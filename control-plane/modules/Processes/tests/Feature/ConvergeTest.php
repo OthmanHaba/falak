@@ -64,7 +64,10 @@ it('compiles schema-valid proc.apply and cron.apply for mixed sites on one serve
     $bunName = 'api.worker-'.strtolower(substr($bunWorker->id, -8));
     $daemonName = 'blog.daemon-'.strtolower(substr($daemon->id, -8));
 
-    expect(array_keys($programs))->toBe(collect(['shop.horizon', 'shop.octane', $workerName, $bunName, $daemonName])->sort()->values()->all())
+    expect(array_keys($programs))->toBe(collect(['api.app', 'shop.horizon', 'shop.octane', $workerName, $bunName, $daemonName])->sort()->values()->all())
+        // The bun site's own web process: its start script, bound to the proxied app port.
+        ->and($programs['api.app']['command'])->toBe(['bun', 'run', 'start'])
+        ->and($programs['api.app']['env'])->toMatchArray(['PORT' => '3001', 'HOST' => '127.0.0.1', 'NODE_ENV' => 'production'])
         ->and($programs['shop.horizon']['command'])->toBe(['php8.4', 'artisan', 'horizon'])
         ->and($programs['shop.horizon']['user'])->toBe('shop')
         ->and($programs['shop.horizon']['cwd'])->toBe('/srv/kiln/sites/shop/current')

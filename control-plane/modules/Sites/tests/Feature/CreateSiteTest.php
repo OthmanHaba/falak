@@ -214,3 +214,35 @@ it('forbids viewers from creating sites', function () {
     $this->actingAs($viewer)->post('/sites', sites_input([$server->id]))->assertForbidden();
     $this->actingAs($viewer)->get('/sites/create')->assertForbidden();
 });
+
+it('installs the Bun or Deno runtime on each target before it is ready', function (string $runtime, string $command, string $version) {
+    config(['sites.bun_version' => '1.4.2', 'sites.deno_version' => '2.9.7']);
+    $server = sites_server($this->organization->id);
+
+    $this->post('/sites', sites_input([$server->id], ['name' => 'api', 'framework' => 'node', 'runtime' => $runtime, 'php_version' => null]))->assertSessionHasNoErrors();
+
+    $target = Site::query()->with('targets')->firstOrFail()->targets->first();
+    $install = $this->agents->last($command);
+
+    expect($install['payload'])->toBe(['version' => $version, 'default' => true])
+        ->and($target->status)->toBe(TargetStatus::Provisioning)
+        ->and($target->step)->toBe('runtime');
+
+    sites_finish($install);
+
+    expect($target->refresh()->status)->toBe(TargetStatus::Ready);
+})->with([
+    'bun' => ['bun', 'runtime.bun.install', '1.4.2'],
+    'deno' => ['deno', 'runtime.deno.install', '2.9.7'],
+]);
+
+it('reports a failed runtime install on the target', function () {
+    $server = sites_server($this->organization->id);
+    $this->post('/sites', sites_input([$server->id], ['name' => 'api', 'framework' => 'node', 'runtime' => 'bun', 'php_version' => null]));
+    $target = Site::query()->with('targets')->firstOrFail()->targets->first();
+
+    sites_finish($this->agents->last('runtime.bun.install'), success: false, error: 'sha256 mismatch');
+
+    expect($target->refresh()->status)->toBe(TargetStatus::Failed)
+        ->and($target->status_message)->toBe('Installing the Bun runtime failed: sha256 mismatch');
+});

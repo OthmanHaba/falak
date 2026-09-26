@@ -29,6 +29,9 @@ class SiteTarget extends Model
 
     public const STEP_POOL = 'pool';
 
+    /** Installing the site's JavaScript runtime (Bun / Deno). */
+    public const STEP_RUNTIME = 'runtime';
+
     public const STEP_CLEANUP = 'cleanup';
 
     protected $table = 'sites_targets';

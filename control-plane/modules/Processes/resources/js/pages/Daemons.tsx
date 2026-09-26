@@ -86,7 +86,7 @@ export default function Daemons(props: Props) {
                 )
             }
         >
-            <ProcessStatusCard {...props} kinds={['daemon']} title="Status" />
+            <ProcessStatusCard {...props} kinds={['app', 'daemon']} title="Status" />
 
             <Card>
                 <CardHeader>

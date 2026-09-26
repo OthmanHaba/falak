@@ -15,7 +15,7 @@ use Kiln\Sites\Infrastructure\CommandPayloads;
 
 /**
  * Prepares a site on one server, one agent command at a time:
- * unix user (isolated sites) → PHP-FPM pool (php-fpm runtime) → ready.
+ * unix user (isolated sites) → PHP-FPM pool (php-fpm runtime) or JS runtime (bun/deno) → ready.
  * Each step is advanced by the command outcome listener.
  */
 final class TargetProvisioner
@@ -73,6 +73,19 @@ final class TargetProvisioner
         if ($site->runtime === SiteRuntime::PhpFpm && $site->php_version) {
             $payload = CommandPayloads::fpmPool($site, $site->php_version, $this->servers->phpSettings($target->server_id, $site->php_version));
             $this->dispatch($target, SiteTarget::STEP_POOL, 'runtime.fpm.pool', $payload, 300);
+
+            return;
+        }
+
+        // Servers provision Node; Bun and Deno are installed where a site needs them.
+        $js = match ($site->runtime) {
+            SiteRuntime::Bun => ['runtime.bun.install', (string) config('sites.bun_version')],
+            SiteRuntime::Deno => ['runtime.deno.install', (string) config('sites.deno_version')],
+            default => null,
+        };
+
+        if ($js !== null) {
+            $this->dispatch($target, SiteTarget::STEP_RUNTIME, $js[0], ['version' => $js[1], 'default' => true], 600);
 
             return;
         }

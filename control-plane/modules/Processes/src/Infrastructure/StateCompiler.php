@@ -80,6 +80,24 @@ final class StateCompiler
         $php = $site->phpBinary();
         $laravel = $site->framework->isLaravel() && $site->runtime->isPhp();
 
+        // JavaScript runtimes serve the site themselves (Caddy proxies to app_port): supervise the
+        // package's conventional start script in the current release.
+        $start = match ($site->runtime) {
+            SiteRuntime::Node => ['npm', 'run', 'start'],
+            SiteRuntime::Bun => ['bun', 'run', 'start'],
+            SiteRuntime::Deno => ['deno', 'task', 'start'],
+            default => null,
+        };
+
+        if ($start !== null && $site->appPort !== null) {
+            $out[] = [$this->program($site, $serverId, ProgramNames::app($site->slug), $start, [], [
+                'PORT' => (string) $site->appPort,
+                'HOST' => '127.0.0.1',
+                'NODE_ENV' => 'production',
+                'PATH' => '/usr/local/bin:/usr/bin:/bin',
+            ]), 'app', 'Web process'];
+        }
+
         if ($laravel && $site->laravel->horizon) {
             $out[] = [$this->program($site, $serverId, ProgramNames::horizon($site->slug), [$php, 'artisan', 'horizon'], [
                 'stop_timeout_s' => max(1, (int) config('processes.horizon_stop_timeout', 120)),

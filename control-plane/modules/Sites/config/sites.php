@@ -15,6 +15,10 @@ return [
     'node_versions' => ['18', '20', '22', '24'],
     'default_node' => '22',
 
+    // Installed on a server when a Bun / Deno site first targets it (official release binaries).
+    'bun_version' => env('KILN_BUN_VERSION', '1.4.2'),
+    'deno_version' => env('KILN_DENO_VERSION', '2.9.7'),
+
     // Ports handed out to node/bun/deno/docker sites (unique per server).
     'app_port_range' => [3000, 3999],
 

@@ -15,6 +15,12 @@ final class ProgramNames
         return self::name($slug, 'horizon');
     }
 
+    /** The web process of a node / bun / deno site. */
+    public static function app(string $slug): string
+    {
+        return self::name($slug, 'app');
+    }
+
     public static function octane(string $slug): string
     {
         return self::name($slug, 'octane');

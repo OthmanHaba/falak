@@ -15,7 +15,7 @@ export interface ProcessInstance {
 
 export interface ProgramStatus {
     name: string;
-    kind: 'horizon' | 'octane' | 'worker' | 'daemon';
+    kind: 'app' | 'horizon' | 'octane' | 'worker' | 'daemon';
     label: string;
     numprocs: number;
     server_id: string;
