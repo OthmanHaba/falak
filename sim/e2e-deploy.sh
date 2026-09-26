@@ -108,8 +108,22 @@ git_commit() { # git_commit REPO MESSAGE SHELL_SNIPPET  -> new commit on main in
 
 deployment_status() { api GET "/deployments/$1"; jq -r '.data.status // empty' <<<"$API_BODY"; }
 
+wait_targets_ready() { # wait_targets_ready SITE_ID  (site targets finish preparing, e.g. runtime install)
+    local deadline=$((SECONDS + 600)) states=""
+    while (( SECONDS < deadline )); do
+        api GET "/sites/$1"
+        states=$(jq -r '[.data.targets[].status] | unique | join(",")' <<<"$API_BODY")
+        [[ $states == ready ]] && return 0
+        [[ $states == *failed* ]] && break
+        sleep 5
+    done
+    bad "site targets not ready: $states $(jq -c '[.data.targets[] | {server_name, status, status_message}]' <<<"$API_BODY")"
+    return 1
+}
+
 deploy_and_wait() { # deploy_and_wait SITE_ID COMMIT LABEL EXPECT(succeeded|failed) -> sets DEPLOYMENT_ID
     local site=$1 commit=$2 label=$3 expect=$4 s="" deadline=$((SECONDS + 1500))
+    wait_targets_ready "$site" || return 1
     api POST "/sites/$site/deployments" "{\"commit\":\"$commit\"}"
     if [[ $API_CODE != 201 ]]; then bad "$label: POST deployments -> $API_CODE: $API_BODY"; return 1; fi
     DEPLOYMENT_ID=$(jq -r .data.id <<<"$API_BODY")

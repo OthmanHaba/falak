@@ -79,7 +79,9 @@ x-control-plane: &control-plane
     - kiln-ca:/kiln/ca
     - cp-storage:/app/storage
     - ..:/opt/kiln/src:ro
-  networks: [backend, observability]
+  # fleet: the control plane (web + Horizon workers running health checks) reaches servers directly,
+  # as it would over their public addresses in production.
+  networks: [backend, observability, fleet]
   deploy:
     resources:
       limits: { memory: 512m }
