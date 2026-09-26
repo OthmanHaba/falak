@@ -9,6 +9,7 @@ use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
+use Kiln\Identity\Application\Console\CreateAdminCommand;
 use Kiln\Identity\Application\Console\SyncPermissionsCommand;
 use Kiln\Identity\Application\Listeners\SyncPermissionsAfterMigrations;
 use Kiln\Identity\Contracts\AuditLog;
@@ -74,7 +75,7 @@ class IdentityServiceProvider extends ModuleServiceProvider
         Event::listen(MigrationsEnded::class, SyncPermissionsAfterMigrations::class);
 
         if ($this->app->runningInConsole()) {
-            $this->commands([SyncPermissionsCommand::class]);
+            $this->commands([SyncPermissionsCommand::class, CreateAdminCommand::class]);
         }
 
         $this->shareInertiaProps();
