@@ -95,6 +95,10 @@ stage_servers() {
     "${C[@]}" exec -T srv-db-1 bash -c 'systemctl is-active postgresql' 2>/dev/null | grep -q active \
         && ok "srv-db-1: postgresql running" || bad "srv-db-1: postgresql not running"
     for c in srv-app-1 srv-app-2 srv-db-1; do
+        [[ "$("${C[@]}" exec -T "$c" bash -c 'exec 3<>/dev/tcp/127.0.0.1/22; head -c 7 <&3' 2>/dev/null)" == SSH-2.0 ]] \
+            && ok "$c: SSH still answering on :22 after provisioning" || bad "$c: SSH not answering after provisioning"
+    done
+    for c in srv-app-1 srv-app-2 srv-db-1; do
         "${C[@]}" exec -T "$c" bash -c 'nft list ruleset 2>/dev/null | grep -q "dport 22"' && ok "$c: nftables firewall applied" || bad "$c: firewall ruleset missing"
     done
 }

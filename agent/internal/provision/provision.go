@@ -501,7 +501,7 @@ func RenderSSHD(s SSH) string {
 func (p *Provisioner) ssh(ctx context.Context, st commands.Stream, s SSH) (bool, error) {
 	old, oldErr := p.d.FS.ReadFile(sshdDropIn)
 	changed, err := p.d.FS.WriteFile(sshdDropIn, []byte(RenderSSHD(s)), 0o644)
-	if err != nil || !changed {
+	if err != nil {
 		return changed, err
 	}
 	// sshd -t needs its privilege separation dir, which Ubuntu's socket-activated ssh only creates
@@ -513,24 +513,41 @@ func (p *Provisioner) ssh(ctx context.Context, st commands.Stream, s SSH) (bool,
 	if err := p.run(ctx, st, "ssh-keygen", "-A"); err != nil {
 		return false, err
 	}
-	if err := p.run(ctx, st, "sshd", "-t"); err != nil {
-		if oldErr != nil {
-			p.d.FS.Remove(sshdDropIn)
-		} else {
-			p.d.FS.WriteFile(sshdDropIn, old, 0o644)
+	if changed {
+		if err := p.run(ctx, st, "sshd", "-t"); err != nil {
+			if oldErr != nil {
+				p.d.FS.Remove(sshdDropIn)
+			} else {
+				p.d.FS.WriteFile(sshdDropIn, old, 0o644)
+			}
+			return false, errors.Join(errors.New("sshd -t rejected the config; previous config restored"), err)
 		}
-		return false, errors.Join(errors.New("sshd -t rejected the config; previous config restored"), err)
 	}
-	// Ubuntu ≥ 22.10 uses socket activation: the listening port comes from ssh.socket via a generator.
-	if sock, _ := p.status(ctx, "is-active", "--quiet", "ssh.socket"); sock {
-		if err := p.run(ctx, st, "systemctl", "daemon-reload"); err != nil {
-			return true, err
-		}
-		if err := p.run(ctx, st, "systemctl", "restart", "ssh.socket"); err != nil {
-			return true, err
-		}
-		return true, nil
+	started, err := p.ensureSSH(ctx, st, changed)
+	return changed || started, err
+}
+
+// ensureSSH keeps SSH reachable after every converge: the agent must never leave a server without
+// SSH (package upgrades can stop sshd). A changed config is applied; a stopped sshd is started.
+// Ubuntu ≥ 22.10 uses socket activation, where the listening port comes from ssh.socket via a
+// generator and ssh.service must not be started alongside it.
+func (p *Provisioner) ensureSSH(ctx context.Context, st commands.Stream, apply bool) (bool, error) {
+	unit := "ssh.service"
+	if sock, _ := p.status(ctx, "is-enabled", "--quiet", "ssh.socket"); sock {
+		unit = "ssh.socket"
 	}
-	// Reloads a running sshd; a stopped one (on-demand/socket-activated) picks the config up when it starts.
-	return true, p.run(ctx, st, "systemctl", "try-reload-or-restart", "ssh")
+	if apply {
+		if unit == "ssh.socket" {
+			if err := p.run(ctx, st, "systemctl", "daemon-reload"); err != nil {
+				return true, err
+			}
+			return true, p.run(ctx, st, "systemctl", "restart", unit)
+		}
+		return true, p.run(ctx, st, "systemctl", "reload-or-restart", unit)
+	}
+	if active, _ := p.status(ctx, "is-active", "--quiet", unit); active {
+		return false, nil
+	}
+	fmt.Fprintf(st.Stdout(), "%s was not running; starting it\n", unit)
+	return true, p.run(ctx, st, "systemctl", "start", unit)
 }

@@ -23,6 +23,9 @@ RUN apt-get update \
       systemd-networkd-wait-online.service systemd-timesyncd.service systemd-resolved.service \
       e2scrub_reap.service e2scrub_all.timer apt-daily.timer apt-daily-upgrade.timer motd-news.timer \
       dpkg-db-backup.timer fstrim.timer \
+      polkit.service \
+ # Behave like a VM: the Docker base image's policy-rc.d (exit 101) stops apt from starting services.
+ && rm -f /usr/sbin/policy-rc.d \
  # Per-container SSH host keys are generated at first boot, not baked into the image.
  && rm -f /etc/ssh/ssh_host_* \
  && mkdir -p /etc/kiln /root/.ssh /run/sshd && chmod 700 /root/.ssh \

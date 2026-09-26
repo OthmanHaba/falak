@@ -155,10 +155,8 @@ for s in "${SERVERS[@]}"; do
 done
 
 # ---------------------------------------------------------------------------------------
-section "7. pending on other components"
-pend "site provisioning + deploy (Sites/Deployments modules + agent deploy.* executors) and Deployment annotations"
-pend "application APM data (kiln/apm-laravel, @kiln/apm-node) on a deployed site: Laravel/Node/Queues dashboards"
-pend "agent deployment log events (kiln.event.type=deployment) feeding the Deployment-failed alert"
+section "7. product flows"
+echo "  provisioning, deploys, rollbacks, Bun site, APM/Insights/Loki: run \`make e2e-deploy\` (e2e-deploy.sh)"
 
 printf '\n==> e2e: %d passed, %d failed, %d pending\n' "$pass" "$fail" "$pending"
 (( fail == 0 ))

@@ -70,6 +70,10 @@ func newHost(f *runnertest.Fake, root string) *hostSim {
 		h.active[c.Args[1]] = true
 		return runner.Result{}, nil
 	})
+	f.OnFunc("systemctl reload-or-restart", func(c runnertest.Call) (runner.Result, error) {
+		h.active[c.Args[1]] = true
+		return runner.Result{}, nil
+	})
 	f.OnFunc("getent passwd", func(c runnertest.Call) (runner.Result, error) {
 		if h.users[c.Args[1]] {
 			shell := "/bin/bash"
@@ -153,7 +157,7 @@ func TestApplyConvergesAndIsIdempotent(t *testing.T) {
 		t.Fatal(names)
 	}
 	for _, w := range []string{"hostnamectl set-hostname web-1", "timedatectl set-timezone UTC", "mkswap /swapfile", "swapon /swapfile",
-		"apt-get remove -y", "useradd", "systemctl enable cron", "systemctl start cron", "sshd -t", "systemctl try-reload-or-restart ssh", "systemctl restart kiln-edge.service"} {
+		"apt-get remove -y", "useradd", "systemctl enable cron", "systemctl start cron", "sshd -t", "systemctl reload-or-restart ssh.service", "systemctl restart kiln-edge.service"} {
 		if !f.Ran(w) {
 			t.Fatalf("missing %q:\n%s", w, strings.Join(f.Lines(), "\n"))
 		}
@@ -219,8 +223,8 @@ func TestFailedStepContinuesAndSSHRestores(t *testing.T) {
 	if string(b) != "Port 22\n" {
 		t.Fatal("not restored", string(b))
 	}
-	if f.Ran("systemctl reload ssh") {
-		t.Fatal("reloaded broken ssh config")
+	if f.Ran("systemctl reload") || f.Ran("systemctl restart ssh") || f.Ran("systemctl start ssh") {
+		t.Fatal("applied a broken ssh config")
 	}
 }
 
@@ -280,5 +284,60 @@ func TestSSHCreatesPrivilegeSeparationDirBeforeValidating(t *testing.T) {
 	lines := strings.Join(f.Lines(), "\n")
 	if !strings.Contains(lines, "ssh-keygen -A") || strings.Index(lines, "ssh-keygen -A") > strings.Index(lines, "sshd -t") {
 		t.Fatalf("ssh-keygen -A must run before sshd -t:\n%s", lines)
+	}
+}
+
+func sshHost(t *testing.T, socketEnabled bool, active map[string]bool) (*Provisioner, *runnertest.Fake, string) {
+	t.Helper()
+	root := t.TempDir()
+	f := &runnertest.Fake{}
+	f.OnFunc("systemctl is-enabled --quiet ssh.socket", func(runnertest.Call) (runner.Result, error) {
+		return runner.Result{ExitCode: map[bool]int{true: 0, false: 1}[socketEnabled]}, nil
+	})
+	f.OnFunc("systemctl is-active --quiet", func(c runnertest.Call) (runner.Result, error) {
+		unit := c.Cmd.Args[len(c.Cmd.Args)-1]
+		return runner.Result{ExitCode: map[bool]int{true: 0, false: 3}[active[unit]]}, nil
+	})
+	return New(Deps{Runner: f, FS: hostfs.FS{Root: root}}), f, root
+}
+
+func TestSSHIsStartedWhenStoppedEvenIfConfigIsUnchanged(t *testing.T) {
+	p, f, _ := sshHost(t, false, map[string]bool{"ssh.service": false})
+	cfg := SSH{Port: 22, PermitRootLogin: "prohibit-password"}
+	st := commands.NewTestStream("c", &commands.Collector{})
+	if _, err := p.ssh(context.Background(), st, cfg); err != nil {
+		t.Fatal(err)
+	}
+	// Second converge: config unchanged, but a package upgrade stopped sshd in between.
+	changed, err := p.ssh(context.Background(), st, cfg)
+	if err != nil || !changed || !f.Ran("systemctl start ssh.service") {
+		t.Fatalf("changed=%v err=%v\n%s", changed, err, strings.Join(f.Lines(), "\n"))
+	}
+}
+
+func TestSocketActivatedSSHRestartsTheSocketNeverTheService(t *testing.T) {
+	p, f, _ := sshHost(t, true, map[string]bool{"ssh.socket": false})
+	if _, err := p.ssh(context.Background(), commands.NewTestStream("c", &commands.Collector{}), SSH{Port: 2222, PermitRootLogin: "prohibit-password"}); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Ran("systemctl daemon-reload") || !f.Ran("systemctl restart ssh.socket") || f.Ran("systemctl start ssh.service") || f.Ran("systemctl reload-or-restart ssh.service") {
+		t.Fatalf("wrong unit handling:\n%s", strings.Join(f.Lines(), "\n"))
+	}
+}
+
+func TestRunningSSHWithUnchangedConfigIsLeftAlone(t *testing.T) {
+	p, f, _ := sshHost(t, false, map[string]bool{"ssh.service": true})
+	cfg := SSH{Port: 22, PermitRootLogin: "prohibit-password"}
+	st := commands.NewTestStream("c", &commands.Collector{})
+	p.ssh(context.Background(), st, cfg)
+	before := len(f.Lines())
+	changed, err := p.ssh(context.Background(), st, cfg)
+	for _, l := range f.Lines()[before:] {
+		if strings.Contains(l, "restart") || strings.Contains(l, "systemctl start") {
+			t.Fatalf("touched a healthy sshd: %s", l)
+		}
+	}
+	if err != nil || changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
 	}
 }
