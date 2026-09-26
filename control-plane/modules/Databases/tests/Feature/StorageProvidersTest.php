@@ -1,0 +1,123 @@
+<?php
+
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Kiln\Databases\Domain\Enums\StorageDriver;
+use Kiln\Databases\Domain\Models\StorageProvider;
+use Kiln\Databases\Infrastructure\ObjectStorage\ObjectStores;
+use Kiln\Identity\Contracts\Role;
+use Tests\Support\FakeAgentGateway;
+
+require_once __DIR__.'/../Support/helpers.php';
+
+beforeEach(function () {
+    FakeAgentGateway::install();
+    [$this->user, $this->organization] = actingAsMember(Role::Admin);
+});
+
+dataset('drivers', [
+    's3' => [['driver' => 's3', 'region' => 'eu-central-1'], 'https://s3.eu-central-1.amazonaws.com', false, 'https://kiln-backups.s3.eu-central-1.amazonaws.com/acme/x.sql.gz'],
+    'r2' => [['driver' => 'r2', 'account_id' => str_repeat('ab', 16)], 'https://'.str_repeat('ab', 16).'.r2.cloudflarestorage.com', true, 'https://'.str_repeat('ab', 16).'.r2.cloudflarestorage.com/kiln-backups/acme/x.sql.gz'],
+    'b2' => [['driver' => 'b2', 'region' => 'us-west-004'], 'https://s3.us-west-004.backblazeb2.com', false, 'https://kiln-backups.s3.us-west-004.backblazeb2.com/acme/x.sql.gz'],
+    'spaces' => [['driver' => 'spaces', 'region' => 'fra1'], 'https://fra1.digitaloceanspaces.com', false, 'https://kiln-backups.fra1.digitaloceanspaces.com/acme/x.sql.gz'],
+    'minio' => [['driver' => 'minio', 'endpoint' => 'https://minio.example.com:9000'], 'https://minio.example.com:9000', true, 'https://minio.example.com:9000/kiln-backups/acme/x.sql.gz'],
+]);
+
+it('creates providers with derived endpoints and encrypted credentials', function (array $input, string $endpoint, bool $pathStyle, string $objectUrl) {
+    $this->post('/databases/storage', [
+        'name' => 'Primary',
+        'bucket' => 'kiln-backups',
+        'prefix' => '/acme/',
+        'access_key_id' => 'AKIAEXAMPLEKEY123456',
+        'secret_access_key' => 'very-secret-value',
+        ...$input,
+    ])->assertSessionHasNoErrors();
+
+    $provider = StorageProvider::query()->firstOrFail();
+    $store = app(ObjectStores::class)->for($provider);
+
+    expect($provider->endpoint)->toBe($endpoint)
+        ->and($provider->path_style)->toBe($pathStyle)
+        ->and($provider->prefix)->toBe('acme')
+        ->and($store->url($store->key('x.sql.gz')))->toBe($objectUrl)
+        ->and(DB::table('databases_storage_providers')->value('secret_access_key'))->not->toContain('very-secret-value');
+})->with('drivers');
+
+it('never sends credentials to the UI', function () {
+    databases_provider($this->organization, ['secret_access_key' => 'do-not-leak-me', 'access_key_id' => 'AKIALEAKCHECK0001234']);
+
+    $response = $this->get('/databases/storage')->assertOk()->assertInertia(fn ($page) => $page
+        ->component('Databases/Storage', false)
+        ->where('providers.0.access_key_hint', '…1234'));
+
+    expect($response->getContent())->not->toContain('do-not-leak-me')->not->toContain('AKIALEAKCHECK0001234');
+});
+
+it('requires https endpoints and the r2 account id', function () {
+    $base = ['name' => 'X', 'bucket' => 'kiln-backups', 'access_key_id' => 'a', 'secret_access_key' => 'b'];
+
+    $this->post('/databases/storage', [...$base, 'driver' => 'minio', 'endpoint' => 'http://minio.local'])->assertSessionHasErrors('endpoint');
+    $this->post('/databases/storage', [...$base, 'driver' => 'r2'])->assertSessionHasErrors('account_id');
+    $this->post('/databases/storage', [...$base, 'driver' => 's3'])->assertSessionHasErrors('region');
+});
+
+it('keeps stored credentials when the secret is left blank on update', function () {
+    $provider = databases_provider($this->organization, ['verified_at' => now()]);
+
+    $this->put("/databases/storage/{$provider->id}", ['name' => 'Renamed', 'driver' => 's3', 'region' => 'eu-central-1', 'bucket' => 'kiln-backups'])->assertSessionHasNoErrors();
+
+    expect($provider->refresh())
+        ->name->toBe('Renamed')
+        ->secret_access_key->toBe('super-secret-access-key-value')
+        ->verified_at->not->toBeNull();
+
+    $this->put("/databases/storage/{$provider->id}", ['name' => 'Renamed', 'driver' => 's3', 'region' => 'eu-central-1', 'bucket' => 'kiln-backups', 'secret_access_key' => 'rotated'])->assertSessionHasNoErrors();
+    expect($provider->refresh())->secret_access_key->toBe('rotated')->verified_at->toBeNull();
+});
+
+it('verifies a provider with a signed PUT and DELETE of a probe object', function () {
+    Http::fake(['*' => Http::response('', 200)]);
+    $provider = databases_provider($this->organization);
+
+    $this->post("/databases/storage/{$provider->id}/verify")->assertSessionHasNoErrors();
+
+    expect($provider->refresh()->verified_at)->not->toBeNull();
+    Http::assertSentInOrder([
+        fn (Request $r) => $r->method() === 'PUT'
+            && str_starts_with($r->url(), 'https://kiln-backups.s3.eu-central-1.amazonaws.com/acme/.kiln-verify-')
+            && str_starts_with($r->header('Authorization')[0], 'AWS4-HMAC-SHA256 Credential=AKIAEXAMPLEKEY123456/')
+            && $r->header('x-amz-content-sha256')[0] === hash('sha256', $r->body()),
+        fn (Request $r) => $r->method() === 'DELETE' && str_contains($r->header('Authorization')[0], 'SignedHeaders=host;x-amz-content-sha256;x-amz-date'),
+    ]);
+});
+
+it('reports storage errors without leaking secrets', function () {
+    Http::fake(['*' => Http::response('<Error><Code>SignatureDoesNotMatch</Code></Error>', 403)]);
+    $provider = databases_provider($this->organization, ['verified_at' => now()]);
+
+    $response = $this->post("/databases/storage/{$provider->id}/verify")->assertSessionHasErrors('provider');
+
+    expect(session('errors')->first('provider'))->toContain('HTTP 403 (SignatureDoesNotMatch)')->not->toContain('super-secret')
+        ->and($provider->refresh()->verified_at)->toBeNull();
+});
+
+it('restricts provider management to admins', function () {
+    $provider = databases_provider($this->organization);
+    [$developer] = memberOf($this->organization, Role::Developer);
+    $this->actingAs($developer);
+
+    $this->post('/databases/storage', ['name' => 'X', 'driver' => 's3', 'region' => 'eu-central-1', 'bucket' => 'b-b-b', 'access_key_id' => 'a', 'secret_access_key' => 'b'])->assertForbidden();
+    $this->delete("/databases/storage/{$provider->id}")->assertForbidden();
+    $this->get('/databases/storage')->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false));
+});
+
+it('refuses to delete providers used by schedules', function () {
+    $provider = databases_provider($this->organization);
+    $engine = databases_engine($this->organization);
+    $db = databases_active_db($engine);
+    $this->post("/databases/servers/{$engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $provider->id, 'database_ids' => [$db->id], 'cron' => '0 3 * * *'])->assertSessionHasNoErrors();
+
+    $this->delete("/databases/storage/{$provider->id}")->assertSessionHasErrors('provider');
+    expect(StorageProvider::query()->count())->toBe(1)->and(StorageDriver::S3->label())->toBe('Amazon S3');
+});

@@ -1,0 +1,16 @@
+<?php
+
+namespace Kiln\Databases\Infrastructure\ObjectStorage;
+
+use Illuminate\Http\Client\Factory as HttpFactory;
+use Kiln\Databases\Domain\Models\StorageProvider;
+
+final class ObjectStores
+{
+    public function __construct(private readonly HttpFactory $http) {}
+
+    public function for(StorageProvider $provider): ObjectStore
+    {
+        return new ObjectStore($provider, $this->http, (int) config('databases.storage_timeout', 30));
+    }
+}
