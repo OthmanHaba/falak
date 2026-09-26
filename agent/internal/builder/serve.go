@@ -119,11 +119,13 @@ func (s *Server) runJob(ctx context.Context, j Job) {
 	if id == "" {
 		id = "invalid"
 	}
-	sink := (&HTTPSink{URL: strings.TrimRight(s.URL, "/") + EventsPath(id), Token: s.Token, Client: s.HTTP, Log: s.Log}).Start()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	sink := (&HTTPSink{URL: strings.TrimRight(s.URL, "/") + EventsPath(id), Token: s.Token, Client: s.HTTP, Log: s.Log, OnGone: cancel}).Start()
 	s.Log.Info("build started", "build_id", id, "mode", j.Mode)
 	res, err := s.Builder.Build(ctx, j, sink)
-	cctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
+	cctx, cancelFlush := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancelFlush()
 	if ferr := sink.Close(cctx); ferr != nil {
 		s.Log.Error("deliver build events", "build_id", id, "err", ferr)
 	}
