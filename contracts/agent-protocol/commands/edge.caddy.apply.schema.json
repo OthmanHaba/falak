@@ -67,6 +67,26 @@
               "cert_name": {
                 "type": "string",
                 "description": "edge.cert.install name, when mode=custom"
+              },
+              "dns": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "provider",
+                  "api_token"
+                ],
+                "properties": {
+                  "provider": {
+                    "enum": [
+                      "cloudflare"
+                    ]
+                  },
+                  "api_token": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "description": "ACME DNS-01 challenge (required for wildcard domains when mode=acme); needs a Caddy/FrankenPHP build with the provider module"
               }
             }
           },
@@ -150,6 +170,11 @@
                 "password_hash": {
                   "type": "string",
                   "description": "bcrypt hash"
+                },
+                "path": {
+                  "type": "string",
+                  "pattern": "^/",
+                  "description": "Caddy path matcher (e.g. /admin/*); omitted = whole site"
                 }
               }
             }

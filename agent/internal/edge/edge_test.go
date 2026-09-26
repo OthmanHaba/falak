@@ -217,3 +217,72 @@ func TestInstallCert(t *testing.T) {
 		t.Fatal("absent did not remove")
 	}
 }
+
+func TestRenderPathScopedBasicAuth(t *testing.T) {
+	cfg, err := Render(Payload{Sites: []Site{{ID: "a", Domains: []string{"a.test"}, Kind: "static", Root: "/srv/a",
+		BasicAuth: []BasicAuth{
+			{Username: "admin", PasswordHash: "$2y$h1", Path: "/admin/*"},
+			{Username: "all", PasswordHash: "$2y$h2"},
+			{Username: "ops", PasswordHash: "$2y$h3", Path: "/admin/*"},
+		}}}}, "/etc/kiln/certs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(cfg)
+	var got struct {
+		Apps struct {
+			HTTP struct {
+				Servers map[string]struct {
+					Routes []struct {
+						Handle []struct {
+							Routes []map[string]any `json:"routes"`
+						} `json:"handle"`
+					} `json:"routes"`
+				} `json:"servers"`
+			} `json:"http"`
+		} `json:"apps"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	sub := got.Apps.HTTP.Servers["kiln"].Routes[0].Handle[0].Routes
+	var auth []map[string]any
+	for _, r := range sub {
+		if strings.Contains(mustJSON(r), `"authentication"`) {
+			auth = append(auth, r)
+		}
+	}
+	if len(auth) != 2 {
+		t.Fatalf("want 2 auth routes, got %d: %v", len(auth), auth)
+	}
+	if _, ok := auth[0]["match"]; ok || !strings.Contains(mustJSON(auth[0]), `"all"`) {
+		t.Fatalf("site-wide auth first without matcher: %v", auth[0])
+	}
+	if !strings.Contains(mustJSON(auth[1]["match"]), `"/admin/*"`) || !strings.Contains(mustJSON(auth[1]), `"ops"`) {
+		t.Fatalf("path auth: %v", auth[1])
+	}
+}
+
+func TestRenderDNSChallenge(t *testing.T) {
+	cfg, err := Render(Payload{ACMEEmail: "ops@example.com", Sites: []Site{
+		{ID: "w", Domains: []string{"*.example.com"}, Kind: "static", Root: "/srv/w", TLS: &TLS{Mode: "acme", DNS: &DNS{Provider: "cloudflare", APIToken: "tok"}}},
+		{ID: "x", Domains: []string{"x.test"}, Kind: "static", Root: "/srv/x"},
+	}}, "/etc/kiln/certs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := mustJSON(cfg)
+	for _, want := range []string{`"challenges":{"dns":{"provider":{"api_token":"tok","name":"cloudflare"}}}`, `"subjects":["*.example.com"]`, `"subjects":["x.test"]`, `"email":"ops@example.com"`} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %s in %s", want, s)
+		}
+	}
+	if _, err := Render(Payload{Sites: []Site{{ID: "w", Domains: []string{"*.e.com"}, Kind: "static", Root: "/r", TLS: &TLS{DNS: &DNS{Provider: "cloudflare"}}}}}, ""); err == nil {
+		t.Fatal("want error for missing api token")
+	}
+}
+
+func mustJSON(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
