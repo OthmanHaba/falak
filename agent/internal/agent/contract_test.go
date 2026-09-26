@@ -20,7 +20,7 @@ import (
 var Catalogue = []string{
 	"system.facts", "system.exec", "system.write_file", "system.package.install", "system.user.create", "system.ssh_key.sync", "system.upgrade_agent",
 	"provision.apply",
-	"runtime.php.install", "runtime.php.configure", "runtime.node.install", "runtime.frankenphp.configure", "runtime.fpm.pool",
+	"runtime.php.install", "runtime.php.configure", "runtime.node.install", "runtime.bun.install", "runtime.deno.install", "runtime.frankenphp.configure", "runtime.fpm.pool",
 	"edge.caddy.apply", "edge.cert.install",
 	"deploy.fetch", "deploy.prepare", "deploy.hook", "deploy.activate", "deploy.rollback", "deploy.prune", "deploy.container.swap",
 	"proc.apply", "proc.restart", "proc.status",

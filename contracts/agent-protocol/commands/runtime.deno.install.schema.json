@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/runtime.deno.install.schema.json",
+  "title": "runtime.deno.install \u2014 install the official Deno binary into /opt/kiln/deno/<version>",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "Optional; when absent the agent verifies against the release <zip>.sha256sum"
+    },
+    "default": {
+      "type": "boolean",
+      "default": false,
+      "description": "Symlink deno into /usr/local/bin"
+    },
+    "mirror": {
+      "type": "string",
+      "format": "uri",
+      "default": "https://github.com/denoland/deno/releases/download"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "prefix"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "prefix": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

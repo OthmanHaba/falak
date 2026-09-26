@@ -61,6 +61,8 @@ func (rt *Runtime) Register(reg *commands.Registry) {
 	reg.Register("runtime.php.install", commands.Typed(rt.PHPInstall))
 	reg.Register("runtime.php.configure", commands.Typed(rt.PHPConfigure))
 	reg.Register("runtime.node.install", commands.Typed(rt.NodeInstall))
+	reg.Register("runtime.bun.install", commands.Typed(rt.BunInstall))
+	reg.Register("runtime.deno.install", commands.Typed(rt.DenoInstall))
 	reg.Register("runtime.frankenphp.configure", commands.Typed(rt.FrankenPHPConfigure))
 	reg.Register("runtime.fpm.pool", commands.Typed(rt.FPMPool))
 }

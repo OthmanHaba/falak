@@ -108,7 +108,7 @@ Every command type is **idempotent** (safe to re-run) and declares a JSON Schema
 |---|---|
 | `system` | `facts`, `exec`, `write_file`, `package.install`, `user.create`, `ssh_key.sync`, `upgrade_agent` |
 | `provision` | `apply` (declarative provisioning plan: packages, users, runtimes, services) |
-| `runtime` | `php.install`, `php.configure`, `node.install`, `frankenphp.configure`, `fpm.pool` |
+| `runtime` | `php.install`, `php.configure`, `node.install`, `bun.install`, `deno.install`, `frankenphp.configure`, `fpm.pool` |
 | `edge` | `caddy.apply` (full route set, atomic via Caddy admin API), `cert.install` |
 | `deploy` | `fetch`, `prepare`, `hook`, `activate`, `rollback`, `prune`, `container.swap` |
 | `proc` | `apply` (desired set of supervised processes: workers, daemons), `restart`, `status` |
