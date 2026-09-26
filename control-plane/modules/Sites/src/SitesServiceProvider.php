@@ -9,6 +9,7 @@ use Kiln\Fleet\Events\CommandFinished;
 use Kiln\Identity\Contracts\PermissionRegistry;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Identity\Events\OrganizationDeleted;
+use Kiln\Insights\Contracts\SiteNameResolver;
 use Kiln\Kernel\Support\ModuleServiceProvider;
 use Kiln\Servers\Events\ServerDeleted;
 use Kiln\Sites\Application\Listeners\DeleteOrganizationSites;
@@ -20,10 +21,13 @@ use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Contracts\SiteHeaders;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Policies\SitePolicy;
+use Kiln\Sites\Infrastructure\EloquentServerSites;
 use Kiln\Sites\Infrastructure\EloquentSiteDirectory;
 use Kiln\Sites\Infrastructure\EloquentSiteHeaders;
+use Kiln\Sites\Infrastructure\EloquentSiteNameResolver;
 use Kiln\Sites\Infrastructure\NullSiteDomains;
 use Kiln\SourceControl\Events\ConnectionDeleted;
+use Kiln\Telemetry\Contracts\ServerSites;
 
 class SitesServiceProvider extends ModuleServiceProvider
 {
@@ -35,6 +39,9 @@ class SitesServiceProvider extends ModuleServiceProvider
     public array $singletons = [
         SiteDirectory::class => EloquentSiteDirectory::class,
         SiteHeaders::class => EloquentSiteHeaders::class,
+        // Insights and Telemetry register later and only fill these when unbound.
+        SiteNameResolver::class => EloquentSiteNameResolver::class,
+        ServerSites::class => EloquentServerSites::class,
     ];
 
     public function register(): void
