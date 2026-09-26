@@ -18,6 +18,7 @@ final class CommandController extends Controller
     {
         $model = Command::query()->findOrFail($command);
 
+        abort_if($model->hasPrivateOutput(), 404);
         abort_unless($access->can($request->user(), $model->organization_id, 'fleet.commands.view'), 404);
 
         $after = (int) $request->query('after', '-1');

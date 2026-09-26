@@ -60,3 +60,25 @@ it('authorizes the private broadcast channel per organization', function () {
     $this->actingAs($this->user)->post('/broadcasting/auth', ['channel_name' => $channel, 'socket_id' => '123.456'])->assertOk();
     $this->actingAs($outsider)->post('/broadcasting/auth', ['channel_name' => $channel, 'socket_id' => '123.456'])->assertForbidden();
 });
+
+it('never exposes terminal command output through the generic views', function () {
+    config(['broadcasting.default' => 'reverb', 'broadcasting.connections.reverb' => [
+        'driver' => 'reverb', 'key' => 'k', 'secret' => 's', 'app_id' => 'a', 'options' => ['host' => 'localhost', 'port' => 8080, 'scheme' => 'http'],
+    ]]);
+    app()->forgetInstance(BroadcastManager::class);
+    app()->forgetInstance(Factory::class);
+    Broadcast::clearResolvedInstances();
+    Broadcast::channel(CommandChannel::NAME, CommandChannel::class);
+
+    [$admin] = memberOf($this->organization, Role::Admin);
+    $terminal = app(AgentGateway::class)->dispatch($this->serverId, 'terminal.open', [
+        'session_id' => '01J9ZT8K3M4N5P6Q7R8S9T0V1W', 'user' => 'root', 'shell' => '/bin/bash', 'cols' => 80, 'rows' => 24,
+    ]);
+
+    foreach ([$this->user, $admin] as $member) {
+        $this->actingAs($member)->getJson("/fleet/commands/{$terminal->id}")->assertNotFound();
+        $this->actingAs($member)->post('/broadcasting/auth', ['channel_name' => "private-fleet.commands.{$terminal->id}", 'socket_id' => '123.456'])->assertForbidden();
+    }
+
+    $this->actingAs($this->user)->getJson("/fleet/commands/{$this->handle->id}")->assertOk();
+});

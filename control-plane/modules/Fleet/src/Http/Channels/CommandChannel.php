@@ -8,6 +8,7 @@ use Kiln\Identity\Contracts\OrganizationAccess;
 
 /**
  * private-fleet.commands.{commandId}: members of the command's organization with fleet.commands.view.
+ * Commands with private output (terminal.*) are never joinable here; their module streams them itself.
  */
 final class CommandChannel
 {
@@ -17,8 +18,10 @@ final class CommandChannel
 
     public function join(Authenticatable $user, string $commandId): bool
     {
-        $organizationId = Command::query()->whereKey($commandId)->value('organization_id');
+        $command = Command::query()->find($commandId, ['id', 'type', 'organization_id']);
 
-        return is_string($organizationId) && $this->access->can($user, $organizationId, 'fleet.commands.view');
+        return $command !== null
+            && ! $command->hasPrivateOutput()
+            && $this->access->can($user, $command->organization_id, 'fleet.commands.view');
     }
 }

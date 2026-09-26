@@ -46,6 +46,25 @@ class Command extends Model
     protected $hidden = ['payload'];
 
     /**
+     * Command types whose output is private to the module that issued them (PTY streams can
+     * contain typed secrets); they are never readable through Fleet's generic command views.
+     *
+     * @var list<string>
+     */
+    public const PRIVATE_OUTPUT_PREFIXES = ['terminal.'];
+
+    public function hasPrivateOutput(): bool
+    {
+        foreach (self::PRIVATE_OUTPUT_PREFIXES as $prefix) {
+            if (str_starts_with($this->type, $prefix)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
