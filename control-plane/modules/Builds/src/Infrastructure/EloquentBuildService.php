@@ -1,0 +1,81 @@
+<?php
+
+namespace Kiln\Builds\Infrastructure;
+
+use Kiln\Builds\Application\Actions\CancelBuild;
+use Kiln\Builds\Application\Actions\RequestBuild;
+use Kiln\Builds\Application\Artifacts\ArtifactStorage;
+use Kiln\Builds\Application\Registry;
+use Kiln\Builds\Contracts\BuildService;
+use Kiln\Builds\Contracts\BuildStatus;
+use Kiln\Builds\Contracts\Data\ArtifactData;
+use Kiln\Builds\Contracts\Data\BuildData;
+use Kiln\Builds\Contracts\Data\BuildRequest;
+use Kiln\Builds\Contracts\Data\ImageData;
+use Kiln\Builds\Domain\Models\Build;
+use Kiln\Builds\Domain\Models\BuildLog;
+
+final class EloquentBuildService implements BuildService
+{
+    public function __construct(
+        private readonly RequestBuild $requestBuild,
+        private readonly CancelBuild $cancelBuild,
+        private readonly ArtifactStorage $storage,
+        private readonly Registry $registry,
+    ) {}
+
+    public function request(BuildRequest $request): BuildData
+    {
+        return ($this->requestBuild)($request)->toData();
+    }
+
+    public function find(string $buildId): ?BuildData
+    {
+        return Build::query()->with('builder')->find($buildId)?->toData();
+    }
+
+    public function status(string $buildId): ?BuildStatus
+    {
+        return Build::query()->find($buildId)?->status;
+    }
+
+    public function artifactFor(string $buildId, int $ttlSeconds = 3600): ?ArtifactData
+    {
+        $build = Build::query()->find($buildId);
+
+        if (! $build || $build->mode !== 'native' || ! $build->hasArtifact()) {
+            return null;
+        }
+
+        return new ArtifactData(
+            $this->storage->downloadUrl((string) $build->artifact_key, $ttlSeconds),
+            (string) $build->artifact_sha256,
+            (int) $build->artifact_size,
+            (string) ($build->artifact_format ?? 'tar.gz'),
+        );
+    }
+
+    public function imageFor(string $buildId): ?ImageData
+    {
+        $build = Build::query()->find($buildId);
+
+        if (! $build || $build->mode !== 'docker' || ! $build->hasArtifact()) {
+            return null;
+        }
+
+        return new ImageData((string) $build->pinnedImage(), $this->registry->auth());
+    }
+
+    public function cancel(string $buildId): bool
+    {
+        $build = Build::query()->find($buildId);
+
+        return $build !== null && ($this->cancelBuild)($build, 'Cancelled with its deployment.');
+    }
+
+    public function output(string $buildId, int $afterSeq = 0, int $limit = 1000): array
+    {
+        return BuildLog::query()->where('build_id', $buildId)->where('id', '>', $afterSeq)->orderBy('id')->limit($limit)->get()
+            ->map(fn (BuildLog $log) => $log->toLine())->values()->all();
+    }
+}

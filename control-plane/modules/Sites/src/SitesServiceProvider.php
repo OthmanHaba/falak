@@ -16,12 +16,14 @@ use Kiln\Sites\Application\Listeners\DeleteOrganizationSites;
 use Kiln\Sites\Application\Listeners\DetachSourceConnection;
 use Kiln\Sites\Application\Listeners\HandleCommandOutcome;
 use Kiln\Sites\Application\Listeners\RemoveServerTargets;
+use Kiln\Sites\Contracts\SiteDeploySettings;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Contracts\SiteHeaders;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Policies\SitePolicy;
 use Kiln\Sites\Infrastructure\EloquentServerSites;
+use Kiln\Sites\Infrastructure\EloquentSiteDeploySettings;
 use Kiln\Sites\Infrastructure\EloquentSiteDirectory;
 use Kiln\Sites\Infrastructure\EloquentSiteHeaders;
 use Kiln\Sites\Infrastructure\EloquentSiteNameResolver;
@@ -39,6 +41,7 @@ class SitesServiceProvider extends ModuleServiceProvider
     public array $singletons = [
         SiteDirectory::class => EloquentSiteDirectory::class,
         SiteHeaders::class => EloquentSiteHeaders::class,
+        SiteDeploySettings::class => EloquentSiteDeploySettings::class,
         // Insights and Telemetry register later and only fill these when unbound.
         SiteNameResolver::class => EloquentSiteNameResolver::class,
         ServerSites::class => EloquentServerSites::class,

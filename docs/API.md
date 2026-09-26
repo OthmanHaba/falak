@@ -1,0 +1,213 @@
+# Kiln HTTP API
+
+Three surfaces:
+
+| Surface | Base | Auth | Consumers |
+|---|---|---|---|
+| Public REST API v1 | `/api/v1` | Sanctum bearer token (`Authorization: Bearer <token>`) | `kiln` CLI (`agent/internal/cli/api`), CI, scripts |
+| Deploy hooks | `/api/deploy/{token}` | the unguessable token in the URL | CI / chat ops |
+| Internal builder API | `/api/internal` | builder token (`Authorization: Bearer kbt_…`) or signed URLs | `kiln-builder serve` (`agent/internal/builder`) |
+
+The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protocol/README.md`.
+
+## Conventions (v1)
+
+- Always send `Accept: application/json`.
+- **Tokens** are created under *Settings → API tokens*. A token is pinned to **one organization**; its
+  abilities are permission names (`deployments.create`, …) or `*`. A request is allowed only when the token
+  has the ability **and** the token owner's role grants the permission.
+- **Ids** are lowercase ULIDs. Anything that accepts an id also accepts it uppercase. Sites can be addressed
+  by **id or slug** everywhere (`{site}`).
+- **Responses** wrap payloads in `{"data": …}`; paginated lists add `links` and `meta`
+  (`current_page`, `per_page`, `total`, `last_page`; `?page=`, `?per_page=` ≤ 100).
+- **Errors**: `401` missing/invalid token, `403` `{message}` (ability or role missing), `404` `{message}`
+  (not found *or* in another organization), `422` Laravel validation body
+  `{"message": "…", "errors": {"field": ["…"]}}`, `429` rate limited, `503` backend (Loki) unavailable.
+- Timestamps are ISO-8601.
+
+### Permissions (token abilities)
+
+| Permission | Roles | Grants |
+|---|---|---|
+| `sites.view` | admin, developer, viewer | list/show sites |
+| `sites.env.view` / `sites.env.manage` | admin, developer | read / replace the site environment |
+| `deployments.view` | admin, developer, viewer | deployments, output, releases |
+| `deployments.create` | admin, developer | deploy, cancel queued/building deployments |
+| `deployments.rollback` | admin, developer | roll back to an earlier release |
+| `deployments.manage` | admin, developer | strategy, health checks, retention, push-to-deploy, deploy hooks (UI) |
+| `builds.view` / `builds.manage` | view: all; manage: admin, developer | builds, logs, builders / cancel builds, manage builders (UI) |
+| `telemetry.view` | admin, developer, viewer | site logs |
+
+## Identity
+
+### `GET /api/v1/me`
+```json
+{"data": {"user": {"id": "…", "name": "Ada", "email": "ada@example.com"},
+          "organization": {"id": "…", "name": "Acme", "slug": "acme", "role": "owner"},
+          "token": {"name": "cli", "abilities": ["*"]}}}
+```
+
+### `GET /api/v1/organizations`
+Token requests return the token's organization only; session requests every membership.
+```json
+{"data": [{"id": "…", "name": "Acme", "slug": "acme", "role": "owner", "current": true}]}
+```
+
+## Sites
+
+### `GET /api/v1/sites` · `GET /api/v1/sites/{site}` — `sites.view`
+```json
+{"data": {
+  "id": "01k…", "name": "Shop", "slug": "shop", "status": "ready",
+  "framework": "laravel", "runtime": "frankenphp", "build_mode": "native",
+  "php_version": "8.4", "node_version": null,
+  "repository": "acme/shop", "branch": "main", "push_to_deploy": true,
+  "domain": "shop.example.com", "url": "https://shop.example.com",
+  "web_directory": "public", "root_path": "/srv/kiln/sites/shop", "app_port": null, "test_domain": null,
+  "server_ids": ["01k…"],
+  "targets": [{"id": "…", "server_id": "…", "server_name": "web-1", "server_ip": "203.0.113.1", "role": "leader", "status": "ready", "status_message": null, "command_id": null}],
+  "strategy": "zero-downtime",
+  "current_release": {"id": "01k…", "commit": "a1b2…", "branch": "main", "deployment_id": "01k…", "active": true, "…": "see Release"},
+  "created_at": "2026-09-26T10:00:00+00:00"
+}}
+```
+`show` also returns `deploy_script`, `shared_paths`, `laravel`. `strategy` / `current_release` are contributed by
+Deployments through `Sites\Contracts\SiteResourceExtension`.
+
+### `GET /api/v1/sites/{site}/env` — `sites.env.view`
+Returns the latest environment version as dotenv (audited as a reveal).
+```json
+{"data": {"content": "APP_ENV=production\nAPP_KEY=base64:…\n", "version": 3}}
+```
+
+### `PUT /api/v1/sites/{site}/env` — `sites.env.manage`
+Body `{"content": "<dotenv>"}` replaces all variables (deploy-script exposure of existing keys is kept).
+`422` on unparsable content (`errors.content`). Takes effect on the next deployment.
+```json
+{"data": {"version": 4, "changed": true, "keys": ["APP_ENV", "APP_KEY"]}}
+```
+
+### `GET /api/v1/sites/{site}/logs` — `telemetry.view`
+Query: `since` (seconds, default 3600, ≤ 30 days), `limit` (1–1000, default 100), `level`
+(`trace|debug|info|warn|error|fatal`), `cursor` (from the previous page). Newest first; `meta.cursor` is empty
+on the last page.
+```json
+{"data": [{"at": "2026-09-26T10:00:02.000000+00:00", "level": "ERROR", "source": "laravel", "server": "web-1",
+           "message": "boom", "attributes": {"service_name": "laravel", "…": "…"}}],
+ "meta": {"cursor": "1790000000000000001"}}
+```
+
+## Deployments
+
+### Deployment resource
+```json
+{"id": "01k…", "site_id": "01k…", "number": 42,
+ "status": "queued|building|deploying|succeeded|failed|cancelled",
+ "phase": "build|fetch|prepare|migrate|activate|restart|healthcheck|rollback|null",
+ "trigger": "manual|push|api|hook|rollback", "strategy": "zero-downtime",
+ "branch": "main", "commit": "a1b2c3…", "message": "Fix checkout", "author": "Ada",
+ "release_id": "01k…", "build_id": "01k…", "rolled_back": false,
+ "url": "https://kiln.example.com/sites/01k…/deployments/01k…", "error": null,
+ "created_at": "…", "started_at": "…", "finished_at": "…"}
+```
+`rolled_back: true` with `status: failed` means servers that had switched were returned to the previous release.
+
+### `POST /api/v1/sites/{site}/deployments` — `deployments.create`
+Body (all optional): `{"branch": "main", "commit": "<sha>"}`. Without a commit the branch head is resolved
+through the source-control provider. → `201 {"data": Deployment}`. The deployment starts immediately
+(`building`) or waits behind the site's running deployment (`queued`).
+
+### `GET /api/v1/sites/{site}/deployments` — `deployments.view`
+Paginated, newest first.
+
+### `GET /api/v1/deployments/{deployment}` — `deployments.view`
+Deployment + `targets`:
+```json
+{"targets": [{"id": "…", "server_id": "…", "server_name": "web-1", "role": "leader", "batch": 0,
+  "status": "pending|deploying|succeeded|failed|rolled_back|skipped", "activated": true, "error": null,
+  "steps": [{"key": "fetch:…", "kind": "fetch", "label": "fetch", "phase": "fetch", "rollback": false, "batch": 0,
+             "status": "pending|running|succeeded|failed|skipped", "command_id": "…", "exit_code": null, "error": null,
+             "started_at": "…", "finished_at": "…", "duration_ms": 812}]}]}
+```
+
+### `GET /api/v1/deployments/{deployment}/output?after=<seq>` — `deployments.view`
+Lines with `seq > after` (≤ 1000 per page), in order. Poll with `after = meta.next` until the deployment is
+terminal (`meta.status`). `server` is null for build/orchestration lines.
+```json
+{"data": [{"seq": 1812, "at": "…", "server": "web-1", "server_id": "…", "step_id": "…",
+           "phase": "migrate", "stream": "stdout|stderr", "data": "Migrating: …\n"}],
+ "meta": {"next": 1812, "status": "deploying"}}
+```
+
+### `POST /api/v1/sites/{site}/rollback` — `deployments.rollback`
+Body `{"release_id": "<ulid>"}` (optional; default = the newest retained release before the current one).
+→ `201 {"data": Deployment}` with `trigger: "rollback"`. `422` (`errors.release_id`) when the release is current,
+failed or pruned, or when there is nothing to roll back to.
+
+### `GET /api/v1/sites/{site}/releases` — `deployments.view`
+Retained releases, current first.
+```json
+{"data": [{"id": "01k…", "commit": "…", "branch": "main", "message": "…", "author": "Ada",
+           "deployment_id": "…", "build_id": "…", "image": null,
+           "status": "active|inactive", "active": true, "can_rollback": false,
+           "activated_at": "…", "created_at": "…"}]}
+```
+
+## Deploy hooks
+
+### `GET|POST /api/deploy/{token}`
+The URL is shown (and regenerated) under *Site → Deploy settings*. Reserved query parameters:
+
+| Parameter | Meaning |
+|---|---|
+| `kiln_deploy_branch` | branch to deploy (default: the site branch) |
+| `kiln_deploy_commit` | exact commit SHA (7–64 hex) |
+| `kiln_deploy_author` | author shown in the UI / `KILN_COMMIT_AUTHOR` |
+| `kiln_deploy_message` | message shown in the UI / `KILN_COMMIT_MESSAGE` |
+
+Every other parameter becomes `KILN_VAR_<NAME>` in the deploy script environment (name upper-cased,
+non-alphanumerics → `_`; ≤ 50 variables, ≤ 4 KiB each; stored encrypted). → `202`
+`{"data": {"id", "status", "number", "url"}}`; `404` for unknown/rotated tokens; `422` for an invalid commit.
+Rate limited to 30/min.
+
+## Internal builder API
+
+`kiln-builder serve --url https://kiln.example.com --token kbt_…` (env `KILN_URL`, `KILN_BUILDER_TOKEN`,
+`KILN_BUILDER_NAME`). Tokens: the control-plane host builder uses `KILN_LOCAL_BUILDER_TOKEN` (serves every
+organization); builder servers get one installed automatically when they finish provisioning; external
+builders are created under *Builds → Builders* (organization-scoped). `401` for unknown/disabled tokens.
+
+### `GET /api/internal/builds/next?wait=<s>&builder=<name>`
+Long-poll (≤ 25 s). `204` when nothing is queued for the builder (organization + mode eligibility), else
+`200` with a job (`agent/internal/builder/job.go` `Job`):
+```json
+{"id": "01k…", "mode": "native", "timeout_s": 1800, "runtime": "php",
+ "repo": {"url": "git@github.com:acme/shop.git", "ref": "main", "commit": "a1b2…",
+          "deploy_key": "-----BEGIN OPENSSH PRIVATE KEY-----…", "known_hosts": "…"},
+ "env": {"VITE_APP_NAME": "Shop"},
+ "native": {"upload": {"url": "https://kiln.example.com/api/internal/artifacts/…?expires=…&signature=…",
+                       "headers": {"Content-Type": "application/octet-stream"}}}}
+```
+Docker jobs carry `"docker": {"image": "<registry>/<namespace>/<site-slug>:<build-id>", "dockerfile": "…",
+"build_args": {…}, "registry": {"server", "username", "password"}, "push": true}` instead of `native`.
+Clone credentials come from SourceControl at hand-out time and are never stored. HTTPS clones use
+`token`/`username` instead of `deploy_key`. `env` holds site variables with public front-end prefixes
+(`builds.env_prefixes`).
+
+### `POST /api/internal/builds/{build}/events`
+NDJSON body, one `contracts/agent-protocol/event.schema.json` object per line with `command_id` = build id.
+Idempotent on `(build, seq)`. `started` → running; `output` → build log (live on `private-builds.{id}`, copied
+into the deployment output as phase `build`); `progress`; `finished` with `exit_code` 0 and the builder
+`Result` (`artifact.sha256|size_bytes|format` or `image.ref|digest`) → succeeded, otherwise failed
+(`124` → timed out). With the local artifact driver the uploaded file's SHA-256 must match.
+Responses: `204`; `404` build unknown or assigned to another builder; `413` batch > 8 MiB; `422` malformed line;
+**`410` the build was cancelled — the builder aborts it** (`HTTPSink.OnGone`).
+
+### Artifacts (local driver)
+`PUT /api/internal/artifacts/{key}` (builder upload) and `GET /api/internal/artifacts/{key}` (agent
+`deploy.fetch`) are authorized by the signed, expiring URL alone (`403` otherwise). URLs are always `https`
+(`KILN_ARTIFACTS_URL`, default `APP_URL`). With `KILN_ARTIFACTS_DRIVER=s3` the builder and agents talk to the
+bucket directly through SigV4-presigned URLs instead.
+
+### `GET /install/builder/linux-{amd64|arm64}`
+kiln-builder binary for builder servers (from `KILN_BUILDER_BINARIES_PATH`, or `KILN_BUILDER_DOWNLOAD_URL`).

@@ -32,6 +32,20 @@ Wave 3 (Builds, Deployments, Processes + public API) must honour these.
 `kiln-builder` call. Existing: `/api/v1/me`, `/api/v1/servers`. Wave 3 implements the rest to match (or updates the
 Go endpoint files in the same change): sites, deployments (+ output `?after=seq`), rollback, releases, env
 (`{content}`), logs (`meta.cursor`), `GET /api/internal/builds/next` (200 job | 204), `POST /api/internal/builds/{id}/events` (NDJSON).
+✅ Implemented; see `docs/API.md`. Additions on the Go side: `HTTPSink.OnGone` — a `410` from the events endpoint
+means the build was cancelled and `kiln-builder` aborts it.
+
+## Builds / Deployments (wave 3)
+- `Builds\Contracts\BuildService` (request / find / status / artifactFor / imageFor / cancel / output); events
+  `BuildSucceeded`, `BuildFailed` (Alertable), `BuildCancelled`, `BuildOutputReceived`, `BuildUpdated`.
+- Deployments events: `DeploymentStarted`, `DeploymentSucceeded`, `DeploymentFailed` (Alertable),
+  `DeploymentRolledBack` (Alertable), `ReleaseActivated`. The release directory / `KILN_RELEASE_ID` is the release
+  ULID upper-cased; `.env` of every release gets `KILN_SITE_ID`, `KILN_SERVER_ID`, `KILN_DEPLOYMENT_ID`, `KILN_RELEASE_ID`.
+- Sites gained `SiteResourceExtension` (tagged; Deployments adds `strategy` + `current_release` to the site API)
+  and `SiteDeploySettings` (push-to-deploy toggle from the Deploy settings tab), plus `GET|PUT /api/v1/sites/{site}/env`.
+- Restart phase uses `ProcessControl::restartForSite()`; a restart step completes when all returned commands finish.
+- Not supported yet (deployments fail fast with a clear error): Docker **Compose** sites and **on-server** builds.
+- Registry images are not garbage-collected by Kiln (run the registry's GC); artifacts are pruned per site.
 
 ## Bindings to wire once providers exist
 - ✅ `Insights\Contracts\SiteNameResolver` and `Telemetry\Contracts\ServerSites` are bound by Sites
@@ -40,7 +54,8 @@ Go endpoint files in the same change): sites, deployments (+ output `?after=seq`
 - ✅ Alertable events: Databases `BackupFailed` (+ `BackupSucceeded` recovery), `RestoreFinished`; Fleet `AgentRevoked`;
   Network `FirewallApplyFailed` (new, + `FirewallApplied` recovery); Edge `CertificateInstallFailed` (new, +
   `CertificateIssued` recovery); Processes `ProgramCrashLooping` / `ProgramRecovered`. Types are registered with
-  `AlertTypes`. **Deployments still owes** `DeploymentFailed implements Alertable`.
+  `AlertTypes`. Deployments `DeploymentFailed` / `DeploymentRolledBack` and Builds `BuildFailed` implement `Alertable`
+  (types `deployments.failed`, `deployments.rolled_back`, `builds.failed`).
 - ✅ Servers detail page links to Telemetry server metrics and logs (for `telemetry.view`).
 - ✅ Flash messages are shared as `flash` (`success`, `error`, `warning`, `status`) and rendered as toasts by the app
   layouts (`status` values that are machine codes like `verification-link-sent` are left to their pages).

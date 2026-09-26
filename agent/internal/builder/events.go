@@ -42,8 +42,12 @@ type HTTPSink struct {
 	Client   *http.Client
 	Log      *slog.Logger
 	Interval time.Duration
+	// OnGone is called (once) when the control plane answers 410 Gone: the build was cancelled and
+	// must be aborted. Pending events are dropped.
+	OnGone func()
 
 	mu      sync.Mutex
+	gone    sync.Once
 	pending []commands.Event
 	kick    chan struct{}
 	done    chan struct{}
@@ -137,6 +141,16 @@ func (s *HTTPSink) flush(ctx context.Context) error {
 	}
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
+	if resp.StatusCode == http.StatusGone {
+		s.Log.Warn("build cancelled by the control plane")
+		s.mu.Lock()
+		s.pending = s.pending[len(batch):]
+		s.mu.Unlock()
+		if s.OnGone != nil {
+			s.gone.Do(s.OnGone)
+		}
+		return nil
+	}
 	if resp.StatusCode/100 != 2 {
 		err := fmt.Errorf("post build events: HTTP %d", resp.StatusCode)
 		s.Log.Warn("post build events", "err", err)
