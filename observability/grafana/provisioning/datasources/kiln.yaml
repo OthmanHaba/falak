@@ -1,0 +1,86 @@
+# Provisioned datasources. `$$` escapes a literal `$` in Grafana provisioning files.
+apiVersion: 1
+
+prune: true
+
+datasources:
+  - name: Metrics
+    uid: kiln-metrics
+    type: prometheus
+    access: proxy
+    # Default http://gateway:9090/prometheus auto-routes to the running backend profile.
+    url: ${KILN_METRICS_QUERY_URL}
+    isDefault: true
+    editable: false
+    jsonData:
+      prometheusType: ${KILN_METRICS_PROMETHEUS_TYPE}
+      timeInterval: 15s
+      httpMethod: POST
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: kiln-tempo
+        - name: traceID
+          datasourceUid: kiln-tempo
+
+  - name: Loki
+    uid: kiln-loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        # OTLP logs carry trace_id as structured metadata.
+        - name: TraceID
+          matcherType: label
+          matcherRegex: trace_id
+          datasourceUid: kiln-tempo
+          url: "$${__value.raw}"
+          urlDisplayLabel: View trace
+
+  - name: Tempo
+    uid: kiln-tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      traceQuery:
+        timeShiftEnabled: true
+        spanStartTimeShift: -30m
+        spanEndTimeShift: 30m
+      tracesToLogsV2:
+        datasourceUid: kiln-loki
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        filterByTraceID: true
+        filterBySpanID: false
+        customQuery: false
+        tags:
+          - key: service.name
+            value: service_name
+      tracesToMetrics:
+        datasourceUid: kiln-metrics
+        spanStartTimeShift: -15m
+        spanEndTimeShift: 15m
+        tags:
+          - key: service.name
+            value: service
+          - key: kiln.site.id
+            value: kiln_site_id
+        queries:
+          - name: Request rate
+            query: sum(rate(traces_spanmetrics_calls_total{$$__tags}[5m]))
+          - name: Error rate
+            query: sum(rate(traces_spanmetrics_calls_total{$$__tags, status_code="STATUS_CODE_ERROR"}[5m]))
+          - name: p95 latency
+            query: histogram_quantile(0.95, sum by (le) (rate(traces_spanmetrics_latency_bucket{$$__tags}[5m])))
+      serviceMap:
+        datasourceUid: kiln-metrics
+      lokiSearch:
+        datasourceUid: kiln-loki

@@ -1,0 +1,175 @@
+# Kiln observability stack: Grafana + Loki + Tempo + (VictoriaMetrics | Mimir) behind a
+# single OTLP/HTTP ingress on :4318.
+#
+#   docker compose --profile victoriametrics up -d    # default metrics backend
+#   docker compose --profile mimir up -d              # alternative metrics backend
+#
+# Exactly one metrics profile should be active. The gateway health-checks both backend
+# pools and routes metrics traffic to whichever one is up, so the rest of the stack
+# (Tempo remote-write, Grafana datasource, agents) never needs to know which one it is.
+#
+# Sizing target: 2-4 GB host. Memory limits below sum to ~2.4 GB (VM profile) /
+# ~2.9 GB (Mimir profile) worst case; measured steady state is ~0.6-0.7 GB.
+
+name: kiln-observability
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  gateway:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    logging: *logging
+    volumes:
+      - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+    environment:
+      KILN_OTLP_TOKEN: ${KILN_OTLP_TOKEN:-}
+    ports:
+      - "${KILN_OTLP_BIND:-0.0.0.0}:${KILN_OTLP_PORT:-4318}:4318"
+      - "127.0.0.1:${KILN_METRICS_QUERY_PORT:-9090}:9090"
+    healthcheck:
+      # Aggregate readiness: Loki, Tempo and the active metrics backend must all be ready
+      # (Loki/Tempo/Mimir images are distroless and cannot run their own healthcheck).
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:4318/ready/logs && wget -q -O /dev/null http://127.0.0.1:4318/ready/traces && wget -q -O /dev/null http://127.0.0.1:4318/ready/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { memory: 64m }
+    networks: [observability]
+
+  loki:
+    image: grafana/loki:3.7.8
+    restart: unless-stopped
+    logging: *logging
+    command: ["-config.file=/etc/loki/loki.yaml", "-config.expand-env=true"]
+    environment:
+      KILN_LOGS_RETENTION: ${KILN_LOGS_RETENTION:-360h}
+    volumes:
+      - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "127.0.0.1:${KILN_LOKI_PORT:-3100}:3100"
+    # distroless image: readiness is probed by the gateway healthcheck
+    deploy:
+      resources:
+        limits: { memory: 512m }
+    networks: [observability]
+
+  tempo:
+    image: grafana/tempo:2.10.8
+    restart: unless-stopped
+    logging: *logging
+    user: "0"  # named volume is root-owned; tempo image runs as 10001 by default
+    command: ["-config.file=/etc/tempo/tempo.yaml", "-config.expand-env=true"]
+    environment:
+      KILN_TRACES_RETENTION: ${KILN_TRACES_RETENTION:-360h}
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "127.0.0.1:${KILN_TEMPO_PORT:-3200}:3200"
+    # distroless image: readiness is probed by the gateway healthcheck
+    deploy:
+      resources:
+        limits: { memory: 512m }
+    networks: [observability]
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.152.0
+    profiles: [victoriametrics]
+    restart: unless-stopped
+    logging: *logging
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=${KILN_METRICS_RETENTION:-30d}
+      - -httpListenAddr=:8428
+      # Same series names as Mimir's OTLP translation (unit suffixes, _total, dots -> _).
+      - -opentelemetry.usePrometheusNaming=true
+      - -memory.allowedPercent=60
+      - -search.latencyOffset=5s
+      - -loggerLevel=WARN
+    volumes:
+      - vm-data:/storage
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8428/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    deploy:
+      resources:
+        limits: { memory: 512m }
+    networks: [observability]
+
+  mimir:
+    image: grafana/mimir:3.2.1
+    profiles: [mimir]
+    restart: unless-stopped
+    logging: *logging
+    user: "0"
+    command: ["-config.file=/etc/mimir/mimir.yaml", "-config.expand-env=true"]
+    environment:
+      KILN_METRICS_RETENTION: ${KILN_METRICS_RETENTION:-30d}
+    volumes:
+      - ./mimir/mimir.yaml:/etc/mimir/mimir.yaml:ro
+      - mimir-data:/data
+    # distroless image: readiness is probed by the gateway healthcheck
+    deploy:
+      resources:
+        limits: { memory: 1024m }
+    networks: [observability]
+
+  grafana:
+    image: grafana/grafana:13.2.2
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+      GF_LOG_LEVEL: warn
+      # Metrics datasource: the gateway auto-routes to whichever backend profile is up.
+      # Override to hit a backend directly, e.g. http://victoriametrics:8428 or
+      # http://mimir:9009/prometheus (see README).
+      KILN_METRICS_QUERY_URL: ${KILN_METRICS_QUERY_URL:-http://gateway:9090/prometheus}
+      KILN_METRICS_PROMETHEUS_TYPE: ${KILN_METRICS_PROMETHEUS_TYPE:-Prometheus}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards/kiln:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${KILN_GRAFANA_BIND:-127.0.0.1}:${KILN_GRAFANA_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    depends_on:
+      loki: { condition: service_started }
+      tempo: { condition: service_started }
+    deploy:
+      resources:
+        limits: { memory: 768m }  # Grafana 13 idles at ~300-400 MB
+    networks: [observability]
+
+volumes:
+  loki-data:
+  tempo-data:
+  vm-data:
+  mimir-data:
+  grafana-data:
+
+networks:
+  observability:
+    name: ${KILN_OBSERVABILITY_NETWORK:-kiln-observability}

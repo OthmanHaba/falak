@@ -1,0 +1,60 @@
+# Mimir 3.x monolithic (-target=all), single tenant, filesystem blocks storage.
+# OTLP metrics are ingested natively at /otlp/v1/metrics (routed from gateway :4318/v1/metrics).
+target: all
+multitenancy_enabled: false
+
+server:
+  http_listen_port: 9009
+  grpc_listen_port: 9095
+  log_level: warn
+
+common:
+  storage:
+    backend: filesystem
+
+blocks_storage:
+  filesystem:
+    dir: /data/blocks
+  bucket_store:
+    sync_dir: /data/tsdb-sync
+  tsdb:
+    dir: /data/tsdb
+
+compactor:
+  data_dir: /data/compactor
+  sharding_ring:
+    kvstore:
+      store: memberlist
+
+distributor:
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: memberlist
+
+ingester:
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: memberlist
+    replication_factor: 1
+
+store_gateway:
+  sharding_ring:
+    replication_factor: 1
+
+ruler_storage:
+  filesystem:
+    dir: /data/rules
+
+limits:
+  compactor_blocks_retention_period: ${KILN_METRICS_RETENTION:-30d}
+  max_global_series_per_user: 500000
+  ingestion_rate: 50000
+  ingestion_burst_size: 200000
+  # Promote the Kiln resource attributes to series labels so PromQL matches
+  # VictoriaMetrics (which keeps all resource attributes as labels).
+  promote_otel_resource_attributes: "service.name,service.namespace,host.name,deployment.environment.name,kiln.org.id,kiln.server.id,kiln.site.id,kiln.deployment.id,kiln.release.id,container.name"
+
+usage_stats:
+  enabled: false

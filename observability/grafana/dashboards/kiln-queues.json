@@ -1,0 +1,692 @@
+{
+  "uid": "kiln-queues",
+  "title": "Kiln / Queues",
+  "description": "Queue workers: job throughput, failures, retries and durations from job spans.",
+  "tags": [
+    "kiln",
+    "queues"
+  ],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "label": "Site",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "kiln-metrics"
+        },
+        "query": {
+          "query": "label_values(traces_spanmetrics_calls_total{kiln_event_type=\"job\"}, kiln_site_id)",
+          "refId": "site-var"
+        },
+        "definition": "label_values(traces_spanmetrics_calls_total{kiln_event_type=\"job\"}, kiln_site_id)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "queue",
+        "label": "Queue",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "kiln-metrics"
+        },
+        "query": {
+          "query": "label_values(traces_spanmetrics_calls_total{kiln_event_type=\"job\", kiln_site_id=~\"$site\"}, messaging_destination_name)",
+          "refId": "queue-var"
+        },
+        "definition": "label_values(traces_spanmetrics_calls_total{kiln_event_type=\"job\", kiln_site_id=~\"$site\"}, messaging_destination_name)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {},
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "name": "Deployments (control plane)",
+        "enable": true,
+        "iconColor": "#8e44ff",
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "target": {
+          "type": "tags",
+          "tags": [
+            "kiln",
+            "deployment"
+          ],
+          "limit": 200,
+          "matchAny": false
+        }
+      },
+      {
+        "name": "Deployments (agent logs)",
+        "enable": true,
+        "iconColor": "#ff9830",
+        "datasource": {
+          "type": "loki",
+          "uid": "kiln-loki"
+        },
+        "expr": "{service_name=\"kiln-agent\"} | kiln_event_type=\"deployment\" | kiln_site_id=~\"${site:regex}\"",
+        "titleFormat": "Deploy {{kiln_deployment_status}}",
+        "textFormat": "{{kiln_deployment_id}}",
+        "tagKeys": "kiln_deployment_status,kiln_site_id"
+      }
+    ]
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "kiln"
+      ],
+      "asDropdown": true,
+      "title": "Kiln",
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Processed / min",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "kiln-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kiln-metrics"
+          },
+          "refId": "A",
+          "expr": "sum(rate(traces_spanmetrics_calls_total{kiln_site_id=~\"$site\",kiln_event_type=\"job\", messaging_destination_name=~\"$queue\",kiln_job_status=\"processed\"}[5m])) * 60",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Failed (1h)",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "kiln-metrics"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kiln-metrics"
+          },
+          "refId": "A",
+          "expr": "sum(increase(traces_spanmetrics_calls_total{kiln_site_id=~\"$site\",kiln_event_type=\"job\", messaging_destination_name=~\"$queue\",kiln_job_status=\"failed\"}[1h]))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Released / retried (1h)",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "kiln-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kiln-metrics"
+          },
+          "refId": "A",
+          "expr": "sum(increase(traces_spanmetrics_calls_total{kiln_site_id=~\"$site\",kiln_event_type=\"job\", messaging_destination_name=~\"$queue\",kiln_job_status=\"released\"}[1h]))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Pending (queue size)",
+      "description": "Requires the kiln.queue.size gauge from kiln/apm-laravel's queue sampler.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "kiln-metrics"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kiln-metrics"
+          },
+          "refId": "A",
+          "expr": "sum(kiln_queue_size{kiln_site_id=~\"$site\",messaging_destination_name=~\"$queue\"})",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Throughput by queue & status",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "kiln-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kiln-metrics"
+          },
+          "refId": "A",
+          "expr": "sum by (messaging_destination_name, kiln_job_status) (rate(traces_spanmetrics_calls_total{kiln_site_id=~\"$site\",kiln_event_type=\"job\", messaging_destination_name=~\"$queue\"}[$__rate_interval]))",
+          "legendFormat": "{{messaging_destination_name}} {{kiln_job_status}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Queue size",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "kiln-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kiln-metrics"
+          },
+          "refId": "A",
+          "expr": "sum by (messaging_destination_name) (kiln_queue_size{kiln_site_id=~\"$site\",messaging_destination_name=~\"$queue\"})",
+          "legendFormat": "{{messaging_destination_name}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Job duration p50 / p95",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "kiln-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kiln-metrics"
+          },
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le, messaging_destination_name) (rate(traces_spanmetrics_latency_bucket{kiln_site_id=~\"$site\",kiln_event_type=\"job\", messaging_destination_name=~\"$queue\"}[$__rate_interval])))",
+          "legendFormat": "{{messaging_destination_name}} p50",
+          "range": true,
+          "instant": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kiln-metrics"
+          },
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le, messaging_destination_name) (rate(traces_spanmetrics_latency_bucket{kiln_site_id=~\"$site\",kiln_event_type=\"job\", messaging_destination_name=~\"$queue\"}[$__rate_interval])))",
+          "legendFormat": "{{messaging_destination_name}} p95",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Failed jobs by class",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "kiln-metrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kiln-metrics"
+          },
+          "refId": "A",
+          "expr": "sum by (kiln_job_class) (increase(traces_spanmetrics_calls_total{kiln_site_id=~\"$site\",kiln_event_type=\"job\", messaging_destination_name=~\"$queue\",kiln_job_status=\"failed\"}[$__rate_interval]))",
+          "legendFormat": "{{kiln_job_class}}",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "stacking": {
+              "mode": "normal"
+            },
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Jobs by class (last range)",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "kiln-metrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kiln-metrics"
+          },
+          "refId": "A",
+          "expr": "sum by (messaging_destination_name, kiln_job_class, kiln_job_status) (increase(traces_spanmetrics_calls_total{kiln_site_id=~\"$site\",kiln_event_type=\"job\", messaging_destination_name=~\"$queue\"}[$__range]))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Count"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Recent failed jobs",
+      "description": "",
+      "datasource": {
+        "type": "tempo",
+        "uid": "kiln-tempo"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "kiln-tempo"
+          },
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{ resource.kiln.site.id =~ \"${site:regex}\" && span.kiln.event.type = \"job\" && span.kiln.job.status = \"failed\" } | select(span.kiln.job.class, span.messaging.destination.name, span.kiln.job.attempt)",
+          "limit": 50,
+          "tableType": "spans",
+          "spss": 3
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

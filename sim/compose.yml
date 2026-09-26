@@ -1,0 +1,253 @@
+# Kiln end-to-end simulation.
+#
+#   make up        (= docker compose -p kiln-sim --env-file sim.env --profile victoriametrics up -d --build)
+#
+#   host ──https :8443──► edge (Caddy, internal CA TLS + agent mTLS) ──► control-plane (FrankenPHP)
+#                                                                      └► reverb
+#   srv-app-1, srv-app-2, srv-db-1 (Ubuntu 24.04 + systemd) ── fleet network ──► edge as https://kiln.test
+#                                                          └─ observability network ──► gateway:4318 (OTLP)
+#   control-plane, horizon, reverb ── backend network ──► postgres, valkey
+#
+# Integration point: the Fleet module writes its CA certificate to $KILN_CA_PATH/ca.pem
+# (= /kiln/ca/ca.pem on the shared `kiln-ca` volume); the edge watches that file and uses it
+# to verify agent client certificates.
+
+name: kiln-sim
+
+include:
+  - path: ../observability/compose.yml
+    env_file: ./sim.env
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+x-control-plane: &control-plane
+  image: kiln-sim/control-plane:dev
+  logging: *logging
+  restart: unless-stopped
+  environment: &cp-env
+    APP_NAME: Kiln
+    APP_ENV: local
+    APP_DEBUG: "true"
+    APP_KEY: ${APP_KEY}
+    APP_URL: https://kiln.test
+    LOG_CHANNEL: stderr
+    LOG_LEVEL: info
+    DB_CONNECTION: pgsql
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_DATABASE: kiln
+    DB_USERNAME: kiln
+    DB_PASSWORD: kiln
+    REDIS_CLIENT: phpredis
+    REDIS_HOST: valkey
+    REDIS_PORT: "6379"
+    CACHE_STORE: redis
+    QUEUE_CONNECTION: redis
+    SESSION_DRIVER: redis
+    BROADCAST_CONNECTION: reverb
+    REVERB_APP_ID: ${REVERB_APP_ID}
+    REVERB_APP_KEY: ${REVERB_APP_KEY}
+    REVERB_APP_SECRET: ${REVERB_APP_SECRET}
+    REVERB_HOST: kiln.test
+    REVERB_PORT: "443"
+    REVERB_SCHEME: https
+    REVERB_SERVER_PORT: "8080"
+    # Fleet
+    KILN_CA_PATH: /kiln/ca
+    KILN_AGENT_TRUSTED_PROXIES: 10.77.10.0/24   # backend network: only the edge sets the fingerprint header
+    KILN_PANEL_URL: https://kiln.test
+    KILN_AGENT_API_URL: https://agents.kiln.test/agent/v1   # mTLS API; server cert from the Kiln CA
+    KILN_EDGE_AGENT_API_HOST: agents.kiln.test              # entrypoint issues that cert into /kiln/ca
+    KILN_OTLP_ENDPOINT: http://gateway:4318
+    KILN_AGENT_BINARIES_PATH: /opt/kiln/src/agent/bin
+    KILN_AGENT_SCHEMAS_PATH: /opt/kiln/src/contracts/agent-protocol
+    KILN_AGENT_WAKE_DRIVER: redis
+    # Telemetry module -> observability stack
+    KILN_GRAFANA_URL: http://grafana:3000
+    KILN_LOKI_URL: http://loki:3100
+    KILN_TEMPO_URL: http://tempo:3200
+    KILN_METRICS_QUERY_URL: http://gateway:9090/prometheus
+  volumes:
+    - kiln-ca:/kiln/ca
+    - cp-storage:/app/storage
+    - ..:/opt/kiln/src:ro
+  networks: [backend, observability]
+  deploy:
+    resources:
+      limits: { memory: 512m }
+
+x-server: &server
+  image: kiln-sim/server:dev
+  logging: *logging
+  privileged: true          # systemd as PID 1 (cgroup delegation, mounts)
+  cgroup: private
+  tmpfs: [/run, /run/lock, /tmp]
+  environment: &server-env
+    SIM_AGENT_ARCH: ${SIM_AGENT_ARCH:-arm64}
+    SIM_SSH_PUBKEY: ${SIM_SSH_PUBKEY:-}
+    SIM_PANEL_URL: https://kiln.test
+    SIM_OTLP_ENDPOINT: http://gateway:4318
+    SIM_SERVER_ROLE: app
+  volumes:
+    - ..:/opt/kiln/src:ro                   # agent binary: /opt/kiln/src/agent/bin/kiln-agent-linux-$SIM_AGENT_ARCH
+    - edge-pki:/etc/kiln/edge-pki:ro        # edge TLS root CA (trusted at boot)
+  networks: [fleet, observability]
+  depends_on:
+    edge: { condition: service_healthy }
+  healthcheck:
+    test: ["CMD", "systemctl", "is-system-running"]
+    interval: 5s
+    timeout: 5s
+    retries: 24
+    start_period: 10s
+  deploy:
+    resources:
+      limits: { memory: 512m }
+
+services:
+  postgres:
+    image: postgres:17.11
+    logging: *logging
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kiln
+      POSTGRES_USER: kiln
+      POSTGRES_PASSWORD: kiln
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kiln -d kiln"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits: { memory: 256m }
+
+  valkey:
+    image: valkey/valkey:9.1.2-alpine
+    logging: *logging
+    restart: unless-stopped
+    command: ["valkey-server", "--appendonly", "yes", "--maxmemory", "96mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - valkey-data:/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits: { memory: 128m }
+
+  control-plane:
+    <<: *control-plane
+    build:
+      context: ../control-plane
+      dockerfile: ../sim/control-plane.Dockerfile
+      additional_contexts:
+        sim: .
+    command: ["web"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      valkey: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8080/up"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  horizon:
+    <<: *control-plane
+    command: ["horizon"]
+    depends_on:
+      control-plane: { condition: service_healthy }   # migrations have run
+    healthcheck:
+      test: ["CMD", "php", "artisan", "horizon:status"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 15s
+
+  reverb:
+    <<: *control-plane
+    command: ["reverb"]
+    depends_on:
+      control-plane: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@fsockopen('127.0.0.1', 8080) ? 0 : 1);"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  edge:
+    image: kiln-sim/edge:dev
+    build: ./edge
+    logging: *logging
+    restart: unless-stopped
+    init: true
+    environment:
+      KILN_EDGE_CA_FILE: /kiln/ca/ca.pem
+      KILN_AGENT_API_HOST: agents.kiln.test
+      KILN_EDGE_PKI_OUT: /kiln/edge-pki
+    volumes:
+      - kiln-ca:/kiln/ca:ro
+      - edge-pki:/kiln/edge-pki
+      - edge-data:/data
+    ports:
+      - "127.0.0.1:${SIM_EDGE_HTTPS_PORT:-8443}:443"
+    networks:
+      backend: {}
+      fleet:
+        aliases: [kiln.test, agents.kiln.test]
+    healthcheck:
+      # Caddy is serving TLS and has published its root CA for the servers.
+      test: ["CMD-SHELL", "test -s /kiln/edge-pki/root.crt && curl -fsS -o /dev/null http://localhost:2019/config/"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits: { memory: 128m }
+
+  srv-app-1:
+    <<: *server
+    hostname: srv-app-1
+    environment:
+      <<: *server-env
+      SIM_SERVER_ROLE: app
+  srv-app-2:
+    <<: *server
+    hostname: srv-app-2
+    environment:
+      <<: *server-env
+      SIM_SERVER_ROLE: app
+  srv-db-1:
+    <<: *server
+    hostname: srv-db-1
+    environment:
+      <<: *server-env
+      SIM_SERVER_ROLE: db
+
+volumes:
+  pg-data:
+  valkey-data:
+  cp-storage:
+  kiln-ca:
+  edge-pki:
+  edge-data:
+
+networks:
+  backend:
+    ipam:
+      config: [{ subnet: 10.77.10.0/24 }]
+  fleet:
+    # The "private network" between managed servers (and the edge they dial out to).
+    ipam:
+      config: [{ subnet: 10.77.20.0/24 }]

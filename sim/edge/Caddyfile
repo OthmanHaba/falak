@@ -1,0 +1,72 @@
+# Sim edge for the Kiln control plane.
+#
+#   kiln.test (+ localhost)   panel, installer, enrollment. TLS from Caddy's internal CA
+#                             (published to /kiln/edge-pki/root.crt and trusted by the sim servers).
+#   agents.kiln.test          agent mTLS API. TLS server cert issued by the Kiln Fleet CA
+#                             (agents pin it); site added by the entrypoint once
+#                             /kiln/ca/agent-api.{pem,key} exist (see sites/ below).
+#
+# Agent auth per contracts/agent-protocol: client certs are verified against the Fleet CA
+# (/kiln/ca/ca.pem -> /etc/caddy/trust/ca.pem). /agent/v1/* except /agent/v1/enroll requires a
+# cert. The SHA-256 (lowercase hex) of the client DER cert is forwarded as
+# X-Kiln-Client-Cert-Fingerprint. Any client-supplied value of that header is always stripped.
+{
+	admin localhost:2019
+	skip_install_trust
+	pki {
+		ca local {
+			name "Kiln Sim Edge CA"
+		}
+	}
+}
+
+(client_auth_fleet) {
+	client_auth {
+		mode verify_if_given
+		trust_pool file {
+			pem_file /etc/caddy/trust/ca.pem
+		}
+	}
+}
+
+(kiln_routes) {
+	@agent_without_cert {
+		path /agent/v1/*
+		not path /agent/v1/enroll
+		# No client cert presented. (Caddy reports sha256("") as the fingerprint when there is no
+		# cert, so presence is keyed on the DER placeholder, which is empty without one.)
+		vars {http.request.tls.client.certificate_der_base64} ""
+	}
+	@with_cert not vars {http.request.tls.client.certificate_der_base64} ""
+	@reverb path /app/* /apps/*
+
+	route {
+		respond @agent_without_cert `{"message":"client certificate required"}` 401
+
+		# Debug helper for agent developers: shows what the edge forwards.
+		respond /_edge/whoami `{"fingerprint":"{http.request.tls.client.fingerprint}","subject":"{http.request.tls.client.subject}"}` 200
+
+		handle @reverb {
+			reverse_proxy reverb:8080
+		}
+		handle @with_cert {
+			reverse_proxy control-plane:8080 {
+				header_up X-Kiln-Client-Cert-Fingerprint {http.request.tls.client.fingerprint}
+			}
+		}
+		handle {
+			reverse_proxy control-plane:8080 {
+				header_up -X-Kiln-Client-Cert-Fingerprint
+			}
+		}
+	}
+}
+
+kiln.test, localhost, edge {
+	tls internal {
+		import client_auth_fleet
+	}
+	import kiln_routes
+}
+
+import sites/*.caddyfile

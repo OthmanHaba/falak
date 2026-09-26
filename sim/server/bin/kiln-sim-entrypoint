@@ -1,0 +1,16 @@
+#!/bin/sh
+# Container env is not visible to systemd units: persist the SIM_* settings for them, then
+# hand PID 1 to systemd.
+set -eu
+umask 022
+{
+  echo "SIM_AGENT_ARCH=${SIM_AGENT_ARCH:-arm64}"
+  echo "SIM_SERVER_ROLE=${SIM_SERVER_ROLE:-app}"
+  echo "SIM_PANEL_URL=${SIM_PANEL_URL:-https://kiln.test}"
+  echo "SIM_OTLP_ENDPOINT=${SIM_OTLP_ENDPOINT:-http://gateway:4318}"
+} > /etc/kiln/sim.env
+if [ -n "${SIM_SSH_PUBKEY:-}" ]; then
+  printf '%s\n' "$SIM_SSH_PUBKEY" > /root/.ssh/authorized_keys
+  chmod 600 /root/.ssh/authorized_keys
+fi
+exec /sbin/init

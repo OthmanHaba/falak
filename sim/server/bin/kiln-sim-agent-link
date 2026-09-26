@@ -1,0 +1,12 @@
+#!/bin/sh
+# Link the host-built agent binary (repo mounted at /opt/kiln/src) into PATH, if present.
+set -eu
+. /etc/kiln/sim.env
+bin="/opt/kiln/src/agent/bin/kiln-agent-linux-${SIM_AGENT_ARCH}"
+if [ -f "$bin" ]; then
+  ln -sfn "$bin" /usr/local/bin/kiln-agent
+  echo "kiln-agent linked from $bin"
+else
+  rm -f /usr/local/bin/kiln-agent
+  echo "kiln-agent binary not built yet ($bin missing); skipping"
+fi

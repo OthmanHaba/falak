@@ -1,0 +1,319 @@
+# Grafana-managed default alert rules (provisioned). Generated structure; edit freely.
+# Contact points / notification policies are managed by the control plane Alerting module.
+apiVersion: 1
+groups:
+- orgId: 1
+  name: kiln-hosts
+  folder: Kiln
+  interval: 1m
+  rules:
+  - uid: kiln-disk-usage
+    title: Disk usage > 85%
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: kiln-metrics
+      model:
+        refId: A
+        expr: max by (host_name, system_filesystem_mountpoint) (system_filesystem_utilization_ratio)
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      relativeTimeRange:
+        from: 0
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        datasource:
+          type: __expr__
+          uid: __expr__
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0.85
+    for: 5m
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: warning
+      kiln: default
+    annotations:
+      summary: Disk {{ $labels.system_filesystem_mountpoint }} on {{ $labels.host_name }} is {{ humanizePercentage $values.A.Value }} full
+      description: Filesystem utilisation above 85% for 5 minutes.
+  - uid: kiln-memory-usage
+    title: Memory usage > 90% for 10m
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: kiln-metrics
+      model:
+        refId: A
+        expr: max by (host_name) (system_memory_utilization_ratio)
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      relativeTimeRange:
+        from: 0
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        datasource:
+          type: __expr__
+          uid: __expr__
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0.9
+    for: 10m
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: warning
+      kiln: default
+    annotations:
+      summary: Memory on {{ $labels.host_name }} at {{ humanizePercentage $values.A.Value }}
+      description: Used memory above 90% for 10 minutes.
+  - uid: kiln-host-heartbeat-missing
+    title: Host heartbeat missing
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: kiln-metrics
+      model:
+        refId: A
+        expr: group by (host_name) (last_over_time(system_memory_usage_bytes[24h])) unless group by (host_name) (last_over_time(system_memory_usage_bytes[3m]))
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      relativeTimeRange:
+        from: 0
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        datasource:
+          type: __expr__
+          uid: __expr__
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 2m
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: critical
+      kiln: default
+    annotations:
+      summary: No telemetry from {{ $labels.host_name }} for > 5 minutes
+      description: kiln-agent stopped shipping host metrics (host down, agent down, or network/OTLP path broken). Hosts silent for > 24h drop out of this rule.
+- orgId: 1
+  name: kiln-apps
+  folder: Kiln
+  interval: 1m
+  rules:
+  - uid: kiln-5xx-spike
+    title: 5xx rate spike
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: kiln-metrics
+      model:
+        refId: A
+        expr: (sum by (kiln_site_id) (rate(traces_spanmetrics_calls_total{kiln_event_type="request",http_response_status_code=~"5.."}[5m])) / sum by (kiln_site_id) (rate(traces_spanmetrics_calls_total{kiln_event_type="request"}[5m])) > 0.05) and (sum by (kiln_site_id) (rate(traces_spanmetrics_calls_total{kiln_event_type="request",http_response_status_code=~"5.."}[5m])) > 0.1)
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      relativeTimeRange:
+        from: 0
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        datasource:
+          type: __expr__
+          uid: __expr__
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 3m
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: critical
+      kiln: default
+    annotations:
+      summary: 'Site {{ $labels.kiln_site_id }}: {{ humanizePercentage $values.A.Value }} of requests are 5xx'
+      description: More than 5% of requests (and > 0.1 req/s) returned 5xx over 5 minutes.
+  - uid: kiln-p95-latency
+    title: p95 latency above threshold
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: kiln-metrics
+      model:
+        refId: A
+        expr: histogram_quantile(0.95, sum by (kiln_site_id, le) (rate(traces_spanmetrics_latency_bucket{kiln_event_type="request"}[5m])))
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      relativeTimeRange:
+        from: 0
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        datasource:
+          type: __expr__
+          uid: __expr__
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 1
+    for: 10m
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: warning
+      kiln: default
+    annotations:
+      summary: Site {{ $labels.kiln_site_id }} p95 latency is {{ humanizeDuration $values.A.Value }}
+      description: Request p95 latency above 1s for 10 minutes (default threshold; per-site thresholds live in the Insights module).
+  - uid: kiln-queue-failed-jobs
+    title: Queue failed jobs
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 600
+        to: 0
+      datasourceUid: kiln-metrics
+      model:
+        refId: A
+        expr: sum by (kiln_site_id, messaging_destination_name) (increase(traces_spanmetrics_calls_total{kiln_event_type="job",kiln_job_status="failed"}[5m]))
+        instant: true
+        range: false
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      relativeTimeRange:
+        from: 0
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        datasource:
+          type: __expr__
+          uid: __expr__
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: warning
+      kiln: default
+    annotations:
+      summary: "{{ humanize $values.A.Value }} failed jobs on queue {{ $labels.messaging_destination_name }} (site {{ $labels.kiln_site_id }})"
+      description: At least one job failed in the last 5 minutes.
+- orgId: 1
+  name: kiln-deployments
+  folder: Kiln
+  interval: 1m
+  rules:
+  - uid: kiln-deployment-failed
+    title: Deployment failed
+    condition: C
+    data:
+    - refId: A
+      relativeTimeRange:
+        from: 300
+        to: 0
+      datasourceUid: kiln-loki
+      model:
+        refId: A
+        expr: sum by (kiln_site_id, kiln_deployment_id) (count_over_time({service_name="kiln-agent"} | kiln_event_type="deployment" | kiln_deployment_status="failed" [5m]))
+        queryType: instant
+        intervalMs: 1000
+        maxDataPoints: 43200
+    - refId: C
+      relativeTimeRange:
+        from: 0
+        to: 0
+      datasourceUid: __expr__
+      model:
+        refId: C
+        type: threshold
+        expression: A
+        datasource:
+          type: __expr__
+          uid: __expr__
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    isPaused: false
+    labels:
+      severity: critical
+      kiln: default
+    annotations:
+      summary: Deployment {{ $labels.kiln_deployment_id }} failed (site {{ $labels.kiln_site_id }})
+      description: kiln-agent logged a deployment with kiln.deployment.status=failed.

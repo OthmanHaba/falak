@@ -1,0 +1,113 @@
+# Kiln OTLP ingress + metrics-backend router.
+#
+#   :4318  public OTLP/HTTP (protobuf or JSON)
+#            /v1/traces  -> Tempo  (native OTLP receiver)
+#            /v1/logs    -> Loki   (native OTLP endpoint /otlp/v1/logs)
+#            /v1/metrics -> active metrics backend (VictoriaMetrics | Mimir)
+#            /ready/{logs,traces,metrics}  readiness probes (used by the container healthcheck)
+#   :9090  internal Prometheus-compatible API of the active metrics backend
+#            /prometheus/api/v1/*  query API (Grafana datasource)
+#            /api/v1/write         Prometheus remote-write (Tempo metrics-generator)
+#   :9101  internal: VictoriaMetrics path adapter
+#   :9102  internal: Mimir path adapter
+#
+# The metrics pool actively health-checks both adapters; only the backend whose compose
+# profile is running is healthy, so traffic follows the selected profile automatically.
+#
+# Optional auth: set KILN_OTLP_TOKEN and agents must send "Authorization: Bearer <token>".
+
+{
+	admin off
+	auto_https off
+	persist_config off
+	servers {
+		protocols h1 h2c
+	}
+}
+
+(metrics_pool) {
+	reverse_proxy 127.0.0.1:9101 127.0.0.1:9102 {
+		lb_policy first
+		lb_try_duration 3s
+		lb_try_interval 250ms
+		health_uri /-/kiln-ready
+		health_interval 5s
+		health_timeout 3s
+		health_passes 1
+		health_fails 1
+		fail_duration 10s
+		unhealthy_status 502 503 504
+	}
+}
+
+:4318 {
+	request_body {
+		max_size 32MB
+	}
+
+	@unauthorized {
+		path /v1/*
+		expression `"{$KILN_OTLP_TOKEN}" != "" && {http.request.header.Authorization} != "Bearer {$KILN_OTLP_TOKEN}"`
+	}
+
+	# route = literal order (handle blocks would be re-sorted by path specificity).
+	route {
+		respond @unauthorized "unauthorized" 401
+
+		handle /v1/traces {
+			reverse_proxy tempo:4318
+		}
+		handle /v1/logs {
+			rewrite * /otlp/v1/logs
+			reverse_proxy loki:3100
+		}
+		handle /v1/metrics {
+			import metrics_pool
+		}
+		handle /ready/logs {
+			rewrite * /ready
+			reverse_proxy loki:3100
+		}
+		handle /ready/traces {
+			rewrite * /ready
+			reverse_proxy tempo:3200
+		}
+		handle /ready/metrics {
+			rewrite * /-/kiln-ready
+			import metrics_pool
+		}
+		handle /healthz {
+			respond "ok" 200
+		}
+		respond "not found" 404
+	}
+}
+
+:9090 {
+	import metrics_pool
+}
+
+# VictoriaMetrics adapter
+:9101 {
+	rewrite /v1/metrics /opentelemetry/v1/metrics
+	rewrite /-/kiln-ready /health
+	# /api/v1/write and /prometheus/api/v1/* are native VictoriaMetrics paths.
+	reverse_proxy victoriametrics:8428
+	# The backend of the inactive profile does not resolve; answer 503 without error spam.
+	handle_errors {
+		respond "metrics backend unavailable" 503
+	}
+}
+
+# Mimir adapter
+:9102 {
+	rewrite /v1/metrics /otlp/v1/metrics
+	rewrite /api/v1/write /api/v1/push
+	rewrite /-/kiln-ready /ready
+	# /prometheus/api/v1/* is the native Mimir query path.
+	reverse_proxy mimir:9009
+	# The backend of the inactive profile does not resolve; answer 503 without error spam.
+	handle_errors {
+		respond "metrics backend unavailable" 503
+	}
+}
