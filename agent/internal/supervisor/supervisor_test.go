@@ -95,8 +95,10 @@ func TestRestartOnFailureWithBackoff(t *testing.T) {
 	}
 	start := time.Now()
 	eventually(t, 3*time.Second, func() bool { return s.Status(nil)[0].Restarts >= 5 }, "5 restarts")
-	// 20+40+80+80+80 = 300ms minimum with exponential backoff capped at 80ms.
-	if el := time.Since(start); el < 250*time.Millisecond {
+	// A restart is counted when it is scheduled, before its backoff sleep, so the
+	// 5th count lands after 20+40+80+80 = 220ms. The first exit may precede
+	// `start`, hence the 200ms floor (no backoff at all would take a few ms).
+	if el := time.Since(start); el < 200*time.Millisecond {
 		t.Fatalf("restarts too fast (%s): backoff not applied", el)
 	}
 	st := s.Status(nil)[0]

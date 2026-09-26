@@ -1,0 +1,8 @@
+{
+  // Deno config with comments
+  "tasks": {
+    "start": "deno run -A --watch=static/ main.ts", /* start */
+    "build": "deno run -A dev.ts build",
+  },
+  "imports": { "@std/http": "jsr:@std/http@^1.0.0" },
+}
