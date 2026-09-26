@@ -32,7 +32,16 @@ Go endpoint files in the same change): sites, deployments (+ output `?after=seq`
 - Servers detail page should link to the Telemetry server metrics page.
 - Flash messages are not shared to Inertia yet (Telemetry settings success notice never shows).
 
+## From Sites / Edge / SourceControl
+- Sites' Laravel toggles (scheduler, Horizon, Octane) are **stored only** — Processes must turn them into `proc.apply` / `cron.apply`.
+- `deploy.container.swap`: use `EdgeRoutes::routeId(siteId)` as `edge_route_id`, then `EdgeRoutes::recordUpstream(...)` with the result.
+- Builders get clone URL + credentials from `SourceControlGateway`; pushes arrive as `SourceControl\Events\PushReceived`.
+- `edge.caddy.apply` gained optional `basic_auth[].path` and `tls.dns` (Cloudflare DNS-01) — needs a Caddy/FrankenPHP build with the Cloudflare DNS module on servers.
+- Site pages are extensible via `registerSiteTabs` (Deployments, Processes add tabs).
+
 ## Known limits (accepted for now)
+- LB active health checks send the backend IP as Host, so backends whose routes are domain-only can be marked down; leave health path empty to balance without active checks. Weights are emulated by repeating upstreams.
+- SourceControl: no Bitbucket Server; OAuth for only one self-hosted GitLab (others via token).
 - Providers: AWS is Lightsail only (no EC2).
 - Provision plan has no dedicated db/cache/docker sections → no Postgres version pinning.
 - Deleting an org revokes agents but does not destroy provider machines.
