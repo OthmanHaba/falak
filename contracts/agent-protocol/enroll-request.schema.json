@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/enroll-request.schema.json",
+  "title": "POST /agent/v1/enroll — sent once by a freshly installed agent (plain TLS, no client cert yet)",
+  "type": "object",
+  "required": ["token", "csr_pem", "facts"],
+  "additionalProperties": false,
+  "properties": {
+    "token": { "type": "string", "description": "One-time enrollment token from the install URL" },
+    "csr_pem": { "type": "string", "description": "PEM PKCS#10 CSR for an ECDSA P-256 key generated on the server; key never leaves the server" },
+    "facts": { "$ref": "facts.schema.json" }
+  }
+}

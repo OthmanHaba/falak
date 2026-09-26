@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/facts.schema.json",
+  "title": "Host facts reported at enrollment and in every heartbeat",
+  "type": "object",
+  "required": ["hostname", "os", "arch", "cpus", "memory_bytes", "disk_bytes", "agent_version"],
+  "properties": {
+    "hostname": { "type": "string" },
+    "os": { "type": "object", "required": ["id", "version"], "properties": { "id": { "type": "string", "examples": ["ubuntu"] }, "version": { "type": "string", "examples": ["24.04"] } } },
+    "arch": { "enum": ["amd64", "arm64"] },
+    "kernel": { "type": "string" },
+    "cpus": { "type": "integer" },
+    "memory_bytes": { "type": "integer" },
+    "disk_bytes": { "type": "integer" },
+    "public_ipv4": { "type": ["string", "null"] },
+    "private_ipv4": { "type": ["string", "null"] },
+    "docker": { "type": ["string", "null"], "description": "Docker engine version if present" },
+    "runtimes": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } }, "examples": [{ "php": ["8.4"], "node": ["22"] }] },
+    "agent_version": { "type": "string" }
+  }
+}

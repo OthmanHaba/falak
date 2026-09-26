@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/heartbeat.schema.json",
+  "title": "POST /agent/v1/heartbeat — every 15s over mTLS",
+  "type": "object",
+  "required": ["at", "uptime_s", "load", "memory_used_bytes", "disk_used_bytes"],
+  "properties": {
+    "at": { "type": "string", "format": "date-time" },
+    "uptime_s": { "type": "integer" },
+    "load": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+    "cpu_percent": { "type": "number" },
+    "memory_used_bytes": { "type": "integer" },
+    "disk_used_bytes": { "type": "integer" },
+    "running_commands": { "type": "array", "items": { "type": "string" } },
+    "facts": { "$ref": "facts.schema.json", "description": "Only sent when changed since last heartbeat" }
+  }
+}
