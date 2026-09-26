@@ -235,6 +235,15 @@ services:
       <<: *server-env
       SIM_SERVER_ROLE: db
 
+  # Read-only git server with the demo apps (git://sim-git/<app>.git), used by builders in E2E.
+  sim-git:
+    build: ./git
+    volumes:
+      - ./fixtures:/fixtures:ro
+      - ../packages:/packages:ro
+    networks: [backend, fleet]
+    logging: *logging
+
 volumes:
   pg-data:
   valkey-data:

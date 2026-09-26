@@ -9,10 +9,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useEchoChannel } from '@/hooks/use-echo-channel';
 import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm } from '@inertiajs/react';
+import { shellContext } from '@/lib/registry';
+import { type BreadcrumbItem, type SharedData } from '@/types';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import { formatDistanceToNow } from 'date-fns';
-import { ChevronDown, Pencil, RefreshCw, RotateCw, Trash2 } from 'lucide-react';
+import { Activity, ChevronDown, Pencil, RefreshCw, RotateCw, ScrollText, Trash2 } from 'lucide-react';
 import { FormEventHandler, lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { PhpVersionsCard } from '../components/php-versions-card';
 import { AgentDot, CopyButton, formatBytes, ServerStatusBadge } from '../components/server-ui';
@@ -55,6 +56,7 @@ export default function Show({ server, agent, metrics, php, phpOptions, sshKeys,
         { title: server.name, href: `/servers/${server.id}` },
     ];
 
+    const canViewTelemetry = shellContext(usePage<SharedData>().props).can('telemetry.view');
     const [renaming, setRenaming] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [logOpen, setLogOpen] = useState(server.status !== 'active');
@@ -116,7 +118,21 @@ export default function Show({ server, agent, metrics, php, phpOptions, sshKeys,
                             </p>
                         )}
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
+                        {canViewTelemetry && (
+                            <>
+                                <Button variant="outline" size="sm" asChild>
+                                    <Link href={`/telemetry/servers/${server.id}/metrics`}>
+                                        <Activity /> Metrics
+                                    </Link>
+                                </Button>
+                                <Button variant="outline" size="sm" asChild>
+                                    <Link href={`/telemetry/logs?server_id=${encodeURIComponent(server.id)}`}>
+                                        <ScrollText /> Logs
+                                    </Link>
+                                </Button>
+                            </>
+                        )}
                         <Button variant="outline" size="sm" onClick={reload}>
                             <RefreshCw /> Refresh
                         </Button>

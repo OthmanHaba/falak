@@ -8,6 +8,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
+use Kiln\Alerting\Contracts\AlertTypes;
+use Kiln\Alerting\Contracts\Severity;
 use Kiln\Fleet\Application\Actions\IssueInstallToken;
 use Kiln\Fleet\Application\Console\CaInitCommand;
 use Kiln\Fleet\Application\Console\CaServerCertificateCommand;
@@ -15,6 +17,7 @@ use Kiln\Fleet\Application\Jobs\SweepFleet;
 use Kiln\Fleet\Contracts\AgentDirectory;
 use Kiln\Fleet\Contracts\AgentGateway;
 use Kiln\Fleet\Contracts\Enrollment;
+use Kiln\Fleet\Events\AgentRevoked;
 use Kiln\Fleet\Http\Channels\CommandChannel;
 use Kiln\Fleet\Infrastructure\AgentBinaries;
 use Kiln\Fleet\Infrastructure\EloquentAgentDirectory;
@@ -95,6 +98,8 @@ class FleetServiceProvider extends ModuleServiceProvider
         $registry = $this->app->make(PermissionRegistry::class);
         $registry->register('fleet.commands.view', [Role::Admin, Role::Developer, Role::Viewer], 'View agent command output', 'fleet');
         $registry->register('fleet.agents.manage', [Role::Admin], 'Issue install commands and revoke agents', 'fleet');
+
+        $this->app->make(AlertTypes::class)->register(AgentRevoked::ALERT_TYPE, 'Server agent revoked', 'Fleet', Severity::Warning);
 
         Broadcast::channel(CommandChannel::NAME, CommandChannel::class);
 

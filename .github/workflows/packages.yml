@@ -1,0 +1,51 @@
+name: packages
+
+on:
+  push:
+    branches: [main]
+    paths: ['packages/**', '.github/workflows/packages.yml']
+  pull_request:
+    branches: [main]
+    paths: ['packages/**', '.github/workflows/packages.yml']
+
+jobs:
+  apm-laravel:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        laravel: ['^11.0', '^12.0', '^13.0']
+    defaults:
+      run:
+        working-directory: packages/apm-laravel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - name: Install (Laravel ${{ matrix.laravel }})
+        run: composer update --no-interaction --prefer-dist -W --with "illuminate/support:${{ matrix.laravel }}"
+
+      - name: Test
+        run: vendor/bin/pest
+
+  apm-node:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/apm-node
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run build
+      - run: bun test

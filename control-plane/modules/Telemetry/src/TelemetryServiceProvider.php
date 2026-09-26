@@ -11,12 +11,16 @@ use Kiln\Identity\Events\OrganizationCreated;
 use Kiln\Identity\Events\OrganizationDeleted;
 use Kiln\Kernel\Support\ModuleServiceProvider;
 use Kiln\Servers\Events\ServerProvisioned;
+use Kiln\Sites\Events\SiteCreated;
+use Kiln\Sites\Events\SiteDeleted;
+use Kiln\Sites\Events\SiteTargetsChanged;
 use Kiln\Telemetry\Application\Console\ProvisionGrafanaCommand;
 use Kiln\Telemetry\Application\Jobs\DispatchPendingTelemetry;
 use Kiln\Telemetry\Application\Listeners\ConfigureTelemetryOnEnrollment;
 use Kiln\Telemetry\Application\Listeners\ConfigureTelemetryOnProvisioned;
 use Kiln\Telemetry\Application\Listeners\ForgetOrganizationTelemetry;
 use Kiln\Telemetry\Application\Listeners\ProvisionGrafanaForOrganization;
+use Kiln\Telemetry\Application\Listeners\ReconfigureOnSiteChanges;
 use Kiln\Telemetry\Contracts\Annotations;
 use Kiln\Telemetry\Contracts\LogsQuery;
 use Kiln\Telemetry\Contracts\MetricsBackend;
@@ -73,6 +77,7 @@ class TelemetryServiceProvider extends ModuleServiceProvider
         Event::listen(ServerProvisioned::class, ConfigureTelemetryOnProvisioned::class);
         Event::listen(OrganizationCreated::class, ProvisionGrafanaForOrganization::class);
         Event::listen(OrganizationDeleted::class, ForgetOrganizationTelemetry::class);
+        Event::listen([SiteCreated::class, SiteTargetsChanged::class, SiteDeleted::class], ReconfigureOnSiteChanges::class);
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new DispatchPendingTelemetry)->everyMinute()->name('telemetry:pending-configure')->withoutOverlapping();

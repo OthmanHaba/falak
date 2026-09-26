@@ -13,6 +13,7 @@ use Kiln\Insights\Application\Jobs\DetectMissedHeartbeats;
 use Kiln\Insights\Application\Jobs\EvaluateThresholdsJob;
 use Kiln\Insights\Application\Jobs\PruneInsightsJob;
 use Kiln\Insights\Application\Listeners\DeleteOrganizationInsights;
+use Kiln\Insights\Application\Listeners\ExpectScheduledJobs;
 use Kiln\Insights\Application\Listeners\IngestReceivedInsights;
 use Kiln\Insights\Contracts\IssueDirectory;
 use Kiln\Insights\Contracts\SiteNameResolver;
@@ -23,6 +24,7 @@ use Kiln\Insights\Domain\Policies\OrganizationScopedPolicy;
 use Kiln\Insights\Infrastructure\EloquentIssueDirectory;
 use Kiln\Insights\Infrastructure\IdSiteNameResolver;
 use Kiln\Kernel\Support\ModuleServiceProvider;
+use Kiln\Processes\Events\SchedulesApplied;
 
 class InsightsServiceProvider extends ModuleServiceProvider
 {
@@ -55,6 +57,7 @@ class InsightsServiceProvider extends ModuleServiceProvider
 
         Event::listen(InsightsReceived::class, IngestReceivedInsights::class);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationInsights::class);
+        Event::listen(SchedulesApplied::class, ExpectScheduledJobs::class);
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new EvaluateThresholdsJob)->everyMinute()->name('insights:thresholds')->withoutOverlapping();

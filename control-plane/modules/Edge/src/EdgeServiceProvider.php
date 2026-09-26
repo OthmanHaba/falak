@@ -3,6 +3,8 @@
 namespace Kiln\Edge;
 
 use Illuminate\Support\Facades\Event;
+use Kiln\Alerting\Contracts\AlertTypes;
+use Kiln\Alerting\Contracts\Severity;
 use Kiln\Edge\Application\CertificateInstaller;
 use Kiln\Edge\Application\EdgeChanges;
 use Kiln\Edge\Application\Listeners\ForgetDeletedOrganization;
@@ -10,6 +12,8 @@ use Kiln\Edge\Application\Listeners\ForgetDeletedServer;
 use Kiln\Edge\Application\Listeners\HandleEdgeCommandOutcome;
 use Kiln\Edge\Application\Listeners\ReactToSiteChanges;
 use Kiln\Edge\Contracts\EdgeRoutes;
+use Kiln\Edge\Events\CertificateInstallFailed;
+use Kiln\Edge\Events\CertificateIssued;
 use Kiln\Edge\Infrastructure\EloquentEdgeRoutes;
 use Kiln\Edge\Infrastructure\EloquentSiteDomains;
 use Kiln\Edge\Infrastructure\RouteCompiler;
@@ -74,6 +78,10 @@ class EdgeServiceProvider extends ModuleServiceProvider
         $registry->register('edge.view', [Role::Admin, Role::Developer, Role::Viewer], 'View domains, certificates and routing rules', 'edge');
         $registry->register('edge.manage', [Role::Admin, Role::Developer], 'Manage domains, certificates, redirects, security rules and load balancers', 'edge');
         $registry->register('edge.dns.manage', [Role::Admin], 'Manage DNS provider credentials for DNS-01 certificates', 'edge');
+
+        $types = $this->app->make(AlertTypes::class);
+        $types->register(CertificateInstallFailed::ALERT_TYPE, 'Certificate install failed', 'Edge', Severity::Critical);
+        $types->register(CertificateIssued::ALERT_TYPE, 'Certificate installed', 'Edge', Severity::Info);
 
         Event::listen(SiteCreated::class, [ReactToSiteChanges::class, 'created']);
         Event::listen(SiteUpdated::class, [ReactToSiteChanges::class, 'updated']);
