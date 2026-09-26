@@ -57,7 +57,7 @@ class Release extends Model
      *
      * @return array<string, mixed>
      */
-    public function toResource(): array
+    public function toApi(): array
     {
         return [
             'id' => $this->id,

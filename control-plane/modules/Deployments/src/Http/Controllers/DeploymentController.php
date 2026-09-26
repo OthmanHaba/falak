@@ -43,7 +43,7 @@ final class DeploymentController extends Controller
                 'data' => $history->getCollection()->map(fn (Deployment $d) => $this->deploymentResource($d))->values(),
                 'links' => ['prev' => $history->previousPageUrl(), 'next' => $history->nextPageUrl()],
             ],
-            'current' => Release::current($data->id)?->toResource(),
+            'current' => Release::current($data->id)?->toApi(),
             'strategy' => $settings->effectiveStrategy($data)->label(),
             'defaultBranch' => $data->branch,
             'canDeploy' => $data->repository !== null || ($data->runtime->isContainer() && $data->dockerImage !== null),

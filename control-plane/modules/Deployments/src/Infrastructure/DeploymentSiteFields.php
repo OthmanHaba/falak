@@ -36,7 +36,7 @@ final class DeploymentSiteFields implements SiteResourceExtension
 
             $fields[$siteId] = [
                 'strategy' => $strategy?->value,
-                'current_release' => $current->get($siteId)?->toResource(),
+                'current_release' => $current->get($siteId)?->toApi(),
             ];
         }
 

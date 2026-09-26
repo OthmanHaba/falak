@@ -29,7 +29,7 @@ final class ReleaseController extends Controller
 
         return Inertia::render('Deployments/Releases', [
             'site' => $headers->for($data->id),
-            'releases' => $releases->map(fn (Release $r) => $r->toResource())->values(),
+            'releases' => $releases->map(fn (Release $r) => $r->toApi())->values(),
             'keep' => SiteSettings::for($data)->keep_releases,
             'can' => ['rollback' => $this->can($request->user(), $data, DeploymentPermissions::ROLLBACK)],
         ]);

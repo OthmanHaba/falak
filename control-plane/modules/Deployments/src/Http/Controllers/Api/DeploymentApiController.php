@@ -96,6 +96,6 @@ final class DeploymentApiController extends Controller
         $releases = Release::query()->where('site_id', $data->id)->whereIn('status', [ReleaseStatus::Active, ReleaseStatus::Inactive])
             ->orderByRaw("case when status = 'active' then 0 else 1 end")->orderByDesc('activated_at')->orderByDesc('created_at')->get();
 
-        return response()->json(['data' => $releases->map(fn (Release $r) => $r->toResource())->values()]);
+        return response()->json(['data' => $releases->map(fn (Release $r) => $r->toApi())->values()]);
     }
 }
