@@ -63,6 +63,7 @@ x-control-plane: &control-plane
     KILN_TEST_DOMAIN_TLS: internal
     KILN_CA_PATH: /kiln/ca
     KILN_AGENT_TRUSTED_PROXIES: 10.77.10.0/24   # backend network: only the edge sets the fingerprint header
+    TRUSTED_PROXIES: 10.77.10.0/24              # trust the edge's X-Forwarded-Proto/Host (https URLs, client IPs)
     KILN_PANEL_URL: https://kiln.test
     KILN_AGENT_API_URL: https://agents.kiln.test/agent/v1   # mTLS API; server cert from the Kiln CA
     KILN_EDGE_AGENT_API_HOST: agents.kiln.test              # entrypoint issues that cert into /kiln/ca
