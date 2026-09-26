@@ -4,6 +4,7 @@ namespace Kiln\Terminal\Events;
 
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
@@ -11,7 +12,7 @@ use Illuminate\Foundation\Events\Dispatchable;
  * `data` is base64 of raw bytes; one agent event may be split into several parts to stay under the
  * broadcaster's message size limit (each part decodes independently).
  */
-final class TerminalOutput implements ShouldBroadcastNow
+final class TerminalOutput implements ShouldBroadcastNow, ShouldRescue
 {
     use Dispatchable;
 

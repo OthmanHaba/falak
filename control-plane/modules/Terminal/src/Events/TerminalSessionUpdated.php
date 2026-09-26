@@ -4,12 +4,13 @@ namespace Kiln\Terminal\Events;
 
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * Session state for live viewers (status, size, sharing) on presence-terminal.sessions.{sessionId}.
  */
-final class TerminalSessionUpdated implements ShouldBroadcastNow
+final class TerminalSessionUpdated implements ShouldBroadcastNow, ShouldRescue
 {
     use Dispatchable;
 

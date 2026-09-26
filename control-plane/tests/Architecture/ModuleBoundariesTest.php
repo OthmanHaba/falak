@@ -26,3 +26,19 @@ arch('Kernel depends on no module')
 arch('no debugging leftovers')
     ->expect(['dd', 'dump', 'ray', 'var_dump'])
     ->not->toBeUsed();
+
+// A live-UI broadcast failing (e.g. Reverb down) must never abort the domain work that fired it.
+test('synchronous broadcasts are rescued', function () {
+    $offenders = [];
+
+    foreach (glob(dirname(__DIR__, 2).'/modules/*/src/Events/*.php') as $file) {
+        $class = 'Kiln\\'.basename(dirname($file, 3)).'\\Events\\'.basename($file, '.php');
+
+        if (is_subclass_of($class, Illuminate\Contracts\Broadcasting\ShouldBroadcastNow::class)
+            && ! is_subclass_of($class, Illuminate\Contracts\Broadcasting\ShouldRescue::class)) {
+            $offenders[] = $class;
+        }
+    }
+
+    expect($offenders)->toBe([]);
+});

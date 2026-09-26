@@ -4,12 +4,13 @@ namespace Kiln\Recipes\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * Live run status for run pages, broadcast on private-recipes.runs.{runId}.
  */
-final class RecipeRunUpdated implements ShouldBroadcastNow
+final class RecipeRunUpdated implements ShouldBroadcastNow, ShouldRescue
 {
     use Dispatchable;
 

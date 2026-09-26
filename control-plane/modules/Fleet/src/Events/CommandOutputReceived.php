@@ -5,12 +5,13 @@ namespace Kiln\Fleet\Events;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * Live command events (output / progress / status) broadcast on private-fleet.commands.{commandId}.
  */
-final class CommandOutputReceived implements ShouldBroadcastNow
+final class CommandOutputReceived implements ShouldBroadcastNow, ShouldRescue
 {
     use Dispatchable;
     use InteractsWithSockets;

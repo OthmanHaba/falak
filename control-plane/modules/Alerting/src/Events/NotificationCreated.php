@@ -5,12 +5,13 @@ namespace Kiln\Alerting\Events;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * A notification-center entry was created for a user (broadcast on private-alerting.users.{userId}).
  */
-final class NotificationCreated implements ShouldBroadcastNow
+final class NotificationCreated implements ShouldBroadcastNow, ShouldRescue
 {
     use Dispatchable;
     use InteractsWithSockets;
