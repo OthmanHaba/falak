@@ -153,7 +153,7 @@ func TestApplyConvergesAndIsIdempotent(t *testing.T) {
 		t.Fatal(names)
 	}
 	for _, w := range []string{"hostnamectl set-hostname web-1", "timedatectl set-timezone UTC", "mkswap /swapfile", "swapon /swapfile",
-		"apt-get remove -y", "useradd", "systemctl enable cron", "systemctl start cron", "sshd -t", "systemctl reload ssh", "systemctl restart kiln-edge.service"} {
+		"apt-get remove -y", "useradd", "systemctl enable cron", "systemctl start cron", "sshd -t", "systemctl try-reload-or-restart ssh", "systemctl restart kiln-edge.service"} {
 		if !f.Ran(w) {
 			t.Fatalf("missing %q:\n%s", w, strings.Join(f.Lines(), "\n"))
 		}

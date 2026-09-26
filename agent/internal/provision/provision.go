@@ -519,5 +519,6 @@ func (p *Provisioner) ssh(ctx context.Context, st commands.Stream, s SSH) (bool,
 		}
 		return true, nil
 	}
-	return true, p.run(ctx, st, "systemctl", "reload", "ssh")
+	// Reloads a running sshd; a stopped one (on-demand/socket-activated) picks the config up when it starts.
+	return true, p.run(ctx, st, "systemctl", "try-reload-or-restart", "ssh")
 }
