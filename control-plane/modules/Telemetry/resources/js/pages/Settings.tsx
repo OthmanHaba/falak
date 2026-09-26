@@ -45,7 +45,7 @@ function Status({ ok, label }: { ok: boolean; label: string }) {
 }
 
 export default function Settings({ settings, defaults, backends, can }: Props) {
-    const { errors: pageErrors, flash } = usePage<{ errors: Record<string, string>; flash?: { status?: string } }>().props;
+    const { errors: pageErrors } = usePage<{ errors: Record<string, string> }>().props;
     const [provisioning, setProvisioning] = useState(false);
     const form = useForm({
         otlp_endpoint: settings.otlp_endpoint ?? '',
@@ -71,7 +71,6 @@ export default function Settings({ settings, defaults, backends, can }: Props) {
             <Head title="Telemetry settings" />
             <div className="space-y-6 p-4">
                 <Heading title="Telemetry" description="Where agents ship OTLP traces, logs and metrics, and how Grafana is provisioned" />
-                {flash?.status && <p className="text-sm text-emerald-600">{flash.status}</p>}
                 <div className="grid gap-6 lg:grid-cols-3">
                     <Card className="lg:col-span-2">
                         <CardHeader>

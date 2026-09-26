@@ -40,8 +40,17 @@ export interface OrganizationProps {
     all: OrganizationSummary[];
 }
 
+/** One-shot session flashes shared by HandleInertiaRequests (rendered as toasts). */
+export interface FlashMessages {
+    success?: string;
+    error?: string;
+    warning?: string;
+    status?: string;
+}
+
 export interface SharedData {
     name: string;
+    flash?: FlashMessages;
     quote: { message: string; author: string };
     auth: Auth;
     organization: OrganizationProps | null;
