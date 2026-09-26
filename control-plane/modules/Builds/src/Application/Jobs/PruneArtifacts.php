@@ -32,7 +32,7 @@ final class PruneArtifacts implements ShouldQueue
                 ->orderByDesc('created_at')->orderByDesc('id')->get();
 
             // Distinct artifacts (a reused build shares its origin's), newest first.
-            $artifacts = $builds->groupBy(fn (Build $b) => $b->reused_build_id ?? $b->id);
+            $artifacts = $builds->toBase()->groupBy(fn (Build $b) => $b->reused_build_id ?? $b->id);
             $retained = $artifacts->take($keep)->filter(fn ($group) => $group->first()->created_at->greaterThan($cutoff));
 
             foreach ($artifacts->except($retained->keys()->all()) as $group) {

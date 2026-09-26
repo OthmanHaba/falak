@@ -49,7 +49,7 @@ final class RequestBuild
                 $build = Build::query()->create([
                     ...$previous->only(['organization_id', 'site_id', 'site_slug', 'mode', 'repository', 'cache_key', 'resolved_commit', 'artifact_key',
                         'artifact_sha256', 'artifact_size', 'artifact_format', 'image_ref', 'image_digest', 'manifest', 'builder_id']),
-                    'id' => (string) Str::ulid(),
+                    'id' => strtolower((string) Str::ulid()),
                     'deployment_id' => $request->deploymentId,
                     'status' => BuildStatus::Succeeded,
                     'branch' => $branch,
@@ -70,7 +70,7 @@ final class RequestBuild
         }
 
         return DB::transaction(fn () => Build::query()->create([
-            'id' => (string) Str::ulid(),
+            'id' => strtolower((string) Str::ulid()),
             'organization_id' => $site->organizationId,
             'site_id' => $site->id,
             'site_slug' => $site->slug,
