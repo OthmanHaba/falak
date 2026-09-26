@@ -1,0 +1,93 @@
+<?php
+
+namespace Kiln\Sites\Infrastructure;
+
+use Illuminate\Database\Eloquent\Builder;
+use Kiln\Sites\Contracts\Data\EnvironmentData;
+use Kiln\Sites\Contracts\Data\SiteData;
+use Kiln\Sites\Contracts\Data\SiteTargetData;
+use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Domain\Models\EnvironmentVersion;
+use Kiln\Sites\Domain\Models\Site;
+use Kiln\Sites\Domain\Models\SiteTarget;
+
+final class EloquentSiteDirectory implements SiteDirectory
+{
+    public function find(string $siteId): ?SiteData
+    {
+        return $this->query()->find($siteId)?->toData();
+    }
+
+    public function forOrganization(string $organizationId): array
+    {
+        return $this->list($this->query()->where('organization_id', $organizationId));
+    }
+
+    public function forServer(string $serverId): array
+    {
+        return $this->list($this->query()->whereIn('id', SiteTarget::query()->select('site_id')->where('server_id', $serverId)));
+    }
+
+    public function forRepository(string $connectionId, string $repository, ?string $branch = null): array
+    {
+        return $this->list($this->query()
+            ->where('source_connection_id', $connectionId)
+            ->whereRaw('lower(repository) = ?', [strtolower($repository)])
+            ->when($branch !== null, fn (Builder $q) => $q->where('branch', $branch)));
+    }
+
+    public function targets(string $siteId): array
+    {
+        return $this->query()->find($siteId)?->targets->map(fn (SiteTarget $target) => $target->toData())->values()->all() ?? [];
+    }
+
+    public function leader(string $siteId): ?SiteTargetData
+    {
+        return $this->query()->find($siteId)?->leaderTarget()?->toData();
+    }
+
+    public function environment(string $siteId, ?int $version = null): ?EnvironmentData
+    {
+        return EnvironmentVersion::query()
+            ->where('site_id', $siteId)
+            ->when($version !== null, fn (Builder $q) => $q->where('version', $version), fn (Builder $q) => $q->orderByDesc('version'))
+            ->first()
+            ?->toData();
+    }
+
+    public function sharedPaths(string $siteId): array
+    {
+        return Site::query()->find($siteId)?->shared_paths ?? [];
+    }
+
+    public function deployVariables(string $siteId, string $serverId, array $context = []): array
+    {
+        $site = $this->query()->find($siteId);
+
+        if (! $site) {
+            return [];
+        }
+
+        $exposed = $this->environment($siteId)?->deployScriptVariables() ?? [];
+        $context = array_filter($context, fn ($value, $key) => is_string($key) && str_starts_with($key, 'KILN_'), ARRAY_FILTER_USE_BOTH);
+
+        return array_merge($exposed, SiteVariables::for($site, $serverId), array_map('strval', $context));
+    }
+
+    /**
+     * @return Builder<Site>
+     */
+    private function query(): Builder
+    {
+        return Site::query()->with('targets');
+    }
+
+    /**
+     * @param  Builder<Site>  $query
+     * @return list<SiteData>
+     */
+    private function list(Builder $query): array
+    {
+        return $query->orderBy('name')->get()->map(fn (Site $site) => $site->toData())->values()->all();
+    }
+}

@@ -2,14 +2,86 @@
 
 namespace Kiln\Edge;
 
+use Illuminate\Support\Facades\Event;
+use Kiln\Edge\Application\CertificateInstaller;
+use Kiln\Edge\Application\EdgeChanges;
+use Kiln\Edge\Application\Listeners\ForgetDeletedOrganization;
+use Kiln\Edge\Application\Listeners\ForgetDeletedServer;
+use Kiln\Edge\Application\Listeners\HandleEdgeCommandOutcome;
+use Kiln\Edge\Application\Listeners\ReactToSiteChanges;
+use Kiln\Edge\Contracts\EdgeRoutes;
+use Kiln\Edge\Infrastructure\EloquentEdgeRoutes;
+use Kiln\Edge\Infrastructure\EloquentSiteDomains;
+use Kiln\Edge\Infrastructure\RouteCompiler;
+use Kiln\Fleet\Contracts\AgentGateway;
+use Kiln\Fleet\Events\CommandFailed;
+use Kiln\Fleet\Events\CommandFinished;
+use Kiln\Identity\Contracts\PermissionRegistry;
+use Kiln\Identity\Contracts\Role;
+use Kiln\Identity\Events\OrganizationDeleted;
 use Kiln\Kernel\Support\ModuleServiceProvider;
+use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\Servers\Events\ServerDeleted;
+use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Contracts\SiteDomains;
+use Kiln\Sites\Events\SiteCreated;
+use Kiln\Sites\Events\SiteDeleted;
+use Kiln\Sites\Events\SiteTargetsChanged;
+use Kiln\Sites\Events\SiteUpdated;
 
 class EdgeServiceProvider extends ModuleServiceProvider
 {
     /**
      * Contract => implementation bindings exposed to other modules.
+     * Edge registers after Sites, so its SiteDomains binding replaces Sites' null implementation.
      *
      * @var array<class-string, class-string>
      */
-    public array $singletons = [];
+    public array $singletons = [
+        SiteDomains::class => EloquentSiteDomains::class,
+    ];
+
+    public function register(): void
+    {
+        $this->mergeConfigFrom($this->modulePath().'/config/edge.php', 'edge');
+
+        $this->app->bind(RouteCompiler::class, fn ($app) => new RouteCompiler(
+            $app->make(SiteDirectory::class),
+            $app->make(ServerDirectory::class),
+            config('edge.acme_email') ?: null,
+            config('edge.acme_ca') ?: null,
+            (string) config('edge.test_domain_tls', 'acme'),
+        ));
+
+        $this->app->bind(EdgeRoutes::class, fn ($app) => new EloquentEdgeRoutes(
+            $app->make(RouteCompiler::class),
+            $app->make(AgentGateway::class),
+            $app->make(ServerDirectory::class),
+            (int) config('edge.apply_delay_seconds', 2),
+            (int) config('edge.apply_timeout_seconds', 120),
+        ));
+
+        $this->app->bind(CertificateInstaller::class, fn ($app) => new CertificateInstaller(
+            $app->make(AgentGateway::class),
+            $app->make(EdgeChanges::class),
+            (int) config('edge.cert_install_timeout_seconds', 60),
+        ));
+    }
+
+    protected function bootModule(): void
+    {
+        $registry = $this->app->make(PermissionRegistry::class);
+        $registry->register('edge.view', [Role::Admin, Role::Developer, Role::Viewer], 'View domains, certificates and routing rules', 'edge');
+        $registry->register('edge.manage', [Role::Admin, Role::Developer], 'Manage domains, certificates, redirects, security rules and load balancers', 'edge');
+        $registry->register('edge.dns.manage', [Role::Admin], 'Manage DNS provider credentials for DNS-01 certificates', 'edge');
+
+        Event::listen(SiteCreated::class, [ReactToSiteChanges::class, 'created']);
+        Event::listen(SiteUpdated::class, [ReactToSiteChanges::class, 'updated']);
+        Event::listen(SiteTargetsChanged::class, [ReactToSiteChanges::class, 'targetsChanged']);
+        Event::listen(SiteDeleted::class, [ReactToSiteChanges::class, 'deleted']);
+        Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
+        Event::listen(OrganizationDeleted::class, ForgetDeletedOrganization::class);
+        Event::listen(CommandFinished::class, [HandleEdgeCommandOutcome::class, 'handleFinished']);
+        Event::listen(CommandFailed::class, [HandleEdgeCommandOutcome::class, 'handleFailed']);
+    }
 }

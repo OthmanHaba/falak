@@ -1,0 +1,135 @@
+<?php
+
+namespace Kiln\Sites\Application\Actions;
+
+use Illuminate\Validation\ValidationException;
+use Kiln\Identity\Contracts\AuditLog;
+use Kiln\Sites\Application\SiteRules;
+use Kiln\Sites\Application\SourceControlLinker;
+use Kiln\Sites\Application\TargetProvisioner;
+use Kiln\Sites\Contracts\BuildMode;
+use Kiln\Sites\Contracts\SiteRuntime;
+use Kiln\Sites\Domain\Models\Site;
+use Kiln\Sites\Domain\Models\SiteTarget;
+use Kiln\Sites\Events\SiteUpdated;
+
+/**
+ * General settings: name, repository, runtime + versions, build mode, directories, ports, health check.
+ */
+final class UpdateSite
+{
+    public const FIELDS = [
+        'name', 'runtime', 'build_mode', 'php_version', 'node_version', 'source_connection_id', 'repository', 'branch',
+        'push_to_deploy', 'web_directory', 'app_port', 'docker_image', 'dockerfile', 'compose_file', 'health_check_path',
+        'test_domain_enabled',
+    ];
+
+    /** @var list<string> */
+    public array $warnings = [];
+
+    public function __construct(
+        private readonly SiteRules $rules,
+        private readonly TargetProvisioner $provisioner,
+        private readonly SourceControlLinker $sourceControl,
+        private readonly AuditLog $audit,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<string> changed attributes
+     */
+    public function __invoke(Site $site, array $data): array
+    {
+        $site->loadMissing('targets');
+        $original = $site->replicate()->setRawAttributes($site->getRawOriginal());
+
+        $runtime = isset($data['runtime']) ? SiteRuntime::from((string) $data['runtime']) : $site->runtime;
+        $buildMode = isset($data['build_mode']) ? BuildMode::from((string) $data['build_mode']) : $site->build_mode;
+        $phpVersion = $runtime->isPhp() ? (string) ($data['php_version'] ?? $site->php_version ?? '') : null;
+
+        if ($runtime->isPhp() && $phpVersion === '') {
+            throw ValidationException::withMessages(['php_version' => 'Pick a PHP version.']);
+        }
+
+        if ($runtime->isContainer() !== $site->runtime->isContainer()) {
+            throw ValidationException::withMessages(['runtime' => 'Switching between container and native runtimes requires a new site.']);
+        }
+
+        $this->rules->runtimeAndFramework($site->framework, $runtime, $buildMode);
+        $this->rules->targets($site->organization_id, $site->serverIds(), $runtime, $phpVersion, $buildMode);
+
+        if (array_key_exists('source_connection_id', $data)) {
+            $this->rules->connection($site->organization_id, $data['source_connection_id']);
+        }
+
+        $attributes = array_intersect_key($data, array_flip(self::FIELDS));
+        $attributes['runtime'] = $runtime;
+        $attributes['build_mode'] = $buildMode;
+        $attributes['php_version'] = $phpVersion;
+
+        if (array_key_exists('web_directory', $attributes)) {
+            $attributes['web_directory'] = trim((string) $attributes['web_directory'], '/');
+        }
+
+        if ($runtime->proxiesToPort()) {
+            $port = isset($attributes['app_port']) ? (int) $attributes['app_port'] : ($site->app_port ?? $this->rules->freePort($site->serverIds(), $site->id));
+            $this->rules->portAvailable($port, $site->serverIds(), $site->id);
+            $attributes['app_port'] = $port;
+        } else {
+            $attributes['app_port'] = null;
+        }
+
+        $site->fill($attributes);
+        $changed = array_keys($site->getDirty());
+
+        if ($changed === []) {
+            return [];
+        }
+
+        $site->save();
+
+        $this->afterSave($site, $original, $changed);
+
+        $this->audit->record('site.updated', 'site', $site->id, ['changed' => $changed], $site->organization_id);
+        SiteUpdated::dispatch($site->id, $site->organization_id, $changed, $site->serverIds());
+
+        return $changed;
+    }
+
+    /**
+     * @param  list<string>  $changed
+     */
+    private function afterSave(Site $site, Site $original, array $changed): void
+    {
+        $repositoryChanged = array_intersect(['source_connection_id', 'repository'], $changed) !== [];
+
+        if ($repositoryChanged) {
+            $this->sourceControl->unlink($site->id, $original->source_connection_id, $original->repository, $original->deploy_key_id);
+            $site->forceFill(['deploy_key_id' => null])->save();
+            $this->warnings = $this->sourceControl->link($site);
+        } elseif (in_array('push_to_deploy', $changed, true)) {
+            if ($site->push_to_deploy) {
+                $this->warnings = $this->sourceControl->syncWebhook($site);
+            } elseif ($site->source_connection_id && $site->repository && ! $this->sourceControl->webhookStillNeeded($site->id, $site->source_connection_id, $site->repository)) {
+                $this->sourceControl->unlink($site->id, $site->source_connection_id, $site->repository, null);
+            }
+        }
+
+        // PHP-FPM pools follow the runtime and PHP version.
+        $poolChanged = array_intersect(['runtime', 'php_version'], $changed) !== [];
+
+        if (! $poolChanged) {
+            return;
+        }
+
+        foreach ($site->targets as $target) {
+            /** @var SiteTarget $target */
+            if ($original->runtime === SiteRuntime::PhpFpm && $original->php_version) {
+                $this->provisioner->removePool($site, $target->server_id, $original->php_version);
+            }
+
+            $target->setRelation('site', $site);
+            $this->provisioner->start($target);
+        }
+    }
+}

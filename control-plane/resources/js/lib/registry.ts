@@ -65,9 +65,23 @@ export interface HeaderItem {
     permission?: string;
 }
 
+/**
+ * A tab on the site pages (/sites/{id}/...). Sites, Edge, Deployments, Processes... each add their own.
+ */
+export interface SiteTab {
+    id: string;
+    title: string;
+    /** Path below /sites/{id}; '' is the overview. */
+    path: string;
+    /** Lower comes first. Sites: overview 0, environment 300, deploy script 400, commands 600, settings 900. Edge: domains 100, routing 200. */
+    order: number;
+    permission?: string;
+}
+
 const navItems = new Map<string, ModuleNavItem>();
 const headerItems = new Map<string, HeaderItem>();
 const commandProviders = new Map<string, CommandProvider>();
+const siteTabs = new Map<string, SiteTab>();
 
 export function registerNavigation(...items: ModuleNavItem[]): void {
     items.forEach((item) => navItems.set(item.id, item));
@@ -83,6 +97,14 @@ export function registerHeaderItems(...items: HeaderItem[]): void {
 
 export function headerItemsFor(ctx: ShellContext): HeaderItem[] {
     return [...headerItems.values()].filter((item) => !item.permission || ctx.can(item.permission)).sort((a, b) => a.order - b.order);
+}
+
+export function registerSiteTabs(...tabs: SiteTab[]): void {
+    tabs.forEach((tab) => siteTabs.set(tab.id, tab));
+}
+
+export function siteTabsFor(ctx: ShellContext): SiteTab[] {
+    return [...siteTabs.values()].filter((tab) => !tab.permission || ctx.can(tab.permission)).sort((a, b) => a.order - b.order);
 }
 
 export function navigationFor(ctx: ShellContext): ModuleNavItem[] {

@@ -1,0 +1,75 @@
+<?php
+
+namespace Kiln\Edge\Application\Listeners;
+
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Kiln\Edge\Application\CertificateInstaller;
+use Kiln\Edge\Application\EdgeChanges;
+use Kiln\Edge\Contracts\EdgeRoutes;
+use Kiln\Edge\Domain\Models\Certificate;
+use Kiln\Edge\Domain\Models\Domain;
+use Kiln\Edge\Domain\Models\Header;
+use Kiln\Edge\Domain\Models\LoadBalancer;
+use Kiln\Edge\Domain\Models\Redirect;
+use Kiln\Edge\Domain\Models\SecurityRule;
+use Kiln\Edge\Domain\Models\SiteSetting;
+use Kiln\Edge\Domain\Models\Upstream;
+use Kiln\Edge\Events\DomainRemoved;
+use Kiln\Sites\Events\SiteCreated;
+use Kiln\Sites\Events\SiteDeleted;
+use Kiln\Sites\Events\SiteTargetsChanged;
+use Kiln\Sites\Events\SiteUpdated;
+
+/**
+ * Re-applies the edge of every affected server when a site changes.
+ */
+final class ReactToSiteChanges implements ShouldQueue
+{
+    public function __construct(
+        private readonly EdgeChanges $changes,
+        private readonly EdgeRoutes $routes,
+        private readonly CertificateInstaller $certificates,
+    ) {}
+
+    public function created(SiteCreated $event): void
+    {
+        $this->changes->siteChanged($event->siteId, $event->serverIds);
+    }
+
+    public function updated(SiteUpdated $event): void
+    {
+        $this->changes->siteChanged($event->siteId, $event->serverIds);
+    }
+
+    public function targetsChanged(SiteTargetsChanged $event): void
+    {
+        Upstream::query()->where('site_id', $event->siteId)->whereIn('server_id', $event->removed)->delete();
+
+        foreach (Certificate::query()->where('site_id', $event->siteId)->get() as $certificate) {
+            $this->certificates->sync($certificate);
+        }
+
+        $this->changes->siteChanged($event->siteId, [...$event->serverIds, ...$event->removed]);
+    }
+
+    public function deleted(SiteDeleted $event): void
+    {
+        $balancer = LoadBalancer::query()->where('site_id', $event->siteId)->value('server_id');
+
+        foreach (Certificate::query()->where('site_id', $event->siteId)->where('organization_id', $event->organizationId)->get() as $certificate) {
+            $this->certificates->uninstallEverywhere($certificate);
+            $certificate->delete();
+        }
+
+        foreach (Domain::query()->where('site_id', $event->siteId)->get() as $domain) {
+            $domain->delete();
+            DomainRemoved::dispatch($domain->id, $domain->site_id, $domain->organization_id, $domain->name);
+        }
+
+        foreach ([Redirect::class, SecurityRule::class, Header::class, SiteSetting::class, LoadBalancer::class, Upstream::class] as $model) {
+            $model::query()->where('site_id', $event->siteId)->delete();
+        }
+
+        $this->routes->schedule(...array_values(array_filter([...$event->serverIds, $balancer])));
+    }
+}

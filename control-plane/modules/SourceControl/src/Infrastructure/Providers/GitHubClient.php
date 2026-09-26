@@ -1,0 +1,216 @@
+<?php
+
+namespace Kiln\SourceControl\Infrastructure\Providers;
+
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Http;
+use Kiln\SourceControl\Contracts\Data\BranchData;
+use Kiln\SourceControl\Contracts\Data\CommitData;
+use Kiln\SourceControl\Contracts\Data\RepositoryData;
+use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
+use Kiln\SourceControl\Domain\Models\Connection;
+
+/**
+ * GitHub REST v3 (github.com or GitHub Enterprise Server via the connection's base URL).
+ * Works with OAuth user tokens, personal access tokens and GitHub App installation tokens.
+ */
+class GitHubClient extends HttpProviderClient
+{
+    protected function label(): string
+    {
+        return 'GitHub';
+    }
+
+    protected function request(Connection $connection): PendingRequest
+    {
+        return Http::baseUrl($this->apiUrl($connection))
+            ->withToken($this->tokens->token($connection))
+            ->accept('application/vnd.github+json')
+            ->withHeaders(['X-GitHub-Api-Version' => '2022-11-28']);
+    }
+
+    public function account(Connection $connection): string
+    {
+        if ($connection->auth_type === 'app') {
+            $body = $this->json($connection, '/installation/repositories', ['per_page' => 1]);
+
+            return (string) ($body['repositories'][0]['owner']['login'] ?? $connection->account ?? '');
+        }
+
+        return (string) ($this->json($connection, '/user')['login'] ?? '');
+    }
+
+    public function repositories(Connection $connection, ?string $search = null): array
+    {
+        $app = $connection->auth_type === 'app';
+        $path = $app ? '/installation/repositories' : '/user/repos';
+        $query = $app ? ['per_page' => 100] : ['per_page' => 100, 'sort' => 'updated', 'affiliation' => 'owner,collaborator,organization_member'];
+
+        $repositories = [];
+
+        foreach ($this->pages($connection, $path, $query) as $page) {
+            foreach ($app ? ($page['repositories'] ?? []) : $page as $repo) {
+                if (is_array($repo) && self::matches((string) ($repo['full_name'] ?? ''), $search)) {
+                    $repositories[] = $this->toRepository($repo);
+                }
+            }
+        }
+
+        return $repositories;
+    }
+
+    public function repository(Connection $connection, string $repository): ?RepositoryData
+    {
+        $repo = $this->json($connection, '/repos/'.$this->path($repository), nullOn404: true);
+
+        return $repo === null ? null : $this->toRepository($repo);
+    }
+
+    public function branches(Connection $connection, string $repository): array
+    {
+        $branches = [];
+
+        foreach ($this->pages($connection, '/repos/'.$this->path($repository).'/branches', ['per_page' => 100]) as $page) {
+            foreach ($page as $branch) {
+                $branches[] = new BranchData((string) $branch['name'], $branch['commit']['sha'] ?? null, (bool) ($branch['protected'] ?? false));
+            }
+        }
+
+        return $branches;
+    }
+
+    public function latestCommit(Connection $connection, string $repository, string $branch): ?CommitData
+    {
+        return $this->commit($connection, $repository, $branch);
+    }
+
+    public function commit(Connection $connection, string $repository, string $sha): ?CommitData
+    {
+        $commit = $this->json($connection, '/repos/'.$this->path($repository).'/commits/'.rawurlencode($sha), nullOn404: true);
+
+        if ($commit === null) {
+            return null;
+        }
+
+        return new CommitData(
+            sha: (string) $commit['sha'],
+            message: (string) ($commit['commit']['message'] ?? ''),
+            authorName: $commit['commit']['author']['name'] ?? null,
+            authorEmail: $commit['commit']['author']['email'] ?? null,
+            committedAt: self::date($commit['commit']['author']['date'] ?? null),
+            url: $commit['html_url'] ?? null,
+        );
+    }
+
+    public function addDeployKey(Connection $connection, string $repository, string $title, string $publicKey): string
+    {
+        $response = $this->send($connection, 'POST', '/repos/'.$this->path($repository).'/keys', body: ['title' => $title, 'key' => $publicKey, 'read_only' => true]);
+
+        return (string) $response?->json('id');
+    }
+
+    public function removeDeployKey(Connection $connection, string $repository, string $keyId): void
+    {
+        $this->send($connection, 'DELETE', '/repos/'.$this->path($repository).'/keys/'.rawurlencode($keyId), nullOn404: true);
+    }
+
+    public function createWebhook(Connection $connection, string $repository, string $url, string $secret): string
+    {
+        $response = $this->send($connection, 'POST', '/repos/'.$this->path($repository).'/hooks', body: [
+            'name' => 'web',
+            'active' => true,
+            'events' => ['push'],
+            'config' => ['url' => $url, 'content_type' => 'json', 'secret' => $secret, 'insecure_ssl' => '0'],
+        ]);
+
+        return (string) $response?->json('id');
+    }
+
+    public function deleteWebhook(Connection $connection, string $repository, string $hookId): void
+    {
+        $this->send($connection, 'DELETE', '/repos/'.$this->path($repository).'/hooks/'.rawurlencode($hookId), nullOn404: true);
+    }
+
+    public function sshUrl(Connection $connection, string $repository): string
+    {
+        return 'git@'.self::host($this->webUrl($connection)).':'.$repository.'.git';
+    }
+
+    public function httpsUrl(Connection $connection, string $repository): string
+    {
+        return $this->webUrl($connection).'/'.$repository.'.git';
+    }
+
+    public function httpsCredentials(Connection $connection): array
+    {
+        return ['x-access-token', $this->tokens->token($connection)];
+    }
+
+    /**
+     * @param  array<string, mixed>  $query
+     * @return iterable<array<int|string, mixed>>
+     */
+    private function pages(Connection $connection, string $path, array $query): iterable
+    {
+        $url = $path;
+
+        for ($page = 0; $page < $this->maxPages() && $url !== null; $page++) {
+            $response = $this->send($connection, 'GET', $url, $page === 0 ? $query : []);
+
+            if ($response === null) {
+                return;
+            }
+
+            yield (array) $response->json();
+
+            $url = self::nextLink($response->header('Link'));
+        }
+    }
+
+    public static function nextLink(string $header): ?string
+    {
+        foreach (explode(',', $header) as $part) {
+            if (preg_match('/<([^>]+)>;\s*rel="next"/', $part, $m) === 1) {
+                return $m[1];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $repo
+     */
+    private function toRepository(array $repo): RepositoryData
+    {
+        return new RepositoryData(
+            fullName: (string) $repo['full_name'],
+            defaultBranch: (string) ($repo['default_branch'] ?? 'main'),
+            private: (bool) ($repo['private'] ?? true),
+            sshUrl: (string) ($repo['ssh_url'] ?? ''),
+            httpsUrl: (string) ($repo['clone_url'] ?? ''),
+            webUrl: $repo['html_url'] ?? null,
+        );
+    }
+
+    private function path(string $repository): string
+    {
+        if (preg_match('#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#', $repository) !== 1) {
+            throw SourceControlException::provider('GitHub', "Invalid repository name \"{$repository}\" (expected owner/name).");
+        }
+
+        return $repository;
+    }
+
+    private function apiUrl(Connection $connection): string
+    {
+        return $connection->base_url
+            ? rtrim($connection->base_url, '/').'/api/v3'
+            : rtrim((string) config('source_control.github.api_url'), '/');
+    }
+
+    private function webUrl(Connection $connection): string
+    {
+        return rtrim($connection->base_url ?: (string) config('source_control.github.url'), '/');
+    }
+}
