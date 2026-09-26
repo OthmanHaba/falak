@@ -1,0 +1,36 @@
+name: agent
+
+on:
+  push:
+    branches: [main]
+    paths: ['agent/**', 'contracts/**', '.github/workflows/agent.yml']
+  pull_request:
+    branches: [main]
+    paths: ['agent/**', 'contracts/**', '.github/workflows/agent.yml']
+
+defaults:
+  run:
+    working-directory: agent
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: Build (static, all targets)
+        run: make build
