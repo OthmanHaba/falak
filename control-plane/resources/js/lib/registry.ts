@@ -1,11 +1,12 @@
 import { type SharedData } from '@/types';
 import { type LucideIcon } from 'lucide-react';
+import { type ComponentType } from 'react';
 
 /**
  * Typed extension points modules use to plug into the app shell.
  *
  * Each module may ship `modules/<Module>/resources/js/register.ts`; app.tsx imports all of them
- * eagerly at boot, and they call `registerNavigation()` / `registerCommands()`.
+ * eagerly at boot, and they call `registerNavigation()` / `registerCommands()` / `registerHeaderItems()`.
  */
 
 export interface ShellContext {
@@ -54,7 +55,18 @@ export interface CommandProvider {
     minQueryLength?: number;
 }
 
+/** A widget rendered on the right of the app header (e.g. the notification bell). */
+export interface HeaderItem {
+    id: string;
+    /** Lower comes first (left). */
+    order: number;
+    component: ComponentType;
+    /** Only shown when the user holds this permission in the current organization. */
+    permission?: string;
+}
+
 const navItems = new Map<string, ModuleNavItem>();
+const headerItems = new Map<string, HeaderItem>();
 const commandProviders = new Map<string, CommandProvider>();
 
 export function registerNavigation(...items: ModuleNavItem[]): void {
@@ -63,6 +75,14 @@ export function registerNavigation(...items: ModuleNavItem[]): void {
 
 export function registerCommands(...providers: CommandProvider[]): void {
     providers.forEach((provider) => commandProviders.set(provider.id, provider));
+}
+
+export function registerHeaderItems(...items: HeaderItem[]): void {
+    items.forEach((item) => headerItems.set(item.id, item));
+}
+
+export function headerItemsFor(ctx: ShellContext): HeaderItem[] {
+    return [...headerItems.values()].filter((item) => !item.permission || ctx.can(item.permission)).sort((a, b) => a.order - b.order);
 }
 
 export function navigationFor(ctx: ShellContext): ModuleNavItem[] {
