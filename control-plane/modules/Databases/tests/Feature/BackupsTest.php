@@ -24,6 +24,7 @@ use Tests\Support\FakeAgentGateway;
 require_once __DIR__.'/../Support/helpers.php';
 
 beforeEach(function () {
+    databases_fake_dns();
     Carbon::setTestNow('2026-09-27 02:59:30');
     $this->agents = FakeAgentGateway::install();
     [$this->user, $this->organization] = actingAsMember(Role::Admin);
@@ -138,10 +139,22 @@ it('marks scheduled backups failed when the agent is offline', function () {
     $this->agents->unavailable($this->engine->server_id);
     $this->post("/databases/servers/{$this->engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *']);
 
-    $this->post('/databases/schedules/'.BackupSchedule::query()->value('id').'/run')->assertSessionHasNoErrors();
+    Carbon::setTestNow('2026-09-27 03:00:10');
+    dispatch_sync(new RunDueBackups);
 
-    expect(Backup::query()->first())->status->toBe(BackupStatus::Failed)->error->toContain('not connected');
+    expect(Backup::query()->first())->status->toBe(BackupStatus::Failed)->trigger->toBe('scheduled')->error->toContain('not connected');
     Event::assertDispatched(BackupFailed::class, fn ($e) => $e->trigger === 'scheduled' && $e->scheduleId !== null);
+});
+
+it('runs a schedule manually, recorded as manual, and reports a missing agent', function () {
+    $this->post("/databases/servers/{$this->engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $this->provider->id, 'database_ids' => [$this->db->id], 'cron' => '0 3 * * *']);
+    $scheduleId = BackupSchedule::query()->value('id');
+
+    $this->post("/databases/schedules/{$scheduleId}/run")->assertSessionHasNoErrors();
+    expect(Backup::query()->first())->trigger->toBe('manual')->schedule_id->toBe($scheduleId);
+
+    $this->agents->unavailable($this->engine->server_id);
+    $this->post("/databases/schedules/{$scheduleId}/run")->assertSessionHasErrors('database');
 });
 
 it('prunes by retention count and age with signed DELETEs, always keeping the newest', function () {

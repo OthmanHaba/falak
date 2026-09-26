@@ -31,4 +31,8 @@ return [
 
     // Control-plane → object storage requests (verification, pruning).
     'storage_timeout' => 30,
+
+    // Allow storage endpoints on private / loopback / link-local addresses (self-hosted MinIO on a LAN).
+    // Off by default: otherwise any storage admin could make the control plane probe internal services.
+    'allow_private_endpoints' => (bool) env('KILN_STORAGE_ALLOW_PRIVATE_ENDPOINTS', false),
 ];

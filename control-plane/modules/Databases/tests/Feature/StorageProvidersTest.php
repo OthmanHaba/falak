@@ -12,6 +12,7 @@ use Tests\Support\FakeAgentGateway;
 require_once __DIR__.'/../Support/helpers.php';
 
 beforeEach(function () {
+    databases_fake_dns();
     FakeAgentGateway::install();
     [$this->user, $this->organization] = actingAsMember(Role::Admin);
 });
@@ -120,4 +121,21 @@ it('refuses to delete providers used by schedules', function () {
 
     $this->delete("/databases/storage/{$provider->id}")->assertSessionHasErrors('provider');
     expect(StorageProvider::query()->count())->toBe(1)->and(StorageDriver::S3->label())->toBe('Amazon S3');
+});
+
+it('refuses storage endpoints on private addresses unless allowed', function () {
+    Http::fake(['*' => Http::response('', 200)]);
+    $base = ['name' => 'Lan', 'driver' => 'minio', 'bucket' => 'kiln-backups', 'access_key_id' => 'a', 'secret_access_key' => 'b'];
+
+    $this->post('/databases/storage', [...$base, 'endpoint' => 'https://127.0.0.1:9000'])->assertSessionHasErrors('endpoint');
+    $this->post('/databases/storage', [...$base, 'endpoint' => 'https://169.254.169.254'])->assertSessionHasErrors('endpoint');
+
+    // Saved while allowed, then the instance setting is turned off: requests are refused at send time.
+    config(['databases.allow_private_endpoints' => true]);
+    $this->post('/databases/storage', [...$base, 'endpoint' => 'https://10.1.2.3'])->assertSessionHasNoErrors();
+    $provider = StorageProvider::query()->firstOrFail();
+
+    config(['databases.allow_private_endpoints' => false]);
+    $this->post("/databases/storage/{$provider->id}/verify")->assertSessionHasErrors('provider');
+    Http::assertNothingSent();
 });

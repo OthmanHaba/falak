@@ -20,6 +20,7 @@ use Kiln\Databases\Domain\Models\Restore;
 use Kiln\Databases\Domain\Models\StorageProvider;
 use Kiln\Databases\Domain\Policies\DatabasesPolicy;
 use Kiln\Databases\Infrastructure\EloquentDatabaseDirectory;
+use Kiln\Databases\Infrastructure\ObjectStorage\EndpointGuard;
 use Kiln\Fleet\Events\CommandFailed;
 use Kiln\Fleet\Events\CommandFinished;
 use Kiln\Identity\Contracts\PermissionRegistry;
@@ -43,6 +44,8 @@ class DatabasesServiceProvider extends ModuleServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom($this->modulePath().'/config/databases.php', 'databases');
+
+        $this->app->bind(EndpointGuard::class, fn () => new EndpointGuard((bool) config('databases.allow_private_endpoints', false)));
     }
 
     protected function bootModule(): void

@@ -18,6 +18,7 @@ final class ObjectStore
         private readonly StorageProvider $provider,
         private readonly HttpFactory $http,
         private readonly int $timeout = 30,
+        private readonly EndpointGuard $guard = new EndpointGuard(allowPrivate: true),
     ) {}
 
     /**
@@ -107,6 +108,10 @@ final class ObjectStore
      */
     private function send(callable $request, string $method, string $key, bool $allowNotFound = false): void
     {
+        if ($refusal = $this->guard->refusal($this->url($key))) {
+            throw new StorageRequestFailed($refusal);
+        }
+
         try {
             $response = $request();
         } catch (ConnectionException $e) {

@@ -6,6 +6,7 @@ use Kiln\Databases\Domain\Enums\StorageDriver;
 use Kiln\Databases\Domain\Models\Database;
 use Kiln\Databases\Domain\Models\DatabaseServer;
 use Kiln\Databases\Domain\Models\StorageProvider;
+use Kiln\Databases\Infrastructure\ObjectStorage\EndpointGuard;
 use Kiln\Fleet\Infrastructure\ProtocolSchemas;
 use Kiln\Identity\Domain\Models\Organization;
 use Kiln\Servers\Contracts\ServerType;
@@ -66,4 +67,12 @@ function databases_provider(Organization $organization, array $attributes = []):
 function databases_schema_errors(array $command): array
 {
     return app(ProtocolSchemas::class)->validateCommand($command['handle']->type, ProtocolSchemas::toJson($command['payload']));
+}
+
+/**
+ * Resolve every storage hostname to a public address (tests never touch real DNS).
+ */
+function databases_fake_dns(string $address = '93.184.216.34'): void
+{
+    app()->bind(EndpointGuard::class, fn () => new EndpointGuard((bool) config('databases.allow_private_endpoints', false), fn (string $host) => [$address]));
 }

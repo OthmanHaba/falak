@@ -5,6 +5,7 @@ namespace Kiln\Databases\Application\Actions;
 use Illuminate\Validation\ValidationException;
 use Kiln\Databases\Domain\Enums\StorageDriver;
 use Kiln\Databases\Domain\Models\StorageProvider;
+use Kiln\Databases\Infrastructure\ObjectStorage\EndpointGuard;
 use Kiln\Databases\Infrastructure\ObjectStorage\ObjectStore;
 use Kiln\Identity\Contracts\AuditLog;
 
@@ -13,7 +14,10 @@ use Kiln\Identity\Contracts\AuditLog;
  */
 final class SaveStorageProvider
 {
-    public function __construct(private readonly AuditLog $audit) {}
+    public function __construct(
+        private readonly AuditLog $audit,
+        private readonly EndpointGuard $guard,
+    ) {}
 
     /**
      * @param  array{name: string, driver: string, region?: ?string, bucket: string, prefix?: ?string, endpoint?: ?string, account_id?: ?string, path_style?: ?bool, access_key_id?: ?string, secret_access_key?: ?string}  $data
@@ -32,6 +36,10 @@ final class SaveStorageProvider
         if ($endpoint === '' || ! str_starts_with($endpoint, 'https://') || filter_var($endpoint, FILTER_VALIDATE_URL) === false) {
             // Agents only accept https presigned URLs (db.backup / db.restore schemas).
             throw ValidationException::withMessages([$driver === StorageDriver::R2 ? 'account_id' : 'endpoint' => 'An https endpoint is required.']);
+        }
+
+        if ($driver === StorageDriver::Minio && ($refusal = $this->guard->refusal($endpoint))) {
+            throw ValidationException::withMessages(['endpoint' => $refusal]);
         }
 
         $accessKey = ($data['access_key_id'] ?? null) ?: $provider?->access_key_id;
