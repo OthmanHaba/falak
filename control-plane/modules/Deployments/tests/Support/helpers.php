@@ -10,7 +10,6 @@ use Kiln\Deployments\Tests\Support\FakeProcessControl;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Identity\Domain\Models\Organization;
 use Kiln\Identity\Domain\Models\User;
-use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Sites\Contracts\TargetRole;
 use Kiln\Sites\Contracts\TargetStatus;
@@ -20,6 +19,8 @@ use Kiln\Sites\Domain\Models\SiteTarget;
 use Kiln\Sites\Tests\Support\FakeSourceControlGateway;
 use Kiln\SourceControl\Contracts\SourceControlGateway;
 use Tests\Support\FakeAgentGateway;
+
+require_once __DIR__.'/../../../Sites/tests/Support/helpers.php';
 
 final class DeployWorld
 {
@@ -95,7 +96,7 @@ function deploy_world(int $servers = 1, array $site = [], Role $role = Role::Own
     $models = [];
 
     for ($i = 1; $i <= $servers; $i++) {
-        $models[] = Server::factory()->create(['organization_id' => $organization->id, 'type' => ServerType::Web, 'name' => "web-{$i}", 'ipv4' => "203.0.113.{$i}"]);
+        $models[] = sites_server($organization->id, ['name' => "web-{$i}", 'ipv4' => "203.0.113.{$i}"], docker: true);
     }
 
     $model = Site::query()->forceCreate([
