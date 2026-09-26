@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/envelope.schema.json",
+  "title": "Command envelope sent from control plane to agent",
+  "type": "object",
+  "required": ["id", "type", "timeout_s", "idempotency_key", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "id": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "description": "ULID" },
+    "type": { "type": "string", "pattern": "^[a-z_]+(\\.[a-z_]+)+$", "examples": ["deploy.activate", "proc.apply"] },
+    "timeout_s": { "type": "integer", "minimum": 1, "maximum": 3600 },
+    "idempotency_key": { "type": "string", "minLength": 1 },
+    "payload": { "type": "object", "description": "Validated against commands/<type>.schema.json" }
+  }
+}

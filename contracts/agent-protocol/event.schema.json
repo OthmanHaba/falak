@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/event.schema.json",
+  "title": "Command event streamed from agent to control plane (one NDJSON line)",
+  "type": "object",
+  "required": ["command_id", "seq", "kind", "at"],
+  "additionalProperties": false,
+  "properties": {
+    "command_id": { "type": "string" },
+    "seq": { "type": "integer", "minimum": 0, "description": "Monotonic per command; control plane dedupes on (command_id, seq)" },
+    "kind": { "enum": ["started", "output", "progress", "finished"] },
+    "at": { "type": "string", "format": "date-time" },
+    "stream": { "enum": ["stdout", "stderr"] },
+    "data": { "type": "string" },
+    "progress": { "type": "number", "minimum": 0, "maximum": 1 },
+    "exit_code": { "type": "integer" },
+    "result": { "type": "object", "description": "Structured result for finished events" },
+    "error": { "type": "string" }
+  }
+}

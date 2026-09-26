@@ -1,0 +1,72 @@
+name: control-plane
+
+on:
+  push:
+    branches: [main]
+    paths: ['control-plane/**', 'contracts/**', '.github/workflows/control-plane.yml']
+  pull_request:
+    branches: [main]
+    paths: ['control-plane/**', 'contracts/**', '.github/workflows/control-plane.yml']
+
+defaults:
+  run:
+    working-directory: control-plane
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction --prefer-dist --optimize-autoloader
+          bun install --frozen-lockfile
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          touch database/database.sqlite
+
+      - name: Tests (unit, feature, architecture)
+        run: ./vendor/bin/pest
+
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: |
+          composer install -q --no-interaction --no-scripts --no-progress --prefer-dist
+          bun install --frozen-lockfile
+
+      - name: Pint
+        run: vendor/bin/pint --test
+
+      - name: Prettier
+        run: bun run format:check
+
+      - name: ESLint
+        run: bun run lint:check
+
+      - name: TypeScript
+        run: bun run types
+
+      - name: Build
+        run: bun run build
