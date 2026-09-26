@@ -1,0 +1,239 @@
+<?php
+
+namespace Kiln\SourceControl\Infrastructure;
+
+use Illuminate\Support\Str;
+use Kiln\Identity\Contracts\AuditLog;
+use Kiln\SourceControl\Contracts\Data\CheckoutCredentials;
+use Kiln\SourceControl\Contracts\Data\CommitData;
+use Kiln\SourceControl\Contracts\Data\ConnectionData;
+use Kiln\SourceControl\Contracts\Data\DeployKeyData;
+use Kiln\SourceControl\Contracts\Data\RepositoryData;
+use Kiln\SourceControl\Contracts\Data\WebhookData;
+use Kiln\SourceControl\Contracts\Exceptions\ConnectionNotFound;
+use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
+use Kiln\SourceControl\Contracts\SourceControlGateway;
+use Kiln\SourceControl\Domain\Models\Connection;
+use Kiln\SourceControl\Domain\Models\DeployKey;
+use Kiln\SourceControl\Domain\Models\Webhook;
+use Kiln\SourceControl\Infrastructure\Providers\CustomGitClient;
+use Kiln\SourceControl\Infrastructure\Providers\ProviderClient;
+use Kiln\SourceControl\Infrastructure\Providers\ProviderClients;
+
+final class EloquentSourceControlGateway implements SourceControlGateway
+{
+    public function __construct(
+        private readonly ProviderClients $clients,
+        private readonly DeployKeyGenerator $keys,
+        private readonly AuditLog $audit,
+    ) {}
+
+    public function connection(string $connectionId): ?ConnectionData
+    {
+        return Connection::query()->find($connectionId)?->toData();
+    }
+
+    public function connections(string $organizationId): array
+    {
+        return Connection::query()
+            ->where('organization_id', $organizationId)
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Connection $connection) => $connection->toData())
+            ->values()
+            ->all();
+    }
+
+    public function repositories(string $connectionId, ?string $search = null): array
+    {
+        $connection = $this->find($connectionId);
+
+        return $this->client($connection)->repositories($connection, $search);
+    }
+
+    public function repository(string $connectionId, string $repository): ?RepositoryData
+    {
+        $connection = $this->find($connectionId);
+
+        return $this->client($connection)->repository($connection, $repository);
+    }
+
+    public function branches(string $connectionId, string $repository): array
+    {
+        $connection = $this->find($connectionId);
+
+        return $this->client($connection)->branches($connection, $repository);
+    }
+
+    public function latestCommit(string $connectionId, string $repository, string $branch): ?CommitData
+    {
+        $connection = $this->find($connectionId);
+
+        return $this->client($connection)->latestCommit($connection, $repository, $branch);
+    }
+
+    public function commit(string $connectionId, string $repository, string $sha): ?CommitData
+    {
+        $connection = $this->find($connectionId);
+
+        return $this->client($connection)->commit($connection, $repository, $sha);
+    }
+
+    public function installDeployKey(string $connectionId, string $repository, string $title): DeployKeyData
+    {
+        $connection = $this->find($connectionId);
+        $generated = $this->keys->generate($title);
+
+        $key = DeployKey::query()->create([
+            'organization_id' => $connection->organization_id,
+            'connection_id' => $connection->id,
+            'repository' => $repository,
+            'title' => Str::limit($title, 250, ''),
+            'public_key' => $generated['public_key'],
+            'private_key' => $generated['private_key'],
+            'fingerprint' => $generated['fingerprint'],
+        ]);
+
+        if ($connection->provider->hasApi()) {
+            try {
+                $providerId = $this->client($connection)->addDeployKey($connection, $repository, $title, $generated['public_key']);
+                $key->forceFill(['provider_key_id' => $providerId, 'installed_at' => now()])->save();
+            } catch (SourceControlException $e) {
+                $key->forceFill(['install_error' => Str::limit($e->getMessage(), 990)])->save();
+            }
+        }
+
+        $this->audit->record('source_control.deploy_key_created', 'deploy_key', $key->id, [
+            'connection_id' => $connection->id,
+            'repository' => $repository,
+            'fingerprint' => $key->fingerprint,
+            'installed' => $key->installed_at !== null,
+        ], $connection->organization_id);
+
+        return $key->toData();
+    }
+
+    public function deployKey(string $deployKeyId): ?DeployKeyData
+    {
+        return DeployKey::query()->find($deployKeyId)?->toData();
+    }
+
+    public function removeDeployKey(string $deployKeyId): void
+    {
+        $key = DeployKey::query()->with('connection')->find($deployKeyId);
+
+        if (! $key) {
+            return;
+        }
+
+        if ($key->provider_key_id) {
+            try {
+                $this->client($key->connection)->removeDeployKey($key->connection, $key->repository, $key->provider_key_id);
+            } catch (SourceControlException) {
+                // Best effort: the key may already be gone or the token revoked.
+            }
+        }
+
+        $key->delete();
+
+        $this->audit->record('source_control.deploy_key_removed', 'deploy_key', $key->id, ['repository' => $key->repository, 'fingerprint' => $key->fingerprint], $key->organization_id);
+    }
+
+    public function ensureWebhook(string $connectionId, string $repository): WebhookData
+    {
+        $connection = $this->find($connectionId);
+
+        $webhook = Webhook::query()->firstOrCreate(
+            ['connection_id' => $connection->id, 'repository' => $repository],
+            ['organization_id' => $connection->organization_id, 'secret' => Str::random(40), 'installed' => false],
+        );
+
+        if ($webhook->installed || ! $connection->provider->hasApi()) {
+            return $webhook->toData();
+        }
+
+        try {
+            $hookId = $this->client($connection)->createWebhook($connection, $repository, $webhook->url(), $webhook->secret);
+            $webhook->forceFill(['provider_hook_id' => $hookId, 'installed' => true, 'install_error' => null])->save();
+        } catch (SourceControlException $e) {
+            $webhook->forceFill(['install_error' => Str::limit($e->getMessage(), 990)])->save();
+        }
+
+        $this->audit->record('source_control.webhook_created', 'webhook', $webhook->id, ['connection_id' => $connection->id, 'repository' => $repository, 'installed' => $webhook->installed], $connection->organization_id);
+
+        return $webhook->toData();
+    }
+
+    public function removeWebhook(string $connectionId, string $repository): void
+    {
+        $connection = $this->find($connectionId);
+        $webhook = Webhook::query()->where('connection_id', $connection->id)->where('repository', $repository)->first();
+
+        if (! $webhook) {
+            return;
+        }
+
+        if ($webhook->provider_hook_id) {
+            try {
+                $this->client($connection)->deleteWebhook($connection, $repository, $webhook->provider_hook_id);
+            } catch (SourceControlException) {
+                // Best effort.
+            }
+        }
+
+        $webhook->delete();
+
+        $this->audit->record('source_control.webhook_removed', 'webhook', $webhook->id, ['connection_id' => $connection->id, 'repository' => $repository], $connection->organization_id);
+    }
+
+    public function cloneUrl(string $connectionId, string $repository): string
+    {
+        $connection = $this->find($connectionId);
+
+        return $this->client($connection)->sshUrl($connection, $repository);
+    }
+
+    public function checkoutCredentials(string $connectionId, string $repository, ?string $deployKeyId = null): CheckoutCredentials
+    {
+        $connection = $this->find($connectionId);
+        $client = $this->client($connection);
+
+        if ($deployKeyId !== null) {
+            $key = DeployKey::query()->where('connection_id', $connection->id)->find($deployKeyId);
+
+            if (! $key) {
+                throw new SourceControlException("Deploy key {$deployKeyId} does not belong to this connection.");
+            }
+
+            $url = $client->sshUrl($connection, $key->repository);
+
+            return new CheckoutCredentials(url: $url, sshPrivateKey: $key->private_key, knownHosts: $this->knownHosts($url));
+        }
+
+        if (! $connection->provider->hasApi()) {
+            throw new SourceControlException('Custom git repositories are cloned with a deploy key.');
+        }
+
+        [$username, $password] = $client->httpsCredentials($connection);
+
+        return new CheckoutCredentials(url: $client->httpsUrl($connection, $repository), httpsUsername: $username, httpsPassword: $password);
+    }
+
+    private function knownHosts(string $url): ?string
+    {
+        $host = CustomGitClient::isUrl($url) && preg_match('#^[^@/]+@([^:]+):#', $url, $m) === 1 ? $m[1] : parse_url($url, PHP_URL_HOST);
+        $line = is_string($host) ? (config('source_control.known_hosts')[$host] ?? null) : null;
+
+        return is_string($line) ? $line : null;
+    }
+
+    private function find(string $connectionId): Connection
+    {
+        return Connection::query()->find($connectionId) ?? throw ConnectionNotFound::id($connectionId);
+    }
+
+    private function client(Connection $connection): ProviderClient
+    {
+        return $this->clients->for($connection->provider);
+    }
+}

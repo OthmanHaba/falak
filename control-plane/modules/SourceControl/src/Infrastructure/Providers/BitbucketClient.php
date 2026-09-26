@@ -1,0 +1,201 @@
+<?php
+
+namespace Kiln\SourceControl\Infrastructure\Providers;
+
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Http;
+use Kiln\SourceControl\Contracts\Data\BranchData;
+use Kiln\SourceControl\Contracts\Data\CommitData;
+use Kiln\SourceControl\Contracts\Data\RepositoryData;
+use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
+use Kiln\SourceControl\Domain\Models\Connection;
+
+/**
+ * Bitbucket Cloud REST 2.0 with OAuth tokens or username + app password (basic auth).
+ */
+class BitbucketClient extends HttpProviderClient
+{
+    protected function label(): string
+    {
+        return 'Bitbucket';
+    }
+
+    protected function request(Connection $connection): PendingRequest
+    {
+        $request = Http::baseUrl(rtrim((string) config('source_control.bitbucket.api_url'), '/'));
+
+        return $connection->auth_type === 'basic'
+            ? $request->withBasicAuth((string) $connection->credential('username'), (string) $connection->credential('password'))
+            : $request->withToken($this->tokens->token($connection));
+    }
+
+    public function account(Connection $connection): string
+    {
+        $user = $this->json($connection, '/user');
+
+        return (string) ($user['username'] ?? $user['nickname'] ?? '');
+    }
+
+    public function repositories(Connection $connection, ?string $search = null): array
+    {
+        $query = ['role' => 'member', 'pagelen' => 100, 'sort' => '-updated_on'];
+
+        if ($search !== null && $search !== '') {
+            $query['q'] = 'full_name ~ "'.str_replace('"', '', $search).'"';
+        }
+
+        $repositories = [];
+
+        foreach ($this->pages($connection, '/repositories', $query) as $repo) {
+            $repositories[] = $this->toRepository($repo);
+        }
+
+        return $repositories;
+    }
+
+    public function repository(Connection $connection, string $repository): ?RepositoryData
+    {
+        $repo = $this->json($connection, '/repositories/'.$this->path($repository), nullOn404: true);
+
+        return $repo === null ? null : $this->toRepository($repo);
+    }
+
+    public function branches(Connection $connection, string $repository): array
+    {
+        $branches = [];
+
+        foreach ($this->pages($connection, '/repositories/'.$this->path($repository).'/refs/branches', ['pagelen' => 100]) as $branch) {
+            $branches[] = new BranchData((string) $branch['name'], $branch['target']['hash'] ?? null);
+        }
+
+        return $branches;
+    }
+
+    public function latestCommit(Connection $connection, string $repository, string $branch): ?CommitData
+    {
+        $body = $this->json($connection, '/repositories/'.$this->path($repository).'/refs/branches/'.rawurlencode($branch), nullOn404: true);
+
+        return isset($body['target']) && is_array($body['target']) ? self::toCommit($body['target']) : null;
+    }
+
+    public function commit(Connection $connection, string $repository, string $sha): ?CommitData
+    {
+        $commit = $this->json($connection, '/repositories/'.$this->path($repository).'/commit/'.rawurlencode($sha), nullOn404: true);
+
+        return $commit === null ? null : self::toCommit($commit);
+    }
+
+    public function addDeployKey(Connection $connection, string $repository, string $title, string $publicKey): string
+    {
+        $response = $this->send($connection, 'POST', '/repositories/'.$this->path($repository).'/deploy-keys', body: ['key' => $publicKey, 'label' => $title]);
+
+        return (string) $response?->json('id');
+    }
+
+    public function removeDeployKey(Connection $connection, string $repository, string $keyId): void
+    {
+        $this->send($connection, 'DELETE', '/repositories/'.$this->path($repository).'/deploy-keys/'.rawurlencode($keyId), nullOn404: true);
+    }
+
+    public function createWebhook(Connection $connection, string $repository, string $url, string $secret): string
+    {
+        $response = $this->send($connection, 'POST', '/repositories/'.$this->path($repository).'/hooks', body: [
+            'description' => 'Kiln push-to-deploy',
+            'url' => $url,
+            'active' => true,
+            'secret' => $secret,
+            'events' => ['repo:push'],
+        ]);
+
+        return (string) $response?->json('uuid');
+    }
+
+    public function deleteWebhook(Connection $connection, string $repository, string $hookId): void
+    {
+        $this->send($connection, 'DELETE', '/repositories/'.$this->path($repository).'/hooks/'.rawurlencode($hookId), nullOn404: true);
+    }
+
+    public function sshUrl(Connection $connection, string $repository): string
+    {
+        return 'git@'.self::host((string) config('source_control.bitbucket.url')).':'.$repository.'.git';
+    }
+
+    public function httpsUrl(Connection $connection, string $repository): string
+    {
+        return rtrim((string) config('source_control.bitbucket.url'), '/').'/'.$repository.'.git';
+    }
+
+    public function httpsCredentials(Connection $connection): array
+    {
+        return $connection->auth_type === 'basic'
+            ? [(string) $connection->credential('username'), (string) $connection->credential('password')]
+            : ['x-token-auth', $this->tokens->token($connection)];
+    }
+
+    /**
+     * Author from Bitbucket's "Name <email>" raw string.
+     *
+     * @param  array<string, mixed>  $commit
+     */
+    public static function toCommit(array $commit): CommitData
+    {
+        $raw = (string) ($commit['author']['raw'] ?? '');
+        preg_match('/^(.*?)\s*<([^>]+)>\s*$/', $raw, $m);
+
+        return new CommitData(
+            sha: (string) $commit['hash'],
+            message: (string) ($commit['message'] ?? ''),
+            authorName: ($m[1] ?? '') !== '' ? $m[1] : ($commit['author']['user']['display_name'] ?? ($raw !== '' ? $raw : null)),
+            authorEmail: $m[2] ?? null,
+            committedAt: self::date($commit['date'] ?? null),
+            url: $commit['links']['html']['href'] ?? null,
+        );
+    }
+
+    /**
+     * Iterates `values` across pages following the `next` link.
+     *
+     * @param  array<string, mixed>  $query
+     * @return iterable<array<string, mixed>>
+     */
+    private function pages(Connection $connection, string $path, array $query): iterable
+    {
+        $url = $path;
+
+        for ($page = 0; $page < $this->maxPages() && $url !== null; $page++) {
+            $body = $this->json($connection, $url, $page === 0 ? $query : []);
+
+            foreach ((array) ($body['values'] ?? []) as $value) {
+                yield $value;
+            }
+
+            $url = isset($body['next']) && is_string($body['next']) ? $body['next'] : null;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $repo
+     */
+    private function toRepository(array $repo): RepositoryData
+    {
+        $clone = collect($repo['links']['clone'] ?? [])->pluck('href', 'name');
+
+        return new RepositoryData(
+            fullName: (string) $repo['full_name'],
+            defaultBranch: (string) ($repo['mainbranch']['name'] ?? 'main'),
+            private: (bool) ($repo['is_private'] ?? true),
+            sshUrl: (string) ($clone['ssh'] ?? ''),
+            httpsUrl: (string) preg_replace('#//[^@/]+@#', '//', (string) ($clone['https'] ?? '')),
+            webUrl: $repo['links']['html']['href'] ?? null,
+        );
+    }
+
+    private function path(string $repository): string
+    {
+        if (preg_match('#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#', $repository) !== 1) {
+            throw SourceControlException::provider('Bitbucket', "Invalid repository name \"{$repository}\" (expected workspace/slug).");
+        }
+
+        return $repository;
+    }
+}
