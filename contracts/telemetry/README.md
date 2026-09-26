@@ -39,6 +39,8 @@ Every APM span carries `kiln.event.type`:
 | `command` | INTERNAL | `kiln.command.name`, `process.exit.code` |
 | `scheduled_task` | INTERNAL | `kiln.schedule.name`, `kiln.schedule.expression`, `kiln.schedule.status` (`finished`\|`failed`\|`skipped`) |
 
+- **Timeline spans:** child spans that only mark request phases carry `kiln.timeline.phase`
+  (`bootstrap`\|`middleware`\|`controller`\|`response`) and **no** `kiln.event.type`, so they never skew per-type aggregates.
 - **User context:** `enduser.id` on the root span when authenticated.
 - **Exceptions:** standard OTel span event `exception` (`exception.type`, `exception.message`, `exception.stacktrace`)
   plus `kiln.exception.handled` (bool). The span status is `ERROR` for unhandled exceptions.
