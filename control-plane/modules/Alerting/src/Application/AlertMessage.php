@@ -1,0 +1,91 @@
+<?php
+
+namespace Kiln\Alerting\Application;
+
+use DateTimeImmutable;
+use Kiln\Alerting\Contracts\Severity;
+use Kiln\Alerting\Domain\Models\Alert;
+
+/**
+ * What a channel sender renders: an alert (or a test message).
+ */
+final readonly class AlertMessage
+{
+    /**
+     * @param  array<string, scalar|null>  $context
+     */
+    public function __construct(
+        public string $id,
+        public string $organizationId,
+        public string $type,
+        public Severity $severity,
+        public string $title,
+        public string $body,
+        public ?string $url,
+        public array $context,
+        public bool $resolved,
+        public DateTimeImmutable $createdAt,
+        public bool $test = false,
+    ) {}
+
+    public static function fromAlert(Alert $alert): self
+    {
+        return new self(
+            $alert->id,
+            $alert->organization_id,
+            $alert->type,
+            $alert->severity,
+            $alert->title,
+            (string) $alert->body,
+            $alert->url,
+            $alert->context ?? [],
+            $alert->recovery,
+            $alert->created_at->toDateTimeImmutable(),
+        );
+    }
+
+    public static function test(string $organizationId, string $channelName): self
+    {
+        return new self(
+            'test',
+            $organizationId,
+            'alerting.test',
+            Severity::Info,
+            'Kiln test alert',
+            "This is a test message for the \"{$channelName}\" channel. If you can read it, the channel works.",
+            url('/alerting/channels'),
+            [],
+            false,
+            new DateTimeImmutable,
+            test: true,
+        );
+    }
+
+    /** Title prefixed for chat channels, e.g. "[CRITICAL] Agent offline" / "[RESOLVED] …". */
+    public function headline(): string
+    {
+        $tag = $this->resolved ? 'RESOLVED' : strtoupper($this->severity->value);
+
+        return "[{$tag}] {$this->title}";
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toPayload(): array
+    {
+        return [
+            'id' => $this->id,
+            'type' => $this->type,
+            'severity' => $this->severity->value,
+            'title' => $this->title,
+            'body' => $this->body,
+            'url' => $this->url,
+            'organization_id' => $this->organizationId,
+            'context' => (object) $this->context,
+            'resolved' => $this->resolved,
+            'test' => $this->test,
+            'created_at' => $this->createdAt->format(DATE_ATOM),
+        ];
+    }
+}
