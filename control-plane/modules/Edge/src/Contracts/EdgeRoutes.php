@@ -42,4 +42,9 @@ interface EdgeRoutes
      * @return list<DomainData>
      */
     public function domainsFor(string $siteId): array;
+
+    /**
+     * TLS used for hosted test domains (<slug>.<KILN_TEST_DOMAIN>): Auto (ACME) or Internal.
+     */
+    public function testDomainTls(): TlsMode;
 }

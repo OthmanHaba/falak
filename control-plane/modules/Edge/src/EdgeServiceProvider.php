@@ -63,6 +63,7 @@ class EdgeServiceProvider extends ModuleServiceProvider
             $app->make(ServerDirectory::class),
             (int) config('edge.apply_delay_seconds', 2),
             (int) config('edge.apply_timeout_seconds', 120),
+            (string) config('edge.test_domain_tls', 'acme'),
         ));
 
         $this->app->bind(CertificateInstaller::class, fn ($app) => new CertificateInstaller(

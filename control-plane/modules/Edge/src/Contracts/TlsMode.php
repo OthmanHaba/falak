@@ -15,6 +15,12 @@ enum TlsMode: string
     /** Plain HTTP only. */
     case Off = 'off';
 
+    /** Certificates a client can verify without trusting a private CA (health checks verify these). */
+    public function publiclyTrusted(): bool
+    {
+        return $this === self::Auto || $this === self::Dns;
+    }
+
     public function label(): string
     {
         return match ($this) {

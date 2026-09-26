@@ -83,7 +83,10 @@ function deploy_world(int $servers = 1, array $site = [], Role $role = Role::Own
 
     // Health checks answer 200 unless a test maps a URL prefix to another status with deploy_http().
     $GLOBALS['deploy_http'] = [];
-    Http::fake(function ($request) {
+    $GLOBALS['deploy_http_requests'] = [];
+    Http::fake(function ($request, array $options = []) {
+        $GLOBALS['deploy_http_requests'][] = ['url' => $request->url(), 'options' => $options];
+
         foreach ($GLOBALS['deploy_http'] as $prefix => $status) {
             if (str_starts_with($request->url(), $prefix)) {
                 return Http::response('status '.$status, $status);

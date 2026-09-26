@@ -14,6 +14,7 @@ use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Deployments\Domain\Models\DeploymentStep;
 use Kiln\Edge\Contracts\Data\DomainData;
 use Kiln\Edge\Contracts\EdgeRoutes;
+use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Throwable;
@@ -57,9 +58,15 @@ final class RunHealthCheck implements ShouldQueue
             return;
         }
 
-        $host = $this->host($deployment->site_id, $sites, $edge);
-        $url = $host !== null ? "https://{$host}{$path}" : "http://{$ip}{$path}";
-        $options = $host !== null ? ['curl' => [CURLOPT_RESOLVE => ["{$host}:443:{$ip}"]]] : [];
+        [$host, $tls] = $this->host($deployment->site_id, $sites, $edge) ?? [null, TlsMode::Off];
+        $https = $host !== null && $tls !== TlsMode::Off;
+        $url = $host === null ? "http://{$ip}{$path}" : ($https ? 'https' : 'http')."://{$host}{$path}";
+        $options = $host === null ? [] : [
+            'curl' => [CURLOPT_RESOLVE => ["{$host}:".($https ? 443 : 80).":{$ip}"]],
+            // Liveness through the edge, not certificate validation: only publicly trusted certificates
+            // (ACME) are verifiable from here; internal-CA and uploaded ones may chain to a private root.
+            'verify' => $tls->publiclyTrusted(),
+        ];
 
         $started = microtime(true);
 
@@ -87,7 +94,10 @@ final class RunHealthCheck implements ShouldQueue
         $orchestrator->healthChecked($step->id, $healthy, $message);
     }
 
-    private function host(string $siteId, SiteDirectory $sites, EdgeRoutes $edge): ?string
+    /**
+     * @return array{0: string, 1: TlsMode}|null the primary domain (or test domain) and its TLS mode
+     */
+    private function host(string $siteId, SiteDirectory $sites, EdgeRoutes $edge): ?array
     {
         try {
             $domains = array_values(array_filter($edge->domainsFor($siteId), fn (DomainData $d) => ! $d->isWildcard()));
@@ -97,6 +107,12 @@ final class RunHealthCheck implements ShouldQueue
 
         usort($domains, fn (DomainData $a, DomainData $b) => (int) $b->primary <=> (int) $a->primary);
 
-        return $domains[0]->name ?? $sites->find($siteId)?->testDomain;
+        if ($domains !== []) {
+            return [$domains[0]->name, $domains[0]->tls];
+        }
+
+        $test = $sites->find($siteId)?->testDomain;
+
+        return $test !== null ? [$test, $edge->testDomainTls()] : null;
     }
 }

@@ -15,6 +15,11 @@ final class FakeEdgeRoutes implements EdgeRoutes
     /** @var array<string, list<string>> */
     public array $domains = [];
 
+    /** @var array<string, TlsMode> TLS per domain name (default Auto) */
+    public array $domainTls = [];
+
+    public TlsMode $testDomainTlsMode = TlsMode::Auto;
+
     public static function install(): self
     {
         $fake = new self;
@@ -47,6 +52,11 @@ final class FakeEdgeRoutes implements EdgeRoutes
 
     public function domainsFor(string $siteId): array
     {
-        return array_map(fn (string $name) => new DomainData('d-'.$name, $siteId, $name, true, 'none', TlsMode::cases()[0], null), $this->domains[$siteId] ?? []);
+        return array_map(fn (string $name) => new DomainData('d-'.$name, $siteId, $name, true, 'none', $this->domainTls[$name] ?? TlsMode::Auto, null), $this->domains[$siteId] ?? []);
+    }
+
+    public function testDomainTls(): TlsMode
+    {
+        return $this->testDomainTlsMode;
     }
 }

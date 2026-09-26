@@ -7,6 +7,7 @@ use Illuminate\Support\Str;
 use Kiln\Edge\Application\Jobs\ApplyEdgeConfig;
 use Kiln\Edge\Contracts\Data\DomainData;
 use Kiln\Edge\Contracts\EdgeRoutes;
+use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\ApplyStatus;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Domain\Models\ServerState;
@@ -25,7 +26,13 @@ final class EloquentEdgeRoutes implements EdgeRoutes
         private readonly ServerDirectory $servers,
         private readonly int $applyDelaySeconds = 2,
         private readonly int $applyTimeoutSeconds = 120,
+        private readonly string $testDomainTls = 'acme',
     ) {}
+
+    public function testDomainTls(): TlsMode
+    {
+        return $this->testDomainTls === 'internal' ? TlsMode::Internal : TlsMode::Auto;
+    }
 
     public function compile(string $serverId): array
     {
