@@ -9,6 +9,7 @@ use Kiln\Deployments\Domain\Models\DeploymentTarget;
 use Kiln\Deployments\Domain\Models\OutputLine;
 use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Deployments\Domain\Models\SiteSettings;
+use Kiln\Deployments\Domain\Models\StepCommand;
 use Kiln\Identity\Events\OrganizationDeleted;
 use Kiln\Sites\Events\SiteDeleted;
 
@@ -28,6 +29,7 @@ final class ForgetDeletedResources
         foreach ($ids->chunk(500) as $chunk) {
             OutputLine::query()->whereIn('deployment_id', $chunk)->delete();
             DeploymentStep::query()->whereIn('deployment_id', $chunk)->delete();
+            StepCommand::query()->whereIn('deployment_id', $chunk)->delete();
             DeploymentTarget::query()->whereIn('deployment_id', $chunk)->delete();
         }
 

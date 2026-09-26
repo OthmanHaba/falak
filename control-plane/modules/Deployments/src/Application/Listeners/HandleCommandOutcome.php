@@ -13,20 +13,20 @@ use Kiln\Fleet\Events\CommandFinished;
  */
 final class HandleCommandOutcome implements ShouldQueue
 {
-    private const TYPES = ['deploy.fetch', 'deploy.prepare', 'deploy.hook', 'deploy.activate', 'deploy.rollback', 'deploy.container.swap', 'proc.restart'];
+    private const TYPES = ['deploy.fetch', 'deploy.prepare', 'deploy.hook', 'deploy.activate', 'deploy.rollback', 'deploy.container.swap', 'proc.restart', 'system.exec'];
 
     public function __construct(private readonly Orchestrator $orchestrator) {}
 
     public function handleFinished(CommandFinished $event): void
     {
-        if (in_array($event->type, self::TYPES, true) && str_starts_with($event->idempotencyKey, 'deploy:')) {
+        if (in_array($event->type, self::TYPES, true)) {
             $this->orchestrator->commandSettled($event->commandId, true, $event->exitCode, $event->result, null);
         }
     }
 
     public function handleFailed(CommandFailed $event): void
     {
-        if (in_array($event->type, self::TYPES, true) && str_starts_with($event->idempotencyKey, 'deploy:')) {
+        if (in_array($event->type, self::TYPES, true)) {
             $this->orchestrator->commandSettled($event->commandId, false, $event->exitCode, $event->result, $event->error, $event->status);
         }
     }

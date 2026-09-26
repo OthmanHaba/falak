@@ -26,6 +26,7 @@ use Kiln\Deployments\Domain\Models\DeploymentStep;
 use Kiln\Deployments\Domain\Models\DeploymentTarget;
 use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Deployments\Domain\Models\SiteSettings;
+use Kiln\Deployments\Domain\Models\StepCommand;
 use Kiln\Deployments\Events\DeploymentFailed;
 use Kiln\Deployments\Events\DeploymentRolledBack;
 use Kiln\Deployments\Events\DeploymentStarted;
@@ -37,6 +38,7 @@ use Kiln\Fleet\Contracts\AgentGateway;
 use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Kiln\Fleet\Contracts\Exceptions\InvalidCommandPayload;
 use Kiln\Fleet\Contracts\Exceptions\UnknownCommandType;
+use Kiln\Processes\Contracts\ProcessControl;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\BuildMode;
 use Kiln\Sites\Contracts\Data\SiteData;
@@ -78,6 +80,7 @@ final class Orchestrator
         private readonly PlanBuilder $planner,
         private readonly DeploymentLog $log,
         private readonly DeploymentQueue $queue,
+        private readonly ProcessControl $processes,
     ) {}
 
     // ---- entry points -------------------------------------------------------------------------
@@ -113,23 +116,31 @@ final class Orchestrator
      */
     public function commandSettled(string $commandId, bool $succeeded, ?int $exitCode, ?array $result, ?string $error, string $status = 'succeeded'): void
     {
-        $deploymentId = DeploymentStep::query()->where('command_id', $commandId)->value('deployment_id');
+        $link = StepCommand::query()->find($commandId);
 
-        if (! is_string($deploymentId)) {
+        if ($link === null) {
             return;
         }
 
-        $this->locked($deploymentId, function (Deployment $deployment) use ($commandId, $succeeded, $exitCode, $result, $error, $status) {
-            $step = DeploymentStep::query()->with('target')->where('command_id', $commandId)->first();
+        $this->locked($link->deployment_id, function (Deployment $deployment) use ($commandId, $succeeded, $exitCode, $result, $error, $status) {
+            $link = StepCommand::query()->find($commandId);
+            $step = $link ? DeploymentStep::query()->with('target')->find($link->step_id) : null;
 
-            if (! $step || $step->status->isTerminal()) {
+            if (! $link || ! $step || $link->status !== null || $step->status->isTerminal()) {
                 return; // re-delivered or already reconciled
             }
 
-            if ($step->kind === StepKind::Hook) {
+            if (in_array($link->type, ['deploy.hook', 'system.exec'], true)) {
                 $code = is_numeric($result['exit_code'] ?? null) ? (int) $result['exit_code'] : $exitCode;
                 $succeeded = $succeeded && ($code ?? 0) === 0;
                 $exitCode = $code;
+            }
+
+            $link->forceFill(['status' => $succeeded ? 'succeeded' : 'failed'])->save();
+
+            // A step with several commands succeeds once all of them did; any failure fails it.
+            if ($succeeded && StepCommand::query()->where('step_id', $step->id)->whereNull('status')->exists()) {
+                return;
             }
 
             $this->settle($deployment, $step, $succeeded, $exitCode, $result, $succeeded ? null : $this->commandError($error, $exitCode, $status), $status);
@@ -188,16 +199,32 @@ final class Orchestrator
     {
         $this->locked($deploymentId, function (Deployment $deployment) {
             foreach ($deployment->steps()->with('target')->where('status', StepStatus::Running)->get() as $step) {
-                if ($step->command_id !== null) {
-                    try {
-                        $status = $this->agents->status($step->command_id);
-                    } catch (Throwable) {
-                        continue;
+                $links = StepCommand::query()->where('step_id', $step->id)->whereNull('status')->get();
+
+                if ($links->isNotEmpty()) {
+                    foreach ($links as $link) {
+                        try {
+                            $status = $this->agents->status($link->command_id);
+                        } catch (Throwable) {
+                            continue;
+                        }
+
+                        if (! $status->isFinished()) {
+                            continue;
+                        }
+
+                        $ok = $status->isSuccessful() && (! in_array($link->type, ['deploy.hook', 'system.exec'], true) || (int) ($status->result['exit_code'] ?? $status->exitCode ?? 0) === 0);
+                        $link->forceFill(['status' => $ok ? 'succeeded' : 'failed'])->save();
+
+                        if (! $ok) {
+                            $this->settle($deployment, $step, false, $status->exitCode, $status->result, $this->commandError($status->error, $status->exitCode, $status->status->value), $status->status->value);
+
+                            continue 2;
+                        }
                     }
 
-                    if ($status->isFinished()) {
-                        $this->settle($deployment, $step, $status->isSuccessful() && ($step->kind !== StepKind::Hook || (int) ($status->result['exit_code'] ?? $status->exitCode ?? 0) === 0),
-                            $status->exitCode, $status->result, $status->isSuccessful() ? null : $this->commandError($status->error, $status->exitCode, $status->status->value), $status->status->value);
+                    if (! StepCommand::query()->where('step_id', $step->id)->whereNull('status')->exists()) {
+                        $this->settle($deployment, $step, true, 0, null, null);
                     }
                 } elseif ($step->kind === StepKind::Build && $step->build_id !== null) {
                     $build = $this->builds->find($step->build_id);
@@ -659,8 +686,13 @@ final class Orchestrator
         $key = "deploy:{$deployment->id}:{$step->key}";
 
         try {
-            $payload = $this->payloads->for($step, $deployment, $site);
-            $handle = $this->agents->dispatch((string) $step->server_id, (string) $step->command_type, $payload, $this->payloads->timeout($step->kind), $key);
+            if ($step->kind === StepKind::Restart || $step->kind === StepKind::RevertRestart) {
+                // Processes restarts the site's programs (Horizon: horizon:terminate; others: proc.restart).
+                $handles = $this->processes->restartForSite($site->id, (string) $step->server_id);
+            } else {
+                $payload = $this->payloads->for($step, $deployment, $site);
+                $handles = [$this->agents->dispatch((string) $step->server_id, (string) $step->command_type, $payload, $this->payloads->timeout($step->kind), $key)];
+            }
         } catch (AgentUnavailable) {
             $this->fail($deployment, $step, 'The server agent is not connected.');
 
@@ -671,7 +703,22 @@ final class Orchestrator
             return;
         }
 
-        $step->forceFill(['command_id' => $handle->id, 'idempotency_key' => $key])->save();
+        if ($handles === []) {
+            $this->log->note($deployment->id, 'No running processes to restart.', $step);
+            $this->settle($deployment, $step, true, null, null, null);
+
+            return;
+        }
+
+        foreach ($handles as $handle) {
+            StepCommand::query()->firstOrCreate(['command_id' => $handle->id], [
+                'step_id' => $step->id,
+                'deployment_id' => $deployment->id,
+                'type' => $handle->type,
+            ]);
+        }
+
+        $step->forceFill(['command_id' => $handles[0]->id, 'command_type' => $handles[0]->type, 'idempotency_key' => $handles[0]->idempotencyKey])->save();
         $this->log->note($deployment->id, '→ '.$step->label(), $step);
     }
 
@@ -798,7 +845,7 @@ final class Orchestrator
         $keep = max(1, (int) $deployment->setting('keep_releases', 5));
 
         $stale = Release::query()->where('site_id', $site->id)->where('status', ReleaseStatus::Inactive)
-            ->orderByDesc('activated_at')->orderByDesc('created_at')->get()->slice($keep - 1);
+            ->orderByDesc('activated_at')->orderByDesc('created_at')->orderByDesc('id')->get()->slice($keep - 1);
 
         foreach ($stale as $release) {
             $release->forceFill(['status' => ReleaseStatus::Pruned])->save();

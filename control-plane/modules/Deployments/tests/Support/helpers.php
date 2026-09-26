@@ -6,6 +6,7 @@ use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Deployments\Tests\Support\FakeAnnotations;
 use Kiln\Deployments\Tests\Support\FakeBuildService;
 use Kiln\Deployments\Tests\Support\FakeEdgeRoutes;
+use Kiln\Deployments\Tests\Support\FakeProcessControl;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Identity\Domain\Models\Organization;
 use Kiln\Identity\Domain\Models\User;
@@ -35,6 +36,7 @@ final class DeployWorld
         public FakeEdgeRoutes $edge,
         public FakeAnnotations $annotations,
         public FakeSourceControlGateway $sourceControl,
+        public FakeProcessControl $processes,
     ) {}
 
     public function serverIds(): array
@@ -76,7 +78,19 @@ function deploy_world(int $servers = 1, array $site = [], Role $role = Role::Own
     app()->instance(SourceControlGateway::class, $sourceControl);
     $connection = $sourceControl->addConnection($organization->id);
 
-    Http::fake(['*' => Http::response('ok', 200)]);
+    $processes = FakeProcessControl::install();
+
+    // Health checks answer 200 unless a test maps a URL prefix to another status with deploy_http().
+    $GLOBALS['deploy_http'] = [];
+    Http::fake(function ($request) {
+        foreach ($GLOBALS['deploy_http'] as $prefix => $status) {
+            if (str_starts_with($request->url(), $prefix)) {
+                return Http::response('status '.$status, $status);
+            }
+        }
+
+        return Http::response('ok', 200);
+    });
 
     $models = [];
 
@@ -125,7 +139,7 @@ function deploy_world(int $servers = 1, array $site = [], Role $role = Role::Own
         'created_at' => now(),
     ]);
 
-    return new DeployWorld($user, $organization, $models, $model->refresh(), $agents, $builds, $edge, $annotations, $sourceControl);
+    return new DeployWorld($user, $organization, $models, $model->refresh(), $agents, $builds, $edge, $annotations, $sourceControl, $processes);
 }
 
 /**
@@ -201,4 +215,14 @@ function deploy_run_all(FakeAgentGateway $agents): void
 function deploy_types(FakeAgentGateway $agents, ?string $serverId = null): array
 {
     return array_map(fn (array $c) => $c['handle']->type, $agents->dispatched(null, $serverId));
+}
+
+/**
+ * Health check answers by URL prefix, e.g. ['http://203.0.113.2' => 500].
+ *
+ * @param  array<string, int>  $statuses
+ */
+function deploy_http(array $statuses): void
+{
+    $GLOBALS['deploy_http'] = $statuses;
 }

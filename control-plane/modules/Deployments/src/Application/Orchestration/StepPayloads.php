@@ -51,10 +51,9 @@ final class StepPayloads
             ], fn ($v) => $v !== null),
             StepKind::Switch => $this->rollbackTo($deployment, $site, (string) $deployment->target_release_id),
             StepKind::Revert => $this->rollbackTo($deployment, $site, (string) ($step->meta['release_id'] ?? '')),
-            StepKind::Restart, StepKind::RevertRestart => ['site' => $site->slug],
             StepKind::Swap => $this->swap($deployment, $site, $serverId, $this->imageFor($deployment, $site)),
             StepKind::RevertSwap => $this->swap($deployment, $site, $serverId, [(string) ($step->meta['image'] ?? ''), null]),
-            StepKind::Build, StepKind::HealthCheck => throw new RuntimeException("{$step->kind->value} is not an agent command."),
+            StepKind::Build, StepKind::HealthCheck, StepKind::Restart, StepKind::RevertRestart => throw new RuntimeException("{$step->kind->value} is not an agent command."),
         };
     }
 

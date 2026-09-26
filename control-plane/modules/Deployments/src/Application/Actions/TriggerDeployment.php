@@ -48,7 +48,7 @@ final class TriggerDeployment
         if ($trigger === Trigger::Rollback) {
             $release = $releaseId !== null
                 ? Release::query()->where('site_id', $site->id)->find(strtolower($releaseId))
-                : Release::query()->where('site_id', $site->id)->where('status', 'inactive')->orderByDesc('activated_at')->orderByDesc('created_at')->first();
+                : Release::query()->where('site_id', $site->id)->where('status', 'inactive')->orderByDesc('activated_at')->orderByDesc('created_at')->orderByDesc('id')->first();
 
             if (! $release || ! $release->canRollBackTo()) {
                 throw ValidationException::withMessages(['release_id' => $releaseId ? 'This release cannot be rolled back to (it is current, failed or pruned).' : 'There is no earlier release to roll back to.']);

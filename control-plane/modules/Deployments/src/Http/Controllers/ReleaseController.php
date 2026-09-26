@@ -24,7 +24,7 @@ final class ReleaseController extends Controller
         $data = $this->site($request->user(), $site);
 
         $releases = Release::query()->where('site_id', $data->id)->where('status', '!=', ReleaseStatus::Pending)
-            ->orderByRaw("case when status = 'active' then 0 else 1 end")->orderByDesc('activated_at')->orderByDesc('created_at')
+            ->orderByRaw("case when status = 'active' then 0 else 1 end")->orderByDesc('activated_at')->orderByDesc('created_at')->orderByDesc('id')
             ->limit(50)->get();
 
         return Inertia::render('Deployments/Releases', [

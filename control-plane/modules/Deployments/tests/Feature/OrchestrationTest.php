@@ -186,7 +186,7 @@ it('rolls back exactly the servers that switched releases when a phase fails', f
     $world->builds->succeed();
 
     if ($failing === 'healthcheck') {
-        Http::fake(['http://203.0.113.2/*' => Http::response('down', 500), '*' => Http::response('ok', 200)]);
+        deploy_http(['http://203.0.113.2' => 500]);
     }
 
     for ($i = 0; $i < 60; $i++) {
@@ -240,21 +240,21 @@ it('rolls back exactly the servers that switched releases when a phase fails', f
 
 it('never rolls back on a first deployment without an earlier release', function () {
     $world = deploy_world();
-    Http::fake(['*' => Http::response('nope', 503)]);
+    deploy_http(['http' => 503]);
     $deployment = deploy($world);
     $world->builds->succeed();
     deploy_run_all($world->agents);
 
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
         ->and($world->agents->dispatched('deploy.rollback'))->toBe([])
-        ->and($deployment->error)->toContain('health check');
+        ->and($deployment->error)->toContain('Health check on web-1 failed');
 });
 
 it('aborts a canary whose health check fails before touching the other servers', function () {
     $world = deploy_world(servers: 3);
     $first = deploy_ok($world);
     settings($world, ['strategy' => 'canary', 'health_retries' => 2]);
-    Http::fake(['http://203.0.113.1/*' => Http::response('boom', 500), '*' => Http::response('ok', 200)]);
+    deploy_http(['http://203.0.113.1' => 500]);
 
     $deployment = deploy($world);
     $world->builds->succeed();
@@ -272,7 +272,6 @@ it('aborts a canary whose health check fails before touching the other servers',
 it('activates rolling batches one after another, each gated by its health checks', function () {
     $world = deploy_world(servers: 4);
     settings($world, ['strategy' => 'rolling', 'batch_size' => 2]);
-    Http::fake(['*' => Http::response('ok', 200)]);
     deploy($world);
     $world->builds->succeed();
 
@@ -471,10 +470,13 @@ it('records agent output per server and phase', function () {
     $deployment = deploy($world);
     $world->builds->succeed();
     $hook = $world->agents->last('deploy.hook');
-    $world->agents->emit($hook['handle'], ["before fetch\n"]);
-    $world->agents->emit($hook['handle'], ["before fetch\n"]); // re-delivered seq 2 is new; seq dedupe is per command seq
+    $world->agents->emit($hook['handle'], ["before fetch\n", "second\n"]);
+    // At-least-once ingestion: the same seq again must not duplicate the line.
+    \Kiln\Fleet\Events\CommandOutputReceived::dispatch($hook['handle']->id, $hook['handle']->serverId, 'running', [
+        ['seq' => 1, 'kind' => 'output', 'stream' => 'stdout', 'data' => "before fetch\n", 'progress' => null, 'at' => now()->toIso8601ZuluString()],
+    ]);
 
-    $lines = OutputLine::query()->where('deployment_id', $deployment->id)->whereNotNull('server_id')->get();
+    $lines = OutputLine::query()->where('deployment_id', $deployment->id)->whereNotNull('source_seq')->orderBy('id')->get();
     expect($lines)->toHaveCount(2)
         ->and($lines[0]->server_name)->toBe('web-1')
         ->and($lines[0]->phase)->toBe('fetch');

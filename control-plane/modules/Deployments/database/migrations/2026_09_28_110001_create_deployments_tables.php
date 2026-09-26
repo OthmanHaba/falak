@@ -102,6 +102,16 @@ return new class extends Migration
             $table->unique(['deployment_id', 'key']);
         });
 
+        // Agent commands of a step (a restart may fan out to proc.restart + horizon:terminate).
+        Schema::create('deployments_step_commands', function (Blueprint $table) {
+            $table->ulid('command_id')->primary();
+            $table->ulid('step_id')->index();
+            $table->ulid('deployment_id');
+            $table->string('type', 64);
+            $table->string('status', 16)->nullable();
+            $table->timestamps();
+        });
+
         Schema::create('deployments_output', function (Blueprint $table) {
             // The auto-increment id is the output cursor (`seq`, ?after=).
             $table->id();
@@ -141,7 +151,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        foreach (['deployments_releases', 'deployments_output', 'deployments_steps', 'deployments_targets', 'deployments_deployments', 'deployments_site_settings'] as $table) {
+        foreach (['deployments_releases', 'deployments_output', 'deployments_step_commands', 'deployments_steps', 'deployments_targets', 'deployments_deployments', 'deployments_site_settings'] as $table) {
             Schema::dropIfExists($table);
         }
     }

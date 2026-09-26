@@ -4,6 +4,7 @@ namespace Kiln\Deployments\Application\Listeners;
 
 use Kiln\Deployments\Application\Orchestration\DeploymentLog;
 use Kiln\Deployments\Domain\Models\DeploymentStep;
+use Kiln\Deployments\Domain\Models\StepCommand;
 use Kiln\Fleet\Events\CommandOutputReceived;
 
 /**
@@ -24,7 +25,8 @@ final class RecordCommandOutput
             return;
         }
 
-        $step = DeploymentStep::query()->with('target')->where('command_id', $event->commandId)->first();
+        $stepId = StepCommand::query()->whereKey($event->commandId)->value('step_id');
+        $step = $stepId ? DeploymentStep::query()->with('target')->find($stepId) : null;
 
         if ($step === null) {
             return;
