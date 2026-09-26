@@ -70,6 +70,23 @@ final readonly class SiteData
         return $this->runtime === SiteRuntime::PhpFpm && $this->phpVersion ? "/run/php/kiln-{$this->slug}-{$this->phpVersion}.sock" : null;
     }
 
+    /** PHP CLI binary on the site's servers (e.g. "php8.4"); plain "php" for non-PHP runtimes. */
+    public function phpBinary(): string
+    {
+        return $this->runtime->isPhp() && $this->phpVersion ? "php{$this->phpVersion}" : 'php';
+    }
+
+    public function target(string $serverId): ?SiteTargetData
+    {
+        foreach ($this->targets as $target) {
+            if ($target->serverId === $serverId) {
+                return $target;
+            }
+        }
+
+        return null;
+    }
+
     public function leader(): ?SiteTargetData
     {
         foreach ($this->targets as $target) {

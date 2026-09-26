@@ -10,6 +10,7 @@ use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Contracts\TargetStatus;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Models\SiteTarget;
+use Kiln\Sites\Events\SiteTargetReady;
 use Kiln\Sites\Infrastructure\CommandPayloads;
 
 /**
@@ -82,6 +83,8 @@ final class TargetProvisioner
     private function ready(SiteTarget $target): void
     {
         $target->forceFill(['status' => TargetStatus::Ready, 'status_message' => null, 'step' => null, 'command_id' => null])->save();
+
+        SiteTargetReady::dispatch($target->site_id, $target->site->organization_id, $target->server_id, $target->id);
     }
 
     /**
