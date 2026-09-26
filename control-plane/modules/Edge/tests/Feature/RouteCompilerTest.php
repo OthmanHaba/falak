@@ -1,0 +1,208 @@
+<?php
+
+use Illuminate\Support\Str;
+use Kiln\Edge\Contracts\EdgeRoutes;
+use Kiln\Edge\Contracts\TlsMode;
+use Kiln\Edge\Domain\Enums\InstallStatus;
+use Kiln\Edge\Domain\Enums\LbPolicy;
+use Kiln\Edge\Domain\Enums\WwwRedirect;
+use Kiln\Edge\Domain\Models\Certificate;
+use Kiln\Edge\Domain\Models\CertificateInstall;
+use Kiln\Edge\Domain\Models\DnsCredential;
+use Kiln\Edge\Domain\Models\Domain;
+use Kiln\Edge\Domain\Models\Header;
+use Kiln\Edge\Domain\Models\LoadBalancer;
+use Kiln\Edge\Domain\Models\Redirect;
+use Kiln\Edge\Domain\Models\SecurityRule;
+use Kiln\Edge\Domain\Models\SiteSetting;
+use Kiln\Servers\Contracts\ServerType;
+use Kiln\Sites\Contracts\SiteDomains;
+use Kiln\Sites\Contracts\SiteRuntime;
+
+require_once __DIR__.'/../Support/helpers.php';
+
+beforeEach(function () {
+    ['sites' => $this->sites, 'servers' => $this->servers, 'agents' => $this->agents] = edge_fakes();
+    $this->org = (string) Str::ulid();
+    $this->web = edge_server($this->servers, $this->org, ['privateIpv4' => '10.0.0.2']);
+});
+
+function edge_domain(string $org, string $siteId, string $name, array $attributes = []): Domain
+{
+    return Domain::query()->create(['organization_id' => $org, 'site_id' => $siteId, 'name' => $name, 'is_primary' => false, 'www_redirect' => WwwRedirect::None, 'tls_mode' => TlsMode::Auto, ...$attributes]);
+}
+
+it('compiles every runtime kind', function (SiteRuntime $runtime, array $expected) {
+    $site = edge_site($this->sites, $this->org, [$this->web->id], ['slug' => 'app', 'runtime' => $runtime, 'appPort' => 3000, 'healthCheckPath' => '/up']);
+    edge_domain($this->org, $site->id, 'app.example.com', ['is_primary' => true]);
+
+    $entry = edge_entry(edge_compile($this->web->id), strtolower($site->id));
+
+    expect($entry)->toMatchArray(['domains' => ['app.example.com'], 'tls' => ['mode' => 'acme'], ...$expected]);
+})->with([
+    'frankenphp' => [SiteRuntime::FrankenPhp, ['kind' => 'frankenphp', 'root' => '/srv/kiln/sites/app/current/public']],
+    'php-fpm' => [SiteRuntime::PhpFpm, ['kind' => 'php_fpm', 'root' => '/srv/kiln/sites/app/current/public', 'php_fpm_socket' => '/run/php/kiln-app-8.4.sock']],
+    'static' => [SiteRuntime::Static, ['kind' => 'static', 'root' => '/srv/kiln/sites/app/current/public']],
+    'node' => [SiteRuntime::Node, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']], 'health_uri' => '/up']],
+    'bun' => [SiteRuntime::Bun, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
+    'deno' => [SiteRuntime::Deno, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
+    'docker' => [SiteRuntime::Docker, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
+    'compose' => [SiteRuntime::Compose, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
+]);
+
+it('uses the recorded container upstream for docker sites', function () {
+    $site = edge_site($this->sites, $this->org, [$this->web->id], ['runtime' => SiteRuntime::Docker, 'appPort' => 8080]);
+    edge_domain($this->org, $site->id, 'api.example.com', ['is_primary' => true]);
+
+    app(EdgeRoutes::class)->recordUpstream($site->id, $this->web->id, '127.0.0.1:9002');
+
+    $entry = edge_entry(edge_compile($this->web->id), app(EdgeRoutes::class)->routeId($site->id));
+    expect($entry['upstreams'])->toBe([['dial' => '127.0.0.1:9002']]);
+});
+
+it('skips sites that cannot be routed and sites without hosts', function () {
+    edge_site($this->sites, $this->org, [$this->web->id], ['runtime' => SiteRuntime::Node, 'appPort' => null, 'testDomain' => 'a.kiln.test']);
+    edge_site($this->sites, $this->org, [$this->web->id]); // no domains
+
+    expect(edge_compile($this->web->id)['sites'])->toBe([]);
+});
+
+it('routes the test domain and www redirects', function () {
+    $site = edge_site($this->sites, $this->org, [$this->web->id], ['testDomain' => 'shop.kiln.test']);
+    edge_domain($this->org, $site->id, 'shop.com', ['is_primary' => true, 'www_redirect' => WwwRedirect::ToWww]);
+    edge_domain($this->org, $site->id, 'shop.de', ['www_redirect' => WwwRedirect::ToApex]);
+
+    $entry = edge_entry(edge_compile($this->web->id), strtolower($site->id));
+
+    expect($entry['domains'])->toBe(['www.shop.com', 'shop.de', 'shop.kiln.test'])
+        ->and($entry['redirect_domains'])->toBe(['shop.com', 'www.shop.de']);
+});
+
+it('issues internal certificates for test domains when configured', function () {
+    config(['edge.test_domain_tls' => 'internal']);
+    $site = edge_site($this->sites, $this->org, [$this->web->id], ['testDomain' => 'shop.kiln.test']);
+    edge_domain($this->org, $site->id, 'shop.com', ['is_primary' => true]);
+
+    $payload = edge_compile($this->web->id);
+    $id = strtolower($site->id);
+
+    expect(edge_entry($payload, $id))->toMatchArray(['domains' => ['shop.com'], 'tls' => ['mode' => 'acme']])
+        ->and(edge_entry($payload, "{$id}-1"))->toMatchArray(['domains' => ['shop.kiln.test'], 'tls' => ['mode' => 'internal'], 'kind' => 'frankenphp']);
+});
+
+it('groups domains by tls and gates custom certificates on installation', function () {
+    $site = edge_site($this->sites, $this->org, [$this->web->id]);
+    $pem = edge_self_signed(['secure.example.com']);
+    $certificate = Certificate::query()->create([
+        'organization_id' => $this->org, 'site_id' => $site->id, 'name' => 'kiln-cert1', 'domains' => ['secure.example.com'],
+        'cert_pem' => $pem['cert'], 'key_pem' => $pem['key'], 'fingerprint' => str_repeat('a', 64),
+    ]);
+    edge_domain($this->org, $site->id, 'example.com', ['is_primary' => true]);
+    edge_domain($this->org, $site->id, 'secure.example.com', ['tls_mode' => TlsMode::Custom, 'certificate_id' => $certificate->id]);
+    edge_domain($this->org, $site->id, 'plain.example.com', ['tls_mode' => TlsMode::Off]);
+    $id = strtolower($site->id);
+
+    $before = edge_compile($this->web->id);
+    expect(collect($before['sites'])->pluck('domains')->all())->toBe([['example.com'], ['plain.example.com']]);
+
+    CertificateInstall::query()->create(['certificate_id' => $certificate->id, 'server_id' => $this->web->id, 'status' => InstallStatus::Installed]);
+
+    $after = edge_compile($this->web->id);
+    expect(edge_entry($after, $id)['domains'])->toBe(['example.com'])
+        ->and(edge_entry($after, "{$id}-1"))->toMatchArray(['domains' => ['plain.example.com'], 'tls' => ['mode' => 'off']])
+        ->and(edge_entry($after, "{$id}-2"))->toMatchArray(['domains' => ['secure.example.com'], 'tls' => ['mode' => 'custom', 'cert_name' => 'kiln-cert1']]);
+});
+
+it('uses DNS-01 for wildcard domains', function () {
+    $site = edge_site($this->sites, $this->org, [$this->web->id]);
+    $credential = DnsCredential::query()->create(['organization_id' => $this->org, 'provider' => 'cloudflare', 'name' => 'CF', 'api_token' => 'cf-token-123']);
+    edge_domain($this->org, $site->id, '*.shop.com', ['is_primary' => true, 'tls_mode' => TlsMode::Dns, 'dns_credential_id' => $credential->id]);
+    edge_domain($this->org, $site->id, 'auto.shop.com', ['tls_mode' => TlsMode::Auto]);
+    edge_domain($this->org, $site->id, '*.nope.com', ['tls_mode' => TlsMode::Auto]); // invalid combination is never emitted
+
+    $payload = edge_compile($this->web->id);
+
+    expect(edge_entry($payload, strtolower($site->id)))->toMatchArray([
+        'domains' => ['*.shop.com'],
+        'tls' => ['mode' => 'acme', 'dns' => ['provider' => 'cloudflare', 'api_token' => 'cf-token-123']],
+    ])->and(edge_entry($payload, strtolower($site->id).'-1')['domains'])->toBe(['auto.shop.com'])
+        ->and($payload['sites'])->toHaveCount(2);
+});
+
+it('compiles redirects, headers, basic auth and site settings', function () {
+    config(['edge.acme_email' => 'ops@example.com']);
+    $site = edge_site($this->sites, $this->org, [$this->web->id]);
+    edge_domain($this->org, $site->id, 'example.com', ['is_primary' => true]);
+    Redirect::query()->create(['site_id' => $site->id, 'from' => '/old', 'to' => '/new', 'status' => 302, 'position' => 2]);
+    Redirect::query()->create(['site_id' => $site->id, 'from' => '/blog/*', 'to' => 'https://blog.example.com', 'status' => 301, 'position' => 1]);
+    Header::query()->create(['site_id' => $site->id, 'name' => 'X-Frame-Options', 'value' => 'DENY']);
+    SecurityRule::query()->create(['site_id' => $site->id, 'path' => '/admin/*', 'username' => 'ops', 'password_hash' => '$2y$10$abc']);
+    SecurityRule::query()->create(['site_id' => $site->id, 'path' => null, 'username' => 'all', 'password_hash' => '$2y$10$def']);
+    SiteSetting::query()->create(['site_id' => $site->id, 'allow_ips' => ['10.0.0.0/8'], 'deny_ips' => ['203.0.113.7'], 'max_body_bytes' => 1048576, 'encode' => false]);
+
+    $payload = edge_compile($this->web->id);
+
+    expect($payload['acme_email'])->toBe('ops@example.com')
+        ->and(edge_entry($payload, strtolower($site->id)))->toMatchArray([
+            'redirects' => [['from' => '/blog/*', 'to' => 'https://blog.example.com', 'status' => 301], ['from' => '/old', 'to' => '/new', 'status' => 302]],
+            'headers' => ['X-Frame-Options' => 'DENY'],
+            'basic_auth' => [['username' => 'all', 'password_hash' => '$2y$10$def'], ['username' => 'ops', 'password_hash' => '$2y$10$abc', 'path' => '/admin/*']],
+            'allow_ips' => ['10.0.0.0/8'],
+            'deny_ips' => ['203.0.113.7'],
+            'max_body_bytes' => 1048576,
+            'encode' => false,
+        ]);
+});
+
+it('load balances through an lb server and serves plain HTTP on the backends', function () {
+    $second = edge_server($this->servers, $this->org, ['privateIpv4' => null, 'ipv4' => '198.51.100.9']);
+    $lb = edge_server($this->servers, $this->org, ['type' => ServerType::LoadBalancer]);
+    $site = edge_site($this->sites, $this->org, [$this->web->id, $second->id], ['testDomain' => 'shop.kiln.test']);
+    edge_domain($this->org, $site->id, 'shop.com', ['is_primary' => true, 'www_redirect' => WwwRedirect::ToWww]);
+    SecurityRule::query()->create(['site_id' => $site->id, 'username' => 'ops', 'password_hash' => '$2y$10$abc']);
+    LoadBalancer::query()->create(['organization_id' => $this->org, 'site_id' => $site->id, 'server_id' => $lb->id, 'policy' => LbPolicy::LeastConn, 'health_uri' => '/up', 'backend_port' => 80, 'weights' => [$this->web->id => 2]]);
+    $id = strtolower($site->id);
+
+    $front = edge_entry(edge_compile($lb->id), $id);
+    expect($front)->toMatchArray([
+        'domains' => ['www.shop.com', 'shop.kiln.test'],
+        'redirect_domains' => ['shop.com'],
+        'tls' => ['mode' => 'acme'],
+        'kind' => 'reverse_proxy',
+        'upstreams' => [['dial' => '10.0.0.2:80'], ['dial' => '10.0.0.2:80'], ['dial' => '198.51.100.9:80']],
+        'lb_policy' => 'least_conn',
+        'health_uri' => '/up',
+        'basic_auth' => [['username' => 'ops', 'password_hash' => '$2y$10$abc']],
+    ]);
+
+    $backend = edge_entry(edge_compile($this->web->id), $id);
+    expect($backend)->toMatchArray(['kind' => 'frankenphp', 'tls' => ['mode' => 'off'], 'domains' => ['www.shop.com', 'shop.kiln.test']])
+        ->and($backend)->not->toHaveKey('basic_auth');
+
+    expect(app(EdgeRoutes::class)->compile($lb->id))->toBe(app(EdgeRoutes::class)->compile($lb->id));
+});
+
+it('compiles all sites of a server in a deterministic order', function () {
+    $a = edge_site($this->sites, $this->org, [$this->web->id], ['id' => '01JZZZZZZZZZZZZZZZZZZZZZZZ']);
+    $b = edge_site($this->sites, $this->org, [$this->web->id], ['id' => '01JAAAAAAAAAAAAAAAAAAAAAAA']);
+    edge_domain($this->org, $a->id, 'a.example.com', ['is_primary' => true]);
+    edge_domain($this->org, $b->id, 'b.example.com', ['is_primary' => true]);
+
+    $payload = edge_compile($this->web->id);
+
+    expect(array_column($payload['sites'], 'id'))->toBe(['01jaaaaaaaaaaaaaaaaaaaaaaa', '01jzzzzzzzzzzzzzzzzzzzzzzz'])
+        ->and(json_encode($payload))->toBe(json_encode(edge_compile($this->web->id)));
+});
+
+it('exposes domains and route ids through the contract', function () {
+    $site = edge_site($this->sites, $this->org, [$this->web->id]);
+    edge_domain($this->org, $site->id, 'b.example.com');
+    edge_domain($this->org, $site->id, 'a.example.com', ['is_primary' => true]);
+
+    $domains = app(EdgeRoutes::class)->domainsFor($site->id);
+
+    expect(array_map(fn ($d) => $d->name, $domains))->toBe(['a.example.com', 'b.example.com'])
+        ->and($domains[0]->primary)->toBeTrue()
+        ->and(app(EdgeRoutes::class)->routeId($site->id))->toBe(strtolower($site->id))
+        ->and(app(SiteDomains::class)->primaryDomains([$site->id]))->toBe([$site->id => 'a.example.com']);
+});

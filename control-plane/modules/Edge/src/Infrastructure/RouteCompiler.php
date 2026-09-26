@@ -1,0 +1,367 @@
+<?php
+
+namespace Kiln\Edge\Infrastructure;
+
+use Kiln\Edge\Contracts\TlsMode;
+use Kiln\Edge\Domain\Enums\InstallStatus;
+use Kiln\Edge\Domain\Models\Certificate;
+use Kiln\Edge\Domain\Models\CertificateInstall;
+use Kiln\Edge\Domain\Models\Domain;
+use Kiln\Edge\Domain\Models\Header;
+use Kiln\Edge\Domain\Models\LoadBalancer;
+use Kiln\Edge\Domain\Models\Redirect;
+use Kiln\Edge\Domain\Models\SecurityRule;
+use Kiln\Edge\Domain\Models\SiteSetting;
+use Kiln\Edge\Domain\Models\Upstream;
+use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\Sites\Contracts\Data\SiteData;
+use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Contracts\SiteRuntime;
+
+/**
+ * Compiles the full edge.caddy.apply payload for one server from every site routed through it:
+ *
+ *  - sites targeting the server ("direct"; "backend" when a load balancer fronts the site — then served
+ *    as plain HTTP on :80 for the LB, which enforces TLS, IP and auth rules),
+ *  - sites load-balanced by the server ("lb": reverse_proxy to the targets).
+ *
+ * Domains of one site are grouped by TLS configuration; the first group keeps the site's stable route id
+ * (see {@see routeId()}), further groups get "<routeId>-<n>". Output is deterministic.
+ */
+final class RouteCompiler
+{
+    public function __construct(
+        private readonly SiteDirectory $sites,
+        private readonly ServerDirectory $servers,
+        private readonly ?string $acmeEmail = null,
+        private readonly ?string $acmeCa = null,
+        private readonly string $testDomainTls = 'acme',
+    ) {}
+
+    public static function routeId(string $siteId): string
+    {
+        return strtolower($siteId);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function compile(string $serverId): array
+    {
+        $entries = [];
+
+        foreach ($this->routedSites($serverId) as [$site, $role, $balancer]) {
+            array_push($entries, ...$this->siteEntries($site, $serverId, $role, $balancer));
+        }
+
+        usort($entries, fn (array $a, array $b) => strcmp($a['id'], $b['id']));
+
+        return array_filter([
+            'acme_email' => $this->acmeEmail ?: null,
+            'acme_ca' => $this->acmeCa ?: null,
+        ]) + ['sites' => $entries];
+    }
+
+    /**
+     * Server ids whose compiled config depends on the site (its targets and its load balancer).
+     *
+     * @return list<string>
+     */
+    public function serversForSite(string $siteId): array
+    {
+        $site = $this->sites->find($siteId);
+        $ids = $site ? $site->serverIds() : [];
+
+        $lb = LoadBalancer::query()->where('site_id', $siteId)->value('server_id');
+
+        if (is_string($lb)) {
+            $ids[] = $lb;
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * @return list<array{0: SiteData, 1: 'direct'|'backend'|'lb', 2: ?LoadBalancer}>
+     */
+    private function routedSites(string $serverId): array
+    {
+        $routed = [];
+        $balancers = LoadBalancer::query()->get()->keyBy('site_id');
+
+        foreach (LoadBalancer::query()->where('server_id', $serverId)->get() as $balancer) {
+            $site = $this->sites->find($balancer->site_id);
+
+            if ($site && $site->organizationId === $balancer->organization_id) {
+                $routed[$site->id] = [$site, 'lb', $balancer];
+            }
+        }
+
+        foreach ($this->sites->forServer($serverId) as $site) {
+            if (! isset($routed[$site->id])) {
+                $balancer = $balancers->get($site->id);
+                $routed[$site->id] = [$site, $balancer ? 'backend' : 'direct', $balancer];
+            }
+        }
+
+        ksort($routed);
+
+        return array_values($routed);
+    }
+
+    /**
+     * @param  'direct'|'backend'|'lb'  $role
+     * @return list<array<string, mixed>>
+     */
+    private function siteEntries(SiteData $site, string $serverId, string $role, ?LoadBalancer $balancer): array
+    {
+        $base = $role === 'lb' ? $this->balancerHandler($site, $balancer) : $this->siteHandler($site, $serverId);
+
+        if ($base === null) {
+            return [];
+        }
+
+        $groups = $this->domainGroups($site, $serverId, $role);
+
+        if ($groups === []) {
+            return [];
+        }
+
+        $rules = $this->rules($site->id, $role);
+        $routeId = self::routeId($site->id);
+        $entries = [];
+        $n = 0;
+
+        foreach ($groups as $group) {
+            $entry = ['id' => $n === 0 ? $routeId : "{$routeId}-{$n}", 'domains' => $group['domains']];
+
+            if ($group['redirect_domains'] !== []) {
+                $entry['redirect_domains'] = $group['redirect_domains'];
+            }
+
+            $entry['tls'] = $group['tls'];
+            $entries[] = $entry + $base + $rules;
+            $n++;
+        }
+
+        return $entries;
+    }
+
+    /**
+     * Serving block for the site's runtime on one of its targets.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function siteHandler(SiteData $site, string $serverId): ?array
+    {
+        $proxy = function (?string $dial) use ($site): ?array {
+            if ($dial === null) {
+                return null;
+            }
+
+            return array_filter([
+                'kind' => 'reverse_proxy',
+                'upstreams' => [['dial' => $dial]],
+                'health_uri' => $this->path($site->healthCheckPath),
+            ], fn ($v) => $v !== null);
+        };
+
+        $local = $site->appPort ? "127.0.0.1:{$site->appPort}" : null;
+
+        return match ($site->runtime) {
+            SiteRuntime::FrankenPhp => ['kind' => 'frankenphp', 'root' => $site->documentRoot()],
+            SiteRuntime::PhpFpm => $site->fpmSocket() ? ['kind' => 'php_fpm', 'root' => $site->documentRoot(), 'php_fpm_socket' => $site->fpmSocket()] : null,
+            SiteRuntime::Static => ['kind' => 'static', 'root' => $site->documentRoot()],
+            SiteRuntime::Node, SiteRuntime::Bun, SiteRuntime::Deno => $proxy($local),
+            SiteRuntime::Docker, SiteRuntime::Compose => $proxy(
+                Upstream::query()->where('site_id', $site->id)->where('server_id', $serverId)->value('upstream') ?? $local,
+            ),
+        };
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function balancerHandler(SiteData $site, ?LoadBalancer $balancer): ?array
+    {
+        if ($balancer === null) {
+            return null;
+        }
+
+        $upstreams = [];
+
+        foreach ($site->targets as $target) {
+            $server = $this->servers->find($target->serverId);
+            $ip = $server?->privateIpv4 ?: $server?->ipv4;
+
+            if ($ip === null) {
+                continue;
+            }
+
+            $dial = (str_contains($ip, ':') ? "[{$ip}]" : $ip).':'.$balancer->backend_port;
+
+            // The schema has no weights: an upstream listed N times gets N shares of the rotation.
+            for ($i = 0; $i < $balancer->weightFor($target->serverId); $i++) {
+                $upstreams[] = ['dial' => $dial];
+            }
+        }
+
+        if ($upstreams === []) {
+            return null;
+        }
+
+        return array_filter([
+            'kind' => 'reverse_proxy',
+            'upstreams' => $upstreams,
+            'lb_policy' => $balancer->policy->value,
+            'health_uri' => $this->path($balancer->health_uri),
+        ], fn ($v) => $v !== null);
+    }
+
+    /**
+     * @param  'direct'|'backend'|'lb'  $role
+     * @return list<array{domains: list<string>, redirect_domains: list<string>, tls: array<string, mixed>}>
+     */
+    private function domainGroups(SiteData $site, string $serverId, string $role): array
+    {
+        $domains = Domain::query()
+            ->with('dnsCredential')
+            ->where('site_id', $site->id)
+            ->where('organization_id', $site->organizationId)
+            ->orderByDesc('is_primary')
+            ->orderBy('name')
+            ->get();
+
+        $installed = CertificateInstall::query()
+            ->where('server_id', $serverId)
+            ->where('status', InstallStatus::Installed)
+            ->pluck('certificate_id')
+            ->all();
+
+        $groups = [];
+        $seen = [];
+
+        $add = function (string $key, array $tls, string $host, ?string $redirect) use (&$groups, &$seen) {
+            if (isset($seen[$host]) || ($redirect !== null && isset($seen[$redirect]))) {
+                return;
+            }
+
+            $groups[$key] ??= ['domains' => [], 'redirect_domains' => [], 'tls' => $tls];
+            $groups[$key]['domains'][] = $host;
+            $seen[$host] = true;
+
+            if ($redirect !== null) {
+                $groups[$key]['redirect_domains'][] = $redirect;
+                $seen[$redirect] = true;
+            }
+        };
+
+        foreach ($domains as $domain) {
+            $tls = $role === 'backend' ? ['mode' => 'off'] : $this->tls($domain, $installed);
+
+            if ($tls === null) {
+                continue;
+            }
+
+            $add(json_encode($tls, JSON_THROW_ON_ERROR), $tls, $domain->servedHost(), $domain->redirectHost());
+        }
+
+        if ($site->testDomain !== null) {
+            $tls = ['mode' => $role === 'backend' ? 'off' : ($this->testDomainTls === 'internal' ? 'internal' : 'acme')];
+            $add(json_encode($tls, JSON_THROW_ON_ERROR), $tls, strtolower($site->testDomain), null);
+        }
+
+        return array_values($groups);
+    }
+
+    /**
+     * @param  list<string>  $installedCertificates  certificate ids installed on the server
+     * @return array<string, mixed>|null null when the domain cannot be served on this server yet
+     */
+    private function tls(Domain $domain, array $installedCertificates): ?array
+    {
+        return match ($domain->tls_mode) {
+            TlsMode::Auto => $domain->isWildcard() ? null : ['mode' => 'acme'],
+            TlsMode::Internal => ['mode' => 'internal'],
+            TlsMode::Off => ['mode' => 'off'],
+            TlsMode::Custom => $domain->certificate_id !== null && in_array($domain->certificate_id, $installedCertificates, true)
+                ? ['mode' => 'custom', 'cert_name' => $this->certName($domain->certificate_id)]
+                : null,
+            TlsMode::Dns => $domain->dnsCredential
+                ? ['mode' => 'acme', 'dns' => ['provider' => $domain->dnsCredential->provider, 'api_token' => $domain->dnsCredential->api_token]]
+                : null,
+        };
+    }
+
+    private function certName(string $certificateId): string
+    {
+        return (string) Certificate::query()->whereKey($certificateId)->value('name');
+    }
+
+    /**
+     * Redirects, headers, auth and site settings.
+     *
+     * @param  'direct'|'backend'|'lb'  $role
+     * @return array<string, mixed>
+     */
+    private function rules(string $siteId, string $role): array
+    {
+        $rules = [];
+        $settings = SiteSetting::for($siteId);
+        // Behind a load balancer the LB enforces redirects, auth and IP rules (backends only see the LB's IP).
+        $edge = $role !== 'backend';
+
+        $headers = Header::query()->where('site_id', $siteId)->orderBy('name')->pluck('value', 'name')->all();
+
+        if ($headers !== []) {
+            $rules['headers'] = $headers;
+        }
+
+        if ($edge) {
+            $auth = SecurityRule::query()->where('site_id', $siteId)->orderByRaw('path is not null')->orderBy('path')->orderBy('username')->get()
+                ->map(fn (SecurityRule $rule) => array_filter([
+                    'username' => $rule->username,
+                    'password_hash' => $rule->password_hash,
+                    'path' => $rule->path,
+                ], fn ($v) => $v !== null))
+                ->values()
+                ->all();
+
+            if ($auth !== []) {
+                $rules['basic_auth'] = $auth;
+            }
+
+            $redirects = Redirect::query()->where('site_id', $siteId)->orderBy('position')->orderBy('id')->get()
+                ->map(fn (Redirect $redirect) => ['from' => $redirect->from, 'to' => $redirect->to, 'status' => $redirect->status])
+                ->values()
+                ->all();
+
+            if ($redirects !== []) {
+                $rules['redirects'] = $redirects;
+            }
+
+            if ($settings->deny_ips !== []) {
+                $rules['deny_ips'] = array_values($settings->deny_ips);
+            }
+
+            if ($settings->allow_ips !== []) {
+                $rules['allow_ips'] = array_values($settings->allow_ips);
+            }
+        }
+
+        if ($settings->max_body_bytes) {
+            $rules['max_body_bytes'] = $settings->max_body_bytes;
+        }
+
+        if (! $settings->encode) {
+            $rules['encode'] = false;
+        }
+
+        return $rules;
+    }
+
+    private function path(?string $path): ?string
+    {
+        return $path !== null && str_starts_with($path, '/') ? $path : null;
+    }
+}
