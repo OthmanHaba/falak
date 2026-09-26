@@ -1,7 +1,7 @@
 # Integration notes
 
 Cross-team decisions and open wiring, collected while modules were built in parallel.
-Wave 3 (Builds, Deployments, Processes + public API) must honour these.
+All three build waves are merged; the sections below record the resulting contracts, fixes and limits.
 
 ## Identifiers
 - The control plane stores ULIDs **lowercase** (Laravel default). Agent schemas require **uppercase** Crockford ULIDs.
@@ -81,7 +81,36 @@ means the build was cancelled and `kiln-builder` aborts it.
 - `edge.caddy.apply` gained optional `basic_auth[].path` and `tls.dns` (Cloudflare DNS-01) — needs a Caddy/FrankenPHP build with the Cloudflare DNS module on servers.
 - Site pages are extensible via `registerSiteTabs` (Deployments, Processes add tabs).
 
+## Found by the sim E2E (all fixed, with regression tests)
+Real provisioning and deploys on Ubuntu 24.04 (`sim/e2e-deploy.sh`) surfaced these; each is fixed and covered:
+1. A failed live broadcast (Reverb down) aborted provisioning/deployments → all `ShouldBroadcastNow` events are
+   `ShouldRescue`; an architecture test enforces it.
+2. `sshd -t` failed on fresh 24.04 (`/run/sshd` missing) and on hosts without host keys → created / `ssh-keygen -A`.
+3. `systemctl reload ssh` failed when sshd runs on demand; and after an openssh upgrade **nothing listened on :22** →
+   the SSH step now converges "SSH reachable" every run (socket vs service aware).
+4. hostname / swap steps fail inside containers → skipped only when `systemd-detect-virt --container`.
+5. Transient download failures (DNS, truncated bodies, 5xx) failed provisioning → retried with backoff.
+6. FrankenPHP rejects a config whose PHP root doesn't exist, so a never-deployed site took down **every route on the
+   server** → `current` points at a 503 placeholder release until the first deploy.
+7. FrankenPHP resolves the `current` symlink at config load, so a release swap kept serving the **old** release →
+   activation force-reloads the running config.
+8. Health checks verified internal-CA certificates → only publicly trusted (ACME/DNS-01) certificates are verified.
+9. PHP under FrankenPHP (edge user) couldn't read the site `.env` or write `storage/` → edge joins site groups
+   (`SupplementaryGroups=`), writable dirs are recursively group-writable (setgid), confined to the site root.
+10. Node/Bun/Deno sites were never started and servers had no Bun/Deno → `runtime.bun|deno.install` on target
+    preparation; Processes supervises `<slug>.app` (`npm|bun run start` / `deno task start`) on `app_port`.
+Also added for automation: `POST /api/v1/sites`, `POST|GET /api/v1/source-control/connections`, `kiln:admin`.
+
+## Not covered by the E2E yet (unit/feature tested only)
+Docker/Compose runtimes and docker builds on a real BuildKit, database backups/restore to real S3, WireGuard private
+networks, web terminal, recipes, provider APIs (Hetzner/DO/Vultr/Linode/Lightsail), load balancers, DNS-01 wildcard
+certificates, alert delivery to real Slack/Discord/Telegram, the Grafana provisioning API, Deno runtime at runtime.
+
 ## Known limits (accepted for now)
+- Node/Bun/Deno apps receive `PORT`, `KILN_SITE_ID`, `KILN_SERVER_ID` in their process env but not the release /
+  deployment ids (those are only in the release `.env`, which Bun loads but Node/Deno don't by default).
+- A deployment triggered while a site's targets are still preparing fails with "The site has no ready servers"
+  instead of waiting for them.
 - Octane runs on 127.0.0.1:`app_port` (or 8000 + crc32(site id) % 1000); Edge still serves PHP sites directly and does
   not proxy to Octane yet. Octane on php-fpm sites uses `--server=swoole` (needs the extension).
 - Programs of a site that was never deployed crash-loop (no `current/`) and may alert until the first deploy.
