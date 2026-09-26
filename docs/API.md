@@ -74,6 +74,11 @@ Token requests return the token's organization only; session requests every memb
 `show` also returns `deploy_script`, `shared_paths`, `laravel`. `strategy` / `current_release` are contributed by
 Deployments through `Sites\Contracts\SiteResourceExtension`.
 
+### `POST /api/v1/sites` — `sites.create`
+Same body and validation as the web form (`name`, `framework`, `server_ids[]`, optional `leader_server_id`, `runtime`,
+`build_mode`, `source_connection_id` + `repository` + `branch`, `push_to_deploy`, `php_version`, `web_directory`,
+`app_port`, `health_check_path`, …). `201` with the site resource plus `warnings[]` from the git provider; `422` on errors.
+
 ### `GET /api/v1/sites/{site}/env` — `sites.env.view`
 Returns the latest environment version as dotenv (audited as a reveal).
 ```json
@@ -96,6 +101,14 @@ on the last page.
            "message": "boom", "attributes": {"service_name": "laravel", "…": "…"}}],
  "meta": {"cursor": "1790000000000000001"}}
 ```
+
+## Source control
+
+### `GET /api/v1/source-control/connections` — `source_control.view`
+### `POST /api/v1/source-control/connections` — `source_control.manage`
+`{provider: github|gitlab|bitbucket|custom, auth_type: token|basic|none, name?, base_url?, token?, username?, password?}`.
+Tokens are verified against the provider before saving. Credentials are write-only and never returned.
+Custom git uses `auth_type: none` (public URLs) or per-site deploy keys.
 
 ## Deployments
 

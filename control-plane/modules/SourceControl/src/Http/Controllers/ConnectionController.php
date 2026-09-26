@@ -20,6 +20,7 @@ use Kiln\SourceControl\Contracts\ProviderType;
 use Kiln\SourceControl\Contracts\SourceControlGateway;
 use Kiln\SourceControl\Domain\Models\Connection;
 use Kiln\SourceControl\Domain\Models\Push;
+use Kiln\SourceControl\Http\Requests\StoreConnectionRequest;
 use Kiln\SourceControl\Infrastructure\Providers\GitHubAppTokens;
 use Kiln\SourceControl\Infrastructure\Providers\OAuthProviders;
 
@@ -82,50 +83,19 @@ final class ConnectionController extends Controller
         ]);
     }
 
-    public function store(Request $request, CreateConnection $create): RedirectResponse
+    public function store(StoreConnectionRequest $request, CreateConnection $create): RedirectResponse
     {
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, 'source_control.manage');
 
-        $data = $request->validate([
-            'provider' => ['required', Rule::enum(ProviderType::class)],
-            'name' => ['nullable', 'string', 'max:100', Rule::unique('source_control_connections')->where('organization_id', $organizationId)],
-            'auth_type' => ['required', Rule::in(['token', 'basic', 'none'])],
-            'base_url' => ['nullable', 'url:https,http', 'max:255'],
-            'token' => ['required_if:auth_type,token', 'nullable', 'string', 'max:2000'],
-            'username' => ['required_if:auth_type,basic', 'nullable', 'string', 'max:255'],
-            'password' => ['required_if:auth_type,basic', 'nullable', 'string', 'max:2000'],
-        ]);
-
-        $provider = ProviderType::from($data['provider']);
-        $allowed = match ($provider) {
-            ProviderType::GitHub, ProviderType::GitLab => ['token'],
-            ProviderType::Bitbucket => ['basic', 'token'],
-            ProviderType::Custom => ['none'],
-        };
-
-        if (! in_array($data['auth_type'], $allowed, true)) {
-            return back()->withErrors(['auth_type' => "{$provider->label()} connections use: ".implode(', ', $allowed).'.']);
-        }
-
-        if ($provider === ProviderType::Bitbucket && ! empty($data['base_url'])) {
-            return back()->withErrors(['base_url' => 'Bitbucket Server is not supported; use a custom git connection.']);
-        }
-
-        $credentials = match ($data['auth_type']) {
-            'token' => ['token' => $data['token']],
-            'basic' => ['username' => $data['username'], 'password' => $data['password']],
-            default => [],
-        };
-
         $create(
             $organizationId,
             $request->user()?->getAuthIdentifier(),
-            $provider,
-            $data['auth_type'],
-            $credentials,
-            $data['name'] ?? null,
-            $data['base_url'] ?? null,
+            $request->provider(),
+            $request->validated('auth_type'),
+            $request->credentials(),
+            $request->validated('name'),
+            $request->validated('base_url'),
         );
 
         return to_route('source-control.index')->with('success', 'Connected.');

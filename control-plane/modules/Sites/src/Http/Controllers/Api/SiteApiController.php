@@ -12,6 +12,7 @@ use Kiln\Identity\Contracts\CurrentOrganization;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\Sites\Application\Actions\CreateSite;
 use Kiln\Sites\Application\Actions\SaveEnvironment;
 use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Contracts\SiteResourceExtension;
@@ -19,6 +20,7 @@ use Kiln\Sites\Domain\Dotenv;
 use Kiln\Sites\Domain\Models\EnvironmentVersion;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Http\Controllers\PresentsSites;
+use Kiln\Sites\Http\Requests\StoreSiteRequest;
 
 /**
  * Public API (Sanctum tokens; abilities are permission names). Sites are addressed by id or slug.
@@ -43,6 +45,19 @@ final class SiteApiController extends Controller
         $sites = Site::query()->with('targets')->where('organization_id', $organizationId)->orderBy('name')->get();
 
         return response()->json(['data' => $this->resources($sites)]);
+    }
+
+    public function store(StoreSiteRequest $request, CreateSite $create): JsonResponse
+    {
+        $organizationId = $this->organization->requireId();
+        $this->access->authorize($request->user(), $organizationId, 'sites.create');
+
+        $site = $create($organizationId, $request->user()?->getAuthIdentifier(), $request->validated());
+
+        $body = $this->show($request, $site->id)->getData(true);
+        $body['warnings'] = array_values($create->warnings);
+
+        return response()->json($body, 201);
     }
 
     public function show(Request $request, string $site): JsonResponse
