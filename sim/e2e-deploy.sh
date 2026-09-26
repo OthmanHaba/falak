@@ -137,7 +137,7 @@ stage_sites() {
     api POST /source-control/connections '{"provider":"custom","auth_type":"none","name":"sim git"}'
     [[ $API_CODE == 201 ]] && { save GIT_CONNECTION "$(jq -r .data.id <<<"$API_BODY")"; ok "custom git connection created"; } || { bad "connection -> $API_CODE: $API_BODY"; return 1; }
 
-    api POST /sites "{\"name\":\"shop\",\"framework\":\"laravel\",\"runtime\":\"frankenphp\",\"server_ids\":[\"$SERVER_srv_app_1\",\"$SERVER_srv_app_2\"],\"leader_server_id\":\"$SERVER_srv_app_1\",\"source_connection_id\":\"$GIT_CONNECTION\",\"repository\":\"git://sim-git/laravel-demo.git\",\"branch\":\"main\",\"health_check_path\":\"/health\",\"test_domain_enabled\":true}"
+    api POST /sites "{\"name\":\"shop\",\"framework\":\"laravel\",\"runtime\":\"frankenphp\",\"php_version\":\"8.4\",\"server_ids\":[\"$SERVER_srv_app_1\",\"$SERVER_srv_app_2\"],\"leader_server_id\":\"$SERVER_srv_app_1\",\"source_connection_id\":\"$GIT_CONNECTION\",\"repository\":\"git://sim-git/laravel-demo.git\",\"branch\":\"main\",\"health_check_path\":\"/health\",\"test_domain_enabled\":true}"
     if [[ $API_CODE == 201 ]]; then
         save SITE_SHOP "$(jq -r .data.id <<<"$API_BODY")"
         save SHOP_HOST "$(jq -r '.data.test_domain // .data.domains[0].name // .data.domains[0] // "shop.sites.kiln.test"' <<<"$API_BODY")"

@@ -497,6 +497,10 @@ func (p *Provisioner) ssh(ctx context.Context, st commands.Stream, s SSH) (bool,
 	if err := p.d.FS.MkdirAll("/run/sshd", 0o755); err != nil {
 		return false, err
 	}
+	// Minimal images / LXC templates can ship without host keys; -A only creates the missing ones.
+	if err := p.run(ctx, st, "ssh-keygen", "-A"); err != nil {
+		return false, err
+	}
 	if err := p.run(ctx, st, "sshd", "-t"); err != nil {
 		if oldErr != nil {
 			p.d.FS.Remove(sshdDropIn)

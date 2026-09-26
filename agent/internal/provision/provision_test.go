@@ -276,4 +276,9 @@ func TestSSHCreatesPrivilegeSeparationDirBeforeValidating(t *testing.T) {
 	if err != nil || !changed {
 		t.Fatalf("changed=%v err=%v", changed, err)
 	}
+	// Host keys are generated (only missing ones) before sshd validates the config.
+	lines := strings.Join(f.Lines(), "\n")
+	if !strings.Contains(lines, "ssh-keygen -A") || strings.Index(lines, "ssh-keygen -A") > strings.Index(lines, "sshd -t") {
+		t.Fatalf("ssh-keygen -A must run before sshd -t:\n%s", lines)
+	}
 }
