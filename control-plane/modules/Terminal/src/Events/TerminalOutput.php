@@ -21,11 +21,12 @@ final class TerminalOutput implements ShouldBroadcastNow
         public int $part,
         public int $parts,
         public string $data,
+        public int $epoch = 0,
     ) {}
 
     public function broadcastOn(): PresenceChannel
     {
-        return new PresenceChannel("terminal.sessions.{$this->sessionId}");
+        return new PresenceChannel("terminal.sessions.{$this->sessionId}.{$this->epoch}");
     }
 
     public function broadcastAs(): string

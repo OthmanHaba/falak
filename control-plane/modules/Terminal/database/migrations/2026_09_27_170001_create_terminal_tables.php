@@ -23,6 +23,8 @@ return new class extends Migration
             $table->unsignedSmallInteger('initial_rows')->default(24);
             $table->unsignedInteger('idle_timeout_s');
             $table->boolean('shared')->default(false);
+            // Part of the live channel name; rotated on unshare so existing watchers must re-authorize.
+            $table->unsignedInteger('channel_epoch')->default(0);
             $table->timestamp('started_at', 3)->nullable();
             $table->timestamp('last_activity_at', 3)->nullable();
             $table->timestamp('closed_at', 3)->nullable();

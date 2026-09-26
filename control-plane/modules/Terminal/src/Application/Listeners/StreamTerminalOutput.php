@@ -67,7 +67,7 @@ final class StreamTerminalOutput
             }
 
             $bytes += strlen($raw);
-            $this->broadcast($session->id, $seq, $raw);
+            $this->broadcast($session->id, $seq, $raw, $session->channel_epoch);
         }
 
         if ($bytes > 0) {
@@ -81,7 +81,7 @@ final class StreamTerminalOutput
         }
     }
 
-    private function broadcast(string $sessionId, int $seq, string $raw): void
+    private function broadcast(string $sessionId, int $seq, string $raw, int $epoch): void
     {
         // Split on raw-byte boundaries that are multiples of 3 so each part is independently valid base64.
         $maxChars = max(4, (int) config('terminal.broadcast_chunk_bytes', 6000));
@@ -90,7 +90,7 @@ final class StreamTerminalOutput
         $count = count($parts);
 
         foreach ($parts as $index => $part) {
-            TerminalOutput::dispatch($sessionId, $seq, $index, $count, base64_encode($part));
+            TerminalOutput::dispatch($sessionId, $seq, $index, $count, base64_encode($part), $epoch);
         }
     }
 }

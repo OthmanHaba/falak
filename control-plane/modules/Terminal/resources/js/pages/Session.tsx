@@ -165,7 +165,7 @@ export default function Session({ session: initial, isOwner, can }: Props) {
     // ---- live channel ---------------------------------------------------------------------------------
     useEffect(() => {
         const client = echo();
-        const name = `terminal.sessions.${initial.id}`;
+        const name = `terminal.sessions.${initial.id}.${session.channel_epoch}`;
 
         if (!client) {
             void catchUp();
@@ -188,7 +188,7 @@ export default function Session({ session: initial, isOwner, can }: Props) {
         return () => {
             client.leave(name);
         };
-    }, [initial.id, catchUp, writePart]);
+    }, [initial.id, session.channel_epoch, catchUp, writePart]);
 
     // Without Reverb, poll for new frames while the session is live.
     useEffect(() => {
@@ -204,6 +204,8 @@ export default function Session({ session: initial, isOwner, can }: Props) {
     const pendingChars = useRef(0);
     const inFlight = useRef(false);
     const seq = useRef(0);
+    // Per-page input stream: seq restarts at 0 on reload, so keys must not collide with earlier pages.
+    const stream = useRef(crypto.randomUUID());
     const flushTimer = useRef<number | undefined>(undefined);
 
     const flush = useCallback(async () => {
@@ -215,7 +217,7 @@ export default function Session({ session: initial, isOwner, can }: Props) {
         const batch = pending.current.splice(0);
         pendingChars.current = 0;
         inFlight.current = true;
-        const body = { data: encodeInput(batch), seq: seq.current++ };
+        const body = { data: encodeInput(batch), seq: seq.current++, stream: stream.current };
 
         try {
             for (let attempt = 0; attempt < 3; attempt++) {

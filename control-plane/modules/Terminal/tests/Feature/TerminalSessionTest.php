@@ -103,7 +103,7 @@ it('goes live on output, records frames once and relays them', function () {
         ->and(TerminalFrame::query()->where('session_id', $session->id)->pluck('fleet_seq')->all())->toBe([1, 2]);
 
     Event::assertDispatchedTimes(TerminalOutput::class, 2);
-    Event::assertDispatched(TerminalOutput::class, fn (TerminalOutput $e) => $e->seq === 1 && base64_decode($e->data) === "hello\r\n" && $e->broadcastOn()->name === "presence-terminal.sessions.{$session->id}");
+    Event::assertDispatched(TerminalOutput::class, fn (TerminalOutput $e) => $e->seq === 1 && base64_decode($e->data) === "hello\r\n" && $e->broadcastOn()->name === "presence-terminal.sessions.{$session->id}.0");
 });
 
 it('ignores redelivered output events', function () {

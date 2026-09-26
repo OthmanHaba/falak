@@ -26,6 +26,7 @@ trait PresentsSessions
             'cols' => $session->cols,
             'rows' => $session->rows,
             'shared' => $session->shared,
+            'channel_epoch' => $session->channel_epoch,
             'owner' => ['id' => $session->user_id, 'name' => $owner->name ?? 'Unknown'],
             'recording_bytes' => $session->recording_bytes,
             'created_at' => $session->created_at->toIso8601String(),

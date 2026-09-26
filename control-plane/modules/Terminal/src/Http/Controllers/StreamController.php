@@ -26,6 +26,7 @@ final class StreamController extends Controller
         $data = $request->validate([
             'data' => ['required', 'string', 'max:'.(int) ceil(((int) config('terminal.input_max_bytes', 16384)) / 3) * 4],
             'seq' => ['required', 'integer', 'min:0'],
+            'stream' => ['required', 'uuid'],
         ]);
 
         $raw = base64_decode($data['data'], true);
@@ -38,7 +39,7 @@ final class StreamController extends Controller
         abort_unless($session->isLive(), 409, 'The session is closed.');
 
         try {
-            $send($session, $data['data'], (int) $data['seq']);
+            $send($session, $data['data'], (int) $data['seq'], strtolower((string) $data['stream']), (string) $request->user()?->getAuthIdentifier());
         } catch (AgentUnavailable) {
             abort(503, 'The server agent is not connected.');
         }

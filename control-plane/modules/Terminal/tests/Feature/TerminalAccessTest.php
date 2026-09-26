@@ -1,9 +1,12 @@
 <?php
 
+use Illuminate\Support\Facades\Event;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Identity\Domain\Models\AuditEntry;
 use Kiln\Terminal\Domain\Models\TerminalFrame;
+use Kiln\Terminal\Events\TerminalOutput;
+use Kiln\Terminal\Events\TerminalSessionUpdated;
 use Kiln\Terminal\Http\Channels\TerminalSessionChannel;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Support\FakeAgentGateway;
@@ -20,9 +23,11 @@ beforeEach(function () {
     $this->session->refresh();
 });
 
-function terminal_input(string $sessionId, string $bytes, int $seq = 0)
+const TERMINAL_STREAM = '0b7f5e0c-1d2a-4c3b-9e8f-7a6b5c4d3e2f';
+
+function terminal_input(string $sessionId, string $bytes, int $seq = 0, string $stream = TERMINAL_STREAM)
 {
-    return test()->postJson("/terminal/sessions/{$sessionId}/input", ['data' => base64_encode($bytes), 'seq' => $seq]);
+    return test()->postJson("/terminal/sessions/{$sessionId}/input", ['data' => base64_encode($bytes), 'seq' => $seq, 'stream' => $stream]);
 }
 
 it('forwards keystrokes idempotently per sequence number', function () {
@@ -33,14 +38,26 @@ it('forwards keystrokes idempotently per sequence number', function () {
     $inputs = $this->agents->dispatched('terminal.input');
     expect($inputs)->toHaveCount(2)
         ->and($inputs[0]['payload'])->toBe(['session_id' => $this->session->id, 'data' => base64_encode("ls -la\r")])
-        ->and($inputs[0]['handle']->idempotencyKey)->toBe("terminal.input:{$this->session->id}:0")
+        ->and($inputs[0]['handle']->idempotencyKey)->toBe("terminal.input:{$this->session->id}:{$this->owner->id}:".TERMINAL_STREAM.':0')
         ->and($inputs[0]['timeout'])->toBe(30)
-        ->and($inputs[1]['handle']->idempotencyKey)->toBe("terminal.input:{$this->session->id}:1");
+        ->and($inputs[1]['handle']->idempotencyKey)->toBe("terminal.input:{$this->session->id}:{$this->owner->id}:".TERMINAL_STREAM.':1');
+});
+
+it('does not collide input keys across page reloads (new stream, seq restarts)', function () {
+    terminal_input($this->session->id, 'a', 0)->assertNoContent();
+    $this->agents->succeed($this->agents->last('terminal.input')['handle'], ['bytes' => 1]);
+
+    terminal_input($this->session->id, 'b', 0, 'aa1f5e0c-1d2a-4c3b-9e8f-7a6b5c4d3e2f')->assertNoContent();
+
+    $keys = array_map(fn ($c) => $c['handle']->idempotencyKey, $this->agents->dispatched('terminal.input'));
+    expect($keys)->toHaveCount(2)->and($keys[0])->not->toBe($keys[1]);
+
+    test()->postJson("/terminal/sessions/{$this->session->id}/input", ['data' => base64_encode('x'), 'seq' => 0])->assertUnprocessable();
 });
 
 it('validates input batches', function () {
-    $this->postJson("/terminal/sessions/{$this->session->id}/input", ['data' => '***not base64***', 'seq' => 0])->assertUnprocessable();
-    $this->postJson("/terminal/sessions/{$this->session->id}/input", ['data' => base64_encode('x'), 'seq' => -1])->assertUnprocessable();
+    $this->postJson("/terminal/sessions/{$this->session->id}/input", ['data' => '***not base64***', 'seq' => 0, 'stream' => TERMINAL_STREAM])->assertUnprocessable();
+    $this->postJson("/terminal/sessions/{$this->session->id}/input", ['data' => base64_encode('x'), 'seq' => -1, 'stream' => TERMINAL_STREAM])->assertUnprocessable();
     $this->postJson("/terminal/sessions/{$this->session->id}/input", ['seq' => 0])->assertUnprocessable();
 
     config(['terminal.input_max_bytes' => 10]);
@@ -92,6 +109,31 @@ it('lets attachers watch shared sessions but only controllers type', function ()
     // Developers have no terminal permissions at all by default.
     expect($channel->join($watcher, $this->session->id))->toBeFalse();
     $this->actingAs($watcher)->get("/terminal/sessions/{$this->session->id}")->assertNotFound();
+});
+
+it('rotates the live channel on unshare so existing watchers are cut off', function () {
+    Event::fake([TerminalSessionUpdated::class]);
+    [$admin] = memberOf($this->organization, Role::Admin);
+    $channel = app(TerminalSessionChannel::class);
+
+    $this->patch("/terminal/sessions/{$this->session->id}/share", ['shared' => true])->assertRedirect();
+    expect($channel->join($admin, $this->session->id, '0'))->toBeArray();
+
+    $this->patch("/terminal/sessions/{$this->session->id}/share", ['shared' => false])->assertRedirect();
+
+    expect($this->session->refresh()->channel_epoch)->toBe(1)
+        // Old epoch can no longer be joined by anyone; the new one only by the owner.
+        ->and($channel->join($this->owner, $this->session->id, '0'))->toBeFalse()
+        ->and($channel->join($this->owner, $this->session->id, '1'))->toBeArray()
+        ->and($channel->join($admin, $this->session->id, '1'))->toBeFalse();
+
+    Event::assertDispatched(TerminalSessionUpdated::class, fn ($e) => $e->broadcastOn()->name === "presence-terminal.sessions.{$this->session->id}.0" && $e->broadcastWith()['channel_epoch'] === 1 && ! $e->shared);
+    Event::assertDispatched(TerminalSessionUpdated::class, fn ($e) => $e->broadcastOn()->name === "presence-terminal.sessions.{$this->session->id}.1");
+
+    // New output only goes to the new channel.
+    Event::fake([TerminalOutput::class]);
+    $this->agents->emit($this->handle, base64_encode('secret'));
+    Event::assertDispatched(TerminalOutput::class, fn ($e) => $e->broadcastOn()->name === "presence-terminal.sessions.{$this->session->id}.1");
 });
 
 it('lets members with attach but without control watch only', function () {

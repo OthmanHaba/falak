@@ -23,6 +23,7 @@ use Kiln\Terminal\Domain\Enums\SessionStatus;
  * @property int $initial_rows
  * @property int $idle_timeout_s
  * @property bool $shared
+ * @property int $channel_epoch live channel generation (rotated on unshare)
  * @property ?Carbon $started_at agent clock of the first started/output event
  * @property ?Carbon $last_activity_at
  * @property ?Carbon $closed_at
@@ -58,6 +59,7 @@ class TerminalSession extends Model
             'initial_rows' => 'integer',
             'idle_timeout_s' => 'integer',
             'shared' => 'boolean',
+            'channel_epoch' => 'integer',
             'started_at' => 'datetime',
             'last_activity_at' => 'datetime',
             'closed_at' => 'datetime',

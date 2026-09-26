@@ -71,7 +71,10 @@ final class SessionTransitions
         return true;
     }
 
-    public function broadcast(TerminalSession $session): void
+    /**
+     * @param  int|null  $onEpoch  channel generation to announce on (defaults to the current one)
+     */
+    public function broadcast(TerminalSession $session, ?int $onEpoch = null): void
     {
         TerminalSessionUpdated::dispatch(
             $session->id,
@@ -82,6 +85,8 @@ final class SessionTransitions
             $session->cols,
             $session->rows,
             $session->shared,
+            $onEpoch ?? $session->channel_epoch,
+            $session->channel_epoch,
         );
     }
 }

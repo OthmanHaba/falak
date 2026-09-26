@@ -22,11 +22,13 @@ final class TerminalSessionUpdated implements ShouldBroadcastNow
         public int $cols,
         public int $rows,
         public bool $shared,
+        public int $epoch = 0,
+        public ?int $channelEpoch = null,
     ) {}
 
     public function broadcastOn(): PresenceChannel
     {
-        return new PresenceChannel("terminal.sessions.{$this->sessionId}");
+        return new PresenceChannel("terminal.sessions.{$this->sessionId}.{$this->epoch}");
     }
 
     public function broadcastAs(): string
@@ -48,6 +50,7 @@ final class TerminalSessionUpdated implements ShouldBroadcastNow
             'cols' => $this->cols,
             'rows' => $this->rows,
             'shared' => $this->shared,
+            'channel_epoch' => $this->channelEpoch ?? $this->epoch,
         ];
     }
 }

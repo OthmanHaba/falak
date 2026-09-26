@@ -14,6 +14,7 @@ export interface TerminalSessionData {
     cols: number;
     rows: number;
     shared: boolean;
+    channel_epoch: number;
     owner: { id: string; name: string };
     recording_bytes: number;
     created_at: string;
@@ -30,6 +31,7 @@ export interface SessionUpdate {
     cols: number;
     rows: number;
     shared: boolean;
+    channel_epoch: number;
 }
 
 export interface OutputPart {
