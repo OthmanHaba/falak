@@ -1,0 +1,22 @@
+<?php
+
+namespace Kiln\Identity\Application\Console;
+
+use Illuminate\Console\Command;
+use Kiln\Identity\Application\Actions\SyncPermissions;
+
+final class SyncPermissionsCommand extends Command
+{
+    protected $signature = 'identity:permissions:sync';
+
+    protected $description = 'Sync roles and permissions with the modules\' permission registry';
+
+    public function handle(SyncPermissions $sync): int
+    {
+        $result = $sync();
+
+        $this->components->info("Synced {$result['permissions']} permissions across {$result['roles']} roles.");
+
+        return self::SUCCESS;
+    }
+}

@@ -12,6 +12,9 @@ declare global {
 
 const appName = import.meta.env.VITE_APP_NAME || 'Kiln';
 
+// Module extension points (navigation + ⌘K commands). See resources/js/lib/registry.ts.
+import.meta.glob(['./register.ts', '../../modules/*/resources/js/register.ts'], { eager: true });
+
 const pages = import.meta.glob('./pages/**/*.tsx');
 const modulePages = import.meta.glob('../../modules/*/resources/js/pages/**/*.tsx');
 

@@ -1,0 +1,52 @@
+<?php
+
+use Illuminate\Support\Facades\Http;
+use Kiln\Providers\Contracts\Data\MachineSpec;
+use Kiln\Providers\Contracts\Exceptions\ProviderException;
+use Kiln\Providers\Contracts\ProviderType;
+use Kiln\Providers\Infrastructure\AdapterFactory;
+use Kiln\Providers\Infrastructure\Adapters\CustomAdapter;
+use Kiln\Providers\Infrastructure\Adapters\DigitalOceanAdapter;
+use Kiln\Providers\Infrastructure\Adapters\HetznerAdapter;
+use Kiln\Providers\Infrastructure\Adapters\LightsailAdapter;
+use Kiln\Providers\Infrastructure\Adapters\LinodeAdapter;
+use Kiln\Providers\Infrastructure\Adapters\VultrAdapter;
+
+it('builds the adapter for each provider type', function (ProviderType $type, array $credentials, string $class) {
+    $adapter = app(AdapterFactory::class)->make($type, $credentials);
+
+    expect($adapter)->toBeInstanceOf($class)
+        ->and($adapter->type())->toBe($type);
+})->with([
+    [ProviderType::Hetzner, ['token' => 't'], HetznerAdapter::class],
+    [ProviderType::DigitalOcean, ['token' => 't'], DigitalOceanAdapter::class],
+    [ProviderType::Vultr, ['api_key' => 'k'], VultrAdapter::class],
+    [ProviderType::Linode, ['token' => 't'], LinodeAdapter::class],
+    [ProviderType::Aws, ['access_key_id' => 'a', 'secret_access_key' => 's', 'region' => 'us-east-1'], LightsailAdapter::class],
+    [ProviderType::Custom, [], CustomAdapter::class],
+]);
+
+it('rejects missing credential fields', function () {
+    app(AdapterFactory::class)->make(ProviderType::Aws, ['access_key_id' => 'a']);
+})->throws(ProviderException::class, 'Missing credential field [secret_access_key]');
+
+it('uses configured endpoints', function () {
+    config(['providers.endpoints.hetzner' => 'https://hetzner.mock/v1']);
+    Http::fake(['hetzner.mock/*' => Http::response(['locations' => [], 'meta' => ['pagination' => ['next_page' => null]]])]);
+
+    app(AdapterFactory::class)->make(ProviderType::Hetzner, ['token' => 't'])->regions();
+
+    Http::assertSent(fn ($r) => str_starts_with($r->url(), 'https://hetzner.mock/v1/locations'));
+});
+
+it('custom adapter has no catalog and refuses API operations', function () {
+    $adapter = new CustomAdapter;
+    $adapter->verify();
+
+    expect($adapter->regions())->toBe([])
+        ->and($adapter->sizes())->toBe([])
+        ->and($adapter->images())->toBe([])
+        ->and($adapter->getServer('x'))->toBeNull()
+        ->and(fn () => $adapter->createServer(new MachineSpec('a', 'r', 's', 'i')))->toThrow(ProviderException::class, 'install command')
+        ->and(fn () => $adapter->uploadSshKey('a', 'ssh-ed25519 AAAA'))->toThrow(ProviderException::class, 'install command');
+});

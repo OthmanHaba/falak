@@ -17,6 +17,16 @@ const sidebarNavItems: NavItem[] = [
         icon: null,
     },
     {
+        title: 'Two-factor auth',
+        url: '/settings/two-factor',
+        icon: null,
+    },
+    {
+        title: 'API tokens',
+        url: '/settings/api-tokens',
+        icon: null,
+    },
+    {
         title: 'Appearance',
         url: '/settings/appearance',
         icon: null,
@@ -24,7 +34,7 @@ const sidebarNavItems: NavItem[] = [
 ];
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
-    const currentPath = window.location.pathname;
+    const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
 
     return (
         <div className="px-4 py-6">

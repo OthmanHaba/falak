@@ -18,6 +18,9 @@ pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->in('Feature', '../modules/*/tests/Feature');
 
+// Module unit tests may still need the container (e.g. Http::fake, config); they do not touch the database.
+pest()->extend(TestCase::class)->in('../modules/*/tests/Unit');
+
 /*
 |--------------------------------------------------------------------------
 | Expectations
@@ -44,7 +47,4 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
-{
-    // ..
-}
+require_once __DIR__.'/Helpers.php';

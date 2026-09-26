@@ -2,22 +2,21 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-// use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Kiln\Identity\Application\Actions\RegisterUser;
+use Kiln\Identity\Domain\Models\User;
 
 class DatabaseSeeder extends Seeder
 {
     /**
-     * Seed the application's database.
+     * Seed the application's database with a local development account.
      */
-    public function run(): void
+    public function run(RegisterUser $register): void
     {
-        // User::factory(10)->create();
+        if (User::query()->where('email', 'test@example.com')->exists()) {
+            return;
+        }
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        $register('Test User', 'test@example.com', 'password')->markEmailAsVerified();
     }
 }

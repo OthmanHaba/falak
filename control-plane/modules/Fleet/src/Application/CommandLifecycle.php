@@ -1,0 +1,104 @@
+<?php
+
+namespace Kiln\Fleet\Application;
+
+use Illuminate\Support\Carbon;
+use Kiln\Fleet\Contracts\CommandStatus;
+use Kiln\Fleet\Domain\Models\Command;
+use Kiln\Fleet\Events\CommandFailed;
+use Kiln\Fleet\Events\CommandFinished;
+use Kiln\Fleet\Events\CommandOutputReceived;
+
+/**
+ * State transitions of a command. Terminal transitions announce CommandFinished / CommandFailed exactly once
+ * per transition, and broadcast the new status to live viewers.
+ */
+final class CommandLifecycle
+{
+    public function markStarted(Command $command, ?Carbon $at = null): void
+    {
+        if (! in_array($command->status, [CommandStatus::Queued, CommandStatus::Delivered], true)) {
+            return;
+        }
+
+        $command->forceFill([
+            'status' => CommandStatus::Running,
+            'started_at' => $at ?? now(),
+            'delivered_at' => $command->delivered_at ?? now(),
+        ])->save();
+    }
+
+    /**
+     * Record the agent's `finished` event. A late result may override a control-plane-inferred timeout.
+     *
+     * @param  array<string, mixed>|null  $result
+     */
+    public function finish(Command $command, ?int $exitCode, ?array $result, ?string $error, ?Carbon $at = null): void
+    {
+        if ($command->status->isTerminal() && $command->status !== CommandStatus::TimedOut) {
+            return;
+        }
+
+        $succeeded = ($exitCode ?? 0) === 0 && ($error === null || $error === '');
+
+        $command->forceFill([
+            'status' => $succeeded ? CommandStatus::Succeeded : CommandStatus::Failed,
+            'exit_code' => $exitCode,
+            'result' => $result,
+            'error' => $error,
+            'started_at' => $command->started_at ?? $at ?? now(),
+            'finished_at' => $at ?? now(),
+        ])->save();
+
+        $this->announce($command);
+    }
+
+    /**
+     * Control-plane-side failure (timeout, cancellation, undeliverable, agent revoked).
+     */
+    public function fail(Command $command, CommandStatus $status, string $error): void
+    {
+        if ($command->status->isTerminal()) {
+            return;
+        }
+
+        $command->forceFill([
+            'status' => $status,
+            'error' => $error,
+            'finished_at' => now(),
+        ])->save();
+
+        $this->announce($command);
+    }
+
+    private function announce(Command $command): void
+    {
+        CommandOutputReceived::dispatch($command->id, $command->server_id, $command->status->value, []);
+
+        if ($command->status === CommandStatus::Succeeded) {
+            CommandFinished::dispatch(
+                $command->id,
+                $command->organization_id,
+                $command->server_id,
+                $command->type,
+                $command->idempotency_key,
+                $command->exit_code,
+                $command->result,
+            );
+
+            return;
+        }
+
+        CommandFailed::dispatch(
+            $command->id,
+            $command->organization_id,
+            $command->server_id,
+            $command->type,
+            $command->idempotency_key,
+            $command->status->value,
+            $command->error,
+            $command->exit_code,
+            $command->result,
+        );
+    }
+}

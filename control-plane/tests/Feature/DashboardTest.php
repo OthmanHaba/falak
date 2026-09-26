@@ -2,8 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Kiln\Identity\Domain\Models\User;
 use Tests\TestCase;
 
 class DashboardTest extends TestCase

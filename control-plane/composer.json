@@ -17,6 +17,7 @@
         "laravel/reverb": "^1.12",
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^2.10.1",
+        "opis/json-schema": "^2.6",
         "phpseclib/phpseclib": "^3.0",
         "spatie/laravel-permission": "^8.3",
         "tightenco/ziggy": "^2.4"
@@ -53,7 +54,11 @@
             "Kiln\\Telemetry\\": "modules/Telemetry/src/",
             "Kiln\\Insights\\": "modules/Insights/src/",
             "Kiln\\Alerting\\": "modules/Alerting/src/",
-            "Kiln\\Terminal\\": "modules/Terminal/src/"
+            "Kiln\\Terminal\\": "modules/Terminal/src/",
+            "Kiln\\Identity\\Database\\Factories\\": "modules/Identity/database/factories/",
+            "Kiln\\Providers\\Database\\Factories\\": "modules/Providers/database/factories/",
+            "Kiln\\Fleet\\Database\\Factories\\": "modules/Fleet/database/factories/",
+            "Kiln\\Servers\\Database\\Factories\\": "modules/Servers/database/factories/"
         }
     },
     "autoload-dev": {
