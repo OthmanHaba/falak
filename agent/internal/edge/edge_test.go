@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -25,9 +26,10 @@ import (
 
 // fakeCaddy implements /load, GET /config/, PATCH /id/<id>/<field>.
 type fakeCaddy struct {
-	mu    sync.Mutex
-	cfg   any
-	loads int
+	mu           sync.Mutex
+	cfg          any
+	loads        int
+	cacheControl string // of the last /load
 }
 
 func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -43,6 +45,7 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.cfg = v
 		f.loads++
+		f.cacheControl = r.Header.Get("Cache-Control")
 	case r.Method == "GET" && r.URL.Path == "/config/":
 		_ = json.NewEncoder(w).Encode(f.cfg)
 	case r.Method == "PATCH" && strings.HasPrefix(r.URL.Path, "/id/"):
@@ -285,4 +288,47 @@ func TestRenderDNSChallenge(t *testing.T) {
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+func TestApplyServesPlaceholderUntilFirstDeployAndKeepsRealCurrent(t *testing.T) {
+	m, fc, fs := setup(t)
+	// "legacy" was already deployed: its current link must be left alone.
+	if err := fs.MkdirAll("/srv/kiln/sites/legacy/releases/01J9ZT8K3M4N5P6Q7R8S9T0V1W/public", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("releases/01J9ZT8K3M4N5P6Q7R8S9T0V1W", fs.P("/srv/kiln/sites/legacy/current")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Apply(context.Background(), payload, stream()); err != nil || fc.loads != 1 {
+		t.Fatalf("apply: %v loads=%d", err, fc.loads)
+	}
+
+	link, err := os.Readlink(fs.P("/srv/kiln/sites/shop/current"))
+	if err != nil || link != filepath.Join("releases", PlaceholderRelease) {
+		t.Fatalf("shop current -> %q (%v)", link, err)
+	}
+	page, err := fs.ReadFile("/srv/kiln/sites/shop/current/public/index.php")
+	if err != nil || !strings.Contains(string(page), "503") {
+		t.Fatalf("placeholder page: %v %q", err, page)
+	}
+	if link, _ := os.Readlink(fs.P("/srv/kiln/sites/legacy/current")); link != "releases/01J9ZT8K3M4N5P6Q7R8S9T0V1W" {
+		t.Fatalf("deployed site's current was replaced: %q", link)
+	}
+	if _, err := os.Stat(fs.P("/srv/static")); !os.IsNotExist(err) {
+		t.Fatal("static sites need no placeholder")
+	}
+}
+
+func TestReloadFrankenPHPForceReloadsTheRunningConfig(t *testing.T) {
+	m, fc, _ := setup(t)
+	if _, err := m.Apply(context.Background(), payload, stream()); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.o.Client.ReloadFrankenPHP(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// Caddy ignores an identical /load unless asked to revalidate; that re-resolves `current`.
+	if fc.loads != 2 || fc.cacheControl != "must-revalidate" {
+		t.Fatalf("loads=%d cache-control=%q", fc.loads, fc.cacheControl)
+	}
 }

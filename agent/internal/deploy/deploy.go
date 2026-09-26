@@ -38,7 +38,7 @@ type ProcRestarter interface {
 
 // WorkerRestarter restarts FrankenPHP worker scripts (implemented by edge.Client).
 type WorkerRestarter interface {
-	RestartFrankenPHPWorkers(ctx context.Context) error
+	ReloadFrankenPHP(ctx context.Context) error
 }
 
 // Options for the Deployer.

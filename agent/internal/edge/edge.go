@@ -12,10 +12,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/user"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -37,7 +40,7 @@ func (c *Client) hc() *http.Client {
 	return &http.Client{Timeout: 60 * time.Second}
 }
 
-func (c *Client) req(ctx context.Context, method, p string, body []byte) ([]byte, error) {
+func (c *Client) req(ctx context.Context, method, p string, body []byte, headers ...string) ([]byte, error) {
 	var rd io.Reader
 	if body != nil {
 		rd = bytes.NewReader(body)
@@ -51,6 +54,9 @@ func (c *Client) req(ctx context.Context, method, p string, body []byte) ([]byte
 	}
 	// Caddy's admin API enforces origin checks; a matching Origin keeps requests accepted.
 	r.Header.Set("Origin", strings.TrimRight(c.Base, "/"))
+	for i := 0; i+1 < len(headers); i += 2 {
+		r.Header.Set(headers[i], headers[i+1])
+	}
 	resp, err := c.hc().Do(r)
 	if err != nil {
 		return nil, err
@@ -86,9 +92,20 @@ func (c *Client) SetUpstreams(ctx context.Context, routeID string, dials []strin
 	return err
 }
 
-// RestartFrankenPHPWorkers asks FrankenPHP to gracefully restart worker scripts (after a deploy).
-func (c *Client) RestartFrankenPHPWorkers(ctx context.Context) error {
-	_, err := c.req(ctx, http.MethodPost, "/frankenphp/workers/restart", nil)
+// ReloadFrankenPHP makes a freshly activated release live. FrankenPHP resolves a site's root symlink
+// (current -> releases/<id>) when its php handler is provisioned, not per request, so the running
+// config is force-reloaded (Caddy skips identical configs unless told to revalidate); that also
+// restarts worker scripts gracefully.
+func (c *Client) ReloadFrankenPHP(ctx context.Context) error {
+	cfg, err := c.Config(ctx)
+	if err != nil {
+		return err
+	}
+	if t := bytes.TrimSpace(cfg); len(t) == 0 || bytes.Equal(t, []byte("null")) {
+		_, err = c.req(ctx, http.MethodPost, "/frankenphp/workers/restart", nil)
+		return err
+	}
+	_, err = c.req(ctx, http.MethodPost, "/load", cfg, "Cache-Control", "must-revalidate")
 	return err
 }
 
@@ -155,6 +172,9 @@ func (m *Manager) Apply(ctx context.Context, p Payload, s commands.Stream) (any,
 	} else {
 		return nil, fmt.Errorf("caddy admin API unreachable: %w", err)
 	}
+	if err := m.ensureRoots(p, s); err != nil {
+		return nil, err
+	}
 	if err := m.o.Client.Load(ctx, want); err != nil {
 		return nil, err
 	}
@@ -162,6 +182,51 @@ func (m *Manager) Apply(ctx context.Context, p Payload, s commands.Stream) (any,
 	res.Changed = true
 	_, err = m.persist(want)
 	return res, err
+}
+
+// PlaceholderRelease is the release `current` points at until a site's first deploy. It is not a ULID,
+// so deploy's release listing, pruning and rollback never treat it as a release.
+const PlaceholderRelease = ".kiln-placeholder"
+
+const placeholderPage = `<?php
+http_response_code(503);
+header('Retry-After: 30');
+echo "This site has not been deployed yet.\n";
+`
+
+// ensureRoots makes every PHP site's document root resolvable before loading: FrankenPHP (and the
+// fastcgi transport with resolve_root_symlink) refuse a config whose root does not exist, which before
+// a site's first deploy would take every route on the server down. `current` is pointed at a
+// placeholder release that answers 503 until the first real release is activated.
+func (m *Manager) ensureRoots(p Payload, s commands.Stream) error {
+	for _, site := range p.Sites {
+		if site.Root == "" || (site.Kind != "frankenphp" && site.Kind != "php_fpm" && site.Kind != "php-fpm") {
+			continue
+		}
+		if _, err := os.Stat(m.o.FS.P(site.Root)); err == nil {
+			continue
+		}
+		base, rest, ok := strings.Cut(site.Root, "/current")
+		if !ok || (rest != "" && !strings.HasPrefix(rest, "/")) {
+			if err := m.o.FS.MkdirAll(site.Root, 0o755); err != nil {
+				return err
+			}
+			continue
+		}
+		current := base + "/current"
+		if _, err := os.Lstat(m.o.FS.P(current)); err == nil {
+			continue // a real (possibly broken) current link belongs to deploy; never replace it
+		}
+		release := base + "/releases/" + PlaceholderRelease
+		if _, err := m.o.FS.WriteFile(release+rest+"/index.php", []byte(placeholderPage), 0o644); err != nil {
+			return err
+		}
+		if err := os.Symlink(filepath.Join("releases", PlaceholderRelease), m.o.FS.P(current)); err != nil && !errors.Is(err, fs.ErrExist) {
+			return err
+		}
+		fmt.Fprintf(s.Stdout(), "%s: not deployed yet, serving a placeholder\n", site.ID)
+	}
+	return nil
 }
 
 // PersistRunning snapshots the live config into bootstrap.json (after out-of-band PATCHes).

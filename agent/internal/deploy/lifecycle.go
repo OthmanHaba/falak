@@ -514,7 +514,7 @@ func (d *Deployer) reload(ctx context.Context, rs []Reload, s commands.Stream) e
 				err = errors.New("edge client unavailable")
 				break
 			}
-			err = d.o.Workers.RestartFrankenPHPWorkers(ctx)
+			err = d.o.Workers.ReloadFrankenPHP(ctx)
 		default:
 			err = fmt.Errorf("unknown reload kind %q", r.Kind)
 		}

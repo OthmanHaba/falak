@@ -286,8 +286,10 @@ func siteRoutes(s Site) ([]any, error) {
 	return out, nil
 }
 
-// phpRoutes mirrors Caddy's php_fastcgi / FrankenPHP php_server expansion. resolve_root_symlink makes
-// the `current` symlink resolve per request, so an atomic release swap takes effect immediately.
+// phpRoutes mirrors Caddy's php_fastcgi / FrankenPHP php_server expansion. With resolve_root_symlink the
+// fastcgi transport resolves `current` per request, but FrankenPHP resolves it when the handler is
+// provisioned: deploy.activate therefore force-reloads the config (Client.ReloadFrankenPHP), and
+// Manager.ensureRoots gives never-deployed sites a placeholder release so the config always loads.
 func phpRoutes(s Site) []any {
 	tryFiles := obj{"file": obj{"try_files": []any{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"}, "split_path": []any{".php"}, "root": s.Root}}
 	var phpHandler obj
