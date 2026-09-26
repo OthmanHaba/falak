@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Support\Facades\Http;
+use Kiln\Deployments\Application\Actions\TriggerDeployment;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\Trigger;
 use Kiln\Deployments\Domain\Models\Deployment;
@@ -146,7 +148,7 @@ it('updates deploy settings and validates the strategy against the runtime', fun
         ->where('hookUrl', fn ($url) => str_contains((string) $url, '/api/deploy/'))
         ->has('strategies', 4));
 
-    $this->put("/sites/{$world->site->id}/deploy-settings/push-to-deploy", ["enabled" => true])->assertRedirect()->assertSessionHasNoErrors();
+    $this->put("/sites/{$world->site->id}/deploy-settings/push-to-deploy", ['enabled' => true])->assertRedirect()->assertSessionHasNoErrors();
     expect($world->site->refresh()->push_to_deploy)->toBeTrue();
 });
 
@@ -158,12 +160,12 @@ it('uses the configured health check path, status and domain', function () {
         'health_status' => 200, 'health_timeout_s' => 5, 'health_retries' => 1, 'health_retry_delay_s' => 0,
     ]);
 
-    $deployment = app(\Kiln\Deployments\Application\Actions\TriggerDeployment::class)(app(SiteDirectory::class)->find($world->site->id), Trigger::Manual);
+    $deployment = app(TriggerDeployment::class)(app(SiteDirectory::class)->find($world->site->id), Trigger::Manual);
     $world->builds->succeed();
     deploy_run_all($world->agents);
 
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded);
-    Illuminate\Support\Facades\Http::assertSent(fn ($request) => $request->url() === 'https://shop.example.com/healthz');
+    Http::assertSent(fn ($request) => $request->url() === 'https://shop.example.com/healthz');
 });
 
 it('skips the health check and restart when disabled or without programs', function () {
@@ -171,19 +173,19 @@ it('skips the health check and restart when disabled or without programs', funct
     $world->processes->noPrograms = true;
     SiteSettings::for(app(SiteDirectory::class)->find($world->site->id))->forceFill(['health_enabled' => false])->save();
 
-    $deployment = app(\Kiln\Deployments\Application\Actions\TriggerDeployment::class)(app(SiteDirectory::class)->find($world->site->id), Trigger::Manual);
+    $deployment = app(TriggerDeployment::class)(app(SiteDirectory::class)->find($world->site->id), Trigger::Manual);
     $world->builds->succeed();
     deploy_run_all($world->agents);
 
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
         ->and($world->agents->dispatched('proc.restart'))->toBe([])
         ->and($world->processes->restarts)->toBe([['site' => $world->site->id, 'server' => $world->servers[0]->id]]);
-    Illuminate\Support\Facades\Http::assertNothingSent();
+    Http::assertNothingSent();
 });
 
 it('fails fast when the site cannot be deployed', function () {
     $world = deploy_world(site: ['deploy_script' => "\$KILN_ACTIVATE\n\$KILN_FETCH\n"]);
-    $deployment = app(\Kiln\Deployments\Application\Actions\TriggerDeployment::class)(app(SiteDirectory::class)->find($world->site->id), Trigger::Manual);
+    $deployment = app(TriggerDeployment::class)(app(SiteDirectory::class)->find($world->site->id), Trigger::Manual);
 
     expect($deployment->status)->toBe(DeploymentStatus::Failed)
         ->and($deployment->error)->toContain('must come before');

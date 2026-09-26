@@ -51,7 +51,7 @@ final class BuildEventsController extends Controller
             $event = json_decode($line, true);
 
             if (! is_array($event) || ! is_int($event['seq'] ?? null) || $event['seq'] < 0 || ! in_array($event['kind'] ?? null, self::KINDS, true) || ! is_string($event['at'] ?? null)) {
-                return response()->json(['message' => "Invalid event on line ".($index + 1).'.', 'errors' => ['events' => ['Each line must be an event.schema.json object.']]], 422);
+                return response()->json(['message' => 'Invalid event on line '.($index + 1).'.', 'errors' => ['events' => ['Each line must be an event.schema.json object.']]], 422);
             }
 
             if (isset($event['command_id']) && strtolower((string) $event['command_id']) !== $model->id) {

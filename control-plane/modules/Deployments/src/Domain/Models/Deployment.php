@@ -2,6 +2,7 @@
 
 namespace Kiln\Deployments\Domain\Models;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -40,8 +41,8 @@ use Kiln\Deployments\Domain\Enums\Trigger;
  * @property ?Carbon $started_at
  * @property ?Carbon $finished_at
  * @property Carbon $created_at
- * @property \Illuminate\Database\Eloquent\Collection<int, DeploymentTarget> $targets
- * @property \Illuminate\Database\Eloquent\Collection<int, DeploymentStep> $steps
+ * @property Collection<int, DeploymentTarget> $targets
+ * @property Collection<int, DeploymentStep> $steps
  */
 class Deployment extends Model
 {

@@ -1,8 +1,12 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Kiln\Builds\Application\Actions\CreateExternalBuilder;
+use Kiln\Builds\Application\Artifacts\ArtifactStorage;
+use Kiln\Builds\Application\BuildProgress;
+use Kiln\Builds\Application\JobPayload;
 use Kiln\Builds\Application\Jobs\ExpireBuilds;
 use Kiln\Builds\Application\Jobs\PruneArtifacts;
 use Kiln\Builds\Contracts\BuildService;
@@ -19,6 +23,7 @@ use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\Trigger;
 use Kiln\Deployments\Domain\Models\OutputLine;
 use Kiln\Identity\Contracts\Role;
+use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Events\ServerProvisioned;
 use Kiln\Sites\Contracts\SiteDirectory;
 
@@ -34,10 +39,10 @@ beforeEach(function () {
         'builds.registry.username' => 'kiln',
         'builds.registry.password' => 'registry-secret',
     ]);
-    app()->forgetInstance(\Kiln\Builds\Application\Artifacts\ArtifactStorage::class);
+    app()->forgetInstance(ArtifactStorage::class);
 });
 
-afterEach(fn () => Illuminate\Support\Facades\File::deleteDirectory($this->artifacts));
+afterEach(fn () => File::deleteDirectory($this->artifacts));
 
 /**
  * A deploy world whose BuildService is the real Builds module.
@@ -229,7 +234,7 @@ it('only hands organization builders their own builds and respects modes', funct
 it('reuses an identical successful build instead of rebuilding', function () {
     $world = builds_world();
     $first = request_build($world);
-    $key = Kiln\Builds\Application\JobPayload::artifactKey($first);
+    $key = JobPayload::artifactKey($first);
     $first->forceFill(['status' => BuildStatus::Succeeded, 'artifact_key' => $key, 'artifact_sha256' => str_repeat('a', 64), 'artifact_size' => 1])->save();
 
     $again = app(BuildService::class)->request(new BuildRequest($world->site->id, str_repeat('A', 40), 'main', 'dep-2'));
@@ -248,14 +253,14 @@ it('requeues builds whose builder died and expires stuck builds', function () {
     $stale = request_build($world, str_repeat('c', 40));
     $stale->forceFill(['created_at' => now()->subHours(2)])->save();
 
-    (new ExpireBuilds)->handle(app(\Kiln\Builds\Application\BuildProgress::class));
+    (new ExpireBuilds)->handle(app(BuildProgress::class));
 
     expect($orphan->refresh()->status)->toBe(BuildStatus::Queued)->and($orphan->builder_id)->toBeNull()
         ->and($stale->refresh()->status)->toBe(BuildStatus::Failed);
 
     next_job();
     $orphan->refresh()->forceFill(['status' => BuildStatus::Running, 'started_at' => now()->subHours(2)])->save();
-    (new ExpireBuilds)->handle(app(\Kiln\Builds\Application\BuildProgress::class));
+    (new ExpireBuilds)->handle(app(BuildProgress::class));
     expect($orphan->refresh()->status)->toBe(BuildStatus::TimedOut);
 });
 
@@ -266,14 +271,14 @@ it('prunes artifacts beyond the per-site retention', function () {
 
     foreach (range(1, 3) as $i) {
         $build = request_build($world, str_repeat((string) $i, 40));
-        $key = Kiln\Builds\Application\JobPayload::artifactKey($build);
+        $key = JobPayload::artifactKey($build);
         @mkdir(dirname("{$this->artifacts}/{$key}"), 0777, true);
         file_put_contents("{$this->artifacts}/{$key}", "artifact {$i}");
         $build->forceFill(['status' => BuildStatus::Succeeded, 'artifact_key' => $key, 'artifact_sha256' => str_repeat('a', 64), 'created_at' => now()->subMinutes(10 - $i)])->save();
         $builds[] = $build;
     }
 
-    (new PruneArtifacts)->handle(app(\Kiln\Builds\Application\Artifacts\ArtifactStorage::class));
+    (new PruneArtifacts)->handle(app(ArtifactStorage::class));
 
     expect($builds[0]->refresh()->artifact_pruned_at)->not->toBeNull()
         ->and(is_file("{$this->artifacts}/{$builds[0]->artifact_key}"))->toBeFalse()
@@ -284,7 +289,7 @@ it('prunes artifacts beyond the per-site retention', function () {
 
 it('installs kiln-builder on builder servers when they finish provisioning', function () {
     $world = builds_world();
-    $server = sites_server($world->organization->id, ['type' => Kiln\Servers\Contracts\ServerType::Builder, 'name' => 'builder-1']);
+    $server = sites_server($world->organization->id, ['type' => ServerType::Builder, 'name' => 'builder-1']);
 
     ServerProvisioned::dispatch($server->id, $world->organization->id, 'builder', 'builder-1');
 

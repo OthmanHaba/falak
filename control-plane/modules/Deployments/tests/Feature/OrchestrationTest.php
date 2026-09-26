@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
 use Kiln\Deployments\Application\Jobs\ReconcileDeployments;
+use Kiln\Deployments\Application\Orchestration\DeploymentQueue;
+use Kiln\Deployments\Application\Orchestration\Orchestrator;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\ReleaseStatus;
 use Kiln\Deployments\Domain\Enums\Trigger;
@@ -17,7 +19,9 @@ use Kiln\Deployments\Events\DeploymentRolledBack;
 use Kiln\Deployments\Events\DeploymentStarted;
 use Kiln\Deployments\Events\DeploymentSucceeded;
 use Kiln\Deployments\Events\ReleaseActivated;
+use Kiln\Fleet\Contracts\CommandStatus;
 use Kiln\Fleet\Events\CommandFinished;
+use Kiln\Fleet\Events\CommandOutputReceived;
 use Kiln\Sites\Contracts\SiteDirectory;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -455,11 +459,11 @@ it('resumes a deployment whose command events were lost', function () {
 
     // The agent finished the hook but the event never reached the listener.
     $hook = $world->agents->last('deploy.hook');
-    $world->agents->commands[$hook['handle']->id]['status'] = \Kiln\Fleet\Contracts\CommandStatus::Succeeded;
+    $world->agents->commands[$hook['handle']->id]['status'] = CommandStatus::Succeeded;
     $world->agents->commands[$hook['handle']->id]['result'] = ['exit_code' => 0];
     DeploymentStep::query()->where('command_id', $hook['handle']->id)->update(['updated_at' => now()->subMinutes(10)]);
 
-    (new ReconcileDeployments)->handle(app(\Kiln\Deployments\Application\Orchestration\Orchestrator::class), app(\Kiln\Deployments\Application\Orchestration\DeploymentQueue::class));
+    (new ReconcileDeployments)->handle(app(Orchestrator::class), app(DeploymentQueue::class));
 
     expect($world->agents->dispatched('deploy.fetch'))->toHaveCount(1)
         ->and($deployment->refresh()->status)->toBe(DeploymentStatus::Deploying);
@@ -472,7 +476,7 @@ it('records agent output per server and phase', function () {
     $hook = $world->agents->last('deploy.hook');
     $world->agents->emit($hook['handle'], ["before fetch\n", "second\n"]);
     // At-least-once ingestion: the same seq again must not duplicate the line.
-    \Kiln\Fleet\Events\CommandOutputReceived::dispatch($hook['handle']->id, $hook['handle']->serverId, 'running', [
+    CommandOutputReceived::dispatch($hook['handle']->id, $hook['handle']->serverId, 'running', [
         ['seq' => 1, 'kind' => 'output', 'stream' => 'stdout', 'data' => "before fetch\n", 'progress' => null, 'at' => now()->toIso8601ZuluString()],
     ]);
 
