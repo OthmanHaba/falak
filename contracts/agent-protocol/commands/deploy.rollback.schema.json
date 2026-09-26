@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/deploy.rollback.schema.json",
+  "title": "deploy.rollback — point `current` at an earlier release",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "site"
+  ],
+  "properties": {
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Site slug (directory name under /srv/kiln/sites)"
+    },
+    "sites_root": {
+      "allOf": [
+        {
+          "type": "string",
+          "pattern": "^/"
+        }
+      ],
+      "default": "/srv/kiln/sites"
+    },
+    "release_id": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Target; default = newest release older than current"
+    },
+    "reload": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "php_fpm",
+              "systemd",
+              "proc",
+              "frankenphp"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "description": "php version, unit name, or proc program name"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "to_release_id"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "from_release_id": {
+          "type": "string"
+        },
+        "to_release_id": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

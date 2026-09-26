@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/proc.status.schema.json",
+  "title": "proc.status — report supervised process state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "names": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processes"
+      ],
+      "properties": {
+        "processes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "instance",
+              "state"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "instance": {
+                "type": "integer"
+              },
+              "pid": {
+                "type": "integer"
+              },
+              "state": {
+                "enum": [
+                  "starting",
+                  "running",
+                  "backoff",
+                  "stopping",
+                  "stopped",
+                  "exited",
+                  "fatal"
+                ]
+              },
+              "restarts": {
+                "type": "integer"
+              },
+              "started_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "last_exit_code": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

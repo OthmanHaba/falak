@@ -1,0 +1,207 @@
+// Package facts collects host facts (contracts/agent-protocol/facts.schema.json).
+package facts
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"net"
+	"os"
+	goruntime "runtime"
+	"sort"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/kiln/agent/internal/hostfs"
+	"github.com/kiln/agent/internal/runner"
+)
+
+// OS identifies the distribution.
+type OS struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+}
+
+// Facts mirrors facts.schema.json.
+type Facts struct {
+	Hostname     string              `json:"hostname"`
+	OS           OS                  `json:"os"`
+	Arch         string              `json:"arch"`
+	Kernel       string              `json:"kernel,omitempty"`
+	CPUs         int                 `json:"cpus"`
+	MemoryBytes  int64               `json:"memory_bytes"`
+	DiskBytes    int64               `json:"disk_bytes"`
+	PublicIPv4   *string             `json:"public_ipv4"`
+	PrivateIPv4  *string             `json:"private_ipv4"`
+	Docker       *string             `json:"docker"`
+	Runtimes     map[string][]string `json:"runtimes"`
+	AgentVersion string              `json:"agent_version"`
+}
+
+// Interfaces is overridable in tests.
+var Interfaces = net.InterfaceAddrs
+
+// Collect gathers facts. Missing sources degrade to zero values rather than failing.
+func Collect(ctx context.Context, r runner.Runner, fs hostfs.FS, agentVersion string) (Facts, error) {
+	f := Facts{Arch: goruntime.GOARCH, CPUs: goruntime.NumCPU(), AgentVersion: agentVersion, Runtimes: map[string][]string{}}
+	if b, err := fs.ReadFile("/etc/hostname"); err == nil && strings.TrimSpace(string(b)) != "" {
+		f.Hostname = strings.TrimSpace(string(b))
+	} else {
+		f.Hostname, _ = os.Hostname()
+	}
+	if b, err := fs.ReadFile("/etc/os-release"); err == nil {
+		kv := ParseOSRelease(b)
+		f.OS = OS{ID: kv["ID"], Version: kv["VERSION_ID"]}
+	} else {
+		f.OS = OS{ID: goruntime.GOOS, Version: ""}
+	}
+	if b, err := fs.ReadFile("/proc/sys/kernel/osrelease"); err == nil {
+		f.Kernel = strings.TrimSpace(string(b))
+	}
+	if b, err := fs.ReadFile("/proc/meminfo"); err == nil {
+		f.MemoryBytes = MeminfoKB(b, "MemTotal") * 1024
+	}
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(fs.P("/"), &st); err == nil {
+		f.DiskBytes = int64(st.Blocks) * int64(st.Bsize)
+	}
+	f.PublicIPv4, f.PrivateIPv4 = ipv4s()
+	if r != nil {
+		cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		res, err := r.Run(cctx, runner.Cmd{Name: "docker", Args: []string{"version", "--format", "{{.Server.Version}}"}})
+		cancel()
+		if err == nil && res.ExitCode == 0 {
+			if v := strings.TrimSpace(string(res.Stdout)); v != "" {
+				f.Docker = &v
+			}
+		}
+		if fs.Exists("/usr/local/bin/frankenphp") {
+			cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			res, err := r.Run(cctx, runner.Cmd{Name: fs.P("/usr/local/bin/frankenphp"), Args: []string{"version"}})
+			cancel()
+			if err == nil && res.ExitCode == 0 {
+				if v := frankenVersion(string(res.Stdout)); v != "" {
+					f.Runtimes["frankenphp"] = []string{v}
+				}
+			}
+		}
+	}
+	if v := dirVersions(fs, "/etc/php", func(n string) bool { _, err := strconv.ParseFloat(n, 64); return err == nil }); len(v) > 0 {
+		f.Runtimes["php"] = v
+	}
+	if v := dirVersions(fs, "/opt/kiln/node", func(n string) bool { return strings.Count(n, ".") == 2 }); len(v) > 0 {
+		f.Runtimes["node"] = v
+	}
+	return f, nil
+}
+
+func frankenVersion(out string) string {
+	// "FrankenPHP v1.4.0 PHP 8.4.3 Caddy v2.9.1 ..."
+	for _, w := range strings.Fields(out) {
+		if strings.HasPrefix(w, "v") && strings.Count(w, ".") >= 1 {
+			return strings.TrimPrefix(w, "v")
+		}
+	}
+	return ""
+}
+
+func dirVersions(fs hostfs.FS, dir string, ok func(string) bool) []string {
+	ents, err := os.ReadDir(fs.P(dir))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range ents {
+		if e.IsDir() && ok(e.Name()) {
+			out = append(out, e.Name())
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ParseOSRelease parses /etc/os-release KEY=VALUE lines.
+func ParseOSRelease(b []byte) map[string]string {
+	out := map[string]string{}
+	sc := bufio.NewScanner(bytes.NewReader(b))
+	for sc.Scan() {
+		k, v, ok := strings.Cut(strings.TrimSpace(sc.Text()), "=")
+		if !ok || strings.HasPrefix(k, "#") {
+			continue
+		}
+		out[k] = strings.Trim(v, `"'`)
+	}
+	return out
+}
+
+// MeminfoKB returns the kB value of a /proc/meminfo key.
+func MeminfoKB(b []byte, key string) int64 {
+	sc := bufio.NewScanner(bytes.NewReader(b))
+	for sc.Scan() {
+		k, v, ok := strings.Cut(sc.Text(), ":")
+		if ok && k == key {
+			fs := strings.Fields(v)
+			if len(fs) > 0 {
+				n, _ := strconv.ParseInt(fs[0], 10, 64)
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+var privateNets = func() []*net.IPNet {
+	var out []*net.IPNet
+	for _, c := range []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"} {
+		_, n, _ := net.ParseCIDR(c)
+		out = append(out, n)
+	}
+	return out
+}()
+
+// IsPrivate reports RFC1918/CGNAT addresses.
+func IsPrivate(ip net.IP) bool {
+	for _, n := range privateNets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func ipv4s() (pub, priv *string) {
+	addrs, err := Interfaces()
+	if err != nil {
+		return nil, nil
+	}
+	for _, a := range addrs {
+		ipn, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		ip := ipn.IP.To4()
+		if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+			continue
+		}
+		s := ip.String()
+		if IsPrivate(ip) {
+			if priv == nil {
+				priv = &s
+			}
+		} else if pub == nil {
+			pub = &s
+		}
+	}
+	return pub, priv
+}
+
+// OSRelease helper for other packages: reads VERSION_CODENAME etc.
+func OSRelease(fs hostfs.FS) map[string]string {
+	b, err := fs.ReadFile("/etc/os-release")
+	if err != nil {
+		return map[string]string{}
+	}
+	return ParseOSRelease(b)
+}

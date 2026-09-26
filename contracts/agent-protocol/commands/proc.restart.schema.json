@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/proc.restart.schema.json",
+  "title": "proc.restart — gracefully restart programs (e.g. after deploy)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "names": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Empty = all"
+    },
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Site slug (directory name under /srv/kiln/sites)"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "restarted"
+      ],
+      "properties": {
+        "restarted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

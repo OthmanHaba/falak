@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/edge.caddy.apply.schema.json",
+  "title": "edge.caddy.apply — full desired route set; rendered to Caddy JSON and POSTed atomically to the admin API /load",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sites"
+  ],
+  "properties": {
+    "acme_email": {
+      "type": "string",
+      "format": "email"
+    },
+    "acme_ca": {
+      "type": "string",
+      "format": "uri"
+    },
+    "sites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "domains",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable route id; becomes Caddy @id kiln-site-<id>",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^(\\*\\.)?[a-z0-9.-]+$"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "redirect_domains": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9.-]+$"
+            },
+            "uniqueItems": true,
+            "description": "Hosts that 308-redirect to domains[0]"
+          },
+          "tls": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+              "mode": {
+                "enum": [
+                  "acme",
+                  "internal",
+                  "custom",
+                  "off"
+                ],
+                "default": "acme"
+              },
+              "cert_name": {
+                "type": "string",
+                "description": "edge.cert.install name, when mode=custom"
+              }
+            }
+          },
+          "kind": {
+            "enum": [
+              "frankenphp",
+              "php_fpm",
+              "reverse_proxy",
+              "static",
+              "redirect"
+            ]
+          },
+          "root": {
+            "type": "string",
+            "pattern": "^/",
+            "description": "Document root, e.g. /srv/kiln/sites/shop/current/public"
+          },
+          "php_fpm_socket": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "upstreams": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "dial"
+              ],
+              "properties": {
+                "dial": {
+                  "type": "string",
+                  "description": "host:port or unix//path",
+                  "examples": [
+                    "127.0.0.1:8080",
+                    "unix//run/php/kiln-shop-8.4.sock"
+                  ]
+                }
+              }
+            },
+            "description": "reverse_proxy targets (also used for container/Node apps)"
+          },
+          "lb_policy": {
+            "enum": [
+              "round_robin",
+              "least_conn",
+              "first",
+              "ip_hash"
+            ],
+            "default": "round_robin"
+          },
+          "health_uri": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "redirect_to": {
+            "type": "string",
+            "format": "uri",
+            "description": "kind=redirect target"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Response headers to set"
+          },
+          "basic_auth": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "username",
+                "password_hash"
+              ],
+              "properties": {
+                "username": {
+                  "type": "string"
+                },
+                "password_hash": {
+                  "type": "string",
+                  "description": "bcrypt hash"
+                }
+              }
+            }
+          },
+          "redirects": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "from",
+                "to"
+              ],
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "pattern": "^/"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    301,
+                    302,
+                    307,
+                    308
+                  ],
+                  "default": 301
+                }
+              }
+            }
+          },
+          "deny_ips": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "CIDR"
+            }
+          },
+          "allow_ips": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "CIDR; when set, everything else is denied"
+            }
+          },
+          "max_body_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "encode": {
+            "type": "boolean",
+            "default": true,
+            "description": "gzip + zstd"
+          }
+        }
+      }
+    },
+    "raw": {
+      "type": "object",
+      "description": "Escape hatch: complete Caddy JSON config; when present it is loaded verbatim and `sites` is ignored"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "config_sha256"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "config_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "routes": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

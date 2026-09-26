@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/docker.run.schema.json",
+  "title": "docker.run — ensure a named container runs with exactly this spec (recreated when spec hash changes)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "image"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]+$"
+    },
+    "image": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pull": {
+      "enum": [
+        "always",
+        "missing",
+        "never"
+      ],
+      "default": "missing"
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "username",
+        "password"
+      ],
+      "properties": {
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "server": {
+          "type": "string"
+        }
+      }
+    },
+    "env": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "command": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "entrypoint": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "user": {
+      "type": "string"
+    },
+    "ports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "container_port"
+        ],
+        "properties": {
+          "host_ip": {
+            "type": "string",
+            "default": "127.0.0.1"
+          },
+          "host_port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "container_port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "protocol": {
+            "enum": [
+              "tcp",
+              "udp"
+            ],
+            "default": "tcp"
+          }
+        }
+      }
+    },
+    "volumes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "target"
+        ],
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "read_only": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    },
+    "network": {
+      "type": "string"
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "restart_policy": {
+      "enum": [
+        "no",
+        "always",
+        "unless-stopped",
+        "on-failure"
+      ],
+      "default": "unless-stopped"
+    },
+    "memory_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cpus": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "container_id"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "container_id": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

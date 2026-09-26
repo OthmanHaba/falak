@@ -1,0 +1,191 @@
+package netcfg
+
+import (
+	"context"
+	"encoding/base64"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/kiln/agent/internal/commands"
+	"github.com/kiln/agent/internal/hostfs"
+	"github.com/kiln/agent/internal/runner"
+	"github.com/kiln/agent/internal/runner/runnertest"
+)
+
+var st = commands.NewTestStream("c", &commands.Collector{})
+
+func payload() FirewallPayload {
+	return FirewallPayload{SSHPort: 2222, Rules: []Rule{
+		{ID: "web", Ports: []string{"80", "443"}, Comment: `public "web"`},
+		{ID: "pg", Ports: []string{"5432"}, Sources: []string{"10.0.0.0/8", "fd00::/8", "192.0.2.4"}},
+		{ID: "dns", Protocol: "any", Ports: []string{"53"}, Interface: "wg-kiln"},
+		{ID: "block", Action: "drop", Protocol: "any", Sources: []string{"198.51.100.0/24"}},
+		{ID: "range", Protocol: "udp", Ports: []string{"60000-61000"}},
+	}}
+}
+
+func TestRenderRuleset(t *testing.T) {
+	rs, err := RenderRuleset(payload())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{
+		"table inet kiln {}\ndelete table inet kiln\n",
+		"type filter hook input priority filter; policy drop;",
+		"ct state established,related accept",
+		`iif "lo" accept`,
+		"meta l4proto { icmp, ipv6-icmp } accept",
+		`tcp dport 2222 accept comment "kiln:ssh"`,
+		`tcp dport { 80, 443 } accept comment "kiln:web public web"`,
+		`ip saddr { 10.0.0.0/8, 192.0.2.4 } tcp dport 5432 accept comment "kiln:pg"`,
+		`ip6 saddr fd00::/8 tcp dport 5432 accept comment "kiln:pg"`,
+		`iifname "wg-kiln" meta l4proto { tcp, udp } th dport 53 accept comment "kiln:dns"`,
+		`ip saddr 198.51.100.0/24 drop comment "kiln:block"`,
+		`udp dport 60000-61000 accept comment "kiln:range"`,
+	} {
+		if !strings.Contains(rs, w) {
+			t.Fatalf("missing %q in\n%s", w, rs)
+		}
+	}
+	rs2, _ := RenderRuleset(payload())
+	if rs != rs2 {
+		t.Fatal("not deterministic")
+	}
+	for _, bad := range []Rule{{ID: "x", Ports: []string{"70000"}}, {ID: "x", Ports: []string{"9-3"}}, {ID: "x", Sources: []string{"nope"}}, {ID: "x;y"}, {ID: "x", Interface: `eth0" accept`}} {
+		if _, err := RenderRuleset(FirewallPayload{Rules: []Rule{bad}}); !commands.IsPayloadError(err) {
+			t.Fatalf("accepted %+v", bad)
+		}
+	}
+}
+
+func TestFirewallApply(t *testing.T) {
+	root := t.TempDir()
+	applied := false
+	f := &runnertest.Fake{}
+	f.OnFunc("nft list table inet kiln", func(runnertest.Call) (runner.Result, error) {
+		if applied {
+			return runner.Result{}, nil
+		}
+		return runner.Result{ExitCode: 1}, nil
+	})
+	f.OnFunc("nft -f", func(runnertest.Call) (runner.Result, error) { applied = true; return runner.Result{}, nil })
+	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
+	r, err := n.FirewallApply(context.Background(), payload(), st)
+	if err != nil || !r.(FirewallResult).Changed {
+		t.Fatal(r, err)
+	}
+	conf := filepath.Join(root, "etc/kiln/nftables.conf")
+	want := []string{"nft list table inet kiln", "nft -c -f " + conf + ".new", "nft -f " + conf, "systemctl daemon-reload", "systemctl enable kiln-firewall.service"}
+	if strings.Join(f.Lines(), "|") != strings.Join(want, "|") {
+		t.Fatalf("%v", f.Lines())
+	}
+	f.Reset()
+	r, _ = n.FirewallApply(context.Background(), payload(), st)
+	if r.(FirewallResult).Changed || len(f.Lines()) != 1 {
+		t.Fatal("not idempotent", f.Lines())
+	}
+	// table flushed out-of-band (e.g. reboot without unit) → re-applied even though file matches
+	applied = false
+	r, _ = n.FirewallApply(context.Background(), payload(), st)
+	if !r.(FirewallResult).Changed {
+		t.Fatal("did not re-apply missing table")
+	}
+}
+
+func TestFirewallValidationFailureKeepsOldFile(t *testing.T) {
+	root := t.TempDir()
+	f := (&runnertest.Fake{}).On("nft -c", runner.Result{ExitCode: 1, Stderr: []byte("Error: syntax error")})
+	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
+	os.MkdirAll(filepath.Join(root, "etc/kiln"), 0o755)
+	os.WriteFile(filepath.Join(root, "etc/kiln/nftables.conf"), []byte("old"), 0o600)
+	if _, err := n.FirewallApply(context.Background(), payload(), st); err == nil || !strings.Contains(err.Error(), "untouched") {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "etc/kiln/nftables.conf")); string(b) != "old" {
+		t.Fatal("old ruleset replaced")
+	}
+	if f.Ran("nft -f") {
+		t.Fatal("applied invalid ruleset")
+	}
+	if _, err := os.Stat(filepath.Join(root, "etc/kiln/nftables.conf.new")); err == nil {
+		t.Fatal("tmp left")
+	}
+}
+
+func TestWireGuard(t *testing.T) {
+	root := t.TempDir()
+	active := false
+	f := &runnertest.Fake{}
+	f.OnFunc("systemctl is-active", func(runnertest.Call) (runner.Result, error) {
+		if active {
+			return runner.Result{}, nil
+		}
+		return runner.Result{ExitCode: 3}, nil
+	})
+	f.OnFunc("systemctl enable --now", func(runnertest.Call) (runner.Result, error) { active = true; return runner.Result{}, nil })
+	f.On("wg-quick strip", runner.Result{Stdout: []byte("[Interface]\nPrivateKey = x\n")})
+	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
+	peerKey := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	p := WireGuardPayload{Address: "10.90.0.3/24", Peers: []Peer{{PublicKey: peerKey, Endpoint: "203.0.113.1:51820", AllowedIPs: []string{"10.90.0.1/32"}, PersistentKeepalive: 25}}}
+	r, err := n.WireGuardApply(context.Background(), p, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := r.(WireGuardResult)
+	if !res.Changed || len(res.PublicKey) != 44 || !f.Ran("systemctl enable --now wg-quick@wg-kiln") {
+		t.Fatal(res, f.Lines())
+	}
+	keyFile := filepath.Join(root, "etc/kiln/wireguard/wg-kiln.key")
+	if fi, _ := os.Stat(keyFile); fi.Mode().Perm() != 0o600 {
+		t.Fatal("key mode")
+	}
+	conf, _ := os.ReadFile(filepath.Join(root, "etc/wireguard/wg-kiln.conf"))
+	if !strings.Contains(string(conf), "Endpoint = 203.0.113.1:51820") || !strings.Contains(string(conf), "PersistentKeepalive = 25") {
+		t.Fatal(string(conf))
+	}
+	// key persists and derives the same public key
+	f.Reset()
+	r, _ = n.WireGuardApply(context.Background(), p, st)
+	if r.(WireGuardResult).Changed || r.(WireGuardResult).PublicKey != res.PublicKey || len(f.Lines()) != 1 {
+		t.Fatal("not idempotent", r, f.Lines())
+	}
+	// peer change → live syncconf with stripped config on stdin
+	p.Peers[0].PersistentKeepalive = 15
+	f.Reset()
+	r, _ = n.WireGuardApply(context.Background(), p, st)
+	calls := f.Calls()
+	last := calls[len(calls)-1]
+	if !r.(WireGuardResult).Changed || last.Line != "wg syncconf wg-kiln /dev/stdin" || !strings.Contains(last.Stdin, "[Interface]") {
+		t.Fatal(f.Lines())
+	}
+	// address change → restart
+	p.Address = "10.90.0.4/24"
+	f.Reset()
+	n.WireGuardApply(context.Background(), p, st)
+	if !f.Ran("systemctl restart wg-quick@wg-kiln") {
+		t.Fatal(f.Lines())
+	}
+	p.State = "absent"
+	r, _ = n.WireGuardApply(context.Background(), p, st)
+	if !r.(WireGuardResult).Changed || !f.Ran("systemctl disable --now wg-quick@wg-kiln") {
+		t.Fatal("absent")
+	}
+	if _, err := os.Stat(keyFile); err != nil {
+		t.Fatal("key should be kept for identity stability")
+	}
+}
+
+func TestPublicKeyMatchesWG(t *testing.T) {
+	// Known vector (RFC 7748 §6.1 Alice).
+	priv, _ := base64.StdEncoding.DecodeString("dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo=")
+	pub, err := PublicKey(priv)
+	if err != nil || pub != "hSDwCYkwp1R0i33ctD73Wg2/Og0mOBr066SpjqqbTmo=" {
+		t.Fatal(pub, err)
+	}
+	k, _ := GenerateKey()
+	if k[0]&7 != 0 || k[31]&128 != 0 || k[31]&64 == 0 {
+		t.Fatal("not clamped")
+	}
+}

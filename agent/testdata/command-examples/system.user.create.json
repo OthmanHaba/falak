@@ -1,0 +1,1 @@
+{"name": "shop", "shell": "/bin/bash", "groups": ["www-data"], "system": false, "sudo": "none", "isolated": true}

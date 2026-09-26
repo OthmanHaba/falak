@@ -1,0 +1,15 @@
+{
+  "project": "analytics",
+  "directory": "/srv/kiln/compose/analytics",
+  "files": [
+    {
+      "name": "compose.yaml",
+      "content": "services:\n  plausible:\n    image: ghcr.io/plausible/community-edition:v2\n    ports: [\"127.0.0.1:8000:8000\"]\n"
+    }
+  ],
+  "env": {
+    "BASE_URL": "https://stats.example.com"
+  },
+  "pull": "missing",
+  "remove_orphans": true
+}

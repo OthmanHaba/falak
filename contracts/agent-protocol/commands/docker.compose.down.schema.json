@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/docker.compose.down.schema.json",
+  "title": "docker.compose.down — docker compose down for a project",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project",
+    "directory"
+  ],
+  "properties": {
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "directory": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "volumes": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exit_code"
+      ],
+      "properties": {
+        "exit_code": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

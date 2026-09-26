@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/runtime.fpm.pool.schema.json",
+  "title": "runtime.fpm.pool — PHP-FPM pool for one site",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "php_version",
+    "pool",
+    "user"
+  ],
+  "properties": {
+    "php_version": {
+      "enum": [
+        "7.4",
+        "8.0",
+        "8.1",
+        "8.2",
+        "8.3",
+        "8.4",
+        "8.5"
+      ]
+    },
+    "pool": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Site slug (directory name under /srv/kiln/sites)"
+    },
+    "user": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+    },
+    "group": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+    },
+    "listen": {
+      "type": "string",
+      "pattern": "^/",
+      "description": "Unix socket; default /run/php/kiln-<pool>-<php_version>.sock"
+    },
+    "pm": {
+      "enum": [
+        "dynamic",
+        "static",
+        "ondemand"
+      ],
+      "default": "dynamic"
+    },
+    "max_children": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 5
+    },
+    "start_servers": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 2
+    },
+    "min_spare_servers": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1
+    },
+    "max_spare_servers": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 3
+    },
+    "max_requests": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 500
+    },
+    "php_admin_values": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "env": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "state": {
+      "enum": [
+        "present",
+        "absent"
+      ],
+      "default": "present"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "listen": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

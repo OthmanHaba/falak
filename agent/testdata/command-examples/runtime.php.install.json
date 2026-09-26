@@ -1,0 +1,1 @@
+{"version": "8.4", "extensions": ["mbstring", "intl", "pdo_mysql", "redis"], "fpm": true, "cli_default": true}

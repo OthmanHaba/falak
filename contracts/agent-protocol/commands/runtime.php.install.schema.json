@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/runtime.php.install.schema.json",
+  "title": "runtime.php.install — install PHP from ppa:ondrej/php",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "enum": [
+        "7.4",
+        "8.0",
+        "8.1",
+        "8.2",
+        "8.3",
+        "8.4",
+        "8.5"
+      ]
+    },
+    "extensions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9_]+$"
+      },
+      "uniqueItems": true
+    },
+    "fpm": {
+      "type": "boolean",
+      "default": true
+    },
+    "cli_default": {
+      "type": "boolean",
+      "default": false,
+      "description": "update-alternatives php -> this version"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "binary"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "binary": {
+          "type": "string"
+        },
+        "fpm_service": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

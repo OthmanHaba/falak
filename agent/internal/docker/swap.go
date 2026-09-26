@@ -1,0 +1,247 @@
+package docker
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"sort"
+	"strconv"
+	"time"
+
+	"github.com/kiln/agent/internal/commands"
+)
+
+// SwapPayload is deploy.container.swap.
+type SwapPayload struct {
+	Site          string `json:"site"`
+	Image         string `json:"image"`
+	Pull          string `json:"pull,omitempty"`
+	RegistryAuth  *Auth  `json:"registry_auth,omitempty"`
+	ContainerPort int    `json:"container_port"`
+	Ports         struct {
+		Blue  int `json:"blue"`
+		Green int `json:"green"`
+	} `json:"ports"`
+	Env         map[string]string `json:"env,omitempty"`
+	Command     []string          `json:"command,omitempty"`
+	Volumes     []VolumeSpec      `json:"volumes,omitempty"`
+	Network     string            `json:"network,omitempty"`
+	MemoryBytes int64             `json:"memory_bytes,omitempty"`
+	CPUs        float64           `json:"cpus,omitempty"`
+	Health      *HealthSpec       `json:"health,omitempty"`
+	EdgeRouteID string            `json:"edge_route_id"`
+	DrainS      *int              `json:"drain_s,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
+}
+
+// HealthSpec is the HTTP readiness probe.
+type HealthSpec struct {
+	Path         string `json:"path,omitempty"`
+	ExpectStatus int    `json:"expect_status,omitempty"`
+	TimeoutS     int    `json:"timeout_s,omitempty"`
+	IntervalMS   int    `json:"interval_ms,omitempty"`
+}
+
+// SwapResult is the structured result.
+type SwapResult struct {
+	Changed       bool   `json:"changed"`
+	ActiveColor   string `json:"active_color"`
+	ContainerID   string `json:"container_id,omitempty"`
+	Upstream      string `json:"upstream"`
+	PreviousColor string `json:"previous_color,omitempty"`
+}
+
+func (p SwapPayload) port(color string) int {
+	if color == "green" {
+		return p.Ports.Green
+	}
+	return p.Ports.Blue
+}
+
+func other(color string) string {
+	if color == "blue" {
+		return "green"
+	}
+	return "blue"
+}
+
+// runSpec builds the docker.run spec for one color.
+func (p SwapPayload) runSpec(color string) RunPayload {
+	labels := map[string]string{LabelSite: p.Site, LabelColor: color}
+	for k, v := range p.Labels {
+		if k != LabelSite && k != LabelColor {
+			labels[k] = v
+		}
+	}
+	return RunPayload{
+		Name: "kiln-" + p.Site + "-" + color, Image: p.Image, Env: p.Env, Command: p.Command,
+		Ports:   []PortSpec{{HostIP: "127.0.0.1", HostPort: p.port(color), ContainerPort: p.ContainerPort}},
+		Volumes: p.Volumes, Network: p.Network, Labels: labels, RestartPolicy: "unless-stopped",
+		MemoryBytes: p.MemoryBytes, CPUs: p.CPUs,
+	}
+}
+
+// specHash is color-independent so the same deploy is recognized on either color.
+func (p SwapPayload) specHash() string {
+	r := p.runSpec("")
+	r.Name, r.Ports = "", []PortSpec{{ContainerPort: p.ContainerPort}}
+	delete(r.Labels, LabelColor)
+	return r.specHash()
+}
+
+func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (any, error) {
+	if p.Site == "" || p.Image == "" || p.ContainerPort == 0 || p.Ports.Blue == 0 || p.Ports.Green == 0 || p.EdgeRouteID == "" {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("site, image, container_port, ports and edge_route_id are required")}
+	}
+	if p.Ports.Blue == p.Ports.Green {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("blue and green ports must differ")}
+	}
+	if s.opts.Upstreams == nil {
+		return nil, fmt.Errorf("container.swap: no edge upstream setter configured")
+	}
+	h := HealthSpec{Path: "/", ExpectStatus: 200, TimeoutS: 60, IntervalMS: 1000}
+	if p.Health != nil {
+		if p.Health.Path != "" {
+			h.Path = p.Health.Path
+		}
+		if p.Health.ExpectStatus != 0 {
+			h.ExpectStatus = p.Health.ExpectStatus
+		}
+		if p.Health.TimeoutS > 0 {
+			h.TimeoutS = p.Health.TimeoutS
+		}
+		if p.Health.IntervalMS > 0 {
+			h.IntervalMS = p.Health.IntervalMS
+		}
+	}
+	drain := 10 * time.Second
+	if p.DrainS != nil {
+		drain = time.Duration(*p.DrainS) * time.Second
+	}
+	hash := p.specHash()
+
+	// Active color = newest running container of this site.
+	list, err := s.c.ContainerList(ctx, true, []string{LabelSite + "=" + p.Site})
+	if err != nil {
+		return nil, err
+	}
+	var running []ContainerSummary
+	for _, c := range list {
+		if c.State == "running" && (c.Labels[LabelColor] == "blue" || c.Labels[LabelColor] == "green") {
+			running = append(running, c)
+		}
+	}
+	sort.Slice(running, func(i, j int) bool { return running[i].Created > running[j].Created })
+	active := ""
+	var activeC *ContainerSummary
+	if len(running) > 0 {
+		activeC = &running[0]
+		active = activeC.Labels[LabelColor]
+	}
+
+	// Idempotent: same spec already live and healthy → just make sure the edge points at it.
+	if activeC != nil && activeC.Labels["kiln.swap-hash"] == hash && p.Pull != "always" {
+		up := "127.0.0.1:" + strconv.Itoa(p.port(active))
+		if s.healthy(ctx, p.port(active), h) {
+			if err := s.opts.Upstreams.SetUpstreams(ctx, p.EdgeRouteID, []string{up}); err != nil {
+				return nil, err
+			}
+			return SwapResult{Changed: false, ActiveColor: active, ContainerID: activeC.ID, Upstream: up}, nil
+		}
+	}
+
+	target := "blue"
+	if active != "" {
+		target = other(active)
+	}
+	spec := p.runSpec(target)
+	spec.Labels["kiln.swap-hash"] = hash
+	fmt.Fprintf(st.Stdout(), "starting %s (%s) on 127.0.0.1:%d\n", spec.Name, p.Image, p.port(target))
+	if err := s.ensureImage(ctx, p.Image, p.Pull, p.RegistryAuth, st); err != nil {
+		return nil, err
+	}
+	// Stale container of the target color (e.g. failed earlier swap) is replaced.
+	if old, ok, err := s.c.ContainerInspect(ctx, spec.Name); err != nil {
+		return nil, err
+	} else if ok {
+		_ = s.c.ContainerRemove(ctx, old.ID)
+	}
+	id, err := s.c.ContainerCreate(ctx, spec.Name, spec.createBody(spec.specHash()))
+	if err != nil {
+		return nil, err
+	}
+	if err := s.c.ContainerStart(ctx, id); err != nil {
+		_ = s.c.ContainerRemove(context.WithoutCancel(ctx), id)
+		return nil, err
+	}
+	fail := func(err error) (any, error) {
+		s.log.Warn("container swap failed, removing new container", "site", p.Site, "color", target, "err", err)
+		_ = s.c.ContainerRemove(context.WithoutCancel(ctx), id)
+		return nil, err
+	}
+	if err := s.waitHealthy(ctx, p.port(target), h, st); err != nil {
+		return fail(err)
+	}
+	up := "127.0.0.1:" + strconv.Itoa(p.port(target))
+	if err := s.opts.Upstreams.SetUpstreams(ctx, p.EdgeRouteID, []string{up}); err != nil {
+		return fail(fmt.Errorf("switch edge upstream: %w", err))
+	}
+	fmt.Fprintf(st.Stdout(), "edge route %s → %s\n", p.EdgeRouteID, up)
+
+	// Drain and retire every other container of this site.
+	if len(running) > 0 && drain > 0 {
+		select {
+		case <-time.After(drain):
+		case <-ctx.Done():
+		}
+	}
+	for _, c := range list {
+		if c.ID == id {
+			continue
+		}
+		if c.State == "running" {
+			if _, err := s.c.ContainerStop(context.WithoutCancel(ctx), c.ID, 30*time.Second); err != nil && !IsNotFound(err) {
+				s.log.Warn("stop old container", "id", c.ID, "err", err)
+			}
+		}
+		if err := s.c.ContainerRemove(context.WithoutCancel(ctx), c.ID); err != nil {
+			s.log.Warn("remove old container", "id", c.ID, "err", err)
+		}
+	}
+	return SwapResult{Changed: true, ActiveColor: target, ContainerID: id, Upstream: up, PreviousColor: active}, nil
+}
+
+func (s *Service) healthy(ctx context.Context, port int, h HealthSpec) bool {
+	url := "http://127.0.0.1:" + strconv.Itoa(port) + h.Path
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := s.opts.HTTP.Do(req)
+	if err != nil {
+		return false
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	resp.Body.Close()
+	return resp.StatusCode == h.ExpectStatus
+}
+
+func (s *Service) waitHealthy(ctx context.Context, port int, h HealthSpec, st commands.Stream) error {
+	deadline := time.Now().Add(time.Duration(h.TimeoutS) * time.Second)
+	interval := time.Duration(h.IntervalMS) * time.Millisecond
+	for {
+		if s.healthy(ctx, port, h) {
+			fmt.Fprintf(st.Stdout(), "health check passed on :%d%s\n", port, h.Path)
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("health check %s on :%d did not return %d within %ds", h.Path, port, h.ExpectStatus, h.TimeoutS)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(interval):
+		}
+	}
+}

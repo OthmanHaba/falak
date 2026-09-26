@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/db.user.apply.schema.json",
+  "title": "db.user.apply — converge a database user and its grants",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "engine",
+    "username"
+  ],
+  "properties": {
+    "engine": {
+      "enum": [
+        "mysql",
+        "postgres"
+      ]
+    },
+    "username": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+    },
+    "password": {
+      "type": "string",
+      "minLength": 1,
+      "description": "secret; required when state=present"
+    },
+    "host": {
+      "type": "string",
+      "default": "%",
+      "description": "mysql only"
+    },
+    "grants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "database"
+        ],
+        "properties": {
+          "database": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "privileges": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z ]+$"
+            },
+            "minItems": 1,
+            "default": [
+              "ALL PRIVILEGES"
+            ]
+          }
+        }
+      }
+    },
+    "state": {
+      "enum": [
+        "present",
+        "absent"
+      ],
+      "default": "present"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        }
+      }
+    }
+  }
+}

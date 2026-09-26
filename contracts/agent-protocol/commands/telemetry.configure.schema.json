@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/telemetry.configure.schema.json",
+  "title": "telemetry.configure — OTLP relay configuration (persisted to /etc/kiln/telemetry.json, hot reloaded)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "endpoint": {
+      "type": "string",
+      "format": "uri",
+      "description": "OTLP/HTTP base URL; overrides endpoints.otlp from enrollment"
+    },
+    "headers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "org_id": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID"
+        },
+        "server_id": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID"
+        },
+        "environment": {
+          "type": "string",
+          "default": "production"
+        }
+      }
+    },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "traces_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1
+        }
+      }
+    },
+    "sites": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "slug",
+          "site_id"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "description": "Site slug (directory name under /srv/kiln/sites)"
+          },
+          "site_id": {
+            "type": "string",
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+            "description": "ULID"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string",
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+            "description": "ULID"
+          },
+          "release_id": {
+            "type": "string",
+            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+            "description": "ULID"
+          }
+        }
+      }
+    },
+    "log_sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^/",
+            "description": "File path or glob"
+          },
+          "service": {
+            "type": "string"
+          },
+          "site": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "description": "Site slug (directory name under /srv/kiln/sites)"
+          },
+          "format": {
+            "enum": [
+              "plain",
+              "json"
+            ],
+            "default": "plain"
+          }
+        }
+      }
+    },
+    "docker_logs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "label_selector": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "interval_s": {
+          "type": "integer",
+          "minimum": 5,
+          "default": 15
+        }
+      }
+    },
+    "insights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "buffer_max_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 67108864
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        }
+      }
+    }
+  }
+}

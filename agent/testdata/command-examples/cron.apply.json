@@ -1,0 +1,30 @@
+{
+  "jobs": [
+    {
+      "name": "shop-scheduler",
+      "schedule": "* * * * *",
+      "command": "php artisan schedule:run",
+      "user": "shop",
+      "cwd": "/srv/kiln/sites/shop/current",
+      "env": {
+        "APP_ENV": "production"
+      },
+      "timezone": "Europe/Amsterdam",
+      "overlap": "skip",
+      "timeout_s": 300,
+      "heartbeat": true,
+      "site": "shop"
+    },
+    {
+      "name": "tmp-cleanup",
+      "schedule": "@daily",
+      "command": "find /tmp -mtime +7 -delete"
+    },
+    {
+      "name": "ping",
+      "schedule": "@every 30s",
+      "command": "curl -fsS http://127.0.0.1/up",
+      "overlap": "allow"
+    }
+  ]
+}

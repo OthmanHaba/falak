@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/terminal.resize.schema.json",
+  "title": "terminal.resize — resize a session",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "session_id",
+    "cols",
+    "rows"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$"
+    },
+    "cols": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    },
+    "rows": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {}
+    }
+  }
+}

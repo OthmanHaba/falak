@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/cron.apply.schema.json",
+  "title": "cron.apply — full desired schedule set (built-in scheduler)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "jobs"
+  ],
+  "properties": {
+    "jobs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "schedule",
+          "command"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.-]{0,62}$"
+          },
+          "schedule": {
+            "type": "string",
+            "description": "5-field cron, @hourly/@daily/@weekly/@monthly/@yearly, or @every <duration>",
+            "examples": [
+              "* * * * *",
+              "*/5 * * * *",
+              "@every 30s"
+            ]
+          },
+          "command": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Run via /bin/sh -c"
+          },
+          "user": {
+            "type": "string",
+            "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+          },
+          "cwd": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "env": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "timezone": {
+            "type": "string",
+            "default": "UTC"
+          },
+          "overlap": {
+            "enum": [
+              "allow",
+              "skip"
+            ],
+            "default": "skip"
+          },
+          "timeout_s": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 3600
+          },
+          "heartbeat": {
+            "type": "boolean",
+            "default": true,
+            "description": "Emit a heartbeat (see $defs.heartbeat) for every run so missed runs are detectable"
+          },
+          "site": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "description": "Site slug (directory name under /srv/kiln/sites)"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "jobs"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "jobs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "next_run"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "next_run": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      }
+    },
+    "heartbeat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "job",
+        "status",
+        "scheduled_at",
+        "at"
+      ],
+      "properties": {
+        "kind": {
+          "const": "cron_heartbeat"
+        },
+        "job": {
+          "type": "string"
+        },
+        "site_id": {
+          "type": "string"
+        },
+        "schedule": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "finished",
+            "failed",
+            "skipped",
+            "timeout"
+          ]
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer"
+        },
+        "scheduled_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "NDJSON line posted to /agent/v1/insights for each run; also emitted as an OTLP span with kiln.event.type=scheduled_task"
+    }
+  }
+}

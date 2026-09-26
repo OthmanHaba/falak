@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/deploy.container.swap.schema.json",
+  "title": "deploy.container.swap — blue/green container swap behind Caddy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "site",
+    "image",
+    "container_port",
+    "ports",
+    "edge_route_id"
+  ],
+  "properties": {
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Site slug (directory name under /srv/kiln/sites)"
+    },
+    "image": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pull": {
+      "enum": [
+        "always",
+        "missing",
+        "never"
+      ],
+      "default": "missing"
+    },
+    "registry_auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "username",
+        "password"
+      ],
+      "properties": {
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "server": {
+          "type": "string"
+        }
+      }
+    },
+    "container_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "ports": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "blue",
+        "green"
+      ],
+      "properties": {
+        "blue": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "green": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "description": "Host ports bound on 127.0.0.1"
+    },
+    "env": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "command": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "volumes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "target"
+        ],
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "read_only": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    },
+    "network": {
+      "type": "string"
+    },
+    "memory_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cpus": {
+      "type": "number",
+      "minimum": 0
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^/",
+          "default": "/"
+        },
+        "expect_status": {
+          "type": "integer",
+          "default": 200
+        },
+        "timeout_s": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 60
+        },
+        "interval_ms": {
+          "type": "integer",
+          "minimum": 100,
+          "default": 1000
+        }
+      }
+    },
+    "edge_route_id": {
+      "type": "string",
+      "description": "edge.caddy.apply site id whose upstreams are PATCHed (@id kiln-upstreams-<id>)"
+    },
+    "drain_s": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 10
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "active_color",
+        "upstream"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "active_color": {
+          "enum": [
+            "blue",
+            "green"
+          ]
+        },
+        "container_id": {
+          "type": "string"
+        },
+        "upstream": {
+          "type": "string"
+        },
+        "previous_color": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

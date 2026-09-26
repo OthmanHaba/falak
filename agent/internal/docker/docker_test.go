@@ -1,0 +1,508 @@
+package docker
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/kiln/agent/internal/commands"
+	"github.com/kiln/agent/internal/hostfs"
+	"github.com/kiln/agent/internal/runner"
+	"github.com/kiln/agent/internal/runner/runnertest"
+)
+
+// fakeEngine is an in-memory subset of the Docker Engine API.
+type fakeEngine struct {
+	mu         sync.Mutex
+	images     map[string]string // ref → id
+	containers map[string]*fcont // id → container
+	seq        int
+	pulls      []string
+	pullAuth   []string
+	prunes     []string
+	calls      []string
+	failStart  bool
+}
+
+type fcont struct {
+	id, name, image, imageID string
+	running                  bool
+	created                  int64
+	body                     CreateBody
+}
+
+func newEngine() *fakeEngine {
+	return &fakeEngine{images: map[string]string{}, containers: map[string]*fcont{}}
+}
+
+func (e *fakeEngine) byName(n string) *fcont {
+	n = strings.TrimPrefix(n, "/")
+	for _, c := range e.containers {
+		if c.id == n || c.name == n {
+			return c
+		}
+	}
+	return nil
+}
+
+func jsonOut(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(v)
+}
+
+func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	p := r.URL.Path
+	e.calls = append(e.calls, r.Method+" "+p)
+	if p == "/version" {
+		jsonOut(w, 200, VersionInfo{Version: "27.1.1", APIVersion: "1.46"})
+		return
+	}
+	if !strings.HasPrefix(p, "/v1.43/") {
+		jsonOut(w, 400, map[string]string{"message": "bad version " + p})
+		return
+	}
+	p = strings.TrimPrefix(p, "/v1.43")
+	q := r.URL.Query()
+	switch {
+	case r.Method == "POST" && p == "/images/create":
+		ref := q.Get("fromImage")
+		if t := q.Get("tag"); t != "" {
+			ref += ":" + t
+		}
+		e.pulls = append(e.pulls, ref)
+		e.pullAuth = append(e.pullAuth, r.Header.Get("X-Registry-Auth"))
+		if strings.Contains(ref, "nope") {
+			fmt.Fprintln(w, `{"error":"manifest unknown"}`)
+			return
+		}
+		e.seq++
+		e.images[ref] = "sha256:img" + strconv.Itoa(e.seq)
+		fmt.Fprintln(w, `{"status":"Pulling from library/x","id":"latest"}`)
+		fmt.Fprintln(w, `{"status":"Downloading","progressDetail":{},"progress":"[==>   ]","id":"abc"}`)
+		fmt.Fprintln(w, `{"status":"Status: Downloaded newer image"}`)
+	case r.Method == "GET" && strings.HasPrefix(p, "/images/") && strings.HasSuffix(p, "/json"):
+		ref := strings.TrimSuffix(strings.TrimPrefix(p, "/images/"), "/json")
+		if !strings.Contains(ref, ":") {
+			ref += ":latest"
+		}
+		id, ok := e.images[ref]
+		if !ok {
+			jsonOut(w, 404, map[string]string{"message": "No such image: " + ref})
+			return
+		}
+		jsonOut(w, 200, map[string]string{"Id": id})
+	case r.Method == "POST" && p == "/containers/create":
+		name := q.Get("name")
+		if e.byName(name) != nil {
+			jsonOut(w, 409, map[string]string{"message": "Conflict"})
+			return
+		}
+		var b CreateBody
+		json.NewDecoder(r.Body).Decode(&b)
+		ref := b.Image
+		if !strings.Contains(ref, ":") {
+			ref += ":latest"
+		}
+		e.seq++
+		c := &fcont{id: "c" + strconv.Itoa(e.seq), name: name, image: b.Image, imageID: e.images[ref], created: int64(e.seq), body: b}
+		e.containers[c.id] = c
+		jsonOut(w, 201, map[string]string{"Id": c.id})
+	case r.Method == "GET" && p == "/containers/json":
+		var f map[string][]string
+		json.Unmarshal([]byte(q.Get("filters")), &f)
+		out := []ContainerSummary{}
+		for _, c := range e.containers {
+			match := true
+			for _, l := range f["label"] {
+				k, v, _ := strings.Cut(l, "=")
+				if c.body.Labels[k] != v {
+					match = false
+				}
+			}
+			if !match || (!c.running && q.Get("all") == "") {
+				continue
+			}
+			st := "exited"
+			if c.running {
+				st = "running"
+			}
+			out = append(out, ContainerSummary{ID: c.id, Names: []string{"/" + c.name}, Image: c.image, State: st, Created: c.created, Labels: c.body.Labels})
+		}
+		jsonOut(w, 200, out)
+	case strings.HasPrefix(p, "/containers/"):
+		rest := strings.TrimPrefix(p, "/containers/")
+		parts := strings.SplitN(rest, "/", 2)
+		if parts[0] == "prune" {
+			e.prunes = append(e.prunes, "containers "+q.Get("filters"))
+			jsonOut(w, 200, map[string]any{"SpaceReclaimed": 100})
+			return
+		}
+		c := e.byName(parts[0])
+		if c == nil {
+			jsonOut(w, 404, map[string]string{"message": "No such container: " + parts[0]})
+			return
+		}
+		action := ""
+		if len(parts) == 2 {
+			action = parts[1]
+		}
+		switch {
+		case r.Method == "GET" && action == "json":
+			var ct Container
+			ct.ID, ct.Name, ct.Image = c.id, "/"+c.name, c.imageID
+			ct.State.Running = c.running
+			ct.Config.Image = c.image
+			ct.Config.Labels = c.body.Labels
+			jsonOut(w, 200, ct)
+		case r.Method == "POST" && action == "start":
+			if e.failStart {
+				jsonOut(w, 500, map[string]string{"message": "port is already allocated"})
+				return
+			}
+			if c.running {
+				w.WriteHeader(304)
+				return
+			}
+			c.running = true
+			w.WriteHeader(204)
+		case r.Method == "POST" && action == "stop":
+			if !c.running {
+				w.WriteHeader(304)
+				return
+			}
+			c.running = false
+			w.WriteHeader(204)
+		case r.Method == "DELETE" && action == "":
+			delete(e.containers, c.id)
+			w.WriteHeader(204)
+		default:
+			jsonOut(w, 404, map[string]string{"message": "unknown " + r.Method + " " + p})
+		}
+	case r.Method == "POST" && strings.HasSuffix(p, "/prune"):
+		e.prunes = append(e.prunes, strings.Trim(strings.TrimSuffix(p, "/prune"), "/")+" "+q.Get("filters"))
+		jsonOut(w, 200, map[string]any{"SpaceReclaimed": 1000})
+	default:
+		jsonOut(w, 404, map[string]string{"message": "unknown " + r.Method + " " + p})
+	}
+}
+
+// startEngine serves the fake engine on a short unix socket path (macOS limits sun_path to 104 bytes).
+func startEngine(t *testing.T) (*fakeEngine, string) {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "kd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "d.sock")
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := newEngine()
+	srv := &httptest.Server{Listener: l, Config: &http.Server{Handler: e}}
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return e, sock
+}
+
+type upstreams struct {
+	mu    sync.Mutex
+	calls [][]string
+	err   error
+}
+
+func (u *upstreams) SetUpstreams(ctx context.Context, route string, dials []string) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.err != nil {
+		return u.err
+	}
+	u.calls = append(u.calls, append([]string{route}, dials...))
+	return nil
+}
+
+func newSvc(t *testing.T) (*Service, *fakeEngine, *runnertest.Fake, *upstreams, string) {
+	e, sock := startEngine(t)
+	fr := &runnertest.Fake{}
+	up := &upstreams{}
+	root := t.TempDir()
+	return New(Options{Socket: sock, Runner: fr, FS: hostfs.FS{Root: root}, Upstreams: up}), e, fr, up, root
+}
+
+func exec1(t *testing.T, s *Service, typ string, payload any) (commands.Event, *commands.Collector) {
+	t.Helper()
+	reg := commands.NewRegistry()
+	s.Register(reg)
+	col := &commands.Collector{}
+	d := commands.NewDispatcher(context.Background(), reg, col, nil)
+	b, _ := json.Marshal(payload)
+	d.Submit(commands.Envelope{ID: "01HZZZZZZZZZZZZZZZZZZZZZZ1", Type: typ, TimeoutS: 60, IdempotencyKey: "x", Payload: b})
+	d.Wait()
+	ev := col.Snapshot()
+	return ev[len(ev)-1], col
+}
+
+func TestVersionNegotiation(t *testing.T) {
+	_, sock := startEngine(t)
+	c := NewClient(sock)
+	v, err := c.Version(context.Background())
+	if err != nil || v.Version != "27.1.1" {
+		t.Fatalf("%v %+v", err, v)
+	}
+	if c.apiVersion(context.Background()) != "1.43" {
+		t.Fatal("should cap at 1.43")
+	}
+	if !versionLess("1.41", "1.43") || versionLess("1.46", "1.43") {
+		t.Fatal("versionLess")
+	}
+	if a, b := splitRef("ghcr.io:443/org/app:1.2"); a != "ghcr.io:443/org/app" || b != "1.2" {
+		t.Fatal(a, b)
+	}
+	if a, b := splitRef("localhost:5000/app"); a != "localhost:5000/app" || b != "latest" {
+		t.Fatal(a, b)
+	}
+}
+
+func TestPull(t *testing.T) {
+	s, e, _, _, _ := newSvc(t)
+	fin, col := exec1(t, s, "docker.pull", PullPayload{Image: "nginx:1.27", Auth: &Auth{Username: "u", Password: "p", Server: "ghcr.io"}})
+	if fin.Error != "" || fin.Result.(PullResult).ImageID == "" {
+		t.Fatalf("%+v", fin)
+	}
+	if !strings.Contains(col.Output("stdout"), "Downloaded newer image") || strings.Contains(col.Output("stdout"), "[==>") {
+		t.Fatalf("output %q", col.Output("stdout"))
+	}
+	raw, _ := base64.URLEncoding.DecodeString(e.pullAuth[0])
+	if !strings.Contains(string(raw), `"serveraddress":"ghcr.io"`) {
+		t.Fatalf("auth %s", raw)
+	}
+	fin, _ = exec1(t, s, "docker.pull", PullPayload{Image: "nope:1"})
+	if !strings.Contains(fin.Error, "manifest unknown") {
+		t.Fatalf("%+v", fin)
+	}
+}
+
+func TestRunIdempotent(t *testing.T) {
+	s, e, _, _, _ := newSvc(t)
+	p := RunPayload{Name: "redis", Image: "redis:7", Env: map[string]string{"B": "2", "A": "1"},
+		Ports: []PortSpec{{HostPort: 6379, ContainerPort: 6379}}, Volumes: []VolumeSpec{{Source: "/data/redis", Target: "/data", ReadOnly: true}}, CPUs: 0.5}
+	fin, _ := exec1(t, s, "docker.run", p)
+	r := fin.Result.(RunResult)
+	if fin.Error != "" || !r.Changed {
+		t.Fatalf("%+v", fin)
+	}
+	c := e.containers[r.ContainerID]
+	if !c.running || c.body.Env[0] != "A=1" || c.body.HostConfig.PortBindings["6379/tcp"][0].HostIP != "127.0.0.1" ||
+		c.body.HostConfig.Binds[0] != "/data/redis:/data:ro" || c.body.HostConfig.NanoCPUs != 5e8 || c.body.HostConfig.RestartPolicy.Name != "unless-stopped" {
+		t.Fatalf("create body %+v", c.body)
+	}
+	if len(e.pulls) != 1 {
+		t.Fatal("missing image not pulled")
+	}
+	// Same spec → no change.
+	fin, _ = exec1(t, s, "docker.run", p)
+	if r2 := fin.Result.(RunResult); r2.Changed || r2.ContainerID != r.ContainerID {
+		t.Fatalf("%+v", r2)
+	}
+	// Stopped → started, same container.
+	e.containers[r.ContainerID].running = false
+	fin, _ = exec1(t, s, "docker.run", p)
+	if r2 := fin.Result.(RunResult); !r2.Changed || r2.ContainerID != r.ContainerID || !e.containers[r.ContainerID].running {
+		t.Fatalf("%+v", r2)
+	}
+	// Changed spec → recreated.
+	p.Env["A"] = "changed"
+	fin, _ = exec1(t, s, "docker.run", p)
+	if r2 := fin.Result.(RunResult); !r2.Changed || r2.ContainerID == r.ContainerID || len(e.containers) != 1 {
+		t.Fatalf("%+v %d", r2, len(e.containers))
+	}
+	if len(e.pulls) != 1 {
+		t.Fatal("present image re-pulled with policy missing")
+	}
+}
+
+func TestStop(t *testing.T) {
+	s, e, _, _, _ := newSvc(t)
+	fin, _ := exec1(t, s, "docker.stop", map[string]any{"name": "ghost"})
+	if fin.Error != "" || fin.Result.(ChangedResult).Changed {
+		t.Fatalf("%+v", fin)
+	}
+	exec1(t, s, "docker.run", RunPayload{Name: "web", Image: "nginx"})
+	fin, _ = exec1(t, s, "docker.stop", map[string]any{"name": "web"})
+	if !fin.Result.(ChangedResult).Changed || e.byName("web").running {
+		t.Fatalf("%+v", fin)
+	}
+	fin, _ = exec1(t, s, "docker.stop", map[string]any{"name": "web"})
+	if fin.Result.(ChangedResult).Changed {
+		t.Fatal("second stop changed")
+	}
+	fin, _ = exec1(t, s, "docker.stop", map[string]any{"name": "web", "remove": true})
+	if !fin.Result.(ChangedResult).Changed || e.byName("web") != nil {
+		t.Fatal("not removed")
+	}
+}
+
+func TestPrune(t *testing.T) {
+	s, e, _, _, _ := newSvc(t)
+	fin, _ := exec1(t, s, "docker.prune", map[string]any{"images": "all", "volumes": true, "build_cache": true, "until": "24h"})
+	if fin.Error != "" {
+		t.Fatal(fin.Error)
+	}
+	if got := fin.Result.(PruneResult).SpaceReclaimedBytes; got != 100+1000*4 {
+		t.Fatalf("reclaimed %d", got)
+	}
+	want := []string{
+		`containers {"until":["24h"]}`,
+		`images {"dangling":["false"],"until":["24h"]}`,
+		`volumes `,
+		`networks {"until":["24h"]}`,
+		`build {"until":["24h"]}`,
+	}
+	if strings.Join(e.prunes, "|") != strings.Join(want, "|") {
+		t.Fatalf("prunes %q", e.prunes)
+	}
+}
+
+func TestCompose(t *testing.T) {
+	s, _, fr, _, root := newSvc(t)
+	fr.On("docker compose -p broken", runner.Result{ExitCode: 1, Stderr: []byte("no such service")})
+	fin, _ := exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "stack", Directory: "/srv/kiln/compose/stack",
+		Files: []ComposeFile{{Name: "compose.yaml", Content: "services: {}\n"}, {Name: "compose.prod.yaml", Content: "x: 1\n"}},
+		Env:   map[string]string{"TAG": "v2"}, Pull: "always"})
+	if fin.Error != "" || fin.Result.(ExitResult).ExitCode != 0 {
+		t.Fatalf("%+v", fin)
+	}
+	b, err := os.ReadFile(filepath.Join(root, "srv/kiln/compose/stack/compose.yaml"))
+	if err != nil || string(b) != "services: {}\n" {
+		t.Fatalf("file %q %v", b, err)
+	}
+	c := fr.Calls()[0]
+	if c.Line != "docker compose -p stack -f compose.yaml -f compose.prod.yaml up -d --pull always --remove-orphans" ||
+		c.Dir != filepath.Join(root, "srv/kiln/compose/stack") || c.Env[0] != "TAG=v2" {
+		t.Fatalf("%+v", c)
+	}
+	fin, _ = exec1(t, s, "docker.compose.down", ComposeDownPayload{Project: "stack", Directory: "/srv/kiln/compose/stack", Volumes: true})
+	if fin.Error != "" || fr.Calls()[1].Line != "docker compose -p stack down --volumes" {
+		t.Fatalf("%+v %v", fin, fr.Lines())
+	}
+	fin, _ = exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "broken", Directory: "/srv/x"})
+	if fin.ExitCode == nil || *fin.ExitCode != 1 || fin.Result.(ExitResult).ExitCode != 1 {
+		t.Fatalf("%+v", fin)
+	}
+	fin, _ = exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "x", Directory: "/srv/x", Files: []ComposeFile{{Name: "../evil", Content: ""}}})
+	if fin.ExitCode == nil || *fin.ExitCode != 2 {
+		t.Fatalf("path traversal accepted: %+v", fin)
+	}
+}
+
+// healthServer returns an HTTP server on 127.0.0.1 whose port stands in for a container's host port.
+func healthServer(t *testing.T, code *int) int {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/up" {
+			w.WriteHeader(404)
+			return
+		}
+		w.WriteHeader(*code)
+	}))
+	t.Cleanup(srv.Close)
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	n, _ := strconv.Atoi(port)
+	return n
+}
+
+func swapPayload(blue, green int) SwapPayload {
+	p := SwapPayload{Site: "shop", Image: "registry.local/shop:abc", ContainerPort: 8080, EdgeRouteID: "shop",
+		Health: &HealthSpec{Path: "/up", TimeoutS: 1, IntervalMS: 50}, Env: map[string]string{"APP_ENV": "production"}}
+	zero := 0
+	p.DrainS = &zero
+	p.Ports.Blue, p.Ports.Green = blue, green
+	return p
+}
+
+func TestContainerSwap(t *testing.T) {
+	s, e, _, up, _ := newSvc(t)
+	ok := 200
+	blue, green := healthServer(t, &ok), healthServer(t, &ok)
+	p := swapPayload(blue, green)
+
+	fin, col := exec1(t, s, "deploy.container.swap", p)
+	if fin.Error != "" {
+		t.Fatal(fin.Error, col.Output(""))
+	}
+	r := fin.Result.(SwapResult)
+	if !r.Changed || r.ActiveColor != "blue" || r.Upstream != "127.0.0.1:"+strconv.Itoa(blue) || r.PreviousColor != "" {
+		t.Fatalf("%+v", r)
+	}
+	c := e.byName("kiln-shop-blue")
+	if c == nil || !c.running || c.body.HostConfig.PortBindings["8080/tcp"][0].HostPort != strconv.Itoa(blue) || c.body.Labels[LabelSite] != "shop" {
+		t.Fatalf("blue container %+v", c)
+	}
+
+	// Same spec again → no change, edge re-asserted.
+	fin, _ = exec1(t, s, "deploy.container.swap", p)
+	if r := fin.Result.(SwapResult); r.Changed || r.ActiveColor != "blue" {
+		t.Fatalf("%+v", r)
+	}
+
+	// New image → green takes over, blue retired.
+	p.Image = "registry.local/shop:def"
+	fin, _ = exec1(t, s, "deploy.container.swap", p)
+	r = fin.Result.(SwapResult)
+	if fin.Error != "" || !r.Changed || r.ActiveColor != "green" || r.PreviousColor != "blue" {
+		t.Fatalf("%+v %s", r, fin.Error)
+	}
+	if e.byName("kiln-shop-blue") != nil || !e.byName("kiln-shop-green").running {
+		t.Fatal("blue not retired")
+	}
+	if last := up.calls[len(up.calls)-1]; last[0] != "shop" || last[1] != "127.0.0.1:"+strconv.Itoa(green) {
+		t.Fatalf("upstream %v", last)
+	}
+}
+
+func TestContainerSwapHealthFailureKeepsOld(t *testing.T) {
+	s, e, _, up, _ := newSvc(t)
+	ok, bad := 200, 503
+	blue, green := healthServer(t, &ok), healthServer(t, &bad)
+	p := swapPayload(blue, green)
+	if fin, _ := exec1(t, s, "deploy.container.swap", p); fin.Error != "" {
+		t.Fatal(fin.Error)
+	}
+	nUp := len(up.calls)
+	p.Image = "registry.local/shop:broken"
+	fin, _ := exec1(t, s, "deploy.container.swap", p)
+	if !strings.Contains(fin.Error, "health check") {
+		t.Fatalf("%+v", fin)
+	}
+	if e.byName("kiln-shop-green") != nil {
+		t.Fatal("unhealthy green container left behind")
+	}
+	if b := e.byName("kiln-shop-blue"); b == nil || !b.running {
+		t.Fatal("old container disturbed")
+	}
+	if len(up.calls) != nUp {
+		t.Fatal("edge switched to unhealthy container")
+	}
+
+	// Edge failure also rolls back.
+	bad = 200
+	up.err = errors.New("caddy down")
+	fin, _ = exec1(t, s, "deploy.container.swap", p)
+	if !strings.Contains(fin.Error, "caddy down") || e.byName("kiln-shop-green") != nil || !e.byName("kiln-shop-blue").running {
+		t.Fatalf("%+v", fin)
+	}
+}

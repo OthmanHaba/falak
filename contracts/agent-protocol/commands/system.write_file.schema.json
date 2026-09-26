@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/system.write_file.schema.json",
+  "title": "system.write_file — write a file atomically (tmp + rename)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "path"
+  ],
+  "properties": {
+    "path": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "content": {
+      "type": "string"
+    },
+    "encoding": {
+      "enum": [
+        "utf8",
+        "base64"
+      ],
+      "default": "utf8"
+    },
+    "mode": {
+      "type": "string",
+      "pattern": "^0?[0-7]{3,4}$",
+      "description": "Octal file mode, e.g. \"0644\""
+    },
+    "owner": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+    },
+    "group": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+    },
+    "create_dirs": {
+      "type": "boolean",
+      "default": true
+    },
+    "state": {
+      "enum": [
+        "present",
+        "absent"
+      ],
+      "default": "present"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}

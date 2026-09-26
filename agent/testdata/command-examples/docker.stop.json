@@ -1,0 +1,5 @@
+{
+  "name": "shop-redis",
+  "timeout_s": 10,
+  "remove": true
+}

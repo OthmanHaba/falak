@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/docker.stop.schema.json",
+  "title": "docker.stop — stop (and optionally remove) a container; no-op when absent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timeout_s": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 10
+    },
+    "remove": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        }
+      }
+    }
+  }
+}

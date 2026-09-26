@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/deploy.prune.schema.json",
+  "title": "deploy.prune — delete old releases, keeping the newest N (never current)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "site"
+  ],
+  "properties": {
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Site slug (directory name under /srv/kiln/sites)"
+    },
+    "sites_root": {
+      "allOf": [
+        {
+          "type": "string",
+          "pattern": "^/"
+        }
+      ],
+      "default": "/srv/kiln/sites"
+    },
+    "keep": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 5
+    },
+    "protect": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+        "description": "ULID"
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "removed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "kept": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

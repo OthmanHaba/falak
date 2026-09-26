@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/system.exec.schema.json",
+  "title": "system.exec — run a shell script (idempotency is the script's responsibility; the agent dedupes on command id)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "script"
+  ],
+  "properties": {
+    "script": {
+      "type": "string",
+      "description": "Script body passed to the shell via stdin-less -c",
+      "minLength": 1
+    },
+    "shell": {
+      "type": "string",
+      "default": "/bin/bash"
+    },
+    "user": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+    },
+    "cwd": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "env": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "stdin": {
+      "type": "string",
+      "description": "Data written to the process stdin"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exit_code"
+      ],
+      "properties": {
+        "exit_code": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

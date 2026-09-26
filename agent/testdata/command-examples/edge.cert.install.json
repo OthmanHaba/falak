@@ -1,0 +1,6 @@
+{
+  "name": "legacy",
+  "cert_pem": "-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----\n",
+  "key_pem": "-----BEGIN EC PRIVATE KEY-----\nMHcC...\n-----END EC PRIVATE KEY-----\n",
+  "state": "present"
+}

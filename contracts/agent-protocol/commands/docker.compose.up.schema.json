@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/docker.compose.up.schema.json",
+  "title": "docker.compose.up — docker compose up -d for a project",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project",
+    "directory"
+  ],
+  "properties": {
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "directory": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "content"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Written into directory before up; first file(s) passed with -f"
+    },
+    "env": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "pull": {
+      "enum": [
+        "always",
+        "missing",
+        "never"
+      ],
+      "default": "missing"
+    },
+    "remove_orphans": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exit_code"
+      ],
+      "properties": {
+        "exit_code": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

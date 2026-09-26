@@ -1,0 +1,1 @@
+{"engine": "mysql", "username": "shop", "password": "correct-horse-battery-staple", "host": "%", "grants": [{"database": "shop", "privileges": ["ALL PRIVILEGES"]}], "state": "present"}

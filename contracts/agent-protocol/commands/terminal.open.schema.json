@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/terminal.open.schema.json",
+  "title": "terminal.open — open a PTY session; this command stays running and streams `output` events (data = base64 of raw PTY bytes, stream=stdout) until closed/idle/timeout",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "session_id"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$"
+    },
+    "user": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+    },
+    "shell": {
+      "type": "string",
+      "default": "/bin/bash"
+    },
+    "cwd": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "env": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "cols": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "default": 80
+    },
+    "rows": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000,
+      "default": 24
+    },
+    "idle_timeout_s": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 900
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason"
+      ],
+      "properties": {
+        "exit_code": {
+          "type": "integer"
+        },
+        "reason": {
+          "enum": [
+            "exited",
+            "closed",
+            "idle",
+            "timeout"
+          ]
+        }
+      }
+    }
+  }
+}

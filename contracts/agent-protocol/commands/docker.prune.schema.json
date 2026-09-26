@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/docker.prune.schema.json",
+  "title": "docker.prune — reclaim disk via Engine API prune endpoints",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "containers": {
+      "type": "boolean",
+      "default": true
+    },
+    "images": {
+      "enum": [
+        "none",
+        "dangling",
+        "all"
+      ],
+      "default": "dangling"
+    },
+    "volumes": {
+      "type": "boolean",
+      "default": false
+    },
+    "networks": {
+      "type": "boolean",
+      "default": true
+    },
+    "build_cache": {
+      "type": "boolean",
+      "default": false
+    },
+    "until": {
+      "type": "string",
+      "pattern": "^[0-9]+[smh]$",
+      "description": "Only prune objects older than this, e.g. 24h"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "space_reclaimed_bytes"
+      ],
+      "properties": {
+        "space_reclaimed_bytes": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

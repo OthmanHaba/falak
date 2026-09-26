@@ -1,0 +1,201 @@
+package netcfg
+
+import (
+	"bytes"
+	"context"
+	"crypto/ecdh"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"net"
+	"regexp"
+	"strings"
+
+	"github.com/kiln/agent/internal/commands"
+	"github.com/kiln/agent/internal/runner"
+)
+
+// Peer is a WireGuard peer.
+type Peer struct {
+	PublicKey           string   `json:"public_key"`
+	Endpoint            string   `json:"endpoint"`
+	AllowedIPs          []string `json:"allowed_ips"`
+	PersistentKeepalive int      `json:"persistent_keepalive"`
+}
+
+// WireGuardPayload is net.wireguard.apply.
+type WireGuardPayload struct {
+	Interface  string `json:"interface"`
+	Address    string `json:"address"`
+	ListenPort int    `json:"listen_port"`
+	Peers      []Peer `json:"peers"`
+	State      string `json:"state"`
+}
+
+// WireGuardResult is its result.
+type WireGuardResult struct {
+	Changed   bool   `json:"changed"`
+	PublicKey string `json:"public_key,omitempty"`
+}
+
+var (
+	wgIfRe  = regexp.MustCompile(`^[a-z0-9-]{1,15}$`)
+	wgKeyRe = regexp.MustCompile(`^[A-Za-z0-9+/]{42,43}=$`)
+)
+
+// GenerateKey returns a clamped Curve25519 private key (same format as `wg genkey`).
+func GenerateKey() ([]byte, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	b[0] &= 248
+	b[31] = (b[31] & 127) | 64
+	return b, nil
+}
+
+// PublicKey derives the base64 public key from a raw private key.
+func PublicKey(priv []byte) (string, error) {
+	k, err := ecdh.X25519().NewPrivateKey(priv)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(k.PublicKey().Bytes()), nil
+}
+
+// loadOrCreateKey keeps the private key on the host; it never leaves it.
+func (n *Net) loadOrCreateKey(iface string) ([]byte, bool, error) {
+	path := "/etc/kiln/wireguard/" + iface + ".key"
+	if b, err := n.d.FS.ReadFile(path); err == nil {
+		k, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(b)))
+		if err == nil && len(k) == 32 {
+			return k, false, nil
+		}
+		return nil, false, fmt.Errorf("corrupt wireguard key %s", path)
+	}
+	k, err := GenerateKey()
+	if err != nil {
+		return nil, false, err
+	}
+	if err := n.d.FS.MkdirAll("/etc/kiln/wireguard", 0o700); err != nil {
+		return nil, false, err
+	}
+	_, err = n.d.FS.WriteFile(path, []byte(base64.StdEncoding.EncodeToString(k)+"\n"), 0o600)
+	return k, true, err
+}
+
+// RenderWireGuard renders /etc/wireguard/<if>.conf.
+func RenderWireGuard(p WireGuardPayload, priv []byte) (string, error) {
+	if _, _, err := net.ParseCIDR(p.Address); err != nil {
+		return "", perr("invalid address %q", p.Address)
+	}
+	port := p.ListenPort
+	if port == 0 {
+		port = 51820
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Managed by Kiln (net.wireguard.apply) — do not edit\n[Interface]\nPrivateKey = %s\nAddress = %s\nListenPort = %d\n",
+		base64.StdEncoding.EncodeToString(priv), p.Address, port)
+	for _, peer := range p.Peers {
+		if !wgKeyRe.MatchString(peer.PublicKey) {
+			return "", perr("invalid peer public key %q", peer.PublicKey)
+		}
+		if len(peer.AllowedIPs) == 0 {
+			return "", perr("peer %s: allowed_ips required", peer.PublicKey)
+		}
+		for _, a := range peer.AllowedIPs {
+			if _, _, err := net.ParseCIDR(a); err != nil {
+				return "", perr("peer %s: invalid allowed ip %q", peer.PublicKey, a)
+			}
+		}
+		fmt.Fprintf(&b, "\n[Peer]\nPublicKey = %s\nAllowedIPs = %s\n", peer.PublicKey, strings.Join(peer.AllowedIPs, ", "))
+		if peer.Endpoint != "" {
+			if _, _, err := net.SplitHostPort(peer.Endpoint); err != nil || strings.ContainsAny(peer.Endpoint, "\n\r ") {
+				return "", perr("peer %s: invalid endpoint %q", peer.PublicKey, peer.Endpoint)
+			}
+			fmt.Fprintf(&b, "Endpoint = %s\n", peer.Endpoint)
+		}
+		if peer.PersistentKeepalive > 0 {
+			fmt.Fprintf(&b, "PersistentKeepalive = %d\n", peer.PersistentKeepalive)
+		}
+	}
+	return b.String(), nil
+}
+
+func confLine(conf, key string) string {
+	for _, l := range strings.Split(conf, "\n") {
+		if k, v, ok := strings.Cut(l, "="); ok && strings.TrimSpace(k) == key {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// WireGuardApply converges the interface.
+func (n *Net) WireGuardApply(ctx context.Context, p WireGuardPayload, st commands.Stream) (any, error) {
+	iface := p.Interface
+	if iface == "" {
+		iface = "wg-kiln"
+	}
+	if !wgIfRe.MatchString(iface) {
+		return nil, perr("invalid interface %q", iface)
+	}
+	conf := "/etc/wireguard/" + iface + ".conf"
+	unit := "wg-quick@" + iface
+	sys := func(args ...string) error {
+		_, err := runner.Check(ctx, n.d.Runner, runner.Cmd{Name: "systemctl", Args: args, Stdout: st.Stdout(), Stderr: st.Stderr()})
+		return err
+	}
+	if p.State == "absent" {
+		if !n.d.FS.Exists(conf) {
+			return WireGuardResult{}, nil
+		}
+		if err := sys("disable", "--now", unit); err != nil {
+			return nil, err
+		}
+		_, err := n.d.FS.Remove(conf)
+		return WireGuardResult{Changed: true}, err
+	}
+	priv, created, err := n.loadOrCreateKey(iface)
+	if err != nil {
+		return nil, err
+	}
+	pub, err := PublicKey(priv)
+	if err != nil {
+		return nil, err
+	}
+	rendered, err := RenderWireGuard(p, priv)
+	if err != nil {
+		return nil, err
+	}
+	old, _ := n.d.FS.ReadFile(conf)
+	if err := n.d.FS.MkdirAll("/etc/wireguard", 0o700); err != nil {
+		return nil, err
+	}
+	changed, err := n.d.FS.WriteFile(conf, []byte(rendered), 0o600)
+	if err != nil {
+		return nil, err
+	}
+	res := WireGuardResult{Changed: changed || created, PublicKey: pub}
+	act, err := n.d.Runner.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"is-active", "--quiet", unit}})
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case act.ExitCode != 0:
+		res.Changed = true
+		return res, sys("enable", "--now", unit)
+	case !changed:
+		return res, nil
+	case confLine(string(old), "Address") != p.Address:
+		// Address changes are not handled by syncconf.
+		return res, sys("restart", unit)
+	default:
+		strip, err := runner.Check(ctx, n.d.Runner, runner.Cmd{Name: "wg-quick", Args: []string{"strip", iface}})
+		if err != nil {
+			return nil, err
+		}
+		_, err = runner.Check(ctx, n.d.Runner, runner.Cmd{Name: "wg", Args: []string{"syncconf", iface, "/dev/stdin"}, Stdin: bytes.NewReader(strip.Stdout)})
+		return res, err
+	}
+}

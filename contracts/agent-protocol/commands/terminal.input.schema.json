@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/terminal.input.schema.json",
+  "title": "terminal.input — write bytes to a session",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "session_id",
+    "data"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{8,64}$"
+    },
+    "data": {
+      "type": "string",
+      "description": "base64",
+      "contentEncoding": "base64"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bytes"
+      ],
+      "properties": {
+        "bytes": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

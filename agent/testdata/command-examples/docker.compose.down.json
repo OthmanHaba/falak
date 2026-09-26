@@ -1,0 +1,5 @@
+{
+  "project": "analytics",
+  "directory": "/srv/kiln/compose/analytics",
+  "volumes": false
+}

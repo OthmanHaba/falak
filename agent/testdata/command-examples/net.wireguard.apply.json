@@ -1,0 +1,1 @@
+{"interface": "wg-kiln", "address": "10.90.0.3/24", "listen_port": 51820, "peers": [{"public_key": "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=", "endpoint": "203.0.113.10:51820", "allowed_ips": ["10.90.0.1/32"], "persistent_keepalive": 25}], "state": "present"}

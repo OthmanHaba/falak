@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/proc.apply.schema.json",
+  "title": "proc.apply — full desired set of supervised processes (built-in supervisor)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "programs"
+  ],
+  "properties": {
+    "programs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "command"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_.-]{0,62}$"
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "argv; use [\"/bin/sh\",\"-c\",\"...\"] for shell"
+          },
+          "user": {
+            "type": "string",
+            "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+          },
+          "cwd": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "env": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "numprocs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "default": 1
+          },
+          "autostart": {
+            "type": "boolean",
+            "default": true
+          },
+          "restart": {
+            "enum": [
+              "always",
+              "on-failure",
+              "never"
+            ],
+            "default": "always"
+          },
+          "backoff": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+              "initial_ms": {
+                "type": "integer",
+                "minimum": 10,
+                "default": 1000
+              },
+              "max_ms": {
+                "type": "integer",
+                "minimum": 10,
+                "default": 60000
+              }
+            }
+          },
+          "start_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 1,
+            "description": "Process must stay up this long to reset backoff"
+          },
+          "stop_signal": {
+            "enum": [
+              "TERM",
+              "INT",
+              "QUIT",
+              "HUP",
+              "KILL",
+              "USR1",
+              "USR2"
+            ],
+            "default": "TERM"
+          },
+          "stop_timeout_s": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 30,
+            "description": "SIGKILL after this"
+          },
+          "log": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [],
+            "properties": {
+              "stdout": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "stderr": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "max_bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "default": 52428800
+              },
+              "otlp": {
+                "type": "boolean",
+                "default": true
+              }
+            }
+          },
+          "site": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+            "description": "Site slug (directory name under /srv/kiln/sites)"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "started": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stopped": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "restarted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unchanged": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/net.firewall.apply.schema.json",
+  "title": "net.firewall.apply — full nftables ruleset for table inet kiln (rendered to /etc/kiln/nftables.conf, checked with nft -c, applied with nft -f)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rules"
+  ],
+  "properties": {
+    "input_policy": {
+      "enum": [
+        "drop",
+        "accept"
+      ],
+      "default": "drop"
+    },
+    "ssh_port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535,
+      "default": 22,
+      "description": "Always accepted to avoid lock-out"
+    },
+    "allow_icmp": {
+      "type": "boolean",
+      "default": true
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "action": {
+            "enum": [
+              "accept",
+              "drop",
+              "reject"
+            ],
+            "default": "accept"
+          },
+          "protocol": {
+            "enum": [
+              "tcp",
+              "udp",
+              "any"
+            ],
+            "default": "tcp"
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,5}(-[0-9]{1,5})?$"
+            },
+            "description": "Empty = all ports"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "IPv4/IPv6 address or CIDR"
+            },
+            "description": "Empty = anywhere"
+          },
+          "interface": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 120
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "ruleset_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}

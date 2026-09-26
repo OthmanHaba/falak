@@ -1,0 +1,8 @@
+{
+  "containers": true,
+  "images": "dangling",
+  "volumes": false,
+  "networks": true,
+  "build_cache": true,
+  "until": "24h"
+}

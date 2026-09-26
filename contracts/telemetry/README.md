@@ -53,4 +53,6 @@ The agent inspects spans it relays and forwards compact summaries to `POST /agen
 - every span with an `exception` event → `{ "kind": "exception", "trace_id", "span_id", "site_id", "type", "message", "stacktrace", "handled", "user_id", "event_type", "route_or_name", "at" }`
 - per-minute per-route/job/query-shape aggregates → `{ "kind": "aggregate", "site_id", "event_type", "name", "count", "p50_ms", "p95_ms", "max_ms", "errors", "minute" }`
 
+- every cron run → `{ "kind": "cron_heartbeat", ... }` (shape: `contracts/agent-protocol/commands/cron.apply.schema.json` `$defs.heartbeat`); drives missed-run detection
+
 Thresholds, grouping into issues, and alerts live in the control plane (Insights module).

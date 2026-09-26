@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/deploy.hook.schema.json",
+  "title": "deploy.hook — run a deploy script step with KILN_* env",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "site",
+    "release_id",
+    "name",
+    "script"
+  ],
+  "properties": {
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Site slug (directory name under /srv/kiln/sites)"
+    },
+    "release_id": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID"
+    },
+    "sites_root": {
+      "allOf": [
+        {
+          "type": "string",
+          "pattern": "^/"
+        }
+      ],
+      "default": "/srv/kiln/sites"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.-]+$",
+      "examples": [
+        "build",
+        "migrate",
+        "after_activate"
+      ]
+    },
+    "script": {
+      "type": "string",
+      "minLength": 1,
+      "description": "$KILN_FETCH/$KILN_ACTIVATE/$KILN_RESTART_PROCS are split out by the control plane and are no-ops (':') here"
+    },
+    "shell": {
+      "type": "string",
+      "default": "/bin/bash"
+    },
+    "user": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+    },
+    "cwd": {
+      "enum": [
+        "release",
+        "current",
+        "site_root"
+      ],
+      "default": "release"
+    },
+    "env": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "site_id": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID"
+        },
+        "deployment_id": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "trigger": {
+          "enum": [
+            "push",
+            "manual",
+            "api",
+            "rollback",
+            "schedule"
+          ]
+        },
+        "php_binary": {
+          "type": "string",
+          "description": "e.g. /usr/bin/php8.4 or 'frankenphp php-cli'"
+        }
+      },
+      "description": "Exposed to scripts as KILN_SITE_ID, KILN_DEPLOYMENT_ID, KILN_COMMIT, KILN_AUTHOR, KILN_BRANCH, KILN_TRIGGER, KILN_PHP_BINARY"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exit_code"
+      ],
+      "properties": {
+        "exit_code": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

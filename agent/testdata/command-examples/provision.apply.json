@@ -1,0 +1,16 @@
+{
+  "hostname": "web-1",
+  "timezone": "UTC",
+  "swap_mb": 2048,
+  "apt": {"packages": ["git", "unzip", "curl", "ca-certificates", "acl"], "remove": ["snapd"]},
+  "users": [{"name": "shop", "groups": ["www-data"], "isolated": true}],
+  "runtimes": {
+    "php": {"versions": ["8.3", "8.4"], "default": "8.4", "extensions": ["mbstring", "intl", "pdo_mysql", "redis", "bcmath", "zip", "gd"], "fpm": true},
+    "frankenphp": {"version": "1.4.0"},
+    "node": {"versions": ["22.11.0"], "default": "22.11.0"},
+    "caddy": {"enabled": false}
+  },
+  "services": [{"name": "redis-server", "enabled": true, "state": "started"}],
+  "unattended_upgrades": {"enabled": true, "auto_reboot": false, "reboot_time": "04:00"},
+  "ssh": {"port": 22, "permit_root_login": "prohibit-password", "password_authentication": false}
+}

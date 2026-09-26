@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/system.ssh_key.sync.schema.json",
+  "title": "system.ssh_key.sync — converge ~user/.ssh/authorized_keys to the given set",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "user",
+    "keys"
+  ],
+  "properties": {
+    "user": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+    },
+    "keys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "public_key"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Control-plane key id (used as comment)"
+          },
+          "name": {
+            "type": "string"
+          },
+          "public_key": {
+            "type": "string",
+            "description": "OpenSSH public key line",
+            "pattern": "^(ssh-(ed25519|rsa|dss)|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com) "
+          }
+        }
+      }
+    },
+    "exclusive": {
+      "type": "boolean",
+      "default": true,
+      "description": "true: file contains exactly these keys; false: manage only a '# kiln-managed' block"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "count"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "count": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

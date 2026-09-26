@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/system.package.install.schema.json",
+  "title": "system.package.install — apt packages",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "packages"
+  ],
+  "properties": {
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9+.-]*(=[A-Za-z0-9.+:~-]+)?$",
+        "description": "apt package name, optionally pinned with =version"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "state": {
+      "enum": [
+        "present",
+        "absent",
+        "latest"
+      ],
+      "default": "present"
+    },
+    "update_cache": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "installed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "removed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "site": "shop",
+  "release_id": "01J9Z8Y7X6W5V4T3S2R1Q0P9N1",
+  "artifact": {
+    "url": "https://panel.example.com/artifacts/01J9Z8Y7X6W5V4T3S2R1Q0P9N1.tar.gz",
+    "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    "size_bytes": 48213344,
+    "format": "tar.gz",
+    "headers": { "Authorization": "Bearer artifact-token" }
+  },
+  "owner": { "user": "shop", "group": "shop" }
+}

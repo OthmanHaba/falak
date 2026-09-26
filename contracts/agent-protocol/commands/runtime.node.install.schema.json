@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/runtime.node.install.schema.json",
+  "title": "runtime.node.install — install Node.js from nodejs.org official tarballs into /opt/kiln/node/<version>",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "Optional; when absent the agent verifies against the release SHASUMS256.txt"
+    },
+    "default": {
+      "type": "boolean",
+      "default": false,
+      "description": "Symlink node/npm/npx/corepack into /usr/local/bin"
+    },
+    "mirror": {
+      "type": "string",
+      "format": "uri",
+      "default": "https://nodejs.org/dist"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "prefix"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "prefix": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

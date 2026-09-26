@@ -1,0 +1,51 @@
+{
+  "programs": [
+    {
+      "name": "shop-queue",
+      "command": [
+        "/usr/bin/php8.4",
+        "artisan",
+        "queue:work",
+        "redis",
+        "--sleep=3",
+        "--tries=3",
+        "--max-time=3600"
+      ],
+      "user": "shop",
+      "cwd": "/srv/kiln/sites/shop/current",
+      "env": {
+        "APP_ENV": "production"
+      },
+      "numprocs": 2,
+      "autostart": true,
+      "restart": "always",
+      "backoff": {
+        "initial_ms": 1000,
+        "max_ms": 60000
+      },
+      "start_seconds": 2,
+      "stop_signal": "TERM",
+      "stop_timeout_s": 3600,
+      "log": {
+        "stdout": "/var/log/kiln/shop-queue.out.log",
+        "stderr": "/var/log/kiln/shop-queue.err.log",
+        "max_bytes": 52428800,
+        "otlp": true
+      },
+      "site": "shop"
+    },
+    {
+      "name": "shop-horizon",
+      "command": [
+        "/bin/sh",
+        "-c",
+        "exec php artisan horizon"
+      ],
+      "user": "shop",
+      "cwd": "/srv/kiln/sites/shop/current",
+      "stop_signal": "TERM",
+      "stop_timeout_s": 60,
+      "site": "shop"
+    }
+  ]
+}

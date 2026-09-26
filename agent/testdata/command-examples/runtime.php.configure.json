@@ -1,0 +1,1 @@
+{"version": "8.4", "sapi": "all", "ini": {"memory_limit": "512M", "upload_max_filesize": "64M", "post_max_size": "64M", "opcache.enable": true, "opcache.memory_consumption": 256, "date.timezone": "UTC"}}

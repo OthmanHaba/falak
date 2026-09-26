@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/deploy.prepare.schema.json",
+  "title": "deploy.prepare — shared dirs/files + symlinks into the release, write shared .env",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "site",
+    "release_id"
+  ],
+  "properties": {
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Site slug (directory name under /srv/kiln/sites)"
+    },
+    "release_id": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ULID"
+    },
+    "sites_root": {
+      "allOf": [
+        {
+          "type": "string",
+          "pattern": "^/"
+        }
+      ],
+      "default": "/srv/kiln/sites"
+    },
+    "shared_paths": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[^/].*$",
+            "description": "Relative to release root"
+          },
+          "type": {
+            "enum": [
+              "dir",
+              "file"
+            ],
+            "default": "dir"
+          }
+        }
+      },
+      "default": [
+        {
+          "path": "storage",
+          "type": "dir"
+        },
+        {
+          "path": ".env",
+          "type": "file"
+        }
+      ]
+    },
+    "env_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "content"
+      ],
+      "properties": {
+        "content": {
+          "type": "string",
+          "description": "dotenv content (secret)"
+        },
+        "path": {
+          "type": "string",
+          "default": ".env"
+        }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "user"
+      ],
+      "properties": {
+        "user": {
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+        },
+        "group": {
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+        }
+      },
+      "description": "Owner applied to created files/dirs"
+    },
+    "writable_dirs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Relative dirs chmod'ed 0775 (e.g. bootstrap/cache)"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "site": "shop",
+  "release_id": "01J9Z8Y7X6W5V4T3S2R1Q0P9N1",
+  "name": "migrate",
+  "script": "$KILN_PHP_BINARY artisan migrate --force\n$KILN_PHP_BINARY artisan optimize",
+  "shell": "/bin/bash",
+  "user": "shop",
+  "cwd": "release",
+  "env": { "APP_ENV": "production" },
+  "context": {
+    "site_id": "01J9Z8Y7X6W5V4T3S2R1Q0P9S1",
+    "deployment_id": "01J9Z8Y7X6W5V4T3S2R1Q0P9D1",
+    "commit": "3f2c1a9",
+    "author": "Ada Lovelace",
+    "branch": "main",
+    "trigger": "push",
+    "php_binary": "/usr/bin/php8.4"
+  }
+}

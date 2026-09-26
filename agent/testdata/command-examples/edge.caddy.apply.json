@@ -1,0 +1,34 @@
+{
+  "acme_email": "ops@example.com",
+  "sites": [
+    {
+      "id": "shop",
+      "domains": ["shop.example.com"],
+      "redirect_domains": ["www.shop.example.com"],
+      "tls": { "mode": "acme" },
+      "kind": "frankenphp",
+      "root": "/srv/kiln/sites/shop/current/public",
+      "headers": { "X-Frame-Options": "SAMEORIGIN" },
+      "max_body_bytes": 104857600
+    },
+    {
+      "id": "api",
+      "domains": ["api.example.com"],
+      "kind": "reverse_proxy",
+      "upstreams": [{ "dial": "127.0.0.1:3000" }],
+      "lb_policy": "round_robin",
+      "health_uri": "/health",
+      "deny_ips": ["203.0.113.0/24"]
+    },
+    {
+      "id": "legacy",
+      "domains": ["legacy.example.com"],
+      "tls": { "mode": "custom", "cert_name": "legacy" },
+      "kind": "php_fpm",
+      "root": "/srv/kiln/sites/legacy/current/public",
+      "php_fpm_socket": "/run/php/kiln-legacy-8.3.sock",
+      "basic_auth": [{ "username": "staging", "password_hash": "$2a$14$Zkx19XLiW6VYouLHR5NmfOFU0z2GTNmpkT/5qqR7hx4IjWJPDhjvG" }],
+      "redirects": [{ "from": "/old", "to": "/new", "status": 301 }]
+    }
+  ]
+}

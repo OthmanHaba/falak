@@ -1,0 +1,75 @@
+// Command kiln-agent is the Kiln server daemon.
+//
+//	kiln-agent run        enroll if needed (KILN_PANEL_URL + KILN_TOKEN), then serve
+//	kiln-agent enroll     enroll only
+//	kiln-agent install    install binary + systemd unit and start the service
+//	kiln-agent version
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/kiln/agent/internal/agent"
+	"github.com/kiln/agent/internal/config"
+	"github.com/kiln/agent/internal/hostfs"
+	"github.com/kiln/agent/internal/runner"
+	"github.com/kiln/agent/internal/version"
+)
+
+func usage() {
+	fmt.Fprintf(os.Stderr, "usage: kiln-agent <run|enroll|install|version> [flags]\n")
+	os.Exit(2)
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		usage()
+	}
+	sub := os.Args[1]
+	fs := flag.NewFlagSet(sub, flag.ExitOnError)
+	cfg := config.Default()
+	cfg.Bind(fs)
+	noStart := fs.Bool("no-start", false, "install: enable but do not start the service")
+	logLevel := fs.String("log-level", envOr("KILN_LOG_LEVEL", "info"), "debug|info|warn|error (env KILN_LOG_LEVEL)")
+	_ = fs.Parse(os.Args[2:])
+
+	var lvl slog.Level
+	_ = lvl.UnmarshalText([]byte(*logLevel))
+	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})).With("component", "kiln-agent")
+	slog.SetDefault(log)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	var err error
+	switch sub {
+	case "run":
+		err = agent.Run(ctx, cfg, log)
+	case "enroll":
+		err = agent.EnrollOnly(ctx, cfg, log)
+	case "install":
+		self, _ := os.Executable()
+		err = agent.Install(ctx, agent.InstallOptions{Config: cfg, Source: self, NoStart: *noStart, FS: hostfs.FS{Root: cfg.HostRoot}, Runner: runner.Exec{}, Out: os.Stdout})
+	case "version", "--version", "-v":
+		fmt.Println(version.Version)
+	default:
+		usage()
+	}
+	if err != nil {
+		log.Error("fatal", "err", err)
+		os.Exit(1)
+	}
+}
+
+func envOr(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return d
+}
