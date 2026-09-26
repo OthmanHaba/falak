@@ -269,11 +269,25 @@ func (p *Provisioner) status(ctx context.Context, args ...string) (bool, error) 
 	return err == nil && r.ExitCode == 0, err
 }
 
+// inContainer reports whether the host is a container (Docker, LXC, systemd-nspawn...), where the
+// hostname is owned by the runtime and swap cannot be enabled.
+func (p *Provisioner) inContainer(ctx context.Context) bool {
+	r, err := p.d.Runner.Run(ctx, runner.Cmd{Name: "systemd-detect-virt", Args: []string{"--container", "--quiet"}})
+	return err == nil && r.ExitCode == 0
+}
+
 func (p *Provisioner) hostname(ctx context.Context, st commands.Stream, h string) (bool, error) {
 	if b, err := p.d.FS.ReadFile("/etc/hostname"); err == nil && strings.TrimSpace(string(b)) == h {
 		return false, nil
 	}
-	return true, p.run(ctx, st, "hostnamectl", "set-hostname", h)
+	if err := p.run(ctx, st, "hostnamectl", "set-hostname", h); err != nil {
+		if p.inContainer(ctx) {
+			fmt.Fprintf(st.Stdout(), "hostname is managed by the container runtime; skipping (%v)\n", err)
+			return false, nil
+		}
+		return true, err
+	}
+	return true, nil
 }
 
 func (p *Provisioner) timezone(ctx context.Context, st commands.Stream, tz string) (bool, error) {
@@ -286,6 +300,10 @@ func (p *Provisioner) timezone(ctx context.Context, st commands.Stream, tz strin
 const swapFile = "/swapfile"
 
 func (p *Provisioner) swap(ctx context.Context, st commands.Stream, mb int) (bool, error) {
+	if p.inContainer(ctx) {
+		fmt.Fprintln(st.Stdout(), "swap cannot be enabled inside a container; skipping")
+		return false, nil
+	}
 	want := int64(mb) << 20
 	active := false
 	if b, err := p.d.FS.ReadFile("/proc/swaps"); err == nil {
@@ -473,6 +491,11 @@ func (p *Provisioner) ssh(ctx context.Context, st commands.Stream, s SSH) (bool,
 	changed, err := p.d.FS.WriteFile(sshdDropIn, []byte(RenderSSHD(s)), 0o644)
 	if err != nil || !changed {
 		return changed, err
+	}
+	// sshd -t needs its privilege separation dir, which Ubuntu's socket-activated ssh only creates
+	// once the service has run (fresh 24.04 hosts); Debian's init script pre-creates it the same way.
+	if err := p.d.FS.MkdirAll("/run/sshd", 0o755); err != nil {
+		return false, err
 	}
 	if err := p.run(ctx, st, "sshd", "-t"); err != nil {
 		if oldErr != nil {

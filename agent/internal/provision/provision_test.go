@@ -3,6 +3,7 @@ package provision
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -83,6 +84,8 @@ func newHost(f *runnertest.Fake, root string) *hostSim {
 		h.users[c.Args[len(c.Args)-1]] = true
 		return runner.Result{}, nil
 	})
+	// Default host is a VM; container tests override this.
+	f.OnFunc("systemd-detect-virt", func(c runnertest.Call) (runner.Result, error) { return runner.Result{ExitCode: 1}, nil })
 	f.OnFunc("hostnamectl set-hostname", func(c runnertest.Call) (runner.Result, error) {
 		os.MkdirAll(filepath.Join(root, "etc"), 0o755)
 		return runner.Result{}, os.WriteFile(filepath.Join(root, "etc/hostname"), []byte(c.Args[1]+"\n"), 0o644)
@@ -218,5 +221,59 @@ func TestFailedStepContinuesAndSSHRestores(t *testing.T) {
 	}
 	if f.Ran("systemctl reload ssh") {
 		t.Fatal("reloaded broken ssh config")
+	}
+}
+
+func TestContainerHostSkipsHostnameAndSwapButProvisionsTheRest(t *testing.T) {
+	root := t.TempDir()
+	f := &runnertest.Fake{}
+	// Rules match in registration order, so these win over newHost's defaults.
+	f.OnFunc("systemd-detect-virt", func(c runnertest.Call) (runner.Result, error) { return runner.Result{ExitCode: 0}, nil })
+	f.OnFunc("hostnamectl set-hostname", func(c runnertest.Call) (runner.Result, error) {
+		return runner.Result{ExitCode: 1}, errors.New("Could not set static hostname: Device or resource busy")
+	})
+	h := newHost(f, root)
+	h.users["caddy"] = true
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("-----BEGIN PGP PUBLIC KEY BLOCK-----\n"))
+	}))
+	defer srv.Close()
+	p := New(Deps{Runner: f, FS: hostfs.FS{Root: root}, HTTP: srv.Client(), Arch: "amd64", CaddyKeyURL: srv.URL + "/gpg.key"})
+	plan, err := commands.Decode[Plan](json.RawMessage(planJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := p.Apply(context.Background(), plan, commands.NewTestStream("c", &commands.Collector{}))
+	if err != nil {
+		t.Fatal(err, r)
+	}
+	for _, s := range r.(Result).Steps {
+		if s.Error != "" {
+			t.Fatalf("step %s failed in a container: %s", s.Name, s.Error)
+		}
+	}
+	for _, w := range []string{"fallocate", "swapon"} {
+		if f.Ran(w) {
+			t.Fatalf("%s must not run in a container", w)
+		}
+	}
+	if !f.Ran("sshd -t") || !f.Ran("useradd") {
+		t.Fatal("the rest of the plan must still converge")
+	}
+}
+
+func TestSSHCreatesPrivilegeSeparationDirBeforeValidating(t *testing.T) {
+	root := t.TempDir()
+	f := &runnertest.Fake{}
+	f.OnFunc("sshd -t", func(c runnertest.Call) (runner.Result, error) {
+		if _, err := os.Stat(filepath.Join(root, "run/sshd")); err != nil {
+			return runner.Result{ExitCode: 255}, errors.New("Missing privilege separation directory: /run/sshd")
+		}
+		return runner.Result{}, nil
+	})
+	p := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
+	changed, err := p.ssh(context.Background(), commands.NewTestStream("c", &commands.Collector{}), SSH{Port: 22, PermitRootLogin: "prohibit-password"})
+	if err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
 	}
 }
