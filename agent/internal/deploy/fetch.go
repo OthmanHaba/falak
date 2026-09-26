@@ -36,6 +36,7 @@ type FetchPayload struct {
 	SitesRoot string   `json:"sites_root,omitempty"`
 	Artifact  Artifact `json:"artifact"`
 	Owner     *Owner   `json:"owner,omitempty"`
+	Context   *Context `json:"context,omitempty"`
 }
 
 // FetchResult is deploy.fetch's result.
@@ -56,7 +57,9 @@ type marker struct {
 
 // Fetch downloads, verifies and extracts the artifact into releases/<id>. Extraction happens in a
 // hidden staging dir that is renamed into place, so a release dir is always complete.
-func (d *Deployer) Fetch(ctx context.Context, p FetchPayload, s commands.Stream) (any, error) {
+func (d *Deployer) Fetch(ctx context.Context, p FetchPayload, s commands.Stream) (_ any, err error) {
+	lc := lifecycle{site: p.Site, phase: PhaseFetch, releaseID: p.ReleaseID, ctx: p.Context}
+	defer d.failed(lc, &err)
 	st, err := d.site(p.Site, p.SitesRoot)
 	if err != nil {
 		return nil, err
@@ -79,6 +82,7 @@ func (d *Deployer) Fetch(ctx context.Context, p FetchPayload, s commands.Stream)
 	} else if _, err := os.Stat(st.release(p.ReleaseID)); err == nil {
 		return nil, fmt.Errorf("release dir %s exists but has no marker; refusing to overwrite", res.ReleaseDir)
 	}
+	d.emit(lc, StatusStarted, nil)
 	for _, dir := range []string{st.real, st.releases(), st.shared()} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, err

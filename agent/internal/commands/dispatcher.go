@@ -40,6 +40,14 @@ type Dispatcher struct {
 	byKey   *lru // idempotency key → finished record
 	wg      sync.WaitGroup
 	ctx     context.Context
+
+	// Durable journal (see Persist).
+	journalPath    string
+	journalCap     int
+	journal        []journalEntry
+	journalSeq     uint64
+	journalMu      sync.Mutex
+	journalWritten uint64
 }
 
 type record struct {
@@ -166,7 +174,13 @@ func (d *Dispatcher) run(ctx context.Context, env Envelope) {
 	if env.IdempotencyKey != "" && err == nil {
 		d.byKey.put(env.IdempotencyKey, rec)
 	}
+	snapshot := d.journalAppendLocked(env, rec, err == nil)
+	d.journalSeq++
+	seq := d.journalSeq
 	d.mu.Unlock()
+	if snapshot != nil {
+		d.writeJournal(seq, snapshot)
+	}
 }
 
 func safeExecute(ctx context.Context, ex Executor, env Envelope, s Stream) (res any, err error) {

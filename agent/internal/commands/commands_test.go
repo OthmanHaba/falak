@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -147,4 +148,88 @@ func TestStreamChunksValidUTF8(t *testing.T) {
 	if got.String() != big {
 		t.Fatal("output mismatch")
 	}
+}
+
+func TestDedupeJournalSurvivesRestart(t *testing.T) {
+	path := t.TempDir() + "/state/commands.json"
+	var runs int32
+	reg := NewRegistry()
+	reg.Register("system.exec", Func(func(ctx context.Context, env Envelope, s Stream) (any, error) {
+		atomic.AddInt32(&runs, 1)
+		if string(env.Payload) == `{"fail":true}` {
+			return nil, errors.New("boom")
+		}
+		return map[string]any{"exit_code": 0, "note": "ran once"}, nil
+	}))
+	newD := func() (*Dispatcher, *Collector) {
+		c := &Collector{}
+		d := NewDispatcher(context.Background(), reg, c, nil)
+		if err := d.Persist(path, 3); err != nil {
+			t.Fatal(err)
+		}
+		return d, c
+	}
+
+	d1, _ := newD()
+	d1.Submit(Envelope{ID: "A", Type: "system.exec", IdempotencyKey: "migrate-01"})
+	d1.Wait()
+	d1.Submit(Envelope{ID: "F", Type: "system.exec", IdempotencyKey: "flaky", Payload: json.RawMessage(`{"fail":true}`)})
+	d1.Wait()
+	if runs != 2 {
+		t.Fatalf("runs=%d", runs)
+	}
+	if st, err := os.Stat(path); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("journal not written 0600: %v", err)
+	}
+
+	// "Restart": a fresh dispatcher on the same journal.
+	d2, c2 := newD()
+	if d2.Submit(Envelope{ID: "B", Type: "system.exec", IdempotencyKey: "migrate-01"}) {
+		t.Fatal("finished step re-executed after restart (same idempotency key)")
+	}
+	if d2.Submit(Envelope{ID: "A", Type: "system.exec", IdempotencyKey: "migrate-01"}) {
+		t.Fatal("finished command id re-executed after restart")
+	}
+	if d2.Submit(Envelope{ID: "F", Type: "system.exec", IdempotencyKey: "flaky"}) {
+		t.Fatal("redelivered failed command id must be answered from the journal")
+	}
+	// A failed step may be retried under a new command id.
+	if !d2.Submit(Envelope{ID: "F2", Type: "system.exec", IdempotencyKey: "flaky", Payload: json.RawMessage(`{"fail":true}`)}) {
+		t.Fatal("failed idempotency key must be retryable")
+	}
+	d2.Wait()
+	if runs != 3 {
+		t.Fatalf("runs=%d, want 3", runs)
+	}
+	fb := finished(t, c2, "B")
+	if res, ok := fb.Result.(map[string]any); !ok || res["note"] != "ran once" || *fb.ExitCode != 0 {
+		t.Fatalf("cached result not restored: %+v", fb)
+	}
+
+	// Bounded to the last n=3 entries (A, F, F2 + two more → oldest dropped).
+	d2.Submit(Envelope{ID: "C", Type: "system.exec", IdempotencyKey: "c"})
+	d2.Wait()
+	d2.Submit(Envelope{ID: "D", Type: "system.exec", IdempotencyKey: "d"})
+	d2.Wait()
+	var jf journalFile
+	b, _ := os.ReadFile(path)
+	if err := json.Unmarshal(b, &jf); err != nil || len(jf.Entries) != 3 || jf.Entries[0].CommandID != "F2" || jf.Entries[2].CommandID != "D" {
+		t.Fatalf("journal entries %+v (%v)", jf.Entries, err)
+	}
+	d3, _ := newD()
+	if !d3.Submit(Envelope{ID: "A2", Type: "system.exec", IdempotencyKey: "migrate-01"}) {
+		t.Fatal("evicted key should execute again")
+	}
+	d3.Wait()
+
+	// Corrupt journal: reported, dispatcher still works.
+	os.WriteFile(path, []byte("{nope"), 0o600)
+	d4 := NewDispatcher(context.Background(), reg, &Collector{}, nil)
+	if err := d4.Persist(path, 3); err == nil {
+		t.Fatal("expected corrupt-journal error")
+	}
+	if !d4.Submit(Envelope{ID: "Z", Type: "system.exec"}) {
+		t.Fatal("dispatcher unusable after corrupt journal")
+	}
+	d4.Wait()
 }

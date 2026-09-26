@@ -394,3 +394,34 @@ func TestSignalURL(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentRecordsGetExplicitSiteIDAndNoStaleDeployment(t *testing.T) {
+	col := newCollector(t)
+	r, _ := testRelay(t, nil)
+	r.Configure(Config{Endpoint: col.srv.URL, TracesRatio: 1, HostName: "web-1",
+		Sites: []Site{{Slug: "shop", SiteID: "01SITE", DeploymentID: "01OLDDEPLOY", ReleaseID: "01OLDRELEASE"}}})
+	r.EmitLog(obs.LogRecord{Body: "deployment started", Service: AgentService, Site: "shop", SiteID: "01EXPLICIT",
+		Attrs: map[string]string{"kiln.deployment.id": "01NEWDEPLOY"}})
+	r.EmitLog(obs.LogRecord{Body: "worker log", Site: "shop"})
+	waitFor(t, "logs", func() bool { _, l, _ := col.counts(); return l == 2 })
+	col.mu.Lock()
+	defer col.mu.Unlock()
+	byBody := map[string]*logspb.ResourceLogs{}
+	for _, rl := range col.logs {
+		byBody[rl.ScopeLogs[0].LogRecords[0].Body.GetStringValue()] = rl
+	}
+	agent := byBody["deployment started"].Resource.Attributes
+	if v, _ := Lookup(agent, "kiln.site.id"); v != "01EXPLICIT" {
+		t.Fatalf("explicit site id not used: %v", agent)
+	}
+	if v, _ := Lookup(agent, "service.name"); v != AgentService {
+		t.Fatalf("service.name %q", v)
+	}
+	if _, ok := Lookup(agent, "kiln.deployment.id"); ok {
+		t.Fatal("agent record must not get the site's active deployment id on its resource")
+	}
+	app := byBody["worker log"].Resource.Attributes
+	if v, _ := Lookup(app, "kiln.deployment.id"); v != "01OLDDEPLOY" {
+		t.Fatalf("site workload logs should still carry the active deployment id: %v", app)
+	}
+}

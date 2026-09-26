@@ -103,6 +103,46 @@
         "type": "string"
       },
       "description": "Relative dirs chmod'ed 0775 (e.g. bootstrap/cache)"
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "site_id": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID"
+        },
+        "deployment_id": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "ULID"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "trigger": {
+          "enum": [
+            "push",
+            "manual",
+            "api",
+            "rollback",
+            "schedule"
+          ]
+        },
+        "php_binary": {
+          "type": "string",
+          "description": "e.g. /usr/bin/php8.4 or 'frankenphp php-cli'"
+        }
+      },
+      "description": "Deployment context. Labels the deployment lifecycle OTLP log events (kiln.event.type=deployment, kiln.deployment.id, kiln.site.id, kiln.release.id, kiln.deployment.phase, kiln.deployment.status); in deploy.hook also exposed to scripts as KILN_SITE_ID, KILN_DEPLOYMENT_ID, KILN_COMMIT, KILN_AUTHOR, KILN_BRANCH, KILN_TRIGGER, KILN_PHP_BINARY"
     }
   },
   "$defs": {

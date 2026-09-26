@@ -97,7 +97,7 @@ func Build(d Deps) *Components {
 	edgeClient := &edge.Client{Base: cfg.CaddyAdmin}
 	edgeMgr := edge.New(edge.Options{Client: edgeClient, FS: d.FS, EtcDir: cfg.EtcDir, Logger: log.With("component", "edge")})
 	dock := docker.New(docker.Options{Socket: cfg.DockerSock, Runner: d.Runner, FS: d.FS, Upstreams: edgeMgr, Logger: log.With("component", "docker")})
-	dep := deploy.New(deploy.Options{FS: d.FS, Runner: d.Runner, HTTP: d.HTTP, SitesRoot: cfg.SitesRoot, Procs: sup, Workers: edgeClient, Logger: log.With("component", "deploy")})
+	dep := deploy.New(deploy.Options{FS: d.FS, Runner: d.Runner, HTTP: d.HTTP, SitesRoot: cfg.SitesRoot, Procs: sup, Workers: edgeClient, Events: sink, Logger: log.With("component", "deploy")})
 	terms := pty.New(pty.Options{Logger: log.With("component", "pty")})
 
 	system.New(system.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, AgentVersion: version.Version, Restart: d.RestartAgent}).Register(reg)
@@ -206,6 +206,10 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	go func() { defer outboxDone.Done(); outbox.Run(outboxCtx) }()
 
 	disp := commands.NewDispatcher(runCtx, comps.Registry, outbox, log.With("component", "dispatcher"))
+	// Completed commands survive restarts, so a finished non-idempotent step is never re-run.
+	if err := disp.Persist(filepath.Join(fs.P(cfg.StateDir), "commands.json"), commands.DefaultJournalSize); err != nil {
+		log.Warn("command journal", "err", err)
+	}
 	poller := &transport.Poller{Client: client, Submit: disp.Submit, Wait: cfg.PollWait, Log: log.With("component", "poller")}
 	hb := &transport.Heartbeater{
 		Client: client, Interval: cfg.Heartbeat, Running: disp.Running, Log: log.With("component", "heartbeat"),

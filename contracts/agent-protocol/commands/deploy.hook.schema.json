@@ -107,7 +107,7 @@
           "description": "e.g. /usr/bin/php8.4 or 'frankenphp php-cli'"
         }
       },
-      "description": "Exposed to scripts as KILN_SITE_ID, KILN_DEPLOYMENT_ID, KILN_COMMIT, KILN_AUTHOR, KILN_BRANCH, KILN_TRIGGER, KILN_PHP_BINARY"
+      "description": "Deployment context. Labels the deployment lifecycle OTLP log events (kiln.event.type=deployment, kiln.deployment.id, kiln.site.id, kiln.release.id, kiln.deployment.phase, kiln.deployment.status); in deploy.hook also exposed to scripts as KILN_SITE_ID, KILN_DEPLOYMENT_ID, KILN_COMMIT, KILN_AUTHOR, KILN_BRANCH, KILN_TRIGGER, KILN_PHP_BINARY"
     }
   },
   "$defs": {

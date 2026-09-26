@@ -18,10 +18,12 @@ var _ obs.Sink = (*Relay)(nil)
 var agentScope = &commonpb.InstrumentationScope{Name: "kiln-agent", Version: version.Version}
 
 // agentResource builds the resource for records produced by the agent itself.
-func (r *Relay) agentResource(site, service string) *resourcepb.Resource {
+func (r *Relay) agentResource(site, siteID, service string) *resourcepb.Resource {
 	res := &resourcepb.Resource{}
 	cfg := r.cfg.Load()
-	if site != "" {
+	if siteID != "" {
+		res.Attributes = append(res.Attributes, Str("kiln.site.id", siteID))
+	} else if site != "" {
 		if s := cfg.siteBySlug(site); s != nil {
 			res.Attributes = append(res.Attributes, Str("kiln.site.id", s.SiteID))
 		}
@@ -77,7 +79,7 @@ func (r *Relay) EmitLog(l obs.LogRecord) {
 		rec.Attributes = append(rec.Attributes, Str(k, v))
 	}
 	r.SubmitLogs([]*logspb.ResourceLogs{{
-		Resource:  r.agentResource(l.Site, l.Service),
+		Resource:  r.agentResource(l.Site, l.SiteID, l.Service),
 		ScopeLogs: []*logspb.ScopeLogs{{Scope: agentScope, LogRecords: []*logspb.LogRecord{rec}}},
 	}})
 }
@@ -115,7 +117,7 @@ func (r *Relay) EmitSpan(s obs.Span) {
 		sp.Status = &tracepb.Status{Code: tracepb.Status_STATUS_CODE_ERROR, Message: s.ErrorMsg}
 	}
 	r.SubmitTraces([]*tracepb.ResourceSpans{{
-		Resource:   r.agentResource(s.Site, s.Service),
+		Resource:   r.agentResource(s.Site, s.SiteID, s.Service),
 		ScopeSpans: []*tracepb.ScopeSpans{{Scope: agentScope, Spans: []*tracepb.Span{sp}}},
 	}})
 }

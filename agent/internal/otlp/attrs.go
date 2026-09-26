@@ -124,6 +124,9 @@ func (c *Config) siteBySlug(slug string) *Site {
 	return nil
 }
 
+// AgentService is the service.name of records produced by the agent itself.
+const AgentService = "kiln-agent"
+
 // Enrich fills missing resource attributes per the telemetry contract. Attributes set by the app are
 // never overwritten. The site is resolved from kiln.site.id, then service.name (site slug).
 func Enrich(res *resourcepb.Resource, cfg *Config) *resourcepb.Resource {
@@ -149,11 +152,16 @@ func Enrich(res *resourcepb.Resource, cfg *Config) *resourcepb.Resource {
 		res.Attributes = append(res.Attributes, Str(k, v))
 	}
 	env := cfg.Environment
+	svc, _ := Lookup(res.Attributes, "service.name")
 	if site != nil {
 		add("service.name", site.Slug)
 		add("kiln.site.id", site.SiteID)
-		add("kiln.deployment.id", site.DeploymentID)
-		add("kiln.release.id", site.ReleaseID)
+		// The agent's own records (e.g. deployment lifecycle events) carry their deployment/release
+		// ids as record attributes; the site's *currently active* ids would contradict them.
+		if svc != AgentService {
+			add("kiln.deployment.id", site.DeploymentID)
+			add("kiln.release.id", site.ReleaseID)
+		}
 		if site.Environment != "" {
 			env = site.Environment
 		}

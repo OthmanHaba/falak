@@ -37,6 +37,7 @@ type PreparePayload struct {
 	EnvFile      *EnvFile      `json:"env_file,omitempty"`
 	Owner        *Owner        `json:"owner,omitempty"`
 	WritableDirs []string      `json:"writable_dirs,omitempty"`
+	Context      *Context      `json:"context,omitempty"`
 }
 
 // PrepareResult is deploy.prepare's result.
@@ -50,7 +51,8 @@ var DefaultShared = []SharedPath{{Path: "storage", Type: "dir"}, {Path: ".env", 
 
 // Prepare creates shared paths, seeds them from the first release that ships them, and replaces the
 // release copies with relative symlinks into shared/.
-func (d *Deployer) Prepare(ctx context.Context, p PreparePayload, s commands.Stream) (any, error) {
+func (d *Deployer) Prepare(ctx context.Context, p PreparePayload, s commands.Stream) (_ any, err error) {
+	defer d.failed(lifecycle{site: p.Site, phase: PhasePrepare, releaseID: p.ReleaseID, ctx: p.Context}, &err)
 	st, err := d.site(p.Site, p.SitesRoot)
 	if err != nil {
 		return nil, err
@@ -241,7 +243,8 @@ func HookEnv(site, siteRoot, releaseDir, releaseID string, c *Context, extra map
 }
 
 // Hook runs one deploy script step. A non-zero exit fails the command with that exit code.
-func (d *Deployer) Hook(ctx context.Context, p HookPayload, s commands.Stream) (any, error) {
+func (d *Deployer) Hook(ctx context.Context, p HookPayload, s commands.Stream) (_ any, err error) {
+	defer d.failed(lifecycle{site: p.Site, phase: PhaseHook, releaseID: p.ReleaseID, hook: p.Name, ctx: p.Context}, &err)
 	st, err := d.site(p.Site, p.SitesRoot)
 	if err != nil {
 		return nil, err
@@ -306,6 +309,7 @@ type ActivatePayload struct {
 	ReleaseID string   `json:"release_id"`
 	SitesRoot string   `json:"sites_root,omitempty"`
 	Reload    []Reload `json:"reload,omitempty"`
+	Context   *Context `json:"context,omitempty"`
 }
 
 // ActivateResult is deploy.activate's result.
@@ -316,7 +320,9 @@ type ActivateResult struct {
 }
 
 // Activate atomically swaps `current` and runs reloads when it changed.
-func (d *Deployer) Activate(ctx context.Context, p ActivatePayload, s commands.Stream) (any, error) {
+func (d *Deployer) Activate(ctx context.Context, p ActivatePayload, s commands.Stream) (_ any, err error) {
+	lc := lifecycle{site: p.Site, phase: PhaseActivate, releaseID: p.ReleaseID, ctx: p.Context}
+	defer d.failed(lc, &err)
 	st, err := d.site(p.Site, p.SitesRoot)
 	if err != nil {
 		return nil, err
@@ -340,7 +346,11 @@ func (d *Deployer) Activate(ctx context.Context, p ActivatePayload, s commands.S
 	}
 	res.Changed = true
 	fmt.Fprintf(s.Stdout(), "current -> releases/%s (was %s)\n", p.ReleaseID, orDefault(prev, "none"))
-	return res, d.reload(ctx, p.Reload, s)
+	if err := d.reload(ctx, p.Reload, s); err != nil {
+		return res, err
+	}
+	d.emit(lc, StatusSucceeded, nil)
+	return res, nil
 }
 
 // RollbackPayload is deploy.rollback.
@@ -349,6 +359,7 @@ type RollbackPayload struct {
 	SitesRoot string   `json:"sites_root,omitempty"`
 	ReleaseID string   `json:"release_id,omitempty"`
 	Reload    []Reload `json:"reload,omitempty"`
+	Context   *Context `json:"context,omitempty"`
 }
 
 // RollbackResult is deploy.rollback's result.
@@ -359,7 +370,9 @@ type RollbackResult struct {
 }
 
 // Rollback points current at the given release, or the newest release older than current.
-func (d *Deployer) Rollback(ctx context.Context, p RollbackPayload, s commands.Stream) (any, error) {
+func (d *Deployer) Rollback(ctx context.Context, p RollbackPayload, s commands.Stream) (_ any, err error) {
+	lc := lifecycle{site: p.Site, phase: PhaseRollback, releaseID: p.ReleaseID, ctx: p.Context}
+	defer d.failed(lc, &err)
 	st, err := d.site(p.Site, p.SitesRoot)
 	if err != nil {
 		return nil, err
@@ -397,7 +410,12 @@ func (d *Deployer) Rollback(ctx context.Context, p RollbackPayload, s commands.S
 	}
 	res.Changed = true
 	fmt.Fprintf(s.Stdout(), "rolled back current: %s -> %s\n", orDefault(cur, "none"), target)
-	return res, d.reload(ctx, p.Reload, s)
+	lc.releaseID = target
+	if err := d.reload(ctx, p.Reload, s); err != nil {
+		return res, err
+	}
+	d.emit(lc, StatusRolledBack, nil)
+	return res, nil
 }
 
 // PrunePayload is deploy.prune.

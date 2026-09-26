@@ -27,6 +27,7 @@ import (
 
 	"github.com/kiln/agent/internal/commands"
 	"github.com/kiln/agent/internal/hostfs"
+	"github.com/kiln/agent/internal/obs"
 	"github.com/kiln/agent/internal/runner"
 )
 
@@ -48,6 +49,7 @@ type Options struct {
 	SitesRoot string // default /srv/kiln/sites
 	Procs     ProcRestarter
 	Workers   WorkerRestarter
+	Events    obs.Sink // deployment lifecycle log records (kiln.event.type=deployment); nil disables
 	Logger    *slog.Logger
 }
 
