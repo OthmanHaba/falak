@@ -4,13 +4,14 @@ namespace Kiln\Deployments\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * Live state for deployment pages: private-deployments.{id} ("deployment.updated") and
  * private-deployments.site.{siteId} (list pages).
  */
-final class DeploymentUpdated implements ShouldBroadcastNow
+final class DeploymentUpdated implements ShouldBroadcastNow, ShouldRescue
 {
     use Dispatchable;
 

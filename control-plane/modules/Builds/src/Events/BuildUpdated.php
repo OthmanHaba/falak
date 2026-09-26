@@ -4,12 +4,13 @@ namespace Kiln\Builds\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * Live build status for build pages, broadcast on private-builds.{buildId} ("build.updated").
  */
-final class BuildUpdated implements ShouldBroadcastNow
+final class BuildUpdated implements ShouldBroadcastNow, ShouldRescue
 {
     use Dispatchable;
 

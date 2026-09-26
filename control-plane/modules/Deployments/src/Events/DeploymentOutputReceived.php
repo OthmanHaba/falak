@@ -4,12 +4,13 @@ namespace Kiln\Deployments\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * New deployment output lines on private-deployments.{id} ("deployment.output").
  */
-final class DeploymentOutputReceived implements ShouldBroadcastNow
+final class DeploymentOutputReceived implements ShouldBroadcastNow, ShouldRescue
 {
     use Dispatchable;
 

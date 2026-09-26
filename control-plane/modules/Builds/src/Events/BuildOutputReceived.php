@@ -4,13 +4,14 @@ namespace Kiln\Builds\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * New build log lines, broadcast on private-builds.{buildId} ("build.output"). Deployments copies
  * them into the deployment output (phase "build").
  */
-final class BuildOutputReceived implements ShouldBroadcastNow
+final class BuildOutputReceived implements ShouldBroadcastNow, ShouldRescue
 {
     use Dispatchable;
 
