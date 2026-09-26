@@ -215,7 +215,7 @@ func (p *Provisioner) steps(plan Plan) []step {
 		if rt.FrankenPHP != nil {
 			add("frankenphp", func(ctx context.Context, st commands.Stream) (bool, error) {
 				t := true
-				r, err := p.rt.FrankenPHPConfigure(ctx, runtime.FrankenPHPPayload{Version: rt.FrankenPHP.Version, SHA256: rt.FrankenPHP.SHA256, AsEdge: &t}, st)
+				r, err := p.rt.FrankenPHPConfigure(ctx, runtime.FrankenPHPPayload{Version: rt.FrankenPHP.Version, SHA256: rt.FrankenPHP.SHA256, AsEdge: &t, EdgeGroups: siteGroups(plan.Users)}, st)
 				return changedOf(r), err
 			})
 		}
@@ -257,6 +257,18 @@ func changedOf(r any) bool {
 		return v.Changed
 	}
 	return false
+}
+
+// siteGroups are the primary groups of the plan's regular (non-system) users: the edge user joins them
+// so FrankenPHP can read their sites' .env and write storage/.
+func siteGroups(users []system.UserSpec) []string {
+	var gs []string
+	for _, u := range users {
+		if !u.System {
+			gs = append(gs, u.Name)
+		}
+	}
+	return gs
 }
 
 func (p *Provisioner) run(ctx context.Context, st commands.Stream, name string, args ...string) error {

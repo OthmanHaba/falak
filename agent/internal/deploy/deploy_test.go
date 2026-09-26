@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -283,5 +284,52 @@ func TestExtractRejectsTraversal(t *testing.T) {
 				t.Fatal("expected rejection")
 			}
 		})
+	}
+}
+
+func TestPrepareMakesSharedStorageGroupWritableAllTheWayDown(t *testing.T) {
+	d, _, _, srv, arts := newDeployer(t)
+	root := d.o.FS.P("/srv/kiln/sites/shop")
+	fetch(t, d, srv, arts, r1, "v1")
+	// Builder tarballs normalise modes to 0755/0644: nested storage dirs start out not group-writable.
+	nested := filepath.Join(root, "releases", r1, "storage", "framework", "views")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "compiled.php"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := d.Prepare(context.Background(), PreparePayload{Site: "shop", ReleaseID: r1, WritableDirs: []string{"storage", "bootstrap/cache"}}, st())
+	if err != nil || !res.(PrepareResult).Changed {
+		t.Fatalf("prepare: %v %+v", err, res)
+	}
+	for _, p := range []string{"shared/storage", "shared/storage/framework", "shared/storage/framework/views", "releases/" + r1 + "/bootstrap/cache"} {
+		fi, err := os.Stat(filepath.Join(root, p))
+		if err != nil || fi.Mode()&(fs.ModePerm|fs.ModeSetgid) != 0o775|fs.ModeSetgid {
+			t.Fatalf("%s: mode %v (%v)", p, fi.Mode(), err)
+		}
+	}
+	if fi, _ := os.Stat(filepath.Join(root, "shared/storage/framework/views/compiled.php")); fi.Mode().Perm() != 0o664 {
+		t.Fatalf("file mode %v", fi.Mode())
+	}
+	if again, _ := d.Prepare(context.Background(), PreparePayload{Site: "shop", ReleaseID: r1, WritableDirs: []string{"storage", "bootstrap/cache"}}, st()); again.(PrepareResult).Changed {
+		t.Fatal("second prepare must be a no-op")
+	}
+}
+
+func TestPrepareRefusesWritableDirsThatEscapeTheSite(t *testing.T) {
+	d, _, _, srv, arts := newDeployer(t)
+	fetch(t, d, srv, arts, r1, "v1")
+	outside := t.TempDir()
+	link := filepath.Join(d.o.FS.P("/srv/kiln/sites/shop"), "releases", r1, "escape")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Prepare(context.Background(), PreparePayload{Site: "shop", ReleaseID: r1, WritableDirs: []string{"escape"}}, st()); err == nil || !strings.Contains(err.Error(), "outside the site") {
+		t.Fatalf("expected refusal, got %v", err)
+	}
+	if fi, _ := os.Stat(outside); fi.Mode()&fs.ModeSetgid != 0 {
+		t.Fatal("must not touch files outside the site")
 	}
 }

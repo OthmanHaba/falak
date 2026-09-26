@@ -161,12 +161,11 @@ func (d *Deployer) Prepare(ctx context.Context, p PreparePayload, s commands.Str
 		if err := os.MkdirAll(dir, 0o775); err != nil {
 			return nil, err
 		}
-		if fi, _ := os.Stat(dir); fi != nil && fi.Mode().Perm() != 0o775 {
-			if err := os.Chmod(dir, 0o775); err != nil {
-				return nil, err
-			}
-			res.Changed = true
+		ch, err := groupWritable(st.real, dir)
+		if err != nil {
+			return nil, fmt.Errorf("writable dir %s: %w", c, err)
 		}
+		res.Changed = res.Changed || ch
 		if err := chownHost(dir); err != nil {
 			return nil, err
 		}
@@ -525,4 +524,45 @@ func (d *Deployer) reload(ctx context.Context, rs []Reload, s commands.Stream) e
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// groupWritable makes a writable dir (often a symlink into shared/, e.g. storage) group-writable all
+// the way down: dirs 2775 (setgid keeps the site group on new files), files g+w. The web server joins
+// the site group, so under FrankenPHP (which runs PHP as the edge user) Laravel can write logs, cache
+// and sessions. The target must stay inside the site root, and symlinks inside it are never followed.
+func groupWritable(siteRoot, dir string) (bool, error) {
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return false, err
+	}
+	root, err := filepath.EvalSymlinks(siteRoot)
+	if err != nil {
+		return false, err
+	}
+	if real != root && !strings.HasPrefix(real, root+string(filepath.Separator)) {
+		return false, fmt.Errorf("%s resolves outside the site (%s)", dir, real)
+	}
+	changed := false
+	err = filepath.WalkDir(real, func(p string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if e.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		info, err := e.Info()
+		if err != nil {
+			return err
+		}
+		want := info.Mode().Perm() | 0o020
+		if e.IsDir() {
+			want = 0o775 | fs.ModeSetgid
+		}
+		if info.Mode()&(fs.ModePerm|fs.ModeSetgid) == want {
+			return nil
+		}
+		changed = true
+		return os.Chmod(p, want)
+	})
+	return changed, err
 }

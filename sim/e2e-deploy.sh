@@ -142,6 +142,12 @@ stage_sites() {
         save SITE_SHOP "$(jq -r .data.id <<<"$API_BODY")"
         save SHOP_HOST "$(jq -r '.data.test_domain // .data.domains[0].name // .data.domains[0] // "shop.sites.kiln.test"' <<<"$API_BODY")"
         ok "site shop created on app-1 (leader) + app-2 -> $SHOP_HOST ($(jq -r '.data.targets | length' <<<"$API_BODY") targets)"
+        # No database in this demo: in-memory sqlite for `migrate`, cookie sessions, file cache, sync queue.
+        api GET "/sites/$SITE_SHOP/env"
+        local env; env=$(jq -r '.data.content' <<<"$API_BODY" | grep -vE '^(DB_CONNECTION|DB_DATABASE|SESSION_DRIVER|CACHE_STORE|QUEUE_CONNECTION)=')
+        env+=$'\nDB_CONNECTION=sqlite\nDB_DATABASE=:memory:\nSESSION_DRIVER=cookie\nCACHE_STORE=file\nQUEUE_CONNECTION=sync\n'
+        api PUT "/sites/$SITE_SHOP/env" "$(jq -n --arg c "$env" '{content: $c}')"
+        [[ $API_CODE == 200 ]] && ok "site environment updated via API (version $(jq -r '.data.version // "?"' <<<"$API_BODY"))" || bad "PUT env -> $API_CODE: $API_BODY"
     else
         bad "POST /sites -> $API_CODE: $API_BODY"; return 1
     fi

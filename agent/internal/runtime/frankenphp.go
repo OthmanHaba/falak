@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/kiln/agent/internal/commands"
@@ -17,6 +18,9 @@ type FrankenPHPPayload struct {
 	SHA256  string         `json:"sha256"`
 	INI     map[string]any `json:"ini"`
 	AsEdge  *bool          `json:"as_edge"`
+	// EdgeGroups are extra groups for the edge user (set by provisioning, not the wire payload): PHP runs
+	// as the edge user under FrankenPHP and must read site .env files and write storage/.
+	EdgeGroups []string `json:"-"`
 }
 
 // BinaryResult is {changed, binary}.
@@ -80,7 +84,7 @@ func (rt *Runtime) FrankenPHPConfigure(ctx context.Context, p FrankenPHPPayload,
 	}
 	res.Changed = binChanged || iniChanged
 	if p.AsEdge == nil || *p.AsEdge {
-		c, err := EnsureEdgeUnit(ctx, rt.d.Runner, rt.d.FS, st, EdgeUnit{Binary: FrankenPHPBinary, User: rt.d.EdgeUser, FrankenPHP: true}, binChanged || iniChanged)
+		c, err := EnsureEdgeUnit(ctx, rt.d.Runner, rt.d.FS, st, EdgeUnit{Binary: FrankenPHPBinary, User: rt.d.EdgeUser, FrankenPHP: true, Groups: p.EdgeGroups}, binChanged || iniChanged)
 		if err != nil {
 			return nil, err
 		}
@@ -94,6 +98,7 @@ type EdgeUnit struct {
 	Binary     string // /usr/bin/caddy or /usr/local/bin/frankenphp
 	User       string // default caddy
 	FrankenPHP bool
+	Groups     []string // SupplementaryGroups (site users' groups)
 }
 
 // RenderEdgeUnit renders the systemd unit.
@@ -104,6 +109,9 @@ func RenderEdgeUnit(u EdgeUnit) string {
 	var env string
 	if u.FrankenPHP {
 		env = "Environment=PHPRC=/etc/frankenphp\n"
+	}
+	if len(u.Groups) > 0 {
+		env += "SupplementaryGroups=" + strings.Join(u.Groups, " ") + "\n"
 	}
 	return fmt.Sprintf(`# Managed by Kiln
 [Unit]
@@ -133,6 +141,30 @@ WantedBy=multi-user.target
 `, u.User, u.Binary, env, EdgeBootstrap)
 }
 
+// mergeGroups unions the requested groups with those already on the unit, so a later call that does
+// not know them (a standalone runtime.frankenphp.configure) never strips access a site relies on.
+func mergeGroups(fs hostfs.FS, want []string) []string {
+	set := map[string]bool{}
+	for _, g := range want {
+		set[g] = true
+	}
+	if b, err := fs.ReadFile(EdgeUnitPath); err == nil {
+		for _, l := range strings.Split(string(b), "\n") {
+			if v, ok := strings.CutPrefix(l, "SupplementaryGroups="); ok {
+				for _, g := range strings.Fields(v) {
+					set[g] = true
+				}
+			}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for g := range set {
+		out = append(out, g)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // BootstrapConfig is the admin-only Caddy config written when no config exists yet. The edge package
 // overwrites the file with the full applied config on every edge.caddy.apply.
 const BootstrapConfig = `{"admin":{"listen":"localhost:2019"}}` + "\n"
@@ -160,6 +192,7 @@ func EnsureEdgeUnit(ctx context.Context, r runner.Runner, fs hostfs.FS, st comma
 		}
 		changed = true
 	}
+	u.Groups = mergeGroups(fs, u.Groups)
 	unitChanged, err := fs.WriteFile(EdgeUnitPath, []byte(RenderEdgeUnit(u)), 0o644)
 	if err != nil {
 		return false, err

@@ -311,3 +311,20 @@ func TestFPMPool(t *testing.T) {
 		t.Fatal("absent")
 	}
 }
+
+func TestEdgeUnitJoinsSiteGroupsAndNeverDropsThem(t *testing.T) {
+	fs := hostfs.FS{Root: t.TempDir()}
+	f := (&runnertest.Fake{}).On("getent passwd caddy", runner.Result{Stdout: []byte("caddy:x:998:998::/var/lib/caddy:/usr/sbin/nologin\n")})
+	st := commands.NewTestStream("x", &commands.Collector{})
+	if _, err := EnsureEdgeUnit(context.Background(), f, fs, st, EdgeUnit{Binary: FrankenPHPBinary, FrankenPHP: true, Groups: []string{"kiln"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	// A later call that doesn't know the site groups (standalone runtime.frankenphp.configure).
+	if _, err := EnsureEdgeUnit(context.Background(), f, fs, st, EdgeUnit{Binary: FrankenPHPBinary, FrankenPHP: true, Groups: []string{"shop"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := fs.ReadFile(EdgeUnitPath)
+	if !strings.Contains(string(b), "SupplementaryGroups=kiln shop\n") {
+		t.Fatalf("unit:\n%s", b)
+	}
+}
