@@ -2,6 +2,7 @@
 
 namespace Kiln\Network\Application;
 
+use Illuminate\Support\Facades\DB;
 use Kiln\Fleet\Contracts\AgentGateway;
 use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Kiln\Network\Domain\Enums\ApplyStatus;
@@ -16,6 +17,10 @@ use Kiln\Network\Infrastructure\WireGuardPayloads;
  *  - members whose key is not on the host yet get it delivered (`system.write_file`, 0600 root);
  *  - members with an installed key get the full mesh (`net.wireguard.apply`) when their desired
  *    state differs from what is applied / in flight.
+ *
+ * Converges of one network are serialized with a row lock on the network, so concurrent triggers
+ * (e.g. two key installs finishing on two workers) never reuse a revision key or record a desired
+ * hash that belongs to another worker's payload; the last one to run sees every committed member.
  */
 final class ConvergePrivateNetwork
 {
@@ -26,18 +31,35 @@ final class ConvergePrivateNetwork
 
     public function __invoke(PrivateNetwork $network, bool $force = false): void
     {
+        DB::transaction(function () use ($network, $force) {
+            PrivateNetwork::query()->whereKey($network->id)->lockForUpdate()->first();
+            $this->convergeMembers($network, $force);
+        });
+    }
+
+    private function convergeMembers(PrivateNetwork $network, bool $force): void
+    {
         foreach ($network->members()->get() as $member) {
             $member->setRelation('network', $network);
 
             if ($member->key_status === KeyStatus::Installed) {
                 $this->applyMember($network, $member, $force);
             } elseif ($member->key_command_id === null || ($force && $member->key_status === KeyStatus::Failed)) {
-                $this->installKey($network, $member);
+                $this->dispatchKey($network, $member);
             }
         }
     }
 
     public function installKey(PrivateNetwork $network, PrivateNetworkMember $member): void
+    {
+        DB::transaction(function () use ($network, $member) {
+            PrivateNetwork::query()->whereKey($network->id)->lockForUpdate()->first();
+            $member->refresh();
+            $this->dispatchKey($network, $member);
+        });
+    }
+
+    private function dispatchKey(PrivateNetwork $network, PrivateNetworkMember $member): void
     {
         if ($member->private_key === null) {
             return;

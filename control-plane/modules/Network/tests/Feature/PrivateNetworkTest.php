@@ -315,3 +315,15 @@ it('authorizes private network access', function () {
     $this->post("/network/private-networks/{$this->network->id}/apply")->assertNotFound();
     $this->delete("/network/private-networks/{$this->network->id}/members/{$ma->id}")->assertNotFound();
 });
+
+it('seeds default rules before compiling the firewall of a server nobody configured yet', function () {
+    // web-1 predates the Network module: no firewall state, no rules.
+    network_join($this, $this->a->id);
+
+    $firewall = $this->agents->last('net.firewall.apply', $this->a->id)['payload'];
+    $ports = collect($firewall['rules'])->pluck('ports')->flatten()->all();
+
+    expect($firewall['input_policy'])->toBe('drop')
+        ->and($ports)->toContain('22', '80', '443')
+        ->and(network_schema_errors('net.firewall.apply', $firewall))->toBe([]);
+});
