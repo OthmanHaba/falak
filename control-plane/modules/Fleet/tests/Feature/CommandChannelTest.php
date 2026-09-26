@@ -215,6 +215,18 @@ it('forwards insights NDJSON to the Insights module via an event', function () {
     $this->call('POST', '/agent/v1/insights', [], [], [], $this->transformHeadersToServerVars($this->headers), fleet_ndjson([['kind' => 'weird']]))->assertUnprocessable();
 });
 
+it('accepts cron heartbeats validated against the cron.apply heartbeat schema', function () {
+    Event::fake([InsightsReceived::class]);
+    $heartbeat = ['kind' => 'cron_heartbeat', 'job' => 'app-schedule', 'status' => 'finished', 'exit_code' => 0, 'duration_ms' => 120, 'schedule' => '* * * * *', 'scheduled_at' => now()->startOfMinute()->toIso8601ZuluString(), 'at' => now()->toIso8601ZuluString()];
+    $server = $this->transformHeadersToServerVars($this->headers);
+
+    $this->call('POST', '/agent/v1/insights', [], [], [], $server, fleet_ndjson([$heartbeat]))->assertNoContent();
+    Event::assertDispatched(InsightsReceived::class, fn ($e) => $e->items[0]['kind'] === 'cron_heartbeat');
+
+    $this->call('POST', '/agent/v1/insights', [], [], [], $server, fleet_ndjson([[...$heartbeat, 'status' => 'exploded']]))->assertUnprocessable();
+    $this->call('POST', '/agent/v1/insights', [], [], [], $server, fleet_ndjson([array_diff_key($heartbeat, ['scheduled_at' => true])]))->assertUnprocessable();
+});
+
 it('checks finished results against the command result schema on raw JSON (empty objects stay objects)', function () {
     Log::spy();
     $handle = $this->gateway->dispatch($this->serverId, 'system.facts', []);
