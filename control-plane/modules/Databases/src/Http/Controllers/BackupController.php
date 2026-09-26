@@ -1,0 +1,83 @@
+<?php
+
+namespace Kiln\Databases\Http\Controllers;
+
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
+use Kiln\Databases\Application\Actions\DeleteBackup;
+use Kiln\Databases\Application\Actions\RestoreBackup;
+use Kiln\Databases\Domain\Enums\BackupStatus;
+use Kiln\Databases\Domain\Models\Backup;
+use Kiln\Databases\Domain\Models\DatabaseServer;
+use Kiln\Databases\Domain\Policies\DatabasesPolicy;
+use Kiln\Identity\Contracts\CurrentOrganization;
+use Kiln\Identity\Contracts\OrganizationAccess;
+use Kiln\Kernel\Http\Controller;
+
+final class BackupController extends Controller
+{
+    use PresentsDatabases;
+
+    public function index(Request $request, CurrentOrganization $organization, OrganizationAccess $access): Response
+    {
+        $organizationId = $organization->requireId();
+        $access->authorize($request->user(), $organizationId, DatabasesPolicy::VIEW);
+
+        $filters = $request->validate([
+            'status' => ['nullable', 'in:'.implode(',', array_map(fn (BackupStatus $s) => $s->value, BackupStatus::cases()))],
+            'search' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $backups = Backup::query()
+            ->with('storageProvider')
+            ->where('organization_id', $organizationId)
+            ->when($filters['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
+            ->when($filters['search'] ?? null, fn ($q, $search) => $q->where(fn ($q) => $q->where('database_name', 'like', "%{$search}%")->orWhere('server_name', 'like', "%{$search}%")))
+            ->latest()
+            ->orderByDesc('id')
+            ->paginate(50)
+            ->withQueryString();
+
+        return Inertia::render('Databases/Backups', [
+            'backups' => [
+                'data' => collect($backups->items())->map(fn (Backup $backup) => $this->presentBackup($backup))->values(),
+                'current_page' => $backups->currentPage(),
+                'last_page' => $backups->lastPage(),
+                'total' => $backups->total(),
+            ],
+            'filters' => array_filter($filters),
+            'can' => [
+                'manage' => $access->can($request->user(), $organizationId, DatabasesPolicy::MANAGE),
+                'restore' => $access->can($request->user(), $organizationId, DatabasesPolicy::RESTORE),
+            ],
+        ]);
+    }
+
+    public function restore(Request $request, Backup $backup, RestoreBackup $restore): RedirectResponse
+    {
+        $this->authorize('restore', $backup);
+
+        $data = $request->validate([
+            'database_server_id' => ['required', 'string'],
+            'database' => ['required', 'string', 'max:63'],
+            'confirm' => ['required', 'string', 'same:database'],
+        ], ['confirm.same' => 'Type the target database name to confirm.']);
+
+        $target = DatabaseServer::query()->where('organization_id', $backup->organization_id)->findOrFail($data['database_server_id']);
+
+        $restore($backup, $target, $data['database'], $request->user()?->getAuthIdentifier());
+
+        return back();
+    }
+
+    public function destroy(Backup $backup, DeleteBackup $delete): RedirectResponse
+    {
+        $this->authorize('manage', $backup);
+
+        $delete($backup);
+
+        return back();
+    }
+}

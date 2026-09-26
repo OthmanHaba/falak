@@ -1,0 +1,61 @@
+<?php
+
+namespace Kiln\Databases\Application\Actions;
+
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+use Kiln\Databases\Application\Identifiers;
+use Kiln\Databases\Application\Passwords;
+use Kiln\Databases\Domain\Enums\ResourceStatus;
+use Kiln\Databases\Domain\Models\DatabaseServer;
+use Kiln\Databases\Domain\Models\DatabaseUser;
+use Kiln\Identity\Contracts\AuditLog;
+
+final class CreateDatabaseUser
+{
+    public function __construct(
+        private readonly SyncGrants $grants,
+        private readonly ApplyDatabaseUser $apply,
+        private readonly AuditLog $audit,
+    ) {}
+
+    /**
+     * @param  array{username: string, password?: ?string, host?: ?string, site_id?: ?string, grants?: list<array{database_id: string, privileges?: list<string>}>}  $data
+     */
+    public function __invoke(DatabaseServer $server, array $data, ?string $actorId = null): DatabaseUser
+    {
+        $username = $data['username'];
+        Identifiers::assertValid($server->engine, $username, 'username', 'username');
+
+        if ($server->users()->where('username', $username)->exists()) {
+            throw ValidationException::withMessages(['username' => "A user named \"{$username}\" already exists on {$server->server_name}."]);
+        }
+
+        $user = DB::transaction(function () use ($server, $data, $username, $actorId) {
+            $user = $server->users()->create([
+                'organization_id' => $server->organization_id,
+                'server_id' => $server->server_id,
+                'username' => $username,
+                'password' => ($data['password'] ?? null) ?: Passwords::generate(),
+                'host' => $server->engine->isMysqlFamily() ? (($data['host'] ?? null) ?: '%') : '%',
+                'site_id' => $data['site_id'] ?? null,
+                'status' => ResourceStatus::Pending,
+                'created_by' => $actorId,
+            ]);
+
+            ($this->grants)($user, $data['grants'] ?? []);
+
+            ($this->apply)($user);
+
+            return $user;
+        });
+
+        $this->audit->record('databases.user_created', 'database_user', $user->id, [
+            'username' => $username,
+            'server_id' => $server->server_id,
+            'databases' => $user->grants()->with('database')->get()->map(fn ($g) => $g->database?->name)->filter()->values()->all(),
+        ], $server->organization_id);
+
+        return $user;
+    }
+}

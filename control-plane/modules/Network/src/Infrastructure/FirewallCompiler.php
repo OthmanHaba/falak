@@ -1,0 +1,109 @@
+<?php
+
+namespace Kiln\Network\Infrastructure;
+
+use Kiln\Network\Domain\Enums\RuleAction;
+use Kiln\Network\Domain\Models\FirewallRule;
+use Kiln\Network\Domain\Models\PrivateNetworkMember;
+use Kiln\Servers\Contracts\ServerDirectory;
+
+/**
+ * Compiles a server's firewall rules (plus rules implied by its private networks) into the FULL
+ * `net.firewall.apply` desired state.
+ *
+ * Order: private-network rules first (so user deny rules never cut the mesh), then deny rules,
+ * then allow rules, each by position. Everything else is dropped (input_policy drop); the SSH
+ * port is always accepted by the agent to avoid lock-out.
+ */
+final class FirewallCompiler
+{
+    public function __construct(private readonly ServerDirectory $servers) {}
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function compile(string $serverId): array
+    {
+        $rules = FirewallRule::query()
+            ->where('server_id', $serverId)
+            ->orderByRaw('CASE WHEN action = ? THEN 0 ELSE 1 END', [RuleAction::Deny->value])
+            ->orderBy('position')
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+
+        return [
+            'input_policy' => 'drop',
+            'ssh_port' => (int) config('network.ssh_port', 22),
+            'allow_icmp' => true,
+            'rules' => [...$this->networkRules($serverId), ...$rules->map(fn (FirewallRule $rule) => $this->rule($rule))->all()],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function rule(FirewallRule $rule): array
+    {
+        return array_filter([
+            'id' => $rule->id,
+            'action' => $rule->action->verdict(),
+            'protocol' => $rule->protocol->value,
+            'ports' => $rule->port !== null ? [$rule->port] : null,
+            'sources' => $rule->source !== null ? [$rule->source] : null,
+            'comment' => mb_substr($rule->name, 0, 120),
+        ], fn ($value) => $value !== null);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function networkRules(string $serverId): array
+    {
+        $memberships = PrivateNetworkMember::query()
+            ->with('network')
+            ->where('server_id', $serverId)
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get();
+
+        $rules = [];
+
+        foreach ($memberships as $membership) {
+            $network = $membership->network;
+
+            $peerIps = PrivateNetworkMember::query()
+                ->where('network_id', $network->id)
+                ->where('server_id', '!=', $serverId)
+                ->orderBy('created_at')
+                ->orderBy('id')
+                ->pluck('server_id')
+                ->map(fn (string $id) => $this->servers->find($id)?->ipv4)
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            if ($peerIps !== []) {
+                $rules[] = [
+                    'id' => "wg-{$network->id}-handshake",
+                    'action' => 'accept',
+                    'protocol' => 'udp',
+                    'ports' => [(string) $network->listen_port],
+                    'sources' => $peerIps,
+                    'comment' => mb_substr("WireGuard peers of {$network->name}", 0, 120),
+                ];
+            }
+
+            $rules[] = [
+                'id' => "wg-{$network->id}-interface",
+                'action' => 'accept',
+                'protocol' => 'any',
+                'interface' => $network->interface,
+                'comment' => mb_substr("Private network {$network->name}", 0, 120),
+            ];
+        }
+
+        return $rules;
+    }
+}
