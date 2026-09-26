@@ -57,6 +57,10 @@ x-control-plane: &control-plane
     REVERB_SCHEME: http
     REVERB_SERVER_PORT: "8080"
     # Fleet
+    KILN_LOCAL_BUILDER_TOKEN: ${KILN_LOCAL_BUILDER_TOKEN}
+    # Hosted test domains <slug>.sites.kiln.test, with Caddy's internal CA (no public ACME in the sim).
+    KILN_TEST_DOMAIN: sites.kiln.test
+    KILN_TEST_DOMAIN_TLS: internal
     KILN_CA_PATH: /kiln/ca
     KILN_AGENT_TRUSTED_PROXIES: 10.77.10.0/24   # backend network: only the edge sets the fingerprint header
     KILN_PANEL_URL: https://kiln.test
@@ -237,6 +241,23 @@ services:
       <<: *server-env
       SIM_SERVER_ROLE: db
 
+  # The control-plane host's shared builder (KILN_LOCAL_BUILDER_TOKEN), polling the internal builder API.
+  builder:
+    build: ./builder
+    environment:
+      KILN_URL: https://kiln.test
+      KILN_BUILDER_TOKEN: ${KILN_LOCAL_BUILDER_TOKEN}
+      KILN_BUILDER_NAME: control-plane
+    volumes:
+      - ../agent/bin/kiln-builder-linux-${SIM_AGENT_ARCH:-arm64}:/opt/kiln/kiln-builder:ro
+      - edge-pki:/kiln/edge-pki:ro
+      - builder-cache:/root/.cache
+    depends_on:
+      edge: { condition: service_healthy }
+      sim-git: { condition: service_healthy }
+    networks: [fleet]
+    logging: *logging
+
   # Read-only git server with the demo apps (git://sim-git/<app>.git), used by builders in E2E.
   sim-git:
     build: ./git
@@ -253,6 +274,7 @@ volumes:
   kiln-ca:
   edge-pki:
   edge-data:
+  builder-cache:
 
 networks:
   backend:

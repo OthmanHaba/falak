@@ -21,7 +21,8 @@ endif
 	@{ echo "APP_KEY=base64:$$(openssl rand -base64 32)"; \
 	   echo "REVERB_APP_ID=kiln-sim"; \
 	   echo "REVERB_APP_KEY=$$(openssl rand -hex 10)"; \
-	   echo "REVERB_APP_SECRET=$$(openssl rand -hex 10)"; } > $@
+	   echo "REVERB_APP_SECRET=$$(openssl rand -hex 10)"; \
+	   echo "KILN_LOCAL_BUILDER_TOKEN=kbt_$$(openssl rand -hex 24)"; } > $@
 	@chmod 600 $@
 
 build: .data/secrets.env
