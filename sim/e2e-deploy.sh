@@ -159,12 +159,15 @@ stage_deploy() {
     deploy_and_wait "$SITE_SHOP" "$commit" "first deploy" succeeded || return 1
     save SHOP_DEPLOY_1 "$DEPLOYMENT_ID"
     local targets; targets=$(jq -r '[.data.targets[] | "\(.server_name):\(.status)"] | join(" ")' <<<"$API_BODY"); ok "targets: $targets"
-    local migrate; migrate=$(jq -r '[.data.targets[] | select(.steps[]?.kind == "migrate") | .server_name] | unique | join(",")' <<<"$API_BODY")
+    local migrate; migrate=$(jq -r '[.data.targets[] | select(any(.steps[]?; .phase == "migrate")) | .server_name] | unique | join(",")' <<<"$API_BODY")
     [[ $migrate == app-1 ]] && ok "migrations ran on the leader only ($migrate)" || bad "migrations ran on: '${migrate:-none}' (expected app-1)"
 
     for c in srv-app-1 srv-app-2; do
         local body; body=$(site_get "$c" "$SHOP_HOST" /)
-        jq -e '.app == "Kiln Demo"' >/dev/null 2>&1 <<<"$body" && ok "$c serves the Laravel app (release $(jq -r .release <<<"$body"))" || bad "$c: GET / -> ${body:0:200}"
+        local rel; rel=$(jq -r '.release // empty' 2>/dev/null <<<"$body")
+        local want; want=$(basename "$("${C[@]}" exec -T "$c" bash -c 'readlink /srv/kiln/sites/shop/current' | tr -d '\r')")
+        [[ -n $rel && $rel == "$want" ]] && ok "$c serves the Laravel app from the active release ($rel)" || bad "$c: GET / -> ${body:0:200} (current: $want)"
+        [[ $c == srv-app-1 ]] && save SHOP_RELEASE_1 "$rel"
         [[ "$(site_get "$c" "$SHOP_HOST" /health)" == ok ]] && ok "$c: /health ok" || bad "$c: /health failed"
         "${C[@]}" exec -T "$c" bash -c 'readlink /srv/kiln/sites/*/current' >/dev/null 2>&1 && ok "$c: current -> $("${C[@]}" exec -T "$c" bash -c 'basename $(readlink /srv/kiln/sites/*/current)' | tr -d '\r')" || bad "$c: no current symlink"
     done
@@ -192,7 +195,8 @@ stage_rollback() {
     while (( SECONDS < deadline )); do s=$(deployment_status "$id"); [[ $s == succeeded || $s == failed ]] && break; sleep 3; done
     [[ $s == succeeded ]] && ok "rollback deployment succeeded" || bad "rollback ended '$s'"
     for c in srv-app-1 srv-app-2; do
-        [[ "$(site_get "$c" "$SHOP_HOST" / | jq -r .app 2>/dev/null)" == "Kiln Demo" ]] && ok "$c serves release 1 again" || bad "$c not rolled back"
+        local rel; rel=$(site_get "$c" "$SHOP_HOST" / | jq -r '.release // empty' 2>/dev/null)
+        [[ -n $rel && $rel == "$SHOP_RELEASE_1" ]] && ok "$c serves release 1 again ($rel)" || bad "$c not rolled back (serves ${rel:-nothing}, want $SHOP_RELEASE_1)"
     done
 }
 

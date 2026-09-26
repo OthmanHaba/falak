@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return response()->json([
         'app' => config('app.name'),
-        'release' => env('KILN_RELEASE_ID'),
+        'release' => config('app.release'),
         'server' => gethostname(),
     ]);
 });
