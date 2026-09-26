@@ -1,0 +1,126 @@
+<?php
+
+namespace Kiln\Sites\Tests\Support;
+
+use Illuminate\Support\Str;
+use Kiln\SourceControl\Contracts\Data\BranchData;
+use Kiln\SourceControl\Contracts\Data\CheckoutCredentials;
+use Kiln\SourceControl\Contracts\Data\CommitData;
+use Kiln\SourceControl\Contracts\Data\ConnectionData;
+use Kiln\SourceControl\Contracts\Data\DeployKeyData;
+use Kiln\SourceControl\Contracts\Data\RepositoryData;
+use Kiln\SourceControl\Contracts\Data\WebhookData;
+use Kiln\SourceControl\Contracts\Exceptions\ConnectionNotFound;
+use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
+use Kiln\SourceControl\Contracts\ProviderType;
+use Kiln\SourceControl\Contracts\SourceControlGateway;
+
+/**
+ * In-memory SourceControlGateway implementing only the public contract.
+ */
+final class FakeSourceControlGateway implements SourceControlGateway
+{
+    /** @var array<string, ConnectionData> */
+    public array $connections = [];
+
+    /** @var array<string, DeployKeyData> */
+    public array $keys = [];
+
+    /** @var array<string, WebhookData> keyed by "connection|repo" */
+    public array $webhooks = [];
+
+    /** @var list<string> */
+    public array $removedKeys = [];
+
+    /** @var list<string> */
+    public array $removedWebhooks = [];
+
+    public ?string $failKeysWith = null;
+
+    public function addConnection(string $organizationId, ProviderType $provider = ProviderType::GitHub): ConnectionData
+    {
+        $connection = new ConnectionData((string) Str::ulid(), $organizationId, $provider, $provider->label(), 'token', 'acme', null);
+
+        return $this->connections[$connection->id] = $connection;
+    }
+
+    public function connection(string $connectionId): ?ConnectionData
+    {
+        return $this->connections[$connectionId] ?? null;
+    }
+
+    public function connections(string $organizationId): array
+    {
+        return array_values(array_filter($this->connections, fn (ConnectionData $c) => $c->organizationId === $organizationId));
+    }
+
+    public function repositories(string $connectionId, ?string $search = null): array
+    {
+        return [new RepositoryData('acme/shop', 'main', true, 'git@github.com:acme/shop.git', 'https://github.com/acme/shop.git')];
+    }
+
+    public function repository(string $connectionId, string $repository): ?RepositoryData
+    {
+        return $this->repositories($connectionId)[0];
+    }
+
+    public function branches(string $connectionId, string $repository): array
+    {
+        return [new BranchData('main', str_repeat('a', 40))];
+    }
+
+    public function latestCommit(string $connectionId, string $repository, string $branch): ?CommitData
+    {
+        return new CommitData(str_repeat('a', 40), 'Initial commit', 'Ada', 'ada@example.com');
+    }
+
+    public function commit(string $connectionId, string $repository, string $sha): ?CommitData
+    {
+        return new CommitData($sha, 'Commit', 'Ada', 'ada@example.com');
+    }
+
+    public function installDeployKey(string $connectionId, string $repository, string $title): DeployKeyData
+    {
+        $connection = $this->connections[$connectionId] ?? throw ConnectionNotFound::id($connectionId);
+
+        if ($this->failKeysWith !== null) {
+            throw new SourceControlException($this->failKeysWith);
+        }
+
+        $key = new DeployKeyData((string) Str::ulid(), $connectionId, $repository, 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFake kiln', 'SHA256:fake', $connection->provider->hasApi());
+
+        return $this->keys[$key->id] = $key;
+    }
+
+    public function deployKey(string $deployKeyId): ?DeployKeyData
+    {
+        return $this->keys[$deployKeyId] ?? null;
+    }
+
+    public function removeDeployKey(string $deployKeyId): void
+    {
+        $this->removedKeys[] = $deployKeyId;
+        unset($this->keys[$deployKeyId]);
+    }
+
+    public function ensureWebhook(string $connectionId, string $repository): WebhookData
+    {
+        return $this->webhooks["{$connectionId}|{$repository}"] ??= new WebhookData((string) Str::ulid(), $connectionId, $repository, 'https://kiln.test/api/webhooks/source-control/x', true);
+    }
+
+    public function removeWebhook(string $connectionId, string $repository): void
+    {
+        $this->removedWebhooks[] = "{$connectionId}|{$repository}";
+        unset($this->webhooks["{$connectionId}|{$repository}"]);
+    }
+
+    public function cloneUrl(string $connectionId, string $repository): string
+    {
+        return "git@github.com:{$repository}.git";
+    }
+
+    public function checkoutCredentials(string $connectionId, string $repository, ?string $deployKeyId = null): CheckoutCredentials
+    {
+        return new CheckoutCredentials($this->cloneUrl($connectionId, $repository), 'PRIVATE');
+    }
+}
