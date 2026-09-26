@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Broadcasting\BroadcastException;
 use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Contracts\Broadcasting\Factory;
 use Illuminate\Contracts\Debug\ExceptionHandler;
@@ -25,5 +26,5 @@ it('reports but never throws when the realtime server is unreachable', function 
     ServerUpdated::dispatch('01K5S1M0RG0000000000000000', 'provisioning');
 
     expect($reported)->toHaveCount(1)
-        ->and($reported[0])->toBeInstanceOf(Illuminate\Broadcasting\BroadcastException::class);
+        ->and($reported[0])->toBeInstanceOf(BroadcastException::class);
 });

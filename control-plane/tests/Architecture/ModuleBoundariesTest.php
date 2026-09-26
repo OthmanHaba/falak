@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Kiln\Kernel\Modules;
 
 $layers = fn (string $module) => array_map(
@@ -34,8 +36,8 @@ test('synchronous broadcasts are rescued', function () {
     foreach (glob(dirname(__DIR__, 2).'/modules/*/src/Events/*.php') as $file) {
         $class = 'Kiln\\'.basename(dirname($file, 3)).'\\Events\\'.basename($file, '.php');
 
-        if (is_subclass_of($class, Illuminate\Contracts\Broadcasting\ShouldBroadcastNow::class)
-            && ! is_subclass_of($class, Illuminate\Contracts\Broadcasting\ShouldRescue::class)) {
+        if (is_subclass_of($class, ShouldBroadcastNow::class)
+            && ! is_subclass_of($class, ShouldRescue::class)) {
             $offenders[] = $class;
         }
     }
