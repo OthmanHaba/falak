@@ -9,6 +9,7 @@ use Kiln\Edge\Domain\Enums\ApplyStatus;
 use Kiln\Edge\Domain\Enums\InstallStatus;
 use Kiln\Edge\Domain\Models\CertificateInstall;
 use Kiln\Edge\Domain\Models\ServerState;
+use Kiln\Edge\Events\CertificateInstallFailed;
 use Kiln\Edge\Events\CertificateIssued;
 use Kiln\Edge\Events\EdgeApplied;
 use Kiln\Fleet\Events\CommandFailed;
@@ -91,6 +92,8 @@ final class HandleEdgeCommandOutcome implements ShouldQueue
 
         if ($error !== null) {
             $install->forceFill(['status' => InstallStatus::Failed, 'error' => Str::limit($error, 990)])->save();
+
+            CertificateInstallFailed::dispatch($install->certificate_id, $organizationId, $serverId, $install->certificate->site_id, $install->certificate->domains, Str::limit($error, 990));
 
             return;
         }
