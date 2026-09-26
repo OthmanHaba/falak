@@ -12,6 +12,8 @@ use Kiln\Insights\Contracts\IssueStatus;
 use Kiln\Insights\Domain\Models\HeartbeatMonitor;
 use Kiln\Insights\Domain\Models\Issue;
 use Kiln\Insights\Events\HeartbeatMissed;
+use Kiln\Processes\Contracts\Data\ScheduledJobData;
+use Kiln\Processes\Contracts\ScheduleDirectory;
 
 /**
  * Cron heartbeat tracking (cron.apply `$defs.heartbeat`): monitors are created on the first
@@ -21,7 +23,10 @@ use Kiln\Insights\Events\HeartbeatMissed;
  */
 final class HeartbeatTracker
 {
-    public function __construct(private readonly IssueTracker $issues) {}
+    public function __construct(
+        private readonly IssueTracker $issues,
+        private readonly ScheduleDirectory $schedules,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $heartbeat
@@ -40,6 +45,13 @@ final class HeartbeatTracker
         $at = $this->time($heartbeat['at'] ?? null) ?? CarbonImmutable::now();
         $scheduledAt = $this->time($heartbeat['scheduled_at'] ?? null) ?? $at;
         $schedule = is_string($heartbeat['schedule'] ?? null) && $heartbeat['schedule'] !== '' ? substr($heartbeat['schedule'], 0, 191) : null;
+
+        // Jobs sent by Processes are attributed to their site even when the agent could not resolve it.
+        $expected = $serverId !== null ? $this->schedules->find($serverId, $job) : null;
+
+        if ($expected !== null && $expected->organizationId === $organizationId) {
+            $siteId ??= $expected->siteId;
+        }
 
         $monitor = $this->monitor($organizationId, $sourceId, $job, [
             'server_id' => $serverId,
@@ -132,12 +144,81 @@ final class HeartbeatTracker
                         continue;
                     }
 
+                    if (! $this->stillScheduled($monitor)) {
+                        $this->stopExpecting($monitor);
+
+                        continue;
+                    }
+
                     $this->markMissed($monitor, $expected, $now);
                     $missed++;
                 }
             });
 
         return $missed;
+    }
+
+    /**
+     * Align monitors of a server with the schedule set Processes applied there: jobs that report
+     * heartbeats are expected from their next slot (so a job that never runs is detected too); jobs
+     * that were removed, or no longer report heartbeats, stop being expected.
+     *
+     * @param  list<ScheduledJobData>  $jobs  the complete set on the server
+     */
+    public function expect(string $organizationId, string $serverId, array $jobs, ?CarbonInterface $now = null): void
+    {
+        $now = CarbonImmutable::instance($now ?? now());
+        $expected = [];
+
+        foreach ($jobs as $job) {
+            if (! $job->heartbeat || $job->organizationId !== $organizationId) {
+                continue;
+            }
+
+            $expected[$job->name] = true;
+            $monitor = $this->monitor($organizationId, $serverId, $job->name, ['server_id' => $serverId, 'site_id' => $job->siteId]);
+            $changes = ['server_id' => $serverId, 'site_id' => $job->siteId, 'schedule' => substr($job->schedule, 0, 191), 'timezone' => $job->timezone];
+            $rescheduled = $monitor->schedule !== $changes['schedule'] || $monitor->timezone !== $changes['timezone'];
+            $monitor->forceFill($changes);
+
+            if ($rescheduled || $monitor->next_expected_at === null) {
+                $from = $monitor->last_scheduled_at !== null ? CarbonImmutable::instance($monitor->last_scheduled_at)->max($now) : $now;
+                $monitor->next_expected_at = $monitor->cron()?->nextAfter($from);
+            }
+
+            $monitor->save();
+        }
+
+        HeartbeatMonitor::query()
+            ->where('organization_id', $organizationId)
+            ->where('source_id', $serverId)
+            ->whereNotNull('next_expected_at')
+            ->get()
+            ->each(function (HeartbeatMonitor $monitor) use ($expected) {
+                if (! isset($expected[$monitor->job])) {
+                    $this->stopExpecting($monitor);
+                }
+            });
+    }
+
+    /**
+     * False only when Processes manages the server's schedule set and the job is no longer in it.
+     */
+    private function stillScheduled(HeartbeatMonitor $monitor): bool
+    {
+        if ($monitor->server_id === null || ! $this->schedules->manages($monitor->server_id)) {
+            return true;
+        }
+
+        $job = $this->schedules->find($monitor->server_id, $monitor->job);
+
+        return $job !== null && $job->heartbeat;
+    }
+
+    private function stopExpecting(HeartbeatMonitor $monitor): void
+    {
+        $monitor->forceFill(['next_expected_at' => null, 'missed_at' => null])->save();
+        $this->autoResolve($monitor, 'missed');
     }
 
     private function markMissed(HeartbeatMonitor $monitor, CarbonImmutable $expected, CarbonImmutable $now): void

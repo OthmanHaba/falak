@@ -71,7 +71,7 @@ final class EloquentSiteDirectory implements SiteDirectory
         $exposed = $this->environment($siteId)?->deployScriptVariables() ?? [];
         $context = array_filter($context, fn ($value, $key) => is_string($key) && str_starts_with($key, 'KILN_'), ARRAY_FILTER_USE_BOTH);
 
-        return array_merge($exposed, SiteVariables::for($site, $serverId), array_map('strval', $context));
+        return array_merge($exposed, SiteVariables::for($site, $serverId), SiteVariables::normalizeIds(array_map('strval', $context)));
     }
 
     /**

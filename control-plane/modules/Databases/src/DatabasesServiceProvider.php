@@ -5,6 +5,8 @@ namespace Kiln\Databases;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Kiln\Alerting\Contracts\AlertTypes;
+use Kiln\Alerting\Contracts\Severity;
 use Kiln\Databases\Application\Jobs\RunDueBackups;
 use Kiln\Databases\Application\Listeners\DeleteOrganizationData;
 use Kiln\Databases\Application\Listeners\ForgetDeletedServer;
@@ -19,6 +21,9 @@ use Kiln\Databases\Domain\Models\DatabaseUser;
 use Kiln\Databases\Domain\Models\Restore;
 use Kiln\Databases\Domain\Models\StorageProvider;
 use Kiln\Databases\Domain\Policies\DatabasesPolicy;
+use Kiln\Databases\Events\BackupFailed;
+use Kiln\Databases\Events\BackupSucceeded;
+use Kiln\Databases\Events\RestoreFinished;
 use Kiln\Databases\Infrastructure\EloquentDatabaseDirectory;
 use Kiln\Databases\Infrastructure\ObjectStorage\EndpointGuard;
 use Kiln\Fleet\Events\CommandFailed;
@@ -60,6 +65,12 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         $registry->register(DatabasesPolicy::REVEAL, [Role::Admin, Role::Developer], 'Reveal database user passwords', 'databases');
         $registry->register(DatabasesPolicy::RESTORE, [Role::Admin], 'Restore backups (overwrites data)', 'databases');
         $registry->register(DatabasesPolicy::STORAGE, [Role::Admin], 'Manage backup storage providers and their credentials', 'databases');
+
+        $types = $this->app->make(AlertTypes::class);
+        $types->register(BackupFailed::ALERT_TYPE, 'Database backup failed', 'Databases', Severity::Critical);
+        $types->register(BackupSucceeded::ALERT_TYPE, 'Database backups succeed again', 'Databases', Severity::Info);
+        $types->register(RestoreFinished::ALERT_FAILED, 'Database restore failed', 'Databases', Severity::Critical);
+        $types->register(RestoreFinished::ALERT_SUCCEEDED, 'Database restore finished', 'Databases', Severity::Info);
 
         Event::listen(CommandFinished::class, [HandleCommandOutcome::class, 'handleFinished']);
         Event::listen(CommandFailed::class, [HandleCommandOutcome::class, 'handleFailed']);

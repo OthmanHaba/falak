@@ -52,9 +52,9 @@ it('creates a Laravel site on several servers with a leader, preset defaults and
         ->and($site->targets)->toHaveCount(2)
         ->and($site->leaderTarget()->server_id)->toBe($b->id)
         ->and($site->targets->firstWhere('server_id', $a->id)->role)->toBe(TargetRole::Member)
-        // FrankenPHP + shared unix user: nothing to prepare on the servers.
+        // FrankenPHP + shared unix user: nothing to prepare on the servers (Processes then converges the scheduler).
         ->and($site->targets->every(fn ($t) => $t->status === TargetStatus::Ready))->toBeTrue()
-        ->and($this->agents->dispatched)->toBe([]);
+        ->and(array_values(array_filter($this->agents->dispatched, fn ($c) => ! in_array($c['type'], ['proc.apply', 'cron.apply'], true))))->toBe([]);
 
     $env = app(SiteDirectory::class)->environment($site->id);
     expect($env->version)->toBe(1)

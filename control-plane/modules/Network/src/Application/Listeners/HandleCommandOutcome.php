@@ -11,6 +11,7 @@ use Kiln\Network\Domain\Enums\KeyStatus;
 use Kiln\Network\Domain\Models\FirewallState;
 use Kiln\Network\Domain\Models\PrivateNetworkMember;
 use Kiln\Network\Events\FirewallApplied;
+use Kiln\Network\Events\FirewallApplyFailed;
 use Kiln\Network\Events\PrivateNetworkChanged;
 use Kiln\Network\Infrastructure\WireGuardKeys;
 
@@ -37,10 +38,7 @@ final class HandleCommandOutcome implements ShouldQueue
         $reason = mb_substr($event->error ?: "Command {$event->status}".($event->exitCode !== null ? " (exit code {$event->exitCode})" : ''), 0, 1000);
 
         match ($event->type) {
-            'net.firewall.apply' => FirewallState::query()
-                ->where('command_id', $event->commandId)
-                ->where('organization_id', $event->organizationId)
-                ->update(['status' => ApplyStatus::Failed, 'error' => $reason, 'updated_at' => now()]),
+            'net.firewall.apply' => $this->firewallFailed($event, $reason),
             'net.wireguard.apply' => PrivateNetworkMember::query()
                 ->where('command_id', $event->commandId)
                 ->where('organization_id', $event->organizationId)
@@ -51,6 +49,19 @@ final class HandleCommandOutcome implements ShouldQueue
                 ->update(['key_status' => KeyStatus::Failed, 'status' => ApplyStatus::Failed, 'error' => "Installing the WireGuard key failed: {$reason}", 'updated_at' => now()]),
             default => null,
         };
+    }
+
+    private function firewallFailed(CommandFailed $event, string $reason): void
+    {
+        $updated = FirewallState::query()
+            ->where('command_id', $event->commandId)
+            ->where('organization_id', $event->organizationId)
+            ->update(['status' => ApplyStatus::Failed, 'error' => $reason, 'updated_at' => now()]);
+
+        // Only the tracked (latest) apply alerts; superseded commands are ignored.
+        if ($updated > 0) {
+            FirewallApplyFailed::dispatch($event->serverId, $event->organizationId, $event->commandId, $reason);
+        }
     }
 
     private function firewallApplied(CommandFinished $event): void

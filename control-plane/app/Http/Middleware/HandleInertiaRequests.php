@@ -45,6 +45,30 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            // One-shot session flashes (`back()->with('success', ...)`), rendered as toasts by the app layout.
+            'flash' => fn () => self::flash($request),
         ]);
+    }
+
+    /**
+     * @return array{success?: string, error?: string, warning?: string, status?: string}
+     */
+    public static function flash(Request $request): array
+    {
+        if (! $request->hasSession()) {
+            return [];
+        }
+
+        $flash = [];
+
+        foreach (['success', 'error', 'warning', 'status'] as $key) {
+            $value = $request->session()->get($key);
+
+            if (is_string($value) && $value !== '') {
+                $flash[$key] = $value;
+            }
+        }
+
+        return $flash;
     }
 }
