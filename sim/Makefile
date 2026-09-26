@@ -13,7 +13,7 @@ ifdef SIM_AGENT_ARCH
 export SIM_AGENT_ARCH
 endif
 
-.PHONY: up down logs reset enroll e2e ps build shell ca token enroll-all
+.PHONY: up down logs reset enroll e2e e2e-deploy ps build shell ca token enroll-all
 
 # Sim-only secrets, generated once per sim (removed by `make reset`).
 .data/secrets.env:
@@ -70,3 +70,8 @@ enroll-all:
 
 e2e:
 	./e2e.sh
+
+# Full product E2E: kiln:admin -> REST API -> real provisioning -> build -> multi-server deploy,
+# release, rollback, auto-rollback, Bun site, APM/Insights/Loki checks. Run after `make up`.
+e2e-deploy:
+	./e2e-deploy.sh

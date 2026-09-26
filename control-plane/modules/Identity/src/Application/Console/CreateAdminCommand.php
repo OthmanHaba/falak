@@ -21,6 +21,7 @@ final class CreateAdminCommand extends Command
         {--password= : Password (generated and printed when omitted for a new user)}
         {--organization= : Organization to own (default: the personal organization)}
         {--token= : Also issue an API token with this name (full access)}
+        {--reset-password : Set a new password for an existing user (--password, or a generated one)}
         {--json : Print the result as JSON (for scripts)}';
 
     protected $description = 'Create the first administrator, their organization and an optional API token';
@@ -42,6 +43,9 @@ final class CreateAdminCommand extends Command
             $password = $this->option('password') ?: Str::password(24, symbols: false);
             $user = $register($this->option('name') ?: Str::before($email, '@'), $email, $password);
             $user->forceFill(['email_verified_at' => now()])->save();
+        } elseif ($this->option('reset-password')) {
+            $password = $this->option('password') ?: Str::password(24, symbols: false);
+            $user->forceFill(['password' => $password])->save();
         }
 
         $organization = ($name = $this->option('organization'))
@@ -67,7 +71,11 @@ final class CreateAdminCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->components->info($password === null ? "Using existing user {$email}." : "Created admin {$email}.");
+        $this->components->info(match (true) {
+            $password === null => "Using existing user {$email}.",
+            $this->option('reset-password') && ! $user->wasRecentlyCreated => "Reset the password of {$email}.",
+            default => "Created admin {$email}.",
+        });
         $this->components->twoColumnDetail('Organization', "{$organization->name} ({$organization->id})");
 
         if ($password !== null && ! $this->option('password')) {

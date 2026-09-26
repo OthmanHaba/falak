@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Hash;
 use Kiln\Identity\Domain\Models\User;
 
 function runAdmin(array $args): array
@@ -39,4 +40,16 @@ it('is idempotent and can own a named organization', function () {
 
 it('rejects an invalid e-mail', function () {
     expect(Artisan::call('kiln:admin', ['email' => 'nope']))->toBe(2);
+});
+
+it('resets the password of an existing admin only when asked', function () {
+    $first = runAdmin(['email' => 'ops@example.com']);
+    $user = User::query()->findOrFail($first['user_id']);
+
+    $reset = runAdmin(['email' => 'ops@example.com', '--reset-password' => true, '--password' => 'correct horse battery']);
+
+    expect($reset['password'])->toBe('correct horse battery')
+        ->and(Hash::check('correct horse battery', $user->refresh()->password))->toBeTrue()
+        ->and(runAdmin(['email' => 'ops@example.com', '--password' => 'ignored']))->not->toHaveKey('password')
+        ->and(Hash::check('correct horse battery', $user->refresh()->password))->toBeTrue();
 });
