@@ -269,7 +269,7 @@ cmd_backup() {
 s3_upload() { # optional: KILN_BACKUP_S3_{ENDPOINT,BUCKET,REGION,ACCESS_KEY,SECRET_KEY,PREFIX}
   local file="$1" endpoint bucket
   endpoint="$(env_get KILN_BACKUP_S3_ENDPOINT)"; bucket="$(env_get KILN_BACKUP_S3_BUCKET)"
-  [ -n "$endpoint" ] && [ -n "$bucket" ] || return 0
+  if [ -z "$endpoint" ] || [ -z "$bucket" ]; then return 0; fi
   local region prefix key url
   region="$(env_get KILN_BACKUP_S3_REGION us-east-1)"
   prefix="$(env_get KILN_BACKUP_S3_PREFIX kiln)"
@@ -294,7 +294,7 @@ extract_backup() { # extract_backup FILE DIR
         | tar -xzf - -C "$dir" ;;
     *) tar -xzf "$file" -C "$dir" ;;
   esac
-  [ -s "$dir/db.dump" ] && [ -f "$dir/env" ] || die "$file is not a Kiln backup (db.dump/env missing)"
+  if [ ! -s "$dir/db.dump" ] || [ ! -f "$dir/env" ]; then die "$file is not a Kiln backup (db.dump/env missing)"; fi
 }
 
 cmd_restore() {
@@ -310,7 +310,7 @@ cmd_restore() {
     shift
   done
   [ -n "$file" ] || die "usage: kiln-ctl restore <backup file> [--yes] [--keep-env]"
-  [ -f "$file" ] || { [ -f "$BACKUP_DIR/$file" ] && file="$BACKUP_DIR/$file"; } || die "no such file: $file"
+  if [ ! -f "$file" ] && [ -f "$BACKUP_DIR/$file" ]; then file="$BACKUP_DIR/$file"; fi
   [ -f "$file" ] || die "no such file: $file"
   if [ "$yes" != 1 ]; then
     [ -t 0 ] || die "restore replaces the database, storage and Fleet CA: re-run with --yes to confirm"
