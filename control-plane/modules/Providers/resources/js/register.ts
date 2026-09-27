@@ -1,35 +1,30 @@
-import { registerCommands, registerNavigation } from '@/lib/registry';
+import { registerCommands, registerSettingsNav } from '@/lib/registry';
 import { Cloud, Plus } from 'lucide-react';
 
-registerNavigation({
-    id: 'providers',
-    title: 'Providers',
-    url: '/providers',
+// Organization settings → Integrations (docs/UI_DESIGN.md §3). The palette lists it under "Settings".
+registerSettingsNav({
+    id: 'cloud-providers',
+    title: 'Cloud providers',
+    url: '/settings/cloud-providers',
+    group: 'integrations',
+    order: 210,
     icon: Cloud,
-    order: 150,
     permission: 'providers.view',
+    requiresOrganization: true,
+    keywords: ['cloud', 'hetzner', 'digitalocean', 'vultr', 'linode', 'aws', 'lightsail', 'credentials'],
 });
 
 registerCommands({
-    id: 'providers.navigation',
+    id: 'providers.actions',
     commands: () => [
         {
-            id: 'providers.index',
-            title: 'Providers',
-            group: 'Navigation',
-            icon: Cloud,
-            href: '/providers',
-            permission: 'providers.view',
-            keywords: ['cloud', 'hetzner', 'digitalocean', 'vultr', 'linode', 'aws'],
-        },
-        {
             id: 'providers.add',
-            title: 'Add provider credential',
+            title: 'Add cloud provider credential',
             group: 'Actions',
             icon: Plus,
-            href: '/providers?add=1',
+            href: '/settings/cloud-providers?add=1',
             permission: 'providers.manage',
-            keywords: ['cloud', 'token', 'api key'],
+            keywords: ['cloud', 'token', 'api key', 'hetzner', 'digitalocean'],
         },
     ],
 });

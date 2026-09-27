@@ -1,7 +1,7 @@
 <?php
 
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Kiln\Kernel\Http\LegacyRedirect;
 use Kiln\Telemetry\Http\Controllers\LogController;
 use Kiln\Telemetry\Http\Controllers\ServerMetricsController;
 use Kiln\Telemetry\Http\Controllers\SettingsController;
@@ -17,8 +17,13 @@ Route::middleware(['auth', 'org'])->prefix('observability')->name('observability
     Route::get('traces/{traceId}', [TraceController::class, 'show'])->name('traces.show');
 });
 
+Route::middleware(['auth', 'org'])->group(function () {
+    // Observability settings live in the settings shell (docs/UI_DESIGN.md §3); the old URL redirects.
+    Route::get('settings/observability', [SettingsController::class, 'show'])->name('telemetry.settings.show');
+    Route::get('telemetry/settings', LegacyRedirect::to('/settings/observability'))->name('telemetry.settings.legacy');
+});
+
 Route::middleware(['auth', 'org'])->prefix('telemetry')->name('telemetry.')->group(function () use ($ulid) {
-    Route::get('settings', [SettingsController::class, 'show'])->name('settings.show');
     Route::put('settings', [SettingsController::class, 'update'])->name('settings.update');
     Route::post('grafana/provision', [SettingsController::class, 'provisionGrafana'])->name('grafana.provision');
 
@@ -34,8 +39,7 @@ Route::middleware(['auth', 'org'])->prefix('telemetry')->name('telemetry.')->gro
     Route::get('traces/{traceId}/data', [TraceController::class, 'data'])->name('traces.data');
 
     // Legacy page URLs → /observability.
-    $keepQuery = fn (string $to) => fn (Request $request) => redirect($to.($request->getQueryString() ? '?'.$request->getQueryString() : ''));
-    Route::get('logs', $keepQuery('/observability/logs'))->name('legacy.logs');
-    Route::get('traces', $keepQuery('/observability/traces'))->name('legacy.traces');
-    Route::get('traces/{traceId}', fn (string $traceId) => redirect('/observability/traces/'.rawurlencode($traceId)))->where('traceId', '[0-9a-fA-F]{16,32}')->name('legacy.trace');
+    Route::get('logs', LegacyRedirect::to('/observability/logs'))->name('legacy.logs');
+    Route::get('traces', LegacyRedirect::to('/observability/traces'))->name('legacy.traces');
+    Route::get('traces/{traceId}', fn (string $traceId) => redirect('/observability/traces/'.rawurlencode($traceId), 301))->where('traceId', '[0-9a-fA-F]{16,32}')->name('legacy.trace');
 });

@@ -50,9 +50,10 @@ final class StorageProviderController extends Controller
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, DatabasesPolicy::STORAGE);
 
-        $save($organizationId, $request->validate($this->rules($organizationId, null)), null, $request->user()?->getAuthIdentifier());
+        $data = $request->validate($this->rules($organizationId, null));
+        $save($organizationId, $data, null, $request->user()?->getAuthIdentifier());
 
-        return back();
+        return back()->with('success', "{$data['name']} added. Verify it to check the bucket permissions.");
     }
 
     public function update(Request $request, StorageProvider $storageProvider, SaveStorageProvider $save): RedirectResponse
@@ -70,7 +71,7 @@ final class StorageProviderController extends Controller
 
         $verify($storageProvider);
 
-        return back();
+        return back()->with('success', "{$storageProvider->name} verified: Kiln wrote and deleted a probe object.");
     }
 
     public function destroy(StorageProvider $storageProvider, DeleteStorageProvider $delete): RedirectResponse

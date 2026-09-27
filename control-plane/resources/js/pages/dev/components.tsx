@@ -2,17 +2,20 @@ import {
     AppShell,
     Avatar,
     Button,
+    Callout,
     ChangesBar,
     Checkbox,
     CodeBlock,
     Combobox,
     ConfirmDestructive,
     DataTable,
+    defaultSetupSteps,
     Dialog,
     EmptyState,
     Field,
     IconButton,
     Input,
+    IntegrationTile,
     KeyValue,
     LogViewer,
     Menu,
@@ -21,9 +24,11 @@ import {
     Panel,
     PhaseTimeline,
     RelativeTime,
+    SecretInput,
     Section,
     Select,
     ServiceIcon,
+    SetupChecklist,
     Skeleton,
     StatusBadge,
     StatusDot,
@@ -100,6 +105,7 @@ export default function ComponentsGallery() {
     const [select, setSelect] = useState<string>('production');
     const [combo, setCombo] = useState<string | null>(null);
     const [on, setOn] = useState(true);
+    const [secret, setSecret] = useState('');
 
     const logLines = useMemo(
         () =>
@@ -172,6 +178,55 @@ export default function ComponentsGallery() {
                         >
                             Promise toast
                         </Button>
+                    </div>
+                </Section>
+
+                <Section title="Setup checklist · secrets · callouts · integrations" bare>
+                    <SetupChecklist
+                        steps={defaultSetupSteps({ gitConnected: true, hasServer: true, hasProject: false, hasDeployment: false })}
+                        onDismiss={() => toast.info('Dismissed')}
+                    />
+                    <div className="grid items-start gap-3 sm:grid-cols-2">
+                        <Field label="New secret">
+                            <SecretInput value={secret} onChange={setSecret} placeholder="ghp_…" />
+                        </Field>
+                        <Field label="Stored secret" hint="Write-only: Replace, never reveal.">
+                            <SecretInput stored storedHint="…a1b2" value={secret} onChange={setSecret} />
+                        </Field>
+                    </div>
+                    <Callout tone="success" title="Verified">
+                        Kiln wrote and deleted a probe object.
+                    </Callout>
+                    <Callout tone="danger" title="Could not verify">
+                        Hetzner Cloud: unable to authenticate
+                    </Callout>
+                    <div className="flex flex-wrap gap-2">
+                        {[
+                            'github',
+                            'gitlab',
+                            'bitbucket',
+                            'hetzner',
+                            'digitalocean',
+                            'vultr',
+                            'linode',
+                            'aws',
+                            'r2',
+                            'b2',
+                            'minio',
+                            's3',
+                            'slack',
+                            'discord',
+                            'telegram',
+                            'email',
+                            'webhook',
+                            'grafana',
+                        ].map((name) => (
+                            <Tooltip key={name} content={name}>
+                                <span tabIndex={0}>
+                                    <IntegrationTile name={name} />
+                                </span>
+                            </Tooltip>
+                        ))}
                     </div>
                 </Section>
 

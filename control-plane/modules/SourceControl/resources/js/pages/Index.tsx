@@ -1,21 +1,23 @@
-import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
+import { Button } from '@/components/kiln/button';
+import { Callout } from '@/components/kiln/callout';
+import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
+import { DataTable } from '@/components/kiln/data-table';
+import { Dialog } from '@/components/kiln/dialog';
+import { EmptyState } from '@/components/kiln/empty-state';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { RelativeTime } from '@/components/kiln/relative-time';
+import { SecretInput } from '@/components/kiln/secret-input';
+import { Section } from '@/components/kiln/section';
+import { Tag } from '@/components/kiln/tag';
+import SettingsLayout from '@/layouts/settings/layout';
 import { cn } from '@/lib/utils';
-import { type BreadcrumbItem, type SharedData } from '@/types';
-import { Head, useForm, usePage } from '@inertiajs/react';
-import { formatDistanceToNow } from 'date-fns';
-import { GitBranch, GitCommitHorizontal, Plus, Trash2 } from 'lucide-react';
-import { FormEventHandler, useState } from 'react';
+import { type SharedData } from '@/types';
+import { useForm, usePage } from '@inertiajs/react';
+import { FolderGit2, GitBranch, GitCommitHorizontal, Unplug } from 'lucide-react';
+import { useState, type FormEventHandler } from 'react';
 import { ProviderIcon } from '../components/provider-icon';
+import { RepositoryBrowser } from '../components/repository-browser';
 import { AUTH_LABELS, type ConnectionRow, type ProviderOption, type ProviderValue, type PushRow } from '../types';
 
 interface Props {
@@ -38,8 +40,6 @@ interface ConnectForm {
     password: string;
 }
 
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'Source control', href: '/source-control' }];
-
 const MANUAL_AUTH: Record<ProviderValue, ManualAuth[]> = {
     github: ['token'],
     gitlab: ['token'],
@@ -54,25 +54,69 @@ const TOKEN_HINTS: Record<ProviderValue, string> = {
     custom: '',
 };
 
+const DESCRIPTIONS: Record<ProviderValue, string> = {
+    github: 'Repos, branches, deploy keys and push webhooks via the API.',
+    gitlab: 'GitLab.com or self-managed, via the API.',
+    bitbucket: 'Bitbucket Cloud workspaces via the API.',
+    custom: 'Any SSH-reachable git server, with a deploy key per site.',
+};
+
+const BASE_URL: Record<ProviderValue, { label: string; placeholder: string } | null> = {
+    github: { label: 'GitHub Enterprise URL', placeholder: 'https://github.example.com' },
+    gitlab: { label: 'Self-managed URL', placeholder: 'https://gitlab.example.com' },
+    bitbucket: null,
+    custom: { label: 'Server URL', placeholder: 'ssh://git@git.example.com' },
+};
+
+function ProviderTile({ option, githubApp, onManual }: { option: ProviderOption; githubApp: boolean; onManual: () => void }) {
+    return (
+        <div className="border-border bg-surface-1 flex flex-col gap-3 rounded-lg border p-4" data-testid={`provider-${option.value}`}>
+            <div className="flex items-center gap-2.5">
+                <span className="border-border bg-surface-2 text-fg flex size-8 items-center justify-center rounded-md border">
+                    <ProviderIcon provider={option.value} className="size-4" />
+                </span>
+                <span className="text-fg text-sm font-medium">{option.label}</span>
+            </div>
+            <p className="text-fg-muted flex-1 text-xs">{DESCRIPTIONS[option.value]}</p>
+            <div className="flex flex-wrap gap-1.5">
+                {option.oauth && (
+                    <Button asChild size="sm" variant="primary">
+                        <a href={route('source-control.connect', option.value)}>Connect</a>
+                    </Button>
+                )}
+                {option.value === 'github' && githubApp && (
+                    <Button asChild size="sm">
+                        <a href={route('source-control.github-app')}>Install app</a>
+                    </Button>
+                )}
+                <Button size="sm" variant={option.oauth ? 'ghost' : 'secondary'} onClick={onManual}>
+                    {option.has_api ? 'Use a token' : 'Add server'}
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 export default function Index({ connections, pushes, providers, githubApp, canManage }: Props) {
-    const { errors } = usePage<SharedData & { errors: Record<string, string> }>().props;
+    const { errors } = usePage<SharedData & { errors: Record<string, string | undefined> }>().props;
     const [connecting, setConnecting] = useState<ProviderOption | null>(null);
     const [deleting, setDeleting] = useState<ConnectionRow | null>(null);
+    const [browsing, setBrowsing] = useState<ConnectionRow | null>(null);
     const form = useForm<ConnectForm>({ provider: 'github', auth_type: 'token', name: '', base_url: '', token: '', username: '', password: '' });
     const removal = useForm({ name: '' });
 
-    const openConnect = (provider: ProviderOption) => {
+    const openConnect = (option: ProviderOption) => {
         form.clearErrors();
         form.setData({
-            provider: provider.value,
-            auth_type: MANUAL_AUTH[provider.value][0],
+            provider: option.value,
+            auth_type: MANUAL_AUTH[option.value][0],
             name: '',
             base_url: '',
             token: '',
             username: '',
             password: '',
         });
-        setConnecting(provider);
+        setConnecting(option);
     };
 
     const submit: FormEventHandler = (event) => {
@@ -86,345 +130,302 @@ export default function Index({ connections, pushes, providers, githubApp, canMa
         });
     };
 
-    const destroy: FormEventHandler = (event) => {
-        event.preventDefault();
-
-        if (!deleting) return;
-
-        removal.delete(route('source-control.connections.destroy', deleting.id), {
-            preserveScroll: true,
-            onSuccess: () => {
-                removal.reset();
-                setDeleting(null);
-            },
+    const disconnect = (name: string) =>
+        new Promise<void>((resolve) => {
+            if (!deleting) return resolve();
+            removal.transform(() => ({ name }));
+            removal.delete(route('source-control.connections.destroy', deleting.id), {
+                preserveScroll: true,
+                onSuccess: () => setDeleting(null),
+                onFinish: () => resolve(),
+            });
         });
-    };
 
     const connectionName = (id: string) => connections.find((connection) => connection.id === id)?.name ?? '—';
     const provider = form.data.provider;
+    const baseUrl = BASE_URL[provider];
+
+    const tiles = (
+        <div className="grid gap-3 sm:grid-cols-2">
+            {providers.map((option) => (
+                <ProviderTile key={option.value} option={option} githubApp={githubApp} onManual={() => openConnect(option)} />
+            ))}
+        </div>
+    );
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Source control" />
-            <div className="space-y-6 p-4">
-                <Heading title="Source control" description="Git providers Kiln deploys from: repositories, deploy keys and push webhooks" />
+        <SettingsLayout
+            title="Source control"
+            description="Git providers Kiln deploys from. Kiln adds a deploy key and a push webhook per site, and removes them when you disconnect."
+            wide
+        >
+            {errors.oauth && (
+                <Callout tone="danger" title="The provider did not connect">
+                    {errors.oauth}
+                </Callout>
+            )}
 
-                {errors.oauth && (
-                    <Alert variant="destructive">
-                        <AlertDescription>{errors.oauth}</AlertDescription>
-                    </Alert>
+            <Section title="Connections" description="Accounts, groups and servers this organization can deploy from." bare>
+                {connections.length === 0 ? (
+                    <EmptyState
+                        icon={<GitBranch />}
+                        title="Connect your first git provider"
+                        description={
+                            canManage
+                                ? 'Pick a provider below. OAuth is quickest; a token works for self-hosted instances and CI accounts.'
+                                : 'Ask an admin of this organization to connect GitHub, GitLab, Bitbucket or a git server.'
+                        }
+                    />
+                ) : (
+                    <DataTable
+                        label="Git connections"
+                        rows={connections}
+                        rowKey={(connection) => connection.id}
+                        columns={[
+                            {
+                                id: 'name',
+                                header: 'Name',
+                                sortValue: (connection) => connection.name,
+                                cell: (connection) => (
+                                    <span className="flex min-w-0 items-center gap-2.5 py-1.5">
+                                        <span className="border-border bg-surface-2 text-fg flex size-6 shrink-0 items-center justify-center rounded-md border">
+                                            <ProviderIcon provider={connection.provider} className="size-3.5" />
+                                        </span>
+                                        <span className="grid min-w-0">
+                                            <span className="truncate font-medium">{connection.name}</span>
+                                            <span className="text-fg-faint truncate text-xs">
+                                                {connection.provider_label}
+                                                {connection.base_url ? ` · ${connection.base_url}` : ''}
+                                            </span>
+                                        </span>
+                                    </span>
+                                ),
+                            },
+                            {
+                                id: 'account',
+                                header: 'Account',
+                                hideOnMobile: true,
+                                cell: (connection) => <span className="text-fg-muted font-mono text-xs">{connection.account ?? '—'}</span>,
+                            },
+                            {
+                                id: 'auth',
+                                header: 'Auth',
+                                hideOnMobile: true,
+                                cell: (connection) => <Tag>{AUTH_LABELS[connection.auth_type]}</Tag>,
+                            },
+                            {
+                                id: 'usage',
+                                header: 'Keys · hooks',
+                                align: 'right',
+                                hideOnMobile: true,
+                                cell: (connection) => (
+                                    <span className="text-fg-muted">
+                                        {connection.deploy_keys_count} · {connection.webhooks_count}
+                                    </span>
+                                ),
+                            },
+                            {
+                                id: 'created',
+                                header: 'Connected',
+                                hideOnMobile: true,
+                                sortValue: (connection) => connection.created_at,
+                                cell: (connection) => <RelativeTime value={connection.created_at} className="text-fg-muted" />,
+                            },
+                        ]}
+                        rowActions={(connection) => [
+                            ...(connection.provider !== 'custom'
+                                ? [{ label: 'Browse repositories', icon: <FolderGit2 />, onSelect: () => setBrowsing(connection) }]
+                                : []),
+                            ...(canManage
+                                ? [
+                                      ...(connection.provider !== 'custom' ? [{ type: 'separator' as const }] : []),
+                                      { label: 'Disconnect', icon: <Unplug />, danger: true, onSelect: () => setDeleting(connection) },
+                                  ]
+                                : []),
+                        ]}
+                    />
                 )}
+            </Section>
 
-                {canManage && (
-                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                        {providers.map((option) => (
-                            <Card key={option.value} className="gap-3">
-                                <CardHeader>
-                                    <CardTitle className="flex items-center gap-2 text-base">
-                                        <ProviderIcon provider={option.value} className="size-4" /> {option.label}
-                                    </CardTitle>
-                                    <CardDescription>
-                                        {option.has_api
-                                            ? 'Repositories, branches, deploy keys and webhooks via API.'
-                                            : 'Any SSH-reachable git server with a deploy key.'}
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent className="flex flex-wrap gap-2">
-                                    {option.oauth && (
-                                        <Button size="sm" asChild>
-                                            <a href={route('source-control.connect', option.value)}>Connect with OAuth</a>
-                                        </Button>
+            {canManage && (
+                <Section
+                    title={connections.length === 0 ? 'Choose a provider' : 'Add a connection'}
+                    description="Credentials are verified with the provider, then stored encrypted and never shown again."
+                    bare
+                >
+                    {tiles}
+                </Section>
+            )}
+
+            <Section
+                title="Recent pushes"
+                description="The last 20 push webhooks received. Each one can trigger push-to-deploy on matching sites."
+                bare
+            >
+                <DataTable
+                    label="Recent pushes"
+                    rows={pushes}
+                    rowKey={(push) => push.id}
+                    empty={{
+                        icon: <GitCommitHorizontal />,
+                        title: 'No pushes received yet',
+                        description: 'Push to a branch of a connected repository that a site deploys from, and it shows up here within seconds.',
+                        size: 'sm',
+                    }}
+                    columns={[
+                        {
+                            id: 'commit',
+                            header: 'Commit',
+                            cell: (push) => (
+                                <span className="flex min-w-0 items-center gap-2">
+                                    {push.url ? (
+                                        <a
+                                            href={push.url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-primary shrink-0 font-mono text-xs hover:underline"
+                                        >
+                                            {push.sha.slice(0, 7)}
+                                        </a>
+                                    ) : (
+                                        <span className="shrink-0 font-mono text-xs">{push.sha.slice(0, 7)}</span>
                                     )}
-                                    {option.value === 'github' && githubApp && (
-                                        <Button size="sm" variant="secondary" asChild>
-                                            <a href={route('source-control.github-app')}>Install GitHub App</a>
-                                        </Button>
+                                    <span className="max-w-[16rem] truncate sm:max-w-md">{push.message}</span>
+                                </span>
+                            ),
+                        },
+                        {
+                            id: 'repository',
+                            header: 'Repository',
+                            hideOnMobile: true,
+                            cell: (push) => (
+                                <span className="flex items-center gap-1.5">
+                                    <span className="text-fg-muted font-mono text-xs">{push.repository}</span>
+                                    <Tag mono icon={<GitBranch />}>
+                                        {push.branch}
+                                    </Tag>
+                                </span>
+                            ),
+                        },
+                        {
+                            id: 'author',
+                            header: 'Author',
+                            hideOnMobile: true,
+                            cell: (push) => <span className="text-fg-muted">{push.author ?? push.pusher ?? '—'}</span>,
+                        },
+                        {
+                            id: 'connection',
+                            header: 'Connection',
+                            hideOnMobile: true,
+                            cell: (push) => <span className="text-fg-muted">{connectionName(push.connection_id)}</span>,
+                        },
+                        {
+                            id: 'received',
+                            header: 'Received',
+                            align: 'right',
+                            sortValue: (push) => push.received_at,
+                            cell: (push) => <RelativeTime value={push.received_at} className="text-fg-muted" />,
+                        },
+                    ]}
+                />
+            </Section>
+
+            <Dialog
+                open={connecting !== null}
+                onOpenChange={(open) => !open && setConnecting(null)}
+                title={`Connect ${connecting?.label ?? ''}`}
+                description={
+                    provider === 'custom'
+                        ? 'Kiln generates a deploy key per site; add it to your git server and point its push webhook at the URL shown on the site.'
+                        : 'The credentials are checked with the provider before anything is saved.'
+                }
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setConnecting(null)}>
+                            Cancel
+                        </Button>
+                        <Button variant="primary" type="submit" form="connect-form" loading={form.processing}>
+                            {provider === 'custom' ? 'Add server' : 'Verify and connect'}
+                        </Button>
+                    </>
+                }
+            >
+                <form id="connect-form" onSubmit={submit} className="grid gap-4">
+                    {MANUAL_AUTH[provider].length > 1 && (
+                        <div className="bg-surface-2 grid grid-cols-2 gap-1 rounded-md p-1" role="radiogroup" aria-label="Authentication">
+                            {MANUAL_AUTH[provider].map((auth) => (
+                                <button
+                                    key={auth}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={form.data.auth_type === auth}
+                                    onClick={() => form.setData('auth_type', auth)}
+                                    className={cn(
+                                        'h-7 rounded-sm text-xs font-medium transition-colors',
+                                        form.data.auth_type === auth ? 'bg-surface-1 text-fg shadow-sm' : 'text-fg-muted hover:text-fg',
                                     )}
-                                    <Button size="sm" variant="outline" onClick={() => openConnect(option)}>
-                                        <Plus /> {option.has_api ? 'Use a token' : 'Add server'}
-                                    </Button>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
-                )}
-
-                <section className="space-y-3">
-                    <h3 className="text-sm font-medium">Connections</h3>
-                    {connections.length === 0 ? (
-                        <Card>
-                            <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
-                                <GitBranch className="text-muted-foreground size-10" />
-                                <p className="font-medium">No git providers connected</p>
-                                <p className="text-muted-foreground text-sm">
-                                    Connect GitHub, GitLab, Bitbucket or a custom git server to deploy sites from it.
-                                </p>
-                            </CardContent>
-                        </Card>
-                    ) : (
-                        <Card className="py-0">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Name</TableHead>
-                                        <TableHead>Provider</TableHead>
-                                        <TableHead>Account</TableHead>
-                                        <TableHead>Auth</TableHead>
-                                        <TableHead>Deploy keys</TableHead>
-                                        <TableHead>Webhooks</TableHead>
-                                        <TableHead>Connected</TableHead>
-                                        {canManage && <TableHead className="w-12" />}
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {connections.map((connection) => (
-                                        <TableRow key={connection.id}>
-                                            <TableCell className="font-medium">{connection.name}</TableCell>
-                                            <TableCell>
-                                                <span className="flex items-center gap-2">
-                                                    <ProviderIcon provider={connection.provider} className="size-4" />
-                                                    {connection.provider_label}
-                                                </span>
-                                                {connection.base_url && (
-                                                    <span className="text-muted-foreground block text-xs">{connection.base_url}</span>
-                                                )}
-                                            </TableCell>
-                                            <TableCell className="font-mono text-xs">{connection.account ?? '—'}</TableCell>
-                                            <TableCell>
-                                                <Badge variant="outline">{AUTH_LABELS[connection.auth_type]}</Badge>
-                                            </TableCell>
-                                            <TableCell className="tabular-nums">{connection.deploy_keys_count}</TableCell>
-                                            <TableCell className="tabular-nums">{connection.webhooks_count}</TableCell>
-                                            <TableCell className="text-muted-foreground text-sm">
-                                                {formatDistanceToNow(new Date(connection.created_at), { addSuffix: true })}
-                                            </TableCell>
-                                            {canManage && (
-                                                <TableCell>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        onClick={() => {
-                                                            removal.reset();
-                                                            removal.clearErrors();
-                                                            setDeleting(connection);
-                                                        }}
-                                                        aria-label={`Disconnect ${connection.name}`}
-                                                    >
-                                                        <Trash2 />
-                                                    </Button>
-                                                </TableCell>
-                                            )}
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </Card>
+                                >
+                                    {AUTH_LABELS[auth]}
+                                </button>
+                            ))}
+                        </div>
                     )}
-                </section>
 
-                <section className="space-y-3">
-                    <h3 className="text-sm font-medium">Recent pushes</h3>
-                    {pushes.length === 0 ? (
-                        <p className="text-muted-foreground text-sm">No push webhooks received yet.</p>
-                    ) : (
-                        <Card className="py-0">
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Repository</TableHead>
-                                        <TableHead>Branch</TableHead>
-                                        <TableHead>Commit</TableHead>
-                                        <TableHead>Author</TableHead>
-                                        <TableHead>Connection</TableHead>
-                                        <TableHead>Received</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {pushes.map((push) => (
-                                        <TableRow key={push.id}>
-                                            <TableCell className="font-mono text-xs break-all">{push.repository}</TableCell>
-                                            <TableCell>
-                                                <Badge variant="secondary">{push.branch}</Badge>
-                                            </TableCell>
-                                            <TableCell className="max-w-md">
-                                                <span className="flex items-center gap-2">
-                                                    <GitCommitHorizontal className="text-muted-foreground size-4 shrink-0" />
-                                                    {push.url ? (
-                                                        <a
-                                                            href={push.url}
-                                                            target="_blank"
-                                                            rel="noreferrer"
-                                                            className="font-mono text-xs underline-offset-2 hover:underline"
-                                                        >
-                                                            {push.sha.slice(0, 7)}
-                                                        </a>
-                                                    ) : (
-                                                        <span className="font-mono text-xs">{push.sha.slice(0, 7)}</span>
-                                                    )}
-                                                    <span className="truncate">{push.message}</span>
-                                                </span>
-                                            </TableCell>
-                                            <TableCell className="text-sm">{push.author ?? push.pusher ?? '—'}</TableCell>
-                                            <TableCell className="text-muted-foreground text-sm">{connectionName(push.connection_id)}</TableCell>
-                                            <TableCell className="text-muted-foreground text-sm">
-                                                {formatDistanceToNow(new Date(push.received_at), { addSuffix: true })}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        </Card>
-                    )}
-                </section>
-            </div>
+                    <Field label="Name" hint="Optional — defaults to the account name." error={form.errors.name}>
+                        <Input
+                            value={form.data.name}
+                            onChange={(event) => form.setData('name', event.target.value)}
+                            placeholder={provider === 'custom' ? 'Internal git' : `${connecting?.label ?? ''} (account)`}
+                        />
+                    </Field>
 
-            <Dialog open={connecting !== null} onOpenChange={(value) => !value && setConnecting(null)}>
-                <DialogContent>
-                    <form onSubmit={submit} className="space-y-4">
-                        <DialogHeader>
-                            <DialogTitle>Connect {connecting?.label}</DialogTitle>
-                            <DialogDescription>
-                                {provider === 'custom'
-                                    ? 'Kiln generates a deploy key per site; add it to your git server and point its push webhook at the URL shown on the site.'
-                                    : 'Credentials are verified with the provider and stored encrypted.'}
-                            </DialogDescription>
-                        </DialogHeader>
-
-                        {MANUAL_AUTH[provider].length > 1 && (
-                            <div className="flex gap-2" role="radiogroup" aria-label="Authentication">
-                                {MANUAL_AUTH[provider].map((auth) => (
-                                    <Button
-                                        key={auth}
-                                        type="button"
-                                        size="sm"
-                                        variant="outline"
-                                        role="radio"
-                                        aria-checked={form.data.auth_type === auth}
-                                        className={cn(form.data.auth_type === auth && 'border-primary')}
-                                        onClick={() => form.setData('auth_type', auth)}
-                                    >
-                                        {AUTH_LABELS[auth]}
-                                    </Button>
-                                ))}
-                            </div>
-                        )}
-
-                        <div className="grid gap-2">
-                            <Label htmlFor="connection-name">Name (optional)</Label>
+                    {baseUrl && (
+                        <Field label={baseUrl.label} hint="Optional — leave empty for the hosted service." error={form.errors.base_url}>
                             <Input
-                                id="connection-name"
-                                value={form.data.name}
-                                onChange={(e) => form.setData('name', e.target.value)}
-                                placeholder={provider === 'custom' ? 'Internal git' : `${connecting?.label ?? ''} (account)`}
+                                mono
+                                value={form.data.base_url}
+                                onChange={(event) => form.setData('base_url', event.target.value)}
+                                placeholder={baseUrl.placeholder}
                             />
-                            <InputError message={form.errors.name} />
+                        </Field>
+                    )}
+
+                    {form.data.auth_type === 'token' && (
+                        <Field label="Access token" hint={TOKEN_HINTS[provider]} error={form.errors.token} required>
+                            <SecretInput value={form.data.token} onChange={(value) => form.setData('token', value)} />
+                        </Field>
+                    )}
+
+                    {form.data.auth_type === 'basic' && (
+                        <div className="grid items-start gap-4 sm:grid-cols-2">
+                            <Field label="Username" error={form.errors.username} required>
+                                <Input value={form.data.username} onChange={(event) => form.setData('username', event.target.value)} />
+                            </Field>
+                            <Field label="App password" error={form.errors.password} required>
+                                <SecretInput value={form.data.password} onChange={(value) => form.setData('password', value)} />
+                            </Field>
                         </div>
+                    )}
 
-                        {provider !== 'bitbucket' && (
-                            <div className="grid gap-2">
-                                <Label htmlFor="connection-base-url">
-                                    {provider === 'custom'
-                                        ? 'Server URL (optional)'
-                                        : provider === 'github'
-                                          ? 'GitHub Enterprise URL (optional)'
-                                          : 'Self-hosted URL (optional)'}
-                                </Label>
-                                <Input
-                                    id="connection-base-url"
-                                    value={form.data.base_url}
-                                    onChange={(e) => form.setData('base_url', e.target.value)}
-                                    placeholder={
-                                        provider === 'gitlab'
-                                            ? 'https://gitlab.example.com'
-                                            : provider === 'github'
-                                              ? 'https://github.example.com'
-                                              : 'ssh://git@git.example.com'
-                                    }
-                                />
-                                <InputError message={form.errors.base_url} />
-                            </div>
-                        )}
-
-                        {form.data.auth_type === 'token' && (
-                            <div className="grid gap-2">
-                                <Label htmlFor="connection-token">Access token</Label>
-                                <Input
-                                    id="connection-token"
-                                    type="password"
-                                    autoComplete="off"
-                                    value={form.data.token}
-                                    onChange={(e) => form.setData('token', e.target.value)}
-                                />
-                                <p className="text-muted-foreground text-xs">{TOKEN_HINTS[provider]}</p>
-                                <InputError message={form.errors.token} />
-                            </div>
-                        )}
-
-                        {form.data.auth_type === 'basic' && (
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <div className="grid gap-2">
-                                    <Label htmlFor="connection-username">Username</Label>
-                                    <Input
-                                        id="connection-username"
-                                        value={form.data.username}
-                                        onChange={(e) => form.setData('username', e.target.value)}
-                                    />
-                                    <InputError message={form.errors.username} />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="connection-password">App password</Label>
-                                    <Input
-                                        id="connection-password"
-                                        type="password"
-                                        autoComplete="off"
-                                        value={form.data.password}
-                                        onChange={(e) => form.setData('password', e.target.value)}
-                                    />
-                                    <InputError message={form.errors.password} />
-                                </div>
-                            </div>
-                        )}
-
-                        <InputError message={errors.credentials ?? form.errors.auth_type ?? form.errors.provider} />
-
-                        <DialogFooter>
-                            <Button type="button" variant="ghost" onClick={() => setConnecting(null)}>
-                                Cancel
-                            </Button>
-                            <Button disabled={form.processing}>Connect</Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
+                    {(errors.credentials ?? form.errors.auth_type ?? form.errors.provider) && (
+                        <Callout tone="danger">{errors.credentials ?? form.errors.auth_type ?? form.errors.provider}</Callout>
+                    )}
+                </form>
             </Dialog>
 
-            <Dialog open={deleting !== null} onOpenChange={(value) => !value && setDeleting(null)}>
-                <DialogContent>
-                    <form onSubmit={destroy} className="space-y-4">
-                        <DialogHeader>
-                            <DialogTitle>Disconnect {deleting?.name}?</DialogTitle>
-                            <DialogDescription>
-                                Its {deleting?.deploy_keys_count ?? 0} deploy key(s) and {deleting?.webhooks_count ?? 0} webhook(s) are removed from
-                                the provider. Sites using it can no longer be deployed until they are pointed at another connection.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <div className="grid gap-2">
-                            <Label htmlFor="confirm-name">
-                                Type <span className="font-mono">{deleting?.name}</span> to confirm
-                            </Label>
-                            <Input id="confirm-name" value={removal.data.name} onChange={(e) => removal.setData('name', e.target.value)} />
-                            <InputError message={removal.errors.name} />
-                        </div>
-                        <DialogFooter>
-                            <Button type="button" variant="ghost" onClick={() => setDeleting(null)}>
-                                Cancel
-                            </Button>
-                            <Button variant="destructive" disabled={removal.processing || removal.data.name !== deleting?.name}>
-                                Disconnect
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
-        </AppLayout>
+            <ConfirmDestructive
+                open={deleting !== null}
+                onOpenChange={(open) => !open && setDeleting(null)}
+                title={`Disconnect ${deleting?.name ?? ''}`}
+                description={`Its ${deleting?.deploy_keys_count ?? 0} deploy key(s) and ${deleting?.webhooks_count ?? 0} webhook(s) are removed from the provider. Sites using it can't deploy until they point at another connection.`}
+                confirmText={deleting?.name ?? ''}
+                confirmLabel="Disconnect"
+                onConfirm={disconnect}
+                processing={removal.processing}
+                error={removal.errors.name}
+            />
+
+            <RepositoryBrowser connection={browsing} onClose={() => setBrowsing(null)} />
+        </SettingsLayout>
     );
 }

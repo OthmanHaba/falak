@@ -92,6 +92,9 @@ class UiDemoSeeder extends Seeder
         $platform = app(CreateProject::class)($organization->id, $admin->id, ['name' => 'Platform']);
         app(CreateEnvironment::class)($platform, 'staging', $admin->id);
 
+        // Organization settings: git connections, clouds, buckets, builders, alerting, recipes.
+        $this->callWith(SettingsDemoSeeder::class, ['organizationId' => $organization->id, 'userId' => $admin->id]);
+
         $this->call(ObservabilityDemoSeeder::class, false, ['organizationId' => $organization->id, 'userId' => $admin->id]);
     }
 }

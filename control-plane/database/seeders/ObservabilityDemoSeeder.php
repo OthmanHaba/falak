@@ -351,8 +351,15 @@ class ObservabilityDemoSeeder extends Seeder
             [60 * 26, 'certificates.expiring', Severity::Warning, 'TLS certificate for shop.acme.test expires in 12 days', 'Automatic renewal failed: DNS-01 challenge timed out', '/projects', AlertOutcome::Delivered, false, true, true],
         ];
 
-        $slack = Channel::query()->create(['organization_id' => $organizationId, 'type' => ChannelType::Slack, 'name' => '#ops-alerts', 'config' => ['webhook_url' => 'https://hooks.slack.com/services/T000/B000/demo'], 'enabled' => true, 'last_sent_at' => $now->subMinutes(118)]);
-        $pager = Channel::query()->create(['organization_id' => $organizationId, 'type' => ChannelType::Webhook, 'name' => 'PagerDuty bridge', 'config' => ['url' => 'https://events.pagerduty.example/v2/enqueue'], 'enabled' => true, 'last_error' => 'HTTP 503 from events.pagerduty.example']);
+        // Reuse the channels SettingsDemoSeeder created (same names), or create them.
+        $slack = Channel::query()->firstOrCreate(
+            ['organization_id' => $organizationId, 'name' => '#ops-alerts'],
+            ['type' => ChannelType::Slack, 'config' => ['webhook_url' => 'https://hooks.slack.com/services/T000/B000/demo'], 'enabled' => true, 'last_sent_at' => $now->subMinutes(118)],
+        );
+        $pager = Channel::query()->firstOrCreate(
+            ['organization_id' => $organizationId, 'name' => 'PagerDuty bridge'],
+            ['type' => ChannelType::Webhook, 'config' => ['url' => 'https://events.pagerduty.example/v2/enqueue'], 'enabled' => true, 'last_error' => 'HTTP 503 from events.pagerduty.example'],
+        );
 
         foreach ($entries as [$ago, $type, $severity, $title, $body, $link, $outcome, $recovery, $notify, $read]) {
             $at = $now->subMinutes($ago);

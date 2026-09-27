@@ -40,7 +40,7 @@ export default function RunShow({ run, targets: initialTargets, can }: Props) {
     const [expanded, setExpanded] = useState<Set<string>>(() => new Set(initialTargets.length === 1 ? [initialTargets[0].id] : []));
 
     const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Recipes', href: '/recipes' },
+        { title: 'Recipes', href: '/settings/recipes' },
         { title: 'Runs', href: '/recipes/runs' },
         { title: run.recipe_name, href: `/recipes/runs/${run.id}` },
     ];

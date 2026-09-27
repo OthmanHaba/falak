@@ -18,7 +18,7 @@ beforeEach(function () {
 
 it('creates channels of every type with encrypted config', function (string $type, array $config) {
     $this->post('/alerting/channels', ['name' => "My {$type}", 'type' => $type, 'config' => $config])
-        ->assertSessionHasNoErrors()->assertRedirect('/alerting/channels');
+        ->assertSessionHasNoErrors()->assertRedirect('/settings/alert-channels');
 
     $channel = Channel::query()->where('name', "My {$type}")->sole();
     expect($channel->type->value)->toBe($type)
@@ -56,7 +56,7 @@ it('never sends channel secrets to the UI', function () {
     alerting_channel($this->organization->id, ChannelType::Telegram);
     alerting_channel($this->organization->id, ChannelType::Webhook);
 
-    $response = $this->get('/alerting/channels')->assertOk()->assertInertia(fn ($page) => $page
+    $response = $this->get('/settings/alert-channels')->assertOk()->assertInertia(fn ($page) => $page
         ->component('Alerting/Channels', false)
         ->has('channels', 3)
         ->where('can.manage', true));
@@ -104,7 +104,7 @@ it('hides other organizations channels and rules', function () {
     $this->delete("/alerting/channels/{$channel->id}")->assertNotFound();
     $this->postJson("/alerting/channels/{$channel->id}/test")->assertNotFound();
     $this->delete("/alerting/rules/{$rule->id}")->assertNotFound();
-    $this->get('/alerting/channels')->assertInertia(fn ($page) => $page->has('channels', 0));
+    $this->get('/settings/alert-channels')->assertInertia(fn ($page) => $page->has('channels', 0));
 });
 
 it('lets viewers see but not change alerting', function () {
@@ -112,8 +112,8 @@ it('lets viewers see but not change alerting', function () {
     $this->actingAs($viewer);
     $channel = alerting_channel($this->organization->id);
 
-    $this->get('/alerting/channels')->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false));
-    $this->get('/alerting/rules')->assertOk();
+    $this->get('/settings/alert-channels')->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false));
+    $this->get('/settings/alert-rules')->assertOk();
     $this->get('/observability/alerts')->assertOk();
     $this->post('/alerting/channels', ['name' => 'x', 'type' => 'slack', 'config' => ['webhook_url' => ALERTING_SLACK_URL]])->assertForbidden();
     $this->postJson("/alerting/channels/{$channel->id}/test")->assertForbidden();
@@ -135,14 +135,14 @@ it('creates, updates and deletes rules', function () {
         'name' => 'On-call', 'event_types' => ['fleet.*', 'insights.heartbeat_missed'], 'min_severity' => 'warning',
         'channel_ids' => [$slack->id], 'rate_limit_per_hour' => 10,
         'quiet_hours' => ['enabled' => true, 'start' => '22:00', 'end' => '07:00', 'timezone' => 'Europe/Berlin', 'days' => [1, 2], 'allow_critical' => true],
-    ])->assertSessionHasNoErrors()->assertRedirect('/alerting/rules');
+    ])->assertSessionHasNoErrors()->assertRedirect('/settings/alert-rules');
 
     $rule = Rule::query()->sole();
     expect($rule->event_types)->toBe(['fleet.*', 'insights.heartbeat_missed'])
         ->and($rule->quiet_hours)->toBe(['start' => '22:00', 'end' => '07:00', 'timezone' => 'Europe/Berlin', 'days' => [1, 2], 'allow_critical' => true])
         ->and($rule->channels()->pluck('alerting_channels.id')->all())->toBe([$slack->id]);
 
-    $this->get('/alerting/rules')->assertInertia(fn ($page) => $page
+    $this->get('/settings/alert-rules')->assertInertia(fn ($page) => $page
         ->component('Alerting/Rules', false)
         ->has('rules', 1)
         ->where('rules.0.channels.0.id', $slack->id)

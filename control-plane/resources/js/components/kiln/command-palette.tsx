@@ -58,7 +58,7 @@ function shellCommands(ctx: ShellContext): PaletteCommand[] {
     const settings: PaletteCommand[] = settingsNavFor(ctx).map((item) => ({
         id: `settings.${item.id}`,
         title: item.title,
-        subtitle: item.group === 'organization' ? 'Organization settings' : 'Account settings',
+        subtitle: { account: 'Account settings', organization: 'Organization settings', integrations: 'Integrations' }[item.group],
         group: 'Settings',
         icon: item.icon,
         href: item.url,

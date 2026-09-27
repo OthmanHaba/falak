@@ -10,6 +10,7 @@ use Kiln\Insights\Http\Controllers\HeartbeatController;
 use Kiln\Insights\Http\Controllers\IssueController;
 use Kiln\Insights\Http\Controllers\OverviewController;
 use Kiln\Insights\Http\Controllers\ThresholdController;
+use Kiln\Kernel\Http\LegacyRedirect;
 
 $ulid = '[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}';
 
@@ -42,11 +43,10 @@ Route::middleware(['auth', 'org'])->prefix('insights')->name('insights.')->group
     Route::delete('heartbeats/{monitor}', [HeartbeatController::class, 'destroy'])->name('heartbeats.destroy');
 
     // Legacy page URLs (alert links, bookmarks, CLI `open`) → /observability.
-    $keepQuery = fn (string $to) => fn (Request $request) => redirect($to.($request->getQueryString() ? '?'.$request->getQueryString() : ''));
-    Route::get('/', $keepQuery('/observability'))->name('legacy.index');
-    Route::get('issues', $keepQuery('/observability/issues'))->name('legacy.issues');
-    Route::get('issues/{issueId}', fn (string $issueId) => redirect('/observability/issues/'.rawurlencode($issueId)))->where('issueId', $ulid)->name('legacy.issue');
-    Route::get('heartbeats', $keepQuery('/observability/heartbeats'))->name('legacy.heartbeats');
+    Route::get('/', LegacyRedirect::to('/observability'))->name('legacy.index');
+    Route::get('issues', LegacyRedirect::to('/observability/issues'))->name('legacy.issues');
+    Route::get('issues/{issueId}', fn (string $issueId) => redirect('/observability/issues/'.rawurlencode($issueId), 301))->where('issueId', $ulid)->name('legacy.issue');
+    Route::get('heartbeats', LegacyRedirect::to('/observability/heartbeats'))->name('legacy.heartbeats');
     Route::get('sites/{siteId}', [OverviewController::class, 'show'])->name('legacy.site');
 });
 

@@ -20,7 +20,7 @@ it('lists connections and recent pushes', function () {
     sc_connection(memberOf()[1]->id); // other organization
     Push::query()->create(['organization_id' => $organization->id, 'connection_id' => $connection->id, 'repository' => 'acme/shop', 'branch' => 'main', 'sha' => str_repeat('a', 40), 'message' => "Fix\nbody", 'received_at' => now()]);
 
-    $this->get('/source-control')->assertOk()->assertInertia(fn ($page) => $page->component('SourceControl/Index', false)
+    $this->get('/settings/source-control')->assertOk()->assertInertia(fn ($page) => $page->component('SourceControl/Index', false)
         ->has('connections', 1)
         ->where('connections.0.provider', 'github')
         ->missing('connections.0.credentials')
@@ -35,7 +35,7 @@ it('connects a GitHub personal access token after verifying it', function () {
     Http::fake(['api.github.com/user' => Http::response(['login' => 'ada'])]);
 
     $this->post('/source-control/connections', ['provider' => 'github', 'auth_type' => 'token', 'token' => 'ghp_secret'])
-        ->assertRedirect('/source-control')->assertSessionHasNoErrors();
+        ->assertRedirect('/settings/source-control')->assertSessionHasNoErrors();
 
     $connection = Connection::query()->sole();
     expect($connection->name)->toBe('GitHub (ada)')
@@ -100,7 +100,7 @@ it('disconnects after confirmation, cleaning up the provider', function () {
     app(SourceControlGateway::class)->ensureWebhook($connection->id, 'acme/shop');
 
     $this->delete("/source-control/connections/{$connection->id}", ['name' => 'wrong'])->assertSessionHasErrors('name');
-    $this->delete("/source-control/connections/{$connection->id}", ['name' => $connection->name])->assertRedirect('/source-control');
+    $this->delete("/source-control/connections/{$connection->id}", ['name' => $connection->name])->assertRedirect('/settings/source-control');
 
     expect(Connection::query()->count())->toBe(0)->and(DeployKey::query()->count())->toBe(0);
     Http::assertSent(fn (Request $r) => $r->method() === 'DELETE' && str_ends_with($r->url(), '/keys/3'));

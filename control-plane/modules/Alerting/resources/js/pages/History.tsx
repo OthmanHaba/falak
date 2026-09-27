@@ -117,7 +117,7 @@ export default function History({ alerts, filters, outcomes }: Props) {
             tab="alerts"
             actions={
                 <Button asChild variant="ghost" size="sm">
-                    <Link href="/alerting/rules">
+                    <Link href="/settings/alert-rules">
                         <Settings2 /> Channels &amp; rules
                     </Link>
                 </Button>
@@ -144,7 +144,7 @@ export default function History({ alerts, filters, outcomes }: Props) {
                     description="Failed deploys, new issues, missed heartbeats and offline servers raise alerts. Route them to Slack, Discord, email or webhooks with alert rules."
                     action={
                         <Button asChild variant="primary" size="sm">
-                            <Link href="/alerting/rules">Set up alert rules</Link>
+                            <Link href="/settings/alert-rules">Set up alert rules</Link>
                         </Button>
                     }
                 />

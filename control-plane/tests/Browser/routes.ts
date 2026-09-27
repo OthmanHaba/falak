@@ -111,6 +111,17 @@ export const routes: BrowserRoute[] = [
     { path: '/alerting/channels' },
     { path: '/alerting/history' },
 
+    // settings — organization settings sections (the legacy URLs above now 301 here)
+    { path: '/settings/source-control' },
+    { path: '/settings/cloud-providers' },
+    { path: '/settings/storage' },
+    { path: '/settings/builders' },
+    { path: '/settings/alert-channels' },
+    { path: '/settings/alert-rules' },
+    { path: '/settings/observability' },
+    { path: '/settings/recipes' },
+    { path: '/invitations/not-a-real-token' },
+
     // observability
     { path: '/observability', allowedFailures: observability },
     { path: '/observability?range=7d', allowedFailures: observability },

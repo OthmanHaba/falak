@@ -1,5 +1,5 @@
-import { registerCommands, registerNavigation } from '@/lib/registry';
-import { Activity, ScrollText, Settings2 } from 'lucide-react';
+import { registerCommands, registerNavigation, registerSettingsNav } from '@/lib/registry';
+import { Activity, Radar, ScrollText } from 'lucide-react';
 
 registerNavigation(
     { id: 'telemetry.logs', title: 'Logs', url: '/observability/logs', icon: ScrollText, order: 400, permission: 'telemetry.view' },
@@ -36,14 +36,18 @@ registerCommands({
             permission: 'telemetry.view',
             keywords: ['tempo', 'failed'],
         },
-        {
-            id: 'telemetry.settings',
-            title: 'Telemetry settings',
-            group: 'Settings',
-            icon: Settings2,
-            href: '/telemetry/settings',
-            permission: 'telemetry.view',
-            keywords: ['otlp', 'grafana', 'observability'],
-        },
     ],
+});
+
+// Organization settings → Integrations (docs/UI_DESIGN.md §3). The palette lists it under "Settings".
+registerSettingsNav({
+    id: 'observability',
+    title: 'Observability',
+    url: '/settings/observability',
+    group: 'integrations',
+    order: 240,
+    icon: Radar,
+    permission: 'telemetry.view',
+    requiresOrganization: true,
+    keywords: ['telemetry', 'otlp', 'grafana', 'loki', 'tempo', 'metrics', 'prometheus'],
 });

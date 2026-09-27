@@ -29,7 +29,7 @@ export function NotConfigured({ backend, size = 'md' }: { backend: Backend; size
             }
             action={
                 <Button asChild variant="secondary" size="sm">
-                    <Link href="/telemetry/settings">Observability settings</Link>
+                    <Link href="/settings/observability">Observability settings</Link>
                 </Button>
             }
         />

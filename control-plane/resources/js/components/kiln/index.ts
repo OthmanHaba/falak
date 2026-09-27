@@ -5,6 +5,7 @@
 export { AppShell, type AppShellProps } from './app-shell';
 export { Avatar, initialsOf, type AvatarProps } from './avatar';
 export { Button, IconButton, buttonVariants, type ButtonProps, type IconButtonProps } from './button';
+export { Callout, type CalloutProps } from './callout';
 export { ChangesBar, type ChangesBarProps } from './changes-bar';
 export { Checkbox, type CheckboxProps } from './checkbox';
 export { CodeBlock, type CodeBlockProps } from './code-block';
@@ -19,6 +20,7 @@ export { EnvironmentSwitcher } from './environment-switcher';
 export { Field, useFieldControl, type FieldProps } from './field';
 export { toastsFrom, useFlashToasts } from './flash';
 export { Input, Textarea, type InputProps, type TextareaProps } from './input';
+export { IntegrationIcon, IntegrationTile, type IntegrationIconProps } from './integration-icon';
 export { Kbd } from './kbd';
 export { KeyValue, type KeyValueItem } from './key-value';
 export { LogViewer, stripAnsi, type LogLine, type LogViewerProps } from './log-viewer';
@@ -43,9 +45,11 @@ export { Panel, type PanelProps, type PanelTab, type PanelUrlSync } from './pane
 export { PhaseTimeline, Stepper, formatDuration, type PhaseCell, type PhaseRow, type Step } from './phase-timeline';
 export { ProjectSwitcher } from './project-switcher';
 export { RelativeTime, formatRelative } from './relative-time';
+export { SecretInput, type SecretInputProps } from './secret-input';
 export { PageHeader, Section, type SectionProps } from './section';
 export { Select, type SelectOption, type SelectProps } from './select';
 export { ServiceIcon, hasServiceIcon, type ServiceIconProps } from './service-icon';
+export { SetupChecklist, defaultSetupSteps, type SetupChecklistProps, type SetupProgress, type SetupStep } from './setup-checklist';
 export { Skeleton, SkeletonRows } from './skeleton';
 export { StatusBadge, StatusDot, statusSpec, type StatusBadgeProps, type StatusDotProps, type StatusTone } from './status';
 export { Switch, type SwitchProps } from './switch';
