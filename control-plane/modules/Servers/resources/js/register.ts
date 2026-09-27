@@ -2,7 +2,7 @@ import { registerCommands, registerNavigation, type PaletteCommand } from '@/lib
 import { KeyRound, Plus, Server } from 'lucide-react';
 
 registerNavigation(
-    { id: 'servers', title: 'Servers', url: '/servers', icon: Server, order: 100, permission: 'servers.view' },
+    { id: 'servers', title: 'Infrastructure', url: '/servers', icon: Server, order: 100, permission: 'servers.view' },
     { id: 'ssh-keys', title: 'SSH keys', url: '/ssh-keys', icon: KeyRound, order: 110, permission: 'servers.view' },
 );
 
@@ -20,14 +20,23 @@ registerCommands(
         commands: () => [
             {
                 id: 'servers.index',
-                title: 'Servers',
+                title: 'Infrastructure',
                 group: 'Navigation',
                 icon: Server,
                 href: '/servers',
                 permission: 'servers.view',
                 shortcut: 'G S',
+                keywords: ['servers', 'fleet', 'machines'],
             },
-            { id: 'servers.create', title: 'Create server', group: 'Actions', icon: Plus, href: '/servers/create', permission: 'servers.create' },
+            {
+                id: 'servers.create',
+                title: 'Add server',
+                group: 'Actions',
+                icon: Plus,
+                href: '/servers/create',
+                permission: 'servers.create',
+                keywords: ['create server', 'new server', 'provision', 'install agent'],
+            },
             { id: 'servers.ssh-keys', title: 'SSH keys', group: 'Navigation', icon: KeyRound, href: '/ssh-keys', permission: 'servers.view' },
         ],
     },
@@ -56,6 +65,7 @@ registerCommands(
                 group: 'Servers',
                 icon: Server,
                 href: `/servers/${server.id}`,
+                subtitle: server.ipv4 ?? undefined,
                 keywords: [server.ipv4 ?? '', server.type, server.status, query].filter(Boolean),
             }));
         },

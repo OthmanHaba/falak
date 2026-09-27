@@ -29,6 +29,13 @@ export const params: Record<string, ParamSource> = {
     exception: { from: '/observability/issues?kind=exception&sort=occurrences', match: new RegExp(`^/observability/issues/${ULID}$`) },
     trace: { from: '/observability/traces', match: /^\/observability\/traces\/([0-9a-f]{16,32})$/ },
     server: { from: '/servers', match: new RegExp(`^/servers/${ULID}$`) },
+    // infrastructure: servers in other lifecycle states (the fleet table honours ?status=), runs, recordings, networks
+    waitingServer: { from: '/servers?status=creating', match: new RegExp(`^/servers/${ULID}$`) },
+    provisioningServer: { from: '/servers?status=provisioning', match: new RegExp(`^/servers/${ULID}$`) },
+    failedServer: { from: '/servers?status=error', match: new RegExp(`^/servers/${ULID}$`) },
+    recipeRun: { from: '/recipes/runs', match: new RegExp(`^/recipes/runs/${ULID}$`) },
+    recording: { from: '/terminal', match: new RegExp(`^/terminal/sessions/${ULID}/recording$`) },
+    privateNetwork: { from: '/network', match: new RegExp(`^/network/private-networks/${ULID}$`) },
     // canvas
     project: { from: '/projects', match: new RegExp(`^/projects/${ULID}/production$`) },
     canvas: { from: '/projects', match: new RegExp(`^/projects/(${ULID.slice(1, -1)}/production)$`) },
@@ -67,7 +74,8 @@ export const routes: BrowserRoute[] = [
 
     // Infrastructure
     { path: '/servers' },
-    { path: '/servers/create' },
+    // The demo cloud credentials are fake: the provider catalog endpoints answer 502 locally.
+    { path: '/servers/create', allowedFailures: [/\/providers\/[^/]+\/(regions|sizes|images)/] },
     { path: '/servers/:server' },
     { path: '/telemetry/servers/:server/metrics', allowedFailures: observability },
     { path: '/ssh-keys' },
@@ -113,6 +121,26 @@ export const routes: BrowserRoute[] = [
     { path: '/alerting/rules' },
     { path: '/alerting/channels' },
     { path: '/alerting/history' },
+
+    // infrastructure
+    { path: '/servers/:server/metrics', allowedFailures: observability },
+    { path: '/servers/:server/processes' },
+    { path: '/servers/:server/firewall' },
+    { path: '/servers/:server/network' },
+    { path: '/servers/:server/terminal' },
+    { path: '/servers/:server/ssh-keys' },
+    { path: '/servers/:server/recipes' },
+    { path: '/servers/:server/php' },
+    { path: '/servers/:server/settings' },
+    { path: '/servers/:waitingServer' },
+    { path: '/servers/:provisioningServer' },
+    { path: '/servers/:failedServer' },
+    { path: '/servers/:waitingServer/metrics', allowedFailures: observability },
+    { path: '/servers/create?provider=custom' },
+    { path: '/network/private-networks/:privateNetwork' },
+    { path: '/recipes/runs/:recipeRun' },
+    { path: '/recipes/builtin/disk-usage/run' },
+    { path: '/terminal/sessions/:recording/recording' },
 
     // settings — organization settings sections (the legacy URLs above now 301 here)
     { path: '/settings/source-control' },

@@ -5,6 +5,9 @@ use Kiln\Kernel\Http\LegacyRedirect;
 use Kiln\Recipes\Http\Controllers\RecipeController;
 use Kiln\Recipes\Http\Controllers\RunController;
 
+// Server page tab (/servers/{id}/recipes) owned by Recipes.
+Route::middleware(['auth', 'org'])->get('servers/{server}/recipes', [RunController::class, 'server'])->name('recipes.server');
+
 Route::middleware(['auth', 'org'])->group(function () {
     // The recipe library lives in the settings shell (docs/UI_DESIGN.md §3); run pages stay under /recipes.
     Route::get('settings/recipes', [RecipeController::class, 'index'])->name('recipes.index');

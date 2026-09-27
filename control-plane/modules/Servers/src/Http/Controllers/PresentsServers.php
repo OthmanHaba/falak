@@ -33,6 +33,7 @@ trait PresentsServers
                 'last_heartbeat_at' => $agent->lastHeartbeatAt?->format(DATE_ATOM),
             ] : null,
             'load1' => isset($metrics['load'][0]) ? (float) $metrics['load'][0] : null,
+            'cpu_percent' => is_numeric($metrics['cpu_percent'] ?? null) ? round((float) $metrics['cpu_percent'], 1) : null,
             'memory_percent' => $this->percent($metrics['memory_used_bytes'] ?? null, $server->memory_bytes),
             'disk_percent' => $this->percent($metrics['disk_used_bytes'] ?? null, $server->disk_bytes),
             'created_at' => $server->created_at->toIso8601String(),

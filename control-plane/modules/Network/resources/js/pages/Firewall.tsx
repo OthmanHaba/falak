@@ -1,21 +1,18 @@
 import { CommandLog, TERMINAL_COMMAND_STATUSES, type CommandStatus } from '@/components/command-log';
-import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm } from '@inertiajs/react';
-import { formatDistanceToNow } from 'date-fns';
-import { Pencil, Plus, RefreshCw, Shield, Trash2 } from 'lucide-react';
-import { FormEventHandler, useState } from 'react';
+import { Button } from '@/components/kiln/button';
+import { DataTable } from '@/components/kiln/data-table';
+import { Dialog } from '@/components/kiln/dialog';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { RelativeTime } from '@/components/kiln/relative-time';
+import { Section } from '@/components/kiln/section';
+import { Select } from '@/components/kiln/select';
+import { Tag } from '@/components/kiln/tag';
+import { toast } from '@/components/kiln/toast';
+import ServerLayout, { type ServerHeader } from '@/layouts/server-layout';
+import { router, useForm, usePoll } from '@inertiajs/react';
+import { Lock, Pencil, Plus, RefreshCw, Shield, Trash2 } from 'lucide-react';
+import { useMemo, useState, type FormEventHandler } from 'react';
 import { ApplyStatusBadge } from '../components/network-ui';
 import { type FirewallStateSummary } from '../types';
 
@@ -43,7 +40,7 @@ interface CompiledRule {
 }
 
 interface Props {
-    server: { id: string; name: string; type_label: string; status: string; ipv4: string | null };
+    server: ServerHeader;
     rules: Rule[];
     networkRules: CompiledRule[];
     state: FirewallStateSummary | null;
@@ -59,22 +56,37 @@ interface RuleForm {
     source: string;
 }
 
+type Row = { kind: 'rule'; rule: Rule } | { kind: 'managed'; rule: CompiledRule };
+
 const EMPTY: RuleForm = { name: '', action: 'allow', protocol: 'tcp', port: '', source: '' };
+const PORT = /^\d{1,5}(-\d{1,5})?$/;
+const RELOAD = ['server', 'rules', 'networkRules', 'state'];
+
+const PRESETS: { label: string; form: Partial<RuleForm> }[] = [
+    { label: 'HTTP', form: { name: 'HTTP', protocol: 'tcp', port: '80' } },
+    { label: 'HTTPS', form: { name: 'HTTPS', protocol: 'tcp', port: '443' } },
+    { label: 'PostgreSQL', form: { name: 'PostgreSQL', protocol: 'tcp', port: '5432', source: '10.0.0.0/8' } },
+    { label: 'MySQL', form: { name: 'MySQL', protocol: 'tcp', port: '3306', source: '10.0.0.0/8' } },
+    { label: 'Redis', form: { name: 'Redis', protocol: 'tcp', port: '6379', source: '10.0.0.0/8' } },
+];
 
 export default function Firewall({ server, rules, networkRules, state, sshPort, can }: Props) {
     const [editing, setEditing] = useState<Rule | 'new' | null>(null);
     const [deleting, setDeleting] = useState<Rule | null>(null);
+    const [deleteBusy, setDeleteBusy] = useState(false);
+    const [reapplying, setReapplying] = useState(false);
     const form = useForm<RuleForm>(EMPTY);
-    const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Network', href: '/network' },
-        { title: `${server.name} firewall`, href: `/network/servers/${server.id}/firewall` },
-    ];
+    const active = server.status === 'active';
 
-    const open = (rule: Rule | 'new') => {
+    usePoll(state?.status === 'applying' || state?.status === 'pending' ? 3_000 : 60_000, { only: RELOAD });
+
+    const portError = form.data.port.trim() !== '' && !PORT.test(form.data.port.trim()) ? 'A port (1-65535) or range such as 8000-8100.' : null;
+
+    const open = (rule: Rule | 'new', preset?: Partial<RuleForm>) => {
         form.clearErrors();
         form.setData(
             rule === 'new'
-                ? EMPTY
+                ? { ...EMPTY, ...preset }
                 : { name: rule.name, action: rule.action, protocol: rule.protocol, port: rule.port ?? '', source: rule.source ?? '' },
         );
         setEditing(rule);
@@ -82,9 +94,20 @@ export default function Firewall({ server, rules, networkRules, state, sshPort, 
 
     const submit: FormEventHandler = (event) => {
         event.preventDefault();
-        const options = { preserveScroll: true, onSuccess: () => setEditing(null) };
+        if (portError) return;
+        const isNew = editing === 'new';
+        const options = {
+            preserveScroll: true,
+            onSuccess: () => {
+                setEditing(null);
+                toast.success(
+                    isNew ? `Rule ${form.data.name} added` : `Rule ${form.data.name} saved`,
+                    active ? 'Applying the ruleset to the server.' : undefined,
+                );
+            },
+        };
 
-        if (editing === 'new') {
+        if (isNew) {
             form.post(`/network/servers/${server.id}/firewall/rules`, options);
         } else if (editing) {
             form.put(`/network/servers/${server.id}/firewall/rules/${editing.id}`, options);
@@ -93,238 +116,285 @@ export default function Firewall({ server, rules, networkRules, state, sshPort, 
 
     const destroy = () => {
         if (!deleting) return;
-        router.delete(`/network/servers/${server.id}/firewall/rules/${deleting.id}`, { preserveScroll: true, onFinish: () => setDeleting(null) });
+        router.delete(`/network/servers/${server.id}/firewall/rules/${deleting.id}`, {
+            preserveScroll: true,
+            onStart: () => setDeleteBusy(true),
+            onSuccess: () => toast.success(`Rule ${deleting.name} deleted`),
+            onFinish: () => {
+                setDeleteBusy(false);
+                setDeleting(null);
+            },
+        });
     };
 
-    const reapply = () => router.post(`/network/servers/${server.id}/firewall/apply`, {}, { preserveScroll: true });
+    const reapply = () =>
+        router.post(
+            `/network/servers/${server.id}/firewall/apply`,
+            {},
+            {
+                preserveScroll: true,
+                onStart: () => setReapplying(true),
+                onFinish: () => setReapplying(false),
+                onSuccess: () => toast.success('Re-applying the firewall'),
+                onError: (errors) => toast.error('Could not re-apply', Object.values(errors)[0]),
+            },
+        );
 
     const onCommandStatus = (status: CommandStatus) => {
         if (TERMINAL_COMMAND_STATUSES.includes(status)) {
-            router.reload({ only: ['state'] });
+            router.reload({ only: RELOAD });
         }
     };
 
+    const rows = useMemo<Row[]>(
+        () => [...networkRules.map((rule) => ({ kind: 'managed' as const, rule })), ...rules.map((rule) => ({ kind: 'rule' as const, rule }))],
+        [rules, networkRules],
+    );
+
+    const deletingSsh = deleting?.port === String(sshPort) && deleting.action === 'allow';
+
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title={`${server.name} firewall`} />
-            <div className="space-y-6 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                    <Heading
-                        title={`${server.name} firewall`}
-                        description={`${server.type_label} · ${server.ipv4 ?? 'no public IP'} · incoming traffic is dropped unless a rule allows it`}
-                    />
-                    {can.manage && (
-                        <div className="flex gap-2">
-                            <Button variant="outline" onClick={reapply} disabled={server.status !== 'active'}>
-                                <RefreshCw /> Re-apply
-                            </Button>
-                            <Button onClick={() => open('new')}>
-                                <Plus /> Add rule
-                            </Button>
-                        </div>
-                    )}
+        <ServerLayout
+            server={server}
+            tab="firewall"
+            reloadOnly={RELOAD}
+            actions={
+                can.manage && (
+                    <>
+                        <Button icon={<RefreshCw />} onClick={reapply} disabled={!active} loading={reapplying}>
+                            Re-apply
+                        </Button>
+                        <Button variant="primary" icon={<Plus />} onClick={() => open('new')}>
+                            Add rule
+                        </Button>
+                    </>
+                )
+            }
+        >
+            <div className="border-border bg-surface-1 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border px-4 py-3">
+                <Shield className="text-fg-faint size-4" aria-hidden />
+                <div className="grid min-w-0 flex-1 gap-0.5">
+                    <p className="text-fg text-sm font-medium">Incoming traffic is dropped unless a rule allows it</p>
+                    <p className="text-fg-muted text-xs">
+                        {state?.applied_at ? (
+                            <>
+                                Revision <span className="tabular">{state.revision}</span> applied <RelativeTime value={state.applied_at} />
+                            </>
+                        ) : (
+                            'Never applied'
+                        )}
+                        {state && !state.in_sync && state.status === 'applied' ? ' · changes pending' : ''} · deny rules run before allow rules · ICMP
+                        is always allowed
+                    </p>
                 </div>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between gap-4">
-                        <div className="space-y-1">
-                            <CardTitle className="flex items-center gap-2">
-                                <Shield className="size-4" /> Status
-                            </CardTitle>
-                            <CardDescription>
-                                {state?.applied_at
-                                    ? `Last applied ${formatDistanceToNow(new Date(state.applied_at), { addSuffix: true })}`
-                                    : 'Never applied'}
-                                {state && !state.in_sync && state.status === 'applied' ? ' · changes pending' : ''}
-                            </CardDescription>
-                        </div>
-                        <ApplyStatusBadge status={state?.status} />
-                    </CardHeader>
-                    {(state?.error || state?.ruleset_sha256) && (
-                        <CardContent className="space-y-2 text-sm">
-                            {state.error && (
-                                <Alert variant="destructive">
-                                    <AlertDescription>{state.error}</AlertDescription>
-                                </Alert>
-                            )}
-                            {state.ruleset_sha256 && (
-                                <p className="text-muted-foreground font-mono text-xs break-all">ruleset sha256 {state.ruleset_sha256}</p>
-                            )}
-                        </CardContent>
-                    )}
-                </Card>
-
-                <Card className="py-0">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Name</TableHead>
-                                <TableHead>Action</TableHead>
-                                <TableHead>Protocol</TableHead>
-                                <TableHead>Port</TableHead>
-                                <TableHead>Source</TableHead>
-                                {can.manage && <TableHead className="w-24" />}
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            <TableRow className="text-muted-foreground">
-                                <TableCell>SSH (lock-out protection)</TableCell>
-                                <TableCell>allow</TableCell>
-                                <TableCell className="uppercase">tcp</TableCell>
-                                <TableCell className="font-mono">{sshPort}</TableCell>
-                                <TableCell>anywhere</TableCell>
-                                {can.manage && <TableCell />}
-                            </TableRow>
-                            {networkRules.map((rule) => (
-                                <TableRow key={rule.id} className="text-muted-foreground">
-                                    <TableCell>{rule.comment}</TableCell>
-                                    <TableCell>allow</TableCell>
-                                    <TableCell className="uppercase">{rule.protocol}</TableCell>
-                                    <TableCell className="font-mono">
-                                        {rule.ports?.join(', ') ?? (rule.interface ? `all on ${rule.interface}` : 'all')}
-                                    </TableCell>
-                                    <TableCell className="font-mono text-xs">{rule.sources?.join(', ') ?? 'peers'}</TableCell>
-                                    {can.manage && <TableCell />}
-                                </TableRow>
-                            ))}
-                            {rules.map((rule) => (
-                                <TableRow key={rule.id}>
-                                    <TableCell className="font-medium">
-                                        {rule.name}
-                                        {rule.is_default && (
-                                            <Badge variant="outline" className="ml-2 text-xs">
-                                                default
-                                            </Badge>
-                                        )}
-                                    </TableCell>
-                                    <TableCell>
-                                        <span
-                                            className={
-                                                rule.action === 'deny' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
-                                            }
-                                        >
-                                            {rule.action}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell className="uppercase">{rule.protocol}</TableCell>
-                                    <TableCell className="font-mono">{rule.port ?? 'all'}</TableCell>
-                                    <TableCell className="font-mono text-xs">{rule.source ?? 'anywhere'}</TableCell>
-                                    {can.manage && (
-                                        <TableCell className="text-right whitespace-nowrap">
-                                            <Button variant="ghost" size="icon" onClick={() => open(rule)} aria-label={`Edit ${rule.name}`}>
-                                                <Pencil />
-                                            </Button>
-                                            <Button variant="ghost" size="icon" onClick={() => setDeleting(rule)} aria-label={`Delete ${rule.name}`}>
-                                                <Trash2 />
-                                            </Button>
-                                        </TableCell>
-                                    )}
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </Card>
-                <p className="text-muted-foreground text-xs">Deny rules are evaluated before allow rules. ICMP (ping) is always allowed.</p>
-
-                {state?.command_id && state.status === 'applying' && <CommandLog commandId={state.command_id} onStatusChange={onCommandStatus} />}
+                <ApplyStatusBadge status={state?.status} />
             </div>
 
-            <Dialog open={editing !== null} onOpenChange={(value) => !value && setEditing(null)}>
-                <DialogContent>
-                    <form onSubmit={submit} className="space-y-4">
-                        <DialogHeader>
-                            <DialogTitle>{editing === 'new' ? 'Add rule' : 'Edit rule'}</DialogTitle>
-                            <DialogDescription>Leave port empty for all ports and source empty for anywhere.</DialogDescription>
-                        </DialogHeader>
-                        <div className="grid gap-2">
-                            <Label htmlFor="rule-name">Name</Label>
-                            <Input
-                                id="rule-name"
-                                value={form.data.name}
-                                onChange={(e) => form.setData('name', e.target.value)}
-                                placeholder="PostgreSQL from app servers"
+            {state?.error && (
+                <p role="alert" className="border-danger/40 bg-danger-soft text-danger rounded-lg border px-4 py-3 text-sm">
+                    {state.error}
+                </p>
+            )}
+
+            <DataTable<Row>
+                label="Firewall rules"
+                rows={rows}
+                rowKey={(row) => `${row.kind}-${row.rule.id}`}
+                empty={{
+                    icon: <Shield />,
+                    title: 'No rules',
+                    description: 'Without rules only SSH is reachable. Add a rule to open a port.',
+                    action: can.manage ? (
+                        <Button variant="primary" size="sm" icon={<Plus />} onClick={() => open('new')}>
+                            Add rule
+                        </Button>
+                    ) : undefined,
+                }}
+                columns={[
+                    {
+                        id: 'name',
+                        header: 'Rule',
+                        cell: (row) =>
+                            row.kind === 'managed' ? (
+                                <span className="text-fg-muted flex items-center gap-2">
+                                    <Lock className="text-fg-faint size-3.5" aria-hidden />
+                                    {row.rule.comment ?? 'Private network'}
+                                    <Tag tone="faint">managed</Tag>
+                                </span>
+                            ) : (
+                                <span className="flex items-center gap-2">
+                                    <span className="text-fg font-medium">{row.rule.name}</span>
+                                    {row.rule.is_default && <Tag>default</Tag>}
+                                </span>
+                            ),
+                    },
+                    {
+                        id: 'action',
+                        header: 'Action',
+                        cell: (row) =>
+                            row.kind === 'managed' || row.rule.action === 'allow' ? <Tag tone="success">Allow</Tag> : <Tag tone="danger">Deny</Tag>,
+                    },
+                    {
+                        id: 'protocol',
+                        header: 'Protocol',
+                        hideOnMobile: true,
+                        cell: (row) => <span className="text-fg-muted font-mono text-xs uppercase">{row.rule.protocol}</span>,
+                    },
+                    {
+                        id: 'port',
+                        header: 'Port',
+                        cell: (row) => (
+                            <span className="font-mono text-xs">
+                                {row.kind === 'managed'
+                                    ? (row.rule.ports?.join(', ') ?? (row.rule.interface ? `all on ${row.rule.interface}` : 'all'))
+                                    : (row.rule.port ?? 'all')}
+                            </span>
+                        ),
+                    },
+                    {
+                        id: 'source',
+                        header: 'Source',
+                        hideOnMobile: true,
+                        cell: (row) => (
+                            <span className="text-fg-muted font-mono text-xs">
+                                {row.kind === 'managed' ? (row.rule.sources?.join(', ') ?? 'anywhere') : (row.rule.source ?? 'anywhere')}
+                            </span>
+                        ),
+                    },
+                ]}
+                rowActions={
+                    can.manage
+                        ? (row) =>
+                              row.kind === 'managed'
+                                  ? [{ label: 'Managed by the private network', disabled: true }]
+                                  : [
+                                        { label: 'Edit', icon: <Pencil />, onSelect: () => open(row.rule) },
+                                        { type: 'separator' },
+                                        { label: 'Delete', icon: <Trash2 />, danger: true, onSelect: () => setDeleting(row.rule) },
+                                    ]
+                        : undefined
+                }
+            />
+
+            {state?.command_id && state.status === 'applying' && (
+                <Section title="Applying" bare>
+                    <CommandLog commandId={state.command_id} onStatusChange={onCommandStatus} />
+                </Section>
+            )}
+
+            {state?.ruleset_sha256 && <p className="text-fg-faint font-mono text-xs break-all">ruleset sha256 {state.ruleset_sha256}</p>}
+
+            <Dialog
+                open={editing !== null}
+                onOpenChange={(value) => !value && setEditing(null)}
+                title={editing === 'new' ? 'Add firewall rule' : 'Edit firewall rule'}
+                description="Leave the port empty for all ports and the source empty for anywhere."
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setEditing(null)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="primary"
+                            type="submit"
+                            form="firewall-rule"
+                            loading={form.processing}
+                            disabled={!form.data.name.trim() || Boolean(portError)}
+                        >
+                            {editing === 'new' ? 'Add rule' : 'Save rule'}
+                        </Button>
+                    </>
+                }
+            >
+                <form id="firewall-rule" onSubmit={submit} className="grid gap-4">
+                    {editing === 'new' && (
+                        <div className="flex flex-wrap gap-1.5" aria-label="Presets">
+                            {PRESETS.map((preset) => (
+                                <Button
+                                    key={preset.label}
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => form.setData((current) => ({ ...current, ...preset.form }))}
+                                >
+                                    {preset.label}
+                                </Button>
+                            ))}
+                        </div>
+                    )}
+                    <Field label="Name" required error={form.errors.name}>
+                        <Input
+                            value={form.data.name}
+                            onChange={(event) => form.setData('name', event.target.value)}
+                            placeholder="PostgreSQL from app servers"
+                            autoFocus
+                        />
+                    </Field>
+                    <div className="grid grid-cols-2 gap-4">
+                        <Field label="Action" error={form.errors.action}>
+                            <Select
+                                value={form.data.action}
+                                onValueChange={(value) => form.setData('action', value as RuleAction)}
+                                options={[
+                                    { value: 'allow', label: 'Allow' },
+                                    { value: 'deny', label: 'Deny' },
+                                ]}
                             />
-                            <InputError message={form.errors.name} />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="grid gap-2">
-                                <Label>Action</Label>
-                                <Select value={form.data.action} onValueChange={(value) => form.setData('action', value as RuleAction)}>
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="allow">Allow</SelectItem>
-                                        <SelectItem value="deny">Deny</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <InputError message={form.errors.action} />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label>Protocol</Label>
-                                <Select value={form.data.protocol} onValueChange={(value) => form.setData('protocol', value as RuleProtocol)}>
-                                    <SelectTrigger>
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="tcp">TCP</SelectItem>
-                                        <SelectItem value="udp">UDP</SelectItem>
-                                        <SelectItem value="any">Any</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <InputError message={form.errors.protocol} />
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="grid gap-2">
-                                <Label htmlFor="rule-port">Port or range</Label>
-                                <Input
-                                    id="rule-port"
-                                    value={form.data.port}
-                                    onChange={(e) => form.setData('port', e.target.value)}
-                                    placeholder="5432 or 8000-8100"
-                                    className="font-mono"
-                                />
-                                <InputError message={form.errors.port} />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="rule-source">Source</Label>
-                                <Input
-                                    id="rule-source"
-                                    value={form.data.source}
-                                    onChange={(e) => form.setData('source', e.target.value)}
-                                    placeholder="10.0.0.0/8"
-                                    className="font-mono"
-                                />
-                                <InputError message={form.errors.source} />
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <Button type="button" variant="ghost" onClick={() => setEditing(null)}>
-                                Cancel
-                            </Button>
-                            <Button disabled={form.processing}>{editing === 'new' ? 'Add rule' : 'Save rule'}</Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
+                        </Field>
+                        <Field label="Protocol" error={form.errors.protocol}>
+                            <Select
+                                value={form.data.protocol}
+                                onValueChange={(value) => form.setData('protocol', value as RuleProtocol)}
+                                options={[
+                                    { value: 'tcp', label: 'TCP' },
+                                    { value: 'udp', label: 'UDP' },
+                                    { value: 'any', label: 'Any' },
+                                ]}
+                            />
+                        </Field>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <Field label="Port or range" error={form.errors.port ?? portError}>
+                            <Input
+                                value={form.data.port}
+                                onChange={(event) => form.setData('port', event.target.value)}
+                                placeholder="5432 or 8000-8100"
+                                mono
+                            />
+                        </Field>
+                        <Field label="Source" error={form.errors.source}>
+                            <Input
+                                value={form.data.source}
+                                onChange={(event) => form.setData('source', event.target.value)}
+                                placeholder="10.0.0.0/8"
+                                mono
+                            />
+                        </Field>
+                    </div>
+                </form>
             </Dialog>
 
-            <Dialog open={deleting !== null} onOpenChange={(value) => !value && setDeleting(null)}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Delete {deleting?.name}?</DialogTitle>
-                        <DialogDescription>The updated ruleset is applied to {server.name} immediately.</DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
+            <Dialog
+                open={deleting !== null}
+                onOpenChange={(value) => !value && setDeleting(null)}
+                size="sm"
+                title={`Delete ${deleting?.name}?`}
+                footer={
+                    <>
                         <Button variant="ghost" onClick={() => setDeleting(null)}>
                             Cancel
                         </Button>
-                        <Button variant="destructive" onClick={destroy}>
+                        <Button variant="danger" onClick={destroy} loading={deleteBusy}>
                             Delete rule
                         </Button>
-                    </DialogFooter>
-                </DialogContent>
+                    </>
+                }
+            >
+                <p className={deletingSsh ? 'text-warning text-sm' : 'text-fg-muted text-sm'}>
+                    {deletingSsh
+                        ? `This rule allows SSH (port ${sshPort}). Deleting it may lock you out of the server.`
+                        : `The updated ruleset is applied to ${server.name} immediately.`}
+                </p>
             </Dialog>
-        </AppLayout>
+        </ServerLayout>
     );
 }

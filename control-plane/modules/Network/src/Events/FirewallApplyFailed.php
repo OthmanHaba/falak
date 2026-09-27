@@ -31,6 +31,6 @@ final class FirewallApplyFailed implements Alertable
     public function toAlert(): AlertData
     {
         return new AlertData($this->organizationId, self::ALERT_TYPE, Severity::Critical, 'Firewall could not be applied', $this->error,
-            "/network/servers/{$this->serverId}/firewall", self::dedupKey($this->serverId), context: ['server_id' => $this->serverId]);
+            "/servers/{$this->serverId}/firewall", self::dedupKey($this->serverId), context: ['server_id' => $this->serverId]);
     }
 }

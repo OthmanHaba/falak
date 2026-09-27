@@ -1,18 +1,19 @@
-import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import AppLayout from '@/layouts/app-layout';
+import { AppShell } from '@/components/kiln/app-shell';
+import { Button } from '@/components/kiln/button';
+import { Checkbox } from '@/components/kiln/checkbox';
+import { EmptyState } from '@/components/kiln/empty-state';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { PageHeader, Section } from '@/components/kiln/section';
+import { Select, type SelectOption } from '@/components/kiln/select';
+import { Skeleton } from '@/components/kiln/skeleton';
+import { Tag } from '@/components/kiln/tag';
 import { cn } from '@/lib/utils';
-import { type BreadcrumbItem } from '@/types';
 import { Head, Link, useForm } from '@inertiajs/react';
-import { Loader2 } from 'lucide-react';
-import { FormEventHandler, useMemo } from 'react';
+import { Check, KeyRound, Terminal } from 'lucide-react';
+import { useMemo, type FormEventHandler, type ReactNode } from 'react';
 import { useCatalog, type Image, type Region, type Size } from '../components/catalog';
+import { ProviderIcon } from '../components/server-ui';
 import { type SshKeyOption, type StackComponent, type StackConfig } from '../types';
 
 interface TypeOption {
@@ -57,43 +58,76 @@ type CreateForm = {
 };
 
 const NONE = 'none';
-const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Servers', href: '/servers' },
-    { title: 'Create', href: '/servers/create' },
-];
+const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._-]*$/;
 
-function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+function nullable(items: Option[], noneLabel: string): SelectOption[] {
+    return [{ value: NONE, label: noneLabel }, ...items];
+}
+
+function ChoiceCard({
+    selected,
+    onSelect,
+    title,
+    description,
+    icon,
+    aside,
+}: {
+    selected: boolean;
+    onSelect: () => void;
+    title: ReactNode;
+    description?: ReactNode;
+    icon?: ReactNode;
+    aside?: ReactNode;
+}) {
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle>{title}</CardTitle>
-                {description && <CardDescription>{description}</CardDescription>}
-            </CardHeader>
-            <CardContent className="space-y-4">{children}</CardContent>
-        </Card>
+        <button
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={onSelect}
+            className={cn(
+                'group relative flex min-h-16 items-start gap-3 rounded-lg border p-3 text-left transition-[border-color,background-color] duration-150',
+                'focus-visible:outline-primary focus-visible:outline-2 focus-visible:outline-offset-2',
+                selected ? 'border-primary bg-primary-soft' : 'border-border bg-surface-1 hover:border-border-strong hover:bg-surface-2',
+            )}
+        >
+            {icon && (
+                <span
+                    className={cn(
+                        'flex size-8 shrink-0 items-center justify-center rounded-md border',
+                        selected ? 'border-primary/40 text-primary' : 'border-border bg-surface-2 text-fg-muted',
+                    )}
+                >
+                    {icon}
+                </span>
+            )}
+            <span className="grid min-w-0 flex-1 gap-0.5">
+                <span className="text-fg flex items-center gap-2 text-sm font-medium">{title}</span>
+                {description && <span className="text-fg-muted text-xs">{description}</span>}
+            </span>
+            {aside}
+            {selected && <Check className="text-primary absolute top-2.5 right-2.5 size-4" aria-hidden />}
+        </button>
     );
 }
 
-function CatalogStatus({ loading, error }: { loading: boolean; error: string | null }) {
-    if (loading) {
-        return (
-            <p className="text-muted-foreground flex items-center gap-2 text-xs">
-                <Loader2 className="size-3 animate-spin" /> Loading…
-            </p>
-        );
-    }
+function CatalogHint({ loading, error, empty }: { loading: boolean; error: string | null; empty?: string }) {
+    if (loading) return <Skeleton className="h-3 w-24" />;
+    if (error) return <span className="text-danger">{error}</span>;
 
-    return error ? <p className="text-destructive text-xs">{error}</p> : null;
+    return empty ? <span>{empty}</span> : null;
 }
 
 export default function Create({ types, providers, credentials, options, sshKeys, canManageProviders }: Props) {
     const initialType = types.find((type) => type.value === 'app') ?? types[0];
+    const requested = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('provider');
+    const initialProvider = providers.find((provider) => provider.value === requested)?.value ?? providers.find((p) => p.has_api)?.value ?? 'custom';
 
-    const { data, setData, post, processing, errors, transform } = useForm<CreateForm>({
+    const { data, setData, post, processing, errors, transform, clearErrors } = useForm<CreateForm>({
         name: '',
         type: initialType.value,
-        provider: providers.find((provider) => provider.has_api)?.value ?? 'custom',
-        credential_id: '',
+        provider: initialProvider,
+        credential_id: credentials.find((credential) => credential.provider === initialProvider)?.id ?? '',
         region: '',
         size: '',
         image: '',
@@ -119,15 +153,23 @@ export default function Create({ types, providers, credentials, options, sshKeys
         [sizes.items, data.region],
     );
 
+    const nameError =
+        data.name !== '' && !NAME_PATTERN.test(data.name)
+            ? 'Start with a letter or digit; use letters, digits, spaces, dots, dashes or underscores.'
+            : null;
+    const needsCredential = hasApi && providerCredentials.length === 0;
+    const ready =
+        data.name.trim() !== '' && !nameError && !needsCredential && (!hasApi || (data.credential_id && data.region && data.size && data.image));
+
     const setStack = (patch: Partial<StackConfig>) => setData('stack', { ...data.stack, ...patch });
 
     const chooseType = (value: string) => {
         const type = types.find((option) => option.value === value);
-        if (!type) return;
-        setData((current) => ({ ...current, type: value, stack: type.defaults }));
+        if (type) setData((current) => ({ ...current, type: value, stack: type.defaults }));
     };
 
     const chooseProvider = (value: string) => {
+        clearErrors('provider', 'credential_id', 'region', 'size', 'image');
         setData((current) => ({
             ...current,
             provider: value,
@@ -142,8 +184,7 @@ export default function Create({ types, providers, credentials, options, sshKeys
         const php = data.stack.php ?? { runtime: 'frankenphp', versions: [], default: null };
         const versions = checked ? [...new Set([...php.versions, version])].sort() : php.versions.filter((v) => v !== version);
         const fallback = versions.length > 0 ? versions[versions.length - 1] : null;
-        const nextDefault = php.default && versions.includes(php.default) ? php.default : fallback;
-        setStack({ php: { ...php, versions, default: nextDefault } });
+        setStack({ php: { ...php, versions, default: php.default && versions.includes(php.default) ? php.default : fallback } });
     };
 
     const toggleSshKey = (id: string, checked: boolean) =>
@@ -151,6 +192,7 @@ export default function Create({ types, providers, credentials, options, sshKeys
 
     const submit: FormEventHandler = (event) => {
         event.preventDefault();
+        if (!ready) return;
 
         transform((form) => ({
             ...form,
@@ -167,338 +209,379 @@ export default function Create({ types, providers, credentials, options, sshKeys
             },
         }));
 
-        post(route('servers.store'));
+        post(route('servers.store'), { preserveScroll: true });
     };
 
-    const nullableSelect = (value: string | null, onChange: (value: string | null) => void, items: Option[], id: string, noneLabel: string) => (
-        <Select value={value ?? NONE} onValueChange={(next) => onChange(next === NONE ? null : next)}>
-            <SelectTrigger id={id}>
-                <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-                <SelectItem value={NONE}>{noneLabel}</SelectItem>
-                {items.map((item) => (
-                    <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                    </SelectItem>
-                ))}
-            </SelectContent>
-        </Select>
-    );
-
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Create server" />
-            <form onSubmit={submit} className="mx-auto w-full max-w-4xl space-y-6 p-4">
-                <Heading title="Create server" description="Provision a new machine at a cloud provider, or bring your own and install the agent." />
+        <AppShell
+            breadcrumbs={[
+                { title: 'Infrastructure', href: '/servers' },
+                { title: 'Add server', href: '/servers/create' },
+            ]}
+        >
+            <Head title="Add server" />
+            <form onSubmit={submit} className="mx-auto grid w-full max-w-3xl gap-8" noValidate>
+                <PageHeader
+                    title="Add server"
+                    description="Create a machine at a cloud provider, or bring any Ubuntu LTS server and connect it with one command."
+                />
 
-                <Section title="1. Server">
-                    <div className="grid gap-2 sm:max-w-sm">
-                        <Label htmlFor="name">Name</Label>
-                        <Input id="name" value={data.name} onChange={(e) => setData('name', e.target.value)} placeholder="web-1" autoFocus />
-                        <InputError message={errors.name} />
+                <Section title="1. Where does it run?" description="Pick a provider. Custom works with any machine you can SSH into as root." bare>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" role="radiogroup" aria-label="Provider">
+                        {providers.map((option) => {
+                            const count = credentials.filter((credential) => credential.provider === option.value).length;
+
+                            return (
+                                <ChoiceCard
+                                    key={option.value}
+                                    selected={data.provider === option.value}
+                                    onSelect={() => chooseProvider(option.value)}
+                                    icon={<ProviderIcon provider={option.value} />}
+                                    title={option.value === 'custom' ? 'Custom server' : option.label}
+                                    description={
+                                        option.value === 'custom'
+                                            ? 'Bring your own · install the agent'
+                                            : count > 0
+                                              ? `${count} credential${count === 1 ? '' : 's'} connected`
+                                              : 'Not connected yet'
+                                    }
+                                />
+                            );
+                        })}
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" role="radiogroup" aria-label="Server type">
-                        {types.map((type) => (
-                            <button
-                                type="button"
-                                role="radio"
-                                aria-checked={data.type === type.value}
-                                key={type.value}
-                                onClick={() => chooseType(type.value)}
-                                className={cn(
-                                    'hover:border-primary/60 rounded-lg border p-3 text-left transition-colors',
-                                    data.type === type.value && 'border-primary ring-primary/30 ring-2',
-                                )}
-                            >
-                                <div className="text-sm font-medium">{type.label}</div>
-                                <div className="text-muted-foreground mt-1 text-xs">{type.description}</div>
-                            </button>
-                        ))}
-                    </div>
-                    <InputError message={errors.type} />
+                    {errors.provider && <p className="text-danger text-xs">{errors.provider}</p>}
                 </Section>
 
-                <Section title="2. Infrastructure" description="Where the machine runs.">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="grid gap-2">
-                            <Label htmlFor="provider">Provider</Label>
-                            <Select value={data.provider} onValueChange={chooseProvider}>
-                                <SelectTrigger id="provider">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {providers.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                            {option.label}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <InputError message={errors.provider} />
+                <Section title="2. Server" description="A name you'll recognise, and what the machine is for.">
+                    <Field
+                        label="Name"
+                        required
+                        error={errors.name ?? nameError}
+                        hint={!errors.name && !nameError ? 'Shown in Kiln and used as the hostname.' : undefined}
+                    >
+                        <Input
+                            value={data.name}
+                            onChange={(event) => setData('name', event.target.value)}
+                            placeholder="app-1"
+                            autoFocus
+                            autoComplete="off"
+                            spellCheck={false}
+                            className="sm:max-w-sm"
+                        />
+                    </Field>
+                    <div className="grid gap-1.5">
+                        <span className="text-fg text-xs font-medium">Type</span>
+                        <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Server type">
+                            {types.map((type) => (
+                                <ChoiceCard
+                                    key={type.value}
+                                    selected={data.type === type.value}
+                                    onSelect={() => chooseType(type.value)}
+                                    title={type.label}
+                                    description={type.description}
+                                />
+                            ))}
                         </div>
+                        {errors.type && <p className="text-danger text-xs">{errors.type}</p>}
+                    </div>
+                </Section>
 
-                        {hasApi && (
-                            <div className="grid gap-2">
-                                <Label htmlFor="credential">Credential</Label>
-                                {providerCredentials.length === 0 ? (
-                                    <p className="text-muted-foreground text-sm">
-                                        No {provider?.label} credential yet.{' '}
-                                        {canManageProviders ? (
-                                            <Link href="/providers?add=1" className="text-primary underline">
-                                                Add one
-                                            </Link>
-                                        ) : (
-                                            'Ask an admin to add one.'
-                                        )}
-                                    </p>
-                                ) : (
-                                    <Select
-                                        value={data.credential_id || undefined}
-                                        onValueChange={(value) =>
-                                            setData((current) => ({ ...current, credential_id: value, region: '', size: '', image: '' }))
+                {hasApi ? (
+                    <Section title="3. Location & size" description={`Where ${provider?.label ?? 'the provider'} creates the machine.`}>
+                        {needsCredential ? (
+                            <EmptyState
+                                size="sm"
+                                icon={<KeyRound />}
+                                title={`Connect ${provider?.label}`}
+                                description={`Add an API token for ${provider?.label} to pick regions and sizes here.`}
+                                action={
+                                    canManageProviders ? (
+                                        <Button variant="primary" size="sm" asChild>
+                                            <Link href="/settings/cloud-providers?add=1">Connect provider</Link>
+                                        </Button>
+                                    ) : (
+                                        <span className="text-fg-muted text-xs">Ask an admin to connect it.</span>
+                                    )
+                                }
+                                secondary={
+                                    <Button variant="ghost" size="sm" onClick={() => chooseProvider('custom')}>
+                                        Use a custom server
+                                    </Button>
+                                }
+                            />
+                        ) : (
+                            <>
+                                {providerCredentials.length > 1 && (
+                                    <Field label="Credential" error={errors.credential_id} className="sm:max-w-sm">
+                                        <Select
+                                            value={data.credential_id || undefined}
+                                            onValueChange={(value) =>
+                                                setData((current) => ({ ...current, credential_id: value, region: '', size: '', image: '' }))
+                                            }
+                                            options={providerCredentials.map((credential) => ({ value: credential.id, label: credential.name }))}
+                                            placeholder="Choose a credential"
+                                        />
+                                    </Field>
+                                )}
+                                <div className="grid gap-4 sm:grid-cols-3">
+                                    <Field
+                                        label="Region"
+                                        required
+                                        error={errors.region}
+                                        hint={<CatalogHint loading={regions.loading} error={regions.error} />}
+                                    >
+                                        <Select
+                                            value={data.region || undefined}
+                                            onValueChange={(value) => setData((current) => ({ ...current, region: value, size: '' }))}
+                                            disabled={regions.loading || regions.items.length === 0}
+                                            placeholder="Choose a region"
+                                            options={regions.items.map((region) => ({
+                                                value: region.id,
+                                                label: region.country ? `${region.name} (${region.country})` : region.name,
+                                                disabled: !region.available,
+                                            }))}
+                                        />
+                                    </Field>
+                                    <Field
+                                        label="Size"
+                                        required
+                                        error={errors.size}
+                                        hint={
+                                            <CatalogHint
+                                                loading={sizes.loading}
+                                                error={sizes.error}
+                                                empty={data.region ? undefined : 'Choose a region first'}
+                                            />
                                         }
                                     >
-                                        <SelectTrigger id="credential">
-                                            <SelectValue placeholder="Choose a credential" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {providerCredentials.map((credential) => (
-                                                <SelectItem key={credential.id} value={credential.id}>
-                                                    {credential.name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                )}
-                                <InputError message={errors.credential_id} />
-                            </div>
+                                        <Select
+                                            value={data.size || undefined}
+                                            onValueChange={(value) => setData('size', value)}
+                                            disabled={!data.region || sizes.loading || sizeOptions.length === 0}
+                                            placeholder="Choose a size"
+                                            options={sizeOptions.map((size) => ({
+                                                value: size.id,
+                                                label: size.name,
+                                                description: [
+                                                    `${size.cpus} vCPU`,
+                                                    `${(size.memory_mb / 1024).toFixed(size.memory_mb < 1024 ? 1 : 0)} GB`,
+                                                    `${size.disk_gb} GB disk`,
+                                                    size.arch !== 'amd64' ? size.arch : null,
+                                                    size.price_monthly !== null ? `$${size.price_monthly.toFixed(2)}/mo` : null,
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(' · '),
+                                            }))}
+                                        />
+                                    </Field>
+                                    <Field
+                                        label="Image"
+                                        required
+                                        error={errors.image}
+                                        hint={<CatalogHint loading={images.loading} error={images.error} />}
+                                    >
+                                        <Select
+                                            value={data.image || undefined}
+                                            onValueChange={(value) => setData('image', value)}
+                                            disabled={images.loading || images.items.length === 0}
+                                            placeholder="Choose an image"
+                                            options={images.items.map((image) => ({
+                                                value: image.id,
+                                                label: image.arch ? `${image.name} (${image.arch})` : image.name,
+                                            }))}
+                                        />
+                                    </Field>
+                                </div>
+                                <Field label="Timezone" error={errors.timezone} className="sm:max-w-xs">
+                                    <Input
+                                        value={data.timezone}
+                                        onChange={(event) => setData('timezone', event.target.value)}
+                                        placeholder="UTC"
+                                        mono
+                                    />
+                                </Field>
+                            </>
                         )}
-                    </div>
-
-                    {hasApi && data.credential_id && (
-                        <div className="grid gap-4 sm:grid-cols-3">
-                            <div className="grid gap-2">
-                                <Label htmlFor="region">Region</Label>
-                                <Select
-                                    value={data.region || undefined}
-                                    onValueChange={(value) => setData((current) => ({ ...current, region: value, size: '' }))}
-                                >
-                                    <SelectTrigger id="region" disabled={regions.loading || regions.items.length === 0}>
-                                        <SelectValue placeholder="Choose a region" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {regions.items.map((region) => (
-                                            <SelectItem key={region.id} value={region.id} disabled={!region.available}>
-                                                {region.name}
-                                                {region.country ? ` (${region.country})` : ''}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <CatalogStatus loading={regions.loading} error={regions.error} />
-                                <InputError message={errors.region} />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="size">Size</Label>
-                                <Select value={data.size || undefined} onValueChange={(value) => setData('size', value)}>
-                                    <SelectTrigger id="size" disabled={!data.region || sizes.loading || sizeOptions.length === 0}>
-                                        <SelectValue placeholder={data.region ? 'Choose a size' : 'Choose a region first'} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {sizeOptions.map((size) => (
-                                            <SelectItem key={size.id} value={size.id}>
-                                                {size.name} · {size.cpus} vCPU · {(size.memory_mb / 1024).toFixed(size.memory_mb < 1024 ? 1 : 0)} GB ·{' '}
-                                                {size.disk_gb} GB
-                                                {size.arch !== 'amd64' ? ` · ${size.arch}` : ''}
-                                                {size.price_monthly !== null ? ` · $${size.price_monthly.toFixed(2)}/mo` : ''}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <CatalogStatus loading={sizes.loading} error={sizes.error} />
-                                <InputError message={errors.size} />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="image">Image</Label>
-                                <Select value={data.image || undefined} onValueChange={(value) => setData('image', value)}>
-                                    <SelectTrigger id="image" disabled={images.loading || images.items.length === 0}>
-                                        <SelectValue placeholder="Choose an image" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {images.items.map((image) => (
-                                            <SelectItem key={image.id} value={image.id}>
-                                                {image.name}
-                                                {image.arch ? ` (${image.arch})` : ''}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                                <CatalogStatus loading={images.loading} error={images.error} />
-                                <InputError message={errors.image} />
-                            </div>
+                    </Section>
+                ) : (
+                    <Section title="3. Connect your machine" description="Any Ubuntu 22.04 / 24.04 LTS server with outbound HTTPS.">
+                        <div className="flex items-start gap-3">
+                            <span className="border-border bg-surface-2 text-fg-muted flex size-8 shrink-0 items-center justify-center rounded-md border">
+                                <Terminal className="size-4" aria-hidden />
+                            </span>
+                            <p className="text-fg-muted text-sm">
+                                After you create the server, Kiln shows a one-line install command. Run it as root on the machine; the agent dials
+                                out, enrolls, and provisioning starts on its own — you can watch it live.
+                            </p>
                         </div>
-                    )}
-
-                    {!hasApi && (
-                        <p className="text-muted-foreground text-sm">
-                            After creating the server you will get a one-time install command to run as root on any Ubuntu LTS machine. The agent then
-                            enrolls and provisioning starts automatically.
-                        </p>
-                    )}
-
-                    <div className="grid gap-2 sm:max-w-sm">
-                        <Label htmlFor="timezone">Timezone</Label>
-                        <Input id="timezone" value={data.timezone} onChange={(e) => setData('timezone', e.target.value)} placeholder="UTC" />
-                        <InputError message={errors.timezone} />
-                    </div>
-                </Section>
-
-                {selectedType.components.length > 0 && (
-                    <Section title="3. Software" description="Installed by the provisioning plan. You can add PHP versions later.">
-                        {allows('php') && (
-                            <div className="space-y-3">
-                                <div className="grid gap-4 sm:grid-cols-2">
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="php-runtime">PHP runtime</Label>
-                                        {nullableSelect(
-                                            data.stack.php?.runtime ?? null,
-                                            (runtime) =>
-                                                setStack({
-                                                    php: runtime
-                                                        ? {
-                                                              runtime,
-                                                              versions: data.stack.php?.versions ?? [],
-                                                              default: data.stack.php?.default ?? null,
-                                                          }
-                                                        : null,
-                                                }),
-                                            options.php_runtimes,
-                                            'php-runtime',
-                                            'No PHP',
-                                        )}
-                                        <InputError message={errorBag['stack.php.runtime'] ?? errorBag['stack.php']} />
-                                    </div>
-                                    {data.stack.php && data.stack.php.versions.length > 0 && (
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="php-default">Default PHP version</Label>
-                                            <Select
-                                                value={data.stack.php.default ?? undefined}
-                                                onValueChange={(value) => data.stack.php && setStack({ php: { ...data.stack.php, default: value } })}
-                                            >
-                                                <SelectTrigger id="php-default">
-                                                    <SelectValue />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    {data.stack.php.versions.map((version) => (
-                                                        <SelectItem key={version} value={version}>
-                                                            PHP {version}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectContent>
-                                            </Select>
-                                            <InputError message={errorBag['stack.php.default']} />
-                                        </div>
-                                    )}
-                                </div>
-                                {data.stack.php && (
-                                    <div className="grid gap-2">
-                                        <Label>PHP versions</Label>
-                                        <div className="flex flex-wrap gap-4">
-                                            {options.php_versions.map((version) => (
-                                                <label key={version} className="flex items-center gap-2 text-sm">
-                                                    <Checkbox
-                                                        checked={data.stack.php?.versions.includes(version) ?? false}
-                                                        onCheckedChange={(checked) => togglePhpVersion(version, checked === true)}
-                                                    />
-                                                    {version}
-                                                </label>
-                                            ))}
-                                        </div>
-                                        <InputError message={errorBag['stack.php.versions']} />
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="grid gap-4 sm:grid-cols-3">
-                            {allows('node') && (
-                                <div className="grid gap-2">
-                                    <Label htmlFor="node">Node.js</Label>
-                                    {nullableSelect(
-                                        data.stack.node,
-                                        (node) => setStack({ node }),
-                                        options.node_versions.map((version) => ({ value: version, label: `Node ${version}` })),
-                                        'node',
-                                        'No Node.js',
-                                    )}
-                                    <InputError message={errorBag['stack.node']} />
-                                </div>
-                            )}
-                            {allows('database') && (
-                                <div className="grid gap-2">
-                                    <Label htmlFor="database">Database</Label>
-                                    {nullableSelect(data.stack.database, (database) => setStack({ database }), options.databases, 'database', 'None')}
-                                    <InputError message={errorBag['stack.database']} />
-                                </div>
-                            )}
-                            {allows('cache') && (
-                                <div className="grid gap-2">
-                                    <Label htmlFor="cache">Cache</Label>
-                                    {nullableSelect(data.stack.cache, (cache) => setStack({ cache }), options.caches, 'cache', 'None')}
-                                    <InputError message={errorBag['stack.cache']} />
-                                </div>
-                            )}
-                        </div>
-
-                        {allows('docker') && (
-                            <label className="flex items-center gap-2 text-sm">
-                                <Checkbox checked={data.stack.docker} onCheckedChange={(checked) => setStack({ docker: checked === true })} />
-                                Install Docker Engine (with Compose and Buildx)
-                            </label>
-                        )}
-                        <InputError message={errorBag['stack.docker']} />
+                        <Field label="Timezone" error={errors.timezone} className="sm:max-w-xs">
+                            <Input value={data.timezone} onChange={(event) => setData('timezone', event.target.value)} placeholder="UTC" mono />
+                        </Field>
                     </Section>
                 )}
 
-                <Section title="4. Access" description="Keys installed for the kiln user once the server is provisioned.">
+                {selectedType.components.length > 0 && (
+                    <Section title="4. Software" description="Installed by the provisioning plan. You can add PHP versions later.">
+                        {allows('php') && (
+                            <div className="grid gap-4">
+                                <div className="grid gap-4 sm:grid-cols-2">
+                                    <Field label="PHP runtime" error={errorBag['stack.php.runtime'] ?? errorBag['stack.php']}>
+                                        <Select
+                                            value={data.stack.php?.runtime ?? NONE}
+                                            onValueChange={(runtime) =>
+                                                setStack({
+                                                    php:
+                                                        runtime === NONE
+                                                            ? null
+                                                            : {
+                                                                  runtime,
+                                                                  versions: data.stack.php?.versions ?? [],
+                                                                  default: data.stack.php?.default ?? null,
+                                                              },
+                                                })
+                                            }
+                                            options={nullable(options.php_runtimes, 'No PHP')}
+                                        />
+                                    </Field>
+                                    {data.stack.php && data.stack.php.versions.length > 0 && (
+                                        <Field label="Default PHP version" error={errorBag['stack.php.default']}>
+                                            <Select
+                                                value={data.stack.php.default ?? undefined}
+                                                onValueChange={(value) => data.stack.php && setStack({ php: { ...data.stack.php, default: value } })}
+                                                options={data.stack.php.versions.map((version) => ({ value: version, label: `PHP ${version}` }))}
+                                            />
+                                        </Field>
+                                    )}
+                                </div>
+                                {data.stack.php && (
+                                    <fieldset className="grid gap-2">
+                                        <legend className="text-fg mb-1.5 text-xs font-medium">PHP versions</legend>
+                                        <div className="flex flex-wrap gap-2">
+                                            {options.php_versions.map((version) => {
+                                                const checked = data.stack.php?.versions.includes(version) ?? false;
+
+                                                return (
+                                                    <label
+                                                        key={version}
+                                                        className={cn(
+                                                            'flex h-8 cursor-pointer items-center gap-2 rounded-md border px-2.5 text-sm transition-colors duration-150',
+                                                            checked
+                                                                ? 'border-primary bg-primary-soft text-fg'
+                                                                : 'border-border bg-surface-2 text-fg-muted hover:border-border-strong',
+                                                        )}
+                                                    >
+                                                        <Checkbox
+                                                            checked={checked}
+                                                            onCheckedChange={(value) => togglePhpVersion(version, value === true)}
+                                                        />
+                                                        {version}
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                        {errorBag['stack.php.versions'] && <p className="text-danger text-xs">{errorBag['stack.php.versions']}</p>}
+                                    </fieldset>
+                                )}
+                            </div>
+                        )}
+
+                        {(allows('node') || allows('database') || allows('cache')) && (
+                            <div className="grid gap-4 sm:grid-cols-3">
+                                {allows('node') && (
+                                    <Field label="Node.js" error={errorBag['stack.node']}>
+                                        <Select
+                                            value={data.stack.node ?? NONE}
+                                            onValueChange={(node) => setStack({ node: node === NONE ? null : node })}
+                                            options={nullable(
+                                                options.node_versions.map((version) => ({ value: version, label: `Node ${version}` })),
+                                                'No Node.js',
+                                            )}
+                                        />
+                                    </Field>
+                                )}
+                                {allows('database') && (
+                                    <Field label="Database" error={errorBag['stack.database']}>
+                                        <Select
+                                            value={data.stack.database ?? NONE}
+                                            onValueChange={(database) => setStack({ database: database === NONE ? null : database })}
+                                            options={nullable(options.databases, 'None')}
+                                        />
+                                    </Field>
+                                )}
+                                {allows('cache') && (
+                                    <Field label="Cache" error={errorBag['stack.cache']}>
+                                        <Select
+                                            value={data.stack.cache ?? NONE}
+                                            onValueChange={(cache) => setStack({ cache: cache === NONE ? null : cache })}
+                                            options={nullable(options.caches, 'None')}
+                                        />
+                                    </Field>
+                                )}
+                            </div>
+                        )}
+
+                        {allows('docker') && (
+                            <Field inline label="Install Docker Engine (with Compose and Buildx)" error={errorBag['stack.docker']}>
+                                <Checkbox checked={data.stack.docker} onCheckedChange={(checked) => setStack({ docker: checked === true })} />
+                            </Field>
+                        )}
+                    </Section>
+                )}
+
+                <Section
+                    title={`${selectedType.components.length > 0 ? 5 : 4}. Access`}
+                    description="SSH keys installed for the kiln user once the server is provisioned."
+                    aside={
+                        <Button variant="ghost" size="sm" asChild>
+                            <Link href="/ssh-keys">Manage keys</Link>
+                        </Button>
+                    }
+                >
                     {sshKeys.length === 0 ? (
-                        <p className="text-muted-foreground text-sm">
-                            No organization SSH keys.{' '}
-                            <Link href={route('ssh-keys.index')} className="text-primary underline">
-                                Add one
-                            </Link>
-                            .
+                        <p className="text-fg-muted text-sm">
+                            No organization SSH keys yet — you can attach keys later from the server's SSH keys tab.
                         </p>
                     ) : (
                         <div className="grid gap-2 sm:grid-cols-2">
                             {sshKeys.map((key) => (
-                                <label key={key.id} className="flex items-start gap-2 rounded-md border p-2 text-sm">
+                                <label
+                                    key={key.id}
+                                    className="border-border hover:border-border-strong flex cursor-pointer items-start gap-2.5 rounded-md border p-2.5 text-sm transition-colors duration-150"
+                                >
                                     <Checkbox
+                                        className="mt-0.5"
                                         checked={data.ssh_key_ids.includes(key.id)}
                                         onCheckedChange={(checked) => toggleSshKey(key.id, checked === true)}
                                     />
-                                    <span>
-                                        <span className="font-medium">{key.name}</span>
-                                        <span className="text-muted-foreground block font-mono text-xs break-all">{key.fingerprint}</span>
+                                    <span className="grid min-w-0 gap-0.5">
+                                        <span className="text-fg font-medium">{key.name}</span>
+                                        <span className="text-fg-faint truncate font-mono text-xs">{key.fingerprint}</span>
                                     </span>
                                 </label>
                             ))}
                         </div>
                     )}
-                    <InputError message={errors.ssh_key_ids} />
+                    {errors.ssh_key_ids && <p className="text-danger text-xs">{errors.ssh_key_ids}</p>}
                 </Section>
 
-                <div className="flex justify-end gap-2">
-                    <Button type="button" variant="ghost" asChild>
-                        <Link href={route('servers.index')}>Cancel</Link>
-                    </Button>
-                    <Button disabled={processing}>
-                        {processing && <Loader2 className="animate-spin" />}
-                        Create server
-                    </Button>
+                <div className="border-border-strong bg-surface-2 shadow-panel sticky bottom-4 z-20 rounded-xl border">
+                    <div className="flex items-center justify-between gap-3 py-2 pr-2 pl-4">
+                        <p className="text-fg-muted hidden min-w-0 items-center gap-2 truncate text-sm sm:flex">
+                            <ProviderIcon provider={data.provider} size={14} className="text-fg-faint" />
+                            <span className="text-fg truncate font-medium">{data.name || 'Unnamed server'}</span>
+                            <Tag>{selectedType.label}</Tag>
+                        </p>
+                        <div className="ml-auto flex items-center gap-2">
+                            <Button variant="ghost" asChild>
+                                <Link href="/servers">Cancel</Link>
+                            </Button>
+                            <Button type="submit" variant="primary" loading={processing} disabled={!ready}>
+                                {hasApi ? 'Create server' : 'Create & get install command'}
+                            </Button>
+                        </div>
+                    </div>
                 </div>
             </form>
-        </AppLayout>
+        </AppShell>
     );
 }

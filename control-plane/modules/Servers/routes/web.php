@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Kiln\Servers\Http\Controllers\PhpController;
 use Kiln\Servers\Http\Controllers\ServerController;
+use Kiln\Servers\Http\Controllers\ServerTabController;
 use Kiln\Servers\Http\Controllers\SshKeyController;
 
 Route::middleware(['auth', 'org'])->group(function () {
@@ -16,6 +17,13 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::post('servers/{server}/reprovision', [ServerController::class, 'reprovision'])->name('servers.reprovision');
     Route::post('servers/{server}/install-command', [ServerController::class, 'installCommand'])->name('servers.install-command');
     Route::get('servers/{server}/metrics', [ServerController::class, 'metrics'])->name('servers.metrics');
+
+    // Server page tabs owned by Servers (/servers/{id}/{tab}); Network, Terminal and Recipes register theirs.
+    Route::get('servers/{server}/overview', [ServerTabController::class, 'overview'])->name('servers.overview');
+    Route::get('servers/{server}/processes', [ServerTabController::class, 'processes'])->name('servers.processes');
+    Route::get('servers/{server}/ssh-keys', [ServerTabController::class, 'sshKeys'])->name('servers.ssh-keys');
+    Route::get('servers/{server}/php', [ServerTabController::class, 'php'])->name('servers.php');
+    Route::get('servers/{server}/settings', [ServerTabController::class, 'settings'])->name('servers.settings');
 
     Route::post('servers/{server}/php', [PhpController::class, 'store'])->name('servers.php.store');
     Route::put('servers/{server}/php/{version}/default', [PhpController::class, 'default'])->name('servers.php.default');

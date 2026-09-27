@@ -13,6 +13,7 @@ use Kiln\Identity\Contracts\OrganizationDirectory;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\Servers\Contracts\ServerHeaders;
 use Kiln\Terminal\Application\Actions\CloseSession;
 use Kiln\Terminal\Application\Actions\OpenSession;
 use Kiln\Terminal\Application\Actions\ShareSession;
@@ -71,6 +72,53 @@ final class SessionController extends Controller
             'defaultUser' => (string) config('terminal.default_user', 'root'),
             'idleTimeout' => (int) config('terminal.idle_timeout', 900),
             'can' => ['open' => $can('terminal.open')],
+        ]);
+    }
+
+    /**
+     * The server page's "Terminal" tab: open a shell on this server, its live sessions and recordings.
+     */
+    public function server(Request $request, string $server, ServerDirectory $servers, ServerHeaders $headers, TerminalSessionPolicy $policy): Response
+    {
+        $organizationId = $this->organization->requireId();
+        $user = $request->user();
+        $can = fn (string $permission) => $this->access->can($user, $organizationId, $permission);
+        $data = $servers->find($server);
+
+        abort_if($data === null || $data->organizationId !== $organizationId, 404);
+        abort_unless(collect(TerminalSessionPolicy::PERMISSIONS)->contains(fn (string $p) => $can($p)), 403);
+
+        $userId = (string) $user?->getAuthIdentifier();
+
+        $live = TerminalSession::query()
+            ->where('server_id', $data->id)
+            ->whereIn('status', SessionStatus::live())
+            ->where(fn ($q) => $q->where('user_id', $userId)->orWhere('shared', true))
+            ->latest()
+            ->limit(50)
+            ->get()
+            ->filter(fn (TerminalSession $session) => $user !== null && $policy->canView($user, $session));
+
+        $recordings = TerminalSession::query()
+            ->where('server_id', $data->id)
+            ->whereNotIn('status', SessionStatus::live())
+            ->when(! $can('terminal.recordings.view'), fn ($q) => $q->where('user_id', $userId))
+            ->latest()
+            ->limit(50)
+            ->get();
+
+        return Inertia::render('Terminal/Server', [
+            'server' => $headers->for($data->id),
+            'unixUser' => $data->unixUser,
+            'sessions' => $live->map(fn (TerminalSession $session) => $this->present($session, $this->directory))->values(),
+            'recordings' => $recordings->map(fn (TerminalSession $session) => $this->present($session, $this->directory))->values(),
+            'defaultUser' => (string) config('terminal.default_user', 'root'),
+            'idleTimeout' => (int) config('terminal.idle_timeout', 900),
+            'can' => [
+                'open' => $can('terminal.open') && $data->isActive(),
+                'replay' => $can('terminal.recordings.view'),
+            ],
+            'serverActive' => $data->isActive(),
         ]);
     }
 

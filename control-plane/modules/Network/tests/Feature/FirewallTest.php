@@ -23,7 +23,7 @@ beforeEach(function () {
 });
 
 it('seeds default rules on first visit and applies a schema-valid full ruleset', function () {
-    $this->get("/network/servers/{$this->server->id}/firewall")->assertOk()->assertInertia(fn ($page) => $page
+    $this->get("/servers/{$this->server->id}/firewall")->assertOk()->assertInertia(fn ($page) => $page
         ->component('Network/Firewall', false)
         ->has('rules', 3)
         ->where('rules.0.port', '22')
@@ -41,7 +41,7 @@ it('seeds default rules on first visit and applies a schema-valid full ruleset',
         ->and($command['handle']->idempotencyKey)->toBe("net.firewall:{$this->server->id}:1");
 
     // Visiting again neither re-seeds nor re-dispatches.
-    $this->get("/network/servers/{$this->server->id}/firewall")->assertOk();
+    $this->get("/servers/{$this->server->id}/firewall")->assertOk();
     expect(FirewallRule::query()->count())->toBe(3)
         ->and($this->agents->dispatched('net.firewall.apply'))->toHaveCount(1);
 });
@@ -49,7 +49,7 @@ it('seeds default rules on first visit and applies a schema-valid full ruleset',
 it('only opens SSH by default on servers that do not serve HTTP', function () {
     $db = network_server($this->organization, ['name' => 'db-1'], ServerType::Database);
 
-    $this->get("/network/servers/{$db->id}/firewall")->assertOk()->assertInertia(fn ($page) => $page->has('rules', 1)->where('rules.0.port', '22'));
+    $this->get("/servers/{$db->id}/firewall")->assertOk()->assertInertia(fn ($page) => $page->has('rules', 1)->where('rules.0.port', '22'));
 });
 
 it('seeds and applies defaults when a server finishes provisioning', function () {
@@ -64,7 +64,7 @@ it('seeds and applies defaults when a server finishes provisioning', function ()
 });
 
 it('orders deny rules before allow rules and compiles ranges and sources', function () {
-    $this->get("/network/servers/{$this->server->id}/firewall");
+    $this->get("/servers/{$this->server->id}/firewall");
 
     $this->post("/network/servers/{$this->server->id}/firewall/rules", ['name' => 'App ports', 'action' => 'allow', 'protocol' => 'udp', 'port' => '8000-8100', 'source' => '10.0.0.0/8'])->assertSessionHasNoErrors();
     $this->post("/network/servers/{$this->server->id}/firewall/rules", ['name' => 'Block bad actor', 'action' => 'deny', 'protocol' => 'any', 'port' => '', 'source' => '2001:db8::/32'])->assertSessionHasNoErrors();
@@ -97,7 +97,7 @@ it('rejects invalid rules', function (array $input, string $field) {
 
 it('does not re-dispatch an unchanged ruleset and uses a new key for A → B → A', function () {
     $apply = app(ApplyFirewall::class);
-    $this->get("/network/servers/{$this->server->id}/firewall");
+    $this->get("/servers/{$this->server->id}/firewall");
     $first = $this->agents->last('net.firewall.apply');
 
     // In flight with the same desired state: no duplicate.
@@ -126,7 +126,7 @@ it('does not re-dispatch an unchanged ruleset and uses a new key for A → B →
 
 it('records the outcome and announces FirewallApplied', function () {
     Event::fake([FirewallApplied::class]);
-    $this->get("/network/servers/{$this->server->id}/firewall");
+    $this->get("/servers/{$this->server->id}/firewall");
     $command = $this->agents->last('net.firewall.apply');
 
     $this->agents->succeed($command['handle'], ['changed' => true, 'ruleset_sha256' => str_repeat('b', 64)]);
@@ -147,7 +147,7 @@ it('records the outcome and announces FirewallApplied', function () {
 });
 
 it('ignores results of superseded commands', function () {
-    $this->get("/network/servers/{$this->server->id}/firewall");
+    $this->get("/servers/{$this->server->id}/firewall");
     $old = $this->agents->last('net.firewall.apply');
     $this->post("/network/servers/{$this->server->id}/firewall/rules", ['name' => 'Redis', 'action' => 'allow', 'protocol' => 'tcp', 'port' => '6379']);
 
@@ -159,7 +159,7 @@ it('ignores results of superseded commands', function () {
 it('marks the firewall failed when the agent is not connected', function () {
     $this->agents->unavailable($this->server->id);
 
-    $this->get("/network/servers/{$this->server->id}/firewall")->assertOk();
+    $this->get("/servers/{$this->server->id}/firewall")->assertOk();
 
     $state = FirewallState::query()->findOrFail($this->server->id);
     expect($state->status)->toBe(ApplyStatus::Failed)->and($state->error)->toContain('not connected');
@@ -168,7 +168,7 @@ it('marks the firewall failed when the agent is not connected', function () {
 it('waits for inactive servers to be provisioned', function () {
     $this->server->forceFill(['status' => ServerStatus::Provisioning])->save();
 
-    $this->get("/network/servers/{$this->server->id}/firewall")->assertOk();
+    $this->get("/servers/{$this->server->id}/firewall")->assertOk();
     $this->post("/network/servers/{$this->server->id}/firewall/rules", ['name' => 'x', 'action' => 'allow', 'protocol' => 'tcp', 'port' => '9000']);
 
     $this->agents->assertNothingDispatched();
@@ -176,7 +176,7 @@ it('waits for inactive servers to be provisioned', function () {
 });
 
 it('deletes rules and forgets deleted servers', function () {
-    $this->get("/network/servers/{$this->server->id}/firewall");
+    $this->get("/servers/{$this->server->id}/firewall");
     $rule = FirewallRule::query()->where('port', '443')->firstOrFail();
 
     $this->delete("/network/servers/{$this->server->id}/firewall/rules/{$rule->id}")->assertSessionHasNoErrors();
@@ -191,7 +191,7 @@ it('lets viewers look but not touch', function () {
     $this->actingAs($viewer);
 
     $this->get('/network')->assertOk()->assertInertia(fn ($page) => $page->component('Network/Index', false)->where('can.manage', false)->has('servers', 1));
-    $this->get("/network/servers/{$this->server->id}/firewall")->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false));
+    $this->get("/servers/{$this->server->id}/firewall")->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false));
     $this->post("/network/servers/{$this->server->id}/firewall/rules", ['name' => 'x', 'action' => 'allow', 'protocol' => 'tcp', 'port' => '1'])->assertForbidden();
     $this->post("/network/servers/{$this->server->id}/firewall/apply")->assertForbidden();
 
@@ -203,11 +203,11 @@ it('lets viewers look but not touch', function () {
 
 it('hides other organizations servers and rules', function () {
     [$outsider] = memberOf(null, Role::Owner);
-    $this->get("/network/servers/{$this->server->id}/firewall");
+    $this->get("/servers/{$this->server->id}/firewall");
     $rule = FirewallRule::query()->firstOrFail();
 
     $this->actingAs($outsider);
-    $this->get("/network/servers/{$this->server->id}/firewall")->assertNotFound();
+    $this->get("/servers/{$this->server->id}/firewall")->assertNotFound();
     $this->post("/network/servers/{$this->server->id}/firewall/rules", ['name' => 'x', 'action' => 'allow', 'protocol' => 'tcp'])->assertNotFound();
     $this->delete("/network/servers/{$this->server->id}/firewall/rules/{$rule->id}")->assertNotFound();
 

@@ -1,17 +1,19 @@
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import AppLayout from '@/layouts/app-layout';
+import { AppShell } from '@/components/kiln/app-shell';
+import { Avatar } from '@/components/kiln/avatar';
+import { Button } from '@/components/kiln/button';
+import { Tag } from '@/components/kiln/tag';
+import { toast } from '@/components/kiln/toast';
+import { Tooltip } from '@/components/kiln/tooltip';
 import { echo } from '@/lib/echo';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
-import { Eye, Film, Power, Share2, Users } from 'lucide-react';
+import { Eye, Film, Power, Share2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SessionStatusBadge } from '../components/session-status';
-import { base64ToBytes, encodeInput, postJson, REASON_LABELS, TERMINAL_THEME } from '../lib';
+import { base64ToBytes, encodeInput, onThemeChange, postJson, REASON_LABELS, TERMINAL_FONT, terminalTheme } from '../lib';
 import { type OutputPart, type Participant, type SessionUpdate, type TerminalSessionData } from '../types';
 
 interface Props {
@@ -49,7 +51,9 @@ export default function Session({ session: initial, isOwner, can }: Props) {
     canTypeRef.current = canType;
 
     const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Terminal', href: '/terminal' },
+        { title: 'Infrastructure', href: '/servers' },
+        { title: session.server_name, href: `/servers/${session.server_id}` },
+        { title: 'Terminal', href: `/servers/${session.server_id}/terminal` },
         { title: `${session.unix_user}@${session.server_name}`, href: route('terminal.sessions.show', session.id) },
     ];
 
@@ -106,11 +110,15 @@ export default function Session({ session: initial, isOwner, can }: Props) {
 
         const term = new Terminal({
             cursorBlink: true,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+            fontFamily: TERMINAL_FONT,
             fontSize: 13,
+            lineHeight: 1.2,
             scrollback: 5000,
-            theme: TERMINAL_THEME,
+            theme: terminalTheme(),
             disableStdin: !canTypeRef.current,
+        });
+        const stopTheme = onThemeChange(() => {
+            term.options.theme = terminalTheme();
         });
         const fit = new FitAddon();
         term.loadAddon(fit);
@@ -145,6 +153,7 @@ export default function Session({ session: initial, isOwner, can }: Props) {
         }
 
         return () => {
+            stopTheme();
             window.clearTimeout(fitTimer);
             observer.disconnect();
             data.dispose();
@@ -290,82 +299,113 @@ export default function Session({ session: initial, isOwner, can }: Props) {
         }
     }, [session.status, session.cols, session.rows]);
 
-    const toggleShare = () => router.patch(route('terminal.sessions.share', session.id), { shared: !session.shared }, { preserveScroll: true });
-    const close = () => router.delete(route('terminal.sessions.destroy', session.id), { preserveScroll: true });
+    const [busy, setBusy] = useState<'share' | 'close' | null>(null);
+    const toggleShare = () =>
+        router.patch(
+            route('terminal.sessions.share', session.id),
+            { shared: !session.shared },
+            {
+                preserveScroll: true,
+                onStart: () => setBusy('share'),
+                onFinish: () => setBusy(null),
+                onSuccess: () =>
+                    toast.success(
+                        session.shared ? 'Stopped sharing' : 'Session shared',
+                        session.shared ? undefined : 'Teammates with terminal access can watch.',
+                    ),
+            },
+        );
+    const close = () =>
+        router.delete(route('terminal.sessions.destroy', session.id), {
+            preserveScroll: true,
+            onStart: () => setBusy('close'),
+            onFinish: () => setBusy(null),
+        });
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
+        <AppShell breadcrumbs={breadcrumbs}>
             <Head title={`Terminal · ${session.server_name}`} />
-            <div className="flex flex-col gap-4 p-4">
+            <div className="flex flex-col gap-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-3">
-                        <h1 className="font-mono text-lg font-semibold">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+                        <h1 className="text-fg truncate font-mono text-base font-semibold">
                             {session.unix_user}@{session.server_name}
                         </h1>
                         <SessionStatusBadge status={session.status} />
                         {session.shared && (
-                            <Badge variant="outline" className="gap-1">
-                                <Share2 className="size-3" /> Shared
-                            </Badge>
+                            <Tag tone="accent" icon={<Share2 />}>
+                                Shared
+                            </Tag>
                         )}
-                        {!can.type && live && (
-                            <Badge variant="outline" className="gap-1">
-                                <Eye className="size-3" /> Watching
-                            </Badge>
-                        )}
-                        {!isOwner && <span className="text-muted-foreground text-sm">Owner: {session.owner.name}</span>}
+                        {!can.type && live && <Tag icon={<Eye />}>Watching</Tag>}
+                        {!isOwner && <span className="text-fg-muted text-sm">Owner: {session.owner.name}</span>}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         {participants.length > 0 && (
-                            <span
-                                className="text-muted-foreground inline-flex items-center gap-1.5 text-sm"
-                                title={participants.map((p) => p.name).join(', ')}
-                            >
-                                <Users className="size-4" />
-                                {participants.map((p) => p.name + (p.can_type ? '' : ' (view)')).join(', ')}
-                            </span>
+                            <div className="flex -space-x-1.5" aria-label={`Connected: ${participants.map((p) => p.name).join(', ')}`}>
+                                {participants.slice(0, 5).map((participant) => (
+                                    <Tooltip key={participant.id} content={`${participant.name}${participant.can_type ? '' : ' (watching)'}`}>
+                                        <span className="ring-bg rounded-full ring-2">
+                                            <Avatar name={participant.name} size="sm" />
+                                        </span>
+                                    </Tooltip>
+                                ))}
+                            </div>
                         )}
                         {can.share && live && (
-                            <Button variant="outline" size="sm" onClick={toggleShare}>
-                                <Share2 /> {session.shared ? 'Stop sharing' : 'Share'}
+                            <Button icon={<Share2 />} onClick={toggleShare} loading={busy === 'share'}>
+                                {session.shared ? 'Stop sharing' : 'Share'}
                             </Button>
                         )}
                         {can.replay && !live && (
-                            <Button variant="outline" size="sm" asChild>
+                            <Button asChild>
                                 <Link href={route('terminal.sessions.recording', session.id)}>
-                                    <Film /> Replay
+                                    <Film aria-hidden /> Replay
                                 </Link>
                             </Button>
                         )}
                         {can.close && live && (
-                            <Button variant="destructive" size="sm" onClick={close}>
-                                <Power /> Close
+                            <Button variant="danger" icon={<Power />} onClick={close} loading={busy === 'close'}>
+                                Close
                             </Button>
                         )}
                     </div>
                 </div>
 
                 {!live && (
-                    <Alert variant={session.status === 'failed' ? 'destructive' : 'default'}>
-                        <AlertTitle>
+                    <div
+                        role={session.status === 'failed' ? 'alert' : 'status'}
+                        className={
+                            session.status === 'failed'
+                                ? 'border-danger/40 bg-danger-soft rounded-lg border px-4 py-3'
+                                : 'border-border bg-surface-1 rounded-lg border px-4 py-3'
+                        }
+                    >
+                        <p className={session.status === 'failed' ? 'text-danger text-sm font-medium' : 'text-fg text-sm font-medium'}>
                             {session.close_reason ? (REASON_LABELS[session.close_reason] ?? session.close_reason) : 'Session ended'}
-                        </AlertTitle>
-                        <AlertDescription>
+                        </p>
+                        <p className="text-fg-muted text-sm">
                             {session.error ?? (session.exit_code !== null ? `Exit code ${session.exit_code}.` : 'The session is no longer running.')}
-                        </AlertDescription>
-                    </Alert>
+                        </p>
+                    </div>
                 )}
-                {inputError && live && <p className="text-sm text-red-600 dark:text-red-400">{inputError}</p>}
+                {inputError && live && <p className="text-danger text-sm">{inputError}</p>}
+                {session.status === 'opening' && (
+                    <p className="text-fg-muted flex items-center gap-2 text-sm" aria-live="polite">
+                        <span className="animate-pulse-dot bg-warning text-warning size-1.5 rounded-full" aria-hidden />
+                        Waiting for the agent to open the shell…
+                    </p>
+                )}
                 {session.shared && isOwner && live && (
-                    <p className="text-muted-foreground text-xs">
+                    <p className="text-fg-faint text-xs">
                         Members with terminal access can watch this session; only you and administrators can type.
                     </p>
                 )}
 
-                <div className="overflow-hidden rounded-lg border bg-neutral-950 p-2">
+                <div className="border-border bg-canvas overflow-hidden rounded-lg border p-2">
                     <div ref={container} className="h-[70vh] min-h-80 w-full" data-testid="terminal" />
                 </div>
             </div>
-        </AppLayout>
+        </AppShell>
     );
 }

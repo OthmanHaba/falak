@@ -1,17 +1,18 @@
-import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, Link, router, useForm } from '@inertiajs/react';
-import { Network, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { FormEventHandler, useEffect, useState } from 'react';
+import { AppShell } from '@/components/kiln/app-shell';
+import { Button } from '@/components/kiln/button';
+import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
+import { DataTable } from '@/components/kiln/data-table';
+import { Dialog } from '@/components/kiln/dialog';
+import { Field } from '@/components/kiln/field';
+import { KeyValue } from '@/components/kiln/key-value';
+import { Menu } from '@/components/kiln/menu';
+import { PageHeader, Section } from '@/components/kiln/section';
+import { Select } from '@/components/kiln/select';
+import { Tag } from '@/components/kiln/tag';
+import { toast } from '@/components/kiln/toast';
+import { Head, Link, router, useForm, usePoll } from '@inertiajs/react';
+import { Network, Plus, RefreshCw, Trash2, Unplug } from 'lucide-react';
+import { useState, type FormEventHandler } from 'react';
 import { ApplyStatusBadge } from '../components/network-ui';
 import { type ApplyStatus } from '../types';
 
@@ -39,32 +40,21 @@ interface Props {
 export default function PrivateNetwork({ network, members, availableServers, can }: Props) {
     const [adding, setAdding] = useState(false);
     const [removing, setRemoving] = useState<Member | null>(null);
+    const [removeBusy, setRemoveBusy] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | undefined>();
     const addForm = useForm({ server_id: '' });
-    const deleteForm = useForm({ name: '' });
-    const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Network', href: '/network' },
-        { title: network.name, href: `/network/private-networks/${network.id}` },
-    ];
 
     const converging = members.some((member) => member.status === 'applying' || (member.key_status === 'pending' && member.status !== 'failed'));
-
-    // Refresh while any member is still converging (key delivery / wireguard apply in flight).
-    useEffect(() => {
-        if (!converging) {
-            return;
-        }
-
-        const timer = window.setInterval(() => router.reload({ only: ['members'] }), 3000);
-
-        return () => window.clearInterval(timer);
-    }, [converging]);
+    usePoll(converging ? 3_000 : 60_000, { only: ['members', 'availableServers'] });
 
     const add: FormEventHandler = (event) => {
         event.preventDefault();
+        const server = availableServers.find((item) => item.id === addForm.data.server_id);
         addForm.post(`/network/private-networks/${network.id}/members`, {
             preserveScroll: true,
             onSuccess: () => {
+                toast.success(`Adding ${server?.name ?? 'server'}`, 'WireGuard is configured on every member.');
                 addForm.reset();
                 setAdding(false);
             },
@@ -73,192 +63,222 @@ export default function PrivateNetwork({ network, members, availableServers, can
 
     const remove = () => {
         if (!removing) return;
-        router.delete(`/network/private-networks/${network.id}/members/${removing.id}`, { preserveScroll: true, onFinish: () => setRemoving(null) });
+        router.delete(`/network/private-networks/${network.id}/members/${removing.id}`, {
+            preserveScroll: true,
+            onStart: () => setRemoveBusy(true),
+            onSuccess: () => toast.success(`Removing ${removing.server_name}`),
+            onFinish: () => {
+                setRemoveBusy(false);
+                setRemoving(null);
+            },
+        });
     };
 
-    const destroy: FormEventHandler = (event) => {
-        event.preventDefault();
-        deleteForm.delete(`/network/private-networks/${network.id}`);
-    };
+    const destroy = (name: string) =>
+        new Promise<void>((resolve) => {
+            router.delete(`/network/private-networks/${network.id}`, {
+                data: { name },
+                onError: (errors) => setDeleteError(errors.name),
+                onFinish: () => resolve(),
+            });
+        });
+
+    const reapply = () =>
+        router.post(
+            `/network/private-networks/${network.id}/apply`,
+            {},
+            { preserveScroll: true, onSuccess: () => toast.success('Re-applying WireGuard') },
+        );
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
+        <AppShell
+            breadcrumbs={[
+                { title: 'Infrastructure', href: '/servers' },
+                { title: 'Private networks', href: '/network' },
+                { title: network.name, href: `/network/private-networks/${network.id}` },
+            ]}
+        >
             <Head title={network.name} />
-            <div className="space-y-6 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                    <Heading title={network.name} description={`${network.cidr} · interface ${network.interface} · UDP ${network.listen_port}`} />
-                    {can.manage && (
-                        <div className="flex gap-2">
-                            <Button
-                                variant="outline"
-                                onClick={() => router.post(`/network/private-networks/${network.id}/apply`, {}, { preserveScroll: true })}
-                            >
-                                <RefreshCw /> Re-apply
-                            </Button>
-                            <Button onClick={() => setAdding(true)} disabled={availableServers.length === 0}>
-                                <Plus /> Add server
-                            </Button>
-                        </div>
-                    )}
-                </div>
+            <div className="grid gap-6">
+                <PageHeader
+                    title={
+                        <span className="flex items-center gap-2">
+                            <Network className="text-fg-faint size-4" aria-hidden />
+                            {network.name}
+                        </span>
+                    }
+                    description={`WireGuard mesh · ${members.length} member${members.length === 1 ? '' : 's'}`}
+                    actions={
+                        can.manage && (
+                            <>
+                                <Button variant="primary" icon={<Plus />} onClick={() => setAdding(true)} disabled={availableServers.length === 0}>
+                                    Add server
+                                </Button>
+                                <Menu
+                                    label="Network actions"
+                                    actions={[
+                                        { label: 'Re-apply', icon: <RefreshCw />, onSelect: reapply, disabled: members.length === 0 },
+                                        { type: 'separator' },
+                                        { label: 'Delete network…', icon: <Trash2 />, danger: true, onSelect: () => setDeleting(true) },
+                                    ]}
+                                />
+                            </>
+                        )
+                    }
+                />
 
-                {members.length === 0 ? (
-                    <Card>
-                        <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
-                            <Network className="text-muted-foreground size-10" />
-                            <p className="font-medium">No servers in this network</p>
-                            <p className="text-muted-foreground text-sm">
-                                Each server you add gets a private address and a tunnel to every other member.
-                            </p>
-                        </CardContent>
-                    </Card>
-                ) : (
-                    <Card className="py-0">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Server</TableHead>
-                                    <TableHead>Private address</TableHead>
-                                    <TableHead>Endpoint</TableHead>
-                                    <TableHead>Public key</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    {can.manage && <TableHead className="w-12" />}
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {members.map((member) => (
-                                    <TableRow key={member.id}>
-                                        <TableCell className="font-medium">
-                                            <Link href={`/servers/${member.server_id}`} className="hover:underline">
-                                                {member.server_name}
-                                            </Link>
-                                        </TableCell>
-                                        <TableCell className="font-mono text-xs">{member.address}</TableCell>
-                                        <TableCell className="font-mono text-xs">
-                                            {member.public_ipv4 ? `${member.public_ipv4}:${network.listen_port}` : '—'}
-                                        </TableCell>
-                                        <TableCell className="max-w-48 truncate font-mono text-xs" title={member.public_key}>
-                                            {member.public_key}
-                                        </TableCell>
-                                        <TableCell>
-                                            <div className="flex flex-col items-start gap-1">
-                                                <ApplyStatusBadge status={member.status} />
-                                                {member.key_status !== 'installed' && (
-                                                    <span className="text-muted-foreground text-xs">key {member.key_status}</span>
-                                                )}
-                                                {member.error && <span className="text-xs text-red-600 dark:text-red-400">{member.error}</span>}
-                                            </div>
-                                        </TableCell>
-                                        {can.manage && (
-                                            <TableCell>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() => setRemoving(member)}
-                                                    aria-label={`Remove ${member.server_name}`}
-                                                >
-                                                    <Trash2 />
-                                                </Button>
-                                            </TableCell>
+                <Section title="Configuration">
+                    <KeyValue
+                        columns={3}
+                        items={[
+                            { label: 'CIDR', value: network.cidr, mono: true, copy: network.cidr },
+                            { label: 'Interface', value: network.interface, mono: true },
+                            { label: 'Listen port', value: `UDP ${network.listen_port}` },
+                        ]}
+                    />
+                </Section>
+
+                <Section title="Members" description="Each member has a private address and a tunnel to every other member." bare>
+                    <DataTable
+                        label="Members"
+                        rows={members}
+                        rowKey={(member) => member.id}
+                        defaultSort={{ column: 'server', direction: 'asc' }}
+                        empty={{
+                            icon: <Network />,
+                            title: 'No members yet',
+                            description: 'Add at least two servers to route traffic between them privately.',
+                            action:
+                                can.manage && availableServers.length > 0 ? (
+                                    <Button variant="primary" size="sm" icon={<Plus />} onClick={() => setAdding(true)}>
+                                        Add server
+                                    </Button>
+                                ) : undefined,
+                        }}
+                        columns={[
+                            {
+                                id: 'server',
+                                header: 'Server',
+                                sortValue: (member) => member.server_name,
+                                cell: (member) => (
+                                    <Link href={`/servers/${member.server_id}/network`} className="text-fg font-medium hover:underline">
+                                        {member.server_name}
+                                    </Link>
+                                ),
+                            },
+                            {
+                                id: 'address',
+                                header: 'Address',
+                                sortValue: (member) => member.address,
+                                cell: (member) => <span className="font-mono text-xs">{member.address}</span>,
+                            },
+                            {
+                                id: 'endpoint',
+                                header: 'Endpoint',
+                                hideOnMobile: true,
+                                cell: (member) => (
+                                    <span className="text-fg-muted font-mono text-xs">
+                                        {member.public_ipv4 ? `${member.public_ipv4}:${network.listen_port}` : '—'}
+                                    </span>
+                                ),
+                            },
+                            {
+                                id: 'key',
+                                header: 'Public key',
+                                hideOnMobile: true,
+                                cell: (member) => (
+                                    <span className="text-fg-faint block max-w-40 truncate font-mono text-xs" title={member.public_key}>
+                                        {member.public_key || '—'}
+                                    </span>
+                                ),
+                            },
+                            {
+                                id: 'status',
+                                header: 'Status',
+                                cell: (member) => (
+                                    <span className="flex flex-wrap items-center gap-1.5">
+                                        <ApplyStatusBadge status={member.status} />
+                                        {member.key_status !== 'installed' && (
+                                            <Tag tone={member.key_status === 'failed' ? 'danger' : 'info'}>key {member.key_status}</Tag>
                                         )}
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </Card>
-                )}
-
-                <p className="text-muted-foreground text-xs">
-                    Private keys are generated for each server, installed on the host and then discarded by Kiln. Firewalls of members accept
-                    WireGuard traffic from peers automatically.
-                </p>
-
-                {can.manage && (
-                    <Card className="border-red-500/30">
-                        <CardContent className="flex flex-wrap items-center justify-between gap-4">
-                            <div>
-                                <p className="font-medium">Delete network</p>
-                                <p className="text-muted-foreground text-sm">Tears down the WireGuard interface on every member.</p>
-                            </div>
-                            <Button variant="destructive" onClick={() => setDeleting(true)}>
-                                Delete network
-                            </Button>
-                        </CardContent>
-                    </Card>
-                )}
+                                        {member.error && <span className="text-danger text-xs">{member.error}</span>}
+                                    </span>
+                                ),
+                            },
+                        ]}
+                        rowActions={
+                            can.manage
+                                ? (member) => [{ label: 'Remove from network', icon: <Unplug />, danger: true, onSelect: () => setRemoving(member) }]
+                                : undefined
+                        }
+                    />
+                </Section>
             </div>
 
-            <Dialog open={adding} onOpenChange={setAdding}>
-                <DialogContent>
-                    <form onSubmit={add} className="space-y-4">
-                        <DialogHeader>
-                            <DialogTitle>Add server</DialogTitle>
-                            <DialogDescription>Only active servers can join.</DialogDescription>
-                        </DialogHeader>
-                        <div className="grid gap-2">
-                            <Label>Server</Label>
-                            <Select value={addForm.data.server_id} onValueChange={(value) => addForm.setData('server_id', value)}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Choose a server" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {availableServers.map((server) => (
-                                        <SelectItem key={server.id} value={server.id}>
-                                            {server.name} · {server.type_label}
-                                            {server.ipv4 ? ` · ${server.ipv4}` : ''}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <InputError message={addForm.errors.server_id} />
-                        </div>
-                        <DialogFooter>
-                            <Button type="button" variant="ghost" onClick={() => setAdding(false)}>
-                                Cancel
-                            </Button>
-                            <Button disabled={addForm.processing || addForm.data.server_id === ''}>Add server</Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
+            <Dialog
+                open={adding}
+                onOpenChange={setAdding}
+                title={`Add a server to ${network.name}`}
+                description="Only active servers that are not yet members are listed."
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setAdding(false)}>
+                            Cancel
+                        </Button>
+                        <Button variant="primary" type="submit" form="add-member" loading={addForm.processing} disabled={!addForm.data.server_id}>
+                            Add server
+                        </Button>
+                    </>
+                }
+            >
+                <form id="add-member" onSubmit={add} className="grid gap-4">
+                    <Field label="Server" error={addForm.errors.server_id}>
+                        <Select
+                            value={addForm.data.server_id || undefined}
+                            onValueChange={(value) => addForm.setData('server_id', value)}
+                            placeholder="Choose a server"
+                            options={availableServers.map((server) => ({
+                                value: server.id,
+                                label: server.name,
+                                description: [server.type_label, server.ipv4].filter(Boolean).join(' · '),
+                            }))}
+                        />
+                    </Field>
+                </form>
             </Dialog>
 
-            <Dialog open={removing !== null} onOpenChange={(value) => !value && setRemoving(null)}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Remove {removing?.server_name}?</DialogTitle>
-                        <DialogDescription>Its WireGuard interface is removed and the other members stop peering with it.</DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
+            <Dialog
+                open={removing !== null}
+                onOpenChange={(open) => !open && setRemoving(null)}
+                size="sm"
+                title={`Remove ${removing?.server_name}?`}
+                footer={
+                    <>
                         <Button variant="ghost" onClick={() => setRemoving(null)}>
                             Cancel
                         </Button>
-                        <Button variant="destructive" onClick={remove}>
-                            Remove server
+                        <Button variant="danger" onClick={remove} loading={removeBusy}>
+                            Remove
                         </Button>
-                    </DialogFooter>
-                </DialogContent>
+                    </>
+                }
+            >
+                <p className="text-fg-muted text-sm">The server loses its private address and the other members drop their tunnel to it.</p>
             </Dialog>
 
-            <Dialog open={deleting} onOpenChange={setDeleting}>
-                <DialogContent>
-                    <form onSubmit={destroy} className="space-y-4">
-                        <DialogHeader>
-                            <DialogTitle>Delete {network.name}?</DialogTitle>
-                            <DialogDescription>Type the network name to confirm.</DialogDescription>
-                        </DialogHeader>
-                        <Input value={deleteForm.data.name} onChange={(e) => deleteForm.setData('name', e.target.value)} placeholder={network.name} />
-                        <InputError message={deleteForm.errors.name} />
-                        <DialogFooter>
-                            <Button type="button" variant="ghost" onClick={() => setDeleting(false)}>
-                                Cancel
-                            </Button>
-                            <Button variant="destructive" disabled={deleteForm.processing}>
-                                Delete network
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
-        </AppLayout>
+            <ConfirmDestructive
+                open={deleting}
+                onOpenChange={(open) => {
+                    setDeleting(open);
+                    if (!open) setDeleteError(undefined);
+                }}
+                title={`Delete ${network.name}?`}
+                description="WireGuard is removed from every member. Services talking over the private network lose connectivity."
+                confirmText={network.name}
+                confirmLabel="Delete network"
+                onConfirm={destroy}
+                error={deleteError}
+            />
+        </AppShell>
     );
 }

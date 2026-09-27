@@ -7,6 +7,7 @@ use Kiln\Terminal\Http\Controllers\StreamController;
 
 Route::middleware(['auth', 'org'])->group(function () {
     Route::get('terminal', [SessionController::class, 'index'])->name('terminal.index');
+    Route::get('servers/{server}/terminal', [SessionController::class, 'server'])->name('terminal.server');
     Route::post('terminal/servers/{server}/sessions', [SessionController::class, 'store'])->name('terminal.sessions.store');
     Route::get('terminal/sessions/{session}', [SessionController::class, 'show'])->name('terminal.sessions.show');
     Route::patch('terminal/sessions/{session}/share', [SessionController::class, 'share'])->name('terminal.sessions.share');

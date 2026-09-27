@@ -1,7 +1,7 @@
-import { Badge } from '@/components/ui/badge';
+import { LogViewer, type LogLine } from '@/components/kiln/log-viewer';
+import { StatusBadge } from '@/components/kiln/status';
 import { useEchoChannel } from '@/hooks/use-echo-channel';
-import { cn } from '@/lib/utils';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export type CommandStatus = 'queued' | 'delivered' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'cancelled';
 
@@ -39,22 +39,20 @@ interface LivePayload {
     events: LiveEvent[];
 }
 
-const STATUS_STYLES: Record<CommandStatus, string> = {
-    queued: 'bg-info-soft text-info',
-    delivered: 'bg-info-soft text-info',
-    running: 'bg-warning-soft text-warning',
-    succeeded: 'bg-success-soft text-success',
-    failed: 'bg-danger-soft text-danger',
-    timed_out: 'bg-danger-soft text-danger',
-    cancelled: 'bg-faint-soft text-fg-muted',
+const STATUS_KEYS: Record<CommandStatus, { status: string; label: string }> = {
+    queued: { status: 'queued', label: 'Queued' },
+    delivered: { status: 'queued', label: 'Delivered' },
+    running: { status: 'running', label: 'Running' },
+    succeeded: { status: 'succeeded', label: 'Succeeded' },
+    failed: { status: 'failed', label: 'Failed' },
+    timed_out: { status: 'failed', label: 'Timed out' },
+    cancelled: { status: 'cancelled', label: 'Cancelled' },
 };
 
 export function CommandStatusBadge({ status, className }: { status: CommandStatus; className?: string }) {
-    return (
-        <Badge variant="outline" className={cn('border-transparent capitalize', STATUS_STYLES[status], className)}>
-            {status.replace('_', ' ')}
-        </Badge>
-    );
+    const spec = STATUS_KEYS[status];
+
+    return <StatusBadge status={spec.status} label={spec.label} className={className} />;
 }
 
 async function fetchCommand(commandId: string, after: number): Promise<CommandDetails> {
@@ -88,8 +86,6 @@ export function CommandLog({ commandId, className, onStatusChange }: CommandLogP
     const [error, setError] = useState<string | null>(null);
     const [meta, setMeta] = useState<{ exit_code: number | null; error: string | null }>({ exit_code: null, error: null });
     const lastSeq = useRef(-1);
-    const pane = useRef<HTMLDivElement>(null);
-    const stick = useRef(true);
     const statusCallback = useRef(onStatusChange);
     statusCallback.current = onStatusChange;
 
@@ -164,48 +160,46 @@ export function CommandLog({ commandId, className, onStatusChange }: CommandLogP
         return () => window.clearInterval(timer);
     }, [live, commandId, terminal, load]);
 
-    useEffect(() => {
-        if (stick.current && pane.current) {
-            pane.current.scrollTop = pane.current.scrollHeight;
-        }
-    }, [lines]);
+    const logLines = useMemo<LogLine[]>(() => {
+        // Agent output arrives in chunks; split into lines, keeping stderr lines marked.
+        const out: LogLine[] = [];
+        let carry = '';
+        let carryStream = 'stdout';
 
-    const onScroll = () => {
-        const el = pane.current;
+        lines.forEach((line) => {
+            const parts = (carry + line.data).split('\n');
+            carry = parts.pop() ?? '';
+            carryStream = line.stream;
+            parts.forEach((text) => out.push({ text, level: line.stream === 'stderr' ? 'warning' : undefined }));
+        });
 
-        if (el) {
-            stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-        }
-    };
+        if (carry !== '') out.push({ text: carry, level: carryStream === 'stderr' ? 'warning' : undefined });
+        if (meta.error && terminal) out.push({ text: meta.error, level: 'error' });
+        if (error) out.push({ text: `Could not load output: ${error}`, level: 'error' });
+
+        return out;
+    }, [lines, meta.error, terminal, error]);
 
     if (!commandId) {
         return null;
     }
 
     return (
-        <div className={cn('overflow-hidden rounded-lg border', className)}>
-            <div className="bg-muted/40 flex items-center justify-between gap-2 border-b px-3 py-2 text-xs">
-                <span className="text-muted-foreground font-mono">{commandId}</span>
-                <div className="flex items-center gap-2">
-                    {meta.exit_code !== null && <span className="text-muted-foreground">exit {meta.exit_code}</span>}
-                    {status && <CommandStatusBadge status={status} />}
-                </div>
-            </div>
-            <div
-                ref={pane}
-                onScroll={onScroll}
-                className="bg-canvas text-fg max-h-96 min-h-24 overflow-auto p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap"
-                data-testid="command-log"
-            >
-                {lines.length === 0 && !error && <span className="text-fg-faint">{terminal ? 'No output.' : 'Waiting for output…'}</span>}
-                {lines.map((line) => (
-                    <span key={line.seq} className={line.stream === 'stderr' ? 'text-warning' : undefined}>
-                        {line.data}
+        <div className={className} data-testid="command-log">
+            <LogViewer
+                lines={logLines}
+                label="Command output"
+                filename={`command-${commandId}.log`}
+                streaming={status !== null && !terminal}
+                emptyText={terminal ? 'No output.' : 'Waiting for output…'}
+                height={Math.min(420, Math.max(180, logLines.length * 20 + 56))}
+                toolbar={
+                    <span className="flex items-center gap-2">
+                        {meta.exit_code !== null && <span className="text-fg-faint tabular text-xs">exit {meta.exit_code}</span>}
+                        {status && <CommandStatusBadge status={status} />}
                     </span>
-                ))}
-                {meta.error && terminal && <div className="text-danger mt-2">{meta.error}</div>}
-                {error && <div className="text-danger">Could not load output: {error}</div>}
-            </div>
+                }
+            />
         </div>
     );
 }

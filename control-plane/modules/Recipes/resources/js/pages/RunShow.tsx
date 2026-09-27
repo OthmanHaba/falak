@@ -1,16 +1,15 @@
 import { CommandLog } from '@/components/command-log';
-import Heading from '@/components/heading';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { AppShell } from '@/components/kiln/app-shell';
+import { Button } from '@/components/kiln/button';
+import { RelativeTime } from '@/components/kiln/relative-time';
+import { PageHeader, Section } from '@/components/kiln/section';
+import { Tag } from '@/components/kiln/tag';
 import { useEchoChannel } from '@/hooks/use-echo-channel';
-import AppLayout from '@/layouts/app-layout';
+import { cn } from '@/lib/utils';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link } from '@inertiajs/react';
-import { formatDistanceToNow } from 'date-fns';
 import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { formatDuration, RunStatusBadge, ScriptBlock } from '../components/run-ui';
 import { type RunStatus, type RunSummary, type RunTargetRow } from '../types';
 
@@ -37,13 +36,24 @@ const FINISHED: RunStatus[] = ['succeeded', 'failed', 'partial'];
 export default function RunShow({ run, targets: initialTargets, can }: Props) {
     const [status, setStatus] = useState<RunStatus>(run.status);
     const [targets, setTargets] = useState<RunTargetRow[]>(initialTargets);
-    const [expanded, setExpanded] = useState<Set<string>>(() => new Set(initialTargets.length === 1 ? [initialTargets[0].id] : []));
+    const [expanded, setExpanded] = useState<Set<string>>(
+        () => new Set(initialTargets.length === 1 ? [initialTargets[0].id] : initialTargets.filter((t) => t.status === 'failed').map((t) => t.id)),
+    );
+    const [showScript, setShowScript] = useState(false);
 
-    const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Recipes', href: '/settings/recipes' },
-        { title: 'Runs', href: '/recipes/runs' },
-        { title: run.recipe_name, href: `/recipes/runs/${run.id}` },
-    ];
+    const single = initialTargets.length === 1 ? initialTargets[0] : null;
+    const breadcrumbs: BreadcrumbItem[] = single
+        ? [
+              { title: 'Infrastructure', href: '/servers' },
+              { title: single.server_name, href: `/servers/${single.server_id}` },
+              { title: 'Recipes', href: `/servers/${single.server_id}/recipes` },
+              { title: run.recipe_name, href: `/recipes/runs/${run.id}` },
+          ]
+        : [
+              { title: 'Infrastructure', href: '/servers' },
+              { title: 'Recipe runs', href: '/recipes/runs' },
+              { title: run.recipe_name, href: `/recipes/runs/${run.id}` },
+          ];
 
     const load = useCallback(async () => {
         const response = await fetch(route('recipes.runs.status', run.id), {
@@ -82,114 +92,124 @@ export default function RunShow({ run, targets: initialTargets, can }: Props) {
     const toggle = (id: string) =>
         setExpanded((current) => {
             const next = new Set(current);
-
-            if (next.has(id)) {
-                next.delete(id);
-            } else {
-                next.add(id);
-            }
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
 
             return next;
         });
 
     const rerunHref = run.recipe_id ? route('recipes.run', run.recipe_id) : run.builtin ? route('recipes.builtin.run', run.builtin) : null;
+    const rerunWithServers = rerunHref ? `${rerunHref}?server=${targets.map((t) => t.server_id).join(',')}` : null;
     const counts = {
         succeeded: targets.filter((t) => t.status === 'succeeded').length,
         failed: targets.filter((t) => t.status === 'failed' || t.status === 'unavailable').length,
+        running: targets.filter((t) => t.status === 'running' || t.status === 'queued').length,
     };
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
+        <AppShell breadcrumbs={breadcrumbs}>
             <Head title={`${run.recipe_name} run`} />
-            <div className="space-y-6 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                        <Heading
-                            title={run.recipe_name}
-                            description={`Started ${formatDistanceToNow(new Date(run.created_at), { addSuffix: true })} · runs as ${run.user} · timeout ${run.timeout_s}s`}
-                        />
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <span className="text-muted-foreground text-sm tabular-nums">
-                            {counts.succeeded} ok · {counts.failed} failed · {targets.length} total
+            <div className="grid gap-6">
+                <PageHeader
+                    title={
+                        <span className="flex items-center gap-2.5">
+                            {run.recipe_name}
+                            <RunStatusBadge status={status} />
                         </span>
-                        <RunStatusBadge status={status} />
-                        {can.run && rerunHref && (
-                            <Button variant="outline" size="sm" asChild>
-                                <Link href={rerunHref}>
-                                    <RotateCcw /> Run again
+                    }
+                    description={
+                        <>
+                            Started <RelativeTime value={run.created_at} /> · runs as <span className="font-mono">{run.user}</span> · timeout{' '}
+                            {run.timeout_s}s
+                        </>
+                    }
+                    actions={
+                        can.run &&
+                        rerunWithServers && (
+                            <Button asChild>
+                                <Link href={rerunWithServers}>
+                                    <RotateCcw aria-hidden /> Run again
                                 </Link>
                             </Button>
-                        )}
-                    </div>
+                        )
+                    }
+                />
+
+                <div className="flex flex-wrap items-center gap-2 text-sm" aria-live="polite">
+                    <Tag tone="success">
+                        <span className="tabular">{counts.succeeded}</span> succeeded
+                    </Tag>
+                    {counts.failed > 0 && (
+                        <Tag tone="danger">
+                            <span className="tabular">{counts.failed}</span> failed
+                        </Tag>
+                    )}
+                    {counts.running > 0 && (
+                        <Tag tone="warning">
+                            <span className="tabular">{counts.running}</span> in progress
+                        </Tag>
+                    )}
+                    <span className="text-fg-faint text-xs">
+                        of {targets.length} server{targets.length === 1 ? '' : 's'}
+                    </span>
                 </div>
 
-                <Card className="py-0">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead className="w-8" />
-                                <TableHead>Server</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Exit code</TableHead>
-                                <TableHead>Duration</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {targets.map((target) => {
-                                const open = expanded.has(target.id);
+                <ul className="border-border bg-surface-1 divide-border divide-y overflow-hidden rounded-lg border">
+                    {targets.map((target) => {
+                        const open = expanded.has(target.id);
 
-                                return (
-                                    <Fragment key={target.id}>
-                                        <TableRow className="cursor-pointer" onClick={() => toggle(target.id)}>
-                                            <TableCell>{open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</TableCell>
-                                            <TableCell className="font-medium">{target.server_name}</TableCell>
-                                            <TableCell>
-                                                <RunStatusBadge status={target.status} />
-                                            </TableCell>
-                                            <TableCell className="font-mono text-xs">{target.exit_code ?? '—'}</TableCell>
-                                            <TableCell className="text-sm tabular-nums">{formatDuration(target.duration_ms)}</TableCell>
-                                        </TableRow>
-                                        {open && (
-                                            <TableRow>
-                                                <TableCell colSpan={5} className="bg-muted/20 p-3 whitespace-normal">
-                                                    {target.error && <p className="mb-2 text-sm text-red-600 dark:text-red-400">{target.error}</p>}
-                                                    {target.command_id && can.viewOutput ? (
-                                                        <CommandLog commandId={target.command_id} />
-                                                    ) : (
-                                                        !target.error && <p className="text-muted-foreground text-sm">No output available.</p>
-                                                    )}
-                                                </TableCell>
-                                            </TableRow>
-                                        )}
-                                    </Fragment>
-                                );
-                            })}
-                        </TableBody>
-                    </Table>
-                </Card>
-
-                <Collapsible>
-                    <Card>
-                        <CardHeader>
-                            <CollapsibleTrigger asChild>
-                                <button type="button" className="flex items-center gap-2 text-left">
-                                    <ChevronRight className="size-4" />
-                                    <CardTitle className="text-base">Script</CardTitle>
-                                    {run.env_keys.length > 0 && (
-                                        <span className="text-muted-foreground text-xs">variables: {run.env_keys.join(', ')}</span>
+                        return (
+                            <li key={target.id}>
+                                <button
+                                    type="button"
+                                    onClick={() => toggle(target.id)}
+                                    aria-expanded={open}
+                                    className="hover:bg-surface-2 flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors duration-150"
+                                >
+                                    {open ? (
+                                        <ChevronDown className="text-fg-faint size-4 shrink-0" aria-hidden />
+                                    ) : (
+                                        <ChevronRight className="text-fg-faint size-4 shrink-0" aria-hidden />
                                     )}
+                                    <span className="text-fg min-w-0 flex-1 truncate text-sm font-medium">{target.server_name}</span>
+                                    <RunStatusBadge status={target.status} />
+                                    <span className="text-fg-faint hidden w-16 text-right font-mono text-xs sm:inline">
+                                        {target.exit_code !== null ? `exit ${target.exit_code}` : ''}
+                                    </span>
+                                    <span className="text-fg-muted tabular w-16 text-right text-xs">{formatDuration(target.duration_ms)}</span>
                                 </button>
-                            </CollapsibleTrigger>
-                        </CardHeader>
-                        <CollapsibleContent>
-                            <CardContent>
-                                <ScriptBlock script={run.script} />
-                            </CardContent>
-                        </CollapsibleContent>
-                    </Card>
-                </Collapsible>
+                                {open && (
+                                    <div className={cn('grid gap-2 px-3 pb-3')}>
+                                        {target.error && <p className="text-danger text-sm">{target.error}</p>}
+                                        {target.command_id && can.viewOutput ? (
+                                            <CommandLog commandId={target.command_id} />
+                                        ) : (
+                                            !target.error && (
+                                                <p className="text-fg-muted text-sm">
+                                                    {can.viewOutput ? 'No output yet.' : 'You need the fleet.commands.view permission to see output.'}
+                                                </p>
+                                            )
+                                        )}
+                                    </div>
+                                )}
+                            </li>
+                        );
+                    })}
+                </ul>
+
+                <Section
+                    title="Script"
+                    description={run.env_keys.length > 0 ? `Variables: ${run.env_keys.join(', ')}` : undefined}
+                    bare
+                    aside={
+                        <Button variant="ghost" size="sm" onClick={() => setShowScript((value) => !value)} aria-expanded={showScript}>
+                            {showScript ? 'Hide' : 'Show'}
+                        </Button>
+                    }
+                >
+                    {showScript && <ScriptBlock script={run.script} title={`${run.user} · bash`} />}
+                </Section>
             </div>
-        </AppLayout>
+        </AppShell>
     );
 }

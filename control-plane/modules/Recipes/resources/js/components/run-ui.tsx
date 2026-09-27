@@ -1,23 +1,21 @@
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { CodeBlock } from '@/components/kiln/code-block';
+import { StatusBadge } from '@/components/kiln/status';
 import { type RunStatus, type TargetStatus } from '../types';
 
-const STYLES: Record<RunStatus | TargetStatus, string> = {
-    pending: 'bg-muted text-muted-foreground',
-    queued: 'bg-muted text-muted-foreground',
-    running: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
-    succeeded: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-    failed: 'bg-red-500/15 text-red-700 dark:text-red-300',
-    partial: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-    unavailable: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+const STATUS: Record<RunStatus | TargetStatus, { status: string; label: string; tone?: 'warning' }> = {
+    pending: { status: 'queued', label: 'Pending' },
+    queued: { status: 'queued', label: 'Queued' },
+    running: { status: 'running', label: 'Running' },
+    succeeded: { status: 'succeeded', label: 'Succeeded' },
+    failed: { status: 'failed', label: 'Failed' },
+    partial: { status: 'degraded', label: 'Partial', tone: 'warning' },
+    unavailable: { status: 'degraded', label: 'Unavailable', tone: 'warning' },
 };
 
 export function RunStatusBadge({ status, className }: { status: RunStatus | TargetStatus; className?: string }) {
-    return (
-        <Badge variant="outline" className={cn('border-transparent capitalize', STYLES[status], className)}>
-            {status}
-        </Badge>
-    );
+    const spec = STATUS[status];
+
+    return <StatusBadge status={spec.status} label={spec.label} tone={spec.tone} className={className} />;
 }
 
 export function formatDuration(ms: number | null): string {
@@ -38,10 +36,6 @@ export function formatDuration(ms: number | null): string {
     return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
 }
 
-export function ScriptBlock({ script, className }: { script: string; className?: string }) {
-    return (
-        <pre className={cn('max-h-80 overflow-auto rounded-md bg-neutral-950 p-3 font-mono text-xs leading-relaxed text-neutral-100', className)}>
-            {script}
-        </pre>
-    );
+export function ScriptBlock({ script, title, className }: { script: string; title?: string; className?: string }) {
+    return <CodeBlock code={script} title={title} maxHeight={320} className={className} />;
 }
