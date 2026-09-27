@@ -84,16 +84,6 @@ registerServiceActions(
 // Stand-ins until the owning modules ship these tabs (their registration replaces these).
 registerServiceTabs(
     pendingTab({
-        id: 'settings',
-        title: 'Settings',
-        order: 900,
-        kinds: ['site'],
-        module: 'Sites',
-        permission: 'sites.view',
-        description: 'Source, build, deploy, networking, servers, Laravel and commands.',
-        legacy: '/sites/{id}/settings',
-    }),
-    pendingTab({
         id: 'metrics',
         title: 'Metrics',
         order: 400,

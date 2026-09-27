@@ -186,6 +186,29 @@ export interface ServiceAction {
     separated?: boolean;
 }
 
+/**
+ * A block of the service panel's Settings tab (§5.1): one long page with anchored sections and a left mini-nav.
+ * Several modules contribute to one section (e.g. Deploy = Deployments' strategy/health check + Sites' deploy script),
+ * so each registration names its `section` (anchor + nav entry) and is ordered inside it.
+ *
+ * Sections and their order: source 100 · build 200 · deploy 300 · networking 400 · servers 500 · laravel 600 ·
+ * commands 700 · danger 900. Registrations: `order` = section base + position (e.g. deploy 310, 320 …).
+ */
+export interface ServiceSettingsSection {
+    /** Unique id, e.g. 'sites.deploy-script'. */
+    id: string;
+    kinds: ServiceKind[];
+    /** Anchor / nav id of the section this block belongs to. */
+    section: string;
+    /** Nav label of the section (the first block of the section provides it). */
+    sectionTitle: string;
+    order: number;
+    permission?: string;
+    /** Hide the block (e.g. Laravel only for Laravel sites). */
+    when?: (ctx: ServicePanelContext) => boolean;
+    component: ComponentType<ServiceTabProps>;
+}
+
 const navItems = new Map<string, ModuleNavItem>();
 const settingsItems = new Map<string, SettingsNavItem>();
 const headerItems = new Map<string, HeaderItem>();
@@ -193,6 +216,7 @@ const commandProviders = new Map<string, CommandProvider>();
 const siteTabs = new Map<string, SiteTab>();
 const serviceTabs = new Map<string, ServiceTab>();
 const serviceActions = new Map<string, ServiceAction>();
+const settingsSections = new Map<string, ServiceSettingsSection>();
 
 export function registerNavigation(...items: ModuleNavItem[]): void {
     items.forEach((item) => navItems.set(item.id, item));
@@ -254,6 +278,20 @@ export function serviceActionsFor(ctx: ServicePanelContext): ServiceAction[] {
     return [...serviceActions.values()]
         .filter(
             (action) => action.kinds.includes(ctx.service.kind) && (!action.permission || ctx.can(action.permission)) && (action.when?.(ctx) ?? true),
+        )
+        .sort((a, b) => a.order - b.order);
+}
+
+export function registerServiceSettingsSections(...sections: ServiceSettingsSection[]): void {
+    sections.forEach((section) => settingsSections.set(section.id, section));
+}
+
+/** Visible settings blocks of a service, ordered; group them by `section` for the mini-nav. */
+export function serviceSettingsSectionsFor(ctx: ServicePanelContext): ServiceSettingsSection[] {
+    return [...settingsSections.values()]
+        .filter(
+            (section) =>
+                section.kinds.includes(ctx.service.kind) && (!section.permission || ctx.can(section.permission)) && (section.when?.(ctx) ?? true),
         )
         .sort((a, b) => a.order - b.order);
 }

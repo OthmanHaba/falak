@@ -1,4 +1,4 @@
-import { registerServiceActions, registerServiceTabs, registerSiteTabs } from '@/lib/registry';
+import { registerServiceActions, registerServiceSettingsSections, registerServiceTabs, registerSiteTabs } from '@/lib/registry';
 import { Rocket, RotateCcw, RotateCw } from 'lucide-react';
 import { lazy } from 'react';
 import { deploy } from './panel/api';
@@ -22,6 +22,38 @@ registerServiceTabs({
     permission: 'deployments.view',
     component: DeploymentsTab,
 });
+
+// Settings tab blocks (§5.1): push to deploy (Source), strategy / retention / health check and the deploy hook (Deploy).
+const settings = () => import('./panel/settings');
+registerServiceSettingsSections(
+    {
+        id: 'deployments.push-to-deploy',
+        kinds: ['site'],
+        section: 'source',
+        sectionTitle: 'Source',
+        order: 110,
+        permission: 'deployments.view',
+        component: lazy(() => settings().then((module) => ({ default: module.PushToDeploySettings }))),
+    },
+    {
+        id: 'deployments.strategy',
+        kinds: ['site'],
+        section: 'deploy',
+        sectionTitle: 'Deploy',
+        order: 310,
+        permission: 'deployments.view',
+        component: lazy(() => settings().then((module) => ({ default: module.DeployStrategySettings }))),
+    },
+    {
+        id: 'deployments.hook',
+        kinds: ['site'],
+        section: 'deploy',
+        sectionTitle: 'Deploy',
+        order: 340,
+        permission: 'deployments.view',
+        component: lazy(() => settings().then((module) => ({ default: module.DeployHookSettings }))),
+    },
+);
 
 registerServiceActions(
     {

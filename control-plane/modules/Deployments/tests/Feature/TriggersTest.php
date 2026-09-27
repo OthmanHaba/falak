@@ -95,20 +95,20 @@ it('deploys from the site page and shows the stacked queue', function () {
     $this->post("/sites/{$world->site->id}/deployments", ['branch' => 'main'])->assertRedirect();
     $this->post("/sites/{$world->site->id}/deployments")->assertRedirect();
 
-    $this->get("/sites/{$world->site->id}/deployments")->assertOk()->assertInertia(fn ($page) => $page
-        ->component('Deployments/Index', false)
-        ->where('active.status', 'building')
-        ->has('queued', 1)
-        ->where('queued.0.number', 2)
-        ->where('can.create', true));
+    $this->getJson("/sites/{$world->site->id}/deployments")->assertOk()
+        ->assertJsonPath('data.active.status', 'building')
+        ->assertJsonCount(1, 'data.queued')
+        ->assertJsonPath('data.queued.0.number', 2)
+        ->assertJsonPath('data.can.create', true);
+    $this->get("/sites/{$world->site->id}/deployments")->assertRedirect();
 
     $deployment = Deployment::query()->where('number', 1)->sole();
-    $this->get("/sites/{$world->site->id}/deployments/{$deployment->id}")->assertOk()->assertInertia(fn ($page) => $page
-        ->component('Deployments/Show', false)
-        ->where('deployment.id', $deployment->id)
-        ->has('targets', 1)
-        ->has('steps', 1)
-        ->where('steps.0.kind', 'build'));
+    $this->getJson("/sites/{$world->site->id}/deployments/{$deployment->id}")->assertOk()
+        ->assertJsonPath('data.deployment.id', $deployment->id)
+        ->assertJsonCount(1, 'data.targets')
+        ->assertJsonCount(1, 'data.steps')
+        ->assertJsonPath('data.steps.0.kind', 'build');
+    $this->get("/sites/{$world->site->id}/deployments/{$deployment->id}")->assertRedirect();
 
     $this->getJson("/sites/{$world->site->id}/deployments/{$deployment->id}/state?after=0")->assertOk()
         ->assertJsonPath('data.deployment.status', 'building')
@@ -118,7 +118,7 @@ it('deploys from the site page and shows the stacked queue', function () {
 it('forbids viewers from deploying and hides other organizations', function () {
     $world = deploy_world(role: Role::Viewer);
 
-    $this->get("/sites/{$world->site->id}/deployments")->assertOk();
+    $this->getJson("/sites/{$world->site->id}/deployments")->assertOk();
     $this->post("/sites/{$world->site->id}/deployments")->assertForbidden();
     $this->put("/sites/{$world->site->id}/deploy-settings", [])->assertForbidden();
 
@@ -142,11 +142,11 @@ it('updates deploy settings and validates the strategy against the runtime', fun
         ->and($settings->health_path)->toBe('/healthz');
 
     $this->post("/sites/{$world->site->id}/deploy-settings/hook")->assertRedirect();
-    $this->get("/sites/{$world->site->id}/deploy-settings")->assertOk()->assertInertia(fn ($page) => $page
-        ->component('Deployments/Settings', false)
-        ->where('settings.strategy', 'rolling')
-        ->where('hookUrl', fn ($url) => str_contains((string) $url, '/api/deploy/'))
-        ->has('strategies', 4));
+    $settings = $this->getJson("/sites/{$world->site->id}/deploy-settings")->assertOk()
+        ->assertJsonPath('data.settings.strategy', 'rolling')
+        ->assertJsonCount(4, 'data.strategies');
+    expect((string) $settings->json('data.hookUrl'))->toContain('/api/deploy/');
+    $this->get("/sites/{$world->site->id}/deploy-settings")->assertRedirect();
 
     $this->put("/sites/{$world->site->id}/deploy-settings/push-to-deploy", ['enabled' => true])->assertRedirect()->assertSessionHasNoErrors();
     expect($world->site->refresh()->push_to_deploy)->toBeTrue();

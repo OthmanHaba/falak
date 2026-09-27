@@ -5,8 +5,6 @@ namespace Kiln\Deployments\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
 use Kiln\Deployments\Application\Orchestration\Orchestrator;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
@@ -18,18 +16,15 @@ use Kiln\Deployments\Domain\Models\SiteSettings;
 use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteHeaders;
 
 final class DeploymentController extends Controller
 {
     use PresentsDeployments, ResolvesSites;
 
-    public function __construct(private readonly SiteHeaders $headers) {}
-
     /**
      * JSON for the canvas panel's Deployments tab; a browser visit opens that tab (legacy page for unplaced sites).
      */
-    public function index(Request $request, string $site): Response|JsonResponse|RedirectResponse
+    public function index(Request $request, string $site): JsonResponse|RedirectResponse
     {
         $data = $this->site($request->user(), $site);
 
@@ -37,14 +32,9 @@ final class DeploymentController extends Controller
             return response()->json(['data' => $this->overview($request, $data)]);
         }
 
-        if (($panel = Deployment::path($data->id)) !== "/sites/{$data->id}/deployments") {
-            return redirect($panel);
-        }
+        $panel = Deployment::path($data->id);
 
-        return Inertia::render('Deployments/Index', [
-            'site' => $this->headers->for($data->id),
-            ...$this->overview($request, $data),
-        ]);
+        return redirect($panel !== "/sites/{$data->id}/deployments" ? $panel : '/projects');
     }
 
     /**
@@ -98,7 +88,7 @@ final class DeploymentController extends Controller
     /**
      * JSON for the panel's Deploy view; a browser visit opens it (legacy page for unplaced sites).
      */
-    public function show(Request $request, string $site, string $deployment): Response|JsonResponse|RedirectResponse
+    public function show(Request $request, string $site, string $deployment): JsonResponse|RedirectResponse
     {
         $data = $this->site($request->user(), $site);
         $model = $this->deployment($request->user(), $deployment, $data->id);
@@ -119,11 +109,9 @@ final class DeploymentController extends Controller
             return response()->json(['data' => $props]);
         }
 
-        if (($panel = Deployment::path($data->id, $model->id)) !== "/sites/{$data->id}/deployments/{$model->id}") {
-            return redirect($panel);
-        }
+        $panel = Deployment::path($data->id, $model->id);
 
-        return Inertia::render('Deployments/Show', ['site' => $this->headers->for($data->id), ...$props]);
+        return redirect($panel !== "/sites/{$data->id}/deployments/{$model->id}" ? $panel : '/projects');
     }
 
     /**

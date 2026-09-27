@@ -36,7 +36,7 @@ trait PresentsSites
     {
         $url = app(ProjectDirectory::class)->serviceUrl(ServiceKind::Site, $site->id, $tab);
 
-        return redirect($url !== null ? $url.($anchor !== null ? "#{$anchor}" : '') : '/projects');
+        return redirect($url !== null ? $url.($anchor !== null ? "/{$anchor}" : '') : '/projects');
     }
 
     /**
