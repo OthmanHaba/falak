@@ -295,7 +295,7 @@ stage_compose() {
     local lines="" deadline=$((SECONDS + 90))
     while (( SECONDS < deadline )); do
         lines=$(curl -sS -G "http://127.0.0.1:${KILN_LOKI_PORT}/loki/api/v1/query_range" \
-            --data-urlencode 'query={service_name="compose-demo"} | kiln_compose_service="app" |= "kiln-compose-demo listening"' \
+            --data-urlencode 'query={service_name="compose-demo"} | kiln_compose_service="app" |~ "kiln-compose-demo listening|GET /"' \
             --data-urlencode "start=$(( $(date +%s) - 3600 ))000000000" | jq '[.data.result[].values[]] | length' 2>/dev/null)
         (( ${lines:-0} > 0 )) && break
         sleep 5

@@ -299,6 +299,21 @@ func TestVersionNegotiation(t *testing.T) {
 	if !versionLess("1.41", "1.43") || versionLess("1.46", "1.43") {
 		t.Fatal("versionLess")
 	}
+	// Docker 29 refuses API versions below its minimum (1.44): raise to it.
+	dir, _ := os.MkdirTemp("/tmp", "kv")
+	defer os.RemoveAll(dir)
+	l, err := net.Listen("unix", filepath.Join(dir, "d.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &httptest.Server{Listener: l, Config: &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jsonOut(w, 200, VersionInfo{Version: "29.0.0", APIVersion: "1.52", MinAPI: "1.44"})
+	})}}
+	srv.Start()
+	defer srv.Close()
+	if got := NewClient(filepath.Join(dir, "d.sock")).apiVersion(context.Background()); got != "1.44" {
+		t.Fatalf("docker 29: api version %s, want 1.44", got)
+	}
 	if a, b := splitRef("ghcr.io:443/org/app:1.2"); a != "ghcr.io:443/org/app" || b != "1.2" {
 		t.Fatal(a, b)
 	}

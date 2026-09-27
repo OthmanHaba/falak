@@ -40,6 +40,7 @@ const json = (res, status, body) => {
 
 http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+    res.on('finish', () => console.log(`${req.method} ${url.pathname} ${res.statusCode}`));
     try {
         if (url.pathname === '/health') {
             if (!HEALTHY) return json(res, 500, { ok: false });

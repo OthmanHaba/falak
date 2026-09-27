@@ -79,12 +79,20 @@ func (c *Client) Version(ctx context.Context) (VersionInfo, error) {
 	return v, json.NewDecoder(resp.Body).Decode(&v)
 }
 
-// negotiate picks min(server ApiVersion, DefaultAPIVersion).
+// negotiate picks min(server ApiVersion, DefaultAPIVersion), raised to the server's MinAPIVersion (Docker 29+
+// refuses API versions below 1.44; the subset of the API this client uses is unchanged there).
 func (c *Client) apiVersion(ctx context.Context) string {
 	c.once.Do(func() {
 		c.version = DefaultAPIVersion
-		if v, err := c.Version(ctx); err == nil && v.APIVersion != "" && versionLess(v.APIVersion, DefaultAPIVersion) {
+		v, err := c.Version(ctx)
+		if err != nil {
+			return
+		}
+		if v.APIVersion != "" && versionLess(v.APIVersion, DefaultAPIVersion) {
 			c.version = v.APIVersion
+		}
+		if v.MinAPI != "" && versionLess(c.version, v.MinAPI) {
+			c.version = v.MinAPI
 		}
 	})
 	return c.version
