@@ -8,7 +8,7 @@ registerCommands({
     commands: () => [
         {
             id: 'network.index',
-            title: 'Network',
+            title: 'Private networks',
             group: 'Navigation',
             icon: Network,
             href: '/network',
@@ -17,12 +17,12 @@ registerCommands({
         },
         {
             id: 'network.firewalls',
-            title: 'Firewall rules',
+            title: 'Firewalls',
             group: 'Navigation',
             icon: Shield,
-            href: '/network#firewalls',
+            href: '/network',
             permission: 'network.view',
-            keywords: ['nftables', 'ports'],
+            keywords: ['nftables', 'ports', 'firewall rules'],
         },
     ],
 });

@@ -231,7 +231,6 @@ export default function Settings({ server, can }: Props) {
                 onOpenChange={setConfirmReinstall}
                 size="sm"
                 title="Create a new install command?"
-                description="Running it on a host enrolls that host as this server and revokes the current agent immediately."
                 footer={
                     <>
                         <Button variant="ghost" onClick={() => setConfirmReinstall(false)}>
@@ -242,7 +241,11 @@ export default function Settings({ server, can }: Props) {
                         </Button>
                     </>
                 }
-            />
+            >
+                <p className="text-fg-muted text-sm">
+                    Running it on a host enrolls that host as {server.name} and revokes the current agent immediately.
+                </p>
+            </Dialog>
 
             <ConfirmDestructive
                 open={deleting}
