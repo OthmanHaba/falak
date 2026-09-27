@@ -12,6 +12,8 @@ use Kiln\Fleet\Contracts\AgentDirectory;
 use Kiln\Identity\Contracts\CurrentOrganization;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
+use Kiln\Projects\Contracts\ProjectDirectory;
+use Kiln\Projects\Contracts\ServiceKind;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Application\Actions\CreateSite;
 use Kiln\Sites\Application\Actions\DeleteSite;
@@ -82,10 +84,20 @@ final class SiteController extends Controller
         ]);
     }
 
-    public function create(Request $request, AgentDirectory $agents, SourceControlGateway $sourceControl): Response
+    /**
+     * The create form; JSON (options only) for the canvas Create picker.
+     */
+    public function create(Request $request, AgentDirectory $agents, SourceControlGateway $sourceControl): Response|JsonResponse
     {
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, 'sites.create');
+
+        if ($request->wantsJson() && $request->header('X-Inertia') === null) {
+            return response()->json(['data' => [
+                'options' => $this->options($organizationId, $this->servers, $agents, $sourceControl),
+                'can_manage_source_control' => $this->access->can($request->user(), $organizationId, 'source_control.manage'),
+            ]]);
+        }
 
         return Inertia::render('Sites/Create', [
             'options' => $this->options($organizationId, $this->servers, $agents, $sourceControl),
@@ -103,9 +115,17 @@ final class SiteController extends Controller
         return to_route('sites.show', $site)->with('sites.warnings', $create->warnings);
     }
 
-    public function show(Request $request, Site $site, SourceControlGateway $sourceControl): Response
+    /**
+     * Sites placed in a project open in their canvas panel (UI_DESIGN §3 legacy redirects).
+     */
+    public function show(Request $request, Site $site, SourceControlGateway $sourceControl, ProjectDirectory $projects): Response|RedirectResponse
     {
         $this->authorize('view', $site);
+
+        if ($panel = $projects->serviceUrl(ServiceKind::Site, $site->id)) {
+            return redirect($panel);
+        }
+
         $site->load('targets');
 
         $servers = $this->serversById($this->servers, $site->serverIds());
@@ -167,7 +187,7 @@ final class SiteController extends Controller
         ]);
     }
 
-    public function destroy(Request $request, Site $site, DeleteSite $delete): RedirectResponse
+    public function destroy(Request $request, Site $site, DeleteSite $delete): RedirectResponse|JsonResponse
     {
         $this->authorize('delete', $site);
 
@@ -175,7 +195,7 @@ final class SiteController extends Controller
 
         $delete($site);
 
-        return to_route('sites.index');
+        return $request->wantsJson() && $request->header('X-Inertia') === null ? response()->json(null, 204) : to_route('sites.index');
     }
 
     public function search(Request $request): JsonResponse

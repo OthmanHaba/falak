@@ -17,4 +17,12 @@ interface DeploymentDirectory
      * @return array<string, DeploymentSummary> keyed by site id
      */
     public function currentForSites(array $siteIds): array;
+
+    /**
+     * The most recent deployments of the given sites, newest first (the canvas Activity rail).
+     *
+     * @param  list<string>  $siteIds
+     * @return list<DeploymentSummary>
+     */
+    public function recentForSites(array $siteIds, int $limit = 20): array;
 }

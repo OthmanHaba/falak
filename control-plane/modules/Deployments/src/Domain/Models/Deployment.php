@@ -10,6 +10,8 @@ use Illuminate\Support\Carbon;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\Strategy;
 use Kiln\Deployments\Domain\Enums\Trigger;
+use Kiln\Projects\Contracts\ProjectDirectory;
+use Kiln\Projects\Contracts\ServiceKind;
 
 /**
  * One deployment of a site: a persisted state machine driven by its steps.
@@ -109,9 +111,25 @@ class Deployment extends Model
         return data_get($this->settings ?? [], $key, $default);
     }
 
+    /**
+     * Where a person looks at this deployment: the Deploy view in the site's canvas panel (or the legacy site
+     * page while the site is not placed in a project). Absolute, for the CLI, alerts and API clients.
+     */
     public function url(): string
     {
-        return rtrim((string) config('app.url'), '/')."/sites/{$this->site_id}/deployments/{$this->id}";
+        return rtrim((string) config('app.url'), '/').self::path($this->site_id, $this->id);
+    }
+
+    /** Relative URL of a site's deployments (one deployment when $deploymentId is given). */
+    public static function path(string $siteId, ?string $deploymentId = null): string
+    {
+        $panel = app(ProjectDirectory::class)->serviceUrl(ServiceKind::Site, $siteId, 'deployments');
+
+        if ($panel !== null) {
+            return $deploymentId !== null ? "{$panel}/{$deploymentId}" : $panel;
+        }
+
+        return $deploymentId !== null ? "/sites/{$siteId}/deployments/{$deploymentId}" : "/sites/{$siteId}/deployments";
     }
 
     public function shortCommit(): ?string

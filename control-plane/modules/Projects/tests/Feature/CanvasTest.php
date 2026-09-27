@@ -138,10 +138,13 @@ it('renders the canvas page with project, environment, canvas and panel props', 
 
     $this->get("{$this->url}/service/site/{$site->id}/variables")->assertOk()->assertInertia(fn ($page) => $page
         ->component('Projects/Canvas', false)
-        ->where('panel', ['kind' => 'site', 'id' => $site->id, 'tab' => 'variables']));
+        ->where('panel', ['kind' => 'site', 'id' => $site->id, 'tab' => 'variables', 'item' => null]));
 
     $this->get("{$this->url}/service/site/{$site->id}")->assertOk()->assertInertia(fn ($page) => $page
-        ->where('panel', ['kind' => 'site', 'id' => $site->id, 'tab' => null]));
+        ->where('panel', ['kind' => 'site', 'id' => $site->id, 'tab' => null, 'item' => null]));
+
+    $this->get("{$this->url}/service/site/{$site->id}/deployments/01JDEPLOYMENT0000000000000")->assertOk()->assertInertia(fn ($page) => $page
+        ->where('panel', ['kind' => 'site', 'id' => $site->id, 'tab' => 'deployments', 'item' => '01jdeployment0000000000000']));
 
     $this->get("{$this->url}/service/database/{$site->id}")->assertNotFound();
 });

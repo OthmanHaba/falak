@@ -9,6 +9,7 @@ use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Projects\Application\Actions\CreateService;
 use Kiln\Projects\Application\Actions\MoveService;
+use Kiln\Projects\Application\Actions\RenameService;
 use Kiln\Projects\Application\Canvas\CanvasReadModel;
 use Kiln\Projects\Contracts\ServiceKind;
 use Kiln\Projects\Domain\Models\Project;
@@ -61,6 +62,22 @@ final class ServiceController extends Controller
         $card = collect($canvas->for($model)['services'])->firstWhere('id', $service->id);
 
         return response()->json(['data' => $card, 'warnings' => $create->warnings], 201);
+    }
+
+    /**
+     * PATCH /projects/{project}/{environment}/services/{service} {name} — rename the canvas service.
+     */
+    public function update(Request $request, Project $project, string $environment, string $service, RenameService $rename): JsonResponse
+    {
+        $this->authorize('manage', $project);
+        $model = $this->resolveEnvironment($project, $environment);
+
+        $data = $request->validate(['name' => ['required', 'string', 'max:60', 'regex:/^[^\x00-\x1F\x7F]+$/u']]);
+
+        $record = Service::query()->where('environment_id', $model->id)->find(strtolower($service)) ?? throw new NotFoundHttpException('Service not found.');
+        $rename($record, (string) $data['name']);
+
+        return response()->json(['data' => ['id' => $record->id, 'name' => $record->name]]);
     }
 
     /**

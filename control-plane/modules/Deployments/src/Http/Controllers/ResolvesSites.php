@@ -3,6 +3,7 @@
 namespace Kiln\Deployments\Http\Controllers;
 
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Http\Request;
 use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
 use Kiln\Identity\Contracts\CurrentOrganization;
@@ -49,6 +50,12 @@ trait ResolvesSites
         return Deployment::query()->where('organization_id', $organizationId)
             ->when($siteId !== null, fn ($q) => $q->where('site_id', $siteId))
             ->findOrFail(strtolower($id));
+    }
+
+    /** A fetch() from the canvas panel (JSON), as opposed to an Inertia visit or a plain browser request. */
+    protected function wantsPanelJson(Request $request): bool
+    {
+        return $request->wantsJson() && $request->header('X-Inertia') === null;
     }
 
     protected function can(?Authenticatable $user, SiteData $site, string $permission): bool

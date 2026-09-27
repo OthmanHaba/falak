@@ -44,28 +44,47 @@ final class EloquentDeploymentDirectory implements DeploymentDirectory
 
         /** @var array<string, Deployment> $deployments */
         $deployments = $active->union($latest)->all();
-        $progress = $this->progress(array_values(array_map(fn (Deployment $d) => $d->id, array_filter($deployments, fn (Deployment $d) => $d->status->isActive()))));
 
-        $summaries = [];
+        return $this->summaries($deployments);
+    }
 
-        foreach ($deployments as $siteId => $deployment) {
-            $summaries[(string) $siteId] = new DeploymentSummary(
-                id: $deployment->id,
-                siteId: $deployment->site_id,
-                number: $deployment->number,
-                status: $deployment->status->value,
-                phase: $deployment->phase,
-                progress: $deployment->status->isActive() ? ($progress[$deployment->id] ?? 0) : null,
-                commit: $deployment->commit,
-                message: $deployment->commit_message !== null ? (string) strtok($deployment->commit_message, "\n") : null,
-                error: $deployment->error,
-                createdAt: self::date($deployment->created_at) ?? new DateTimeImmutable,
-                startedAt: self::date($deployment->started_at),
-                finishedAt: self::date($deployment->finished_at),
-            );
+    public function recentForSites(array $siteIds, int $limit = 20): array
+    {
+        $siteIds = array_values(array_unique($siteIds));
+
+        if ($siteIds === []) {
+            return [];
         }
 
-        return $summaries;
+        $deployments = Deployment::query()->whereIn('site_id', $siteIds)->latest()->orderByDesc('id')->limit(max(1, $limit))->get()->all();
+
+        return array_values($this->summaries($deployments));
+    }
+
+    /**
+     * @template TKey of array-key
+     *
+     * @param  array<TKey, Deployment>  $deployments
+     * @return array<TKey, DeploymentSummary>
+     */
+    private function summaries(array $deployments): array
+    {
+        $progress = $this->progress(array_values(array_map(fn (Deployment $d) => $d->id, array_filter($deployments, fn (Deployment $d) => $d->status->isActive()))));
+
+        return array_map(fn (Deployment $deployment) => new DeploymentSummary(
+            id: $deployment->id,
+            siteId: $deployment->site_id,
+            number: $deployment->number,
+            status: $deployment->status->value,
+            phase: $deployment->phase,
+            progress: $deployment->status->isActive() ? ($progress[$deployment->id] ?? 0) : null,
+            commit: $deployment->commit,
+            message: $deployment->commit_message !== null ? (string) strtok($deployment->commit_message, "\n") : null,
+            error: $deployment->error,
+            createdAt: self::date($deployment->created_at) ?? new DateTimeImmutable,
+            startedAt: self::date($deployment->started_at),
+            finishedAt: self::date($deployment->finished_at),
+        ), $deployments);
     }
 
     /**
