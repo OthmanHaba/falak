@@ -53,7 +53,7 @@ final readonly class AlertMessage
             Severity::Info,
             'Kiln test alert',
             "This is a test message for the \"{$channelName}\" channel. If you can read it, the channel works.",
-            url('/alerting/channels'),
+            url('/settings/alert-channels'),
             [],
             false,
             new DateTimeImmutable,

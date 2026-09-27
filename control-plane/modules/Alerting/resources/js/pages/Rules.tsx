@@ -1,29 +1,43 @@
-import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, Link, router, useForm } from '@inertiajs/react';
-import { Moon, Pencil, Plus, Trash2 } from 'lucide-react';
-import { FormEventHandler, useMemo, useState } from 'react';
-import { AlertingTabs, SeverityBadge } from '../components/alerting-ui';
-import { type AlertTypeOption, type ChannelType, type RuleRow, type Severity } from '../types';
+import { Button } from '@/components/kiln/button';
+import { Checkbox } from '@/components/kiln/checkbox';
+import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
+import { DataTable } from '@/components/kiln/data-table';
+import { Dialog } from '@/components/kiln/dialog';
+import { EmptyState } from '@/components/kiln/empty-state';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { IntegrationIcon } from '@/components/kiln/integration-icon';
+import { Section } from '@/components/kiln/section';
+import { Select } from '@/components/kiln/select';
+import { Switch } from '@/components/kiln/switch';
+import { Tag, type TagProps } from '@/components/kiln/tag';
+import SettingsLayout from '@/layouts/settings/layout';
+import { cn } from '@/lib/utils';
+import { Link, router, useForm } from '@inertiajs/react';
+import { BellRing, Gauge, Moon, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useMemo, useState, type FormEventHandler } from 'react';
+import { type AlertTypeOption, type ChannelType, type QuietHours, type RuleRow, type Severity } from '../types';
+
+interface ChannelOption {
+    id: string;
+    name: string;
+    type: ChannelType;
+    enabled: boolean;
+}
 
 interface Props {
     rules: RuleRow[];
-    channels: { id: string; name: string; type: ChannelType; enabled: boolean }[];
+    channels: ChannelOption[];
     alertTypes: AlertTypeOption[];
     severities: { value: Severity; label: string }[];
     timezones: string[];
     can: { manage: boolean };
+}
+
+interface QuietForm extends QuietHours {
+    enabled: boolean;
+    days: number[];
+    allow_critical: boolean;
 }
 
 interface RuleForm {
@@ -33,15 +47,12 @@ interface RuleForm {
     min_severity: Severity;
     channel_ids: string[];
     rate_limit_per_hour: string;
-    quiet_hours: { enabled: boolean; start: string; end: string; timezone: string; days: number[]; allow_critical: boolean };
+    quiet_hours: QuietForm;
 }
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Alerts', href: '/alerting/rules' },
-    { title: 'Rules', href: '/alerting/rules' },
-];
+const SEVERITY_TONE: Record<Severity, TagProps['tone']> = { info: 'info', warning: 'warning', critical: 'danger' };
 
 function browserTimezone(): string {
     try {
@@ -67,10 +78,33 @@ function toggle<T>(list: T[], value: T): T[] {
     return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 }
 
+/** The full PUT payload for a rule with some fields changed (matrix / inline toggles). */
+function payload(rule: RuleRow, changes: Partial<{ channel_ids: string[]; enabled: boolean }>) {
+    return {
+        name: rule.name,
+        enabled: rule.enabled,
+        event_types: rule.event_types,
+        min_severity: rule.min_severity,
+        channel_ids: rule.channels.map((channel) => channel.id),
+        rate_limit_per_hour: rule.rate_limit_per_hour,
+        quiet_hours: rule.quiet_hours ? { ...rule.quiet_hours, enabled: true } : null,
+        ...changes,
+    };
+}
+
+function SeverityTag({ severity }: { severity: Severity }) {
+    return (
+        <Tag tone={SEVERITY_TONE[severity]} className="capitalize">
+            ≥ {severity}
+        </Tag>
+    );
+}
+
 export default function Rules({ rules, channels, alertTypes, severities, timezones, can }: Props) {
     const [open, setOpen] = useState(false);
     const [editing, setEditing] = useState<RuleRow | null>(null);
     const [deleting, setDeleting] = useState<RuleRow | null>(null);
+    const [pending, setPending] = useState<string | null>(null);
     const form = useForm<RuleForm>(emptyForm());
 
     const groups = useMemo(() => {
@@ -130,173 +164,256 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
         }
     };
 
-    const destroy = () => {
-        if (!deleting) return;
-        router.delete(route('alerting.rules.destroy', deleting.id), { preserveScroll: true, onFinish: () => setDeleting(null) });
+    const update = (rule: RuleRow, key: string, changes: Partial<{ channel_ids: string[]; enabled: boolean }>) => {
+        setPending(key);
+        router.put(route('alerting.rules.update', rule.id), payload(rule, changes), { preserveScroll: true, onFinish: () => setPending(null) });
     };
+
+    const destroy = () =>
+        new Promise<void>((resolve) => {
+            if (!deleting) return resolve();
+            router.delete(route('alerting.rules.destroy', deleting.id), {
+                preserveScroll: true,
+                onSuccess: () => setDeleting(null),
+                onFinish: () => resolve(),
+            });
+        });
 
     const errors = form.errors as Record<string, string | undefined>;
     const everything = form.data.event_types.includes('*');
+    const quiet = form.data.quiet_hours;
+    const setQuiet = (changes: Partial<QuietForm>) => form.setData('quiet_hours', { ...quiet, ...changes });
+    const rate = form.data.rate_limit_per_hour;
+    const rateError = errors.rate_limit_per_hour ?? (rate !== '' && (Number(rate) < 1 || Number(rate) > 1000) ? 'Between 1 and 1000.' : undefined);
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Alert rules" />
-            <div className="space-y-6 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                    <Heading
-                        title="Alerts"
-                        description="Rules decide which events notify which channels. Every issue alerts once until it is resolved."
-                    />
-                    {can.manage && (
-                        <Button onClick={startCreate}>
-                            <Plus /> Add rule
-                        </Button>
-                    )}
-                </div>
-
-                <AlertingTabs active="/alerting/rules" />
-
-                <Card>
-                    <CardContent className="p-0">
-                        {rules.length === 0 ? (
-                            <p className="text-muted-foreground p-10 text-center text-sm">
-                                No rules yet. Without rules, alerts are only recorded in the history.{' '}
-                                {channels.length === 0 && (
-                                    <Link href="/alerting/channels" className="underline">
-                                        Add a channel first.
-                                    </Link>
-                                )}
-                            </p>
+        <SettingsLayout
+            title="Alert rules"
+            description="Rules decide which events notify which channels. Every issue alerts once until it resolves; members always see alerts in their notification center."
+            actions={
+                can.manage &&
+                rules.length > 0 && (
+                    <Button variant="primary" icon={<Plus />} onClick={startCreate}>
+                        Add rule
+                    </Button>
+                )
+            }
+            wide
+        >
+            {rules.length === 0 ? (
+                <EmptyState
+                    icon={<BellRing />}
+                    title="No alert rules yet"
+                    description={
+                        channels.length === 0
+                            ? 'Alerts are recorded in the history but go nowhere. Add a channel (Slack, email, …) first, then a rule that routes to it.'
+                            : 'Alerts are recorded in the history but reach no channel. Add a rule, e.g. “Everything ≥ warning → Slack”.'
+                    }
+                    action={
+                        can.manage &&
+                        (channels.length === 0 ? (
+                            <Button asChild variant="primary" icon={<Plus />}>
+                                <Link href={route('alerting.channels.index')}>Add a channel</Link>
+                            </Button>
                         ) : (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Name</TableHead>
-                                        <TableHead>Events</TableHead>
-                                        <TableHead>Min. severity</TableHead>
-                                        <TableHead>Channels</TableHead>
-                                        <TableHead>Limits</TableHead>
-                                        <TableHead className="text-right">Actions</TableHead>
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {rules.map((rule) => (
-                                        <TableRow key={rule.id}>
-                                            <TableCell className="font-medium">
-                                                {rule.name}
-                                                {!rule.enabled && (
-                                                    <Badge variant="secondary" className="ml-2">
-                                                        Disabled
-                                                    </Badge>
-                                                )}
-                                            </TableCell>
-                                            <TableCell>
-                                                <div className="flex max-w-sm flex-wrap gap-1">
-                                                    {rule.event_types.map((pattern) => (
-                                                        <Badge key={pattern} variant="outline">
-                                                            {labelFor(pattern)}
-                                                        </Badge>
-                                                    ))}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell>
-                                                <SeverityBadge severity={rule.min_severity} />
-                                            </TableCell>
-                                            <TableCell className="text-sm">
-                                                {rule.channels.length === 0 ? (
-                                                    <span className="text-muted-foreground">In-app only</span>
-                                                ) : (
-                                                    rule.channels.map((channel) => channel.name).join(', ')
-                                                )}
-                                            </TableCell>
-                                            <TableCell className="text-muted-foreground text-xs">
-                                                {rule.quiet_hours && (
-                                                    <span className="flex items-center gap-1">
-                                                        <Moon className="size-3" /> {rule.quiet_hours.start}–{rule.quiet_hours.end} (
-                                                        {rule.quiet_hours.timezone})
-                                                    </span>
-                                                )}
-                                                {rule.rate_limit_per_hour && <span>≤ {rule.rate_limit_per_hour}/hour</span>}
-                                            </TableCell>
-                                            <TableCell className="text-right whitespace-nowrap">
-                                                {can.manage && (
-                                                    <>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            onClick={() => startEdit(rule)}
-                                                            aria-label={`Edit ${rule.name}`}
-                                                        >
-                                                            <Pencil />
-                                                        </Button>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            onClick={() => setDeleting(rule)}
-                                                            aria-label={`Delete ${rule.name}`}
-                                                        >
-                                                            <Trash2 />
-                                                        </Button>
-                                                    </>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))}
-                                </TableBody>
-                            </Table>
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
-
-            <Dialog open={open} onOpenChange={setOpen}>
-                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-                    <form onSubmit={submit} className="space-y-5">
-                        <DialogHeader>
-                            <DialogTitle>{editing ? `Edit ${editing.name}` : 'Add rule'}</DialogTitle>
-                            <DialogDescription>
-                                Matching alerts are sent to the selected channels and to members' notification centers.
-                            </DialogDescription>
-                        </DialogHeader>
-
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="grid gap-2">
-                                <Label htmlFor="rule-name">Name</Label>
-                                <Input id="rule-name" value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} required />
-                                <InputError message={form.errors.name} />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label>Minimum severity</Label>
-                                <Select value={form.data.min_severity} onValueChange={(value) => form.setData('min_severity', value as Severity)}>
-                                    <SelectTrigger aria-label="Minimum severity">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {severities.map((severity) => (
-                                            <SelectItem key={severity.value} value={severity.value}>
-                                                {severity.label}
-                                            </SelectItem>
+                            <Button variant="primary" icon={<Plus />} onClick={startCreate}>
+                                Add a rule
+                            </Button>
+                        ))
+                    }
+                    secondary={
+                        can.manage &&
+                        channels.length === 0 && (
+                            <Button variant="ghost" onClick={startCreate}>
+                                Create an in-app rule
+                            </Button>
+                        )
+                    }
+                />
+            ) : (
+                <DataTable
+                    label="Alert rules"
+                    rows={rules}
+                    rowKey={(rule) => rule.id}
+                    columns={[
+                        {
+                            id: 'enabled',
+                            header: <span className="sr-only">Enabled</span>,
+                            width: '48px',
+                            cell: (rule) => (
+                                <Switch
+                                    checked={rule.enabled}
+                                    disabled={!can.manage || pending === `enabled-${rule.id}`}
+                                    onCheckedChange={(enabled) => update(rule, `enabled-${rule.id}`, { enabled })}
+                                    aria-label={`${rule.enabled ? 'Disable' : 'Enable'} ${rule.name}`}
+                                />
+                            ),
+                        },
+                        {
+                            id: 'name',
+                            header: 'Rule',
+                            sortValue: (rule) => rule.name,
+                            cell: (rule) => (
+                                <span className={cn('grid gap-1 py-1.5', !rule.enabled && 'opacity-60')}>
+                                    <span className="font-medium">{rule.name}</span>
+                                    <span className="flex max-w-md flex-wrap gap-1">
+                                        <SeverityTag severity={rule.min_severity} />
+                                        {rule.event_types.map((pattern) => (
+                                            <Tag key={pattern}>{labelFor(pattern)}</Tag>
                                         ))}
-                                    </SelectContent>
-                                </Select>
-                                <InputError message={form.errors.min_severity} />
-                            </div>
-                        </div>
+                                    </span>
+                                </span>
+                            ),
+                        },
+                        {
+                            id: 'channels',
+                            header: 'Delivers to',
+                            hideOnMobile: true,
+                            cell: (rule) =>
+                                rule.channels.length === 0 ? (
+                                    <span className="text-fg-faint">In-app only</span>
+                                ) : (
+                                    <span className="flex flex-wrap gap-1">
+                                        {rule.channels.map((channel) => (
+                                            <Tag key={channel.id} icon={<IntegrationIcon name={channel.type} size={12} />}>
+                                                {channel.name}
+                                            </Tag>
+                                        ))}
+                                    </span>
+                                ),
+                        },
+                        {
+                            id: 'limits',
+                            header: 'Limits',
+                            hideOnMobile: true,
+                            cell: (rule) => (
+                                <span className="text-fg-muted grid gap-0.5 text-xs">
+                                    {rule.quiet_hours && (
+                                        <span className="flex items-center gap-1">
+                                            <Moon className="size-3" aria-hidden /> {rule.quiet_hours.start}–{rule.quiet_hours.end}
+                                        </span>
+                                    )}
+                                    {rule.rate_limit_per_hour && (
+                                        <span className="flex items-center gap-1">
+                                            <Gauge className="size-3" aria-hidden /> ≤ {rule.rate_limit_per_hour}/h
+                                        </span>
+                                    )}
+                                    {!rule.quiet_hours && !rule.rate_limit_per_hour && <span className="text-fg-faint">—</span>}
+                                </span>
+                            ),
+                        },
+                    ]}
+                    rowActions={
+                        can.manage
+                            ? (rule) => [
+                                  { label: 'Edit', icon: <Pencil />, onSelect: () => startEdit(rule) },
+                                  { type: 'separator' },
+                                  { label: 'Delete', icon: <Trash2 />, danger: true, onSelect: () => setDeleting(rule) },
+                              ]
+                            : undefined
+                    }
+                />
+            )}
 
-                        <fieldset className="space-y-3">
-                            <legend className="text-sm font-medium">Events</legend>
-                            <label className="flex items-center gap-2 text-sm">
-                                <Checkbox checked={everything} onCheckedChange={() => form.setData('event_types', everything ? [] : ['*'])} />
-                                Everything (including future event types)
-                            </label>
-                            {!everything &&
-                                groups.map(([group, types]) => {
+            {rules.length > 0 && channels.length > 0 && (
+                <Section title="Routing" description="Which rule delivers to which channel. Click a cell to route or unroute; changes apply immediately." bare>
+                    <div className="border-border bg-surface-1 overflow-x-auto rounded-lg border">
+                        <table className="w-full border-collapse text-xs">
+                            <caption className="sr-only">Rule to channel routing</caption>
+                            <thead>
+                                <tr className="border-border border-b">
+                                    <th scope="col" className="text-fg-faint h-9 px-3 text-left font-medium">
+                                        Rule
+                                    </th>
+                                    {channels.map((channel) => (
+                                        <th key={channel.id} scope="col" className="text-fg-muted h-9 px-2 font-medium whitespace-nowrap">
+                                            <span className="inline-flex items-center gap-1.5">
+                                                <IntegrationIcon name={channel.type} size={12} />
+                                                <span className={cn(!channel.enabled && 'line-through opacity-60')}>{channel.name}</span>
+                                            </span>
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {rules.map((rule) => {
+                                    const routed = rule.channels.map((channel) => channel.id);
+
+                                    return (
+                                        <tr key={rule.id} className="border-border border-b last:border-0">
+                                            <th scope="row" className={cn('text-fg h-10 px-3 text-left text-sm font-medium', !rule.enabled && 'opacity-60')}>
+                                                {rule.name}
+                                            </th>
+                                            {channels.map((channel) => {
+                                                const key = `${rule.id}:${channel.id}`;
+                                                const on = routed.includes(channel.id);
+
+                                                return (
+                                                    <td key={channel.id} className="px-2 text-center">
+                                                        <Checkbox
+                                                            checked={on}
+                                                            disabled={!can.manage || pending === key}
+                                                            onCheckedChange={() => update(rule, key, { channel_ids: toggle(routed, channel.id) })}
+                                                            aria-label={`${on ? 'Stop routing' : 'Route'} ${rule.name} to ${channel.name}`}
+                                                            className="mx-auto"
+                                                        />
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </Section>
+            )}
+
+            <Dialog
+                open={open}
+                onOpenChange={setOpen}
+                size="lg"
+                title={editing ? `Edit ${editing.name}` : 'Add alert rule'}
+                description="Matching alerts go to the selected channels and to members' notification centers."
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button variant="primary" type="submit" form="rule-form" loading={form.processing}>
+                            {editing ? 'Save changes' : 'Add rule'}
+                        </Button>
+                    </>
+                }
+            >
+                <form id="rule-form" onSubmit={submit} className="grid gap-5">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Field label="Name" error={errors.name} required>
+                            <Input value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} placeholder="Production incidents" />
+                        </Field>
+                        <Field label="Minimum severity" error={errors.min_severity}>
+                            <Select
+                                value={form.data.min_severity}
+                                onValueChange={(value) => form.setData('min_severity', value)}
+                                options={severities.map((severity) => ({ value: severity.value, label: severity.label }))}
+                            />
+                        </Field>
+                    </div>
+
+                    <fieldset className="grid gap-2">
+                        <legend className="text-fg mb-1 text-xs font-medium">Events</legend>
+                        <Field inline label="Everything, including future event types">
+                            <Checkbox checked={everything} onCheckedChange={() => form.setData('event_types', everything ? [] : ['*'])} />
+                        </Field>
+                        {!everything && (
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                {groups.map(([group, types]) => {
                                     const wildcard = `${types[0].type.split('.')[0]}.*`;
                                     const all = form.data.event_types.includes(wildcard);
 
                                     return (
-                                        <div key={group} className="rounded-md border p-3">
-                                            <label className="flex items-center gap-2 text-sm font-medium">
+                                        <div key={group} className="border-border grid content-start gap-2 rounded-md border p-3">
+                                            <Field inline label={<span className="capitalize">All {group}</span>}>
                                                 <Checkbox
                                                     checked={all}
                                                     onCheckedChange={() =>
@@ -304,197 +421,158 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                                                             'event_types',
                                                             all
                                                                 ? form.data.event_types.filter((item) => item !== wildcard)
-                                                                : [
-                                                                      ...form.data.event_types.filter(
-                                                                          (item) => !types.some((type) => type.type === item),
-                                                                      ),
-                                                                      wildcard,
-                                                                  ],
+                                                                : [...form.data.event_types.filter((item) => !types.some((type) => type.type === item)), wildcard],
                                                         )
                                                     }
                                                 />
-                                                All {group}
-                                            </label>
+                                            </Field>
                                             {!all && (
-                                                <div className="mt-2 grid gap-1 pl-6 sm:grid-cols-2">
+                                                <div className="grid gap-1.5 pl-6">
                                                     {types.map((type) => (
-                                                        <label key={type.type} className="flex items-center gap-2 text-sm">
+                                                        <Field key={type.type} inline label={<span className="font-normal">{type.label}</span>}>
                                                             <Checkbox
                                                                 checked={form.data.event_types.includes(type.type)}
-                                                                onCheckedChange={() =>
-                                                                    form.setData('event_types', toggle(form.data.event_types, type.type))
-                                                                }
+                                                                onCheckedChange={() => form.setData('event_types', toggle(form.data.event_types, type.type))}
                                                             />
-                                                            {type.label}
-                                                        </label>
+                                                        </Field>
                                                     ))}
                                                 </div>
                                             )}
                                         </div>
                                     );
                                 })}
-                            <InputError message={errors.event_types ?? errors['event_types.0']} />
-                        </fieldset>
-
-                        <fieldset className="space-y-2">
-                            <legend className="text-sm font-medium">Channels</legend>
-                            {channels.length === 0 ? (
-                                <p className="text-muted-foreground text-sm">No channels yet: alerts will only appear in the notification center.</p>
-                            ) : (
-                                <div className="grid gap-1 sm:grid-cols-2">
-                                    {channels.map((channel) => (
-                                        <label key={channel.id} className="flex items-center gap-2 text-sm">
-                                            <Checkbox
-                                                checked={form.data.channel_ids.includes(channel.id)}
-                                                onCheckedChange={() => form.setData('channel_ids', toggle(form.data.channel_ids, channel.id))}
-                                            />
-                                            {channel.name}
-                                            <span className="text-muted-foreground text-xs">
-                                                {channel.type}
-                                                {!channel.enabled && ' · disabled'}
-                                            </span>
-                                        </label>
-                                    ))}
-                                </div>
-                            )}
-                            <InputError message={errors.channel_ids ?? Object.entries(errors).find(([key]) => key.startsWith('channel_ids.'))?.[1]} />
-                        </fieldset>
-
-                        <fieldset className="space-y-3">
-                            <legend className="text-sm font-medium">Quiet hours</legend>
-                            <label className="flex items-center gap-2 text-sm">
-                                <Checkbox
-                                    checked={form.data.quiet_hours.enabled}
-                                    onCheckedChange={(checked) =>
-                                        form.setData('quiet_hours', { ...form.data.quiet_hours, enabled: checked === true })
-                                    }
-                                />
-                                Hold channel notifications during quiet hours (in-app notifications still arrive)
-                            </label>
-                            {form.data.quiet_hours.enabled && (
-                                <div className="space-y-3 pl-6">
-                                    <div className="flex flex-wrap items-end gap-3">
-                                        <div className="grid gap-1">
-                                            <Label htmlFor="quiet-start">From</Label>
-                                            <Input
-                                                id="quiet-start"
-                                                type="time"
-                                                value={form.data.quiet_hours.start}
-                                                onChange={(e) => form.setData('quiet_hours', { ...form.data.quiet_hours, start: e.target.value })}
-                                                className="w-32"
-                                            />
-                                        </div>
-                                        <div className="grid gap-1">
-                                            <Label htmlFor="quiet-end">Until</Label>
-                                            <Input
-                                                id="quiet-end"
-                                                type="time"
-                                                value={form.data.quiet_hours.end}
-                                                onChange={(e) => form.setData('quiet_hours', { ...form.data.quiet_hours, end: e.target.value })}
-                                                className="w-32"
-                                            />
-                                        </div>
-                                        <div className="grid min-w-56 flex-1 gap-1">
-                                            <Label htmlFor="quiet-timezone">Timezone</Label>
-                                            <Input
-                                                id="quiet-timezone"
-                                                list="alerting-timezones"
-                                                value={form.data.quiet_hours.timezone}
-                                                onChange={(e) => form.setData('quiet_hours', { ...form.data.quiet_hours, timezone: e.target.value })}
-                                            />
-                                            <datalist id="alerting-timezones">
-                                                {timezones.map((timezone) => (
-                                                    <option key={timezone} value={timezone} />
-                                                ))}
-                                            </datalist>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-wrap gap-3" role="group" aria-label="Days">
-                                        {DAYS.map((day, index) => (
-                                            <label key={day} className="flex items-center gap-1 text-sm">
-                                                <Checkbox
-                                                    checked={form.data.quiet_hours.days.includes(index + 1)}
-                                                    onCheckedChange={() =>
-                                                        form.setData('quiet_hours', {
-                                                            ...form.data.quiet_hours,
-                                                            days: toggle(form.data.quiet_hours.days, index + 1),
-                                                        })
-                                                    }
-                                                />
-                                                {day}
-                                            </label>
-                                        ))}
-                                        <span className="text-muted-foreground text-xs">(none selected = every day)</span>
-                                    </div>
-                                    <label className="flex items-center gap-2 text-sm">
-                                        <Checkbox
-                                            checked={form.data.quiet_hours.allow_critical}
-                                            onCheckedChange={(checked) =>
-                                                form.setData('quiet_hours', { ...form.data.quiet_hours, allow_critical: checked === true })
-                                            }
-                                        />
-                                        Critical alerts still go through
-                                    </label>
-                                    <InputError
-                                        message={
-                                            errors['quiet_hours.start'] ??
-                                            errors['quiet_hours.end'] ??
-                                            errors['quiet_hours.timezone'] ??
-                                            errors['quiet_hours.days.0']
-                                        }
-                                    />
-                                </div>
-                            )}
-                        </fieldset>
-
-                        <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="grid gap-2">
-                                <Label htmlFor="rule-rate">Max. alerts per hour</Label>
-                                <Input
-                                    id="rule-rate"
-                                    type="number"
-                                    min={1}
-                                    max={1000}
-                                    placeholder="unlimited"
-                                    value={form.data.rate_limit_per_hour}
-                                    onChange={(e) => form.setData('rate_limit_per_hour', e.target.value)}
-                                />
-                                <InputError message={form.errors.rate_limit_per_hour} />
                             </div>
-                            <label className="flex items-center gap-2 self-end pb-2 text-sm">
-                                <Checkbox checked={form.data.enabled} onCheckedChange={(checked) => form.setData('enabled', checked === true)} />
-                                Enabled
-                            </label>
-                        </div>
+                        )}
+                        {(errors.event_types ?? errors['event_types.0']) && (
+                            <p className="text-danger text-xs" role="alert">
+                                {errors.event_types ?? errors['event_types.0']}
+                            </p>
+                        )}
+                    </fieldset>
 
-                        <DialogFooter>
-                            <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
-                                Cancel
-                            </Button>
-                            <Button type="submit" disabled={form.processing}>
-                                {editing ? 'Save' : 'Add rule'}
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
+                    <fieldset className="grid gap-2">
+                        <legend className="text-fg mb-1 text-xs font-medium">Channels</legend>
+                        {channels.length === 0 ? (
+                            <p className="text-fg-muted text-sm">
+                                No channels yet — this rule will only notify in-app.{' '}
+                                <Link href={route('alerting.channels.index')} className="text-primary hover:underline">
+                                    Add a channel
+                                </Link>
+                            </p>
+                        ) : (
+                            <div className="grid gap-1.5 sm:grid-cols-2">
+                                {channels.map((channel) => (
+                                    <Field
+                                        key={channel.id}
+                                        inline
+                                        label={
+                                            <span className="inline-flex items-center gap-1.5 font-normal">
+                                                <IntegrationIcon name={channel.type} size={12} />
+                                                {channel.name}
+                                                {!channel.enabled && <span className="text-fg-faint">(disabled)</span>}
+                                            </span>
+                                        }
+                                    >
+                                        <Checkbox
+                                            checked={form.data.channel_ids.includes(channel.id)}
+                                            onCheckedChange={() => form.setData('channel_ids', toggle(form.data.channel_ids, channel.id))}
+                                        />
+                                    </Field>
+                                ))}
+                            </div>
+                        )}
+                        {(errors.channel_ids ?? Object.entries(errors).find(([key]) => key.startsWith('channel_ids.'))?.[1]) && (
+                            <p className="text-danger text-xs" role="alert">
+                                {errors.channel_ids ?? Object.entries(errors).find(([key]) => key.startsWith('channel_ids.'))?.[1]}
+                            </p>
+                        )}
+                    </fieldset>
+
+                    <fieldset className="border-border grid gap-3 rounded-md border p-3">
+                        <legend className="sr-only">Quiet hours</legend>
+                        <Field inline label="Quiet hours" hint="Hold channel notifications during these hours (in-app notifications still arrive).">
+                            <Switch checked={quiet.enabled} onCheckedChange={(enabled) => setQuiet({ enabled })} />
+                        </Field>
+                        {quiet.enabled && (
+                            <>
+                                <div className="grid gap-3 sm:grid-cols-[8rem_8rem_minmax(0,1fr)]">
+                                    <Field label="From" error={errors['quiet_hours.start']}>
+                                        <Input type="time" value={quiet.start} onChange={(event) => setQuiet({ start: event.target.value })} />
+                                    </Field>
+                                    <Field label="Until" error={errors['quiet_hours.end']}>
+                                        <Input type="time" value={quiet.end} onChange={(event) => setQuiet({ end: event.target.value })} />
+                                    </Field>
+                                    <Field
+                                        label="Timezone"
+                                        error={errors['quiet_hours.timezone'] ?? (quiet.timezone && !timezones.includes(quiet.timezone) ? 'Unknown timezone.' : undefined)}
+                                    >
+                                        <Input list="alerting-timezones" value={quiet.timezone} onChange={(event) => setQuiet({ timezone: event.target.value })} />
+                                    </Field>
+                                    <datalist id="alerting-timezones">
+                                        {timezones.map((timezone) => (
+                                            <option key={timezone} value={timezone} />
+                                        ))}
+                                    </datalist>
+                                </div>
+                                <div className="grid gap-1.5">
+                                    <span className="text-fg text-xs font-medium">Days</span>
+                                    <div className="flex flex-wrap gap-1" role="group" aria-label="Days">
+                                        {DAYS.map((day, index) => {
+                                            const on = quiet.days.includes(index + 1);
+
+                                            return (
+                                                <button
+                                                    key={day}
+                                                    type="button"
+                                                    aria-pressed={on}
+                                                    onClick={() => setQuiet({ days: toggle(quiet.days, index + 1) })}
+                                                    className={cn(
+                                                        'h-7 w-11 rounded-md border text-xs font-medium transition-colors duration-150',
+                                                        on ? 'border-primary bg-primary-soft text-fg' : 'border-border bg-surface-2 text-fg-muted hover:text-fg',
+                                                    )}
+                                                >
+                                                    {day}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <p className="text-fg-faint text-xs">{quiet.days.length === 0 ? 'No days selected: every day.' : ''}</p>
+                                </div>
+                                <Field inline label="Critical alerts still go through">
+                                    <Checkbox checked={quiet.allow_critical} onCheckedChange={(checked) => setQuiet({ allow_critical: checked === true })} />
+                                </Field>
+                            </>
+                        )}
+                    </fieldset>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Field label="Rate limit" hint="Max. channel notifications per hour; empty = unlimited." error={rateError}>
+                            <Input
+                                type="number"
+                                min={1}
+                                max={1000}
+                                placeholder="Unlimited"
+                                value={rate}
+                                onChange={(event) => form.setData('rate_limit_per_hour', event.target.value)}
+                                suffix={<span className="text-xs">/ hour</span>}
+                            />
+                        </Field>
+                        <Field inline label="Enabled" className="self-center">
+                            <Switch checked={form.data.enabled} onCheckedChange={(enabled) => form.setData('enabled', enabled)} />
+                        </Field>
+                    </div>
+                </form>
             </Dialog>
 
-            <Dialog open={deleting !== null} onOpenChange={(value) => !value && setDeleting(null)}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Delete {deleting?.name}?</DialogTitle>
-                        <DialogDescription>Alerts matched only by this rule will no longer be delivered.</DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter>
-                        <Button variant="secondary" onClick={() => setDeleting(null)}>
-                            Cancel
-                        </Button>
-                        <Button variant="destructive" onClick={destroy}>
-                            Delete
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-        </AppLayout>
+            <ConfirmDestructive
+                open={deleting !== null}
+                onOpenChange={(value) => !value && setDeleting(null)}
+                title={`Delete ${deleting?.name ?? ''}`}
+                description="Alerts matched only by this rule will no longer be delivered to channels."
+                confirmText={deleting?.name ?? ''}
+                confirmLabel="Delete rule"
+                onConfirm={destroy}
+            />
+        </SettingsLayout>
     );
 }
