@@ -98,7 +98,7 @@ final class SiteController extends Controller
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, 'sites.create');
 
-        $site = $create($organizationId, $request->user()?->getAuthIdentifier(), $request->validated());
+        $site = $create($organizationId, $request->user()?->getAuthIdentifier(), $request->siteData(), $request->placement());
 
         return to_route('sites.show', $site)->with('sites.warnings', $create->warnings);
     }
