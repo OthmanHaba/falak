@@ -450,7 +450,7 @@ export function VariablesTab({ ctx }: ServiceTabProps) {
                                         <th scope="col" className="h-8 px-3 font-medium">
                                             Value
                                         </th>
-                                        <th scope="col" className="h-8 w-24 px-3 text-center font-medium">
+                                        <th scope="col" className="h-8 w-28 px-3 text-center font-medium whitespace-nowrap">
                                             <Tooltip content="Export into the deploy script’s shell (always in .env)">
                                                 <span className="cursor-help underline decoration-dotted underline-offset-2">Deploy script</span>
                                             </Tooltip>

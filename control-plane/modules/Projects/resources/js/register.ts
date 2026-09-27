@@ -84,15 +84,6 @@ registerServiceActions(
 // Stand-ins until the owning modules ship these tabs (their registration replaces these).
 registerServiceTabs(
     pendingTab({
-        id: 'processes',
-        title: 'Processes',
-        order: 600,
-        kinds: ['site'],
-        module: 'Processes',
-        description: 'Queue workers, Horizon, Octane, daemons and cron jobs with live status.',
-        legacy: '/sites/{id}/queues',
-    }),
-    pendingTab({
         id: 'settings',
         title: 'Settings',
         order: 900,

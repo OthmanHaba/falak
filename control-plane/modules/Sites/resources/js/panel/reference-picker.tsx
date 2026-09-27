@@ -19,7 +19,7 @@ interface ReferencePickerProps {
  */
 export function ReferencePicker({ targets, selfHandle, onPick, disabled }: ReferencePickerProps) {
     const [open, setOpen] = useState(false);
-    const others = (targets ?? []).filter((target) => target.handle !== selfHandle);
+    const others = (targets ?? []).filter((target) => target.handle !== selfHandle && target.keys.length > 0);
 
     return (
         <Popover.Root open={open} onOpenChange={setOpen}>
