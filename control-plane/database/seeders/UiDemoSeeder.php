@@ -22,6 +22,12 @@ use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Identity\Application\Actions\CreateOrganization;
 use Kiln\Identity\Application\Actions\RegisterUser;
 use Kiln\Identity\Domain\Models\User;
+use Kiln\Processes\Domain\Enums\ApplyStatus;
+use Kiln\Processes\Domain\Models\Daemon;
+use Kiln\Processes\Domain\Models\Schedule;
+use Kiln\Processes\Domain\Models\ServerState;
+use Kiln\Processes\Domain\Models\Worker;
+use Kiln\Processes\Infrastructure\ProgramNames;
 use Kiln\Projects\Application\Actions\CreateEnvironment;
 use Kiln\Projects\Application\Actions\CreateProject;
 use Kiln\Servers\Contracts\ServerStatus;
@@ -108,6 +114,7 @@ class UiDemoSeeder extends Seeder
         $this->database($organization->id, $servers[2]);
         $this->variables($created['storefront'], ['APP_ENV' => 'production', 'DATABASE_URL' => '${{ storefront_db.DATABASE_URL }}', 'DB_HOST' => '${{ storefront_db.DB_HOST }}']);
         $this->deployments($organization->id, $created, [$servers[0], $servers[1]]);
+        $this->processes($organization->id, $created['storefront'], $created['marketing'], [$servers[0], $servers[1]]);
 
         // Place the sites into the organization's Default project, and add a second project with staging so the
         // project/environment switchers have something to switch between.
@@ -156,6 +163,70 @@ class UiDemoSeeder extends Seeder
         }
 
         return $database;
+    }
+
+    /**
+     * Storefront runs Horizon, a queue worker, a Reverb daemon, the scheduler and two cron jobs on app-1/app-2
+     * (one worker instance crash-looping on app-2); Marketing's Next.js web process runs on app-2. Job names match
+     * the heartbeats ObservabilityDemoSeeder sends.
+     *
+     * @param  list<Server>  $servers
+     */
+    private function processes(string $organizationId, Site $storefront, Site $marketing, array $servers): void
+    {
+        $storefront->forceFill(['laravel' => LaravelSettings::fromArray(['scheduler' => true, 'horizon' => true, 'octane' => false, 'maintenance' => false])])->save();
+
+        $worker = Worker::query()->create([
+            'organization_id' => $organizationId, 'site_id' => $storefront->id, 'connection' => 'redis', 'queue' => 'emails,default', 'processes' => 2,
+            'timeout' => 90, 'sleep' => 3, 'tries' => 3, 'max_time' => 3600, 'memory' => 256, 'env' => [],
+        ]);
+        $daemon = Daemon::query()->create([
+            'organization_id' => $organizationId, 'site_id' => $storefront->id, 'name' => 'Reverb', 'command' => 'php8.4 artisan reverb:start --port=8080',
+            'instances' => 1, 'restart' => 'always', 'stop_signal' => 'TERM', 'stop_timeout' => 30, 'env' => [],
+        ]);
+        $schedules = collect([
+            ['Sync inventory', 'php8.4 artisan inventory:sync', '*/15 * * * *'],
+            ['Abandoned cart emails', 'php8.4 artisan carts:remind', '*/30 * * * *'],
+        ])->map(fn (array $spec) => Schedule::query()->create([
+            'organization_id' => $organizationId, 'site_id' => $storefront->id, 'name' => $spec[0], 'command' => $spec[1], 'expression' => $spec[2],
+            'timezone' => 'UTC', 'overlap' => 'skip', 'timeout' => 600, 'heartbeat' => true, 'enabled' => true, 'all_servers' => false,
+        ]));
+
+        $programs = [
+            ProgramNames::horizon('storefront') => ['site_id' => $storefront->id, 'kind' => 'horizon', 'label' => 'Horizon', 'numprocs' => 1],
+            ProgramNames::worker('storefront', $worker->id) => ['site_id' => $storefront->id, 'kind' => 'worker', 'label' => 'redis: emails,default', 'numprocs' => 2],
+            ProgramNames::daemon('storefront', $daemon->id) => ['site_id' => $storefront->id, 'kind' => 'daemon', 'label' => 'Reverb', 'numprocs' => 1],
+        ];
+        $jobs = [ProgramNames::scheduler('storefront') => ['site_id' => $storefront->id, 'kind' => 'scheduler', 'label' => 'Scheduler', 'schedule' => '* * * * *', 'timezone' => 'UTC', 'heartbeat' => true]];
+
+        foreach ($schedules as $schedule) {
+            $jobs[ProgramNames::cron('storefront', $schedule->id)] = ['site_id' => $storefront->id, 'kind' => 'cron', 'label' => $schedule->name, 'schedule' => $schedule->expression, 'timezone' => 'UTC', 'heartbeat' => true];
+        }
+
+        foreach ($servers as $index => $server) {
+            $mine = $programs;
+            if ($index === 1) {
+                $mine[ProgramNames::app('marketing')] = ['site_id' => $marketing->id, 'kind' => 'app', 'label' => 'Web process', 'numprocs' => 1];
+            }
+            $status = [];
+            foreach ($mine as $name => $meta) {
+                for ($instance = 0; $instance < $meta['numprocs']; $instance++) {
+                    $crashing = $index === 1 && $meta['kind'] === 'worker' && $instance === 1;
+                    $status[] = [
+                        'name' => $name, 'instance' => $instance, 'state' => $crashing ? 'backoff' : 'running', 'pid' => $crashing ? null : 4100 + $index * 100 + $instance,
+                        'restarts' => $crashing ? 7 : 0, 'started_at' => now()->subHours(3)->toIso8601String(), 'last_exit_code' => $crashing ? 1 : null,
+                    ];
+                }
+            }
+
+            ServerState::query()->create([
+                'server_id' => $server->id, 'organization_id' => $organizationId,
+                'proc_status' => ApplyStatus::Applied, 'programs' => $mine, 'applied_programs' => array_keys($mine), 'proc_applied_at' => now()->subHours(3),
+                'cron_status' => ApplyStatus::Applied, 'jobs' => $index === 0 ? $jobs : [], 'applied_jobs' => $index === 0 ? array_keys($jobs) : [], 'cron_applied_at' => now()->subHours(3),
+                'process_status' => $status, 'status_at' => now()->subMinutes(2),
+                'crash_looping' => $index === 1 ? [ProgramNames::worker('storefront', $worker->id)] : [],
+            ]);
+        }
     }
 
     /**
