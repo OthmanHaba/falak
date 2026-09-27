@@ -5,15 +5,19 @@ use Kiln\Alerting\Http\Controllers\ChannelController;
 use Kiln\Alerting\Http\Controllers\HistoryController;
 use Kiln\Alerting\Http\Controllers\NotificationController;
 use Kiln\Alerting\Http\Controllers\RuleController;
+use Kiln\Kernel\Http\LegacyRedirect;
 
 Route::middleware(['auth', 'org'])->group(function () {
-    Route::get('alerting/channels', [ChannelController::class, 'index'])->name('alerting.channels.index');
+    // Channels and rules live in the settings shell (docs/UI_DESIGN.md §3); the old URLs redirect.
+    Route::get('settings/alert-channels', [ChannelController::class, 'index'])->name('alerting.channels.index');
+    Route::get('alerting/channels', LegacyRedirect::to('/settings/alert-channels'))->name('alerting.channels.legacy');
     Route::post('alerting/channels', [ChannelController::class, 'store'])->name('alerting.channels.store');
     Route::put('alerting/channels/{channel}', [ChannelController::class, 'update'])->name('alerting.channels.update');
     Route::delete('alerting/channels/{channel}', [ChannelController::class, 'destroy'])->name('alerting.channels.destroy');
     Route::post('alerting/channels/{channel}/test', [ChannelController::class, 'test'])->middleware('throttle:10,1')->name('alerting.channels.test');
 
-    Route::get('alerting/rules', [RuleController::class, 'index'])->name('alerting.rules.index');
+    Route::get('settings/alert-rules', [RuleController::class, 'index'])->name('alerting.rules.index');
+    Route::get('alerting/rules', LegacyRedirect::to('/settings/alert-rules'))->name('alerting.rules.legacy');
     Route::post('alerting/rules', [RuleController::class, 'store'])->name('alerting.rules.store');
     Route::put('alerting/rules/{rule}', [RuleController::class, 'update'])->name('alerting.rules.update');
     Route::delete('alerting/rules/{rule}', [RuleController::class, 'destroy'])->name('alerting.rules.destroy');

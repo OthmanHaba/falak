@@ -1,33 +1,28 @@
-import { registerCommands, registerNavigation } from '@/lib/registry';
+import { registerCommands, registerSettingsNav } from '@/lib/registry';
 import { GitBranch, Plus } from 'lucide-react';
 
-registerNavigation({
+// Organization settings → Integrations (docs/UI_DESIGN.md §3). The palette lists it under "Settings".
+registerSettingsNav({
     id: 'source-control',
     title: 'Source control',
-    url: '/source-control',
+    url: '/settings/source-control',
+    group: 'integrations',
+    order: 200,
     icon: GitBranch,
-    order: 250,
     permission: 'source_control.view',
+    requiresOrganization: true,
+    keywords: ['git', 'github', 'gitlab', 'bitbucket', 'repositories', 'webhooks'],
 });
 
 registerCommands({
-    id: 'source-control.navigation',
+    id: 'source-control.actions',
     commands: () => [
-        {
-            id: 'source-control.index',
-            title: 'Source control',
-            group: 'Navigation',
-            icon: GitBranch,
-            href: '/source-control',
-            permission: 'source_control.view',
-            keywords: ['git', 'github', 'gitlab', 'bitbucket', 'repositories'],
-        },
         {
             id: 'source-control.connect',
             title: 'Connect a git provider',
             group: 'Actions',
             icon: Plus,
-            href: '/source-control',
+            href: '/settings/source-control',
             permission: 'source_control.manage',
             keywords: ['github', 'gitlab', 'bitbucket', 'oauth'],
         },

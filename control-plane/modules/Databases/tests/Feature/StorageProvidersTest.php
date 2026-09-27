@@ -48,7 +48,7 @@ it('creates providers with derived endpoints and encrypted credentials', functio
 it('never sends credentials to the UI', function () {
     databases_provider($this->organization, ['secret_access_key' => 'do-not-leak-me', 'access_key_id' => 'AKIALEAKCHECK0001234']);
 
-    $response = $this->get('/databases/storage')->assertOk()->assertInertia(fn ($page) => $page
+    $response = $this->get('/settings/storage')->assertOk()->assertInertia(fn ($page) => $page
         ->component('Databases/Storage', false)
         ->where('providers.0.access_key_hint', '…1234'));
 
@@ -110,7 +110,7 @@ it('restricts provider management to admins', function () {
 
     $this->post('/databases/storage', ['name' => 'X', 'driver' => 's3', 'region' => 'eu-central-1', 'bucket' => 'b-b-b', 'access_key_id' => 'a', 'secret_access_key' => 'b'])->assertForbidden();
     $this->delete("/databases/storage/{$provider->id}")->assertForbidden();
-    $this->get('/databases/storage')->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false));
+    $this->get('/settings/storage')->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false));
 });
 
 it('refuses to delete providers used by schedules', function () {

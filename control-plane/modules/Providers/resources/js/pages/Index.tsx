@@ -1,20 +1,21 @@
-import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm } from '@inertiajs/react';
-import { formatDistanceToNow } from 'date-fns';
-import { Cloud, MoreHorizontal, Plus, RefreshCw } from 'lucide-react';
-import { FormEventHandler, useMemo, useState } from 'react';
+import { Button } from '@/components/kiln/button';
+import { Callout } from '@/components/kiln/callout';
+import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
+import { DataTable } from '@/components/kiln/data-table';
+import { Dialog } from '@/components/kiln/dialog';
+import { EmptyState } from '@/components/kiln/empty-state';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { IntegrationTile } from '@/components/kiln/integration-icon';
+import { RelativeTime } from '@/components/kiln/relative-time';
+import { SecretInput } from '@/components/kiln/secret-input';
+import { Section } from '@/components/kiln/section';
+import { StatusBadge } from '@/components/kiln/status';
+import SettingsLayout from '@/layouts/settings/layout';
+import { cn } from '@/lib/utils';
+import { router, useForm } from '@inertiajs/react';
+import { Cloud, KeyRound, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEventHandler } from 'react';
 
 interface CredentialField {
     name: string;
@@ -53,10 +54,20 @@ interface CredentialForm {
     [key: string]: string | Record<string, string>;
 }
 
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'Providers', href: '/providers' }];
+const BLURBS: Record<string, string> = {
+    hetzner: 'Cloud servers in Germany, Finland, the US and Singapore.',
+    digitalocean: 'Droplets in 14 regions.',
+    vultr: 'Cloud compute in 30+ locations.',
+    linode: 'Akamai cloud compute (Linode).',
+    aws: 'Amazon Lightsail instances.',
+};
 
-function fieldError(errors: Partial<Record<string, string>>, field: string): string | undefined {
-    return errors[`credentials.${field}`] ?? undefined;
+function credentialStatus(credential: Credential): { status: string; label: string } {
+    if (credential.status === 'invalid') return { status: 'failed', label: 'Invalid' };
+    if (credential.last_error) return { status: 'degraded', label: 'Unreachable' };
+    if (credential.last_verified_at) return { status: 'active', label: 'Verified' };
+
+    return { status: 'queued', label: 'Unverified' };
 }
 
 function CredentialFields({
@@ -64,119 +75,139 @@ function CredentialFields({
     values,
     errors,
     onChange,
-    optional = false,
+    replace = false,
 }: {
     fields: CredentialField[];
     values: Record<string, string>;
     errors: Partial<Record<string, string>>;
     onChange: (name: string, value: string) => void;
-    optional?: boolean;
+    /** Editing an existing credential: secrets are write-only (Replace), other fields optional. */
+    replace?: boolean;
 }) {
     return (
         <>
             {fields.map((field) => (
-                <div key={field.name} className="grid gap-2">
-                    <Label htmlFor={`credential-${field.name}`}>
-                        {field.label}
-                        {optional && <span className="text-muted-foreground ml-1 font-normal">(leave blank to keep)</span>}
-                    </Label>
-                    <Input
-                        id={`credential-${field.name}`}
-                        type={field.secret ? 'password' : 'text'}
-                        autoComplete="off"
-                        value={values[field.name] ?? ''}
-                        onChange={(e) => onChange(field.name, e.target.value)}
-                    />
-                    {field.help && <p className="text-muted-foreground text-xs">{field.help}</p>}
-                    <InputError message={fieldError(errors, field.name)} />
-                </div>
+                <Field
+                    key={field.name}
+                    label={field.label}
+                    hint={
+                        replace && !field.secret
+                            ? `${field.help ? `${field.help} ` : ''}Leave empty to keep the stored value.`
+                            : field.help || undefined
+                    }
+                    error={errors[`credentials.${field.name}`]}
+                    required={!replace}
+                >
+                    {field.secret ? (
+                        <SecretInput stored={replace} value={values[field.name] ?? ''} onChange={(value) => onChange(field.name, value)} />
+                    ) : (
+                        <Input
+                            mono
+                            autoComplete="off"
+                            value={values[field.name] ?? ''}
+                            placeholder={replace ? 'Unchanged' : undefined}
+                            onChange={(event) => onChange(field.name, event.target.value)}
+                        />
+                    )}
+                </Field>
             ))}
         </>
     );
 }
 
+/** Only send filled-in credential fields (empty = keep the stored value when editing). */
+function filled(values: Record<string, string>): Record<string, string> {
+    return Object.fromEntries(Object.entries(values).filter(([, value]) => value.trim() !== ''));
+}
+
 function AddCredentialDialog({
     providers,
-    open,
-    onOpenChange,
+    provider,
+    onClose,
 }: {
     providers: ProviderOption[];
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
+    /** Provider to add, or null when closed. */
+    provider: string | null;
+    onClose: () => void;
 }) {
-    const form = useForm<CredentialForm>({ provider: providers[0]?.value ?? '', name: '', credentials: {} });
-    const provider = providers.find((p) => p.value === form.data.provider);
+    const form = useForm<CredentialForm>({ provider: provider ?? providers[0]?.value ?? '', name: '', credentials: {} });
+    const selected = providers.find((option) => option.value === form.data.provider);
     const errors = form.errors as Partial<Record<string, string>>;
+    const { setData, clearErrors } = form;
 
-    const submit: FormEventHandler = (e) => {
-        e.preventDefault();
+    useEffect(() => {
+        if (!provider) return;
+        clearErrors();
+        setData({ provider, name: '', credentials: {} });
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when the dialog opens for a provider
+    }, [provider]);
+
+    const submit: FormEventHandler = (event) => {
+        event.preventDefault();
         form.post(route('providers.store'), {
             preserveScroll: true,
             onSuccess: () => {
                 form.reset();
-                onOpenChange(false);
+                onClose();
             },
         });
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <form onSubmit={submit} className="space-y-4">
-                    <DialogHeader>
-                        <DialogTitle>Add provider credential</DialogTitle>
-                        <DialogDescription>
-                            The credential is verified against the provider before it is saved, then stored encrypted.
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="grid gap-2">
-                        <Label>Provider</Label>
-                        <Select
-                            value={form.data.provider}
-                            onValueChange={(value) => form.setData({ ...form.data, provider: value, credentials: {} })}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder="Choose a provider" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {providers.map((p) => (
-                                    <SelectItem key={p.value} value={p.value}>
-                                        {p.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <InputError message={errors.provider} />
+        <Dialog
+            open={provider !== null}
+            onOpenChange={(open) => !open && onClose()}
+            title="Add a cloud provider"
+            description="Kiln checks the credential against the provider's API before saving it, then stores it encrypted. It is never shown again."
+            footer={
+                <>
+                    <Button variant="ghost" onClick={onClose}>
+                        Cancel
+                    </Button>
+                    <Button variant="primary" type="submit" form="add-credential" loading={form.processing}>
+                        {form.processing ? 'Verifying…' : 'Verify and add'}
+                    </Button>
+                </>
+            }
+        >
+            <form id="add-credential" onSubmit={submit} className="grid gap-4">
+                <fieldset className="grid gap-1.5">
+                    <legend className="text-fg mb-1.5 text-xs font-medium">Provider</legend>
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3" role="radiogroup" aria-label="Provider">
+                        {providers.map((option) => (
+                            <button
+                                key={option.value}
+                                type="button"
+                                role="radio"
+                                aria-checked={form.data.provider === option.value}
+                                onClick={() => form.setData({ ...form.data, provider: option.value, credentials: {} })}
+                                className={cn(
+                                    'flex items-center gap-2 rounded-md border px-2.5 py-2 text-left text-sm transition-colors duration-150',
+                                    form.data.provider === option.value
+                                        ? 'border-primary bg-primary-soft text-fg'
+                                        : 'border-border bg-surface-2 text-fg-muted hover:border-border-strong hover:text-fg',
+                                )}
+                            >
+                                <IntegrationTile name={option.value} size="sm" className="bg-surface-1" />
+                                <span className="truncate">{option.label}</span>
+                            </button>
+                        ))}
                     </div>
+                    {errors.provider && <p className="text-danger text-xs">{errors.provider}</p>}
+                </fieldset>
 
-                    <div className="grid gap-2">
-                        <Label htmlFor="credential-name">Name</Label>
-                        <Input
-                            id="credential-name"
-                            value={form.data.name}
-                            onChange={(e) => form.setData('name', e.target.value)}
-                            placeholder="Production account"
-                        />
-                        <InputError message={errors.name} />
-                    </div>
+                <Field label="Name" hint="How this account appears when creating servers." error={errors.name} required>
+                    <Input value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} placeholder="Production account" />
+                </Field>
 
-                    <CredentialFields
-                        fields={provider?.fields ?? []}
-                        values={form.data.credentials}
-                        errors={errors}
-                        onChange={(name, value) => form.setData('credentials', { ...form.data.credentials, [name]: value })}
-                    />
-                    <InputError message={errors.credentials} />
-
-                    <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                            Cancel
-                        </Button>
-                        <Button disabled={form.processing}>{form.processing ? 'Verifying…' : 'Add credential'}</Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
+                <CredentialFields
+                    fields={selected?.fields ?? []}
+                    values={form.data.credentials}
+                    errors={errors}
+                    onChange={(name, value) => form.setData('credentials', { ...form.data.credentials, [name]: value })}
+                />
+                {errors.credentials && <Callout tone="danger">{errors.credentials}</Callout>}
+            </form>
         </Dialog>
     );
 }
@@ -196,165 +227,218 @@ function EditCredentialDialog({
     });
     const errors = form.errors as Partial<Record<string, string>>;
 
-    const submit: FormEventHandler = (e) => {
-        e.preventDefault();
+    const submit: FormEventHandler = (event) => {
+        event.preventDefault();
+        form.transform((data) => {
+            const credentials = filled(data.credentials);
+
+            return Object.keys(credentials).length > 0 ? { name: data.name, credentials } : { name: data.name };
+        });
         form.patch(route('providers.update', credential.id), { preserveScroll: true, onSuccess: onClose });
     };
 
     return (
-        <Dialog open onOpenChange={(open) => !open && onClose()}>
-            <DialogContent>
-                <form onSubmit={submit} className="space-y-4">
-                    <DialogHeader>
-                        <DialogTitle>Edit {credential.name}</DialogTitle>
-                        <DialogDescription>
-                            Rename the credential or rotate its secret. New secrets are verified before they replace the old ones.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="grid gap-2">
-                        <Label htmlFor="edit-name">Name</Label>
-                        <Input id="edit-name" value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} />
-                        <InputError message={errors.name} />
-                    </div>
-                    <CredentialFields
-                        fields={provider?.fields ?? []}
-                        values={form.data.credentials}
-                        errors={errors}
-                        optional
-                        onChange={(name, value) => form.setData('credentials', { ...form.data.credentials, [name]: value })}
-                    />
-                    <InputError message={errors.credentials} />
-                    <DialogFooter>
-                        <Button type="button" variant="outline" onClick={onClose}>
-                            Cancel
-                        </Button>
-                        <Button disabled={form.processing}>Save</Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
+        <Dialog
+            open
+            onOpenChange={(open) => !open && onClose()}
+            title={`Edit ${credential.name}`}
+            description="Rename the credential or replace its secret. A new secret is verified before it replaces the stored one."
+            footer={
+                <>
+                    <Button variant="ghost" onClick={onClose}>
+                        Cancel
+                    </Button>
+                    <Button variant="primary" type="submit" form="edit-credential" loading={form.processing}>
+                        Save
+                    </Button>
+                </>
+            }
+        >
+            <form id="edit-credential" onSubmit={submit} className="grid gap-4">
+                <Field label="Name" error={errors.name} required>
+                    <Input value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} />
+                </Field>
+                <CredentialFields
+                    fields={provider?.fields ?? []}
+                    values={form.data.credentials}
+                    errors={errors}
+                    replace
+                    onChange={(name, value) => form.setData('credentials', { ...form.data.credentials, [name]: value })}
+                />
+                {errors.credentials && <Callout tone="danger">{errors.credentials}</Callout>}
+            </form>
         </Dialog>
     );
 }
 
 export default function ProvidersIndex({ credentials, providers, can }: Props) {
-    const [adding, setAdding] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('add') && can.manage);
+    const [adding, setAdding] = useState<string | null>(() =>
+        typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('add') && can.manage ? (providers[0]?.value ?? null) : null,
+    );
     const [editing, setEditing] = useState<Credential | null>(null);
+    const [removing, setRemoving] = useState<Credential | null>(null);
     const [verifying, setVerifying] = useState<string | null>(null);
-    const providerByValue = useMemo(() => new Map(providers.map((p) => [p.value, p])), [providers]);
+    const providerByValue = useMemo(() => new Map(providers.map((provider) => [provider.value, provider])), [providers]);
 
     const verify = (credential: Credential) => {
         setVerifying(credential.id);
         router.post(route('providers.verify', credential.id), {}, { preserveScroll: true, onFinish: () => setVerifying(null) });
     };
 
-    const remove = (credential: Credential) => {
-        if (
-            window.confirm(
-                `Remove "${credential.name}"? Existing servers keep running, but Kiln can no longer manage them through ${credential.provider_label}.`,
-            )
-        ) {
-            router.delete(route('providers.destroy', credential.id), { preserveScroll: true });
-        }
-    };
+    const remove = () =>
+        new Promise<void>((resolve) => {
+            if (!removing) return resolve();
+            router.delete(route('providers.destroy', removing.id), {
+                preserveScroll: true,
+                onSuccess: () => setRemoving(null),
+                onFinish: () => resolve(),
+            });
+        });
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Providers" />
-            <div className="space-y-6 p-4 md:p-6">
-                <div className="flex items-start justify-between gap-4">
-                    <Heading
-                        title="Cloud providers"
-                        description="API credentials Kiln uses to create and destroy servers. Secrets are encrypted and never shown again."
-                    />
-                    {can.manage && (
-                        <Button onClick={() => setAdding(true)}>
-                            <Plus className="mr-1 size-4" />
-                            Add credential
-                        </Button>
-                    )}
-                </div>
+        <SettingsLayout
+            title="Cloud providers"
+            description="API credentials Kiln uses to create, resize and destroy servers. Any Ubuntu machine can also join with the install command — no credential needed."
+            actions={
+                can.manage &&
+                credentials.length > 0 && (
+                    <Button variant="primary" icon={<Plus />} onClick={() => setAdding(providers[0]?.value ?? null)}>
+                        Add credential
+                    </Button>
+                )
+            }
+            wide
+        >
+            {credentials.length === 0 ? (
+                <EmptyState
+                    icon={<Cloud />}
+                    title="No cloud accounts connected"
+                    description="Connect Hetzner Cloud, DigitalOcean, Vultr, Linode or AWS Lightsail to create servers from Kiln. Tokens are verified before they are saved."
+                    action={
+                        can.manage && (
+                            <Button variant="primary" icon={<Plus />} onClick={() => setAdding(providers[0]?.value ?? null)}>
+                                Add a credential
+                            </Button>
+                        )
+                    }
+                />
+            ) : (
+                <DataTable
+                    label="Cloud provider credentials"
+                    rows={credentials}
+                    rowKey={(credential) => credential.id}
+                    columns={[
+                        {
+                            id: 'name',
+                            header: 'Credential',
+                            sortValue: (credential) => credential.name,
+                            cell: (credential) => (
+                                <span className="flex min-w-0 items-center gap-2.5 py-1.5">
+                                    <IntegrationTile name={credential.provider} size="sm" />
+                                    <span className="grid min-w-0">
+                                        <span className="truncate font-medium">{credential.name}</span>
+                                        <span className="text-fg-faint truncate text-xs">{credential.provider_label}</span>
+                                    </span>
+                                </span>
+                            ),
+                        },
+                        {
+                            id: 'status',
+                            header: 'Status',
+                            cell: (credential) => {
+                                const spec = credentialStatus(credential);
 
-                {credentials.length === 0 ? (
-                    <Card>
-                        <CardHeader className="items-center text-center">
-                            <Cloud className="text-muted-foreground mb-2 size-10" />
-                            <CardTitle>No provider credentials yet</CardTitle>
-                            <CardDescription>
-                                Connect Hetzner Cloud, DigitalOcean, Vultr, Linode or AWS Lightsail — or add any Ubuntu server with the install
-                                command.
-                            </CardDescription>
-                        </CardHeader>
-                        {can.manage && (
-                            <CardContent className="flex justify-center">
-                                <Button onClick={() => setAdding(true)}>Add your first credential</Button>
-                            </CardContent>
-                        )}
-                    </Card>
-                ) : (
-                    <Card>
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Name</TableHead>
-                                    <TableHead>Provider</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Last verified</TableHead>
-                                    <TableHead className="w-12" />
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {credentials.map((credential) => (
-                                    <TableRow key={credential.id}>
-                                        <TableCell className="font-medium">{credential.name}</TableCell>
-                                        <TableCell>{credential.provider_label}</TableCell>
-                                        <TableCell>
-                                            <Badge variant={credential.status === 'active' ? 'secondary' : 'destructive'}>{credential.status}</Badge>
-                                            {credential.last_error && (
-                                                <p className="text-destructive mt-1 max-w-sm truncate text-xs">{credential.last_error}</p>
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="text-muted-foreground">
-                                            {credential.last_verified_at
-                                                ? formatDistanceToNow(new Date(credential.last_verified_at), { addSuffix: true })
-                                                : 'never'}
-                                        </TableCell>
-                                        <TableCell>
-                                            {can.manage && (
-                                                <DropdownMenu>
-                                                    <DropdownMenuTrigger asChild>
-                                                        <Button variant="ghost" size="icon" aria-label={`Actions for ${credential.name}`}>
-                                                            {verifying === credential.id ? (
-                                                                <RefreshCw className="size-4 animate-spin" />
-                                                            ) : (
-                                                                <MoreHorizontal className="size-4" />
-                                                            )}
-                                                        </Button>
-                                                    </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end">
-                                                        <DropdownMenuItem onSelect={() => verify(credential)}>Verify now</DropdownMenuItem>
-                                                        <DropdownMenuItem onSelect={() => setEditing(credential)}>
-                                                            Rename / rotate secret
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuSeparator />
-                                                        <DropdownMenuItem className="text-destructive" onSelect={() => remove(credential)}>
-                                                            Remove
-                                                        </DropdownMenuItem>
-                                                    </DropdownMenuContent>
-                                                </DropdownMenu>
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </Card>
-                )}
-            </div>
+                                return (
+                                    <span className="grid justify-items-start gap-0.5 py-1.5">
+                                        <StatusBadge status={spec.status} label={spec.label} />
+                                        {credential.last_error && (
+                                            <span className="text-danger line-clamp-2 max-w-xs text-xs" title={credential.last_error}>
+                                                {credential.last_error}
+                                            </span>
+                                        )}
+                                    </span>
+                                );
+                            },
+                        },
+                        {
+                            id: 'verified',
+                            header: 'Last verified',
+                            hideOnMobile: true,
+                            sortValue: (credential) => credential.last_verified_at ?? '',
+                            cell: (credential) => <RelativeTime value={credential.last_verified_at} fallback="Never" className="text-fg-muted" />,
+                        },
+                        ...(can.manage
+                            ? [
+                                  {
+                                      id: 'verify',
+                                      hideOnMobile: true,
+                                      header: <span className="sr-only">Verify</span>,
+                                      align: 'right' as const,
+                                      cell: (credential: Credential) => (
+                                          <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              icon={<ShieldCheck />}
+                                              loading={verifying === credential.id}
+                                              onClick={() => verify(credential)}
+                                              aria-label={`Verify ${credential.name}`}
+                                          >
+                                              <span className="hidden sm:inline">Verify</span>
+                                          </Button>
+                                      ),
+                                  },
+                              ]
+                            : []),
+                    ]}
+                    rowActions={
+                        can.manage
+                            ? (credential) => [
+                                  { label: 'Verify now', icon: <ShieldCheck />, onSelect: () => verify(credential) },
+                                  { label: 'Rename', icon: <Pencil />, onSelect: () => setEditing(credential) },
+                                  { label: 'Replace secret', icon: <KeyRound />, onSelect: () => setEditing(credential) },
+                                  { type: 'separator' },
+                                  { label: 'Remove', icon: <Trash2 />, danger: true, onSelect: () => setRemoving(credential) },
+                              ]
+                            : undefined
+                    }
+                />
+            )}
 
-            {can.manage && <AddCredentialDialog providers={providers} open={adding} onOpenChange={setAdding} />}
+            {can.manage && (
+                <Section title="Supported providers" description="Pick one to connect another account." bare>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {providers.map((provider) => (
+                            <button
+                                key={provider.value}
+                                type="button"
+                                onClick={() => setAdding(provider.value)}
+                                className="border-border bg-surface-1 hover:border-border-strong hover:bg-surface-2 flex items-center gap-3 rounded-lg border p-3 text-left transition-colors duration-150"
+                            >
+                                <IntegrationTile name={provider.value} />
+                                <span className="grid min-w-0">
+                                    <span className="text-fg text-sm font-medium">{provider.label}</span>
+                                    <span className="text-fg-muted truncate text-xs">{BLURBS[provider.value] ?? 'Cloud servers via API.'}</span>
+                                </span>
+                                <Plus className="text-fg-faint ml-auto size-4 shrink-0" aria-hidden />
+                            </button>
+                        ))}
+                    </div>
+                </Section>
+            )}
+
+            {can.manage && <AddCredentialDialog providers={providers} provider={adding} onClose={() => setAdding(null)} />}
             {editing && (
                 <EditCredentialDialog credential={editing} provider={providerByValue.get(editing.provider)} onClose={() => setEditing(null)} />
             )}
-        </AppLayout>
+            <ConfirmDestructive
+                open={removing !== null}
+                onOpenChange={(open) => !open && setRemoving(null)}
+                title={`Remove ${removing?.name ?? ''}`}
+                description={`Existing servers keep running, but Kiln can no longer create, resize or destroy them through ${removing?.provider_label ?? 'this provider'}.`}
+                confirmText={removing?.name ?? ''}
+                confirmLabel="Remove credential"
+                onConfirm={remove}
+            />
+        </SettingsLayout>
     );
 }
