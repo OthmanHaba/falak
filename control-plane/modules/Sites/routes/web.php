@@ -1,6 +1,8 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Kiln\Sites\Http\Controllers\ComposeController;
+use Kiln\Sites\Http\Controllers\ComposePolicyController;
 use Kiln\Sites\Http\Controllers\DeployScriptController;
 use Kiln\Sites\Http\Controllers\EnvironmentController;
 use Kiln\Sites\Http\Controllers\SiteCommandController;
@@ -27,6 +29,17 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::patch('sites/{site}/environment', [EnvironmentController::class, 'patch'])->name('sites.environment.patch');
     Route::post('sites/{site}/environment/reveal', [EnvironmentController::class, 'reveal'])->middleware('throttle:30,1')->name('sites.environment.reveal');
     Route::post('sites/{site}/environment/versions/{version}/restore', [EnvironmentController::class, 'restore'])->whereNumber('version')->name('sites.environment.restore');
+
+    Route::get('sites/{site}/compose', [ComposeController::class, 'show'])->name('sites.compose');
+    Route::put('sites/{site}/compose', [ComposeController::class, 'update'])->name('sites.compose.update');
+    Route::post('sites/{site}/compose/validate', [ComposeController::class, 'validateContent'])->middleware('throttle:120,1')->name('sites.compose.validate');
+    Route::get('sites/{site}/compose/versions/{version}', [ComposeController::class, 'version'])->whereNumber('version')->name('sites.compose.version');
+    Route::post('sites/{site}/compose/versions/{version}/restore', [ComposeController::class, 'restore'])->whereNumber('version')->name('sites.compose.restore');
+    Route::get('sites/{site}/compose/services', [ComposeController::class, 'services'])->name('sites.compose.services');
+    Route::post('sites/{site}/compose/restart', [ComposeController::class, 'restart'])->middleware('throttle:30,1')->name('sites.compose.restart');
+
+    Route::get('settings/compose', [ComposePolicyController::class, 'show'])->name('sites.compose-policy');
+    Route::put('settings/compose', [ComposePolicyController::class, 'update'])->name('sites.compose-policy.update');
 
     Route::get('sites/{site}/deploy-script', [DeployScriptController::class, 'show'])->name('sites.deploy-script');
     Route::put('sites/{site}/deploy-script', [DeployScriptController::class, 'update'])->name('sites.deploy-script.update');
