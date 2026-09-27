@@ -1,11 +1,17 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Kiln\Kernel\Http\LegacyRedirect;
 use Kiln\Providers\Http\Controllers\CatalogController;
 use Kiln\Providers\Http\Controllers\ProviderCredentialController;
 
+Route::middleware(['auth', 'org', 'org.can:providers.view'])->group(function () {
+    // The page lives in the settings shell (docs/UI_DESIGN.md §3); the old URL redirects (keeping ?add=1).
+    Route::get('settings/cloud-providers', [ProviderCredentialController::class, 'index'])->name('providers.index');
+    Route::get('providers', LegacyRedirect::to('/settings/cloud-providers'))->name('providers.legacy');
+});
+
 Route::middleware(['auth', 'org', 'org.can:providers.view'])->prefix('providers')->name('providers.')->group(function () {
-    Route::get('/', [ProviderCredentialController::class, 'index'])->name('index');
     Route::post('/', [ProviderCredentialController::class, 'store'])->middleware('org.can:providers.manage')->name('store');
     Route::patch('{credential}', [ProviderCredentialController::class, 'update'])->name('update');
     Route::post('{credential}/verify', [ProviderCredentialController::class, 'verify'])->name('verify');

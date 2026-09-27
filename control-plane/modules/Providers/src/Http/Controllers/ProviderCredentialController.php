@@ -66,7 +66,7 @@ final class ProviderCredentialController extends Controller
 
         $add($organizationId, ProviderType::from($data['provider']), $data['name'], $data['credentials'], (string) $request->user()?->getAuthIdentifier());
 
-        return back();
+        return back()->with('success', "{$data['name']} connected and verified.");
     }
 
     public function update(Request $request, string $credential, UpdateCredential $update): RedirectResponse
@@ -90,9 +90,11 @@ final class ProviderCredentialController extends Controller
         $model = $this->find($credential);
         $this->authorize('update', $model);
 
-        $verify($model);
+        $ok = $verify($model);
 
-        return back();
+        return $ok
+            ? back()->with('success', "{$model->name} verified.")
+            : back()->with('error', "{$model->name} could not be verified: {$model->last_error}");
     }
 
     public function destroy(string $credential, RemoveCredential $remove): RedirectResponse
