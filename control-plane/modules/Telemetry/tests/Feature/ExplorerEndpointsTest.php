@@ -33,15 +33,20 @@ function explorer_trace(string $orgId): array
 it('renders the explorer pages', function () {
     $server = Server::factory()->create(['organization_id' => $this->organization->id]);
 
-    $this->get('/telemetry/logs?site_id=01JSQTE000000000000000000A&search=error')->assertOk()
-        ->assertInertia(fn ($page) => $page->component('Telemetry/Logs', false)->where('filters.search', 'error')->where('configured', true)->has('servers', 1));
-    $this->get('/telemetry/traces?min_duration_ms=1000')->assertOk()
+    $this->get('/observability/logs?site_id=01JSQTE000000000000000000A&search=error')->assertOk()
+        ->assertInertia(fn ($page) => $page->component('Telemetry/Logs', false)->where('filters.search', 'error')->where('configured', true)->has('servers', 1)->has('sites', 0));
+    $this->get('/observability/traces?min_duration_ms=1000')->assertOk()
         ->assertInertia(fn ($page) => $page->component('Telemetry/Traces', false)->where('filters.min_duration_ms', '1000'));
-    $this->get('/telemetry/traces/0af7651916cd43dd8448eb211c80319c')->assertOk()
+    $this->get('/observability/traces/0af7651916cd43dd8448eb211c80319c')->assertOk()
         ->assertInertia(fn ($page) => $page->component('Telemetry/Trace', false)->where('traceId', '0af7651916cd43dd8448eb211c80319c'));
+
+    // Legacy explorer URLs redirect (query string kept).
+    $this->get('/telemetry/logs?site_id=01JSQTE000000000000000000A')->assertRedirect('/observability/logs?site_id=01JSQTE000000000000000000A');
+    $this->get('/telemetry/traces?status=error')->assertRedirect('/observability/traces?status=error');
+    $this->get('/telemetry/traces/0af7651916cd43dd8448eb211c80319c')->assertRedirect('/observability/traces/0af7651916cd43dd8448eb211c80319c');
     $this->get("/telemetry/servers/{$server->id}/metrics")->assertOk()
         ->assertInertia(fn ($page) => $page->component('Telemetry/ServerMetrics', false)->where('server.id', $server->id));
-    $this->get('/telemetry/traces/not-a-trace')->assertNotFound();
+    $this->get('/observability/traces/not-a-trace')->assertNotFound();
 });
 
 it('serves server metrics scoped to the server and hides other organizations\' servers', function () {
@@ -139,5 +144,5 @@ it('returns traces of the current organization only', function () {
 it('requires authentication and telemetry.view', function () {
     auth()->logout();
     $this->getJson('/telemetry/logs/data')->assertUnauthorized();
-    $this->get('/telemetry/traces')->assertRedirect();
+    $this->get('/observability/traces')->assertRedirect('/login');
 });

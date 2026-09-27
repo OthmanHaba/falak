@@ -49,7 +49,7 @@ it('ingests the agent insights tee end-to-end through the Fleet endpoint', funct
         && $e->organizationId === $this->organization->id
         && $e->siteId === INSIGHTS_SITE
         && $e->kind === 'exception'
-        && str_ends_with($e->url, "/insights/issues/{$issue->id}"));
+        && str_ends_with($e->url, "/observability/issues/{$issue->id}"));
 });
 
 it('groups exceptions by fingerprint and counts occurrences and distinct users', function () {

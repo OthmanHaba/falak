@@ -10,6 +10,8 @@ use Inertia\Response;
 use Kiln\Identity\Contracts\CurrentOrganization;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
+use Kiln\Sites\Contracts\Data\SiteData;
+use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Telemetry\Application\Queries\TraceQueryBuilder;
 use Kiln\Telemetry\Contracts\Data\TraceSummary;
 use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
@@ -26,12 +28,13 @@ final class TraceController extends Controller
         private readonly OrganizationAccess $access,
     ) {}
 
-    public function index(Request $request): Response
+    public function index(Request $request, SiteDirectory $sites): Response
     {
-        $this->authorizeView($request);
+        $organizationId = $this->authorizeView($request);
 
         return Inertia::render('Telemetry/Traces', [
             'filters' => $request->only(['site_id', 'service', 'name', 'status', 'min_duration_ms', 'range', 'from', 'to']),
+            'sites' => array_map(fn (SiteData $s) => ['id' => $s->id, 'name' => $s->name], $sites->forOrganization($organizationId)),
             'configured' => (string) config('telemetry.tempo.url') !== '',
         ]);
     }

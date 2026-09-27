@@ -3,31 +3,34 @@
 namespace Kiln\Insights\Application\Queries;
 
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Kiln\Insights\Contracts\IssueStatus;
 use Kiln\Insights\Domain\Models\Issue;
 
 /**
- * App overview dashboard for one site, computed from the per-minute aggregates and occurrences.
+ * App overview dashboard computed from the per-minute aggregates and occurrences: for one site, a set of sites
+ * (e.g. a project's), or the whole organization (`$sites = null`).
  */
 final class SiteOverview
 {
     /** range => [window minutes, bucket minutes] */
-    public const RANGES = ['1h' => [60, 1], '6h' => [360, 5], '24h' => [1440, 15], '7d' => [10080, 120]];
+    public const RANGES = ['1h' => [60, 1], '6h' => [360, 5], '24h' => [1440, 15], '7d' => [10080, 120], '30d' => [43200, 720]];
 
     /**
+     * @param  string|list<string>|null  $sites  one site, several, or null for every site of the organization
      * @return array<string, mixed>
      */
-    public function __invoke(string $organizationId, string $siteId, string $range, ?CarbonImmutable $now = null): array
+    public function __invoke(string $organizationId, string|array|null $sites, string $range, ?CarbonImmutable $now = null): array
     {
         [$window, $bucket] = self::RANGES[$range] ?? self::RANGES['24h'];
         $end = ($now ?? CarbonImmutable::now('UTC'))->utc()->startOfMinute()->addMinute();
         $start = $end->subMinutes($window);
+        $scope = fn ($query) => self::scope($query, $sites);
 
-        $aggregates = fn () => DB::table('insights_aggregates')
+        $aggregates = fn () => $scope(DB::table('insights_aggregates'))
             ->where('organization_id', $organizationId)
-            ->where('site_id', $siteId)
             ->where('minute', '>=', $start)
             ->where('minute', '<', $end);
 
@@ -71,9 +74,8 @@ final class SiteOverview
             }
         }
 
-        $exceptions = DB::table('insights_exceptions')
+        $exceptions = $scope(DB::table('insights_exceptions'))
             ->where('organization_id', $organizationId)
-            ->where('site_id', $siteId)
             ->where('minute', '>=', $start)
             ->where('minute', '<', $end)
             ->groupBy('minute', 'handled')
@@ -122,24 +124,65 @@ final class SiteOverview
             'jobs' => $this->top($aggregates(), 'job', 'total'),
             'queries' => $this->top($aggregates(), 'query', 'max'),
             'outgoing' => $this->top($aggregates(), 'outgoing_request', 'p95'),
-            'issues' => Issue::query()
-                ->where('organization_id', $organizationId)
-                ->where('site_id', $siteId)
-                ->where('status', IssueStatus::Open)
-                ->orderByDesc('last_seen_at')
-                ->limit(5)
-                ->get(['id', 'kind', 'title', 'culprit', 'occurrences', 'affected_users', 'last_seen_at', 'priority'])
-                ->map(fn (Issue $issue) => [
-                    'id' => $issue->id,
-                    'kind' => $issue->kind->value,
-                    'title' => $issue->title,
-                    'culprit' => $issue->culprit,
-                    'occurrences' => $issue->occurrences,
-                    'affected_users' => $issue->affected_users,
-                    'priority' => $issue->priority->value,
-                    'last_seen_at' => $issue->last_seen_at->toIso8601String(),
-                ])->all(),
+            'issues' => $this->topIssues($organizationId, $sites, $start, $end),
         ];
+    }
+
+    /**
+     * Restrict a query on a `site_id` column to one site, several, or (null) none.
+     *
+     * @param  string|list<string>|null  $sites
+     */
+    public static function scope(Builder|EloquentBuilder $query, string|array|null $sites): Builder|EloquentBuilder
+    {
+        return match (true) {
+            $sites === null => $query,
+            is_array($sites) => $query->whereIn('site_id', $sites),
+            default => $query->where('site_id', $sites),
+        };
+    }
+
+    /**
+     * Open issues ranked by occurrences inside the window (then most recently seen), with their in-window count.
+     *
+     * @param  string|list<string>|null  $sites
+     * @return list<array<string, mixed>>
+     */
+    private function topIssues(string $organizationId, string|array|null $sites, CarbonImmutable $start, CarbonImmutable $end, int $limit = 6): array
+    {
+        $counts = self::scope(DB::table('insights_exceptions'), $sites)
+            ->where('organization_id', $organizationId)
+            ->where('minute', '>=', $start)
+            ->where('minute', '<', $end)
+            ->groupBy('issue_id')
+            ->selectRaw('issue_id, COUNT(*) AS total')
+            ->orderByDesc('total')
+            ->limit(50)
+            ->pluck('total', 'issue_id');
+
+        $open = fn () => self::scope(Issue::query(), $sites)->where('organization_id', $organizationId)->where('status', IssueStatus::Open);
+        $issues = $open()->whereIn('id', $counts->keys()->all())->get()->keyBy('id');
+        $ranked = $counts->keys()->filter(fn ($id) => $issues->has($id))->take($limit)->map(fn ($id) => $issues[$id])->values();
+
+        if ($ranked->count() < $limit) {
+            $ranked = $ranked->concat(
+                $open()->whereNotIn('id', $ranked->pluck('id')->all())->orderByDesc('last_seen_at')->limit($limit - $ranked->count())->get()
+            );
+        }
+
+        return $ranked->map(fn (Issue $issue) => [
+            'id' => $issue->id,
+            'kind' => $issue->kind->value,
+            'title' => $issue->title,
+            'culprit' => $issue->culprit,
+            'site_id' => $issue->site_id,
+            'occurrences' => $issue->occurrences,
+            'occurrences_in_range' => (int) ($counts[$issue->id] ?? 0),
+            'affected_users' => $issue->affected_users,
+            'priority' => $issue->priority->value,
+            'handled' => $issue->kind->value === 'exception' ? $issue->unhandled_occurrences === 0 : null,
+            'last_seen_at' => $issue->last_seen_at->toIso8601String(),
+        ])->all();
     }
 
     /**

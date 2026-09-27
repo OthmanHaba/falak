@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Kiln\Alerting\Http\Controllers\ChannelController;
 use Kiln\Alerting\Http\Controllers\HistoryController;
@@ -18,7 +19,9 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::put('alerting/rules/{rule}', [RuleController::class, 'update'])->name('alerting.rules.update');
     Route::delete('alerting/rules/{rule}', [RuleController::class, 'destroy'])->name('alerting.rules.destroy');
 
-    Route::get('alerting/history', HistoryController::class)->name('alerting.history');
+    // /observability Alerts tab (history); channels and rules are managed under /settings.
+    Route::get('observability/alerts', HistoryController::class)->name('observability.alerts');
+    Route::get('alerting/history', fn (Request $request) => redirect('/observability/alerts'.($request->getQueryString() ? '?'.$request->getQueryString() : '')))->name('alerting.history');
 
     Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
     Route::get('notifications/unread', [NotificationController::class, 'unread'])->name('notifications.unread');

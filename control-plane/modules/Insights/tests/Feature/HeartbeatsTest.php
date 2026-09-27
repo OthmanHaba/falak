@@ -11,6 +11,7 @@ use Kiln\Insights\Domain\Models\Issue;
 use Kiln\Insights\Events\HeartbeatMissed;
 use Kiln\Insights\Events\IssueOpened;
 use Kiln\Insights\Events\IssueResolved;
+use Kiln\Insights\Http\Controllers\HeartbeatController;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -125,10 +126,12 @@ it('lets members configure monitors', function () {
     insights_ingest($this->organization->id, [insights_heartbeat(['scheduled_at' => '2026-09-27T10:00:00Z'])]);
     $monitor = HeartbeatMonitor::query()->sole();
 
-    $this->get('/insights/heartbeats')->assertOk()->assertInertia(fn ($page) => $page
+    $this->get('/observability/heartbeats')->assertOk()->assertInertia(fn ($page) => $page
         ->component('Insights/Heartbeats', false)
         ->where('monitors.0.job', 'shop-schedule')
-        ->where('monitors.0.healthy', true));
+        ->where('monitors.0.healthy', true)
+        ->has('monitors.0.slots')
+        ->has('monitors.0.expected_24h'));
 
     $this->put("/insights/heartbeats/{$monitor->id}", ['schedule' => '@hourly', 'grace_seconds' => 600, 'timezone' => 'Europe/Berlin'])->assertSessionHasNoErrors();
     expect($monitor->refresh())->schedule->toBe('@hourly')->grace_seconds->toBe(600)
@@ -141,4 +144,22 @@ it('lets members configure monitors', function () {
 
     $this->actingAs($this->user)->delete("/insights/heartbeats/{$monitor->id}")->assertRedirect();
     expect(HeartbeatMonitor::query()->count())->toBe(0);
+});
+
+it('compares expected runs with recorded runs over the last day', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-27T12:00:30Z'));
+    insights_ingest($this->organization->id, [
+        insights_heartbeat(['schedule' => '*/15 * * * *', 'scheduled_at' => '2026-09-27T11:15:00Z', 'at' => '2026-09-27T11:15:05Z']),
+        insights_heartbeat(['schedule' => '*/15 * * * *', 'scheduled_at' => '2026-09-27T11:30:00Z', 'at' => '2026-09-27T11:30:04Z', 'status' => 'failed', 'exit_code' => 1]),
+    ]);
+    $monitor = HeartbeatMonitor::query()->sole();
+    $monitor->forceFill(['created_at' => '2026-09-27T11:10:00Z', 'grace_seconds' => 60])->save();
+
+    $result = HeartbeatController::expectedVsActual($monitor->refresh());
+
+    // Expected 11:15, 11:30, 11:45 (12:00 is still within its grace period); 11:45 never reported.
+    expect($result['expected_24h'])->toBe(3)
+        ->and($result['actual_24h'])->toBe(2)
+        ->and($result['missed_24h'])->toBe(1)
+        ->and(array_column($result['slots'], 'status'))->toBe(['finished', 'failed', 'missed']);
 });
