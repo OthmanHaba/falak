@@ -3,7 +3,7 @@
 # (git, PHP 8.4 + Composer, Node 22, Bun). Multi-arch: linux/amd64, linux/arm64.
 #
 #   docker buildx build -f deploy/builder.Dockerfile --build-arg KILN_VERSION=v1.2.3 \
-#     --platform linux/amd64,linux/arm64 -t ghcr.io/OWNER/kiln-builder:v1.2.3 .
+#     --platform linux/amd64,linux/arm64 -t ghcr.io/othmanhaba/kiln-builder:v1.2.3 .
 #
 # Build context: the REPOSITORY ROOT. Proven in sim/builder. Docker-mode builds need a `builder`
 # server (this container has no Docker daemon/BuildKit).

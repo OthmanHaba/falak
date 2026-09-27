@@ -28,8 +28,8 @@ find "$stage" -name .DS_Store -delete
 
 pin() { # pin FILE : default repo -> $repo; install.sh defaults to this release
   local tmp="$1.tmp"
-  sed -e "s#^DEFAULT_REPO=\"OWNER/kiln\"#DEFAULT_REPO=\"$repo\"#" \
-      -e "s#^KILN_REPO_DEFAULT=\"OWNER/kiln\"#KILN_REPO_DEFAULT=\"$repo\"#" \
+  sed -e "s#^DEFAULT_REPO=\".*\"#DEFAULT_REPO=\"$repo\"#" \
+      -e "s#^KILN_REPO_DEFAULT=\".*\"#KILN_REPO_DEFAULT=\"$repo\"#" \
       -e "s#^VERSION=\"\${KILN_VERSION:-}\"#VERSION=\"\${KILN_VERSION:-$tag}\"#" "$1" > "$tmp"
   chmod --reference="$1" "$tmp" 2>/dev/null || chmod 755 "$tmp"
   mv "$tmp" "$1"

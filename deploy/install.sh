@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Kiln installer — single-host Docker Compose install into /opt/kiln.
 #
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/kiln/main/deploy/install.sh \
+#   curl -fsSL https://raw.githubusercontent.com/OthmanHaba/kiln/main/deploy/install.sh \
 #     | sudo bash -s -- --domain kiln.example.com --email you@example.com
 #
 # Options (each also settable via the environment variable in brackets):
@@ -11,7 +11,7 @@
 #   --version TAG            release to install (default: latest release)                    [KILN_VERSION]
 #   --observability          also run Grafana/Loki/Tempo/VictoriaMetrics (grafana.NAME)      [KILN_OBSERVABILITY=1]
 #   --tls acme|internal      internal = Caddy's local CA, for testing only (default: acme)    [KILN_TLS]
-#   --repo OWNER/NAME        GitHub repository of the release (default: OWNER/kiln)         [KILN_REPO]
+#   --repo OWNER/NAME        GitHub repository of the release (default: OthmanHaba/kiln)         [KILN_REPO]
 #   --image-prefix PREFIX    image registry prefix (default: ghcr.io/<owner>)                [KILN_IMAGE_PREFIX]
 #   --build-from-source      build images locally from --ref instead of pulling them         [KILN_BUILD_FROM_SOURCE=1]
 #   --ref REF                git ref for --build-from-source (default: --version or main)    [KILN_REF]
@@ -42,7 +42,7 @@ HTTP_PORT="${KILN_HTTP_PORT:-}"
 HTTPS_PORT="${KILN_HTTPS_PORT:-}"
 SKIP_DNS="${KILN_SKIP_DNS_CHECK:-0}"
 FORCE=0
-DEFAULT_REPO="OWNER/kiln"
+DEFAULT_REPO="OthmanHaba/kiln"
 
 if [ -t 1 ]; then B=$'\e[1m'; R=$'\e[31m'; G=$'\e[32m'; Y=$'\e[33m'; N=$'\e[0m'; else B=; R=; G=; Y=; N=; fi
 info() { printf '%s==>%s %s\n' "$B" "$N" "$*"; }

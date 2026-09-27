@@ -136,7 +136,7 @@ One command on a fresh Ubuntu 22.04/24.04 or Debian 12 host (4 GB RAM recommende
 `kiln.example.com` and `agents.kiln.example.com` at the host first:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/kiln/main/deploy/install.sh \
+curl -fsSL https://raw.githubusercontent.com/OthmanHaba/kiln/main/deploy/install.sh \
   | sudo bash -s -- --domain kiln.example.com --email you@example.com [--observability]
 ```
 

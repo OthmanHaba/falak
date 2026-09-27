@@ -13,7 +13,7 @@ control-plane · horizon · reverb · scheduler ─► postgres 17 · valkey
 builder (kiln-builder serve: PHP/Composer, Node, Bun) ─► edge
 ```
 
-`OWNER/kiln` in this document is a placeholder for the GitHub repository that publishes Kiln releases.
+Releases are published from [github.com/OthmanHaba/kiln](https://github.com/OthmanHaba/kiln); a fork can install its own releases with `--repo OWNER/NAME`.
 
 ## 1. Requirements
 
@@ -61,12 +61,12 @@ Create these records before you install (replace the IP with your server's publi
 ## 3. Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OWNER/kiln/main/deploy/install.sh \
+curl -fsSL https://raw.githubusercontent.com/OthmanHaba/kiln/main/deploy/install.sh \
   | sudo bash -s -- --domain kiln.example.com --email you@example.com
 ```
 
 Or pin a release with its own copy of the script:
-`curl -fsSL https://github.com/OWNER/kiln/releases/download/v1.2.3/install.sh | sudo bash -s -- --domain ... --email ...`
+`curl -fsSL https://github.com/OthmanHaba/kiln/releases/download/v1.2.3/install.sh | sudo bash -s -- --domain ... --email ...`
 
 What it does:
 
@@ -88,7 +88,7 @@ What it does:
 | `--version TAG` | `KILN_VERSION` | latest release |
 | `--observability` | `KILN_OBSERVABILITY=1` | off |
 | `--tls acme\|internal` | `KILN_TLS` | `acme` (`internal` = Caddy's local CA, for testing only) |
-| `--repo OWNER/NAME` | `KILN_REPO` | `OWNER/kiln` |
+| `--repo OWNER/NAME` | `KILN_REPO` | `OthmanHaba/kiln` |
 | `--image-prefix PREFIX` | `KILN_IMAGE_PREFIX` | `ghcr.io/<owner>` |
 | `--build-from-source [--ref REF]` | `KILN_BUILD_FROM_SOURCE=1` | clones the repo and builds images locally (no registry) |
 | `--source-dir PATH` | `KILN_DEPLOY_SOURCE` | use deploy files from a local checkout |

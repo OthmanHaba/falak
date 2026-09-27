@@ -26,7 +26,7 @@ ENV_FILE="$KILN_DIR/.env"
 COMPOSE_FILE="$KILN_DIR/deploy/compose.yml"
 BACKUP_DIR="$KILN_DIR/backups"
 APP_SERVICES="control-plane horizon reverb scheduler builder"
-KILN_REPO_DEFAULT="OWNER/kiln"
+KILN_REPO_DEFAULT="OthmanHaba/kiln"
 TMP_LIST=""
 # shellcheck disable=SC2086  # mktemp paths, space-separated
 cleanup() { [ -z "$TMP_LIST" ] || rm -rf $TMP_LIST; }
