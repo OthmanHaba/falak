@@ -50,6 +50,7 @@ export function SaveAsTemplateDialog({ ctx, open, onOpenChange }: ServiceActionD
             open={open}
             onOpenChange={onOpenChange}
             size="lg"
+            className="grid-rows-[auto_minmax(0,1fr)_auto]"
             title={`Save ${ctx.service.name} as a template`}
             description="Secret values are not copied: they become inputs generated fresh for every deploy. Review before saving."
             footer={

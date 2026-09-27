@@ -175,6 +175,10 @@ export const routes: BrowserRoute[] = [
     { path: '/projects/:canvas/service/site/:site/settings/networking' },
     { path: '/projects/:canvas/service/site/:site/settings/servers' },
     { path: '/projects/:canvas/service/site/:site/settings/commands' },
+
+    // templates
+    { path: '/templates' },
+    { path: '/settings/templates' },
 ];
 
 export function slugFor(path: string): string {

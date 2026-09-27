@@ -65,7 +65,7 @@ export function TemplateEditor({
                 <Textarea
                     value={files.template_yaml}
                     onChange={(event) => update({ ...files, template_yaml: event.target.value })}
-                    rows={10}
+                    rows={8}
                     mono
                     spellCheck={false}
                     placeholder={
@@ -77,7 +77,7 @@ export function TemplateEditor({
                 <Textarea
                     value={files.compose_yaml}
                     onChange={(event) => update({ ...files, compose_yaml: event.target.value })}
-                    rows={10}
+                    rows={8}
                     mono
                     spellCheck={false}
                     placeholder={'services:\n  web:\n    image: ghcr.io/acme/web:1.4.2\n    expose: ["8080"]'}

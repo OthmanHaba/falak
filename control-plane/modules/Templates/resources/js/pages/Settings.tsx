@@ -30,6 +30,9 @@ interface Props {
 
 type ImportMode = 'paste' | 'upload' | 'url';
 
+/** Tall dialogs: header, scrolling body, footer always visible. */
+const TALL = 'grid-rows-[auto_minmax(0,1fr)_auto]';
+
 const EMPTY: TemplateFiles = { template_yaml: '', compose_yaml: '' };
 
 function reload() {
@@ -112,6 +115,7 @@ function ImportDialog({ open, onOpenChange, maxKb }: { open: boolean; onOpenChan
             open={open}
             onOpenChange={onOpenChange}
             size="lg"
+            className={TALL}
             title="Import template"
             description="Same format as the catalog: template.yaml + compose.yaml, validated before it is saved."
             footer={
@@ -127,6 +131,7 @@ function ImportDialog({ open, onOpenChange, maxKb }: { open: boolean; onOpenChan
         >
             <div className="grid gap-4">
                 <Segmented<ImportMode>
+                    className="w-fit"
                     label="Import from"
                     value={mode}
                     onValueChange={setMode}
@@ -211,6 +216,7 @@ function EditDialog({ row, onOpenChange }: { row: CustomTemplateRow; onOpenChang
             open
             onOpenChange={onOpenChange}
             size="lg"
+            className={TALL}
             title={`Edit ${row.name}`}
             description="Saving creates a new revision. Bump version: when the compose file changes."
             footer={
@@ -273,12 +279,17 @@ export default function Settings({ templates, limits, can }: Props) {
                 </span>
             ),
         },
-        { id: 'slug', header: 'Slug', hideOnMobile: true, cell: (row) => <span className="text-fg-muted font-mono text-xs">{row.slug}</span> },
+        {
+            id: 'slug',
+            header: 'Slug',
+            hideOnMobile: true,
+            cell: (row) => <span className="text-fg-muted font-mono text-xs whitespace-nowrap">{row.slug}</span>,
+        },
         {
             id: 'version',
             header: 'Version',
             cell: (row) => (
-                <span className="flex items-center gap-1.5">
+                <span className="flex items-center gap-1.5 whitespace-nowrap">
                     <Tag mono>v{row.version}</Tag>
                     <span className="text-fg-faint text-xs">rev {row.revision}</span>
                 </span>
@@ -288,7 +299,11 @@ export default function Settings({ templates, limits, can }: Props) {
             id: 'services',
             header: 'Services',
             hideOnMobile: true,
-            cell: (row) => <span className="text-fg-muted text-xs">{row.summary?.services.map((service) => service.name).join(', ') ?? '—'}</span>,
+            cell: (row) => (
+                <span className="text-fg-muted text-xs whitespace-nowrap">
+                    {row.summary?.services.map((service) => service.name).join(', ') ?? '—'}
+                </span>
+            ),
         },
         {
             id: 'updated',
@@ -297,7 +312,7 @@ export default function Settings({ templates, limits, can }: Props) {
             hideOnMobile: true,
             sortValue: (row) => row.updated_at,
             cell: (row) => (
-                <span className="text-fg-faint text-xs">
+                <span className="text-fg-faint text-xs whitespace-nowrap">
                     <RelativeTime value={row.updated_at} />
                 </span>
             ),

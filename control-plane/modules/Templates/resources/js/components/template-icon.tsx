@@ -59,7 +59,7 @@ function monochrome(hex: string): boolean {
     const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
     const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
 
-    return luminance < 0.18 || luminance > 0.9;
+    return luminance < 0.25 || luminance > 0.9;
 }
 
 export function TemplateIcon({ icon, name, size = 20, className }: { icon: TemplateIconRef; name: string; size?: number; className?: string }) {

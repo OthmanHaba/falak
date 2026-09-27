@@ -88,7 +88,12 @@ function InputControl({
             return <Switch checked={value === 'true'} onCheckedChange={(checked) => onChange(checked ? 'true' : 'false')} />;
         case 'select':
             return (
-                <Select value={value} onValueChange={onChange} options={(input.options ?? []).map((option) => ({ value: option, label: option }))} />
+                <Select
+                    value={value}
+                    // Radix can report '' while its items mount; an input with options never becomes empty.
+                    onValueChange={(next) => next !== '' && onChange(next)}
+                    options={(input.options ?? []).map((option) => ({ value: option, label: option }))}
+                />
             );
         case 'secret':
             return <Input type="password" value={value} onChange={(event) => onChange(event.target.value)} autoComplete="new-password" mono />;
