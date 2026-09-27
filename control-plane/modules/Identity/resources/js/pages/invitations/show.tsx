@@ -24,7 +24,7 @@ export default function ShowInvitation({ token, invitation }: InvitationProps) {
             <AuthLayout
                 title="Invitation unavailable"
                 description="This invitation is invalid, has already been used, or has expired. Ask for a new one."
-                footer={<AuthLink href={route('dashboard')}>Go to Kiln</AuthLink>}
+                footer={<AuthLink href={'/projects'}>Go to Kiln</AuthLink>}
             >
                 <Head title="Invitation" />
             </AuthLayout>
@@ -64,7 +64,7 @@ export default function ShowInvitation({ token, invitation }: InvitationProps) {
                     Accept invitation
                 </Button>
                 <Button variant="ghost" className="w-full" asChild>
-                    <Link href={route('dashboard')}>Not now</Link>
+                    <Link href={'/projects'}>Not now</Link>
                 </Button>
             </div>
         </AuthLayout>

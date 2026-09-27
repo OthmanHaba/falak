@@ -23,6 +23,8 @@ use Kiln\Insights\Contracts\IssuePriority;
 use Kiln\Insights\Contracts\IssueStatus;
 use Kiln\Insights\Domain\Models\HeartbeatMonitor;
 use Kiln\Insights\Domain\Models\Issue;
+use Kiln\Processes\Domain\Models\Schedule;
+use Kiln\Processes\Infrastructure\ProgramNames;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Sites\Domain\Models\Site;
 
@@ -241,12 +243,16 @@ class ObservabilityDemoSeeder extends Seeder
     private function heartbeats(string $organizationId, string $serverId, string $siteId, CarbonImmutable $now): void
     {
         $ingest = app(IngestInsights::class);
+        // Job names are the Processes cron.apply names of the demo schedules (UiDemoSeeder), so the Processes tab
+        // shows each job's heartbeat state.
+        $cron = Schedule::query()->where('site_id', $siteId)->pluck('id', 'name');
+        $name = fn (string $schedule, string $fallback) => isset($cron[$schedule]) ? ProgramNames::cron('storefront', (string) $cron[$schedule]) : $fallback;
         $jobs = [
             // job, schedule, period minutes, duration ms, fail every Nth, stop reporting N minutes ago
-            ['storefront-schedule-run', '* * * * *', 1, 900, 0, 0],
+            [ProgramNames::scheduler('storefront'), '* * * * *', 1, 900, 0, 0],
             ['storefront:prune-carts', '0 * * * *', 60, 4200, 0, 0],
-            ['storefront:sync-inventory', '*/15 * * * *', 15, 38_000, 7, 0],
-            ['storefront:send-abandoned-cart-emails', '*/30 * * * *', 30, 12_000, 0, 150],
+            [$name('Sync inventory', 'storefront:sync-inventory'), '*/15 * * * *', 15, 38_000, 7, 0],
+            [$name('Abandoned cart emails', 'storefront:send-abandoned-cart-emails'), '*/30 * * * *', 30, 12_000, 0, 150],
             ['storefront:backup-database', '0 3 * * *', 1440, 184_000, 0, 0],
         ];
         $items = [];
@@ -354,11 +360,11 @@ class ObservabilityDemoSeeder extends Seeder
         // Reuse the channels SettingsDemoSeeder created (same names), or create them.
         $slack = Channel::query()->firstOrCreate(
             ['organization_id' => $organizationId, 'name' => '#ops-alerts'],
-            ['type' => ChannelType::Slack, 'config' => ['webhook_url' => 'https://hooks.slack.com/services/T000/B000/demo'], 'enabled' => true, 'last_sent_at' => $now->subMinutes(118)],
+            ['type' => ChannelType::Slack, 'config' => ['webhook_url' => 'https://hooks.slack.invalid/services/T000/B000/demo'], 'enabled' => true, 'last_sent_at' => $now->subMinutes(118)],
         );
         $pager = Channel::query()->firstOrCreate(
             ['organization_id' => $organizationId, 'name' => 'PagerDuty bridge'],
-            ['type' => ChannelType::Webhook, 'config' => ['url' => 'https://events.pagerduty.example/v2/enqueue'], 'enabled' => true, 'last_error' => 'HTTP 503 from events.pagerduty.example'],
+            ['type' => ChannelType::Webhook, 'config' => ['url' => 'https://events.pagerduty.invalid/v2/enqueue'], 'enabled' => true, 'last_error' => 'HTTP 503 from events.pagerduty.invalid'],
         );
 
         foreach ($entries as [$ago, $type, $severity, $title, $body, $link, $outcome, $recovery, $notify, $read]) {
@@ -382,7 +388,7 @@ class ObservabilityDemoSeeder extends Seeder
 
                 if ($severity === Severity::Critical) {
                     $failed = $ago === 95;
-                    $alert->deliveries()->create(['channel_id' => $pager->id, 'status' => $failed ? DeliveryStatus::Failed : DeliveryStatus::Sent, 'attempts' => $failed ? 3 : 1, 'error' => $failed ? 'HTTP 503 from events.pagerduty.example' : null, 'sent_at' => $failed ? null : $at->addSeconds(3)]);
+                    $alert->deliveries()->create(['channel_id' => $pager->id, 'status' => $failed ? DeliveryStatus::Failed : DeliveryStatus::Sent, 'attempts' => $failed ? 3 : 1, 'error' => $failed ? 'HTTP 503 from events.pagerduty.invalid' : null, 'sent_at' => $failed ? null : $at->addSeconds(3)]);
                 }
             }
 

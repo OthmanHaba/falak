@@ -2,32 +2,39 @@
 
 namespace Kiln\Deployments\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Kiln\Deployments\Application\Actions\UpdateDeploySettings;
 use Kiln\Deployments\Domain\Enums\Strategy;
 use Kiln\Deployments\Domain\Models\SiteSettings;
 use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
 use Kiln\Identity\Contracts\AuditLog;
 use Kiln\Kernel\Http\Controller;
+use Kiln\Projects\Contracts\ProjectDirectory;
+use Kiln\Projects\Contracts\ServiceKind;
 use Kiln\Sites\Contracts\SiteDeploySettings;
-use Kiln\Sites\Contracts\SiteHeaders;
 
 final class DeploySettingsController extends Controller
 {
     use ResolvesSites;
 
-    public function show(Request $request, string $site, SiteHeaders $headers): Response
+    /** JSON for the Settings tab's Deploy / Source sections; a browser visit opens the Deploy section. */
+    public function show(Request $request, string $site): JsonResponse|RedirectResponse
     {
         $data = $this->site($request->user(), $site);
+
+        if (! $this->wantsPanelJson($request)) {
+            $panel = app(ProjectDirectory::class)->serviceUrl(ServiceKind::Site, $data->id, 'settings');
+
+            return redirect($panel !== null ? "{$panel}/deploy" : '/projects');
+        }
+
         $settings = SiteSettings::for($data);
         $manage = $this->can($request->user(), $data, DeploymentPermissions::MANAGE);
 
-        return Inertia::render('Deployments/Settings', [
-            'site' => $headers->for($data->id),
+        return response()->json(['data' => [
             'settings' => [
                 'strategy' => $settings->effectiveStrategy($data)->value,
                 'batch_size' => $settings->batch_size,
@@ -47,7 +54,7 @@ final class DeploySettingsController extends Controller
             'hookUrl' => $manage && $settings->hook_token ? $this->hookUrl($settings->hook_token) : null,
             'hasHook' => $settings->hook_token_hash !== null,
             'can' => ['manage' => $manage],
-        ]);
+        ]]);
     }
 
     public function update(Request $request, string $site, UpdateDeploySettings $update): RedirectResponse

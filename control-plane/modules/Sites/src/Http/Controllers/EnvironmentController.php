@@ -6,12 +6,11 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
-use Inertia\Inertia;
-use Inertia\Response;
 use InvalidArgumentException;
 use Kiln\Identity\Contracts\AuditLog;
 use Kiln\Identity\Contracts\OrganizationDirectory;
 use Kiln\Kernel\Http\Controller;
+use Kiln\Projects\Contracts\VariableReferences;
 use Kiln\Sites\Application\Actions\SaveEnvironment;
 use Kiln\Sites\Domain\Dotenv;
 use Kiln\Sites\Domain\Models\EnvironmentVersion;
@@ -24,22 +23,41 @@ final class EnvironmentController extends Controller
 {
     use PresentsSites;
 
-    public function show(Request $request, Site $site, OrganizationDirectory $directory): Response
+    /**
+     * JSON for the service panel's Variables tab (keys, exposure, versions, references); a browser visit opens the
+     * panel. Values only leave the server on an explicit, audited reveal, except values that are nothing but
+     * `${{ service.KEY }}` references (they hold no secret).
+     */
+    public function show(Request $request, Site $site, OrganizationDirectory $directory, VariableReferences $references): JsonResponse|RedirectResponse
     {
         $this->authorize('view', $site);
-        $site->load('targets');
+
+        if (! $this->wantsPanelJson($request)) {
+            return $this->toPanel($site, 'variables');
+        }
 
         $versions = $site->environmentVersions()->limit(25)->get(['id', 'site_id', 'version', 'exposed', 'changed_keys', 'created_by', 'created_at']);
         $current = EnvironmentVersion::query()->where('site_id', $site->id)->orderByDesc('version')->first();
+        $variables = $current !== null ? array_map('strval', $current->variables) : [];
         $users = [];
 
-        return Inertia::render('Sites/Environment', [
-            'site' => $this->header($site),
+        $referenceOnly = array_filter(
+            $variables,
+            fn (string $value) => preg_match(VariableReferences::PATTERN, $value) === 1 && trim((string) preg_replace(VariableReferences::PATTERN, '', $value)) === '',
+        );
+        $resolved = $references->referencesIn($variables) !== [] ? $references->resolveForSite($site->id, $variables) : null;
+
+        return response()->json(['data' => [
+            'site' => ['id' => $site->id, 'name' => $site->name],
             'current' => $current ? [
                 'version' => $current->version,
                 // Names only; values need a reveal.
-                'keys' => array_keys($current->variables),
-                'exposed' => $current->exposed,
+                'keys' => array_keys($variables),
+                'exposed' => array_values(array_intersect($current->exposed, array_keys($variables))),
+                'references' => $referenceOnly,
+                'referencing' => array_values(array_unique(array_map(fn (array $r) => $r['variable'], $references->referencesIn($variables)))),
+                'reference_errors' => $resolved?->errors ?? [],
+                'created_at' => $current->created_at->toIso8601String(),
             ] : null,
             'versions' => $versions->map(function (EnvironmentVersion $version) use ($directory, &$users) {
                 $by = $version->created_by;
@@ -59,7 +77,63 @@ final class EnvironmentController extends Controller
                 'reveal' => $request->user()?->can('revealEnvironment', $site) ?? false,
                 'update' => $request->user()?->can('updateEnvironment', $site) ?? false,
             ],
+        ]])->header('Cache-Control', 'no-store');
+    }
+
+    /**
+     * PATCH /sites/{site}/environment — apply staged row edits (set / unset / exposure) as one new version,
+     * without the browser ever holding the other values.
+     */
+    public function patch(Request $request, Site $site, SaveEnvironment $save): JsonResponse
+    {
+        $this->authorize('updateEnvironment', $site);
+
+        $data = $request->validate([
+            'set' => ['present', 'array', 'max:500'],
+            'set.*' => ['nullable', 'string', 'max:65535'],
+            'unset' => ['present', 'array', 'max:500'],
+            'unset.*' => ['string', 'regex:'.Dotenv::KEY_PATTERN],
+            'exposed' => ['present', 'array'],
+            'exposed.*' => ['boolean'],
+            'base_version' => ['nullable', 'integer'],
         ]);
+
+        foreach (array_keys($data['set']) as $key) {
+            if (preg_match(Dotenv::KEY_PATTERN, (string) $key) !== 1) {
+                throw ValidationException::withMessages(['set' => "Invalid variable name \"{$key}\": use letters, digits and underscores, not starting with a digit."]);
+            }
+        }
+
+        foreach (array_keys($data['exposed']) as $key) {
+            if (preg_match(Dotenv::KEY_PATTERN, (string) $key) !== 1) {
+                throw ValidationException::withMessages(['exposed' => "Invalid variable name \"{$key}\"."]);
+            }
+        }
+
+        $current = EnvironmentVersion::query()->where('site_id', $site->id)->orderByDesc('version')->first();
+
+        if (isset($data['base_version']) && $current !== null && (int) $data['base_version'] !== $current->version) {
+            throw ValidationException::withMessages(['base_version' => "Someone saved version {$current->version} while you were editing. Reload to see their changes."]);
+        }
+
+        $variables = $current !== null ? array_map('strval', $current->variables) : [];
+        $exposed = $current->exposed ?? [];
+
+        foreach ($data['unset'] as $key) {
+            unset($variables[$key]);
+        }
+
+        foreach ($data['set'] as $key => $value) {
+            $variables[(string) $key] = (string) $value;
+        }
+
+        foreach ($data['exposed'] as $key => $on) {
+            $exposed = $on ? [...$exposed, (string) $key] : array_values(array_diff($exposed, [(string) $key]));
+        }
+
+        $version = $save($site, $variables, $exposed, $request->user()?->getAuthIdentifier());
+
+        return response()->json(['data' => ['version' => $version->version ?? $current?->version]]);
     }
 
     public function reveal(Request $request, Site $site, AuditLog $audit): JsonResponse
@@ -84,7 +158,7 @@ final class EnvironmentController extends Controller
         ])->header('Cache-Control', 'no-store');
     }
 
-    public function update(Request $request, Site $site, SaveEnvironment $save): RedirectResponse
+    public function update(Request $request, Site $site, SaveEnvironment $save): RedirectResponse|JsonResponse
     {
         $this->authorize('updateEnvironment', $site);
 
@@ -107,19 +181,19 @@ final class EnvironmentController extends Controller
             throw ValidationException::withMessages(['content' => "Someone saved version {$latest} while you were editing. Reveal again to merge your changes."]);
         }
 
-        $save($site, $variables, array_values($data['exposed']), $request->user()?->getAuthIdentifier());
+        $saved = $save($site, $variables, array_values($data['exposed']), $request->user()?->getAuthIdentifier());
 
-        return back();
+        return $this->wantsPanelJson($request) ? response()->json(['data' => ['version' => $saved->version ?? $latest]]) : back();
     }
 
-    public function restore(Request $request, Site $site, int $version, SaveEnvironment $save): RedirectResponse
+    public function restore(Request $request, Site $site, int $version, SaveEnvironment $save): RedirectResponse|JsonResponse
     {
         $this->authorize('updateEnvironment', $site);
 
         $old = EnvironmentVersion::query()->where('site_id', $site->id)->where('version', $version)->firstOrFail();
 
-        $save($site, array_map('strval', $old->variables), $old->exposed, $request->user()?->getAuthIdentifier(), 'site.environment_restored');
+        $saved = $save($site, array_map('strval', $old->variables), $old->exposed, $request->user()?->getAuthIdentifier(), 'site.environment_restored');
 
-        return back();
+        return $this->wantsPanelJson($request) ? response()->json(['data' => ['version' => $saved?->version]]) : back();
     }
 }

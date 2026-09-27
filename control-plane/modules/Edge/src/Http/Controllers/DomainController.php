@@ -2,11 +2,10 @@
 
 namespace Kiln\Edge\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Kiln\Edge\Application\Actions\AddDomain;
 use Kiln\Edge\Application\Actions\MakePrimaryDomain;
 use Kiln\Edge\Application\Actions\RemoveDomain;
@@ -27,7 +26,6 @@ use Kiln\Kernel\Http\Controller;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Servers\Contracts\ServerType;
-use Kiln\Sites\Contracts\SiteHeaders;
 
 final class DomainController extends Controller
 {
@@ -38,17 +36,22 @@ final class DomainController extends Controller
         private readonly ServerDirectory $servers,
     ) {}
 
-    public function index(Request $request, string $site, SiteHeaders $headers, EdgeChanges $changes): Response
+    /** JSON for the Settings tab's Networking section (domains, TLS, certificates, edge servers, load balancer). */
+    public function index(Request $request, string $site, EdgeChanges $changes): JsonResponse|RedirectResponse
     {
         $siteData = $this->site($request, $site);
+
+        if (! $this->wantsPanelJson($request)) {
+            return $this->toNetworking($siteData);
+        }
+
         $serverIds = $changes->serversFor($siteData->id);
         $servers = collect($serverIds)->map(fn (string $id) => $this->servers->find($id))->filter()->keyBy('id');
         $states = ServerState::query()->whereIn('server_id', $serverIds)->get()->keyBy('server_id');
         $balancer = LoadBalancer::query()->where('site_id', $siteData->id)->first();
         $roles = collect($siteData->targets)->mapWithKeys(fn ($target) => [$target->serverId => $target->role->value]);
 
-        return Inertia::render('Edge/Domains', [
-            'site' => $headers->for($siteData->id),
+        return response()->json(['data' => [
             'testDomain' => $siteData->testDomain,
             'domains' => Domain::query()->where('site_id', $siteData->id)->orderByDesc('is_primary')->orderBy('name')->get()->map(fn (Domain $domain) => [
                 'id' => $domain->id,
@@ -115,7 +118,7 @@ final class DomainController extends Controller
                 'manage' => $this->access->can($request->user(), $siteData->organizationId, 'edge.manage'),
                 'manage_dns' => $this->access->can($request->user(), $siteData->organizationId, 'edge.dns.manage'),
             ],
-        ]);
+        ]]);
     }
 
     public function store(Request $request, string $site, AddDomain $add): RedirectResponse

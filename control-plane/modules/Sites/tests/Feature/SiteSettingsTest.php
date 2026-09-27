@@ -174,7 +174,12 @@ it('hides sites of other organizations and blocks viewers from changes', functio
     $this->actingAs($stranger)->patch("/sites/{$this->site->id}", ['name' => 'x'])->assertNotFound();
 
     [$viewer] = memberOf($this->organization, Role::Viewer);
-    $this->actingAs($viewer)->get("/sites/{$this->site->id}/settings")->assertOk();
+    $this->actingAs($viewer)->getJson("/sites/{$this->site->id}/settings")->assertOk()
+        ->assertJsonPath('data.can.update', false)
+        ->assertJsonPath('data.settings.name', $this->site->name);
+    $this->actingAs($viewer)->get("/sites/{$this->site->id}/settings")->assertRedirect();
+    $this->actingAs($viewer)->getJson("/sites/{$this->site->id}/deploy-script")->assertOk()->assertJsonPath('data.can.update', false);
+    $this->actingAs($viewer)->getJson("/sites/{$this->site->id}/commands")->assertOk()->assertJsonPath('data.can.run', false);
     $this->actingAs($viewer)->patch("/sites/{$this->site->id}", ['name' => 'x'])->assertForbidden();
     $this->actingAs($viewer)->put("/sites/{$this->site->id}/laravel", ['scheduler' => true, 'horizon' => false, 'octane' => false, 'maintenance' => false])->assertForbidden();
 });

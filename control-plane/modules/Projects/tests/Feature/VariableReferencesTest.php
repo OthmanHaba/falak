@@ -122,3 +122,22 @@ it('lists references without resolving them', function () {
         ['service' => 'db', 'key' => 'DB_HOST', 'variable' => 'A'],
     ]);
 });
+
+it('lists the services of an environment with the keys a reference can use, never values', function () {
+    [$member] = memberOf($this->organization);
+    projects_database($this->organization, 'shop', $this->environment);
+    projects_site($this->organization, 'Shop API', ['API_KEY' => 'secret-key'], $this->environment);
+    $project = $this->environment->project;
+
+    $response = $this->actingAs($member)->getJson("/projects/{$project->id}/{$this->environment->slug}/variables")->assertOk();
+
+    $services = collect($response->json('data.services'))->keyBy('name');
+    expect($services['shop']['kind'])->toBe('database')
+        ->and($services['shop']['keys'])->toBe(DatabaseConnections::KEYS)
+        ->and($services['Shop API']['handle'])->toBe('shop-api')
+        ->and($services['Shop API']['keys'])->toBe(['API_KEY'])
+        ->and($response->getContent())->not->toContain('secret-key');
+
+    [$stranger] = memberOf();
+    $this->actingAs($stranger)->getJson("/projects/{$project->id}/{$this->environment->slug}/variables")->assertNotFound();
+});

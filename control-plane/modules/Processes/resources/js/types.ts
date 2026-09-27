@@ -1,5 +1,3 @@
-import { type SiteHeader } from '@/layouts/site-layout';
-
 export type ApplyStatus = 'pending' | 'applied' | 'failed' | 'error';
 
 export type ProcessState = 'starting' | 'running' | 'backoff' | 'stopping' | 'stopped' | 'exited' | 'fatal' | 'unknown';
@@ -39,12 +37,4 @@ export interface ProcessServer {
 export interface EnvRow {
     key: string;
     value: string | null;
-}
-
-export interface SharedProps {
-    site: SiteHeader;
-    servers: ProcessServer[];
-    programs: ProgramStatus[];
-    logsUrl: string | null;
-    can: { manage: boolean };
 }

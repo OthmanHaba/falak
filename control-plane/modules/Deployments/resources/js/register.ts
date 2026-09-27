@@ -1,4 +1,4 @@
-import { registerServiceActions, registerServiceTabs, registerSiteTabs } from '@/lib/registry';
+import { registerServiceActions, registerServiceSettingsSections, registerServiceTabs } from '@/lib/registry';
 import { Rocket, RotateCcw, RotateCw } from 'lucide-react';
 import { lazy } from 'react';
 import { deploy } from './panel/api';
@@ -6,12 +6,6 @@ import { deploy } from './panel/api';
 // Panel code loads with the canvas, not with every page.
 const DeploymentsTab = lazy(() => import('./panel/deployments-tab').then((module) => ({ default: module.DeploymentsTab })));
 const RollbackDialog = lazy(() => import('./panel/rollback-dialog').then((module) => ({ default: module.RollbackDialog })));
-
-registerSiteTabs(
-    { id: 'deployments.deployments', title: 'Deployments', path: 'deployments', order: 50, permission: 'deployments.view' },
-    { id: 'deployments.releases', title: 'Releases', path: 'releases', order: 60, permission: 'deployments.view' },
-    { id: 'deployments.settings', title: 'Deploy settings', path: 'deploy-settings', order: 850, permission: 'deployments.view' },
-);
 
 // Canvas service panel (§5.1 / §5.2).
 registerServiceTabs({
@@ -22,6 +16,38 @@ registerServiceTabs({
     permission: 'deployments.view',
     component: DeploymentsTab,
 });
+
+// Settings tab blocks (§5.1): push to deploy (Source), strategy / retention / health check and the deploy hook (Deploy).
+const settings = () => import('./panel/settings');
+registerServiceSettingsSections(
+    {
+        id: 'deployments.push-to-deploy',
+        kinds: ['site'],
+        section: 'source',
+        sectionTitle: 'Source',
+        order: 110,
+        permission: 'deployments.view',
+        component: lazy(() => settings().then((module) => ({ default: module.PushToDeploySettings }))),
+    },
+    {
+        id: 'deployments.strategy',
+        kinds: ['site'],
+        section: 'deploy',
+        sectionTitle: 'Deploy',
+        order: 310,
+        permission: 'deployments.view',
+        component: lazy(() => settings().then((module) => ({ default: module.DeployStrategySettings }))),
+    },
+    {
+        id: 'deployments.hook',
+        kinds: ['site'],
+        section: 'deploy',
+        sectionTitle: 'Deploy',
+        order: 340,
+        permission: 'deployments.view',
+        component: lazy(() => settings().then((module) => ({ default: module.DeployHookSettings }))),
+    },
+);
 
 registerServiceActions(
     {

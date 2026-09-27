@@ -44,8 +44,7 @@ it('renders the explorer pages', function () {
     $this->get('/telemetry/logs?site_id=01JSQTE000000000000000000A')->assertRedirect('/observability/logs?site_id=01JSQTE000000000000000000A');
     $this->get('/telemetry/traces?status=error')->assertRedirect('/observability/traces?status=error');
     $this->get('/telemetry/traces/0af7651916cd43dd8448eb211c80319c')->assertRedirect('/observability/traces/0af7651916cd43dd8448eb211c80319c');
-    $this->get("/telemetry/servers/{$server->id}/metrics")->assertOk()
-        ->assertInertia(fn ($page) => $page->component('Telemetry/ServerMetrics', false)->where('server.id', $server->id));
+    $this->get("/telemetry/servers/{$server->id}/metrics")->assertRedirect("/servers/{$server->id}/metrics");
     $this->get('/observability/traces/not-a-trace')->assertNotFound();
 });
 

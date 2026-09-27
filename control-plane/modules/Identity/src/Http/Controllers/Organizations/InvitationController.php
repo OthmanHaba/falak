@@ -71,6 +71,6 @@ final class InvitationController extends Controller
         $user = $request->user();
         $accept($user, $token);
 
-        return to_route('dashboard');
+        return redirect(config('fortify.home'));
     }
 }

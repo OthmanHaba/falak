@@ -6,13 +6,13 @@ import { FolderKanban, Monitor, Moon, Sun } from 'lucide-react';
 registerCommands(
     {
         id: 'core.navigation',
-        commands: ({ props }) => [
+        commands: () => [
             {
                 id: 'nav.projects',
                 title: 'Projects',
                 group: 'Navigation',
                 icon: FolderKanban,
-                href: props.kiln ? '/projects' : '/dashboard',
+                href: '/projects',
                 shortcut: 'G P',
                 keywords: ['home', 'dashboard', 'canvas'],
             },

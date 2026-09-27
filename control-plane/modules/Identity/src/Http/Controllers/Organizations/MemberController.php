@@ -87,6 +87,6 @@ final class MemberController extends Controller
 
         $remove($organization, $actor, $organization->members()->findOrFail($member));
 
-        return $actor->id === $member ? to_route('dashboard') : back();
+        return $actor->id === $member ? redirect(config('fortify.home')) : back();
     }
 }

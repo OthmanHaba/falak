@@ -24,7 +24,12 @@ final class AdapterFactory
     {
         /** @var array<string, int> $http */
         $http = (array) $this->config->get('providers.http', []);
-        $endpoint = fn (string $default) => (string) $this->config->get("providers.endpoints.{$type->value}", $default);
+        // Demo / test credentials may pin an unroutable `.invalid` endpoint (RFC 6761: never resolves), so Verify and
+        // catalog calls fail fast without reaching the real provider. Any other override is ignored.
+        $pinned = is_string($credentials['endpoint'] ?? null) && str_ends_with((string) parse_url($credentials['endpoint'], PHP_URL_HOST), '.invalid')
+            ? $credentials['endpoint']
+            : null;
+        $endpoint = fn (string $default) => $pinned ?? (string) $this->config->get("providers.endpoints.{$type->value}", $default);
         $field = function (string $name) use ($credentials, $type): string {
             $value = $credentials[$name] ?? null;
 

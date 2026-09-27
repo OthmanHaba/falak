@@ -35,17 +35,19 @@ it('renders the domains page', function () {
     Domain::query()->create(['organization_id' => $this->org, 'site_id' => $this->site->id, 'name' => 'shop.com', 'is_primary' => true, 'www_redirect' => WwwRedirect::ToWww, 'tls_mode' => TlsMode::Auto]);
     edge_server($this->servers, $this->org, ['type' => ServerType::LoadBalancer, 'name' => 'lb-1']);
 
-    $this->get("{$this->base}/domains")->assertOk()->assertInertia(fn ($page) => $page
-        ->component('Edge/Domains', false)
-        ->where('site.id', $this->site->id)
-        ->where('domains.0.hosts', ['www.shop.com', 'shop.com'])
-        ->where('testDomain', 'shop.kiln.test')
-        ->has('lbServers', 1)
-        ->has('edgeServers', 1)
-        ->where('can.manage', true)
-        ->where('can.manage_dns', false));
+    $this->getJson("{$this->base}/domains")->assertOk()
+        ->assertJsonPath('data.domains.0.hosts', ['www.shop.com', 'shop.com'])
+        ->assertJsonPath('data.testDomain', 'shop.kiln.test')
+        ->assertJsonCount(1, 'data.lbServers')
+        ->assertJsonCount(1, 'data.edgeServers')
+        ->assertJsonPath('data.can.manage', true)
+        ->assertJsonPath('data.can.manage_dns', false);
 
-    $this->get("{$this->base}/routing")->assertOk()->assertInertia(fn ($page) => $page->component('Edge/Routing', false)->where('can.manage', true));
+    $this->getJson("{$this->base}/routing")->assertOk()->assertJsonPath('data.can.manage', true);
+
+    // The classic pages open the panel's Settings → Networking section.
+    $this->get("{$this->base}/domains")->assertRedirect();
+    $this->get("{$this->base}/routing")->assertRedirect();
 });
 
 it('adds domains, making the first one primary, and applies the edge', function () {
@@ -134,7 +136,7 @@ it('manages DNS credentials as an admin only and never exposes tokens', function
     expect($credential->api_token)->toBe(str_repeat('t', 40))
         ->and($credential->getRawOriginal('api_token'))->not->toBe(str_repeat('t', 40));
 
-    $this->get("{$this->base}/domains")->assertInertia(fn ($page) => $page->where('dnsCredentials.0.name', 'CF')->missing('dnsCredentials.0.api_token')->where('can.manage_dns', true));
+    $this->getJson("{$this->base}/domains")->assertJsonPath('data.dnsCredentials.0.name', 'CF')->assertJsonMissingPath('data.dnsCredentials.0.api_token')->assertJsonPath('data.can.manage_dns', true);
 
     $this->post("{$this->base}/domains", ['name' => '*.shop.com', 'tls_mode' => 'dns', 'dns_credential_id' => $credential->id])->assertSessionHasNoErrors();
     $this->delete("/edge/dns-credentials/{$credential->id}")->assertSessionHasErrors('credential');
@@ -173,7 +175,7 @@ it('manages redirects, security rules, headers and settings', function () {
     expect($entry)->toHaveKey('basic_auth')->not->toHaveKey('redirects')->not->toHaveKey('headers')
         ->and($entry['max_body_bytes'])->toBe(1024);
 
-    $this->get("{$this->base}/routing")->assertInertia(fn ($page) => $page->has('rules', 1)->missing('rules.0.password_hash'));
+    $this->getJson("{$this->base}/routing")->assertJsonCount(1, 'data.rules')->assertJsonMissingPath('data.rules.0.password_hash');
 });
 
 it('configures a load balancer', function () {
@@ -207,7 +209,7 @@ it('re-applies a server on demand', function () {
 it('lets viewers look but not touch', function () {
     [$viewer] = actingAsMember(Role::Viewer, $this->organization);
 
-    $this->get("{$this->base}/domains")->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false));
+    $this->getJson("{$this->base}/domains")->assertOk()->assertJsonPath('data.can.manage', false);
     $this->post("{$this->base}/domains", ['name' => 'shop.com'])->assertForbidden();
     $this->post("{$this->base}/redirects", ['from' => '/a', 'to' => '/b', 'status' => 301])->assertForbidden();
     $this->put("{$this->base}/edge-settings", ['allow_ips' => [], 'deny_ips' => [], 'encode' => true])->assertForbidden();

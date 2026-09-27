@@ -46,7 +46,7 @@ class AuthenticatedSessionController extends Controller
 
         $audit->recordPersonal('auth.login', $user->id);
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        return redirect()->intended(config('fortify.home'));
     }
 
     /**

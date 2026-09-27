@@ -25,6 +25,7 @@ Route::middleware(['auth', 'org'])->prefix('projects')->name('projects.')->group
 
     Route::get('{project}/{environment}', [CanvasController::class, 'show'])->where($patterns)->name('canvas');
     Route::get('{project}/{environment}/canvas', [CanvasController::class, 'canvas'])->where($patterns)->name('canvas.data');
+    Route::get('{project}/{environment}/variables', [CanvasController::class, 'variables'])->where($patterns)->name('canvas.variables');
     Route::get('{project}/{environment}/activity', [CanvasController::class, 'activity'])->where($patterns)->name('canvas.activity');
     // {item}: a record inside the tab, e.g. the Deploy view of one deployment (…/deployments/{deployment}).
     Route::get('{project}/{environment}/service/{kind}/{id}/{tab?}/{item?}', [CanvasController::class, 'panel'])

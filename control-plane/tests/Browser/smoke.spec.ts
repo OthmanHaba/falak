@@ -19,13 +19,27 @@ async function resolveParam(browser: Browser, name: string, baseURL: string): Pr
     const source = params[name];
     if (!source) throw new Error(`Unknown route param :${name} — add it to params in tests/Browser/routes.ts`);
 
+    // `from` may itself contain params (e.g. the site is found on a server page).
+    const from = source.from.includes(':') ? await resolvePath(browser, source.from, baseURL) : source.from;
+    if (from === null) {
+        resolved.set(name, null);
+
+        return null;
+    }
+
     const context = await browser.newContext({ baseURL, ignoreHTTPSErrors: true, storageState: storageStatePath });
     const page = await context.newPage();
-    await page.goto(source.from, { waitUntil: 'networkidle' });
-    const hrefs = await page.locator('a[href]').evaluateAll((anchors) => anchors.map((a) => new URL((a as HTMLAnchorElement).href).pathname));
+    await page.goto(from, { waitUntil: 'networkidle' });
+    const anchors = await page
+        .locator('a[href]')
+        .evaluateAll((elements) => elements.map((a) => ({ path: new URL((a as HTMLAnchorElement).href).pathname, text: a.textContent ?? '' })));
     await context.close();
 
-    const value = hrefs.map((href) => source.match.exec(href)?.[1]).find(Boolean) ?? null;
+    const value =
+        anchors
+            .filter((anchor) => !source.text || source.text.test(anchor.text))
+            .map((anchor) => source.match.exec(anchor.path)?.[1])
+            .find(Boolean) ?? null;
     resolved.set(name, value);
 
     return value;
@@ -113,7 +127,13 @@ for (const theme of THEMES) {
                         const offenders = [...document.querySelectorAll('body *')]
                             .filter((element) => element.getBoundingClientRect().right > root.clientWidth + 1)
                             .slice(0, 5)
-                            .map((element) => `${element.tagName.toLowerCase()}.${String((element as HTMLElement).className).split(' ').slice(0, 4).join('.')}`);
+                            .map(
+                                (element) =>
+                                    `${element.tagName.toLowerCase()}.${String((element as HTMLElement).className)
+                                        .split(' ')
+                                        .slice(0, 4)
+                                        .join('.')}`,
+                            );
 
                         return { scrollWidth: root.scrollWidth, clientWidth: root.clientWidth, offenders };
                     });

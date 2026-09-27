@@ -15,7 +15,7 @@ it('shares the kiln prop on every authenticated page', function () {
 
     expect(app(SharedProps::class)->has('kiln'))->toBeTrue();
 
-    $this->get('/dashboard')->assertOk()->assertInertia(fn ($page) => $page
+    $this->get('/settings/profile')->assertOk()->assertInertia(fn ($page) => $page
         ->where('kiln.projects.0', [
             'id' => $environment->project_id,
             'name' => 'Default',
@@ -32,7 +32,7 @@ it('shares the kiln prop on every authenticated page', function () {
         ->where('kiln.current', ['project_id' => $shop->id, 'environment_id' => $staging->id]));
     $this->get("/projects/{$shop->id}/settings")->assertInertia(fn ($page) => $page
         ->where('kiln.current', ['project_id' => $shop->id, 'environment_id' => $shop->production()->id]));
-    $this->get('/dashboard')->assertInertia(fn ($page) => $page
+    $this->get('/settings/profile')->assertInertia(fn ($page) => $page
         ->where('kiln.current', ['project_id' => $shop->id, 'environment_id' => $staging->id]));
 });
 

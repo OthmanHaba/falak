@@ -81,12 +81,16 @@ final class ProcessStatusController extends Controller
         return response()->json(['results' => $results]);
     }
 
-    public function restart(Request $request, string $site, RestartSiteProcesses $restart): RedirectResponse
+    public function restart(Request $request, string $site, RestartSiteProcesses $restart): RedirectResponse|JsonResponse
     {
         $site = $this->site($request, $site, 'processes.manage');
         $data = $request->validate(['server_id' => ['nullable', 'string', 'in:'.implode(',', $site->serverIds())]]);
 
         $count = $restart($site, $data['server_id'] ?? null);
+
+        if ($request->wantsJson() && $request->header('X-Inertia') === null) {
+            return response()->json(['data' => ['commands' => $count]]);
+        }
 
         return back()->with($count > 0 ? 'success' : 'warning', $count > 0 ? 'Restarting the site\'s processes.' : 'Nothing is running for this site yet.');
     }

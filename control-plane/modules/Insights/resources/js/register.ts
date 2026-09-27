@@ -1,5 +1,18 @@
-import { registerCommands, registerNavigation } from '@/lib/registry';
+import { registerCommands, registerNavigation, registerServiceTabs, type ServiceTabProps } from '@/lib/registry';
 import { Bug, Gauge, HeartPulse } from 'lucide-react';
+import { createElement, lazy } from 'react';
+
+const SiteObservability = lazy(() => import('./panels/SiteObservability'));
+
+// Canvas service panel (docs/UI_DESIGN.md §5.1): Observability 500.
+registerServiceTabs({
+    id: 'observability',
+    kinds: ['site'],
+    title: 'Observability',
+    order: 500,
+    permission: 'insights.view',
+    component: ({ ctx }: ServiceTabProps) => createElement(SiteObservability, { siteId: ctx.service.ref_id }),
+});
 
 registerNavigation(
     {

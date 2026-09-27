@@ -2,12 +2,11 @@
 
 namespace Kiln\Edge\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Inertia\Inertia;
-use Inertia\Response;
 use Kiln\Edge\Application\Actions\AddRedirect;
 use Kiln\Edge\Application\Actions\AddSecurityRule;
 use Kiln\Edge\Application\Actions\DeleteSiteRule;
@@ -21,7 +20,6 @@ use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Edge\Http\Rules\Cidr;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
-use Kiln\Sites\Contracts\SiteHeaders;
 
 final class RoutingController extends Controller
 {
@@ -32,13 +30,18 @@ final class RoutingController extends Controller
 
     public function __construct(private readonly OrganizationAccess $access) {}
 
-    public function index(Request $request, string $site, SiteHeaders $headers): Response
+    /** JSON for the Settings tab's Networking section (redirects, basic auth, headers, access & limits). */
+    public function index(Request $request, string $site): JsonResponse|RedirectResponse
     {
         $siteData = $this->site($request, $site);
+
+        if (! $this->wantsPanelJson($request)) {
+            return $this->toNetworking($siteData);
+        }
+
         $settings = SiteSetting::for($siteData->id);
 
-        return Inertia::render('Edge/Routing', [
-            'site' => $headers->for($siteData->id),
+        return response()->json(['data' => [
             'redirects' => Redirect::query()->where('site_id', $siteData->id)->orderBy('position')->get(['id', 'from', 'to', 'status']),
             'rules' => SecurityRule::query()->where('site_id', $siteData->id)->orderBy('path')->orderBy('username')->get()
                 ->map(fn (SecurityRule $rule) => ['id' => $rule->id, 'name' => $rule->name, 'path' => $rule->path, 'username' => $rule->username])->values(),
@@ -51,7 +54,7 @@ final class RoutingController extends Controller
             ],
             'behindLoadBalancer' => LoadBalancer::query()->where('site_id', $siteData->id)->exists(),
             'can' => ['manage' => $this->access->can($request->user(), $siteData->organizationId, 'edge.manage')],
-        ]);
+        ]]);
     }
 
     public function storeRedirect(Request $request, string $site, AddRedirect $add): RedirectResponse

@@ -48,6 +48,7 @@ export { ProjectSwitcher } from './project-switcher';
 export { RelativeTime, formatRelative } from './relative-time';
 export { SecretInput, type SecretInputProps } from './secret-input';
 export { PageHeader, Section, type SectionProps } from './section';
+export { Segmented, type SegmentedOption, type SegmentedProps } from './segmented';
 export { Select, type SelectOption, type SelectProps } from './select';
 export { ServiceCard, type ServiceCardProps } from './service-card';
 export { ServiceIcon, hasServiceIcon, type ServiceIconProps } from './service-icon';

@@ -1,10 +1,6 @@
 <?php
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
-use Kiln\Identity\Contracts\CurrentOrganization;
 use Kiln\Insights\Http\Controllers\CommentController;
 use Kiln\Insights\Http\Controllers\HeartbeatController;
 use Kiln\Insights\Http\Controllers\IssueController;
@@ -49,12 +45,3 @@ Route::middleware(['auth', 'org'])->prefix('insights')->name('insights.')->group
     Route::get('heartbeats', LegacyRedirect::to('/observability/heartbeats'))->name('legacy.heartbeats');
     Route::get('sites/{siteId}', [OverviewController::class, 'show'])->name('legacy.site');
 });
-
-// Local-only gallery of the service-panel tab components (Metrics, Logs, Observability) for a site.
-if (app()->environment('local')) {
-    Route::middleware(['auth', 'org'])->get('dev/observability-panels', function (Request $request, CurrentOrganization $organization) {
-        $siteId = $request->query('site') ?? DB::table('insights_sites')->where('organization_id', $organization->requireId())->orderByDesc('last_seen_at')->value('site_id');
-
-        return Inertia::render('Insights/dev/Panels', ['siteId' => $siteId]);
-    })->name('dev.observability-panels');
-}

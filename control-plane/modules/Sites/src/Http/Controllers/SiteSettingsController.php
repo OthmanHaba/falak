@@ -2,11 +2,10 @@
 
 namespace Kiln\Sites\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Kiln\Fleet\Contracts\AgentDirectory;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Servers\Contracts\ServerDirectory;
@@ -21,6 +20,7 @@ use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Models\SiteTarget;
 use Kiln\Sites\Http\Requests\StoreSiteRequest;
+use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
 use Kiln\SourceControl\Contracts\SourceControlGateway;
 
 final class SiteSettingsController extends Controller
@@ -29,16 +29,36 @@ final class SiteSettingsController extends Controller
 
     public function __construct(private readonly ServerDirectory $servers) {}
 
-    public function show(Request $request, Site $site, AgentDirectory $agents, SourceControlGateway $sourceControl): Response
+    /**
+     * JSON for the service panel's Settings tab (Source, Build, Servers, Laravel, Danger sections); a browser visit
+     * opens that tab.
+     */
+    public function show(Request $request, Site $site, AgentDirectory $agents, SourceControlGateway $sourceControl): JsonResponse|RedirectResponse
     {
         $this->authorize('view', $site);
-        $site->load('targets');
 
-        return Inertia::render('Sites/Settings', [
-            'site' => $this->header($site),
+        if (! $this->wantsPanelJson($request)) {
+            return $this->toPanel($site, 'settings');
+        }
+
+        $site->load('targets');
+        $deployKey = null;
+        $connection = null;
+        $sourceError = null;
+
+        try {
+            $deployKey = $site->deploy_key_id ? $sourceControl->deployKey($site->deploy_key_id) : null;
+            $connection = $site->source_connection_id ? $sourceControl->connection($site->source_connection_id) : null;
+        } catch (SourceControlException $e) {
+            $sourceError = $e->getMessage();
+        }
+
+        return response()->json(['data' => [
+            'site' => [...$this->header($site), 'status' => $this->status($site)],
             'settings' => [
                 'name' => $site->name,
                 'framework' => $site->framework->value,
+                'framework_label' => $site->framework->label(),
                 'is_laravel' => $site->framework->isLaravel(),
                 'runtime' => $site->runtime->value,
                 'build_mode' => $site->build_mode->value,
@@ -55,22 +75,32 @@ final class SiteSettingsController extends Controller
                 'compose_file' => $site->compose_file,
                 'health_check_path' => $site->health_check_path,
                 'test_domain_enabled' => $site->test_domain_enabled,
+                'test_domain' => $site->testDomain(),
                 'unix_user' => $site->unix_user,
                 'isolated' => $site->isolated,
+                'root_path' => $site->rootPath(),
+                'document_root' => $site->toData()->documentRoot(),
                 'laravel' => $site->laravel->toArray(),
                 'shared_paths' => array_map(fn ($path) => $path->toArray(), $site->shared_paths),
+                'created_at' => $site->created_at->toIso8601String(),
+            ],
+            'source' => [
+                'connection' => $connection ? ['id' => $connection->id, 'name' => $connection->name, 'provider' => $connection->provider->value, 'provider_label' => $connection->provider->label()] : null,
+                'deploy_key' => $deployKey ? ['public_key' => $deployKey->publicKey, 'fingerprint' => $deployKey->fingerprint, 'installed' => $deployKey->installed, 'install_error' => $deployKey->installError] : null,
+                'error' => $sourceError,
             ],
             'targets' => $this->targets($site, $this->serversById($this->servers, $site->serverIds())),
             'options' => $this->options($site->organization_id, $this->servers, $agents, $sourceControl),
-            'warnings' => array_values((array) $request->session()->get('sites.warnings', [])),
+            'warnings' => array_values((array) $request->session()->pull('sites.warnings', [])),
             'can' => [
                 'update' => $request->user()?->can('update', $site) ?? false,
                 'delete' => $request->user()?->can('delete', $site) ?? false,
+                'run_commands' => $request->user()?->can('runCommands', $site) ?? false,
             ],
-        ]);
+        ]]);
     }
 
-    public function update(Request $request, Site $site, UpdateSite $update): RedirectResponse
+    public function update(Request $request, Site $site, UpdateSite $update): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $site);
 
@@ -82,6 +112,10 @@ final class SiteSettingsController extends Controller
         ]);
 
         $update($site, $data);
+
+        if ($this->wantsPanelJson($request)) {
+            return response()->json(['data' => ['warnings' => array_values($update->warnings)]]);
+        }
 
         return back()->with('sites.warnings', $update->warnings);
     }

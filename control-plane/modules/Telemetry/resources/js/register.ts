@@ -1,5 +1,29 @@
-import { registerCommands, registerNavigation, registerSettingsNav } from '@/lib/registry';
+import { registerCommands, registerNavigation, registerServiceTabs, registerSettingsNav, type ServiceTabProps } from '@/lib/registry';
 import { Activity, Radar, ScrollText } from 'lucide-react';
+import { createElement, lazy } from 'react';
+
+const SiteMetrics = lazy(() => import('./panels/SiteMetrics'));
+const SiteLogs = lazy(() => import('./panels/SiteLogs'));
+
+// Canvas service panel (docs/UI_DESIGN.md §5.1): Metrics 300, Logs 400.
+registerServiceTabs(
+    {
+        id: 'metrics',
+        kinds: ['site'],
+        title: 'Metrics',
+        order: 300,
+        permission: 'telemetry.view',
+        component: ({ ctx }: ServiceTabProps) => createElement(SiteMetrics, { siteId: ctx.service.ref_id }),
+    },
+    {
+        id: 'logs',
+        kinds: ['site'],
+        title: 'Logs',
+        order: 400,
+        permission: 'telemetry.view',
+        component: ({ ctx }: ServiceTabProps) => createElement(SiteLogs, { siteId: ctx.service.ref_id }),
+    },
+);
 
 registerNavigation(
     { id: 'telemetry.logs', title: 'Logs', url: '/observability/logs', icon: ScrollText, order: 400, permission: 'telemetry.view' },

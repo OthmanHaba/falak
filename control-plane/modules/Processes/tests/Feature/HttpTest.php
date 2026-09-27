@@ -1,6 +1,5 @@
 <?php
 
-use Inertia\Testing\AssertableInertia as Assert;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Processes\Domain\Models\Daemon;
 use Kiln\Processes\Domain\Models\Schedule;
@@ -32,11 +31,15 @@ it('manages queue workers and keeps env values out of the UI', function () {
     expect($worker->queue)->toBe('high,default')->and($worker->env)->toBe(['SECRET' => 's3cret'])
         ->and(processes_programs($this->agents->last('proc.apply')))->toHaveKey('shop.worker-'.strtolower(substr($worker->id, -8)));
 
-    $this->get("/sites/{$this->site->id}/queues")->assertInertia(fn (Assert $page) => $page
-        ->component('Processes/Queues', false)
-        ->where('workers.0.env', [['key' => 'SECRET', 'value' => null]])
-        ->where('laravel.available', true)
-        ->where('can.manage', true));
+    $state = $this->getJson("/sites/{$this->site->id}/processes")->assertOk()
+        ->assertJsonPath('data.laravel.available', true)
+        ->assertJsonPath('data.can.manage', true);
+    expect(collect($state->json('data.items'))->firstWhere('kind', 'worker')['config']['env'])->toBe([['key' => 'SECRET', 'value' => null]])
+        ->and($state->getContent())->not->toContain('s3cret');
+
+    // The classic pages open the canvas panel's Processes tab.
+    $this->get("/sites/{$this->site->id}/queues")->assertRedirect();
+    $this->get("/sites/{$this->site->id}/processes")->assertRedirect();
 
     // A row without a value keeps the stored secret.
     $this->put("/sites/{$this->site->id}/queues/{$worker->id}", worker_input(['processes' => 4, 'env' => [['key' => 'SECRET', 'value' => null], ['key' => 'NEW', 'value' => '1']]]))->assertSessionHasNoErrors();
@@ -81,8 +84,10 @@ it('manages daemons and scheduled jobs', function () {
     expect(processes_programs($this->agents->last('proc.apply')))->toHaveKey('shop.daemon-'.strtolower(substr($daemon->id, -8)))
         ->and($jobs['shop.cron-'.strtolower(substr($schedule->id, -8))])->toMatchArray(['schedule' => '@every 90s', 'timezone' => 'Europe/Paris', 'overlap' => 'allow', 'timeout_s' => 600]);
 
-    $this->get("/sites/{$this->site->id}/daemons")->assertInertia(fn (Assert $page) => $page->component('Processes/Daemons', false)->has('daemons', 1));
-    $this->get("/sites/{$this->site->id}/scheduler")->assertInertia(fn (Assert $page) => $page->component('Processes/Scheduler', false)->has('schedules', 1)->where('scheduler.available', true));
+    $items = collect($this->getJson("/sites/{$this->site->id}/processes")->assertOk()->json('data.items'));
+    expect($items->where('kind', 'daemon')->count())->toBe(1)
+        ->and($items->firstWhere('kind', 'cron')['config']['expression'])->toBe('@every 90s')
+        ->and($items->firstWhere('kind', 'cron')['program'])->toBe('shop.cron-'.strtolower(substr($schedule->id, -8)));
 
     // Paused jobs leave the schedule set.
     $this->put("/sites/{$this->site->id}/scheduler/{$schedule->id}", ['name' => 'Report', 'command' => 'php8.4 artisan report', 'expression' => '@hourly', 'overlap' => 'skip', 'timeout' => 600, 'heartbeat' => true, 'enabled' => false, 'all_servers' => false])
@@ -94,13 +99,13 @@ it('lets viewers look but not change, and hides other organizations', function (
     [$viewer] = memberOf($this->organization, Role::Viewer);
     $this->actingAs($viewer);
 
-    $this->get("/sites/{$this->site->id}/queues")->assertOk()->assertInertia(fn (Assert $page) => $page->where('can.manage', false));
+    $this->getJson("/sites/{$this->site->id}/processes")->assertOk()->assertJsonPath('data.can.manage', false);
     $this->post("/sites/{$this->site->id}/queues", worker_input())->assertForbidden();
     $this->post("/sites/{$this->site->id}/processes/restart")->assertForbidden();
 
     actingAsMember(Role::Owner);
     $this->get("/sites/{$this->site->id}/queues")->assertNotFound();
-    $this->get("/sites/{$this->site->id}/scheduler")->assertNotFound();
+    $this->getJson("/sites/{$this->site->id}/processes")->assertNotFound();
 });
 
 it('refreshes live status for the site programs only', function () {
@@ -126,7 +131,7 @@ it('refreshes live status for the site programs only', function () {
     $this->getJson("/sites/{$this->site->id}/processes/status?commands={$foreign->id}")->assertJsonCount(0, 'results');
 
     // The snapshot is kept for the next page load.
-    $this->get("/sites/{$this->site->id}/queues")->assertInertia(fn (Assert $page) => $page->where('programs.0.instances.0.state', 'running'));
+    $this->getJson("/sites/{$this->site->id}/processes")->assertJsonPath('data.programs.0.instances.0.state', 'running');
 });
 
 it('restarts from the UI with a flash message', function () {

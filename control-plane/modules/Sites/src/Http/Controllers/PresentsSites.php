@@ -2,7 +2,11 @@
 
 namespace Kiln\Sites\Http\Controllers;
 
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Kiln\Fleet\Contracts\AgentDirectory;
+use Kiln\Projects\Contracts\ProjectDirectory;
+use Kiln\Projects\Contracts\ServiceKind;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\BuildMode;
@@ -18,6 +22,23 @@ use Kiln\SourceControl\Contracts\SourceControlGateway;
 
 trait PresentsSites
 {
+    /** A fetch() from the canvas service panel (JSON), as opposed to a browser / Inertia visit. */
+    protected function wantsPanelJson(Request $request): bool
+    {
+        return $request->wantsJson() && $request->header('X-Inertia') === null;
+    }
+
+    /**
+     * Legacy site pages (/sites/{id}/…) open the site's canvas service panel on the matching tab
+     * (UI_DESIGN §3 legacy redirects); sites outside every project land on the projects list.
+     */
+    protected function toPanel(Site $site, ?string $tab = null, ?string $anchor = null): RedirectResponse
+    {
+        $url = app(ProjectDirectory::class)->serviceUrl(ServiceKind::Site, $site->id, $tab);
+
+        return redirect($url !== null ? $url.($anchor !== null ? "/{$anchor}" : '') : '/projects');
+    }
+
     /**
      * @return array<string, mixed>
      */

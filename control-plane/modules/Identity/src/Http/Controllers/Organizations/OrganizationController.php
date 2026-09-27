@@ -29,7 +29,7 @@ final class OrganizationController extends Controller
 
         $create($this->user($request), $data['name']);
 
-        return to_route('dashboard');
+        return redirect(config('fortify.home'));
     }
 
     public function switch(Request $request, SwitchOrganization $switch): RedirectResponse
@@ -38,7 +38,7 @@ final class OrganizationController extends Controller
 
         $switch($this->user($request), $data['organization_id']);
 
-        return to_route('dashboard');
+        return redirect(config('fortify.home'));
     }
 
     public function edit(Request $request): Response
@@ -107,7 +107,7 @@ final class OrganizationController extends Controller
 
         $delete($organization, $this->user($request));
 
-        return to_route('dashboard');
+        return redirect(config('fortify.home'));
     }
 
     private function user(Request $request): User

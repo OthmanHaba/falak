@@ -2,10 +2,9 @@
 
 namespace Kiln\Sites\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Application\Actions\RunSiteCommand;
@@ -16,15 +15,20 @@ final class SiteCommandController extends Controller
 {
     use PresentsSites;
 
-    public function index(Request $request, Site $site, ServerDirectory $directory): Response
+    /** JSON for the Settings tab's Commands section; a browser visit opens that section. */
+    public function index(Request $request, Site $site, ServerDirectory $directory): JsonResponse|RedirectResponse
     {
         $this->authorize('view', $site);
+
+        if (! $this->wantsPanelJson($request)) {
+            return $this->toPanel($site, 'settings', 'commands');
+        }
+
         $site->load('targets');
 
         $servers = $this->serversById($directory, $site->serverIds());
 
-        return Inertia::render('Sites/Commands', [
-            'site' => $this->header($site),
+        return response()->json(['data' => [
             'targets' => $this->targets($site, $servers),
             'commands' => $site->commands()->limit((int) config('sites.command_history', 50))->get()->map(fn (SiteCommand $command) => [
                 'id' => $command->id,
@@ -42,10 +46,10 @@ final class SiteCommandController extends Controller
             'isLaravel' => $site->framework->isLaravel(),
             'currentPath' => $site->currentPath(),
             'can' => ['run' => $request->user()?->can('runCommands', $site) ?? false],
-        ]);
+        ]]);
     }
 
-    public function store(Request $request, Site $site, RunSiteCommand $run): RedirectResponse
+    public function store(Request $request, Site $site, RunSiteCommand $run): RedirectResponse|JsonResponse
     {
         $this->authorize('runCommands', $site);
 
@@ -54,8 +58,8 @@ final class SiteCommandController extends Controller
             'command' => ['required', 'string', 'max:2000'],
         ]);
 
-        $run($site, $data['server_id'] ?? null, $data['command'], $request->user()?->getAuthIdentifier());
+        $command = $run($site, $data['server_id'] ?? null, $data['command'], $request->user()?->getAuthIdentifier());
 
-        return back();
+        return $this->wantsPanelJson($request) ? response()->json(['data' => ['id' => $command->id, 'command_id' => $command->command_id]], 201) : back();
     }
 }

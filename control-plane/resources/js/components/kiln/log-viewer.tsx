@@ -146,8 +146,25 @@ export function LogViewer({
         return plain.reduce<number[]>((acc, text, index) => (text.toLowerCase().includes(needle) ? [...acc, index] : acc), []);
     }, [plain, deferredQuery]);
 
+    // Rows = lines plus a group header wherever the phase (e.g. "app-2 · fetch") changes, so every line sits under
+    // the header of its own group; the sticky header repeats the group of the topmost visible row.
+    const { rows, rowOf } = useMemo(() => {
+        const out: ({ kind: 'header'; phase: string } | { kind: 'line'; index: number })[] = [];
+        const map: number[] = [];
+        let previous: string | undefined;
+        lines.forEach((line, index) => {
+            if (line.phase && line.phase !== previous) out.push({ kind: 'header', phase: line.phase });
+            previous = line.phase ?? previous;
+            map.push(out.length);
+            out.push({ kind: 'line', index });
+        });
+
+        return { rows: out, rowOf: map };
+    }, [lines]);
+    const lastRow = rows.length - 1;
+
     const virtualizer = useVirtualizer({
-        count: lines.length,
+        count: rows.length,
         getScrollElement: () => scrollRef.current,
         estimateSize: () => ROW_HEIGHT,
         overscan: 20,
@@ -156,10 +173,10 @@ export function LogViewer({
 
     // Follow new output.
     useEffect(() => {
-        if (following && lines.length > 0) {
-            virtualizer.scrollToIndex(lines.length - 1, { align: 'end' });
+        if (following && lastRow >= 0) {
+            virtualizer.scrollToIndex(lastRow, { align: 'end' });
         }
-    }, [lines.length, following, virtualizer]);
+    }, [lastRow, following, virtualizer]);
 
     useEffect(() => {
         setMatchIndex(0);
@@ -168,9 +185,9 @@ export function LogViewer({
     useEffect(() => {
         if (matches.length > 0) {
             setFollowing(false);
-            virtualizer.scrollToIndex(matches[Math.min(matchIndex, matches.length - 1)], { align: 'center' });
+            virtualizer.scrollToIndex(rowOf[matches[Math.min(matchIndex, matches.length - 1)]] ?? 0, { align: 'center' });
         }
-    }, [matches, matchIndex, virtualizer]);
+    }, [matches, matchIndex, virtualizer, rowOf]);
 
     const onScroll = useCallback(() => {
         const element = scrollRef.current;
@@ -180,8 +197,24 @@ export function LogViewer({
     }, []);
 
     const items = virtualizer.getVirtualItems();
-    const firstVisible = items.find((item) => item.start >= (scrollRef.current?.scrollTop ?? 0)) ?? items[0];
-    const currentPhase = firstVisible ? lines[firstVisible.index]?.phase : undefined;
+    const scrollTop = virtualizer.scrollOffset ?? scrollRef.current?.scrollTop ?? 0;
+    // Group of the topmost (even partially) visible row: the last header at or above it.
+    const topRow = items.find((item) => item.end > scrollTop)?.index ?? 0;
+    let currentPhase: string | undefined;
+    for (let index = Math.min(topRow, lastRow); index >= 0; index--) {
+        const row = rows[index];
+        if (row.kind === 'header') {
+            currentPhase = row.phase;
+            break;
+        }
+        const phase = lines[row.index]?.phase;
+        if (phase) {
+            currentPhase = phase;
+            break;
+        }
+    }
+    // The sticky header would duplicate the inline header while that one is on screen at the top.
+    const inlineHeaderOnTop = rows[topRow]?.kind === 'header';
     const gutter = String(lines.length).length;
 
     const copyAll = async () => {
@@ -252,7 +285,7 @@ export function LogViewer({
                 <IconButton size="sm" label="Download log" icon={<Download />} onClick={download} disabled={lines.length === 0} />
             </div>
 
-            {currentPhase && (
+            {currentPhase && !inlineHeaderOnTop && (
                 <div
                     className="border-border bg-surface-1 text-2xs text-fg-muted border-b px-3 py-1 font-mono font-medium tracking-wide uppercase"
                     aria-live="off"
@@ -282,15 +315,31 @@ export function LogViewer({
                             }}
                         >
                             {items.map((item) => {
-                                const line = lines[item.index];
-                                const isMatch = matches.length > 0 && matches[matchIndex] === item.index;
+                                const row = rows[item.index];
+                                if (row.kind === 'header') {
+                                    return (
+                                        <div
+                                            key={item.key}
+                                            data-index={item.index}
+                                            ref={wrap ? virtualizer.measureElement : undefined}
+                                            role="separator"
+                                            aria-label={row.phase}
+                                            className="border-border bg-surface-1 text-2xs text-fg-muted absolute left-0 flex w-full min-w-max items-center border-y px-3 font-mono font-medium tracking-wide uppercase"
+                                            style={{ transform: `translateY(${item.start}px)`, height: ROW_HEIGHT }}
+                                        >
+                                            {row.phase}
+                                        </div>
+                                    );
+                                }
+                                const line = lines[row.index];
+                                const isMatch = matches.length > 0 && matches[matchIndex] === row.index;
 
                                 return (
                                     <div
                                         key={item.key}
                                         data-index={item.index}
                                         ref={wrap ? virtualizer.measureElement : undefined}
-                                        onClick={onLineClick ? () => onLineClick(line, item.index) : undefined}
+                                        onClick={onLineClick ? () => onLineClick(line, row.index) : undefined}
                                         className={cn(
                                             'hover:bg-surface-2/60 absolute left-0 flex w-full min-w-max',
                                             wrap && 'min-w-0',
@@ -306,7 +355,7 @@ export function LogViewer({
                                                 style={{ width: `${gutter + 3}ch` }}
                                                 aria-hidden
                                             >
-                                                {item.index + 1}
+                                                {row.index + 1}
                                             </span>
                                         )}
                                         {line.time && <span className="text-fg-faint shrink-0 pr-3 select-none">{line.time}</span>}
@@ -327,7 +376,7 @@ export function LogViewer({
                         className="shadow-panel absolute right-3 bottom-3 z-10"
                         onClick={() => {
                             setFollowing(true);
-                            virtualizer.scrollToIndex(lines.length - 1, { align: 'end' });
+                            virtualizer.scrollToIndex(lastRow, { align: 'end' });
                         }}
                     >
                         Jump to live

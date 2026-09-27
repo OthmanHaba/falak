@@ -114,7 +114,7 @@ it('lets a member leave and moves their current organization elsewhere', functio
     $own = app(CreateOrganization::class)($developer, 'Own');
     $developer->forceFill(['current_organization_id' => $organization->id])->save();
 
-    $this->actingAs($developer)->delete("/organization/members/{$developer->id}")->assertRedirect(route('dashboard'));
+    $this->actingAs($developer)->delete("/organization/members/{$developer->id}")->assertRedirect('/projects');
 
     expect($developer->fresh()->current_organization_id)->toBe($own->id)
         ->and(AuditEntry::query()->where('action', 'member.left')->exists())->toBeTrue();
