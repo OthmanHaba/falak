@@ -73,8 +73,7 @@ export interface ActivityItem {
 
 export type { Canvas, CanvasService };
 
-/** Window event that opens the canvas Create picker (⌘K → Create service). */
-export const CREATE_SERVICE_EVENT = 'kiln:canvas-create';
+export { CREATE_SERVICE_EVENT } from '@/lib/registry';
 
 export function canvasUrl(projectId: string, environmentSlug: string): string {
     return `/projects/${projectId}/${environmentSlug}`;

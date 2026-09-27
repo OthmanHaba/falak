@@ -23,7 +23,7 @@ it('renders the gallery page with catalog and custom templates', function () {
     ]);
 
     $this->get('/templates')->assertOk()->assertInertia(fn (Assert $page) => $page
-        ->component('Templates/Index')
+        ->component('Templates/Index', false)
         ->has('templates', 3)
         ->where('templates.0.slug', 'hello')
         ->where('templates.0.source', 'catalog')

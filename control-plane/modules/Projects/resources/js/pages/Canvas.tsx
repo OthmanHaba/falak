@@ -50,7 +50,11 @@ function CanvasPage({ project, environment, canvas: initial, panel, can }: Canva
     const home = canvasUrl(project.id, environment.slug);
     const { canvas, setCanvas, refresh } = useLiveCanvas(`${home}/canvas`, initial);
     const [route, setRoute] = useState<PanelRoute | null>(panel);
-    const [picker, setPicker] = useState<{ position: { x: number; y: number } | null; anchor: { x: number; y: number } | null } | null>(null);
+    const [picker, setPicker] = useState<{
+        position: { x: number; y: number } | null;
+        anchor: { x: number; y: number } | null;
+        option?: string | null;
+    } | null>(null);
     const [activity, setActivity] = useState(false);
     const canCreate = can.create_sites || can.create_databases;
 
@@ -71,9 +75,12 @@ function CanvasPage({ project, environment, canvas: initial, panel, can }: Canva
         [visit],
     );
 
-    // ⌘K → Create (registered by this module) and the empty state open the picker.
+    // ⌘K → Create (registered by this module) and the empty state open the picker; `detail.option` opens a
+    // registered create option directly (⌘K → Deploy template…).
     useEffect(() => {
-        const open = () => canCreate && setPicker({ position: null, anchor: null });
+        const open = (event: Event) =>
+            canCreate &&
+            setPicker({ position: null, anchor: null, option: (event as CustomEvent<{ option?: string } | null>).detail?.option ?? null });
         window.addEventListener(CREATE_SERVICE_EVENT, open);
 
         return () => window.removeEventListener(CREATE_SERVICE_EVENT, open);
@@ -173,6 +180,7 @@ function CanvasPage({ project, environment, canvas: initial, panel, can }: Canva
                         can={can}
                         position={picker.position}
                         anchor={picker.anchor}
+                        initialOption={picker.option}
                         onClose={() => setPicker(null)}
                         onCreated={(service, deploymentId) => {
                             setPicker(null);

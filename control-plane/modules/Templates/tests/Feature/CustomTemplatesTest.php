@@ -40,7 +40,7 @@ it('imports, previews, edits (with revisions) and deletes organization templates
         ->assertJsonPath('data.revisions.1.version', '1.0.0');
 
     $this->get('/settings/templates')->assertOk()->assertInertia(fn (Assert $page) => $page
-        ->component('Templates/Settings')
+        ->component('Templates/Settings', false)
         ->has('templates', 1)
         ->where('templates.0.slug', 'ours')
         ->where('templates.0.summary.services.1.name', 'admin')
