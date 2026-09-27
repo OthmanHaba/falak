@@ -133,9 +133,12 @@ func New(opts Options) (*Service, error) {
 	s.sampler = metrics.NewSampler(opts.FS)
 	s.collector = metrics.NewCollector(s.sampler, relay)
 	s.tailer = logs.NewTailer(opts.FS, opts.StateDir, relay, opts.Logger)
+	// The socket may appear later (Docker installed by provisioning after the agent started): both followers
+	// check for it on every cycle.
 	if opts.DockerSocket != "" {
 		s.docker = logs.NewDocker(opts.DockerSocket, relay, opts.Logger)
 		s.stats = metrics.NewContainerCollector(docker.NewClient(opts.DockerSocket), relay)
+		s.stats.Socket = opts.DockerSocket
 	}
 	// Persisted configuration from a previous telemetry.configure.
 	if b, err := opts.FS.ReadFile(s.configPath()); err == nil {

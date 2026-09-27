@@ -281,7 +281,7 @@ stage_compose() {
     jq -e '.app == "kiln-compose-demo" and .greeting == "hello"' >/dev/null 2>&1 <<<"$body" && ok "public URL answers through the edge ($body)" || { bad "compose GET / -> ${body:0:200}"; return 1; }
     [[ "$(compose_get /health)" == ok ]] && ok "/health ok through the edge" || bad "compose /health failed"
 
-    local images; images=$("${C[@]}" exec -T srv-app-2 bash -c "docker ps --filter label=kiln.site=compose-demo --format '{{.Label \"kiln.service\"}}={{.Image}}'" 2>/dev/null | tr -d '\r' | sort | tr '\n' ' ')
+    local images; images=$("${C[@]}" exec -T srv-app-2 bash -c 'for c in $(docker ps -q --filter label=kiln.site=compose-demo); do docker inspect "$c" --format "{{index .Config.Labels \"kiln.service\"}}={{.Config.Image}}"; done' 2>/dev/null | tr -d '\r' | sort | tr '\n' ' ')
     [[ $images == *"app=sim-registry:5000/kiln/compose-demo/app@sha256:"* ]] && ok "app runs the built image pinned by digest ($images)" || bad "app image not digest-pinned: $images"
     "${C[@]}" exec -T srv-app-2 bash -c "docker port compose-demo-app-1 8080" 2>/dev/null | grep -q '^127.0.0.1:' && ok "app published on loopback only" || bad "app port not on 127.0.0.1: $("${C[@]}" exec -T srv-app-2 docker port compose-demo-app-1 2>&1)"
 

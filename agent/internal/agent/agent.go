@@ -172,7 +172,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	tel, err := telemetry.New(telemetry.Options{
 		FS: fs, EtcDir: cfg.EtcDir, StateDir: cfg.StateDir, UnixSocket: cfg.OTLPSocket, HTTPAddr: cfg.OTLPHTTP,
-		Endpoint: id.State.Endpoints.OTLP, ServerID: id.State.AgentID, HostName: host, DockerSocket: dockerSocketIfPresent(cfg.DockerSock),
+		Endpoint: id.State.Endpoints.OTLP, ServerID: id.State.AgentID, HostName: host, DockerSocket: cfg.DockerSock,
 		Insights: client, Logger: log.With("component", "telemetry"),
 	})
 	if err != nil {
@@ -242,13 +242,6 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	stopOutbox()
 	outboxDone.Wait()
 	return nil
-}
-
-func dockerSocketIfPresent(p string) string {
-	if _, err := os.Stat(p); err == nil {
-		return p
-	}
-	return ""
 }
 
 func waitTimeout(fn func(), d time.Duration) {

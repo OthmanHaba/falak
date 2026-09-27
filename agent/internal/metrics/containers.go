@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -24,6 +25,8 @@ type ContainerEngine interface {
 // kiln.container.*: one ResourceMetrics per site (service.name = site slug, enriched to kiln.site.id by
 // the relay), data points labelled with the compose service and container.
 type ContainerCollector struct {
+	// Socket, when set, is checked before each collection (Docker may be installed after the agent started).
+	Socket string
 	engine ContainerEngine
 	out    Emitter
 	now    func() time.Time
@@ -87,6 +90,11 @@ type containerPoint struct {
 // Collect samples every running site container once. CPU utilisation needs two samples, so a
 // container's first sample only reports memory and network.
 func (c *ContainerCollector) Collect(ctx context.Context) []*metricspb.ResourceMetrics {
+	if c.Socket != "" {
+		if _, err := os.Stat(c.Socket); err != nil {
+			return nil
+		}
+	}
 	list, err := c.engine.ContainerList(ctx, false, []string{"kiln.site"})
 	if err != nil {
 		return nil
