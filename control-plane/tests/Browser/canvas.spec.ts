@@ -78,6 +78,25 @@ for (const theme of ['dark', 'light'] as const) {
         await page.getByRole('tab', { name: /Deploy logs/ }).click();
         await shot(page, theme, 'deploy-view-logs');
 
+        // A deployment waiting for its server to finish preparing (Blog)
+        await page.keyboard.press('Escape');
+        await page.waitForURL(/\/production$/);
+        await page.getByRole('group', { name: /^Blog:/ }).click();
+        await page.waitForURL(/\/service\/site\//);
+        await expect(page.getByText('Waiting for servers')).toBeVisible();
+        await expect(page.getByTestId('waiting-notice')).toContainText('Waiting for 1 server to finish preparing');
+        await page.waitForLoadState('networkidle');
+        await shot(page, theme, 'panel-deployments-waiting');
+        await page.getByRole('button', { name: 'View logs' }).first().click();
+        await expect(page.getByTestId('deploy-view')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
+        await page.waitForLoadState('networkidle');
+        await shot(page, theme, 'deploy-view-waiting');
+        await page.keyboard.press('Escape');
+        await page.waitForURL(/\/production$/);
+        await page.getByRole('group', { name: /^Storefront:/ }).click();
+        await page.waitForURL(/\/service\/site\//);
+
         // Variables: reveal, stage a new variable with a reference, see the changes bar
         await page.getByRole('tab', { name: 'Variables' }).click();
         await expect(page.getByTestId('variables-tab')).toBeVisible();

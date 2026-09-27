@@ -84,7 +84,7 @@ class UiDemoSeeder extends Seeder
             ['Storefront', 'storefront', SiteRuntime::FrankenPhp, Framework::Laravel, 'acme/storefront'],
             ['Marketing', 'marketing', SiteRuntime::Node, Framework::Next, 'acme/marketing-site'],
             ['Docs', 'docs', SiteRuntime::Static, Framework::Static, 'acme/docs'],
-            ['Blog', 'blog', SiteRuntime::PhpFpm, Framework::WordPress, null],
+            ['Blog', 'blog', SiteRuntime::PhpFpm, Framework::WordPress, 'acme/blog'],
         ];
 
         $created = [];
@@ -113,7 +113,8 @@ class UiDemoSeeder extends Seeder
                     'site_id' => $site->id,
                     'server_id' => $server->id,
                     'role' => $position === 0 ? TargetRole::Leader : TargetRole::Member,
-                    'status' => TargetStatus::Ready,
+                    // Blog's server is still being prepared (its deployment waits for it).
+                    'status' => $slug === 'blog' ? TargetStatus::Provisioning : TargetStatus::Ready,
                 ]);
             }
         }
@@ -123,6 +124,7 @@ class UiDemoSeeder extends Seeder
         $this->database($organization->id, $servers[2]);
         $this->variables($created['storefront'], ['APP_ENV' => 'production', 'DATABASE_URL' => '${{ storefront_db.DATABASE_URL }}', 'DB_HOST' => '${{ storefront_db.DB_HOST }}']);
         $this->deployments($organization->id, $created, [$servers[0], $servers[1]]);
+        $this->waitingDeployment($organization->id, $created['blog'], $servers[1]);
         $this->processes($organization->id, $created['storefront'], $created['marketing'], [$servers[0], $servers[1]]);
 
         // Place the sites into the organization's Default project, and add a second project with staging so the
@@ -407,7 +409,8 @@ YAML;
 
     /**
      * Deployment history with releases, per-server phase steps and output: Storefront has a live deployment in
-     * progress plus one queued, Marketing is healthy, Docs failed, Blog was never deployed.
+     * progress plus one queued, Marketing is healthy, Docs failed, Blog was never deployed (its first deployment waits
+     * for its server, see waitingDeployment()).
      *
      * @param  array<string, Site>  $sites
      * @param  list<Server>  $servers
@@ -451,6 +454,24 @@ YAML;
             }
 
             $active?->forceFill(['status' => 'active'])->save();
+        }
+    }
+
+    /**
+     * Blog was triggered right after it was created: its deployment waits for app-2 to finish preparing.
+     */
+    private function waitingDeployment(string $organizationId, Site $site, Server $server): void
+    {
+        $at = now()->subMinutes(2)->subSeconds(14);
+        $reason = "Waiting for 1 server to finish preparing: {$server->name}";
+        $deployment = Deployment::query()->create([
+            'organization_id' => $organizationId, 'site_id' => $site->id, 'site_slug' => $site->slug, 'number' => 1, 'trigger' => 'push', 'status' => 'waiting',
+            'branch' => 'main', 'commit' => substr(hash('sha1', 'blog1'), 0, 40), 'commit_message' => 'Initial theme', 'commit_author' => 'Grace Hopper',
+            'waiting_since' => $at, 'waiting_reason' => $reason, 'created_at' => $at, 'updated_at' => $at,
+        ]);
+
+        foreach (['Queued by push at '.substr((string) $deployment->commit, 0, 7).'.', "{$reason}. The deployment starts automatically once they are ready."] as $line) {
+            OutputLine::query()->create(['deployment_id' => $deployment->id, 'stream' => 'stdout', 'data' => $line."\n", 'at' => $at]);
         }
     }
 

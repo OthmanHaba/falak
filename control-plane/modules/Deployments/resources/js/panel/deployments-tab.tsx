@@ -3,15 +3,24 @@ import { useEchoChannel } from '@/hooks/use-echo-channel';
 import { useJson } from '@/hooks/use-json';
 import { requestJson } from '@/lib/http';
 import { type ServicePanelContext, type ServiceTabProps } from '@/lib/registry';
-import { History, Rocket, RotateCcw, ScrollText } from 'lucide-react';
+import { Ban, History, Rocket, RotateCcw, ScrollText } from 'lucide-react';
 import { useState } from 'react';
 import { type Deployment } from '../types';
-import { deploy, deploymentsUrl, durationMs, firstLine, rollback, type DeploymentsOverview, type RunningDeployment } from './api';
+import { cancelDeployment, deploy, deploymentsUrl, durationMs, firstLine, rollback, type DeploymentsOverview, type RunningDeployment } from './api';
 import { DeployView } from './deploy-view';
 import { CommitTag, DeploymentRow, triggerLabel } from './deployment-row';
+import { WaitingNotice } from './waiting-notice';
 
-function rowActions(ctx: ServicePanelContext, overview: DeploymentsOverview, deployment: Deployment): MenuAction[] {
+function rowActions(ctx: ServicePanelContext, overview: DeploymentsOverview, deployment: Deployment, reload?: () => void): MenuAction[] {
     const actions: MenuAction[] = [{ label: 'View logs', icon: <ScrollText />, onSelect: () => ctx.open('deployments', deployment.id) }];
+
+    if (overview.can.cancel && (deployment.status === 'waiting' || deployment.status === 'queued')) {
+        actions.push({
+            label: 'Cancel',
+            icon: <Ban />,
+            onSelect: () => void cancelDeployment(ctx, deployment).then((ok) => ok && reload?.()),
+        });
+    }
 
     if (overview.can.create && deployment.commit) {
         actions.push({
@@ -41,16 +50,17 @@ function FeaturedDeployment({
     live: boolean;
     actions: MenuAction[];
 }) {
+    const waiting = live && deployment.status === 'waiting';
     const duration = durationMs(deployment.started_at, deployment.finished_at);
     const servers =
-        'targets' in deployment
+        'targets' in deployment && deployment.targets.length > 0
             ? deployment.targets.map((target) => ({ id: target.server_id, name: target.server_name, leader: target.role === 'leader' }))
             : ctx.service.servers;
 
     return (
         <section aria-label={label} className="border-border bg-surface-1 grid gap-3 rounded-lg border p-4">
             <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge status={live ? deployment.status : 'active'} label={live ? undefined : 'Active'} />
+                <StatusBadge status={live ? deployment.status : 'active'} label={waiting ? 'Waiting' : live ? undefined : 'Active'} />
                 <span className="text-fg-faint text-xs">{label}</span>
                 <span className="text-fg-faint tabular ml-auto text-xs">#{deployment.number}</span>
                 {actions.length > 0 && <Menu actions={actions} label={`Deployment #${deployment.number} actions`} />}
@@ -75,6 +85,7 @@ function FeaturedDeployment({
                     <span>{triggerLabel(deployment.trigger)}</span>
                 </div>
             </div>
+            {waiting && <WaitingNotice deployment={deployment} compact />}
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap gap-1">
                     {servers.map((server) => (
@@ -153,15 +164,28 @@ function DeploymentList({ ctx }: { ctx: ServicePanelContext }) {
     return (
         <div className="grid gap-5">
             {data.active && (
-                <FeaturedDeployment ctx={ctx} deployment={data.active} label="In progress" live actions={rowActions(ctx, data, data.active)} />
+                <FeaturedDeployment
+                    ctx={ctx}
+                    deployment={data.active}
+                    label={data.active.status === 'waiting' ? 'Waiting for servers' : 'In progress'}
+                    live
+                    actions={rowActions(ctx, data, data.active, () => void reload())}
+                />
             )}
 
             {data.queued.length > 0 && (
                 <section aria-label="Queued deployments" className="grid gap-1">
-                    <h3 className="text-fg-faint text-2xs px-1 font-medium tracking-wide uppercase">Queued · runs after the current deployment</h3>
+                    <h3 className="text-fg-faint text-2xs px-1 font-medium tracking-wide uppercase">
+                        Queued · runs after the {data.active?.status === 'waiting' ? 'waiting' : 'current'} deployment
+                    </h3>
                     <div className="border-border grid rounded-lg border border-dashed p-1">
                         {data.queued.map((deployment) => (
-                            <DeploymentRow key={deployment.id} deployment={deployment} onOpen={() => ctx.open('deployments', deployment.id)} />
+                            <DeploymentRow
+                                key={deployment.id}
+                                deployment={deployment}
+                                onOpen={() => ctx.open('deployments', deployment.id)}
+                                actions={rowActions(ctx, data, deployment, () => void reload())}
+                            />
                         ))}
                     </div>
                 </section>
