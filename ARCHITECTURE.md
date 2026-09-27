@@ -52,6 +52,7 @@ Every module lives in `control-plane/modules/<Module>/` and is registered by its
 | 15 | **Insights** | Nightwatch-equivalent: event ingest, issues (fingerprint/group), affected users, route/job/query thresholds, timelines | Sites, Telemetry |
 | 16 | **Alerting** | Alert rules, routing, channels (email, Slack, Discord, Telegram, webhook), notification center | Identity |
 | 17 | **Terminal** | Web terminal sessions (PTY over agent), shared sessions, recording | Servers, Fleet |
+| 18 | **Projects** | Projects → environments → services (sites/databases on a canvas), `${{ service.KEY }}` variable references, canvas read model | Sites, Databases, Deployments, Servers, Fleet |
 
 ### 2.1 Module internal structure (mandatory)
 

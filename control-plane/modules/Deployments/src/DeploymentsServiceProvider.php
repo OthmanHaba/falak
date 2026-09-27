@@ -18,10 +18,12 @@ use Kiln\Deployments\Application\Listeners\HandleBuildEvents;
 use Kiln\Deployments\Application\Listeners\HandleCommandOutcome;
 use Kiln\Deployments\Application\Listeners\RecordBuildOutput;
 use Kiln\Deployments\Application\Listeners\RecordCommandOutput;
+use Kiln\Deployments\Contracts\DeploymentDirectory;
 use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
 use Kiln\Deployments\Http\Channels\DeploymentChannel;
 use Kiln\Deployments\Http\Channels\SiteDeploymentsChannel;
 use Kiln\Deployments\Infrastructure\DeploymentSiteFields;
+use Kiln\Deployments\Infrastructure\EloquentDeploymentDirectory;
 use Kiln\Fleet\Events\CommandFailed;
 use Kiln\Fleet\Events\CommandFinished;
 use Kiln\Fleet\Events\CommandOutputReceived;
@@ -35,6 +37,15 @@ use Kiln\SourceControl\Events\PushReceived;
 
 class DeploymentsServiceProvider extends ModuleServiceProvider
 {
+    /**
+     * Contract => implementation bindings exposed to other modules.
+     *
+     * @var array<class-string, class-string>
+     */
+    public array $singletons = [
+        DeploymentDirectory::class => EloquentDeploymentDirectory::class,
+    ];
+
     public function register(): void
     {
         $this->mergeConfigFrom($this->modulePath().'/config/deployments.php', 'deployments');

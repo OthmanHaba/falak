@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Kiln\Kernel\Support\SharedProps;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -11,7 +12,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Registered before the module providers, which add their shared Inertia props to it.
+        $this->app->singleton(SharedProps::class);
     }
 
     /**

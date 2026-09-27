@@ -37,6 +37,7 @@ The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protoco
 | `deployments.manage` | admin, developer | strategy, health checks, retention, push-to-deploy, deploy hooks (UI) |
 | `builds.view` / `builds.manage` | view: all; manage: admin, developer | builds, logs, builders / cancel builds, manage builders (UI) |
 | `telemetry.view` | admin, developer, viewer | site logs |
+| `projects.view` / `projects.manage` | view: all; manage: admin, developer | projects + environments / create, rename, delete, duplicate environments |
 
 ## Identity
 
@@ -78,6 +79,8 @@ Deployments through `Sites\Contracts\SiteResourceExtension`.
 Same body and validation as the web form (`name`, `framework`, `server_ids[]`, optional `leader_server_id`, `runtime`,
 `build_mode`, `source_connection_id` + `repository` + `branch`, `push_to_deploy`, `php_version`, `web_directory`,
 `app_port`, `health_check_path`, …). `201` with the site resource plus `warnings[]` from the git provider; `422` on errors.
+Optional `project_id` / `environment_id` place the site (Projects); without them it lands in the organization's
+Default project, `production` environment. An environment of another organization/project is a `422`.
 
 ### `GET /api/v1/sites/{site}/env` — `sites.env.view`
 Returns the latest environment version as dotenv (audited as a reveal).
@@ -101,6 +104,39 @@ on the last page.
            "message": "boom", "attributes": {"service_name": "laravel", "…": "…"}}],
  "meta": {"cursor": "1790000000000000001"}}
 ```
+
+## Projects
+
+Projects → environments → services (sites / databases). Every organization has a `Default` project (`is_default`);
+new sites and databases without a placement land in its `production` environment. Environments are addressed by
+slug or id.
+
+```json
+{ "id": "01j…", "name": "Shop", "description": null, "icon": null, "is_default": false, "created_at": "…",
+  "environments": [{ "id": "01j…", "project_id": "01j…", "name": "production", "slug": "production",
+                     "is_production": true, "forked_from_id": null, "services_count": 3, "created_at": "…" }] }
+```
+
+### `GET /api/v1/projects` · `GET /api/v1/projects/{project}` — `projects.view`
+### `POST /api/v1/projects` `{name, description?, icon?}` — `projects.manage`
+Creates the project with its `production` environment. `201`.
+### `PATCH /api/v1/projects/{project}` · `DELETE /api/v1/projects/{project}` — `projects.manage`
+Only empty, non-default projects can be deleted (`422` otherwise).
+### `GET /api/v1/projects/{project}/environments` — `projects.view`
+### `POST /api/v1/projects/{project}/environments` `{name, from_environment_id?}` — `projects.manage`
+With `from_environment_id` (also needs `sites.create`), every site is copied through `Sites\Contracts\SiteFactory`
+(configuration, deploy script, toggles, shared paths, variables — no servers, push-to-deploy off) at the same canvas
+position and service name; databases are not copied. `201 {data, warnings[]}`.
+### `PATCH|DELETE /api/v1/projects/{project}/environments/{environment}` — `projects.manage`
+Rename (the slug follows). Only empty, non-production environments can be deleted.
+
+### Variable references
+Site variables may contain `${{ <service>.<KEY> }}`; they resolve at deploy time (release `.env`, deploy script
+environment, public build variables) against services of the **same environment**. Service names match
+case-insensitively with spaces/dots/underscores as dashes. Database services expose `DATABASE_URL`,
+`DB_CONNECTION`, `DB_HOST` (private network → provider private IP → public IP), `DB_PORT`, `DB_DATABASE`,
+`DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the database); site services expose their own variables.
+Unknown services/keys and cycles fail the deployment: `Unresolved variable references: …`.
 
 ## Source control
 

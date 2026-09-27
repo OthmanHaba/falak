@@ -2,6 +2,7 @@
 
 namespace Kiln\Sites\Application\Actions;
 
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -10,6 +11,7 @@ use Kiln\Sites\Application\SiteRules;
 use Kiln\Sites\Application\SourceControlLinker;
 use Kiln\Sites\Application\TargetProvisioner;
 use Kiln\Sites\Contracts\BuildMode;
+use Kiln\Sites\Contracts\Data\SitePlacement;
 use Kiln\Sites\Contracts\Framework;
 use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Contracts\TargetRole;
@@ -36,8 +38,11 @@ final class CreateSite
 
     /**
      * @param  array<string, mixed>  $data  validated StoreSiteRequest input
+     * @param  ?SitePlacement  $placement  passed through to SiteCreated for Projects
+     * @param  bool  $requireServers  false lets a site start without servers (environment duplicates)
+     * @param  ?Closure(Site): void  $configure  runs inside the creation transaction, before any side effect
      */
-    public function __invoke(string $organizationId, ?string $userId, array $data): Site
+    public function __invoke(string $organizationId, ?string $userId, array $data, ?SitePlacement $placement = null, bool $requireServers = true, ?Closure $configure = null): Site
     {
         $framework = Framework::from((string) $data['framework']);
         $preset = Preset::for($framework);
@@ -50,7 +55,7 @@ final class CreateSite
         }
 
         /** @var list<string> $serverIds */
-        $serverIds = array_values(array_unique(array_map('strval', (array) $data['server_ids'])));
+        $serverIds = array_values(array_unique(array_map('strval', (array) ($data['server_ids'] ?? []))));
         $leaderId = (string) ($data['leader_server_id'] ?? $serverIds[0] ?? '');
 
         if ($serverIds !== [] && ! in_array($leaderId, $serverIds, true)) {
@@ -58,7 +63,10 @@ final class CreateSite
         }
 
         $this->rules->runtimeAndFramework($framework, $runtime, $buildMode);
-        $this->rules->targets($organizationId, $serverIds, $runtime, $phpVersion, $buildMode);
+        if ($requireServers || $serverIds !== []) {
+            $this->rules->targets($organizationId, $serverIds, $runtime, $phpVersion, $buildMode);
+        }
+
         $this->rules->connection($organizationId, $data['source_connection_id'] ?? null);
 
         $appPort = null;
@@ -71,7 +79,7 @@ final class CreateSite
         $slug = $this->slug((string) ($data['slug'] ?? '') ?: (string) $data['name']);
         $isolated = (bool) ($data['isolated'] ?? false);
 
-        $site = DB::transaction(function () use ($organizationId, $userId, $data, $framework, $preset, $runtime, $buildMode, $phpVersion, $serverIds, $leaderId, $appPort, $slug, $isolated) {
+        $site = DB::transaction(function () use ($organizationId, $userId, $data, $framework, $preset, $runtime, $buildMode, $phpVersion, $serverIds, $leaderId, $appPort, $slug, $isolated, $configure) {
             $site = Site::query()->create([
                 'organization_id' => $organizationId,
                 'name' => $data['name'],
@@ -119,6 +127,10 @@ final class CreateSite
                 'created_at' => now(),
             ]);
 
+            if ($configure !== null) {
+                $configure($site);
+            }
+
             return $site;
         });
 
@@ -138,7 +150,7 @@ final class CreateSite
             'repository' => $site->repository,
         ], $organizationId);
 
-        SiteCreated::dispatch($site->id, $organizationId, $site->slug, $runtime->value, $serverIds);
+        SiteCreated::dispatch($site->id, $organizationId, $site->slug, $runtime->value, $serverIds, $placement);
 
         return $site->refresh()->load('targets');
     }
