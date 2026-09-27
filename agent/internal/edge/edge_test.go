@@ -332,3 +332,49 @@ func TestReloadFrankenPHPForceReloadsTheRunningConfig(t *testing.T) {
 		t.Fatalf("loads=%d cache-control=%q", fc.loads, fc.cacheControl)
 	}
 }
+
+// Laravel Octane: reverse_proxy with a root serves existing assets directly (never PHP sources, dotfiles or
+// directories) and proxies the rest, retrying the upstream for try_duration_s while Octane restarts.
+func TestRenderOctaneProxyWithStaticPassthrough(t *testing.T) {
+	root := "/srv/kiln/sites/shop/current/public"
+	cfg, err := Render(Payload{Sites: []Site{{
+		ID: "shop", Domains: []string{"shop.test"}, Kind: "reverse_proxy", Root: root,
+		Upstreams: []Upstream{{Dial: "127.0.0.1:8123"}}, TryDurationS: 30,
+		Headers: map[string]string{"X-Frame-Options": "DENY"},
+	}}}, "/etc/kiln/certs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(cfg)
+	s := string(b)
+	for _, want := range []string{
+		`{"handler":"vars","root":"` + root + `"}`,
+		`"file":{"root":"` + root + `","try_files":["{http.request.uri.path}"]}`,
+		`"not":[{"path":["*.php","*/","/.*","*/.*"]}]`,
+		`{"handler":"file_server","hide":[".env",".git"]}`,
+		`"upstreams":[{"dial":"127.0.0.1:8123"}]`,
+		`"try_duration":"30s"`,
+		`"X-Frame-Options":["DENY"]`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %s in %s", want, s)
+		}
+	}
+	if strings.Contains(s, `"handler":"php"`) || strings.Contains(s, `"protocol":"fastcgi"`) {
+		t.Errorf("octane route must not execute PHP itself: %s", s)
+	}
+	// Static route comes before the proxy, and the headers before both.
+	if strings.Index(s, `"file_server"`) > strings.Index(s, `"reverse_proxy"`) || strings.Index(s, `"X-Frame-Options"`) > strings.Index(s, `"file_server"`) {
+		t.Errorf("wrong route order: %s", s)
+	}
+
+	// Without a root (containers, Node): plain proxy with the default 5s retry window, no file server.
+	cfg, err = Render(Payload{Sites: []Site{{ID: "api", Domains: []string{"api.test"}, Kind: "reverse_proxy", Upstreams: []Upstream{{Dial: "127.0.0.1:3000"}}}}}, "/etc/kiln/certs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ = json.Marshal(cfg)
+	if s := string(b); strings.Contains(s, "file_server") || !strings.Contains(s, `"try_duration":"5s"`) {
+		t.Errorf("plain proxy changed: %s", s)
+	}
+}

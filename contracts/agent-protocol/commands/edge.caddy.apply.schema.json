@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/edge.caddy.apply.schema.json",
-  "title": "edge.caddy.apply — full desired route set; rendered to Caddy JSON and POSTed atomically to the admin API /load",
+  "title": "edge.caddy.apply \u2014 full desired route set; rendered to Caddy JSON and POSTed atomically to the admin API /load",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -102,7 +102,7 @@
           "root": {
             "type": "string",
             "pattern": "^/",
-            "description": "Document root, e.g. /srv/kiln/sites/shop/current/public"
+            "description": "Document root, e.g. /srv/kiln/sites/shop/current/public. With kind=reverse_proxy (Laravel Octane): existing files under root are served directly (never *.php, dotfiles or directories) and everything else is proxied"
           },
           "php_fpm_socket": {
             "type": "string",
@@ -141,6 +141,13 @@
           "health_uri": {
             "type": "string",
             "pattern": "^/"
+          },
+          "try_duration_s": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 5,
+            "description": "reverse_proxy: how long a request retries connecting to an upstream before failing (e.g. Octane restarting on deploy)"
           },
           "redirect_to": {
             "type": "string",
