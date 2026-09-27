@@ -73,9 +73,7 @@ export default function Builders({ builders, localConfigured, panelUrl, plainTok
     };
 
     const setEnabled = (builder: BuilderRow, enabled: boolean) =>
-        act(builder, (done) =>
-            router.patch(route('builds.builders.update', builder.id), { enabled }, { preserveScroll: true, onFinish: done }),
-        );
+        act(builder, (done) => router.patch(route('builds.builders.update', builder.id), { enabled }, { preserveScroll: true, onFinish: done }));
 
     const reinstall = (builder: BuilderRow) =>
         act(builder, (done) => router.post(route('builds.builders.reinstall', builder.id), {}, { preserveScroll: true, onFinish: done }));
@@ -152,15 +150,22 @@ export default function Builders({ builders, localConfigured, panelUrl, plainTok
             description="Where sites are built. Builds run on the control plane, on builder servers or on machines you run yourself — app servers only receive finished artifacts."
             wide
         >
-            <Section title="Control-plane builder" description="Shared by every organization on this installation; configured through the environment." bare>
+            <Section
+                title="Control-plane builder"
+                description="Shared by every organization on this installation; configured through the environment."
+                bare
+            >
                 {local.length === 0 ? (
-                    <Callout tone={localConfigured ? 'info' : 'warning'} title={localConfigured ? 'Waiting for the local builder' : 'Local builder not configured'}>
+                    <Callout
+                        tone={localConfigured ? 'info' : 'warning'}
+                        title={localConfigured ? 'Waiting for the local builder' : 'Local builder not configured'}
+                    >
                         {localConfigured ? (
                             'The token is set, but the builder process has not checked in yet. Start it next to the control plane.'
                         ) : (
                             <>
-                                Set <code className="font-mono text-xs">KILN_LOCAL_BUILDER_TOKEN</code> to build on the control-plane host, or add a builder
-                                server below.
+                                Set <code className="font-mono text-xs">KILN_LOCAL_BUILDER_TOKEN</code> to build on the control-plane host, or add a
+                                builder server below.
                             </>
                         )}
                     </Callout>
@@ -198,7 +203,11 @@ export default function Builders({ builders, localConfigured, panelUrl, plainTok
                 />
             </Section>
 
-            <Section title="External builders" description="Run kiln-builder on any machine with Docker (a CI runner, a spare box). It builds only this organization's sites." bare>
+            <Section
+                title="External builders"
+                description="Run kiln-builder on any machine with Docker (a CI runner, a spare box). It builds only this organization's sites."
+                bare
+            >
                 {plainToken && (
                     <Callout tone="success" title="Builder token created — copy it now, it won't be shown again">
                         <div className="mt-1 grid gap-2">
@@ -217,14 +226,20 @@ export default function Builders({ builders, localConfigured, panelUrl, plainTok
                         icon: <Hammer />,
                         size: 'sm',
                         title: 'No external builders',
-                        description: can.manage ? 'Create a token below, then start kiln-builder with it.' : 'Ask an admin to create a builder token.',
+                        description: can.manage
+                            ? 'Create a token below, then start kiln-builder with it.'
+                            : 'Ask an admin to create a builder token.',
                     }}
                 />
                 {can.manage && (
                     <form onSubmit={submit} className="border-border bg-surface-1 grid gap-4 rounded-lg border p-4">
                         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                             <Field label="Name" error={form.errors.name} required>
-                                <Input value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} placeholder="ci-runner-1" />
+                                <Input
+                                    value={form.data.name}
+                                    onChange={(event) => form.setData('name', event.target.value)}
+                                    placeholder="ci-runner-1"
+                                />
                             </Field>
                             <Button type="submit" variant="primary" icon={<Plus />} loading={form.processing} disabled={form.data.modes.length === 0}>
                                 Create token

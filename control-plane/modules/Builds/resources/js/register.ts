@@ -5,9 +5,7 @@ registerNavigation({ id: 'builds', title: 'Builds', url: '/builds', icon: Hammer
 
 registerCommands({
     id: 'builds.navigation',
-    commands: () => [
-        { id: 'builds.index', title: 'Builds', group: 'Navigation', icon: Hammer, href: '/builds', permission: 'builds.view' },
-    ],
+    commands: () => [{ id: 'builds.index', title: 'Builds', group: 'Navigation', icon: Hammer, href: '/builds', permission: 'builds.view' }],
 });
 
 // Organization settings → Integrations (docs/UI_DESIGN.md §3). The palette lists it under "Settings".

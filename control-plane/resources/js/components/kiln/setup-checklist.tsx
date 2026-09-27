@@ -41,7 +41,10 @@ export interface SetupProgress {
  * The standard first-run steps: connect git → add a server → create a project → first deploy.
  * Override any href (e.g. `{ deploy: '/projects/acme/production' }`) or pass `onAction` handlers by id afterwards.
  */
-export function defaultSetupSteps(progress: SetupProgress, hrefs: Partial<Record<'git' | 'server' | 'project' | 'deploy', string>> = {}): SetupStep[] {
+export function defaultSetupSteps(
+    progress: SetupProgress,
+    hrefs: Partial<Record<'git' | 'server' | 'project' | 'deploy', string>> = {},
+): SetupStep[] {
     return [
         {
             id: 'git',

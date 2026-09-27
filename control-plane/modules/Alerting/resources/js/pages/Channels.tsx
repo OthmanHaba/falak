@@ -179,7 +179,10 @@ export default function Channels({ channels, types, can }: Props) {
 
     const sendTest = async (channel: ChannelRow) => {
         setTests((current) => ({ ...current, [channel.id]: { ok: true, message: 'Sending…', pending: true } }));
-        const response = await jsonRequest<{ ok: boolean; error: string | null; message?: string }>('POST', route('alerting.channels.test', channel.id));
+        const response = await jsonRequest<{ ok: boolean; error: string | null; message?: string }>(
+            'POST',
+            route('alerting.channels.test', channel.id),
+        );
         const message = response.ok ? 'Test message delivered' : (response.body?.error ?? response.body?.message ?? `HTTP ${response.status}`);
         setTests((current) => ({ ...current, [channel.id]: { ok: response.ok, message } }));
     };
@@ -264,7 +267,9 @@ export default function Channels({ channels, types, can }: Props) {
                                             <span className="truncate font-medium">{channel.name}</span>
                                             {!channel.enabled && <Tag tone="faint">Disabled</Tag>}
                                         </span>
-                                        <span className="text-fg-faint max-w-[14rem] truncate font-mono text-xs sm:max-w-xs">{describeTarget(channel)}</span>
+                                        <span className="text-fg-faint max-w-[14rem] truncate font-mono text-xs sm:max-w-xs">
+                                            {describeTarget(channel)}
+                                        </span>
                                     </span>
                                 </span>
                             ),
@@ -422,7 +427,12 @@ export default function Channels({ channels, types, can }: Props) {
                                         placeholder={spec.placeholder}
                                     />
                                 ) : spec.multiline ? (
-                                    <Textarea value={value} placeholder={spec.placeholder} rows={3} onChange={(event) => onChange(event.target.value)} />
+                                    <Textarea
+                                        value={value}
+                                        placeholder={spec.placeholder}
+                                        rows={3}
+                                        onChange={(event) => onChange(event.target.value)}
+                                    />
                                 ) : (
                                     <Input mono value={value} placeholder={spec.placeholder} onChange={(event) => onChange(event.target.value)} />
                                 )}

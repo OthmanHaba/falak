@@ -111,7 +111,12 @@ export default function Settings({ settings, defaults, backends, can }: Props) {
                         can.manage && (
                             <>
                                 {form.isDirty && <span className="text-fg-faint mr-auto text-xs">Unsaved changes</span>}
-                                <Button variant="primary" type="submit" loading={form.processing} disabled={!form.isDirty || Object.keys(hints).length > 0}>
+                                <Button
+                                    variant="primary"
+                                    type="submit"
+                                    loading={form.processing}
+                                    disabled={!form.isDirty || Object.keys(hints).length > 0}
+                                >
                                     Save and reconfigure servers
                                 </Button>
                             </>

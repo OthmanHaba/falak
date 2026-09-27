@@ -31,7 +31,9 @@ export function ScriptEditor({ value, onChange, id, rows = 16, readOnly = false,
             const indent = value.slice(lineStart, lineStart + 4).match(/^ {1,4}/)?.[0].length ?? 0;
             if (indent === 0) return;
             onChange(value.slice(0, lineStart) + value.slice(lineStart + indent));
-            requestAnimationFrame(() => target.setSelectionRange(Math.max(lineStart, selectionStart - indent), Math.max(lineStart, selectionEnd - indent)));
+            requestAnimationFrame(() =>
+                target.setSelectionRange(Math.max(lineStart, selectionStart - indent), Math.max(lineStart, selectionEnd - indent)),
+            );
 
             return;
         }

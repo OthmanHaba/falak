@@ -90,7 +90,11 @@ function CredentialFields({
                 <Field
                     key={field.name}
                     label={field.label}
-                    hint={replace && !field.secret ? `${field.help ? `${field.help} ` : ''}Leave empty to keep the stored value.` : field.help || undefined}
+                    hint={
+                        replace && !field.secret
+                            ? `${field.help ? `${field.help} ` : ''}Leave empty to keep the stored value.`
+                            : field.help || undefined
+                    }
                     error={errors[`credentials.${field.name}`]}
                     required={!replace}
                 >
@@ -208,7 +212,15 @@ function AddCredentialDialog({
     );
 }
 
-function EditCredentialDialog({ credential, provider, onClose }: { credential: Credential; provider: ProviderOption | undefined; onClose: () => void }) {
+function EditCredentialDialog({
+    credential,
+    provider,
+    onClose,
+}: {
+    credential: Credential;
+    provider: ProviderOption | undefined;
+    onClose: () => void;
+}) {
     const form = useForm<{ name: string; credentials: Record<string, string>; [key: string]: string | Record<string, string> }>({
         name: credential.name,
         credentials: {},
@@ -414,7 +426,9 @@ export default function ProvidersIndex({ credentials, providers, can }: Props) {
             )}
 
             {can.manage && <AddCredentialDialog providers={providers} provider={adding} onClose={() => setAdding(null)} />}
-            {editing && <EditCredentialDialog credential={editing} provider={providerByValue.get(editing.provider)} onClose={() => setEditing(null)} />}
+            {editing && (
+                <EditCredentialDialog credential={editing} provider={providerByValue.get(editing.provider)} onClose={() => setEditing(null)} />
+            )}
             <ConfirmDestructive
                 open={removing !== null}
                 onOpenChange={(open) => !open && setRemoving(null)}

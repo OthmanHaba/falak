@@ -45,8 +45,8 @@ export { Panel, type PanelProps, type PanelTab, type PanelUrlSync } from './pane
 export { PhaseTimeline, Stepper, formatDuration, type PhaseCell, type PhaseRow, type Step } from './phase-timeline';
 export { ProjectSwitcher } from './project-switcher';
 export { RelativeTime, formatRelative } from './relative-time';
-export { PageHeader, Section, type SectionProps } from './section';
 export { SecretInput, type SecretInputProps } from './secret-input';
+export { PageHeader, Section, type SectionProps } from './section';
 export { Select, type SelectOption, type SelectProps } from './select';
 export { ServiceIcon, hasServiceIcon, type ServiceIconProps } from './service-icon';
 export { SetupChecklist, defaultSetupSteps, type SetupChecklistProps, type SetupProgress, type SetupStep } from './setup-checklist';

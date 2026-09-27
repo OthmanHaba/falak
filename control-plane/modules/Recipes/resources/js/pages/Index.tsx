@@ -3,7 +3,6 @@ import { CodeBlock } from '@/components/kiln/code-block';
 import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
 import { DataTable } from '@/components/kiln/data-table';
 import { Dialog } from '@/components/kiln/dialog';
-import { EmptyState } from '@/components/kiln/empty-state';
 import { Field } from '@/components/kiln/field';
 import { Input } from '@/components/kiln/input';
 import { RelativeTime } from '@/components/kiln/relative-time';
@@ -66,7 +65,9 @@ export default function Index({ recipes, builtins, recentRuns, can }: Props) {
 
     const open = (recipe: RecipeRow | 'new') => {
         form.clearErrors();
-        form.setData(recipe === 'new' ? EMPTY : { name: recipe.name, description: recipe.description ?? '', script: recipe.script, user: recipe.user });
+        form.setData(
+            recipe === 'new' ? EMPTY : { name: recipe.name, description: recipe.description ?? '', script: recipe.script, user: recipe.user },
+        );
         setEditing(recipe);
     };
 
@@ -188,7 +189,11 @@ export default function Index({ recipes, builtins, recentRuns, can }: Props) {
                 />
             </Section>
 
-            <Section title="Built-in recipes" description="Maintained by Kiln. Run them as they are, or copy one into your library to change it." bare>
+            <Section
+                title="Built-in recipes"
+                description="Maintained by Kiln. Run them as they are, or copy one into your library to change it."
+                bare
+            >
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     {builtins.map((builtin) => (
                         <div key={builtin.key} className="border-border bg-surface-1 flex flex-col gap-2 rounded-lg border p-4">

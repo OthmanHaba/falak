@@ -159,7 +159,11 @@ export default function Index({ connections, pushes, providers, githubApp, canMa
             description="Git providers Kiln deploys from. Kiln adds a deploy key and a push webhook per site, and removes them when you disconnect."
             wide
         >
-            {errors.oauth && <Callout tone="danger" title="The provider did not connect">{errors.oauth}</Callout>}
+            {errors.oauth && (
+                <Callout tone="danger" title="The provider did not connect">
+                    {errors.oauth}
+                </Callout>
+            )}
 
             <Section title="Connections" description="Accounts, groups and servers this organization can deploy from." bare>
                 {connections.length === 0 ? (
@@ -253,7 +257,11 @@ export default function Index({ connections, pushes, providers, githubApp, canMa
                 </Section>
             )}
 
-            <Section title="Recent pushes" description="The last 20 push webhooks received. Each one can trigger push-to-deploy on matching sites." bare>
+            <Section
+                title="Recent pushes"
+                description="The last 20 push webhooks received. Each one can trigger push-to-deploy on matching sites."
+                bare
+            >
                 <DataTable
                     label="Recent pushes"
                     rows={pushes}

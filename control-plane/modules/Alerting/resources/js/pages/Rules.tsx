@@ -318,7 +318,11 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
             )}
 
             {rules.length > 0 && channels.length > 0 && (
-                <Section title="Routing" description="Which rule delivers to which channel. Click a cell to route or unroute; changes apply immediately." bare>
+                <Section
+                    title="Routing"
+                    description="Which rule delivers to which channel. Click a cell to route or unroute; changes apply immediately."
+                    bare
+                >
                     <div className="border-border bg-surface-1 overflow-x-auto rounded-lg border">
                         <table className="w-full border-collapse text-xs">
                             <caption className="sr-only">Rule to channel routing</caption>
@@ -343,7 +347,10 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
 
                                     return (
                                         <tr key={rule.id} className="border-border border-b last:border-0">
-                                            <th scope="row" className={cn('text-fg h-10 px-3 text-left text-sm font-medium', !rule.enabled && 'opacity-60')}>
+                                            <th
+                                                scope="row"
+                                                className={cn('text-fg h-10 px-3 text-left text-sm font-medium', !rule.enabled && 'opacity-60')}
+                                            >
                                                 {rule.name}
                                             </th>
                                             {channels.map((channel) => {
@@ -391,7 +398,11 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                 <form id="rule-form" onSubmit={submit} className="grid gap-5">
                     <div className="grid gap-4 sm:grid-cols-2">
                         <Field label="Name" error={errors.name} required>
-                            <Input value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} placeholder="Production incidents" />
+                            <Input
+                                value={form.data.name}
+                                onChange={(event) => form.setData('name', event.target.value)}
+                                placeholder="Production incidents"
+                            />
                         </Field>
                         <Field label="Minimum severity" error={errors.min_severity}>
                             <Select
@@ -423,7 +434,12 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                                                             'event_types',
                                                             all
                                                                 ? form.data.event_types.filter((item) => item !== wildcard)
-                                                                : [...form.data.event_types.filter((item) => !types.some((type) => type.type === item)), wildcard],
+                                                                : [
+                                                                      ...form.data.event_types.filter(
+                                                                          (item) => !types.some((type) => type.type === item),
+                                                                      ),
+                                                                      wildcard,
+                                                                  ],
                                                         )
                                                     }
                                                 />
@@ -434,7 +450,9 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                                                         <Field key={type.type} inline label={<span className="font-normal">{type.label}</span>}>
                                                             <Checkbox
                                                                 checked={form.data.event_types.includes(type.type)}
-                                                                onCheckedChange={() => form.setData('event_types', toggle(form.data.event_types, type.type))}
+                                                                onCheckedChange={() =>
+                                                                    form.setData('event_types', toggle(form.data.event_types, type.type))
+                                                                }
                                                             />
                                                         </Field>
                                                     ))}
@@ -506,9 +524,16 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                                     </Field>
                                     <Field
                                         label="Timezone"
-                                        error={errors['quiet_hours.timezone'] ?? (quiet.timezone && !timezones.includes(quiet.timezone) ? 'Unknown timezone.' : undefined)}
+                                        error={
+                                            errors['quiet_hours.timezone'] ??
+                                            (quiet.timezone && !timezones.includes(quiet.timezone) ? 'Unknown timezone.' : undefined)
+                                        }
                                     >
-                                        <Input list="alerting-timezones" value={quiet.timezone} onChange={(event) => setQuiet({ timezone: event.target.value })} />
+                                        <Input
+                                            list="alerting-timezones"
+                                            value={quiet.timezone}
+                                            onChange={(event) => setQuiet({ timezone: event.target.value })}
+                                        />
                                     </Field>
                                     <datalist id="alerting-timezones">
                                         {timezones.map((timezone) => (
@@ -530,7 +555,9 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                                                     onClick={() => setQuiet({ days: toggle(quiet.days, index + 1) })}
                                                     className={cn(
                                                         'h-7 w-11 rounded-md border text-xs font-medium transition-colors duration-150',
-                                                        on ? 'border-primary bg-primary-soft text-fg' : 'border-border bg-surface-2 text-fg-muted hover:text-fg',
+                                                        on
+                                                            ? 'border-primary bg-primary-soft text-fg'
+                                                            : 'border-border bg-surface-2 text-fg-muted hover:text-fg',
                                                     )}
                                                 >
                                                     {day}
@@ -541,7 +568,10 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                                     <p className="text-fg-faint text-xs">{quiet.days.length === 0 ? 'No days selected: every day.' : ''}</p>
                                 </div>
                                 <Field inline label="Critical alerts still go through">
-                                    <Checkbox checked={quiet.allow_critical} onCheckedChange={(checked) => setQuiet({ allow_critical: checked === true })} />
+                                    <Checkbox
+                                        checked={quiet.allow_critical}
+                                        onCheckedChange={(checked) => setQuiet({ allow_critical: checked === true })}
+                                    />
                                 </Field>
                             </>
                         )}
