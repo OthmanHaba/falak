@@ -48,8 +48,29 @@ export interface FlashMessages {
     status?: string;
 }
 
+/** Shared by the Projects module on every authenticated page (docs/UI_DESIGN.md §9). Absent until it ships. */
+export interface KilnEnvironment {
+    id: string;
+    name: string;
+    slug: string;
+    is_production: boolean;
+}
+
+export interface KilnProject {
+    id: string;
+    name: string;
+    icon: string | null;
+    environments: KilnEnvironment[];
+}
+
+export interface KilnShared {
+    projects: KilnProject[];
+    current: { project_id: string | null; environment_id: string | null };
+}
+
 export interface SharedData {
     name: string;
+    kiln?: KilnShared | null;
     flash?: FlashMessages;
     quote: { message: string; author: string };
     auth: Auth;

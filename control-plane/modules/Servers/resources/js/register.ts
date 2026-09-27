@@ -18,7 +18,15 @@ registerCommands(
     {
         id: 'servers.navigation',
         commands: () => [
-            { id: 'servers.index', title: 'Servers', group: 'Navigation', icon: Server, href: '/servers', permission: 'servers.view' },
+            {
+                id: 'servers.index',
+                title: 'Servers',
+                group: 'Navigation',
+                icon: Server,
+                href: '/servers',
+                permission: 'servers.view',
+                shortcut: 'G S',
+            },
             { id: 'servers.create', title: 'Create server', group: 'Actions', icon: Plus, href: '/servers/create', permission: 'servers.create' },
             { id: 'servers.ssh-keys', title: 'SSH keys', group: 'Navigation', icon: KeyRound, href: '/ssh-keys', permission: 'servers.view' },
         ],

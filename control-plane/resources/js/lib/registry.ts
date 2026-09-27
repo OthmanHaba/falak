@@ -32,11 +32,17 @@ export interface ModuleNavItem {
 export interface PaletteCommand {
     id: string;
     title: string;
+    /** Palette group heading. Well-known groups are ordered: Navigation, Actions, Projects, Organization, Settings; others follow. */
     group: string;
     icon?: LucideIcon;
     keywords?: string[];
-    /** Short hint rendered on the right (e.g. "G S"). */
+    /**
+     * Key hint rendered on the right. Two-key sequences like "G S" are also live global shortcuts
+     * (press g then s anywhere outside a text field) — only static providers (minQueryLength 0) are consulted.
+     */
     shortcut?: string;
+    /** Optional secondary text (e.g. an IP or a repository). */
+    subtitle?: string;
     /** Navigate with Inertia on select. */
     href?: string;
     /** Or run an arbitrary action. */
@@ -78,7 +84,26 @@ export interface SiteTab {
     permission?: string;
 }
 
+/**
+ * An entry in the /settings/{section} left mini-nav (§3). Identity registers the account + organization sections;
+ * other modules add theirs (Source control, Cloud providers, Storage, Builders, Alert channels ...).
+ */
+export interface SettingsNavItem {
+    id: string;
+    title: string;
+    url: string;
+    group: 'account' | 'organization';
+    /** Lower comes first. Identity: profile 0 … api tokens 40; general 100 … audit log 130. */
+    order: number;
+    icon?: LucideIcon;
+    permission?: string;
+    /** Only shown when the user has a current organization. */
+    requiresOrganization?: boolean;
+    keywords?: string[];
+}
+
 const navItems = new Map<string, ModuleNavItem>();
+const settingsItems = new Map<string, SettingsNavItem>();
 const headerItems = new Map<string, HeaderItem>();
 const commandProviders = new Map<string, CommandProvider>();
 const siteTabs = new Map<string, SiteTab>();
@@ -97,6 +122,18 @@ export function registerHeaderItems(...items: HeaderItem[]): void {
 
 export function headerItemsFor(ctx: ShellContext): HeaderItem[] {
     return [...headerItems.values()].filter((item) => !item.permission || ctx.can(item.permission)).sort((a, b) => a.order - b.order);
+}
+
+export function registerSettingsNav(...items: SettingsNavItem[]): void {
+    items.forEach((item) => settingsItems.set(item.id, item));
+}
+
+export function settingsNavFor(ctx: ShellContext): SettingsNavItem[] {
+    const hasOrganization = Boolean(ctx.props.organization?.current);
+
+    return [...settingsItems.values()]
+        .filter((item) => (!item.permission || ctx.can(item.permission)) && (!item.requiresOrganization || hasOrganization))
+        .sort((a, b) => a.order - b.order);
 }
 
 export function registerSiteTabs(...tabs: SiteTab[]): void {
