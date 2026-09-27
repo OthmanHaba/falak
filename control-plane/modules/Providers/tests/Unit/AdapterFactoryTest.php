@@ -39,6 +39,16 @@ it('uses configured endpoints', function () {
     Http::assertSent(fn ($r) => str_starts_with($r->url(), 'https://hetzner.mock/v1/locations'));
 });
 
+it('lets demo credentials pin an unroutable .invalid endpoint, and ignores any other override', function () {
+    Http::fake(['*' => Http::response(['locations' => [], 'meta' => ['pagination' => ['next_page' => null]]])]);
+
+    app(AdapterFactory::class)->make(ProviderType::Hetzner, ['token' => 't', 'endpoint' => 'https://api.hetzner.invalid/v1'])->regions();
+    app(AdapterFactory::class)->make(ProviderType::Hetzner, ['token' => 't', 'endpoint' => 'https://attacker.example/v1'])->regions();
+
+    Http::assertSent(fn ($r) => str_starts_with($r->url(), 'https://api.hetzner.invalid/v1/locations'));
+    Http::assertNotSent(fn ($r) => str_contains($r->url(), 'attacker.example'));
+});
+
 it('custom adapter has no catalog and refuses API operations', function () {
     $adapter = new CustomAdapter;
     $adapter->verify();

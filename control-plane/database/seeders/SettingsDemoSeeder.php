@@ -22,15 +22,16 @@ use Kiln\SourceControl\Domain\Models\Push;
 /**
  * Organization settings demo data (called by UiDemoSeeder): git connections and pushes, cloud credentials, backup
  * buckets, builders, alert channels + rules and recipes, so every /settings section renders with content.
- * Credentials are fake; nothing here talks to a real provider. Never run in production.
+ * Credentials are fake and every endpoint is an unroutable `.invalid` host (RFC 6761), so Verify / Test / catalog calls
+ * fail fast instead of reaching a real provider. Never run in production.
  */
 class SettingsDemoSeeder extends Seeder
 {
     public function run(string $organizationId, string $userId): void
     {
-        $github = $this->connection($organizationId, GitProvider::GitHub, 'Acme on GitHub', 'oauth', 'acme');
-        $this->connection($organizationId, GitProvider::GitLab, 'GitLab (self-managed)', 'token', 'acme-platform', 'https://gitlab.acme.test');
-        $this->connection($organizationId, GitProvider::Custom, 'Internal git', 'none', null, 'ssh://git@git.acme.test');
+        $github = $this->connection($organizationId, GitProvider::GitHub, 'Acme on GitHub', 'oauth', 'acme', 'https://github.acme.invalid');
+        $this->connection($organizationId, GitProvider::GitLab, 'GitLab (self-managed)', 'token', 'acme-platform', 'https://gitlab.acme.invalid');
+        $this->connection($organizationId, GitProvider::Custom, 'Internal git', 'none', null, 'ssh://git@git.acme.invalid');
 
         foreach ([
             ['acme/storefront', 'main', 'Speed up checkout totals', 'Grace Hopper', 3],
@@ -47,30 +48,34 @@ class SettingsDemoSeeder extends Seeder
                 'message' => $message,
                 'author_name' => $author,
                 'pusher' => Str::slug($author),
-                'url' => "https://github.com/{$repository}/commit/".bin2hex(random_bytes(20)),
+                'url' => "https://github.acme.invalid/{$repository}/commit/".bin2hex(random_bytes(20)),
                 'received_at' => now()->subMinutes($minutesAgo),
             ]);
         }
 
-        ProviderCredential::factory()->forOrganization($organizationId)->create(['name' => 'Hetzner production', 'provider' => ProviderType::Hetzner]);
+        ProviderCredential::factory()->forOrganization($organizationId)->create([
+            'name' => 'Hetzner production',
+            'provider' => ProviderType::Hetzner,
+            'credentials' => ['token' => 'hcloud-'.Str::random(40), 'endpoint' => 'https://api.hetzner.invalid/v1'],
+        ]);
         ProviderCredential::factory()->forOrganization($organizationId)->create([
             'name' => 'DigitalOcean staging',
             'provider' => ProviderType::DigitalOcean,
-            'credentials' => ['token' => 'dop_v1_'.Str::random(40)],
+            'credentials' => ['token' => 'dop_v1_'.Str::random(40), 'endpoint' => 'https://api.digitalocean.invalid/v2'],
             'last_verified_at' => now()->subDays(3),
         ]);
         ProviderCredential::factory()->forOrganization($organizationId)->create([
             'name' => 'Old Vultr account',
             'provider' => ProviderType::Vultr,
-            'credentials' => ['api_key' => Str::random(36)],
+            'credentials' => ['api_key' => Str::random(36), 'endpoint' => 'https://api.vultr.invalid/v2'],
             'status' => CredentialStatus::Invalid,
             'last_verified_at' => now()->subDays(40),
             'last_error' => 'Vultr: unable to authenticate (401 Unauthorized)',
         ]);
 
         foreach ([
-            ['Offsite backups (R2)', StorageDriver::R2, 'https://0123456789abcdef0123456789abcdef.r2.cloudflarestorage.com', 'auto', 'acme-db-backups', true, now()->subHours(5)],
-            ['Archive (B2)', StorageDriver::B2, 'https://s3.eu-central-003.backblazeb2.com', 'eu-central-003', 'acme-archive', false, null],
+            ['Offsite backups (R2)', StorageDriver::R2, 'https://r2.storage.invalid', 'auto', 'acme-db-backups', true, now()->subHours(5)],
+            ['Archive (B2)', StorageDriver::B2, 'https://b2.storage.invalid', 'eu-central-003', 'acme-archive', false, null],
         ] as [$name, $driver, $endpoint, $region, $bucket, $pathStyle, $verifiedAt]) {
             StorageProvider::query()->create([
                 'organization_id' => $organizationId,
@@ -95,7 +100,7 @@ class SettingsDemoSeeder extends Seeder
             'organization_id' => $organizationId,
             'type' => ChannelType::Slack,
             'name' => '#ops-alerts',
-            'config' => ['webhook_url' => 'https://hooks.slack.com/services/T000/B000/'.Str::random(24)],
+            'config' => ['webhook_url' => 'https://hooks.slack.invalid/services/T000/B000/'.Str::random(24)],
             'enabled' => true,
             'last_sent_at' => now()->subMinutes(12),
         ]);
@@ -103,14 +108,14 @@ class SettingsDemoSeeder extends Seeder
             'organization_id' => $organizationId,
             'type' => ChannelType::Email,
             'name' => 'On-call email',
-            'config' => ['recipients' => ['oncall@acme.test', 'ops@acme.test']],
+            'config' => ['recipients' => ['oncall@example.com', 'ops@example.com']],
             'enabled' => true,
         ]);
         $webhook = Channel::query()->create([
             'organization_id' => $organizationId,
             'type' => ChannelType::Webhook,
             'name' => 'PagerDuty bridge',
-            'config' => ['url' => 'https://events.acme.test/kiln', 'secret' => Str::random(32)],
+            'config' => ['url' => 'https://events.acme.invalid/kiln', 'secret' => Str::random(32)],
             'enabled' => false,
             'last_error' => 'HTTP 502: bad gateway',
         ]);

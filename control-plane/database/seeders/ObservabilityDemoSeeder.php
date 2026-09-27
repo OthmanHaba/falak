@@ -360,11 +360,11 @@ class ObservabilityDemoSeeder extends Seeder
         // Reuse the channels SettingsDemoSeeder created (same names), or create them.
         $slack = Channel::query()->firstOrCreate(
             ['organization_id' => $organizationId, 'name' => '#ops-alerts'],
-            ['type' => ChannelType::Slack, 'config' => ['webhook_url' => 'https://hooks.slack.com/services/T000/B000/demo'], 'enabled' => true, 'last_sent_at' => $now->subMinutes(118)],
+            ['type' => ChannelType::Slack, 'config' => ['webhook_url' => 'https://hooks.slack.invalid/services/T000/B000/demo'], 'enabled' => true, 'last_sent_at' => $now->subMinutes(118)],
         );
         $pager = Channel::query()->firstOrCreate(
             ['organization_id' => $organizationId, 'name' => 'PagerDuty bridge'],
-            ['type' => ChannelType::Webhook, 'config' => ['url' => 'https://events.pagerduty.example/v2/enqueue'], 'enabled' => true, 'last_error' => 'HTTP 503 from events.pagerduty.example'],
+            ['type' => ChannelType::Webhook, 'config' => ['url' => 'https://events.pagerduty.invalid/v2/enqueue'], 'enabled' => true, 'last_error' => 'HTTP 503 from events.pagerduty.invalid'],
         );
 
         foreach ($entries as [$ago, $type, $severity, $title, $body, $link, $outcome, $recovery, $notify, $read]) {
@@ -388,7 +388,7 @@ class ObservabilityDemoSeeder extends Seeder
 
                 if ($severity === Severity::Critical) {
                     $failed = $ago === 95;
-                    $alert->deliveries()->create(['channel_id' => $pager->id, 'status' => $failed ? DeliveryStatus::Failed : DeliveryStatus::Sent, 'attempts' => $failed ? 3 : 1, 'error' => $failed ? 'HTTP 503 from events.pagerduty.example' : null, 'sent_at' => $failed ? null : $at->addSeconds(3)]);
+                    $alert->deliveries()->create(['channel_id' => $pager->id, 'status' => $failed ? DeliveryStatus::Failed : DeliveryStatus::Sent, 'attempts' => $failed ? 3 : 1, 'error' => $failed ? 'HTTP 503 from events.pagerduty.invalid' : null, 'sent_at' => $failed ? null : $at->addSeconds(3)]);
                 }
             }
 

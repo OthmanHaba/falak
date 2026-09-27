@@ -143,7 +143,7 @@ class UiDemoSeeder extends Seeder
         Grant::query()->create(['user_id' => $user->id, 'database_id' => $database->id, 'privileges' => ['ALL PRIVILEGES']]);
 
         $storage = StorageProvider::query()->create([
-            'organization_id' => $organizationId, 'name' => 'Backups', 'driver' => StorageDriver::R2, 'endpoint' => 'https://example.r2.cloudflarestorage.com',
+            'organization_id' => $organizationId, 'name' => 'Backups', 'driver' => StorageDriver::R2, 'endpoint' => 'https://r2.storage.invalid',
             'region' => 'auto', 'bucket' => 'acme-backups', 'path_style' => false, 'access_key_id' => 'demo-access-key-id', 'secret_access_key' => 'demo-secret', 'verified_at' => now(),
         ]);
         $schedule = BackupSchedule::query()->create([
