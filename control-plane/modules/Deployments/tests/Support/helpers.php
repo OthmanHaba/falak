@@ -175,6 +175,11 @@ function deploy_result(array $command): array
         'deploy.container.swap' => ['changed' => true, 'active_color' => 'green', 'upstream' => '127.0.0.1:'.$payload['ports']['green']],
         'deploy.prune' => ['changed' => false, 'removed' => []],
         'proc.restart' => ['restarted' => []],
+        'docker.compose.pull' => ['exit_code' => 0],
+        'docker.compose.up' => ['exit_code' => 0, 'services' => [
+            ['service' => 'app', 'container_id' => 'c-app', 'state' => 'running', 'health' => 'healthy', 'image' => 'app', 'image_digest' => 'sha256:'.str_repeat('1', 64), 'restarts' => 0],
+            ['service' => 'redis', 'container_id' => 'c-redis', 'state' => 'running', 'image' => 'redis:7.4.1-alpine', 'image_digest' => 'sha256:'.str_repeat('2', 64), 'restarts' => 0],
+        ]],
         default => [],
     };
 }

@@ -3,6 +3,7 @@
 namespace Kiln\Sites\Contracts\Data;
 
 use Kiln\Sites\Contracts\BuildMode;
+use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Framework;
 use Kiln\Sites\Contracts\SiteRuntime;
 
@@ -49,6 +50,14 @@ final readonly class SiteData
         public array $targets,
         public ?ComposeConfig $compose = null,
     ) {}
+
+    /** Something to deploy: a repository, a docker image, or an inline compose file. */
+    public function hasDeploySource(): bool
+    {
+        return $this->repository !== null
+            || ($this->runtime === SiteRuntime::Docker && $this->dockerImage !== null)
+            || ($this->compose?->source === ComposeSource::Inline && $this->compose->version !== null);
+    }
 
     public function currentPath(): string
     {

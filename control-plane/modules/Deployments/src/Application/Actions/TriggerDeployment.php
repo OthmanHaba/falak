@@ -56,8 +56,8 @@ final class TriggerDeployment
 
             [$branch, $commit, $message, $author] = [$release->branch, $release->commit, $release->commit_message, $release->commit_author];
             $releaseId = $release->id;
-        } elseif ($site->repository === null && ! ($site->runtime->isContainer() && $site->dockerImage)) {
-            throw ValidationException::withMessages(['site' => 'Connect a repository before deploying.']);
+        } elseif (! $site->hasDeploySource()) {
+            throw ValidationException::withMessages(['site' => $site->compose !== null ? 'Add a compose file (Settings → Compose) or connect a repository before deploying.' : 'Connect a repository before deploying.']);
         } elseif ($commit === null && $site->sourceConnectionId !== null && $site->repository !== null && $branch !== null) {
             try {
                 $head = $this->sourceControl->latestCommit($site->sourceConnectionId, $site->repository, $branch);

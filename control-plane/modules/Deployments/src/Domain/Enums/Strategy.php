@@ -19,6 +19,8 @@ enum Strategy: string
     case Rolling = 'rolling';
     /** One server first, verify it, then the rest. */
     case Canary = 'canary';
+    /** Docker Compose: pull on every server, then `docker compose up --wait` (previous release's files on failure). */
+    case Compose = 'compose';
 
     public function label(): string
     {
@@ -28,6 +30,7 @@ enum Strategy: string
             self::BlueGreen => 'Blue / green',
             self::Rolling => 'Rolling',
             self::Canary => 'Canary',
+            self::Compose => 'Compose',
         };
     }
 
@@ -39,6 +42,7 @@ enum Strategy: string
             self::BlueGreen => 'The new container starts next to the old one and takes over after passing its health check.',
             self::Rolling => 'Servers switch in batches; each batch must pass its health check before the next starts.',
             self::Canary => 'One server switches first and must pass its health check before the rest follow.',
+            self::Compose => 'Every server pulls the new images, then all run `docker compose up --wait`; a failure brings back the previous release’s files.',
         };
     }
 
@@ -47,6 +51,10 @@ enum Strategy: string
      */
     public static function for(SiteRuntime $runtime): array
     {
+        if ($runtime === SiteRuntime::Compose) {
+            return [self::Compose, self::Rolling, self::Canary];
+        }
+
         return $runtime->isContainer()
             ? [self::BlueGreen, self::Rolling, self::Canary]
             : [self::ZeroDowntime, self::InPlace, self::Rolling, self::Canary];

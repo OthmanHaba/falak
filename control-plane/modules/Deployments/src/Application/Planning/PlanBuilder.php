@@ -54,6 +54,12 @@ final class PlanBuilder
 
         $build = $needsBuild ? [$this->add($deployment, null, 'build', StepKind::Build, 'build', [])->key] : [];
 
+        if ($runtime === SiteRuntime::Compose) {
+            $this->composePlan($deployment, $strategy, $targets, $batches, $build);
+
+            return $this->steps;
+        }
+
         if ($runtime->isContainer()) {
             $this->activationBatches($deployment, $runtime, $batches, $build, fn () => $build);
 
@@ -143,6 +149,40 @@ final class PlanBuilder
     }
 
     /**
+     * Compose (docs/COMPOSE_TEMPLATES.md §1.4): FETCH (write files + pull) on every server → leader command
+     * (MIGRATE, only when a service declares kiln.deploy.leader_command) → ACTIVATE (`up --wait`) → HEALTHCHECK.
+     * The compose strategy activates all servers behind one barrier; rolling / canary batch them.
+     *
+     * @param  list<DeploymentTarget>  $targets  leader first
+     * @param  list<list<DeploymentTarget>>  $batches
+     * @param  list<string>  $build
+     */
+    private function composePlan(Deployment $deployment, Strategy $strategy, array $targets, array $batches, array $build): void
+    {
+        $fetched = [];
+
+        foreach ($targets as $target) {
+            $fetched[$target->id] = $this->add($deployment, $target, "fetch:{$target->id}", StepKind::Fetch, 'fetch', $build, null, 'docker.compose.pull')->key;
+        }
+
+        $migrate = $this->add($deployment, $targets[0], "migrate:{$targets[0]->id}", StepKind::Hook, 'migrate', array_values($fetched), ['name' => 'leader_command', 'compose' => true], 'system.exec')->key;
+        $barrier = [...array_values($fetched), $migrate];
+        $previousBatch = [];
+
+        foreach ($batches as $batch) {
+            $done = [];
+
+            foreach ($batch as $target) {
+                $deps = $strategy === Strategy::Compose ? $barrier : [$fetched[$target->id], $migrate];
+                $up = $this->add($deployment, $target, "activate:{$target->id}", StepKind::Activate, 'activate', [...$deps, ...$previousBatch], null, 'docker.compose.up')->key;
+                $done[] = $this->add($deployment, $target, "healthcheck:{$target->id}", StepKind::HealthCheck, 'healthcheck', [$up])->key;
+            }
+
+            $previousBatch = $done;
+        }
+    }
+
+    /**
      * @param  list<list<DeploymentTarget>>  $batches
      */
     private function rollbackPlan(Deployment $deployment, SiteRuntime $runtime, array $batches): void
@@ -153,7 +193,9 @@ final class PlanBuilder
             $done = [];
 
             foreach ($batch as $target) {
-                if ($runtime->isContainer()) {
+                if ($runtime === SiteRuntime::Compose) {
+                    $last = $this->add($deployment, $target, "switch:{$target->id}", StepKind::Switch, 'activate', $previousBatch, null, 'docker.compose.up')->key;
+                } elseif ($runtime->isContainer()) {
                     $last = $this->add($deployment, $target, "swap:{$target->id}", StepKind::Swap, 'activate', $previousBatch)->key;
                 } else {
                     $last = $this->add($deployment, $target, "switch:{$target->id}", StepKind::Switch, 'activate', $previousBatch)->key;
@@ -199,7 +241,7 @@ final class PlanBuilder
      * @param  list<string>  $deps
      * @param  array<string, mixed>|null  $meta
      */
-    private function add(Deployment $deployment, ?DeploymentTarget $target, string $key, StepKind $kind, string $phase, array $deps, ?array $meta = null): DeploymentStep
+    private function add(Deployment $deployment, ?DeploymentTarget $target, string $key, StepKind $kind, string $phase, array $deps, ?array $meta = null, ?string $commandType = null): DeploymentStep
     {
         $step = DeploymentStep::query()->create([
             'deployment_id' => $deployment->id,
@@ -214,7 +256,7 @@ final class PlanBuilder
             'depends_on' => array_values(array_unique($deps)),
             'meta' => $meta,
             'status' => StepStatus::Pending,
-            'command_type' => $kind->commandType(),
+            'command_type' => $commandType ?? $kind->commandType(),
         ]);
 
         $this->steps[] = $step;

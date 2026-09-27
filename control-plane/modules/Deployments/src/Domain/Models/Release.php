@@ -19,6 +19,7 @@ use Kiln\Deployments\Domain\Enums\ReleaseStatus;
  * @property ?string $commit_message
  * @property ?string $commit_author
  * @property ?string $image
+ * @property ?array{yaml: string, env: array<string, string>, leader: array<string, list<string>>, source: string, version?: ?int, pinned?: bool, registry?: bool} $compose rendered compose release
  * @property ReleaseStatus $status
  * @property ?Carbon $activated_at
  * @property Carbon $created_at
@@ -34,12 +35,15 @@ class Release extends Model
     /** @var list<string> */
     protected $guarded = [];
 
+    /** @var list<string> */
+    protected $hidden = ['compose'];
+
     /**
      * @return array<string, string>
      */
     protected function casts(): array
     {
-        return ['status' => ReleaseStatus::class, 'activated_at' => 'datetime'];
+        return ['status' => ReleaseStatus::class, 'activated_at' => 'datetime', 'compose' => 'encrypted:array'];
     }
 
     public static function current(string $siteId): ?self

@@ -13,7 +13,7 @@ use Kiln\Fleet\Events\CommandFinished;
  */
 final class HandleCommandOutcome implements ShouldQueue
 {
-    private const TYPES = ['deploy.fetch', 'deploy.prepare', 'deploy.hook', 'deploy.activate', 'deploy.rollback', 'deploy.container.swap', 'proc.restart', 'system.exec'];
+    private const TYPES = ['deploy.fetch', 'deploy.prepare', 'deploy.hook', 'deploy.activate', 'deploy.rollback', 'deploy.container.swap', 'proc.restart', 'system.exec', 'docker.compose.pull', 'docker.compose.up'];
 
     public function __construct(private readonly Orchestrator $orchestrator) {}
 
