@@ -9,6 +9,7 @@ use Kiln\Builds\Contracts\BuildStatus;
 use Kiln\Builds\Contracts\Data\ArtifactData;
 use Kiln\Builds\Contracts\Data\BuildData;
 use Kiln\Builds\Contracts\Data\BuildRequest;
+use Kiln\Builds\Contracts\Data\ComposeBuildData;
 use Kiln\Builds\Contracts\Data\ImageData;
 use Kiln\Builds\Events\BuildCancelled;
 use Kiln\Builds\Events\BuildFailed;
@@ -25,6 +26,12 @@ final class FakeBuildService implements BuildService
     public array $builds = [];
 
     public bool $autoSucceed = false;
+
+    /** Compose file a compose build "finds" in the repository, and the services it builds. */
+    public string $composeContent = "services:\n  app:\n    build: .\n";
+
+    /** @var array<string, string> */
+    public array $composeImages = ['app' => 'registry.kiln.local/kiln/shop/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'];
 
     public string $sha256 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -72,6 +79,13 @@ final class FakeBuildService implements BuildService
     {
         return ($this->builds[$buildId]['status'] ?? null) === BuildStatus::Succeeded
             ? new ImageData("registry.kiln.local/kiln/app@sha256:{$this->sha256}", ['server' => 'registry.kiln.local', 'username' => 'kiln', 'password' => 'secret'])
+            : null;
+    }
+
+    public function composeFor(string $buildId): ?ComposeBuildData
+    {
+        return ($this->builds[$buildId]['status'] ?? null) === BuildStatus::Succeeded
+            ? new ComposeBuildData('compose.yaml', $this->composeContent, $this->composeImages, ['server' => 'registry.kiln.local', 'username' => 'kiln', 'password' => 'secret'])
             : null;
     }
 

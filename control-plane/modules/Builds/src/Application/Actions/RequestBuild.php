@@ -48,7 +48,7 @@ final class RequestBuild
             if ($previous !== null && $previous->hasArtifact()) {
                 $build = Build::query()->create([
                     ...$previous->only(['organization_id', 'site_id', 'site_slug', 'mode', 'repository', 'cache_key', 'resolved_commit', 'artifact_key',
-                        'artifact_sha256', 'artifact_size', 'artifact_format', 'image_ref', 'image_digest', 'manifest', 'builder_id']),
+                        'artifact_sha256', 'artifact_size', 'artifact_format', 'image_ref', 'image_digest', 'manifest', 'compose', 'builder_id']),
                     'id' => strtolower((string) Str::ulid()),
                     'deployment_id' => $request->deploymentId,
                     'status' => BuildStatus::Succeeded,

@@ -5,6 +5,7 @@ namespace Kiln\Builds\Contracts;
 use Kiln\Builds\Contracts\Data\ArtifactData;
 use Kiln\Builds\Contracts\Data\BuildData;
 use Kiln\Builds\Contracts\Data\BuildRequest;
+use Kiln\Builds\Contracts\Data\ComposeBuildData;
 use Kiln\Builds\Contracts\Data\ImageData;
 
 /**
@@ -34,6 +35,9 @@ interface BuildService
 
     /** Image + registry credentials of a succeeded docker build (deploy.container.swap). */
     public function imageFor(string $buildId): ?ImageData;
+
+    /** Compose file + built images of a succeeded compose build (compose sites with a repository source). */
+    public function composeFor(string $buildId): ?ComposeBuildData;
 
     /** Cancel a queued or running build. Returns false when it already finished. */
     public function cancel(string $buildId): bool;
