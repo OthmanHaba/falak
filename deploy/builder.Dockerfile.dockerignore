@@ -1,0 +1,6 @@
+# Ignore rules for deploy/builder.Dockerfile (build context: repository root). Allow-list.
+*
+!agent/
+!deploy/builder/
+agent/bin
+**/.DS_Store
