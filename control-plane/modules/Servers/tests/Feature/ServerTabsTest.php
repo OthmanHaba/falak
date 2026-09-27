@@ -100,7 +100,10 @@ it('lists the services running on a server with their canvas deep links', functi
 });
 
 it('loads fleet sparklines as a deferred prop', function () {
-    $this->get('/servers', ['X-Inertia' => 'true', 'X-Inertia-Partial-Component' => 'Servers/Index', 'X-Inertia-Partial-Data' => 'sparklines'])
+    $this->get('/servers')->assertInertia(fn ($page) => $page->missing('sparklines'));
+    $version = (string) $this->get('/servers')->viewData('page')['version'];
+
+    $this->get('/servers', ['X-Inertia' => 'true', 'X-Inertia-Version' => $version, 'X-Inertia-Partial-Component' => 'Servers/Index', 'X-Inertia-Partial-Data' => 'sparklines'])
         ->assertOk()
         ->assertJsonPath('props.sparklines', []);
 });

@@ -220,7 +220,7 @@ export default function Create({ types, providers, credentials, options, sshKeys
             ]}
         >
             <Head title="Add server" />
-            <form onSubmit={submit} className="mx-auto grid w-full max-w-3xl gap-8 pb-24" noValidate>
+            <form onSubmit={submit} className="mx-auto grid w-full max-w-3xl gap-8" noValidate>
                 <PageHeader
                     title="Add server"
                     description="Create a machine at a cloud provider, or bring any Ubuntu LTS server and connect it with one command."
@@ -564,8 +564,8 @@ export default function Create({ types, providers, credentials, options, sshKeys
                     {errors.ssh_key_ids && <p className="text-danger text-xs">{errors.ssh_key_ids}</p>}
                 </Section>
 
-                <div className="border-border bg-bg/90 fixed inset-x-0 bottom-0 z-20 border-t backdrop-blur">
-                    <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-4 py-3 md:px-0">
+                <div className="border-border-strong bg-surface-2 shadow-panel sticky bottom-4 z-20 rounded-xl border">
+                    <div className="flex items-center justify-between gap-3 py-2 pr-2 pl-4">
                         <p className="text-fg-muted hidden min-w-0 items-center gap-2 truncate text-sm sm:flex">
                             <ProviderIcon provider={data.provider} size={14} className="text-fg-faint" />
                             <span className="text-fg truncate font-medium">{data.name || 'Unnamed server'}</span>

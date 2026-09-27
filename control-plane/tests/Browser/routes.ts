@@ -68,7 +68,8 @@ export const routes: BrowserRoute[] = [
 
     // Infrastructure
     { path: '/servers' },
-    { path: '/servers/create' },
+    // The demo cloud credentials are fake: the provider catalog endpoints answer 502 locally.
+    { path: '/servers/create', allowedFailures: [/\/providers\/[^/]+\/(regions|sizes|images)/] },
     { path: '/servers/:server' },
     { path: '/telemetry/servers/:server/metrics', allowedFailures: observability },
     { path: '/ssh-keys' },

@@ -113,7 +113,13 @@ for (const theme of THEMES) {
                         const offenders = [...document.querySelectorAll('body *')]
                             .filter((element) => element.getBoundingClientRect().right > root.clientWidth + 1)
                             .slice(0, 5)
-                            .map((element) => `${element.tagName.toLowerCase()}.${String((element as HTMLElement).className).split(' ').slice(0, 4).join('.')}`);
+                            .map(
+                                (element) =>
+                                    `${element.tagName.toLowerCase()}.${String((element as HTMLElement).className)
+                                        .split(' ')
+                                        .slice(0, 4)
+                                        .join('.')}`,
+                            );
 
                         return { scrollWidth: root.scrollWidth, clientWidth: root.clientWidth, offenders };
                     });

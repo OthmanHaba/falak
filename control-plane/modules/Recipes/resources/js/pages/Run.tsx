@@ -54,6 +54,15 @@ interface RunForm {
 }
 
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const TYPE_LABELS: Record<string, string> = {
+    app: 'App',
+    web: 'Web',
+    db: 'Database',
+    cache: 'Cache',
+    worker: 'Worker',
+    lb: 'Load balancer',
+    builder: 'Builder',
+};
 
 export default function Run({ recipe, servers, preselected = [], defaultTimeout, maxTimeout }: Props) {
     const [confirming, setConfirming] = useState(false);
@@ -120,7 +129,7 @@ export default function Run({ recipe, servers, preselected = [], defaultTimeout,
     return (
         <AppShell breadcrumbs={breadcrumbs}>
             <Head title={`Run ${recipe.name}`} />
-            <div className="grid gap-6 pb-20">
+            <div className="grid gap-6">
                 <PageHeader
                     title={
                         <span className="flex items-center gap-2">
@@ -131,7 +140,7 @@ export default function Run({ recipe, servers, preselected = [], defaultTimeout,
                     description={recipe.description ?? undefined}
                 />
 
-                <div className="grid gap-6 lg:grid-cols-2">
+                <div className="grid items-start gap-6 lg:grid-cols-2">
                     <Section title="Script" description={`Runs as ${recipe.user} on every selected server in parallel.`} bare>
                         <ScriptBlock script={recipe.script} title={`${recipe.user} · bash`} />
                     </Section>
@@ -177,7 +186,7 @@ export default function Run({ recipe, servers, preselected = [], defaultTimeout,
                                                 <StatusDot status={server.status === 'error' ? 'failed' : server.status} size="sm" />
                                                 <span className="text-fg font-medium">{server.name}</span>
                                                 <span className="text-fg-faint font-mono text-xs">{server.ipv4}</span>
-                                                <span className="text-fg-faint ml-auto text-xs capitalize">{server.type}</span>
+                                                <span className="text-fg-faint ml-auto text-xs">{TYPE_LABELS[server.type] ?? server.type}</span>
                                             </label>
                                         ))}
                                     </div>
@@ -257,8 +266,8 @@ export default function Run({ recipe, servers, preselected = [], defaultTimeout,
                     </div>
                 </div>
 
-                <div className="border-border bg-bg/90 fixed inset-x-0 bottom-0 z-20 border-t backdrop-blur">
-                    <div className="mx-auto flex w-full max-w-[1200px] items-center justify-end gap-3 px-4 py-3 md:px-6">
+                <div className="border-border-strong bg-surface-2 shadow-panel sticky bottom-4 z-20 rounded-xl border">
+                    <div className="flex items-center justify-end gap-3 py-2 pr-2 pl-4">
                         <span className="text-fg-muted text-sm">
                             {count === 0 ? 'Select at least one server' : `${count} server${count === 1 ? '' : 's'} · as ${recipe.user}`}
                         </span>

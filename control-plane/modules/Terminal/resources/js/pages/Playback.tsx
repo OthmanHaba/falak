@@ -89,6 +89,13 @@ export default function Playback({ session, castUrl }: Props) {
         });
         term.open(container.current);
         terminal.current = term;
+        // Show the first frame (usually the prompt) before playback starts.
+        index.current = 0;
+        while (index.current < cast.events.length && cast.events[index.current][0] <= 0) {
+            const [, kind, data] = cast.events[index.current];
+            if (kind === 'o') term.write(data);
+            index.current++;
+        }
         const stopTheme = onThemeChange(() => {
             term.options.theme = terminalTheme();
         });

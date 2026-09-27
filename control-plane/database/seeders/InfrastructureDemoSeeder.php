@@ -383,13 +383,6 @@ class InfrastructureDemoSeeder extends Seeder
             'script' => "#!/usr/bin/env bash\nset -euo pipefail\nsystemctl reload frankenphp\necho \"opcache cleared on \$(hostname)\"",
             'user' => 'root',
         ]);
-        Recipe::query()->create([
-            'organization_id' => $organizationId,
-            'name' => 'Disk usage report',
-            'description' => 'Largest directories under /srv and /var.',
-            'script' => 'du -xh /srv /var 2>/dev/null | sort -rh | head -20',
-            'user' => 'kiln',
-        ]);
 
         $runs = [
             [['app-1', 'app-2'], [RunTargetStatus::Succeeded, RunTargetStatus::Unavailable], RunStatus::Partial, 90],
