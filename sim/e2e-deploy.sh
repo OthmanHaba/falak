@@ -113,7 +113,7 @@ git_commit() { # git_commit REPO MESSAGE SHELL_SNIPPET  -> new commit on main in
 deployment_status() { api GET "/deployments/$1"; jq -r '.data.status // empty' <<<"$API_BODY"; }
 
 wait_targets_ready() { # wait_targets_ready SITE_ID  (site targets finish preparing, e.g. runtime install)
-    local deadline=$((SECONDS + 600)) states=""
+    local deadline=$((SECONDS + 1900)) states=""
     while (( SECONDS < deadline )); do
         api GET "/sites/$1"
         states=$(jq -r '[.data.targets[].status] | unique | join(",")' <<<"$API_BODY")
