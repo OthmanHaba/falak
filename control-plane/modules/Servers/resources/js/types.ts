@@ -24,6 +24,7 @@ export interface ServerSummary {
     php: string | null;
     agent: { status: 'online' | 'offline' | 'revoked'; last_heartbeat_at: string | null } | null;
     load1: number | null;
+    cpu_percent: number | null;
     memory_percent: number | null;
     disk_percent: number | null;
     created_at: string;
@@ -104,4 +105,25 @@ export interface SshKeyOption {
     id: string;
     name: string;
     fingerprint: string;
+}
+
+export interface FleetService {
+    kind: 'site' | 'database';
+    id: string;
+    name: string;
+    icon: string;
+}
+
+/** A site / database running on a server, with its canvas deep link. */
+export interface ServerService extends FleetService {
+    subtitle: string | null;
+    status: string;
+    role: 'leader' | 'member' | null;
+    url: string;
+}
+
+export interface SparklinePoint {
+    t: string;
+    cpu: number | null;
+    mem: number | null;
 }

@@ -18,6 +18,7 @@ use Kiln\Network\Domain\Models\FirewallRule;
 use Kiln\Network\Domain\Models\FirewallState;
 use Kiln\Network\Http\Requests\FirewallRuleRequest;
 use Kiln\Network\Infrastructure\FirewallCompiler;
+use Kiln\Servers\Contracts\ServerHeaders;
 
 final class FirewallController extends Controller
 {
@@ -44,13 +45,7 @@ final class FirewallController extends Controller
         $state = FirewallState::query()->find($data->id);
 
         return Inertia::render('Network/Firewall', [
-            'server' => [
-                'id' => $data->id,
-                'name' => $data->name,
-                'type_label' => $data->type->label(),
-                'status' => $data->status->value,
-                'ipv4' => $data->ipv4,
-            ],
+            'server' => app(ServerHeaders::class)->for($data->id),
             'rules' => $rules->map(fn (FirewallRule $rule) => [
                 'id' => $rule->id,
                 'name' => $rule->name,

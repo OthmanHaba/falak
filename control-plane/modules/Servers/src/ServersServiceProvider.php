@@ -22,6 +22,7 @@ use Kiln\Servers\Application\Listeners\HandleCommandOutcome;
 use Kiln\Servers\Application\Listeners\RecordReportedFacts;
 use Kiln\Servers\Application\Listeners\StartProvisioningOnEnrollment;
 use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\Servers\Contracts\ServerHeaders;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Servers\Domain\Models\SshKey;
 use Kiln\Servers\Domain\Policies\ServerPolicy;
@@ -29,6 +30,7 @@ use Kiln\Servers\Domain\Policies\SshKeyPolicy;
 use Kiln\Servers\Http\Channels\ServerChannel;
 use Kiln\Servers\Infrastructure\EloquentServerDirectory;
 use Kiln\Servers\Infrastructure\ProvisioningPlanBuilder;
+use Kiln\Servers\Infrastructure\ServerHeaderPresenter;
 
 class ServersServiceProvider extends ModuleServiceProvider
 {
@@ -39,6 +41,7 @@ class ServersServiceProvider extends ModuleServiceProvider
      */
     public array $singletons = [
         ServerDirectory::class => EloquentServerDirectory::class,
+        ServerHeaders::class => ServerHeaderPresenter::class,
     ];
 
     public function register(): void

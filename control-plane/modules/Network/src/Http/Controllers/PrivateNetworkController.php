@@ -20,6 +20,7 @@ use Kiln\Network\Domain\Models\PrivateNetwork;
 use Kiln\Network\Domain\Models\PrivateNetworkMember;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\Servers\Contracts\ServerHeaders;
 
 final class PrivateNetworkController extends Controller
 {
@@ -31,7 +32,7 @@ final class PrivateNetworkController extends Controller
         private readonly ServerDirectory $servers,
     ) {}
 
-    public function store(Request $request, CreatePrivateNetwork $create): RedirectResponse
+    public function store(Request $request, CreatePrivateNetwork $create, AddNetworkMember $add): RedirectResponse
     {
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, 'network.manage');
@@ -40,9 +41,22 @@ final class PrivateNetworkController extends Controller
             'name' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/', Rule::unique('network_private_networks')->where('organization_id', $organizationId)],
             'cidr' => ['nullable', 'string', 'max:18'],
             'listen_port' => ['nullable', 'integer', 'between:1024,65535'],
+            // Created from a server's "Private network" tab: join that server right away.
+            'server_id' => ['nullable', 'string', 'size:26'],
         ]);
 
-        $network = $create($organizationId, $data);
+        $server = isset($data['server_id']) ? $this->servers->find($data['server_id']) : null;
+        abort_if(isset($data['server_id']) && ($server === null || $server->organizationId !== $organizationId), 404);
+
+        $network = $create($organizationId, array_diff_key($data, ['server_id' => true]));
+
+        if ($server !== null) {
+            if ($server->isActive()) {
+                $add($network, $server);
+            }
+
+            return back()->with('success', "Private network {$network->name} created.");
+        }
 
         return to_route('network.private-networks.show', $network);
     }
@@ -85,6 +99,56 @@ final class PrivateNetworkController extends Controller
                 ->map(fn (ServerData $server) => ['id' => $server->id, 'name' => $server->name, 'ipv4' => $server->ipv4, 'type_label' => $server->type->label()])
                 ->values(),
             'can' => ['manage' => $request->user()?->can('manage', $network) ?? false],
+        ]);
+    }
+
+    /**
+     * The server page's "Private network" tab: this server's memberships and the networks it can join.
+     */
+    public function server(Request $request, string $server): Response
+    {
+        $data = $this->server($request->user(), $server);
+
+        $memberships = PrivateNetworkMember::query()->with(['network' => fn ($q) => $q->withCount('members')])
+            ->where('server_id', $data->id)->orderBy('created_at')->get();
+        $joined = $memberships->pluck('network_id')->all();
+
+        return Inertia::render('Network/ServerNetwork', [
+            'server' => app(ServerHeaders::class)->for($data->id),
+            'privateIpv4' => $data->privateIpv4,
+            'memberships' => $memberships->map(fn (PrivateNetworkMember $member) => [
+                'id' => $member->id,
+                'network' => [
+                    'id' => $member->network->id,
+                    'name' => $member->network->name,
+                    'cidr' => $member->network->cidr,
+                    'interface' => $member->network->interface,
+                    'listen_port' => $member->network->listen_port,
+                    'members_count' => (int) $member->network->getAttribute('members_count'),
+                ],
+                'address' => $member->address,
+                'status' => $member->status->value,
+                'key_status' => $member->key_status->value,
+                'error' => $member->error,
+                'command_id' => $member->command_id,
+                'applied_at' => $member->applied_at?->toIso8601String(),
+            ])->values(),
+            'availableNetworks' => PrivateNetwork::query()->where('organization_id', $data->organizationId)
+                ->whereNotIn('id', $joined)->withCount('members')->orderBy('name')->get()
+                ->map(fn (PrivateNetwork $network) => [
+                    'id' => $network->id,
+                    'name' => $network->name,
+                    'cidr' => $network->cidr,
+                    'members_count' => (int) $network->getAttribute('members_count'),
+                ])->values(),
+            'defaults' => [
+                'cidr' => (string) config('network.private_cidr'),
+                'listen_port' => (int) config('network.wireguard_port'),
+            ],
+            'can' => [
+                'manage' => $this->access->can($request->user(), $data->organizationId, 'network.manage'),
+                'join' => $data->isActive(),
+            ],
         ]);
     }
 

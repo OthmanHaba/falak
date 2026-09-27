@@ -1,73 +1,102 @@
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Check, Copy } from 'lucide-react';
-import { useState } from 'react';
-import { type ServerStatus } from '../types';
+import { Server } from 'lucide-react';
+import { siAkamai, siDigitalocean, siHetzner, siVultr, type SimpleIcon } from 'simple-icons';
 
-const STATUS_STYLES: Record<ServerStatus, string> = {
-    creating: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
-    provisioning: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
-    active: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-    error: 'bg-red-500/15 text-red-700 dark:text-red-300',
-    deleting: 'bg-muted text-muted-foreground',
+const PROVIDER_ICONS: Record<string, SimpleIcon> = {
+    hetzner: siHetzner,
+    digitalocean: siDigitalocean,
+    vultr: siVultr,
+    linode: siAkamai,
 };
 
-export function ServerStatusBadge({ status, className }: { status: ServerStatus; className?: string }) {
+/** Provider mark (monochrome, current text color); a generic server glyph for custom / unknown providers. */
+export function ProviderIcon({ provider, size = 16, className }: { provider: string; size?: number; className?: string }) {
+    const icon = PROVIDER_ICONS[provider];
+
+    if (!icon) {
+        return <Server className={cn('shrink-0', className)} style={{ width: size, height: size }} aria-hidden />;
+    }
+
     return (
-        <Badge variant="outline" className={cn('border-transparent capitalize', STATUS_STYLES[status], className)}>
-            {status}
-        </Badge>
+        <svg viewBox="0 0 24 24" width={size} height={size} className={cn('shrink-0 fill-current', className)} aria-hidden>
+            <path d={icon.path} />
+        </svg>
     );
 }
 
-export function AgentDot({ status }: { status: 'online' | 'offline' | 'revoked' | null | undefined }) {
-    const color = status === 'online' ? 'bg-emerald-500' : status === 'offline' ? 'bg-red-500' : 'bg-neutral-400';
-    const label = status ?? 'no agent';
+/** Tone of a utilisation percentage: calm until it matters. */
+function usageTone(value: number): string {
+    if (value >= 90) return 'bg-danger';
+    if (value >= 75) return 'bg-warning';
 
-    return (
-        <span className="inline-flex items-center gap-1.5 text-xs" title={`Agent ${label}`}>
-            <span className={cn('size-2 rounded-full', color)} />
-            <span className="text-muted-foreground capitalize">{label}</span>
-        </span>
-    );
+    return 'bg-fg-faint';
 }
 
-export function CopyButton({ value, className, label = 'Copy' }: { value: string; className?: string; label?: string }) {
-    const [copied, setCopied] = useState(false);
-
-    const copy = async () => {
-        try {
-            await navigator.clipboard.writeText(value);
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1500);
-        } catch {
-            setCopied(false);
-        }
-    };
-
-    return (
-        <Button type="button" variant="ghost" size="icon" className={cn('size-6', className)} onClick={copy} aria-label={label} title={label}>
-            {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-        </Button>
-    );
-}
-
-export function UsageBar({ value, label }: { value: number | null; label: string }) {
+/** Thin usage meter + percentage (tabular). */
+export function UsageMeter({ value, label, className }: { value: number | null; label: string; className?: string }) {
     if (value === null) {
-        return <span className="text-muted-foreground text-xs">—</span>;
+        return <span className="text-fg-faint text-xs">—</span>;
     }
 
     const clamped = Math.max(0, Math.min(100, value));
-    const color = clamped > 90 ? 'bg-red-500' : clamped > 75 ? 'bg-amber-500' : 'bg-emerald-500';
 
     return (
-        <div className="flex items-center gap-2" title={`${label} ${clamped.toFixed(1)}%`}>
-            <div className="bg-muted h-1.5 w-16 overflow-hidden rounded-full">
-                <div className={cn('h-full rounded-full', color)} style={{ width: `${clamped}%` }} />
+        <div className={cn('flex items-center gap-2', className)} title={`${label} ${clamped.toFixed(1)}%`}>
+            <div
+                className="bg-surface-3 h-1 w-14 overflow-hidden rounded-full"
+                role="meter"
+                aria-label={label}
+                aria-valuenow={Math.round(clamped)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+            >
+                <div className={cn('h-full rounded-full', usageTone(clamped))} style={{ width: `${clamped}%` }} />
             </div>
-            <span className="text-muted-foreground w-10 text-right text-xs tabular-nums">{clamped.toFixed(0)}%</span>
+            <span className="text-fg-muted tabular w-9 text-right text-xs">{clamped.toFixed(0)}%</span>
         </div>
+    );
+}
+
+/** Inline SVG sparkline (0–100 scale) with a faint area, for dense tables. */
+export function Sparkline({
+    values,
+    width = 72,
+    height = 20,
+    label,
+    className,
+}: {
+    values: (number | null)[];
+    width?: number;
+    height?: number;
+    label: string;
+    className?: string;
+}) {
+    const points = values
+        .map((value, index) => ({ value, index }))
+        .filter((point): point is { value: number; index: number } => point.value !== null);
+
+    if (points.length < 2) {
+        return <span className="text-fg-faint inline-block text-xs" style={{ width }} />;
+    }
+
+    const last = values.length - 1 || 1;
+    const x = (index: number) => (index / last) * width;
+    const y = (value: number) => height - 1 - (Math.max(0, Math.min(100, value)) / 100) * (height - 2);
+    const line = points.map((point) => `${x(point.index).toFixed(1)},${y(point.value).toFixed(1)}`).join(' ');
+    const area = `${x(points[0].index).toFixed(1)},${height} ${line} ${x(points[points.length - 1].index).toFixed(1)},${height}`;
+
+    return (
+        <svg
+            width={width}
+            height={height}
+            viewBox={`0 0 ${width} ${height}`}
+            className={cn('text-chart-1 shrink-0 overflow-visible', className)}
+            role="img"
+            aria-label={label}
+        >
+            <polygon points={area} className="fill-current opacity-15" />
+            <polyline points={line} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+        </svg>
     );
 }
 
@@ -86,4 +115,34 @@ export function formatBytes(bytes: number | null | undefined): string {
     }
 
     return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+export function formatUptime(seconds: number | undefined | null): string {
+    if (seconds === undefined || seconds === null) return '—';
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    return days > 0 ? `${days}d ${hours}h` : hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+function csrfToken(): string {
+    return document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content ?? '';
+}
+
+/** Same-origin JSON request (session auth + CSRF). Throws with the server's message on non-2xx. */
+export async function requestJson<T>(url: string, init: { method?: 'GET' | 'POST'; signal?: AbortSignal } = {}): Promise<T> {
+    const response = await fetch(url, {
+        method: init.method ?? 'GET',
+        credentials: 'same-origin',
+        signal: init.signal,
+        headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken() },
+    });
+    const body = (await response.json().catch(() => ({}))) as T & { message?: string };
+
+    if (!response.ok) {
+        throw Object.assign(new Error(body.message ?? `HTTP ${response.status}`), { status: response.status });
+    }
+
+    return body;
 }

@@ -17,13 +17,14 @@ use Kiln\Providers\Contracts\Data\CredentialSummary;
 use Kiln\Providers\Contracts\ProviderGateway;
 use Kiln\Providers\Contracts\ProviderType;
 use Kiln\Servers\Application\Actions\ApplyProvisioningPlan;
+use Kiln\Servers\Application\Actions\ChangeServerTimezone;
 use Kiln\Servers\Application\Actions\CreateServer;
 use Kiln\Servers\Application\Actions\DeleteServer;
 use Kiln\Servers\Application\Actions\RegenerateInstallCommand;
 use Kiln\Servers\Application\Actions\RenameServer;
+use Kiln\Servers\Application\Queries\ServerServices;
 use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Models\PhpVersion;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Servers\Domain\Models\SshKey;
 use Kiln\Servers\Domain\Stack\Stack;
@@ -39,6 +40,7 @@ final class ServerController extends Controller
         private readonly CurrentOrganization $organization,
         private readonly OrganizationAccess $access,
         private readonly AgentDirectory $agents,
+        private readonly ServerServices $services,
     ) {}
 
     public function index(Request $request): Response
@@ -61,10 +63,20 @@ final class ServerController extends Controller
             ->orderBy('name')
             ->get();
 
-        $agents = $this->agents->forServers($servers->pluck('id')->all());
+        $serverIds = $servers->pluck('id')->all();
+        $agents = $this->agents->forServers($serverIds);
+        $services = $this->services->forServers($organizationId, $serverIds);
 
         return Inertia::render('Servers/Index', [
-            'servers' => $servers->map(fn (Server $server) => $this->summary($server, $agents[$server->id] ?? null))->values(),
+            'servers' => $servers->map(fn (Server $server) => [
+                ...$this->summary($server, $agents[$server->id] ?? null),
+                'services' => $services[$server->id] ?? [],
+            ])->values(),
+            // CPU / memory sparklines (last hour) load after the first paint.
+            'sparklines' => Inertia::defer(fn () => $servers
+                ->filter(fn (Server $server) => isset($agents[$server->id]))
+                ->mapWithKeys(fn (Server $server) => [$server->id => $this->sparkline($server)])
+                ->all()),
             'filters' => array_filter($filters),
             'types' => collect(ServerType::cases())->map(fn (ServerType $type) => ['value' => $type->value, 'label' => $type->label()]),
             'can' => ['create' => $this->access->can($request->user(), $organizationId, 'servers.create')],
@@ -115,7 +127,7 @@ final class ServerController extends Controller
     public function show(Request $request, Server $server): Response
     {
         $this->authorize('view', $server);
-        $server->load(['phpVersions', 'sshKeys']);
+        $server->load('phpVersions');
 
         $agent = $this->agents->forServer($server->id);
         $canUpdate = $request->user()?->can('update', $server) ?? false;
@@ -158,15 +170,7 @@ final class ServerController extends Controller
                 'kernel' => $agent->facts['kernel'] ?? null,
             ] : null,
             'metrics' => $this->samples($server, '1h'),
-            'php' => $server->phpVersions->map(fn (PhpVersion $php) => $this->phpVersion($php))->values(),
-            'phpOptions' => array_values(array_diff((array) config('servers.php_versions'), $server->phpVersions->pluck('version')->all())),
-            'sshKeys' => $server->sshKeys->map(fn (SshKey $key) => [
-                'id' => $key->id,
-                'name' => $key->name,
-                'fingerprint' => $key->fingerprint,
-                'unix_user' => $key->getRelationValue('pivot')?->getAttribute('unix_user'),
-            ])->values(),
-            'availableSshKeys' => SshKey::query()->where('organization_id', $server->organization_id)->orderBy('name')->get(['id', 'name', 'fingerprint']),
+            'services' => $this->services->forServer($server->id),
             'can' => [
                 'update' => $canUpdate,
                 'delete' => $request->user()?->can('delete', $server) ?? false,
@@ -174,17 +178,24 @@ final class ServerController extends Controller
         ]);
     }
 
-    public function update(Request $request, Server $server, RenameServer $rename): RedirectResponse
+    public function update(Request $request, Server $server, RenameServer $rename, ChangeServerTimezone $changeTimezone): RedirectResponse
     {
         $this->authorize('update', $server);
 
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/', Rule::unique('servers_servers')->where('organization_id', $server->organization_id)->ignore($server->id)],
+            'name' => ['required_without:timezone', 'string', 'max:64', 'regex:/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/', Rule::unique('servers_servers')->where('organization_id', $server->organization_id)->ignore($server->id)],
+            'timezone' => ['sometimes', 'required', 'timezone:all'],
         ]);
 
-        $rename($server, $data['name']);
+        if (isset($data['name']) && $data['name'] !== $server->name) {
+            $rename($server, $data['name']);
+        }
 
-        return back();
+        if (isset($data['timezone']) && $changeTimezone($server, $data['timezone'])) {
+            return back()->with('success', 'Timezone saved — applying it to the server.');
+        }
+
+        return back()->with('success', 'Server settings saved.');
     }
 
     public function reprovision(Server $server, ApplyProvisioningPlan $apply): RedirectResponse
@@ -222,10 +233,17 @@ final class ServerController extends Controller
         return to_route('servers.index');
     }
 
-    public function metrics(Request $request, Server $server): JsonResponse
+    /**
+     * JSON samples for XHR callers (Accept: application/json); otherwise the Metrics tab.
+     */
+    public function metrics(Request $request, Server $server): JsonResponse|Response
     {
         $this->authorize('view', $server);
         $range = $request->validate(['range' => ['nullable', Rule::in(array_keys(self::METRIC_RANGES))]])['range'] ?? '1h';
+
+        if (! $request->wantsJson()) {
+            return app(ServerTabController::class)->metrics($request, $server);
+        }
 
         return response()->json(['data' => $this->samples($server, $range)]);
     }
@@ -249,6 +267,32 @@ final class ServerController extends Controller
                 ->get(['id', 'name', 'ipv4', 'type', 'status'])
                 ->map(fn (Server $server) => ['id' => $server->id, 'name' => $server->name, 'ipv4' => $server->ipv4, 'type' => $server->type->value, 'status' => $server->status->value]),
         ]);
+    }
+
+    /**
+     * Last hour of CPU / memory percentages, downsampled to at most 30 points.
+     *
+     * @return list<array{t: string, cpu: ?float, mem: ?float}>
+     */
+    private function sparkline(Server $server): array
+    {
+        $samples = $this->agents->metrics($server->id, now()->subHour());
+        $step = max(1, (int) ceil(count($samples) / 30));
+        $points = [];
+
+        foreach ($samples as $index => $sample) {
+            if ($index % $step !== 0 && $index !== count($samples) - 1) {
+                continue;
+            }
+
+            $points[] = [
+                't' => $sample->at->format(DATE_ATOM),
+                'cpu' => $sample->cpuPercent !== null ? round($sample->cpuPercent, 1) : null,
+                'mem' => $server->memory_bytes ? round($sample->memoryUsedBytes / $server->memory_bytes * 100, 1) : null,
+            ];
+        }
+
+        return $points;
     }
 
     /**

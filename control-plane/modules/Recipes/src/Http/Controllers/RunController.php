@@ -20,6 +20,7 @@ use Kiln\Recipes\Domain\Models\RunTarget;
 use Kiln\Recipes\Infrastructure\BuiltinRecipes;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\Servers\Contracts\ServerHeaders;
 use Kiln\Servers\Contracts\ServerStatus;
 
 final class RunController extends Controller
@@ -37,7 +38,7 @@ final class RunController extends Controller
     {
         $this->authorize('run', $recipe);
 
-        return $this->runPage($recipe->organization_id, [
+        return $this->runPage($request, $recipe->organization_id, [
             ...$this->recipe($recipe),
             'builtin' => false,
             'variables' => (object) [],
@@ -51,7 +52,7 @@ final class RunController extends Controller
         $this->access->authorize($request->user(), $organizationId, 'recipes.run');
         $builtin = $this->builtins->find($key) ?? abort(404);
 
-        return $this->runPage($organizationId, [
+        return $this->runPage($request, $organizationId, [
             ...$builtin->toArray(),
             'id' => null,
             'builtin' => true,
@@ -113,6 +114,50 @@ final class RunController extends Controller
         ]);
     }
 
+    /**
+     * The server page's "Recipes" tab: run a recipe on this server and its run history here.
+     */
+    public function server(Request $request, string $server, ServerHeaders $headers): Response
+    {
+        $organizationId = $this->organization->requireId();
+        $this->access->authorize($request->user(), $organizationId, 'recipes.view');
+        $data = $this->servers->find($server);
+        abort_if($data === null || $data->organizationId !== $organizationId, 404);
+
+        $runs = Run::query()
+            ->with('targets')
+            ->where('organization_id', $organizationId)
+            ->whereHas('targets', fn ($q) => $q->where('server_id', $data->id))
+            ->latest()
+            ->orderByDesc('id')
+            ->limit(25)
+            ->get();
+
+        return Inertia::render('Recipes/Server', [
+            'server' => $headers->for($data->id),
+            'recipes' => Recipe::query()->where('organization_id', $organizationId)->orderBy('name')->get()->map(fn (Recipe $r) => [
+                ...$this->recipe($r),
+                'run_url' => route('recipes.run', $r).'?server='.$data->id,
+            ])->values(),
+            'builtins' => array_values(array_map(fn (BuiltinRecipe $r) => [
+                ...$r->toArray(),
+                'run_url' => route('recipes.builtin.run', $r->key).'?server='.$data->id,
+            ], $this->builtins->all())),
+            'runs' => $runs->map(function (Run $run) use ($data) {
+                $target = $run->targets->firstWhere('server_id', $data->id);
+
+                return [
+                    ...$this->runSummary($run),
+                    'target' => $target ? $this->runTarget($target) : null,
+                ];
+            })->values(),
+            'can' => [
+                'run' => $this->access->can($request->user(), $organizationId, 'recipes.run') && $data->status !== ServerStatus::Deleting,
+                'manage' => $this->access->can($request->user(), $organizationId, 'recipes.manage'),
+            ],
+        ]);
+    }
+
     public function show(Request $request, Run $run): Response
     {
         $this->authorize('view', $run);
@@ -151,11 +196,15 @@ final class RunController extends Controller
     /**
      * @param  array<string, mixed>  $recipe
      */
-    private function runPage(string $organizationId, array $recipe): Response
+    private function runPage(Request $request, string $organizationId, array $recipe): Response
     {
         $servers = array_values(array_filter(
             $this->servers->forOrganization($organizationId),
             fn (ServerData $server) => $server->status !== ServerStatus::Deleting,
+        ));
+        $preselected = array_values(array_intersect(
+            array_filter(explode(',', (string) $request->query('server', ''))),
+            array_map(fn (ServerData $s) => $s->id, $servers),
         ));
 
         return Inertia::render('Recipes/Run', [
@@ -167,6 +216,8 @@ final class RunController extends Controller
                 'status' => $s->status->value,
                 'ipv4' => $s->ipv4,
             ], $servers),
+            // ?server=<id>[,<id>] (from a server's Recipes tab) preselects servers.
+            'preselected' => $preselected,
             'defaultTimeout' => (int) config('recipes.timeout', 900),
             'maxTimeout' => (int) config('recipes.max_timeout', 3600),
         ]);

@@ -4,6 +4,9 @@ use Illuminate\Support\Facades\Route;
 use Kiln\Recipes\Http\Controllers\RecipeController;
 use Kiln\Recipes\Http\Controllers\RunController;
 
+// Server page tab (/servers/{id}/recipes) owned by Recipes.
+Route::middleware(['auth', 'org'])->get('servers/{server}/recipes', [RunController::class, 'server'])->name('recipes.server');
+
 Route::middleware(['auth', 'org'])->prefix('recipes')->name('recipes.')->group(function () {
     Route::get('/', [RecipeController::class, 'index'])->name('index');
     Route::post('/', [RecipeController::class, 'store'])->name('store');

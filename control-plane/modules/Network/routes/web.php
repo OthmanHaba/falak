@@ -5,10 +5,17 @@ use Kiln\Network\Http\Controllers\FirewallController;
 use Kiln\Network\Http\Controllers\NetworkController;
 use Kiln\Network\Http\Controllers\PrivateNetworkController;
 
+// Server page tabs (/servers/{id}/{tab}) owned by Network.
+Route::middleware(['auth', 'org'])->group(function () {
+    Route::get('servers/{server}/firewall', [FirewallController::class, 'show'])->name('network.firewall.show');
+    Route::get('servers/{server}/network', [PrivateNetworkController::class, 'server'])->name('network.server');
+});
+
 Route::middleware(['auth', 'org'])->prefix('network')->name('network.')->group(function () {
     Route::get('/', [NetworkController::class, 'index'])->name('index');
 
-    Route::get('servers/{server}/firewall', [FirewallController::class, 'show'])->name('firewall.show');
+    // Legacy URL: the firewall is a tab of the server page now.
+    Route::get('servers/{server}/firewall', fn (string $server) => redirect("/servers/{$server}/firewall", 301))->name('firewall.legacy');
     Route::post('servers/{server}/firewall/rules', [FirewallController::class, 'store'])->name('firewall.rules.store');
     Route::put('servers/{server}/firewall/rules/{rule}', [FirewallController::class, 'update'])->name('firewall.rules.update');
     Route::delete('servers/{server}/firewall/rules/{rule}', [FirewallController::class, 'destroy'])->name('firewall.rules.destroy');
