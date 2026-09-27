@@ -44,7 +44,7 @@ means the build was cancelled and `kiln-builder` aborts it.
 - Sites gained `SiteResourceExtension` (tagged; Deployments adds `strategy` + `current_release` to the site API)
   and `SiteDeploySettings` (push-to-deploy toggle from the Deploy settings tab), plus `GET|PUT /api/v1/sites/{site}/env`.
 - Restart phase uses `ProcessControl::restartForSite()`; a restart step completes when all returned commands finish.
-- Not supported yet (deployments fail fast with a clear error): Docker **Compose** sites and **on-server** builds.
+- Not supported yet (deployments fail fast with a clear error): **on-server** builds. (Compose: see below.)
 - Registry images are not garbage-collected by Kiln (run the registry's GC); artifacts are pruned per site.
 
 ## Bindings to wire once providers exist
@@ -106,6 +106,37 @@ means the build was cancelled and `kiln-builder` aborts it.
 - Limits: Redis is not a Databases engine yet (`422` "Redis services are not supported yet"); duplicated environments
   get sites without servers (pick servers per service); canvas status has no "crashed" state yet (no process
   health contract).
+
+## Docker Compose sites (roadmap step 4, lane A — docs/COMPOSE_TEMPLATES.md §1)
+- Contracts (Sites): `SiteFactory::create` accepts `compose_source|compose_content|compose_file|public_services|variables|
+  template` (§5); `ComposeInspector::parse()` → `ComposeSummary` (services, ports, volumes, policy violations, errors,
+  warnings; never throws); `ComposeSites` (inline versions, `render()` for a release, `pinDigests()`, service state for
+  the Services tab / canvas). `SiteData::$compose` (`ComposeConfig`: source, file, public services with host ports and
+  test domains, template, inline version).
+- Rendering: `build:` services → built image (digest), `ports` removed everywhere and `127.0.0.1:<host port>:<port>` on
+  public services, labels `kiln.site|release|service`; `${VAR}` stays Compose-native — the release `.env` (site variables
+  with references resolved + `KILN_SITE_ID|SERVER_ID|DEPLOYMENT_ID|RELEASE_ID`) is written next to `compose.yaml` and
+  also passed as the compose process env. Policy toggle: org setting `sites_organization_settings.allow_privileged_compose`
+  (Settings → Compose, permission `sites.compose.policy`, admins).
+- Builds: compose sites build in docker mode with a `compose` job spec; kiln-builder builds every `build:` service to
+  `<registry>/<ns>/<slug>/<service>:<build id>` and returns the unmodified compose file + pinned images
+  (`BuildService::composeFor`). Repo compose sites therefore need a docker-capable builder even without `build:` services.
+- Deployments (`compose` strategy; rolling/canary batch the activations): `docker.compose.pull` (FETCH, writes
+  `releases/<ID>/compose.yaml` + `.env`) → leader `system.exec` running `docker compose run --rm <svc> <argv>` for every
+  `kiln.deploy.leader_command` label (settles instantly when there is none) → `docker.compose.up --wait` → health check of
+  every public service through the edge (primary: configured path/status; others: `/` and `< 500`). The rendered files are
+  stored encrypted on the release (`deployments_releases.compose`) and pulled images are re-pinned to the digests the
+  server resolved; rollback (failure or manual) = `up --wait` with that release's files. Project name = site slug, so
+  named volumes survive releases. `deploy.prune` keeps N release directories like native sites.
+- Edge: the primary public service is the site route (site domains + `<slug>` test domain → app port = its host port);
+  each other public service gets `<route>-svc-<service>[-test]` routes for its custom domain / `<service>-<slug>` test domain.
+- Telemetry: compose containers log with `service.name=<slug>` and `kiln.compose.service` (Loki structured metadata
+  `kiln_compose_service`, filter `compose_service` on the logs endpoints); `docker stats` → `kiln.container.cpu.utilization`,
+  `kiln.container.memory.usage|limit`, `kiln.container.network.io` per site resource.
+- Limits: only `compose.yaml` + `.env` reach the servers — repository files referenced by relative bind mounts or extra
+  `env_file`s are not shipped; `include`/`extends` are rejected; a failed first deploy has nothing to roll back to
+  (containers stay as `up` left them); kiln-builder with registry credentials looks up the buildx builder in its
+  temporary DOCKER_CONFIG (the sim registry has no auth).
 
 ## Found by the sim E2E (all fixed, with regression tests)
 Real provisioning and deploys on Ubuntu 24.04 (`sim/e2e-deploy.sh`) surfaced these; each is fixed and covered:
