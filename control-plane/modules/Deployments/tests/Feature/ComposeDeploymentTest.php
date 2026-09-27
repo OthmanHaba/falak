@@ -144,9 +144,10 @@ it('rolls a failed compose release back with the previous release files', functi
         ['service' => 'app', 'container_id' => 'c', 'state' => 'running', 'health' => 'unhealthy', 'image' => 'app', 'restarts' => 3],
     ]]);
 
+    // Both servers go back: app-1 switched, and app-2's failed `up` already replaced its containers.
     $reverts = deploy_pending($world->agents, 'docker.compose.up');
-    expect($reverts)->toHaveCount(1)
-        ->and($reverts[0]['handle']->serverId)->toBe($world->servers[0]->id)
+    expect($reverts)->toHaveCount(2)
+        ->and(array_map(fn ($c) => $c['handle']->serverId, $reverts))->toEqualCanonicalizing($world->serverIds())
         ->and($reverts[0]['payload']['directory'])->toEndWith('/releases/'.strtoupper($first->release_id))
         ->and($reverts[0]['payload']['files'][0]['content'])->toBe($firstYaml);
 

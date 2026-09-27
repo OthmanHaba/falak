@@ -194,7 +194,9 @@ final class RouteCompiler
             return array_filter([
                 'kind' => 'reverse_proxy',
                 'upstreams' => [['dial' => $dial]],
-                'health_uri' => $this->path($site->healthCheckPath),
+                // Compose services have container healthchecks (`up --wait`); Caddy's active check only accepts 2xx
+                // and would take apps that redirect `/` to a login page out of rotation.
+                'health_uri' => $site->runtime === SiteRuntime::Compose ? null : $this->path($site->healthCheckPath),
             ], fn ($v) => $v !== null);
         };
 

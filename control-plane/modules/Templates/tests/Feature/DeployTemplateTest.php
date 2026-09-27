@@ -6,6 +6,7 @@ use Kiln\Projects\Contracts\ServiceKind;
 use Kiln\Projects\Domain\Models\Project;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Templates\Domain\Models\CustomTemplate;
+use Laravel\Sanctum\Sanctum;
 
 require_once __DIR__.'/../Support/helpers.php';
 require_once __DIR__.'/../../../Projects/tests/Support/helpers.php';
@@ -152,7 +153,7 @@ it('authorizes and scopes to the organization', function () {
 });
 
 it('deploys templates over the public API with a token', function () {
-    \Laravel\Sanctum\Sanctum::actingAs($this->user, ['*']);
+    Sanctum::actingAs($this->user, ['*']);
     $token = $this->user->createToken('cli', ['*'])->accessToken;
     $token->forceFill(['organization_id' => $this->organization->id])->save();
     $this->user->withAccessToken($token);

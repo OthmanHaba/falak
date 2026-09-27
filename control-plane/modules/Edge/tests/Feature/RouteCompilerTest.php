@@ -65,7 +65,7 @@ it('uses the recorded container upstream for docker sites', function () {
 
 it('routes every public compose service: primary on the site domains, others on their own domains', function () {
     $site = edge_site($this->sites, $this->org, [$this->web->id], [
-        'runtime' => SiteRuntime::Compose, 'appPort' => 3000, 'testDomain' => 'stack.sites.kiln.test',
+        'runtime' => SiteRuntime::Compose, 'appPort' => 3000, 'testDomain' => 'stack.sites.kiln.test', 'healthCheckPath' => '/',
         'compose' => new ComposeConfig(ComposeSource::Inline, null, [
             new PublicService('app', 8080, 'app.example.com', 3000, 'stack.sites.kiln.test'),
             new PublicService('grafana_ui', 3000, null, 3001, 'grafana-ui-stack.sites.kiln.test'),
@@ -79,6 +79,8 @@ it('routes every public compose service: primary on the site domains, others on 
 
     $primary = collect($payload['sites'])->filter(fn ($e) => str_starts_with($e['id'], $routeId) && ! str_contains($e['id'], '-svc-'));
     expect($primary->pluck('upstreams')->unique()->values()->all())->toBe([[['dial' => '127.0.0.1:3000']]])
+        // No Caddy active health check: `up --wait` covers container health and apps may redirect `/`.
+        ->and($primary->every(fn ($entry) => ! array_key_exists('health_uri', $entry)))->toBeTrue()
         ->and($primary->pluck('domains')->flatten()->all())->toContain('www.example.com', 'stack.sites.kiln.test');
 
     expect(edge_entry($payload, "{$routeId}-svc-app"))->toMatchArray(['domains' => ['app.example.com'], 'upstreams' => [['dial' => '127.0.0.1:3000']], 'tls' => ['mode' => 'acme']])

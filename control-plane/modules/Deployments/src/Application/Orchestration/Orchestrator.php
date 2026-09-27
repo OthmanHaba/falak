@@ -778,8 +778,9 @@ final class Orchestrator
         $target = $step->target;
 
         if (! $succeeded) {
-            // A timed-out activation may still have switched the server: treat it as activated.
-            if ($target && $step->kind->activates() && $status === 'timed_out') {
+            // A timed-out activation may still have switched the server: treat it as activated. A failed
+            // `docker compose up` has already replaced containers (they just never got healthy): roll it back too.
+            if ($target && (($step->kind->activates() && $status === 'timed_out') || ($step->command_type === 'docker.compose.up' && ! $step->rollback && $step->kind === StepKind::Activate))) {
                 $target->activated = true;
             }
 
