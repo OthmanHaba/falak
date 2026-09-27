@@ -252,12 +252,15 @@ export function LogViewer({
                 <IconButton size="sm" label="Download log" icon={<Download />} onClick={download} disabled={lines.length === 0} />
             </div>
 
+            {currentPhase && (
+                <div
+                    className="border-border bg-surface-1 text-2xs text-fg-muted border-b px-3 py-1 font-mono font-medium tracking-wide uppercase"
+                    aria-live="off"
+                >
+                    {currentPhase}
+                </div>
+            )}
             <div className="relative min-h-0 flex-1">
-                {currentPhase && (
-                    <div className="border-border bg-surface-1/95 text-2xs text-fg-muted absolute inset-x-0 top-0 z-10 border-b px-3 py-1 font-mono font-medium tracking-wide uppercase backdrop-blur">
-                        {currentPhase}
-                    </div>
-                )}
                 <div
                     ref={scrollRef}
                     onScroll={onScroll}

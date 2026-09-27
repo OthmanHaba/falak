@@ -127,6 +127,12 @@ export function Panel({
             <DialogPrimitive.Portal>
                 <DialogPrimitive.Overlay className="animate-fade-in bg-overlay/40 fixed inset-0 z-40" />
                 <DialogPrimitive.Content
+                    // Focus the panel itself (not the primary action) so opening doesn't paint a focus ring on Deploy.
+                    onOpenAutoFocus={(event) => {
+                        event.preventDefault();
+                        (event.currentTarget as HTMLElement | null)?.focus();
+                    }}
+                    tabIndex={-1}
                     className={cn(
                         'animate-panel-in border-border bg-surface-1 shadow-panel fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l outline-none lg:top-2 lg:right-2 lg:bottom-2 lg:w-[min(960px,62vw)] lg:rounded-xl lg:border',
                         className,

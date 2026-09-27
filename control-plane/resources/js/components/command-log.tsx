@@ -40,13 +40,13 @@ interface LivePayload {
 }
 
 const STATUS_STYLES: Record<CommandStatus, string> = {
-    queued: 'bg-muted text-muted-foreground',
-    delivered: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
-    running: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
-    succeeded: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-    failed: 'bg-red-500/15 text-red-700 dark:text-red-300',
-    timed_out: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-    cancelled: 'bg-muted text-muted-foreground',
+    queued: 'bg-info-soft text-info',
+    delivered: 'bg-info-soft text-info',
+    running: 'bg-warning-soft text-warning',
+    succeeded: 'bg-success-soft text-success',
+    failed: 'bg-danger-soft text-danger',
+    timed_out: 'bg-danger-soft text-danger',
+    cancelled: 'bg-faint-soft text-fg-muted',
 };
 
 export function CommandStatusBadge({ status, className }: { status: CommandStatus; className?: string }) {
@@ -194,17 +194,17 @@ export function CommandLog({ commandId, className, onStatusChange }: CommandLogP
             <div
                 ref={pane}
                 onScroll={onScroll}
-                className="max-h-96 min-h-24 overflow-auto bg-neutral-950 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-neutral-100"
+                className="bg-canvas text-fg max-h-96 min-h-24 overflow-auto p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap"
                 data-testid="command-log"
             >
-                {lines.length === 0 && !error && <span className="text-neutral-500">{terminal ? 'No output.' : 'Waiting for output…'}</span>}
+                {lines.length === 0 && !error && <span className="text-fg-faint">{terminal ? 'No output.' : 'Waiting for output…'}</span>}
                 {lines.map((line) => (
-                    <span key={line.seq} className={line.stream === 'stderr' ? 'text-amber-300' : undefined}>
+                    <span key={line.seq} className={line.stream === 'stderr' ? 'text-warning' : undefined}>
                         {line.data}
                     </span>
                 ))}
-                {meta.error && terminal && <div className="mt-2 text-red-400">{meta.error}</div>}
-                {error && <div className="text-red-400">Could not load output: {error}</div>}
+                {meta.error && terminal && <div className="text-danger mt-2">{meta.error}</div>}
+                {error && <div className="text-danger">Could not load output: {error}</div>}
             </div>
         </div>
     );
