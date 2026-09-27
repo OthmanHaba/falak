@@ -4,7 +4,7 @@ import { MetricChart, type MetricPoint } from '@/components/kiln/metric-chart';
 import ServerLayout, { type ServerHeader } from '@/layouts/server-layout';
 import { cn } from '@/lib/utils';
 import { Link } from '@inertiajs/react';
-import { Activity, ExternalLink, RefreshCw } from 'lucide-react';
+import { Activity, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatBytes, requestJson } from '../../components/server-ui';
 import { type MetricSample } from '../../types';
@@ -216,11 +216,6 @@ export default function Metrics({ server, capacity, ranges, telemetry }: Props) 
                                     <h2 className="text-fg text-base font-medium">Network & disk I/O</h2>
                                     <p className="text-fg-muted text-sm">From the telemetry backend (OpenTelemetry host metrics).</p>
                                 </div>
-                                <Button variant="ghost" size="sm" asChild>
-                                    <Link href={`/telemetry/servers/${server.id}/metrics`}>
-                                        Open in Telemetry <ExternalLink aria-hidden />
-                                    </Link>
-                                </Button>
                             </div>
                             {detailState === 'unavailable' ? (
                                 <EmptyState

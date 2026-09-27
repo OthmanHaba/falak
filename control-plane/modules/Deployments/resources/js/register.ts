@@ -1,4 +1,4 @@
-import { registerServiceActions, registerServiceSettingsSections, registerServiceTabs, registerSiteTabs } from '@/lib/registry';
+import { registerServiceActions, registerServiceSettingsSections, registerServiceTabs } from '@/lib/registry';
 import { Rocket, RotateCcw, RotateCw } from 'lucide-react';
 import { lazy } from 'react';
 import { deploy } from './panel/api';
@@ -6,12 +6,6 @@ import { deploy } from './panel/api';
 // Panel code loads with the canvas, not with every page.
 const DeploymentsTab = lazy(() => import('./panel/deployments-tab').then((module) => ({ default: module.DeploymentsTab })));
 const RollbackDialog = lazy(() => import('./panel/rollback-dialog').then((module) => ({ default: module.RollbackDialog })));
-
-registerSiteTabs(
-    { id: 'deployments.deployments', title: 'Deployments', path: 'deployments', order: 50, permission: 'deployments.view' },
-    { id: 'deployments.releases', title: 'Releases', path: 'releases', order: 60, permission: 'deployments.view' },
-    { id: 'deployments.settings', title: 'Deploy settings', path: 'deploy-settings', order: 850, permission: 'deployments.view' },
-);
 
 // Canvas service panel (§5.1 / §5.2).
 registerServiceTabs({

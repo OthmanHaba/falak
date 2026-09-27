@@ -1,5 +1,3 @@
-import { type SiteHeader } from '@/layouts/site-layout';
-
 export type DeploymentStatus = 'queued' | 'building' | 'deploying' | 'succeeded' | 'failed' | 'cancelled';
 export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
 export type Phase = 'build' | 'fetch' | 'prepare' | 'migrate' | 'activate' | 'restart' | 'healthcheck' | 'rollback';
@@ -83,8 +81,4 @@ export interface Release {
     can_rollback: boolean;
     activated_at: string | null;
     created_at: string;
-}
-
-export interface SitePageProps {
-    site: SiteHeader;
 }

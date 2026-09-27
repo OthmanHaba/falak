@@ -4,10 +4,9 @@ namespace Kiln\Telemetry\Http\Controllers;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Kiln\Identity\Contracts\CurrentOrganization;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
@@ -18,7 +17,6 @@ use Kiln\Telemetry\Contracts\Data\MetricSeries;
 use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
 use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 use Kiln\Telemetry\Contracts\MetricsBackend;
-use Kiln\Telemetry\Contracts\TelemetryLinks;
 
 final class ServerMetricsController extends Controller
 {
@@ -28,18 +26,12 @@ final class ServerMetricsController extends Controller
         private readonly ServerDirectory $servers,
     ) {}
 
-    public function show(Request $request, string $serverId, TelemetryLinks $links): Response
+    /** The classic server metrics page moved into the server panel's Metrics tab (which reads data() below). */
+    public function show(Request $request, string $serverId): RedirectResponse
     {
         $server = $this->server($request, $serverId);
 
-        return Inertia::render('Telemetry/ServerMetrics', [
-            'server' => ['id' => $server->id, 'name' => $server->name, 'memory_bytes' => null],
-            'ranges' => array_keys(ServerMetricQueries::RANGES),
-            'links' => [
-                'logs' => $links->logs(['server_id' => $server->id]),
-                'grafana' => $links->grafanaDashboard($server->organizationId, 'kiln-server'),
-            ],
-        ]);
+        return redirect("/servers/{$server->id}/metrics");
     }
 
     public function data(Request $request, string $serverId, MetricsBackend $metrics): JsonResponse

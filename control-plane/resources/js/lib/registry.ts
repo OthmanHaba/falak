@@ -72,19 +72,6 @@ export interface HeaderItem {
 }
 
 /**
- * A tab on the site pages (/sites/{id}/...). Sites, Edge, Deployments, Processes... each add their own.
- */
-export interface SiteTab {
-    id: string;
-    title: string;
-    /** Path below /sites/{id}; '' is the overview. */
-    path: string;
-    /** Lower comes first. Sites: overview 0, environment 300, deploy script 400, commands 600, settings 900. Edge: domains 100, routing 200. */
-    order: number;
-    permission?: string;
-}
-
-/**
  * An entry in the /settings/{section} left mini-nav (§3). Identity registers the account + organization sections;
  * other modules add theirs (Source control, Cloud providers, Storage, Builders, Alert channels ...).
  *
@@ -213,7 +200,6 @@ const navItems = new Map<string, ModuleNavItem>();
 const settingsItems = new Map<string, SettingsNavItem>();
 const headerItems = new Map<string, HeaderItem>();
 const commandProviders = new Map<string, CommandProvider>();
-const siteTabs = new Map<string, SiteTab>();
 const serviceTabs = new Map<string, ServiceTab>();
 const serviceActions = new Map<string, ServiceAction>();
 const settingsSections = new Map<string, ServiceSettingsSection>();
@@ -244,14 +230,6 @@ export function settingsNavFor(ctx: ShellContext): SettingsNavItem[] {
     return [...settingsItems.values()]
         .filter((item) => (!item.permission || ctx.can(item.permission)) && (!item.requiresOrganization || hasOrganization))
         .sort((a, b) => a.order - b.order);
-}
-
-export function registerSiteTabs(...tabs: SiteTab[]): void {
-    tabs.forEach((tab) => siteTabs.set(tab.id, tab));
-}
-
-export function siteTabsFor(ctx: ShellContext): SiteTab[] {
-    return [...siteTabs.values()].filter((tab) => !tab.permission || ctx.can(tab.permission)).sort((a, b) => a.order - b.order);
 }
 
 export function registerServiceTabs(...tabs: ServiceTab[]): void {
