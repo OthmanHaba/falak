@@ -253,7 +253,7 @@ services:
       - srv-app-2-containerd:/var/lib/containerd
     deploy:
       resources:
-        limits: { memory: 1536m }
+        limits: { memory: 2560m }
   srv-db-1:
     <<: *server
     hostname: srv-db-1

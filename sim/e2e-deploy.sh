@@ -14,7 +14,7 @@ C=(docker compose -p kiln-sim --env-file sim.env --env-file .data/secrets.env)
 EDGE="https://kiln.test:${SIM_EDGE_HTTPS_PORT}"
 CURL=(curl -sS --cacert .data/edge-root.crt --resolve "kiln.test:${SIM_EDGE_HTTPS_PORT}:127.0.0.1")
 STATE=.data/e2e.env
-STAGES="${STAGES:-bootstrap servers sites deploy release rollback failure bun observability compose compose_redeploy compose_failure}"
+STAGES="${STAGES:-bootstrap servers sites deploy release rollback failure bun observability compose compose_redeploy compose_failure templates}"
 
 pass=0 fail=0 API_CODE=000 API_BODY='' KILN_TOKEN=${KILN_TOKEN:-}
 ok()   { printf '  \033[32mPASS\033[0m %s\n' "$*"; pass=$((pass + 1)); }
@@ -321,6 +321,53 @@ stage_compose_failure() {
     while (( SECONDS < deadline )); do health=$(compose_get /health); [[ $health == ok ]] && break; sleep 3; done
     [[ $health == ok && "$(compose_get / | jq -r .greeting 2>/dev/null)" == "hello v2" ]] && ok "the previous healthy release serves again" || bad "after rollback: health=$health body=$(compose_get /)"
     [[ "$(compose_get /get | jq -r .marker 2>/dev/null)" == "$COMPOSE_MARKER" ]] && ok "redis data intact after the rollback" || bad "redis data lost after rollback"
+}
+
+wait_deployment() { # wait_deployment ID -> final status (sets API_BODY)
+    local s="" deadline=$((SECONDS + 1500))
+    while (( SECONDS < deadline )); do
+        s=$(deployment_status "$1")
+        [[ $s == succeeded || $s == failed || $s == cancelled ]] && break
+        sleep 5
+    done
+    api GET "/deployments/$1"
+    printf '%s' "$s"
+}
+
+deploy_template() { # deploy_template SLUG NAME INPUTS_JSON PROBE_PATH GREP_PATTERN
+    local slug=$1 name=$2 inputs=$3 probe=$4 check=$5 project site deployment status host
+    api GET /projects
+    project=$(jq -r '[.data[] | select(.is_default)][0].id // .data[0].id' <<<"$API_BODY")
+    api POST "/projects/$project/production/templates/$slug/deploy" "{\"name\":\"$name\",\"inputs\":$inputs,\"server_ids\":[\"$SERVER_srv_app_2\"]}"
+    [[ $API_CODE == 201 ]] || { bad "$slug: POST template deploy -> $API_CODE: $API_BODY"; return 1; }
+    site=$(jq -r .data.site_id <<<"$API_BODY"); deployment=$(jq -r '.data.deployment_id // empty' <<<"$API_BODY")
+    ok "$slug: template deployed through the API -> site $name ($site)"
+    api GET "/sites/$site"
+    host=$(jq -r '.data.compose.public_services[0].test_domain // .data.test_domain' <<<"$API_BODY")
+    [[ "$(jq -r '.data.compose.template.slug' <<<"$API_BODY")" == "$slug" ]] && ok "$slug: site records template $slug@$(jq -r '.data.compose.template.version' <<<"$API_BODY")" || bad "$slug: template metadata missing: $(jq -c .data.compose <<<"$API_BODY")"
+
+    status=""
+    [[ -n $deployment ]] && status=$(wait_deployment "$deployment")
+    if [[ $status != succeeded ]]; then
+        # The first deployment can start before the site's targets finished preparing; deploy again once ready.
+        [[ -n $status ]] && ok "$slug: first deployment ended '$status' ($(jq -r '.data.error // ""' <<<"$API_BODY" | head -c 120)); redeploying"
+        wait_targets_ready "$site" || return 1
+        api POST "/sites/$site/deployments" '{}'
+        [[ $API_CODE == 201 ]] || { bad "$slug: POST deployments -> $API_CODE: $API_BODY"; return 1; }
+        status=$(wait_deployment "$(jq -r .data.id <<<"$API_BODY")")
+    fi
+    [[ $status == succeeded ]] && ok "$slug: deployment succeeded (compose up --wait + health check through the edge)" || {
+        bad "$slug: deployment ended '$status': $(jq -c '.data | {phase, error}' <<<"$API_BODY")"; return 1; }
+
+    local body="" deadline=$((SECONDS + 120))
+    while (( SECONDS < deadline )); do body=$(site_get srv-app-2 "$host" "$probe"); grep -qiE "$check" <<<"$body" && break; sleep 5; done
+    grep -qiE "$check" <<<"$body" && ok "$slug: public URL https://$host$probe answers through the edge" || bad "$slug: https://$host$probe -> ${body:0:200}"
+}
+
+stage_templates() {
+    step "templates: deploy catalog templates (Uptime Kuma, Umami) through the API"
+    deploy_template uptime-kuma kuma '{"TIMEZONE":"UTC"}' / 'uptime kuma' || true
+    deploy_template umami umami '{}' /api/heartbeat '"ok": ?true' || true
 }
 
 for s in $STAGES; do "stage_$s"; done
