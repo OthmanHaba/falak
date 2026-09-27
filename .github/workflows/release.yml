@@ -1,0 +1,151 @@
+# Release: push a tag vX.Y.Z (vX.Y.Z-rc.N = pre-release, not tagged `latest`).
+#   1. multi-arch images (native amd64 + arm64 runners, merged manifests) -> GHCR:
+#        ghcr.io/<owner>/kiln-control-plane, kiln-builder, kiln-edge  :<tag> and :latest
+#   2. kiln-agent / kiln / kiln-builder binaries (make build), kiln-deploy.tar.gz, install.sh, kiln-ctl,
+#      SHA256SUMS -> GitHub release assets.
+# Only GITHUB_TOKEN is used. After the first release, make the three GHCR packages public
+# (Package settings -> Change visibility) so servers can pull without logging in.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  images:
+    name: image ${{ matrix.image }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        image: [control-plane, builder, edge]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+          - image: control-plane
+            dockerfile: control-plane/Dockerfile
+            context: .
+          - image: builder
+            dockerfile: deploy/builder.Dockerfile
+            context: .
+          - image: edge
+            dockerfile: deploy/edge/Dockerfile
+            context: deploy/edge
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Image name
+        id: name
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/kiln-${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
+          build-args: KILN_VERSION=${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          outputs: type=image,name=${{ steps.name.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  manifests:
+    name: manifest ${{ matrix.image }}
+    needs: images
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: [control-plane, builder, edge]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.image }}-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create multi-arch manifest (<tag>, and latest for final releases)
+        working-directory: /tmp/digests
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/kiln-${{ matrix.image }}"
+          tags=(-t "$image:${GITHUB_REF_NAME}")
+          case "$GITHUB_REF_NAME" in *-*) ;; *) tags+=(-t "$image:latest") ;; esac
+          docker buildx imagetools create "${tags[@]}" $(printf "$image@sha256:%s " *)
+          docker buildx imagetools inspect "$image:${GITHUB_REF_NAME}"
+
+  release:
+    name: GitHub release
+    needs: manifests
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+          cache-dependency-path: agent/go.sum
+
+      - name: Build binaries
+        working-directory: agent
+        run: make build VERSION="${GITHUB_REF_NAME}"
+
+      - name: Assemble assets
+        run: deploy/tools/release-assets.sh "${GITHUB_REF_NAME}" "${GITHUB_REPOSITORY}" dist
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prerelease=()
+          case "$GITHUB_REF_NAME" in *-*) prerelease=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "Kiln $GITHUB_REF_NAME" "${prerelease[@]}"
