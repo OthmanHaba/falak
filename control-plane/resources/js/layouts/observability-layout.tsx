@@ -56,7 +56,7 @@ export default function ObservabilityLayout({ tab, title, actions, breadcrumbs =
             ]}
         >
             <Head title={title ?? `${active.title} · Observability`} />
-            <div className="grid min-w-0 gap-6">
+            <div className="grid min-w-0 grid-cols-1 gap-6">
                 {header ?? (
                     <div className="grid gap-4">
                         <PageHeader title="Observability" actions={actions} />

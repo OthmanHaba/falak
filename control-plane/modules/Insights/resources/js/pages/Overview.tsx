@@ -11,7 +11,7 @@ import ObservabilityLayout from '@/layouts/observability-layout';
 import { Link, router } from '@inertiajs/react';
 import { Activity, ExternalLink, Gauge, ScrollText, Timer } from 'lucide-react';
 import { useMemo } from 'react';
-import { formatCount, formatMs, formatPercent } from '../components/insights-ui';
+import { formatCount, formatMs, formatMsShort, formatPercent } from '../components/insights-ui';
 import { Block, IssueList, TopList, timeFormatFor } from '../components/overview-parts';
 import { type OverviewData } from '../types';
 
@@ -68,7 +68,7 @@ export default function Overview({ filters, ranges, projects, sites, overview, s
             header: 'Error rate',
             align: 'right',
             cell: (row) => (
-                <span className={row.errors > 0 ? 'text-danger' : 'text-fg-muted'}>
+                <span className={row.requests > 0 && row.errors / row.requests >= 0.01 ? 'text-danger' : 'text-fg'}>
                     {row.requests > 0 ? formatPercent(row.errors / row.requests) : '—'}
                 </span>
             ),
@@ -177,7 +177,7 @@ export default function Overview({ filters, ranges, projects, sites, overview, s
                         <Stat
                             label="Jobs"
                             value={formatCount(totals.jobs)}
-                            tone={totals.failed_jobs > 0 ? 'danger' : undefined}
+                            tone={totals.jobs > 0 && totals.failed_jobs / totals.jobs >= 0.01 ? 'danger' : undefined}
                             hint={`${formatCount(totals.failed_jobs)} failed`}
                         />
                         <Stat
@@ -210,7 +210,7 @@ export default function Overview({ filters, ranges, projects, sites, overview, s
                             title="p95 latency"
                             data={series}
                             series={[{ key: 'request_p95_ms', label: 'p95' }]}
-                            format={(value) => formatMs(value)}
+                            format={formatMsShort}
                             timeFormat={timeFormat}
                         />
                         <MetricChart

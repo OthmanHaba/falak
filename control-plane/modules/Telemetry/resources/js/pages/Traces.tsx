@@ -6,7 +6,7 @@ import { RelativeTime } from '@/components/kiln/relative-time';
 import { Segmented } from '@/components/kiln/segmented';
 import { Select } from '@/components/kiln/select';
 import ObservabilityLayout from '@/layouts/observability-layout';
-import { router } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 import { Activity, Search } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEventHandler } from 'react';
 import { BackendError, NotConfigured } from '../components/backend-state';
@@ -85,7 +85,13 @@ export default function Traces({ filters: initial, sites, configured }: Props) {
             header: 'Root span',
             cell: (trace) => (
                 <span className="grid min-w-0">
-                    <span className="text-fg truncate font-mono text-xs">{trace.root_name ?? '(unknown root)'}</span>
+                    <Link
+                        href={`/observability/traces/${trace.trace_id}`}
+                        onClick={(event) => event.stopPropagation()}
+                        className="text-fg truncate font-mono text-xs hover:underline"
+                    >
+                        {trace.root_name ?? '(unknown root)'}
+                    </Link>
                     <span className="text-fg-faint text-2xs truncate font-mono">{trace.trace_id}</span>
                 </span>
             ),

@@ -182,6 +182,13 @@ export function HeartbeatTable({
                                       ? `${monitor.actual_24h ?? 0} runs · no schedule to compare`
                                       : `${monitor.actual_24h ?? 0} of ${monitor.expected_24h} expected runs`}
                                   {(monitor.missed_24h ?? 0) > 0 && <span className="text-danger"> · {monitor.missed_24h} missed</span>}
+                                  {(() => {
+                                      const failed = (monitor.slots ?? []).filter(
+                                          (slot) => slot.status === 'failed' || slot.status === 'timeout',
+                                      ).length;
+
+                                      return failed > 0 ? <span className="text-danger"> · {failed} failed</span> : null;
+                                  })()}
                               </span>
                           </span>
                       ),

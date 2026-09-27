@@ -5,7 +5,6 @@ import { Pagination } from '@/components/kiln/pagination';
 import { RelativeTime } from '@/components/kiln/relative-time';
 import { PageHeader } from '@/components/kiln/section';
 import { Segmented } from '@/components/kiln/segmented';
-import { Tag } from '@/components/kiln/tag';
 import { useEchoChannel } from '@/hooks/use-echo-channel';
 import { cn } from '@/lib/utils';
 import { type Paginated, type SharedData } from '@/types';
@@ -28,10 +27,6 @@ function dayLabel(iso: string): string {
     if (isYesterday(date)) return 'Yesterday';
 
     return format(date, 'EEEE, MMM d');
-}
-
-function typeLabel(type: string): string {
-    return type.replace(/[._]/g, ' ');
 }
 
 /** Notification center (docs/UI_DESIGN.md §3): the current user's notifications in this organization, live. */
@@ -149,7 +144,7 @@ export default function Notifications({ notifications, filters, unreadCount }: P
                                                     )}
                                                     <span className="text-fg-faint flex flex-wrap items-center gap-2 text-xs">
                                                         <RelativeTime value={notification.created_at} />
-                                                        <Tag className="capitalize">{typeLabel(notification.type)}</Tag>
+                                                        <span className="font-mono">{notification.type}</span>
                                                     </span>
                                                 </span>
                                             </button>

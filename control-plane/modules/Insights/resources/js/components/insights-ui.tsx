@@ -16,6 +16,13 @@ export function formatMs(ms: number | null | undefined): string {
     return `${ms.toFixed(ms >= 100 ? 0 : 1)} ms`;
 }
 
+/** Compact duration for chart axes ("600ms", "1.2s"). */
+export function formatMsShort(ms: number): string {
+    if (ms >= 1000) return `${(ms / 1000).toFixed(ms >= 10_000 ? 0 : 1)}s`;
+
+    return `${ms.toFixed(ms >= 10 || ms === 0 ? 0 : 1)}ms`;
+}
+
 export function formatCount(value: number): string {
     return new Intl.NumberFormat(undefined, { notation: value >= 10_000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value);
 }

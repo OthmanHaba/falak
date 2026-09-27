@@ -101,7 +101,7 @@ function AttributeList({ values, empty = 'None' }: { values: Record<string, Attr
     return (
         <dl className="divide-border border-border divide-y rounded-md border text-xs">
             {entries.map(([key, value]) => (
-                <div key={key} className="group grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-3 px-2.5 py-1.5">
+                <div key={key} className="group grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 px-2.5 py-1.5">
                     <dt className="text-fg-muted truncate font-mono" title={key}>
                         {key}
                     </dt>
@@ -225,7 +225,7 @@ export function TraceWaterfall({ spans, highlightSpanId, detailsPlacement = 'sid
     const categories = [...new Set(rows.map((row) => spanCategory(row.span)))].filter((category) => CATEGORY_COLORS[category]);
 
     return (
-        <div className={cn('grid min-w-0 gap-4', detailsPlacement === 'side' && selectedSpan && 'xl:grid-cols-[minmax(0,1fr)_380px]')}>
+        <div className={cn('grid min-w-0 gap-4', detailsPlacement === 'side' && selectedSpan && 'xl:grid-cols-[minmax(0,1fr)_420px]')}>
             <div className="border-border bg-surface-1 min-w-0 overflow-hidden rounded-lg border">
                 <div className="border-border flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-3 py-2 text-xs">
                     <span className="text-fg-muted">
@@ -335,7 +335,7 @@ export function TraceWaterfall({ spans, highlightSpanId, detailsPlacement = 'sid
                                         />
                                         <span
                                             className="text-fg-muted tabular absolute top-1/2 -translate-y-1/2 whitespace-nowrap"
-                                            style={left + width > 78 ? { right: `${100 - left + 0.75}%` } : { left: `${left + width + 0.75}%` }}
+                                            style={{ left: `calc(${Math.min(left + width, 100)}% + 6px)` }}
                                         >
                                             {formatDuration(span.duration_ms)}
                                         </span>

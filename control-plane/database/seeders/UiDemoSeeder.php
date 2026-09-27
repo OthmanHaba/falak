@@ -91,5 +91,7 @@ class UiDemoSeeder extends Seeder
         Artisan::call('projects:backfill', ['--organization' => $organization->id]);
         $platform = app(CreateProject::class)($organization->id, $admin->id, ['name' => 'Platform']);
         app(CreateEnvironment::class)($platform, 'staging', $admin->id);
+
+        $this->call(ObservabilityDemoSeeder::class, false, ['organizationId' => $organization->id, 'userId' => $admin->id]);
     }
 }

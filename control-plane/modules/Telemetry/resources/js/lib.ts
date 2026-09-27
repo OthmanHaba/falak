@@ -47,6 +47,7 @@ export function queryString(params: Record<string, string | number | boolean | n
 }
 
 export function formatDuration(ms: number): string {
+    if (ms === 0) return '0ms';
     if (ms < 1) return `${Math.round(ms * 1000)}µs`;
     if (ms < 1000) return `${ms < 10 ? ms.toFixed(1) : Math.round(ms)}ms`;
     if (ms < 60_000) return `${(ms / 1000).toFixed(2)}s`;

@@ -3,6 +3,7 @@ import { EmptyState } from '@/components/kiln/empty-state';
 import { MetricChart, type MetricPoint } from '@/components/kiln/metric-chart';
 import { Segmented } from '@/components/kiln/segmented';
 import { Skeleton } from '@/components/kiln/skeleton';
+import { format } from 'date-fns';
 import { RotateCw, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BackendError, NotConfigured } from '../components/backend-state';
@@ -123,6 +124,8 @@ export default function SiteMetrics({ siteId }: SiteMetricsProps) {
     if (context.status === 'error') return <BackendError size="sm" backend="metrics backend" error={context.error} onRetry={retryContext} />;
     if (!configured) return <NotConfigured size="sm" backend="metrics backend" />;
 
+    const timeFormat = (value: number | string) =>
+        format(new Date(typeof value === 'number' ? value * 1000 : value), range === '7d' ? 'MMM d' : 'HH:mm');
     const perChartError = (key: string) => data?.errors[key];
     const percent = (value: number) => `${value.toFixed(0)}%`;
     const rate = (value: number) => (value >= 100 ? value.toFixed(0) : value >= 1 ? value.toFixed(1) : value.toFixed(2));
@@ -158,6 +161,7 @@ export default function SiteMetrics({ siteId }: SiteMetricsProps) {
                         value={latest(requests) !== null ? rate(latest(requests)!) : undefined}
                         format={rate}
                         loading={loading && data === null}
+                        timeFormat={timeFormat}
                         emptyText={empty('requests')}
                     />
                     <MetricChart
@@ -167,6 +171,7 @@ export default function SiteMetrics({ siteId }: SiteMetricsProps) {
                         value={latest(p95) !== null ? formatDuration(latest(p95)!) : undefined}
                         format={(value) => formatDuration(value)}
                         loading={loading && data === null}
+                        timeFormat={timeFormat}
                         emptyText={empty('p95')}
                     />
                     <MetricChart
@@ -177,6 +182,7 @@ export default function SiteMetrics({ siteId }: SiteMetricsProps) {
                         value={latest(errors) !== null ? rate(latest(errors)!) : undefined}
                         format={rate}
                         loading={loading && data === null}
+                        timeFormat={timeFormat}
                         emptyText={empty('errors')}
                     />
                     {servers.length === 0 ? (
@@ -189,6 +195,7 @@ export default function SiteMetrics({ siteId }: SiteMetricsProps) {
                                 series={servers}
                                 format={percent}
                                 loading={loading && data === null}
+                                timeFormat={timeFormat}
                                 emptyText={empty('cpu')}
                             />
                             <MetricChart
@@ -197,6 +204,7 @@ export default function SiteMetrics({ siteId }: SiteMetricsProps) {
                                 series={servers}
                                 format={percent}
                                 loading={loading && data === null}
+                                timeFormat={timeFormat}
                                 emptyText={empty('memory')}
                             />
                         </>

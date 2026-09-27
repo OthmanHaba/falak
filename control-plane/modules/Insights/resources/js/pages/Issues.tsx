@@ -12,7 +12,7 @@ import { Tooltip } from '@/components/kiln/tooltip';
 import ObservabilityLayout from '@/layouts/observability-layout';
 import { cn } from '@/lib/utils';
 import { type Paginated } from '@/types';
-import { router } from '@inertiajs/react';
+import { Link, router } from '@inertiajs/react';
 import { Bug, CheckCircle2, EyeOff, RotateCcw, Search, X } from 'lucide-react';
 import { useEffect, useState, type FormEventHandler } from 'react';
 import { formatCount, KIND, priorityLabel, PriorityTag } from '../components/insights-ui';
@@ -125,9 +125,13 @@ export default function Issues({ issues, filters, counts, members, sites, priori
                             aria-label={KIND[row.kind].label}
                         />
                         <span className="grid min-w-0 gap-0.5">
-                            <span className={cn('truncate text-sm', row.status === 'open' ? 'text-fg font-medium' : 'text-fg-muted')}>
+                            <Link
+                                href={`/observability/issues/${row.id}`}
+                                onClick={(event) => event.stopPropagation()}
+                                className={cn('truncate text-sm hover:underline', row.status === 'open' ? 'text-fg font-medium' : 'text-fg-muted')}
+                            >
                                 {row.title}
-                            </span>
+                            </Link>
                             <span className="text-fg-faint flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
                                 {row.culprit && <span className="max-w-full truncate font-mono">{row.culprit}</span>}
                                 {row.site_name && <span>{row.site_name}</span>}
@@ -153,7 +157,7 @@ export default function Issues({ issues, filters, counts, members, sites, priori
                     <Sparkline
                         values={row.sparkline}
                         label="Occurrences per hour, last 24 hours"
-                        tone={row.handled === false ? 'danger' : 'accent'}
+                        tone={row.status !== 'open' ? 'muted' : row.handled === false ? 'danger' : 'accent'}
                     />
                 ) : (
                     <span className="text-fg-faint text-xs">—</span>
@@ -186,8 +190,8 @@ export default function Issues({ issues, filters, counts, members, sites, priori
             id: 'seen',
             header: 'Last seen',
             align: 'right',
-            width: '104px',
-            cell: (row) => <RelativeTime value={row.last_seen_at} className="text-fg-muted text-xs" />,
+            width: '132px',
+            cell: (row) => <RelativeTime value={row.last_seen_at} className="text-fg-muted text-xs whitespace-nowrap" />,
         },
     ];
 

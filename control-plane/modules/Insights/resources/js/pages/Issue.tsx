@@ -17,8 +17,17 @@ import { format } from 'date-fns';
 import { Activity, ArrowLeft, CheckCircle2, ExternalLink, EyeOff, RotateCcw, ScrollText, Trash2 } from 'lucide-react';
 import { useState, type FormEventHandler } from 'react';
 import { TraceTimelineCard } from '../../../../Telemetry/resources/js/components/trace-waterfall';
-import { formatCount, formatMs, IssueKindTag, IssueStatusBadge, priorityLabel, PriorityTag, StackTraceView } from '../components/insights-ui';
-import { Block } from '../components/overview-parts';
+import {
+    formatCount,
+    formatMs,
+    formatMsShort,
+    IssueKindTag,
+    IssueStatusBadge,
+    priorityLabel,
+    PriorityTag,
+    StackTraceView,
+} from '../components/insights-ui';
+import { Block, timeFormatFor } from '../components/overview-parts';
 import { type Frame, type IssuePriority, type IssueStatus, type IssueSummary, type Member } from '../types';
 
 interface IssueDetail extends IssueSummary {
@@ -254,8 +263,8 @@ export default function Issue({ issue, occurrences, timeline, monitor, activity,
                 </div>
             }
         >
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-                <div className="grid min-w-0 content-start gap-6">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+                <div className="grid min-w-0 grid-cols-1 content-start gap-6">
                     <MetricChart
                         title={performance ? 'p95 · last 24 hours' : 'Occurrences · last 24 hours'}
                         type={performance ? 'line' : 'bar'}
@@ -268,8 +277,9 @@ export default function Issue({ issue, occurrences, timeline, monitor, activity,
                                   ]
                                 : [{ key: 'value', label: 'Occurrences' }]
                         }
-                        format={performance ? (value) => formatMs(value) : (value) => formatCount(Math.round(value))}
+                        format={performance ? formatMsShort : (value) => formatCount(Math.round(value))}
                         height={150}
+                        timeFormat={timeFormatFor('24h')}
                     />
 
                     <Tabs defaultValue={issue.kind === 'exception' ? 'stack' : monitor ? 'runs' : performance ? 'details' : 'activity'}>

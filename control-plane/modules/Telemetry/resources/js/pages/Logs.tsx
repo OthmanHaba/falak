@@ -56,8 +56,8 @@ export default function Logs({ filters: initial, servers, sites, levels, configu
                         onChange={(event) => setSearch(event.target.value)}
                         onBlur={() => update({ search: search.trim() || undefined })}
                         prefix={<Search />}
-                        placeholder={filters.regex ? 'Regular expression (press Enter)' : 'Search log lines (press Enter)'}
-                        aria-label="Search log lines"
+                        placeholder={filters.regex ? 'Regular expression (press Enter)' : 'Filter log lines (press Enter)'}
+                        aria-label="Filter log lines"
                         mono
                     />
                 </form>
