@@ -84,3 +84,8 @@ it('always scopes LogQL to the organization and escapes user input', function ()
     expect(LogQueryBuilder::build('org', ['search' => 'a.*b', 'regex' => true]))->toBe('{kiln_org_id="ORG"} |~ "a.*b"')
         ->and(fn () => LogQueryBuilder::build('org', ['search' => '(unclosed', 'regex' => true]))->toThrow(InvalidArgumentException::class);
 });
+
+it('filters compose container logs by compose service (structured metadata)', function () {
+    expect(LogQueryBuilder::build('org', ['site_id' => 'site', 'compose_service' => 'redis', 'search' => 'ready']))
+        ->toBe('{kiln_org_id="ORG", kiln_site_id="SITE"} | kiln_compose_service="redis" |= "ready"');
+});

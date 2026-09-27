@@ -21,7 +21,7 @@ registerServiceTabs(
         title: 'Logs',
         order: 400,
         permission: 'telemetry.view',
-        component: ({ ctx }: ServiceTabProps) => createElement(SiteLogs, { siteId: ctx.service.ref_id }),
+        component: ({ ctx }: ServiceTabProps) => createElement(SiteLogs, { siteId: ctx.service.ref_id, composeService: ctx.item ?? undefined, onClearComposeService: () => ctx.open('logs') }),
     },
 );
 
