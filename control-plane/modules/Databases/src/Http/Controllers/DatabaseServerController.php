@@ -2,6 +2,7 @@
 
 namespace Kiln\Databases\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -32,7 +33,10 @@ final class DatabaseServerController extends Controller
         private readonly OrganizationAccess $access,
     ) {}
 
-    public function index(Request $request, EngineInventory $inventory): Response
+    /**
+     * Engine servers page; JSON (engine servers only) for the canvas Create picker's Database step.
+     */
+    public function index(Request $request, EngineInventory $inventory): Response|JsonResponse
     {
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, DatabasesPolicy::VIEW);
@@ -44,6 +48,10 @@ final class DatabaseServerController extends Controller
             ->withCount(['databases', 'users'])
             ->orderBy('server_name')
             ->get();
+
+        if ($request->wantsJson() && $request->header('X-Inertia') === null) {
+            return response()->json(['data' => $servers->map(fn (DatabaseServer $server) => $this->presentServer($server))->values()]);
+        }
 
         $recent = Backup::query()->with('storageProvider')->where('organization_id', $organizationId)->latest()->orderByDesc('id')->limit(10)->get();
 

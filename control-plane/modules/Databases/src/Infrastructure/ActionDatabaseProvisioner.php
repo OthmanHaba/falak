@@ -4,11 +4,13 @@ namespace Kiln\Databases\Infrastructure;
 
 use Illuminate\Validation\ValidationException;
 use Kiln\Databases\Application\Actions\CreateDatabase;
+use Kiln\Databases\Application\Actions\DeleteDatabase;
 use Kiln\Databases\Application\EngineInventory;
 use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Databases\Contracts\DatabaseDirectory;
 use Kiln\Databases\Contracts\DatabaseProvisioner;
 use Kiln\Databases\Domain\Enums\Engine;
+use Kiln\Databases\Domain\Models\Database;
 use Kiln\Databases\Domain\Models\DatabaseServer;
 use LogicException;
 
@@ -18,6 +20,7 @@ final class ActionDatabaseProvisioner implements DatabaseProvisioner
         private readonly EngineInventory $inventory,
         private readonly CreateDatabase $createDatabase,
         private readonly DatabaseDirectory $directory,
+        private readonly DeleteDatabase $deleteDatabase,
     ) {}
 
     public function create(string $organizationId, string $serverId, string $engine, string $name, ?string $actorId = null): DatabaseData
@@ -41,6 +44,13 @@ final class ActionDatabaseProvisioner implements DatabaseProvisioner
         ], $actorId);
 
         return $this->directory->find($database->id) ?? throw new LogicException('Created database not found.');
+    }
+
+    public function delete(string $databaseId): void
+    {
+        if ($database = Database::query()->find(strtolower($databaseId))) {
+            ($this->deleteDatabase)($database);
+        }
     }
 
     /** The database name, suffixed when the server already has a user of that name. */

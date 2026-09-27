@@ -2,6 +2,7 @@
 
 namespace Kiln\Insights\Http\Controllers;
 
+use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,6 +14,7 @@ use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Insights\Application\Actions\UpdateHeartbeatMonitor;
 use Kiln\Insights\Contracts\SiteNameResolver;
 use Kiln\Insights\Domain\Models\HeartbeatMonitor;
+use Kiln\Insights\Domain\Models\HeartbeatRun;
 use Kiln\Insights\Domain\Support\CronSchedule;
 use Kiln\Kernel\Http\Controller;
 
@@ -27,7 +29,11 @@ final class HeartbeatController extends Controller
         $names = $sites->names(array_values(array_unique(array_filter($monitors->pluck('site_id')->all()))));
 
         return Inertia::render('Insights/Heartbeats', [
-            'monitors' => $monitors->map(fn (HeartbeatMonitor $m) => [...self::present($m), 'site_name' => $m->site_id ? ($names[$m->site_id] ?? $m->site_id) : null])->values(),
+            'monitors' => $monitors->map(fn (HeartbeatMonitor $m) => [
+                ...self::present($m),
+                'site_name' => $m->site_id ? ($names[$m->site_id] ?? $m->site_id) : null,
+                ...self::expectedVsActual($m),
+            ])->values(),
             'defaultGraceSeconds' => (int) config('insights.heartbeats.grace_seconds', 120),
             'can' => ['manage' => $access->can($request->user(), $organizationId, 'insights.manage')],
         ]);
@@ -62,6 +68,53 @@ final class HeartbeatController extends Controller
         $audit->record('insights.heartbeat.deleted', 'insights_heartbeat', $monitor->id, ['job' => $monitor->job], $monitor->organization_id);
 
         return back();
+    }
+
+    /**
+     * Expected runs (from the schedule) against recorded runs over the last 24 hours, plus a slot strip for the UI:
+     * each expected run with the status of the run that answered it, or "missed".
+     *
+     * @return array{expected_24h: int|null, actual_24h: int, missed_24h: int|null, slots: list<array{at: string, status: string, duration_ms: int|null}>}
+     */
+    public static function expectedVsActual(HeartbeatMonitor $monitor, ?CarbonImmutable $now = null, int $maxSlots = 48): array
+    {
+        $now = ($now ?? CarbonImmutable::now('UTC'))->utc();
+        $since = $now->subDay();
+        $runs = $monitor->runs()->where('scheduled_at', '>=', $since)->orderBy('scheduled_at')->get();
+        $cron = $monitor->enabled ? $monitor->cron() : null;
+
+        if ($cron === null) {
+            return [
+                'expected_24h' => null,
+                'actual_24h' => $runs->count(),
+                'missed_24h' => null,
+                'slots' => $runs->slice(-$maxSlots)->map(fn (HeartbeatRun $run) => ['at' => $run->scheduled_at->toIso8601String(), 'status' => $run->status, 'duration_ms' => $run->duration_ms])->values()->all(),
+            ];
+        }
+
+        // Only slots whose grace period has elapsed can be missed; start at the later of 24h ago and first sight.
+        $deadline = $now->subSeconds($monitor->graceSeconds());
+        $start = $monitor->created_at && $monitor->created_at->greaterThan($since) ? CarbonImmutable::instance($monitor->created_at)->subMinute() : $since;
+        $expected = [];
+
+        for ($at = $cron->nextAfter($start); $at->lessThanOrEqualTo($deadline) && count($expected) < 1440; $at = $cron->nextAfter($at)) {
+            $expected[] = $at;
+        }
+
+        $byMinute = $runs->keyBy(fn (HeartbeatRun $run) => CarbonImmutable::instance($run->scheduled_at)->utc()->startOfMinute()->timestamp);
+        $slots = array_map(function (CarbonImmutable $at) use ($byMinute) {
+            $run = $byMinute->get($at->startOfMinute()->timestamp);
+
+            return ['at' => $at->toIso8601String(), 'status' => $run?->status ?? 'missed', 'duration_ms' => $run?->duration_ms];
+        }, $expected);
+        $missed = count(array_filter($slots, fn (array $slot) => $slot['status'] === 'missed'));
+
+        return [
+            'expected_24h' => count($expected),
+            'actual_24h' => $runs->count(),
+            'missed_24h' => $missed,
+            'slots' => array_values(array_slice($slots, -$maxSlots)),
+        ];
     }
 
     /**

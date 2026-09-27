@@ -7,6 +7,7 @@ use Kiln\Insights\Contracts\IssueStatus;
 use Kiln\Insights\Contracts\SiteNameResolver;
 use Kiln\Insights\Domain\Models\Issue;
 use Kiln\Insights\Domain\Models\IssueComment;
+use Kiln\Projects\Application\Actions\CreateProject;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -24,20 +25,29 @@ beforeEach(function () {
     $this->issue = Issue::query()->where('site_id', INSIGHTS_SITE)->sole();
 });
 
-it('lists sites with 24h stats', function () {
-    $this->get('/insights')->assertOk()->assertInertia(fn ($page) => $page
-        ->component('Insights/Index', false)
+it('renders the organization-wide overview with a per-site breakdown', function () {
+    $this->get('/observability')->assertOk()->assertInertia(fn ($page) => $page
+        ->component('Insights/Overview', false)
+        ->where('filters.range', '24h')
         ->has('sites', 2)
+        ->has('siteRows', 2)
         ->where('openIssues', 2)
-        ->where('sites', fn ($sites) => collect($sites)->firstWhere('id', INSIGHTS_SITE)['requests_24h'] === 100
-            && collect($sites)->firstWhere('id', INSIGHTS_SITE)['exceptions_24h'] === 1
+        ->where('overview.totals.requests', 100)
+        ->where('overview.totals.exceptions_unhandled', 2)
+        ->has('overview.issues', 2)
+        ->where('siteRows', fn ($sites) => collect($sites)->firstWhere('id', INSIGHTS_SITE)['requests'] === 100
+            && collect($sites)->firstWhere('id', INSIGHTS_SITE)['exceptions'] === 1
             && collect($sites)->firstWhere('id', INSIGHTS_SITE)['open_issues'] === 1));
+
+    $this->get('/observability?range=30d')->assertOk()->assertInertia(fn ($page) => $page->where('filters.range', '30d')->has('overview.series', 60));
+    $this->get('/observability?range=5y')->assertSessionHasErrors('range');
 });
 
-it('renders the app overview from aggregates with telemetry deep links', function () {
-    $this->get('/insights/sites/'.INSIGHTS_SITE.'?range=1h')->assertOk()->assertInertia(fn ($page) => $page
+it('renders the app overview for one site from aggregates with telemetry deep links', function () {
+    $this->get('/observability?site='.INSIGHTS_SITE.'&range=1h')->assertOk()->assertInertia(fn ($page) => $page
         ->component('Insights/Overview', false)
-        ->where('site.id', INSIGHTS_SITE)
+        ->where('filters.site', INSIGHTS_SITE)
+        ->where('siteRows', [])
         ->where('overview.totals.requests', 100)
         ->where('overview.totals.request_errors', 1)
         ->where('overview.totals.request_p95_ms', 120)
@@ -51,11 +61,58 @@ it('renders the app overview from aggregates with telemetry deep links', functio
         ->where('overview.queries.0.max_ms', 2500)
         ->where('overview.jobs.0.errors', 2)
         ->has('overview.issues', 1)
-        ->where('links.logs', fn ($url) => str_contains($url, '/telemetry/logs') && str_contains($url, INSIGHTS_SITE))
-        ->where('links.traces', fn ($url) => str_contains($url, '/telemetry/traces')));
+        ->where('links.logs', fn ($url) => str_contains($url, '/observability/logs') && str_contains($url, INSIGHTS_SITE))
+        ->where('links.traces', fn ($url) => str_contains($url, '/observability/traces')));
 
-    $this->get('/insights/sites/'.INSIGHTS_SITE.'?range=5y')->assertSessionHasErrors('range');
+    $this->get('/observability?site=not-a-site')->assertSessionHasErrors('site');
+});
+
+it('filters the overview by project', function () {
+    $project = app(CreateProject::class)($this->organization->id, $this->user->id, ['name' => 'Empty']);
+
+    $this->get('/observability?project='.$project->id)->assertOk()->assertInertia(fn ($page) => $page
+        ->where('filters.project', $project->id)
+        ->has('projects')
+        ->where('overview.totals.requests', 0)
+        ->has('siteRows', 0));
+});
+
+it('returns the site summary for the service panel', function () {
+    $this->getJson('/insights/sites/'.INSIGHTS_SITE.'/summary?range=1h')->assertOk()
+        ->assertJsonPath('site.id', INSIGHTS_SITE)
+        ->assertJsonPath('overview.totals.requests', 100)
+        ->assertJsonPath('overview.routes.0.name', 'GET /products')
+        ->assertJsonPath('open_issues', 1)
+        ->assertJsonPath('links.issues', '/observability/issues?site='.INSIGHTS_SITE);
+
+    $this->getJson('/insights/sites/'.INSIGHTS_SITE.'/summary?range=5y')->assertUnprocessable();
+});
+
+it('redirects the legacy insights pages', function () {
+    $this->get('/insights')->assertRedirect('/observability');
+    $this->get('/insights/issues?status=all')->assertRedirect('/observability/issues?status=all');
+    $this->get("/insights/issues/{$this->issue->id}")->assertRedirect("/observability/issues/{$this->issue->id}");
+    $this->get('/insights/heartbeats')->assertRedirect('/observability/heartbeats');
+    $this->get('/insights/sites/'.INSIGHTS_SITE.'?range=1h')->assertRedirect('/observability?site='.INSIGHTS_SITE.'&range=1h');
     $this->get('/insights/sites/not-a-site')->assertNotFound();
+    expect($this->issue->url())->toEndWith("/observability/issues/{$this->issue->id}");
+});
+
+it('bulk-resolves and ignores issues', function () {
+    $other = Issue::query()->where('site_id', INSIGHTS_OTHER_SITE)->sole();
+
+    $this->put('/insights/issues/bulk/status', ['ids' => [$this->issue->id, $other->id], 'status' => 'resolved'])->assertRedirect()->assertSessionHas('success', '2 issues resolved.');
+    expect($this->issue->refresh()->status)->toBe(IssueStatus::Resolved)->and($other->refresh()->status)->toBe(IssueStatus::Resolved);
+
+    $this->put('/insights/issues/bulk/status', ['ids' => [$other->id], 'status' => 'ignored'])->assertSessionHas('success', 'Issue ignored.');
+    $this->put('/insights/issues/bulk/status', ['ids' => [], 'status' => 'ignored'])->assertSessionHasErrors('ids');
+    $this->put('/insights/issues/bulk/status', ['ids' => [$other->id], 'status' => 'nope'])->assertSessionHasErrors('status');
+
+    [$viewer] = memberOf($this->organization, Role::Viewer);
+    $this->actingAs($viewer)->put('/insights/issues/bulk/status', ['ids' => [$other->id], 'status' => 'open'])->assertForbidden();
+
+    actingAsMember(Role::Owner);
+    $this->put('/insights/issues/bulk/status', ['ids' => [$other->id], 'status' => 'open'])->assertNotFound();
 });
 
 it('uses the bound SiteNameResolver for names', function () {
@@ -72,23 +129,25 @@ it('uses the bound SiteNameResolver for names', function () {
         }
     });
 
-    $this->get('/insights/issues')->assertInertia(fn ($page) => $page->where('issues.data.0.site_name', fn ($name) => str_starts_with($name, 'site-')));
+    $this->get('/observability/issues')->assertInertia(fn ($page) => $page->where('issues.data.0.site_name', fn ($name) => str_starts_with($name, 'site-')));
 });
 
 it('filters, searches and sorts the issue list', function () {
-    $this->get('/insights/issues')->assertOk()->assertInertia(fn ($page) => $page->component('Insights/Issues', false)->has('issues.data', 2)->where('filters.status', 'open'));
-    $this->get('/insights/issues?site='.INSIGHTS_SITE)->assertInertia(fn ($page) => $page->has('issues.data', 1)->where('issues.data.0.id', $this->issue->id));
-    $this->get('/insights/issues?search=invariant')->assertInertia(fn ($page) => $page->has('issues.data', 1)->where('issues.data.0.title', 'LogicException: Broken invariant'));
-    $this->get('/insights/issues?search=%25')->assertInertia(fn ($page) => $page->has('issues.data', 0));
-    $this->get('/insights/issues?status=resolved')->assertInertia(fn ($page) => $page->has('issues.data', 0));
-    $this->get('/insights/issues?kind=performance')->assertInertia(fn ($page) => $page->has('issues.data', 0));
-    $this->get('/insights/issues?sort=occurrences&status=all')->assertInertia(fn ($page) => $page->has('issues.data', 2));
-    $this->get('/insights/issues?assignee=me')->assertInertia(fn ($page) => $page->has('issues.data', 0));
-    $this->get('/insights/issues?sort=random')->assertSessionHasErrors('sort');
+    $this->get('/observability/issues')->assertOk()->assertInertia(fn ($page) => $page->component('Insights/Issues', false)->has('issues.data', 2)->where('filters.status', 'open')
+        ->where('counts.open', 2)->where('counts.resolved', 0)->where('counts.all', 2)
+        ->where('issues.data.0.sparkline', fn ($line) => collect($line)->count() === 24 && collect($line)->sum() === 1));
+    $this->get('/observability/issues?site='.INSIGHTS_SITE)->assertInertia(fn ($page) => $page->has('issues.data', 1)->where('issues.data.0.id', $this->issue->id));
+    $this->get('/observability/issues?search=invariant')->assertInertia(fn ($page) => $page->has('issues.data', 1)->where('issues.data.0.title', 'LogicException: Broken invariant'));
+    $this->get('/observability/issues?search=%25')->assertInertia(fn ($page) => $page->has('issues.data', 0));
+    $this->get('/observability/issues?status=resolved')->assertInertia(fn ($page) => $page->has('issues.data', 0));
+    $this->get('/observability/issues?kind=performance')->assertInertia(fn ($page) => $page->has('issues.data', 0));
+    $this->get('/observability/issues?sort=occurrences&status=all')->assertInertia(fn ($page) => $page->has('issues.data', 2));
+    $this->get('/observability/issues?assignee=me')->assertInertia(fn ($page) => $page->has('issues.data', 0));
+    $this->get('/observability/issues?sort=random')->assertSessionHasErrors('sort');
 });
 
 it('shows the issue with its stack trace, occurrences and trace links', function () {
-    $this->get("/insights/issues/{$this->issue->id}")->assertOk()->assertInertia(fn ($page) => $page
+    $this->get("/observability/issues/{$this->issue->id}")->assertOk()->assertInertia(fn ($page) => $page
         ->component('Insights/Issue', false)
         ->where('issue.id', $this->issue->id)
         ->where('issue.frames.0.file', 'app/Services/Checkout.php')
@@ -96,7 +155,7 @@ it('shows the issue with its stack trace, occurrences and trace links', function
         ->where('issue.frames.2.in_app', false)
         ->where('issue.trace_id', $this->issue->last_trace_id)
         ->has('occurrences', 1)
-        ->where('occurrences.0.trace_url', fn ($url) => str_contains($url, "/telemetry/traces/{$this->issue->last_trace_id}"))
+        ->where('occurrences.0.trace_url', fn ($url) => str_contains($url, "/observability/traces/{$this->issue->last_trace_id}"))
         ->has('timeline', 24)
         ->where('links.trace', fn ($url) => str_contains($url, $this->issue->last_trace_id))
         ->where('links.traceLogs', fn ($url) => str_contains($url, $this->issue->last_trace_id))
@@ -122,7 +181,7 @@ it('supports assigning, prioritising and commenting', function () {
         ->and($this->issue->activities()->pluck('type')->all())->toBe(['opened', 'assigned', 'priority', 'commented'])
         ->and(AuditEntry::query()->where('action', 'insights.issue.assigned')->exists())->toBeTrue();
 
-    $this->get('/insights/issues?assignee='.$teammate->id)->assertInertia(fn ($page) => $page->has('issues.data', 1)->where('issues.data.0.assignee.name', $teammate->name));
+    $this->get('/observability/issues?assignee='.$teammate->id)->assertInertia(fn ($page) => $page->has('issues.data', 1)->where('issues.data.0.assignee.name', $teammate->name));
     $this->put("/insights/issues/{$this->issue->id}/assignee", ['assignee_id' => null])->assertSessionHasNoErrors();
     expect($this->issue->refresh()->assignee_id)->toBeNull();
 
@@ -146,17 +205,18 @@ it('reopens ignored issues and records the audit trail', function () {
 it('enforces permissions and organization isolation', function () {
     [$viewer] = memberOf($this->organization, Role::Viewer);
     $this->actingAs($viewer);
-    $this->get("/insights/issues/{$this->issue->id}")->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false));
+    $this->get("/observability/issues/{$this->issue->id}")->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false));
     $this->put("/insights/issues/{$this->issue->id}/status", ['status' => 'resolved'])->assertForbidden();
     $this->post("/insights/issues/{$this->issue->id}/comments", ['body' => 'hi'])->assertForbidden();
 
     actingAsMember(Role::Owner);
-    $this->get("/insights/issues/{$this->issue->id}")->assertNotFound();
+    $this->get("/observability/issues/{$this->issue->id}")->assertNotFound();
     $this->put("/insights/issues/{$this->issue->id}/priority", ['priority' => 'high'])->assertNotFound();
-    $this->get('/insights/issues')->assertInertia(fn ($page) => $page->has('issues.data', 0));
-    $this->get('/insights')->assertInertia(fn ($page) => $page->has('sites', 0));
-    $this->get('/insights/sites/'.INSIGHTS_SITE)->assertInertia(fn ($page) => $page->where('overview.totals.requests', 0));
+    $this->get('/observability/issues')->assertInertia(fn ($page) => $page->has('issues.data', 0));
+    $this->get('/observability')->assertInertia(fn ($page) => $page->has('sites', 0));
+    $this->get('/observability?site='.INSIGHTS_SITE)->assertInertia(fn ($page) => $page->where('overview.totals.requests', 0));
+    $this->getJson('/insights/sites/'.INSIGHTS_SITE.'/summary')->assertOk()->assertJsonPath('overview.totals.requests', 0);
 
     auth()->logout();
-    $this->get('/insights')->assertRedirect('/login');
+    $this->get('/observability')->assertRedirect('/login');
 });

@@ -143,9 +143,9 @@ it('builds in-app and Grafana deep links', function () {
     $links = app(TelemetryLinks::class);
     $from = CarbonImmutable::parse('2026-09-27T10:00:00Z');
 
-    expect($links->trace('ABCDEF0123456789ABCDEF0123456789'))->toBe('/telemetry/traces/abcdef0123456789abcdef0123456789')
-        ->and($links->logs(['site_id' => 'S1', 'search' => 'error', 'bogus' => 'x'], $from))->toBe('/telemetry/logs?site_id=S1&search=error&from=2026-09-27T10%3A00%3A00%2B00%3A00')
-        ->and($links->traceSearch(['site_id' => 'S1', 'min_duration_ms' => 1000]))->toBe('/telemetry/traces?site_id=S1&min_duration_ms=1000')
+    expect($links->trace('ABCDEF0123456789ABCDEF0123456789'))->toBe('/observability/traces/abcdef0123456789abcdef0123456789')
+        ->and($links->logs(['site_id' => 'S1', 'search' => 'error', 'bogus' => 'x'], $from))->toBe('/observability/logs?site_id=S1&search=error&from=2026-09-27T10%3A00%3A00%2B00%3A00')
+        ->and($links->traceSearch(['site_id' => 'S1', 'min_duration_ms' => 1000]))->toBe('/observability/traces?site_id=S1&min_duration_ms=1000')
         ->and($links->grafanaTrace('abc'))->toStartWith('https://grafana.example.com/explore?schemaVersion=1&panes=')
         ->and($links->grafanaDashboard('01jorg0000000000000000000a', 'kiln-laravel', ['site' => 'S1']))
         ->toBe('https://grafana.example.com/d/kiln-laravel-000000000a?var-site=S1');

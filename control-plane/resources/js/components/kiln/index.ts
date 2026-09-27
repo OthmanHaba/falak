@@ -15,6 +15,7 @@ export { ConfirmDestructive, type ConfirmDestructiveProps } from './confirm-dest
 export { CopyButton, copyText, type CopyButtonProps } from './copy-button';
 export { DataTable, type DataTableColumn, type DataTableProps, type SortState } from './data-table';
 export { Dialog, DialogClose, DialogTrigger, type DialogProps } from './dialog';
+export { EmptyCanvas, type EmptyCanvasProps } from './empty-canvas';
 export { EmptyState, type EmptyStateProps } from './empty-state';
 export { EnvironmentSwitcher } from './environment-switcher';
 export { Field, useFieldControl, type FieldProps } from './field';
@@ -48,6 +49,7 @@ export { RelativeTime, formatRelative } from './relative-time';
 export { SecretInput, type SecretInputProps } from './secret-input';
 export { PageHeader, Section, type SectionProps } from './section';
 export { Select, type SelectOption, type SelectProps } from './select';
+export { ServiceCard, type ServiceCardProps } from './service-card';
 export { ServiceIcon, hasServiceIcon, type ServiceIconProps } from './service-icon';
 export { SetupChecklist, defaultSetupSteps, type SetupChecklistProps, type SetupProgress, type SetupStep } from './setup-checklist';
 export { Skeleton, SkeletonRows } from './skeleton';

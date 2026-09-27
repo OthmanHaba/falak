@@ -64,7 +64,7 @@ it('routes a php-fpm site on two servers and applies the edge on creation', func
     expect($this->agents->last('edge.caddy.apply')['payload']['sites'][0]['domains'])->toContain('www.shop.example.com');
 
     // The primary domain shows up in the Sites header.
-    $this->get("/sites/{$site->id}")->assertInertia(fn ($page) => $page->where('site.primary_domain', 'www.shop.example.com'));
+    $this->get("/sites/{$site->id}/settings")->assertInertia(fn ($page) => $page->where('site.primary_domain', 'www.shop.example.com'));
 });
 
 it('re-applies after a PHP version change and not for unrelated changes', function () {

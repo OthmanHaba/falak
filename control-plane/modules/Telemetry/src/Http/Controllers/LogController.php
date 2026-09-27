@@ -15,6 +15,8 @@ use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\Sites\Contracts\Data\SiteData;
+use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Telemetry\Application\Queries\LogQueryBuilder;
 use Kiln\Telemetry\Contracts\Data\LogLine;
 use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
@@ -32,7 +34,7 @@ final class LogController extends Controller
         private readonly OrganizationAccess $access,
     ) {}
 
-    public function index(Request $request, ServerDirectory $servers): Response
+    public function index(Request $request, ServerDirectory $servers, SiteDirectory $sites): Response
     {
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, 'telemetry.view');
@@ -40,6 +42,7 @@ final class LogController extends Controller
         return Inertia::render('Telemetry/Logs', [
             'filters' => $request->only(['server_id', 'site_id', 'service', 'level', 'search', 'regex', 'trace_id', 'range', 'from', 'to']),
             'servers' => array_map(fn (ServerData $s) => ['id' => $s->id, 'name' => $s->name], $servers->forOrganization($organizationId)),
+            'sites' => array_map(fn (SiteData $s) => ['id' => $s->id, 'name' => $s->name], $sites->forOrganization($organizationId)),
             'levels' => self::LEVELS,
             'configured' => (string) config('telemetry.loki.url') !== '',
         ]);

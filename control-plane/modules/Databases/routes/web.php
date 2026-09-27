@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use Kiln\Databases\Http\Controllers\BackupController;
 use Kiln\Databases\Http\Controllers\BackupScheduleController;
 use Kiln\Databases\Http\Controllers\DatabaseController;
+use Kiln\Databases\Http\Controllers\DatabasePanelController;
 use Kiln\Databases\Http\Controllers\DatabaseServerController;
 use Kiln\Databases\Http\Controllers\DatabaseUserController;
 use Kiln\Databases\Http\Controllers\StorageProviderController;
@@ -24,6 +25,7 @@ Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->gro
     Route::post('servers/{databaseServer}/users', [DatabaseUserController::class, 'store'])->name('users.store');
     Route::post('servers/{databaseServer}/schedules', [BackupScheduleController::class, 'store'])->name('schedules.store');
 
+    Route::get('databases/{database}', [DatabasePanelController::class, 'show'])->name('databases.show');
     Route::delete('databases/{database}', [DatabaseController::class, 'destroy'])->name('databases.destroy');
     Route::post('databases/{database}/backups', [DatabaseController::class, 'backup'])->name('databases.backup');
 
@@ -44,4 +46,7 @@ Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->gro
     Route::put('storage/{storageProvider}', [StorageProviderController::class, 'update'])->name('storage.update');
     Route::post('storage/{storageProvider}/verify', [StorageProviderController::class, 'verify'])->name('storage.verify');
     Route::delete('storage/{storageProvider}', [StorageProviderController::class, 'destroy'])->name('storage.destroy');
+
+    // Legacy / short link to one database: opens its canvas panel.
+    Route::get('{database}', [DatabasePanelController::class, 'show'])->where('database', '[0-9A-Za-z]{26}')->name('databases.open');
 });

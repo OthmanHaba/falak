@@ -25,10 +25,14 @@ Route::middleware(['auth', 'org'])->prefix('projects')->name('projects.')->group
 
     Route::get('{project}/{environment}', [CanvasController::class, 'show'])->where($patterns)->name('canvas');
     Route::get('{project}/{environment}/canvas', [CanvasController::class, 'canvas'])->where($patterns)->name('canvas.data');
-    Route::get('{project}/{environment}/service/{kind}/{id}/{tab?}', [CanvasController::class, 'panel'])
-        ->where([...$patterns, 'kind' => 'site|database', 'id' => $ulid, 'tab' => '[a-z0-9-]+'])
+    Route::get('{project}/{environment}/activity', [CanvasController::class, 'activity'])->where($patterns)->name('canvas.activity');
+    // {item}: a record inside the tab, e.g. the Deploy view of one deployment (…/deployments/{deployment}).
+    Route::get('{project}/{environment}/service/{kind}/{id}/{tab?}/{item?}', [CanvasController::class, 'panel'])
+        ->where([...$patterns, 'kind' => 'site|database', 'id' => $ulid, 'tab' => '[a-z0-9-]+', 'item' => '[A-Za-z0-9-]{1,64}'])
         ->name('canvas.service');
 
     Route::post('{project}/{environment}/services', [ServiceController::class, 'store'])->where($patterns)->name('services.store');
+    Route::patch('{project}/{environment}/services/{service}', [ServiceController::class, 'update'])->where($patterns)->name('services.update');
+    Route::delete('{project}/{environment}/services/{service}', [ServiceController::class, 'destroy'])->where($patterns)->name('services.destroy');
     Route::patch('{project}/{environment}/services/{service}/position', [ServiceController::class, 'position'])->where($patterns)->name('services.position');
 });

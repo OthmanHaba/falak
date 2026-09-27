@@ -25,6 +25,9 @@ const ULID = '([0-9A-Za-z]{26})';
 
 export const params: Record<string, ParamSource> = {
     site: { from: '/sites', match: new RegExp(`^/sites/${ULID}$`) },
+    issue: { from: '/observability/issues?status=all', match: new RegExp(`^/observability/issues/${ULID}$`) },
+    exception: { from: '/observability/issues?kind=exception&sort=occurrences', match: new RegExp(`^/observability/issues/${ULID}$`) },
+    trace: { from: '/observability/traces', match: /^\/observability\/traces\/([0-9a-f]{16,32})$/ },
     server: { from: '/servers', match: new RegExp(`^/servers/${ULID}$`) },
     // infrastructure: servers in other lifecycle states (the fleet table honours ?status=), runs, recordings, networks
     waitingServer: { from: '/servers?status=creating', match: new RegExp(`^/servers/${ULID}$`) },
@@ -33,6 +36,9 @@ export const params: Record<string, ParamSource> = {
     recipeRun: { from: '/recipes/runs', match: new RegExp(`^/recipes/runs/${ULID}$`) },
     recording: { from: '/terminal', match: new RegExp(`^/terminal/sessions/${ULID}/recording$`) },
     privateNetwork: { from: '/network', match: new RegExp(`^/network/private-networks/${ULID}$`) },
+    // canvas
+    project: { from: '/projects', match: new RegExp(`^/projects/${ULID}/production$`) },
+    canvas: { from: '/projects', match: new RegExp(`^/projects/(${ULID.slice(1, -1)}/production)$`) },
 };
 
 /** Requests allowed to fail on every page (optional backends in local/sim setups). */
@@ -41,7 +47,7 @@ export const globalAllowedFailures: RegExp[] = [/\/broadcasting\/auth/, /\/favic
 /** Console noise allowed everywhere (realtime transport retries when Reverb isn't running). */
 export const globalAllowedConsole: RegExp[] = [/WebSocket connection to .* failed/i, /pusher/i];
 
-const observability = [/\/telemetry\/.*\/data/, /\/telemetry\/.*search/, /\/insights\/.*\/data/];
+const observability = [/\/telemetry\/.*\/data/, /\/telemetry\/.*search/, /\/insights\/.*\/data/, /\/telemetry\/sites\/[^/?]+(\?|$)/];
 
 export const routes: BrowserRoute[] = [
     // Auth (guest)
@@ -146,6 +152,26 @@ export const routes: BrowserRoute[] = [
     { path: '/settings/observability' },
     { path: '/settings/recipes' },
     { path: '/invitations/not-a-real-token' },
+
+    // observability
+    { path: '/observability', allowedFailures: observability },
+    { path: '/observability?range=7d', allowedFailures: observability },
+    { path: '/observability/issues' },
+    { path: '/observability/issues?status=all' },
+    { path: '/observability/issues/:issue', allowedFailures: observability },
+    { path: '/observability/issues/:exception', allowedFailures: observability },
+    { path: '/observability/traces', allowedFailures: observability },
+    { path: '/observability/traces/:trace', allowedFailures: observability },
+    { path: '/observability/logs', allowedFailures: observability },
+    { path: '/observability/heartbeats' },
+    { path: '/observability/alerts' },
+    { path: '/insights/sites/:site/settings' },
+    // canvas
+    { path: '/projects' },
+    { path: '/projects/:canvas' },
+    { path: '/projects/:project/settings' },
+    { path: '/projects/:canvas/service/site/:site/deployments' },
+    { path: '/projects/:canvas/service/site/:site/variables' },
 ];
 
 export function slugFor(path: string): string {

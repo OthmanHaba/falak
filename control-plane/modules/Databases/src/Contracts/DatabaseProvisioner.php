@@ -19,4 +19,9 @@ interface DatabaseProvisioner
      * @throws ValidationException engine / server / name problems (keys: engine, server_id, name)
      */
     public function create(string $organizationId, string $serverId, string $engine, string $name, ?string $actorId = null): DatabaseData;
+
+    /**
+     * Drop a database like the Databases page does (DatabaseDeleted once the agent confirms). Unknown ids are ignored.
+     */
+    public function delete(string $databaseId): void;
 }

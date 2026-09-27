@@ -2,6 +2,7 @@
 
 namespace Kiln\Insights\Http\Controllers;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -59,9 +60,8 @@ final class IssueController extends Controller
         $status = $filters['status'] ?? IssueStatus::Open->value;
         $userId = (string) $request->user()?->getAuthIdentifier();
 
-        $issues = Issue::query()
+        $filtered = fn () => Issue::query()
             ->where('organization_id', $organizationId)
-            ->when($status !== 'all', fn ($q) => $q->where('status', $status))
             ->when($filters['kind'] ?? null, fn ($q, $kind) => $q->where('kind', $kind))
             ->when($filters['priority'] ?? null, fn ($q, $priority) => $q->where('priority', $priority))
             ->when($filters['site'] ?? null, fn ($q, $site) => $q->where('site_id', strtolower($site)))
@@ -74,7 +74,10 @@ final class IssueController extends Controller
                 $like = '%'.addcslashes($search, '%_\\').'%';
 
                 $q->where(fn ($q) => $q->whereRaw("title LIKE ? ESCAPE '\\'", [$like])->orWhereRaw("culprit LIKE ? ESCAPE '\\'", [$like]));
-            })
+            });
+
+        $issues = $filtered()
+            ->when($status !== 'all', fn ($q) => $q->where('status', $status))
             ->orderByDesc(self::SORTS[$filters['sort'] ?? 'last_seen'])
             ->orderByDesc('id')
             ->paginate(25)
@@ -82,13 +85,55 @@ final class IssueController extends Controller
 
         $names = $this->sites->names(array_values(array_unique(array_filter($issues->getCollection()->pluck('site_id')->all()))));
         $members = $this->members($organizationId);
+        $sparklines = $this->sparklines($issues->getCollection()->pluck('id')->all());
+        $counts = $filtered()->groupBy('status')->selectRaw('status, COUNT(*) AS total')->pluck('total', 'status');
 
         return Inertia::render('Insights/Issues', [
-            'issues' => $issues->through(fn (Issue $issue) => $this->summary($issue, $names, $members)),
+            'issues' => $issues->through(fn (Issue $issue) => [...$this->summary($issue, $names, $members), 'sparkline' => $sparklines[$issue->id] ?? null]),
             'filters' => [...array_filter($filters), 'status' => $status],
+            'counts' => [
+                ...array_map(fn (IssueStatus $s) => (int) ($counts[$s->value] ?? 0), array_combine(array_column(IssueStatus::cases(), 'value'), IssueStatus::cases())),
+                'all' => (int) $counts->sum(),
+            ],
             'members' => array_values($members),
             'sites' => $this->sites->names(DB::table('insights_sites')->where('organization_id', $organizationId)->pluck('site_id')->all()),
+            'priorities' => array_column(IssuePriority::cases(), 'value'),
+            'can' => ['manage' => $this->access->can($request->user(), $organizationId, 'insights.manage')],
         ]);
+    }
+
+    /** PUT /insights/issues/bulk/status {ids[], status}: resolve / ignore / reopen several issues at once. */
+    public function bulkStatus(Request $request, ChangeIssueStatus $change): RedirectResponse
+    {
+        $organizationId = $this->organization->requireId();
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1', 'max:100'],
+            'ids.*' => ['string', 'size:26'],
+            'status' => ['required', Rule::enum(IssueStatus::class)],
+        ]);
+        $status = IssueStatus::from($data['status']);
+        $userId = (string) $request->user()?->getAuthIdentifier();
+
+        $issues = Issue::query()->where('organization_id', $organizationId)->whereIn('id', array_map('strtolower', $data['ids']))->get();
+        abort_if($issues->isEmpty(), 404);
+
+        foreach ($issues as $issue) {
+            $this->authorize('update', $issue);
+        }
+
+        foreach ($issues as $issue) {
+            if ($issue->status !== $status) {
+                $change($issue, $status, $userId);
+            }
+        }
+
+        $label = match ($status) {
+            IssueStatus::Resolved => 'resolved',
+            IssueStatus::Ignored => 'ignored',
+            IssueStatus::Open => 'reopened',
+        };
+
+        return back()->with('success', $issues->count() === 1 ? "Issue {$label}." : "{$issues->count()} issues {$label}.");
     }
 
     public function show(Request $request, Issue $issue, IssueTimeline $timeline, TelemetryLinks $links): Response
@@ -236,6 +281,39 @@ final class IssueController extends Controller
             'assignee' => $issue->assignee_id ? ($members[$issue->assignee_id] ?? ['id' => $issue->assignee_id, 'name' => 'Former member', 'email' => '']) : null,
             'handled' => $issue->kind === IssueKind::Exception ? $issue->unhandled_occurrences === 0 : null,
         ];
+    }
+
+    /**
+     * Occurrences per hour over the last 24 hours for each exception issue (24 buckets, oldest first).
+     *
+     * @param  list<string>  $issueIds
+     * @return array<string, list<int>>
+     */
+    private function sparklines(array $issueIds): array
+    {
+        if ($issueIds === []) {
+            return [];
+        }
+
+        $end = CarbonImmutable::now('UTC')->startOfHour()->addHour();
+        $start = $end->subHours(24);
+        $lines = [];
+
+        $rows = DB::table('insights_exceptions')
+            ->whereIn('issue_id', $issueIds)
+            ->where('minute', '>=', $start)
+            ->where('minute', '<', $end)
+            ->groupBy('issue_id', 'minute')
+            ->selectRaw('issue_id, minute, COUNT(*) AS total')
+            ->get();
+
+        foreach ($rows as $row) {
+            $bucket = intdiv((int) $start->diffInMinutes(CarbonImmutable::parse($row->minute, 'UTC'), true), 60);
+            $lines[$row->issue_id] ??= array_fill(0, 24, 0);
+            $lines[$row->issue_id][min(23, $bucket)] += (int) $row->total;
+        }
+
+        return $lines;
     }
 
     /**
