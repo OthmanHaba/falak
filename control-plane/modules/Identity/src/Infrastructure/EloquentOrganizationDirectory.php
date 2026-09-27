@@ -15,6 +15,14 @@ final class EloquentOrganizationDirectory implements OrganizationDirectory
         return Organization::query()->find($organizationId)?->toData();
     }
 
+    public function all(): array
+    {
+        return Organization::query()->orderBy('created_at')->orderBy('id')->get()
+            ->map(fn (Organization $organization) => $organization->toData())
+            ->values()
+            ->all();
+    }
+
     public function findUser(string $userId): ?UserData
     {
         $user = User::query()->find($userId);

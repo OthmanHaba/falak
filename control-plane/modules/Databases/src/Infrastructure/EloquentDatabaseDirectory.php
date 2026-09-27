@@ -15,6 +15,22 @@ final class EloquentDatabaseDirectory implements DatabaseDirectory
         return $database ? $this->toData($database) : null;
     }
 
+    public function findMany(array $databaseIds): array
+    {
+        if ($databaseIds === []) {
+            return [];
+        }
+
+        return Database::query()->with('databaseServer')->whereIn('id', array_values(array_unique($databaseIds)))->get()
+            ->mapWithKeys(fn (Database $database) => [$database->id => $this->toData($database)])->all();
+    }
+
+    public function forOrganization(string $organizationId): array
+    {
+        return Database::query()->with('databaseServer')->where('organization_id', $organizationId)->orderBy('name')->get()
+            ->map(fn (Database $database) => $this->toData($database))->values()->all();
+    }
+
     public function forServer(string $serverId): array
     {
         return Database::query()->with('databaseServer')->where('server_id', $serverId)->orderBy('name')->get()
