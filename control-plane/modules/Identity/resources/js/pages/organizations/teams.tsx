@@ -1,17 +1,16 @@
-import HeadingSmall from '@/components/heading-small';
-import InputError from '@/components/input-error';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import AppLayout from '@/layouts/app-layout';
-import OrganizationLayout from '@/layouts/organization/layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm } from '@inertiajs/react';
-import { Pencil, Plus, Trash2, Users } from 'lucide-react';
-import { FormEventHandler, useState } from 'react';
+import { Avatar } from '@/components/kiln/avatar';
+import { Button } from '@/components/kiln/button';
+import { Checkbox } from '@/components/kiln/checkbox';
+import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
+import { Dialog } from '@/components/kiln/dialog';
+import { EmptyState } from '@/components/kiln/empty-state';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { Menu } from '@/components/kiln/menu';
+import SettingsLayout from '@/layouts/settings/layout';
+import { router, useForm } from '@inertiajs/react';
+import { Pencil, Plus, Trash2, Users, UsersRound } from 'lucide-react';
+import { useState, type FormEventHandler } from 'react';
 
 interface Person {
     id: string;
@@ -32,45 +31,41 @@ interface TeamsProps {
     canManage: boolean;
 }
 
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'Teams', href: '/organization/teams' }];
-
-function TeamFormDialog({ team, open, onOpenChange }: { team: Team | null; open: boolean; onOpenChange: (open: boolean) => void }) {
+function TeamFormDialog({ team, onOpenChange }: { team: Team | null; onOpenChange: (open: boolean) => void }) {
     const form = useForm({ name: team?.name ?? '', description: team?.description ?? '' });
 
-    const submit: FormEventHandler = (e) => {
-        e.preventDefault();
+    const submit: FormEventHandler = (event) => {
+        event.preventDefault();
         const options = { preserveScroll: true, onSuccess: () => onOpenChange(false) };
-
-        if (team) {
-            form.patch(route('organization.teams.update', team.id), options);
-        } else {
-            form.post(route('organization.teams.store'), options);
-        }
+        if (team) form.patch(route('organization.teams.update', team.id), options);
+        else form.post(route('organization.teams.store'), options);
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <form onSubmit={submit} className="space-y-4">
-                    <DialogHeader>
-                        <DialogTitle>{team ? 'Edit team' : 'New team'}</DialogTitle>
-                        <DialogDescription>Teams group members, e.g. "Backend" or "On-call".</DialogDescription>
-                    </DialogHeader>
-                    <div className="grid gap-2">
-                        <Label htmlFor="team_name">Name</Label>
-                        <Input id="team_name" value={form.data.name} onChange={(e) => form.setData('name', e.target.value)} />
-                        <InputError message={form.errors.name} />
-                    </div>
-                    <div className="grid gap-2">
-                        <Label htmlFor="team_description">Description</Label>
-                        <Input id="team_description" value={form.data.description} onChange={(e) => form.setData('description', e.target.value)} />
-                        <InputError message={form.errors.description} />
-                    </div>
-                    <DialogFooter>
-                        <Button disabled={form.processing}>{team ? 'Save' : 'Create team'}</Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
+        <Dialog
+            open
+            onOpenChange={onOpenChange}
+            title={team ? 'Edit team' : 'New team'}
+            description='Teams group members, e.g. "Backend" or "On-call".'
+            footer={
+                <>
+                    <Button variant="ghost" onClick={() => onOpenChange(false)}>
+                        Cancel
+                    </Button>
+                    <Button variant="primary" type="submit" form="team-form" loading={form.processing}>
+                        {team ? 'Save' : 'Create team'}
+                    </Button>
+                </>
+            }
+        >
+            <form id="team-form" onSubmit={submit} className="grid gap-4">
+                <Field label="Name" error={form.errors.name}>
+                    <Input value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} autoFocus />
+                </Field>
+                <Field label="Description" error={form.errors.description}>
+                    <Input value={form.data.description} onChange={(event) => form.setData('description', event.target.value)} />
+                </Field>
+            </form>
         </Dialog>
     );
 }
@@ -81,118 +76,139 @@ function TeamMembersDialog({ team, members, onOpenChange }: { team: Team; member
     const toggle = (id: string, checked: boolean) =>
         form.setData('user_ids', checked ? [...form.data.user_ids, id] : form.data.user_ids.filter((userId) => userId !== id));
 
-    const submit: FormEventHandler = (e) => {
-        e.preventDefault();
+    const submit: FormEventHandler = (event) => {
+        event.preventDefault();
         form.put(route('organization.teams.members', team.id), { preserveScroll: true, onSuccess: () => onOpenChange(false) });
     };
 
     return (
-        <Dialog open onOpenChange={onOpenChange}>
-            <DialogContent>
-                <form onSubmit={submit} className="space-y-4">
-                    <DialogHeader>
-                        <DialogTitle>Members of {team.name}</DialogTitle>
-                        <DialogDescription>Only organization members can join a team.</DialogDescription>
-                    </DialogHeader>
-                    <div className="max-h-80 space-y-2 overflow-y-auto">
-                        {members.map((member) => (
-                            <label key={member.id} className="flex items-center gap-2 text-sm">
-                                <Checkbox
-                                    checked={form.data.user_ids.includes(member.id)}
-                                    onCheckedChange={(checked) => toggle(member.id, checked === true)}
-                                />
-                                <span>{member.name}</span>
-                                <span className="text-muted-foreground text-xs">{member.email}</span>
-                            </label>
-                        ))}
-                    </div>
-                    <InputError message={form.errors.user_ids} />
-                    <DialogFooter>
-                        <Button disabled={form.processing}>Save members</Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
+        <Dialog
+            open
+            onOpenChange={onOpenChange}
+            title={`Members of ${team.name}`}
+            description="Only organization members can join a team."
+            footer={
+                <>
+                    <Button variant="ghost" onClick={() => onOpenChange(false)}>
+                        Cancel
+                    </Button>
+                    <Button variant="primary" type="submit" form="team-members" loading={form.processing}>
+                        Save members
+                    </Button>
+                </>
+            }
+        >
+            <form id="team-members" onSubmit={submit} className="grid max-h-80 gap-2.5 overflow-y-auto">
+                {members.map((member) => (
+                    <Field
+                        key={member.id}
+                        inline
+                        label={
+                            <span>
+                                {member.name} <span className="text-fg-faint font-normal">{member.email}</span>
+                            </span>
+                        }
+                    >
+                        <Checkbox
+                            checked={form.data.user_ids.includes(member.id)}
+                            onCheckedChange={(checked) => toggle(member.id, checked === true)}
+                        />
+                    </Field>
+                ))}
+                {form.errors.user_ids && <p className="text-danger text-xs">{form.errors.user_ids}</p>}
+            </form>
         </Dialog>
     );
 }
 
 export default function Teams({ teams, members, canManage }: TeamsProps) {
-    const [editing, setEditing] = useState<Team | null>(null);
-    const [formOpen, setFormOpen] = useState(false);
+    const [editing, setEditing] = useState<Team | null | undefined>(undefined);
     const [managing, setManaging] = useState<Team | null>(null);
+    const [deleting, setDeleting] = useState<Team | null>(null);
 
-    const openForm = (team: Team | null) => {
-        setEditing(team);
-        setFormOpen(true);
-    };
-
-    const destroy = (team: Team) => {
-        if (window.confirm(`Delete the team "${team.name}"?`)) {
-            router.delete(route('organization.teams.destroy', team.id), { preserveScroll: true });
-        }
+    const destroy = () => {
+        if (!deleting) return;
+        router.delete(route('organization.teams.destroy', deleting.id), { preserveScroll: true, onFinish: () => setDeleting(null) });
     };
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Teams" />
-            <OrganizationLayout wide>
-                <div className="space-y-4">
-                    <div className="flex items-start justify-between gap-4">
-                        <HeadingSmall title="Teams" description="Group members of this organization." />
-                        {canManage && (
-                            <Button size="sm" onClick={() => openForm(null)}>
-                                <Plus className="size-4" /> New team
+        <SettingsLayout
+            title="Teams"
+            description="Group members of this organization."
+            wide
+            actions={
+                canManage && (
+                    <Button variant="primary" icon={<Plus />} onClick={() => setEditing(null)}>
+                        New team
+                    </Button>
+                )
+            }
+        >
+            {teams.length === 0 ? (
+                <EmptyState
+                    icon={<UsersRound />}
+                    title="No teams yet"
+                    description="Teams group members (e.g. Backend, On-call) so you can route alerts and grant access together."
+                    action={
+                        canManage && (
+                            <Button variant="primary" icon={<Plus />} onClick={() => setEditing(null)}>
+                                Create a team
                             </Button>
-                        )}
-                    </div>
-
-                    {teams.length === 0 ? (
-                        <p className="text-muted-foreground text-sm">No teams yet.</p>
-                    ) : (
-                        <div className="grid gap-4 md:grid-cols-2">
-                            {teams.map((team) => (
-                                <Card key={team.id}>
-                                    <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0">
-                                        <div className="space-y-1">
-                                            <CardTitle className="text-base">{team.name}</CardTitle>
-                                            {team.description && <CardDescription>{team.description}</CardDescription>}
-                                        </div>
-                                        {canManage && (
-                                            <div className="flex gap-1">
-                                                <Button size="icon" variant="ghost" aria-label="Manage members" onClick={() => setManaging(team)}>
-                                                    <Users className="size-4" />
-                                                </Button>
-                                                <Button size="icon" variant="ghost" aria-label="Edit team" onClick={() => openForm(team)}>
-                                                    <Pencil className="size-4" />
-                                                </Button>
-                                                <Button size="icon" variant="ghost" aria-label="Delete team" onClick={() => destroy(team)}>
-                                                    <Trash2 className="text-destructive size-4" />
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </CardHeader>
-                                    <CardContent>
-                                        {team.members.length === 0 ? (
-                                            <p className="text-muted-foreground text-sm">No members.</p>
-                                        ) : (
-                                            <ul className="space-y-1 text-sm">
-                                                {team.members.map((member) => (
-                                                    <li key={member.id}>
-                                                        {member.name} <span className="text-muted-foreground text-xs">{member.email}</span>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        )}
-                                    </CardContent>
-                                </Card>
-                            ))}
-                        </div>
-                    )}
+                        )
+                    }
+                />
+            ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                    {teams.map((team) => (
+                        <article key={team.id} className="border-border bg-surface-1 grid content-start gap-3 rounded-lg border p-4">
+                            <header className="flex items-start justify-between gap-2">
+                                <div className="grid min-w-0 gap-0.5">
+                                    <h3 className="text-fg truncate text-base font-medium">{team.name}</h3>
+                                    {team.description && <p className="text-fg-muted text-sm">{team.description}</p>}
+                                </div>
+                                {canManage && (
+                                    <Menu
+                                        label={`Actions for ${team.name}`}
+                                        actions={[
+                                            { label: 'Manage members', icon: <Users />, onSelect: () => setManaging(team) },
+                                            { label: 'Edit team', icon: <Pencil />, onSelect: () => setEditing(team) },
+                                            { type: 'separator' },
+                                            { label: 'Delete team', icon: <Trash2 />, danger: true, onSelect: () => setDeleting(team) },
+                                        ]}
+                                    />
+                                )}
+                            </header>
+                            {team.members.length === 0 ? (
+                                <p className="text-fg-faint text-sm">No members.</p>
+                            ) : (
+                                <ul className="grid gap-1.5">
+                                    {team.members.map((member) => (
+                                        <li key={member.id} className="flex min-w-0 items-center gap-2 text-sm">
+                                            <Avatar name={member.name} size="xs" />
+                                            <span className="text-fg truncate">{member.name}</span>
+                                            <span className="text-fg-faint truncate text-xs">{member.email}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </article>
+                    ))}
                 </div>
+            )}
 
-                {formOpen && <TeamFormDialog key={editing?.id ?? 'new'} team={editing} open={formOpen} onOpenChange={setFormOpen} />}
-                {managing && <TeamMembersDialog team={managing} members={members} onOpenChange={(open) => !open && setManaging(null)} />}
-            </OrganizationLayout>
-        </AppLayout>
+            {editing !== undefined && (
+                <TeamFormDialog key={editing?.id ?? 'new'} team={editing} onOpenChange={(open) => !open && setEditing(undefined)} />
+            )}
+            {managing && <TeamMembersDialog team={managing} members={members} onOpenChange={(open) => !open && setManaging(null)} />}
+            <ConfirmDestructive
+                open={deleting !== null}
+                onOpenChange={(open) => !open && setDeleting(null)}
+                title="Delete team"
+                description="Members stay in the organization; only the grouping is removed."
+                confirmText={deleting?.name ?? ''}
+                confirmLabel="Delete team"
+                onConfirm={destroy}
+            />
+        </SettingsLayout>
     );
 }

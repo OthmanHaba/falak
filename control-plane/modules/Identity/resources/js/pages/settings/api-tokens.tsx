@@ -1,18 +1,17 @@
-import HeadingSmall from '@/components/heading-small';
-import InputError from '@/components/input-error';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
+import { Button } from '@/components/kiln/button';
+import { Checkbox } from '@/components/kiln/checkbox';
+import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
+import { CopyButton } from '@/components/kiln/copy-button';
+import { DataTable } from '@/components/kiln/data-table';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { RelativeTime } from '@/components/kiln/relative-time';
+import { Section } from '@/components/kiln/section';
+import { Tag } from '@/components/kiln/tag';
 import SettingsLayout from '@/layouts/settings/layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm } from '@inertiajs/react';
-import { formatDistanceToNow } from 'date-fns';
-import { Check, Copy } from 'lucide-react';
-import { FormEventHandler, useMemo, useState } from 'react';
+import { router, useForm } from '@inertiajs/react';
+import { KeyRound, Trash2 } from 'lucide-react';
+import { useMemo, useState, type FormEventHandler } from 'react';
 
 interface Ability {
     name: string;
@@ -41,13 +40,10 @@ interface TokenForm {
     expires_in_days: string;
 }
 
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'API tokens', href: '/settings/api-tokens' }];
-
-const relative = (value: string | null, fallback: string) => (value ? formatDistanceToNow(new Date(value), { addSuffix: true }) : fallback);
-
 export default function ApiTokens({ tokens, abilities, plainTextToken }: ApiTokensProps) {
-    const [copied, setCopied] = useState(false);
     const { data, setData, post, processing, errors, reset } = useForm<TokenForm>({ name: '', abilities: [], expires_in_days: '' });
+    const [revoking, setRevoking] = useState<Token | null>(null);
+    const [revokeProcessing, setRevokeProcessing] = useState(false);
 
     const groups = useMemo(() => {
         const map = new Map<string, Ability[]>();
@@ -64,160 +60,166 @@ export default function ApiTokens({ tokens, abilities, plainTextToken }: ApiToke
 
             return;
         }
-
         setData('abilities', checked ? [...data.abilities.filter((a) => a !== '*'), name] : data.abilities.filter((a) => a !== name));
     };
 
-    const submit: FormEventHandler = (e) => {
-        e.preventDefault();
-        post(route('api-tokens.store'), {
+    const submit: FormEventHandler = (event) => {
+        event.preventDefault();
+        post(route('api-tokens.store'), { preserveScroll: true, onSuccess: () => reset() });
+    };
+
+    const revoke = () => {
+        if (!revoking) return;
+        router.delete(route('api-tokens.destroy', revoking.id), {
             preserveScroll: true,
-            onSuccess: () => reset(),
+            onStart: () => setRevokeProcessing(true),
+            onFinish: () => {
+                setRevokeProcessing(false);
+                setRevoking(null);
+            },
         });
     };
 
-    const copy = async () => {
-        if (plainTextToken) {
-            await navigator.clipboard.writeText(plainTextToken);
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 2000);
-        }
-    };
-
-    const revoke = (token: Token) => {
-        if (window.confirm(`Revoke the token "${token.name}"? Clients using it will stop working immediately.`)) {
-            router.delete(route('api-tokens.destroy', token.id), { preserveScroll: true });
-        }
-    };
-
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="API tokens" />
-
-            <SettingsLayout>
-                <div className="space-y-6">
-                    <HeadingSmall
-                        title="Create API token"
-                        description="Tokens authenticate the kiln CLI and API clients. They are scoped to the current organization and can never exceed your role."
-                    />
-
-                    {plainTextToken && (
-                        <div className="space-y-2 rounded-lg border border-green-600/40 bg-green-50 p-4 dark:bg-green-950/30">
-                            <p className="text-sm font-medium">Copy your new token now — it won't be shown again.</p>
-                            <div className="flex items-center gap-2">
-                                <code
-                                    className="bg-background flex-1 overflow-x-auto rounded border px-2 py-1.5 font-mono text-xs"
-                                    data-testid="plain-token"
-                                >
-                                    {plainTextToken}
-                                </code>
-                                <Button type="button" size="sm" variant="secondary" onClick={copy}>
-                                    {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-                                    {copied ? 'Copied' : 'Copy'}
-                                </Button>
-                            </div>
-                        </div>
-                    )}
-
-                    <form onSubmit={submit} className="space-y-6">
-                        <div className="grid gap-4 sm:grid-cols-[1fr_160px]">
-                            <div className="grid gap-2">
-                                <Label htmlFor="name">Name</Label>
-                                <Input id="name" value={data.name} onChange={(e) => setData('name', e.target.value)} placeholder="CI deploys" />
-                                <InputError message={errors.name} />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="expires_in_days">Expires in (days)</Label>
-                                <Input
-                                    id="expires_in_days"
-                                    type="number"
-                                    min={1}
-                                    max={3650}
-                                    value={data.expires_in_days}
-                                    onChange={(e) => setData('expires_in_days', e.target.value)}
-                                    placeholder="Never"
-                                />
-                                <InputError message={errors.expires_in_days} />
-                            </div>
-                        </div>
-
-                        <div className="space-y-3">
-                            <Label>Abilities</Label>
-                            <label className="flex items-center gap-2 text-sm">
-                                <Checkbox checked={all} onCheckedChange={(checked) => toggle('*', checked === true)} />
-                                <span className="font-medium">All abilities (*)</span>
-                                <span className="text-muted-foreground">— everything your role allows, now and in the future</span>
-                            </label>
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                {groups.map(([group, items]) => (
-                                    <fieldset key={group} className="space-y-2 rounded-md border p-3" disabled={all}>
-                                        <legend className="px-1 text-xs font-medium tracking-wide uppercase">{group}</legend>
-                                        {items.map((ability) => (
-                                            <label key={ability.name} className="flex items-start gap-2 text-sm">
-                                                <Checkbox
-                                                    className="mt-0.5"
-                                                    disabled={all}
-                                                    checked={all || data.abilities.includes(ability.name)}
-                                                    onCheckedChange={(checked) => toggle(ability.name, checked === true)}
-                                                />
-                                                <span>
-                                                    <span className="font-mono text-xs">{ability.name}</span>
-                                                    {ability.description && (
-                                                        <span className="text-muted-foreground block text-xs">{ability.description}</span>
-                                                    )}
-                                                </span>
-                                            </label>
-                                        ))}
-                                    </fieldset>
-                                ))}
-                            </div>
-                            <InputError message={errors.abilities} />
-                        </div>
-
-                        <Button disabled={processing}>Create token</Button>
-                    </form>
-
-                    <HeadingSmall title="Active tokens" />
-                    {tokens.length === 0 ? (
-                        <p className="text-muted-foreground text-sm">You have no API tokens for this organization.</p>
-                    ) : (
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Name</TableHead>
-                                    <TableHead>Abilities</TableHead>
-                                    <TableHead>Last used</TableHead>
-                                    <TableHead>Expires</TableHead>
-                                    <TableHead />
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {tokens.map((token) => (
-                                    <TableRow key={token.id}>
-                                        <TableCell className="font-medium">{token.name}</TableCell>
-                                        <TableCell>
-                                            <div className="flex max-w-xs flex-wrap gap-1">
-                                                {token.abilities.map((ability) => (
-                                                    <Badge key={ability} variant="secondary" className="font-mono text-[10px]">
-                                                        {ability}
-                                                    </Badge>
-                                                ))}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-muted-foreground">{relative(token.last_used_at, 'Never')}</TableCell>
-                                        <TableCell className="text-muted-foreground">{relative(token.expires_at, 'Never')}</TableCell>
-                                        <TableCell className="text-right">
-                                            <Button size="sm" variant="ghost" className="text-destructive" onClick={() => revoke(token)}>
-                                                Revoke
-                                            </Button>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    )}
+        <SettingsLayout
+            title="API tokens"
+            description="Tokens authenticate the kiln CLI and API clients. They are scoped to the current organization and never exceed your role."
+            wide
+        >
+            {plainTextToken && (
+                <div role="status" className="border-success/40 bg-success-soft grid gap-2 rounded-lg border p-4">
+                    <p className="text-fg text-sm font-medium">Copy your new token now — it won't be shown again.</p>
+                    <div className="border-border bg-canvas flex items-center gap-2 rounded-md border px-2 py-1.5">
+                        <code className="text-fg min-w-0 flex-1 overflow-x-auto font-mono text-xs whitespace-nowrap" data-testid="plain-token">
+                            {plainTextToken}
+                        </code>
+                        <CopyButton value={plainTextToken} label="Copy token" />
+                    </div>
                 </div>
-            </SettingsLayout>
-        </AppLayout>
+            )}
+
+            <form onSubmit={submit} className="max-w-3xl">
+                <Section
+                    title="Create token"
+                    footer={
+                        <Button variant="primary" type="submit" loading={processing}>
+                            Create token
+                        </Button>
+                    }
+                >
+                    <div className="grid gap-4 sm:grid-cols-[1fr_160px]">
+                        <Field label="Name" error={errors.name}>
+                            <Input value={data.name} onChange={(event) => setData('name', event.target.value)} placeholder="CI deploys" />
+                        </Field>
+                        <Field label="Expires in (days)" error={errors.expires_in_days} hint="Empty = never">
+                            <Input
+                                type="number"
+                                min={1}
+                                max={3650}
+                                value={data.expires_in_days}
+                                onChange={(event) => setData('expires_in_days', event.target.value)}
+                                placeholder="Never"
+                            />
+                        </Field>
+                    </div>
+
+                    <fieldset className="grid gap-3">
+                        <legend className="text-fg mb-2 text-xs font-medium">Abilities</legend>
+                        <Field
+                            inline
+                            label={
+                                <span>
+                                    All abilities <span className="text-fg-faint font-normal">— everything your role allows, now and later</span>
+                                </span>
+                            }
+                        >
+                            <Checkbox checked={all} onCheckedChange={(checked) => toggle('*', checked === true)} />
+                        </Field>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                            {groups.map(([group, items]) => (
+                                <fieldset key={group} className="border-border grid content-start gap-2 rounded-md border p-3" disabled={all}>
+                                    <legend className="text-2xs text-fg-faint px-1 font-medium tracking-wide uppercase">{group}</legend>
+                                    {items.map((ability) => (
+                                        <Field
+                                            key={ability.name}
+                                            inline
+                                            label={<span className="font-mono text-xs font-normal">{ability.name}</span>}
+                                            hint={ability.description || undefined}
+                                        >
+                                            <Checkbox
+                                                disabled={all}
+                                                checked={all || data.abilities.includes(ability.name)}
+                                                onCheckedChange={(checked) => toggle(ability.name, checked === true)}
+                                            />
+                                        </Field>
+                                    ))}
+                                </fieldset>
+                            ))}
+                        </div>
+                        {errors.abilities && <p className="text-danger text-xs">{errors.abilities}</p>}
+                    </fieldset>
+                </Section>
+            </form>
+
+            <Section title="Active tokens" bare>
+                <DataTable
+                    label="Active API tokens"
+                    rows={tokens}
+                    rowKey={(token) => String(token.id)}
+                    empty={{
+                        icon: <KeyRound />,
+                        title: 'No API tokens yet',
+                        description: 'Create a token above to use the kiln CLI or call the API from CI.',
+                        size: 'sm',
+                    }}
+                    columns={[
+                        {
+                            id: 'name',
+                            header: 'Name',
+                            cell: (token) => <span className="font-medium">{token.name}</span>,
+                            sortValue: (token) => token.name,
+                        },
+                        {
+                            id: 'abilities',
+                            header: 'Abilities',
+                            hideOnMobile: true,
+                            cell: (token) => (
+                                <div className="flex max-w-xs flex-wrap gap-1 py-1">
+                                    {token.abilities.map((ability) => (
+                                        <Tag key={ability} mono>
+                                            {ability}
+                                        </Tag>
+                                    ))}
+                                </div>
+                            ),
+                        },
+                        {
+                            id: 'last_used',
+                            header: 'Last used',
+                            sortValue: (token) => token.last_used_at ?? '',
+                            cell: (token) => <RelativeTime value={token.last_used_at} fallback="Never" className="text-fg-muted" />,
+                        },
+                        {
+                            id: 'expires',
+                            header: 'Expires',
+                            hideOnMobile: true,
+                            cell: (token) => <RelativeTime value={token.expires_at} fallback="Never" className="text-fg-muted" />,
+                        },
+                    ]}
+                    rowActions={(token) => [{ label: 'Revoke', icon: <Trash2 />, danger: true, onSelect: () => setRevoking(token) }]}
+                />
+            </Section>
+
+            <ConfirmDestructive
+                open={revoking !== null}
+                onOpenChange={(open) => !open && setRevoking(null)}
+                title="Revoke API token"
+                description="Clients using this token will stop working immediately."
+                confirmText={revoking?.name ?? ''}
+                confirmLabel="Revoke token"
+                onConfirm={revoke}
+                processing={revokeProcessing}
+            />
+        </SettingsLayout>
     );
 }

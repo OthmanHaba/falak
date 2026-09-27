@@ -40,7 +40,7 @@ it('invites by email and lists pending invitations', function () {
     $mail = (new OrganizationInvitation($organization->name, 'Ann', Role::Developer, 'https://x'))->toMail(new AnonymousNotifiable);
     expect($mail->subject)->toContain($organization->name);
 
-    $this->get('/organization/members')->assertInertia(fn (Assert $page) => $page->has('invitations', 1)->where('invitations.0.email', 'new@example.com'));
+    $this->get('/settings/members')->assertInertia(fn (Assert $page) => $page->has('invitations', 1)->where('invitations.0.email', 'new@example.com'));
 });
 
 it('validates invitations', function () {

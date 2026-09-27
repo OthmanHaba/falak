@@ -1,17 +1,17 @@
-import HeadingSmall from '@/components/heading-small';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
-import OrganizationLayout from '@/layouts/organization/layout';
-import { type BreadcrumbItem, type Paginated } from '@/types';
-import { Head, Link, router } from '@inertiajs/react';
+import { Button } from '@/components/kiln/button';
+import { CodeBlock } from '@/components/kiln/code-block';
+import { EmptyState } from '@/components/kiln/empty-state';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { Select } from '@/components/kiln/select';
+import { Tag } from '@/components/kiln/tag';
+import SettingsLayout from '@/layouts/settings/layout';
+import { cn } from '@/lib/utils';
+import { type Paginated } from '@/types';
+import { Link, router } from '@inertiajs/react';
 import { format } from 'date-fns';
-import { ChevronDown, ChevronRight } from 'lucide-react';
-import { FormEventHandler, Fragment, useState } from 'react';
+import { ChevronDown, ChevronRight, ScrollText } from 'lucide-react';
+import { Fragment, useState, type FormEventHandler } from 'react';
 
 interface AuditEntry {
     id: string;
@@ -42,14 +42,12 @@ interface AuditLogProps {
 
 const ALL = '__all__';
 
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'Audit log', href: '/organization/audit-log' }];
-
 export default function AuditLog({ entries, filters, actions }: AuditLogProps) {
     const [draft, setDraft] = useState<Filters>(filters);
     const [expanded, setExpanded] = useState<string | null>(null);
 
-    const apply: FormEventHandler = (e) => {
-        e.preventDefault();
+    const apply: FormEventHandler = (event) => {
+        event.preventDefault();
         const query = Object.fromEntries(Object.entries(draft).filter(([, value]) => value)) as Record<string, string>;
         router.get(route('organization.audit-log'), query, { preserveState: true, preserveScroll: true });
     };
@@ -60,128 +58,133 @@ export default function AuditLog({ entries, filters, actions }: AuditLogProps) {
     };
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Audit log" />
-            <OrganizationLayout wide>
-                <div className="space-y-4">
-                    <HeadingSmall title="Audit log" description="Security-relevant changes in this organization, newest first." />
-
-                    <form onSubmit={apply} className="grid gap-3 md:grid-cols-5 md:items-end">
-                        <div className="grid gap-1.5">
-                            <Label>Action</Label>
-                            <Select
-                                value={draft.action ?? ALL}
-                                onValueChange={(value) => setDraft({ ...draft, action: value === ALL ? undefined : value })}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value={ALL}>All actions</SelectItem>
-                                    {actions.map((action) => (
-                                        <SelectItem key={action} value={action}>
-                                            {action}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="grid gap-1.5">
-                            <Label htmlFor="actor">Actor id</Label>
-                            <Input id="actor" value={draft.actor ?? ''} onChange={(e) => setDraft({ ...draft, actor: e.target.value })} />
-                        </div>
-                        <div className="grid gap-1.5">
-                            <Label htmlFor="from">From</Label>
-                            <Input id="from" type="date" value={draft.from ?? ''} onChange={(e) => setDraft({ ...draft, from: e.target.value })} />
-                        </div>
-                        <div className="grid gap-1.5">
-                            <Label htmlFor="to">To</Label>
-                            <Input id="to" type="date" value={draft.to ?? ''} onChange={(e) => setDraft({ ...draft, to: e.target.value })} />
-                        </div>
-                        <div className="flex gap-2">
-                            <Button type="submit">Filter</Button>
-                            <Button type="button" variant="ghost" onClick={clear}>
-                                Reset
-                            </Button>
-                        </div>
-                    </form>
-
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead className="w-8" />
-                                <TableHead>When</TableHead>
-                                <TableHead>Actor</TableHead>
-                                <TableHead>Action</TableHead>
-                                <TableHead>Subject</TableHead>
-                                <TableHead>IP</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {entries.data.length === 0 && (
-                                <TableRow>
-                                    <TableCell colSpan={6} className="text-muted-foreground py-6 text-center">
-                                        No entries match these filters.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                            {entries.data.map((entry) => (
-                                <Fragment key={entry.id}>
-                                    <TableRow className="cursor-pointer" onClick={() => setExpanded(expanded === entry.id ? null : entry.id)}>
-                                        <TableCell>
-                                            {expanded === entry.id ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-                                        </TableCell>
-                                        <TableCell className="whitespace-nowrap">
-                                            {format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm:ss')}
-                                        </TableCell>
-                                        <TableCell>
-                                            <span>{entry.actor_name ?? 'Unknown'}</span>{' '}
-                                            {entry.actor_type !== 'user' && (
-                                                <Badge variant="outline" className="text-[10px]">
-                                                    {entry.actor_type}
-                                                </Badge>
-                                            )}
-                                        </TableCell>
-                                        <TableCell className="font-mono text-xs">{entry.action}</TableCell>
-                                        <TableCell className="text-muted-foreground text-xs">
-                                            {entry.subject_type ? `${entry.subject_type}:${entry.subject_id ?? ''}` : '—'}
-                                        </TableCell>
-                                        <TableCell className="text-muted-foreground text-xs">{entry.ip_address ?? '—'}</TableCell>
-                                    </TableRow>
-                                    {expanded === entry.id && (
-                                        <TableRow>
-                                            <TableCell />
-                                            <TableCell colSpan={5}>
-                                                <pre className="bg-muted overflow-x-auto rounded-md p-3 text-xs">
-                                                    {JSON.stringify(entry.context, null, 2)}
-                                                </pre>
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </Fragment>
-                            ))}
-                        </TableBody>
-                    </Table>
-
-                    {entries.last_page > 1 && (
-                        <nav className="flex flex-wrap items-center gap-1" aria-label="Pagination">
-                            {entries.links.map((link, index) =>
-                                link.url ? (
-                                    <Button key={index} asChild size="sm" variant={link.active ? 'default' : 'ghost'}>
-                                        <Link href={link.url} preserveScroll preserveState>
-                                            <span dangerouslySetInnerHTML={{ __html: link.label }} />
-                                        </Link>
-                                    </Button>
-                                ) : (
-                                    <Button key={index} size="sm" variant="ghost" disabled>
-                                        <span dangerouslySetInnerHTML={{ __html: link.label }} />
-                                    </Button>
-                                ),
-                            )}
-                        </nav>
-                    )}
+        <SettingsLayout title="Audit log" description="Security-relevant changes in this organization, newest first." wide>
+            <form
+                onSubmit={apply}
+                className="border-border bg-surface-1 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr_auto] lg:items-end"
+            >
+                <Field label="Action">
+                    <Select
+                        value={draft.action ?? ALL}
+                        onValueChange={(value) => setDraft({ ...draft, action: value === ALL ? undefined : value })}
+                        options={[{ value: ALL, label: 'All actions' }, ...actions.map((action) => ({ value: action, label: action }))]}
+                    />
+                </Field>
+                <Field label="Actor id">
+                    <Input value={draft.actor ?? ''} onChange={(event) => setDraft({ ...draft, actor: event.target.value })} mono />
+                </Field>
+                <Field label="From">
+                    <Input type="date" value={draft.from ?? ''} onChange={(event) => setDraft({ ...draft, from: event.target.value })} />
+                </Field>
+                <Field label="To">
+                    <Input type="date" value={draft.to ?? ''} onChange={(event) => setDraft({ ...draft, to: event.target.value })} />
+                </Field>
+                <div className="flex gap-2">
+                    <Button type="submit">Filter</Button>
+                    <Button variant="ghost" onClick={clear}>
+                        Reset
+                    </Button>
                 </div>
-            </OrganizationLayout>
-        </AppLayout>
+            </form>
+
+            {entries.data.length === 0 ? (
+                <EmptyState
+                    icon={<ScrollText />}
+                    title="No entries"
+                    description="Nothing matches these filters. Sign-ins, role changes, deploys and deletions show up here."
+                />
+            ) : (
+                <div className="border-border bg-surface-1 overflow-x-auto rounded-lg border">
+                    <table className="w-full text-left text-xs">
+                        <caption className="sr-only">Audit log entries</caption>
+                        <thead className="border-border text-fg-faint border-b">
+                            <tr>
+                                <th className="w-8" />
+                                <th className="h-8 px-3 font-medium">When</th>
+                                <th className="px-3 font-medium">Actor</th>
+                                <th className="px-3 font-medium">Action</th>
+                                <th className="hidden px-3 font-medium md:table-cell">Subject</th>
+                                <th className="hidden px-3 font-medium md:table-cell">IP</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {entries.data.map((entry) => {
+                                const open = expanded === entry.id;
+
+                                return (
+                                    <Fragment key={entry.id}>
+                                        <tr className="border-border hover:bg-surface-2 border-b text-sm last:border-0">
+                                            <td className="pl-2">
+                                                <button
+                                                    type="button"
+                                                    className="text-fg-faint hover:text-fg rounded-sm p-1"
+                                                    aria-expanded={open}
+                                                    aria-label={open ? 'Hide details' : 'Show details'}
+                                                    onClick={() => setExpanded(open ? null : entry.id)}
+                                                >
+                                                    {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                                                </button>
+                                            </td>
+                                            <td className="text-fg-muted tabular h-10 px-3 whitespace-nowrap">
+                                                {format(new Date(entry.created_at), 'yyyy-MM-dd HH:mm:ss')}
+                                            </td>
+                                            <td className="px-3">
+                                                <span className="flex items-center gap-1.5">
+                                                    {entry.actor_name ?? 'Unknown'}
+                                                    {entry.actor_type !== 'user' && <Tag>{entry.actor_type}</Tag>}
+                                                </span>
+                                            </td>
+                                            <td className="px-3 font-mono text-xs">{entry.action}</td>
+                                            <td className="text-2xs text-fg-faint hidden px-3 font-mono md:table-cell">
+                                                {entry.subject_type ? `${entry.subject_type}:${entry.subject_id ?? ''}` : '—'}
+                                            </td>
+                                            <td className="text-2xs text-fg-faint hidden px-3 font-mono md:table-cell">{entry.ip_address ?? '—'}</td>
+                                        </tr>
+                                        {open && (
+                                            <tr className="border-border border-b">
+                                                <td />
+                                                <td colSpan={5} className="px-3 py-2">
+                                                    <CodeBlock code={JSON.stringify(entry.context, null, 2)} maxHeight={320} />
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </Fragment>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {entries.last_page > 1 && (
+                <nav className="flex flex-wrap items-center gap-1" aria-label="Pagination">
+                    {entries.links.map((link, index) => {
+                        const label = <span dangerouslySetInnerHTML={{ __html: link.label }} />;
+                        const classes = cn(
+                            'inline-flex h-7 min-w-7 items-center justify-center rounded-md px-2 text-xs',
+                            link.active ? 'bg-surface-3 text-fg font-medium' : 'text-fg-muted hover:bg-surface-2 hover:text-fg',
+                            !link.url && 'pointer-events-none opacity-40',
+                        );
+
+                        return link.url ? (
+                            <Link
+                                key={index}
+                                href={link.url}
+                                preserveScroll
+                                preserveState
+                                className={classes}
+                                aria-current={link.active ? 'page' : undefined}
+                            >
+                                {label}
+                            </Link>
+                        ) : (
+                            <span key={index} className={classes}>
+                                {label}
+                            </span>
+                        );
+                    })}
+                </nav>
+            )}
+        </SettingsLayout>
     );
 }

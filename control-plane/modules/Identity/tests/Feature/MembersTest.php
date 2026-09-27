@@ -18,7 +18,7 @@ it('lists members with roles for every member', function () {
     memberOf($organization, Role::Developer);
     [$viewer] = memberOf($organization, Role::Viewer);
 
-    $this->get('/organization/members')->assertOk()->assertInertia(fn (Assert $page) => $page
+    $this->get('/settings/members')->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('Identity/organizations/members', false)
         ->has('members', 3)
         ->where('myRole', 'owner')
@@ -26,7 +26,7 @@ it('lists members with roles for every member', function () {
         ->has('roles', 4)
         ->where('members', fn ($members) => collect($members)->firstWhere('id', $owner->id)['role'] === 'owner'));
 
-    $this->actingAs($viewer)->get('/organization/members')->assertInertia(fn (Assert $page) => $page
+    $this->actingAs($viewer)->get('/settings/members')->assertInertia(fn (Assert $page) => $page
         ->where('canManage', false)
         ->where('invitations', []));
 });

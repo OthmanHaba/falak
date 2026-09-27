@@ -12,7 +12,7 @@ use Kiln\Identity\Events\OrganizationDeleted;
 
 it('redirects members without an organization to create one', function () {
     $this->actingAs(User::factory()->create())
-        ->get('/organization/settings')
+        ->get('/settings/organization')
         ->assertRedirect(route('organizations.create'));
 
     $this->get('/organizations/create')->assertOk()->assertInertia(fn (Assert $page) => $page->component('Identity/organizations/create', false));
@@ -42,10 +42,10 @@ it('switches between organizations the user belongs to only', function () {
 
     $this->put('/organizations/current', ['organization_id' => $first->id])->assertRedirect(route('dashboard'));
     expect($user->fresh()->current_organization_id)->toBe($first->id);
-    $this->get('/organization/settings')->assertInertia(fn (Assert $page) => $page->where('details.id', $first->id));
+    $this->get('/settings/organization')->assertInertia(fn (Assert $page) => $page->where('details.id', $first->id));
 
     $this->put('/organizations/current', ['organization_id' => $second->id]);
-    $this->get('/organization/settings')->assertInertia(fn (Assert $page) => $page->where('details.id', $second->id));
+    $this->get('/settings/organization')->assertInertia(fn (Assert $page) => $page->where('details.id', $second->id));
 
     $this->put('/organizations/current', ['organization_id' => $foreign->id])->assertForbidden();
     expect($user->fresh()->current_organization_id)->toBe($second->id);
@@ -55,14 +55,14 @@ it('shows settings with permissions per role', function () {
     [, $organization] = actingAsMember();
     [$viewer] = memberOf($organization, Role::Viewer);
 
-    $this->get('/organization/settings')->assertOk()->assertInertia(fn (Assert $page) => $page
+    $this->get('/settings/organization')->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('Identity/organizations/settings', false)
         ->where('can.update', true)
         ->where('can.transfer', true)
         ->where('can.delete', true)
         ->has('members', 1));
 
-    $this->actingAs($viewer)->get('/organization/settings')->assertInertia(fn (Assert $page) => $page
+    $this->actingAs($viewer)->get('/settings/organization')->assertInertia(fn (Assert $page) => $page
         ->where('can.update', false)
         ->where('can.delete', false)
         ->where('can.transfer', false));
@@ -134,7 +134,7 @@ it('deletes an organization after typed confirmation', function () {
 it('shares the current organization, switcher list and permissions with every page', function () {
     [$user, $organization] = actingAsMember(Role::Viewer);
 
-    $this->get('/organization/settings')->assertInertia(fn (Assert $page) => $page
+    $this->get('/settings/organization')->assertInertia(fn (Assert $page) => $page
         ->where('organization.current.id', $organization->id)
         ->where('organization.current.name', $organization->name)
         ->where('organization.current.role', 'viewer')

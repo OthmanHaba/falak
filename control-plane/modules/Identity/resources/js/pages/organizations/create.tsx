@@ -1,40 +1,42 @@
-import HeadingSmall from '@/components/heading-small';
-import InputError from '@/components/input-error';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
+import { AppShell } from '@/components/kiln/app-shell';
+import { Button } from '@/components/kiln/button';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { PageHeader, Section } from '@/components/kiln/section';
 import { Head, useForm } from '@inertiajs/react';
-import { FormEventHandler } from 'react';
-
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'New organization', href: '/organizations/create' }];
+import { type FormEventHandler } from 'react';
 
 export default function CreateOrganization() {
     const { data, setData, post, processing, errors } = useForm({ name: '' });
 
-    const submit: FormEventHandler = (e) => {
-        e.preventDefault();
+    const submit: FormEventHandler = (event) => {
+        event.preventDefault();
         post(route('organizations.store'));
     };
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
+        <AppShell breadcrumbs={[{ title: 'New organization', href: '/organizations/create' }]}>
             <Head title="New organization" />
-            <div className="max-w-xl space-y-6 px-4 py-6">
-                <HeadingSmall
+            <div className="mx-auto grid max-w-xl gap-6">
+                <PageHeader
                     title="Create an organization"
                     description="Organizations own servers, sites and credentials. Invite teammates and give them roles once it exists."
                 />
-                <form onSubmit={submit} className="space-y-6">
-                    <div className="grid gap-2">
-                        <Label htmlFor="name">Name</Label>
-                        <Input id="name" autoFocus value={data.name} onChange={(e) => setData('name', e.target.value)} placeholder="Acme Inc." />
-                        <InputError message={errors.name} />
-                    </div>
-                    <Button disabled={processing}>Create organization</Button>
+                <form onSubmit={submit}>
+                    <Section
+                        title="Details"
+                        footer={
+                            <Button variant="primary" type="submit" loading={processing}>
+                                Create organization
+                            </Button>
+                        }
+                    >
+                        <Field label="Name" error={errors.name}>
+                            <Input autoFocus value={data.name} onChange={(event) => setData('name', event.target.value)} placeholder="Acme Inc." />
+                        </Field>
+                    </Section>
                 </form>
             </div>
-        </AppLayout>
+        </AppShell>
     );
 }

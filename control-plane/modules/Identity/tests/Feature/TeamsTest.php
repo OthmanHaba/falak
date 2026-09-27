@@ -20,7 +20,7 @@ it('creates, updates, syncs members of and deletes teams', function () {
     $this->put("/organization/teams/{$team->id}/members", ['user_ids' => [$owner->id, $developer->id]])->assertSessionHasNoErrors();
     expect($team->members()->pluck('identity_users.id')->sort()->values()->all())->toBe(collect([$owner->id, $developer->id])->sort()->values()->all());
 
-    $this->get('/organization/teams')->assertInertia(fn (Assert $page) => $page
+    $this->get('/settings/teams')->assertInertia(fn (Assert $page) => $page
         ->component('Identity/organizations/teams', false)
         ->has('teams', 1)
         ->has('teams.0.members', 2)
@@ -52,7 +52,7 @@ it('lets viewers see teams but not manage them', function () {
     $team = $organization->teams()->create(['name' => 'Ops']);
     $this->actingAs($viewer);
 
-    $this->get('/organization/teams')->assertOk()->assertInertia(fn (Assert $page) => $page->where('canManage', false));
+    $this->get('/settings/teams')->assertOk()->assertInertia(fn (Assert $page) => $page->where('canManage', false));
     $this->post('/organization/teams', ['name' => 'New'])->assertForbidden();
     $this->patch("/organization/teams/{$team->id}", ['name' => 'X'])->assertForbidden();
     $this->put("/organization/teams/{$team->id}/members", ['user_ids' => []])->assertForbidden();

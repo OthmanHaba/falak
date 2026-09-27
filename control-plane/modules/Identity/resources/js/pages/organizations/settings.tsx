@@ -1,15 +1,13 @@
-import HeadingSmall from '@/components/heading-small';
-import InputError from '@/components/input-error';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import AppLayout from '@/layouts/app-layout';
-import OrganizationLayout from '@/layouts/organization/layout';
-import { type BreadcrumbItem } from '@/types';
-import { Transition } from '@headlessui/react';
-import { Head, useForm } from '@inertiajs/react';
-import { FormEventHandler } from 'react';
+import { Button } from '@/components/kiln/button';
+import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { KeyValue } from '@/components/kiln/key-value';
+import { Section } from '@/components/kiln/section';
+import { Select } from '@/components/kiln/select';
+import SettingsLayout from '@/layouts/settings/layout';
+import { useForm } from '@inertiajs/react';
+import { useState, type FormEventHandler } from 'react';
 
 interface Member {
     id: string;
@@ -23,142 +21,129 @@ interface OrganizationSettingsProps {
     members: Member[];
 }
 
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'Organization settings', href: '/organization/settings' }];
-
 export default function OrganizationSettings({ details: organization, can, members }: OrganizationSettingsProps) {
     const rename = useForm({ name: organization.name });
     const transfer = useForm({ user_id: '', password: '' });
     const destroy = useForm({ name: '', password: '' });
+    const [deleteOpen, setDeleteOpen] = useState(false);
 
-    const submitRename: FormEventHandler = (e) => {
-        e.preventDefault();
+    const submitRename: FormEventHandler = (event) => {
+        event.preventDefault();
         rename.patch(route('organization.update'), { preserveScroll: true });
     };
 
-    const submitTransfer: FormEventHandler = (e) => {
-        e.preventDefault();
+    const submitTransfer: FormEventHandler = (event) => {
+        event.preventDefault();
         transfer.post(route('organization.transfer'), { preserveScroll: true, onSuccess: () => transfer.reset() });
     };
 
-    const submitDelete: FormEventHandler = (e) => {
-        e.preventDefault();
+    const submitDelete = (confirmed: string) => {
+        destroy.transform((data) => ({ ...data, name: confirmed }));
         destroy.delete(route('organization.destroy'), { preserveScroll: true, onFinish: () => destroy.reset('password') });
     };
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Organization settings" />
-            <OrganizationLayout>
-                <div className="space-y-6">
-                    <HeadingSmall
-                        title="General"
-                        description={`Slug: ${organization.slug}${organization.personal ? ' · personal organization' : ''}`}
+        <SettingsLayout title="General" description="Your organization's name and ownership.">
+            <form onSubmit={submitRename}>
+                <Section
+                    title="Organization"
+                    footer={
+                        can.update ? (
+                            <>
+                                {rename.recentlySuccessful && <span className="text-fg-muted text-xs">Saved</span>}
+                                <Button variant="primary" type="submit" loading={rename.processing}>
+                                    Save
+                                </Button>
+                            </>
+                        ) : undefined
+                    }
+                >
+                    <Field label="Name" error={rename.errors.name}>
+                        <Input value={rename.data.name} disabled={!can.update} onChange={(event) => rename.setData('name', event.target.value)} />
+                    </Field>
+                    <KeyValue
+                        columns={3}
+                        items={[
+                            { label: 'Slug', value: organization.slug, mono: true, copy: organization.slug },
+                            { label: 'ID', value: organization.id, mono: true, copy: organization.id },
+                            { label: 'Type', value: organization.personal ? 'Personal' : 'Team' },
+                        ]}
                     />
-                    <form onSubmit={submitRename} className="space-y-4">
-                        <div className="grid gap-2">
-                            <Label htmlFor="name">Name</Label>
-                            <Input
-                                id="name"
-                                value={rename.data.name}
-                                disabled={!can.update}
-                                onChange={(e) => rename.setData('name', e.target.value)}
-                            />
-                            <InputError message={rename.errors.name} />
-                        </div>
-                        {can.update && (
-                            <div className="flex items-center gap-4">
-                                <Button disabled={rename.processing}>Save</Button>
-                                <Transition
-                                    show={rename.recentlySuccessful}
-                                    enter="transition"
-                                    enterFrom="opacity-0"
-                                    leave="transition"
-                                    leaveTo="opacity-0"
-                                >
-                                    <p className="text-sm text-neutral-600">Saved</p>
-                                </Transition>
-                            </div>
-                        )}
-                    </form>
-                </div>
+                </Section>
+            </form>
 
-                {can.transfer && (
-                    <div className="space-y-6">
-                        <HeadingSmall title="Transfer ownership" description="The new owner gets full control; you become an admin." />
+            {can.transfer && (
+                <form onSubmit={submitTransfer}>
+                    <Section
+                        title="Transfer ownership"
+                        description="The new owner gets full control; you become an admin."
+                        footer={
+                            members.length > 0 ? (
+                                <Button type="submit" loading={transfer.processing} disabled={!transfer.data.user_id}>
+                                    Transfer ownership
+                                </Button>
+                            ) : undefined
+                        }
+                    >
                         {members.length === 0 ? (
-                            <p className="text-muted-foreground text-sm">Invite another member first.</p>
+                            <p className="text-fg-muted text-sm">Invite another member first.</p>
                         ) : (
-                            <form onSubmit={submitTransfer} className="space-y-4">
-                                <div className="grid gap-2">
-                                    <Label>New owner</Label>
-                                    <Select value={transfer.data.user_id} onValueChange={(value) => transfer.setData('user_id', value)}>
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select a member" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {members.map((member) => (
-                                                <SelectItem key={member.id} value={member.id}>
-                                                    {member.name} ({member.email})
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <InputError message={transfer.errors.user_id} />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="transfer_password">Your password</Label>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <Field label="New owner" error={transfer.errors.user_id}>
+                                    <Select
+                                        value={transfer.data.user_id || undefined}
+                                        onValueChange={(value) => transfer.setData('user_id', value)}
+                                        placeholder="Select a member"
+                                        options={members.map((member) => ({ value: member.id, label: member.name, description: member.email }))}
+                                    />
+                                </Field>
+                                <Field label="Your password" error={transfer.errors.password}>
                                     <Input
-                                        id="transfer_password"
                                         type="password"
                                         autoComplete="current-password"
                                         value={transfer.data.password}
-                                        onChange={(e) => transfer.setData('password', e.target.value)}
+                                        onChange={(event) => transfer.setData('password', event.target.value)}
                                     />
-                                    <InputError message={transfer.errors.password} />
-                                </div>
-                                <Button variant="secondary" disabled={transfer.processing || !transfer.data.user_id}>
-                                    Transfer ownership
-                                </Button>
-                            </form>
+                                </Field>
+                            </div>
                         )}
-                    </div>
-                )}
+                    </Section>
+                </form>
+            )}
 
-                {can.delete && (
-                    <div className="space-y-6">
-                        <HeadingSmall
-                            title="Delete organization"
-                            description="Deletes the organization and everything it owns. This cannot be undone."
-                        />
-                        <form
-                            onSubmit={submitDelete}
-                            className="space-y-4 rounded-lg border border-red-100 bg-red-50 p-4 dark:border-red-200/10 dark:bg-red-700/10"
-                        >
-                            <div className="grid gap-2">
-                                <Label htmlFor="confirm_name">
-                                    Type <span className="font-mono">{organization.name}</span> to confirm
-                                </Label>
-                                <Input id="confirm_name" value={destroy.data.name} onChange={(e) => destroy.setData('name', e.target.value)} />
-                                <InputError message={destroy.errors.name} />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="delete_password">Your password</Label>
-                                <Input
-                                    id="delete_password"
-                                    type="password"
-                                    autoComplete="current-password"
-                                    value={destroy.data.password}
-                                    onChange={(e) => destroy.setData('password', e.target.value)}
-                                />
-                                <InputError message={destroy.errors.password} />
-                            </div>
-                            <Button variant="destructive" disabled={destroy.processing || destroy.data.name !== organization.name}>
-                                Delete organization
-                            </Button>
-                        </form>
+            {can.delete && (
+                <Section
+                    tone="danger"
+                    title="Delete organization"
+                    description="Deletes the organization and everything it owns. This cannot be undone."
+                >
+                    <div>
+                        <Button variant="danger" onClick={() => setDeleteOpen(true)}>
+                            Delete organization
+                        </Button>
                     </div>
-                )}
-            </OrganizationLayout>
-        </AppLayout>
+                    <ConfirmDestructive
+                        open={deleteOpen}
+                        onOpenChange={setDeleteOpen}
+                        title="Delete organization"
+                        description="All servers, sites, databases and history owned by this organization will be removed."
+                        confirmText={organization.name}
+                        confirmLabel="Delete organization"
+                        onConfirm={submitDelete}
+                        processing={destroy.processing}
+                        error={destroy.errors.name}
+                    >
+                        <Field label="Your password" error={destroy.errors.password}>
+                            <Input
+                                type="password"
+                                autoComplete="current-password"
+                                value={destroy.data.password}
+                                onChange={(event) => destroy.setData('password', event.target.value)}
+                            />
+                        </Field>
+                    </ConfirmDestructive>
+                </Section>
+            )}
+        </SettingsLayout>
     );
 }

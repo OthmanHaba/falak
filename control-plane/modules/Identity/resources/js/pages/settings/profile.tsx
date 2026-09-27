@@ -1,120 +1,121 @@
-import { type BreadcrumbItem, type SharedData } from '@/types';
-import { Transition } from '@headlessui/react';
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
-import { FormEventHandler } from 'react';
-
-import DeleteUser from '@/components/delete-user';
-import HeadingSmall from '@/components/heading-small';
-import InputError from '@/components/input-error';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import AppLayout from '@/layouts/app-layout';
+import { Button } from '@/components/kiln/button';
+import { Dialog } from '@/components/kiln/dialog';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { Section } from '@/components/kiln/section';
 import SettingsLayout from '@/layouts/settings/layout';
+import { type SharedData } from '@/types';
+import { Link, useForm, usePage } from '@inertiajs/react';
+import { useState, type FormEventHandler } from 'react';
 
-const breadcrumbs: BreadcrumbItem[] = [
-    {
-        title: 'Profile settings',
-        href: '/settings/profile',
-    },
-];
+function DeleteAccount() {
+    const [open, setOpen] = useState(false);
+    const form = useForm({ password: '' });
 
-export default function Profile({ mustVerifyEmail, status }: { mustVerifyEmail: boolean; status?: string }) {
-    const { auth } = usePage<SharedData>().props;
-
-    const { data, setData, patch, errors, processing, recentlySuccessful } = useForm({
-        name: auth.user.name,
-        email: auth.user.email,
-    });
-
-    const submit: FormEventHandler = (e) => {
-        e.preventDefault();
-
-        patch(route('profile.update'));
+    const submit: FormEventHandler = (event) => {
+        event.preventDefault();
+        form.delete(route('profile.destroy'), { preserveScroll: true, onSuccess: () => setOpen(false), onFinish: () => form.reset() });
     };
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Profile settings" />
-
-            <SettingsLayout>
-                <div className="space-y-6">
-                    <HeadingSmall title="Profile information" description="Update your name and email address" />
-
-                    <form onSubmit={submit} className="space-y-6">
-                        <div className="grid gap-2">
-                            <Label htmlFor="name">Name</Label>
-
+        <Section
+            id="danger"
+            tone="danger"
+            title="Delete account"
+            description="Permanently delete your account and everything that belongs to it. This cannot be undone."
+        >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-fg-muted text-sm">Organizations you own must be transferred or deleted first.</p>
+                <Dialog
+                    open={open}
+                    onOpenChange={(value) => {
+                        setOpen(value);
+                        if (!value) form.clearErrors();
+                    }}
+                    trigger={<Button variant="danger">Delete account</Button>}
+                    title="Delete your account?"
+                    description="All of your data will be permanently removed. Enter your password to confirm."
+                    size="sm"
+                    footer={
+                        <>
+                            <Button variant="ghost" onClick={() => setOpen(false)}>
+                                Cancel
+                            </Button>
+                            <Button variant="danger" type="submit" form="delete-account" loading={form.processing}>
+                                Delete account
+                            </Button>
+                        </>
+                    }
+                >
+                    <form id="delete-account" onSubmit={submit}>
+                        <Field label="Password" error={form.errors.password}>
                             <Input
-                                id="name"
-                                className="mt-1 block w-full"
-                                value={data.name}
-                                onChange={(e) => setData('name', e.target.value)}
-                                required
-                                autoComplete="name"
-                                placeholder="Full name"
+                                type="password"
+                                autoComplete="current-password"
+                                value={form.data.password}
+                                onChange={(event) => form.setData('password', event.target.value)}
+                                autoFocus
                             />
-
-                            <InputError className="mt-2" message={errors.name} />
-                        </div>
-
-                        <div className="grid gap-2">
-                            <Label htmlFor="email">Email address</Label>
-
-                            <Input
-                                id="email"
-                                type="email"
-                                className="mt-1 block w-full"
-                                value={data.email}
-                                onChange={(e) => setData('email', e.target.value)}
-                                required
-                                autoComplete="username"
-                                placeholder="Email address"
-                            />
-
-                            <InputError className="mt-2" message={errors.email} />
-                        </div>
-
-                        {mustVerifyEmail && auth.user.email_verified_at === null && (
-                            <div>
-                                <p className="mt-2 text-sm text-neutral-800">
-                                    Your email address is unverified.
-                                    <Link
-                                        href={route('verification.send')}
-                                        method="post"
-                                        as="button"
-                                        className="rounded-md text-sm text-neutral-600 underline hover:text-neutral-900 focus:ring-2 focus:ring-offset-2 focus:outline-hidden"
-                                    >
-                                        Click here to re-send the verification email.
-                                    </Link>
-                                </p>
-
-                                {status === 'verification-link-sent' && (
-                                    <div className="mt-2 text-sm font-medium text-green-600">
-                                        A new verification link has been sent to your email address.
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="flex items-center gap-4">
-                            <Button disabled={processing}>Save</Button>
-
-                            <Transition
-                                show={recentlySuccessful}
-                                enter="transition ease-in-out"
-                                enterFrom="opacity-0"
-                                leave="transition ease-in-out"
-                                leaveTo="opacity-0"
-                            >
-                                <p className="text-sm text-neutral-600">Saved</p>
-                            </Transition>
-                        </div>
+                        </Field>
                     </form>
-                </div>
+                </Dialog>
+            </div>
+        </Section>
+    );
+}
 
-                <DeleteUser />
-            </SettingsLayout>
-        </AppLayout>
+export default function Profile({ mustVerifyEmail, status }: { mustVerifyEmail: boolean; status?: string }) {
+    const { auth } = usePage<SharedData>().props;
+    const { data, setData, patch, errors, processing, recentlySuccessful } = useForm({ name: auth.user.name, email: auth.user.email });
+
+    const submit: FormEventHandler = (event) => {
+        event.preventDefault();
+        patch(route('profile.update'), { preserveScroll: true });
+    };
+
+    return (
+        <SettingsLayout title="Profile" description="Your name and the email address you sign in with.">
+            <form onSubmit={submit}>
+                <Section
+                    title="Profile information"
+                    footer={
+                        <>
+                            {recentlySuccessful && <span className="text-fg-muted text-xs">Saved</span>}
+                            <Button variant="primary" type="submit" loading={processing}>
+                                Save
+                            </Button>
+                        </>
+                    }
+                >
+                    <Field label="Name" error={errors.name}>
+                        <Input value={data.name} onChange={(event) => setData('name', event.target.value)} required autoComplete="name" />
+                    </Field>
+                    <Field label="Email address" error={errors.email}>
+                        <Input
+                            type="email"
+                            value={data.email}
+                            onChange={(event) => setData('email', event.target.value)}
+                            required
+                            autoComplete="username"
+                        />
+                    </Field>
+                    {mustVerifyEmail && auth.user.email_verified_at === null && (
+                        <p className="text-fg-muted text-sm">
+                            Your email address is unverified.{' '}
+                            <Link
+                                href={route('verification.send')}
+                                method="post"
+                                as="button"
+                                className="text-primary underline-offset-4 hover:underline"
+                            >
+                                Re-send the verification email
+                            </Link>
+                            {status === 'verification-link-sent' && <span className="text-success ml-1">A new link has been sent.</span>}
+                        </p>
+                    )}
+                </Section>
+            </form>
+            <DeleteAccount />
+        </SettingsLayout>
     );
 }
