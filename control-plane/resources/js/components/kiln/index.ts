@@ -14,6 +14,7 @@ export { ConfirmDestructive, type ConfirmDestructiveProps } from './confirm-dest
 export { CopyButton, copyText, type CopyButtonProps } from './copy-button';
 export { DataTable, type DataTableColumn, type DataTableProps, type SortState } from './data-table';
 export { Dialog, DialogClose, DialogTrigger, type DialogProps } from './dialog';
+export { EmptyCanvas, type EmptyCanvasProps } from './empty-canvas';
 export { EmptyState, type EmptyStateProps } from './empty-state';
 export { EnvironmentSwitcher } from './environment-switcher';
 export { Field, useFieldControl, type FieldProps } from './field';
@@ -46,6 +47,7 @@ export { RelativeTime, formatRelative } from './relative-time';
 export { PageHeader, Section, type SectionProps } from './section';
 export { Select, type SelectOption, type SelectProps } from './select';
 export { ServiceIcon, hasServiceIcon, type ServiceIconProps } from './service-icon';
+export { ServiceCard, type ServiceCardProps } from './service-card';
 export { Skeleton, SkeletonRows } from './skeleton';
 export { StatusBadge, StatusDot, statusSpec, type StatusBadgeProps, type StatusDotProps, type StatusTone } from './status';
 export { Switch, type SwitchProps } from './switch';

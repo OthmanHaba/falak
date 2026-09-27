@@ -101,3 +101,31 @@ export interface Paginated<T> {
     to: number | null;
     links: { url: string | null; label: string; active: boolean }[];
 }
+
+/** docs/UI_DESIGN.md §9 canvas read model (GET /projects/{p}/{env}/canvas). */
+export type ServiceKind = 'site' | 'database';
+
+export type CanvasStatus = 'active' | 'deploying' | 'building' | 'queued' | 'failed' | 'crashed' | 'inactive' | 'provisioning';
+
+export interface CanvasService {
+    /** projects_services.id */
+    id: string;
+    kind: ServiceKind;
+    /** Site id / database id (the owning module's ULID). */
+    ref_id: string;
+    name: string;
+    /** ServiceIcon key. */
+    icon: string;
+    position: { x: number; y: number };
+    status: CanvasStatus;
+    status_label: string;
+    url: string | null;
+    subtitle: string | null;
+    servers: { id: string; name: string; leader: boolean; online: boolean }[];
+    last_deployment: { id: string; status: string; commit: string | null; message: string | null; finished_at: string | null } | null;
+}
+
+export interface Canvas {
+    services: CanvasService[];
+    edges: { from: string; to: string }[];
+}

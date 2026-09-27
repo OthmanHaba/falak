@@ -33,5 +33,6 @@ Route::middleware(['auth', 'org'])->prefix('projects')->name('projects.')->group
 
     Route::post('{project}/{environment}/services', [ServiceController::class, 'store'])->where($patterns)->name('services.store');
     Route::patch('{project}/{environment}/services/{service}', [ServiceController::class, 'update'])->where($patterns)->name('services.update');
+    Route::delete('{project}/{environment}/services/{service}', [ServiceController::class, 'destroy'])->where($patterns)->name('services.destroy');
     Route::patch('{project}/{environment}/services/{service}/position', [ServiceController::class, 'position'])->where($patterns)->name('services.position');
 });

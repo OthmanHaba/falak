@@ -1,4 +1,4 @@
-import { type SharedData } from '@/types';
+import { type CanvasService, type ServiceKind, type SharedData } from '@/types';
 import { type LucideIcon } from 'lucide-react';
 import { type ComponentType } from 'react';
 
@@ -102,11 +102,89 @@ export interface SettingsNavItem {
     keywords?: string[];
 }
 
+/**
+ * What a service panel tab / action knows about the open service (docs/UI_DESIGN.md §5). The panel is one page;
+ * each tab fetches its own data as JSON from the owning module's endpoints.
+ */
+export interface ServicePanelContext {
+    project: { id: string; name: string };
+    environment: { id: string; name: string; slug: string };
+    service: CanvasService;
+    /** Canvas URL of the environment (closing the panel goes here). */
+    canvasUrl: string;
+    /** Panel URL without the tab: /projects/{p}/{env}/service/{kind}/{id}. */
+    baseUrl: string;
+    /** Active tab id (URL segment). */
+    tab: string;
+    /** Record inside the tab (…/{tab}/{item}), e.g. the deployment shown in the Deploy view. */
+    item: string | null;
+    /** Navigate inside the panel without leaving the canvas. */
+    open: (tab: string, item?: string | null) => void;
+    /** Re-fetch the canvas read model (card status, panel header). */
+    refresh: () => void;
+    /** Leave the panel (e.g. after deleting the service). */
+    close: () => void;
+    can: (permission: string) => boolean;
+}
+
+export interface ServiceTabProps {
+    ctx: ServicePanelContext;
+}
+
+/**
+ * A tab of the service panel. `id` is its URL segment. Modules register theirs in register.ts:
+ * Deployments: deployments 100 · Sites: variables 200, settings 900 · Telemetry: metrics 300, logs 400 ·
+ * Insights: observability 500 · Processes: processes 600. Databases: overview 100, databases 200, backups 300,
+ * metrics 400, settings 900.
+ */
+export interface ServiceTab {
+    id: string;
+    kinds: ServiceKind[];
+    title: string;
+    order: number;
+    permission?: string;
+    component: ComponentType<ServiceTabProps>;
+    /**
+     * A stand-in until the owning module ships the tab: never replaces a real registration, and a real
+     * registration with the same id replaces it regardless of load order.
+     */
+    placeholder?: boolean;
+}
+
+export interface ServiceActionDialogProps {
+    ctx: ServicePanelContext;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+}
+
+/**
+ * An action in the panel header (§5): the one `primary` action renders as a button (Deploy for sites, Connect for
+ * databases), the rest go into the `⋯` menu, ordered. Either `perform` it or open its `dialog`.
+ */
+export interface ServiceAction {
+    id: string;
+    kinds: ServiceKind[];
+    label: string;
+    order: number;
+    icon?: LucideIcon;
+    primary?: boolean;
+    danger?: boolean;
+    permission?: string;
+    /** Hide the action when this returns false (e.g. "Open site" without a URL). */
+    when?: (ctx: ServicePanelContext) => boolean;
+    perform?: (ctx: ServicePanelContext) => void | Promise<void>;
+    dialog?: ComponentType<ServiceActionDialogProps>;
+    /** Menu separator above this action. */
+    separated?: boolean;
+}
+
 const navItems = new Map<string, ModuleNavItem>();
 const settingsItems = new Map<string, SettingsNavItem>();
 const headerItems = new Map<string, HeaderItem>();
 const commandProviders = new Map<string, CommandProvider>();
 const siteTabs = new Map<string, SiteTab>();
+const serviceTabs = new Map<string, ServiceTab>();
+const serviceActions = new Map<string, ServiceAction>();
 
 export function registerNavigation(...items: ModuleNavItem[]): void {
     items.forEach((item) => navItems.set(item.id, item));
@@ -142,6 +220,35 @@ export function registerSiteTabs(...tabs: SiteTab[]): void {
 
 export function siteTabsFor(ctx: ShellContext): SiteTab[] {
     return [...siteTabs.values()].filter((tab) => !tab.permission || ctx.can(tab.permission)).sort((a, b) => a.order - b.order);
+}
+
+export function registerServiceTabs(...tabs: ServiceTab[]): void {
+    tabs.forEach((tab) => {
+        for (const kind of tab.kinds) {
+            const key = `${kind}:${tab.id}`;
+            if (tab.placeholder && serviceTabs.has(key) && !serviceTabs.get(key)?.placeholder) continue;
+            serviceTabs.set(key, { ...tab, kinds: [kind] });
+        }
+    });
+}
+
+export function serviceTabsFor(kind: ServiceKind, ctx: Pick<ShellContext, 'can'>): ServiceTab[] {
+    return [...serviceTabs.values()]
+        .filter((tab) => tab.kinds.includes(kind) && (!tab.permission || ctx.can(tab.permission)))
+        .sort((a, b) => a.order - b.order);
+}
+
+export function registerServiceActions(...actions: ServiceAction[]): void {
+    actions.forEach((action) => serviceActions.set(action.id, action));
+}
+
+export function serviceActionsFor(ctx: ServicePanelContext): ServiceAction[] {
+    return [...serviceActions.values()]
+        .filter(
+            (action) =>
+                action.kinds.includes(ctx.service.kind) && (!action.permission || ctx.can(action.permission)) && (action.when?.(ctx) ?? true),
+        )
+        .sort((a, b) => a.order - b.order);
 }
 
 export function navigationFor(ctx: ShellContext): ModuleNavItem[] {

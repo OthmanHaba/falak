@@ -2,6 +2,7 @@
 
 use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Identity\Contracts\Role;
+use Kiln\Sites\Domain\Models\Site;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -107,4 +108,36 @@ it('serves the create picker options as JSON', function () {
     $this->getJson('/sites/create')->assertOk()
         ->assertJsonPath('data.options.servers.0.name', 'web-1')
         ->assertJsonStructure(['data' => ['options' => ['frameworks', 'runtimes', 'connections'], 'can_manage_source_control']]);
+});
+
+it('lists engine servers as JSON for the create picker', function () {
+    projects_database($this->organization, 'shop-db');
+
+    $this->getJson('/databases')->assertOk()
+        ->assertJsonPath('data.0.engine', 'postgresql')
+        ->assertJsonStructure(['data' => [['id', 'server_id', 'server_name', 'engine', 'engine_label', 'version']]]);
+});
+
+it('deletes the site behind a service after typing its name', function () {
+    sites_fake_agents();
+    $shop = projects_site($this->organization, 'Shop', [], $this->environment);
+    $service = projects_service('site', $shop->id);
+
+    $this->deleteJson("{$this->canvas}/services/{$service->id}", ['confirm' => 'shop'])->assertUnprocessable()->assertJsonValidationErrors('confirm');
+    $this->deleteJson("{$this->canvas}/services/{$service->id}", ['confirm' => 'Shop'])->assertNoContent();
+
+    expect(Site::query()->find($shop->id))->toBeNull()
+        ->and(projects_service('site', $shop->id))->toBeNull();
+});
+
+it('drops the database behind a service and forbids developers without the permission', function () {
+    sites_fake_agents();
+    [$database] = projects_database($this->organization, 'shop_db', $this->environment);
+    $service = projects_service('database', $database->id);
+
+    [$viewer] = memberOf($this->organization, Role::Viewer);
+    $this->actingAs($viewer)->deleteJson("{$this->canvas}/services/{$service->id}", ['confirm' => 'shop_db'])->assertForbidden();
+
+    $this->actingAs($this->user)->deleteJson("{$this->canvas}/services/{$service->id}", ['confirm' => 'shop_db'])->assertNoContent();
+    expect($database->refresh()->status->value)->toBe('deleting');
 });

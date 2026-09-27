@@ -8,6 +8,7 @@ use Illuminate\Validation\Rule;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Projects\Application\Actions\CreateService;
+use Kiln\Projects\Application\Actions\DeleteService;
 use Kiln\Projects\Application\Actions\MoveService;
 use Kiln\Projects\Application\Actions\RenameService;
 use Kiln\Projects\Application\Canvas\CanvasReadModel;
@@ -78,6 +79,24 @@ final class ServiceController extends Controller
         $rename($record, (string) $data['name']);
 
         return response()->json(['data' => ['id' => $record->id, 'name' => $record->name]]);
+    }
+
+    /**
+     * DELETE /projects/{project}/{environment}/services/{service} {confirm: service name} — delete the site /
+     * database behind a card (§1.9: typed confirmation).
+     */
+    public function destroy(Request $request, Project $project, string $environment, string $service, DeleteService $delete): JsonResponse
+    {
+        $this->authorize('manage', $project);
+        $model = $this->resolveEnvironment($project, $environment);
+        $record = Service::query()->where('environment_id', $model->id)->find(strtolower($service)) ?? throw new NotFoundHttpException('Service not found.');
+
+        $this->access->authorize($request->user(), $project->organization_id, $record->kind === ServiceKind::Site ? 'sites.delete' : 'databases.manage');
+        $request->validate(['confirm' => ['required', 'string', Rule::in([$record->name])]], ['confirm.in' => 'Type the service name to confirm.']);
+
+        $delete($record);
+
+        return response()->json(null, 204);
     }
 
     /**

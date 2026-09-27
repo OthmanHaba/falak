@@ -5,6 +5,7 @@ namespace Kiln\Sites\Infrastructure;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Kiln\Sites\Application\Actions\CreateSite;
+use Kiln\Sites\Application\Actions\DeleteSite;
 use Kiln\Sites\Application\Actions\DuplicateSite;
 use Kiln\Sites\Contracts\Data\CreatedSite;
 use Kiln\Sites\Contracts\Data\SitePlacement;
@@ -37,5 +38,12 @@ final class ActionSiteFactory implements SiteFactory
         $site = (new DuplicateSite($create))($source, $overrides, $placement, $userId);
 
         return new CreatedSite($site->toData(), array_values($create->warnings));
+    }
+
+    public function delete(string $siteId): void
+    {
+        if ($site = Site::query()->find(strtolower($siteId))) {
+            app(DeleteSite::class)($site);
+        }
     }
 }
