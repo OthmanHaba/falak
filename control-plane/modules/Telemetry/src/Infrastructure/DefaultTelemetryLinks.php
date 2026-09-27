@@ -17,17 +17,17 @@ final class DefaultTelemetryLinks implements TelemetryLinks
 
     public function trace(string $traceId): string
     {
-        return route('telemetry.traces.show', ['traceId' => strtolower($traceId)], false);
+        return route('observability.traces.show', ['traceId' => strtolower($traceId)], false);
     }
 
     public function logs(array $filters = [], ?DateTimeInterface $from = null, ?DateTimeInterface $to = null): string
     {
-        return route('telemetry.logs.index', $this->query($filters, self::LOG_FILTERS, $from, $to), false);
+        return route('observability.logs', $this->query($filters, self::LOG_FILTERS, $from, $to), false);
     }
 
     public function traceSearch(array $filters = [], ?DateTimeInterface $from = null, ?DateTimeInterface $to = null): string
     {
-        return route('telemetry.traces.index', $this->query($filters, self::TRACE_FILTERS, $from, $to), false);
+        return route('observability.traces.index', $this->query($filters, self::TRACE_FILTERS, $from, $to), false);
     }
 
     public function grafanaTrace(string $traceId): ?string

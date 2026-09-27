@@ -1,17 +1,15 @@
-import Heading from '@/components/heading';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, Link } from '@inertiajs/react';
-import { format } from 'date-fns';
-import { Search } from 'lucide-react';
-import { FormEventHandler, useCallback, useEffect, useState } from 'react';
+import { Button } from '@/components/kiln/button';
+import { DataTable, type DataTableColumn } from '@/components/kiln/data-table';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { RelativeTime } from '@/components/kiln/relative-time';
+import { Segmented } from '@/components/kiln/segmented';
+import { Select } from '@/components/kiln/select';
+import ObservabilityLayout from '@/layouts/observability-layout';
+import { Link, router } from '@inertiajs/react';
+import { Activity, Search } from 'lucide-react';
+import { useCallback, useEffect, useState, type FormEventHandler } from 'react';
+import { BackendError, NotConfigured } from '../components/backend-state';
 import { formatDuration, getJson, queryString } from '../lib';
 import { type TraceSummaryDto } from '../types';
 
@@ -28,30 +26,37 @@ interface Filters {
 
 interface Props {
     filters: Filters;
+    sites: { id: string; name: string }[];
     configured: boolean;
 }
 
-const RANGES = ['15m', '1h', '6h', '24h', '7d'];
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'Traces', href: '/telemetry/traces' }];
+const RANGES = ['15m', '1h', '6h', '24h', '7d'] as const;
+const ANY = '__any__';
 
-export default function Traces({ filters: initial, configured }: Props) {
+type SearchState = { status: 'idle' } | { status: 'loading' } | { status: 'loaded'; traces: TraceSummaryDto[] } | { status: 'error'; error: unknown };
+
+function startedAt(trace: TraceSummaryDto): number {
+    try {
+        return Number(BigInt(trace.start_unix_nano) / 1_000_000n);
+    } catch {
+        return 0;
+    }
+}
+
+export default function Traces({ filters: initial, sites, configured }: Props) {
     const [filters, setFilters] = useState<Filters>({ range: '1h', status: 'any', ...initial });
-    const [traces, setTraces] = useState<TraceSummaryDto[] | null>(null);
-    const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [state, setState] = useState<SearchState>({ status: 'idle' });
 
     const run = useCallback(async (current: Filters) => {
-        setLoading(true);
-        setError(null);
+        setState({ status: 'loading' });
+        const query = queryString({ ...current, status: current.status === 'any' ? undefined : current.status });
+        window.history.replaceState(window.history.state, '', `/observability/traces${query}`);
 
         try {
-            const body = await getJson<{ traces: TraceSummaryDto[] }>(`/telemetry/traces/search${queryString({ ...current })}`);
-            setTraces(body.traces);
-            window.history.replaceState(null, '', `/telemetry/traces${queryString({ ...current })}`);
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Search failed');
-        } finally {
-            setLoading(false);
+            const body = await getJson<{ traces: TraceSummaryDto[] }>(`/telemetry/traces/search${query}`);
+            setState({ status: 'loaded', traces: body.traces });
+        } catch (error) {
+            setState({ status: 'error', error });
         }
     }, []);
 
@@ -64,116 +69,156 @@ export default function Traces({ filters: initial, configured }: Props) {
         void run(filters);
     };
 
-    const set = (key: keyof Filters) => (value: string) => setFilters((current) => ({ ...current, [key]: value }));
+    const update = (patch: Partial<Filters>, immediate = false) => {
+        const next = { ...filters, ...patch };
+        setFilters(next);
+        if (immediate && configured) void run(next);
+    };
+
+    const traces = state.status === 'loaded' ? state.traces : [];
+    const longest = Math.max(1, ...traces.map((trace) => trace.duration_ms));
+    const siteName = (id: string | undefined) => sites.find((site) => site.id.toLowerCase() === id?.toLowerCase())?.name;
+
+    const columns: DataTableColumn<TraceSummaryDto>[] = [
+        {
+            id: 'root',
+            header: 'Root span',
+            cell: (trace) => (
+                <span className="grid min-w-0">
+                    <Link
+                        href={`/observability/traces/${trace.trace_id}`}
+                        onClick={(event) => event.stopPropagation()}
+                        className="text-fg truncate font-mono text-xs hover:underline"
+                    >
+                        {trace.root_name ?? '(unknown root)'}
+                    </Link>
+                    <span className="text-fg-faint text-2xs truncate font-mono">{trace.trace_id}</span>
+                </span>
+            ),
+            sortValue: (trace) => trace.root_name,
+        },
+        {
+            id: 'service',
+            header: 'Service',
+            cell: (trace) => <span className="text-fg-muted">{trace.root_service ?? '—'}</span>,
+            sortValue: (trace) => trace.root_service,
+            hideOnMobile: true,
+        },
+        {
+            id: 'duration',
+            header: 'Duration',
+            width: '28%',
+            cell: (trace) => (
+                <span className="flex items-center gap-2">
+                    <span className="bg-surface-2 relative hidden h-1.5 flex-1 overflow-hidden rounded-full sm:block" aria-hidden>
+                        <span
+                            className="bg-chart-1 absolute inset-y-0 left-0 rounded-full"
+                            style={{ width: `${Math.max(2, (trace.duration_ms / longest) * 100)}%` }}
+                        />
+                    </span>
+                    <span className="tabular text-fg w-16 text-right text-xs">{formatDuration(trace.duration_ms)}</span>
+                </span>
+            ),
+            sortValue: (trace) => trace.duration_ms,
+        },
+        {
+            id: 'spans',
+            header: 'Matched',
+            align: 'right',
+            cell: (trace) => trace.matched_spans,
+            sortValue: (trace) => trace.matched_spans,
+            hideOnMobile: true,
+        },
+        {
+            id: 'started',
+            header: 'Started',
+            align: 'right',
+            cell: (trace) => <RelativeTime value={startedAt(trace)} className="text-fg-muted text-xs" />,
+            sortValue: (trace) => startedAt(trace),
+        },
+    ];
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Traces" />
-            <div className="space-y-6 p-4">
-                <Heading title="Traces" description="Search distributed traces (Tempo) across your sites" />
-                {!configured && (
-                    <Alert>
-                        <AlertDescription>Tempo is not configured (KILN_TEMPO_URL).</AlertDescription>
-                    </Alert>
-                )}
-                <form onSubmit={submit} className="grid gap-3 sm:grid-cols-3 lg:grid-cols-7">
-                    <div className="space-y-1">
-                        <Label htmlFor="service">Service</Label>
-                        <Input
-                            id="service"
-                            value={filters.service ?? ''}
-                            onChange={(e) => set('service')(e.target.value)}
-                            placeholder="shop-example-com"
-                        />
-                    </div>
-                    <div className="space-y-1 lg:col-span-2">
-                        <Label htmlFor="name">Span name</Label>
-                        <Input id="name" value={filters.name ?? ''} onChange={(e) => set('name')(e.target.value)} placeholder="GET /orders/{order}" />
-                    </div>
-                    <div className="space-y-1">
-                        <Label htmlFor="min">Min duration (ms)</Label>
-                        <Input
-                            id="min"
-                            type="number"
-                            min={0}
-                            value={filters.min_duration_ms ?? ''}
-                            onChange={(e) => set('min_duration_ms')(e.target.value)}
-                        />
-                    </div>
-                    <div className="space-y-1">
-                        <Label>Status</Label>
-                        <Select value={filters.status ?? 'any'} onValueChange={set('status')}>
-                            <SelectTrigger aria-label="Status">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="any">Any</SelectItem>
-                                <SelectItem value="error">Errors only</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="space-y-1">
-                        <Label>Range</Label>
-                        <Select value={filters.range ?? '1h'} onValueChange={set('range')}>
-                            <SelectTrigger aria-label="Time range">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {RANGES.map((range) => (
-                                    <SelectItem key={range} value={range}>
-                                        Last {range}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="flex items-end">
-                        <Button type="submit" disabled={!configured || loading} className="w-full">
-                            <Search /> Search
-                        </Button>
-                    </div>
-                </form>
-                {error && <p className="text-destructive text-sm">{error}</p>}
-                <Card>
-                    <CardContent className="p-0">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Started</TableHead>
-                                    <TableHead>Service</TableHead>
-                                    <TableHead>Root span</TableHead>
-                                    <TableHead className="text-right">Duration</TableHead>
-                                    <TableHead className="text-right">Matched spans</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {traces?.map((trace) => (
-                                    <TableRow key={trace.trace_id}>
-                                        <TableCell className="whitespace-nowrap">
-                                            {format(Number(BigInt(trace.start_unix_nano) / 1_000_000n), 'PP HH:mm:ss')}
-                                        </TableCell>
-                                        <TableCell>{trace.root_service ?? '—'}</TableCell>
-                                        <TableCell className="max-w-md truncate font-mono text-xs">
-                                            <Link href={`/telemetry/traces/${trace.trace_id}`} className="hover:underline">
-                                                {trace.root_name ?? trace.trace_id}
-                                            </Link>
-                                        </TableCell>
-                                        <TableCell className="text-right">{formatDuration(trace.duration_ms)}</TableCell>
-                                        <TableCell className="text-right">{trace.matched_spans}</TableCell>
-                                    </TableRow>
-                                ))}
-                                {traces?.length === 0 && (
-                                    <TableRow>
-                                        <TableCell colSpan={5} className="text-muted-foreground py-8 text-center">
-                                            No traces match these filters.
-                                        </TableCell>
-                                    </TableRow>
-                                )}
-                            </TableBody>
-                        </Table>
-                    </CardContent>
-                </Card>
-            </div>
-        </AppLayout>
+        <ObservabilityLayout tab="traces">
+            <form
+                onSubmit={submit}
+                className="border-border bg-surface-1 grid gap-3 rounded-lg border p-3 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1.4fr_0.8fr_auto] lg:items-end"
+            >
+                <Field label="Site">
+                    <Select
+                        value={filters.site_id ?? ANY}
+                        onValueChange={(value) => update({ site_id: value === ANY ? undefined : value }, true)}
+                        options={[{ value: ANY, label: 'All sites' }, ...sites.map((site) => ({ value: site.id, label: site.name }))]}
+                    />
+                </Field>
+                <Field label="Service">
+                    <Input
+                        value={filters.service ?? ''}
+                        onChange={(event) => update({ service: event.target.value || undefined })}
+                        placeholder="service.name"
+                        mono
+                    />
+                </Field>
+                <Field label="Span name">
+                    <Input
+                        value={filters.name ?? ''}
+                        onChange={(event) => update({ name: event.target.value || undefined })}
+                        placeholder="GET /orders/{order}"
+                        mono
+                    />
+                </Field>
+                <Field label="Min duration">
+                    <Input
+                        type="number"
+                        min={0}
+                        value={filters.min_duration_ms ?? ''}
+                        onChange={(event) => update({ min_duration_ms: event.target.value || undefined })}
+                        suffix={<span className="text-xs">ms</span>}
+                    />
+                </Field>
+                <Button type="submit" variant="primary" icon={<Search />} loading={state.status === 'loading'} disabled={!configured}>
+                    Search
+                </Button>
+                <div className="flex flex-wrap items-center gap-2 sm:col-span-2 lg:col-span-5">
+                    <Segmented
+                        label="Status"
+                        value={filters.status === 'error' ? 'error' : 'any'}
+                        onValueChange={(status) => update({ status }, true)}
+                        options={[
+                            { value: 'any', label: 'All traces' },
+                            { value: 'error', label: 'Errors only' },
+                        ]}
+                    />
+                    <Segmented
+                        label="Time range"
+                        value={(filters.range as (typeof RANGES)[number]) ?? '1h'}
+                        onValueChange={(range) => update({ range, from: undefined, to: undefined }, true)}
+                        options={RANGES.map((range) => ({ value: range, label: range }))}
+                    />
+                    {filters.site_id && <span className="text-fg-muted text-xs">Site: {siteName(filters.site_id) ?? filters.site_id}</span>}
+                </div>
+            </form>
+
+            {!configured ? (
+                <NotConfigured backend="Tempo" />
+            ) : state.status === 'error' ? (
+                <BackendError backend="Tempo" error={state.error} onRetry={() => void run(filters)} />
+            ) : (
+                <DataTable
+                    label="Traces"
+                    columns={columns}
+                    rows={traces}
+                    rowKey={(trace) => trace.trace_id}
+                    loading={state.status === 'loading' || state.status === 'idle'}
+                    onRowClick={(trace) => router.visit(`/observability/traces/${trace.trace_id}`)}
+                    empty={{
+                        icon: <Activity />,
+                        title: 'No traces match',
+                        description:
+                            'Widen the time range or loosen the filters. Traces are recorded for requests, jobs and commands of instrumented sites.',
+                    }}
+                />
+            )}
+        </ObservabilityLayout>
     );
 }

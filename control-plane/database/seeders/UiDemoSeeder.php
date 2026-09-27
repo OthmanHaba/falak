@@ -94,5 +94,7 @@ class UiDemoSeeder extends Seeder
 
         // Organization settings: git connections, clouds, buckets, builders, alerting, recipes.
         $this->callWith(SettingsDemoSeeder::class, ['organizationId' => $organization->id, 'userId' => $admin->id]);
+
+        $this->call(ObservabilityDemoSeeder::class, false, ['organizationId' => $organization->id, 'userId' => $admin->id]);
     }
 }

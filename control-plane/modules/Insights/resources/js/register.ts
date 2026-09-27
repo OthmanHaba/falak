@@ -1,9 +1,17 @@
 import { registerCommands, registerNavigation } from '@/lib/registry';
-import { Bug, HeartPulse, Lightbulb } from 'lucide-react';
+import { Bug, Gauge, HeartPulse } from 'lucide-react';
 
 registerNavigation(
-    { id: 'insights', title: 'Insights', url: '/insights', icon: Lightbulb, order: 300, permission: 'insights.view', activePrefix: '/insights' },
-    { id: 'insights.issues', title: 'Issues', url: '/insights/issues', icon: Bug, order: 310, permission: 'insights.view' },
+    {
+        id: 'insights',
+        title: 'Observability',
+        url: '/observability',
+        icon: Gauge,
+        order: 300,
+        permission: 'insights.view',
+        activePrefix: '/observability',
+    },
+    { id: 'insights.issues', title: 'Issues', url: '/observability/issues', icon: Bug, order: 310, permission: 'insights.view' },
 );
 
 registerCommands({
@@ -11,13 +19,12 @@ registerCommands({
     commands: () => [
         {
             id: 'insights.index',
-            title: 'Insights',
+            title: 'Observability',
             group: 'Navigation',
-            icon: Lightbulb,
-            href: '/insights',
+            icon: Gauge,
+            href: '/observability',
             permission: 'insights.view',
-            keywords: ['apm', 'nightwatch', 'observability'],
-            // Until the unified /observability page lands (§3), `g o` opens Insights.
+            keywords: ['apm', 'nightwatch', 'insights', 'overview', 'health'],
             shortcut: 'G O',
         },
         {
@@ -25,7 +32,7 @@ registerCommands({
             title: 'Open issues',
             group: 'Navigation',
             icon: Bug,
-            href: '/insights/issues',
+            href: '/observability/issues',
             permission: 'insights.view',
             keywords: ['exceptions', 'errors'],
         },
@@ -34,7 +41,7 @@ registerCommands({
             title: 'Issues assigned to me',
             group: 'Navigation',
             icon: Bug,
-            href: '/insights/issues?assignee=me',
+            href: '/observability/issues?assignee=me',
             permission: 'insights.view',
         },
         {
@@ -42,9 +49,9 @@ registerCommands({
             title: 'Scheduled task heartbeats',
             group: 'Navigation',
             icon: HeartPulse,
-            href: '/insights/heartbeats',
+            href: '/observability/heartbeats',
             permission: 'insights.view',
-            keywords: ['cron'],
+            keywords: ['cron', 'schedule', 'missed'],
         },
     ],
 });

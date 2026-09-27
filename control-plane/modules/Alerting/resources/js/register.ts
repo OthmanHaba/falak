@@ -5,11 +5,11 @@ import { NotificationBell } from './components/notification-bell';
 registerNavigation({
     id: 'alerting',
     title: 'Alerts',
-    url: '/alerting/history',
+    url: '/observability/alerts',
     icon: BellRing,
     order: 500,
     permission: 'alerting.view',
-    activePrefix: '/alerting',
+    activePrefix: '/observability/alerts',
 });
 
 registerHeaderItems({ id: 'alerting.notifications', order: 100, component: NotificationBell });
@@ -22,7 +22,7 @@ registerCommands({
             title: 'Alert history',
             group: 'Navigation',
             icon: History,
-            href: '/alerting/history',
+            href: '/observability/alerts',
             permission: 'alerting.view',
         },
         {

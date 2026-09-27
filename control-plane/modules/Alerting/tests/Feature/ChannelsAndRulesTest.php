@@ -114,7 +114,7 @@ it('lets viewers see but not change alerting', function () {
 
     $this->get('/settings/alert-channels')->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false));
     $this->get('/settings/alert-rules')->assertOk();
-    $this->get('/alerting/history')->assertOk();
+    $this->get('/observability/alerts')->assertOk();
     $this->post('/alerting/channels', ['name' => 'x', 'type' => 'slack', 'config' => ['webhook_url' => ALERTING_SLACK_URL]])->assertForbidden();
     $this->postJson("/alerting/channels/{$channel->id}/test")->assertForbidden();
     $this->delete("/alerting/channels/{$channel->id}")->assertForbidden();
@@ -174,11 +174,12 @@ it('lists alert history with deliveries', function () {
     alerting_rule($this->organization->id, ['*'], [alerting_channel($this->organization->id)]);
     event(alerting_issue_opened($this->organization->id));
 
-    $this->get('/alerting/history')->assertOk()->assertInertia(fn ($page) => $page
+    $this->get('/alerting/history?outcome=delivered')->assertRedirect('/observability/alerts?outcome=delivered');
+    $this->get('/observability/alerts')->assertOk()->assertInertia(fn ($page) => $page
         ->component('Alerting/History', false)
         ->has('alerts.data', 1)
         ->where('alerts.data.0.outcome', 'delivered')
         ->where('alerts.data.0.deliveries.0.status', 'sent'));
 
-    $this->get('/alerting/history?outcome=no_route')->assertInertia(fn ($page) => $page->has('alerts.data', 0));
+    $this->get('/observability/alerts?outcome=no_route')->assertInertia(fn ($page) => $page->has('alerts.data', 0));
 });

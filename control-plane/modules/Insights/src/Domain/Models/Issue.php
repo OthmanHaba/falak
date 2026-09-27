@@ -107,7 +107,7 @@ class Issue extends Model
 
     public function url(): string
     {
-        return route('insights.issues.show', $this->id);
+        return route('observability.issues.show', $this->id);
     }
 
     public function record(string $type, ?string $userId = null, array $data = []): IssueActivity

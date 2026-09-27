@@ -25,6 +25,9 @@ const ULID = '([0-9A-Za-z]{26})';
 
 export const params: Record<string, ParamSource> = {
     site: { from: '/sites', match: new RegExp(`^/sites/${ULID}$`) },
+    issue: { from: '/observability/issues?status=all', match: new RegExp(`^/observability/issues/${ULID}$`) },
+    exception: { from: '/observability/issues?kind=exception&sort=occurrences', match: new RegExp(`^/observability/issues/${ULID}$`) },
+    trace: { from: '/observability/traces', match: /^\/observability\/traces\/([0-9a-f]{16,32})$/ },
     server: { from: '/servers', match: new RegExp(`^/servers/${ULID}$`) },
 };
 
@@ -34,7 +37,7 @@ export const globalAllowedFailures: RegExp[] = [/\/broadcasting\/auth/, /\/favic
 /** Console noise allowed everywhere (realtime transport retries when Reverb isn't running). */
 export const globalAllowedConsole: RegExp[] = [/WebSocket connection to .* failed/i, /pusher/i];
 
-const observability = [/\/telemetry\/.*\/data/, /\/telemetry\/.*search/, /\/insights\/.*\/data/];
+const observability = [/\/telemetry\/.*\/data/, /\/telemetry\/.*search/, /\/insights\/.*\/data/, /\/telemetry\/sites\/[^/?]+(\?|$)/];
 
 export const routes: BrowserRoute[] = [
     // Auth (guest)
@@ -118,6 +121,20 @@ export const routes: BrowserRoute[] = [
     { path: '/settings/observability' },
     { path: '/settings/recipes' },
     { path: '/invitations/not-a-real-token' },
+
+    // observability
+    { path: '/observability', allowedFailures: observability },
+    { path: '/observability?range=7d', allowedFailures: observability },
+    { path: '/observability/issues' },
+    { path: '/observability/issues?status=all' },
+    { path: '/observability/issues/:issue', allowedFailures: observability },
+    { path: '/observability/issues/:exception', allowedFailures: observability },
+    { path: '/observability/traces', allowedFailures: observability },
+    { path: '/observability/traces/:trace', allowedFailures: observability },
+    { path: '/observability/logs', allowedFailures: observability },
+    { path: '/observability/heartbeats' },
+    { path: '/observability/alerts' },
+    { path: '/insights/sites/:site/settings' },
 ];
 
 export function slugFor(path: string): string {
