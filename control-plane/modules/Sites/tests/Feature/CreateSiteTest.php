@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Event;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Identity\Domain\Models\AuditEntry;
+use Kiln\Projects\Contracts\ProjectDirectory;
 use Kiln\Servers\Contracts\ServerType;
 use Kiln\Sites\Contracts\BuildMode;
 use Kiln\Sites\Contracts\SiteDirectory;
@@ -12,6 +13,7 @@ use Kiln\Sites\Contracts\TargetStatus;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Events\SiteCreated;
 use Kiln\SourceControl\Contracts\ProviderType;
+use Kiln\SourceControl\Contracts\SourceControlGateway;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -190,10 +192,10 @@ it('makes slugs unique and keeps a manual deploy key for custom git', function (
     $site = Site::query()->where('name', 'Shop.')->firstOrFail();
     expect($site->slug)->toBe('shop-2');
 
-    $this->get("/sites/{$site->id}")->assertInertia(fn ($page) => $page
-        ->component('Sites/Show', false)
-        ->where('details.deploy_key.installed', false)
-        ->where('details.connection.provider', 'custom'));
+    // The site page now lives in the project canvas panel.
+    $this->get("/sites/{$site->id}")->assertRedirect(app(ProjectDirectory::class)->serviceUrl('site', $site->id));
+    expect($site->deploy_key_id)->not->toBeNull()
+        ->and(app(SourceControlGateway::class)->deployKey($site->deploy_key_id)?->installed)->toBeFalse();
 });
 
 it('surfaces source control failures as warnings without blocking creation', function () {

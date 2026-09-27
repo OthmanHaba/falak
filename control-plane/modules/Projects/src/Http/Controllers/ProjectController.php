@@ -17,6 +17,8 @@ use Kiln\Projects\Application\Canvas\ProjectSummaries;
 use Kiln\Projects\Domain\Models\Project;
 use Kiln\Projects\Domain\Policies\ProjectPolicy;
 use Kiln\Projects\Http\Requests\ProjectRules;
+use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\SourceControl\Contracts\SourceControlGateway;
 
 /**
  * Projects grid, settings page and project CRUD (JSON for fetch clients, redirects for Inertia visits).
@@ -30,7 +32,7 @@ final class ProjectController extends Controller
         private readonly OrganizationAccess $access,
     ) {}
 
-    public function index(Request $request, ProjectSummaries $summaries): Response|JsonResponse
+    public function index(Request $request, ProjectSummaries $summaries, ServerDirectory $servers, SourceControlGateway $sourceControl): Response|JsonResponse
     {
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, ProjectPolicy::VIEW);
@@ -43,6 +45,13 @@ final class ProjectController extends Controller
 
         return Inertia::render('Projects/Index', [
             'projects' => $projects,
+            // First-run checklist (SetupChecklist on the grid).
+            'setup' => fn () => [
+                'gitConnected' => $sourceControl->connections($organizationId) !== [],
+                'hasServer' => $servers->forOrganization($organizationId) !== [],
+                'hasProject' => collect($projects)->contains(fn (array $project) => ! $project['is_default'] || $project['services_count'] > 0),
+                'hasDeployment' => collect($projects)->contains(fn (array $project) => $project['last_deployment'] !== null),
+            ],
             'can' => ['create' => $this->access->can($request->user(), $organizationId, ProjectPolicy::MANAGE)],
         ]);
     }

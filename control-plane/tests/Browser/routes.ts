@@ -29,6 +29,9 @@ export const params: Record<string, ParamSource> = {
     exception: { from: '/observability/issues?kind=exception&sort=occurrences', match: new RegExp(`^/observability/issues/${ULID}$`) },
     trace: { from: '/observability/traces', match: /^\/observability\/traces\/([0-9a-f]{16,32})$/ },
     server: { from: '/servers', match: new RegExp(`^/servers/${ULID}$`) },
+    // canvas
+    project: { from: '/projects', match: new RegExp(`^/projects/${ULID}/production$`) },
+    canvas: { from: '/projects', match: new RegExp(`^/projects/(${ULID.slice(1, -1)}/production)$`) },
 };
 
 /** Requests allowed to fail on every page (optional backends in local/sim setups). */
@@ -135,8 +138,19 @@ export const routes: BrowserRoute[] = [
     { path: '/observability/heartbeats' },
     { path: '/observability/alerts' },
     { path: '/insights/sites/:site/settings' },
+    // canvas
+    { path: '/projects' },
+    { path: '/projects/:canvas' },
+    { path: '/projects/:project/settings' },
+    { path: '/projects/:canvas/service/site/:site/deployments' },
+    { path: '/projects/:canvas/service/site/:site/variables' },
 ];
 
 export function slugFor(path: string): string {
-    return path.replace(/^\//, '').replace(/[/:]+/g, '-').replace(/[^a-z0-9-]/gi, '') || 'root';
+    return (
+        path
+            .replace(/^\//, '')
+            .replace(/[/:]+/g, '-')
+            .replace(/[^a-z0-9-]/gi, '') || 'root'
+    );
 }

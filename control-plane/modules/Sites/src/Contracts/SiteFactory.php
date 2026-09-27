@@ -29,4 +29,9 @@ interface SiteFactory
      * @throws ValidationException
      */
     public function duplicate(string $siteId, array $overrides = [], ?SitePlacement $placement = null, ?string $userId = null): CreatedSite;
+
+    /**
+     * Delete a site like DELETE /sites/{id} does (removes it from its servers, SiteDeleted). Unknown ids are ignored.
+     */
+    public function delete(string $siteId): void;
 }

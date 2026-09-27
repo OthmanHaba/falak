@@ -8,6 +8,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
+use Kiln\Projects\Application\Canvas\CanvasActivity;
 use Kiln\Projects\Application\Canvas\CanvasReadModel;
 use Kiln\Projects\Application\Canvas\KilnNavigation;
 use Kiln\Projects\Contracts\ServiceKind;
@@ -35,9 +36,19 @@ final class CanvasController extends Controller
     /**
      * /projects/{project}/{environment}/service/{kind}/{id}/{tab?} — the canvas with a service panel open.
      */
-    public function panel(Request $request, Project $project, string $environment, string $kind, string $id, ?string $tab = null): Response
+    public function panel(Request $request, Project $project, string $environment, string $kind, string $id, ?string $tab = null, ?string $item = null): Response
     {
-        return $this->page($request, $project, $environment, [$kind, $id, $tab]);
+        return $this->page($request, $project, $environment, [$kind, $id, $tab, $item]);
+    }
+
+    /**
+     * GET /projects/{project}/{environment}/activity — the canvas Activity rail (recent deploys and services added).
+     */
+    public function activity(Project $project, string $environment, CanvasActivity $activity): JsonResponse
+    {
+        $this->authorize('view', $project);
+
+        return response()->json(['data' => $activity->for($this->resolveEnvironment($project, $environment))]);
     }
 
     /**
@@ -51,7 +62,7 @@ final class CanvasController extends Controller
     }
 
     /**
-     * @param  ?array{0: string, 1: string, 2: ?string}  $panel
+     * @param  ?array{0: string, 1: string, 2: ?string, 3: ?string}  $panel
      */
     private function page(Request $request, Project $project, string $environment, ?array $panel = null): Response
     {
@@ -76,9 +87,9 @@ final class CanvasController extends Controller
     }
 
     /**
-     * @return array{kind: string, id: string, tab: ?string}
+     * @return array{kind: string, id: string, tab: ?string, item: ?string}
      */
-    private function panelFor(Environment $environment, string $kind, string $id, ?string $tab): array
+    private function panelFor(Environment $environment, string $kind, string $id, ?string $tab, ?string $item): array
     {
         $kind = ServiceKind::tryFrom($kind) ?? throw new NotFoundHttpException;
         $id = strtolower($id);
@@ -87,6 +98,6 @@ final class CanvasController extends Controller
             throw new NotFoundHttpException('Service not found in this environment.');
         }
 
-        return ['kind' => $kind->value, 'id' => $id, 'tab' => $tab];
+        return ['kind' => $kind->value, 'id' => $id, 'tab' => $tab, 'item' => $tab !== null && $item !== null ? strtolower($item) : null];
     }
 }

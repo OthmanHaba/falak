@@ -2,6 +2,7 @@
 
 namespace Kiln\Deployments\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -9,6 +10,7 @@ use Inertia\Response;
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
 use Kiln\Deployments\Domain\Enums\ReleaseStatus;
 use Kiln\Deployments\Domain\Enums\Trigger;
+use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Deployments\Domain\Models\SiteSettings;
 use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
@@ -19,7 +21,7 @@ final class ReleaseController extends Controller
 {
     use ResolvesSites;
 
-    public function index(Request $request, string $site, SiteHeaders $headers): Response
+    public function index(Request $request, string $site, SiteHeaders $headers): Response|JsonResponse
     {
         $data = $this->site($request->user(), $site);
 
@@ -27,19 +29,24 @@ final class ReleaseController extends Controller
             ->orderByRaw("case when status = 'active' then 0 else 1 end")->orderByDesc('activated_at')->orderByDesc('created_at')->orderByDesc('id')
             ->limit(50)->get();
 
-        return Inertia::render('Deployments/Releases', [
-            'site' => $headers->for($data->id),
+        $props = [
             'releases' => $releases->map(fn (Release $r) => $r->toApi())->values(),
             'keep' => SiteSettings::for($data)->keep_releases,
             'can' => ['rollback' => $this->can($request->user(), $data, DeploymentPermissions::ROLLBACK)],
-        ]);
+        ];
+
+        return $this->wantsPanelJson($request)
+            ? response()->json(['data' => $props])
+            : Inertia::render('Deployments/Releases', ['site' => $headers->for($data->id), ...$props]);
     }
 
-    public function rollback(Request $request, string $site, string $release, TriggerDeployment $trigger): RedirectResponse
+    public function rollback(Request $request, string $site, string $release, TriggerDeployment $trigger): RedirectResponse|JsonResponse
     {
         $data = $this->site($request->user(), $site, DeploymentPermissions::ROLLBACK);
         $deployment = $trigger($data, Trigger::Rollback, requestedBy: (string) $request->user()?->getAuthIdentifier(), releaseId: $release);
 
-        return redirect("/sites/{$data->id}/deployments/{$deployment->id}");
+        return $this->wantsPanelJson($request)
+            ? response()->json(['data' => ['id' => $deployment->id, 'number' => $deployment->number, 'status' => $deployment->status->value, 'url' => $deployment->url()]], 201)
+            : redirect(Deployment::path($data->id, $deployment->id));
     }
 }

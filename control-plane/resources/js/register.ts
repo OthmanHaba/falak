@@ -1,5 +1,4 @@
 import { setAppearance } from '@/hooks/use-appearance';
-import { projectsUi } from '@/lib/pages';
 import { registerCommands } from '@/lib/registry';
 import { FolderKanban, Monitor, Moon, Sun } from 'lucide-react';
 
@@ -13,8 +12,7 @@ registerCommands(
                 title: 'Projects',
                 group: 'Navigation',
                 icon: FolderKanban,
-                // Home is the Projects grid once its page ships; the dashboard until then.
-                href: props.kiln && projectsUi.index() ? '/projects' : '/dashboard',
+                href: props.kiln ? '/projects' : '/dashboard',
                 shortcut: 'G P',
                 keywords: ['home', 'dashboard', 'canvas'],
             },

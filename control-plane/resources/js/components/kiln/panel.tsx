@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 import { router, usePage } from '@inertiajs/react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { IconButton } from './button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
 
@@ -39,7 +39,48 @@ export interface PanelProps {
     urlSync?: PanelUrlSync;
     /** Content when there are no tabs, or above the tab body. */
     children?: ReactNode;
+    /** Drag the left edge to resize (≥ 1024px). The width is remembered per `resizeKey`. */
+    resizable?: boolean;
+    resizeKey?: string;
     className?: string;
+}
+
+const MIN_WIDTH = 480;
+
+function storedWidth(key: string | undefined): number | null {
+    if (!key) return null;
+    try {
+        const value = Number(window.localStorage.getItem(`kiln:panel-width:${key}`));
+
+        return Number.isFinite(value) && value >= MIN_WIDTH ? value : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Left-edge drag handle; reports the new width (px) while dragging and once more on release. */
+function ResizeHandle({ onResize, onDone }: { onResize: (width: number) => void; onDone: () => void }) {
+    return (
+        <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize panel"
+            className="hover:bg-primary/40 absolute inset-y-3 -left-1 z-10 hidden w-2 cursor-col-resize rounded-full transition-colors lg:block"
+            onPointerDown={(event) => {
+                event.preventDefault();
+                const target = event.currentTarget;
+                target.setPointerCapture(event.pointerId);
+                const move = (e: PointerEvent) => onResize(Math.min(Math.max(window.innerWidth - e.clientX - 8, MIN_WIDTH), window.innerWidth - 80));
+                const up = () => {
+                    target.removeEventListener('pointermove', move);
+                    target.removeEventListener('pointerup', up);
+                    onDone();
+                };
+                target.addEventListener('pointermove', move);
+                target.addEventListener('pointerup', up);
+            }}
+        />
+    );
 }
 
 function tabFromUrl(url: string, tabs: PanelTab[], sync: PanelUrlSync | undefined): string | undefined {
@@ -88,9 +129,24 @@ export function Panel({
     onTabChange,
     urlSync,
     children,
+    resizable = false,
+    resizeKey,
     className,
 }: PanelProps) {
     const { url } = usePage();
+    const [width, setWidth] = useState<number | null>(() => (resizable && typeof window !== 'undefined' ? storedWidth(resizeKey) : null));
+    const persistWidth = useCallback(() => {
+        if (!resizeKey) return;
+        setWidth((current) => {
+            try {
+                if (current) window.localStorage.setItem(`kiln:panel-width:${resizeKey}`, String(Math.round(current)));
+            } catch {
+                // Storage unavailable: the width is just not remembered.
+            }
+
+            return current;
+        });
+    }, [resizeKey]);
     const active = useMemo(() => tab ?? tabFromUrl(url, tabs, urlSync) ?? tabs[0]?.id, [tab, url, tabs, urlSync]);
 
     const select = useCallback(
@@ -133,11 +189,13 @@ export function Panel({
                         (event.currentTarget as HTMLElement | null)?.focus();
                     }}
                     tabIndex={-1}
+                    style={width ? ({ '--panel-width': `${width}px` } as CSSProperties) : undefined}
                     className={cn(
-                        'animate-panel-in border-border bg-surface-1 shadow-panel fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l outline-none lg:top-2 lg:right-2 lg:bottom-2 lg:w-[min(960px,62vw)] lg:rounded-xl lg:border',
+                        'animate-panel-in border-border bg-surface-1 shadow-panel fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l outline-none lg:top-2 lg:right-2 lg:bottom-2 lg:w-(--panel-width,min(960px,62vw)) lg:rounded-xl lg:border',
                         className,
                     )}
                 >
+                    {resizable && <ResizeHandle onResize={setWidth} onDone={persistWidth} />}
                     <header className="flex items-start gap-3 px-5 pt-4 pb-3">
                         {icon && (
                             <div className="border-border bg-surface-2 mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border">
