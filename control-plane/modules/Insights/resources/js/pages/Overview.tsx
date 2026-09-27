@@ -1,300 +1,308 @@
-import Heading from '@/components/heading';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, Link, router } from '@inertiajs/react';
-import { format } from 'date-fns';
-import { Activity, ExternalLink, ScrollText, Settings2 } from 'lucide-react';
-import { type ReactNode } from 'react';
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ago, formatCount, formatMs, IssueKindBadge, SERIES, StatTile } from '../components/insights-ui';
-import { type IssueKind, type IssuePriority, type OverviewPoint, type TopEntry } from '../types';
+import { Button } from '@/components/kiln/button';
+import { DataTable, type DataTableColumn } from '@/components/kiln/data-table';
+import { EmptyState } from '@/components/kiln/empty-state';
+import { Menu } from '@/components/kiln/menu';
+import { MetricChart, type MetricPoint } from '@/components/kiln/metric-chart';
+import { RelativeTime } from '@/components/kiln/relative-time';
+import { Segmented } from '@/components/kiln/segmented';
+import { Select } from '@/components/kiln/select';
+import { Stat } from '@/components/kiln/stat';
+import ObservabilityLayout from '@/layouts/observability-layout';
+import { Link, router } from '@inertiajs/react';
+import { Activity, ExternalLink, Gauge, ScrollText, Timer } from 'lucide-react';
+import { useMemo } from 'react';
+import { formatCount, formatMs, formatPercent } from '../components/insights-ui';
+import { Block, IssueList, TopList, timeFormatFor } from '../components/overview-parts';
+import { type OverviewData } from '../types';
+
+interface SiteRow {
+    id: string;
+    name: string;
+    last_seen_at: string;
+    requests: number;
+    errors: number;
+    p95_ms: number | null;
+    exceptions: number;
+    open_issues: number;
+}
 
 interface Props {
-    site: { id: string; name: string };
-    overview: {
-        range: string;
-        bucket_minutes: number;
-        totals: {
-            requests: number;
-            request_errors: number;
-            request_p95_ms: number | null;
-            jobs: number;
-            failed_jobs: number;
-            queries: number;
-            outgoing_requests: number;
-            exceptions_handled: number;
-            exceptions_unhandled: number;
-            cache_hit_ratio: number | null;
-            cache_hits: number;
-            cache_misses: number;
-        };
-        series: OverviewPoint[];
-        routes: TopEntry[];
-        jobs: TopEntry[];
-        queries: TopEntry[];
-        outgoing: TopEntry[];
-        issues: {
-            id: string;
-            kind: IssueKind;
-            title: string;
-            culprit: string | null;
-            occurrences: number;
-            affected_users: number;
-            priority: IssuePriority;
-            last_seen_at: string;
-        }[];
-    };
+    filters: { range: string; project: string | null; site: string | null };
     ranges: string[];
+    projects: { id: string; name: string }[];
+    sites: { id: string; name: string }[];
+    overview: OverviewData;
+    siteRows: SiteRow[];
+    issueSites: Record<string, string>;
+    openIssues: number;
+    heartbeats: { total: number; healthy: number; missed: number; failing: number };
     links: { logs: string; errorLogs: string; traces: string; slowTraces: string; grafana: string | null };
     can: { manage: boolean };
 }
 
-function ChartCard({ title, children }: { title: string; children: ReactNode }) {
-    return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="text-sm">{title}</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <div className="h-56 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                        {children as React.ReactElement}
-                    </ResponsiveContainer>
-                </div>
-            </CardContent>
-        </Card>
-    );
-}
+const ALL = '__all__';
 
-function TopTable({ title, rows, empty, emphasis }: { title: string; rows: TopEntry[]; empty: string; emphasis: 'p95' | 'max' | 'count' }) {
-    return (
-        <Card className="gap-2">
-            <CardHeader>
-                <CardTitle className="text-sm">{title}</CardTitle>
-            </CardHeader>
-            <CardContent className="px-0">
-                {rows.length === 0 ? (
-                    <p className="text-muted-foreground px-6 py-4 text-sm">{empty}</p>
-                ) : (
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead className="pl-6">Name</TableHead>
-                                <TableHead className="text-right">Count</TableHead>
-                                <TableHead className="text-right">Errors</TableHead>
-                                <TableHead className={emphasis === 'p95' ? 'text-right font-semibold' : 'text-right'}>p95</TableHead>
-                                <TableHead className={emphasis === 'max' ? 'pr-6 text-right font-semibold' : 'pr-6 text-right'}>Max</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {rows.map((row) => (
-                                <TableRow key={row.name}>
-                                    <TableCell className="max-w-[22rem] truncate pl-6 font-mono text-xs" title={row.name}>
-                                        {row.name}
-                                    </TableCell>
-                                    <TableCell className="text-right tabular-nums">{formatCount(row.count)}</TableCell>
-                                    <TableCell className="text-right tabular-nums">{row.errors > 0 ? formatCount(row.errors) : '—'}</TableCell>
-                                    <TableCell className="text-right tabular-nums">{formatMs(row.p95_ms)}</TableCell>
-                                    <TableCell className="pr-6 text-right tabular-nums">{formatMs(row.max_ms)}</TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                )}
-            </CardContent>
-        </Card>
-    );
-}
-
-export default function Overview({ site, overview, ranges, links, can }: Props) {
-    const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Insights', href: '/insights' },
-        { title: site.name, href: route('insights.sites.show', site.id) },
-    ];
+export default function Overview({ filters, ranges, projects, sites, overview, siteRows, issueSites, openIssues, heartbeats, links }: Props) {
     const { totals } = overview;
-    const tick = (value: string) => format(new Date(value), overview.bucket_minutes >= 120 ? 'EEE HH:mm' : 'HH:mm');
-    const label = (value: unknown) => format(new Date(String(value)), 'PPp');
-    const errorRate = totals.requests > 0 ? (totals.request_errors / totals.requests) * 100 : 0;
-    const axis = { fontSize: 11, tickLine: false, axisLine: false } as const;
+    const visit = (patch: Partial<Props['filters']>) => {
+        const next = { ...filters, ...patch };
+        router.get(
+            '/observability',
+            Object.fromEntries(Object.entries(next).filter(([key, value]) => value && !(key === 'range' && value === '24h'))),
+            { preserveState: true, preserveScroll: true, replace: true },
+        );
+    };
+
+    const timeFormat = useMemo(() => timeFormatFor(filters.range), [filters.range]);
+    const errorRate = totals.requests > 0 ? totals.request_errors / totals.requests : null;
+    const exceptions = totals.exceptions_handled + totals.exceptions_unhandled;
+    const hasData = totals.requests + totals.jobs + exceptions + totals.queries > 0 || sites.length > 0;
+    const siteName = filters.site ? (sites.find((site) => site.id === filters.site)?.name ?? filters.site) : null;
+    const series = overview.series as unknown as MetricPoint[];
+
+    const siteColumns: DataTableColumn<SiteRow>[] = [
+        { id: 'name', header: 'Site', cell: (row) => <span className="text-fg font-medium">{row.name}</span>, sortValue: (row) => row.name },
+        { id: 'requests', header: 'Requests', align: 'right', cell: (row) => formatCount(row.requests), sortValue: (row) => row.requests },
+        {
+            id: 'errors',
+            header: 'Error rate',
+            align: 'right',
+            cell: (row) => (
+                <span className={row.errors > 0 ? 'text-danger' : 'text-fg-muted'}>
+                    {row.requests > 0 ? formatPercent(row.errors / row.requests) : '—'}
+                </span>
+            ),
+            sortValue: (row) => (row.requests > 0 ? row.errors / row.requests : null),
+        },
+        { id: 'p95', header: 'p95', align: 'right', cell: (row) => formatMs(row.p95_ms), sortValue: (row) => row.p95_ms, hideOnMobile: true },
+        {
+            id: 'exceptions',
+            header: 'Exceptions',
+            align: 'right',
+            cell: (row) => <span className={row.exceptions > 0 ? 'text-fg' : 'text-fg-muted'}>{formatCount(row.exceptions)}</span>,
+            sortValue: (row) => row.exceptions,
+        },
+        {
+            id: 'issues',
+            header: 'Open issues',
+            align: 'right',
+            cell: (row) =>
+                row.open_issues > 0 ? (
+                    <Link
+                        href={`/observability/issues?site=${row.id}`}
+                        className="text-fg hover:text-primary underline-offset-2 hover:underline"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        {row.open_issues}
+                    </Link>
+                ) : (
+                    <span className="text-fg-faint">0</span>
+                ),
+            sortValue: (row) => row.open_issues,
+            hideOnMobile: true,
+        },
+        {
+            id: 'seen',
+            header: 'Last event',
+            align: 'right',
+            cell: (row) => <RelativeTime value={row.last_seen_at} className="text-fg-muted text-xs" />,
+            sortValue: (row) => row.last_seen_at,
+            hideOnMobile: true,
+        },
+    ];
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title={`${site.name} · Insights`} />
-            <div className="space-y-6 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                    <Heading title={site.name} description="Application overview" />
-                    <div className="flex flex-wrap items-center gap-2">
-                        <div className="flex gap-1" role="group" aria-label="Time range">
-                            {ranges.map((range) => (
-                                <Button
-                                    key={range}
-                                    size="sm"
-                                    variant={range === overview.range ? 'secondary' : 'ghost'}
-                                    onClick={() =>
-                                        router.get(route('insights.sites.show', site.id), { range }, { preserveScroll: true, replace: true })
-                                    }
+        <ObservabilityLayout
+            tab="overview"
+            actions={
+                <>
+                    {projects.length > 1 && (
+                        <Select
+                            className="w-40"
+                            aria-label="Project"
+                            value={filters.project ?? ALL}
+                            onValueChange={(value) => visit({ project: value === ALL ? null : value, site: null })}
+                            options={[
+                                { value: ALL, label: 'All projects' },
+                                ...projects.map((project) => ({ value: project.id, label: project.name })),
+                            ]}
+                        />
+                    )}
+                    {sites.length > 0 && (
+                        <Select
+                            className="w-40"
+                            aria-label="Site"
+                            value={filters.site ?? ALL}
+                            onValueChange={(value) => visit({ site: value === ALL ? null : value })}
+                            options={[{ value: ALL, label: 'All sites' }, ...sites.map((site) => ({ value: site.id, label: site.name }))]}
+                        />
+                    )}
+                    <Segmented
+                        label="Time range"
+                        value={filters.range}
+                        onValueChange={(range) => visit({ range })}
+                        options={ranges.map((range) => ({ value: range, label: range }))}
+                    />
+                </>
+            }
+        >
+            {!hasData ? (
+                <EmptyState
+                    icon={<Gauge />}
+                    title="No application data yet"
+                    description="Requests, jobs, queries and exceptions appear here once a Laravel site reports insights through the Kiln agent. Deploy a site with the Kiln Insights package installed to start collecting."
+                    action={
+                        <Button asChild variant="primary">
+                            <Link href="/projects">Go to projects</Link>
+                        </Button>
+                    }
+                />
+            ) : (
+                <>
+                    <section aria-label="Totals" className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                        <Stat label="Requests" value={formatCount(totals.requests)} hint={siteName ? siteName : `last ${filters.range}`} />
+                        <Stat
+                            label="Error rate"
+                            value={formatPercent(errorRate)}
+                            tone={errorRate !== null && errorRate >= 0.01 ? 'danger' : undefined}
+                            hint={`${formatCount(totals.request_errors)} failed requests`}
+                        />
+                        <Stat label="p95 latency" value={formatMs(totals.request_p95_ms)} hint="weighted across routes" />
+                        <Stat
+                            label="Exceptions"
+                            value={formatCount(exceptions)}
+                            tone={totals.exceptions_unhandled > 0 ? 'danger' : undefined}
+                            hint={`${formatCount(totals.exceptions_unhandled)} unhandled · ${formatCount(totals.exceptions_handled)} handled`}
+                        />
+                        <Stat
+                            label="Jobs"
+                            value={formatCount(totals.jobs)}
+                            tone={totals.failed_jobs > 0 ? 'danger' : undefined}
+                            hint={`${formatCount(totals.failed_jobs)} failed`}
+                        />
+                        <Stat
+                            label="Open issues"
+                            value={formatCount(openIssues)}
+                            href={`/observability/issues${filters.site ? `?site=${filters.site}` : ''}`}
+                            hint={
+                                heartbeats.total > 0
+                                    ? heartbeats.missed + heartbeats.failing > 0
+                                        ? `${heartbeats.missed + heartbeats.failing} heartbeat${heartbeats.missed + heartbeats.failing === 1 ? '' : 's'} unhealthy`
+                                        : `${heartbeats.total} heartbeats healthy`
+                                    : 'across all kinds'
+                            }
+                        />
+                    </section>
+
+                    <section aria-label="Charts" className="grid gap-3 lg:grid-cols-2">
+                        <MetricChart
+                            title="Requests"
+                            type="area"
+                            data={series}
+                            series={[
+                                { key: 'requests', label: 'Requests' },
+                                { key: 'request_errors', label: 'Failed' },
+                            ]}
+                            format={(value) => formatCount(Math.round(value))}
+                            timeFormat={timeFormat}
+                        />
+                        <MetricChart
+                            title="p95 latency"
+                            data={series}
+                            series={[{ key: 'request_p95_ms', label: 'p95' }]}
+                            format={(value) => formatMs(value)}
+                            timeFormat={timeFormat}
+                        />
+                        <MetricChart
+                            title="Exceptions"
+                            type="bar"
+                            data={series}
+                            series={[
+                                { key: 'exceptions_unhandled', label: 'Unhandled' },
+                                { key: 'exceptions_handled', label: 'Handled' },
+                            ]}
+                            format={(value) => formatCount(Math.round(value))}
+                            timeFormat={timeFormat}
+                        />
+                        <MetricChart
+                            title="Jobs"
+                            type="bar"
+                            data={series}
+                            series={[
+                                { key: 'jobs', label: 'Processed' },
+                                { key: 'failed_jobs', label: 'Failed' },
+                            ]}
+                            format={(value) => formatCount(Math.round(value))}
+                            timeFormat={timeFormat}
+                        />
+                    </section>
+
+                    <section className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                        <Block
+                            title="Top issues"
+                            aside={
+                                <Link
+                                    href={`/observability/issues${filters.site ? `?site=${filters.site}` : ''}`}
+                                    className="text-fg-muted hover:text-fg"
                                 >
-                                    {range}
-                                </Button>
-                            ))}
-                        </div>
-                        <Button size="sm" variant="outline" asChild>
-                            <a href={links.logs}>
-                                <ScrollText /> Logs
-                            </a>
-                        </Button>
-                        <Button size="sm" variant="outline" asChild>
-                            <a href={links.traces}>
-                                <Activity /> Traces
-                            </a>
-                        </Button>
-                        {links.grafana && (
-                            <Button size="sm" variant="outline" asChild>
-                                <a href={links.grafana} target="_blank" rel="noreferrer">
-                                    <ExternalLink /> Grafana
-                                </a>
-                            </Button>
-                        )}
-                        <Button size="sm" variant="ghost" asChild>
-                            <Link href={route('insights.sites.settings', site.id)} aria-label="Thresholds and heartbeats">
-                                <Settings2 /> {can.manage ? 'Configure' : 'Settings'}
-                            </Link>
-                        </Button>
-                    </div>
-                </div>
+                                    View all
+                                </Link>
+                            }
+                        >
+                            <IssueList issues={overview.issues} siteNames={issueSites} />
+                        </Block>
+                        <Block
+                            title="Slow routes"
+                            aside={
+                                <Menu
+                                    label="Explore"
+                                    actions={[
+                                        { label: 'Slow traces', icon: <Timer />, href: links.slowTraces },
+                                        { label: 'All traces', icon: <Activity />, href: links.traces },
+                                        { label: 'Error logs', icon: <ScrollText />, href: links.errorLogs },
+                                        ...(links.grafana
+                                            ? [
+                                                  {
+                                                      label: 'Grafana dashboard',
+                                                      icon: <ExternalLink />,
+                                                      onSelect: () => window.open(links.grafana!, '_blank'),
+                                                  },
+                                              ]
+                                            : []),
+                                    ]}
+                                />
+                            }
+                        >
+                            <TopList rows={overview.routes.slice(0, 6)} emphasis="p95" empty="No requests in this window." />
+                        </Block>
+                    </section>
 
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-                    <StatTile label="Requests" value={formatCount(totals.requests)} hint={`${errorRate.toFixed(2)}% errors`} />
-                    <StatTile label="Request p95" value={formatMs(totals.request_p95_ms)} />
-                    <StatTile
-                        label="Unhandled exceptions"
-                        value={formatCount(totals.exceptions_unhandled)}
-                        hint={`${formatCount(totals.exceptions_handled)} handled`}
-                        tone={totals.exceptions_unhandled > 0 ? 'danger' : undefined}
-                    />
-                    <StatTile
-                        label="Jobs"
-                        value={formatCount(totals.jobs)}
-                        hint={`${formatCount(totals.failed_jobs)} failed`}
-                        tone={totals.failed_jobs > 0 ? 'danger' : undefined}
-                    />
-                    <StatTile
-                        label="Queries"
-                        value={formatCount(totals.queries)}
-                        hint={`${formatCount(totals.outgoing_requests)} outgoing requests`}
-                    />
-                    <StatTile
-                        label="Cache hit ratio"
-                        value={totals.cache_hit_ratio === null ? '—' : `${(totals.cache_hit_ratio * 100).toFixed(1)}%`}
-                        hint={`${formatCount(totals.cache_hits)} hits · ${formatCount(totals.cache_misses)} misses`}
-                    />
-                </div>
+                    <section className="grid gap-3 lg:grid-cols-2">
+                        <Block title="Slow queries">
+                            <TopList rows={overview.queries.slice(0, 6)} emphasis="max" empty="No queries recorded in this window." />
+                        </Block>
+                        <Block title="Jobs">
+                            <TopList rows={overview.jobs.slice(0, 6)} emphasis="count" empty="No queued jobs ran in this window." />
+                        </Block>
+                    </section>
 
-                <div className="grid gap-4 lg:grid-cols-3">
-                    <ChartCard title="Requests">
-                        <AreaChart data={overview.series} margin={{ top: 5, right: 8, bottom: 0, left: -16 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" />
-                            <XAxis dataKey="t" tickFormatter={tick} minTickGap={40} {...axis} />
-                            <YAxis allowDecimals={false} {...axis} />
-                            <Tooltip labelFormatter={label} />
-                            <Area
-                                type="monotone"
-                                dataKey="requests"
-                                name="Requests"
-                                stroke={SERIES.primary}
-                                fill={SERIES.primary}
-                                fillOpacity={0.15}
-                                strokeWidth={2}
+                    {siteRows.length > 0 && (
+                        <section className="grid gap-3" aria-labelledby="sites-heading">
+                            <h2 id="sites-heading" className="text-fg text-sm font-medium">
+                                Sites
+                            </h2>
+                            <DataTable
+                                label="Sites"
+                                columns={siteColumns}
+                                rows={siteRows}
+                                rowKey={(row) => row.id}
+                                onRowClick={(row) => visit({ site: row.id })}
+                                defaultSort={{ column: 'requests', direction: 'desc' }}
                             />
-                        </AreaChart>
-                    </ChartCard>
-                    <ChartCard title="Exceptions">
-                        <BarChart data={overview.series} margin={{ top: 5, right: 8, bottom: 0, left: -16 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" />
-                            <XAxis dataKey="t" tickFormatter={tick} minTickGap={40} {...axis} />
-                            <YAxis allowDecimals={false} {...axis} />
-                            <Tooltip labelFormatter={label} cursor={{ fillOpacity: 0.1 }} />
-                            <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                            <Bar dataKey="exceptions_unhandled" name="Unhandled" stackId="e" fill={SERIES.secondary} />
-                            <Bar dataKey="exceptions_handled" name="Handled" stackId="e" fill={SERIES.primary} radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ChartCard>
-                    <ChartCard title="Request p95">
-                        <LineChart data={overview.series} margin={{ top: 5, right: 8, bottom: 0, left: -8 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" />
-                            <XAxis dataKey="t" tickFormatter={tick} minTickGap={40} {...axis} />
-                            <YAxis tickFormatter={(v: number) => formatMs(v)} {...axis} />
-                            <Tooltip labelFormatter={label} formatter={(v) => formatMs(Number(v))} />
-                            <Line
-                                type="monotone"
-                                dataKey="request_p95_ms"
-                                name="p95"
-                                stroke={SERIES.primary}
-                                strokeWidth={2}
-                                dot={false}
-                                connectNulls
-                            />
-                        </LineChart>
-                    </ChartCard>
-                </div>
-
-                <Card className="gap-2">
-                    <CardHeader className="flex flex-row items-center justify-between">
-                        <CardTitle className="text-sm">Open issues</CardTitle>
-                        <Link href={route('insights.issues.index', { site: site.id })} className="text-muted-foreground text-xs hover:underline">
-                            View all
-                        </Link>
-                    </CardHeader>
-                    <CardContent>
-                        {overview.issues.length === 0 ? (
-                            <p className="text-muted-foreground text-sm">No open issues. 🎉</p>
-                        ) : (
-                            <ul className="divide-y">
-                                {overview.issues.map((issue) => (
-                                    <li key={issue.id} className="flex items-center justify-between gap-4 py-2">
-                                        <div className="min-w-0">
-                                            <Link
-                                                href={route('insights.issues.show', issue.id)}
-                                                className="block truncate font-medium hover:underline"
-                                            >
-                                                {issue.title}
-                                            </Link>
-                                            <p className="text-muted-foreground truncate text-xs">{issue.culprit}</p>
-                                        </div>
-                                        <div className="flex shrink-0 items-center gap-3 text-xs">
-                                            <IssueKindBadge kind={issue.kind} />
-                                            <span className="tabular-nums">{formatCount(issue.occurrences)}×</span>
-                                            <span className="text-muted-foreground">{ago(issue.last_seen_at)}</span>
-                                        </div>
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                    </CardContent>
-                </Card>
-
-                <div className="grid gap-4 xl:grid-cols-2">
-                    <TopTable title="Slowest routes (p95)" rows={overview.routes} empty="No requests in this range." emphasis="p95" />
-                    <TopTable title="Slow queries (max)" rows={overview.queries} empty="No queries in this range." emphasis="max" />
-                    <TopTable title="Jobs" rows={overview.jobs} empty="No jobs in this range." emphasis="count" />
-                    <TopTable title="Outgoing requests (p95)" rows={overview.outgoing} empty="No outgoing requests in this range." emphasis="p95" />
-                </div>
-
-                <p className="text-muted-foreground text-xs">
-                    Need raw events? Open{' '}
-                    <a className="underline" href={links.errorLogs}>
-                        error logs
-                    </a>{' '}
-                    or{' '}
-                    <a className="underline" href={links.slowTraces}>
-                        traces slower than 1 s
-                    </a>{' '}
-                    for this site.
-                </p>
-            </div>
-        </AppLayout>
+                        </section>
+                    )}
+                </>
+            )}
+        </ObservabilityLayout>
     );
 }

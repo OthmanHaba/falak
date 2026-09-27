@@ -2,8 +2,8 @@ import { registerCommands, registerNavigation } from '@/lib/registry';
 import { Activity, ScrollText, Settings2 } from 'lucide-react';
 
 registerNavigation(
-    { id: 'telemetry.logs', title: 'Logs', url: '/telemetry/logs', icon: ScrollText, order: 400, permission: 'telemetry.view' },
-    { id: 'telemetry.traces', title: 'Traces', url: '/telemetry/traces', icon: Activity, order: 410, permission: 'telemetry.view' },
+    { id: 'telemetry.logs', title: 'Logs', url: '/observability/logs', icon: ScrollText, order: 400, permission: 'telemetry.view' },
+    { id: 'telemetry.traces', title: 'Traces', url: '/observability/traces', icon: Activity, order: 410, permission: 'telemetry.view' },
 );
 
 registerCommands({
@@ -14,18 +14,27 @@ registerCommands({
             title: 'Logs',
             group: 'Navigation',
             icon: ScrollText,
-            href: '/telemetry/logs',
+            href: '/observability/logs',
             permission: 'telemetry.view',
-            keywords: ['loki'],
+            keywords: ['loki', 'observability', 'tail'],
         },
         {
             id: 'telemetry.traces',
             title: 'Traces',
             group: 'Navigation',
             icon: Activity,
-            href: '/telemetry/traces',
+            href: '/observability/traces',
             permission: 'telemetry.view',
-            keywords: ['tempo', 'apm'],
+            keywords: ['tempo', 'apm', 'observability', 'spans'],
+        },
+        {
+            id: 'telemetry.traces.errors',
+            title: 'Traces with errors',
+            group: 'Navigation',
+            icon: Activity,
+            href: '/observability/traces?status=error',
+            permission: 'telemetry.view',
+            keywords: ['tempo', 'failed'],
         },
         {
             id: 'telemetry.settings',

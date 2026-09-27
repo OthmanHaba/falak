@@ -38,6 +38,8 @@ export interface MetricChartProps {
     emptyText?: ReactNode;
     /** Extra header content (range selector …). */
     actions?: ReactNode;
+    /** Formats x (time) ticks and tooltip headers; defaults to HH:mm (use a date format for multi-day ranges). */
+    timeFormat?: (value: number | string) => string;
     className?: string;
 }
 
@@ -46,8 +48,12 @@ const SERIES_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'va
 
 const tickStyle = { fill: 'var(--text-faint)', fontSize: 11, fontFamily: 'var(--font-sans)' };
 
+function chartDate(value: number | string): Date {
+    return typeof value === 'number' ? new Date(value < 1e12 ? value * 1000 : value) : new Date(value);
+}
+
 function formatTime(value: number | string): string {
-    const date = typeof value === 'number' ? new Date(value < 1e12 ? value * 1000 : value) : new Date(value);
+    const date = chartDate(value);
     if (Number.isNaN(date.getTime())) return String(value);
 
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -59,12 +65,17 @@ function ChartTooltip({
     label,
     format,
     series,
-}: TooltipContentProps<number, string> & { format: (value: number) => string; series: MetricSeries[] }) {
+    timeFormat,
+}: TooltipContentProps<number, string> & {
+    format: (value: number) => string;
+    series: MetricSeries[];
+    timeFormat: (value: number | string) => string;
+}) {
     if (!active || !payload?.length) return null;
 
     return (
         <div className="border-border bg-surface-1 shadow-panel min-w-36 rounded-lg border px-3 py-2 text-xs">
-            <p className="text-fg-faint mb-1">{formatTime(label as number | string)}</p>
+            <p className="text-fg-faint mb-1">{timeFormat(label as number | string)}</p>
             {payload.map((entry) => {
                 const index = series.findIndex((item) => item.key === entry.dataKey);
 
@@ -92,6 +103,7 @@ export function MetricChart({
     loading = false,
     emptyText = 'No data for this range.',
     actions,
+    timeFormat = formatTime,
     className,
 }: MetricChartProps) {
     const gradientId = useId().replace(/:/g, '');
@@ -106,11 +118,13 @@ export function MetricChart({
     const axes = (
         <>
             <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="0" />
-            <XAxis dataKey="t" tickFormatter={formatTime} tick={tickStyle} axisLine={false} tickLine={false} minTickGap={32} />
+            <XAxis dataKey="t" tickFormatter={timeFormat} tick={tickStyle} axisLine={false} tickLine={false} minTickGap={32} />
             <YAxis tickFormatter={format} tick={tickStyle} axisLine={false} tickLine={false} width={44} />
             <Tooltip
                 cursor={type === 'bar' ? { fill: 'var(--surface-2)' } : { stroke: 'var(--border-strong)', strokeWidth: 1 }}
-                content={(props) => <ChartTooltip {...(props as TooltipContentProps<number, string>)} format={format} series={visible} />}
+                content={(props) => (
+                    <ChartTooltip {...(props as TooltipContentProps<number, string>)} format={format} series={visible} timeFormat={timeFormat} />
+                )}
             />
         </>
     );
@@ -226,7 +240,7 @@ export function MetricChart({
                         <tbody className="text-fg tabular">
                             {data.map((point, index) => (
                                 <tr key={index} className="border-border border-t">
-                                    <td className="text-fg-muted py-1">{formatTime(point.t)}</td>
+                                    <td className="text-fg-muted py-1">{timeFormat(point.t)}</td>
                                     {visible.map((item) => {
                                         const cell = point[item.key];
 

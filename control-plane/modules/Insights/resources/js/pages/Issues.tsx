@@ -1,15 +1,22 @@
-import Heading from '@/components/heading';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem, type Paginated } from '@/types';
-import { Head, Link, router } from '@inertiajs/react';
-import { FormEventHandler, useState } from 'react';
-import { ago, formatCount, IssueKindBadge, IssueStatusBadge, PriorityBadge } from '../components/insights-ui';
-import { type IssueSummary, type Member } from '../types';
+import { Avatar } from '@/components/kiln/avatar';
+import { Button } from '@/components/kiln/button';
+import { Checkbox } from '@/components/kiln/checkbox';
+import { DataTable, type DataTableColumn } from '@/components/kiln/data-table';
+import { Input } from '@/components/kiln/input';
+import { Pagination } from '@/components/kiln/pagination';
+import { RelativeTime } from '@/components/kiln/relative-time';
+import { Select } from '@/components/kiln/select';
+import { Sparkline } from '@/components/kiln/sparkline';
+import { Tag } from '@/components/kiln/tag';
+import { Tooltip } from '@/components/kiln/tooltip';
+import ObservabilityLayout from '@/layouts/observability-layout';
+import { cn } from '@/lib/utils';
+import { type Paginated } from '@/types';
+import { router } from '@inertiajs/react';
+import { Bug, CheckCircle2, EyeOff, RotateCcw, Search, X } from 'lucide-react';
+import { useEffect, useState, type FormEventHandler } from 'react';
+import { formatCount, KIND, priorityLabel, PriorityTag } from '../components/insights-ui';
+import { type IssuePriority, type IssueStatus, type IssueSummary, type Member } from '../types';
 
 interface Filters {
     status: string;
@@ -21,53 +28,40 @@ interface Filters {
     sort?: string;
 }
 
+type IssueRow = IssueSummary & { sparkline: number[] | null };
+
 interface Props {
-    issues: Paginated<IssueSummary>;
+    issues: Paginated<IssueRow>;
     filters: Filters;
+    counts: Record<IssueStatus | 'all', number>;
     members: Member[];
     sites: Record<string, string>;
+    priorities: IssuePriority[];
+    can: { manage: boolean };
 }
 
-const ALL = 'all';
-const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Insights', href: '/insights' },
-    { title: 'Issues', href: '/insights/issues' },
+const ALL = '__all__';
+const STATUS_TABS: { value: IssueStatus | 'all'; label: string }[] = [
+    { value: 'open', label: 'Open' },
+    { value: 'resolved', label: 'Resolved' },
+    { value: 'ignored', label: 'Ignored' },
+    { value: 'all', label: 'All' },
 ];
 
-function FilterSelect({
-    value,
-    onChange,
-    label,
-    options,
-}: {
-    value: string;
-    onChange: (v: string) => void;
-    label: string;
-    options: { value: string; label: string }[];
-}) {
-    return (
-        <Select value={value} onValueChange={onChange}>
-            <SelectTrigger className="w-40" aria-label={label}>
-                <SelectValue placeholder={label} />
-            </SelectTrigger>
-            <SelectContent>
-                {options.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                    </SelectItem>
-                ))}
-            </SelectContent>
-        </Select>
-    );
-}
-
-export default function Issues({ issues, filters, members, sites }: Props) {
+export default function Issues({ issues, filters, counts, members, sites, priorities, can }: Props) {
     const [search, setSearch] = useState(filters.search ?? '');
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [pending, setPending] = useState<IssueStatus | null>(null);
+
+    // Selection only spans the visible page.
+    useEffect(() => setSelected(new Set()), [issues.current_page, filters]);
 
     const apply = (next: Partial<Filters>) => {
         const query = { ...filters, search, ...next };
-        const cleaned = Object.fromEntries(Object.entries(query).filter(([key, value]) => value && (value !== ALL || key === 'status')));
-        router.get(route('insights.issues.index'), cleaned, { preserveState: true, replace: true });
+        const cleaned = Object.fromEntries(
+            Object.entries(query).filter(([key, value]) => value && value !== ALL && !(key === 'status' && value === 'open')),
+        );
+        router.get('/observability/issues', cleaned, { preserveState: true, preserveScroll: true, replace: true });
     };
 
     const submit: FormEventHandler = (event) => {
@@ -75,36 +69,172 @@ export default function Issues({ issues, filters, members, sites }: Props) {
         apply({ search });
     };
 
-    return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Issues" />
-            <div className="space-y-6 p-4">
-                <Heading title="Issues" description="Exceptions, slow endpoints and scheduled tasks that need attention" />
+    const bulk = (status: IssueStatus) => {
+        setPending(status);
+        router.put(
+            route('insights.issues.bulk-status'),
+            { ids: [...selected], status },
+            { preserveScroll: true, onFinish: () => setPending(null), onSuccess: () => setSelected(new Set()) },
+        );
+    };
 
-                <div className="flex flex-wrap items-center gap-2">
-                    <form onSubmit={submit} className="flex-1 sm:max-w-xs">
+    const rows = issues.data;
+    const allSelected = rows.length > 0 && rows.every((row) => selected.has(row.id));
+    const someSelected = rows.some((row) => selected.has(row.id));
+    const toggle = (id: string) =>
+        setSelected((current) => {
+            const next = new Set(current);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+
+            return next;
+        });
+    const hasFilters = Boolean(filters.kind || filters.priority || filters.site || filters.assignee || filters.search);
+
+    const columns: DataTableColumn<IssueRow>[] = [
+        ...(can.manage
+            ? [
+                  {
+                      id: 'select',
+                      width: '36px',
+                      header: (
+                          <Checkbox
+                              aria-label="Select all issues on this page"
+                              checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                              onCheckedChange={() => setSelected(allSelected ? new Set() : new Set(rows.map((row) => row.id)))}
+                          />
+                      ),
+                      cell: (row: IssueRow) => (
+                          <span onClick={(event) => event.stopPropagation()} className="flex">
+                              <Checkbox aria-label={`Select ${row.title}`} checked={selected.has(row.id)} onCheckedChange={() => toggle(row.id)} />
+                          </span>
+                      ),
+                  } satisfies DataTableColumn<IssueRow>,
+              ]
+            : []),
+        {
+            id: 'issue',
+            header: 'Issue',
+            cell: (row) => {
+                const Icon = KIND[row.kind].icon;
+
+                return (
+                    <span className="flex min-w-0 items-start gap-2.5 py-1.5">
+                        <Icon
+                            className={cn('mt-0.5 size-4 shrink-0', row.status === 'open' && row.handled === false ? 'text-danger' : 'text-fg-faint')}
+                            aria-label={KIND[row.kind].label}
+                        />
+                        <span className="grid min-w-0 gap-0.5">
+                            <span className={cn('truncate text-sm', row.status === 'open' ? 'text-fg font-medium' : 'text-fg-muted')}>
+                                {row.title}
+                            </span>
+                            <span className="text-fg-faint flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+                                {row.culprit && <span className="max-w-full truncate font-mono">{row.culprit}</span>}
+                                {row.site_name && <span>{row.site_name}</span>}
+                                <span>
+                                    first seen <RelativeTime value={row.first_seen_at} />
+                                </span>
+                                {row.status !== 'open' && <Tag tone="faint">{row.status}</Tag>}
+                                {row.handled === false && row.status === 'open' && <Tag tone="danger">Unhandled</Tag>}
+                                <PriorityTag priority={row.priority} />
+                            </span>
+                        </span>
+                    </span>
+                );
+            },
+        },
+        {
+            id: 'trend',
+            header: '24h',
+            width: '112px',
+            hideOnMobile: true,
+            cell: (row) =>
+                row.sparkline ? (
+                    <Sparkline
+                        values={row.sparkline}
+                        label="Occurrences per hour, last 24 hours"
+                        tone={row.handled === false ? 'danger' : 'accent'}
+                    />
+                ) : (
+                    <span className="text-fg-faint text-xs">—</span>
+                ),
+        },
+        { id: 'events', header: 'Events', align: 'right', width: '80px', cell: (row) => formatCount(row.occurrences) },
+        {
+            id: 'users',
+            header: 'Users',
+            align: 'right',
+            width: '72px',
+            hideOnMobile: true,
+            cell: (row) => (row.affected_users > 0 ? formatCount(row.affected_users) : <span className="text-fg-faint">—</span>),
+        },
+        {
+            id: 'assignee',
+            header: <span className="sr-only">Assignee</span>,
+            width: '44px',
+            hideOnMobile: true,
+            cell: (row) =>
+                row.assignee ? (
+                    <Tooltip content={`Assigned to ${row.assignee.name}`}>
+                        <span className="flex">
+                            <Avatar name={row.assignee.name} size="sm" />
+                        </span>
+                    </Tooltip>
+                ) : null,
+        },
+        {
+            id: 'seen',
+            header: 'Last seen',
+            align: 'right',
+            width: '104px',
+            cell: (row) => <RelativeTime value={row.last_seen_at} className="text-fg-muted text-xs" />,
+        },
+    ];
+
+    return (
+        <ObservabilityLayout tab="issues">
+            <div className="grid gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div role="tablist" aria-label="Status" className="border-border bg-surface-1 inline-flex items-center rounded-md border p-0.5">
+                        {STATUS_TABS.map((tab) => {
+                            const active = filters.status === tab.value;
+
+                            return (
+                                <button
+                                    key={tab.value}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={active}
+                                    onClick={() => apply({ status: tab.value })}
+                                    className={cn(
+                                        'flex h-7 items-center gap-1.5 rounded-sm px-2.5 text-sm font-medium transition-colors duration-150',
+                                        active ? 'bg-surface-3 text-fg' : 'text-fg-muted hover:text-fg',
+                                    )}
+                                >
+                                    {tab.label}
+                                    <span className="text-fg-faint tabular text-xs">{formatCount(counts[tab.value] ?? 0)}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <form onSubmit={submit} className="w-full sm:w-72">
                         <Input
-                            placeholder="Search title or culprit…"
+                            type="search"
+                            prefix={<Search />}
+                            placeholder="Search title or culprit"
                             value={search}
-                            onChange={(e) => setSearch(e.target.value)}
+                            onChange={(event) => setSearch(event.target.value)}
                             aria-label="Search issues"
                         />
                     </form>
-                    <FilterSelect
-                        label="Status"
-                        value={filters.status}
-                        onChange={(status) => apply({ status })}
-                        options={[
-                            { value: 'open', label: 'Open' },
-                            { value: 'resolved', label: 'Resolved' },
-                            { value: 'ignored', label: 'Ignored' },
-                            { value: ALL, label: 'Any status' },
-                        ]}
-                    />
-                    <FilterSelect
-                        label="Kind"
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                        size="sm"
+                        className="w-36"
+                        aria-label="Kind"
                         value={filters.kind ?? ALL}
-                        onChange={(kind) => apply({ kind })}
+                        onValueChange={(kind) => apply({ kind })}
                         options={[
                             { value: ALL, label: 'All kinds' },
                             { value: 'exception', label: 'Exceptions' },
@@ -112,16 +242,23 @@ export default function Issues({ issues, filters, members, sites }: Props) {
                             { value: 'heartbeat', label: 'Scheduled tasks' },
                         ]}
                     />
-                    <FilterSelect
-                        label="Site"
-                        value={filters.site ?? ALL}
-                        onChange={(site) => apply({ site })}
-                        options={[{ value: ALL, label: 'All sites' }, ...Object.entries(sites).map(([id, name]) => ({ value: id, label: name }))]}
+                    <Select
+                        size="sm"
+                        className="w-36"
+                        aria-label="Priority"
+                        value={filters.priority ?? ALL}
+                        onValueChange={(priority) => apply({ priority })}
+                        options={[
+                            { value: ALL, label: 'Any priority' },
+                            ...priorities.map((priority) => ({ value: priority, label: priorityLabel(priority) })),
+                        ]}
                     />
-                    <FilterSelect
-                        label="Assignee"
+                    <Select
+                        size="sm"
+                        className="w-40"
+                        aria-label="Assignee"
                         value={filters.assignee ?? ALL}
-                        onChange={(assignee) => apply({ assignee })}
+                        onValueChange={(assignee) => apply({ assignee })}
                         options={[
                             { value: ALL, label: 'Anyone' },
                             { value: 'me', label: 'Assigned to me' },
@@ -129,88 +266,102 @@ export default function Issues({ issues, filters, members, sites }: Props) {
                             ...members.map((member) => ({ value: member.id, label: member.name })),
                         ]}
                     />
-                    <FilterSelect
-                        label="Sort"
+                    {Object.keys(sites).length > 0 && (
+                        <Select
+                            size="sm"
+                            className="w-36"
+                            aria-label="Site"
+                            value={filters.site ?? ALL}
+                            onValueChange={(site) => apply({ site })}
+                            options={[{ value: ALL, label: 'All sites' }, ...Object.entries(sites).map(([id, name]) => ({ value: id, label: name }))]}
+                        />
+                    )}
+                    <Select
+                        size="sm"
+                        className="w-36"
+                        aria-label="Sort"
                         value={filters.sort ?? 'last_seen'}
-                        onChange={(sort) => apply({ sort })}
+                        onValueChange={(sort) => apply({ sort })}
                         options={[
                             { value: 'last_seen', label: 'Last seen' },
                             { value: 'first_seen', label: 'First seen' },
-                            { value: 'occurrences', label: 'Occurrences' },
-                            { value: 'users', label: 'Users affected' },
+                            { value: 'occurrences', label: 'Most events' },
+                            { value: 'users', label: 'Most users' },
                         ]}
                     />
-                </div>
-
-                <Card className="py-0">
-                    {issues.data.length === 0 ? (
-                        <p className="text-muted-foreground py-12 text-center text-sm">No issues match these filters.</p>
-                    ) : (
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Issue</TableHead>
-                                    <TableHead>Site</TableHead>
-                                    <TableHead className="text-right">Events</TableHead>
-                                    <TableHead className="text-right">Users</TableHead>
-                                    <TableHead>Last seen</TableHead>
-                                    <TableHead>Assignee</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {issues.data.map((issue) => (
-                                    <TableRow key={issue.id}>
-                                        <TableCell className="max-w-[36rem]">
-                                            <Link
-                                                href={route('insights.issues.show', issue.id)}
-                                                className="block truncate font-medium hover:underline"
-                                            >
-                                                {issue.title}
-                                            </Link>
-                                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                                <IssueStatusBadge status={issue.status} />
-                                                <IssueKindBadge kind={issue.kind} />
-                                                <PriorityBadge priority={issue.priority} />
-                                                {issue.handled === false && <span className="text-xs text-red-600 dark:text-red-400">unhandled</span>}
-                                                {issue.culprit && <span className="text-muted-foreground truncate text-xs">{issue.culprit}</span>}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-sm">{issue.site_name ?? '—'}</TableCell>
-                                        <TableCell className="text-right tabular-nums">{formatCount(issue.occurrences)}</TableCell>
-                                        <TableCell className="text-right tabular-nums">{formatCount(issue.affected_users)}</TableCell>
-                                        <TableCell className="text-muted-foreground text-sm whitespace-nowrap" title={issue.last_seen_at}>
-                                            {ago(issue.last_seen_at)}
-                                        </TableCell>
-                                        <TableCell className="text-sm">
-                                            {issue.assignee?.name ?? <span className="text-muted-foreground">—</span>}
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+                    {hasFilters && (
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={<X />}
+                            onClick={() => {
+                                setSearch('');
+                                router.get('/observability/issues', filters.status === 'open' ? {} : { status: filters.status }, {
+                                    preserveState: true,
+                                    replace: true,
+                                });
+                            }}
+                        >
+                            Clear filters
+                        </Button>
                     )}
-                </Card>
-
-                {issues.last_page > 1 && (
-                    <nav className="flex flex-wrap items-center justify-center gap-1" aria-label="Pagination">
-                        {issues.links.map((link, index) => (
-                            <Button
-                                key={index}
-                                size="sm"
-                                variant={link.active ? 'secondary' : 'ghost'}
-                                disabled={!link.url}
-                                asChild={Boolean(link.url)}
-                            >
-                                {link.url ? (
-                                    <Link href={link.url} preserveState dangerouslySetInnerHTML={{ __html: link.label }} />
-                                ) : (
-                                    <span dangerouslySetInnerHTML={{ __html: link.label }} />
-                                )}
-                            </Button>
-                        ))}
-                    </nav>
-                )}
+                </div>
             </div>
-        </AppLayout>
+
+            {selected.size > 0 && (
+                <div
+                    className="border-border-strong bg-surface-2 sticky top-14 z-20 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2"
+                    role="region"
+                    aria-label="Bulk actions"
+                >
+                    <span className="text-fg text-sm font-medium">{selected.size} selected</span>
+                    <div className="ml-auto flex flex-wrap items-center gap-2">
+                        {filters.status !== 'resolved' && (
+                            <Button
+                                size="sm"
+                                variant="primary"
+                                icon={<CheckCircle2 />}
+                                loading={pending === 'resolved'}
+                                onClick={() => bulk('resolved')}
+                            >
+                                Resolve
+                            </Button>
+                        )}
+                        {filters.status !== 'ignored' && (
+                            <Button size="sm" icon={<EyeOff />} loading={pending === 'ignored'} onClick={() => bulk('ignored')}>
+                                Ignore
+                            </Button>
+                        )}
+                        {filters.status !== 'open' && (
+                            <Button size="sm" icon={<RotateCcw />} loading={pending === 'open'} onClick={() => bulk('open')}>
+                                Reopen
+                            </Button>
+                        )}
+                        <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                            Cancel
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            <DataTable
+                label="Issues"
+                columns={columns}
+                rows={rows}
+                rowKey={(row) => row.id}
+                onRowClick={(row) => router.visit(`/observability/issues/${row.id}`)}
+                empty={
+                    hasFilters || filters.status !== 'open'
+                        ? { icon: <Search />, title: 'No issues match', description: 'Try another status or clear the filters.' }
+                        : {
+                              icon: <Bug />,
+                              title: 'No open issues',
+                              description:
+                                  'Unhandled exceptions, slow endpoints that break a threshold and missed scheduled tasks open issues here. Nothing needs attention right now.',
+                          }
+                }
+            />
+            <Pagination page={issues} noun="issues" />
+        </ObservabilityLayout>
     );
 }

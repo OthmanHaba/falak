@@ -1,251 +1,144 @@
-import Heading from '@/components/heading';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import AppLayout from '@/layouts/app-layout';
-import { cn } from '@/lib/utils';
-import { type BreadcrumbItem } from '@/types';
-import { Head, Link } from '@inertiajs/react';
-import { format } from 'date-fns';
-import { ChevronDown, ChevronRight, Search } from 'lucide-react';
-import { FormEventHandler, useCallback, useEffect, useState } from 'react';
-import { getJson, queryString } from '../lib';
-import { type LogLineDto } from '../types';
-
-interface Filters {
-    server_id?: string;
-    site_id?: string;
-    service?: string;
-    level?: string;
-    search?: string;
-    regex?: boolean | string;
-    trace_id?: string;
-    range?: string;
-    from?: string;
-    to?: string;
-}
+import { Checkbox } from '@/components/kiln/checkbox';
+import { Input } from '@/components/kiln/input';
+import { Segmented } from '@/components/kiln/segmented';
+import { Select } from '@/components/kiln/select';
+import { Tag } from '@/components/kiln/tag';
+import ObservabilityLayout from '@/layouts/observability-layout';
+import { Search, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { BackendError, NotConfigured } from '../components/backend-state';
+import { LogStreamView, useLogStream, type LogFilters } from '../components/log-stream';
+import { queryString } from '../lib';
 
 interface Props {
-    filters: Filters;
+    filters: Omit<LogFilters, 'regex'> & { regex?: boolean | string };
     servers: { id: string; name: string }[];
+    sites: { id: string; name: string }[];
     levels: string[];
     configured: boolean;
 }
 
-interface LogsResponse {
-    lines: LogLineDto[];
-    next_before: string | null;
-}
+const RANGES = ['15m', '1h', '6h', '24h', '7d'] as const;
+const ANY = '__any__';
 
-const ANY = 'any';
-const RANGES = ['15m', '1h', '6h', '24h', '7d'];
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'Logs', href: '/telemetry/logs' }];
+export default function Logs({ filters: initial, servers, sites, levels, configured }: Props) {
+    const [filters, setFilters] = useState<LogFilters>(() => ({
+        ...initial,
+        range: initial.range ?? (initial.from ? undefined : '1h'),
+        regex: initial.regex === true || initial.regex === '1',
+    }));
+    const [search, setSearch] = useState(filters.search ?? '');
+    const [following, setFollowing] = useState(true);
+    const stream = useLogStream(filters, { enabled: configured, follow: following });
+    const serverNames = useMemo(() => Object.fromEntries(servers.map((server) => [server.id.toLowerCase(), server.name])), [servers]);
 
-function levelOf(line: LogLineDto): string | undefined {
-    return line.metadata.severity_text ?? line.metadata.detected_level ?? line.labels.detected_level ?? line.labels.level;
-}
+    useEffect(() => {
+        window.history.replaceState(window.history.state, '', `/observability/logs${queryString({ ...filters })}`);
+    }, [filters]);
 
-function levelClass(level: string | undefined): string {
-    const value = level?.toLowerCase() ?? '';
-    if (value.startsWith('err') || value.startsWith('fatal') || value.startsWith('crit')) return 'border-l-red-500';
-    if (value.startsWith('warn')) return 'border-l-amber-500';
-    if (value.startsWith('debug') || value.startsWith('trace')) return 'border-l-zinc-400';
-
-    return 'border-l-sky-500';
-}
-
-function LogRow({ line }: { line: LogLineDto }) {
-    const [open, setOpen] = useState(false);
-    const level = levelOf(line);
+    const update = (patch: Partial<LogFilters>) => setFilters((current) => ({ ...current, ...patch }));
+    const option = (value: string | undefined) => value ?? ANY;
+    const fromOption = (value: string) => (value === ANY ? undefined : value);
 
     return (
-        <div className={cn('border-b border-l-2 font-mono text-xs', levelClass(level))}>
-            <button
-                type="button"
-                className="hover:bg-muted/50 flex w-full items-start gap-2 px-2 py-1 text-left"
-                onClick={() => setOpen(!open)}
-                aria-expanded={open}
-            >
-                {open ? <ChevronDown className="mt-0.5 size-3 shrink-0" /> : <ChevronRight className="mt-0.5 size-3 shrink-0" />}
-                <span className="text-muted-foreground shrink-0 whitespace-nowrap">{format(new Date(line.at), 'MM-dd HH:mm:ss.SSS')}</span>
-                {level && <span className="w-12 shrink-0 uppercase">{level.slice(0, 5)}</span>}
-                <span className="text-muted-foreground shrink-0">{line.labels.service_name ?? ''}</span>
-                <span className="min-w-0 break-all whitespace-pre-wrap">{line.line}</span>
-            </button>
-            {open && (
-                <div className="bg-muted/30 space-y-2 px-8 py-2">
-                    {line.trace_id && (
-                        <Link href={`/telemetry/traces/${line.trace_id}`} className="text-primary hover:underline">
-                            View trace {line.trace_id}
-                        </Link>
+        <ObservabilityLayout tab="logs">
+            <div className="flex flex-wrap items-center gap-2">
+                <form
+                    className="min-w-56 flex-1"
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        update({ search: search.trim() || undefined });
+                    }}
+                >
+                    <Input
+                        type="search"
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        onBlur={() => update({ search: search.trim() || undefined })}
+                        prefix={<Search />}
+                        placeholder={filters.regex ? 'Regular expression (press Enter)' : 'Search log lines (press Enter)'}
+                        aria-label="Search log lines"
+                        mono
+                    />
+                </form>
+                <label className="text-fg-muted flex h-8 items-center gap-1.5 text-xs">
+                    <Checkbox checked={filters.regex === true} onCheckedChange={(checked) => update({ regex: checked === true })} />
+                    Regex
+                </label>
+                <Select
+                    size="md"
+                    className="w-40"
+                    aria-label="Site"
+                    value={option(filters.site_id)}
+                    onValueChange={(value) => update({ site_id: fromOption(value) })}
+                    options={[{ value: ANY, label: 'All sites' }, ...sites.map((site) => ({ value: site.id, label: site.name }))]}
+                />
+                <Select
+                    className="w-36"
+                    aria-label="Server"
+                    value={option(filters.server_id)}
+                    onValueChange={(value) => update({ server_id: fromOption(value) })}
+                    options={[{ value: ANY, label: 'All servers' }, ...servers.map((server) => ({ value: server.id, label: server.name }))]}
+                />
+                <Select
+                    className="w-32"
+                    aria-label="Level"
+                    value={option(filters.level)}
+                    onValueChange={(value) => update({ level: fromOption(value) })}
+                    options={[{ value: ANY, label: 'Any level' }, ...levels.map((level) => ({ value: level, label: level }))]}
+                />
+                <Segmented
+                    label="Time range"
+                    value={(filters.range as (typeof RANGES)[number]) ?? '1h'}
+                    onValueChange={(range) => update({ range, from: undefined, to: undefined })}
+                    options={RANGES.map((range) => ({ value: range, label: range }))}
+                />
+            </div>
+
+            {(filters.trace_id || filters.service || filters.from) && (
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="text-fg-faint">Also filtered by</span>
+                    {filters.trace_id && (
+                        <FilterChip label={`trace ${filters.trace_id.slice(0, 12)}`} onClear={() => update({ trace_id: undefined })} />
                     )}
-                    <dl className="grid grid-cols-[minmax(8rem,auto)_1fr] gap-x-3 gap-y-0.5">
-                        {[...Object.entries(line.labels), ...Object.entries(line.metadata)].map(([key, value]) => (
-                            <div key={key} className="contents">
-                                <dt className="text-muted-foreground">{key}</dt>
-                                <dd className="break-all">{value}</dd>
-                            </div>
-                        ))}
-                    </dl>
+                    {filters.service && <FilterChip label={`service ${filters.service}`} onClear={() => update({ service: undefined })} />}
+                    {filters.from && (
+                        <FilterChip label="custom time window" onClear={() => update({ from: undefined, to: undefined, range: '1h' })} />
+                    )}
                 </div>
             )}
-        </div>
+
+            {!configured ? (
+                <NotConfigured backend="Loki" />
+            ) : stream.state.status === 'error' ? (
+                <BackendError backend="Loki" error={stream.state.error} onRetry={stream.retry} />
+            ) : (
+                <LogStreamView
+                    lines={stream.lines}
+                    live={stream.live}
+                    following={following}
+                    onFollowChange={setFollowing}
+                    olderCursor={stream.olderCursor}
+                    loadingOlder={stream.loadingOlder}
+                    onLoadOlder={() => void stream.loadOlder()}
+                    loading={stream.state.status === 'loading'}
+                    serverNames={serverNames}
+                    height="calc(100vh - 17rem)"
+                />
+            )}
+        </ObservabilityLayout>
     );
 }
 
-export default function Logs({ filters: initial, servers, levels, configured }: Props) {
-    const [filters, setFilters] = useState<Filters>({ range: '1h', ...initial, regex: initial.regex === true || initial.regex === '1' });
-    const [lines, setLines] = useState<LogLineDto[]>([]);
-    const [nextBefore, setNextBefore] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
-
-    const load = useCallback(async (current: Filters, before?: string) => {
-        setLoading(true);
-        setError(null);
-
-        try {
-            const params = { ...current, regex: current.regex === true, before, limit: 200 };
-            const body = await getJson<LogsResponse>(`/telemetry/logs/data${queryString(params)}`);
-            setLines((existing) => (before ? [...existing, ...body.lines] : body.lines));
-            setNextBefore(body.next_before);
-
-            if (!before) {
-                window.history.replaceState(null, '', `/telemetry/logs${queryString({ ...current, regex: current.regex === true })}`);
-            }
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Failed to load logs');
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        if (configured) void load({ range: '1h', ...initial, regex: initial.regex === true || initial.regex === '1' });
-    }, [configured, initial, load]);
-
-    const submit: FormEventHandler = (event) => {
-        event.preventDefault();
-        void load(filters);
-    };
-
-    const set = (key: keyof Filters) => (value: string) => setFilters((current) => ({ ...current, [key]: value === ANY ? undefined : value }));
-
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Logs" />
-            <div className="space-y-6 p-4">
-                <Heading title="Logs" description="Application, server and agent logs (Loki)" />
-                {!configured && (
-                    <Alert>
-                        <AlertDescription>Loki is not configured (KILN_LOKI_URL).</AlertDescription>
-                    </Alert>
-                )}
-                <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-                    <div className="space-y-1 sm:col-span-2">
-                        <Label htmlFor="search">Contains</Label>
-                        <Input id="search" value={filters.search ?? ''} onChange={(e) => set('search')(e.target.value)} placeholder="Search text…" />
-                        <label className="text-muted-foreground flex items-center gap-2 text-xs">
-                            <Checkbox
-                                checked={filters.regex === true}
-                                onCheckedChange={(checked) => setFilters((c) => ({ ...c, regex: checked === true }))}
-                            />
-                            Regular expression
-                        </label>
-                    </div>
-                    <div className="space-y-1">
-                        <Label>Server</Label>
-                        <Select value={filters.server_id ?? ANY} onValueChange={set('server_id')}>
-                            <SelectTrigger aria-label="Server">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value={ANY}>All servers</SelectItem>
-                                {servers.map((server) => (
-                                    <SelectItem key={server.id} value={server.id}>
-                                        {server.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="space-y-1">
-                        <Label>Level</Label>
-                        <Select value={filters.level ?? ANY} onValueChange={set('level')}>
-                            <SelectTrigger aria-label="Level">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value={ANY}>Any level</SelectItem>
-                                {levels.map((level) => (
-                                    <SelectItem key={level} value={level}>
-                                        {level}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="space-y-1">
-                        <Label>Range</Label>
-                        <Select value={filters.range ?? '1h'} onValueChange={set('range')}>
-                            <SelectTrigger aria-label="Time range">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {RANGES.map((range) => (
-                                    <SelectItem key={range} value={range}>
-                                        Last {range}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                    <div className="flex items-end">
-                        <Button type="submit" disabled={!configured || loading} className="w-full">
-                            <Search /> Run
-                        </Button>
-                    </div>
-                    <div className="space-y-1">
-                        <Label htmlFor="service">Service</Label>
-                        <Input
-                            id="service"
-                            value={filters.service ?? ''}
-                            onChange={(e) => set('service')(e.target.value)}
-                            placeholder="service.name"
-                        />
-                    </div>
-                    <div className="space-y-1">
-                        <Label htmlFor="site">Site id</Label>
-                        <Input id="site" value={filters.site_id ?? ''} onChange={(e) => set('site_id')(e.target.value)} />
-                    </div>
-                    <div className="space-y-1 sm:col-span-2">
-                        <Label htmlFor="trace">Trace id</Label>
-                        <Input id="trace" value={filters.trace_id ?? ''} onChange={(e) => set('trace_id')(e.target.value)} className="font-mono" />
-                    </div>
-                </form>
-                {error && <p className="text-destructive text-sm">{error}</p>}
-                <Card>
-                    <CardContent className="p-0">
-                        {lines.length === 0 && !loading && (
-                            <p className="text-muted-foreground py-10 text-center text-sm">No log lines in this range.</p>
-                        )}
-                        {lines.map((line, index) => (
-                            <LogRow key={`${line.ts}-${index}`} line={line} />
-                        ))}
-                    </CardContent>
-                </Card>
-                {nextBefore && (
-                    <div className="flex justify-center">
-                        <Button variant="outline" disabled={loading} onClick={() => void load(filters, nextBefore)}>
-                            Load older
-                        </Button>
-                    </div>
-                )}
-            </div>
-        </AppLayout>
+        <Tag className="pr-0.5">
+            <span className="flex items-center gap-1">
+                {label}
+                <button type="button" onClick={onClear} aria-label={`Remove filter ${label}`} className="text-fg-faint hover:text-fg rounded-sm">
+                    <X className="size-3" />
+                </button>
+            </span>
+        </Tag>
     );
 }
