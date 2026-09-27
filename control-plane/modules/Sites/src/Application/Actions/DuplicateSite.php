@@ -3,6 +3,8 @@
 namespace Kiln\Sites\Application\Actions;
 
 use Illuminate\Support\Str;
+use Kiln\Sites\Contracts\ComposeSites;
+use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\SitePlacement;
 use Kiln\Sites\Domain\Models\EnvironmentVersion;
 use Kiln\Sites\Domain\Models\Site;
@@ -44,6 +46,12 @@ final class DuplicateSite
             'docker_image' => $source->docker_image,
             'dockerfile' => $source->dockerfile,
             'compose_file' => $source->compose_file,
+            'compose_source' => $source->compose_source?->value,
+            'compose_content' => $source->compose_source === ComposeSource::Inline ? app(ComposeSites::class)->content($source->id)?->content : null,
+            'public_services' => $source->public_services !== null
+                ? array_map(fn (array $p) => ['service' => $p['service'], 'port' => $p['port'], 'domain' => null], array_values(array_filter($source->public_services, 'is_array')))
+                : null,
+            'template' => $source->template,
             'health_check_path' => $source->health_check_path,
             'test_domain_enabled' => $source->test_domain_enabled,
             'isolated' => $source->isolated,

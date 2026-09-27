@@ -1,0 +1,309 @@
+<?php
+
+namespace Kiln\Sites\Infrastructure\Compose;
+
+use Kiln\Sites\Contracts\ComposeInspector;
+use Kiln\Sites\Contracts\Data\ComposeServiceSummary;
+use Kiln\Sites\Contracts\Data\ComposeSummary;
+use Symfony\Component\Yaml\Exception\ParseException;
+use Symfony\Component\Yaml\Yaml;
+
+/**
+ * Compose file parser + policy (docs/COMPOSE_TEMPLATES.md §1.3). Policy without "Allow privileged compose":
+ * no privileged containers, host network / pid / ipc / userns namespaces, capabilities beyond Docker's
+ * default set, devices, unconfined security profiles, host bind mounts outside the release directory or
+ * the Docker socket. Named volumes are always allowed.
+ */
+final class YamlComposeInspector implements ComposeInspector
+{
+    public const LEADER_COMMAND_LABEL = 'kiln.deploy.leader_command';
+
+    public function parse(string $yaml): ComposeSummary
+    {
+        $max = (int) config('sites.compose.max_bytes', 262144);
+
+        if (strlen($yaml) > $max) {
+            return new ComposeSummary([], [], [], ['The compose file is larger than '.intdiv($max, 1024).' KB.']);
+        }
+
+        try {
+            $doc = self::load($yaml);
+        } catch (ParseException $e) {
+            return new ComposeSummary([], [], [], ['YAML: '.$e->getMessage()]);
+        }
+
+        if (! is_array($doc)) {
+            return new ComposeSummary([], [], [], ['The compose file must be a mapping with a `services` section.']);
+        }
+
+        $errors = [];
+        $violations = [];
+        $warnings = [];
+        $services = [];
+        $definitions = $doc['services'] ?? null;
+
+        if (! is_array($definitions) || $definitions === [] || array_is_list($definitions)) {
+            $errors[] = 'The compose file has no services.';
+            $definitions = [];
+        }
+
+        foreach (['include', 'extends'] as $unsupported) {
+            if (array_key_exists($unsupported, $doc)) {
+                $errors[] = "Top-level `{$unsupported}` is not supported.";
+            }
+        }
+
+        $volumes = [];
+
+        foreach ((array) ($doc['volumes'] ?? []) as $name => $volume) {
+            $volumes[] = (string) $name;
+            $device = is_array($volume) ? ($volume['driver_opts']['device'] ?? null) : null;
+
+            if (is_string($device) && str_starts_with($device, '/')) {
+                $violations[] = "Volume {$name} binds the host path {$device} (driver_opts.device).";
+            }
+        }
+
+        $safe = array_map('strtoupper', (array) config('sites.compose.safe_capabilities', []));
+
+        foreach ($definitions as $name => $service) {
+            $name = (string) $name;
+
+            if (preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/', $name) !== 1) {
+                $errors[] = "Service name “{$name}” is invalid.";
+
+                continue;
+            }
+
+            if (! is_array($service)) {
+                $service = [];
+            }
+
+            if (isset($service['extends'])) {
+                $errors[] = "Service {$name}: `extends` is not supported.";
+            }
+
+            $image = isset($service['image']) && is_scalar($service['image']) ? (string) $service['image'] : null;
+            $build = array_key_exists('build', $service);
+
+            if ($image === null && ! $build) {
+                $errors[] = "Service {$name} has neither `image` nor `build`.";
+            }
+
+            // ---- policy
+            if (($service['privileged'] ?? false) === true) {
+                $violations[] = "Service {$name} runs privileged.";
+            }
+
+            foreach (['network_mode' => 'network', 'pid' => 'PID', 'ipc' => 'IPC', 'userns_mode' => 'user'] as $key => $label) {
+                if (($service[$key] ?? null) === 'host') {
+                    $violations[] = "Service {$name} uses the host {$label} namespace ({$key}: host).";
+                }
+            }
+
+            foreach ((array) ($service['cap_add'] ?? []) as $capability) {
+                $capability = strtoupper(preg_replace('/^CAP_/i', '', (string) $capability) ?? '');
+
+                if ($capability === 'ALL' || ! in_array($capability, $safe, true)) {
+                    $violations[] = "Service {$name} adds the capability {$capability}.";
+                }
+            }
+
+            if (! empty($service['devices'])) {
+                $violations[] = "Service {$name} maps host devices.";
+            }
+
+            foreach ((array) ($service['security_opt'] ?? []) as $option) {
+                if (preg_match('/unconfined/i', (string) $option) === 1) {
+                    $violations[] = "Service {$name} disables a security profile ({$option}).";
+                }
+            }
+
+            [$named, $binds] = $this->volumes($service['volumes'] ?? [], $volumes);
+
+            foreach ($binds as $source) {
+                if (str_contains($source, 'docker.sock')) {
+                    $violations[] = "Service {$name} mounts the Docker socket.";
+                } elseif (! self::insideRelease($source)) {
+                    $violations[] = "Service {$name} bind-mounts the host path {$source} (only paths inside the release directory are allowed).";
+                }
+            }
+
+            [$ports, $published] = $this->ports($service['ports'] ?? [], $service['expose'] ?? []);
+
+            if ($published !== []) {
+                $warnings[] = "Host ports of {$name} (".implode(', ', $published).') are not published; Kiln publishes public services itself.';
+            }
+
+            $labels = self::labels($service['labels'] ?? []);
+            $leader = isset($labels[self::LEADER_COMMAND_LABEL]) && trim($labels[self::LEADER_COMMAND_LABEL]) !== '' ? trim($labels[self::LEADER_COMMAND_LABEL]) : null;
+
+            $healthcheck = is_array($service['healthcheck'] ?? null) && ($service['healthcheck']['disable'] ?? false) !== true;
+
+            $services[] = new ComposeServiceSummary(
+                name: $name,
+                image: $image,
+                build: $build,
+                ports: $ports,
+                publishedPorts: $published,
+                volumes: $named,
+                bindMounts: $binds,
+                healthcheck: $healthcheck,
+                dependsOn: array_values(array_map('strval', is_array($service['depends_on'] ?? null) ? (array_is_list($service['depends_on']) ? $service['depends_on'] : array_keys($service['depends_on'])) : [])),
+                leaderCommand: $leader,
+            );
+        }
+
+        return new ComposeSummary($services, $volumes, array_values(array_unique($violations)), $errors, $warnings);
+    }
+
+    /**
+     * YAML → array. Compose files are YAML 1.2-ish; Symfony handles anchors and merge keys.
+     *
+     * @throws ParseException
+     */
+    public static function load(string $yaml): mixed
+    {
+        return Yaml::parse($yaml);
+    }
+
+    /**
+     * Normalise `labels` (map or list of "k=v") into a map.
+     *
+     * @return array<string, string>
+     */
+    public static function labels(mixed $labels): array
+    {
+        if (! is_array($labels)) {
+            return [];
+        }
+
+        if (! array_is_list($labels)) {
+            return array_map(fn ($value) => is_scalar($value) ? (is_bool($value) ? ($value ? 'true' : 'false') : (string) $value) : '', array_combine(array_map('strval', array_keys($labels)), $labels));
+        }
+
+        $map = [];
+
+        foreach ($labels as $label) {
+            [$key, $value] = array_pad(explode('=', (string) $label, 2), 2, '');
+            $map[$key] = $value;
+        }
+
+        return $map;
+    }
+
+    /** Relative paths that stay inside the release directory (./data, data/config). */
+    public static function insideRelease(string $source): bool
+    {
+        if ($source === '' || str_starts_with($source, '/') || str_starts_with($source, '~') || str_contains($source, '$')) {
+            return false;
+        }
+
+        $depth = 0;
+
+        foreach (explode('/', $source) as $segment) {
+            if ($segment === '..') {
+                $depth--;
+            } elseif ($segment !== '' && $segment !== '.') {
+                $depth++;
+            }
+
+            if ($depth < 0) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  list<string>  $declared  top-level named volumes
+     * @return array{0: list<string>, 1: list<string>} named volumes, bind sources
+     */
+    private function volumes(mixed $volumes, array $declared): array
+    {
+        $named = [];
+        $binds = [];
+
+        foreach (is_array($volumes) ? $volumes : [] as $volume) {
+            if (is_array($volume)) {
+                $type = (string) ($volume['type'] ?? 'volume');
+                $source = (string) ($volume['source'] ?? '');
+
+                if ($type === 'bind') {
+                    $binds[] = $source;
+                } elseif ($type === 'volume' && $source !== '') {
+                    $named[] = $source;
+                }
+
+                continue;
+            }
+
+            $parts = explode(':', (string) $volume);
+
+            if (count($parts) < 2) {
+                continue; // anonymous volume
+            }
+
+            $source = $parts[0];
+
+            if (str_starts_with($source, '.') || str_starts_with($source, '/') || str_starts_with($source, '~') || str_contains($source, '/')) {
+                $binds[] = $source;
+            } else {
+                $named[] = $source;
+            }
+        }
+
+        return [array_values(array_unique($named)), array_values(array_unique($binds))];
+    }
+
+    /**
+     * @return array{0: list<int>, 1: list<string>} container ports, host mappings
+     */
+    private function ports(mixed $ports, mixed $expose): array
+    {
+        $container = [];
+        $published = [];
+
+        foreach (is_array($ports) ? $ports : [] as $port) {
+            if (is_array($port)) {
+                if (is_numeric($port['target'] ?? null)) {
+                    $container[] = (int) $port['target'];
+                }
+
+                if (isset($port['published']) && $port['published'] !== '') {
+                    $published[] = ($port['published']).':'.($port['target'] ?? '?');
+                }
+
+                continue;
+            }
+
+            $spec = preg_replace('#/(tcp|udp|sctp)$#', '', (string) $port) ?? '';
+            // [ip:]host:container | container; IPv6 hosts are bracketed.
+            $spec = preg_replace('/^\[[^\]]*\]:/', '', $spec) ?? $spec;
+            $parts = explode(':', $spec);
+            $target = end($parts);
+
+            if (is_numeric($target)) {
+                $container[] = (int) $target;
+            }
+
+            if (count($parts) >= 2) {
+                $published[] = (string) $port;
+            }
+        }
+
+        foreach (is_array($expose) ? $expose : [] as $port) {
+            $port = preg_replace('#/(tcp|udp|sctp)$#', '', (string) $port);
+
+            if (is_numeric($port)) {
+                $container[] = (int) $port;
+            }
+        }
+
+        $container = array_values(array_unique($container));
+        sort($container);
+
+        return [$container, $published];
+    }
+}

@@ -16,6 +16,7 @@ final readonly class SiteData
      * @param  ?string  $testDomain  <slug>.<KILN_TEST_DOMAIN> when enabled
      * @param  list<SharedPath>  $sharedPaths
      * @param  list<SiteTargetData>  $targets
+     * @param  ?ComposeConfig  $compose  compose runtime only
      */
     public function __construct(
         public string $id,
@@ -46,6 +47,7 @@ final readonly class SiteData
         public ?string $testDomain,
         public array $sharedPaths,
         public array $targets,
+        public ?ComposeConfig $compose = null,
     ) {}
 
     public function currentPath(): string

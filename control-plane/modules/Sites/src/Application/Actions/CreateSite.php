@@ -7,10 +7,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Kiln\Identity\Contracts\AuditLog;
+use Kiln\Sites\Application\ComposeSettings;
 use Kiln\Sites\Application\SiteRules;
 use Kiln\Sites\Application\SourceControlLinker;
 use Kiln\Sites\Application\TargetProvisioner;
 use Kiln\Sites\Contracts\BuildMode;
+use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\SitePlacement;
 use Kiln\Sites\Contracts\Framework;
 use Kiln\Sites\Contracts\SiteRuntime;
@@ -34,7 +36,50 @@ final class CreateSite
         private readonly TargetProvisioner $provisioner,
         private readonly SourceControlLinker $sourceControl,
         private readonly AuditLog $audit,
+        private readonly ComposeSettings $composeSettings,
     ) {}
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  list<string>  $serverIds
+     * @return array{source: ComposeSource, content: ?string, public_services: list<array{service: string, port: int, domain: ?string, host_port: int}>}
+     */
+    private function composeFields(string $organizationId, array $data, array $serverIds): array
+    {
+        $content = isset($data['compose_content']) && is_string($data['compose_content']) && trim($data['compose_content']) !== '' ? $data['compose_content'] : null;
+        $source = ComposeSettings::source($data['compose_source'] ?? null, $content !== null);
+        $summary = null;
+
+        if ($source === ComposeSource::Inline) {
+            $summary = $this->composeSettings->validateInline($organizationId, (string) $content);
+        } elseif ($content !== null) {
+            throw ValidationException::withMessages(['compose_content' => 'Repository sources read the compose file from the repository.']);
+        }
+
+        return [
+            'source' => $source,
+            'content' => $content,
+            'public_services' => $this->composeSettings->publicServices(array_values((array) ($data['public_services'] ?? [])), $serverIds, $summary),
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function variables(mixed $variables): array
+    {
+        $out = [];
+
+        foreach (is_array($variables) ? $variables : [] as $key => $value) {
+            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $key) !== 1) {
+                throw ValidationException::withMessages(['variables' => "“{$key}” is not a valid variable name."]);
+            }
+
+            $out[(string) $key] = (string) $value;
+        }
+
+        return $out;
+    }
 
     /**
      * @param  array<string, mixed>  $data  validated StoreSiteRequest input
@@ -44,7 +89,7 @@ final class CreateSite
      */
     public function __invoke(string $organizationId, ?string $userId, array $data, ?SitePlacement $placement = null, bool $requireServers = true, ?Closure $configure = null): Site
     {
-        $framework = Framework::from((string) $data['framework']);
+        $framework = isset($data['framework']) && $data['framework'] !== null ? Framework::from((string) $data['framework']) : Framework::Docker;
         $preset = Preset::for($framework);
         $runtime = isset($data['runtime']) ? SiteRuntime::from((string) $data['runtime']) : $preset->defaultRuntime();
         $buildMode = isset($data['build_mode']) ? BuildMode::from((string) $data['build_mode']) : $preset->defaultBuildMode($runtime);
@@ -70,8 +115,12 @@ final class CreateSite
         $this->rules->connection($organizationId, $data['source_connection_id'] ?? null);
 
         $appPort = null;
+        $compose = null;
 
-        if ($runtime->proxiesToPort()) {
+        if ($runtime === SiteRuntime::Compose) {
+            $compose = $this->composeFields($organizationId, $data, $serverIds);
+            $appPort = $compose['public_services'][0]['host_port'] ?? null;
+        } elseif ($runtime->proxiesToPort()) {
             $appPort = isset($data['app_port']) ? (int) $data['app_port'] : $this->rules->freePort($serverIds);
             $this->rules->portAvailable($appPort, $serverIds);
         }
@@ -79,7 +128,9 @@ final class CreateSite
         $slug = $this->slug((string) ($data['slug'] ?? '') ?: (string) $data['name']);
         $isolated = (bool) ($data['isolated'] ?? false);
 
-        $site = DB::transaction(function () use ($organizationId, $userId, $data, $framework, $preset, $runtime, $buildMode, $phpVersion, $serverIds, $leaderId, $appPort, $slug, $isolated, $configure) {
+        $variables = $this->variables($data['variables'] ?? null);
+
+        $site = DB::transaction(function () use ($organizationId, $userId, $data, $framework, $preset, $runtime, $buildMode, $phpVersion, $serverIds, $leaderId, $appPort, $slug, $isolated, $configure, $compose, $variables) {
             $site = Site::query()->create([
                 'organization_id' => $organizationId,
                 'name' => $data['name'],
@@ -99,7 +150,10 @@ final class CreateSite
                 'app_port' => $appPort,
                 'docker_image' => $data['docker_image'] ?? null,
                 'dockerfile' => $runtime === SiteRuntime::Docker ? ($data['dockerfile'] ?? (isset($data['docker_image']) ? null : 'Dockerfile')) : null,
-                'compose_file' => $runtime === SiteRuntime::Compose ? ($data['compose_file'] ?? 'compose.yaml') : null,
+                'compose_file' => $compose !== null && $compose['source'] === ComposeSource::Repo ? ($data['compose_file'] ?? null) : null,
+                'compose_source' => $compose['source'] ?? null,
+                'public_services' => $compose['public_services'] ?? null,
+                'template' => $data['template'] ?? null,
                 'health_check_path' => $data['health_check_path'] ?? $preset->healthCheckPath,
                 'deploy_script' => $preset->deployScript."\n",
                 'laravel' => $framework->isLaravel() ? $preset->laravel : [],
@@ -120,12 +174,16 @@ final class CreateSite
             EnvironmentVersion::query()->create([
                 'site_id' => $site->id,
                 'version' => 1,
-                'variables' => $this->initialEnvironment($site, $preset),
+                'variables' => [...$this->initialEnvironment($site, $preset), ...$variables],
                 'exposed' => [],
                 'changed_keys' => [],
                 'created_by' => $userId,
                 'created_at' => now(),
             ]);
+
+            if ($compose !== null && $compose['content'] !== null) {
+                $this->composeSettings->saveVersion($site, $compose['content'], $userId);
+            }
 
             if ($configure !== null) {
                 $configure($site);
@@ -206,7 +264,7 @@ final class CreateSite
             $variables['APP_URL'] = ($domain = $site->testDomain()) ? "https://{$domain}" : '';
         }
 
-        if ($site->app_port !== null) {
+        if ($site->app_port !== null && $site->runtime !== SiteRuntime::Compose) {
             $variables['PORT'] = (string) $site->app_port;
         }
 
