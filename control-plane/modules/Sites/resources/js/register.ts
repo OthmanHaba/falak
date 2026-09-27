@@ -26,8 +26,24 @@ const general = (name: keyof Blocks): ComponentType<ServiceTabProps> =>
 
 // Settings tab sections owned by Sites (Deployments and Edge add theirs: deploy strategy, domains, routing …).
 registerServiceSettingsSections(
-    { id: 'sites.source', kinds: ['site'], section: 'source', sectionTitle: 'Source', order: 100, permission: 'sites.view', component: general('SourceSettings') },
-    { id: 'sites.build', kinds: ['site'], section: 'build', sectionTitle: 'Build', order: 200, permission: 'sites.view', component: general('BuildSettings') },
+    {
+        id: 'sites.source',
+        kinds: ['site'],
+        section: 'source',
+        sectionTitle: 'Source',
+        order: 100,
+        permission: 'sites.view',
+        component: general('SourceSettings'),
+    },
+    {
+        id: 'sites.build',
+        kinds: ['site'],
+        section: 'build',
+        sectionTitle: 'Build',
+        order: 200,
+        permission: 'sites.view',
+        component: general('BuildSettings'),
+    },
     {
         id: 'sites.deploy-script',
         kinds: ['site'],
@@ -37,7 +53,15 @@ registerServiceSettingsSections(
         permission: 'sites.view',
         component: lazy(() => import('./panel/settings/deploy-script').then((module) => ({ default: module.DeployScriptSettings }))),
     },
-    { id: 'sites.shared-paths', kinds: ['site'], section: 'deploy', sectionTitle: 'Deploy', order: 330, permission: 'sites.view', component: general('SharedPathsSettings') },
+    {
+        id: 'sites.shared-paths',
+        kinds: ['site'],
+        section: 'deploy',
+        sectionTitle: 'Deploy',
+        order: 330,
+        permission: 'sites.view',
+        component: general('SharedPathsSettings'),
+    },
     {
         id: 'sites.test-domain',
         kinds: ['site'],
@@ -47,7 +71,15 @@ registerServiceSettingsSections(
         permission: 'sites.view',
         component: general('TestDomainSettings'),
     },
-    { id: 'sites.servers', kinds: ['site'], section: 'servers', sectionTitle: 'Servers', order: 500, permission: 'sites.view', component: general('ServersSettings') },
+    {
+        id: 'sites.servers',
+        kinds: ['site'],
+        section: 'servers',
+        sectionTitle: 'Servers',
+        order: 500,
+        permission: 'sites.view',
+        component: general('ServersSettings'),
+    },
     {
         id: 'sites.laravel',
         kinds: ['site'],
@@ -67,7 +99,15 @@ registerServiceSettingsSections(
         permission: 'sites.view',
         component: lazy(() => import('./panel/settings/commands').then((module) => ({ default: module.CommandsSettings }))),
     },
-    { id: 'sites.danger', kinds: ['site'], section: 'danger', sectionTitle: 'Danger', order: 900, permission: 'sites.delete', component: general('DangerSettings') },
+    {
+        id: 'sites.danger',
+        kinds: ['site'],
+        section: 'danger',
+        sectionTitle: 'Danger',
+        order: 900,
+        permission: 'sites.delete',
+        component: general('DangerSettings'),
+    },
 );
 
 registerNavigation({ id: 'sites', title: 'Sites', url: '/sites', icon: Globe, order: 200, permission: 'sites.view' });

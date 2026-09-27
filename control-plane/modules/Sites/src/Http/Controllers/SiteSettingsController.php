@@ -54,7 +54,7 @@ final class SiteSettingsController extends Controller
         }
 
         return response()->json(['data' => [
-            'site' => ['id' => $site->id, 'name' => $site->name, 'slug' => $site->slug, 'status' => $this->status($site)],
+            'site' => [...$this->header($site), 'status' => $this->status($site)],
             'settings' => [
                 'name' => $site->name,
                 'framework' => $site->framework->value,

@@ -70,7 +70,9 @@ export function DeployScriptSettings({ ctx }: ServiceTabProps) {
                 onClick={() => insert(macro ? `$${item.name}\n` : `$${item.name}`)}
                 className={cn(
                     'rounded-sm border px-1.5 py-0.5 font-mono text-[11px] transition-colors',
-                    macro ? 'border-primary/30 bg-primary-soft text-primary hover:border-primary' : 'border-border bg-surface-2 text-fg-muted hover:text-fg',
+                    macro
+                        ? 'border-primary/30 bg-primary-soft text-primary hover:border-primary'
+                        : 'border-border bg-surface-2 text-fg-muted hover:text-fg',
                 )}
             >
                 ${item.name}
@@ -84,7 +86,13 @@ export function DeployScriptSettings({ ctx }: ServiceTabProps) {
             description="Bash, run on every server as the site user. Macros expand into the deployment phases."
             aside={
                 data.can.update && (
-                    <Button size="sm" variant="ghost" icon={<RotateCcw />} disabled={script === data.defaultScript} onClick={() => setScript(data.defaultScript)}>
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<RotateCcw />}
+                        disabled={script === data.defaultScript}
+                        onClick={() => setScript(data.defaultScript)}
+                    >
                         Preset default
                     </Button>
                 )
@@ -129,7 +137,8 @@ export function DeployScriptSettings({ ctx }: ServiceTabProps) {
             {errors.script && <p className="text-danger text-xs">{errors.script}</p>}
             {missing.length > 0 && (
                 <Callout tone="warning">
-                    The script doesn’t use {missing.map((macro) => `$${macro}`).join(' or ')} — without them the release is never fetched or activated.
+                    The script doesn’t use {missing.map((macro) => `$${macro}`).join(' or ')} — without them the release is never fetched or
+                    activated.
                 </Callout>
             )}
             <details className="group">

@@ -36,7 +36,13 @@ function useDeploySettings(ctx: ServiceTabProps['ctx']) {
     return useJson<DeploySettingsData>(url(ctx.service.ref_id));
 }
 
-async function send(method: HttpMethod, target: string, body: unknown, success: string, reload: () => Promise<void>): Promise<Record<string, string> | null> {
+async function send(
+    method: HttpMethod,
+    target: string,
+    body: unknown,
+    success: string,
+    reload: () => Promise<void>,
+): Promise<Record<string, string> | null> {
     try {
         await requestJson(target, method, body);
         toast.success(success);
@@ -151,7 +157,13 @@ export function DeployHookSettings({ ctx }: ServiceTabProps) {
         if (kind === 'disable' && !window.confirm('Disable the deploy hook? Anything calling it stops deploying.')) return;
         if (kind === 'rotate' && data.hasHook && !window.confirm('Generate a new URL? The current one stops working.')) return;
         setBusy(kind);
-        await send(kind === 'rotate' ? 'POST' : 'DELETE', `${url(ctx.service.ref_id)}/hook`, {}, kind === 'rotate' ? 'New deploy hook URL' : 'Deploy hook disabled', reload);
+        await send(
+            kind === 'rotate' ? 'POST' : 'DELETE',
+            `${url(ctx.service.ref_id)}/hook`,
+            {},
+            kind === 'rotate' ? 'New deploy hook URL' : 'Deploy hook disabled',
+            reload,
+        );
         setBusy(null);
     };
 
@@ -210,7 +222,13 @@ export function PushToDeploySettings({ ctx }: ServiceTabProps) {
                     disabled={!data.can.manage || !data.hasRepository || saving}
                     onCheckedChange={async (enabled) => {
                         setSaving(true);
-                        await send('PUT', `${url(ctx.service.ref_id)}/push-to-deploy`, { enabled }, enabled ? 'Push to deploy enabled' : 'Push to deploy disabled', reload);
+                        await send(
+                            'PUT',
+                            `${url(ctx.service.ref_id)}/push-to-deploy`,
+                            { enabled },
+                            enabled ? 'Push to deploy enabled' : 'Push to deploy disabled',
+                            reload,
+                        );
                         setSaving(false);
                     }}
                 />

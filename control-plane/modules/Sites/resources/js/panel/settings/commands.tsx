@@ -88,7 +88,10 @@ export function CommandsSettings({ ctx }: ServiceTabProps) {
                                 aria-label="Server"
                                 value={serverId}
                                 onValueChange={setServer}
-                                options={data.targets.map((target) => ({ value: target.server_id, label: `${target.server_name}${target.role === 'leader' ? ' ★' : ''}` }))}
+                                options={data.targets.map((target) => ({
+                                    value: target.server_id,
+                                    label: `${target.server_name}${target.role === 'leader' ? ' ★' : ''}`,
+                                }))}
                             />
                         )}
                         <div className="min-w-0 flex-1">
@@ -136,7 +139,10 @@ export function CommandsSettings({ ctx }: ServiceTabProps) {
                                     type="button"
                                     onClick={() => setSelected(item.id)}
                                     aria-current={current?.id === item.id || undefined}
-                                    className={cn('grid w-full gap-1 px-3 py-2 text-left', current?.id === item.id ? 'bg-surface-3' : 'hover:bg-surface-2')}
+                                    className={cn(
+                                        'grid w-full gap-1 px-3 py-2 text-left',
+                                        current?.id === item.id ? 'bg-surface-3' : 'hover:bg-surface-2',
+                                    )}
                                 >
                                     <span className="text-fg truncate font-mono text-xs">{item.command}</span>
                                     <span className="text-fg-faint flex items-center gap-2 text-[11px]">

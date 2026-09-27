@@ -34,7 +34,12 @@ function useDraft<T extends object>(source: T | null): [T | null, (patch: Partia
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => setDraft(source), [key]);
 
-    return [draft, (patch) => setDraft((current) => (current ? { ...current, ...patch } : current)), () => setDraft(source), JSON.stringify(draft) !== key];
+    return [
+        draft,
+        (patch) => setDraft((current) => (current ? { ...current, ...patch } : current)),
+        () => setDraft(source),
+        JSON.stringify(draft) !== key,
+    ];
 }
 
 // ─── Source ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -43,7 +48,11 @@ function useDraft<T extends object>(source: T | null): [T | null, (patch: Partia
 export function SourceSettings({ ctx }: ServiceTabProps) {
     const { data, error, reload } = useSiteSettings(ctx);
     const source = data
-        ? { source_connection_id: data.settings.source_connection_id ?? '', repository: data.settings.repository ?? '', branch: data.settings.branch ?? '' }
+        ? {
+              source_connection_id: data.settings.source_connection_id ?? '',
+              repository: data.settings.repository ?? '',
+              branch: data.settings.branch ?? '',
+          }
         : null;
     const [value, set, reset, dirty] = useDraft(source);
     const { saving, errors, save } = useSave(reload, ctx.refresh);
@@ -83,6 +92,11 @@ export function SourceSettings({ ctx }: ServiceTabProps) {
                     )
                 }
             >
+                {!data.settings.source_connection_id && data.settings.repository && (
+                    <Callout tone="info" title={`${data.settings.repository} · ${data.settings.branch ?? 'main'}`}>
+                        No git connection is linked, so deploys use a manually installed key. Pick a connection to manage the deploy key and push to deploy.
+                    </Callout>
+                )}
                 <form id="site-source" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
                     <Field label="Git connection" error={errors.source_connection_id} className="sm:col-span-2">
                         <Select
@@ -107,7 +121,13 @@ export function SourceSettings({ ctx }: ServiceTabProps) {
                                 />
                             </Field>
                             <Field label="Branch" error={errors.branch}>
-                                <Input mono value={value.branch} disabled={!data.can.update} placeholder="main" onChange={(event) => set({ branch: event.target.value })} />
+                                <Input
+                                    mono
+                                    value={value.branch}
+                                    disabled={!data.can.update}
+                                    placeholder="main"
+                                    onChange={(event) => set({ branch: event.target.value })}
+                                />
                             </Field>
                         </>
                     )}
@@ -133,7 +153,10 @@ export function SourceSettings({ ctx }: ServiceTabProps) {
                         <KeyValue
                             items={[
                                 { label: 'Fingerprint', value: <span className="font-mono text-xs">{data.source.deploy_key.fingerprint}</span> },
-                                { label: 'Connection', value: data.source.connection ? `${data.source.connection.name} · ${data.source.connection.provider_label}` : '—' },
+                                {
+                                    label: 'Connection',
+                                    value: data.source.connection ? `${data.source.connection.name} · ${data.source.connection.provider_label}` : '—',
+                                },
                             ]}
                         />
                         {data.source.deploy_key.install_error && <Callout tone="warning">{data.source.deploy_key.install_error}</Callout>}
@@ -152,7 +175,17 @@ export function SourceSettings({ ctx }: ServiceTabProps) {
 
 type BuildDraft = Pick<
     SiteSettingsData['settings'],
-    'name' | 'runtime' | 'build_mode' | 'php_version' | 'node_version' | 'web_directory' | 'app_port' | 'docker_image' | 'dockerfile' | 'compose_file' | 'health_check_path'
+    | 'name'
+    | 'runtime'
+    | 'build_mode'
+    | 'php_version'
+    | 'node_version'
+    | 'web_directory'
+    | 'app_port'
+    | 'docker_image'
+    | 'dockerfile'
+    | 'compose_file'
+    | 'health_check_path'
 >;
 
 /** Runtime, build mode, language versions and paths. */
@@ -160,7 +193,19 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
     const { data, error, reload } = useSiteSettings(ctx);
     const [draft, set, reset, dirty] = useDraft<BuildDraft>(
         data
-            ? (({ name, runtime, build_mode, php_version, node_version, web_directory, app_port, docker_image, dockerfile, compose_file, health_check_path }) => ({
+            ? (({
+                  name,
+                  runtime,
+                  build_mode,
+                  php_version,
+                  node_version,
+                  web_directory,
+                  app_port,
+                  docker_image,
+                  dockerfile,
+                  compose_file,
+                  health_check_path,
+              }) => ({
                   name,
                   runtime,
                   build_mode,
@@ -212,8 +257,8 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
             description={
                 <>
                     {settings.framework_label} · runs as <code className="font-mono text-xs">{settings.unix_user}</code>
-                    {settings.isolated ? ' (isolated)' : ''} in <code className="font-mono text-xs">{settings.root_path}</code>. Runtime changes reconfigure
-                    the servers right away; the rest applies on the next deploy.
+                    {settings.isolated ? ' (isolated)' : ''} in <code className="font-mono text-xs">{settings.root_path}</code>. Runtime changes
+                    reconfigure the servers right away; the rest applies on the next deploy.
                 </>
             }
             footer={
@@ -243,7 +288,9 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                         value={draft.build_mode}
                         disabled={!data.can.update}
                         onValueChange={(value) => set({ build_mode: value })}
-                        options={options.build_modes.filter((mode) => runtime.build_modes.includes(mode.value)).map((mode) => ({ value: mode.value, label: mode.label }))}
+                        options={options.build_modes
+                            .filter((mode) => runtime.build_modes.includes(mode.value))
+                            .map((mode) => ({ value: mode.value, label: mode.label }))}
                     />
                 </Field>
                 {runtime.is_php ? (
@@ -271,7 +318,12 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                 )}
                 {(runtime.is_php || draft.runtime === 'static') && (
                     <Field label="Web directory" error={errors.web_directory} hint={`Document root: ${settings.document_root}`}>
-                        <Input mono value={text('web_directory')} disabled={!data.can.update} onChange={(event) => set({ web_directory: event.target.value })} />
+                        <Input
+                            mono
+                            value={text('web_directory')}
+                            disabled={!data.can.update}
+                            onChange={(event) => set({ web_directory: event.target.value })}
+                        />
                     </Field>
                 )}
                 {runtime.proxies && (
@@ -288,16 +340,31 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                 {draft.runtime === 'docker' && (
                     <>
                         <Field label="Image" error={errors.docker_image}>
-                            <Input mono value={text('docker_image')} disabled={!data.can.update} onChange={(event) => set({ docker_image: event.target.value })} />
+                            <Input
+                                mono
+                                value={text('docker_image')}
+                                disabled={!data.can.update}
+                                onChange={(event) => set({ docker_image: event.target.value })}
+                            />
                         </Field>
                         <Field label="Dockerfile" error={errors.dockerfile}>
-                            <Input mono value={text('dockerfile')} disabled={!data.can.update} onChange={(event) => set({ dockerfile: event.target.value })} />
+                            <Input
+                                mono
+                                value={text('dockerfile')}
+                                disabled={!data.can.update}
+                                onChange={(event) => set({ dockerfile: event.target.value })}
+                            />
                         </Field>
                     </>
                 )}
                 {draft.runtime === 'compose' && (
                     <Field label="Compose file" error={errors.compose_file}>
-                        <Input mono value={text('compose_file')} disabled={!data.can.update} onChange={(event) => set({ compose_file: event.target.value })} />
+                        <Input
+                            mono
+                            value={text('compose_file')}
+                            disabled={!data.can.update}
+                            onChange={(event) => set({ compose_file: event.target.value })}
+                        />
                     </Field>
                 )}
                 <Field label="App health path" error={errors.health_check_path} hint="Default path of the deploy health check.">
@@ -325,7 +392,8 @@ export function SharedPathsSettings({ ctx }: ServiceTabProps) {
 
     if (!data) return <Loading error={error} />;
     const dirty = JSON.stringify(paths) !== JSON.stringify(data.settings.shared_paths);
-    const update = (index: number, patch: Partial<(typeof paths)[number]>) => setPaths(paths.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+    const update = (index: number, patch: Partial<(typeof paths)[number]>) =>
+        setPaths(paths.map((item, i) => (i === index ? { ...item, ...patch } : item)));
 
     return (
         <Section
@@ -333,7 +401,12 @@ export function SharedPathsSettings({ ctx }: ServiceTabProps) {
             description="Linked into every release from shared/ so uploads and logs survive deploys."
             footer={
                 data.can.update && (
-                    <Button variant="primary" loading={saving} disabled={!dirty} onClick={() => void save('PUT', `/sites/${data.site.id}/shared-paths`, { paths }, 'Shared paths saved')}>
+                    <Button
+                        variant="primary"
+                        loading={saving}
+                        disabled={!dirty}
+                        onClick={() => void save('PUT', `/sites/${data.site.id}/shared-paths`, { paths }, 'Shared paths saved')}
+                    >
                         Save
                     </Button>
                 )
@@ -343,7 +416,13 @@ export function SharedPathsSettings({ ctx }: ServiceTabProps) {
             {paths.map((path, index) => (
                 <div key={index} className="flex items-start gap-2">
                     <div className="grid flex-1 gap-1">
-                        <Input mono aria-label="Path" value={path.path} disabled={!data.can.update} onChange={(event) => update(index, { path: event.target.value })} />
+                        <Input
+                            mono
+                            aria-label="Path"
+                            value={path.path}
+                            disabled={!data.can.update}
+                            onChange={(event) => update(index, { path: event.target.value })}
+                        />
                         {errors[`paths.${index}.path`] && <p className="text-danger text-xs">{errors[`paths.${index}.path`]}</p>}
                     </div>
                     <Select
@@ -398,7 +477,9 @@ export function TestDomainSettings({ ctx }: ServiceTabProps) {
                 <Switch
                     checked={data.settings.test_domain_enabled}
                     disabled={!data.can.update || saving}
-                    onCheckedChange={(on) => void save('PATCH', `/sites/${data.site.id}`, { test_domain_enabled: on }, on ? 'Test domain enabled' : 'Test domain disabled')}
+                    onCheckedChange={(on) =>
+                        void save('PATCH', `/sites/${data.site.id}`, { test_domain_enabled: on }, on ? 'Test domain enabled' : 'Test domain disabled')
+                    }
                 />
             </Field>
         </Section>
@@ -410,7 +491,9 @@ export function TestDomainSettings({ ctx }: ServiceTabProps) {
 /** Targets: which servers the site deploys to, the leader (migrations, scheduler), per-server preparation status. */
 export function ServersSettings({ ctx }: ServiceTabProps) {
     const { data, error, reload } = useSiteSettings(ctx);
-    const initial = data ? { ids: data.targets.map((target) => target.server_id), leader: data.targets.find((target) => target.role === 'leader')?.server_id ?? '' } : null;
+    const initial = data
+        ? { ids: data.targets.map((target) => target.server_id), leader: data.targets.find((target) => target.role === 'leader')?.server_id ?? '' }
+        : null;
     const [value, update, reset, dirty] = useDraft(initial);
     const { saving, errors, save } = useSave(reload, ctx.refresh);
     const [retrying, setRetrying] = useState<string | null>(null);
@@ -449,7 +532,14 @@ export function ServersSettings({ ctx }: ServiceTabProps) {
                             variant="primary"
                             loading={saving}
                             disabled={!dirty || value.ids.length === 0}
-                            onClick={() => void save('PUT', `/sites/${data.site.id}/targets`, { server_ids: value.ids, leader_server_id: value.leader }, 'Servers saved')}
+                            onClick={() =>
+                                void save(
+                                    'PUT',
+                                    `/sites/${data.site.id}/targets`,
+                                    { server_ids: value.ids, leader_server_id: value.leader },
+                                    'Servers saved',
+                                )
+                            }
                         >
                             Save servers
                         </Button>
@@ -480,11 +570,25 @@ export function ServersSettings({ ctx }: ServiceTabProps) {
                             {target && (
                                 <span className="flex items-center gap-2">
                                     <StatusBadge
-                                        status={target.status === 'ready' ? 'active' : target.status === 'failed' ? 'failed' : target.status === 'removing' ? 'removed' : 'provisioning'}
+                                        status={
+                                            target.status === 'ready'
+                                                ? 'active'
+                                                : target.status === 'failed'
+                                                  ? 'failed'
+                                                  : target.status === 'removing'
+                                                    ? 'removed'
+                                                    : 'provisioning'
+                                        }
                                         label={target.status === 'ready' ? 'Ready' : undefined}
                                     />
                                     {target.status === 'failed' && data.can.update && (
-                                        <Button size="sm" variant="ghost" icon={<RotateCw />} loading={retrying === target.id} onClick={() => void retry(target.id)}>
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            icon={<RotateCw />}
+                                            loading={retrying === target.id}
+                                            onClick={() => void retry(target.id)}
+                                        >
                                             Retry
                                         </Button>
                                     )}
@@ -503,7 +607,9 @@ export function ServersSettings({ ctx }: ServiceTabProps) {
                                     Leader
                                 </label>
                             )}
-                            {target?.status_message && target.status === 'failed' && <p className="text-danger w-full pl-7 text-xs">{target.status_message}</p>}
+                            {target?.status_message && target.status === 'failed' && (
+                                <p className="text-danger w-full pl-7 text-xs">{target.status_message}</p>
+                            )}
                         </li>
                     );
                 })}
@@ -550,7 +656,12 @@ export function LaravelSettings({ ctx }: ServiceTabProps) {
                             checked={toggles[item.key]}
                             disabled={!data.can.update || saving}
                             onCheckedChange={(on) =>
-                                void save('PUT', `/sites/${data.site.id}/laravel`, { ...toggles, [item.key]: on }, `${item.label} ${on ? 'enabled' : 'disabled'}`)
+                                void save(
+                                    'PUT',
+                                    `/sites/${data.site.id}/laravel`,
+                                    { ...toggles, [item.key]: on },
+                                    `${item.label} ${on ? 'enabled' : 'disabled'}`,
+                                )
                             }
                         />
                     </li>
@@ -574,8 +685,8 @@ export function DangerSettings({ ctx }: ServiceTabProps) {
         <Section title="Delete site" tone="danger">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-fg-muted max-w-lg text-sm">
-                    Removes routes, processes, PHP pools and the deploy key. Files under <code className="font-mono text-xs">{data.settings.root_path}</code> stay
-                    on the servers.
+                    Removes routes, processes, PHP pools and the deploy key. Files under{' '}
+                    <code className="font-mono text-xs">{data.settings.root_path}</code> stay on the servers.
                 </p>
                 <Button variant="danger" icon={<Trash2 />} onClick={() => setOpen(true)}>
                     Delete site
@@ -604,4 +715,3 @@ export function DangerSettings({ ctx }: ServiceTabProps) {
         </Section>
     );
 }
-

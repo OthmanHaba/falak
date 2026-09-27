@@ -1,5 +1,3 @@
-import { type SiteHeader } from '@/layouts/site-layout';
-
 export type TlsMode = 'auto' | 'dns' | 'custom' | 'internal' | 'off';
 export type WwwRedirect = 'none' | 'to_www' | 'to_apex';
 export type ApplyStatus = 'pending' | 'applied' | 'failed' | 'error';
@@ -64,8 +62,8 @@ export interface LoadBalancerConfig {
     weights: Record<string, number>;
 }
 
-export interface DomainsPageProps {
-    site: SiteHeader;
+/** GET /sites/{site}/domains (JSON). */
+export interface DomainsData {
     testDomain: string | null;
     domains: EdgeDomain[];
     certificates: EdgeCertificate[];
@@ -81,8 +79,8 @@ export interface DomainsPageProps {
     can: { manage: boolean; manage_dns: boolean };
 }
 
-export interface RoutingPageProps {
-    site: SiteHeader;
+/** GET /sites/{site}/routing (JSON). */
+export interface RoutingData {
     redirects: { id: string; from: string; to: string; status: number }[];
     rules: { id: string; name: string | null; path: string | null; username: string }[];
     headers: { id: string; name: string; value: string }[];
