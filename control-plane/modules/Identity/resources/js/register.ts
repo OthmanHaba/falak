@@ -1,6 +1,71 @@
-import { registerCommands } from '@/lib/registry';
+import { registerCommands, registerSettingsNav } from '@/lib/registry';
 import { router } from '@inertiajs/react';
-import { Building2, KeyRound, LogOut, Plus, ScrollText, Settings, ShieldCheck, User, Users, UsersRound } from 'lucide-react';
+import { Building2, KeyRound, Lock, LogOut, Palette, Plus, ScrollText, Settings, ShieldCheck, User, Users, UsersRound } from 'lucide-react';
+
+// /settings/{section} mini-nav. The palette lists these under "Settings" automatically.
+registerSettingsNav(
+    { id: 'profile', title: 'Profile', url: '/settings/profile', group: 'account', order: 0, icon: User, keywords: ['name', 'email', 'account'] },
+    { id: 'password', title: 'Password', url: '/settings/password', group: 'account', order: 10, icon: Lock },
+    {
+        id: 'two-factor',
+        title: 'Two-factor auth',
+        url: '/settings/two-factor',
+        group: 'account',
+        order: 20,
+        icon: ShieldCheck,
+        keywords: ['2fa', 'mfa', 'totp'],
+    },
+    {
+        id: 'appearance',
+        title: 'Appearance',
+        url: '/settings/appearance',
+        group: 'account',
+        order: 30,
+        icon: Palette,
+        keywords: ['theme', 'dark', 'light'],
+    },
+    {
+        id: 'api-tokens',
+        title: 'API tokens',
+        url: '/settings/api-tokens',
+        group: 'account',
+        order: 40,
+        icon: KeyRound,
+        requiresOrganization: true,
+        keywords: ['token', 'cli'],
+    },
+    {
+        id: 'organization',
+        title: 'General',
+        url: '/settings/organization',
+        group: 'organization',
+        order: 100,
+        icon: Settings,
+        requiresOrganization: true,
+        keywords: ['organization', 'rename', 'transfer'],
+    },
+    {
+        id: 'members',
+        title: 'Members',
+        url: '/settings/members',
+        group: 'organization',
+        order: 110,
+        icon: Users,
+        permission: 'members.view',
+        keywords: ['invite', 'invitations', 'roles'],
+    },
+    { id: 'teams', title: 'Teams', url: '/settings/teams', group: 'organization', order: 120, icon: UsersRound, permission: 'members.view' },
+    {
+        id: 'audit-log',
+        title: 'Audit log',
+        url: '/settings/audit-log',
+        group: 'organization',
+        order: 130,
+        icon: ScrollText,
+        permission: 'audit.view',
+        keywords: ['history', 'activity'],
+    },
+);
 
 registerCommands(
     {
@@ -21,50 +86,17 @@ registerCommands(
         },
     },
     {
-        id: 'identity.navigation',
+        id: 'identity.actions',
         commands: () => [
-            { id: 'identity.org.settings', title: 'Organization settings', group: 'Organization', icon: Settings, href: '/organization/settings' },
+            { id: 'identity.org.create', title: 'New organization', group: 'Organization', icon: Plus, href: '/organizations/create' },
             {
-                id: 'identity.org.members',
-                title: 'Members',
+                id: 'identity.org.invite',
+                title: 'Invite a member',
                 group: 'Organization',
                 icon: Users,
-                href: '/organization/members',
-                permission: 'members.view',
-            },
-            {
-                id: 'identity.org.teams',
-                title: 'Teams',
-                group: 'Organization',
-                icon: UsersRound,
-                href: '/organization/teams',
-                permission: 'members.view',
-            },
-            {
-                id: 'identity.org.audit',
-                title: 'Audit log',
-                group: 'Organization',
-                icon: ScrollText,
-                href: '/organization/audit-log',
-                permission: 'audit.view',
-            },
-            { id: 'identity.org.create', title: 'New organization', group: 'Organization', icon: Plus, href: '/organizations/create' },
-            { id: 'identity.settings.profile', title: 'Profile', group: 'Settings', icon: User, href: '/settings/profile' },
-            {
-                id: 'identity.settings.tokens',
-                title: 'API tokens',
-                group: 'Settings',
-                icon: KeyRound,
-                href: '/settings/api-tokens',
-                keywords: ['token', 'cli'],
-            },
-            {
-                id: 'identity.settings.2fa',
-                title: 'Two-factor authentication',
-                group: 'Settings',
-                icon: ShieldCheck,
-                href: '/settings/two-factor',
-                keywords: ['2fa', 'mfa', 'totp'],
+                href: '/settings/members',
+                permission: 'members.manage',
+                keywords: ['invitation', 'add user'],
             },
             { id: 'identity.logout', title: 'Log out', group: 'Settings', icon: LogOut, perform: () => router.post(route('logout')) },
         ],

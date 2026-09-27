@@ -23,3 +23,9 @@ Homestead.json
 Homestead.yaml
 npm-debug.log
 yarn-error.log
+
+# Playwright (tests/Browser)
+/tests/Browser/screenshots
+/tests/Browser/.auth
+/tests/Browser/.results
+/tests/Browser/.report

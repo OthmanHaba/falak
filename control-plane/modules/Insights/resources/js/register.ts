@@ -16,7 +16,9 @@ registerCommands({
             icon: Lightbulb,
             href: '/insights',
             permission: 'insights.view',
-            keywords: ['apm', 'nightwatch'],
+            keywords: ['apm', 'nightwatch', 'observability'],
+            // Until the unified /observability page lands (§3), `g o` opens Insights.
+            shortcut: 'G O',
         },
         {
             id: 'insights.issues',

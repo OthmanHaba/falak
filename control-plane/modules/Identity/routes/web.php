@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Kiln\Identity\Http\Controllers\Auth\AuthenticatedSessionController;
@@ -79,26 +80,35 @@ Route::middleware('auth')->group(function () {
         Route::post('settings/api-tokens', [ApiTokenController::class, 'store'])->name('api-tokens.store');
         Route::delete('settings/api-tokens/{token}', [ApiTokenController::class, 'destroy'])->name('api-tokens.destroy');
 
+        // Canonical organization settings pages live in the /settings/{section} shell (docs/UI_DESIGN.md §3).
+        Route::get('settings/organization', [OrganizationController::class, 'edit'])->name('organization.settings');
+        Route::get('settings/members', [MemberController::class, 'index'])->name('organization.members.index');
+        Route::get('settings/teams', [TeamController::class, 'index'])->name('organization.teams.index');
+        Route::get('settings/audit-log', [AuditLogController::class, 'index'])->name('organization.audit-log');
+
+        // Legacy URLs keep working (bookmarks, alert links): permanent redirect, query string preserved.
+        foreach (['settings' => 'organization', 'members' => 'members', 'teams' => 'teams', 'audit-log' => 'audit-log'] as $legacy => $section) {
+            Route::get("organization/{$legacy}", fn (Request $request) => redirect()->to(
+                "/settings/{$section}".($request->getQueryString() ? '?'.$request->getQueryString() : ''),
+                301,
+            ))->name("organization.legacy.{$legacy}");
+        }
+
         Route::prefix('organization')->name('organization.')->group(function () {
-            Route::get('settings', [OrganizationController::class, 'edit'])->name('settings');
             Route::patch('/', [OrganizationController::class, 'update'])->name('update');
             Route::delete('/', [OrganizationController::class, 'destroy'])->name('destroy');
             Route::post('transfer', [OrganizationController::class, 'transfer'])->name('transfer');
 
-            Route::get('members', [MemberController::class, 'index'])->name('members.index');
             Route::patch('members/{member}', [MemberController::class, 'update'])->name('members.update');
             Route::delete('members/{member}', [MemberController::class, 'destroy'])->name('members.destroy');
 
             Route::post('invitations', [InvitationController::class, 'store'])->name('invitations.store');
             Route::delete('invitations/{invitation}', [InvitationController::class, 'destroy'])->name('invitations.destroy');
 
-            Route::get('teams', [TeamController::class, 'index'])->name('teams.index');
             Route::post('teams', [TeamController::class, 'store'])->name('teams.store');
             Route::patch('teams/{team}', [TeamController::class, 'update'])->name('teams.update');
             Route::put('teams/{team}/members', [TeamController::class, 'members'])->name('teams.members');
             Route::delete('teams/{team}', [TeamController::class, 'destroy'])->name('teams.destroy');
-
-            Route::get('audit-log', [AuditLogController::class, 'index'])->name('audit-log');
         });
     });
 });

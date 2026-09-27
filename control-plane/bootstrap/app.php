@@ -19,6 +19,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $proxies = array_values(array_filter(array_map('trim', explode(',', (string) env('TRUSTED_PROXIES', '')))));
         $middleware->trustProxies(at: $proxies === ['*'] ? '*' : $proxies);
 
+        // The UI theme cookie is read by the root Blade view before first paint (and written by JS): not a secret.
+        $middleware->encryptCookies(except: ['appearance']);
+
         $middleware->web(append: [
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,

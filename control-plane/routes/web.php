@@ -13,4 +13,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('dashboard', function () {
         return Inertia::render('dashboard');
     })->name('dashboard');
+
+    // Kiln component gallery for UI work; local environment only.
+    if (app()->environment('local')) {
+        Route::get('dev/components', fn () => Inertia::render('dev/components'))->name('dev.components');
+    }
 });

@@ -1,11 +1,52 @@
+import { setAppearance } from '@/hooks/use-appearance';
+import { projectsUi } from '@/lib/pages';
 import { registerCommands } from '@/lib/registry';
-import { LayoutGrid, Palette } from 'lucide-react';
+import { FolderKanban, Monitor, Moon, Sun } from 'lucide-react';
 
 // Core shell commands. Modules register their own in modules/<Module>/resources/js/register.ts.
-registerCommands({
-    id: 'core.navigation',
-    commands: () => [
-        { id: 'nav.dashboard', title: 'Dashboard', group: 'Navigation', icon: LayoutGrid, href: '/dashboard' },
-        { id: 'nav.appearance', title: 'Appearance', group: 'Settings', icon: Palette, href: '/settings/appearance', keywords: ['theme', 'dark'] },
-    ],
-});
+registerCommands(
+    {
+        id: 'core.navigation',
+        commands: ({ props }) => [
+            {
+                id: 'nav.projects',
+                title: 'Projects',
+                group: 'Navigation',
+                icon: FolderKanban,
+                // Home is the Projects grid once its page ships; the dashboard until then.
+                href: props.kiln && projectsUi.index() ? '/projects' : '/dashboard',
+                shortcut: 'G P',
+                keywords: ['home', 'dashboard', 'canvas'],
+            },
+        ],
+    },
+    {
+        id: 'core.preferences',
+        commands: () => [
+            {
+                id: 'theme.dark',
+                title: 'Theme: Dark',
+                group: 'Preferences',
+                icon: Moon,
+                perform: () => setAppearance('dark'),
+                keywords: ['appearance'],
+            },
+            {
+                id: 'theme.light',
+                title: 'Theme: Light',
+                group: 'Preferences',
+                icon: Sun,
+                perform: () => setAppearance('light'),
+                keywords: ['appearance'],
+            },
+            {
+                id: 'theme.system',
+                title: 'Theme: System',
+                group: 'Preferences',
+                icon: Monitor,
+                perform: () => setAppearance('system'),
+                keywords: ['appearance', 'auto'],
+            },
+        ],
+    },
+);
