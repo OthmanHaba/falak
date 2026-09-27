@@ -17,7 +17,6 @@ it('deploys a catalog template through the real compose runtime', function () {
     templates_fixture_catalog();
     config(['sites.test_domain' => 'kiln.test']);
     $world = deploy_world(servers: 1);
-    $world->servers[0]->forceFill(['stack' => $world->servers[0]->stack->withDocker(true)])->save();
     $project = Project::query()->where('organization_id', $world->organization->id)->where('is_default', true)->firstOrFail();
 
     $response = $this->postJson("/projects/{$project->id}/production/templates/hello/deploy", [
