@@ -76,7 +76,7 @@ it('accepts an invitation with the matching account', function () {
         ->where('invitation.organization', $organization->name)
         ->where('invitation.email_matches', true));
 
-    $this->post($url)->assertRedirect(route('dashboard'));
+    $this->post($url)->assertRedirect('/projects');
 
     expect(app(OrganizationAccess::class)->roleOf($joiner->id, $organization->id))->toBe(Role::Developer)
         ->and($joiner->fresh()->current_organization_id)->toBe($organization->id)

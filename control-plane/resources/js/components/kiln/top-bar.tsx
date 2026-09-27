@@ -60,7 +60,7 @@ export function TopBar({ breadcrumbs = [] }: { breadcrumbs?: BreadcrumbItem[] })
     const ctx = useMemo(() => shellContext(props), [props]);
     const headerItems = props.organization?.current ? headerItemsFor(ctx) : [];
     const inProject = Boolean(props.kiln?.projects.length) && (url.startsWith('/projects/') || breadcrumbs.length === 0);
-    const home = props.kiln ? '/projects' : '/dashboard';
+    const home = '/projects';
 
     return (
         <header className="border-border bg-bg/85 sticky top-0 z-30 flex h-12 shrink-0 items-center gap-1 border-b px-3 backdrop-blur md:px-4">

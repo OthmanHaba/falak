@@ -173,7 +173,7 @@ it('shares success, warning and error flashes', function () {
     Route::middleware(['web', 'auth'])->get('/_flash-test', fn () => back()->with('success', 'Saved.')->with('warning', 'Careful.')->with('error', 'Nope.'));
     $this->get('/_flash-test');
 
-    $this->get('/dashboard')->assertInertia(fn (Assert $page) => $page->where('flash', ['success' => 'Saved.', 'error' => 'Nope.', 'warning' => 'Careful.']));
+    $this->get('/settings/profile')->assertInertia(fn (Assert $page) => $page->where('flash', ['success' => 'Saved.', 'error' => 'Nope.', 'warning' => 'Careful.']));
 });
 
 it('sends ids upper-case at the agent boundary and accepts either case back', function () {

@@ -30,7 +30,7 @@ it('registers a user with a personal organization, owner role and audit entry', 
         'email' => 'ada@example.com',
         'password' => 'password',
         'password_confirmation' => 'password',
-    ])->assertRedirect(route('dashboard', absolute: false));
+    ])->assertRedirect('/projects');
 
     $user = User::query()->where('email', 'ada@example.com')->firstOrFail();
     $this->assertAuthenticatedAs($user);
@@ -59,7 +59,7 @@ it('logs in users without two-factor directly and audits it', function () {
     [$user, $organization] = memberOf();
 
     $this->post('/login', ['email' => $user->email, 'password' => 'password'])
-        ->assertRedirect(route('dashboard', absolute: false));
+        ->assertRedirect('/projects');
 
     $this->assertAuthenticatedAs($user);
     // Logins are personal: recorded without an organization so org admins never see members' login activity.
@@ -93,7 +93,7 @@ it('completes the challenge with a valid TOTP code', function () {
 
     $this->withSession(['login.id' => $user->id, 'login.remember' => false])
         ->post('/two-factor-challenge', ['code' => app(Google2FA::class)->getCurrentOtp($secret)])
-        ->assertRedirect(route('dashboard', absolute: false));
+        ->assertRedirect('/projects');
 
     $this->assertAuthenticatedAs($user);
     expect(AuditEntry::query()->where('action', 'auth.login')->latest('id')->first()->context)->toBe(['two_factor' => 'totp']);
@@ -106,7 +106,7 @@ it('completes the challenge with a recovery code and consumes it', function () {
 
     $this->withSession(['login.id' => $user->id])
         ->post('/two-factor-challenge', ['recovery_code' => $code])
-        ->assertRedirect(route('dashboard', absolute: false));
+        ->assertRedirect('/projects');
 
     $this->assertAuthenticatedAs($user);
     expect($user->fresh()->recoveryCodes())->not->toContain($code)->toHaveCount(8);

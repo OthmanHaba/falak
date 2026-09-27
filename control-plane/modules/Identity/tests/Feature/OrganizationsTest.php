@@ -21,7 +21,7 @@ it('redirects members without an organization to create one', function () {
 it('creates an organization owned by the user and switches to it', function () {
     [$user] = actingAsMember();
 
-    $this->post('/organizations', ['name' => 'Umbrella Corp'])->assertRedirect(route('dashboard'));
+    $this->post('/organizations', ['name' => 'Umbrella Corp'])->assertRedirect('/projects');
 
     $organization = Organization::query()->where('name', 'Umbrella Corp')->sole();
     expect($organization->slug)->toBe('umbrella-corp')
@@ -40,7 +40,7 @@ it('switches between organizations the user belongs to only', function () {
     $second = app(CreateOrganization::class)($user, 'Second');
     [, $foreign] = memberOf();
 
-    $this->put('/organizations/current', ['organization_id' => $first->id])->assertRedirect(route('dashboard'));
+    $this->put('/organizations/current', ['organization_id' => $first->id])->assertRedirect('/projects');
     expect($user->fresh()->current_organization_id)->toBe($first->id);
     $this->get('/settings/organization')->assertInertia(fn (Assert $page) => $page->where('details.id', $first->id));
 
@@ -123,7 +123,7 @@ it('deletes an organization after typed confirmation', function () {
 
     $this->actingAs($owner)->delete('/organization', ['name' => 'wrong', 'password' => 'password'])->assertSessionHasErrors('name');
 
-    $this->delete('/organization', ['name' => $organization->name, 'password' => 'password'])->assertRedirect(route('dashboard'));
+    $this->delete('/organization', ['name' => $organization->name, 'password' => 'password'])->assertRedirect('/projects');
 
     expect(Organization::query()->find($organization->id))->toBeNull()
         ->and($admin->fresh()->current_organization_id)->toBeNull()

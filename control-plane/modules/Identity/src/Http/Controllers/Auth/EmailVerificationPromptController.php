@@ -16,7 +16,7 @@ class EmailVerificationPromptController extends Controller
     public function __invoke(Request $request): Response|RedirectResponse
     {
         return $request->user()->hasVerifiedEmail()
-                    ? redirect()->intended(route('dashboard', absolute: false))
+                    ? redirect()->intended(config('fortify.home'))
                     : Inertia::render('Identity/auth/verify-email', ['status' => $request->session()->get('status')]);
     }
 }

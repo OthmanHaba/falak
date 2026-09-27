@@ -22,7 +22,7 @@ export default function Welcome() {
                 <div className="flex gap-2">
                     {auth.user ? (
                         <Button variant="primary" asChild>
-                            <Link href={route('dashboard')}>Open dashboard</Link>
+                            <Link href="/projects">Open Kiln</Link>
                         </Button>
                     ) : (
                         <>

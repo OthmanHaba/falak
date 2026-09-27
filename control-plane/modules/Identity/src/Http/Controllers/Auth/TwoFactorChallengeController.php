@@ -85,7 +85,7 @@ final class TwoFactorChallengeController extends Controller
 
         $audit->recordPersonal('auth.login', $user->id, ['two_factor' => empty($data['code']) ? 'recovery_code' : 'totp']);
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        return redirect()->intended(config('fortify.home'));
     }
 
     private function challengedUser(Request $request): ?User
