@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Identity\Domain\Models\AuditEntry;
+use Kiln\Projects\Contracts\ProjectDirectory;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Domain\Models\EnvironmentVersion;
 use Kiln\Sites\Domain\Models\Site;
@@ -24,13 +25,42 @@ it('stores environment values encrypted and never renders them in the page', fun
     $raw = DB::table('sites_environment_versions')->value('variables');
     expect($raw)->not->toContain('APP_KEY');
 
-    $this->get("/sites/{$this->site->id}/environment")->assertOk()->assertInertia(fn ($page) => $page
-        ->component('Sites/Environment', false)
-        ->where('current.version', 1)
-        ->where('current.keys', ['APP_NAME', 'APP_ENV', 'APP_KEY', 'APP_DEBUG', 'APP_URL', 'LOG_CHANNEL'])
-        ->missing('current.variables'));
+    $this->getJson("/sites/{$this->site->id}/environment")->assertOk()
+        ->assertJsonPath('data.current.version', 1)
+        ->assertJsonPath('data.current.keys', ['APP_NAME', 'APP_ENV', 'APP_KEY', 'APP_DEBUG', 'APP_URL', 'LOG_CHANNEL'])
+        ->assertJsonMissingPath('data.current.variables');
 
-    expect($this->get("/sites/{$this->site->id}/environment")->getContent())->not->toContain('base64:');
+    expect($this->getJson("/sites/{$this->site->id}/environment")->getContent())->not->toContain('base64:');
+
+    // The legacy page opens the canvas panel's Variables tab.
+    $this->get("/sites/{$this->site->id}/environment")->assertRedirect(app(ProjectDirectory::class)->serviceUrl('site', $this->site->id, 'variables'));
+});
+
+it('applies staged row edits as one version and shows reference-only values', function () {
+    $this->patchJson("/sites/{$this->site->id}/environment", [
+        'set' => ['APP_NAME' => 'Renamed', 'DB_URL' => '${{ missing-db.DATABASE_URL }}'],
+        'unset' => ['LOG_CHANNEL'],
+        'exposed' => ['APP_NAME' => true],
+        'base_version' => 1,
+    ])->assertOk()->assertJsonPath('data.version', 2);
+
+    $env = app(SiteDirectory::class)->environment($this->site->id);
+    expect($env->variables)->toHaveKey('APP_KEY')->not->toHaveKey('LOG_CHANNEL')
+        ->and($env->variables['APP_NAME'])->toBe('Renamed')
+        ->and($env->exposedToDeployScript)->toBe(['APP_NAME']);
+
+    $state = $this->getJson("/sites/{$this->site->id}/environment")->assertOk();
+    expect($state->json('data.current.references'))->toBe(['DB_URL' => '${{ missing-db.DATABASE_URL }}'])
+        ->and($state->json('data.current.referencing'))->toBe(['DB_URL'])
+        ->and($state->json('data.current.reference_errors.0'))->toContain('missing-db')
+        ->and($state->getContent())->not->toContain('Renamed');
+
+    // Stale base version and invalid names are rejected.
+    $this->patchJson("/sites/{$this->site->id}/environment", ['set' => ['A' => '1'], 'unset' => [], 'exposed' => [], 'base_version' => 1])->assertUnprocessable();
+    $this->patchJson("/sites/{$this->site->id}/environment", ['set' => ['1BAD' => '1'], 'unset' => [], 'exposed' => []])->assertUnprocessable();
+
+    [$viewer] = memberOf($this->organization, Role::Viewer);
+    $this->actingAs($viewer)->patchJson("/sites/{$this->site->id}/environment", ['set' => ['A' => '1'], 'unset' => [], 'exposed' => []])->assertForbidden();
 });
 
 it('reveals values with an audit entry, only with sites.env.view', function () {
@@ -98,6 +128,6 @@ it('restores an older version as a new version', function () {
 
 it('lets viewers see keys but not edit', function () {
     [$viewer] = memberOf($this->organization, Role::Viewer);
-    $this->actingAs($viewer)->get("/sites/{$this->site->id}/environment")->assertOk();
+    $this->actingAs($viewer)->getJson("/sites/{$this->site->id}/environment")->assertOk()->assertJsonPath('data.can.update', false);
     $this->actingAs($viewer)->put("/sites/{$this->site->id}/environment", ['content' => 'A=1', 'exposed' => []])->assertForbidden();
 });

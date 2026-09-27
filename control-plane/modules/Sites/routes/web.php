@@ -24,6 +24,7 @@ Route::middleware(['auth', 'org'])->group(function () {
 
     Route::get('sites/{site}/environment', [EnvironmentController::class, 'show'])->name('sites.environment');
     Route::put('sites/{site}/environment', [EnvironmentController::class, 'update'])->name('sites.environment.update');
+    Route::patch('sites/{site}/environment', [EnvironmentController::class, 'patch'])->name('sites.environment.patch');
     Route::post('sites/{site}/environment/reveal', [EnvironmentController::class, 'reveal'])->middleware('throttle:30,1')->name('sites.environment.reveal');
     Route::post('sites/{site}/environment/versions/{version}/restore', [EnvironmentController::class, 'restore'])->whereNumber('version')->name('sites.environment.restore');
 

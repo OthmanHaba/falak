@@ -11,6 +11,8 @@ export interface ChangesBarProps {
     onApply: () => void;
     onDiscard?: () => void;
     processing?: boolean;
+    /** Extra buttons between Discard and the apply button (e.g. "Save" without deploying). */
+    extra?: ReactNode;
     className?: string;
 }
 
@@ -22,6 +24,7 @@ export function ChangesBar({
     onApply,
     onDiscard,
     processing = false,
+    extra,
     className,
 }: ChangesBarProps) {
     if (count <= 0) return null;
@@ -47,6 +50,7 @@ export function ChangesBar({
                     Discard
                 </Button>
             )}
+            {extra}
             <Button variant="primary" size="sm" onClick={onApply} loading={processing}>
                 {applyLabel}
             </Button>

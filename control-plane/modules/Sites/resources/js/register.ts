@@ -1,5 +1,11 @@
-import { registerCommands, registerNavigation, registerSiteTabs, type PaletteCommand } from '@/lib/registry';
+import { registerCommands, registerNavigation, registerServiceTabs, registerSiteTabs, type PaletteCommand } from '@/lib/registry';
 import { Globe, Plus } from 'lucide-react';
+import { lazy } from 'react';
+
+// Canvas service panel (docs/UI_DESIGN.md §5.1): Variables 200, Settings 900. Panel code loads with the canvas.
+const VariablesTab = lazy(() => import('./panel/variables-tab').then((module) => ({ default: module.VariablesTab })));
+
+registerServiceTabs({ id: 'variables', kinds: ['site'], title: 'Variables', order: 200, permission: 'sites.view', component: VariablesTab });
 
 registerNavigation({ id: 'sites', title: 'Sites', url: '/sites', icon: Globe, order: 200, permission: 'sites.view' });
 

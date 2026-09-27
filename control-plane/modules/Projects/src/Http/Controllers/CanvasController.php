@@ -6,6 +6,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Kiln\Databases\Contracts\DatabaseConnections;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Projects\Application\Canvas\CanvasActivity;
@@ -14,6 +15,8 @@ use Kiln\Projects\Application\Canvas\KilnNavigation;
 use Kiln\Projects\Contracts\ServiceKind;
 use Kiln\Projects\Domain\Models\Environment;
 use Kiln\Projects\Domain\Models\Project;
+use Kiln\Projects\Domain\Models\Service;
+use Kiln\Sites\Contracts\SiteDirectory;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -59,6 +62,30 @@ final class CanvasController extends Controller
         $this->authorize('view', $project);
 
         return response()->json($this->canvas->for($this->resolveEnvironment($project, $environment)));
+    }
+
+    /**
+     * GET /projects/{project}/{environment}/variables — what `${{ service.KEY }}` can point at in this environment
+     * (UI_DESIGN §5.3): every service with the keys it exposes. Key names only, never values.
+     */
+    public function variables(Project $project, string $environment, SiteDirectory $sites): JsonResponse
+    {
+        $this->authorize('view', $project);
+        $model = $this->resolveEnvironment($project, $environment);
+
+        $services = $model->services()->orderBy('name')->get()->map(fn (Service $service) => [
+            'id' => $service->id,
+            'kind' => $service->kind->value,
+            'ref_id' => $service->ref_id,
+            'name' => $service->name,
+            'handle' => Service::handle($service->name),
+            'keys' => match ($service->kind) {
+                ServiceKind::Site => array_keys($sites->environment($service->ref_id)->variables ?? []),
+                ServiceKind::Database => DatabaseConnections::KEYS,
+            },
+        ])->values();
+
+        return response()->json(['data' => ['services' => $services]]);
     }
 
     /**

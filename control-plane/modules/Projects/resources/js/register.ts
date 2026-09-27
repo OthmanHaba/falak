@@ -84,42 +84,6 @@ registerServiceActions(
 // Stand-ins until the owning modules ship these tabs (their registration replaces these).
 registerServiceTabs(
     pendingTab({
-        id: 'variables',
-        title: 'Variables',
-        order: 200,
-        kinds: ['site'],
-        module: 'Sites',
-        permission: 'sites.view',
-        description: 'Environment variables with reveal, raw editor and ${{ service.KEY }} references.',
-        legacy: '/sites/{id}/environment',
-    }),
-    pendingTab({
-        id: 'metrics',
-        title: 'Metrics',
-        order: 300,
-        kinds: ['site'],
-        module: 'Telemetry',
-        description: 'CPU, memory, requests, p95 latency and errors per server.',
-    }),
-    pendingTab({
-        id: 'logs',
-        title: 'Logs',
-        order: 400,
-        kinds: ['site'],
-        module: 'Telemetry',
-        description: 'Live log stream with search and level / server filters.',
-        legacy: '/telemetry/logs',
-    }),
-    pendingTab({
-        id: 'observability',
-        title: 'Observability',
-        order: 500,
-        kinds: ['site'],
-        module: 'Insights',
-        description: 'Issues, slow routes, jobs and queries, and heartbeats of this site.',
-        legacy: '/insights',
-    }),
-    pendingTab({
         id: 'processes',
         title: 'Processes',
         order: 600,
