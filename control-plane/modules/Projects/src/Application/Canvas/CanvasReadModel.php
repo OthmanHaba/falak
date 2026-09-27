@@ -170,7 +170,7 @@ final class CanvasReadModel
      */
     private function siteStatus(SiteData $site, ?DeploymentSummary $deployment): array
     {
-        $targets = array_map(fn ($target) => $target->status, $site->targets);
+        $targets = array_map(fn ($target) => $target->status->value, $site->targets);
 
         if ($deployment !== null && $deployment->isActive()) {
             return $deployment->status === 'building'
@@ -182,11 +182,11 @@ final class CanvasReadModel
             return ['inactive', 'No servers'];
         }
 
-        if (in_array(TargetStatus::Failed, $targets, true)) {
+        if (in_array(TargetStatus::Failed->value, $targets, true)) {
             return ['failed', 'Server setup failed'];
         }
 
-        if (array_intersect([TargetStatus::Pending, TargetStatus::Provisioning], $targets) !== []) {
+        if (array_intersect([TargetStatus::Pending->value, TargetStatus::Provisioning->value], $targets) !== []) {
             return ['provisioning', 'Provisioning'];
         }
 
