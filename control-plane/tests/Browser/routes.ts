@@ -26,6 +26,9 @@ const ULID = '([0-9A-Za-z]{26})';
 export const params: Record<string, ParamSource> = {
     site: { from: '/sites', match: new RegExp(`^/sites/${ULID}$`) },
     server: { from: '/servers', match: new RegExp(`^/servers/${ULID}$`) },
+    // canvas
+    project: { from: '/projects', match: new RegExp(`^/projects/${ULID}/production$`) },
+    canvas: { from: '/projects', match: new RegExp(`^/projects/(${ULID.slice(1, -1)}/production)$`) },
 };
 
 /** Requests allowed to fail on every page (optional backends in local/sim setups). */
@@ -107,6 +110,13 @@ export const routes: BrowserRoute[] = [
     { path: '/alerting/rules' },
     { path: '/alerting/channels' },
     { path: '/alerting/history' },
+
+    // canvas
+    { path: '/projects' },
+    { path: '/projects/:canvas' },
+    { path: '/projects/:project/settings' },
+    { path: '/projects/:canvas/service/site/:site/deployments' },
+    { path: '/projects/:canvas/service/site/:site/variables' },
 ];
 
 export function slugFor(path: string): string {

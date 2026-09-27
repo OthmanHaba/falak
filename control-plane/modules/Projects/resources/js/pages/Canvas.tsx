@@ -119,15 +119,17 @@ function CanvasPage({ project, environment, canvas: initial, panel, can }: Canva
         <>
             <Head title={`${project.name} · ${environment.name}`} />
             <div className="relative h-[calc(100svh-3rem)] min-h-0 flex-1 overflow-hidden" data-testid="project-canvas">
-                <CanvasBoard
-                    services={canvas.services}
-                    edges={canvas.edges}
-                    selectedId={selected?.id ?? null}
-                    draggable={can.manage}
-                    onOpen={(service) => openService(service)}
-                    onMove={move}
-                    onContextMenu={canCreate ? (position, anchor) => setPicker({ position, anchor }) : undefined}
-                />
+                <div className="absolute inset-0">
+                    <CanvasBoard
+                        services={canvas.services}
+                        edges={canvas.edges}
+                        selectedId={selected?.id ?? null}
+                        draggable={can.manage}
+                        onOpen={(service) => openService(service)}
+                        onMove={move}
+                        onContextMenu={canCreate ? (position, anchor) => setPicker({ position, anchor }) : undefined}
+                    />
+                </div>
 
                 <div className="absolute top-3 right-3 z-10 flex items-center gap-2 md:right-4">
                     {can.manage && (
