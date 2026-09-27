@@ -54,6 +54,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
     useEffect(() => {
         if (source !== 'inline' || !data || content === (data.content ?? '')) {
             if (data && content === (data.content ?? '')) setSummary(data.summary);
+            setValidating(false);
 
             return;
         }
@@ -65,7 +66,10 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                 .finally(() => setValidating(false));
         }, 400);
 
-        return () => window.clearTimeout(timer);
+        return () => {
+            window.clearTimeout(timer);
+            setValidating(false);
+        };
     }, [content, source, data, url]);
 
     const services = useMemo(() => summary?.services ?? [], [summary]);
@@ -275,7 +279,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                             const exposed = services.find((service) => service.name === item.service)?.ports ?? [];
 
                             return (
-                                <li key={index} className="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_minmax(0,1.3fr)_auto]">
+                                <li key={index} className="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_minmax(0,1.3fr)_4.5rem]">
                                     <Field
                                         label={index === 0 ? 'Service' : <span className="sr-only">Service</span>}
                                         error={errors[`public_services.${index}.service`]}

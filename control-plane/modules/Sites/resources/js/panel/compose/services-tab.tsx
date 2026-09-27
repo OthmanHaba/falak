@@ -1,17 +1,4 @@
-import {
-    Button,
-    Callout,
-    CopyButton,
-    EmptyState,
-    IconButton,
-    RelativeTime,
-    SkeletonRows,
-    StatusBadge,
-    StatusDot,
-    Tag,
-    Tooltip,
-    toast,
-} from '@/components/kiln';
+import { Button, Callout, CopyButton, EmptyState, IconButton, RelativeTime, SkeletonRows, StatusBadge, Tag, Tooltip, toast } from '@/components/kiln';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
@@ -178,7 +165,6 @@ function ServiceTableRow({
         <tr data-service={row.service} className="hover:bg-surface-2/50 transition-colors">
             <td className="px-3 py-2.5">
                 <div className="flex items-center gap-2">
-                    <StatusDot status={status.status} />
                     <div className="grid min-w-0 gap-0.5">
                         <span className="text-fg truncate text-[13px] font-medium">{row.service}</span>
                         <span className="text-fg-faint flex items-center gap-1.5">
@@ -210,7 +196,7 @@ function ServiceTableRow({
                         </a>
                     ) : null}
                     {published
-                        .filter((port) => port.container_port !== row.public?.port)
+                        .filter((port) => !row.public?.url || port.container_port !== row.public.port)
                         .map((port) => (
                             <Tag key={`${port.host_port}:${port.container_port}`} mono>
                                 {port.host_port}→{port.container_port}

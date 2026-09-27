@@ -34,11 +34,14 @@ use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Sites\Contracts\BuildMode;
+use Kiln\Sites\Contracts\ComposeSites;
+use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\LaravelSettings;
 use Kiln\Sites\Contracts\Framework;
 use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Contracts\TargetRole;
 use Kiln\Sites\Contracts\TargetStatus;
+use Kiln\Sites\Domain\Models\ComposeVersion;
 use Kiln\Sites\Domain\Models\EnvironmentVersion;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Models\SiteTarget;
@@ -111,6 +114,8 @@ class UiDemoSeeder extends Seeder
             }
         }
 
+        $created['stack'] = $this->composeSite($organization->id, $admin->id, $servers[0]);
+
         $this->database($organization->id, $servers[2]);
         $this->variables($created['storefront'], ['APP_ENV' => 'production', 'DATABASE_URL' => '${{ storefront_db.DATABASE_URL }}', 'DB_HOST' => '${{ storefront_db.DB_HOST }}']);
         $this->deployments($organization->id, $created, [$servers[0], $servers[1]]);
@@ -128,6 +133,118 @@ class UiDemoSeeder extends Seeder
         $this->callWith(SettingsDemoSeeder::class, ['organizationId' => $organization->id, 'userId' => $admin->id]);
 
         $this->call(ObservabilityDemoSeeder::class, false, ['organizationId' => $organization->id, 'userId' => $admin->id]);
+    }
+
+    /**
+     * A Docker Compose site (docs/COMPOSE_TEMPLATES.md §1) created from the n8n template: two inline compose versions,
+     * public services, and a reported state with one unhealthy service for the Services tab.
+     */
+    private function composeSite(string $organizationId, string $userId, Server $server): Site
+    {
+        $site = Site::query()->create([
+            'organization_id' => $organizationId,
+            'name' => 'Automations',
+            'slug' => 'automations',
+            'runtime' => SiteRuntime::Compose,
+            'build_mode' => BuildMode::Docker,
+            'framework' => Framework::Docker,
+            'web_directory' => '',
+            'unix_user' => 'kiln',
+            'deploy_script' => '',
+            'laravel' => new LaravelSettings,
+            'shared_paths' => [],
+            'compose_source' => ComposeSource::Inline,
+            'public_services' => [
+                ['service' => 'n8n', 'port' => 5678, 'domain' => 'automations.acme.dev', 'host_port' => 3200],
+                ['service' => 'grafana', 'port' => 3000, 'domain' => null, 'host_port' => 3201],
+            ],
+            'app_port' => 3200,
+            'test_domain_enabled' => true,
+            'template' => ['slug' => 'n8n', 'version' => '1.0.0', 'source' => 'catalog'],
+        ]);
+
+        SiteTarget::query()->create(['site_id' => $site->id, 'server_id' => $server->id, 'role' => TargetRole::Leader, 'status' => TargetStatus::Ready]);
+
+        $v1 = <<<'YAML'
+            services:
+              n8n:
+                image: n8nio/n8n:1.64.0
+                environment:
+                  N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+                  DB_TYPE: postgresdb
+                  DB_POSTGRESDB_HOST: postgres
+                volumes:
+                  - n8n-data:/home/node/.n8n
+                depends_on: [postgres]
+              postgres:
+                image: postgres:17.2-alpine
+                environment:
+                  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+                volumes:
+                  - pg-data:/var/lib/postgresql/data
+            volumes:
+              n8n-data:
+              pg-data:
+            YAML;
+        $v2 = <<<'YAML'
+            # n8n with Postgres, Redis queue mode and Grafana
+            services:
+              n8n:
+                image: n8nio/n8n:1.64.0
+                environment:
+                  N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+                  DB_TYPE: postgresdb
+                  DB_POSTGRESDB_HOST: postgres
+                  QUEUE_BULL_REDIS_HOST: redis
+                  WEBHOOK_URL: https://automations.acme.dev/
+                expose: ["5678"]
+                labels:
+                  kiln.deploy.leader_command: "n8n db:migrate"
+                volumes:
+                  - n8n-data:/home/node/.n8n
+                depends_on: [postgres, redis]
+                healthcheck:
+                  test: ["CMD", "wget", "-qO-", "http://localhost:5678/healthz"]
+                  interval: 10s
+              postgres:
+                image: postgres:17.2-alpine
+                environment:
+                  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+                volumes:
+                  - pg-data:/var/lib/postgresql/data
+              redis:
+                image: redis:7.4.1-alpine
+                command: ["redis-server", "--appendonly", "yes"]
+                volumes:
+                  - redis-data:/data
+              grafana:
+                image: grafana/grafana-oss:11.3.0
+                ports: ["3000:3000"]
+            volumes:
+              n8n-data:
+              pg-data:
+              redis-data:
+            YAML;
+
+        foreach ([1 => $v1, 2 => $v2] as $version => $content) {
+            ComposeVersion::query()->create(['site_id' => $site->id, 'version' => $version, 'content' => $content."\n", 'created_by' => $userId, 'created_at' => now()->subDays(3 - $version)]);
+        }
+
+        $this->variables($site, ['N8N_ENCRYPTION_KEY' => Str::random(32), 'POSTGRES_PASSWORD' => Str::random(24)]);
+
+        $digest = fn (string $seed) => 'sha256:'.hash('sha256', $seed);
+        app(ComposeSites::class)->recordStatus($site->id, $server->id, [
+            ['service' => 'grafana', 'container_id' => 'c-grafana', 'container_name' => 'automations-grafana-1', 'state' => 'running', 'image' => 'grafana/grafana-oss:11.3.0', 'image_digest' => $digest('grafana'), 'restarts' => 0, 'cpu_percent' => 0.8, 'memory_bytes' => 96 * 1024 ** 2, 'memory_limit_bytes' => 2 * 1024 ** 3,
+                'ports' => [['host_ip' => '127.0.0.1', 'host_port' => 3201, 'container_port' => 3000, 'protocol' => 'tcp']]],
+            ['service' => 'n8n', 'container_id' => 'c-n8n', 'container_name' => 'automations-n8n-1', 'state' => 'running', 'health' => 'healthy', 'image' => 'n8nio/n8n:1.64.0@'.$digest('n8n'), 'image_digest' => $digest('n8n'), 'restarts' => 0, 'cpu_percent' => 3.4, 'memory_bytes' => 312 * 1024 ** 2, 'memory_limit_bytes' => 2 * 1024 ** 3,
+                'ports' => [['host_ip' => '127.0.0.1', 'host_port' => 3200, 'container_port' => 5678, 'protocol' => 'tcp']]],
+            ['service' => 'postgres', 'container_id' => 'c-pg', 'container_name' => 'automations-postgres-1', 'state' => 'running', 'image' => 'postgres:17.2-alpine', 'image_digest' => $digest('pg'), 'restarts' => 0, 'cpu_percent' => 1.1, 'memory_bytes' => 58 * 1024 ** 2, 'memory_limit_bytes' => 2 * 1024 ** 3,
+                'ports' => [['container_port' => 5432, 'protocol' => 'tcp']]],
+            ['service' => 'redis', 'container_id' => 'c-redis', 'container_name' => 'automations-redis-1', 'state' => 'restarting', 'image' => 'redis:7.4.1-alpine', 'image_digest' => $digest('redis'), 'restarts' => 7,
+                'ports' => [['container_port' => 6379, 'protocol' => 'tcp']]],
+        ]);
+
+        return $site;
     }
 
     /**
@@ -248,7 +365,7 @@ class UiDemoSeeder extends Seeder
     {
         $messages = ['Fix checkout rounding', 'Add wishlist sharing', 'Upgrade to Laravel 12', 'Speed up product search'];
 
-        foreach ([[$sites['storefront'], ['failed', 'succeeded', 'succeeded', 'deploying', 'queued'], $servers], [$sites['marketing'], ['succeeded'], [$servers[1]]], [$sites['docs'], ['failed'], [$servers[1]]]] as [$site, $statuses, $targets]) {
+        foreach ([[$sites['storefront'], ['failed', 'succeeded', 'succeeded', 'deploying', 'queued'], $servers], [$sites['marketing'], ['succeeded'], [$servers[1]]], [$sites['docs'], ['failed'], [$servers[1]]], [$sites['stack'], ['succeeded', 'succeeded'], [$servers[0]]]] as [$site, $statuses, $targets]) {
             $active = null;
 
             foreach ($statuses as $index => $status) {

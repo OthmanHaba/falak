@@ -19,7 +19,7 @@ const TOKEN_CLASS: Record<Token['kind'], string> = {
 function valueTokens(text: string): Token[] {
     const out: Token[] = [];
     const pattern =
-        /(\$\{[^}]*\}|\$\$|"(?:[^"\\]|\\.)*"?|'(?:[^']|'')*'?|[&*][A-Za-z0-9_-]+|\b(?:true|false|null|yes|no|on|off)\b|-?\b\d+(?:\.\d+)?\b|[[\]{},])/g;
+        /(\$\{[^}]*\}|\$\$|"(?:[^"\\]|\\.)*"?|'(?:[^']|'')*'?|[&*][A-Za-z0-9_-]+|\b(?:true|false|null|yes|no|on|off)\b|(?<![\w.:/@-])-?\d+(?:\.\d+)?(?![\w.:/@-])|[[\]{},])/g;
     let last = 0;
     for (const match of text.matchAll(pattern)) {
         const index = match.index ?? 0;
