@@ -8,6 +8,7 @@ use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Deployments\Domain\Models\DeploymentStep;
 use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Edge\Contracts\EdgeRoutes;
+use Kiln\Projects\Contracts\VariableReferences;
 use Kiln\Sites\Contracts\Data\SharedPath;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
@@ -24,6 +25,7 @@ final class StepPayloads
         private readonly SiteDirectory $sites,
         private readonly BuildService $builds,
         private readonly EdgeRoutes $edge,
+        private readonly VariableReferences $references,
     ) {}
 
     public static function upper(?string $ulid): ?string
@@ -124,7 +126,7 @@ final class StepPayloads
      */
     private function prepare(Deployment $deployment, SiteData $site, string $serverId): array
     {
-        $env = $this->sites->environment($site->id)?->variables ?? [];
+        $env = $this->releaseVariables($site);
 
         return [
             ...$this->base($deployment, $site),
@@ -178,11 +180,40 @@ final class StepPayloads
             $context[$key] = (string) $value;
         }
 
-        $variables = $this->sites->deployVariables($site->id, $serverId, $context);
+        $variables = $this->resolved($site, $this->sites->deployVariables($site->id, $serverId, $context));
         $variables['KILN_SITE_ID'] = (string) self::upper($site->id);
         $variables['KILN_SERVER_ID'] = (string) self::upper($serverId);
 
         return array_filter($variables, fn ($v, $k) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH);
+    }
+
+    /**
+     * The site's latest environment with `${{ service.KEY }}` references resolved (Projects).
+     *
+     * @return array<string, string>
+     *
+     * @throws RuntimeException when a reference cannot be resolved (fails the deployment with the reason)
+     */
+    public function releaseVariables(SiteData $site): array
+    {
+        return $this->resolved($site, $this->sites->environment($site->id)?->variables ?? []);
+    }
+
+    /**
+     * @param  array<string, string>  $variables
+     * @return array<string, string>
+     *
+     * @throws RuntimeException
+     */
+    private function resolved(SiteData $site, array $variables): array
+    {
+        $result = $this->references->resolveForSite($site->id, $variables);
+
+        if (! $result->ok()) {
+            throw new RuntimeException($result->errorSummary());
+        }
+
+        return $result->variables;
     }
 
     /**
@@ -305,7 +336,7 @@ final class StepPayloads
             throw new RuntimeException('The site app port leaves no room for the green container port.');
         }
 
-        $env = $this->sites->environment($site->id)?->variables ?? [];
+        $env = $this->releaseVariables($site);
         $env = array_filter([...$env, 'PORT' => (string) $site->appPort, ...$this->injected($deployment, $site, $serverId)], fn ($v, $k) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH);
         $health = (array) $deployment->setting('health', []);
 
