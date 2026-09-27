@@ -208,6 +208,16 @@ it('checks every public service through the edge', function () {
         ->and(collect($GLOBALS['deploy_http_requests'])->pluck('url')->all())->toContain('https://'.$world->site->slug.'.kiln.test/health');
 });
 
+it('accepts a redirect from the primary public service (apps that redirect to a login page)', function () {
+    $world = compose_world();
+    deploy_http(['https://'.$world->site->slug.'.kiln.test' => 302]);
+    $deployment = compose_deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded);
+});
+
 it('writes a compose .env that compose reads literally', function () {
     expect(StepPayloads::composeDotenv(['A' => 'plain', 'B' => 'has space $HOME', 'C' => "it's\nmultiline"]))
         ->toBe("A=plain\nB='has space \$HOME'\nC=\"it's\\nmultiline\"\n");

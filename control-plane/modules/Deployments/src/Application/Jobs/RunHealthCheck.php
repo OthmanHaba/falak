@@ -74,7 +74,11 @@ final class RunHealthCheck implements ShouldQueue
             foreach ($publicServices as $i => $public) {
                 if ($i === 0) {
                     [$host, $tls] = $this->host($deployment->site_id, $sites, $edge) ?? [null, TlsMode::Off];
-                    $checks[] = [$host, $tls, $path, fn (int $status) => $status === $expect, "expected {$expect}", $public->service];
+                    // Container health is verified by `up --wait`; through the edge a redirect (e.g. to a login page)
+                    // also proves the route works unless a specific status is configured.
+                    $checks[] = $expect === 200
+                        ? [$host, $tls, $path, fn (int $status) => $status >= 200 && $status < 400, 'expected 2xx/3xx', $public->service]
+                        : [$host, $tls, $path, fn (int $status) => $status === $expect, "expected {$expect}", $public->service];
 
                     continue;
                 }
