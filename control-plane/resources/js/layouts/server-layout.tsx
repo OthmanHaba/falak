@@ -146,7 +146,9 @@ export default function ServerLayout({ server, tab, actions, reloadOnly, childre
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [tabs, current.id, base]);
 
-    const meta = [server.type_label, server.provider_label, server.region].filter(Boolean) as string[];
+    const meta = [server.type_label, server.provider === 'custom' ? 'Custom server' : server.provider_label, server.region].filter(
+        Boolean,
+    ) as string[];
 
     return (
         <AppShell

@@ -12,7 +12,7 @@ import { ServiceIcon } from '@/components/kiln/service-icon';
 import { StatusBadge } from '@/components/kiln/status';
 import { Tag } from '@/components/kiln/tag';
 import { toast } from '@/components/kiln/toast';
-import ServerLayout, { serverState } from '@/layouts/server-layout';
+import ServerLayout from '@/layouts/server-layout';
 import { Link, router, usePoll } from '@inertiajs/react';
 import { ChevronRight, Copy, Globe, RefreshCw, RotateCw, Settings, SquareTerminal, Trash2 } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
@@ -62,7 +62,7 @@ function lifecycleSteps(server: ServerDetails, agent: AgentDetails | null): Step
             id: 'agent',
             label: custom ? 'Install the agent' : 'Agent enrolls',
             status: enrolled ? 'succeeded' : failed ? 'failed' : 'waiting',
-            detail: enrolled ? undefined : custom ? 'Waiting for the agent to connect…' : 'Waiting for cloud-init to start the agent…',
+            detail: enrolled || failed ? undefined : custom ? 'Waiting for the agent to connect…' : 'Waiting for cloud-init to start the agent…',
         },
         {
             id: 'provision',
@@ -80,7 +80,6 @@ function serviceStatus(service: ServerService): string {
 }
 
 export default function Show({ server, agent, metrics, services, can }: Props) {
-    const state = serverState(server);
     const awaitingAgent = server.install_command !== null && ['creating', 'error'].includes(server.status) && !agent;
     const settling = ['creating', 'provisioning', 'deleting'].includes(server.status);
     const [showLog, setShowLog] = useState(server.status !== 'active');
@@ -182,7 +181,7 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                 </>
             }
         >
-            {server.status_message && server.status !== 'active' && (
+            {server.status_message && !['active', 'error'].includes(server.status) && (
                 <div
                     role={server.status === 'error' ? 'alert' : 'status'}
                     className={
@@ -201,11 +200,12 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                     description={
                         awaitingAgent
                             ? 'Run this once as root on the machine (Ubuntu 22.04 / 24.04 LTS). The link is single-use; provisioning starts when the agent enrolls.'
-                            : 'This page updates live as the agent reports progress.'
+                            : server.status === 'error'
+                              ? 'Fix the cause below, then retry — provisioning is idempotent.'
+                              : 'This page updates live as the agent reports progress.'
                     }
-                    aside={<StatusBadge status={state.status} label={state.label} tone={state.tone} pulse={state.pulse} />}
                 >
-                    <div className="grid gap-5 md:grid-cols-[220px_minmax(0,1fr)]">
+                    <div className="grid items-start gap-5 md:grid-cols-[220px_minmax(0,1fr)]">
                         <Stepper steps={lifecycleSteps(server, agent)} />
                         <div className="grid min-w-0 content-start gap-3">
                             {awaitingAgent && server.install_command && (
@@ -226,10 +226,15 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                                     </div>
                                 </>
                             )}
+                            {server.status === 'error' && server.status_message && (
+                                <p role="alert" className="border-danger/40 bg-danger-soft text-danger rounded-lg border px-3 py-2 text-sm">
+                                    {server.status_message}
+                                </p>
+                            )}
                             {!awaitingAgent && server.provision_command_id && (
                                 <CommandLog commandId={server.provision_command_id} onStatusChange={onProvisionStatus} />
                             )}
-                            {!awaitingAgent && !server.provision_command_id && (
+                            {!awaitingAgent && !server.provision_command_id && server.status !== 'error' && (
                                 <p className="text-fg-muted text-sm">
                                     {server.provider === 'custom'
                                         ? 'The agent has not connected yet.'
@@ -330,52 +335,54 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                 )}
             </Section>
 
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-                <Section title="Details">
-                    <KeyValue
-                        columns={3}
-                        items={[
-                            { label: 'Public IPv4', value: server.ipv4, copy: server.ipv4 ?? undefined, mono: true },
-                            { label: 'Public IPv6', value: server.ipv6, copy: server.ipv6 ?? undefined, mono: true },
-                            { label: 'Private IPv4', value: server.private_ipv4, copy: server.private_ipv4 ?? undefined, mono: true },
-                            { label: 'SSH port', value: server.ssh_port },
-                            { label: 'OS', value: server.os },
-                            { label: 'Architecture', value: server.arch },
-                            { label: 'CPUs', value: server.cpus },
-                            { label: 'Memory', value: formatBytes(server.memory_bytes) },
-                            { label: 'Disk', value: formatBytes(server.disk_bytes) },
-                            { label: 'Size', value: server.size },
-                            { label: 'Image', value: server.image },
-                            { label: 'Timezone', value: server.timezone },
-                            { label: 'Stack', value: stack },
-                            { label: 'Provisioned', value: <RelativeTime value={server.provisioned_at} /> },
-                            { label: 'Created', value: <RelativeTime value={server.created_at} /> },
-                            ...(server.provider_server_id
-                                ? [{ label: 'Provider ID', value: server.provider_server_id, mono: true, copy: server.provider_server_id }]
-                                : []),
-                        ]}
-                    />
-                </Section>
-                <Section title="Agent">
-                    {agent ? (
+            {!awaitingAgent && (
+                <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                    <Section title="Details">
                         <KeyValue
-                            columns={2}
+                            columns={3}
                             items={[
-                                { label: 'Status', value: <StatusBadge status={agent.status === 'online' ? 'online' : 'offline'} /> },
-                                { label: 'Version', value: agent.version, mono: true },
-                                { label: 'Last heartbeat', value: <RelativeTime value={agent.last_heartbeat_at} /> },
-                                { label: 'Enrolled', value: <RelativeTime value={agent.enrolled_at} /> },
-                                { label: 'Certificate expires', value: <RelativeTime value={agent.certificate_expires_at} /> },
-                                { label: 'Kernel', value: agent.kernel, mono: true },
-                                { label: 'Docker', value: agent.docker ?? 'not installed' },
-                                { label: 'Hostname', value: agent.hostname, mono: true },
+                                { label: 'Public IPv4', value: server.ipv4, copy: server.ipv4 ?? undefined, mono: true },
+                                { label: 'Public IPv6', value: server.ipv6, copy: server.ipv6 ?? undefined, mono: true },
+                                { label: 'Private IPv4', value: server.private_ipv4, copy: server.private_ipv4 ?? undefined, mono: true },
+                                { label: 'SSH port', value: server.ssh_port },
+                                { label: 'OS', value: server.os },
+                                { label: 'Architecture', value: server.arch },
+                                { label: 'CPUs', value: server.cpus },
+                                { label: 'Memory', value: formatBytes(server.memory_bytes) },
+                                { label: 'Disk', value: formatBytes(server.disk_bytes) },
+                                { label: 'Size', value: server.size },
+                                { label: 'Image', value: server.image },
+                                { label: 'Timezone', value: server.timezone },
+                                { label: 'Stack', value: stack },
+                                { label: 'Provisioned', value: <RelativeTime value={server.provisioned_at} /> },
+                                { label: 'Created', value: <RelativeTime value={server.created_at} /> },
+                                ...(server.provider_server_id
+                                    ? [{ label: 'Provider ID', value: server.provider_server_id, mono: true, copy: server.provider_server_id }]
+                                    : []),
                             ]}
                         />
-                    ) : (
-                        <p className="text-fg-muted text-sm">No agent enrolled yet.</p>
-                    )}
-                </Section>
-            </div>
+                    </Section>
+                    <Section title="Agent">
+                        {agent ? (
+                            <KeyValue
+                                columns={2}
+                                items={[
+                                    { label: 'Status', value: <StatusBadge status={agent.status === 'online' ? 'online' : 'offline'} /> },
+                                    { label: 'Version', value: agent.version, mono: true },
+                                    { label: 'Last heartbeat', value: <RelativeTime value={agent.last_heartbeat_at} /> },
+                                    { label: 'Enrolled', value: <RelativeTime value={agent.enrolled_at} /> },
+                                    { label: 'Certificate expires', value: <RelativeTime value={agent.certificate_expires_at} /> },
+                                    { label: 'Kernel', value: agent.kernel, mono: true },
+                                    { label: 'Docker', value: agent.docker ?? 'not installed' },
+                                    { label: 'Hostname', value: agent.hostname, mono: true },
+                                ]}
+                            />
+                        ) : (
+                            <p className="text-fg-muted text-sm">No agent enrolled yet.</p>
+                        )}
+                    </Section>
+                </div>
+            )}
 
             {server.provision_command_id && !settling && server.status !== 'error' && (
                 <Section

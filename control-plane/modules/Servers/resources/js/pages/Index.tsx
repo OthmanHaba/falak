@@ -8,7 +8,6 @@ import { RelativeTime } from '@/components/kiln/relative-time';
 import { Select } from '@/components/kiln/select';
 import { ServiceIcon } from '@/components/kiln/service-icon';
 import { Skeleton } from '@/components/kiln/skeleton';
-import { StatusDot } from '@/components/kiln/status';
 import { toast } from '@/components/kiln/toast';
 import { Tooltip } from '@/components/kiln/tooltip';
 import InfrastructureLayout from '@/layouts/infrastructure-layout';
@@ -150,25 +149,18 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
             id: 'name',
             header: 'Name',
             sortValue: (server) => server.name,
-            cell: (server) => {
-                const spec = serverState(server);
-
-                return (
-                    <div className="flex min-w-0 items-center gap-2.5 py-1.5">
-                        <StatusDot status={spec.status} tone={spec.tone} pulse={spec.pulse} label={spec.label} />
-                        <div className="grid min-w-0">
-                            <Link
-                                href={`/servers/${server.id}`}
-                                className="text-fg truncate font-medium hover:underline"
-                                onClick={(event) => event.stopPropagation()}
-                            >
-                                {server.name}
-                            </Link>
-                            <span className="text-fg-faint truncate text-xs">{server.type_label}</span>
-                        </div>
-                    </div>
-                );
-            },
+            cell: (server) => (
+                <div className="grid min-w-0 py-1.5">
+                    <Link
+                        href={`/servers/${server.id}`}
+                        className="text-fg truncate font-medium hover:underline"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        {server.name}
+                    </Link>
+                    <span className="text-fg-faint truncate text-xs">{server.type_label}</span>
+                </div>
+            ),
         },
         {
             id: 'status',
@@ -244,6 +236,7 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
         {
             id: 'services',
             header: 'Services',
+            hideOnMobile: true,
             sortValue: (server) => server.services.length,
             cell: (server) => <ServiceStack services={server.services} />,
         },

@@ -26,6 +26,13 @@ const ULID = '([0-9A-Za-z]{26})';
 export const params: Record<string, ParamSource> = {
     site: { from: '/sites', match: new RegExp(`^/sites/${ULID}$`) },
     server: { from: '/servers', match: new RegExp(`^/servers/${ULID}$`) },
+    // infrastructure: servers in other lifecycle states (the fleet table honours ?status=), runs, recordings, networks
+    waitingServer: { from: '/servers?status=creating', match: new RegExp(`^/servers/${ULID}$`) },
+    provisioningServer: { from: '/servers?status=provisioning', match: new RegExp(`^/servers/${ULID}$`) },
+    failedServer: { from: '/servers?status=error', match: new RegExp(`^/servers/${ULID}$`) },
+    recipeRun: { from: '/recipes/runs', match: new RegExp(`^/recipes/runs/${ULID}$`) },
+    recording: { from: '/terminal', match: new RegExp(`^/terminal/sessions/${ULID}/recording$`) },
+    privateNetwork: { from: '/network', match: new RegExp(`^/network/private-networks/${ULID}$`) },
 };
 
 /** Requests allowed to fail on every page (optional backends in local/sim setups). */
@@ -107,8 +114,33 @@ export const routes: BrowserRoute[] = [
     { path: '/alerting/rules' },
     { path: '/alerting/channels' },
     { path: '/alerting/history' },
+
+    // infrastructure
+    { path: '/servers/:server/metrics', allowedFailures: observability },
+    { path: '/servers/:server/processes' },
+    { path: '/servers/:server/firewall' },
+    { path: '/servers/:server/network' },
+    { path: '/servers/:server/terminal' },
+    { path: '/servers/:server/ssh-keys' },
+    { path: '/servers/:server/recipes' },
+    { path: '/servers/:server/php' },
+    { path: '/servers/:server/settings' },
+    { path: '/servers/:waitingServer' },
+    { path: '/servers/:provisioningServer' },
+    { path: '/servers/:failedServer' },
+    { path: '/servers/:waitingServer/metrics', allowedFailures: observability },
+    { path: '/servers/create?provider=custom' },
+    { path: '/network/private-networks/:privateNetwork' },
+    { path: '/recipes/runs/:recipeRun' },
+    { path: '/recipes/builtin/disk-usage/run' },
+    { path: '/terminal/sessions/:recording/recording' },
 ];
 
 export function slugFor(path: string): string {
-    return path.replace(/^\//, '').replace(/[/:]+/g, '-').replace(/[^a-z0-9-]/gi, '') || 'root';
+    return (
+        path
+            .replace(/^\//, '')
+            .replace(/[/:]+/g, '-')
+            .replace(/[^a-z0-9-]/gi, '') || 'root'
+    );
 }

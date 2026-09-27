@@ -157,7 +157,7 @@ function VersionSettings({ server, php, canUpdate }: { server: ServerHeader; php
 
             <Section title="FPM pool defaults" description="Used when Kiln creates a new site pool on this version.">
                 <div className="grid gap-4 sm:grid-cols-3">
-                    <Field label="Process manager">
+                    <Field label="Process manager" hint="How the pool scales workers.">
                         <Select
                             value={form.data.fpm.pm}
                             onValueChange={(value) => setFpm('pm', value)}

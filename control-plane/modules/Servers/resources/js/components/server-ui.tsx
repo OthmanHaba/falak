@@ -57,7 +57,7 @@ export function UsageMeter({ value, label, className }: { value: number | null; 
     );
 }
 
-/** Inline SVG sparkline (0–100 scale) with a faint area, for dense tables. */
+/** Inline SVG sparkline for percentages, with a faint area, for dense tables. */
 export function Sparkline({
     values,
     width = 72,
@@ -79,9 +79,14 @@ export function Sparkline({
         return <span className="text-fg-faint inline-block text-xs" style={{ width }} />;
     }
 
+    // Fit the visible range (at least 20 points wide) so small movements stay readable without looking dramatic.
+    const lo = Math.min(...points.map((point) => point.value));
+    const hi = Math.max(...points.map((point) => point.value));
+    const span = Math.max(20, hi - lo + 10);
+    const floor = Math.max(0, Math.min(100 - span, (lo + hi) / 2 - span / 2));
     const last = values.length - 1 || 1;
     const x = (index: number) => (index / last) * width;
-    const y = (value: number) => height - 1 - (Math.max(0, Math.min(100, value)) / 100) * (height - 2);
+    const y = (value: number) => height - 1 - ((Math.max(floor, Math.min(floor + span, value)) - floor) / span) * (height - 2);
     const line = points.map((point) => `${x(point.index).toFixed(1)},${y(point.value).toFixed(1)}`).join(' ');
     const area = `${x(points[0].index).toFixed(1)},${height} ${line} ${x(points[points.length - 1].index).toFixed(1)},${height}`;
 

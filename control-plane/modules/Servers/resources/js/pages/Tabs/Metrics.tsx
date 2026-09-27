@@ -86,14 +86,17 @@ export default function Metrics({ server, capacity, ranges, telemetry }: Props) 
         [server.id, telemetry],
     );
 
+    const hasAgent = server.agent !== null;
+
     useEffect(() => {
+        if (!hasAgent) return;
         void load(range);
         void loadDetail(range);
         // Live: refresh quietly every 30s.
         const timer = window.setInterval(() => void load(range, true), 30_000);
 
         return () => window.clearInterval(timer);
-    }, [range, load, loadDetail]);
+    }, [range, load, loadDetail, hasAgent]);
 
     const points = useMemo(
         () =>

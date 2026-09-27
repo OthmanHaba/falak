@@ -12,7 +12,7 @@ import { Tag } from '@/components/kiln/tag';
 import { toast } from '@/components/kiln/toast';
 import ServerLayout, { type ServerHeader } from '@/layouts/server-layout';
 import { Link, router, useForm, usePoll } from '@inertiajs/react';
-import { ExternalLink, Network, Plus, RefreshCw, Unplug } from 'lucide-react';
+import { Network, Plus, RefreshCw, Unplug } from 'lucide-react';
 import { useState, type FormEventHandler } from 'react';
 import { ApplyStatusBadge } from '../components/network-ui';
 import { type ApplyStatus } from '../types';
@@ -151,7 +151,6 @@ export default function ServerNetwork({ server, privateIpv4, memberships, availa
                                         className="text-fg flex items-center gap-1.5 text-sm font-medium hover:underline"
                                     >
                                         {membership.network.name}
-                                        <ExternalLink className="text-fg-faint size-3.5" aria-hidden />
                                     </Link>
                                     <p className="text-fg-muted text-xs">
                                         <span className="font-mono">{membership.network.cidr}</span> · {membership.network.interface} · UDP{' '}
