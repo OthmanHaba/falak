@@ -10,6 +10,10 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <meta name="color-scheme" content="dark light">
+        @if (config('broadcasting.default') === 'reverb' && filled(config('broadcasting.connections.reverb.key')))
+            {{-- Runtime Reverb key for prebuilt images (VITE_REVERB_* are build-time); the key is public. --}}
+            <meta name="kiln-reverb-key" content="{{ config('broadcasting.connections.reverb.key') }}">
+        @endif
 
         @if ($appearance === 'system')
             <script>

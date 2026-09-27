@@ -1,0 +1,73 @@
+# PR/main CI for the production install: build the images (amd64, no push), lint the scripts and
+# validate the compose file.
+name: images
+
+on:
+  push:
+    branches: [main]
+    paths: ['control-plane/**', 'agent/**', 'contracts/**', 'deploy/**', 'observability/**', '.github/workflows/images.yml']
+  pull_request:
+    branches: [main]
+    paths: ['control-plane/**', 'agent/**', 'contracts/**', 'deploy/**', 'observability/**', '.github/workflows/images.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck deploy/install.sh deploy/kiln-ctl deploy/tools/*.sh deploy/control-plane/*.sh deploy/edge/entrypoint.sh deploy/builder/entrypoint.sh
+      - name: compose config
+        run: |
+          deploy/tools/test-env.sh > /tmp/kiln.env
+          docker compose -p kiln --env-file /tmp/kiln.env -f deploy/compose.yml config -q
+          COMPOSE_PROFILES=observability docker compose -p kiln --env-file /tmp/kiln.env -f deploy/compose.yml config -q
+      - name: edge Caddyfile
+        run: |
+          docker run --rm -e KILN_DOMAIN=kiln.example.com -e KILN_ACME_EMAIL=ops@example.com \
+            -v "$PWD/deploy/edge/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.11.4-alpine \
+            sh -c 'mkdir -p /etc/caddy/global /etc/caddy/sites && caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile'
+
+  build:
+    name: build ${{ matrix.image }}
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - image: control-plane
+            dockerfile: control-plane/Dockerfile
+            context: .
+          - image: builder
+            dockerfile: deploy/builder.Dockerfile
+            context: .
+          - image: edge
+            dockerfile: deploy/edge/Dockerfile
+            context: deploy/edge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          build-args: KILN_VERSION=ci-${{ github.sha }}
+          push: false
+          load: ${{ matrix.image == 'control-plane' }}
+          tags: kiln-ci/kiln-${{ matrix.image }}:ci
+          cache-from: type=gha,scope=${{ matrix.image }}-amd64
+      - name: Smoke-test the control-plane image
+        if: matrix.image == 'control-plane'
+        run: |
+          docker run --rm --entrypoint sh kiln-ci/kiln-control-plane:ci -c '
+            set -e
+            id -un | grep -qx www-data
+            for f in kiln-agent-linux-amd64 kiln-agent-linux-arm64 kiln-builder-linux-amd64 kiln-builder-linux-arm64 kiln-linux-amd64 kiln-linux-arm64; do
+              test -x /opt/kiln/bin/$f; (cd /opt/kiln/bin && sha256sum -c $f.sha256 >/dev/null)
+            done
+            test -d /opt/kiln/contracts/agent-protocol
+            php -m | grep -q pdo_pgsql
+            APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= php artisan --version'

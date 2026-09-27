@@ -130,20 +130,24 @@ Grafana (dashboards are provisioned per organization).
 
 ---
 
-## 4. Production install (current state)
+## 4. Production install
 
-There is no one-command installer yet. A production control plane needs:
+One command on a fresh Ubuntu 22.04/24.04 or Debian 12 host (4 GB RAM recommended). Point DNS for
+`kiln.example.com` and `agents.kiln.example.com` at the host first:
 
-| Component | Notes |
-|---|---|
-| Control plane (web) | image from `sim/control-plane.Dockerfile` (FrankenPHP); `APP_URL`, `KILN_PANEL_URL` |
-| Horizon + Reverb | same image, commands `horizon` / `reverb` (see `sim/compose.yml`) |
-| PostgreSQL 17, Redis/Valkey | `DB_*`, `REDIS_*`, `QUEUE_CONNECTION=redis`, `BROADCAST_CONNECTION=reverb` |
-| Edge (Caddy) | TLS for the panel + **mTLS for `/agent/v1/*`** forwarding `X-Kiln-Client-Cert-Fingerprint`; template: `sim/edge/Caddyfile`. Set `KILN_AGENT_TRUSTED_PROXIES` to the edge address and `TRUSTED_PROXIES` for the panel. |
-| Agent API host | `KILN_AGENT_API_URL` (served with a Fleet-CA certificate: `php artisan fleet:ca:server-cert`) |
-| Agent binaries | `KILN_AGENT_BINARIES_PATH` → `agent/bin` (install script downloads from the panel) |
-| Builder | `kiln-builder serve` with `KILN_LOCAL_BUILDER_TOKEN`, or `builder` servers |
-| Observability | `observability/compose.yml` (`--profile victoriametrics` or `--profile mimir`); `KILN_OTLP_ENDPOINT`, `KILN_GRAFANA_*`, `KILN_METRICS_BACKEND` |
-| Test domains (optional) | `KILN_TEST_DOMAIN` + wildcard DNS; `KILN_TEST_DOMAIN_TLS=acme|internal` |
+```bash
+curl -fsSL https://raw.githubusercontent.com/OWNER/kiln/main/deploy/install.sh \
+  | sudo bash -s -- --domain kiln.example.com --email you@example.com [--observability]
+```
+
+The installer runs preflight checks, installs Docker, generates `/opt/kiln/.env`, pulls the release images
+from GHCR, starts the Compose stack (`deploy/compose.yml`: FrankenPHP web, Horizon, Reverb, scheduler,
+Postgres 17, Valkey, a Caddy edge with Let's Encrypt and agent mTLS, and the builder) and prints the first
+admin password. Day-2 operations use `kiln-ctl`: `status`, `logs`, `update` (backup, then automatic
+rollback if the update fails), `backup`/`restore` (database, storage, **Fleet CA**, `.env`), `doctor`,
+`domain set` and `admin reset-password`.
+
+Full guide (requirements, DNS, upgrade, backup/restore, uninstall, troubleshooting, releasing):
+[`docs/INSTALL.md`](docs/INSTALL.md).
 
 Known limits and deferred items are listed in [`docs/INTEGRATION-NOTES.md`](docs/INTEGRATION-NOTES.md).

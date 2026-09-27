@@ -1,0 +1,29 @@
+# FrankenPHP inside the control-plane image: plain HTTP on :8080 behind the Kiln edge (deploy/edge).
+# TLS, security headers and agent mTLS are the edge's job.
+{
+	admin localhost:2019
+	auto_https off
+	skip_install_trust
+	servers {
+		# Real client IP / scheme come from the edge (Laravel TRUSTED_PROXIES handles X-Forwarded-*).
+		trusted_proxies static private_ranges
+	}
+	frankenphp {
+		{$FRANKENPHP_CONFIG}
+	}
+	log {
+		format json
+		level {$KILN_HTTP_LOG_LEVEL:WARN}
+	}
+}
+
+:8080 {
+	root /app/public
+	encode zstd br gzip
+
+	# Vite assets are content-hashed.
+	@build path /build/*
+	header @build Cache-Control "public, max-age=31536000, immutable"
+
+	php_server
+}
