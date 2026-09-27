@@ -93,7 +93,7 @@ final class ServerTabController extends Controller
 
         return Inertia::render('Servers/Tabs/Php', [
             'server' => $this->headers->for($server->id),
-            'runtime' => $server->stack->php?->runtime,
+            'runtime' => $server->stack->phpRuntime,
             'php' => $server->phpVersions->map(fn (PhpVersion $php) => $this->phpVersion($php))->values(),
             'phpOptions' => array_values(array_diff((array) config('servers.php_versions'), $server->phpVersions->pluck('version')->all())),
             'can' => ['update' => $request->user()?->can('update', $server) ?? false],

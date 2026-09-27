@@ -8,7 +8,7 @@ use Kiln\Network\Http\Controllers\PrivateNetworkController;
 // Server page tabs (/servers/{id}/{tab}) owned by Network.
 Route::middleware(['auth', 'org'])->group(function () {
     Route::get('servers/{server}/firewall', [FirewallController::class, 'show'])->name('network.firewall.show');
-    Route::get('servers/{server}/network', [PrivateNetworkController::class, 'server'])->name('network.server');
+    Route::get('servers/{server}/network', [PrivateNetworkController::class, 'forServer'])->name('network.server');
 });
 
 Route::middleware(['auth', 'org'])->prefix('network')->name('network.')->group(function () {

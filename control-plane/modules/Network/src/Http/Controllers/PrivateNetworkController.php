@@ -105,7 +105,7 @@ final class PrivateNetworkController extends Controller
     /**
      * The server page's "Private network" tab: this server's memberships and the networks it can join.
      */
-    public function server(Request $request, string $server): Response
+    public function forServer(Request $request, string $server): Response
     {
         $data = $this->server($request->user(), $server);
 
