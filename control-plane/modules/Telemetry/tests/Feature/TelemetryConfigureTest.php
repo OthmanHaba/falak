@@ -166,7 +166,7 @@ it('validates settings and requires telemetry.manage', function () {
 it('never sends the token to the settings page', function () {
     TelemetrySettings::query()->create(['organization_id' => $this->organization->id, 'otlp_token' => 'super-secret']);
 
-    $this->get('/telemetry/settings')->assertOk()
+    $this->get('/settings/observability')->assertOk()
         ->assertDontSee('super-secret')
         ->assertInertia(fn ($page) => $page->component('Telemetry/Settings', false)
             ->where('settings.otlp_token_set', true)

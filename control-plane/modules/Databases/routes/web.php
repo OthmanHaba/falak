@@ -8,6 +8,13 @@ use Kiln\Databases\Http\Controllers\DatabasePanelController;
 use Kiln\Databases\Http\Controllers\DatabaseServerController;
 use Kiln\Databases\Http\Controllers\DatabaseUserController;
 use Kiln\Databases\Http\Controllers\StorageProviderController;
+use Kiln\Kernel\Http\LegacyRedirect;
+
+Route::middleware(['auth', 'org'])->group(function () {
+    // Backup storage lives in the settings shell (docs/UI_DESIGN.md §3); the old URL redirects.
+    Route::get('settings/storage', [StorageProviderController::class, 'index'])->name('databases.storage.index');
+    Route::get('databases/storage', LegacyRedirect::to('/settings/storage'))->name('databases.storage.legacy');
+});
 
 Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->group(function () {
     Route::get('/', [DatabaseServerController::class, 'index'])->name('index');
@@ -35,7 +42,6 @@ Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->gro
     Route::post('backups/{backup}/restore', [BackupController::class, 'restore'])->name('backups.restore');
     Route::delete('backups/{backup}', [BackupController::class, 'destroy'])->name('backups.destroy');
 
-    Route::get('storage', [StorageProviderController::class, 'index'])->name('storage.index');
     Route::post('storage', [StorageProviderController::class, 'store'])->name('storage.store');
     Route::put('storage/{storageProvider}', [StorageProviderController::class, 'update'])->name('storage.update');
     Route::post('storage/{storageProvider}/verify', [StorageProviderController::class, 'verify'])->name('storage.verify');

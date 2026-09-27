@@ -141,3 +141,15 @@ it('drops the database behind a service and forbids developers without the permi
     $this->actingAs($this->user)->deleteJson("{$this->canvas}/services/{$service->id}", ['confirm' => 'shop_db'])->assertNoContent();
     expect($database->refresh()->status->value)->toBe('deleting');
 });
+
+it('shares first-run setup progress with the projects grid', function () {
+    $this->get('/projects')->assertOk()->assertInertia(fn ($page) => $page
+        ->component('Projects/Index', false)
+        ->where('setup', ['gitConnected' => false, 'hasServer' => false, 'hasProject' => false, 'hasDeployment' => false]));
+
+    $shop = projects_site($this->organization, 'Shop', [], $this->environment, [sites_server($this->organization->id)]);
+    projects_deployment($shop, 'succeeded');
+
+    $this->get('/projects')->assertInertia(fn ($page) => $page
+        ->where('setup.hasServer', true)->where('setup.hasProject', true)->where('setup.hasDeployment', true));
+});

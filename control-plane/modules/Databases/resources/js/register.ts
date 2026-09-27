@@ -1,4 +1,4 @@
-import { registerCommands, registerNavigation, registerServiceActions, registerServiceTabs } from '@/lib/registry';
+import { registerCommands, registerNavigation, registerServiceActions, registerServiceTabs, registerSettingsNav } from '@/lib/registry';
 import { Archive, Database, HardDrive, Plug } from 'lucide-react';
 import { lazy } from 'react';
 
@@ -42,14 +42,18 @@ registerCommands({
             permission: 'databases.view',
             keywords: ['restore', 'dump'],
         },
-        {
-            id: 'databases.storage',
-            title: 'Backup storage providers',
-            group: 'Navigation',
-            icon: HardDrive,
-            href: '/databases/storage',
-            permission: 'databases.view',
-            keywords: ['s3', 'r2', 'b2', 'spaces', 'minio', 'bucket'],
-        },
     ],
+});
+
+// Organization settings → Integrations (docs/UI_DESIGN.md §3). The palette lists it under "Settings".
+registerSettingsNav({
+    id: 'storage',
+    title: 'Backup storage',
+    url: '/settings/storage',
+    group: 'integrations',
+    order: 220,
+    icon: HardDrive,
+    permission: 'databases.view',
+    requiresOrganization: true,
+    keywords: ['s3', 'r2', 'b2', 'spaces', 'minio', 'bucket', 'backups'],
 });

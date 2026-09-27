@@ -111,6 +111,17 @@ export const routes: BrowserRoute[] = [
     { path: '/alerting/channels' },
     { path: '/alerting/history' },
 
+    // settings — organization settings sections (the legacy URLs above now 301 here)
+    { path: '/settings/source-control' },
+    { path: '/settings/cloud-providers' },
+    { path: '/settings/storage' },
+    { path: '/settings/builders' },
+    { path: '/settings/alert-channels' },
+    { path: '/settings/alert-rules' },
+    { path: '/settings/observability' },
+    { path: '/settings/recipes' },
+    { path: '/invitations/not-a-real-token' },
+
     // canvas
     { path: '/projects' },
     { path: '/projects/:canvas' },
@@ -120,5 +131,10 @@ export const routes: BrowserRoute[] = [
 ];
 
 export function slugFor(path: string): string {
-    return path.replace(/^\//, '').replace(/[/:]+/g, '-').replace(/[^a-z0-9-]/gi, '') || 'root';
+    return (
+        path
+            .replace(/^\//, '')
+            .replace(/[/:]+/g, '-')
+            .replace(/[^a-z0-9-]/gi, '') || 'root'
+    );
 }

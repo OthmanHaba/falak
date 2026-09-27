@@ -316,7 +316,7 @@ it('shows builds and builders to members and lets them create external builders'
     $this->getJson("/builds/{$build->id}/output?after=0")->assertOk()->assertJsonPath('data.build.id', $build->id);
 
     $this->post('/builds/builders', ['name' => 'ci', 'modes' => ['native']])->assertRedirect()->assertSessionHas('builderToken');
-    $this->get('/builds/builders')->assertOk()->assertInertia(fn ($page) => $page->component('Builds/Builders', false)->has('builders', 1));
+    $this->get('/settings/builders')->assertOk()->assertInertia(fn ($page) => $page->component('Builds/Builders', false)->has('builders', 1));
 
     actingAsMember(Role::Viewer);
     $this->get("/builds/{$build->id}")->assertNotFound();

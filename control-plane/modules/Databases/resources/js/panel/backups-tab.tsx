@@ -188,7 +188,7 @@ export function DatabaseBackupsTab({ ctx }: ServiceTabProps) {
                 action={
                     can.manage_storage && (
                         <Button asChild variant="primary">
-                            <Link href="/databases/storage">Add storage</Link>
+                            <Link href="/settings/storage">Add storage</Link>
                         </Button>
                     )
                 }

@@ -438,7 +438,7 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
                 <p className="text-fg-muted">Connect GitHub, GitLab, Bitbucket or a custom git server to deploy repositories.</p>
                 {options.can_manage_source_control ? (
                     <Button asChild variant="primary" className="w-fit">
-                        <Link href="/source-control">Connect source control</Link>
+                        <Link href="/settings/source-control">Connect source control</Link>
                     </Button>
                 ) : (
                     <p className="text-fg-faint text-xs">Ask an organization admin to connect one.</p>

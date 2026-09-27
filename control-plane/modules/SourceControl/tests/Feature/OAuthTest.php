@@ -36,7 +36,7 @@ it('connects GitHub through the OAuth flow', function () {
         'api.github.com/user' => Http::response(['login' => 'ada']),
     ]);
 
-    $this->get('/source-control/callback/github?code=xyz&state='.oauth_state($location))->assertRedirect('/source-control')->assertSessionHasNoErrors();
+    $this->get('/source-control/callback/github?code=xyz&state='.oauth_state($location))->assertRedirect('/settings/source-control')->assertSessionHasNoErrors();
 
     $connection = Connection::query()->sole();
     expect($connection->auth_type)->toBe('oauth')
@@ -95,7 +95,7 @@ it('reports failed token exchanges', function () {
     $location = $this->get('/source-control/connect/github')->headers->get('Location');
     Http::fake(['github.com/login/oauth/access_token' => Http::response(['error' => 'bad_verification_code', 'error_description' => 'The code passed is incorrect or expired.'])]);
 
-    $this->get('/source-control/callback/github?code=x&state='.oauth_state($location))->assertRedirect('/source-control')->assertSessionHasErrors('oauth');
+    $this->get('/source-control/callback/github?code=x&state='.oauth_state($location))->assertRedirect('/settings/source-control')->assertSessionHasErrors('oauth');
     expect(Connection::query()->count())->toBe(0);
 });
 
@@ -116,7 +116,7 @@ it('connects a verified GitHub App installation', function () {
 
     Http::fake(['api.github.com/app/installations/555' => Http::response(['id' => 555, 'account' => ['login' => 'acme'], 'target_type' => 'Organization'])]);
 
-    $this->get('/source-control/github-app/setup?installation_id=555&setup_action=install&state='.oauth_state($location))->assertRedirect('/source-control')->assertSessionHasNoErrors();
+    $this->get('/source-control/github-app/setup?installation_id=555&setup_action=install&state='.oauth_state($location))->assertRedirect('/settings/source-control')->assertSessionHasNoErrors();
 
     $connection = Connection::query()->sole();
     expect($connection->auth_type)->toBe('app')

@@ -114,6 +114,9 @@ class UiDemoSeeder extends Seeder
         Artisan::call('projects:backfill', ['--organization' => $organization->id]);
         $platform = app(CreateProject::class)($organization->id, $admin->id, ['name' => 'Platform']);
         app(CreateEnvironment::class)($platform, 'staging', $admin->id);
+
+        // Organization settings: git connections, clouds, buckets, builders, alerting, recipes.
+        $this->callWith(SettingsDemoSeeder::class, ['organizationId' => $organization->id, 'userId' => $admin->id]);
     }
 
     /**

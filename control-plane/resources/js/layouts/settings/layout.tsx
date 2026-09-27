@@ -49,7 +49,7 @@ function NavGroup({ label, items, path }: { label: string; items: SettingsNavIte
 }
 
 /**
- * /settings/{section} shell (§3): left mini-nav (Account · Organization, extended by modules via registerSettingsNav)
+ * /settings/{section} shell (§3): left mini-nav (Account · Organization · Integrations, extended by modules via registerSettingsNav)
  * and the section content.
  */
 export default function SettingsLayout({ title, description, actions, wide = false, children }: SettingsLayoutProps) {
@@ -71,6 +71,7 @@ export default function SettingsLayout({ title, description, actions, wide = fal
                     <div className="border-border flex gap-4 border-b pb-2 md:sticky md:top-20 md:block md:border-0 md:pb-0">
                         <NavGroup label="Account" items={items.filter((item) => item.group === 'account')} path={path} />
                         <NavGroup label={orgName} items={items.filter((item) => item.group === 'organization')} path={path} />
+                        <NavGroup label="Integrations" items={items.filter((item) => item.group === 'integrations')} path={path} />
                     </div>
                 </nav>
                 <div className={cn('grid min-w-0 content-start gap-8', !wide && 'max-w-3xl')}>

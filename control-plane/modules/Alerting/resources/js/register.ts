@@ -1,11 +1,11 @@
-import { registerCommands, registerHeaderItems, registerNavigation } from '@/lib/registry';
+import { registerCommands, registerHeaderItems, registerNavigation, registerSettingsNav } from '@/lib/registry';
 import { Bell, BellRing, History, Send } from 'lucide-react';
 import { NotificationBell } from './components/notification-bell';
 
 registerNavigation({
     id: 'alerting',
     title: 'Alerts',
-    url: '/alerting/rules',
+    url: '/alerting/history',
     icon: BellRing,
     order: 500,
     permission: 'alerting.view',
@@ -17,16 +17,6 @@ registerHeaderItems({ id: 'alerting.notifications', order: 100, component: Notif
 registerCommands({
     id: 'alerting.navigation',
     commands: () => [
-        { id: 'alerting.rules', title: 'Alert rules', group: 'Navigation', icon: BellRing, href: '/alerting/rules', permission: 'alerting.view' },
-        {
-            id: 'alerting.channels',
-            title: 'Alert channels',
-            group: 'Navigation',
-            icon: Send,
-            href: '/alerting/channels',
-            permission: 'alerting.view',
-            keywords: ['slack', 'discord', 'telegram', 'webhook', 'email'],
-        },
         {
             id: 'alerting.history',
             title: 'Alert history',
@@ -45,3 +35,29 @@ registerCommands({
         },
     ],
 });
+
+// Organization settings (docs/UI_DESIGN.md §3): rules are org policy, channels are integrations.
+registerSettingsNav(
+    {
+        id: 'alert-rules',
+        title: 'Alert rules',
+        url: '/settings/alert-rules',
+        group: 'organization',
+        order: 160,
+        icon: BellRing,
+        permission: 'alerting.view',
+        requiresOrganization: true,
+        keywords: ['alerts', 'routing', 'quiet hours', 'rate limit'],
+    },
+    {
+        id: 'alert-channels',
+        title: 'Alert channels',
+        url: '/settings/alert-channels',
+        group: 'integrations',
+        order: 250,
+        icon: Send,
+        permission: 'alerting.view',
+        requiresOrganization: true,
+        keywords: ['slack', 'discord', 'telegram', 'webhook', 'email', 'alerts'],
+    },
+);

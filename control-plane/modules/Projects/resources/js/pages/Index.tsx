@@ -9,9 +9,12 @@ import {
     PageHeader,
     RelativeTime,
     ServiceIcon,
+    SetupChecklist,
     StatusBadge,
     Tag,
     Textarea,
+    defaultSetupSteps,
+    type SetupProgress,
 } from '@/components/kiln';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { FolderKanban, Plus, Settings } from 'lucide-react';
@@ -20,7 +23,18 @@ import { canvasUrl, type ProjectSummary } from '../types';
 
 interface Props {
     projects: ProjectSummary[];
+    setup: SetupProgress;
     can: { create: boolean };
+}
+
+const SETUP_DISMISSED = 'kiln:setup-dismissed';
+
+function readDismissed(): boolean {
+    try {
+        return window.localStorage.getItem(SETUP_DISMISSED) === '1';
+    } catch {
+        return false;
+    }
 }
 
 function productionOf(project: ProjectSummary) {
@@ -133,8 +147,14 @@ function CreateProjectDialog({ open, onOpenChange }: { open: boolean; onOpenChan
 }
 
 /** §3 Projects grid: home of the app. */
-export default function Index({ projects, can }: Props) {
+export default function Index({ projects, setup, can }: Props) {
     const [creating, setCreating] = useState(false);
+    const [dismissed, setDismissed] = useState(readDismissed);
+    const first = projects.find((project) => project.is_default) ?? projects[0];
+    const firstEnv = first ? productionOf(first) : null;
+    const steps = defaultSetupSteps(setup, firstEnv && first ? { deploy: canvasUrl(first.id, firstEnv.slug) } : {}).map((step) =>
+        step.id === 'project' && can.create ? { ...step, href: undefined, onAction: () => setCreating(true) } : step,
+    );
 
     return (
         <AppShell>
@@ -151,6 +171,19 @@ export default function Index({ projects, can }: Props) {
                         )
                     }
                 />
+                {!dismissed && (
+                    <SetupChecklist
+                        steps={steps}
+                        onDismiss={() => {
+                            setDismissed(true);
+                            try {
+                                window.localStorage.setItem(SETUP_DISMISSED, '1');
+                            } catch {
+                                // Not persisted; hidden for this visit.
+                            }
+                        }}
+                    />
+                )}
                 {projects.length === 0 ? (
                     <EmptyState
                         icon={<FolderKanban />}
