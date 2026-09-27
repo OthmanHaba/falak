@@ -19,9 +19,11 @@ use Kiln\Deployments\Application\Listeners\HandleCommandOutcome;
 use Kiln\Deployments\Application\Listeners\RecordBuildOutput;
 use Kiln\Deployments\Application\Listeners\RecordCommandOutput;
 use Kiln\Deployments\Contracts\DeploymentDirectory;
+use Kiln\Deployments\Contracts\DeploymentTrigger;
 use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
 use Kiln\Deployments\Http\Channels\DeploymentChannel;
 use Kiln\Deployments\Http\Channels\SiteDeploymentsChannel;
+use Kiln\Deployments\Infrastructure\ActionDeploymentTrigger;
 use Kiln\Deployments\Infrastructure\DeploymentSiteFields;
 use Kiln\Deployments\Infrastructure\EloquentDeploymentDirectory;
 use Kiln\Fleet\Events\CommandFailed;
@@ -44,6 +46,13 @@ class DeploymentsServiceProvider extends ModuleServiceProvider
      */
     public array $singletons = [
         DeploymentDirectory::class => EloquentDeploymentDirectory::class,
+    ];
+
+    /**
+     * @var array<class-string, class-string>
+     */
+    public array $bindings = [
+        DeploymentTrigger::class => ActionDeploymentTrigger::class,
     ];
 
     public function register(): void
