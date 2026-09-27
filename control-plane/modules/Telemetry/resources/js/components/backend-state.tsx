@@ -63,10 +63,10 @@ export function BackendError({
                 unreachable ? (
                     <>
                         Kiln couldn't reach {backend}. Check that it is running and reachable from the control plane.
-                        <span className="text-fg-faint mt-1 block font-mono text-xs">{message}</span>
+                        <span className="text-fg-faint mt-1 block font-mono text-xs [overflow-wrap:anywhere]">{message}</span>
                     </>
                 ) : (
-                    <span className="font-mono text-xs">{message}</span>
+                    <span className="font-mono text-xs [overflow-wrap:anywhere]">{message}</span>
                 )
             }
             action={

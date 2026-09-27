@@ -1,19 +1,18 @@
-import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm } from '@inertiajs/react';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
-import { FormEventHandler, useState } from 'react';
+import { Button } from '@/components/kiln/button';
+import { DataTable } from '@/components/kiln/data-table';
+import { Dialog } from '@/components/kiln/dialog';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { RelativeTime } from '@/components/kiln/relative-time';
+import { Section } from '@/components/kiln/section';
+import { Select } from '@/components/kiln/select';
+import { Switch } from '@/components/kiln/switch';
+import { Tag } from '@/components/kiln/tag';
+import ObservabilityLayout from '@/layouts/observability-layout';
+import { Link, router, useForm } from '@inertiajs/react';
+import { ArrowLeft, Gauge, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useState, type FormEventHandler } from 'react';
 import { HeartbeatTable } from '../components/heartbeat-table';
-import { ago } from '../components/insights-ui';
 import { type HeartbeatMonitor } from '../types';
 
 interface Threshold {
@@ -41,18 +40,18 @@ interface Props {
     can: { manage: boolean };
 }
 
-function ThresholdForm({
+function ThresholdDialog({
     siteId,
     eventTypes,
     metrics,
     threshold,
-    onDone,
+    onClose,
 }: {
     siteId: string;
     eventTypes: Option[];
     metrics: Option[];
     threshold?: Threshold;
-    onDone: () => void;
+    onClose: () => void;
 }) {
     const form = useForm({
         event_type: threshold?.event_type ?? 'request',
@@ -66,216 +65,188 @@ function ThresholdForm({
 
     const submit: FormEventHandler = (event) => {
         event.preventDefault();
-        const options = { preserveScroll: true, onSuccess: onDone };
+        const options = { preserveScroll: true, onSuccess: onClose };
 
-        if (threshold) {
-            form.put(route('insights.thresholds.update', threshold.id), options);
-        } else {
-            form.post(route('insights.thresholds.store', siteId), options);
-        }
+        if (threshold) form.put(route('insights.thresholds.update', threshold.id), options);
+        else form.post(route('insights.thresholds.store', siteId), options);
     };
 
     return (
-        <form onSubmit={submit} className="grid gap-3 rounded-md border p-4 md:grid-cols-3">
-            <div className="space-y-1">
-                <Label>Watch</Label>
-                <Select value={form.data.event_type} onValueChange={(v) => form.setData('event_type', v)}>
-                    <SelectTrigger aria-label="Event type">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {eventTypes.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                                {o.label}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-                <InputError message={form.errors.event_type} />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-                <Label htmlFor="name_pattern">Name pattern</Label>
-                <Input
-                    id="name_pattern"
-                    value={form.data.name_pattern}
-                    onChange={(e) => form.setData('name_pattern', e.target.value)}
-                    placeholder="All — or e.g. GET /api/*"
-                />
-                <InputError message={form.errors.name_pattern} />
-            </div>
-            <div className="space-y-1">
-                <Label>Metric</Label>
-                <Select value={form.data.metric} onValueChange={(v) => form.setData('metric', v)}>
-                    <SelectTrigger aria-label="Metric">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {metrics.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>
-                                {o.label}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-            </div>
-            <div className="space-y-1">
-                <Label htmlFor="threshold_ms">Above (ms)</Label>
-                <Input
-                    id="threshold_ms"
-                    type="number"
-                    min={1}
-                    value={form.data.threshold_ms}
-                    onChange={(e) => form.setData('threshold_ms', e.target.value)}
-                />
-                <InputError message={form.errors.threshold_ms} />
-            </div>
-            <div className="space-y-1">
-                <Label htmlFor="window_minutes">Over window (minutes)</Label>
-                <Input
-                    id="window_minutes"
-                    type="number"
-                    min={1}
-                    max={1440}
-                    value={form.data.window_minutes}
-                    onChange={(e) => form.setData('window_minutes', e.target.value)}
-                />
-                <InputError message={form.errors.window_minutes} />
-            </div>
-            <div className="space-y-1">
-                <Label htmlFor="min_count">Minimum samples</Label>
-                <Input id="min_count" type="number" min={1} value={form.data.min_count} onChange={(e) => form.setData('min_count', e.target.value)} />
-                <InputError message={form.errors.min_count} />
-            </div>
-            <label className="flex items-center gap-2 self-end pb-2 text-sm">
-                <Checkbox checked={form.data.enabled} onCheckedChange={(checked) => form.setData('enabled', checked === true)} /> Enabled
-            </label>
-            <div className="flex items-end gap-2">
-                <Button type="submit" disabled={form.processing}>
-                    {threshold ? 'Save' : 'Add threshold'}
-                </Button>
-                <Button type="button" variant="ghost" onClick={onDone}>
-                    Cancel
-                </Button>
-            </div>
-        </form>
+        <Dialog
+            open
+            onOpenChange={(open) => !open && onClose()}
+            title={threshold ? 'Edit threshold' : 'New threshold'}
+            description="Opens a performance issue (one per name) when the metric stays above the limit over the window."
+            footer={
+                <>
+                    <Button variant="ghost" onClick={onClose}>
+                        Cancel
+                    </Button>
+                    <Button variant="primary" type="submit" form="threshold-form" loading={form.processing}>
+                        {threshold ? 'Save' : 'Add threshold'}
+                    </Button>
+                </>
+            }
+        >
+            <form id="threshold-form" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+                <Field label="Watch" error={form.errors.event_type}>
+                    <Select value={form.data.event_type} onValueChange={(value) => form.setData('event_type', value)} options={eventTypes} />
+                </Field>
+                <Field label="Metric" error={form.errors.metric}>
+                    <Select value={form.data.metric} onValueChange={(value) => form.setData('metric', value)} options={metrics} />
+                </Field>
+                <Field
+                    label="Name pattern"
+                    hint="Empty watches every name; * is a wildcard."
+                    error={form.errors.name_pattern}
+                    className="sm:col-span-2"
+                >
+                    <Input
+                        value={form.data.name_pattern}
+                        onChange={(event) => form.setData('name_pattern', event.target.value)}
+                        placeholder="GET /api/*"
+                        mono
+                    />
+                </Field>
+                <Field label="Above" error={form.errors.threshold_ms}>
+                    <Input
+                        type="number"
+                        min={1}
+                        value={form.data.threshold_ms}
+                        onChange={(event) => form.setData('threshold_ms', event.target.value)}
+                        suffix={<span className="text-xs">ms</span>}
+                    />
+                </Field>
+                <Field label="Over window" error={form.errors.window_minutes}>
+                    <Input
+                        type="number"
+                        min={1}
+                        max={1440}
+                        value={form.data.window_minutes}
+                        onChange={(event) => form.setData('window_minutes', event.target.value)}
+                        suffix={<span className="text-xs">min</span>}
+                    />
+                </Field>
+                <Field label="Minimum samples" error={form.errors.min_count}>
+                    <Input type="number" min={1} value={form.data.min_count} onChange={(event) => form.setData('min_count', event.target.value)} />
+                </Field>
+                <Field label="Enabled" inline className="self-end">
+                    <Switch checked={form.data.enabled} onCheckedChange={(checked) => form.setData('enabled', checked)} />
+                </Field>
+            </form>
+        </Dialog>
     );
 }
 
+/** Per-site performance thresholds and heartbeat monitors (reached from the site's Observability tab). */
 export default function Settings({ site, thresholds, heartbeats, eventTypes, metrics, can }: Props) {
-    const [editing, setEditing] = useState<string | 'new' | null>(null);
-    const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Insights', href: '/insights' },
-        { title: site.name, href: route('insights.sites.show', site.id) },
-        { title: 'Settings', href: route('insights.sites.settings', site.id) },
-    ];
-    const label = (type: string) => eventTypes.find((o) => o.value === type)?.label ?? type;
+    const [editing, setEditing] = useState<Threshold | 'new' | null>(null);
+    const label = (type: string) => eventTypes.find((option) => option.value === type)?.label ?? type;
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title={`${site.name} · Insights settings`} />
-            <div className="space-y-6 p-4">
-                <Heading title="Thresholds & heartbeats" description={`Performance issues and scheduled task monitoring for ${site.name}`} />
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between">
-                        <CardTitle className="text-sm">Performance thresholds</CardTitle>
-                        {can.manage && editing === null && (
-                            <Button size="sm" onClick={() => setEditing('new')}>
-                                <Plus /> Add threshold
-                            </Button>
-                        )}
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <p className="text-muted-foreground text-sm">
-                            When a route, job, query, command, scheduled task or outgoing request exceeds its threshold over the window, Kiln opens a
-                            performance issue (one per name) and alerts through your alert rules. p95 over a window is the sample-weighted mean of
-                            per-minute p95s.
-                        </p>
-                        {editing === 'new' && (
-                            <ThresholdForm siteId={site.id} eventTypes={eventTypes} metrics={metrics} onDone={() => setEditing(null)} />
-                        )}
-                        {thresholds.length === 0 && editing !== 'new' ? (
-                            <p className="text-muted-foreground text-sm">No thresholds configured.</p>
-                        ) : (
-                            <Table>
-                                <TableHeader>
-                                    <TableRow>
-                                        <TableHead>Watch</TableHead>
-                                        <TableHead>Name</TableHead>
-                                        <TableHead>Condition</TableHead>
-                                        <TableHead>Last breach</TableHead>
-                                        <TableHead />
-                                    </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                    {thresholds.map((threshold) =>
-                                        editing === threshold.id ? (
-                                            <TableRow key={threshold.id}>
-                                                <TableCell colSpan={5}>
-                                                    <ThresholdForm
-                                                        siteId={site.id}
-                                                        eventTypes={eventTypes}
-                                                        metrics={metrics}
-                                                        threshold={threshold}
-                                                        onDone={() => setEditing(null)}
-                                                    />
-                                                </TableCell>
-                                            </TableRow>
-                                        ) : (
-                                            <TableRow key={threshold.id} className={threshold.enabled ? '' : 'opacity-60'}>
-                                                <TableCell>{label(threshold.event_type)}</TableCell>
-                                                <TableCell className="font-mono text-xs">{threshold.name_pattern ?? 'all'}</TableCell>
-                                                <TableCell className="text-sm">
-                                                    {threshold.description}
-                                                    {threshold.min_count > 1 && (
-                                                        <span className="text-muted-foreground"> · ≥ {threshold.min_count} samples</span>
-                                                    )}
-                                                </TableCell>
-                                                <TableCell className="text-muted-foreground text-sm">
-                                                    {threshold.last_breached_at ? ago(threshold.last_breached_at) : 'never'}
-                                                </TableCell>
-                                                <TableCell className="text-right whitespace-nowrap">
-                                                    {can.manage && (
-                                                        <>
-                                                            <Button
-                                                                size="icon"
-                                                                variant="ghost"
-                                                                aria-label="Edit threshold"
-                                                                onClick={() => setEditing(threshold.id)}
-                                                            >
-                                                                <Pencil />
-                                                            </Button>
-                                                            <Button
-                                                                size="icon"
-                                                                variant="ghost"
-                                                                aria-label="Delete threshold"
-                                                                onClick={() =>
-                                                                    router.delete(route('insights.thresholds.destroy', threshold.id), {
-                                                                        preserveScroll: true,
-                                                                    })
-                                                                }
-                                                            >
-                                                                <Trash2 />
-                                                            </Button>
-                                                        </>
-                                                    )}
-                                                </TableCell>
-                                            </TableRow>
-                                        ),
-                                    )}
-                                </TableBody>
-                            </Table>
-                        )}
-                    </CardContent>
-                </Card>
-
-                <Card className="gap-2 pb-0">
-                    <CardHeader>
-                        <CardTitle className="text-sm">Scheduled task heartbeats</CardTitle>
-                    </CardHeader>
-                    <HeartbeatTable monitors={heartbeats} canManage={can.manage} defaultGrace={120} />
-                </Card>
-            </div>
-        </AppLayout>
+        <ObservabilityLayout
+            tab="overview"
+            title={`${site.name} · Thresholds`}
+            breadcrumbs={[
+                { title: site.name, href: `/observability?site=${site.id}` },
+                { title: 'Thresholds', href: route('insights.sites.settings', site.id) },
+            ]}
+            header={
+                <div className="grid gap-1">
+                    <Link
+                        href={`/observability?site=${site.id}`}
+                        className="text-fg-muted hover:text-fg inline-flex w-fit items-center gap-1 text-xs"
+                    >
+                        <ArrowLeft className="size-3.5" /> {site.name}
+                    </Link>
+                    <h1 className="text-fg text-lg font-semibold">Thresholds &amp; heartbeats</h1>
+                    <p className="text-fg-muted text-sm">Performance issues and scheduled task monitoring for {site.name}.</p>
+                </div>
+            }
+        >
+            <Section
+                title="Performance thresholds"
+                description="When a route, job, query, command, scheduled task or outgoing request exceeds its threshold over the window, Kiln opens a performance issue and alerts through your alert rules."
+                aside={
+                    can.manage && (
+                        <Button size="sm" variant="primary" icon={<Plus />} onClick={() => setEditing('new')}>
+                            Add threshold
+                        </Button>
+                    )
+                }
+                bare
+            >
+                <DataTable
+                    label="Performance thresholds"
+                    rows={thresholds}
+                    rowKey={(threshold) => threshold.id}
+                    columns={[
+                        {
+                            id: 'watch',
+                            header: 'Watch',
+                            cell: (threshold) => (
+                                <span className={threshold.enabled ? 'text-fg' : 'text-fg-muted'}>{label(threshold.event_type)}</span>
+                            ),
+                        },
+                        {
+                            id: 'name',
+                            header: 'Name',
+                            cell: (threshold) => <span className="font-mono text-xs">{threshold.name_pattern ?? 'all'}</span>,
+                        },
+                        {
+                            id: 'condition',
+                            header: 'Condition',
+                            cell: (threshold) => (
+                                <span className="flex flex-wrap items-center gap-1.5 text-sm">
+                                    {threshold.description}
+                                    {threshold.min_count > 1 && <span className="text-fg-faint text-xs">≥ {threshold.min_count} samples</span>}
+                                    {!threshold.enabled && <Tag tone="faint">paused</Tag>}
+                                </span>
+                            ),
+                        },
+                        {
+                            id: 'breach',
+                            header: 'Last breach',
+                            align: 'right',
+                            cell: (threshold) => (
+                                <RelativeTime value={threshold.last_breached_at} fallback="never" className="text-fg-muted text-xs" />
+                            ),
+                        },
+                    ]}
+                    rowActions={
+                        can.manage
+                            ? (threshold) => [
+                                  { label: 'Edit', icon: <Pencil />, onSelect: () => setEditing(threshold) },
+                                  { type: 'separator' },
+                                  {
+                                      label: 'Delete',
+                                      icon: <Trash2 />,
+                                      danger: true,
+                                      onSelect: () => router.delete(route('insights.thresholds.destroy', threshold.id), { preserveScroll: true }),
+                                  },
+                              ]
+                            : undefined
+                    }
+                    empty={{
+                        icon: <Gauge />,
+                        size: 'sm',
+                        title: 'No thresholds',
+                        description: 'Add one to open an issue when, say, GET /checkout p95 stays above 1s for 5 minutes.',
+                    }}
+                />
+            </Section>
+            <Section title="Scheduled task heartbeats" bare>
+                <HeartbeatTable monitors={heartbeats} canManage={can.manage} defaultGrace={120} />
+            </Section>
+            {editing && (
+                <ThresholdDialog
+                    siteId={site.id}
+                    eventTypes={eventTypes}
+                    metrics={metrics}
+                    threshold={editing === 'new' ? undefined : editing}
+                    onClose={() => setEditing(null)}
+                />
+            )}
+        </ObservabilityLayout>
     );
 }

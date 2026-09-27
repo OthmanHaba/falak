@@ -51,7 +51,7 @@ export default function ObservabilityLayout({ tab, title, actions, breadcrumbs =
         <AppShell
             breadcrumbs={[
                 { title: 'Observability', href: '/observability' },
-                ...(tab === 'overview' && breadcrumbs.length === 0 ? [] : [{ title: active.title, href: active.href }]),
+                ...(tab === 'overview' ? [] : [{ title: active.title, href: active.href }]),
                 ...breadcrumbs,
             ]}
         >

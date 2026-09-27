@@ -123,6 +123,7 @@ export const routes: BrowserRoute[] = [
     { path: '/observability/logs', allowedFailures: observability },
     { path: '/observability/heartbeats' },
     { path: '/observability/alerts' },
+    { path: '/insights/sites/:site/settings' },
 ];
 
 export function slugFor(path: string): string {
