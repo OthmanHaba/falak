@@ -75,6 +75,7 @@ x-control-plane: &control-plane
     KILN_OTLP_ENDPOINT: http://gateway:4318
     KILN_AGENT_BINARIES_PATH: /opt/kiln/src/agent/bin
     KILN_AGENT_SCHEMAS_PATH: /opt/kiln/src/contracts/agent-protocol
+    KILN_TEMPLATES_PATH: /opt/kiln/src/templates
     KILN_AGENT_WAKE_DRIVER: redis
     # Telemetry module -> observability stack
     KILN_GRAFANA_URL: http://grafana:3000
