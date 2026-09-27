@@ -170,7 +170,18 @@ export function DeployView({ ctx, deploymentId }: { ctx: ServicePanelContext; de
     }, [terminal, ctx]);
 
     const buildLines = useMemo(() => lines.filter((line) => line.phase === 'build').map(toLogLine), [lines]);
-    const deployLines = useMemo(() => lines.filter((line) => line.phase !== 'build').map(toLogLine), [lines]);
+    // Servers deploy in parallel, so their output interleaves: group it per server (deployment order, orchestrator
+    // lines first), chronological inside a server, so each line sits under its own "server · phase" header.
+    const serverOrder = useMemo(() => (detail?.targets ?? []).map((target) => target.server_id), [detail?.targets]);
+    const deployLines = useMemo(() => {
+        const rank = (line: OutputLine) => (line.server_id ? (serverOrder.indexOf(line.server_id) + 1 || serverOrder.length + 1) : 0);
+
+        return lines
+            .filter((line) => line.phase !== 'build')
+            .map((line, index) => ({ line, index }))
+            .sort((a, b) => rank(a.line) - rank(b.line) || a.index - b.index)
+            .map(({ line }) => toLogLine(line));
+    }, [lines, serverOrder]);
 
     if (error) return <p className="text-danger text-sm">{error}</p>;
     if (!detail || !deployment) return <SkeletonRows rows={8} />;
