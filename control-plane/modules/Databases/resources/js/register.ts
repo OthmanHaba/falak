@@ -1,7 +1,33 @@
-import { registerCommands, registerNavigation } from '@/lib/registry';
-import { Archive, Database, HardDrive } from 'lucide-react';
+import { registerCommands, registerNavigation, registerServiceActions, registerServiceTabs } from '@/lib/registry';
+import { Archive, Database, HardDrive, Plug } from 'lucide-react';
+import { lazy } from 'react';
+
+// Panel code loads with the canvas, not with every page.
+const DatabaseOverviewTab = lazy(() => import('./panel/overview-tab').then((module) => ({ default: module.DatabaseOverviewTab })));
+const DatabaseUsersTab = lazy(() => import('./panel/users-tab').then((module) => ({ default: module.DatabaseUsersTab })));
+const DatabaseBackupsTab = lazy(() => import('./panel/backups-tab').then((module) => ({ default: module.DatabaseBackupsTab })));
+const DatabaseSettingsTab = lazy(() => import('./panel/settings-tab').then((module) => ({ default: module.DatabaseSettingsTab })));
 
 registerNavigation({ id: 'databases', title: 'Databases', url: '/databases', icon: Database, order: 300, permission: 'databases.view' });
+
+// Canvas service panel of a database (§5.4).
+registerServiceTabs(
+    { id: 'overview', kinds: ['database'], title: 'Overview', order: 100, permission: 'databases.view', component: DatabaseOverviewTab },
+    { id: 'databases', kinds: ['database'], title: 'Databases & users', order: 200, permission: 'databases.view', component: DatabaseUsersTab },
+    { id: 'backups', kinds: ['database'], title: 'Backups', order: 300, permission: 'databases.view', component: DatabaseBackupsTab },
+    { id: 'settings', kinds: ['database'], title: 'Settings', order: 900, permission: 'databases.view', component: DatabaseSettingsTab },
+);
+
+registerServiceActions({
+    id: 'databases.connect',
+    kinds: ['database'],
+    label: 'Connect',
+    icon: Plug,
+    order: 0,
+    primary: true,
+    permission: 'databases.view',
+    perform: (ctx) => ctx.open('overview'),
+});
 
 registerCommands({
     id: 'databases.navigation',

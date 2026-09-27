@@ -111,9 +111,7 @@ export function CanvasBoard({ services, edges, selectedId, draggable, onOpen, on
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onNodeClick={(_, node) => onOpen(node.data.service)}
-            onNodeDragStop={(_, node) =>
-                onMove(node.data.service, { x: Math.round(node.position.x), y: Math.round(node.position.y) })
-            }
+            onNodeDragStop={(_, node) => onMove(node.data.service, { x: Math.round(node.position.x), y: Math.round(node.position.y) })}
             onPaneContextMenu={(event: ReactMouseEvent | MouseEvent) => {
                 if (!onContextMenu) return;
                 event.preventDefault();

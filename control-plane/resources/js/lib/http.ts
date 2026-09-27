@@ -21,7 +21,12 @@ function xsrfToken(): string {
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-export async function requestJson<T = unknown>(url: string, method: HttpMethod = 'GET', body?: unknown, init: { signal?: AbortSignal } = {}): Promise<T> {
+export async function requestJson<T = unknown>(
+    url: string,
+    method: HttpMethod = 'GET',
+    body?: unknown,
+    init: { signal?: AbortSignal } = {},
+): Promise<T> {
     const xsrf = xsrfToken();
     const response = await fetch(url, {
         method,

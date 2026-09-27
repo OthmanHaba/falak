@@ -55,5 +55,13 @@ export function pendingTab(spec: Pending): ServiceTab {
     }
     PendingTab.displayName = `PendingTab(${spec.id})`;
 
-    return { id: spec.id, title: spec.title, order: spec.order, kinds: spec.kinds, permission: spec.permission, component: PendingTab, placeholder: true };
+    return {
+        id: spec.id,
+        title: spec.title,
+        order: spec.order,
+        kinds: spec.kinds,
+        permission: spec.permission,
+        component: PendingTab,
+        placeholder: true,
+    };
 }

@@ -76,7 +76,12 @@ const ENGINES = [
 ] as const;
 
 function slugName(value: string): string {
-    return (value.split('/').pop() ?? value).replace(/\.git$/, '').replace(/[^A-Za-z0-9 ._-]+/g, '-').replace(/^[^A-Za-z0-9]+/, '') || 'service';
+    return (
+        (value.split('/').pop() ?? value)
+            .replace(/\.git$/, '')
+            .replace(/[^A-Za-z0-9 ._-]+/g, '-')
+            .replace(/^[^A-Za-z0-9]+/, '') || 'service'
+    );
 }
 
 function Errors({ errors }: { errors: string[] }) {
@@ -107,7 +112,11 @@ function ServersField({
     const eligible = servers.filter((server) => !requireDocker || server.docker);
 
     return (
-        <Field label="Servers" hint={value.length > 1 ? 'The first server is the leader (runs migrations and the scheduler).' : undefined} error={error}>
+        <Field
+            label="Servers"
+            hint={value.length > 1 ? 'The first server is the leader (runs migrations and the scheduler).' : undefined}
+            error={error}
+        >
             {eligible.length === 0 ? (
                 <p className="text-fg-muted text-xs">
                     No {requireDocker ? 'Docker-capable ' : ''}app servers yet.{' '}
@@ -187,10 +196,14 @@ export function CreatePicker({ projectId, environmentSlug, can, position, anchor
         setSubmitting(true);
         setErrors({});
         try {
-            const created = await requestJson<{ data: CanvasService; warnings: string[] }>(`/projects/${projectId}/${environmentSlug}/services`, 'POST', {
-                ...payload,
-                ...(position ?? {}),
-            });
+            const created = await requestJson<{ data: CanvasService; warnings: string[] }>(
+                `/projects/${projectId}/${environmentSlug}/services`,
+                'POST',
+                {
+                    ...payload,
+                    ...(position ?? {}),
+                },
+            );
             created.warnings.forEach((warning) => toast.warning(warning));
             let deploymentId: string | null = null;
 
@@ -272,9 +285,27 @@ export function CreatePicker({ projectId, environmentSlug, can, position, anchor
 
 function RootStep({ can, onPick }: { can: ProjectAbilities; onPick: (step: Step) => void }) {
     const items: { id: Step | 'template'; title: string; description: string; icon: ReactNode; disabled?: boolean; soon?: boolean }[] = [
-        { id: 'git', title: 'Git repository', description: 'Deploy a repo from GitHub, GitLab, Bitbucket or any git server', icon: <GitBranch />, disabled: !can.create_sites },
-        { id: 'database', title: 'Database', description: 'PostgreSQL, MySQL or MariaDB on one of your servers', icon: <Database />, disabled: !can.create_databases },
-        { id: 'docker', title: 'Docker image', description: 'Run a public or private registry image', icon: <ServiceIcon name="docker" size={16} mono />, disabled: !can.create_sites },
+        {
+            id: 'git',
+            title: 'Git repository',
+            description: 'Deploy a repo from GitHub, GitLab, Bitbucket or any git server',
+            icon: <GitBranch />,
+            disabled: !can.create_sites,
+        },
+        {
+            id: 'database',
+            title: 'Database',
+            description: 'PostgreSQL, MySQL or MariaDB on one of your servers',
+            icon: <Database />,
+            disabled: !can.create_databases,
+        },
+        {
+            id: 'docker',
+            title: 'Docker image',
+            description: 'Run a public or private registry image',
+            icon: <ServiceIcon name="docker" size={16} mono />,
+            disabled: !can.create_sites,
+        },
         { id: 'empty', title: 'Empty service', description: 'Configure the source later', icon: <Box />, disabled: !can.create_sites },
         { id: 'template', title: 'Template', description: 'Multi-service compose templates', icon: <LayoutTemplate />, disabled: true, soon: true },
     ];
@@ -283,7 +314,11 @@ function RootStep({ can, onPick }: { can: ProjectAbilities; onPick: (step: Step)
         <Command loop className="flex flex-col" label="Create a service">
             <div className="border-border flex items-center gap-2 border-b px-3">
                 <Search className="text-fg-faint size-4" aria-hidden />
-                <Command.Input autoFocus placeholder="What do you want to create?" className="text-fg placeholder:text-fg-faint h-10 w-full bg-transparent text-sm outline-none" />
+                <Command.Input
+                    autoFocus
+                    placeholder="What do you want to create?"
+                    className="text-fg placeholder:text-fg-faint h-10 w-full bg-transparent text-sm outline-none"
+                />
             </div>
             <Command.List className="p-1.5">
                 <Command.Empty className="text-fg-faint px-3 py-6 text-center text-sm">Nothing matches.</Command.Empty>
@@ -334,7 +369,12 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
     const [branches, setBranches] = useState<string[]>([]);
     const [branch, setBranch] = useState('');
     const [framework, setFramework] = useState('laravel');
-    const [serverIds, setServerIds] = useState<string[]>(servers.filter((server) => server.status === 'active').slice(0, 1).map((server) => server.id));
+    const [serverIds, setServerIds] = useState<string[]>(
+        servers
+            .filter((server) => server.status === 'active')
+            .slice(0, 1)
+            .map((server) => server.id),
+    );
     const [name, setName] = useState('');
     const frameworkValues = useMemo(() => frameworks.map((item) => item.value), [frameworks]);
 
@@ -346,9 +386,14 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
         }
         const controller = new AbortController();
         const timer = window.setTimeout(() => {
-            requestJson<{ data: RepositoryItem[] }>(`/source-control/connections/${connection.id}/repositories?search=${encodeURIComponent(search)}`, 'GET', undefined, {
-                signal: controller.signal,
-            })
+            requestJson<{ data: RepositoryItem[] }>(
+                `/source-control/connections/${connection.id}/repositories?search=${encodeURIComponent(search)}`,
+                'GET',
+                undefined,
+                {
+                    signal: controller.signal,
+                },
+            )
                 .then((body) => {
                     setRepositories(body.data);
                     setLoadError(null);
@@ -369,7 +414,9 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
             return;
         }
         let cancelled = false;
-        requestJson<{ data: { name: string }[] }>(`/source-control/connections/${connection.id}/branches?repository=${encodeURIComponent(repository)}`)
+        requestJson<{ data: { name: string }[] }>(
+            `/source-control/connections/${connection.id}/branches?repository=${encodeURIComponent(repository)}`,
+        )
             .then((body) => !cancelled && setBranches(body.data.map((item) => item.name)))
             .catch(() => !cancelled && setBranches([]));
 
@@ -472,13 +519,21 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
                     <div className="grid grid-cols-2 gap-3">
                         <Field label="Branch" error={errors.branch}>
                             {branches.length > 0 ? (
-                                <Combobox value={branch} onValueChange={(value) => setBranch(value ?? '')} options={branches.map((item) => ({ value: item, label: item }))} />
+                                <Combobox
+                                    value={branch}
+                                    onValueChange={(value) => setBranch(value ?? '')}
+                                    options={branches.map((item) => ({ value: item, label: item }))}
+                                />
                             ) : (
                                 <Input value={branch} onChange={(event) => setBranch(event.target.value)} mono />
                             )}
                         </Field>
                         <Field label="Preset" hint={detected ? 'Detected from the repository' : undefined} error={errors.framework}>
-                            <Select value={framework} onValueChange={setFramework} options={frameworks.map((item) => ({ value: item.value, label: item.label }))} />
+                            <Select
+                                value={framework}
+                                onValueChange={setFramework}
+                                options={frameworks.map((item) => ({ value: item.value, label: item.label }))}
+                            />
                         </Field>
                     </div>
                     <Field label="Service name" error={errors.name}>
@@ -486,7 +541,13 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
                     </Field>
                     <ServersField servers={servers} value={serverIds} onChange={setServerIds} error={errors.server_ids} />
                     <Errors errors={otherErrors(errors, ['branch', 'framework', 'name', 'server_ids'])} />
-                    <Button variant="primary" type="submit" icon={<Rocket />} loading={submitting} disabled={!branch || serverIds.length === 0 || !name}>
+                    <Button
+                        variant="primary"
+                        type="submit"
+                        icon={<Rocket />}
+                        loading={submitting}
+                        disabled={!branch || serverIds.length === 0 || !name}
+                    >
                         Deploy
                     </Button>
                 </>
@@ -543,7 +604,11 @@ function DockerStep({ options, submitting, errors, onSubmit }: StepProps) {
             </Field>
             <div className="grid grid-cols-2 gap-3">
                 <Field label="Service name" error={errors.name}>
-                    <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={image ? slugName(image.split(':')[0]) : 'api'} />
+                    <Input
+                        value={name}
+                        onChange={(event) => setName(event.target.value)}
+                        placeholder={image ? slugName(image.split(':')[0]) : 'api'}
+                    />
                 </Field>
                 <Field label="Port" hint="Container port" error={errors.app_port}>
                     <Input value={port} onChange={(event) => setPort(event.target.value.replace(/\D/g, ''))} placeholder="auto" inputMode="numeric" />
@@ -561,7 +626,12 @@ function DockerStep({ options, submitting, errors, onSubmit }: StepProps) {
 function EmptyStep({ options, submitting, errors, onSubmit }: StepProps) {
     const [name, setName] = useState('');
     const [framework, setFramework] = useState('laravel');
-    const [serverIds, setServerIds] = useState<string[]>(options.options.servers.filter((server) => server.status === 'active').slice(0, 1).map((server) => server.id));
+    const [serverIds, setServerIds] = useState<string[]>(
+        options.options.servers
+            .filter((server) => server.status === 'active')
+            .slice(0, 1)
+            .map((server) => server.id),
+    );
 
     return (
         <form
@@ -571,13 +641,19 @@ function EmptyStep({ options, submitting, errors, onSubmit }: StepProps) {
                 onSubmit({ kind: 'site', name, framework, server_ids: serverIds, leader_server_id: serverIds[0] });
             }}
         >
-            <p className="text-fg-muted text-xs">Creates the service on its servers without a source; connect a repository or image later in Settings.</p>
+            <p className="text-fg-muted text-xs">
+                Creates the service on its servers without a source; connect a repository or image later in Settings.
+            </p>
             <div className="grid grid-cols-2 gap-3">
                 <Field label="Service name" error={errors.name}>
                     <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="api" autoFocus />
                 </Field>
                 <Field label="Preset" error={errors.framework}>
-                    <Select value={framework} onValueChange={setFramework} options={options.options.frameworks.map((item) => ({ value: item.value, label: item.label }))} />
+                    <Select
+                        value={framework}
+                        onValueChange={setFramework}
+                        options={options.options.frameworks.map((item) => ({ value: item.value, label: item.label }))}
+                    />
                 </Field>
             </div>
             <ServersField servers={options.options.servers} value={serverIds} onChange={setServerIds} error={errors.server_ids} />

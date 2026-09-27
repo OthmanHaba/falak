@@ -21,7 +21,12 @@ function Toolbar({ activity, onActivity }: { activity: boolean; onActivity: () =
         <div className="border-border bg-surface-1 shadow-panel absolute bottom-3 left-3 z-10 flex items-center gap-0.5 rounded-lg border p-0.5">
             <IconButton size="sm" label="Zoom out" shortcut="−" icon={<Minus />} onClick={() => flow.zoomOut({ duration: 150 })} />
             <IconButton size="sm" label="Zoom in" shortcut="+" icon={<Plus />} onClick={() => flow.zoomIn({ duration: 150 })} />
-            <IconButton size="sm" label="Fit to screen" icon={<Maximize />} onClick={() => flow.fitView({ duration: 220, padding: 0.3, maxZoom: 1 })} />
+            <IconButton
+                size="sm"
+                label="Fit to screen"
+                icon={<Maximize />}
+                onClick={() => flow.fitView({ duration: 220, padding: 0.3, maxZoom: 1 })}
+            />
             <span className="bg-border mx-0.5 h-4 w-px" aria-hidden />
             <Tooltip content="Activity">
                 <Button
@@ -61,7 +66,8 @@ function CanvasPage({ project, environment, canvas: initial, panel, can }: Canva
     );
 
     const openService = useCallback(
-        (service: Pick<CanvasService, 'kind' | 'ref_id'>, tab: string | null = null, item: string | null = null) => visit({ kind: service.kind, id: service.ref_id, tab, item }),
+        (service: Pick<CanvasService, 'kind' | 'ref_id'>, tab: string | null = null, item: string | null = null) =>
+            visit({ kind: service.kind, id: service.ref_id, tab, item }),
         [visit],
     );
 
@@ -75,7 +81,10 @@ function CanvasPage({ project, environment, canvas: initial, panel, can }: Canva
 
     const move = useCallback(
         (service: CanvasService, position: { x: number; y: number }) => {
-            setCanvas((current) => ({ ...current, services: current.services.map((item) => (item.id === service.id ? { ...item, position } : item)) }));
+            setCanvas((current) => ({
+                ...current,
+                services: current.services.map((item) => (item.id === service.id ? { ...item, position } : item)),
+            }));
             requestJson(`${home}/services/${service.id}/position`, 'PATCH', position).catch((error) => {
                 toast.error('Could not save the position', errorMessage(error));
                 void refresh();
@@ -130,7 +139,12 @@ function CanvasPage({ project, environment, canvas: initial, panel, can }: Canva
                         />
                     )}
                     {canCreate && (
-                        <Button variant="primary" icon={<Plus />} onClick={() => setPicker(picker ? null : { position: null, anchor: null })} aria-expanded={picker !== null}>
+                        <Button
+                            variant="primary"
+                            icon={<Plus />}
+                            onClick={() => setPicker(picker ? null : { position: null, anchor: null })}
+                            aria-expanded={picker !== null}
+                        >
                             Create
                         </Button>
                     )}
@@ -160,7 +174,10 @@ function CanvasPage({ project, environment, canvas: initial, panel, can }: Canva
                         onClose={() => setPicker(null)}
                         onCreated={(service, deploymentId) => {
                             setPicker(null);
-                            setCanvas((current) => ({ ...current, services: [...current.services.filter((item) => item.id !== service.id), service] }));
+                            setCanvas((current) => ({
+                                ...current,
+                                services: [...current.services.filter((item) => item.id !== service.id), service],
+                            }));
                             openService(service, service.kind === 'site' ? 'deployments' : 'overview', deploymentId);
                             void refresh();
                         }}
@@ -177,7 +194,10 @@ function CanvasPage({ project, environment, canvas: initial, panel, can }: Canva
                     tab={route.tab}
                     renameUrl={can.manage && selected ? `${home}/services/${selected.id}` : null}
                     onRenamed={(name) =>
-                        setCanvas((current) => ({ ...current, services: current.services.map((item) => (item.id === selected?.id ? { ...item, name } : item)) }))
+                        setCanvas((current) => ({
+                            ...current,
+                            services: current.services.map((item) => (item.id === selected?.id ? { ...item, name } : item)),
+                        }))
                     }
                 />
             )}

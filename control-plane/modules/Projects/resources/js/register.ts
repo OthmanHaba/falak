@@ -2,9 +2,12 @@ import { toast } from '@/components/kiln';
 import { copyText } from '@/components/kiln/copy-button';
 import { registerCommands, registerServiceActions, registerServiceTabs } from '@/lib/registry';
 import { type SharedData } from '@/types';
-import { Copy, ExternalLink, Plus, Settings } from 'lucide-react';
+import { Copy, ExternalLink, Plus, Settings, Trash2 } from 'lucide-react';
+import { lazy } from 'react';
 import { pendingTab } from './components/pending-tab';
 import { CREATE_SERVICE_EVENT } from './types';
+
+const DeleteServiceDialog = lazy(() => import('./components/delete-service-dialog').then((module) => ({ default: module.DeleteServiceDialog })));
 
 const onCanvas = () => /^\/projects\/[0-9A-Za-z]{26}\/(?!settings(\/|$))[^/]+/.test(window.location.pathname);
 
@@ -43,7 +46,7 @@ registerCommands({
                           title: `${project.name}: new environment`,
                           group: 'Actions',
                           icon: Plus,
-                          href: `/projects/${project.id}/settings#environments`,
+                          href: `/projects/${project.id}/settings#new-environment`,
                           keywords: ['staging', 'duplicate'],
                           permission: 'projects.manage',
                       },
@@ -144,3 +147,15 @@ registerServiceTabs(
         description: 'Connections, queries per second, cache hit rate and disk usage.',
     }),
 );
+
+registerServiceActions({
+    id: 'projects.delete',
+    kinds: ['site', 'database'],
+    label: 'Delete',
+    icon: Trash2,
+    order: 900,
+    danger: true,
+    separated: true,
+    permission: 'projects.manage',
+    dialog: DeleteServiceDialog,
+});

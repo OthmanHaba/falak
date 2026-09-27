@@ -4,7 +4,6 @@ import { openCommandPalette } from '@/components/kiln/command-palette';
 import { EmptyState } from '@/components/kiln/empty-state';
 import { Kbd } from '@/components/kiln/kbd';
 import { PageHeader } from '@/components/kiln/section';
-import { projectsUi } from '@/lib/pages';
 import { navigationFor, shellContext } from '@/lib/registry';
 import { type SharedData } from '@/types';
 import { Head, Link, usePage } from '@inertiajs/react';
@@ -25,7 +24,7 @@ export default function Dashboard() {
                     title="Your projects will live here"
                     description="Each project is a canvas of services with production and staging environments. Until then, jump straight to your infrastructure."
                     action={
-                        props.kiln && projectsUi.index() ? (
+                        props.kiln ? (
                             <Button variant="primary" asChild>
                                 <Link href="/projects">
                                     Open projects <ArrowRight />

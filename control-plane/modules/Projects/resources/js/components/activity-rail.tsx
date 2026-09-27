@@ -20,7 +20,9 @@ export function ActivityRail({ url, onClose, onOpen }: { url: string; onClose: (
             <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
                 {error && <p className="text-danger p-3 text-xs">{error}</p>}
                 {!data && !error && <SkeletonRows rows={6} className="p-2" />}
-                {data?.length === 0 && <p className="text-fg-faint p-4 text-center text-sm">No activity yet. Deploys and new services show up here.</p>}
+                {data?.length === 0 && (
+                    <p className="text-fg-faint p-4 text-center text-sm">No activity yet. Deploys and new services show up here.</p>
+                )}
                 <ol className="grid">
                     {data?.map((item) => (
                         <li key={item.id}>

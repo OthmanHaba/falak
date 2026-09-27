@@ -23,7 +23,15 @@ interface Props {
     can: ProjectAbilities;
 }
 
-function RenameEnvironmentDialog({ projectId, environment, onClose }: { projectId: string; environment: ProjectEnvironment | null; onClose: () => void }) {
+function RenameEnvironmentDialog({
+    projectId,
+    environment,
+    onClose,
+}: {
+    projectId: string;
+    environment: ProjectEnvironment | null;
+    onClose: () => void;
+}) {
     const form = useForm({ name: environment?.name ?? '' });
 
     useEffect(() => {
@@ -74,11 +82,12 @@ export default function Settings({ project, can }: Props) {
     const [error, setError] = useState<string | undefined>();
     const production = project.environments.find((env) => env.is_production) ?? project.environments[0];
 
+    // Deep links from the environment switcher / ⌘K: #environments scrolls, #new-environment opens the dialog.
     useEffect(() => {
-        if (window.location.hash === '#environments' && can.manage && project.environments.length > 0) {
-            document.getElementById('environments')?.scrollIntoView();
-        }
-    }, [can.manage, project.environments.length]);
+        const hash = window.location.hash;
+        if (hash === '#environments' || hash === '#new-environment') document.getElementById('environments')?.scrollIntoView();
+        if (hash === '#new-environment' && can.manage) setCreating({ from: null });
+    }, [can.manage]);
 
     const saveGeneral = (event: FormEvent) => {
         event.preventDefault();
@@ -110,7 +119,10 @@ export default function Settings({ project, can }: Props) {
             <div className="mx-auto grid w-full max-w-3xl gap-8">
                 <div className="grid gap-3">
                     {production && (
-                        <Link href={canvasUrl(project.id, production.slug)} className="text-fg-muted hover:text-fg flex w-fit items-center gap-1 text-xs">
+                        <Link
+                            href={canvasUrl(project.id, production.slug)}
+                            className="text-fg-muted hover:text-fg flex w-fit items-center gap-1 text-xs"
+                        >
                             <ArrowLeft className="size-3.5" aria-hidden /> Back to canvas
                         </Link>
                     )}
@@ -131,7 +143,11 @@ export default function Settings({ project, can }: Props) {
                 >
                     <form id="project-general" onSubmit={saveGeneral} className="grid gap-4">
                         <Field label="Name" error={general.errors.name}>
-                            <Input value={general.data.name} onChange={(event) => general.setData('name', event.target.value)} disabled={!can.manage} />
+                            <Input
+                                value={general.data.name}
+                                onChange={(event) => general.setData('name', event.target.value)}
+                                disabled={!can.manage}
+                            />
                         </Field>
                         <Field label="Description" error={general.errors.description}>
                             <Textarea
@@ -179,7 +195,12 @@ export default function Settings({ project, can }: Props) {
                                 ),
                             },
                             { id: 'slug', header: 'Slug', hideOnMobile: true, cell: (env) => <span className="font-mono text-xs">{env.slug}</span> },
-                            { id: 'services', header: 'Services', align: 'right', cell: (env) => <span className="tabular">{env.services_count ?? 0}</span> },
+                            {
+                                id: 'services',
+                                header: 'Services',
+                                align: 'right',
+                                cell: (env) => <span className="tabular">{env.services_count ?? 0}</span>,
+                            },
                             {
                                 id: 'created',
                                 header: 'Created',

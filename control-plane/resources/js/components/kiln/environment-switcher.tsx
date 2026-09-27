@@ -1,5 +1,4 @@
 import { currentProject, projectUrl } from '@/lib/kiln';
-import { projectsUi } from '@/lib/pages';
 import { type SharedData } from '@/types';
 import { usePage } from '@inertiajs/react';
 import { Check, Plus } from 'lucide-react';
@@ -25,7 +24,7 @@ export function EnvironmentSwitcher() {
             <MenuContent align="start" className="w-56">
                 <MenuLabel>Environments</MenuLabel>
                 {project.environments.map((env) => (
-                    <MenuLink key={env.id} href={projectUrl(project, env)} disabled={!projectsUi.canvas()}>
+                    <MenuLink key={env.id} href={projectUrl(project, env)}>
                         <span className="flex items-center gap-2">
                             {env.name}
                             {env.is_production && <Tag tone="success">prod</Tag>}
@@ -34,7 +33,7 @@ export function EnvironmentSwitcher() {
                     </MenuLink>
                 ))}
                 <MenuSeparator />
-                <MenuLink href={`/projects/${project.id}/settings#environments`} icon={<Plus />} disabled={!projectsUi.canvas()}>
+                <MenuLink href={`/projects/${project.id}/settings#new-environment`} icon={<Plus />}>
                     New environment
                 </MenuLink>
             </MenuContent>

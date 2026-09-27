@@ -80,7 +80,13 @@ export function canvasUrl(projectId: string, environmentSlug: string): string {
     return `/projects/${projectId}/${environmentSlug}`;
 }
 
-export function panelUrl(projectId: string, environmentSlug: string, service: Pick<CanvasService, 'kind' | 'ref_id'>, tab?: string | null, item?: string | null): string {
+export function panelUrl(
+    projectId: string,
+    environmentSlug: string,
+    service: Pick<CanvasService, 'kind' | 'ref_id'>,
+    tab?: string | null,
+    item?: string | null,
+): string {
     const base = `${canvasUrl(projectId, environmentSlug)}/service/${service.kind}/${service.ref_id}`;
 
     return tab ? `${base}/${tab}${item ? `/${item}` : ''}` : base;

@@ -61,7 +61,9 @@ export function ServiceCard({ service, selected = false, className, ...props }: 
                                         server.online ? 'text-fg-muted' : 'text-fg-faint',
                                     )}
                                 >
-                                    {server.leader && servers.length > 1 && <Star className="fill-warning text-warning size-2.5" aria-label="leader" />}
+                                    {server.leader && servers.length > 1 && (
+                                        <Star className="fill-warning text-warning size-2.5" aria-label="leader" />
+                                    )}
                                     {server.name}
                                 </span>
                             ))}

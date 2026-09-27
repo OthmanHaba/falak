@@ -1,10 +1,10 @@
-import { Button, Menu, Panel, ServiceIcon, Skeleton, StatusBadge, toast, type MenuAction } from '@/components/kiln';
+import { Button, Menu, Panel, ServiceIcon, Skeleton, SkeletonRows, StatusBadge, toast, type MenuAction } from '@/components/kiln';
 import { errorMessage, requestJson } from '@/lib/http';
 import { serviceActionsFor, serviceTabsFor, type ServiceAction, type ServicePanelContext } from '@/lib/registry';
 import { cn } from '@/lib/utils';
 import { type CanvasService } from '@/types';
 import { Pencil } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 interface ServicePanelProps {
     base: Omit<ServicePanelContext, 'service' | 'tab' | 'baseUrl'>;
@@ -38,7 +38,12 @@ function InlineName({ name, url, onRenamed }: { name: string; url: string | null
                 aria-label={url ? `Rename ${name}` : undefined}
             >
                 <span className="truncate">{name}</span>
-                {url && <Pencil className="text-fg-faint size-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" aria-hidden />}
+                {url && (
+                    <Pencil
+                        className="text-fg-faint size-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                        aria-hidden
+                    />
+                )}
             </button>
         );
     }
@@ -137,7 +142,11 @@ function HeaderActions({ ctx }: { ctx: ServicePanelContext }) {
                 </Button>
             )}
             {menu.length > 0 && <Menu actions={menu} label="Service actions" />}
-            {Dialog && <Dialog ctx={ctx} open onOpenChange={(open) => !open && setDialog(null)} />}
+            {Dialog && (
+                <Suspense fallback={null}>
+                    <Dialog ctx={ctx} open onOpenChange={(open) => !open && setDialog(null)} />
+                </Suspense>
+            )}
         </>
     );
 }
@@ -182,7 +191,14 @@ export function ServicePanel({ base, service, kind, refId, tab, renameUrl, onRen
             tabs={tabs.map((item) => ({
                 id: item.id,
                 label: item.title,
-                content: () => (ctx ? <item.component key={`${refId}:${item.id}`} ctx={ctx} /> : <Skeleton className="h-40" />),
+                content: () =>
+                    ctx ? (
+                        <Suspense fallback={<SkeletonRows rows={6} />}>
+                            <item.component key={`${refId}:${item.id}`} ctx={ctx} />
+                        </Suspense>
+                    ) : (
+                        <Skeleton className="h-40" />
+                    ),
             }))}
         />
     );

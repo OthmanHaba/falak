@@ -245,8 +245,7 @@ export function registerServiceActions(...actions: ServiceAction[]): void {
 export function serviceActionsFor(ctx: ServicePanelContext): ServiceAction[] {
     return [...serviceActions.values()]
         .filter(
-            (action) =>
-                action.kinds.includes(ctx.service.kind) && (!action.permission || ctx.can(action.permission)) && (action.when?.(ctx) ?? true),
+            (action) => action.kinds.includes(ctx.service.kind) && (!action.permission || ctx.can(action.permission)) && (action.when?.(ctx) ?? true),
         )
         .sort((a, b) => a.order - b.order);
 }
