@@ -325,6 +325,7 @@ export default function Channels({ channels, types, can }: Props) {
                             ? [
                                   {
                                       id: 'test',
+                                      hideOnMobile: true,
                                       header: <span className="sr-only">Test</span>,
                                       align: 'right' as const,
                                       cell: (channel: ChannelRow) => (

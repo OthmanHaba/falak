@@ -371,6 +371,7 @@ export default function ProvidersIndex({ credentials, providers, can }: Props) {
                             ? [
                                   {
                                       id: 'verify',
+                                      hideOnMobile: true,
                                       header: <span className="sr-only">Verify</span>,
                                       align: 'right' as const,
                                       cell: (credential: Credential) => (

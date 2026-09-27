@@ -256,6 +256,7 @@ export default function Storage({ providers, drivers, can }: Props) {
                             ? [
                                   {
                                       id: 'verify',
+                                      hideOnMobile: true,
                                       header: <span className="sr-only">Verify</span>,
                                       align: 'right' as const,
                                       cell: (provider: StorageProviderRow) => (
