@@ -1,12 +1,14 @@
-import { Button } from '@/components/ui/button';
-import AppLayout from '@/layouts/app-layout';
+import { AppShell } from '@/components/kiln/app-shell';
+import { Button } from '@/components/kiln/button';
+import { EmptyState } from '@/components/kiln/empty-state';
+import { Skeleton } from '@/components/kiln/skeleton';
 import { type BreadcrumbItem } from '@/types';
 import { Head } from '@inertiajs/react';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
-import { Download, Pause, Play, RotateCcw } from 'lucide-react';
+import { Download, Film, Pause, Play, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { formatDuration, REASON_LABELS, TERMINAL_THEME } from '../lib';
+import { formatDuration, onThemeChange, REASON_LABELS, TERMINAL_FONT, terminalTheme } from '../lib';
 import { type TerminalSessionData } from '../types';
 
 interface Props {
@@ -55,8 +57,10 @@ export default function Playback({ session, castUrl }: Props) {
     const clock = useRef(0);
 
     const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Terminal', href: '/terminal' },
-        { title: `Recording · ${session.server_name}`, href: route('terminal.sessions.recording', session.id) },
+        { title: 'Infrastructure', href: '/servers' },
+        { title: session.server_name, href: `/servers/${session.server_id}` },
+        { title: 'Terminal', href: `/servers/${session.server_id}/terminal` },
+        { title: 'Recording', href: route('terminal.sessions.recording', session.id) },
     ];
 
     useEffect(() => {
@@ -73,11 +77,24 @@ export default function Playback({ session, castUrl }: Props) {
     useEffect(() => {
         if (!container.current || !cast) return;
 
-        const term = new Terminal({ cols: cast.width, rows: cast.height, disableStdin: true, theme: TERMINAL_THEME, fontSize: 13, scrollback: 5000 });
+        const term = new Terminal({
+            cols: cast.width,
+            rows: cast.height,
+            disableStdin: true,
+            theme: terminalTheme(),
+            fontFamily: TERMINAL_FONT,
+            fontSize: 13,
+            lineHeight: 1.2,
+            scrollback: 5000,
+        });
         term.open(container.current);
         terminal.current = term;
+        const stopTheme = onThemeChange(() => {
+            term.options.theme = terminalTheme();
+        });
 
         return () => {
+            stopTheme();
             term.dispose();
             terminal.current = null;
         };
@@ -141,65 +158,115 @@ export default function Playback({ session, castUrl }: Props) {
         setPlaying((value) => !value);
     };
 
+    // Space toggles playback (outside form fields).
+    const toggleRef = useRef(toggle);
+    toggleRef.current = toggle;
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (event.key !== ' ' || target?.closest('input, textarea, button, a, [contenteditable="true"]')) return;
+            event.preventDefault();
+            toggleRef.current();
+        };
+        window.addEventListener('keydown', onKeyDown);
+
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, []);
+
+    const progress = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
+
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
+        <AppShell breadcrumbs={breadcrumbs}>
             <Head title={`Recording · ${session.server_name}`} />
-            <div className="flex flex-col gap-4 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <h1 className="font-mono text-lg font-semibold">
+            <div className="flex flex-col gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="grid gap-0.5">
+                        <h1 className="text-fg font-mono text-base font-semibold">
                             {session.unix_user}@{session.server_name}
                         </h1>
-                        <p className="text-muted-foreground text-sm">
+                        <p className="text-fg-muted text-sm">
                             {session.owner.name} · {new Date(session.created_at).toLocaleString()}
                             {session.close_reason && ` · ${REASON_LABELS[session.close_reason] ?? session.close_reason}`}
                         </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <Button size="sm" onClick={toggle} disabled={!cast || cast.events.length === 0}>
-                            {playing ? <Pause /> : <Play />} {playing ? 'Pause' : 'Play'}
-                        </Button>
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                                setPlaying(false);
-                                restart();
-                            }}
-                            disabled={!cast}
+                    <Button asChild>
+                        <a href={castUrl}>
+                            <Download aria-hidden /> Download .cast
+                        </a>
+                    </Button>
+                </div>
+
+                <div className="border-border bg-surface-1 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2">
+                    <Button
+                        variant="primary"
+                        size="sm"
+                        icon={playing ? <Pause /> : <Play />}
+                        onClick={toggle}
+                        disabled={!cast || cast.events.length === 0}
+                        aria-keyshortcuts="Space"
+                    >
+                        {playing ? 'Pause' : finished ? 'Replay' : 'Play'}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<RotateCcw />}
+                        onClick={() => {
+                            setPlaying(false);
+                            restart();
+                        }}
+                        disabled={!cast}
+                    >
+                        Restart
+                    </Button>
+                    <div className="text-fg-muted tabular flex min-w-40 flex-1 items-center gap-3 text-xs">
+                        <span>{formatDuration(position)}</span>
+                        <div
+                            className="bg-surface-3 h-1 flex-1 overflow-hidden rounded-full"
+                            role="progressbar"
+                            aria-label="Playback position"
+                            aria-valuenow={Math.round(progress)}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
                         >
-                            <RotateCcw /> Restart
-                        </Button>
-                        <div className="flex items-center gap-1" role="group" aria-label="Playback speed">
-                            {SPEEDS.map((value) => (
-                                <Button key={value} size="sm" variant={speed === value ? 'secondary' : 'ghost'} onClick={() => setSpeed(value)}>
-                                    {value}×
-                                </Button>
-                            ))}
+                            <div className="bg-primary h-full rounded-full" style={{ width: `${progress}%` }} />
                         </div>
-                        <Button size="sm" variant="outline" asChild>
-                            <a href={castUrl}>
-                                <Download /> .cast
-                            </a>
-                        </Button>
+                        <span>{formatDuration(duration)}</span>
+                    </div>
+                    <div className="border-border flex items-center rounded-md border p-0.5" role="radiogroup" aria-label="Playback speed">
+                        {SPEEDS.map((value) => (
+                            <button
+                                key={value}
+                                type="button"
+                                role="radio"
+                                aria-checked={speed === value}
+                                onClick={() => setSpeed(value)}
+                                className={
+                                    speed === value
+                                        ? 'bg-surface-3 text-fg h-6 rounded-sm px-2 text-xs font-medium'
+                                        : 'text-fg-muted hover:text-fg h-6 rounded-sm px-2 text-xs font-medium'
+                                }
+                            >
+                                {value}×
+                            </button>
+                        ))}
                     </div>
                 </div>
 
-                <div className="text-muted-foreground flex items-center gap-3 text-xs tabular-nums">
-                    <span>{formatDuration(position)}</span>
-                    <div className="bg-muted h-1.5 flex-1 overflow-hidden rounded-full">
-                        <div className="bg-primary h-full" style={{ width: `${duration > 0 ? Math.min(100, (position / duration) * 100) : 0}%` }} />
-                    </div>
-                    <span>{formatDuration(duration)}</span>
-                </div>
+                {error && (
+                    <p role="alert" className="border-danger/40 bg-danger-soft text-danger rounded-lg border px-4 py-3 text-sm">
+                        Could not load the recording: {error}
+                    </p>
+                )}
+                {!cast && !error && <Skeleton className="h-80" />}
+                {cast && cast.events.length === 0 && (
+                    <EmptyState size="sm" icon={<Film />} title="This recording is empty" description="Nothing was printed during the session." />
+                )}
 
-                {error && <p className="text-sm text-red-600 dark:text-red-400">Could not load the recording: {error}</p>}
-                {cast && cast.events.length === 0 && <p className="text-muted-foreground text-sm">This recording is empty.</p>}
-
-                <div className="overflow-auto rounded-lg border bg-neutral-950 p-2">
+                <div className={cast && cast.events.length > 0 ? 'border-border bg-canvas overflow-auto rounded-lg border p-2' : 'hidden'}>
                     <div ref={container} className="min-h-80" data-testid="playback" />
                 </div>
             </div>
-        </AppLayout>
+        </AppShell>
     );
 }

@@ -75,10 +75,47 @@ export const REASON_LABELS: Record<string, string> = {
     server_deleted: 'Server deleted',
 };
 
-/** xterm.js theme matching the app's dark log panes. */
-export const TERMINAL_THEME = {
-    background: '#0a0a0a',
-    foreground: '#e5e5e5',
-    cursor: '#e5e5e5',
-    selectionBackground: '#404040',
-};
+/**
+ * xterm.js theme built from the design tokens (resources/css/app.css): canvas background, text, accent cursor and
+ * the --ansi-* palette, so terminals follow dark / light mode. Re-read it when the theme changes.
+ */
+export function terminalTheme(): Record<string, string> {
+    if (typeof window === 'undefined') return {};
+    const styles = getComputedStyle(document.documentElement);
+    const token = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
+    const ansi = (name: string) => token(`--ansi-${name}`, token('--text', '#ecebf2'));
+
+    return {
+        background: token('--bg-canvas', '#0e0d13'),
+        foreground: token('--text', '#ecebf2'),
+        cursor: token('--accent', '#8b5cf6'),
+        cursorAccent: token('--bg-canvas', '#0e0d13'),
+        selectionBackground: token('--accent-soft', 'rgba(139,92,246,.14)'),
+        black: ansi('black'),
+        red: ansi('red'),
+        green: ansi('green'),
+        yellow: ansi('yellow'),
+        blue: ansi('blue'),
+        magenta: ansi('magenta'),
+        cyan: ansi('cyan'),
+        white: ansi('white'),
+        brightBlack: ansi('bright-black'),
+        brightRed: ansi('red'),
+        brightGreen: ansi('green'),
+        brightYellow: ansi('yellow'),
+        brightBlue: ansi('blue'),
+        brightMagenta: ansi('magenta'),
+        brightCyan: ansi('cyan'),
+        brightWhite: token('--text', '#ecebf2'),
+    };
+}
+
+/** Calls `apply` whenever the app theme (the `dark` class on <html>) flips. */
+export function onThemeChange(apply: () => void): () => void {
+    const observer = new MutationObserver(apply);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
+
+    return () => observer.disconnect();
+}
+
+export const TERMINAL_FONT = "'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
