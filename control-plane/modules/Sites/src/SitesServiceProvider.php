@@ -19,9 +19,11 @@ use Kiln\Sites\Application\Listeners\RemoveServerTargets;
 use Kiln\Sites\Contracts\SiteDeploySettings;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteDomains;
+use Kiln\Sites\Contracts\SiteFactory;
 use Kiln\Sites\Contracts\SiteHeaders;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Policies\SitePolicy;
+use Kiln\Sites\Infrastructure\ActionSiteFactory;
 use Kiln\Sites\Infrastructure\EloquentServerSites;
 use Kiln\Sites\Infrastructure\EloquentSiteDeploySettings;
 use Kiln\Sites\Infrastructure\EloquentSiteDirectory;
@@ -42,6 +44,7 @@ class SitesServiceProvider extends ModuleServiceProvider
         SiteDirectory::class => EloquentSiteDirectory::class,
         SiteHeaders::class => EloquentSiteHeaders::class,
         SiteDeploySettings::class => EloquentSiteDeploySettings::class,
+        SiteFactory::class => ActionSiteFactory::class,
         // Insights and Telemetry register later and only fill these when unbound.
         SiteNameResolver::class => EloquentSiteNameResolver::class,
         ServerSites::class => EloquentServerSites::class,

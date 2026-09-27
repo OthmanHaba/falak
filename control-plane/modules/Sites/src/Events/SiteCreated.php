@@ -3,6 +3,7 @@
 namespace Kiln\Sites\Events;
 
 use Illuminate\Foundation\Events\Dispatchable;
+use Kiln\Sites\Contracts\Data\SitePlacement;
 
 final class SiteCreated
 {
@@ -10,6 +11,7 @@ final class SiteCreated
 
     /**
      * @param  list<string>  $serverIds
+     * @param  ?SitePlacement  $placement  where the creator asked Projects to place the site
      */
     public function __construct(
         public string $siteId,
@@ -17,5 +19,6 @@ final class SiteCreated
         public string $slug,
         public string $runtime,
         public array $serverIds,
+        public ?SitePlacement $placement = null,
     ) {}
 }

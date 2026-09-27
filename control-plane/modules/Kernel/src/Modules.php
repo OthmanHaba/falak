@@ -22,6 +22,7 @@ final class Modules
         'Deployments',
         'Processes',
         'Databases',
+        'Projects',
         'Network',
         'Recipes',
         'Telemetry',

@@ -12,6 +12,17 @@ interface DatabaseDirectory
     public function find(string $databaseId): ?DatabaseData;
 
     /**
+     * @param  list<string>  $databaseIds
+     * @return array<string, DatabaseData> keyed by id (unknown ids are omitted)
+     */
+    public function findMany(array $databaseIds): array;
+
+    /**
+     * @return list<DatabaseData>
+     */
+    public function forOrganization(string $organizationId): array;
+
+    /**
      * @return list<DatabaseData>
      */
     public function forServer(string $serverId): array;

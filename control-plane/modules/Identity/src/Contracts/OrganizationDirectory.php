@@ -12,6 +12,13 @@ interface OrganizationDirectory
 {
     public function find(string $organizationId): ?OrganizationData;
 
+    /**
+     * Every organization, oldest first (maintenance tasks such as data backfills).
+     *
+     * @return list<OrganizationData>
+     */
+    public function all(): array;
+
     public function findUser(string $userId): ?UserData;
 
     /**

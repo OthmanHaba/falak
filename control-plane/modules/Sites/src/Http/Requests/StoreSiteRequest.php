@@ -4,10 +4,14 @@ namespace Kiln\Sites\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 use Kiln\Identity\Contracts\CurrentOrganization;
+use Kiln\Projects\Contracts\ProjectDirectory;
 use Kiln\Sites\Application\Actions\CreateSite;
 use Kiln\Sites\Contracts\BuildMode;
+use Kiln\Sites\Contracts\Data\SitePlacement;
 use Kiln\Sites\Contracts\Framework;
+use Kiln\Sites\Contracts\SiteFactory;
 use Kiln\Sites\Contracts\SiteRuntime;
 
 final class StoreSiteRequest extends FormRequest
@@ -17,8 +21,21 @@ final class StoreSiteRequest extends FormRequest
      */
     public function rules(): array
     {
-        $organizationId = app(CurrentOrganization::class)->requireId();
+        return [
+            ...self::rulesFor(app(CurrentOrganization::class)->requireId()),
+            // Optional Projects placement (defaults to the organization's default project / production).
+            'project_id' => ['nullable', 'string', 'size:26'],
+            'environment_id' => ['nullable', 'string', 'size:26'],
+        ];
+    }
 
+    /**
+     * Site creation rules (also applied by {@see SiteFactory}).
+     *
+     * @return array<string, mixed>
+     */
+    public static function rulesFor(string $organizationId): array
+    {
         return [
             'name' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/', Rule::unique('sites_sites')->where('organization_id', $organizationId)],
             'slug' => ['nullable', 'string', 'max:50', 'regex:'.CreateSite::SLUG_PATTERN, Rule::unique('sites_sites', 'slug')],
@@ -58,9 +75,72 @@ final class StoreSiteRequest extends FormRequest
     }
 
     /**
+     * The placement must belong to the organization (and the environment to the project, when both are given).
+     *
+     * @return list<callable(Validator): void>
+     */
+    public function after(): array
+    {
+        return [function (Validator $validator) {
+            if ($validator->errors()->hasAny(['project_id', 'environment_id'])) {
+                return;
+            }
+
+            $organizationId = app(CurrentOrganization::class)->requireId();
+            $projects = app(ProjectDirectory::class);
+            $projectId = $this->input('project_id');
+            $environmentId = $this->input('environment_id');
+
+            if (is_string($environmentId) && $environmentId !== '') {
+                $environment = $projects->environment(strtolower($environmentId));
+
+                if ($environment === null || $environment->organizationId !== $organizationId) {
+                    $validator->errors()->add('environment_id', 'Unknown environment.');
+                } elseif (is_string($projectId) && $projectId !== '' && $environment->projectId !== strtolower($projectId)) {
+                    $validator->errors()->add('environment_id', 'The environment does not belong to the project.');
+                }
+            } elseif (is_string($projectId) && $projectId !== '') {
+                $project = $projects->find(strtolower($projectId));
+
+                if ($project === null || $project->organizationId !== $organizationId) {
+                    $validator->errors()->add('project_id', 'Unknown project.');
+                }
+            }
+        }];
+    }
+
+    public function placement(): ?SitePlacement
+    {
+        $projectId = $this->validated('project_id');
+        $environmentId = $this->validated('environment_id');
+
+        return $projectId || $environmentId
+            ? new SitePlacement($projectId ? strtolower((string) $projectId) : null, $environmentId ? strtolower((string) $environmentId) : null)
+            : null;
+    }
+
+    /**
+     * Site fields only (without the Projects placement).
+     *
+     * @return array<string, mixed>
+     */
+    public function siteData(): array
+    {
+        return array_diff_key($this->validated(), array_flip(['project_id', 'environment_id']));
+    }
+
+    /**
      * @return array<string, string>
      */
     public function messages(): array
+    {
+        return self::errorMessages();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function errorMessages(): array
     {
         return [
             'name.regex' => 'Use letters, numbers, spaces, dots, dashes and underscores.',

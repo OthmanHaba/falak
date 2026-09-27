@@ -52,7 +52,7 @@ final class SiteApiController extends Controller
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, 'sites.create');
 
-        $site = $create($organizationId, $request->user()?->getAuthIdentifier(), $request->validated());
+        $site = $create($organizationId, $request->user()?->getAuthIdentifier(), $request->siteData(), $request->placement());
 
         $body = $this->show($request, $site->id)->getData(true);
         $body['warnings'] = array_values($create->warnings);

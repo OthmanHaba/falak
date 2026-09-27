@@ -2,6 +2,7 @@
 
 namespace Kiln\Builds\Application;
 
+use Kiln\Projects\Contracts\VariableReferences;
 use Kiln\Sites\Contracts\BuildMode;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
@@ -12,7 +13,10 @@ use Kiln\Sites\Contracts\SiteDirectory;
  */
 final class BuildConfiguration
 {
-    public function __construct(private readonly SiteDirectory $sites) {}
+    public function __construct(
+        private readonly SiteDirectory $sites,
+        private readonly VariableReferences $references,
+    ) {}
 
     public static function mode(SiteData $site): ?string
     {
@@ -24,7 +28,8 @@ final class BuildConfiguration
     }
 
     /**
-     * Build-time environment: site variables with a public front-end prefix (VITE_…, NEXT_PUBLIC_…).
+     * Build-time environment: site variables with a public front-end prefix (VITE_…, NEXT_PUBLIC_…), with
+     * `${{ service.KEY }}` references resolved (unresolvable ones stay literal; the deploy fails on them).
      *
      * @return array<string, string>
      */
@@ -33,7 +38,7 @@ final class BuildConfiguration
         $variables = $this->sites->environment($site->id)?->variables ?? [];
         $prefixes = (array) config('builds.env_prefixes', []);
 
-        return array_filter($variables, function ($value, $key) use ($prefixes) {
+        $public = array_filter($variables, function ($value, $key) use ($prefixes) {
             foreach ($prefixes as $prefix) {
                 if (str_starts_with((string) $key, (string) $prefix)) {
                     return true;
@@ -42,6 +47,15 @@ final class BuildConfiguration
 
             return false;
         }, ARRAY_FILTER_USE_BOTH);
+
+        if ($public === []) {
+            return [];
+        }
+
+        // Resolve against the full set so public variables may reference the site's own keys.
+        $resolved = $this->references->resolveForSite($site->id, $variables)->variables;
+
+        return array_intersect_key($resolved, $public);
     }
 
     public function cacheKey(SiteData $site, string $mode, ?string $commit): string

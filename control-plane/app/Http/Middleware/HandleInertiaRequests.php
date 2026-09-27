@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use Kiln\Kernel\Support\SharedProps;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -47,6 +48,8 @@ class HandleInertiaRequests extends Middleware
             ],
             // One-shot session flashes (`back()->with('success', ...)`), rendered as toasts by the app layout.
             'flash' => fn () => self::flash($request),
+            // Props registered by modules (e.g. Projects' `kiln` navigation model).
+            ...app(SharedProps::class)->for($request),
         ]);
     }
 

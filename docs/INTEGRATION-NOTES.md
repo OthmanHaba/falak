@@ -81,6 +81,32 @@ means the build was cancelled and `kiln-builder` aborts it.
 - `edge.caddy.apply` gained optional `basic_auth[].path` and `tls.dns` (Cloudflare DNS-01) — needs a Caddy/FrankenPHP build with the Cloudflare DNS module on servers.
 - Site pages are extensible via `registerSiteTabs` (Deployments, Processes add tabs).
 
+## Projects (UI redesign backend)
+- Module `Projects` (after Databases in `Kernel\Modules::ALL`): `projects_projects`, `projects_environments`,
+  `projects_services` (`kind` site|database, `ref_id` unique per kind, `name` unique per environment, `x`/`y`).
+  Contracts `ProjectDirectory` (lookups, `projectOf`, `servicesIn`, `serviceUrl(kind, refId, tab)` →
+  `/projects/{p}/{env}/service/{kind}/{id}/{tab}` for the upcoming legacy redirects) and `VariableReferences`;
+  events `ProjectCreated`, `EnvironmentCreated`, `ServiceLinked`, `ServiceUnlinked`.
+- Data migration `backfill_default_projects` (= `php artisan projects:backfill [--organization=]`, idempotent) gives
+  every organization a `Default` project / `production` environment and places every site and database in it.
+  `OrganizationCreated` creates it for new organizations.
+- Placement: `Sites\Events\SiteCreated` carries an optional `SitePlacement` (project, environment, x, y, service
+  name) from `SiteFactory::create` / `POST /sites` (`project_id`, `environment_id`); Projects places the site
+  synchronously. Databases are placed on `DatabaseCreated` (i.e. once `db.create` converged) unless the canvas already
+  placed them via `Databases\Contracts\DatabaseProvisioner`. `SiteDeleted` / `DatabaseDeleted` unlink.
+- New contracts used by Projects: `Sites\Contracts\SiteFactory` (create / duplicate), `Databases\Contracts\
+  DatabaseConnections` (reference variables; the only place passwords leave Databases) and `DatabaseProvisioner`,
+  `Deployments\Contracts\DeploymentDirectory::currentForSites`, `Identity\Contracts\OrganizationDirectory::all`,
+  `DatabaseDirectory::findMany/forOrganization`.
+- `Deployments\StepPayloads` resolves references for `deploy.prepare` env files, container env and deploy-script env
+  (unresolved → the deployment fails with the reason); `Builds\BuildConfiguration` resolves public build variables.
+- Shared Inertia props: `Kernel\Support\SharedProps` registry merged by `HandleInertiaRequests`; Projects registers
+  `kiln` (UI_DESIGN §9). Pages `Projects/Index`, `Projects/Canvas`, `Projects/Settings` are rendered with their props;
+  the TSX pages come with the UI wave.
+- Limits: Redis is not a Databases engine yet (`422` "Redis services are not supported yet"); duplicated environments
+  get sites without servers (pick servers per service); canvas status has no "crashed" state yet (no process
+  health contract).
+
 ## Found by the sim E2E (all fixed, with regression tests)
 Real provisioning and deploys on Ubuntu 24.04 (`sim/e2e-deploy.sh`) surfaced these; each is fixed and covered:
 1. A failed live broadcast (Reverb down) aborted provisioning/deployments → all `ShouldBroadcastNow` events are

@@ -55,6 +55,7 @@
             "Kiln\\Insights\\": "modules/Insights/src/",
             "Kiln\\Alerting\\": "modules/Alerting/src/",
             "Kiln\\Terminal\\": "modules/Terminal/src/",
+            "Kiln\\Projects\\": "modules/Projects/src/",
             "Kiln\\Identity\\Database\\Factories\\": "modules/Identity/database/factories/",
             "Kiln\\Providers\\Database\\Factories\\": "modules/Providers/database/factories/",
             "Kiln\\Fleet\\Database\\Factories\\": "modules/Fleet/database/factories/",
@@ -81,7 +82,8 @@
             "Kiln\\Telemetry\\Tests\\": "modules/Telemetry/tests/",
             "Kiln\\Insights\\Tests\\": "modules/Insights/tests/",
             "Kiln\\Alerting\\Tests\\": "modules/Alerting/tests/",
-            "Kiln\\Terminal\\Tests\\": "modules/Terminal/tests/"
+            "Kiln\\Terminal\\Tests\\": "modules/Terminal/tests/",
+            "Kiln\\Projects\\Tests\\": "modules/Projects/tests/"
         }
     },
     "scripts": {

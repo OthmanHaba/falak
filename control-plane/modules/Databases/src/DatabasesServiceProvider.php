@@ -12,7 +12,9 @@ use Kiln\Databases\Application\Listeners\DeleteOrganizationData;
 use Kiln\Databases\Application\Listeners\ForgetDeletedServer;
 use Kiln\Databases\Application\Listeners\HandleCommandOutcome;
 use Kiln\Databases\Application\Listeners\SyncDatabaseEngine;
+use Kiln\Databases\Contracts\DatabaseConnections;
 use Kiln\Databases\Contracts\DatabaseDirectory;
+use Kiln\Databases\Contracts\DatabaseProvisioner;
 use Kiln\Databases\Domain\Models\Backup;
 use Kiln\Databases\Domain\Models\BackupSchedule;
 use Kiln\Databases\Domain\Models\Database;
@@ -24,6 +26,8 @@ use Kiln\Databases\Domain\Policies\DatabasesPolicy;
 use Kiln\Databases\Events\BackupFailed;
 use Kiln\Databases\Events\BackupSucceeded;
 use Kiln\Databases\Events\RestoreFinished;
+use Kiln\Databases\Infrastructure\ActionDatabaseProvisioner;
+use Kiln\Databases\Infrastructure\EloquentDatabaseConnections;
 use Kiln\Databases\Infrastructure\EloquentDatabaseDirectory;
 use Kiln\Databases\Infrastructure\ObjectStorage\EndpointGuard;
 use Kiln\Fleet\Events\CommandFailed;
@@ -44,6 +48,8 @@ class DatabasesServiceProvider extends ModuleServiceProvider
      */
     public array $singletons = [
         DatabaseDirectory::class => EloquentDatabaseDirectory::class,
+        DatabaseConnections::class => EloquentDatabaseConnections::class,
+        DatabaseProvisioner::class => ActionDatabaseProvisioner::class,
     ];
 
     public function register(): void
