@@ -22,7 +22,7 @@ services:
     volumes:
       - listmonk-uploads:/listmonk/uploads
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10

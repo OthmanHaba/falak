@@ -29,7 +29,8 @@ services:
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2019/config/ || exit 1"]
+      # `caddy reverse-proxy` runs without the admin API: probe the proxied console itself.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
