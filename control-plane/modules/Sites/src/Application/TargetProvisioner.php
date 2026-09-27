@@ -85,7 +85,8 @@ final class TargetProvisioner
         };
 
         if ($js !== null) {
-            $this->dispatch($target, SiteTarget::STEP_RUNTIME, $js[0], ['version' => $js[1], 'default' => true], 600);
+            // Runtime zips are 30–45 MB from GitHub releases; allow slow links (downloads retry on stalls).
+            $this->dispatch($target, SiteTarget::STEP_RUNTIME, $js[0], ['version' => $js[1], 'default' => true], 1800);
 
             return;
         }
