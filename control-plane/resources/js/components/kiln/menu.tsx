@@ -54,13 +54,25 @@ export function MenuLink({
     children,
     method,
     external,
+    disabled = false,
 }: {
     href: string;
     icon?: ReactNode;
     children: ReactNode;
     method?: 'post' | 'delete';
     external?: boolean;
+    /** Render as a disabled item (e.g. the target page isn't available yet). */
+    disabled?: boolean;
 }) {
+    if (disabled) {
+        return (
+            <DropdownMenu.Item disabled className={itemClasses}>
+                {icon}
+                <span className="min-w-0 flex-1 truncate">{children}</span>
+            </DropdownMenu.Item>
+        );
+    }
+
     return (
         <DropdownMenu.Item asChild className={itemClasses}>
             {external ? (

@@ -1,3 +1,5 @@
+import { currentProject } from '@/lib/kiln';
+import { projectsUi } from '@/lib/pages';
 import { headerItemsFor, shellContext } from '@/lib/registry';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem, type SharedData } from '@/types';
@@ -59,7 +61,7 @@ export function TopBar({ breadcrumbs = [] }: { breadcrumbs?: BreadcrumbItem[] })
     const ctx = useMemo(() => shellContext(props), [props]);
     const headerItems = props.organization?.current ? headerItemsFor(ctx) : [];
     const inProject = Boolean(props.kiln?.projects.length) && (url.startsWith('/projects/') || breadcrumbs.length === 0);
-    const home = props.kiln ? '/projects' : '/dashboard';
+    const home = props.kiln && projectsUi.index() ? '/projects' : '/dashboard';
 
     return (
         <header className="border-border bg-bg/85 sticky top-0 z-30 flex h-12 shrink-0 items-center gap-1 border-b px-3 backdrop-blur md:px-4">
@@ -77,10 +79,12 @@ export function TopBar({ breadcrumbs = [] }: { breadcrumbs?: BreadcrumbItem[] })
                             <PathSeparator />
                             <ProjectSwitcher />
                         </span>
-                        <span className="hidden items-center md:flex">
-                            <PathSeparator />
-                            <EnvironmentSwitcher />
-                        </span>
+                        {currentProject(props.kiln).environment && (
+                            <span className="hidden items-center md:flex">
+                                <PathSeparator />
+                                <EnvironmentSwitcher />
+                            </span>
+                        )}
                     </>
                 ) : (
                     <ol className="hidden min-w-0 items-center md:flex">

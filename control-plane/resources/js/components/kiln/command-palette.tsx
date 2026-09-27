@@ -1,4 +1,5 @@
 import { defaultEnvironment, projectUrl } from '@/lib/kiln';
+import { projectsUi } from '@/lib/pages';
 import { navigationFor, registeredCommandProviders, settingsNavFor, shellContext, type PaletteCommand, type ShellContext } from '@/lib/registry';
 import { cn } from '@/lib/utils';
 import { type SharedData } from '@/types';
@@ -64,7 +65,7 @@ function shellCommands(ctx: ShellContext): PaletteCommand[] {
         keywords: item.keywords,
     }));
 
-    const projects: PaletteCommand[] = (ctx.props.kiln?.projects ?? []).flatMap((project) => {
+    const projects: PaletteCommand[] = (projectsUi.canvas() ? (ctx.props.kiln?.projects ?? []) : []).flatMap((project) => {
         const primary = defaultEnvironment(project);
 
         return [

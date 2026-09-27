@@ -3,9 +3,12 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Artisan;
 use Kiln\Identity\Application\Actions\CreateOrganization;
 use Kiln\Identity\Application\Actions\RegisterUser;
 use Kiln\Identity\Domain\Models\User;
+use Kiln\Projects\Application\Actions\CreateEnvironment;
+use Kiln\Projects\Application\Actions\CreateProject;
 use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Domain\Models\Server;
@@ -82,5 +85,11 @@ class UiDemoSeeder extends Seeder
                 ]);
             }
         }
+
+        // Place the sites into the organization's Default project, and add a second project with staging so the
+        // project/environment switchers have something to switch between.
+        Artisan::call('projects:backfill', ['--organization' => $organization->id]);
+        $platform = app(CreateProject::class)($organization->id, $admin->id, ['name' => 'Platform']);
+        app(CreateEnvironment::class)($platform, 'staging', $admin->id);
     }
 }

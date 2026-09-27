@@ -1,4 +1,5 @@
 import { currentProject, defaultEnvironment, projectUrl } from '@/lib/kiln';
+import { projectsUi } from '@/lib/pages';
 import { type SharedData } from '@/types';
 import { usePage } from '@inertiajs/react';
 import { Check, FolderKanban, LayoutGrid } from 'lucide-react';
@@ -16,6 +17,7 @@ export function ProjectSwitcher() {
     if (!kiln || kiln.projects.length === 0) return null;
 
     const { project } = currentProject(kiln);
+    const canvasReady = projectsUi.canvas();
 
     return (
         <MenuRoot>
@@ -29,7 +31,12 @@ export function ProjectSwitcher() {
             <MenuContent align="start" className="w-64">
                 <MenuLabel>Projects</MenuLabel>
                 {kiln.projects.map((item) => (
-                    <MenuLink key={item.id} href={projectUrl(item, defaultEnvironment(item))} icon={<ProjectIcon icon={item.icon} />}>
+                    <MenuLink
+                        key={item.id}
+                        href={projectUrl(item, defaultEnvironment(item))}
+                        icon={<ProjectIcon icon={item.icon} />}
+                        disabled={!canvasReady}
+                    >
                         <span className="flex items-center gap-2">
                             {item.name}
                             {item.id === project?.id && <Check className="text-primary ml-auto size-4" aria-label="Current" />}
@@ -37,7 +44,8 @@ export function ProjectSwitcher() {
                     </MenuLink>
                 ))}
                 <MenuSeparator />
-                <MenuLink href="/projects" icon={<LayoutGrid />}>
+                {!canvasReady && <MenuLabel className="normal-case">Project canvas coming soon</MenuLabel>}
+                <MenuLink href="/projects" icon={<LayoutGrid />} disabled={!projectsUi.index()}>
                     All projects
                 </MenuLink>
             </MenuContent>
