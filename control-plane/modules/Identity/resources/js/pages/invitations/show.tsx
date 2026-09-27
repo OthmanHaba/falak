@@ -1,10 +1,7 @@
-import InputError from '@/components/input-error';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
+import { Button } from '@/components/kiln/button';
+import { RelativeTime } from '@/components/kiln/relative-time';
+import AuthLayout, { AuthLink } from '@/layouts/auth-layout';
 import { Head, Link, useForm } from '@inertiajs/react';
-import { formatDistanceToNow } from 'date-fns';
 
 interface InvitationProps {
     token: string;
@@ -18,51 +15,58 @@ interface InvitationProps {
     } | null;
 }
 
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'Invitation', href: '#' }];
-
 export default function ShowInvitation({ token, invitation }: InvitationProps) {
     const { post, processing, errors } = useForm({});
+    const error = (errors as Record<string, string | undefined>).invitation;
+
+    if (!invitation) {
+        return (
+            <AuthLayout
+                title="Invitation unavailable"
+                description="This invitation is invalid, has already been used, or has expired. Ask for a new one."
+                footer={<AuthLink href={route('dashboard')}>Go to Kiln</AuthLink>}
+            >
+                <Head title="Invitation" />
+            </AuthLayout>
+        );
+    }
 
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
+        <AuthLayout
+            title={`Join ${invitation.organization ?? 'the organization'}`}
+            description={
+                <>
+                    {invitation.invited_by ?? 'Someone'} invited <span className="text-fg">{invitation.email}</span> as{' '}
+                    <span className="text-fg font-medium">{invitation.role}</span>. Expires <RelativeTime value={invitation.expires_at} />.
+                </>
+            }
+        >
             <Head title="Invitation" />
-            <div className="flex justify-center px-4 py-10">
-                <Card className="w-full max-w-md">
-                    {invitation ? (
-                        <>
-                            <CardHeader>
-                                <CardTitle>Join {invitation.organization}</CardTitle>
-                                <CardDescription>
-                                    {invitation.invited_by ?? 'Someone'} invited {invitation.email} as <strong>{invitation.role}</strong>. Expires{' '}
-                                    {formatDistanceToNow(new Date(invitation.expires_at), { addSuffix: true })}.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                {!invitation.email_matches && (
-                                    <p className="text-sm text-amber-700 dark:text-amber-400">
-                                        This invitation was sent to {invitation.email}, but you are signed in with a different address. Log in with
-                                        that account to accept it.
-                                    </p>
-                                )}
-                                <InputError message={(errors as Record<string, string>).invitation} />
-                            </CardContent>
-                            <CardFooter className="gap-2">
-                                <Button disabled={processing || !invitation.email_matches} onClick={() => post(route('invitations.accept', token))}>
-                                    Accept invitation
-                                </Button>
-                                <Button variant="ghost" asChild>
-                                    <Link href={route('dashboard')}>Not now</Link>
-                                </Button>
-                            </CardFooter>
-                        </>
-                    ) : (
-                        <CardHeader>
-                            <CardTitle>Invitation unavailable</CardTitle>
-                            <CardDescription>This invitation is invalid, has already been used, or has expired. Ask for a new one.</CardDescription>
-                        </CardHeader>
-                    )}
-                </Card>
+            {!invitation.email_matches && (
+                <p role="alert" className="border-warning/40 bg-warning-soft text-fg rounded-md border px-3 py-2 text-sm">
+                    This invitation was sent to {invitation.email}, but you're signed in with a different address. Log in with that account to accept
+                    it.
+                </p>
+            )}
+            {error && (
+                <p role="alert" className="text-danger text-sm">
+                    {error}
+                </p>
+            )}
+            <div className="grid gap-2">
+                <Button
+                    variant="primary"
+                    className="w-full"
+                    loading={processing}
+                    disabled={!invitation.email_matches}
+                    onClick={() => post(route('invitations.accept', token))}
+                >
+                    Accept invitation
+                </Button>
+                <Button variant="ghost" className="w-full" asChild>
+                    <Link href={route('dashboard')}>Not now</Link>
+                </Button>
             </div>
-        </AppLayout>
+        </AuthLayout>
     );
 }
