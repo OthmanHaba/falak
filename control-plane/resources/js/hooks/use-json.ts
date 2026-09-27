@@ -13,6 +13,17 @@ interface JsonState<T> {
 
 // Shared across mounts so switching panel tabs back and forth renders instantly from the last response.
 const cache = new Map<string, unknown>();
+// Concurrent mounts of the same URL (e.g. several settings sections of one panel) share one request.
+const inflight = new Map<string, Promise<unknown>>();
+
+function fetchShared(url: string): Promise<unknown> {
+    const pending = inflight.get(url);
+    if (pending) return pending;
+    const request = requestJson<unknown>(url).finally(() => inflight.delete(url));
+    inflight.set(url, request);
+
+    return request;
+}
 
 /**
  * GET a JSON endpoint (`{data: T}` envelope unwrapped), optionally polling. `url === null` pauses the hook.
@@ -30,7 +41,7 @@ export function useJson<T>(url: string | null, options: { interval?: number | fa
         if (!url) return;
         setLoading(true);
         try {
-            const body = await requestJson<{ data: T } | T>(url);
+            const body = (await fetchShared(url)) as { data: T } | T;
             const value = (unwrap ? (body as { data: T }).data : body) as T;
             cache.set(url, value);
             if (current.current === url) {
