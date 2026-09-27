@@ -25,7 +25,8 @@ export default function SiteLogs({ siteId, composeService, onClearComposeService
     const [range, setRange] = useState('1h');
     const [following, setFollowing] = useState(true);
     const configured = context.status === 'ready' && context.data.configured.logs;
-    const filters = useMemo<LogFilters>(() => ({ site_id: siteId, level, server_id: server, range, compose_service: composeService }),
+    const filters = useMemo<LogFilters>(
+        () => ({ site_id: siteId, level, server_id: server, range, compose_service: composeService }),
         [siteId, level, server, range, composeService],
     );
     const stream = useLogStream(filters, { enabled: configured, follow: following });

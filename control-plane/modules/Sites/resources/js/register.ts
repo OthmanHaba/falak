@@ -1,5 +1,12 @@
-import { registerCommands, registerServiceSettingsSections, registerServiceTabs, type PaletteCommand, type ServiceTabProps } from '@/lib/registry';
-import { Globe } from 'lucide-react';
+import {
+    registerCommands,
+    registerServiceSettingsSections,
+    registerServiceTabs,
+    registerSettingsNav,
+    type PaletteCommand,
+    type ServiceTabProps,
+} from '@/lib/registry';
+import { Boxes, Globe } from 'lucide-react';
 import { lazy, type ComponentType } from 'react';
 import { isCompose } from './panel/compose/api';
 
@@ -33,6 +40,16 @@ registerServiceSettingsSections(
         component: general('SourceSettings'),
     },
     {
+        id: 'sites.compose',
+        kinds: ['site'],
+        section: 'compose',
+        sectionTitle: 'Compose',
+        order: 150,
+        permission: 'sites.view',
+        when: (ctx) => isCompose(ctx.service),
+        component: lazy(() => import('./panel/compose/compose-settings').then((module) => ({ default: module.ComposeSettings }))),
+    },
+    {
         id: 'sites.build',
         kinds: ['site'],
         section: 'build',
@@ -48,6 +65,8 @@ registerServiceSettingsSections(
         sectionTitle: 'Deploy',
         order: 320,
         permission: 'sites.view',
+        // Compose sites deploy with `docker compose up`; there is no deploy script.
+        when: (ctx) => !isCompose(ctx.service),
         component: lazy(() => import('./panel/settings/deploy-script').then((module) => ({ default: module.DeployScriptSettings }))),
     },
     {
@@ -57,6 +76,7 @@ registerServiceSettingsSections(
         sectionTitle: 'Deploy',
         order: 330,
         permission: 'sites.view',
+        when: (ctx) => !isCompose(ctx.service),
         component: general('SharedPathsSettings'),
     },
     {
@@ -106,6 +126,19 @@ registerServiceSettingsSections(
         component: general('DangerSettings'),
     },
 );
+
+// Organization settings → Compose policy (docs/COMPOSE_TEMPLATES.md §1.3).
+registerSettingsNav({
+    id: 'compose',
+    title: 'Compose',
+    url: '/settings/compose',
+    group: 'organization',
+    order: 150,
+    icon: Boxes,
+    permission: 'sites.view',
+    requiresOrganization: true,
+    keywords: ['docker', 'compose', 'privileged', 'policy', 'capabilities'],
+});
 
 interface SiteSearchResult {
     id: string;

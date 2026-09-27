@@ -247,10 +247,7 @@ export function registerServiceTabs(...tabs: ServiceTab[]): void {
 export function serviceTabsFor(kind: ServiceKind, ctx: Pick<ShellContext, 'can'>, service?: CanvasService | null): ServiceTab[] {
     return [...serviceTabs.values()]
         .filter(
-            (tab) =>
-                tab.kinds.includes(kind) &&
-                (!tab.permission || ctx.can(tab.permission)) &&
-                (!tab.when || (service ? tab.when(service) : false)),
+            (tab) => tab.kinds.includes(kind) && (!tab.permission || ctx.can(tab.permission)) && (!tab.when || (service ? tab.when(service) : false)),
         )
         .sort((a, b) => a.order - b.order);
 }

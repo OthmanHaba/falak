@@ -1,4 +1,17 @@
-import { Button, Callout, CopyButton, EmptyState, IconButton, RelativeTime, SkeletonRows, StatusBadge, StatusDot, Tag, Tooltip, toast } from '@/components/kiln';
+import {
+    Button,
+    Callout,
+    CopyButton,
+    EmptyState,
+    IconButton,
+    RelativeTime,
+    SkeletonRows,
+    StatusBadge,
+    StatusDot,
+    Tag,
+    Tooltip,
+    toast,
+} from '@/components/kiln';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
@@ -38,7 +51,10 @@ export function ServicesTab({ ctx }: ServiceTabProps) {
         setRestarting(key);
         try {
             await requestJson(`${composeUrl(siteId)}/restart`, 'POST', { service, server_id: serverId });
-            toast.success(service ? `Restarting ${service}` : 'Restarting every service', multiServer && !serverId ? 'On every server of the site' : undefined);
+            toast.success(
+                service ? `Restarting ${service}` : 'Restarting every service',
+                multiServer && !serverId ? 'On every server of the site' : undefined,
+            );
             window.setTimeout(() => void reload(), 2500);
         } catch (e) {
             toast.error('Could not restart', errorMessage(e));
@@ -55,19 +71,29 @@ export function ServicesTab({ ctx }: ServiceTabProps) {
         <div className="grid gap-4" data-testid="services-tab">
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-fg-muted flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-fg text-sm font-medium">
-                        {new Set(data.services.map((row) => row.service)).size} services
-                    </span>
+                    <span className="text-fg text-sm font-medium">{new Set(data.services.map((row) => row.service)).size} services</span>
                     {unhealthy.length > 0 && <Tag tone="danger">{unhealthy.length} down</Tag>}
                     <span className="text-fg-faint">
-                        {data.servers.some((server) => server.refreshing) ? 'Asking servers…' : <>Reported <RelativeTime value={lastReport} fallback="never" /></>}
+                        {data.servers.some((server) => server.refreshing) ? (
+                            'Asking servers…'
+                        ) : (
+                            <>
+                                Reported <RelativeTime value={lastReport} fallback="never" />
+                            </>
+                        )}
                     </span>
                 </div>
                 <div className="flex items-center gap-1.5">
                     <Button size="sm" variant="ghost" icon={<ScrollText />} onClick={() => ctx.open('logs')}>
                         Logs
                     </Button>
-                    <Button size="sm" variant="ghost" icon={<RefreshCw className={cn(refreshing && 'animate-spin')} />} disabled={refreshing} onClick={() => void refresh()}>
+                    <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<RefreshCw className={cn(refreshing && 'animate-spin')} />}
+                        disabled={refreshing}
+                        onClick={() => void refresh()}
+                    >
                         Refresh
                     </Button>
                     {data.can.restart && data.services.length > 0 && (

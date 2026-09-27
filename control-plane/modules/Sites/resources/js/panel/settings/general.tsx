@@ -362,14 +362,7 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                     </>
                 )}
                 {draft.runtime === 'compose' && (
-                    <Field label="Compose file" error={errors.compose_file}>
-                        <Input
-                            mono
-                            value={text('compose_file')}
-                            disabled={!data.can.update}
-                            onChange={(event) => set({ compose_file: event.target.value })}
-                        />
-                    </Field>
+                    <p className="text-fg-muted text-xs">The compose file and public services are configured in the Compose section.</p>
                 )}
                 <Field label="App health path" error={errors.health_check_path} hint="Default path of the deploy health check.">
                     <Input
