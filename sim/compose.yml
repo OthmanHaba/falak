@@ -94,6 +94,9 @@ x-control-plane: &control-plane
 
 x-server: &server
   image: kiln-sim/server:dev
+  build:
+    context: .
+    dockerfile: server.Dockerfile
   logging: *logging
   privileged: true          # systemd as PID 1 (cgroup delegation, mounts)
   cgroup: private
@@ -247,6 +250,7 @@ services:
       - ..:/opt/kiln/src:ro
       - edge-pki:/etc/kiln/edge-pki:ro
       - srv-app-2-docker:/var/lib/docker
+      - srv-app-2-containerd:/var/lib/containerd
     deploy:
       resources:
         limits: { memory: 1536m }
@@ -314,6 +318,7 @@ volumes:
   builder-cache:
   registry-data:
   srv-app-2-docker:
+  srv-app-2-containerd:
 
 networks:
   backend:
