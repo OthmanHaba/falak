@@ -3,17 +3,20 @@ import { type CanvasService } from '@/types';
 import {
     Background,
     BackgroundVariant,
+    BaseEdge,
     Handle,
     Position,
     ReactFlow,
     useNodesState,
     useReactFlow,
     type Edge,
+    type EdgeProps,
     type Node,
     type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
 import { memo, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { roundedPath, routeEdge, type Point, type Rect } from './edge-routing';
 
 const SIDES = [
     ['l', Position.Left],
@@ -24,13 +27,19 @@ const SIDES = [
 
 const CARD = { width: 240, height: 96 };
 
-/** Connect the facing sides of two cards so derived edges never cut across them. */
-function sides(from: { x: number; y: number }, to: { x: number; y: number }): { source: string; target: string } {
-    if (to.x >= from.x + CARD.width) return { source: 's-r', target: 't-l' };
-    if (to.x + CARD.width <= from.x) return { source: 's-l', target: 't-r' };
+type RoutedEdge = Edge<{ points: Point[] }, 'routed'>;
 
-    return to.y >= from.y ? { source: 's-b', target: 't-t' } : { source: 's-t', target: 't-b' };
-}
+/** A derived reference edge drawn along its precomputed orthogonal route (see edge-routing.ts). */
+const RoutedEdgeView = memo(function RoutedEdgeView({ id, data, sourceX, sourceY, targetX, targetY }: EdgeProps<RoutedEdge>) {
+    const points = data?.points ?? [
+        { x: sourceX, y: sourceY },
+        { x: targetX, y: targetY },
+    ];
+
+    return <BaseEdge id={id} path={roundedPath(points)} />;
+});
+
+const edgeTypes = { routed: RoutedEdgeView };
 
 /** Follow the app theme (the `dark` class on <html>), so xyflow's own `light`/`dark` class never fights it. */
 function useDocumentTheme(): 'dark' | 'light' {
@@ -110,27 +119,43 @@ export function CanvasBoard({ services, edges, selectedId, draggable, onOpen, on
         });
     }, [services, selectedId, draggable, setNodes]);
 
-    const positions = useMemo(() => new Map(nodes.map((node) => [node.id, node.position])), [nodes]);
+    // Card rectangles (measured size once rendered) for routing edges around cards.
+    const rects = useMemo(
+        () =>
+            new Map<string, Rect>(
+                nodes.map((node) => [
+                    node.id,
+                    { x: node.position.x, y: node.position.y, width: node.measured?.width ?? CARD.width, height: node.measured?.height ?? CARD.height },
+                ]),
+            ),
+        [nodes],
+    );
     const colorMode = useDocumentTheme();
 
-    const flowEdges = useMemo<Edge[]>(
+    const flowEdges = useMemo<RoutedEdge[]>(
         () =>
-            edges.map((edge) => ({
-                id: `${edge.from}>${edge.to}`,
-                source: edge.from,
-                target: edge.to,
-                ...(() => {
-                    const from = positions.get(edge.from);
-                    const to = positions.get(edge.to);
-                    const handles = from && to ? sides(from, to) : { source: 's-r', target: 't-l' };
+            edges.flatMap((edge) => {
+                const from = rects.get(edge.from);
+                const to = rects.get(edge.to);
+                if (!from || !to) return [];
+                const obstacles = [...rects.entries()].filter(([id]) => id !== edge.from && id !== edge.to).map(([, rect]) => rect);
 
-                    return { sourceHandle: handles.source, targetHandle: handles.target };
-                })(),
-                className: 'kiln-edge',
-                focusable: false,
-                selectable: false,
-            })),
-        [edges, positions],
+                return [
+                    {
+                        id: `${edge.from}>${edge.to}`,
+                        type: 'routed' as const,
+                        source: edge.from,
+                        target: edge.to,
+                        sourceHandle: 's-r',
+                        targetHandle: 't-l',
+                        data: { points: routeEdge(from, to, obstacles) },
+                        className: 'kiln-edge',
+                        focusable: false,
+                        selectable: false,
+                    },
+                ];
+            }),
+        [edges, rects],
     );
 
     // Keyboard zoom (+ / −) and fit (shift+1), outside text fields and dialogs.
@@ -150,12 +175,13 @@ export function CanvasBoard({ services, edges, selectedId, draggable, onOpen, on
     }, [flow]);
 
     return (
-        <ReactFlow<ServiceNode>
+        <ReactFlow<ServiceNode, RoutedEdge>
             className="kiln-canvas"
             colorMode={colorMode}
             nodes={nodes}
             edges={flowEdges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onNodeClick={(_, node) => onOpen(node.data.service)}
             onNodeDragStop={(_, node) => onMove(node.data.service, { x: Math.round(node.position.x), y: Math.round(node.position.y) })}
