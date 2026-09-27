@@ -1,13 +1,25 @@
-import { registerCommands, registerServiceSettingsSections, registerServiceTabs, type PaletteCommand, type ServiceTabProps } from '@/lib/registry';
-import { Globe } from 'lucide-react';
+import {
+    registerCommands,
+    registerServiceSettingsSections,
+    registerServiceTabs,
+    registerSettingsNav,
+    type PaletteCommand,
+    type ServiceTabProps,
+} from '@/lib/registry';
+import { Boxes, Globe } from 'lucide-react';
 import { lazy, type ComponentType } from 'react';
+import { isCompose } from './panel/compose/api';
 
 // Canvas service panel (docs/UI_DESIGN.md §5.1): Variables 200, Settings 900. Panel code loads with the canvas.
 const VariablesTab = lazy(() => import('./panel/variables-tab').then((module) => ({ default: module.VariablesTab })));
 
+const ServicesTab = lazy(() => import('./panel/compose/services-tab').then((module) => ({ default: module.ServicesTab })));
+
 const SettingsTab = lazy(() => import('./panel/settings-tab').then((module) => ({ default: module.SettingsTab })));
 
 registerServiceTabs(
+    // Docker Compose sites (docs/COMPOSE_TEMPLATES.md §1.6): after Deployments.
+    { id: 'services', kinds: ['site'], title: 'Services', order: 150, permission: 'sites.view', when: isCompose, component: ServicesTab },
     { id: 'variables', kinds: ['site'], title: 'Variables', order: 200, permission: 'sites.view', component: VariablesTab },
     { id: 'settings', kinds: ['site'], title: 'Settings', order: 900, permission: 'sites.view', component: SettingsTab },
 );
@@ -28,6 +40,16 @@ registerServiceSettingsSections(
         component: general('SourceSettings'),
     },
     {
+        id: 'sites.compose',
+        kinds: ['site'],
+        section: 'compose',
+        sectionTitle: 'Compose',
+        order: 150,
+        permission: 'sites.view',
+        when: (ctx) => isCompose(ctx.service),
+        component: lazy(() => import('./panel/compose/compose-settings').then((module) => ({ default: module.ComposeSettings }))),
+    },
+    {
         id: 'sites.build',
         kinds: ['site'],
         section: 'build',
@@ -43,6 +65,8 @@ registerServiceSettingsSections(
         sectionTitle: 'Deploy',
         order: 320,
         permission: 'sites.view',
+        // Compose sites deploy with `docker compose up`; there is no deploy script.
+        when: (ctx) => !isCompose(ctx.service),
         component: lazy(() => import('./panel/settings/deploy-script').then((module) => ({ default: module.DeployScriptSettings }))),
     },
     {
@@ -52,6 +76,7 @@ registerServiceSettingsSections(
         sectionTitle: 'Deploy',
         order: 330,
         permission: 'sites.view',
+        when: (ctx) => !isCompose(ctx.service),
         component: general('SharedPathsSettings'),
     },
     {
@@ -101,6 +126,19 @@ registerServiceSettingsSections(
         component: general('DangerSettings'),
     },
 );
+
+// Organization settings → Compose policy (docs/COMPOSE_TEMPLATES.md §1.3).
+registerSettingsNav({
+    id: 'compose',
+    title: 'Compose',
+    url: '/settings/compose',
+    group: 'organization',
+    order: 150,
+    icon: Boxes,
+    permission: 'sites.view',
+    requiresOrganization: true,
+    keywords: ['docker', 'compose', 'privileged', 'policy', 'capabilities'],
+});
 
 interface SiteSearchResult {
     id: string;

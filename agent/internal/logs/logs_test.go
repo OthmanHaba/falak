@@ -194,3 +194,51 @@ func TestDockerFollower(t *testing.T) {
 		t.Fatalf("record %+v", r)
 	}
 }
+
+func TestDockerFollowerComposeService(t *testing.T) {
+	sock := filepath.Join(os.TempDir(), fmt.Sprintf("kiln-dockc-%d.sock", time.Now().UnixNano()))
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(sock)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/containers/json", func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode([]map[string]any{{"Id": "c0mp05e", "Names": []string{"/shop-redis-1"}, "Created": time.Now().Add(-20 * time.Second).Unix(),
+			"Labels": map[string]string{"kiln.site": "shop", "kiln.service": "redis", "kiln.release": "01J9ZQ4N8V2M6R0T3W5Y7B9D1F"}}})
+	})
+	mux.HandleFunc("/containers/c0mp05e/json", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"Config":{"Tty":false}}`)) })
+	var logsQuery string
+	mux.HandleFunc("/containers/c0mp05e/logs", func(w http.ResponseWriter, r *http.Request) {
+		logsQuery = r.URL.RawQuery
+		w.Write(frame(1, "2026-09-26T10:00:00Z Ready to accept connections\n"))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	})
+	srv := &http.Server{Handler: mux}
+	go srv.Serve(l)
+	defer srv.Close()
+	sink := &memSink{}
+	d := NewDocker(sock, sink, nil)
+	d.Configure(true, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.Sync(ctx)
+	deadline := time.Now().Add(3 * time.Second)
+	for len(sink.bodies()) < 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if len(sink.recs) != 1 {
+		t.Fatalf("recs %+v", sink.recs)
+	}
+	r := sink.recs[0]
+	if r.Site != "shop" || r.Service != "" || r.Attrs["kiln.compose.service"] != "redis" || r.Attrs["kiln.release.id"] != "01J9ZQ4N8V2M6R0T3W5Y7B9D1F" {
+		t.Fatalf("record %+v", r)
+	}
+	// A container created moments ago is read from its start (its startup lines predate the attach).
+	if !strings.Contains(logsQuery, "since=") || strings.Contains(logsQuery, "tail=0") {
+		t.Fatalf("fresh container attached without its startup logs: %s", logsQuery)
+	}
+}

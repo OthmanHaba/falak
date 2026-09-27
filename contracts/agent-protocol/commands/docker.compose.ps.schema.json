@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/docker.compose.ps.schema.json",
+  "title": "docker.compose.ps — per-service state of a compose project (Engine API; read-only)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project"
+  ],
+  "properties": {
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "stats": {
+      "type": "boolean",
+      "default": false,
+      "description": "Include a CPU / memory sample per running container (~1 s)"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "services"
+      ],
+      "properties": {
+        "services": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/service"
+          }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service",
+        "container_id",
+        "state",
+        "image",
+        "restarts"
+      ],
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "container_id": {
+          "type": "string"
+        },
+        "container_name": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "description": "created|running|restarting|paused|exited|dead"
+        },
+        "health": {
+          "type": "string",
+          "description": "healthy|unhealthy|starting (absent without a healthcheck)"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "image": {
+          "type": "string"
+        },
+        "image_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/port"
+          }
+        },
+        "restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "cpu_percent": {
+          "type": "number",
+          "minimum": 0
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "memory_limit_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "container_port",
+        "protocol"
+      ],
+      "properties": {
+        "host_ip": {
+          "type": "string"
+        },
+        "host_port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "container_port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "protocol": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

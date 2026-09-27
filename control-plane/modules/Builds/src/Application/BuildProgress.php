@@ -123,7 +123,11 @@ final class BuildProgress
             return;
         }
 
-        $problem = $build->mode === 'docker' ? $this->acceptImage($build, $result) : $this->acceptArtifact($build, $result);
+        $problem = match (true) {
+            $build->mode === 'docker' && is_array($result['compose'] ?? null) => $this->acceptCompose($build, $result['compose']),
+            $build->mode === 'docker' => $this->acceptImage($build, $result),
+            default => $this->acceptArtifact($build, $result),
+        };
 
         if ($problem !== null) {
             $this->log($build, ["{$problem}\n"], 'stderr');
@@ -230,6 +234,41 @@ final class BuildProgress
         $digest = (string) ($image['digest'] ?? '');
 
         $build->forceFill(['image_ref' => $ref, 'image_digest' => preg_match('/^sha256:[a-f0-9]{64}$/', $digest) === 1 ? $digest : null]);
+
+        return null;
+    }
+
+    /**
+     * kiln-builder ComposeResult: the compose file and one pinned image per `build:` service.
+     *
+     * @param  array<string, mixed>  $compose
+     */
+    private function acceptCompose(Build $build, array $compose): ?string
+    {
+        $content = $compose['content'] ?? null;
+
+        if (! is_string($content) || trim($content) === '') {
+            return 'The builder reported no compose file.';
+        }
+
+        $images = [];
+
+        foreach ((array) ($compose['images'] ?? []) as $service => $image) {
+            $pinned = is_array($image) ? (string) ($image['pinned'] ?? '') : '';
+            $ref = $pinned !== '' ? $pinned : (is_array($image) ? (string) ($image['ref'] ?? '') : '');
+
+            if ($ref === '') {
+                return "The builder reported no image for service {$service}.";
+            }
+
+            $images[(string) $service] = $ref;
+        }
+
+        $build->forceFill(['compose' => [
+            'file' => (string) ($compose['file'] ?? 'compose.yaml'),
+            'content' => $content,
+            'images' => $images,
+        ]]);
 
         return null;
     }

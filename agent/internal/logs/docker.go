@@ -97,10 +97,15 @@ func (d *Docker) Run(ctx context.Context) {
 }
 
 type containerSummary struct {
-	ID     string            `json:"Id"`
-	Names  []string          `json:"Names"`
-	Labels map[string]string `json:"Labels"`
+	ID      string            `json:"Id"`
+	Names   []string          `json:"Names"`
+	Labels  map[string]string `json:"Labels"`
+	Created int64             `json:"Created"`
 }
+
+// freshContainer is how recent a container must be for its logs to be read from the start on first attach
+// (containers created by a deploy between two container-list refreshes keep their startup lines).
+const freshContainer = 2 * time.Minute
 
 // Sync starts followers for new running containers and stops those that disappeared.
 func (d *Docker) Sync(ctx context.Context) {
@@ -177,8 +182,21 @@ func (d *Docker) follow(ctx context.Context, c containerSummary) {
 	}
 	site := c.Labels["kiln.site"]
 	service := c.Labels["kiln.service"]
+	// Compose sites label every service with kiln.site=<slug> and kiln.service=<compose service>: the
+	// records belong to the site (service.name=<slug>) and carry the compose service as an attribute.
+	composeService := ""
+	if site != "" && service != "" {
+		composeService, service = service, ""
+	}
 	if service == "" && site == "" {
 		service = name
+	}
+	if created := time.Unix(c.Created, 0); c.Created > 0 && time.Since(created) < freshContainer {
+		d.mu.Lock()
+		if d.since[c.ID].IsZero() {
+			d.since[c.ID] = created.Add(-time.Nanosecond)
+		}
+		d.mu.Unlock()
 	}
 	backoff := time.Second
 	for ctx.Err() == nil {
@@ -197,6 +215,12 @@ func (d *Docker) follow(ctx context.Context, c containerSummary) {
 			rec.Attrs["container.id"] = c.ID
 			rec.Attrs["container.name"] = name
 			rec.Attrs["log.iostream"] = stream
+			if composeService != "" {
+				rec.Attrs["kiln.compose.service"] = composeService
+				if r := c.Labels["kiln.release"]; r != "" {
+					rec.Attrs["kiln.release.id"] = r
+				}
+			}
 			d.sink.EmitLog(rec)
 		})
 		if ctx.Err() != nil {

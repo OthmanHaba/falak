@@ -58,6 +58,7 @@ final class LogController extends Controller
             'server_id' => ['nullable', 'string', 'regex:/^[0-9A-HJKMNP-TV-Z]{26}$/i'],
             'site_id' => ['nullable', 'string', 'regex:/^[0-9A-HJKMNP-TV-Z]{26}$/i'],
             'service' => ['nullable', 'string', 'max:255'],
+            'compose_service' => ['nullable', 'string', 'max:63', 'regex:/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/'],
             'level' => ['nullable', Rule::in(self::LEVELS)],
             'search' => ['nullable', 'string', 'max:500'],
             'regex' => ['nullable', 'boolean'],

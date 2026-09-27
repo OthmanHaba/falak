@@ -75,6 +75,8 @@ type job struct {
 	checkout  checkout
 	started   time.Time
 	steps     []StepResult
+	// cacheSuffix separates the BuildKit cache of each compose service.
+	cacheSuffix string
 }
 
 func (j *job) logf(format string, args ...any) { fmt.Fprintf(j.out, "==> "+format+"\n", args...) }
@@ -140,7 +142,11 @@ func (b *Builder) Build(ctx context.Context, jb Job, sink commands.EventSink) (r
 
 	switch jb.Mode {
 	case ModeDocker:
-		res.Image, err = b.buildDocker(ctx, j)
+		if jb.Compose != nil {
+			res.Compose, err = b.buildCompose(ctx, j)
+		} else {
+			res.Image, err = b.buildDocker(ctx, j)
+		}
 	default:
 		res.Artifact, res.Manifest, err = b.buildNative(ctx, j)
 	}

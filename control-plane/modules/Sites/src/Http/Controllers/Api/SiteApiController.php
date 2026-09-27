@@ -169,6 +169,13 @@ final class SiteApiController extends Controller
                 'test_domain' => $site->testDomain(),
                 'server_ids' => $site->serverIds(),
                 'targets' => $this->targets($site, $servers),
+                'compose' => ($compose = $site->composeConfig()) !== null ? [
+                    'source' => $compose->source->value,
+                    'file' => $compose->file,
+                    'version' => $compose->version,
+                    'public_services' => array_map(fn ($public) => $public->toArray(), $compose->publicServices),
+                    'template' => $compose->template,
+                ] : null,
                 'created_at' => $site->created_at->toIso8601String(),
                 ...($extra[$site->id] ?? []),
             ];

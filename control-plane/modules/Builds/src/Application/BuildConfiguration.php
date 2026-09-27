@@ -73,6 +73,7 @@ final class BuildConfiguration
             'php' => $site->phpVersion,
             'node' => $site->nodeVersion,
             'dockerfile' => $site->dockerfile,
+            'compose_file' => $site->compose?->file,
             'env' => hash('sha256', (string) json_encode($env)),
         ]));
     }

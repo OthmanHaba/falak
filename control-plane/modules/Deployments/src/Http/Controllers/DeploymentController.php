@@ -59,7 +59,7 @@ final class DeploymentController extends Controller
             'current' => Release::current($data->id)?->toApi(),
             'strategy' => $settings->effectiveStrategy($data)->label(),
             'defaultBranch' => $data->branch,
-            'canDeploy' => $data->repository !== null || ($data->runtime->isContainer() && $data->dockerImage !== null),
+            'canDeploy' => $data->hasDeploySource(),
             'can' => [
                 'create' => $this->can($request->user(), $data, DeploymentPermissions::CREATE),
                 'cancel' => $this->can($request->user(), $data, DeploymentPermissions::CREATE),

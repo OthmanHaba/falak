@@ -156,7 +156,7 @@ function HeaderActions({ ctx }: { ctx: ServicePanelContext }) {
  * /projects/{p}/{env}/service/{kind}/{id}/{tab}. Each tab loads its own data from the owning module.
  */
 export function ServicePanel({ base, service, kind, refId, tab, renameUrl, onRenamed }: ServicePanelProps) {
-    const tabs = useMemo(() => serviceTabsFor(kind, base), [kind, base]);
+    const tabs = useMemo(() => serviceTabsFor(kind, base, service), [kind, base, service]);
     const active = tabs.find((item) => item.id === tab)?.id ?? tabs[0]?.id ?? '';
     const baseUrl = `${base.canvasUrl}/service/${kind}/${refId}`;
 

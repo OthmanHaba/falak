@@ -9,7 +9,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use Kiln\Sites\Contracts\BuildMode;
+use Kiln\Sites\Contracts\ComposeSource;
+use Kiln\Sites\Contracts\Data\ComposeConfig;
 use Kiln\Sites\Contracts\Data\LaravelSettings;
+use Kiln\Sites\Contracts\Data\PublicService;
 use Kiln\Sites\Contracts\Data\SharedPath;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\Framework;
@@ -38,6 +41,9 @@ use Kiln\Sites\Contracts\TargetRole;
  * @property ?string $docker_image
  * @property ?string $dockerfile
  * @property ?string $compose_file
+ * @property ?ComposeSource $compose_source
+ * @property ?list<array{service: string, port: int, domain?: ?string, host_port?: ?int}> $public_services
+ * @property ?array{slug: string, version: string, source: string} $template
  * @property ?string $health_check_path
  * @property string $deploy_script
  * @property LaravelSettings $laravel
@@ -69,6 +75,9 @@ class Site extends Model
             'isolated' => 'boolean',
             'app_port' => 'integer',
             'test_domain_enabled' => 'boolean',
+            'compose_source' => ComposeSource::class,
+            'public_services' => 'array',
+            'template' => 'array',
         ];
     }
 
@@ -149,6 +158,68 @@ class Site extends Model
         return $this->test_domain_enabled && is_string($base) && $base !== '' ? $this->slug.'.'.strtolower(trim($base, '.')) : null;
     }
 
+    /**
+     * Public compose services with their test domains: the first gets the site's <slug> test domain,
+     * the others <service>-<slug>.
+     *
+     * @return list<PublicService>
+     */
+    public function publicServices(): array
+    {
+        if ($this->runtime !== SiteRuntime::Compose) {
+            return [];
+        }
+
+        $base = config('sites.test_domain');
+        $base = $this->test_domain_enabled && is_string($base) && $base !== '' ? strtolower(trim($base, '.')) : null;
+        $out = [];
+
+        foreach (array_values(array_filter((array) $this->public_services, 'is_array')) as $i => $public) {
+            $service = (string) ($public['service'] ?? '');
+            $label = trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($service)), '-');
+            $testDomain = $base === null ? null : ($i === 0 ? "{$this->slug}.{$base}" : substr("{$label}-{$this->slug}", 0, 63).".{$base}");
+
+            $out[] = new PublicService(
+                service: $service,
+                port: (int) ($public['port'] ?? 0),
+                domain: isset($public['domain']) && $public['domain'] !== '' ? strtolower((string) $public['domain']) : null,
+                hostPort: isset($public['host_port']) ? (int) $public['host_port'] : null,
+                testDomain: $testDomain,
+            );
+        }
+
+        return $out;
+    }
+
+    public function publicService(string $service): ?PublicService
+    {
+        foreach ($this->publicServices() as $public) {
+            if ($public->service === $service) {
+                return $public;
+            }
+        }
+
+        return null;
+    }
+
+    public function composeConfig(): ?ComposeConfig
+    {
+        if ($this->runtime !== SiteRuntime::Compose) {
+            return null;
+        }
+
+        $source = $this->compose_source ?? ComposeSource::Repo;
+        $version = $source === ComposeSource::Inline ? ComposeVersion::query()->where('site_id', $this->id)->max('version') : null;
+
+        return new ComposeConfig(
+            source: $source,
+            file: $source === ComposeSource::Repo ? $this->compose_file : null,
+            publicServices: $this->publicServices(),
+            template: is_array($this->template) ? $this->template : null,
+            version: $version !== null ? (int) $version : null,
+        );
+    }
+
     public function leaderTarget(): ?SiteTarget
     {
         return $this->targets->firstWhere('role', TargetRole::Leader);
@@ -203,6 +274,7 @@ class Site extends Model
             testDomain: $this->testDomain(),
             sharedPaths: $this->shared_paths,
             targets: $this->targets->map(fn (SiteTarget $target) => $target->toData())->values()->all(),
+            compose: $this->composeConfig(),
         );
     }
 }

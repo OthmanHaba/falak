@@ -1,0 +1,32 @@
+# Kiln sim fixture: an app built from this repository (build:) + Redis with a named volume.
+services:
+  app:
+    build:
+      context: ./app
+    environment:
+      REDIS_HOST: redis
+      APP_GREETING: ${APP_GREETING:-hello}
+      KILN_RELEASE_ID: ${KILN_RELEASE_ID}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+  redis:
+    image: redis:7.4.1-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+volumes:
+  redis-data:

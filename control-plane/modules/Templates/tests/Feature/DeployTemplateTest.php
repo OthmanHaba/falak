@@ -6,6 +6,7 @@ use Kiln\Projects\Contracts\ServiceKind;
 use Kiln\Projects\Domain\Models\Project;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Templates\Domain\Models\CustomTemplate;
+use Laravel\Sanctum\Sanctum;
 
 require_once __DIR__.'/../Support/helpers.php';
 require_once __DIR__.'/../../../Projects/tests/Support/helpers.php';
@@ -149,4 +150,15 @@ it('authorizes and scopes to the organization', function () {
 
     $this->actingAs($this->user)->postJson("/projects/{$this->project->id}/nope/templates/hello/deploy", deploy_payload())->assertNotFound();
     $this->postJson("/projects/{$this->project->id}/production/templates/nope/deploy", deploy_payload())->assertNotFound();
+});
+
+it('deploys templates over the public API with a token', function () {
+    Sanctum::actingAs($this->user, ['*']);
+    $token = $this->user->createToken('cli', ['*'])->accessToken;
+    $token->forceFill(['organization_id' => $this->organization->id])->save();
+    $this->user->withAccessToken($token);
+
+    $this->postJson("/api/v1/projects/{$this->project->id}/production/templates/hello/deploy", deploy_payload())
+        ->assertCreated()
+        ->assertJsonStructure(['data' => ['site_id']]);
 });

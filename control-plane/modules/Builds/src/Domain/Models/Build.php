@@ -36,6 +36,7 @@ use Kiln\Builds\Contracts\Data\BuildData;
  * @property ?string $image_ref
  * @property ?string $image_digest
  * @property ?array<string, mixed> $manifest
+ * @property ?array{file: string, content: string, images: array<string, string>} $compose
  * @property ?int $exit_code
  * @property ?string $error
  * @property ?int $duration_ms
@@ -68,6 +69,7 @@ class Build extends Model
             'artifact_size' => 'integer',
             'artifact_pruned_at' => 'datetime',
             'manifest' => 'array',
+            'compose' => 'array',
             'exit_code' => 'integer',
             'duration_ms' => 'integer',
             'assigned_at' => 'datetime',
@@ -108,7 +110,7 @@ class Build extends Model
     public function hasArtifact(): bool
     {
         return $this->status === BuildStatus::Succeeded && $this->artifact_pruned_at === null
-            && ($this->mode === 'docker' ? $this->image_ref !== null : $this->artifact_key !== null && $this->artifact_sha256 !== null);
+            && ($this->mode === 'docker' ? ($this->image_ref !== null || $this->compose !== null) : $this->artifact_key !== null && $this->artifact_sha256 !== null);
     }
 
     public function toData(): BuildData

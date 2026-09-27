@@ -1,15 +1,24 @@
 {
-  "project": "analytics",
-  "directory": "/srv/kiln/compose/analytics",
+  "project": "shop",
+  "directory": "/srv/kiln/sites/shop/releases/01J9ZQ4N8V2M6R0T3W5Y7B9D1F",
   "files": [
     {
       "name": "compose.yaml",
-      "content": "services:\n  plausible:\n    image: ghcr.io/plausible/community-edition:v2\n    ports: [\"127.0.0.1:8000:8000\"]\n"
+      "content": "services:\n  app:\n    image: registry.kiln.local/kiln/shop/app@sha256:3f1c9a0e4b5d6c7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e\n    ports: [\"127.0.0.1:3001:8080\"]\n    labels: {kiln.site: shop, kiln.release: 01J9ZQ4N8V2M6R0T3W5Y7B9D1F, kiln.service: app}\n"
+    },
+    {
+      "name": ".env",
+      "content": "APP_KEY=secret\nKILN_SITE_ID=01J9ZQ4N8V2M6R0T3W5Y7B9D1A\n"
     }
   ],
-  "env": {
-    "BASE_URL": "https://stats.example.com"
-  },
+  "project_env_file": ".env",
   "pull": "missing",
-  "remove_orphans": true
+  "remove_orphans": true,
+  "wait": true,
+  "wait_timeout_s": 120,
+  "registry_auth": {
+    "server": "registry.kiln.local",
+    "username": "kiln",
+    "password": "s3cret"
+  }
 }

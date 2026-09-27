@@ -82,6 +82,14 @@ Same body and validation as the web form (`name`, `framework`, `server_ids[]`, o
 Optional `project_id` / `environment_id` place the site (Projects); without them it lands in the organization's
 Default project, `production` environment. An environment of another organization/project is a `422`.
 
+Docker Compose sites (`runtime: compose`, `framework` optional — defaults to `docker`; docs/COMPOSE_TEMPLATES.md §5):
+`compose_source` `repo` (`compose_file`, default `compose.yaml` then `docker-compose.yml`, built by kiln-builder) or
+`inline` (`compose_content`, versioned; no `build:`), `public_services` `[{service, port, domain?}]` (Kiln allocates a
+loopback host port per service), `variables` `{KEY: value}` (initial environment; `${{ service.KEY }}` allowed) and
+`template` `{slug, version, source: catalog|custom}`. Inline files must pass the compose policy (`422` otherwise) unless
+the organization allows privileged compose. The site resource then carries `compose {source, file, version,
+public_services[] (with host_port, test_domain, url), template}`.
+
 ### `GET /api/v1/sites/{site}/env` — `sites.env.view`
 Returns the latest environment version as dotenv (audited as a reveal).
 ```json

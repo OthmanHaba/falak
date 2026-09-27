@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -72,6 +71,9 @@ func (s *Service) Register(reg *commands.Registry) {
 	reg.Register("docker.prune", commands.Typed(s.prune))
 	reg.Register("docker.compose.up", commands.Typed(s.composeUp))
 	reg.Register("docker.compose.down", commands.Typed(s.composeDown))
+	reg.Register("docker.compose.pull", commands.Typed(s.composePull))
+	reg.Register("docker.compose.ps", commands.Typed(s.composePs))
+	reg.Register("docker.compose.restart", commands.Typed(s.composeRestart))
 	reg.Register("deploy.container.swap", commands.Typed(s.swap))
 }
 
@@ -387,104 +389,4 @@ func (s *Service) prune(ctx context.Context, p PrunePayload, st commands.Stream)
 		total += n
 	}
 	return PruneResult{SpaceReclaimedBytes: total}, nil
-}
-
-// ---- docker.compose.* (docker compose CLI; the Engine API has no compose support) ----
-
-type ComposeFile struct {
-	Name    string `json:"name"`
-	Content string `json:"content"`
-}
-
-type ComposeUpPayload struct {
-	Project       string            `json:"project"`
-	Directory     string            `json:"directory"`
-	Files         []ComposeFile     `json:"files,omitempty"`
-	Env           map[string]string `json:"env,omitempty"`
-	Pull          string            `json:"pull,omitempty"`
-	RemoveOrphans *bool             `json:"remove_orphans,omitempty"`
-}
-
-type ComposeDownPayload struct {
-	Project   string `json:"project"`
-	Directory string `json:"directory"`
-	Volumes   bool   `json:"volumes,omitempty"`
-}
-
-type ExitResult struct {
-	ExitCode int `json:"exit_code"`
-}
-
-var projectRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
-var fileNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
-
-func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands.Stream) (any, error) {
-	if !projectRe.MatchString(p.Project) || !path.IsAbs(p.Directory) {
-		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid project or directory")}
-	}
-	switch p.Pull {
-	case "":
-		p.Pull = "missing"
-	case "always", "missing", "never":
-	default:
-		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid pull policy %q", p.Pull)}
-	}
-	if err := s.opts.FS.MkdirAll(p.Directory, 0o750); err != nil {
-		return nil, err
-	}
-	args := []string{"compose", "-p", p.Project}
-	for _, f := range p.Files {
-		if !fileNameRe.MatchString(f.Name) || f.Name == "." || f.Name == ".." {
-			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid file name %q", f.Name)}
-		}
-		if _, err := s.opts.FS.WriteFile(path.Join(p.Directory, f.Name), []byte(f.Content), 0o640); err != nil {
-			return nil, err
-		}
-		args = append(args, "-f", f.Name)
-	}
-	args = append(args, "up", "-d", "--pull", p.Pull)
-	if p.RemoveOrphans == nil || *p.RemoveOrphans {
-		args = append(args, "--remove-orphans")
-	}
-	return s.compose(ctx, p.Directory, p.Env, args, st)
-}
-
-func (s *Service) composeDown(ctx context.Context, p ComposeDownPayload, st commands.Stream) (any, error) {
-	if !projectRe.MatchString(p.Project) || !path.IsAbs(p.Directory) {
-		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid project or directory")}
-	}
-	args := []string{"compose", "-p", p.Project, "down"}
-	if p.Volumes {
-		args = append(args, "--volumes")
-	}
-	if !s.opts.FS.Exists(p.Directory) {
-		// compose down by project name works without the directory
-		return s.compose(ctx, "", nil, args, st)
-	}
-	return s.compose(ctx, p.Directory, nil, args, st)
-}
-
-func (s *Service) compose(ctx context.Context, dir string, env map[string]string, args []string, st commands.Stream) (any, error) {
-	var envs []string
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		envs = append(envs, k+"="+env[k])
-	}
-	realDir := ""
-	if dir != "" {
-		realDir = s.opts.FS.P(dir)
-	}
-	res, err := s.opts.Runner.Run(ctx, runner.Cmd{Name: "docker", Args: args, Dir: realDir, Env: envs, Stdout: st.Stdout(), Stderr: st.Stderr()})
-	if err != nil {
-		return nil, err
-	}
-	out := ExitResult{ExitCode: res.ExitCode}
-	if res.ExitCode != 0 {
-		return out, &commands.ExitError{Code: res.ExitCode, Err: fmt.Errorf("docker %s exited %d", args[len(args)-1], res.ExitCode)}
-	}
-	return out, nil
 }

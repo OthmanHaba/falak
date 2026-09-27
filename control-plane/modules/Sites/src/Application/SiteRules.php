@@ -119,10 +119,11 @@ final class SiteRules
      * A free local port for the app on all given servers.
      *
      * @param  list<string>  $serverIds
+     * @param  list<int>  $alsoTaken  ports reserved by the caller (e.g. earlier public services of the same site)
      */
-    public function freePort(array $serverIds, ?string $exceptSiteId = null): int
+    public function freePort(array $serverIds, ?string $exceptSiteId = null, array $alsoTaken = []): int
     {
-        $used = $this->portsInUse($serverIds, $exceptSiteId);
+        $used = [...$this->portsInUse($serverIds, $exceptSiteId), ...$alsoTaken];
         [$from, $to] = array_map('intval', (array) config('sites.app_port_range', [3000, 3999]));
 
         for ($port = $from; $port <= $to; $port++) {
@@ -147,17 +148,33 @@ final class SiteRules
     }
 
     /**
+     * Loopback ports used by sites on the servers: app ports and compose public service ports.
+     *
      * @param  list<string>  $serverIds
      * @return list<int>
      */
-    private function portsInUse(array $serverIds, ?string $exceptSiteId): array
+    public function portsInUse(array $serverIds, ?string $exceptSiteId = null): array
     {
-        return Site::query()
-            ->whereNotNull('app_port')
+        $sites = Site::query()
             ->when($exceptSiteId, fn ($q, $id) => $q->whereKeyNot($id))
             ->whereIn('id', SiteTarget::query()->select('site_id')->whereIn('server_id', $serverIds))
-            ->pluck('app_port')
-            ->map(fn ($port) => (int) $port)
-            ->all();
+            ->where(fn ($q) => $q->whereNotNull('app_port')->orWhereNotNull('public_services'))
+            ->get(['id', 'app_port', 'public_services']);
+
+        $ports = [];
+
+        foreach ($sites as $site) {
+            if ($site->app_port !== null) {
+                $ports[] = (int) $site->app_port;
+            }
+
+            foreach ((array) $site->public_services as $public) {
+                if (is_array($public) && isset($public['host_port'])) {
+                    $ports[] = (int) $public['host_port'];
+                }
+            }
+        }
+
+        return array_values(array_unique($ports));
     }
 }

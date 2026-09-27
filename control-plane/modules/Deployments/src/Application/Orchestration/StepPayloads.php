@@ -9,6 +9,7 @@ use Kiln\Deployments\Domain\Models\DeploymentStep;
 use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Projects\Contracts\VariableReferences;
+use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\Data\SharedPath;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
@@ -26,7 +27,206 @@ final class StepPayloads
         private readonly BuildService $builds,
         private readonly EdgeRoutes $edge,
         private readonly VariableReferences $references,
+        private readonly ComposeSites $compose,
     ) {}
+
+    // ---- Docker Compose (docs/COMPOSE_TEMPLATES.md §1.4) -------------------------------------------------------
+
+    /**
+     * @return ?array<string, mixed>
+     */
+    private function compose(DeploymentStep $step, Deployment $deployment, SiteData $site, string $serverId): ?array
+    {
+        return match ($step->kind) {
+            StepKind::Fetch => $this->composeFiles($site, $this->composeRelease($deployment, $site), (string) $deployment->release_id, $serverId, $deployment),
+            StepKind::Hook => $this->composeLeader($site, $this->composeRelease($deployment, $site), (string) $deployment->release_id),
+            StepKind::Activate => $this->composeUp($site, $this->composeRelease($deployment, $site), (string) $deployment->release_id, $serverId, $deployment),
+            StepKind::Switch => $this->composeUp($site, $this->storedRelease((string) $deployment->target_release_id), (string) $deployment->target_release_id, $serverId, $deployment),
+            StepKind::Revert => $this->composeUp($site, $this->storedRelease((string) ($step->meta['release_id'] ?? '')), (string) ($step->meta['release_id'] ?? ''), $serverId, $deployment),
+            default => throw new RuntimeException("{$step->kind->value} is not a compose step."),
+        };
+    }
+
+    /**
+     * The rendered compose release, rendered once (at the first step that needs it) and stored on the release.
+     *
+     * @return array{yaml: string, env: array<string, string>, leader: array<string, list<string>>, source: string, version?: ?int, registry?: bool}
+     *
+     * @throws RuntimeException
+     */
+    public function composeRelease(Deployment $deployment, SiteData $site): array
+    {
+        $release = Release::query()->find($deployment->release_id) ?? throw new RuntimeException('The release no longer exists.');
+
+        if (is_array($release->compose)) {
+            return $release->compose;
+        }
+
+        $images = [];
+        $version = null;
+        $registry = false;
+
+        if ($deployment->build_id !== null) {
+            $build = $this->builds->composeFor($deployment->build_id) ?? throw new RuntimeException('The build produced no compose file.');
+            [$yaml, $images, $registry] = [$build->content, $build->images, $build->registryAuth !== null];
+        } else {
+            $inline = $this->compose->content($site->id) ?? throw new RuntimeException('The site has no compose file; add one in Settings → Compose.');
+            [$yaml, $version] = [$inline->content, $inline->version];
+        }
+
+        $rendered = $this->compose->render($site->id, $yaml, $images, (string) $deployment->release_id);
+
+        $data = [
+            'yaml' => $rendered->yaml,
+            'env' => [...$this->releaseVariables($site), ...array_filter([
+                'KILN_SITE_ID' => self::upper($site->id),
+                'KILN_DEPLOYMENT_ID' => self::upper($deployment->id),
+                'KILN_RELEASE_ID' => self::upper($deployment->release_id),
+            ])],
+            'leader' => $rendered->leaderCommands,
+            'source' => $site->compose?->source->value ?? 'repo',
+            'version' => $version,
+            'registry' => $registry,
+        ];
+
+        $release->forceFill(['compose' => $data])->save();
+
+        return $data;
+    }
+
+    /**
+     * @return array{yaml: string, env: array<string, string>, leader: array<string, list<string>>, source: string}
+     */
+    private function storedRelease(string $releaseId): array
+    {
+        $compose = $releaseId !== '' ? Release::query()->find(strtolower($releaseId))?->compose : null;
+
+        if (! is_array($compose)) {
+            throw new RuntimeException('The release has no compose files to return to.');
+        }
+
+        return $compose;
+    }
+
+    private function composeDirectory(SiteData $site, string $releaseId): string
+    {
+        return $site->rootPath.'/releases/'.self::upper($releaseId);
+    }
+
+    /**
+     * docker.compose.pull (FETCH): the release's compose.yaml + .env, images pulled.
+     *
+     * @param  array{yaml: string, env: array<string, string>}  $release
+     * @return array<string, mixed>
+     */
+    private function composeFiles(SiteData $site, array $release, string $releaseId, string $serverId, Deployment $deployment): array
+    {
+        $env = $this->composeEnv($release, $serverId);
+
+        return array_filter([
+            'project' => $site->slug,
+            'directory' => $this->composeDirectory($site, $releaseId),
+            'files' => [
+                ['name' => 'compose.yaml', 'content' => $release['yaml']],
+                ['name' => '.env', 'content' => self::composeDotenv($env)],
+            ],
+            'env' => (object) $env,
+            'project_env_file' => '.env',
+            'registry_auth' => $this->composeRegistryAuth($release),
+        ], fn ($v) => $v !== null);
+    }
+
+    /**
+     * docker.compose.up --wait (ACTIVATE, manual rollback, failure rollback).
+     *
+     * @param  array{yaml: string, env: array<string, string>}  $release
+     * @return array<string, mixed>
+     */
+    private function composeUp(SiteData $site, array $release, string $releaseId, string $serverId, Deployment $deployment): array
+    {
+        return [
+            ...$this->composeFiles($site, $release, $releaseId, $serverId, $deployment),
+            'pull' => 'missing',
+            'remove_orphans' => true,
+            'wait' => true,
+            'wait_timeout_s' => max(1, min(3600, (int) config('deployments.compose.wait_timeout', 300))),
+        ];
+    }
+
+    /**
+     * system.exec on the leader: `docker compose run --rm <service> <argv>` for every kiln.deploy.leader_command.
+     * Arguments are shell-escaped one by one (never re-parsed by a shell).
+     *
+     * @param  array{leader: array<string, list<string>>}  $release
+     * @return ?array<string, mixed>
+     */
+    private function composeLeader(SiteData $site, array $release, string $releaseId): ?array
+    {
+        $leader = (array) ($release['leader'] ?? []);
+
+        if ($leader === []) {
+            return null;
+        }
+
+        $lines = ['set -e'];
+
+        foreach ($leader as $service => $argv) {
+            $command = implode(' ', array_map('escapeshellarg', array_map('strval', (array) $argv)));
+            $lines[] = 'echo '.escapeshellarg("==> {$service}: ".implode(' ', (array) $argv));
+            $lines[] = 'docker compose -p '.escapeshellarg($site->slug).' --env-file .env -f compose.yaml run --rm -T --no-deps '.escapeshellarg((string) $service).($command !== '' ? ' '.$command : '');
+        }
+
+        return [
+            'script' => implode("\n", $lines)."\n",
+            'cwd' => $this->composeDirectory($site, $releaseId),
+        ];
+    }
+
+    /**
+     * @param  array{env: array<string, string>}  $release
+     * @return array<string, string>
+     */
+    private function composeEnv(array $release, string $serverId): array
+    {
+        $env = [...array_map('strval', (array) $release['env']), 'KILN_SERVER_ID' => (string) self::upper($serverId)];
+
+        return array_filter($env, fn ($v, $k) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH);
+    }
+
+    /**
+     * @param  array{yaml: string, registry?: bool}  $release
+     * @return ?array<string, string>
+     */
+    private function composeRegistryAuth(array $release): ?array
+    {
+        $registry = rtrim((string) preg_replace('#^https?://#i', '', (string) config('builds.registry.url')), '/');
+
+        return ($release['registry'] ?? false) || ($registry !== '' && str_contains($release['yaml'], $registry.'/'))
+            ? $this->registryAuthFor($registry.'/')
+            : null;
+    }
+
+    /**
+     * Project .env for `--env-file`: single-quoted (literal, no interpolation) where possible. The same values
+     * are passed as the compose process environment, which wins over the file for interpolation.
+     *
+     * @param  array<string, string>  $env
+     */
+    public static function composeDotenv(array $env): string
+    {
+        $lines = [];
+
+        foreach ($env as $key => $value) {
+            $value = (string) $value;
+            $lines[] = $key.'='.match (true) {
+                preg_match('/^[A-Za-z0-9_.,:\/@+=\-]*$/', $value) === 1 => $value,
+                ! str_contains($value, "'") && ! str_contains($value, "\n") => "'{$value}'",
+                default => '"'.str_replace(['\\', '"', "\n"], ['\\\\', '\\"', '\\n'], $value).'"',
+            };
+        }
+
+        return $lines === [] ? '' : implode("\n", $lines)."\n";
+    }
 
     public static function upper(?string $ulid): ?string
     {
@@ -34,13 +234,17 @@ final class StepPayloads
     }
 
     /**
-     * @return array<string, mixed>
+     * @return ?array<string, mixed> null when the step has nothing to run (compose leader step without leader commands)
      *
      * @throws RuntimeException when the payload cannot be built (missing artifact, image, port…)
      */
-    public function for(DeploymentStep $step, Deployment $deployment, SiteData $site): array
+    public function for(DeploymentStep $step, Deployment $deployment, SiteData $site): ?array
     {
         $serverId = (string) $step->server_id;
+
+        if ($site->runtime === SiteRuntime::Compose) {
+            return $this->compose($step, $deployment, $site, $serverId);
+        }
 
         return match ($step->kind) {
             StepKind::Fetch => $this->fetch($deployment, $site),
@@ -59,8 +263,12 @@ final class StepPayloads
         };
     }
 
-    public function timeout(StepKind $kind): int
+    public function timeout(StepKind $kind, ?string $commandType = null): int
     {
+        if ($commandType === 'docker.compose.up') {
+            return max(60, min(3600, (int) config('deployments.timeouts.compose_up', 600) + (int) config('deployments.compose.wait_timeout', 300)));
+        }
+
         $key = match ($kind) {
             StepKind::Fetch => 'fetch',
             StepKind::Prepare => 'prepare',

@@ -22,6 +22,17 @@ return [
     // Ports handed out to node/bun/deno/docker sites (unique per server).
     'app_port_range' => [3000, 3999],
 
+    // Docker Compose sites (docs/COMPOSE_TEMPLATES.md §1).
+    'compose' => [
+        // cap_add values allowed without "Allow privileged compose" (Docker's default capability set).
+        'safe_capabilities' => ['AUDIT_WRITE', 'CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'FSETID', 'KILL', 'MKNOD', 'NET_BIND_SERVICE', 'NET_RAW', 'SETFCAP', 'SETGID', 'SETPCAP', 'SETUID', 'SYS_CHROOT'],
+        'max_bytes' => 262144,
+        // Inline compose versions kept per site (the newest N; older ones are pruned on save).
+        'keep_versions' => 50,
+        // Refresh docker.compose.ps for the Services tab at most this often (seconds).
+        'status_refresh_seconds' => 10,
+    ],
+
     // Site commands (system.exec).
     'command_timeout' => (int) env('KILN_SITE_COMMAND_TIMEOUT', 600),
     'command_history' => 50,

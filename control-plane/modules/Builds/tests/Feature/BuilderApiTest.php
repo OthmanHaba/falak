@@ -219,6 +219,47 @@ it('hands docker jobs the registry image and credentials', function () {
     expect(app(BuildService::class)->imageFor($build->id)->ref)->toBe("registry.kiln.local/kiln/{$world->site->slug}@sha256:".str_repeat('b', 64));
 });
 
+it('hands compose sites a compose build job and stores the built images', function () {
+    config(['builds.local_builder.modes' => ['native', 'docker']]);
+    $world = builds_world(site: ['runtime' => 'compose', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'compose_source' => 'repo', 'compose_file' => 'deploy/compose.yaml']);
+    $build = request_build($world);
+    $job = next_job()->json();
+    $prefix = "registry.kiln.local/kiln/{$world->site->slug}";
+
+    expect($job['mode'])->toBe('docker')
+        ->and($job)->not->toHaveKey('docker')
+        ->and($job['compose'])->toBe([
+            'file' => 'deploy/compose.yaml',
+            'image_prefix' => $prefix,
+            'tag' => $build->id,
+            'registry' => ['server' => 'registry.kiln.local', 'username' => 'kiln', 'password' => 'registry-secret'],
+        ]);
+
+    post_events($build->id, [['command_id' => $build->id, 'seq' => 0, 'kind' => 'finished', 'exit_code' => 0, 'at' => now()->toIso8601ZuluString(),
+        'result' => ['build_id' => $build->id, 'mode' => 'docker', 'duration_ms' => 5, 'compose' => [
+            'file' => 'deploy/compose.yaml',
+            'content' => "services:\n  app:\n    build: .\n  redis:\n    image: redis:7\n",
+            'images' => ['app' => ['ref' => "{$prefix}/app:{$build->id}", 'digest' => 'sha256:'.str_repeat('c', 64), 'pinned' => "{$prefix}/app@sha256:".str_repeat('c', 64)]],
+        ]]]])->assertNoContent();
+
+    $compose = app(BuildService::class)->composeFor($build->id);
+    expect($build->refresh()->status)->toBe(BuildStatus::Succeeded)
+        ->and($compose->file)->toBe('deploy/compose.yaml')
+        ->and($compose->images)->toBe(['app' => "{$prefix}/app@sha256:".str_repeat('c', 64)])
+        ->and($compose->registryAuth['username'])->toBe('kiln')
+        ->and(app(BuildService::class)->imageFor($build->id)?->ref)->toBeNull();
+
+    // Identical rebuild requests reuse the compose result.
+    $reused = request_build($world, $build->commit);
+    expect(app(BuildService::class)->composeFor($reused->id)?->images)->toBe($compose->images);
+
+    $bad = request_build($world, str_repeat('d', 40));
+    next_job();
+    post_events($bad->id, [['command_id' => $bad->id, 'seq' => 0, 'kind' => 'finished', 'exit_code' => 0, 'at' => now()->toIso8601ZuluString(),
+        'result' => ['compose' => ['file' => 'compose.yaml', 'content' => '', 'images' => []]]]]);
+    expect($bad->refresh()->status)->toBe(BuildStatus::Failed)->and($bad->error)->toBe('The builder reported no compose file.');
+});
+
 it('only hands organization builders their own builds and respects modes', function () {
     config(['builds.local_builder.token' => null]);
     $world = builds_world();

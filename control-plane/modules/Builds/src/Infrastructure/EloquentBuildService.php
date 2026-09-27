@@ -11,6 +11,7 @@ use Kiln\Builds\Contracts\BuildStatus;
 use Kiln\Builds\Contracts\Data\ArtifactData;
 use Kiln\Builds\Contracts\Data\BuildData;
 use Kiln\Builds\Contracts\Data\BuildRequest;
+use Kiln\Builds\Contracts\Data\ComposeBuildData;
 use Kiln\Builds\Contracts\Data\ImageData;
 use Kiln\Builds\Domain\Models\Build;
 use Kiln\Builds\Domain\Models\BuildLog;
@@ -59,11 +60,27 @@ final class EloquentBuildService implements BuildService
     {
         $build = Build::query()->find($buildId);
 
-        if (! $build || $build->mode !== 'docker' || ! $build->hasArtifact()) {
+        if (! $build || $build->mode !== 'docker' || ! $build->hasArtifact() || $build->image_ref === null) {
             return null;
         }
 
         return new ImageData((string) $build->pinnedImage(), $this->registry->auth());
+    }
+
+    public function composeFor(string $buildId): ?ComposeBuildData
+    {
+        $build = Build::query()->find($buildId);
+
+        if (! $build || $build->mode !== 'docker' || ! $build->hasArtifact() || ! is_array($build->compose)) {
+            return null;
+        }
+
+        return new ComposeBuildData(
+            (string) ($build->compose['file'] ?? 'compose.yaml'),
+            (string) ($build->compose['content'] ?? ''),
+            array_map('strval', (array) ($build->compose['images'] ?? [])),
+            $this->registry->auth(),
+        );
     }
 
     public function cancel(string $buildId): bool

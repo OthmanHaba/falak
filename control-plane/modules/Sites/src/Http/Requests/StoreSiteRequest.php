@@ -9,6 +9,7 @@ use Kiln\Identity\Contracts\CurrentOrganization;
 use Kiln\Projects\Contracts\ProjectDirectory;
 use Kiln\Sites\Application\Actions\CreateSite;
 use Kiln\Sites\Contracts\BuildMode;
+use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\SitePlacement;
 use Kiln\Sites\Contracts\Framework;
 use Kiln\Sites\Contracts\SiteFactory;
@@ -39,7 +40,7 @@ final class StoreSiteRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/', Rule::unique('sites_sites')->where('organization_id', $organizationId)],
             'slug' => ['nullable', 'string', 'max:50', 'regex:'.CreateSite::SLUG_PATTERN, Rule::unique('sites_sites', 'slug')],
-            'framework' => ['required', Rule::enum(Framework::class)],
+            'framework' => ['required_unless:runtime,compose', 'nullable', Rule::enum(Framework::class)],
             'runtime' => ['nullable', Rule::enum(SiteRuntime::class)],
             'build_mode' => ['nullable', Rule::enum(BuildMode::class)],
             'server_ids' => ['required', 'array', 'min:1', 'max:50'],
@@ -47,6 +48,32 @@ final class StoreSiteRequest extends FormRequest
             'leader_server_id' => ['nullable', 'string', 'size:26'],
             ...self::siteRules(),
             'isolated' => ['boolean'],
+            ...self::composeRules(),
+            // Initial environment (encrypted); values may contain ${{ service.KEY }} references.
+            'variables' => ['nullable', 'array', 'max:500'],
+            'variables.*' => ['nullable', 'string', 'max:65535'],
+            'template' => ['nullable', 'array:slug,version,source'],
+            'template.slug' => ['required_with:template', 'string', 'max:64', 'regex:/^[a-z0-9][a-z0-9-]*$/'],
+            'template.version' => ['required_with:template', 'string', 'max:32'],
+            'template.source' => ['required_with:template', Rule::in(['catalog', 'custom'])],
+        ];
+    }
+
+    /**
+     * Compose site fields (docs/COMPOSE_TEMPLATES.md §5), shared with Settings → Compose.
+     *
+     * @return array<string, mixed>
+     */
+    public static function composeRules(): array
+    {
+        return [
+            'compose_source' => ['nullable', Rule::enum(ComposeSource::class)],
+            'compose_content' => ['nullable', 'string', 'max:'.(int) config('sites.compose.max_bytes', 262144)],
+            'public_services' => ['nullable', 'array', 'max:20'],
+            'public_services.*' => ['array:service,port,domain'],
+            'public_services.*.service' => ['required', 'string', 'max:63'],
+            'public_services.*.port' => ['required', 'integer', 'between:1,65535'],
+            'public_services.*.domain' => ['nullable', 'string', 'max:253'],
         ];
     }
 

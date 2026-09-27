@@ -33,6 +33,9 @@ type fakeEngine struct {
 	prunes     []string
 	calls      []string
 	failStart  bool
+	restarts   []string
+	// image id → RepoDigests
+	repoDigests map[string][]string
 }
 
 type fcont struct {
@@ -40,10 +43,13 @@ type fcont struct {
 	running                  bool
 	created                  int64
 	body                     CreateBody
+	health                   string
+	restarts                 int
+	ports                    map[string][]PortBinding
 }
 
 func newEngine() *fakeEngine {
-	return &fakeEngine{images: map[string]string{}, containers: map[string]*fcont{}}
+	return &fakeEngine{images: map[string]string{}, containers: map[string]*fcont{}, repoDigests: map[string][]string{}}
 }
 
 func (e *fakeEngine) byName(n string) *fcont {
@@ -100,11 +106,16 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ref += ":latest"
 		}
 		id, ok := e.images[ref]
+		for _, v := range e.images {
+			if v == ref {
+				id, ok = v, true
+			}
+		}
 		if !ok {
 			jsonOut(w, 404, map[string]string{"message": "No such image: " + ref})
 			return
 		}
-		jsonOut(w, 200, map[string]string{"Id": id})
+		jsonOut(w, 200, map[string]any{"Id": id, "RepoDigests": e.repoDigests[id]})
 	case r.Method == "POST" && p == "/containers/create":
 		name := q.Get("name")
 		if e.byName(name) != nil {
@@ -165,6 +176,14 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			var ct Container
 			ct.ID, ct.Name, ct.Image = c.id, "/"+c.name, c.imageID
 			ct.State.Running = c.running
+			ct.State.Status = map[bool]string{true: "running", false: "exited"}[c.running]
+			ct.RestartCount = c.restarts
+			if c.health != "" {
+				ct.State.Health = &struct {
+					Status string `json:"Status"`
+				}{c.health}
+			}
+			ct.NetworkSettings.Ports = c.ports
 			ct.Config.Image = c.image
 			ct.Config.Labels = c.body.Labels
 			jsonOut(w, 200, ct)
@@ -179,6 +198,16 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			c.running = true
 			w.WriteHeader(204)
+		case r.Method == "POST" && action == "restart":
+			e.restarts = append(e.restarts, c.name)
+			c.running = true
+			w.WriteHeader(204)
+		case r.Method == "GET" && action == "stats":
+			jsonOut(w, 200, map[string]any{
+				"cpu_stats":    map[string]any{"cpu_usage": map[string]any{"total_usage": 3000}, "system_cpu_usage": 20000, "online_cpus": 2},
+				"precpu_stats": map[string]any{"cpu_usage": map[string]any{"total_usage": 1000}, "system_cpu_usage": 10000, "online_cpus": 2},
+				"memory_stats": map[string]any{"usage": 5000, "limit": 100000, "stats": map[string]any{"inactive_file": 1000}},
+			})
 		case r.Method == "POST" && action == "stop":
 			if !c.running {
 				w.WriteHeader(304)
@@ -269,6 +298,21 @@ func TestVersionNegotiation(t *testing.T) {
 	}
 	if !versionLess("1.41", "1.43") || versionLess("1.46", "1.43") {
 		t.Fatal("versionLess")
+	}
+	// Docker 29 refuses API versions below its minimum (1.44): raise to it.
+	dir, _ := os.MkdirTemp("/tmp", "kv")
+	defer os.RemoveAll(dir)
+	l, err := net.Listen("unix", filepath.Join(dir, "d.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &httptest.Server{Listener: l, Config: &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jsonOut(w, 200, VersionInfo{Version: "29.0.0", APIVersion: "1.52", MinAPI: "1.44"})
+	})}}
+	srv.Start()
+	defer srv.Close()
+	if got := NewClient(filepath.Join(dir, "d.sock")).apiVersion(context.Background()); got != "1.44" {
+		t.Fatalf("docker 29: api version %s, want 1.44", got)
 	}
 	if a, b := splitRef("ghcr.io:443/org/app:1.2"); a != "ghcr.io:443/org/app" || b != "1.2" {
 		t.Fatal(a, b)
@@ -384,7 +428,7 @@ func TestCompose(t *testing.T) {
 	fin, _ := exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "stack", Directory: "/srv/kiln/compose/stack",
 		Files: []ComposeFile{{Name: "compose.yaml", Content: "services: {}\n"}, {Name: "compose.prod.yaml", Content: "x: 1\n"}},
 		Env:   map[string]string{"TAG": "v2"}, Pull: "always"})
-	if fin.Error != "" || fin.Result.(ExitResult).ExitCode != 0 {
+	if fin.Error != "" || fin.Result.(ComposeUpResult).ExitCode != 0 {
 		t.Fatalf("%+v", fin)
 	}
 	b, err := os.ReadFile(filepath.Join(root, "srv/kiln/compose/stack/compose.yaml"))
@@ -401,7 +445,7 @@ func TestCompose(t *testing.T) {
 		t.Fatalf("%+v %v", fin, fr.Lines())
 	}
 	fin, _ = exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "broken", Directory: "/srv/x"})
-	if fin.ExitCode == nil || *fin.ExitCode != 1 || fin.Result.(ExitResult).ExitCode != 1 {
+	if fin.ExitCode == nil || *fin.ExitCode != 1 || fin.Result.(ComposeUpResult).ExitCode != 1 {
 		t.Fatalf("%+v", fin)
 	}
 	fin, _ = exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "x", Directory: "/srv/x", Files: []ComposeFile{{Name: "../evil", Content: ""}}})

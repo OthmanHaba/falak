@@ -16,6 +16,9 @@ use Kiln\Edge\Domain\Models\Redirect;
 use Kiln\Edge\Domain\Models\SecurityRule;
 use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Servers\Contracts\ServerType;
+use Kiln\Sites\Contracts\ComposeSource;
+use Kiln\Sites\Contracts\Data\ComposeConfig;
+use Kiln\Sites\Contracts\Data\PublicService;
 use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Contracts\SiteRuntime;
 
@@ -58,6 +61,33 @@ it('uses the recorded container upstream for docker sites', function () {
 
     $entry = edge_entry(edge_compile($this->web->id), app(EdgeRoutes::class)->routeId($site->id));
     expect($entry['upstreams'])->toBe([['dial' => '127.0.0.1:9002']]);
+});
+
+it('routes every public compose service: primary on the site domains, others on their own domains', function () {
+    $site = edge_site($this->sites, $this->org, [$this->web->id], [
+        'runtime' => SiteRuntime::Compose, 'appPort' => 3000, 'testDomain' => 'stack.sites.kiln.test', 'healthCheckPath' => '/',
+        'compose' => new ComposeConfig(ComposeSource::Inline, null, [
+            new PublicService('app', 8080, 'app.example.com', 3000, 'stack.sites.kiln.test'),
+            new PublicService('grafana_ui', 3000, null, 3001, 'grafana-ui-stack.sites.kiln.test'),
+            new PublicService('api', 9000, 'api.example.com', 3002, 'api-stack.sites.kiln.test'),
+            new PublicService('pending', 1, null, null, 'pending-stack.sites.kiln.test'),
+        ]),
+    ]);
+    edge_domain($this->org, $site->id, 'www.example.com', ['is_primary' => true]);
+    $routeId = app(EdgeRoutes::class)->routeId($site->id);
+    $payload = edge_compile($this->web->id);
+
+    $primary = collect($payload['sites'])->filter(fn ($e) => str_starts_with($e['id'], $routeId) && ! str_contains($e['id'], '-svc-'));
+    expect($primary->pluck('upstreams')->unique()->values()->all())->toBe([[['dial' => '127.0.0.1:3000']]])
+        // No Caddy active health check: `up --wait` covers container health and apps may redirect `/`.
+        ->and($primary->every(fn ($entry) => ! array_key_exists('health_uri', $entry)))->toBeTrue()
+        ->and($primary->pluck('domains')->flatten()->all())->toContain('www.example.com', 'stack.sites.kiln.test');
+
+    expect(edge_entry($payload, "{$routeId}-svc-app"))->toMatchArray(['domains' => ['app.example.com'], 'upstreams' => [['dial' => '127.0.0.1:3000']], 'tls' => ['mode' => 'acme']])
+        ->and(edge_entry($payload, "{$routeId}-svc-grafana-ui-test"))->toMatchArray(['domains' => ['grafana-ui-stack.sites.kiln.test'], 'upstreams' => [['dial' => '127.0.0.1:3001']]])
+        ->and(edge_entry($payload, "{$routeId}-svc-api")['upstreams'])->toBe([['dial' => '127.0.0.1:3002']])
+        ->and(edge_entry($payload, "{$routeId}-svc-api-test")['domains'])->toBe(['api-stack.sites.kiln.test'])
+        ->and(collect($payload['sites'])->pluck('id')->filter(fn ($id) => str_contains($id, 'pending'))->all())->toBe([]);
 });
 
 it('skips sites that cannot be routed and sites without hosts', function () {

@@ -109,7 +109,7 @@ func (b *Builder) buildDocker(ctx context.Context, j *job) (*ImageResult, error)
 	d := dockerBuild{
 		Spec:         spec,
 		ContextDir:   filepath.Join(j.app, filepath.FromSlash(firstNonEmpty(spec.Context, "."))),
-		CacheDir:     filepath.Join(b.CacheDir, "buildkit", cacheKey(j.Repo.URL, j.Subdir)),
+		CacheDir:     filepath.Join(b.CacheDir, "buildkit", cacheKey(j.Repo.URL, j.Subdir)+suffix(j.cacheSuffix)),
 		MetadataFile: filepath.Join(j.ws, "metadata.json"),
 	}
 	if err := os.MkdirAll(filepath.Dir(d.CacheDir), 0o755); err != nil {
@@ -225,6 +225,13 @@ func (b *Builder) buildDocker(ctx context.Context, j *job) (*ImageResult, error)
 		fmt.Fprintf(j.out, "image %s\n", img.Pinned)
 	}
 	return img, nil
+}
+
+func suffix(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "-" + s
 }
 
 // imageRepo strips a tag/digest from an image reference (keeping a registry port).

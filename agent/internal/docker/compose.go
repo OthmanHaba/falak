@@ -1,0 +1,473 @@
+package docker
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/kiln/agent/internal/commands"
+	"github.com/kiln/agent/internal/runner"
+)
+
+// ---- docker.compose.* (docker compose CLI for up/pull/down; the Engine API for ps/restart) ----
+
+// Compose labels set by `docker compose` on every container of a project.
+const (
+	LabelComposeProject = "com.docker.compose.project"
+	LabelComposeService = "com.docker.compose.service"
+	LabelComposeOneOff  = "com.docker.compose.oneoff"
+)
+
+type ComposeFile struct {
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+type ComposeUpPayload struct {
+	Project        string            `json:"project"`
+	Directory      string            `json:"directory"`
+	Files          []ComposeFile     `json:"files,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
+	Pull           string            `json:"pull,omitempty"`
+	RemoveOrphans  *bool             `json:"remove_orphans,omitempty"`
+	Wait           bool              `json:"wait,omitempty"`
+	WaitTimeoutS   int               `json:"wait_timeout_s,omitempty"`
+	ProjectEnvFile string            `json:"project_env_file,omitempty"`
+	RegistryAuth   *Auth             `json:"registry_auth,omitempty"`
+}
+
+type ComposePullPayload struct {
+	Project        string            `json:"project"`
+	Directory      string            `json:"directory"`
+	Files          []ComposeFile     `json:"files,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
+	ProjectEnvFile string            `json:"project_env_file,omitempty"`
+	RegistryAuth   *Auth             `json:"registry_auth,omitempty"`
+	Services       []string          `json:"services,omitempty"`
+}
+
+type ComposeDownPayload struct {
+	Project   string `json:"project"`
+	Directory string `json:"directory"`
+	Volumes   bool   `json:"volumes,omitempty"`
+}
+
+type ComposePsPayload struct {
+	Project string `json:"project"`
+	Stats   bool   `json:"stats,omitempty"`
+}
+
+type ComposeRestartPayload struct {
+	Project  string   `json:"project"`
+	Services []string `json:"services,omitempty"`
+	TimeoutS *int     `json:"timeout_s,omitempty"`
+}
+
+type ExitResult struct {
+	ExitCode int `json:"exit_code"`
+}
+
+// ComposeUpResult is the result of docker.compose.up: exit code plus the project's services after up.
+type ComposeUpResult struct {
+	ExitCode int             `json:"exit_code"`
+	Services []ServiceStatus `json:"services,omitempty"`
+}
+
+// ComposePsResult is the result of docker.compose.ps.
+type ComposePsResult struct {
+	Services []ServiceStatus `json:"services"`
+}
+
+// ComposeRestartResult lists restarted containers' services.
+type ComposeRestartResult struct {
+	Restarted []string `json:"restarted"`
+}
+
+// ServiceStatus is one container of a compose project.
+type ServiceStatus struct {
+	Service       string       `json:"service"`
+	ContainerID   string       `json:"container_id"`
+	ContainerName string       `json:"container_name,omitempty"`
+	State         string       `json:"state"`
+	Health        string       `json:"health,omitempty"`
+	ExitCode      *int         `json:"exit_code,omitempty"`
+	Image         string       `json:"image"`
+	ImageDigest   string       `json:"image_digest,omitempty"`
+	Ports         []PortStatus `json:"ports,omitempty"`
+	Restarts      int          `json:"restarts"`
+	StartedAt     string       `json:"started_at,omitempty"`
+	CPUPercent    *float64     `json:"cpu_percent,omitempty"`
+	MemoryBytes   *int64       `json:"memory_bytes,omitempty"`
+	MemoryLimit   *int64       `json:"memory_limit_bytes,omitempty"`
+}
+
+// PortStatus is a published (or exposed) container port.
+type PortStatus struct {
+	HostIP        string `json:"host_ip,omitempty"`
+	HostPort      int    `json:"host_port,omitempty"`
+	ContainerPort int    `json:"container_port"`
+	Protocol      string `json:"protocol"`
+}
+
+var projectRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+var fileNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+var serviceNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
+
+func validFileName(n string) bool { return fileNameRe.MatchString(n) && n != "." && n != ".." }
+
+// prepare validates the project, writes the files and returns the global compose args
+// (-p, --env-file, -f …).
+func (s *Service) prepare(project, dir string, files []ComposeFile, envFile string) ([]string, error) {
+	if !projectRe.MatchString(project) || !path.IsAbs(dir) {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid project or directory")}
+	}
+	if envFile != "" && !validFileName(envFile) {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid project_env_file %q", envFile)}
+	}
+	for _, f := range files {
+		if !validFileName(f.Name) {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid file name %q", f.Name)}
+		}
+	}
+	if err := s.opts.FS.MkdirAll(dir, 0o750); err != nil {
+		return nil, err
+	}
+	args := []string{"compose", "-p", project}
+	if envFile != "" {
+		args = append(args, "--env-file", envFile)
+	}
+	for _, f := range files {
+		// .env files hold secrets: owner-only.
+		mode := os.FileMode(0o640)
+		if strings.HasPrefix(f.Name, ".env") || f.Name == envFile {
+			mode = 0o600
+		}
+		if _, err := s.opts.FS.WriteFile(path.Join(dir, f.Name), []byte(f.Content), mode); err != nil {
+			return nil, err
+		}
+		if f.Name != envFile && !strings.HasPrefix(f.Name, ".env") {
+			args = append(args, "-f", f.Name)
+		}
+	}
+	return args, nil
+}
+
+func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands.Stream) (any, error) {
+	switch p.Pull {
+	case "":
+		p.Pull = "missing"
+	case "always", "missing", "never":
+	default:
+		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid pull policy %q", p.Pull)}
+	}
+	if p.WaitTimeoutS < 0 || p.WaitTimeoutS > 3600 {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("wait_timeout_s out of range")}
+	}
+	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile)
+	if err != nil {
+		return nil, err
+	}
+	args = append(args, "up", "-d", "--pull", p.Pull)
+	if p.RemoveOrphans == nil || *p.RemoveOrphans {
+		args = append(args, "--remove-orphans")
+	}
+	if p.Wait {
+		args = append(args, "--wait")
+		if p.WaitTimeoutS > 0 {
+			args = append(args, "--wait-timeout", strconv.Itoa(p.WaitTimeoutS))
+		}
+	}
+	res, runErr := s.compose(ctx, p.Directory, p.Env, p.RegistryAuth, args, st)
+	out := ComposeUpResult{ExitCode: res.ExitCode}
+	// Report the project state even when up failed (unhealthy services explain the failure).
+	if services, err := s.projectStatus(ctx, p.Project, false); err == nil {
+		out.Services = services
+		if runErr != nil {
+			for _, sv := range services {
+				if sv.Health == "unhealthy" || (sv.State != "running" && sv.State != "") {
+					fmt.Fprintf(st.Stderr(), "service %s: %s%s\n", sv.Service, sv.State, map[bool]string{true: " (" + sv.Health + ")", false: ""}[sv.Health != ""])
+				}
+			}
+		}
+	} else {
+		s.log.Debug("compose up: project status failed", "project", p.Project, "err", err)
+	}
+	return out, runErr
+}
+
+func (s *Service) composePull(ctx context.Context, p ComposePullPayload, st commands.Stream) (any, error) {
+	for _, sv := range p.Services {
+		if !serviceNameRe.MatchString(sv) {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid service %q", sv)}
+		}
+	}
+	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile)
+	if err != nil {
+		return nil, err
+	}
+	args = append(append(args, "pull", "--quiet"), p.Services...)
+	res, err := s.compose(ctx, p.Directory, p.Env, p.RegistryAuth, args, st)
+	return ExitResult{ExitCode: res.ExitCode}, err
+}
+
+func (s *Service) composeDown(ctx context.Context, p ComposeDownPayload, st commands.Stream) (any, error) {
+	if !projectRe.MatchString(p.Project) || !path.IsAbs(p.Directory) {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid project or directory")}
+	}
+	args := []string{"compose", "-p", p.Project, "down"}
+	if p.Volumes {
+		args = append(args, "--volumes")
+	}
+	dir := p.Directory
+	if !s.opts.FS.Exists(dir) {
+		dir = "" // compose down by project name works without the directory
+	}
+	res, err := s.compose(ctx, dir, nil, nil, args, st)
+	return ExitResult{ExitCode: res.ExitCode}, err
+}
+
+func (s *Service) composePs(ctx context.Context, p ComposePsPayload, _ commands.Stream) (any, error) {
+	if !projectRe.MatchString(p.Project) {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid project")}
+	}
+	services, err := s.projectStatus(ctx, p.Project, p.Stats)
+	if err != nil {
+		return nil, err
+	}
+	if services == nil {
+		services = []ServiceStatus{}
+	}
+	return ComposePsResult{Services: services}, nil
+}
+
+func (s *Service) composeRestart(ctx context.Context, p ComposeRestartPayload, st commands.Stream) (any, error) {
+	if !projectRe.MatchString(p.Project) {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid project")}
+	}
+	want := map[string]bool{}
+	for _, sv := range p.Services {
+		if !serviceNameRe.MatchString(sv) {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid service %q", sv)}
+		}
+		want[sv] = true
+	}
+	t := 10
+	if p.TimeoutS != nil {
+		t = *p.TimeoutS
+	}
+	list, err := s.c.ContainerList(ctx, true, []string{LabelComposeProject + "=" + p.Project})
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Labels[LabelComposeService] < list[j].Labels[LabelComposeService] })
+	out := ComposeRestartResult{Restarted: []string{}}
+	found := map[string]bool{}
+	for _, c := range list {
+		svc := c.Labels[LabelComposeService]
+		if c.Labels[LabelComposeOneOff] == "True" || (len(want) > 0 && !want[svc]) {
+			continue
+		}
+		found[svc] = true
+		fmt.Fprintf(st.Stdout(), "restarting %s (%s)\n", svc, strings.TrimPrefix(firstName(c.Names), "/"))
+		if err := s.c.ContainerRestart(ctx, c.ID, time.Duration(t)*time.Second); err != nil {
+			return nil, fmt.Errorf("restart %s: %w", svc, err)
+		}
+		out.Restarted = append(out.Restarted, svc)
+	}
+	for sv := range want {
+		if !found[sv] {
+			return nil, fmt.Errorf("service %s has no container in project %s", sv, p.Project)
+		}
+	}
+	return out, nil
+}
+
+func firstName(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	return names[0]
+}
+
+// projectStatus inspects every (non one-off) container of a compose project.
+func (s *Service) projectStatus(ctx context.Context, project string, withStats bool) ([]ServiceStatus, error) {
+	list, err := s.c.ContainerList(ctx, true, []string{LabelComposeProject + "=" + project})
+	if err != nil {
+		return nil, err
+	}
+	digests := map[string]string{}
+	var out []ServiceStatus
+	for _, c := range list {
+		if c.Labels[LabelComposeOneOff] == "True" {
+			continue
+		}
+		ct, ok, err := s.c.ContainerInspect(ctx, c.ID)
+		if err != nil || !ok {
+			continue
+		}
+		sv := ServiceStatus{
+			Service:       c.Labels[LabelComposeService],
+			ContainerID:   ct.ID,
+			ContainerName: strings.TrimPrefix(ct.Name, "/"),
+			State:         ct.State.Status,
+			Image:         ct.Config.Image,
+			Restarts:      ct.RestartCount,
+			StartedAt:     ct.State.StartedAt,
+		}
+		if ct.State.Health != nil {
+			sv.Health = ct.State.Health.Status
+		}
+		if !ct.State.Running {
+			code := ct.State.ExitCode
+			sv.ExitCode = &code
+		}
+		if i := strings.Index(ct.Config.Image, "@sha256:"); i >= 0 {
+			sv.ImageDigest = ct.Config.Image[i+1:]
+		} else if d, ok := digests[ct.Image]; ok {
+			sv.ImageDigest = d
+		} else {
+			if rds, ok, _ := s.c.ImageRepoDigests(ctx, ct.Image); ok {
+				repo := imageRepo(ct.Config.Image)
+				for _, rd := range rds {
+					r, dg, _ := strings.Cut(rd, "@")
+					if dg != "" && (sv.ImageDigest == "" || r == repo) {
+						sv.ImageDigest = dg
+					}
+				}
+			}
+			digests[ct.Image] = sv.ImageDigest
+		}
+		for key, binds := range ct.NetworkSettings.Ports {
+			port, proto, _ := strings.Cut(key, "/")
+			cp, _ := strconv.Atoi(port)
+			if len(binds) == 0 {
+				sv.Ports = append(sv.Ports, PortStatus{ContainerPort: cp, Protocol: proto})
+			}
+			for _, b := range binds {
+				hp, _ := strconv.Atoi(b.HostPort)
+				sv.Ports = append(sv.Ports, PortStatus{HostIP: b.HostIP, HostPort: hp, ContainerPort: cp, Protocol: proto})
+			}
+		}
+		sort.Slice(sv.Ports, func(i, j int) bool {
+			a, b := sv.Ports[i], sv.Ports[j]
+			if a.ContainerPort != b.ContainerPort {
+				return a.ContainerPort < b.ContainerPort
+			}
+			return a.HostIP+strconv.Itoa(a.HostPort) < b.HostIP+strconv.Itoa(b.HostPort)
+		})
+		out = append(out, sv)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Service != out[j].Service {
+			return out[i].Service < out[j].Service
+		}
+		return out[i].ContainerName < out[j].ContainerName
+	})
+	if withStats {
+		var wg sync.WaitGroup
+		for i := range out {
+			if out[i].State != "running" {
+				continue
+			}
+			wg.Add(1)
+			go func(sv *ServiceStatus) {
+				defer wg.Done()
+				sctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				defer cancel()
+				stats, err := s.c.ContainerStats(sctx, sv.ContainerID, false)
+				if err != nil {
+					return
+				}
+				cpu := float64(int64(CPUPercent(stats.PreCPUStats, stats.CPUStats)*100)) / 100
+				mem := int64(stats.MemoryUsed())
+				sv.CPUPercent, sv.MemoryBytes = &cpu, &mem
+				if stats.MemoryStats.Limit > 0 {
+					limit := int64(stats.MemoryStats.Limit)
+					sv.MemoryLimit = &limit
+				}
+			}(&out[i])
+		}
+		wg.Wait()
+	}
+	return out, nil
+}
+
+func (s *Service) compose(ctx context.Context, dir string, env map[string]string, auth *Auth, args []string, st commands.Stream) (runner.Result, error) {
+	var envs []string
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		envs = append(envs, k+"="+env[k])
+	}
+	if auth != nil && auth.Username != "" {
+		cfg, err := dockerConfigDir(auth)
+		if err != nil {
+			return runner.Result{}, err
+		}
+		defer os.RemoveAll(cfg)
+		envs = append(envs, "DOCKER_CONFIG="+cfg)
+	}
+	realDir := ""
+	if dir != "" {
+		realDir = s.opts.FS.P(dir)
+	}
+	res, err := s.opts.Runner.Run(ctx, runner.Cmd{Name: "docker", Args: args, Dir: realDir, Env: envs, Stdout: st.Stdout(), Stderr: st.Stderr()})
+	if err != nil {
+		return res, err
+	}
+	if res.ExitCode != 0 {
+		sub := "compose"
+		for _, a := range args {
+			if a == "up" || a == "pull" || a == "down" {
+				sub = a
+			}
+		}
+		return res, &commands.ExitError{Code: res.ExitCode, Err: fmt.Errorf("docker compose %s exited %d", sub, res.ExitCode)}
+	}
+	return res, nil
+}
+
+// dockerConfigDir writes a throwaway DOCKER_CONFIG with registry credentials (removed after the command).
+func dockerConfigDir(a *Auth) (string, error) {
+	dir, err := os.MkdirTemp("", "kiln-docker-")
+	if err != nil {
+		return "", err
+	}
+	server := a.Server
+	if server == "" {
+		server = "https://index.docker.io/v1/"
+	}
+	b, _ := json.Marshal(map[string]any{"auths": map[string]any{server: map[string]string{
+		"auth": base64.StdEncoding.EncodeToString([]byte(a.Username + ":" + a.Password)),
+	}}})
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), b, 0o600); err != nil {
+		os.RemoveAll(dir)
+		return "", err
+	}
+	return dir, nil
+}
+
+// imageRepo strips a tag/digest from an image reference (keeping a registry port).
+func imageRepo(ref string) string {
+	if i := strings.Index(ref, "@"); i >= 0 {
+		ref = ref[:i]
+	}
+	slash := strings.LastIndex(ref, "/")
+	if i := strings.LastIndex(ref, ":"); i > slash {
+		ref = ref[:i]
+	}
+	return ref
+}

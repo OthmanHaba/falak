@@ -7,6 +7,8 @@ return [
         'prepare' => 300,
         'hook' => (int) env('KILN_DEPLOY_HOOK_TIMEOUT', 1800),
         'activate' => 120,
+        // docker compose up --wait (added to compose.wait_timeout).
+        'compose_up' => 600,
         'restart' => 300,
         'rollback' => 120,
         'swap' => 900,
@@ -31,6 +33,11 @@ return [
 
     // A deployment step still running after its timeout + this grace is reconciled from the agent.
     'reconcile_after_seconds' => 120,
+
+    // Docker Compose sites: `docker compose up --wait --wait-timeout` (seconds; healthchecks with long start periods need more).
+    'compose' => [
+        'wait_timeout' => (int) env('KILN_COMPOSE_WAIT_TIMEOUT', 300),
+    ],
 
     // Blue/green: the "green" host port is the site's app port + this offset.
     'green_port_offset' => 1000,

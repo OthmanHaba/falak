@@ -15,6 +15,8 @@ use Kiln\Projects\Domain\Models\Environment;
 use Kiln\Projects\Domain\Models\Service;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\Sites\Contracts\ComposeInspector;
+use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\Framework;
 use Kiln\Sites\Contracts\SiteDirectory;
@@ -38,6 +40,8 @@ final class CanvasReadModel
         private readonly ServerDirectory $servers,
         private readonly AgentDirectory $agents,
         private readonly VariableReferences $references,
+        private readonly ComposeSites $compose,
+        private readonly ComposeInspector $inspector,
     ) {}
 
     /**
@@ -100,6 +104,14 @@ final class CanvasReadModel
     {
         [$status, $label] = $this->siteStatus($site, $deployment);
         $host = $domain ?? $site->testDomain;
+        $subtitle = implode(' · ', array_filter([
+            $site->framework->label(),
+            $site->runtime->isPhp() && $site->phpVersion ? "PHP {$site->phpVersion}" : $site->runtime->label(),
+        ]));
+
+        if ($site->compose !== null) {
+            [$subtitle, $status, $label] = $this->composeCard($site, $status, $label);
+        }
 
         return [
             ...$this->base($service),
@@ -107,10 +119,7 @@ final class CanvasReadModel
             'status' => $status,
             'status_label' => $label,
             'url' => $host !== null ? "https://{$host}" : null,
-            'subtitle' => implode(' · ', array_filter([
-                $site->framework->label(),
-                $site->runtime->isPhp() && $site->phpVersion ? "PHP {$site->phpVersion}" : $site->runtime->label(),
-            ])),
+            'subtitle' => $subtitle,
             'servers' => array_map(fn ($target) => $this->server($target->serverId, $target->isLeader(), $servers, $agents), $site->targets),
             'last_deployment' => $deployment !== null ? [
                 'id' => $deployment->id,
@@ -163,6 +172,37 @@ final class CanvasReadModel
             'name' => $service->name,
             'position' => ['x' => $service->x, 'y' => $service->y],
         ];
+    }
+
+    /**
+     * Compose sites: "Compose · 3 services"; an active site whose services report unhealthy / exited
+     * containers is shown as crashed.
+     *
+     * @return array{0: string, 1: string, 2: string}
+     */
+    private function composeCard(SiteData $site, string $status, string $label): array
+    {
+        $states = $this->compose->status($site->id);
+        $names = array_values(array_unique(array_map(fn ($state) => $state->service, $states)));
+
+        if ($names === [] && ($content = $this->compose->content($site->id)) !== null) {
+            $names = $this->inspector->parse($content->content)->serviceNames();
+        }
+
+        $count = count($names);
+        $subtitle = 'Compose'.($count > 0 ? ' · '.$count.' '.($count === 1 ? 'service' : 'services') : '');
+
+        if ($status === 'active' && $states !== []) {
+            $failing = array_values(array_unique(array_map(fn ($state) => $state->service, array_filter($states, fn ($state) => $state->failing()))));
+
+            if ($failing !== []) {
+                $healthy = $count - count($failing);
+
+                return [$subtitle, 'crashed', "{$healthy}/{$count} services healthy · ".implode(', ', array_slice($failing, 0, 2)).' down'];
+            }
+        }
+
+        return [$subtitle, $status, $label];
     }
 
     /**
@@ -272,6 +312,10 @@ final class CanvasReadModel
     /** ServiceIcon key of a site: framework logo, runtime for generic Node sites. */
     public static function siteIcon(SiteData $site): string
     {
+        if ($site->runtime === SiteRuntime::Compose) {
+            return 'compose';
+        }
+
         return match ($site->framework) {
             Framework::Node => match ($site->runtime) {
                 SiteRuntime::Bun => 'bun',

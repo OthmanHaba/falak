@@ -139,6 +139,8 @@ export interface ServiceTab {
     order: number;
     permission?: string;
     component: ComponentType<ServiceTabProps>;
+    /** Only for some services of the kind (e.g. the Services tab of compose sites). Hidden until the service is loaded. */
+    when?: (service: CanvasService) => boolean;
     /**
      * A stand-in until the owning module ships the tab: never replaces a real registration, and a real
      * registration with the same id replaces it regardless of load order.
@@ -280,9 +282,11 @@ export function registerServiceTabs(...tabs: ServiceTab[]): void {
     });
 }
 
-export function serviceTabsFor(kind: ServiceKind, ctx: Pick<ShellContext, 'can'>): ServiceTab[] {
+export function serviceTabsFor(kind: ServiceKind, ctx: Pick<ShellContext, 'can'>, service?: CanvasService | null): ServiceTab[] {
     return [...serviceTabs.values()]
-        .filter((tab) => tab.kinds.includes(kind) && (!tab.permission || ctx.can(tab.permission)))
+        .filter(
+            (tab) => tab.kinds.includes(kind) && (!tab.permission || ctx.can(tab.permission)) && (!tab.when || (service ? tab.when(service) : false)),
+        )
         .sort((a, b) => a.order - b.order);
 }
 

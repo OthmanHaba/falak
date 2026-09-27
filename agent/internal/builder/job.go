@@ -32,6 +32,7 @@ type Job struct {
 	TimeoutS int               `json:"timeout_s,omitempty"`
 	Native   *NativeSpec       `json:"native,omitempty"`
 	Docker   *DockerSpec       `json:"docker,omitempty"`
+	Compose  *ComposeSpec      `json:"compose,omitempty"` // docker mode: build the `build:` services of a compose file
 }
 
 // Repo to clone.
@@ -92,6 +93,7 @@ type Result struct {
 	Artifact   *ArtifactResult `json:"artifact,omitempty"`
 	Manifest   *Manifest       `json:"manifest,omitempty"`
 	Image      *ImageResult    `json:"image,omitempty"`
+	Compose    *ComposeResult  `json:"compose,omitempty"`
 }
 
 // ArtifactResult feeds deploy.fetch's `artifact` (url + sha256 + size_bytes + format).
@@ -135,7 +137,15 @@ func (j *Job) Validate() error {
 	switch j.Mode {
 	case ModeNative:
 	case ModeDocker:
-		if j.Docker == nil || j.Docker.Image == "" {
+		switch {
+		case j.Compose != nil:
+			if j.Compose.ImagePrefix == "" {
+				errs = append(errs, "compose.image_prefix: required for compose builds")
+			}
+			if j.Docker != nil {
+				errs = append(errs, "docker and compose are mutually exclusive")
+			}
+		case j.Docker == nil || j.Docker.Image == "":
 			errs = append(errs, "docker.image: required for docker builds")
 		}
 	default:
@@ -176,6 +186,9 @@ func (j Job) Secrets() []string {
 	add(j.Repo.DeployKey)
 	if j.Docker != nil && j.Docker.Registry != nil {
 		add(j.Docker.Registry.Password)
+	}
+	if j.Compose != nil && j.Compose.Registry != nil {
+		add(j.Compose.Registry.Password)
 	}
 	if j.Native != nil && j.Native.Upload != nil {
 		add(j.Native.Upload.URL)

@@ -71,7 +71,10 @@ final class UpdateSite
             $attributes['web_directory'] = trim((string) $attributes['web_directory'], '/');
         }
 
-        if ($runtime->proxiesToPort()) {
+        if ($runtime === SiteRuntime::Compose) {
+            // Compose sites: the app port is the primary public service's host port (Settings → Compose).
+            unset($attributes['app_port']);
+        } elseif ($runtime->proxiesToPort()) {
             $port = isset($attributes['app_port']) ? (int) $attributes['app_port'] : ($site->app_port ?? $this->rules->freePort($site->serverIds(), $site->id));
             $this->rules->portAvailable($port, $site->serverIds(), $site->id);
             $attributes['app_port'] = $port;

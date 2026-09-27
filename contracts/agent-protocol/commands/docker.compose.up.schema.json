@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/docker.compose.up.schema.json",
-  "title": "docker.compose.up — docker compose up -d for a project",
+  "title": "docker.compose.up — docker compose up -d for a project (optionally waiting for healthy services)",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -36,7 +36,7 @@
           }
         }
       },
-      "description": "Written into directory before up; first file(s) passed with -f"
+      "description": "Written into directory before running; compose files are passed with -f in order. .env* files are written 0600 and not passed with -f."
     },
     "env": {
       "type": "object",
@@ -45,7 +45,8 @@
       },
       "additionalProperties": {
         "type": "string"
-      }
+      },
+      "description": "Process environment of the compose CLI (interpolation)"
     },
     "pull": {
       "enum": [
@@ -58,6 +59,42 @@
     "remove_orphans": {
       "type": "boolean",
       "default": true
+    },
+    "wait": {
+      "type": "boolean",
+      "default": false,
+      "description": "--wait: block until services are running/healthy; fails when one is unhealthy or exits"
+    },
+    "wait_timeout_s": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600,
+      "description": "--wait-timeout"
+    },
+    "project_env_file": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "description": "File in directory passed as --env-file (e.g. .env)"
+    },
+    "registry_auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "username",
+        "password"
+      ],
+      "properties": {
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "server": {
+          "type": "string"
+        }
+      },
+      "description": "Registry credentials for pulls (written to a throwaway DOCKER_CONFIG for the command)"
     }
   },
   "$defs": {
@@ -70,6 +107,104 @@
       "properties": {
         "exit_code": {
           "type": "integer"
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/service"
+          },
+          "description": "Every container of the project after up (also on failure)"
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service",
+        "container_id",
+        "state",
+        "image",
+        "restarts"
+      ],
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "container_id": {
+          "type": "string"
+        },
+        "container_name": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "description": "created|running|restarting|paused|exited|dead"
+        },
+        "health": {
+          "type": "string",
+          "description": "healthy|unhealthy|starting (absent without a healthcheck)"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "image": {
+          "type": "string"
+        },
+        "image_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/port"
+          }
+        },
+        "restarts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "cpu_percent": {
+          "type": "number",
+          "minimum": 0
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "memory_limit_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "container_port",
+        "protocol"
+      ],
+      "properties": {
+        "host_ip": {
+          "type": "string"
+        },
+        "host_port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "container_port": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "protocol": {
+          "type": "string"
         }
       }
     }

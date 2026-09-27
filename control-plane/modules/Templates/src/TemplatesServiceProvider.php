@@ -17,7 +17,6 @@ use Kiln\Templates\Application\Console\RenderTemplateCommand;
 use Kiln\Templates\Application\Import\HostResolver;
 use Kiln\Templates\Application\Import\RemoteFetcher;
 use Kiln\Templates\Infrastructure\DnsHostResolver;
-use Kiln\Templates\Infrastructure\FallbackComposeAnalyzer;
 use Kiln\Templates\Infrastructure\FilesystemCatalog;
 use Kiln\Templates\Infrastructure\GuardedHttpFetcher;
 use Kiln\Templates\Infrastructure\InspectorComposeAnalyzer;
@@ -52,12 +51,8 @@ class TemplatesServiceProvider extends ModuleServiceProvider
             (int) config('templates.cache_ttl', 3600),
         ));
 
-        // The compose runtime's inspector once it is bound (lane A); until then a local stand-in with the same
-        // default policy. After lane A merges: bind InspectorComposeAnalyzer unconditionally and delete
-        // FallbackComposeAnalyzer.
-        $this->app->bind(ComposeAnalyzer::class, fn (Application $app) => $app->bound(ComposeInspector::class)
-            ? new InspectorComposeAnalyzer($app)
-            : new FallbackComposeAnalyzer);
+        // Structure + policy checks come from the compose runtime (Sites\Contracts\ComposeInspector).
+        $this->app->bind(ComposeAnalyzer::class, fn (Application $app) => new InspectorComposeAnalyzer($app->make(ComposeInspector::class)));
 
         $this->app->bind(RemoteFetcher::class, fn (Application $app) => new GuardedHttpFetcher(
             $app->make(Http::class),

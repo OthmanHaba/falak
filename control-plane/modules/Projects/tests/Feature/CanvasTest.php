@@ -3,7 +3,9 @@
 use Kiln\Identity\Contracts\Role;
 use Kiln\Projects\Domain\Models\Service;
 use Kiln\Servers\Domain\Models\Server;
+use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\TargetStatus;
+use Kiln\Sites\Domain\Models\ComposeVersion;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -155,4 +157,23 @@ it('opens the production canvas for a project url and serves project JSON', func
         ->assertJsonPath('data.name', 'Default')
         ->assertJsonPath('data.environments.0.slug', 'production')
         ->assertJsonPath('data.environments.0.services_count', 0);
+});
+
+it('shows compose sites as "Compose · N services" and crashed when a service is down', function () {
+    $web = sites_server($this->organization->id, ['name' => 'web-1'], docker: true);
+    $site = projects_site($this->organization, 'Stack', [], $this->environment, [$web], [
+        'framework' => 'docker', 'runtime' => 'compose', 'build_mode' => 'docker', 'php_version' => null, 'compose_source' => 'inline',
+    ]);
+    ComposeVersion::query()->create(['site_id' => $site->id, 'version' => 1, 'content' => "services:\n  app: {image: a:1}\n  db: {image: b:1}\n  cache: {image: c:1}\n", 'created_at' => now()]);
+
+    expect($this->getJson("{$this->url}/canvas")->json('services.0'))->toMatchArray(['icon' => 'compose', 'subtitle' => 'Compose · 3 services', 'status' => 'inactive']);
+
+    projects_deployment($site, 'succeeded', ['finished_at' => now()->subMinute()]);
+    app(ComposeSites::class)->recordStatus($site->id, $web->id, [
+        ['service' => 'app', 'state' => 'running', 'health' => 'healthy', 'image' => 'a:1', 'restarts' => 0],
+        ['service' => 'db', 'state' => 'running', 'image' => 'b:1', 'restarts' => 0],
+        ['service' => 'cache', 'state' => 'exited', 'image' => 'c:1', 'restarts' => 5],
+    ]);
+
+    expect($this->getJson("{$this->url}/canvas")->json('services.0'))->toMatchArray(['status' => 'crashed', 'status_label' => '2/3 services healthy · cache down']);
 });

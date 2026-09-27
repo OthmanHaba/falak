@@ -79,12 +79,20 @@ func (c *Client) Version(ctx context.Context) (VersionInfo, error) {
 	return v, json.NewDecoder(resp.Body).Decode(&v)
 }
 
-// negotiate picks min(server ApiVersion, DefaultAPIVersion).
+// negotiate picks min(server ApiVersion, DefaultAPIVersion), raised to the server's MinAPIVersion (Docker 29+
+// refuses API versions below 1.44; the subset of the API this client uses is unchanged there).
 func (c *Client) apiVersion(ctx context.Context) string {
 	c.once.Do(func() {
 		c.version = DefaultAPIVersion
-		if v, err := c.Version(ctx); err == nil && v.APIVersion != "" && versionLess(v.APIVersion, DefaultAPIVersion) {
+		v, err := c.Version(ctx)
+		if err != nil {
+			return
+		}
+		if v.APIVersion != "" && versionLess(v.APIVersion, DefaultAPIVersion) {
 			c.version = v.APIVersion
+		}
+		if v.MinAPI != "" && versionLess(c.version, v.MinAPI) {
+			c.version = v.MinAPI
 		}
 	})
 	return c.version
@@ -243,14 +251,17 @@ func (c *Client) ImageInspect(ctx context.Context, ref string) (id string, exist
 
 // Container is the subset of GET /containers/{id}/json we use.
 type Container struct {
-	ID      string `json:"Id"`
-	Name    string `json:"Name"`
-	Image   string `json:"Image"`
-	Created string `json:"Created"`
-	State   struct {
-		Status  string `json:"Status"`
-		Running bool   `json:"Running"`
-		Health  *struct {
+	ID           string `json:"Id"`
+	Name         string `json:"Name"`
+	Image        string `json:"Image"`
+	Created      string `json:"Created"`
+	RestartCount int    `json:"RestartCount"`
+	State        struct {
+		Status    string `json:"Status"`
+		Running   bool   `json:"Running"`
+		ExitCode  int    `json:"ExitCode"`
+		StartedAt string `json:"StartedAt"`
+		Health    *struct {
 			Status string `json:"Status"`
 		} `json:"Health,omitempty"`
 	} `json:"State"`
@@ -258,6 +269,88 @@ type Container struct {
 		Image  string            `json:"Image"`
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
+	NetworkSettings struct {
+		Ports map[string][]PortBinding `json:"Ports"`
+	} `json:"NetworkSettings"`
+}
+
+// ImageRepoDigests returns RepoDigests of an image ("repo@sha256:…"); exists=false on 404.
+func (c *Client) ImageRepoDigests(ctx context.Context, ref string) ([]string, bool, error) {
+	var out struct {
+		RepoDigests []string `json:"RepoDigests"`
+	}
+	_, err := c.do(ctx, http.MethodGet, "/images/"+ref+"/json", nil, nil, &out)
+	if IsNotFound(err) {
+		return nil, false, nil
+	}
+	return out.RepoDigests, err == nil, err
+}
+
+// ContainerRestart restarts a container (stop timeout t).
+func (c *Client) ContainerRestart(ctx context.Context, id string, timeout time.Duration) error {
+	_, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/restart", url.Values{"t": {strconv.Itoa(int(timeout.Seconds()))}}, nil, nil)
+	return err
+}
+
+// Stats is the subset of GET /containers/{id}/stats we use.
+type Stats struct {
+	CPUStats    CPUStats `json:"cpu_stats"`
+	PreCPUStats CPUStats `json:"precpu_stats"`
+	MemoryStats struct {
+		Usage uint64            `json:"usage"`
+		Limit uint64            `json:"limit"`
+		Stats map[string]uint64 `json:"stats"`
+	} `json:"memory_stats"`
+	Networks map[string]struct {
+		RxBytes uint64 `json:"rx_bytes"`
+		TxBytes uint64 `json:"tx_bytes"`
+	} `json:"networks"`
+}
+
+// CPUStats of a stats sample.
+type CPUStats struct {
+	CPUUsage struct {
+		TotalUsage uint64 `json:"total_usage"`
+	} `json:"cpu_usage"`
+	SystemUsage uint64 `json:"system_cpu_usage"`
+	OnlineCPUs  uint32 `json:"online_cpus"`
+}
+
+// MemoryUsed is usage minus the page cache (what `docker stats` shows).
+func (s Stats) MemoryUsed() uint64 {
+	cache := s.MemoryStats.Stats["inactive_file"]
+	if cache == 0 {
+		cache = s.MemoryStats.Stats["total_inactive_file"]
+	}
+	if cache > s.MemoryStats.Usage {
+		return s.MemoryStats.Usage
+	}
+	return s.MemoryStats.Usage - cache
+}
+
+// CPUPercent between prev and s (100 = one full CPU), like `docker stats`.
+func CPUPercent(prev, cur CPUStats) float64 {
+	cpu := float64(cur.CPUUsage.TotalUsage) - float64(prev.CPUUsage.TotalUsage)
+	sys := float64(cur.SystemUsage) - float64(prev.SystemUsage)
+	n := float64(cur.OnlineCPUs)
+	if n == 0 {
+		n = 1
+	}
+	if cpu <= 0 || sys <= 0 {
+		return 0
+	}
+	return cpu / sys * n * 100
+}
+
+// ContainerStats takes one stats sample. oneShot skips the ~1s wait for precpu_stats.
+func (c *Client) ContainerStats(ctx context.Context, id string, oneShot bool) (Stats, error) {
+	var s Stats
+	q := url.Values{"stream": {"false"}}
+	if oneShot {
+		q.Set("one-shot", "true")
+	}
+	_, err := c.do(ctx, http.MethodGet, "/containers/"+id+"/stats", q, nil, &s)
+	return s, err
 }
 
 // ContainerInspect returns the container; exists=false on 404.

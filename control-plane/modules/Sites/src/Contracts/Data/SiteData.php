@@ -3,6 +3,7 @@
 namespace Kiln\Sites\Contracts\Data;
 
 use Kiln\Sites\Contracts\BuildMode;
+use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Framework;
 use Kiln\Sites\Contracts\SiteRuntime;
 
@@ -16,6 +17,7 @@ final readonly class SiteData
      * @param  ?string  $testDomain  <slug>.<KILN_TEST_DOMAIN> when enabled
      * @param  list<SharedPath>  $sharedPaths
      * @param  list<SiteTargetData>  $targets
+     * @param  ?ComposeConfig  $compose  compose runtime only
      */
     public function __construct(
         public string $id,
@@ -46,7 +48,16 @@ final readonly class SiteData
         public ?string $testDomain,
         public array $sharedPaths,
         public array $targets,
+        public ?ComposeConfig $compose = null,
     ) {}
+
+    /** Something to deploy: a repository, a docker image, or an inline compose file. */
+    public function hasDeploySource(): bool
+    {
+        return $this->repository !== null
+            || ($this->runtime === SiteRuntime::Docker && $this->dockerImage !== null)
+            || ($this->compose?->source === ComposeSource::Inline && $this->compose->version !== null);
+    }
 
     public function currentPath(): string
     {

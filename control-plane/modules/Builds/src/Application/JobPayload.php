@@ -5,6 +5,7 @@ namespace Kiln\Builds\Application;
 use Kiln\Builds\Application\Artifacts\ArtifactStorage;
 use Kiln\Builds\Domain\Models\Build;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\SourceControl\Contracts\SourceControlGateway;
 use RuntimeException;
 
@@ -69,7 +70,16 @@ final class JobPayload
             $job['env'] = (object) $env;
         }
 
-        if ($build->mode === 'docker') {
+        if ($build->mode === 'docker' && $site->runtime === SiteRuntime::Compose) {
+            // Every `build:` service of the repository's compose file, pushed as <repo>/<slug>/<service>:<build id>.
+            $job['compose'] = array_filter([
+                'file' => $site->compose?->file,
+                'image_prefix' => $this->registry->repository($site->slug),
+                'tag' => strtolower($build->id),
+                'build_args' => $env === [] ? null : (object) $env,
+                'registry' => $this->registry->auth(),
+            ], fn ($value) => $value !== null && $value !== '');
+        } elseif ($build->mode === 'docker') {
             $docker = array_filter([
                 'image' => $this->registry->image($site->slug, $build->id),
                 'dockerfile' => $site->dockerfile,

@@ -41,6 +41,8 @@ use Kiln\Fleet\Contracts\Exceptions\UnknownCommandType;
 use Kiln\Processes\Contracts\ProcessControl;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\BuildMode;
+use Kiln\Sites\Contracts\ComposeSites;
+use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\Data\SiteTargetData;
 use Kiln\Sites\Contracts\SiteDirectory;
@@ -81,6 +83,7 @@ final class Orchestrator
         private readonly DeploymentLog $log,
         private readonly DeploymentQueue $queue,
         private readonly ProcessControl $processes,
+        private readonly ComposeSites $compose,
     ) {}
 
     // ---- entry points -------------------------------------------------------------------------
@@ -285,10 +288,6 @@ final class Orchestrator
     {
         $site = $this->sites->find($deployment->site_id) ?? throw new InvalidArgumentException('The site no longer exists.');
 
-        if ($site->runtime === SiteRuntime::Compose) {
-            throw new InvalidArgumentException('Docker Compose sites cannot be deployed by Kiln yet; use the docker runtime.');
-        }
-
         if ($site->buildMode === BuildMode::OnServer && $deployment->trigger !== Trigger::Rollback) {
             throw new InvalidArgumentException('On-server builds are not supported yet; switch the site to native builds.');
         }
@@ -305,7 +304,7 @@ final class Orchestrator
             throw new InvalidArgumentException('The leader server of the site is not ready.');
         }
 
-        if ($site->runtime->isContainer() && $site->appPort === null) {
+        if ($site->runtime === SiteRuntime::Docker && $site->appPort === null) {
             throw new InvalidArgumentException('The site has no app port for its container.');
         }
 
@@ -322,16 +321,25 @@ final class Orchestrator
                 throw new InvalidArgumentException('The release is no longer available to roll back to.');
             }
 
-            if ($site->runtime->isContainer() && $release->image === null) {
+            if ($site->runtime === SiteRuntime::Docker && $release->image === null) {
                 throw new InvalidArgumentException('The release has no image to roll back to.');
+            }
+
+            if ($site->runtime === SiteRuntime::Compose && ! is_array($release->compose)) {
+                throw new InvalidArgumentException('The release has no compose files to roll back to.');
             }
 
             $releaseId = $release->id;
         } else {
             $hasRepository = $site->repository !== null && $site->sourceConnectionId !== null;
-            $needsBuild = $hasRepository;
+            $inlineCompose = $site->runtime === SiteRuntime::Compose && $site->compose?->source === ComposeSource::Inline;
+            $needsBuild = $hasRepository && ! $inlineCompose;
 
-            if (! $hasRepository && ! ($site->runtime->isContainer() && $site->dockerImage)) {
+            if ($inlineCompose && $site->compose?->version === null) {
+                throw new InvalidArgumentException('The site has no compose file; add one in Settings → Compose.');
+            }
+
+            if (! $hasRepository && ! $inlineCompose && ! ($site->runtime === SiteRuntime::Docker && $site->dockerImage)) {
                 throw new InvalidArgumentException('The site has no repository to deploy.');
             }
 
@@ -349,7 +357,7 @@ final class Orchestrator
                 'branch' => $deployment->branch,
                 'commit_message' => $deployment->commit_message,
                 'commit_author' => $deployment->commit_author,
-                'image' => ! $needsBuild && $site->runtime->isContainer() ? $site->dockerImage : null,
+                'image' => ! $needsBuild && $site->runtime === SiteRuntime::Docker ? $site->dockerImage : null,
                 'status' => ReleaseStatus::Pending,
             ]);
         }
@@ -542,6 +550,19 @@ final class Orchestrator
 
         foreach ($activated as $target) {
             /** @var DeploymentTarget $target */
+            if ($site->runtime === SiteRuntime::Compose) {
+                // `up --wait` with the previous release's files (images pinned to what ran then).
+                if (! is_array($previous?->compose)) {
+                    $this->log->note($deployment->id, "{$target->server_name}: no previous compose release to return to.", stream: 'stderr');
+
+                    continue;
+                }
+
+                $this->addRollbackStep($deployment, $target, "revert:{$target->id}", StepKind::Revert, [], ['release_id' => $previous->id], $position++, 'docker.compose.up');
+
+                continue;
+            }
+
             if ($site->runtime->isContainer()) {
                 if ($previous?->image === null) {
                     $this->log->note($deployment->id, "{$target->server_name}: no previous image to return to.", stream: 'stderr');
@@ -574,7 +595,7 @@ final class Orchestrator
      * @param  list<string>  $deps
      * @param  array<string, mixed>|null  $meta
      */
-    private function addRollbackStep(Deployment $deployment, DeploymentTarget $target, string $key, StepKind $kind, array $deps, ?array $meta, int $position): DeploymentStep
+    private function addRollbackStep(Deployment $deployment, DeploymentTarget $target, string $key, StepKind $kind, array $deps, ?array $meta, int $position, ?string $commandType = null): DeploymentStep
     {
         return DeploymentStep::query()->create([
             'deployment_id' => $deployment->id,
@@ -589,7 +610,7 @@ final class Orchestrator
             'depends_on' => $deps,
             'meta' => $meta,
             'status' => StepStatus::Pending,
-            'command_type' => $kind->commandType(),
+            'command_type' => $commandType ?? $kind->commandType(),
         ]);
     }
 
@@ -691,7 +712,15 @@ final class Orchestrator
                 $handles = $this->processes->restartForSite($site->id, (string) $step->server_id);
             } else {
                 $payload = $this->payloads->for($step, $deployment, $site);
-                $handles = [$this->agents->dispatch((string) $step->server_id, (string) $step->command_type, $payload, $this->payloads->timeout($step->kind), $key)];
+
+                if ($payload === null) {
+                    $this->log->note($deployment->id, 'No leader command to run.', $step);
+                    $this->settle($deployment, $step, true, null, null, null);
+
+                    return;
+                }
+
+                $handles = [$this->agents->dispatch((string) $step->server_id, (string) $step->command_type, $payload, $this->payloads->timeout($step->kind, $step->command_type), $key)];
             }
         } catch (AgentUnavailable) {
             $this->fail($deployment, $step, 'The server agent is not connected.');
@@ -749,8 +778,9 @@ final class Orchestrator
         $target = $step->target;
 
         if (! $succeeded) {
-            // A timed-out activation may still have switched the server: treat it as activated.
-            if ($target && $step->kind->activates() && $status === 'timed_out') {
+            // A timed-out activation may still have switched the server: treat it as activated. A failed
+            // `docker compose up` has already replaced containers (they just never got healthy): roll it back too.
+            if ($target && (($step->kind->activates() && $status === 'timed_out') || ($step->command_type === 'docker.compose.up' && ! $step->rollback && $step->kind === StepKind::Activate))) {
                 $target->activated = true;
             }
 
@@ -761,6 +791,12 @@ final class Orchestrator
         }
 
         if ($target === null) {
+            return;
+        }
+
+        if ($step->command_type === 'docker.compose.up') {
+            $this->composeUpSettled($deployment, $step, $target, $result ?? []);
+
             return;
         }
 
@@ -792,6 +828,51 @@ final class Orchestrator
             $serverId = $target->server_id;
             $this->afterCommit(fn () => $this->edge->recordUpstream($siteId, $serverId, $upstream));
         }
+    }
+
+    /**
+     * docker.compose.up finished: record the services' state for the Services tab and pin the release's pulled
+     * images to the digests the server resolved (so rolling back to it is exact).
+     *
+     * @param  array<string, mixed>  $result
+     */
+    private function composeUpSettled(Deployment $deployment, DeploymentStep $step, DeploymentTarget $target, array $result): void
+    {
+        match ($step->kind) {
+            StepKind::Revert => $target->forceFill(['status' => TargetStatus::RolledBack])->save(),
+            default => $target->forceFill(['activated' => true, 'previous_release_id' => $target->previous_release_id ?? $deployment->previous_release_id])->save(),
+        };
+
+        $services = array_values(array_filter((array) ($result['services'] ?? []), 'is_array'));
+
+        if ($services === []) {
+            return;
+        }
+
+        $siteId = $deployment->site_id;
+        $serverId = $target->server_id;
+        $this->afterCommit(fn () => $this->compose->recordStatus($siteId, $serverId, $services));
+
+        if ($step->kind !== StepKind::Activate) {
+            return;
+        }
+
+        $release = Release::query()->find($deployment->release_id);
+        $compose = $release?->compose;
+
+        if (! is_array($compose) || ($compose['pinned'] ?? false)) {
+            return;
+        }
+
+        $digests = [];
+
+        foreach ($services as $service) {
+            if (is_string($service['service'] ?? null) && is_string($service['image_digest'] ?? null)) {
+                $digests[$service['service']] = $service['image_digest'];
+            }
+        }
+
+        $release->forceFill(['compose' => [...$compose, 'yaml' => $this->compose->pinDigests((string) $compose['yaml'], $digests), 'pinned' => true]])->save();
     }
 
     private function markTargetDone(Deployment $deployment, DeploymentStep $step): void
@@ -854,7 +935,7 @@ final class Orchestrator
         // Failed releases may have left directories behind; the agent's keep-N prune removes them too.
         Release::query()->where('site_id', $site->id)->where('status', ReleaseStatus::Failed)->where('created_at', '<', now()->subDay())->update(['status' => ReleaseStatus::Pruned]);
 
-        if ($site->runtime->isContainer()) {
+        if ($site->runtime === SiteRuntime::Docker) {
             return;
         }
 

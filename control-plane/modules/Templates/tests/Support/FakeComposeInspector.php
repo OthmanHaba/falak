@@ -2,14 +2,16 @@
 
 namespace Kiln\Templates\Tests\Support;
 
+use Kiln\Sites\Contracts\ComposeInspector;
+use Kiln\Sites\Contracts\Data\ComposeServiceSummary;
+use Kiln\Sites\Contracts\Data\ComposeSummary;
 use Kiln\Templates\Application\Compose\ComposeDocument;
 
 /**
- * Stand-in for lane A's `Sites\Contracts\ComposeInspector` (docs/COMPOSE_TEMPLATES.md §5): duck-typed (the
- * interface does not exist before lane A merges) and bound under its container key, so templates code takes the
- * "real inspector" path. Returns a summary-shaped object with configurable policy violations.
+ * `Sites\Contracts\ComposeInspector` double: services and ports from the parsed document, configurable policy
+ * violations, records what it parsed.
  */
-final class FakeComposeInspector
+final class FakeComposeInspector implements ComposeInspector
 {
     /** @var list<string> */
     public array $violations = [];
@@ -17,15 +19,16 @@ final class FakeComposeInspector
     /** @var list<string> */
     public array $parsed = [];
 
-    public function parse(string $yaml): object
+    public function parse(string $yaml): ComposeSummary
     {
         $this->parsed[] = $yaml;
         $compose = ComposeDocument::parse($yaml);
 
-        return (object) [
-            'services' => array_map(fn (string $name) => (object) ['name' => $name, 'ports' => $compose->containerPorts($name)], $compose->serviceNames()),
-            'volumes' => array_keys((array) ($compose->data['volumes'] ?? [])),
-            'violations' => array_map(fn (string $message) => (object) ['message' => $message], $this->violations),
-        ];
+        return new ComposeSummary(
+            array_map(fn (string $name) => new ComposeServiceSummary($name, null, false, $compose->containerPorts($name), [], [], [], false), $compose->serviceNames()),
+            array_map('strval', array_keys((array) ($compose->data['volumes'] ?? []))),
+            $this->violations,
+            [],
+        );
     }
 }

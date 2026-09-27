@@ -13,7 +13,11 @@ use Kiln\Sites\Contracts\Data\SitePlacement;
 interface SiteFactory
 {
     /**
-     * @param  array<string, mixed>  $data  the fields of POST /api/v1/sites (name, framework, runtime, server_ids, …)
+     * @param  array<string, mixed>  $data  the fields of POST /api/v1/sites (name, framework, runtime, server_ids, …). Compose
+     *                                      sites (docs/COMPOSE_TEMPLATES.md §5): runtime `compose` (framework optional), `compose_source`
+     *                                      inline|repo, `compose_content` (inline), `compose_file` (repo), `public_services`
+     *                                      [{service, port, domain?}], `variables` {KEY: value} (initial environment, may contain
+     *                                      ${{ service.KEY }} references) and `template` {slug, version, source: catalog|custom}.
      *
      * @throws ValidationException
      */

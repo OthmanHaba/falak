@@ -58,7 +58,72 @@ final class RunHealthCheck implements ShouldQueue
             return;
         }
 
-        [$host, $tls] = $this->host($deployment->site_id, $sites, $edge) ?? [null, TlsMode::Off];
+        $site = $sites->find($deployment->site_id);
+        $checks = [];
+
+        if ($site?->compose !== null) {
+            // Compose: every public service through the edge; the primary answers the configured check.
+            $publicServices = $site->compose->publicServices;
+
+            if ($publicServices === []) {
+                $orchestrator->healthChecked($step->id, true, 'No public services to check; every container passed `docker compose up --wait`.');
+
+                return;
+            }
+
+            foreach ($publicServices as $i => $public) {
+                if ($i === 0) {
+                    [$host, $tls] = $this->host($deployment->site_id, $sites, $edge) ?? [null, TlsMode::Off];
+                    // Container health is verified by `up --wait`; through the edge a redirect (e.g. to a login page)
+                    // also proves the route works unless a specific status is configured.
+                    $checks[] = $expect === 200
+                        ? [$host, $tls, $path, fn (int $status) => $status >= 200 && $status < 400, 'expected 2xx/3xx', $public->service]
+                        : [$host, $tls, $path, fn (int $status) => $status === $expect, "expected {$expect}", $public->service];
+
+                    continue;
+                }
+
+                $host = $public->domain ?? $public->testDomain;
+
+                if ($host === null) {
+                    continue; // not routed
+                }
+
+                $checks[] = [$host, $public->domain !== null ? TlsMode::Auto : $edge->testDomainTls(), '/', fn (int $status) => $status < 500, 'expected < 500', $public->service];
+            }
+        } else {
+            [$host, $tls] = $this->host($deployment->site_id, $sites, $edge) ?? [null, TlsMode::Off];
+            $checks[] = [$host, $tls, $path, fn (int $status) => $status === $expect, "expected {$expect}", null];
+        }
+
+        $healthy = true;
+        $messages = [];
+
+        foreach ($checks as [$host, $tls, $checkPath, $accepts, $expectation, $service]) {
+            [$ok, $message] = $this->check($http, $ip, $host, $tls, $checkPath, $timeout, $accepts, $expectation);
+            $healthy = $healthy && $ok;
+            $messages[] = ($service !== null && count($checks) > 1 ? "[{$service}] " : '').$message;
+        }
+
+        $message = implode('; ', $messages);
+
+        $log->note($deployment->id, ($healthy ? '✓ ' : '… ')."{$message} [attempt {$this->attempt}/{$retries}]", $step, $healthy ? 'stdout' : 'stderr');
+
+        if (! $healthy && $this->attempt < $retries) {
+            self::dispatch($this->stepId, $this->attempt + 1)->delay(now()->addSeconds(max(0, (int) ($health['retry_delay_s'] ?? 5))));
+
+            return;
+        }
+
+        $orchestrator->healthChecked($step->id, $healthy, $message);
+    }
+
+    /**
+     * @param  callable(int): bool  $accepts
+     * @return array{0: bool, 1: string}
+     */
+    private function check(HttpFactory $http, string $ip, ?string $host, TlsMode $tls, string $path, int $timeout, callable $accepts, string $expectation): array
+    {
         $https = $host !== null && $tls !== TlsMode::Off;
         $url = $host === null ? "http://{$ip}{$path}" : ($https ? 'https' : 'http')."://{$host}{$path}";
         $options = $host === null ? [] : [
@@ -76,22 +141,11 @@ final class RunHealthCheck implements ShouldQueue
                 ->withOptions($options)
                 ->get($url);
             $status = $response->status();
-            $healthy = $status === $expect;
-            $message = sprintf('GET %s via %s → %d in %d ms (expected %d)', $url, $ip, $status, (int) ((microtime(true) - $started) * 1000), $expect);
+
+            return [$accepts($status), sprintf('GET %s via %s → %d in %d ms (%s)', $url, $ip, $status, (int) ((microtime(true) - $started) * 1000), $expectation)];
         } catch (Throwable $e) {
-            $healthy = false;
-            $message = sprintf('GET %s via %s failed: %s', $url, $ip, $e->getMessage());
+            return [false, sprintf('GET %s via %s failed: %s', $url, $ip, $e->getMessage())];
         }
-
-        $log->note($deployment->id, ($healthy ? '✓ ' : '… ')."{$message} [attempt {$this->attempt}/{$retries}]", $step, $healthy ? 'stdout' : 'stderr');
-
-        if (! $healthy && $this->attempt < $retries) {
-            self::dispatch($this->stepId, $this->attempt + 1)->delay(now()->addSeconds(max(0, (int) ($health['retry_delay_s'] ?? 5))));
-
-            return;
-        }
-
-        $orchestrator->healthChecked($step->id, $healthy, $message);
     }
 
     /**

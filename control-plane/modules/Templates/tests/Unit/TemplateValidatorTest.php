@@ -1,10 +1,11 @@
 <?php
 
 use Kiln\Sites\Contracts\ComposeInspector;
+use Kiln\Sites\Contracts\Data\ComposeServiceSummary;
+use Kiln\Sites\Contracts\Data\ComposeSummary;
 use Kiln\Templates\Application\Catalog\TemplateParser;
 use Kiln\Templates\Application\Catalog\TemplateValidator;
 use Kiln\Templates\Application\Compose\ComposeAnalyzer;
-use Kiln\Templates\Infrastructure\FallbackComposeAnalyzer;
 use Kiln\Templates\Infrastructure\InspectorComposeAnalyzer;
 use Kiln\Templates\Tests\Support\FakeComposeInspector;
 
@@ -37,13 +38,13 @@ it('reports compose problems', function (string $compose, string $expected) {
     'unknown kiln placeholder' => ["services:\n  web:\n    image: nginx:1\n    expose: ['80']\n    environment: [U=\${{ kiln.secret }}]", 'unknown Kiln placeholder'],
     'reference in compose' => ["services:\n  web:\n    image: nginx:1\n    expose: ['80']\n    environment: [U=\${{ pg.DATABASE_URL }}]", 'belong in input defaults'],
     'container_name' => ["services:\n  web:\n    image: nginx:1\n    container_name: web\n    expose: ['80']", 'container_name'],
-    'privileged' => ["services:\n  web:\n    image: nginx:1\n    privileged: true\n    expose: ['80']", 'privileged containers are not allowed'],
-    'host network' => ["services:\n  web:\n    image: nginx:1\n    network_mode: host\n    expose: ['80']", 'network_mode: host is not allowed'],
-    'cap_add' => ["services:\n  web:\n    image: nginx:1\n    cap_add: [SYS_ADMIN]\n    expose: ['80']", 'cap_add SYS_ADMIN is not allowed'],
+    'privileged' => ["services:\n  web:\n    image: nginx:1\n    privileged: true\n    expose: ['80']", 'Service web runs privileged.'],
+    'host network' => ["services:\n  web:\n    image: nginx:1\n    network_mode: host\n    expose: ['80']", 'uses the host network namespace (network_mode: host)'],
+    'cap_add' => ["services:\n  web:\n    image: nginx:1\n    cap_add: [SYS_ADMIN]\n    expose: ['80']", 'adds the capability SYS_ADMIN'],
     'docker socket' => ["services:\n  web:\n    image: nginx:1\n    volumes: ['/var/run/docker.sock:/var/run/docker.sock']\n    expose: ['80']", 'Docker socket'],
-    'host bind' => ["services:\n  web:\n    image: nginx:1\n    volumes: ['/etc:/host-etc']\n    expose: ['80']", 'outside the release directory'],
-    'escaping bind' => ["services:\n  web:\n    image: nginx:1\n    volumes: ['./../../x:/x']\n    expose: ['80']", 'outside the release directory'],
-    'devices' => ["services:\n  web:\n    image: nginx:1\n    devices: ['/dev/fuse']\n    expose: ['80']", 'devices are not allowed'],
+    'host bind' => ["services:\n  web:\n    image: nginx:1\n    volumes: ['/etc:/host-etc']\n    expose: ['80']", 'only paths inside the release directory are allowed'],
+    'escaping bind' => ["services:\n  web:\n    image: nginx:1\n    volumes: ['./../../x:/x']\n    expose: ['80']", 'only paths inside the release directory are allowed'],
+    'devices' => ["services:\n  web:\n    image: nginx:1\n    devices: ['/dev/fuse']\n    expose: ['80']", 'maps host devices'],
 ]);
 
 it('allows digests, named volumes, release-relative binds and safe capabilities', function () {
@@ -52,26 +53,26 @@ it('allows digests, named volumes, release-relative binds and safe capabilities'
     expect(validator_problems($compose))->toBe([]);
 });
 
-it('uses the compose runtime inspector when one is bound', function () {
-    expect(app(ComposeAnalyzer::class))->toBeInstanceOf(FallbackComposeAnalyzer::class);
+it('validates with the compose runtime inspector', function () {
+    expect(app(ComposeAnalyzer::class))->toBeInstanceOf(InspectorComposeAnalyzer::class);
 
     $inspector = new FakeComposeInspector;
-    $inspector->violations = ['services.web: cap_add NET_ADMIN needs "Allow privileged compose"'];
+    $inspector->violations = ['Service web adds the capability NET_ADMIN.'];
     app()->instance(ComposeInspector::class, $inspector);
 
-    expect(app(ComposeAnalyzer::class))->toBeInstanceOf(InspectorComposeAnalyzer::class)
-        ->and(validator_problems("services:\n  web:\n    image: nginx:1\n    expose: ['80']"))->toBe(['compose.yaml: services.web: cap_add NET_ADMIN needs "Allow privileged compose"'])
+    expect(validator_problems("services:\n  web:\n    image: nginx:1\n    expose: ['80']"))->toBe(['compose.yaml: Service web adds the capability NET_ADMIN.'])
         ->and($inspector->parsed)->toHaveCount(1);
 });
 
-it('reads summaries of different shapes from the inspector', function () {
-    $facts = InspectorComposeAnalyzer::facts([
-        'services' => ['web' => ['ports' => [80, ['target' => 443]]], 'db' => ['exposed_ports' => []]],
-        'named_volumes' => ['data', 'logs'],
-        'policy_violations' => ['privileged'],
-    ]);
+it('turns a ComposeSummary into facts (errors and violations both count)', function () {
+    $facts = InspectorComposeAnalyzer::facts(new ComposeSummary(
+        [new ComposeServiceSummary('web', 'nginx:1', false, [80, 443], [], ['data'], [], true), new ComposeServiceSummary('db', 'postgres:17', false, [], [], [], [], false)],
+        ['data', 'logs'],
+        ['Service web runs privileged.'],
+        ['Top-level `include` is not supported.'],
+    ));
 
     expect($facts->services)->toBe(['web' => [80, 443], 'db' => []])
         ->and($facts->volumes)->toBe(['data', 'logs'])
-        ->and($facts->violations)->toBe(['privileged']);
+        ->and($facts->violations)->toBe(['Top-level `include` is not supported.', 'Service web runs privileged.']);
 });

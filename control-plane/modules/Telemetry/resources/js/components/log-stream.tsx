@@ -14,6 +14,8 @@ export interface LogFilters {
     server_id?: string;
     site_id?: string;
     service?: string;
+    /** Compose sites: one compose service's container logs. */
+    compose_service?: string;
     level?: string;
     search?: string;
     regex?: boolean;

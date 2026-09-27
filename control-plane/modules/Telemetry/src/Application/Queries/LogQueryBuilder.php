@@ -12,7 +12,7 @@ use Kiln\Telemetry\Contracts\PromQl;
 final class LogQueryBuilder
 {
     /**
-     * @param  array{server_id?: ?string, site_id?: ?string, service?: ?string, level?: ?string, search?: ?string, regex?: bool, trace_id?: ?string}  $filters
+     * @param  array{server_id?: ?string, site_id?: ?string, service?: ?string, compose_service?: ?string, level?: ?string, search?: ?string, regex?: bool, trace_id?: ?string}  $filters
      */
     public static function build(string $organizationId, array $filters): string
     {
@@ -25,6 +25,11 @@ final class LogQueryBuilder
         }
 
         $query = '{'.implode(', ', $matchers).'}';
+
+        // Compose sites: container logs carry the compose service as structured metadata (kiln.compose.service).
+        if (($composeService = $filters['compose_service'] ?? null) !== null && $composeService !== '') {
+            $query .= ' | kiln_compose_service='.PromQl::quote((string) $composeService);
+        }
 
         if (($search = $filters['search'] ?? null) !== null && $search !== '') {
             if (! empty($filters['regex'])) {
