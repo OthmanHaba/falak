@@ -166,7 +166,7 @@ it('shows compose sites as "Compose · N services" and crashed when a service is
     ]);
     ComposeVersion::query()->create(['site_id' => $site->id, 'version' => 1, 'content' => "services:\n  app: {image: a:1}\n  db: {image: b:1}\n  cache: {image: c:1}\n", 'created_at' => now()]);
 
-    expect($this->getJson("{$this->url}/canvas")->json('services.0'))->toMatchArray(['icon' => 'docker', 'subtitle' => 'Compose · 3 services', 'status' => 'inactive']);
+    expect($this->getJson("{$this->url}/canvas")->json('services.0'))->toMatchArray(['icon' => 'compose', 'subtitle' => 'Compose · 3 services', 'status' => 'inactive']);
 
     projects_deployment($site, 'succeeded', ['finished_at' => now()->subMinute()]);
     app(ComposeSites::class)->recordStatus($site->id, $web->id, [

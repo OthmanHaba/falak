@@ -1,7 +1,8 @@
 import { type CanvasService } from '@/types';
 
-/** A compose site's card subtitle starts with "Compose" (Projects canvas read model). */
-export const isCompose = (service: CanvasService): boolean => service.kind === 'site' && (service.subtitle ?? '').startsWith('Compose');
+/** Compose sites have the `compose` icon and a "Compose · N services" subtitle (Projects canvas read model). */
+export const isCompose = (service: CanvasService): boolean =>
+    service.kind === 'site' && (service.icon === 'compose' || (service.subtitle ?? '').startsWith('Compose'));
 
 export interface PublicServiceData {
     service: string;

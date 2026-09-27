@@ -312,6 +312,10 @@ final class CanvasReadModel
     /** ServiceIcon key of a site: framework logo, runtime for generic Node sites. */
     public static function siteIcon(SiteData $site): string
     {
+        if ($site->runtime === SiteRuntime::Compose) {
+            return 'compose';
+        }
+
         return match ($site->framework) {
             Framework::Node => match ($site->runtime) {
                 SiteRuntime::Bun => 'bun',
