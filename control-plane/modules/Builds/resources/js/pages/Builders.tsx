@@ -1,12 +1,21 @@
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import AppLayout from '@/layouts/app-layout';
-import { Head, router, useForm } from '@inertiajs/react';
-import { FormEventHandler } from 'react';
+import { Button } from '@/components/kiln/button';
+import { Callout } from '@/components/kiln/callout';
+import { Checkbox } from '@/components/kiln/checkbox';
+import { CodeBlock } from '@/components/kiln/code-block';
+import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
+import { DataTable, type DataTableColumn } from '@/components/kiln/data-table';
+import { EmptyState } from '@/components/kiln/empty-state';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { type MenuAction } from '@/components/kiln/menu';
+import { RelativeTime } from '@/components/kiln/relative-time';
+import { Section } from '@/components/kiln/section';
+import { StatusBadge, StatusDot } from '@/components/kiln/status';
+import { Tag } from '@/components/kiln/tag';
+import SettingsLayout from '@/layouts/settings/layout';
+import { Link, router, useForm } from '@inertiajs/react';
+import { Hammer, Plus, Power, RefreshCw, Server, Trash2 } from 'lucide-react';
+import { useState, type FormEventHandler } from 'react';
 
 interface BuilderRow {
     id: string;
@@ -30,168 +39,226 @@ interface Props {
     can: { manage: boolean };
 }
 
+const MODES = [
+    { value: 'native', label: 'Native', hint: 'Railpack / language toolchains' },
+    { value: 'docker', label: 'Docker', hint: 'Dockerfile builds with BuildKit' },
+];
+
+function builderStatus(builder: BuilderRow) {
+    if (!builder.enabled) return <StatusBadge status="inactive" label="Disabled" />;
+
+    return builder.online ? <StatusBadge status="online" /> : <StatusBadge status="offline" />;
+}
+
 export default function Builders({ builders, localConfigured, panelUrl, plainToken, can }: Props) {
     const form = useForm<{ name: string; modes: string[] }>({ name: '', modes: ['native', 'docker'] });
+    const [removing, setRemoving] = useState<BuilderRow | null>(null);
+    const [busy, setBusy] = useState<string | null>(null);
+
+    const local = builders.filter((builder) => builder.shared || builder.kind === 'local');
+    const servers = builders.filter((builder) => !builder.shared && builder.kind === 'server');
+    const external = builders.filter((builder) => !builder.shared && builder.kind === 'external');
 
     const submit: FormEventHandler = (event) => {
         event.preventDefault();
-        form.post('/builds/builders', { preserveScroll: true, onSuccess: () => form.reset('name') });
+        form.post(route('builds.builders.store'), { preserveScroll: true, onSuccess: () => form.reset('name') });
     };
 
     const toggleMode = (mode: string, on: boolean) =>
-        form.setData('modes', on ? [...new Set([...form.data.modes, mode])] : form.data.modes.filter((m) => m !== mode));
+        form.setData('modes', on ? [...new Set([...form.data.modes, mode])] : form.data.modes.filter((item) => item !== mode));
+
+    const act = (builder: BuilderRow, visit: (done: () => void) => void) => {
+        setBusy(builder.id);
+        visit(() => setBusy(null));
+    };
+
+    const setEnabled = (builder: BuilderRow, enabled: boolean) =>
+        act(builder, (done) =>
+            router.patch(route('builds.builders.update', builder.id), { enabled }, { preserveScroll: true, onFinish: done }),
+        );
+
+    const reinstall = (builder: BuilderRow) =>
+        act(builder, (done) => router.post(route('builds.builders.reinstall', builder.id), {}, { preserveScroll: true, onFinish: done }));
+
+    const remove = () =>
+        new Promise<void>((resolve) => {
+            if (!removing) return resolve();
+            router.delete(route('builds.builders.destroy', removing.id), {
+                preserveScroll: true,
+                onSuccess: () => setRemoving(null),
+                onFinish: () => resolve(),
+            });
+        });
+
+    const columns: DataTableColumn<BuilderRow>[] = [
+        {
+            id: 'name',
+            header: 'Builder',
+            sortValue: (builder) => builder.name,
+            cell: (builder) => (
+                <span className="grid min-w-0">
+                    <span className="flex items-center gap-2 font-medium">
+                        <StatusDot status={builder.enabled ? (builder.online ? 'online' : 'offline') : 'inactive'} />
+                        <span className="truncate">{builder.name}</span>
+                    </span>
+                    {(builder.reported_name || builder.last_ip) && (
+                        <span className="text-fg-faint truncate pl-4 font-mono text-xs">
+                            {[builder.reported_name !== builder.name ? builder.reported_name : null, builder.last_ip].filter(Boolean).join(' · ')}
+                        </span>
+                    )}
+                </span>
+            ),
+        },
+        {
+            id: 'modes',
+            header: 'Modes',
+            hideOnMobile: true,
+            cell: (builder) => (
+                <span className="flex gap-1">
+                    {builder.modes.map((mode) => (
+                        <Tag key={mode}>{mode}</Tag>
+                    ))}
+                </span>
+            ),
+        },
+        { id: 'status', header: 'Status', cell: builderStatus },
+        {
+            id: 'seen',
+            header: 'Last seen',
+            hideOnMobile: true,
+            sortValue: (builder) => builder.last_seen_at ?? '',
+            cell: (builder) => <RelativeTime value={builder.last_seen_at} fallback="Never" className="text-fg-muted" />,
+        },
+    ];
+
+    const actions = (builder: BuilderRow): MenuAction[] => [
+        ...(builder.kind === 'server' ? [{ label: 'Reinstall', icon: <RefreshCw />, onSelect: () => reinstall(builder) }] : []),
+        {
+            label: builder.enabled ? 'Disable' : 'Enable',
+            icon: <Power />,
+            disabled: busy === builder.id,
+            onSelect: () => setEnabled(builder, !builder.enabled),
+        },
+        { type: 'separator' },
+        { label: 'Remove', icon: <Trash2 />, danger: true, onSelect: () => setRemoving(builder) },
+    ];
+
+    const serveCommand = plainToken ? `KILN_URL=${panelUrl} KILN_BUILDER_TOKEN=${plainToken} kiln-builder serve` : '';
+    const installCommand = `curl -fsSL ${panelUrl}/install/builder/linux-amd64 -o /usr/local/bin/kiln-builder && chmod +x /usr/local/bin/kiln-builder`;
 
     return (
-        <AppLayout
-            breadcrumbs={[
-                { title: 'Builds', href: '/builds' },
-                { title: 'Builders', href: '/builds/builders' },
-            ]}
+        <SettingsLayout
+            title="Builders"
+            description="Where sites are built. Builds run on the control plane, on builder servers or on machines you run yourself — app servers only receive finished artifacts."
+            wide
         >
-            <Head title="Builders" />
-            <div className="space-y-6 p-4">
-                <div>
-                    <h1 className="text-xl font-semibold tracking-tight">Builders</h1>
-                    <p className="text-muted-foreground text-sm">
-                        Builds run on the control-plane host {localConfigured ? '' : '(not configured: set KILN_LOCAL_BUILDER_TOKEN) '}or on servers
-                        of type builder. Managed servers never build.
-                    </p>
-                </div>
+            <Section title="Control-plane builder" description="Shared by every organization on this installation; configured through the environment." bare>
+                {local.length === 0 ? (
+                    <Callout tone={localConfigured ? 'info' : 'warning'} title={localConfigured ? 'Waiting for the local builder' : 'Local builder not configured'}>
+                        {localConfigured ? (
+                            'The token is set, but the builder process has not checked in yet. Start it next to the control plane.'
+                        ) : (
+                            <>
+                                Set <code className="font-mono text-xs">KILN_LOCAL_BUILDER_TOKEN</code> to build on the control-plane host, or add a builder
+                                server below.
+                            </>
+                        )}
+                    </Callout>
+                ) : (
+                    <DataTable label="Control-plane builder" rows={local} rowKey={(builder) => builder.id} columns={columns} />
+                )}
+            </Section>
 
+            <Section
+                title="Builder servers"
+                description="Kiln servers of type Builder. Kiln installs and upgrades kiln-builder on them for you."
+                aside={
+                    can.manage && (
+                        <Button asChild size="sm" icon={<Server />}>
+                            <Link href="/servers/create">Add builder server</Link>
+                        </Button>
+                    )
+                }
+                bare
+            >
+                <DataTable
+                    label="Builder servers"
+                    rows={servers}
+                    rowKey={(builder) => builder.id}
+                    columns={columns}
+                    rowActions={can.manage ? actions : undefined}
+                    empty={{
+                        icon: <Server />,
+                        size: 'sm',
+                        title: 'No builder servers',
+                        description: 'Create a server and choose the Builder type to keep heavy builds off your app servers.',
+                    }}
+                />
+            </Section>
+
+            <Section title="External builders" description="Run kiln-builder on any machine with Docker (a CI runner, a spare box). It builds only this organization's sites." bare>
                 {plainToken && (
-                    <Card className="border-emerald-500/40">
-                        <CardHeader>
-                            <CardTitle>Builder token</CardTitle>
-                            <CardDescription>Shown once. Run the builder with:</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <pre className="bg-muted overflow-x-auto rounded-md p-3 text-xs">{`KILN_URL=${panelUrl} KILN_BUILDER_TOKEN=${plainToken} kiln-builder serve`}</pre>
-                        </CardContent>
-                    </Card>
+                    <Callout tone="success" title="Builder token created — copy it now, it won't be shown again">
+                        <div className="mt-1 grid gap-2">
+                            <CodeBlock title="1. Install" code={installCommand} wrap />
+                            <CodeBlock title="2. Run" code={serveCommand} wrap />
+                        </div>
+                    </Callout>
                 )}
-
-                <Card>
-                    <CardContent className="pt-6">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Name</TableHead>
-                                    <TableHead>Kind</TableHead>
-                                    <TableHead>Modes</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead>Last seen</TableHead>
-                                    <TableHead />
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {builders.length === 0 && (
-                                    <TableRow>
-                                        <TableCell colSpan={6} className="text-muted-foreground text-center">
-                                            No builder has connected yet.
-                                        </TableCell>
-                                    </TableRow>
-                                )}
-                                {builders.map((builder) => (
-                                    <TableRow key={builder.id}>
-                                        <TableCell className="font-medium">
-                                            {builder.name}
-                                            {builder.reported_name && builder.reported_name !== builder.name && (
-                                                <span className="text-muted-foreground text-xs"> ({builder.reported_name})</span>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>{builder.shared ? 'control plane (shared)' : builder.kind}</TableCell>
-                                        <TableCell>{builder.modes.join(', ')}</TableCell>
-                                        <TableCell>
-                                            {!builder.enabled ? (
-                                                <Badge variant="outline">disabled</Badge>
-                                            ) : builder.online ? (
-                                                <Badge>online</Badge>
-                                            ) : (
-                                                <Badge variant="secondary">offline</Badge>
-                                            )}
-                                        </TableCell>
-                                        <TableCell>{builder.last_seen_at ? new Date(builder.last_seen_at).toLocaleString() : 'never'}</TableCell>
-                                        <TableCell className="space-x-2 text-right">
-                                            {can.manage && !builder.shared && (
-                                                <>
-                                                    {builder.kind === 'server' && (
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() =>
-                                                                router.post(`/builds/builders/${builder.id}/reinstall`, {}, { preserveScroll: true })
-                                                            }
-                                                        >
-                                                            Reinstall
-                                                        </Button>
-                                                    )}
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        onClick={() =>
-                                                            router.patch(
-                                                                `/builds/builders/${builder.id}`,
-                                                                { enabled: !builder.enabled },
-                                                                { preserveScroll: true },
-                                                            )
-                                                        }
-                                                    >
-                                                        {builder.enabled ? 'Disable' : 'Enable'}
-                                                    </Button>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="ghost"
-                                                        onClick={() => router.delete(`/builds/builders/${builder.id}`, { preserveScroll: true })}
-                                                    >
-                                                        Remove
-                                                    </Button>
-                                                </>
-                                            )}
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
-                    </CardContent>
-                </Card>
-
+                <DataTable
+                    label="External builders"
+                    rows={external}
+                    rowKey={(builder) => builder.id}
+                    columns={columns}
+                    rowActions={can.manage ? actions : undefined}
+                    empty={{
+                        icon: <Hammer />,
+                        size: 'sm',
+                        title: 'No external builders',
+                        description: can.manage ? 'Create a token below, then start kiln-builder with it.' : 'Ask an admin to create a builder token.',
+                    }}
+                />
                 {can.manage && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Add an external builder</CardTitle>
-                            <CardDescription>Run kiln-builder on any machine with Docker; it only builds this organization's sites.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <form onSubmit={submit} className="flex flex-wrap items-end gap-4">
-                                <div className="grid gap-1">
-                                    <label htmlFor="builder-name" className="text-sm">
-                                        Name
-                                    </label>
-                                    <Input
-                                        id="builder-name"
-                                        value={form.data.name}
-                                        onChange={(e) => form.setData('name', e.target.value)}
-                                        className="w-56"
+                    <form onSubmit={submit} className="border-border bg-surface-1 grid gap-4 rounded-lg border p-4">
+                        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                            <Field label="Name" error={form.errors.name} required>
+                                <Input value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} placeholder="ci-runner-1" />
+                            </Field>
+                            <Button type="submit" variant="primary" icon={<Plus />} loading={form.processing} disabled={form.data.modes.length === 0}>
+                                Create token
+                            </Button>
+                        </div>
+                        <fieldset className="flex flex-wrap gap-x-6 gap-y-2">
+                            <legend className="text-fg mb-2 text-xs font-medium">Build modes</legend>
+                            {MODES.map((mode) => (
+                                <Field key={mode.value} inline label={mode.label} hint={mode.hint}>
+                                    <Checkbox
+                                        checked={form.data.modes.includes(mode.value)}
+                                        onCheckedChange={(checked) => toggleMode(mode.value, checked === true)}
                                     />
-                                    {form.errors.name && <p className="text-sm text-red-600">{form.errors.name}</p>}
-                                </div>
-                                {['native', 'docker'].map((mode) => (
-                                    <label key={mode} className="flex items-center gap-2 text-sm">
-                                        <Checkbox
-                                            checked={form.data.modes.includes(mode)}
-                                            onCheckedChange={(checked) => toggleMode(mode, checked === true)}
-                                        />
-                                        {mode}
-                                    </label>
-                                ))}
-                                <Button type="submit" disabled={form.processing}>
-                                    Create token
-                                </Button>
-                            </form>
-                        </CardContent>
-                    </Card>
+                                </Field>
+                            ))}
+                        </fieldset>
+                        {(form.errors.modes || form.data.modes.length === 0) && (
+                            <p className="text-danger text-xs">{form.errors.modes ?? 'Pick at least one build mode.'}</p>
+                        )}
+                    </form>
                 )}
-            </div>
-        </AppLayout>
+            </Section>
+
+            {builders.length === 0 && !localConfigured && !can.manage && (
+                <EmptyState icon={<Hammer />} title="No builders" description="Builds will queue until a builder connects." />
+            )}
+
+            <ConfirmDestructive
+                open={removing !== null}
+                onOpenChange={(open) => !open && setRemoving(null)}
+                title={`Remove ${removing?.name ?? ''}`}
+                description="Its token stops working immediately; queued builds move to another builder."
+                confirmText={removing?.name ?? ''}
+                confirmLabel="Remove builder"
+                onConfirm={remove}
+            />
+        </SettingsLayout>
     );
 }
