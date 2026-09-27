@@ -74,7 +74,6 @@ export function SecretInput({
                 </span>
                 <span className="text-fg-faint min-w-0 truncate text-xs">{storedHint ?? 'Stored encrypted'}</span>
                 <Button
-                    id={field.id}
                     aria-describedby={field['aria-describedby']}
                     size="sm"
                     variant="ghost"

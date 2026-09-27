@@ -333,7 +333,7 @@ export default function ProvidersIndex({ credentials, providers, can }: Props) {
                             header: 'Credential',
                             sortValue: (credential) => credential.name,
                             cell: (credential) => (
-                                <span className="flex min-w-0 items-center gap-2.5">
+                                <span className="flex min-w-0 items-center gap-2.5 py-1.5">
                                     <IntegrationTile name={credential.provider} size="sm" />
                                     <span className="grid min-w-0">
                                         <span className="truncate font-medium">{credential.name}</span>

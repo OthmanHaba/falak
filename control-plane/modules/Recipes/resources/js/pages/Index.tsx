@@ -298,7 +298,7 @@ export default function Index({ recipes, builtins, recentRuns, can }: Props) {
                 }
             >
                 <form id="recipe-form" onSubmit={submit} className="grid gap-4">
-                    <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
+                    <div className="grid items-start gap-4 sm:grid-cols-[minmax(0,1fr)_10rem]">
                         <Field label="Name" error={form.errors.name} required>
                             <Input value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} placeholder="Rotate logs" />
                         </Field>

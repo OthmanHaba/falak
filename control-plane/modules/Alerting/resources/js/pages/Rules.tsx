@@ -349,7 +349,10 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                                         <tr key={rule.id} className="border-border border-b last:border-0">
                                             <th
                                                 scope="row"
-                                                className={cn('text-fg h-10 px-3 text-left text-sm font-medium', !rule.enabled && 'opacity-60')}
+                                                className={cn(
+                                                    'text-fg h-10 min-w-40 px-3 text-left text-sm font-medium',
+                                                    !rule.enabled && 'opacity-60',
+                                                )}
                                             >
                                                 {rule.name}
                                             </th>
@@ -396,7 +399,7 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                 }
             >
                 <form id="rule-form" onSubmit={submit} className="grid gap-5">
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid items-start gap-4 sm:grid-cols-2">
                         <Field label="Name" error={errors.name} required>
                             <Input
                                 value={form.data.name}
@@ -577,7 +580,7 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                         )}
                     </fieldset>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid items-start gap-4 sm:grid-cols-2">
                         <Field label="Rate limit" hint="Max. channel notifications per hour; empty = unlimited." error={rateError}>
                             <Input
                                 type="number"
@@ -589,7 +592,7 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                                 suffix={<span className="text-xs">/ hour</span>}
                             />
                         </Field>
-                        <Field inline label="Enabled" className="self-center">
+                        <Field inline label="Enabled" className="self-center sm:mt-5">
                             <Switch checked={form.data.enabled} onCheckedChange={(enabled) => form.setData('enabled', enabled)} />
                         </Field>
                     </div>

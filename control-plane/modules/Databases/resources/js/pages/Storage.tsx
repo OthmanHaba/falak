@@ -201,7 +201,7 @@ export default function Storage({ providers, drivers, can }: Props) {
                             header: 'Bucket',
                             sortValue: (provider) => provider.name,
                             cell: (provider) => (
-                                <span className="flex min-w-0 items-center gap-2.5">
+                                <span className="flex min-w-0 items-center gap-2.5 py-1.5">
                                     <IntegrationTile name={provider.driver} size="sm" />
                                     <span className="grid min-w-0">
                                         <span className="truncate font-medium">{provider.name}</span>
@@ -299,7 +299,13 @@ export default function Storage({ providers, drivers, can }: Props) {
                         <Button variant="ghost" onClick={() => setEditing(null)}>
                             Cancel
                         </Button>
-                        <Button variant="primary" type="submit" form="storage-form" loading={form.processing}>
+                        <Button
+                            variant="primary"
+                            type="submit"
+                            form="storage-form"
+                            loading={form.processing}
+                            disabled={Object.keys(hints).length > 0}
+                        >
                             {isNew ? 'Add bucket' : 'Save changes'}
                         </Button>
                     </>
@@ -308,7 +314,7 @@ export default function Storage({ providers, drivers, can }: Props) {
                 <form id="storage-form" onSubmit={submit} className="grid gap-4">
                     <fieldset className="grid gap-1.5">
                         <legend className="text-fg mb-1.5 text-xs font-medium">Provider</legend>
-                        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5" role="radiogroup" aria-label="Storage provider">
+                        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3" role="radiogroup" aria-label="Storage provider">
                             {drivers.map((option) => (
                                 <button
                                     key={option.value}
@@ -368,7 +374,7 @@ export default function Storage({ providers, drivers, can }: Props) {
                         </Field>
                     )}
 
-                    <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="grid items-start gap-4 sm:grid-cols-3">
                         <Field label="Bucket" error={error('bucket')} required>
                             <Input mono value={form.data.bucket} onChange={(event) => form.setData('bucket', event.target.value)} />
                         </Field>
@@ -385,7 +391,7 @@ export default function Storage({ providers, drivers, can }: Props) {
                         </Field>
                     </div>
 
-                    <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="grid items-start gap-4 sm:grid-cols-2">
                         <Field label="Access key ID" error={form.errors.access_key_id} required={isNew}>
                             {isNew ? (
                                 <Input

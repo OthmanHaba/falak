@@ -158,7 +158,7 @@ export default function Settings({ settings, defaults, backends, can }: Props) {
                             disabled={!can.manage}
                         />
                     </Field>
-                    <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="grid items-start gap-4 sm:grid-cols-3">
                         <Field label="Environment" error={error('environment')}>
                             <Input
                                 mono

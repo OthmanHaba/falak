@@ -260,7 +260,7 @@ export default function Channels({ channels, types, can }: Props) {
                             header: 'Channel',
                             sortValue: (channel) => channel.name,
                             cell: (channel) => (
-                                <span className="flex min-w-0 items-center gap-2.5">
+                                <span className="flex min-w-0 items-center gap-2.5 py-1.5">
                                     <IntegrationTile name={channel.type} size="sm" />
                                     <span className="grid min-w-0">
                                         <span className="flex items-center gap-2">

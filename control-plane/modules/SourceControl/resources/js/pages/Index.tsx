@@ -187,7 +187,7 @@ export default function Index({ connections, pushes, providers, githubApp, canMa
                                 header: 'Name',
                                 sortValue: (connection) => connection.name,
                                 cell: (connection) => (
-                                    <span className="flex min-w-0 items-center gap-2.5">
+                                    <span className="flex min-w-0 items-center gap-2.5 py-1.5">
                                         <span className="border-border bg-surface-2 text-fg flex size-6 shrink-0 items-center justify-center rounded-md border">
                                             <ProviderIcon provider={connection.provider} className="size-3.5" />
                                         </span>
@@ -397,7 +397,7 @@ export default function Index({ connections, pushes, providers, githubApp, canMa
                     )}
 
                     {form.data.auth_type === 'basic' && (
-                        <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="grid items-start gap-4 sm:grid-cols-2">
                             <Field label="Username" error={form.errors.username} required>
                                 <Input value={form.data.username} onChange={(event) => form.setData('username', event.target.value)} />
                             </Field>
