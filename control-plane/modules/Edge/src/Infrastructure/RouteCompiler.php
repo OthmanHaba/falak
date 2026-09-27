@@ -122,14 +122,9 @@ final class RouteCompiler
         }
 
         $groups = $this->domainGroups($site, $serverId, $role);
-
-        if ($groups === []) {
-            return [];
-        }
-
         $rules = $this->rules($site->id, $role);
         $routeId = self::routeId($site->id);
-        $entries = [];
+        $entries = $role === 'direct' ? $this->composeServiceEntries($site, $routeId, $rules) : [];
         $n = 0;
 
         foreach ($groups as $group) {
@@ -142,6 +137,43 @@ final class RouteCompiler
             $entry['tls'] = $group['tls'];
             $entries[] = $entry + $base + $rules;
             $n++;
+        }
+
+        return $entries;
+    }
+
+    /**
+     * Docker Compose: every public service after the first gets its own route — its custom domain and/or
+     * <service>-<slug>.<test domain> — proxied to 127.0.0.1:<host port>. (The first service is the site's
+     * primary route: site domains + <slug> test domain → app port; its custom domain is added here.)
+     *
+     * @param  array<string, mixed>  $rules
+     * @return list<array<string, mixed>>
+     */
+    private function composeServiceEntries(SiteData $site, string $routeId, array $rules): array
+    {
+        if ($site->runtime !== SiteRuntime::Compose || $site->compose === null) {
+            return [];
+        }
+
+        $entries = [];
+        $testTls = ['mode' => $this->testDomainTls === 'internal' ? 'internal' : 'acme'];
+
+        foreach ($site->compose->publicServices as $i => $public) {
+            if ($public->hostPort === null) {
+                continue;
+            }
+
+            $label = trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($public->service)), '-') ?: 'svc';
+            $handler = ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => "127.0.0.1:{$public->hostPort}"]]];
+
+            if ($public->domain !== null) {
+                $entries[] = ['id' => "{$routeId}-svc-{$label}", 'domains' => [$public->domain], 'tls' => ['mode' => 'acme']] + $handler + $rules;
+            }
+
+            if ($i > 0 && $public->testDomain !== null) {
+                $entries[] = ['id' => "{$routeId}-svc-{$label}-test", 'domains' => [strtolower($public->testDomain)], 'tls' => $testTls] + $handler + $rules;
+            }
         }
 
         return $entries;
