@@ -1,0 +1,67 @@
+<?php
+
+namespace Kiln\Projects\Domain\Models;
+
+use Illuminate\Database\Eloquent\Concerns\HasUlids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
+use Kiln\Projects\Contracts\Data\ServiceData;
+use Kiln\Projects\Contracts\ServiceKind;
+
+/**
+ * A site / database placed on an environment's canvas. `ref_id` is the owning module's opaque ULID.
+ *
+ * @property string $id
+ * @property string $organization_id
+ * @property string $project_id
+ * @property string $environment_id
+ * @property ServiceKind $kind
+ * @property string $ref_id
+ * @property string $name
+ * @property int $x
+ * @property int $y
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
+ * @property-read Environment $environment
+ */
+class Service extends Model
+{
+    use HasUlids;
+
+    protected $table = 'projects_services';
+
+    /** @var list<string> */
+    protected $guarded = [];
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return ['kind' => ServiceKind::class, 'x' => 'integer', 'y' => 'integer'];
+    }
+
+    /**
+     * @return BelongsTo<Environment, $this>
+     */
+    public function environment(): BelongsTo
+    {
+        return $this->belongsTo(Environment::class);
+    }
+
+    /**
+     * Normalised form of a service name used to match references: "Shop API", "shop-api" and
+     * "shop_api" all refer to the same service.
+     */
+    public static function handle(string $name): string
+    {
+        return Str::slug(str_replace(['_', '.'], '-', trim($name)));
+    }
+
+    public function toData(): ServiceData
+    {
+        return new ServiceData($this->id, $this->organization_id, $this->project_id, $this->environment_id, $this->kind, $this->ref_id, $this->name, $this->x, $this->y);
+    }
+}
