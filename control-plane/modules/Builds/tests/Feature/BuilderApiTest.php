@@ -201,6 +201,7 @@ it('tells the builder to abort a cancelled build with 410', function () {
 });
 
 it('hands docker jobs the registry image and credentials', function () {
+    config(['builds.local_builder.modes' => ['native', 'docker']]);
     $world = builds_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3000, 'dockerfile' => 'docker/Dockerfile']);
     $build = request_build($world);
     $job = next_job()->json();
@@ -345,4 +346,11 @@ it('deploys end to end with the real build pipeline', function () {
 
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
         ->and(OutputLine::query()->where('deployment_id', $deployment->id)->where('phase', 'build')->pluck('data')->all())->toContain("composer install\n");
+});
+
+it('does not hand docker jobs to a native-only host builder (the default)', function () {
+    $world = builds_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3000]);
+    request_build($world);
+
+    next_job()->assertNoContent();
 });

@@ -24,7 +24,8 @@ return [
     'local_builder' => [
         'token' => env('KILN_LOCAL_BUILDER_TOKEN'),
         'name' => env('KILN_LOCAL_BUILDER_NAME', 'control-plane'),
-        'modes' => ['native', 'docker'],
+        // Build modes the host builder accepts; add `docker` only when it can reach a Docker daemon (BuildKit).
+        'modes' => array_values(array_filter(array_map('trim', explode(',', (string) env('KILN_LOCAL_BUILDER_MODES', 'native'))))),
     ],
 
     // Builder servers: kiln-builder is installed by the agent when a `builder` server finishes provisioning.

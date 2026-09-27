@@ -220,7 +220,7 @@ data. Managed servers keep running. Remove the agent there with `systemctl disab
 | Agents go offline after a restore | The restored `.env` / `APP_KEY` must belong to the same backup as the database. The `kiln-ca` volume is re-synced by the edge within 3 seconds. |
 | Live updates in the UI don't refresh | Check that the `reverb` service is healthy. Browsers connect to `wss://<domain>/app/…` through the edge. |
 | `KILN_EDGE_SUBNET ... overlaps` | Pick another private /24 in `.env` and re-run the installer. The app trusts proxy headers only from that subnet. |
-| Builds stay queued | `kiln-ctl logs builder`. The builder polls `https://<domain>` with `KILN_BUILDER_TOKEN`. Docker-mode builds need a `builder` server; the bundled builder does native builds only. |
+| Builds stay queued | `kiln-ctl logs builder`. The builder polls `https://<domain>` with `KILN_BUILDER_TOKEN`. Docker-mode builds need a `builder` server: the bundled builder does native builds only (`KILN_LOCAL_BUILDER_MODES=native`, the default). |
 | Low memory | Lower `KILN_HORIZON_MAX_PROCESSES` in `.env`, or move observability to its own host. |
 
 ## 10. Testing the installer locally (`--tls internal`)
