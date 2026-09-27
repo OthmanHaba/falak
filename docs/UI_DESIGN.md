@@ -206,3 +206,40 @@ toast on completion/failure; every form validates inline (server 422 errors mapp
   screenshots to `tests/Browser/screenshots/{theme}/{route}.png` for visual review.
 - Existing Pest feature tests keep passing (update Inertia component names where pages moved).
 - Lighthouse-style budgets: first canvas render < 1.5s on the sim with 20 services; route JS < 250 KB gzip.
+
+---
+
+## 9. Shared contracts between the UI foundation and the Projects backend (fixed; build against these)
+
+**Inertia shared prop `kiln`** (added by the Projects module to every authenticated page, via a
+`Kernel`-level shared-props registry so app glue doesn't import modules):
+```ts
+type KilnShared = {
+  projects: { id: string; name: string; icon: string | null; environments: { id: string; name: string; slug: string; is_production: boolean }[] }[];
+  current: { project_id: string | null; environment_id: string | null }; // from the URL or last visited
+};
+```
+
+**Canvas read model** — `GET /projects/{project}/{environment}/canvas` (JSON, session auth):
+```ts
+type CanvasService = {
+  id: string;                     // project_services.id
+  kind: 'site' | 'database';
+  ref_id: string;                 // site id / database id
+  name: string;
+  icon: string;                   // 'laravel' | 'next' | 'bun' | 'postgresql' | ... (ServiceIcon key)
+  position: { x: number; y: number };
+  status: 'active' | 'deploying' | 'building' | 'queued' | 'failed' | 'crashed' | 'inactive' | 'provisioning';
+  status_label: string;           // "Active · 2m ago", "Deploying 64%"
+  url: string | null;             // primary https URL (sites)
+  subtitle: string | null;        // "PostgreSQL 17 · db-1"
+  servers: { id: string; name: string; leader: boolean; online: boolean }[];
+  last_deployment: { id: string; status: string; commit: string | null; message: string | null; finished_at: string | null } | null;
+};
+type Canvas = { services: CanvasService[]; edges: { from: string; to: string }[] };  // edges by project_services.id
+```
+`PATCH /projects/{project}/{environment}/services/{service}/position {x,y}` persists card positions.
+
+**Page names** (Inertia): `Projects/Index`, `Projects/Canvas` (props: project, environment, canvas, `panel?: {kind, id, tab}`),
+`Projects/Settings`. Service panel tab content is loaded as **JSON from each owning module's endpoints**
+(the panel is one page; tabs fetch lazily), so modules keep owning their data and routes.
