@@ -14,7 +14,7 @@ C=(docker compose -p kiln-sim --env-file sim.env --env-file .data/secrets.env)
 EDGE="https://kiln.test:${SIM_EDGE_HTTPS_PORT}"
 CURL=(curl -sS --cacert .data/edge-root.crt --resolve "kiln.test:${SIM_EDGE_HTTPS_PORT}:127.0.0.1")
 STATE=.data/e2e.env
-STAGES="${STAGES:-bootstrap servers sites deploy release rollback failure bun observability}"
+STAGES="${STAGES:-bootstrap servers sites deploy release rollback failure bun observability compose compose_redeploy compose_failure}"
 
 pass=0 fail=0 API_CODE=000 API_BODY='' KILN_TOKEN=${KILN_TOKEN:-}
 ok()   { printf '  \033[32mPASS\033[0m %s\n' "$*"; pass=$((pass + 1)); }
@@ -70,7 +70,8 @@ stage_servers() {
     step "servers: create via API, install agent, real provisioning on Ubuntu 24.04"
     local php='{"php":{"runtime":"frankenphp","versions":["8.4"],"default":"8.4"},"node":"22"}'
     provision_server app-1 srv-app-1 app "$php" || true
-    provision_server app-2 srv-app-2 app "$php" || true
+    # app-2 also runs Docker (compose sites): nested dockerd on the srv-app-2-docker volume.
+    provision_server app-2 srv-app-2 app '{"php":{"runtime":"frankenphp","versions":["8.4"],"default":"8.4"},"node":"22","docker":true}' || true
     provision_server db-1 srv-db-1 db '{"database":"postgresql"}' || true
 
     for c in srv-app-1 srv-app-2 srv-db-1; do
@@ -257,6 +258,69 @@ stage_observability() {
     local deploys
     deploys=$(curl -sS -G "http://127.0.0.1:${KILN_LOKI_PORT}/loki/api/v1/query_range" --data-urlencode 'query={service_name="kiln-agent"} | kiln_event_type="deployment"' --data-urlencode "start=$(( $(date +%s) - 7200 ))000000000" | jq '[.data.result[].values[]] | length' 2>/dev/null)
     (( ${deploys:-0} > 0 )) && ok "Loki has $deploys deployment lifecycle events from the agents" || bad "no deployment events in Loki"
+}
+
+# ---------------------------------------------------------------------------------------------- compose
+compose_get() { site_get srv-app-2 "$COMPOSE_HOST" "$1"; }
+
+stage_compose() {
+    step "compose: repo compose site (build: service via kiln-builder docker mode + redis volume) through the API"
+    "${C[@]}" exec -T srv-app-2 bash -c 'systemctl is-active docker' 2>/dev/null | grep -q active && ok "srv-app-2: docker running" || bad "srv-app-2: docker not running"
+    api POST /sites "{\"name\":\"compose-demo\",\"runtime\":\"compose\",\"server_ids\":[\"$SERVER_srv_app_2\"],\"source_connection_id\":\"$GIT_CONNECTION\",\"repository\":\"git://sim-git/compose-demo.git\",\"branch\":\"main\",\"compose_source\":\"repo\",\"public_services\":[{\"service\":\"app\",\"port\":8080}],\"health_check_path\":\"/health\",\"test_domain_enabled\":true}"
+    [[ $API_CODE == 201 ]] || { bad "POST /sites (compose) -> $API_CODE: $API_BODY"; return 1; }
+    save SITE_COMPOSE "$(jq -r .data.id <<<"$API_BODY")"
+    save COMPOSE_HOST "$(jq -r '.data.test_domain // "compose-demo.sites.kiln.test"' <<<"$API_BODY")"
+    ok "compose site created -> $COMPOSE_HOST"
+
+    deploy_and_wait "$SITE_COMPOSE" "$(git_head compose-demo)" "compose deploy" succeeded || return 1
+    local phases; phases=$(jq -r '[.data.targets[].steps[]?.phase] | unique | join(",")' <<<"$API_BODY")
+    ok "phases: $phases"
+    save COMPOSE_RELEASE_1 "$(jq -r '.data.release_id // empty' <<<"$API_BODY")"
+
+    local body; body=$(compose_get /)
+    jq -e '.app == "kiln-compose-demo" and .greeting == "hello"' >/dev/null 2>&1 <<<"$body" && ok "public URL answers through the edge ($body)" || { bad "compose GET / -> ${body:0:200}"; return 1; }
+    [[ "$(compose_get /health)" == ok ]] && ok "/health ok through the edge" || bad "compose /health failed"
+
+    local images; images=$("${C[@]}" exec -T srv-app-2 bash -c "docker ps --filter label=kiln.site=compose-demo --format '{{.Label \"kiln.service\"}}={{.Image}}'" 2>/dev/null | tr -d '\r' | sort | tr '\n' ' ')
+    [[ $images == *"app=sim-registry:5000/kiln/compose-demo/app@sha256:"* ]] && ok "app runs the built image pinned by digest ($images)" || bad "app image not digest-pinned: $images"
+    "${C[@]}" exec -T srv-app-2 bash -c "docker port compose-demo-app-1 8080" 2>/dev/null | grep -q '^127.0.0.1:' && ok "app published on loopback only" || bad "app port not on 127.0.0.1: $("${C[@]}" exec -T srv-app-2 docker port compose-demo-app-1 2>&1)"
+
+    local marker="persist-$(date +%s)"
+    save COMPOSE_MARKER "$marker"
+    [[ "$(compose_get "/set?value=$marker" | jq -r .marker 2>/dev/null)" == "$marker" ]] && ok "stored $marker in redis" || bad "could not store the marker in redis"
+
+    api GET "/sites/$SITE_COMPOSE"
+    ok "site API: runtime $(jq -r .data.runtime <<<"$API_BODY")"
+
+    local lines="" deadline=$((SECONDS + 90))
+    while (( SECONDS < deadline )); do
+        lines=$(curl -sS -G "http://127.0.0.1:${KILN_LOKI_PORT}/loki/api/v1/query_range" \
+            --data-urlencode 'query={service_name="compose-demo"} | kiln_compose_service="app" |= "kiln-compose-demo listening"' \
+            --data-urlencode "start=$(( $(date +%s) - 3600 ))000000000" | jq '[.data.result[].values[]] | length' 2>/dev/null)
+        (( ${lines:-0} > 0 )) && break
+        sleep 5
+    done
+    (( ${lines:-0} > 0 )) && ok "container logs reached Loki (service_name=compose-demo, kiln_compose_service=app: $lines lines)" || bad "no compose container logs in Loki"
+}
+
+stage_compose_redeploy() {
+    step "compose: a new commit redeploys; the redis named volume keeps its data"
+    git_commit compose-demo "Greeting v2" "sed -i 's/APP_GREETING:-hello}/APP_GREETING:-hello v2}/' compose.yaml" && ok "pushed a second compose commit" || { bad "could not push"; return 1; }
+    deploy_and_wait "$SITE_COMPOSE" "$(git_head compose-demo)" "compose redeploy" succeeded || return 1
+    [[ "$(compose_get / | jq -r .greeting 2>/dev/null)" == "hello v2" ]] && ok "serves the new release (greeting v2)" || bad "not serving v2: $(compose_get /)"
+    local got; got=$(compose_get /get | jq -r .marker 2>/dev/null)
+    [[ $got == "$COMPOSE_MARKER" ]] && ok "redis volume data survived the redeploy ($got)" || bad "redis data lost: got '$got', want $COMPOSE_MARKER"
+}
+
+stage_compose_failure() {
+    step "compose: a release whose container healthcheck fails is rolled back to the previous release"
+    git_commit compose-demo "Broken health" "sed -i 's/const HEALTHY = true;/const HEALTHY = false;/' app/server.js" && ok "pushed a broken compose commit" || { bad "could not push"; return 1; }
+    deploy_and_wait "$SITE_COMPOSE" "$(git_head compose-demo)" "broken compose deploy" failed
+    [[ "$(jq -r .data.rolled_back <<<"$API_BODY")" == true ]] && ok "deployment reports rolled_back=true ($(jq -r .data.error <<<"$API_BODY" | head -c 160))" || bad "rolled_back not set: $(jq -c '.data | {status,phase,error}' <<<"$API_BODY")"
+    local deadline=$((SECONDS + 60)) health=""
+    while (( SECONDS < deadline )); do health=$(compose_get /health); [[ $health == ok ]] && break; sleep 3; done
+    [[ $health == ok && "$(compose_get / | jq -r .greeting 2>/dev/null)" == "hello v2" ]] && ok "the previous healthy release serves again" || bad "after rollback: health=$health body=$(compose_get /)"
+    [[ "$(compose_get /get | jq -r .marker 2>/dev/null)" == "$COMPOSE_MARKER" ]] && ok "redis data intact after the rollback" || bad "redis data lost after rollback"
 }
 
 for s in $STAGES; do "stage_$s"; done

@@ -58,6 +58,11 @@ x-control-plane: &control-plane
     REVERB_SERVER_PORT: "8080"
     # Fleet
     KILN_LOCAL_BUILDER_TOKEN: ${KILN_LOCAL_BUILDER_TOKEN}
+    # The sim builder reaches a Docker daemon (host socket), so it also takes docker / compose builds, pushed to
+    # the sim registry (plain HTTP on the fleet network; servers trust it as an insecure registry).
+    KILN_LOCAL_BUILDER_MODES: native,docker
+    KILN_REGISTRY_URL: sim-registry:5000
+    KILN_REGISTRY_NAMESPACE: kiln
     # Hosted test domains <slug>.sites.kiln.test, with Caddy's internal CA (no public ACME in the sim).
     KILN_TEST_DOMAIN: sites.kiln.test
     KILN_TEST_DOMAIN_TLS: internal
@@ -237,6 +242,14 @@ services:
     environment:
       <<: *server-env
       SIM_SERVER_ROLE: app
+    # Docker Compose sites run here (nested dockerd): /var/lib/docker must not be on the container's overlayfs.
+    volumes:
+      - ..:/opt/kiln/src:ro
+      - edge-pki:/etc/kiln/edge-pki:ro
+      - srv-app-2-docker:/var/lib/docker
+    deploy:
+      resources:
+        limits: { memory: 1536m }
   srv-db-1:
     <<: *server
     hostname: srv-db-1
@@ -245,21 +258,42 @@ services:
       SIM_SERVER_ROLE: db
 
   # The control-plane host's shared builder (KILN_LOCAL_BUILDER_TOKEN), polling the internal builder API.
+  # Native builds run in the container; docker/compose builds use BuildKit through the host Docker socket
+  # (a buildx docker-container builder attached to the fleet network, pushing to sim-registry).
   builder:
     build: ./builder
     environment:
       KILN_URL: https://kiln.test
       KILN_BUILDER_TOKEN: ${KILN_LOCAL_BUILDER_TOKEN}
       KILN_BUILDER_NAME: control-plane
+      SIM_BUILDKIT_NETWORK: kiln-sim_fleet
+      SIM_REGISTRY: sim-registry:5000
     volumes:
       - ../agent/bin/kiln-builder-linux-${SIM_AGENT_ARCH:-arm64}:/opt/kiln/kiln-builder:ro
       - edge-pki:/kiln/edge-pki:ro
       - builder-cache:/root/.cache
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       edge: { condition: service_healthy }
       sim-git: { condition: service_healthy }
     networks: [fleet]
     logging: *logging
+
+  # Built-in registry for docker / compose builds (distribution, plain HTTP; sim only).
+  sim-registry:
+    image: registry:2.8.3
+    logging: *logging
+    restart: unless-stopped
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    volumes:
+      - registry-data:/var/lib/registry
+    networks: [fleet]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5000/v2/"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   # Read-only git server with the demo apps (git://sim-git/<app>.git), used by builders in E2E.
   sim-git:
@@ -278,6 +312,8 @@ volumes:
   edge-pki:
   edge-data:
   builder-cache:
+  registry-data:
+  srv-app-2-docker:
 
 networks:
   backend:

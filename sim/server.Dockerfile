@@ -29,7 +29,9 @@ RUN apt-get update \
  # Per-container SSH host keys are generated at first boot, not baked into the image.
  && rm -f /etc/ssh/ssh_host_* \
  && mkdir -p /etc/kiln /root/.ssh /run/sshd && chmod 700 /root/.ssh \
- && printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\n' > /etc/ssh/sshd_config.d/10-kiln-sim.conf
+ && printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\n' > /etc/ssh/sshd_config.d/10-kiln-sim.conf \
+ # Sim only: the registry of docker/compose builds is plain HTTP on the fleet network.
+ && mkdir -p /etc/docker && printf '{"insecure-registries": ["sim-registry:5000"]}\n' > /etc/docker/daemon.json
 
 COPY server/units/ /etc/systemd/system/
 COPY server/bin/ /usr/local/sbin/

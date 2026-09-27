@@ -9,5 +9,8 @@ RUN apt-get update \
  && curl -fsSL https://nodejs.org/dist/v22.20.0/node-v22.20.0-linux-$(dpkg --print-architecture | sed 's/amd64/x64/').tar.xz \
     | tar -xJ -C /usr/local --strip-components=1 \
  && rm -rf /var/lib/apt/lists/*
+# docker CLI + buildx for docker / compose builds through the host Docker socket (mounted by compose.yml).
+COPY --from=docker:28.5.1-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker/buildx-bin:0.29.1 /buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
