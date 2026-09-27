@@ -1,0 +1,20 @@
+{
+  "project": "shop",
+  "directory": "/srv/kiln/sites/shop/releases/01J9ZQ4N8V2M6R0T3W5Y7B9D1F",
+  "files": [
+    {
+      "name": "compose.yaml",
+      "content": "services:\n  redis:\n    image: redis:7.4.1-alpine\n"
+    },
+    {
+      "name": ".env",
+      "content": "KILN_SITE_ID=01J9ZQ4N8V2M6R0T3W5Y7B9D1A\n"
+    }
+  ],
+  "project_env_file": ".env",
+  "registry_auth": {
+    "server": "registry.kiln.local",
+    "username": "kiln",
+    "password": "s3cret"
+  }
+}

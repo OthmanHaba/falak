@@ -1,0 +1,5 @@
+{
+  "project": "shop",
+  "services": ["app", "worker"],
+  "timeout_s": 10
+}

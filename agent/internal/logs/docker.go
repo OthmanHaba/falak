@@ -177,6 +177,12 @@ func (d *Docker) follow(ctx context.Context, c containerSummary) {
 	}
 	site := c.Labels["kiln.site"]
 	service := c.Labels["kiln.service"]
+	// Compose sites label every service with kiln.site=<slug> and kiln.service=<compose service>: the
+	// records belong to the site (service.name=<slug>) and carry the compose service as an attribute.
+	composeService := ""
+	if site != "" && service != "" {
+		composeService, service = service, ""
+	}
 	if service == "" && site == "" {
 		service = name
 	}
@@ -197,6 +203,12 @@ func (d *Docker) follow(ctx context.Context, c containerSummary) {
 			rec.Attrs["container.id"] = c.ID
 			rec.Attrs["container.name"] = name
 			rec.Attrs["log.iostream"] = stream
+			if composeService != "" {
+				rec.Attrs["kiln.compose.service"] = composeService
+				if r := c.Labels["kiln.release"]; r != "" {
+					rec.Attrs["kiln.release.id"] = r
+				}
+			}
 			d.sink.EmitLog(rec)
 		})
 		if ctx.Err() != nil {

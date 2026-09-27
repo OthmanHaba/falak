@@ -116,7 +116,7 @@ Every command type is **idempotent** (safe to re-run) and declares a JSON Schema
 | `cron` | `apply` (desired schedule set with heartbeat wrapper) |
 | `db` | `create`, `drop`, `user.apply`, `backup`, `restore` |
 | `net` | `firewall.apply` (nftables), `wireguard.apply` |
-| `docker` | `pull`, `run`, `stop`, `compose.up`, `compose.down`, `prune` |
+| `docker` | `pull`, `run`, `stop`, `compose.up`, `compose.down`, `compose.pull`, `compose.ps`, `compose.restart`, `prune` |
 | `telemetry` | `configure` (OTLP endpoints, sampling, log sources) |
 | `terminal` | `open`, `input`, `resize`, `close` |
 

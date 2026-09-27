@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/kiln/agent/internal/commands"
+	"github.com/kiln/agent/internal/docker"
 	"github.com/kiln/agent/internal/hostfs"
 	"github.com/kiln/agent/internal/insights"
 	"github.com/kiln/agent/internal/logs"
@@ -101,6 +102,7 @@ type Service struct {
 	collector *metrics.Collector
 	tailer    *logs.Tailer
 	docker    *logs.Docker
+	stats     *metrics.ContainerCollector
 
 	mu        sync.Mutex
 	cur       Payload
@@ -133,6 +135,7 @@ func New(opts Options) (*Service, error) {
 	s.tailer = logs.NewTailer(opts.FS, opts.StateDir, relay, opts.Logger)
 	if opts.DockerSocket != "" {
 		s.docker = logs.NewDocker(opts.DockerSocket, relay, opts.Logger)
+		s.stats = metrics.NewContainerCollector(docker.NewClient(opts.DockerSocket), relay)
 	}
 	// Persisted configuration from a previous telemetry.configure.
 	if b, err := opts.FS.ReadFile(s.configPath()); err == nil {
@@ -165,6 +168,9 @@ func (s *Service) Start(ctx context.Context) error {
 	go s.tailer.Run(ctx)
 	if s.docker != nil {
 		go s.docker.Run(ctx)
+	}
+	if s.stats != nil {
+		go s.stats.Run(ctx)
 	}
 	if s.tee != nil {
 		go s.tee.Run(ctx)
@@ -298,6 +304,9 @@ func (s *Service) apply(p Payload) {
 		}
 	}
 	s.collector.Configure(enabled, interval)
+	if s.stats != nil {
+		s.stats.Configure(enabled, interval)
+	}
 	s.tailer.SetSources(p.LogSources)
 	if s.docker != nil {
 		on, labels := true, map[string]string(nil)

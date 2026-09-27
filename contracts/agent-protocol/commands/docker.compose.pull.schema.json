@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/docker.compose.pull.schema.json",
+  "title": "docker.compose.pull — write a project's files and pull its images (deploy FETCH for compose sites)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "project",
+    "directory"
+  ],
+  "properties": {
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "directory": {
+      "type": "string",
+      "pattern": "^/"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "content"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "content": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Written into directory before running; compose files are passed with -f in order. .env* files are written 0600 and not passed with -f."
+    },
+    "env": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Process environment of the compose CLI (interpolation)"
+    },
+    "project_env_file": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "description": "File in directory passed as --env-file (e.g. .env)"
+    },
+    "registry_auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "username",
+        "password"
+      ],
+      "properties": {
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "server": {
+          "type": "string"
+        }
+      },
+      "description": "Registry credentials for pulls (written to a throwaway DOCKER_CONFIG for the command)"
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
+      },
+      "description": "Only these services (default: all)"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exit_code"
+      ],
+      "properties": {
+        "exit_code": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

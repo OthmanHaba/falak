@@ -13,6 +13,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/kiln/agent/internal/commands"
+	"github.com/kiln/agent/internal/docker"
 	"github.com/kiln/agent/internal/transport"
 )
 
@@ -27,7 +28,7 @@ var Catalogue = []string{
 	"cron.apply",
 	"db.create", "db.drop", "db.user.apply", "db.backup", "db.restore",
 	"net.firewall.apply", "net.wireguard.apply",
-	"docker.pull", "docker.run", "docker.stop", "docker.compose.up", "docker.compose.down", "docker.prune",
+	"docker.pull", "docker.run", "docker.stop", "docker.compose.up", "docker.compose.down", "docker.compose.pull", "docker.compose.ps", "docker.compose.restart", "docker.prune",
 	"telemetry.configure",
 	"terminal.open", "terminal.input", "terminal.resize", "terminal.close",
 }
@@ -149,11 +150,15 @@ func TestEveryExampleValidatesAndDecodes(t *testing.T) {
 func TestSchemasRejectInvalidPayloads(t *testing.T) {
 	c := compiler(t)
 	bad := map[string]string{
-		"deploy.fetch":       `{"site":"shop","release_id":"x","artifact":{"url":"http://x","sha256":"nope"}}`,
-		"proc.apply":         `{"programs":[{"name":"w","command":[],"restart":"sometimes"}]}`,
-		"edge.caddy.apply":   `{"sites":[{"id":"a","domains":[],"kind":"php_fpm"}]}`,
-		"net.firewall.apply": `{"rules":[{"id":"x","ports":["http"]}]}`,
-		"system.exec":        `{"script":"true","unexpected":1}`,
+		"deploy.fetch":           `{"site":"shop","release_id":"x","artifact":{"url":"http://x","sha256":"nope"}}`,
+		"proc.apply":             `{"programs":[{"name":"w","command":[],"restart":"sometimes"}]}`,
+		"edge.caddy.apply":       `{"sites":[{"id":"a","domains":[],"kind":"php_fpm"}]}`,
+		"net.firewall.apply":     `{"rules":[{"id":"x","ports":["http"]}]}`,
+		"system.exec":            `{"script":"true","unexpected":1}`,
+		"docker.compose.up":      `{"project":"shop","directory":"/srv/x","project_env_file":"../.env"}`,
+		"docker.compose.ps":      `{"project":"Shop!"}`,
+		"docker.compose.restart": `{"project":"shop","services":["a b"]}`,
+		"docker.compose.pull":    `{"project":"shop"}`,
 	}
 	for typ, payload := range bad {
 		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json")
@@ -163,6 +168,33 @@ func TestSchemasRejectInvalidPayloads(t *testing.T) {
 		v, _ := jsonschema.UnmarshalJSON(strings.NewReader(payload))
 		if sch.Validate(v) == nil {
 			t.Errorf("%s: invalid payload accepted", typ)
+		}
+	}
+}
+
+// Results of the compose executors validate against their schemas' $defs.result.
+func TestComposeResultsValidate(t *testing.T) {
+	c := compiler(t)
+	cpu, mem := 12.5, int64(64<<20)
+	code := 137
+	svc := docker.ServiceStatus{Service: "app", ContainerID: "abc", ContainerName: "shop-app-1", State: "exited", ExitCode: &code, Health: "unhealthy",
+		Image: "registry.kiln.local/kiln/shop/app@sha256:" + strings.Repeat("a", 64), ImageDigest: "sha256:" + strings.Repeat("a", 64),
+		Ports: []docker.PortStatus{{HostIP: "127.0.0.1", HostPort: 3001, ContainerPort: 8080, Protocol: "tcp"}}, Restarts: 3,
+		StartedAt: "2026-09-27T10:00:00Z", CPUPercent: &cpu, MemoryBytes: &mem, MemoryLimit: &mem}
+	for typ, res := range map[string]any{
+		"docker.compose.up":      docker.ComposeUpResult{ExitCode: 1, Services: []docker.ServiceStatus{svc}},
+		"docker.compose.ps":      docker.ComposePsResult{Services: []docker.ServiceStatus{svc}},
+		"docker.compose.restart": docker.ComposeRestartResult{Restarted: []string{"app"}},
+		"docker.compose.pull":    docker.ExitResult{ExitCode: 0},
+	} {
+		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json#/$defs/result")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := json.Marshal(res)
+		v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(b))
+		if err := sch.Validate(v); err != nil {
+			t.Errorf("%s result invalid: %v\n%s", typ, err, b)
 		}
 	}
 }
