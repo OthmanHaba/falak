@@ -87,13 +87,21 @@ export interface SiteTab {
 /**
  * An entry in the /settings/{section} left mini-nav (§3). Identity registers the account + organization sections;
  * other modules add theirs (Source control, Cloud providers, Storage, Builders, Alert channels ...).
+ *
+ * Groups: `account` (the signed-in user), `organization` (people, policy and org-wide libraries) and
+ * `integrations` (external systems the organization connects: git, clouds, buckets, builders, alert targets).
  */
+export type SettingsNavGroup = 'account' | 'organization' | 'integrations';
+
 export interface SettingsNavItem {
     id: string;
     title: string;
     url: string;
-    group: 'account' | 'organization';
-    /** Lower comes first. Identity: profile 0 … api tokens 40; general 100 … audit log 130. */
+    group: SettingsNavGroup;
+    /**
+     * Lower comes first. Identity: profile 0 … api tokens 40; general 100 … audit log 130.
+     * Organization libraries: alert rules 160, recipes 170. Integrations: 200+.
+     */
     order: number;
     icon?: LucideIcon;
     permission?: string;

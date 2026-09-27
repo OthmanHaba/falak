@@ -91,7 +91,7 @@ export default function Server({ server, recipes, builtins, runs, can }: Props) 
                             !query &&
                             can.manage && (
                                 <Button variant="secondary" size="sm" asChild>
-                                    <Link href="/recipes?create=1">Create a recipe</Link>
+                                    <Link href="/settings/recipes?create=1">Create a recipe</Link>
                                 </Button>
                             )
                         }

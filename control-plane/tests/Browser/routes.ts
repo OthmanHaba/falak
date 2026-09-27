@@ -134,6 +134,17 @@ export const routes: BrowserRoute[] = [
     { path: '/recipes/runs/:recipeRun' },
     { path: '/recipes/builtin/disk-usage/run' },
     { path: '/terminal/sessions/:recording/recording' },
+
+    // settings — organization settings sections (the legacy URLs above now 301 here)
+    { path: '/settings/source-control' },
+    { path: '/settings/cloud-providers' },
+    { path: '/settings/storage' },
+    { path: '/settings/builders' },
+    { path: '/settings/alert-channels' },
+    { path: '/settings/alert-rules' },
+    { path: '/settings/observability' },
+    { path: '/settings/recipes' },
+    { path: '/invitations/not-a-real-token' },
 ];
 
 export function slugFor(path: string): string {

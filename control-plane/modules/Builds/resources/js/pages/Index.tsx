@@ -40,7 +40,7 @@ export default function Index({ builds, sites, filters }: Props) {
                             ))}
                         </select>
                         <Button variant="outline" asChild>
-                            <Link href="/builds/builders">Builders</Link>
+                            <Link href="/settings/builders">Builders</Link>
                         </Button>
                     </div>
                 </div>

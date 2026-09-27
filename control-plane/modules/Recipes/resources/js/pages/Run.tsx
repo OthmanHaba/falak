@@ -65,7 +65,7 @@ export default function Run({ recipe, servers, preselected = [], defaultTimeout,
     });
 
     const origin = preselected.length === 1 ? servers.find((server) => server.id === preselected[0]) : undefined;
-    const path = typeof window === 'undefined' ? '/recipes' : window.location.pathname + window.location.search;
+    const path = typeof window === 'undefined' ? '/settings/recipes' : window.location.pathname + window.location.search;
     const breadcrumbs: BreadcrumbItem[] = origin
         ? [
               { title: 'Infrastructure', href: '/servers' },
@@ -74,7 +74,7 @@ export default function Run({ recipe, servers, preselected = [], defaultTimeout,
               { title: `Run ${recipe.name}`, href: path },
           ]
         : [
-              { title: 'Recipes', href: '/recipes' },
+              { title: 'Recipes', href: '/settings/recipes' },
               { title: `Run ${recipe.name}`, href: path },
           ];
 

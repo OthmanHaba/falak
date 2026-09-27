@@ -1,13 +1,19 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Kiln\Kernel\Http\LegacyRedirect;
 use Kiln\Telemetry\Http\Controllers\LogController;
 use Kiln\Telemetry\Http\Controllers\ServerMetricsController;
 use Kiln\Telemetry\Http\Controllers\SettingsController;
 use Kiln\Telemetry\Http\Controllers\TraceController;
 
+Route::middleware(['auth', 'org'])->group(function () {
+    // Observability settings live in the settings shell (docs/UI_DESIGN.md §3); the old URL redirects.
+    Route::get('settings/observability', [SettingsController::class, 'show'])->name('telemetry.settings.show');
+    Route::get('telemetry/settings', LegacyRedirect::to('/settings/observability'))->name('telemetry.settings.legacy');
+});
+
 Route::middleware(['auth', 'org'])->prefix('telemetry')->name('telemetry.')->group(function () {
-    Route::get('settings', [SettingsController::class, 'show'])->name('settings.show');
     Route::put('settings', [SettingsController::class, 'update'])->name('settings.update');
     Route::post('grafana/provision', [SettingsController::class, 'provisionGrafana'])->name('grafana.provision');
 

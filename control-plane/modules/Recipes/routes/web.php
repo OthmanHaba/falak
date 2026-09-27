@@ -1,14 +1,20 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Kiln\Kernel\Http\LegacyRedirect;
 use Kiln\Recipes\Http\Controllers\RecipeController;
 use Kiln\Recipes\Http\Controllers\RunController;
 
 // Server page tab (/servers/{id}/recipes) owned by Recipes.
 Route::middleware(['auth', 'org'])->get('servers/{server}/recipes', [RunController::class, 'server'])->name('recipes.server');
 
+Route::middleware(['auth', 'org'])->group(function () {
+    // The recipe library lives in the settings shell (docs/UI_DESIGN.md §3); run pages stay under /recipes.
+    Route::get('settings/recipes', [RecipeController::class, 'index'])->name('recipes.index');
+    Route::get('recipes', LegacyRedirect::to('/settings/recipes'))->name('recipes.legacy');
+});
+
 Route::middleware(['auth', 'org'])->prefix('recipes')->name('recipes.')->group(function () {
-    Route::get('/', [RecipeController::class, 'index'])->name('index');
     Route::post('/', [RecipeController::class, 'store'])->name('store');
 
     Route::get('runs', [RunController::class, 'index'])->name('runs.index');

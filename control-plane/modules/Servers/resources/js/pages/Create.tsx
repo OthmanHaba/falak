@@ -297,7 +297,7 @@ export default function Create({ types, providers, credentials, options, sshKeys
                                 action={
                                     canManageProviders ? (
                                         <Button variant="primary" size="sm" asChild>
-                                            <Link href="/providers?add=1">Connect provider</Link>
+                                            <Link href="/settings/cloud-providers?add=1">Connect provider</Link>
                                         </Button>
                                     ) : (
                                         <span className="text-fg-muted text-xs">Ask an admin to connect it.</span>

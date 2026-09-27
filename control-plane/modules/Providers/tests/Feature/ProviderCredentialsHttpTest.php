@@ -25,7 +25,7 @@ it('shows credentials without secrets to viewers', function () {
     ProviderCredential::factory()->forOrganization($org->id)->create(['name' => 'Prod', 'credentials' => ['token' => 'never-show-me']]);
     ProviderCredential::factory()->forOrganization('01JOTHERORGAAAAAAAAAAAAAAA')->create(['name' => 'Other org']);
 
-    $response = $this->get('/providers')->assertOk();
+    $response = $this->get('/settings/cloud-providers')->assertOk();
 
     $response->assertInertia(fn (Assert $page) => $page
         ->component('Providers/Index', false)
@@ -43,7 +43,7 @@ it('shows credentials without secrets to viewers', function () {
 });
 
 it('requires authentication and an organization permission', function () {
-    $this->get('/providers')->assertRedirect('/login');
+    $this->get('/settings/cloud-providers')->assertRedirect('/login');
 });
 
 it('lets admins add a verified credential and records an audit entry without secrets', function () {

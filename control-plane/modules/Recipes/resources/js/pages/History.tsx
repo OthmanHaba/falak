@@ -52,7 +52,7 @@ export default function History({ runs, filters, recipes, servers }: Props) {
             description="Every recipe run across your servers, with per-server output."
             actions={
                 <Button asChild>
-                    <Link href="/recipes">
+                    <Link href="/settings/recipes">
                         <ScrollText aria-hidden /> Recipes
                     </Link>
                 </Button>

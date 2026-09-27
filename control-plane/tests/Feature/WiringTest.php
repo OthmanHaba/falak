@@ -159,12 +159,12 @@ it('delivers an Alertable event to a matching rule end to end', function () {
 it('shares flash messages with Inertia so the Telemetry settings notice shows', function () {
     actingAsMember(Role::Owner);
 
-    $this->from('/telemetry/settings')->put('/telemetry/settings', ['otlp_endpoint' => 'https://otlp.example.com'])->assertRedirect('/telemetry/settings');
+    $this->from('/settings/observability')->put('/telemetry/settings', ['otlp_endpoint' => 'https://otlp.example.com'])->assertRedirect('/settings/observability');
 
-    $this->get('/telemetry/settings')->assertInertia(fn (Assert $page) => $page->where('flash.status', fn ($status) => str_starts_with((string) $status, 'Telemetry settings saved')));
+    $this->get('/settings/observability')->assertInertia(fn (Assert $page) => $page->where('flash.status', fn ($status) => str_starts_with((string) $status, 'Telemetry settings saved')));
 
     // Consumed after one request.
-    $this->get('/telemetry/settings')->assertInertia(fn (Assert $page) => $page->where('flash', []));
+    $this->get('/settings/observability')->assertInertia(fn (Assert $page) => $page->where('flash', []));
 });
 
 it('shares success, warning and error flashes', function () {
