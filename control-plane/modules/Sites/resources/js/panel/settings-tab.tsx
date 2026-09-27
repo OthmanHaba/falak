@@ -121,7 +121,10 @@ export function SettingsTab({ ctx }: ServiceTabProps) {
                     <section key={group.id} id={anchor(group.id)} aria-labelledby={`${anchor(group.id)}-title`} className="grid scroll-mt-2 gap-5">
                         <h2
                             id={`${anchor(group.id)}-title`}
-                            className={cn('border-border border-b pb-2 text-sm font-semibold', group.id === 'danger' ? 'text-danger' : 'text-fg')}
+                            className={cn(
+                                'border-border border-b pb-2 text-[11px] font-semibold tracking-wider uppercase',
+                                group.id === 'danger' ? 'text-danger' : 'text-fg-faint',
+                            )}
                         >
                             {group.title}
                         </h2>

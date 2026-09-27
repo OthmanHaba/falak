@@ -4,8 +4,7 @@ import { join } from 'node:path';
 import { storageStatePath } from './global-setup';
 
 /**
- * Isolated render test for the service-panel tab components (SiteMetrics, SiteLogs, SiteObservability) via the
- * local-only gallery /dev/observability-panels. Skipped where the gallery isn't registered (non-local envs).
+ * The service panel's observability tabs (Telemetry's Metrics / Logs, Insights' Observability) on the demo Storefront.
  * Backends that aren't running must render an explanatory state, never an uncaught error.
  */
 for (const theme of ['dark', 'light'] as const) {
@@ -23,17 +22,27 @@ for (const theme of ['dark', 'light'] as const) {
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(error.message));
 
-        const response = await page.goto('/dev/observability-panels', { waitUntil: 'networkidle' });
-        test.skip(response?.status() === 404, 'gallery is local-only');
-
-        for (const name of ['Metrics', 'Logs', 'Observability']) {
-            await expect(page.getByRole('region', { name, exact: true })).toBeVisible();
-        }
-        // Each tab settles into content or a teaching state (no skeletons left, no error boundary).
-        await expect(page.locator('[aria-busy="true"]')).toHaveCount(0);
+        await page.goto('/projects', { waitUntil: 'networkidle' });
+        await page.locator('a[href$="/production"]').first().click();
+        await page.waitForURL(/\/projects\/[0-9a-z]{26}\/production$/i);
+        await page.waitForLoadState('networkidle');
+        await page.locator('.react-flow__node').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
+        const storefront = page.getByRole('group', { name: /^Storefront:/ });
+        test.skip((await storefront.count()) === 0, 'no demo data');
+        await storefront.click();
+        await page.waitForURL(/\/service\/site\//);
 
         mkdirSync(join(import.meta.dirname, 'screenshots', theme), { recursive: true });
-        await page.screenshot({ path: join(import.meta.dirname, 'screenshots', theme, 'dev-observability-panels.png'), fullPage: true });
+        for (const name of ['Metrics', 'Logs', 'Observability']) {
+            await page.getByRole('tab', { name, exact: true }).click();
+            await page.waitForURL(new RegExp(`/${name.toLowerCase()}$`));
+            await page.waitForLoadState('networkidle');
+            // Each tab settles into content or a teaching state (no skeletons left, no error boundary).
+            const panel = page.getByRole('tabpanel');
+            await expect(panel.locator('.animate-pulse')).toHaveCount(0, { timeout: 15_000 });
+            await expect(panel.locator('[aria-busy="true"]')).toHaveCount(0);
+            await page.screenshot({ path: join(import.meta.dirname, 'screenshots', theme, `panel-${name.toLowerCase()}.png`) });
+        }
         expect(errors).toEqual([]);
         await context.close();
     });

@@ -125,7 +125,12 @@ export function CanvasBoard({ services, edges, selectedId, draggable, onOpen, on
             new Map<string, Rect>(
                 nodes.map((node) => [
                     node.id,
-                    { x: node.position.x, y: node.position.y, width: node.measured?.width ?? CARD.width, height: node.measured?.height ?? CARD.height },
+                    {
+                        x: node.position.x,
+                        y: node.position.y,
+                        width: node.measured?.width ?? CARD.width,
+                        height: node.measured?.height ?? CARD.height,
+                    },
                 ]),
             ),
         [nodes],

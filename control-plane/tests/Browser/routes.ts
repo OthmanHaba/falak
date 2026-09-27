@@ -17,14 +17,18 @@ export interface BrowserRoute {
 }
 
 export interface ParamSource {
+    /** Page to scrape; may contain other `:params`. */
     from: string;
     match: RegExp;
+    /** Only anchors whose text matches (e.g. a specific demo service). */
+    text?: RegExp;
 }
 
 const ULID = '([0-9A-Za-z]{26})';
 
 export const params: Record<string, ParamSource> = {
-    site: { from: '/sites', match: new RegExp(`^/sites/${ULID}$`) },
+    // The demo Storefront site (richest panel), found through the services list of the first server.
+    site: { from: '/servers/:server', match: new RegExp(`^/projects/[0-9a-z]{26}/production/service/site/${ULID}$`, 'i'), text: /Storefront/ },
     issue: { from: '/observability/issues?status=all', match: new RegExp(`^/observability/issues/${ULID}$`) },
     exception: { from: '/observability/issues?kind=exception&sort=occurrences', match: new RegExp(`^/observability/issues/${ULID}$`) },
     trace: { from: '/observability/traces', match: /^\/observability\/traces\/([0-9a-f]{16,32})$/ },
@@ -86,22 +90,10 @@ export const routes: BrowserRoute[] = [
     { path: '/recipes' },
     { path: '/recipes/runs' },
 
-    // Sites (until the project canvas replaces them)
-    { path: '/sites' },
-    { path: '/sites/create' },
+    // Legacy site URLs redirect into the canvas panel (§3)
     { path: '/sites/:site' },
     { path: '/sites/:site/environment' },
-    { path: '/sites/:site/deploy-script' },
-    { path: '/sites/:site/commands' },
-    { path: '/sites/:site/settings' },
     { path: '/sites/:site/domains' },
-    { path: '/sites/:site/routing' },
-    { path: '/sites/:site/deployments' },
-    { path: '/sites/:site/releases' },
-    { path: '/sites/:site/deploy-settings' },
-    { path: '/sites/:site/queues' },
-    { path: '/sites/:site/daemons' },
-    { path: '/sites/:site/scheduler' },
 
     // Data, builds, source control
     { path: '/databases' },
@@ -170,8 +162,19 @@ export const routes: BrowserRoute[] = [
     { path: '/projects' },
     { path: '/projects/:canvas' },
     { path: '/projects/:project/settings' },
+
+    // panel — every service panel tab of a site, and deep links into the Settings sections
     { path: '/projects/:canvas/service/site/:site/deployments' },
     { path: '/projects/:canvas/service/site/:site/variables' },
+    { path: '/projects/:canvas/service/site/:site/metrics', allowedFailures: observability },
+    { path: '/projects/:canvas/service/site/:site/logs', allowedFailures: observability },
+    { path: '/projects/:canvas/service/site/:site/observability', allowedFailures: observability },
+    { path: '/projects/:canvas/service/site/:site/processes', allowedFailures: observability },
+    { path: '/projects/:canvas/service/site/:site/settings' },
+    { path: '/projects/:canvas/service/site/:site/settings/deploy' },
+    { path: '/projects/:canvas/service/site/:site/settings/networking' },
+    { path: '/projects/:canvas/service/site/:site/settings/servers' },
+    { path: '/projects/:canvas/service/site/:site/settings/commands' },
 ];
 
 export function slugFor(path: string): string {

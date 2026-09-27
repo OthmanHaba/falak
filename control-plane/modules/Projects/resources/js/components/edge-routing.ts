@@ -96,7 +96,12 @@ function candidates(from: Rect, to: Rect, obstacles: Rect[]): Point[][] {
         const gapStart = rightwards ? fromRight : toRight;
         const gapEnd = rightwards ? to.x : from.x;
         // Try the middle of the gap first, then lanes next to each card (other cards may sit in between).
-        const lanes = [(gapStart + gapEnd) / 2, gapStart + DETOUR / 2, gapEnd - DETOUR / 2, ...obstacles.flatMap((rect) => [rect.x - DETOUR / 2, rect.x + rect.width + DETOUR / 2])]
+        const lanes = [
+            (gapStart + gapEnd) / 2,
+            gapStart + DETOUR / 2,
+            gapEnd - DETOUR / 2,
+            ...obstacles.flatMap((rect) => [rect.x - DETOUR / 2, rect.x + rect.width + DETOUR / 2]),
+        ]
             .filter((x) => x > gapStart && x < gapEnd)
             .map(Math.round);
         for (const x of [...new Set(lanes)]) routes.push([s, { x, y: s.y }, { x, y: t.y }, t]);

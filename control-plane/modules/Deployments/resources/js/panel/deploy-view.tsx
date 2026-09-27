@@ -174,7 +174,7 @@ export function DeployView({ ctx, deploymentId }: { ctx: ServicePanelContext; de
     // lines first), chronological inside a server, so each line sits under its own "server · phase" header.
     const serverOrder = useMemo(() => (detail?.targets ?? []).map((target) => target.server_id), [detail?.targets]);
     const deployLines = useMemo(() => {
-        const rank = (line: OutputLine) => (line.server_id ? (serverOrder.indexOf(line.server_id) + 1 || serverOrder.length + 1) : 0);
+        const rank = (line: OutputLine) => (line.server_id ? serverOrder.indexOf(line.server_id) + 1 || serverOrder.length + 1 : 0);
 
         return lines
             .filter((line) => line.phase !== 'build')

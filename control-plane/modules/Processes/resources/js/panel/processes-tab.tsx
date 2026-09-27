@@ -293,7 +293,7 @@ export function ProcessesTab({ ctx }: ServiceTabProps) {
                                     <div className="grid min-w-0 flex-1 gap-0.5">
                                         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                             <span className="text-fg truncate text-sm font-medium">{item.label}</span>
-                                            <Tag>{KIND[item.kind].label}</Tag>
+                                            {item.label !== KIND[item.kind].label && <Tag>{KIND[item.kind].label}</Tag>}
                                             {item.instances > 1 && <Tag mono>×{item.instances}</Tag>}
                                         </div>
                                         <p className="text-fg-muted truncate font-mono text-[11px]" title={item.command ?? undefined}>

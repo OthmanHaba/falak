@@ -32,7 +32,11 @@ for (const theme of ['dark', 'light'] as const) {
         const errors: string[] = [];
         page.on('pageerror', (error) => errors.push(`Uncaught: ${error.message}`));
         page.on('console', (message) => {
-            if (message.type() === 'error' && !/Failed to load resource/.test(message.text()) && !globalAllowedConsole.some((pattern) => pattern.test(message.text()))) {
+            if (
+                message.type() === 'error' &&
+                !/Failed to load resource/.test(message.text()) &&
+                !globalAllowedConsole.some((pattern) => pattern.test(message.text()))
+            ) {
                 errors.push(message.text());
             }
         });
@@ -74,10 +78,43 @@ for (const theme of ['dark', 'light'] as const) {
         await page.getByRole('tab', { name: /Deploy logs/ }).click();
         await shot(page, theme, 'deploy-view-logs');
 
-        // A pending (placeholder) tab
+        // Variables: reveal, stage a new variable with a reference, see the changes bar
         await page.getByRole('tab', { name: 'Variables' }).click();
-        await expect(page.getByTestId('pending-tab-variables')).toBeVisible();
-        await shot(page, theme, 'panel-pending');
+        await expect(page.getByTestId('variables-tab')).toBeVisible();
+        await page.waitForLoadState('networkidle');
+        await shot(page, theme, 'panel-variables');
+        await page.getByRole('button', { name: 'New variable' }).click();
+        await page.getByLabel('Key').fill('REDIS_URL');
+        await page.getByRole('button', { name: 'Insert a reference to another service' }).click();
+        await expect(page.getByRole('option', { name: 'DATABASE_URL' })).toBeVisible();
+        await shot(page, theme, 'panel-variables-picker');
+        await page.getByRole('option', { name: 'DATABASE_URL' }).click();
+        await page.getByRole('button', { name: 'Add', exact: true }).click();
+        await expect(page.getByRole('region', { name: 'Pending changes' })).toBeVisible();
+        await shot(page, theme, 'panel-variables-staged');
+        await page.getByRole('button', { name: 'Discard' }).click();
+        await page.getByRole('radio', { name: 'Raw editor' }).click();
+        await page.getByRole('button', { name: 'Reveal & edit' }).click();
+        await expect(page.getByLabel('Environment file')).toBeVisible();
+        await page.getByLabel('Environment file').press('End');
+        await page.getByLabel('Environment file').pressSequentially('\nFEATURE_FLAG=on');
+        await page.getByRole('button', { name: 'Review changes' }).click();
+        await expect(page.getByLabel('Changes to save')).toBeVisible();
+        await shot(page, theme, 'panel-variables-diff');
+
+        // Processes and Settings
+        await page.getByRole('tab', { name: 'Processes' }).click();
+        await expect(page.getByTestId('processes-tab')).toBeVisible();
+        await page.waitForLoadState('networkidle');
+        await shot(page, theme, 'panel-processes');
+        await page.getByRole('tab', { name: 'Settings' }).click();
+        await expect(page.getByTestId('settings-tab')).toBeVisible();
+        await page.waitForLoadState('networkidle');
+        await shot(page, theme, 'panel-settings');
+        await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Networking' }).click();
+        await expect(page).toHaveURL(/\/settings\/networking$/);
+        await page.waitForTimeout(400);
+        await shot(page, theme, 'panel-settings-networking');
 
         await page.keyboard.press('Escape');
         await page.waitForURL(/\/production$/);

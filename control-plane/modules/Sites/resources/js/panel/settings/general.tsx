@@ -94,7 +94,8 @@ export function SourceSettings({ ctx }: ServiceTabProps) {
             >
                 {!data.settings.source_connection_id && data.settings.repository && (
                     <Callout tone="info" title={`${data.settings.repository} · ${data.settings.branch ?? 'main'}`}>
-                        No git connection is linked, so deploys use a manually installed key. Pick a connection to manage the deploy key and push to deploy.
+                        No git connection is linked, so deploys use a manually installed key. Pick a connection to manage the deploy key and push to
+                        deploy.
                     </Callout>
                 )}
                 <form id="site-source" onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
@@ -163,7 +164,10 @@ export function SourceSettings({ ctx }: ServiceTabProps) {
                     </>
                 ) : (
                     <p className="text-fg-muted flex items-center gap-2 text-sm">
-                        <KeyRound className="size-4" aria-hidden /> No deploy key — this site has no repository.
+                        <KeyRound className="size-4" aria-hidden />{' '}
+                        {data.settings.repository
+                            ? 'No deploy key managed by Kiln — link a git connection to create one.'
+                            : 'No deploy key — this site has no repository.'}
                     </p>
                 )}
             </Section>
@@ -520,7 +524,7 @@ export function ServersSettings({ ctx }: ServiceTabProps) {
 
     return (
         <Section
-            title="Servers"
+            title="Deploy targets"
             description="Where the site deploys. New servers are prepared right away; removed servers keep their files. The leader runs migrations and the scheduler."
             footer={
                 data.can.update && (
@@ -640,7 +644,10 @@ export function LaravelSettings({ ctx }: ServiceTabProps) {
     const toggles = data.settings.laravel;
 
     return (
-        <Section title="Laravel" description="Processes and switches Kiln manages for Laravel apps. Changes apply to the servers right away.">
+        <Section
+            title="Laravel features"
+            description="Processes and switches Kiln manages for Laravel apps. Changes apply to the servers right away."
+        >
             <ul className="divide-border -my-2 divide-y">
                 {LARAVEL.map((item) => (
                     <li key={item.key} className="flex items-center justify-between gap-4 py-2.5">

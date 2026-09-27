@@ -72,7 +72,7 @@ export function CommandsSettings({ ctx }: ServiceTabProps) {
 
     return (
         <Section
-            title="Commands"
+            title="Run a command"
             description={
                 <>
                     Runs in <code className="font-mono text-xs">{data.currentPath}</code> as the site user. Every run is audited.
