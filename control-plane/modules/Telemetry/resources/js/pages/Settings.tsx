@@ -1,17 +1,16 @@
-import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import AppLayout from '@/layouts/app-layout';
-import { type BreadcrumbItem } from '@/types';
-import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { formatDistanceToNow } from 'date-fns';
-import { ExternalLink, RefreshCw } from 'lucide-react';
-import { FormEventHandler, useState } from 'react';
+import { Button } from '@/components/kiln/button';
+import { Callout } from '@/components/kiln/callout';
+import { Field } from '@/components/kiln/field';
+import { Input } from '@/components/kiln/input';
+import { IntegrationIcon } from '@/components/kiln/integration-icon';
+import { RelativeTime } from '@/components/kiln/relative-time';
+import { SecretInput } from '@/components/kiln/secret-input';
+import { Section } from '@/components/kiln/section';
+import { StatusBadge } from '@/components/kiln/status';
+import SettingsLayout from '@/layouts/settings/layout';
+import { router, useForm, usePage } from '@inertiajs/react';
+import { ExternalLink, LayoutDashboard, RefreshCw } from 'lucide-react';
+import { useState, type FormEventHandler, type ReactNode } from 'react';
 
 interface SettingsValues {
     otlp_endpoint: string | null;
@@ -33,19 +32,36 @@ interface Props {
     can: { manage: boolean };
 }
 
-const breadcrumbs: BreadcrumbItem[] = [{ title: 'Telemetry settings', href: '/telemetry/settings' }];
+function inlineErrors(data: { otlp_endpoint: string; environment: string; traces_ratio: string; metrics_interval_s: string }) {
+    const errors: Partial<Record<keyof typeof data, string>> = {};
 
-function Status({ ok, label }: { ok: boolean; label: string }) {
+    if (data.otlp_endpoint && !/^https?:\/\/\S+$/.test(data.otlp_endpoint)) errors.otlp_endpoint = 'Use an http:// or https:// URL.';
+    if (data.environment && !/^[A-Za-z0-9_.-]+$/.test(data.environment)) errors.environment = 'Letters, digits, dots, dashes and underscores.';
+    if (data.traces_ratio !== '' && !(Number(data.traces_ratio) >= 0 && Number(data.traces_ratio) <= 1)) errors.traces_ratio = 'Between 0 and 1.';
+    if (data.metrics_interval_s !== '' && !(Number(data.metrics_interval_s) >= 5 && Number(data.metrics_interval_s) <= 3600)) {
+        errors.metrics_interval_s = 'Between 5 and 3600 seconds.';
+    }
+
+    return errors;
+}
+
+function BackendRow({ icon, label, detail, configured }: { icon: string; label: string; detail: ReactNode; configured: boolean }) {
     return (
-        <div className="flex items-center justify-between gap-2 py-1 text-sm">
-            <span>{label}</span>
-            <Badge variant={ok ? 'secondary' : 'outline'}>{ok ? 'configured' : 'not configured'}</Badge>
-        </div>
+        <li className="flex items-center gap-3 py-2.5">
+            <span className="border-border bg-surface-2 flex size-8 shrink-0 items-center justify-center rounded-md border">
+                <IntegrationIcon name={icon} />
+            </span>
+            <span className="grid min-w-0 flex-1">
+                <span className="text-fg text-sm font-medium">{label}</span>
+                <span className="text-fg-faint truncate text-xs">{detail}</span>
+            </span>
+            <StatusBadge status={configured ? 'active' : 'inactive'} label={configured ? 'Connected' : 'Not configured'} />
+        </li>
     );
 }
 
 export default function Settings({ settings, defaults, backends, can }: Props) {
-    const { errors: pageErrors } = usePage<{ errors: Record<string, string> }>().props;
+    const { errors: pageErrors } = usePage<{ errors: Record<string, string | undefined> }>().props;
     const [provisioning, setProvisioning] = useState(false);
     const form = useForm({
         otlp_endpoint: settings.otlp_endpoint ?? '',
@@ -55,171 +71,203 @@ export default function Settings({ settings, defaults, backends, can }: Props) {
         traces_ratio: settings.traces_ratio?.toString() ?? '',
         metrics_interval_s: settings.metrics_interval_s?.toString() ?? '',
     });
+    const hints = inlineErrors(form.data);
+    const error = (key: keyof typeof hints) => form.errors[key] ?? hints[key];
 
     const submit: FormEventHandler = (event) => {
         event.preventDefault();
-        form.put('/telemetry/settings', { preserveScroll: true, onSuccess: () => form.reset('otlp_token', 'clear_otlp_token') });
+        form.put(route('telemetry.settings.update'), {
+            preserveScroll: true,
+            onSuccess: () => {
+                form.setDefaults({ ...form.data, otlp_token: '', clear_otlp_token: false });
+                form.reset('otlp_token', 'clear_otlp_token');
+            },
+        });
     };
 
     const provision = () => {
         setProvisioning(true);
-        router.post('/telemetry/grafana/provision', {}, { preserveScroll: true, onFinish: () => setProvisioning(false) });
+        router.post(route('telemetry.grafana.provision'), {}, { preserveScroll: true, onFinish: () => setProvisioning(false) });
     };
 
+    const tokenHint = form.data.clear_otlp_token
+        ? 'Will be removed on save'
+        : settings.otlp_token_set
+          ? 'Organization token set'
+          : defaults.otlp_token_set
+            ? 'Using the installation default'
+            : 'No token';
+
     return (
-        <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title="Telemetry settings" />
-            <div className="space-y-6 p-4">
-                <Heading title="Telemetry" description="Where agents ship OTLP traces, logs and metrics, and how Grafana is provisioned" />
-                <div className="grid gap-6 lg:grid-cols-3">
-                    <Card className="lg:col-span-2">
-                        <CardHeader>
-                            <CardTitle>Agent pipeline</CardTitle>
-                            <CardDescription>Saving pushes telemetry.configure to every active server of this organization.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <form onSubmit={submit} className="space-y-4">
-                                <div className="space-y-1">
-                                    <Label htmlFor="otlp_endpoint">OTLP/HTTP endpoint</Label>
-                                    <Input
-                                        id="otlp_endpoint"
-                                        value={form.data.otlp_endpoint}
-                                        onChange={(e) => form.setData('otlp_endpoint', e.target.value)}
-                                        placeholder={defaults.otlp_endpoint}
-                                        disabled={!can.manage}
-                                    />
-                                    <InputError message={form.errors.otlp_endpoint} />
-                                </div>
-                                <div className="space-y-1">
-                                    <Label htmlFor="otlp_token">Bearer token</Label>
-                                    <Input
-                                        id="otlp_token"
-                                        type="password"
-                                        autoComplete="new-password"
-                                        value={form.data.otlp_token}
-                                        onChange={(e) => form.setData('otlp_token', e.target.value)}
-                                        placeholder={
-                                            settings.otlp_token_set
-                                                ? '•••••••• (set — leave blank to keep)'
-                                                : defaults.otlp_token_set
-                                                  ? 'Using the installation default'
-                                                  : 'Not set'
-                                        }
-                                        disabled={!can.manage}
-                                    />
-                                    {settings.otlp_token_set && can.manage && (
-                                        <label className="text-muted-foreground flex items-center gap-2 text-xs">
-                                            <Checkbox
-                                                checked={form.data.clear_otlp_token}
-                                                onCheckedChange={(c) => form.setData('clear_otlp_token', c === true)}
-                                            />
-                                            Remove the organization token
-                                        </label>
-                                    )}
-                                    <InputError message={form.errors.otlp_token} />
-                                </div>
-                                <div className="grid gap-4 sm:grid-cols-3">
-                                    <div className="space-y-1">
-                                        <Label htmlFor="environment">Environment</Label>
-                                        <Input
-                                            id="environment"
-                                            value={form.data.environment}
-                                            onChange={(e) => form.setData('environment', e.target.value)}
-                                            placeholder={defaults.environment}
-                                            disabled={!can.manage}
-                                        />
-                                        <InputError message={form.errors.environment} />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <Label htmlFor="traces_ratio">Trace sampling (0–1)</Label>
-                                        <Input
-                                            id="traces_ratio"
-                                            type="number"
-                                            step="0.01"
-                                            min={0}
-                                            max={1}
-                                            value={form.data.traces_ratio}
-                                            onChange={(e) => form.setData('traces_ratio', e.target.value)}
-                                            placeholder={String(defaults.traces_ratio)}
-                                            disabled={!can.manage}
-                                        />
-                                        <InputError message={form.errors.traces_ratio} />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <Label htmlFor="metrics_interval_s">Metrics interval (s)</Label>
-                                        <Input
-                                            id="metrics_interval_s"
-                                            type="number"
-                                            min={5}
-                                            value={form.data.metrics_interval_s}
-                                            onChange={(e) => form.setData('metrics_interval_s', e.target.value)}
-                                            placeholder={String(defaults.metrics_interval_s)}
-                                            disabled={!can.manage}
-                                        />
-                                        <InputError message={form.errors.metrics_interval_s} />
-                                    </div>
-                                </div>
-                                {can.manage && (
-                                    <Button type="submit" disabled={form.processing}>
-                                        Save and reconfigure servers
-                                    </Button>
-                                )}
-                            </form>
-                        </CardContent>
-                    </Card>
-                    <div className="space-y-6">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Backends</CardTitle>
-                                <CardDescription>Installation-wide (KILN_* environment variables).</CardDescription>
-                            </CardHeader>
-                            <CardContent>
-                                <Status ok={backends.metrics.configured} label={`Metrics (${backends.metrics.backend})`} />
-                                <Status ok={backends.loki.configured} label="Logs (Loki)" />
-                                <Status ok={backends.tempo.configured} label="Traces (Tempo)" />
-                                <Status ok={backends.grafana.configured} label="Grafana" />
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Grafana</CardTitle>
-                                <CardDescription>
-                                    {backends.grafana.provisioned_at
-                                        ? `Provisioned ${formatDistanceToNow(new Date(backends.grafana.provisioned_at), { addSuffix: true })}`
-                                        : 'Not provisioned yet'}
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-3">
-                                {backends.grafana.last_error && <p className="text-destructive text-xs">{backends.grafana.last_error}</p>}
-                                <InputError message={pageErrors.grafana} />
-                                <ul className="space-y-1 text-sm">
-                                    {backends.grafana.dashboards.map((dashboard) => (
-                                        <li key={dashboard.uid}>
-                                            {dashboard.url ? (
-                                                <a
-                                                    href={dashboard.url}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    className="inline-flex items-center gap-1 hover:underline"
-                                                >
-                                                    {dashboard.uid} <ExternalLink className="size-3" />
-                                                </a>
-                                            ) : (
-                                                dashboard.uid
-                                            )}
-                                        </li>
-                                    ))}
-                                </ul>
-                                {can.manage && (
-                                    <Button variant="outline" onClick={provision} disabled={!backends.grafana.configured || provisioning}>
-                                        <RefreshCw className={provisioning ? 'animate-spin' : undefined} /> Provision dashboards
-                                    </Button>
-                                )}
-                            </CardContent>
-                        </Card>
+        <SettingsLayout
+            title="Observability"
+            description="Where server agents ship OTLP traces, logs and metrics for this organization, and the backends Kiln queries for charts and log search."
+        >
+            <form onSubmit={submit}>
+                <Section
+                    title="Agent pipeline"
+                    description="Empty fields use the installation defaults shown as placeholders. Saving pushes the configuration to every active server."
+                    footer={
+                        can.manage && (
+                            <>
+                                {form.isDirty && <span className="text-fg-faint mr-auto text-xs">Unsaved changes</span>}
+                                <Button variant="primary" type="submit" loading={form.processing} disabled={!form.isDirty || Object.keys(hints).length > 0}>
+                                    Save and reconfigure servers
+                                </Button>
+                            </>
+                        )
+                    }
+                >
+                    <Field label="OTLP/HTTP endpoint" error={error('otlp_endpoint')}>
+                        <Input
+                            mono
+                            value={form.data.otlp_endpoint}
+                            onChange={(event) => form.setData('otlp_endpoint', event.target.value)}
+                            placeholder={defaults.otlp_endpoint || 'https://otlp.example.com'}
+                            disabled={!can.manage}
+                        />
+                    </Field>
+                    <Field
+                        label="Bearer token"
+                        error={form.errors.otlp_token}
+                        hint="Sent by agents as Authorization: Bearer … — write-only."
+                        aside={
+                            can.manage &&
+                            settings.otlp_token_set && (
+                                <button
+                                    type="button"
+                                    className="text-fg-faint hover:text-danger text-xs"
+                                    onClick={() => form.setData({ ...form.data, otlp_token: '', clear_otlp_token: !form.data.clear_otlp_token })}
+                                >
+                                    {form.data.clear_otlp_token ? 'Keep token' : 'Remove token'}
+                                </button>
+                            )
+                        }
+                    >
+                        <SecretInput
+                            stored={settings.otlp_token_set && !form.data.clear_otlp_token}
+                            storedHint={tokenHint}
+                            value={form.data.otlp_token}
+                            onChange={(value) => form.setData('otlp_token', value)}
+                            placeholder={tokenHint}
+                            disabled={!can.manage}
+                        />
+                    </Field>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                        <Field label="Environment" error={error('environment')}>
+                            <Input
+                                mono
+                                value={form.data.environment}
+                                onChange={(event) => form.setData('environment', event.target.value)}
+                                placeholder={defaults.environment}
+                                disabled={!can.manage}
+                            />
+                        </Field>
+                        <Field label="Trace sampling" hint="0 – 1" error={error('traces_ratio')}>
+                            <Input
+                                type="number"
+                                step="0.01"
+                                min={0}
+                                max={1}
+                                value={form.data.traces_ratio}
+                                onChange={(event) => form.setData('traces_ratio', event.target.value)}
+                                placeholder={String(defaults.traces_ratio)}
+                                disabled={!can.manage}
+                            />
+                        </Field>
+                        <Field label="Metrics interval" error={error('metrics_interval_s')}>
+                            <Input
+                                type="number"
+                                min={5}
+                                max={3600}
+                                value={form.data.metrics_interval_s}
+                                onChange={(event) => form.setData('metrics_interval_s', event.target.value)}
+                                placeholder={String(defaults.metrics_interval_s)}
+                                suffix={<span className="text-xs">s</span>}
+                                disabled={!can.manage}
+                            />
+                        </Field>
                     </div>
-                </div>
-            </div>
-        </AppLayout>
+                </Section>
+            </form>
+
+            <Section title="Backends" description="Installation-wide, configured with KILN_* environment variables on the control plane.">
+                <ul className="divide-border -my-2 divide-y">
+                    <BackendRow
+                        icon={backends.metrics.backend.toLowerCase().includes('victoria') ? 'victoriametrics' : 'prometheus'}
+                        label="Metrics"
+                        detail={backends.metrics.backend}
+                        configured={backends.metrics.configured}
+                    />
+                    <BackendRow icon="grafana" label="Logs" detail="Loki" configured={backends.loki.configured} />
+                    <BackendRow icon="grafana" label="Traces" detail="Tempo" configured={backends.tempo.configured} />
+                    <BackendRow icon="grafana" label="Dashboards" detail="Grafana" configured={backends.grafana.configured} />
+                </ul>
+            </Section>
+
+            <Section
+                title="Grafana dashboards"
+                description={
+                    backends.grafana.provisioned_at ? (
+                        <>
+                            Provisioned <RelativeTime value={backends.grafana.provisioned_at} /> into this organization's Grafana folder.
+                        </>
+                    ) : (
+                        'Kiln creates a folder and dashboards for this organization in Grafana.'
+                    )
+                }
+                aside={
+                    can.manage && (
+                        <Button
+                            size="sm"
+                            icon={<RefreshCw />}
+                            loading={provisioning}
+                            onClick={provision}
+                            disabled={!backends.grafana.configured}
+                            title={backends.grafana.configured ? undefined : 'Set KILN_GRAFANA_URL and KILN_GRAFANA_TOKEN first'}
+                        >
+                            {backends.grafana.provisioned_at ? 'Re-provision' : 'Provision'}
+                        </Button>
+                    )
+                }
+            >
+                {(pageErrors.grafana ?? backends.grafana.last_error) && (
+                    <Callout tone="danger" title="Provisioning failed">
+                        {pageErrors.grafana ?? backends.grafana.last_error}
+                    </Callout>
+                )}
+                {backends.grafana.dashboards.length === 0 ? (
+                    <p className="text-fg-muted flex items-center gap-2 text-sm">
+                        <LayoutDashboard className="text-fg-faint size-4" aria-hidden />
+                        {backends.grafana.configured
+                            ? 'No dashboards yet — provision them to get server, site and database dashboards.'
+                            : 'Grafana is not configured on this installation. Charts inside Kiln still work with a metrics backend.'}
+                    </p>
+                ) : (
+                    <ul className="grid gap-1.5 sm:grid-cols-2">
+                        {backends.grafana.dashboards.map((dashboard) => (
+                            <li key={dashboard.uid}>
+                                {dashboard.url ? (
+                                    <a
+                                        href={dashboard.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="border-border hover:bg-surface-2 text-fg flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors"
+                                    >
+                                        <LayoutDashboard className="text-fg-faint size-4" aria-hidden />
+                                        <span className="truncate font-mono text-xs">{dashboard.uid}</span>
+                                        <ExternalLink className="text-fg-faint ml-auto size-3.5" aria-hidden />
+                                    </a>
+                                ) : (
+                                    <span className="border-border text-fg-muted flex items-center gap-2 rounded-md border px-3 py-2 font-mono text-xs">
+                                        {dashboard.uid}
+                                    </span>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </Section>
+        </SettingsLayout>
     );
 }
