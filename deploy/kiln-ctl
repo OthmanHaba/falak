@@ -177,7 +177,7 @@ cmd_status() {
   say
   say "  panel:      $(env_get KILN_URL)"
   say "  agent API:  $(env_get KILN_AGENT_API_URL)"
-  [ -n "$(env_get KILN_GRAFANA_HOST)" ] && say "  grafana:    $(env_get KILN_GRAFANA_PUBLIC_URL)"
+  if [ -n "$(env_get KILN_GRAFANA_HOST)" ]; then say "  grafana:    $(env_get KILN_GRAFANA_PUBLIC_URL)"; fi
   local last
   last="$(latest_backup)"
   say "  last backup: ${last:-none}"
@@ -192,9 +192,9 @@ cmd_logs() {
   compose logs --tail="${KILN_LOG_TAIL:-200}" "${follow[@]}" "${svc[@]}"
 }
 
-latest_backup() {
-  # newest first by name (timestamped)
-  find "$BACKUP_DIR" -maxdepth 1 -type f -name 'kiln-backup-*' 2>/dev/null | sort -r | head -1
+latest_backup() { # newest by name (UTC timestamps sort)
+  [ -d "$BACKUP_DIR" ] || return 0
+  find "$BACKUP_DIR" -maxdepth 1 -type f -name 'kiln-backup-*' 2>/dev/null | sort -r | head -1 || true
 }
 
 cmd_backup() {
