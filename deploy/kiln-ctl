@@ -103,7 +103,7 @@ health_check() { # quiet health check used by update/restore; prints problems
   done < <(compose ps -a --format '{{.Service}} {{.State}} {{.Health}}' 2>/dev/null)
   local code
   code="$(edge_curl "$(env_get KILN_DOMAIN)" /up -o /dev/null -w '%{http_code}' 2>/dev/null || true)"
-  if [ "$code" = "200" ]; then ok "panel https://$(env_get KILN_DOMAIN)/up -> 200"; else bad "panel /up -> ${code:-no response}"; failed=1; fi
+  if [ "$code" = "200" ]; then ok "panel $(env_get KILN_URL)/up -> 200"; else bad "panel $(env_get KILN_URL)/up -> ${code:-no response}"; failed=1; fi
   return "$failed"
 }
 
@@ -465,7 +465,10 @@ cmd_doctor() {
   if end="$(cert_field "$domain" -enddate)"; then
     issuer="$(cert_field "$domain" -issuer || true)"
     ok "$domain: ${end#notAfter=} (${issuer#issuer=})"
-    days_left "${end#notAfter=}" 14 || { warn "$domain certificate expires within 14 days"; problems=$((problems + 1)); }
+    # Caddy's internal CA issues 12-hour certificates (KILN_TLS=internal); ACME renews 30 days ahead.
+    if [ "$(env_get KILN_TLS acme)" = acme ] && ! days_left "${end#notAfter=}" 14; then
+      warn "$domain certificate expires within 14 days (renewal failing? kiln-ctl logs edge)"; problems=$((problems + 1))
+    fi
   else bad "$domain: no TLS certificate served"; problems=$((problems + 1)); fi
   local ca
   ca="$(mktemp)"
