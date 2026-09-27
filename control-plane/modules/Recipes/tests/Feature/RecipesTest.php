@@ -16,7 +16,7 @@ it('lists organization recipes and built-ins', function () {
     Recipe::query()->create(['organization_id' => $organization->id, 'name' => 'Deploy check', 'script' => 'uptime', 'user' => 'root']);
     Recipe::query()->create(['organization_id' => (string) Str::ulid(), 'name' => 'Other org', 'script' => 'id', 'user' => 'root']);
 
-    $this->get('/recipes')->assertOk()->assertInertia(fn ($page) => $page
+    $this->get('/settings/recipes')->assertOk()->assertInertia(fn ($page) => $page
         ->component('Recipes/Index', false)
         ->has('recipes', 1)
         ->where('recipes.0.name', 'Deploy check')
@@ -36,7 +36,7 @@ it('creates, updates and deletes recipes with audit entries', function () {
     $this->put("/recipes/{$recipe->id}", ['name' => 'Tail logs', 'script' => 'tail /var/log/kern.log', 'user' => 'kiln', 'description' => 'kernel'])->assertSessionHasNoErrors();
     expect($recipe->refresh()->user)->toBe('kiln')->and($recipe->description)->toBe('kernel');
 
-    $this->delete("/recipes/{$recipe->id}")->assertRedirect('/recipes');
+    $this->delete("/recipes/{$recipe->id}")->assertRedirect('/settings/recipes');
     expect(Recipe::query()->count())->toBe(0);
 
     $actions = DB::table('identity_audit_log')->where('organization_id', $organization->id)->pluck('action')->all();

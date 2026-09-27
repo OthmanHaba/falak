@@ -61,8 +61,8 @@ export default function Run({ recipe, servers, defaultTimeout, maxTimeout }: Pro
     });
 
     const breadcrumbs: BreadcrumbItem[] = [
-        { title: 'Recipes', href: '/recipes' },
-        { title: `Run ${recipe.name}`, href: typeof window === 'undefined' ? '/recipes' : window.location.pathname },
+        { title: 'Recipes', href: '/settings/recipes' },
+        { title: `Run ${recipe.name}`, href: typeof window === 'undefined' ? '/settings/recipes' : window.location.pathname },
     ];
 
     const visible = useMemo(

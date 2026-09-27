@@ -212,8 +212,10 @@ export default function Rules({ rules, channels, alertTypes, severities, timezon
                     action={
                         can.manage &&
                         (channels.length === 0 ? (
-                            <Button asChild variant="primary" icon={<Plus />}>
-                                <Link href={route('alerting.channels.index')}>Add a channel</Link>
+                            <Button asChild variant="primary">
+                                <Link href={route('alerting.channels.index')}>
+                                    <Plus /> Add a channel
+                                </Link>
                             </Button>
                         ) : (
                             <Button variant="primary" icon={<Plus />} onClick={startCreate}>

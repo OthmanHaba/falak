@@ -21,7 +21,7 @@ interface Props {
 const ALL = 'all';
 const STATUSES: RunStatus[] = ['pending', 'running', 'succeeded', 'partial', 'failed'];
 const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'Recipes', href: '/recipes' },
+    { title: 'Recipes', href: '/settings/recipes' },
     { title: 'Runs', href: '/recipes/runs' },
 ];
 

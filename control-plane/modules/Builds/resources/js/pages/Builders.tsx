@@ -174,8 +174,10 @@ export default function Builders({ builders, localConfigured, panelUrl, plainTok
                 description="Kiln servers of type Builder. Kiln installs and upgrades kiln-builder on them for you."
                 aside={
                     can.manage && (
-                        <Button asChild size="sm" icon={<Server />}>
-                            <Link href="/servers/create">Add builder server</Link>
+                        <Button asChild size="sm">
+                            <Link href="/servers/create">
+                                <Server /> Add builder server
+                            </Link>
                         </Button>
                     )
                 }
