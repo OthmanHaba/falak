@@ -4,6 +4,7 @@
 !contracts/
 !control-plane/
 !observability/grafana/dashboards/
+!templates/
 !deploy/control-plane/
 
 agent/bin

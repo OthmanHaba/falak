@@ -33,6 +33,7 @@ use Kiln\Projects\Application\Actions\CreateProject;
 use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Domain\Models\Server;
+use Kiln\Servers\Domain\Stack\Stack;
 use Kiln\Sites\Contracts\BuildMode;
 use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\ComposeSource;
@@ -45,6 +46,7 @@ use Kiln\Sites\Domain\Models\ComposeVersion;
 use Kiln\Sites\Domain\Models\EnvironmentVersion;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Models\SiteTarget;
+use Kiln\Templates\Application\Actions\SaveCustomTemplate;
 
 /**
  * Local UI demo data (`php artisan db:seed --class=UiDemoSeeder`): an admin, an organization, a few servers and
@@ -74,6 +76,8 @@ class UiDemoSeeder extends Seeder
             'organization_id' => $organization->id,
             'name' => $spec[0],
             ...($spec[0] === 'db-1' ? ['stack' => ['database' => 'postgresql'], 'private_ipv4' => '10.0.0.12'] : []),
+            // Docker-capable, so compose templates can target it.
+            ...($spec[0] === 'app-1' ? ['stack' => [...Stack::defaultsFor(ServerType::App)->toArray(), 'docker' => true]] : []),
         ]));
 
         $sites = [
@@ -133,7 +137,54 @@ class UiDemoSeeder extends Seeder
         $this->callWith(SettingsDemoSeeder::class, ['organizationId' => $organization->id, 'userId' => $admin->id]);
 
         $this->call(ObservabilityDemoSeeder::class, false, ['organizationId' => $organization->id, 'userId' => $admin->id]);
+
+        // Settings → Templates: an organization template next to the catalog.
+        app(SaveCustomTemplate::class)($organization->id, $admin->id, self::CUSTOM_TEMPLATE, self::CUSTOM_COMPOSE);
     }
+
+    private const CUSTOM_TEMPLATE = <<<'YAML'
+name: Acme Status API
+slug: acme-status-api
+version: 1.2.0
+description: Internal status API with a Redis cache, used by every Acme storefront.
+category: dev-tools
+icon: docker
+stateful: false
+min_memory_mb: 256
+tags: [internal, api]
+public:
+  - service: api
+    port: 8080
+inputs:
+  - key: API_TOKEN
+    type: secret
+    generate: hex(32)
+    label: API token
+  - key: LOG_LEVEL
+    type: select
+    options: [debug, info, warn, error]
+    default: info
+YAML;
+
+    private const CUSTOM_COMPOSE = <<<'YAML'
+services:
+  api:
+    image: ghcr.io/acme/status-api:1.2.0
+    restart: unless-stopped
+    expose: ["8080"]
+    environment:
+      API_TOKEN: ${API_TOKEN}
+      LOG_LEVEL: ${LOG_LEVEL}
+      PUBLIC_URL: ${{ kiln.url(api) }}
+      REDIS_URL: redis://cache:6379
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+  cache:
+    image: redis:8.2.1-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+YAML;
 
     /**
      * A Docker Compose site (docs/COMPOSE_TEMPLATES.md §1) created from the n8n template: two inline compose versions,

@@ -1,7 +1,10 @@
 <?php
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
+use Kiln\Deployments\Contracts\DeploymentTrigger;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\Trigger;
 use Kiln\Deployments\Domain\Models\Deployment;
@@ -191,4 +194,18 @@ it('fails fast when the site cannot be deployed', function () {
         ->and($deployment->error)->toContain('must come before');
     $world->agents->assertNothingDispatched();
     expect($world->builds->builds)->toBe([]);
+});
+
+it('starts deployments for other modules through the DeploymentTrigger contract', function () {
+    $world = deploy_world();
+
+    $id = app(DeploymentTrigger::class)->deploy($world->site->id, $world->user->id);
+
+    $deployment = Deployment::query()->findOrFail($id);
+    expect($deployment->site_id)->toBe($world->site->id)
+        ->and($deployment->trigger)->toBe(Trigger::Manual)
+        ->and($deployment->requested_by)->toBe($world->user->id);
+
+    expect(fn () => app(DeploymentTrigger::class)->deploy(strtolower((string) Str::ulid())))
+        ->toThrow(ValidationException::class);
 });

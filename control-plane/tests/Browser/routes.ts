@@ -183,6 +183,10 @@ export const routes: BrowserRoute[] = [
     { path: '/projects/:canvas/service/site/:composeSite/settings/compose' },
     { path: '/projects/:canvas/service/site/:composeSite/logs/redis', allowedFailures: observability },
     { path: '/settings/compose' },
+
+    // templates
+    { path: '/templates' },
+    { path: '/settings/templates' },
 ];
 
 export function slugFor(path: string): string {

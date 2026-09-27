@@ -198,6 +198,43 @@ export interface ServiceSettingsSection {
     component: ComponentType<ServiceTabProps>;
 }
 
+/**
+ * Window event that opens the canvas Create picker (⌘K → Create service). A CustomEvent with `detail.option` opens a
+ * registered create option directly (e.g. `new CustomEvent(CREATE_SERVICE_EVENT, {detail: {option: 'template'}})`).
+ */
+export const CREATE_SERVICE_EVENT = 'kiln:canvas-create';
+
+export interface CreateOptionProps {
+    projectId: string;
+    environmentSlug: string;
+    /** Canvas coordinates for the new card; auto-placed when null. */
+    position: { x: number; y: number } | null;
+    /** The new card (and the first deployment when one was started): the canvas adds it and opens its panel. */
+    onCreated: (service: CanvasService, deploymentId: string | null) => void;
+    onClose: () => void;
+}
+
+/**
+ * A kind in the canvas Create picker (§4) contributed by another module (e.g. Templates' "Template"). Projects renders
+ * the built-in kinds (git, database, docker image, empty) and appends these; picking one renders its `component`
+ * inside the picker.
+ */
+export interface CreateOption {
+    id: string;
+    title: string;
+    description: string;
+    icon: LucideIcon;
+    /** Lower comes first; built-in kinds use 100–400. */
+    order: number;
+    /** Organization permission needed (in addition to managing the project). */
+    permission?: string;
+    /** Picker header while the option is open (defaults to `title`). */
+    stepTitle?: string;
+    /** Render the picker wider while the option is open (galleries, long forms). */
+    wide?: boolean;
+    component: ComponentType<CreateOptionProps>;
+}
+
 const navItems = new Map<string, ModuleNavItem>();
 const settingsItems = new Map<string, SettingsNavItem>();
 const headerItems = new Map<string, HeaderItem>();
@@ -205,6 +242,7 @@ const commandProviders = new Map<string, CommandProvider>();
 const serviceTabs = new Map<string, ServiceTab>();
 const serviceActions = new Map<string, ServiceAction>();
 const settingsSections = new Map<string, ServiceSettingsSection>();
+const createOptions = new Map<string, CreateOption>();
 
 export function registerNavigation(...items: ModuleNavItem[]): void {
     items.forEach((item) => navItems.set(item.id, item));
@@ -276,6 +314,14 @@ export function serviceSettingsSectionsFor(ctx: ServicePanelContext): ServiceSet
                 section.kinds.includes(ctx.service.kind) && (!section.permission || ctx.can(section.permission)) && (section.when?.(ctx) ?? true),
         )
         .sort((a, b) => a.order - b.order);
+}
+
+export function registerCreateOptions(...options: CreateOption[]): void {
+    options.forEach((option) => createOptions.set(option.id, option));
+}
+
+export function createOptionsFor(ctx: Pick<ShellContext, 'can'>): CreateOption[] {
+    return [...createOptions.values()].filter((option) => !option.permission || ctx.can(option.permission)).sort((a, b) => a.order - b.order);
 }
 
 export function navigationFor(ctx: ShellContext): ModuleNavItem[] {

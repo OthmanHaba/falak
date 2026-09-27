@@ -1,12 +1,13 @@
 import { Button, Checkbox, Combobox, Field, IconButton, Input, Select, ServiceIcon, Skeleton, Tag, toast } from '@/components/kiln';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, HttpError, requestJson } from '@/lib/http';
+import { createOptionsFor, shellContext, type CreateOption } from '@/lib/registry';
 import { cn } from '@/lib/utils';
-import { type CanvasService } from '@/types';
-import { Link } from '@inertiajs/react';
+import { type CanvasService, type SharedData } from '@/types';
+import { Link, usePage } from '@inertiajs/react';
 import { Command } from 'cmdk';
 import { ArrowLeft, Box, ChevronRight, Database, GitBranch, LayoutTemplate, Lock, Rocket, Search, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { type ProjectAbilities } from '../types';
 
 /** Sites' GET /sites/create JSON (the create form options). */
@@ -35,7 +36,9 @@ interface EngineServer {
     version: string | null;
 }
 
-type Step = 'root' | 'git' | 'docker' | 'empty' | 'database';
+type BuiltinStep = 'root' | 'git' | 'docker' | 'empty' | 'database';
+/** Built-in kinds, or `option:<id>` for a kind another module registered (registerCreateOptions). */
+type Step = BuiltinStep | `option:${string}`;
 
 export interface CreatePickerProps {
     projectId: string;
@@ -48,6 +51,8 @@ export interface CreatePickerProps {
     onClose: () => void;
     /** The new card, and the first deployment when one was started. */
     onCreated: (service: CanvasService, deploymentId: string | null) => void;
+    /** Open a registered option right away (e.g. ⌘K → Deploy template…). */
+    initialOption?: string | null;
 }
 
 /** Guess the framework preset from the repository name (the user can change it before deploying). */
@@ -158,8 +163,13 @@ function ServersField({
  * service is created through the Projects create-service endpoint; sites deploy right away and open on their
  * Deploy view.
  */
-export function CreatePicker({ projectId, environmentSlug, can, position, anchor, onClose, onCreated }: CreatePickerProps) {
-    const [step, setStep] = useState<Step>('root');
+export function CreatePicker({ projectId, environmentSlug, can, position, anchor, onClose, onCreated, initialOption = null }: CreatePickerProps) {
+    const { props } = usePage<SharedData>();
+    const options = useMemo(() => (can.create_sites ? createOptionsFor(shellContext(props)) : []), [can.create_sites, props]);
+    const [step, setStep] = useState<Step>(() =>
+        initialOption && options.some((option) => option.id === initialOption) ? `option:${initialOption}` : 'root',
+    );
+    const option = step.startsWith('option:') ? (options.find((item) => `option:${item.id}` === step) ?? null) : null;
     const ref = useRef<HTMLDivElement>(null);
     const needsSites = step === 'git' || step === 'docker' || step === 'empty';
     const sites = useJson<SiteOptions>(needsSites && can.create_sites ? '/sites/create' : null);
@@ -225,11 +235,15 @@ export function CreatePicker({ projectId, environmentSlug, can, position, anchor
         }
     };
 
+    const wide = option?.wide ?? false;
     const style = anchor
-        ? { left: Math.max(8, Math.min(anchor.x, window.innerWidth - 408)), top: Math.max(56, Math.min(anchor.y, window.innerHeight - 480)) }
+        ? {
+              left: Math.max(8, Math.min(anchor.x, window.innerWidth - (wide ? 568 : 408))),
+              top: Math.max(56, Math.min(anchor.y, window.innerHeight - (wide ? 640 : 480))),
+          }
         : undefined;
 
-    const titles: Record<Step, string> = {
+    const titles: Record<BuiltinStep, string> = {
         root: 'Create',
         git: 'Deploy a Git repository',
         docker: 'Deploy a Docker image',
@@ -241,20 +255,44 @@ export function CreatePicker({ projectId, environmentSlug, can, position, anchor
         <div
             ref={ref}
             role="dialog"
-            aria-label={titles[step]}
+            aria-label={option ? (option.stepTitle ?? option.title) : titles[step as BuiltinStep]}
             style={style}
             className={cn(
-                'animate-fade-in border-border bg-surface-1 shadow-panel z-30 flex max-h-[min(640px,calc(100svh-7rem))] w-[min(400px,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border',
+                'animate-fade-in border-border bg-surface-1 shadow-panel z-30 flex flex-col overflow-hidden rounded-xl border',
+                wide
+                    ? 'max-h-[min(760px,calc(100svh-7rem))] w-[min(560px,calc(100vw-2rem))]'
+                    : 'max-h-[min(640px,calc(100svh-7rem))] w-[min(400px,calc(100vw-2rem))]',
                 anchor ? 'fixed' : 'absolute top-14 right-3 md:right-4',
             )}
         >
             <div className="border-border flex items-center gap-1 border-b px-2 py-2">
                 {step !== 'root' && <IconButton size="sm" label="Back" icon={<ArrowLeft />} onClick={() => go('root')} />}
-                <span className="text-fg flex-1 px-1 text-sm font-medium">{titles[step]}</span>
+                <span className="text-fg flex-1 px-1 text-sm font-medium">
+                    {option ? (option.stepTitle ?? option.title) : titles[step as BuiltinStep]}
+                </span>
                 <IconButton size="sm" label="Close" shortcut="Esc" icon={<X />} onClick={onClose} />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
-                {step === 'root' && <RootStep can={can} onPick={go} />}
+                {step === 'root' && <RootStep can={can} options={options} onPick={go} />}
+                {option && (
+                    <Suspense
+                        fallback={
+                            <div className="grid gap-2 p-4">
+                                {[0, 1, 2].map((i) => (
+                                    <Skeleton key={i} className="h-8" />
+                                ))}
+                            </div>
+                        }
+                    >
+                        <option.component
+                            projectId={projectId}
+                            environmentSlug={environmentSlug}
+                            position={position}
+                            onCreated={onCreated}
+                            onClose={onClose}
+                        />
+                    </Suspense>
+                )}
                 {needsSites && !sites.data && (
                     <div className="grid gap-2 p-4">
                         {sites.error ? <Errors errors={[sites.error]} /> : [0, 1, 2].map((i) => <Skeleton key={i} className="h-8" />)}
@@ -283,7 +321,7 @@ export function CreatePicker({ projectId, environmentSlug, can, position, anchor
     );
 }
 
-function RootStep({ can, onPick }: { can: ProjectAbilities; onPick: (step: Step) => void }) {
+function RootStep({ can, options, onPick }: { can: ProjectAbilities; options: CreateOption[]; onPick: (step: Step) => void }) {
     const items: { id: Step | 'template'; title: string; description: string; icon: ReactNode; disabled?: boolean; soon?: boolean }[] = [
         {
             id: 'git',
@@ -307,7 +345,25 @@ function RootStep({ can, onPick }: { can: ProjectAbilities; onPick: (step: Step)
             disabled: !can.create_sites,
         },
         { id: 'empty', title: 'Empty service', description: 'Configure the source later', icon: <Box />, disabled: !can.create_sites },
-        { id: 'template', title: 'Template', description: 'Multi-service compose templates', icon: <LayoutTemplate />, disabled: true, soon: true },
+        ...options.map((option) => ({
+            id: `option:${option.id}` as Step,
+            title: option.title,
+            description: option.description,
+            icon: <option.icon />,
+        })),
+        // Stand-in until the Templates module registers its option.
+        ...(options.some((option) => option.id === 'template')
+            ? []
+            : [
+                  {
+                      id: 'template' as const,
+                      title: 'Template',
+                      description: 'Multi-service compose templates',
+                      icon: <LayoutTemplate />,
+                      disabled: true,
+                      soon: true,
+                  },
+              ]),
     ];
 
     return (

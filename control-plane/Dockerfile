@@ -65,6 +65,7 @@ COPY control-plane/ ./
 COPY --from=assets /app/public/build ./public/build
 COPY --from=binaries /out/ /opt/kiln/bin/
 COPY contracts/ /opt/kiln/contracts/
+COPY templates/ /opt/kiln/templates/
 COPY observability/grafana/dashboards/ /opt/kiln/observability/grafana/dashboards/
 COPY deploy/control-plane/Caddyfile /etc/frankenphp/Caddyfile
 COPY --chmod=0755 deploy/control-plane/entrypoint.sh /usr/local/bin/kiln-entrypoint
@@ -88,6 +89,7 @@ ENV APP_ENV=production \
     KILN_AGENT_BINARIES_PATH=/opt/kiln/bin \
     KILN_BUILDER_BINARIES_PATH=/opt/kiln/bin \
     KILN_AGENT_SCHEMAS_PATH=/opt/kiln/contracts/agent-protocol \
+    KILN_TEMPLATES_PATH=/opt/kiln/templates \
     KILN_GRAFANA_DASHBOARDS_PATH=/opt/kiln/observability/grafana/dashboards
 USER www-data
 EXPOSE 8080
