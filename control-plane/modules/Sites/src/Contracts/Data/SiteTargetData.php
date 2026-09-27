@@ -13,6 +13,8 @@ final readonly class SiteTargetData
         public string $serverId,
         public TargetRole $role,
         public TargetStatus $status,
+        /** Why preparation failed (when $status is Failed). */
+        public ?string $statusMessage = null,
     ) {}
 
     public function isLeader(): bool

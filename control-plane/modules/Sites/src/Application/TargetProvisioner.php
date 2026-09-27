@@ -10,6 +10,7 @@ use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Contracts\TargetStatus;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Models\SiteTarget;
+use Kiln\Sites\Events\SiteTargetFailed;
 use Kiln\Sites\Events\SiteTargetReady;
 use Kiln\Sites\Infrastructure\CommandPayloads;
 
@@ -52,6 +53,8 @@ final class TargetProvisioner
     public function fail(SiteTarget $target, string $reason): void
     {
         $target->forceFill(['status' => TargetStatus::Failed, 'status_message' => Str::limit($reason, 990), 'command_id' => null])->save();
+
+        SiteTargetFailed::dispatch($target->site_id, $target->site->organization_id, $target->server_id, $target->id, (string) $target->status_message);
     }
 
     /**

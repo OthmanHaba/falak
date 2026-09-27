@@ -7,7 +7,7 @@ use DateTimeImmutable;
 final readonly class DeploymentSummary
 {
     /**
-     * @param  string  $status  queued | building | deploying | succeeded | failed | cancelled
+     * @param  string  $status  queued | waiting (for the site's servers to finish preparing) | building | deploying | succeeded | failed | cancelled
      * @param  ?int  $progress  0–100 while building / deploying (finished plan steps), null otherwise
      */
     public function __construct(

@@ -18,6 +18,7 @@ use Kiln\Deployments\Application\Listeners\HandleBuildEvents;
 use Kiln\Deployments\Application\Listeners\HandleCommandOutcome;
 use Kiln\Deployments\Application\Listeners\RecordBuildOutput;
 use Kiln\Deployments\Application\Listeners\RecordCommandOutput;
+use Kiln\Deployments\Application\Listeners\ResumeWaitingDeployments;
 use Kiln\Deployments\Contracts\DeploymentDirectory;
 use Kiln\Deployments\Contracts\DeploymentTrigger;
 use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
@@ -35,6 +36,9 @@ use Kiln\Identity\Events\OrganizationDeleted;
 use Kiln\Kernel\Support\ModuleServiceProvider;
 use Kiln\Sites\Contracts\SiteResourceExtension;
 use Kiln\Sites\Events\SiteDeleted;
+use Kiln\Sites\Events\SiteTargetFailed;
+use Kiln\Sites\Events\SiteTargetReady;
+use Kiln\Sites\Events\SiteTargetsChanged;
 use Kiln\SourceControl\Events\PushReceived;
 
 class DeploymentsServiceProvider extends ModuleServiceProvider
@@ -66,7 +70,7 @@ class DeploymentsServiceProvider extends ModuleServiceProvider
     {
         $registry = $this->app->make(PermissionRegistry::class);
         $registry->register(DeploymentPermissions::VIEW, [Role::Admin, Role::Developer, Role::Viewer], 'View deployments, their output and releases', 'deployments');
-        $registry->register(DeploymentPermissions::CREATE, [Role::Admin, Role::Developer], 'Deploy sites and cancel queued deployments', 'deployments');
+        $registry->register(DeploymentPermissions::CREATE, [Role::Admin, Role::Developer], 'Deploy sites and cancel queued or waiting deployments', 'deployments');
         $registry->register(DeploymentPermissions::ROLLBACK, [Role::Admin, Role::Developer], 'Roll sites back to an earlier release', 'deployments');
         $registry->register(DeploymentPermissions::MANAGE, [Role::Admin, Role::Developer], 'Change deployment strategy, health checks, retention, push-to-deploy and deploy hooks', 'deployments');
 
@@ -83,6 +87,7 @@ class DeploymentsServiceProvider extends ModuleServiceProvider
         Event::listen(BuildOutputReceived::class, RecordBuildOutput::class);
         Event::listen(PushReceived::class, DeployOnPush::class);
         Event::listen(SiteDeleted::class, [ForgetDeletedResources::class, 'siteDeleted']);
+        Event::listen([SiteTargetReady::class, SiteTargetFailed::class, SiteTargetsChanged::class], ResumeWaitingDeployments::class);
         Event::listen(OrganizationDeleted::class, [ForgetDeletedResources::class, 'organizationDeleted']);
 
         Broadcast::channel(DeploymentChannel::NAME, DeploymentChannel::class);

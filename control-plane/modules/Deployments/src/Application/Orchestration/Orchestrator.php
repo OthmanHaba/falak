@@ -47,7 +47,6 @@ use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\Data\SiteTargetData;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetStatus as SiteTargetStatus;
 use Kiln\Telemetry\Contracts\Annotations;
 use RuntimeException;
 use Throwable;
@@ -245,17 +244,25 @@ final class Orchestrator
     }
 
     /**
-     * Cancel a queued deployment, or one still building (nothing has touched the servers yet).
+     * Cancel a queued or waiting deployment, or one still building (nothing has touched the servers yet).
      */
     public function cancel(string $deploymentId): bool
     {
         $cancelled = false;
 
         $this->locked($deploymentId, function (Deployment $deployment) use (&$cancelled) {
-            if ($deployment->status === DeploymentStatus::Queued) {
-                $deployment->forceFill(['status' => DeploymentStatus::Cancelled, 'finished_at' => now(), 'error' => 'Cancelled before it started.'])->save();
+            if ($deployment->status === DeploymentStatus::Queued || $deployment->status === DeploymentStatus::Waiting) {
+                $waiting = $deployment->status === DeploymentStatus::Waiting;
+                $deployment->forceFill(['status' => DeploymentStatus::Cancelled, 'finished_at' => now(), 'error' => 'Cancelled before it started.', 'waiting_reason' => null])->save();
+                $this->log->note($deployment->id, 'Deployment cancelled before it started.');
                 $this->updated($deployment);
                 $cancelled = true;
+
+                if ($waiting) {
+                    // A waiting deployment held the site's queue: let the next one go.
+                    $siteId = $deployment->site_id;
+                    $this->afterCommit(fn () => $this->queue->startNext($siteId));
+                }
 
                 return;
             }
@@ -292,10 +299,21 @@ final class Orchestrator
             throw new InvalidArgumentException('On-server builds are not supported yet; switch the site to native builds.');
         }
 
-        $ready = array_values(array_filter($site->targets, fn (SiteTargetData $t) => $t->status === SiteTargetStatus::Ready));
+        $readiness = TargetReadiness::of($site, $this->servers);
+        $blocker = $readiness->blocker();
+
+        if ($blocker !== null) {
+            throw new InvalidArgumentException($blocker);
+        }
+
+        $ready = $readiness->ready;
 
         if ($ready === []) {
             throw new InvalidArgumentException('The site has no ready servers.');
+        }
+
+        foreach ($readiness->skipped() as $warning) {
+            $this->log->note($deployment->id, $warning, stream: 'stderr');
         }
 
         usort($ready, fn (SiteTargetData $a, SiteTargetData $b) => (int) $b->isLeader() <=> (int) $a->isLeader());

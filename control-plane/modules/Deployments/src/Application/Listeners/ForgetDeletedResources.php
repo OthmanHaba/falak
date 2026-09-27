@@ -17,7 +17,7 @@ final class ForgetDeletedResources
 {
     public function siteDeleted(SiteDeleted $event): void
     {
-        Deployment::query()->where('site_id', $event->siteId)->whereIn('status', [DeploymentStatus::Queued, ...DeploymentStatus::active()])
+        Deployment::query()->where('site_id', $event->siteId)->whereIn('status', [DeploymentStatus::Queued, ...DeploymentStatus::occupying()])
             ->update(['status' => DeploymentStatus::Cancelled, 'error' => 'The site was deleted.', 'finished_at' => now(), 'updated_at' => now()]);
         SiteSettings::query()->whereKey($event->siteId)->delete();
     }
