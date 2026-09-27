@@ -679,14 +679,10 @@ function DatabaseStep({
     onSubmit: (payload: Record<string, unknown>) => void;
 }) {
     const [engine, setEngine] = useState<string | null>(null);
-    const [serverId, setServerId] = useState('');
+    const [picked, setServerId] = useState('');
     const [name, setName] = useState('app');
     const candidates = (servers ?? []).filter((server) => server.engine === engine);
-
-    useEffect(() => {
-        setServerId(candidates[0]?.server_id ?? '');
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [engine, servers]);
+    const serverId = candidates.some((server) => server.server_id === picked) ? picked : (candidates[0]?.server_id ?? '');
 
     return (
         <form

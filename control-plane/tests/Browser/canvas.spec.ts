@@ -51,7 +51,7 @@ for (const theme of ['dark', 'light'] as const) {
         await shot(page, theme, 'create-picker');
         await page.getByRole('option', { name: /Database/ }).click();
         await page.getByRole('button', { name: /PostgreSQL/ }).click();
-        await page.waitForLoadState('networkidle');
+        await expect(page.getByRole('button', { name: 'Create database' })).toBeVisible();
         await shot(page, theme, 'create-database');
         await page.getByRole('button', { name: 'Back' }).click();
         await page.getByRole('option', { name: /Git repository/ }).click();
@@ -86,13 +86,13 @@ for (const theme of ['dark', 'light'] as const) {
         await page.getByRole('group', { name: /^storefront_db:/ }).click();
         await expect(page.getByTestId('connection-url')).toBeVisible();
         await shot(page, theme, 'db-overview');
-        for (const [tab, name] of [
-            ['Databases & users', 'db-users'],
-            ['Backups', 'db-backups'],
-            ['Settings', 'db-settings'],
+        for (const [tab, name, ready] of [
+            ['Databases & users', 'db-users', 'Users'],
+            ['Backups', 'db-backups', 'Schedules'],
+            ['Settings', 'db-settings', 'Danger zone'],
         ]) {
             await page.getByRole('tab', { name: tab }).click();
-            await page.waitForLoadState('networkidle');
+            await expect(page.getByRole('heading', { name: ready })).toBeVisible();
             await shot(page, theme, name);
         }
 

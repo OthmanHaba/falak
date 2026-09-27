@@ -13,16 +13,52 @@ import {
     type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
-import { memo, useEffect, useMemo, type MouseEvent as ReactMouseEvent } from 'react';
+import { memo, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react';
+
+const SIDES = [
+    ['l', Position.Left],
+    ['r', Position.Right],
+    ['t', Position.Top],
+    ['b', Position.Bottom],
+] as const;
+
+const CARD = { width: 240, height: 96 };
+
+/** Connect the facing sides of two cards so derived edges never cut across them. */
+function sides(from: { x: number; y: number }, to: { x: number; y: number }): { source: string; target: string } {
+    if (to.x >= from.x + CARD.width) return { source: 's-r', target: 't-l' };
+    if (to.x + CARD.width <= from.x) return { source: 's-l', target: 't-r' };
+
+    return to.y >= from.y ? { source: 's-b', target: 't-t' } : { source: 's-t', target: 't-b' };
+}
+
+/** Follow the app theme (the `dark` class on <html>), so xyflow's own `light`/`dark` class never fights it. */
+function useDocumentTheme(): 'dark' | 'light' {
+    const read = () => (document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+    const [theme, setTheme] = useState<'dark' | 'light'>(read);
+
+    useEffect(() => {
+        const observer = new MutationObserver(() => setTheme(read()));
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+
+        return () => observer.disconnect();
+    }, []);
+
+    return theme;
+}
 
 type ServiceNode = Node<{ service: CanvasService; selected: boolean }, 'service'>;
 
 const ServiceNodeView = memo(function ServiceNodeView({ data }: NodeProps<ServiceNode>) {
     return (
         <>
-            <Handle type="target" position={Position.Left} className="kiln-handle" isConnectable={false} />
+            {SIDES.map(([id, position]) => (
+                <Handle key={`t-${id}`} id={`t-${id}`} type="target" position={position} className="kiln-handle" isConnectable={false} />
+            ))}
             <ServiceCard service={data.service} selected={data.selected} className="cursor-pointer" />
-            <Handle type="source" position={Position.Right} className="kiln-handle" isConnectable={false} />
+            {SIDES.map(([id, position]) => (
+                <Handle key={`s-${id}`} id={`s-${id}`} type="source" position={position} className="kiln-handle" isConnectable={false} />
+            ))}
         </>
     );
 });
@@ -74,17 +110,27 @@ export function CanvasBoard({ services, edges, selectedId, draggable, onOpen, on
         });
     }, [services, selectedId, draggable, setNodes]);
 
+    const positions = useMemo(() => new Map(nodes.map((node) => [node.id, node.position])), [nodes]);
+    const colorMode = useDocumentTheme();
+
     const flowEdges = useMemo<Edge[]>(
         () =>
             edges.map((edge) => ({
                 id: `${edge.from}>${edge.to}`,
                 source: edge.from,
                 target: edge.to,
+                ...(() => {
+                    const from = positions.get(edge.from);
+                    const to = positions.get(edge.to);
+                    const handles = from && to ? sides(from, to) : { source: 's-r', target: 't-l' };
+
+                    return { sourceHandle: handles.source, targetHandle: handles.target };
+                })(),
                 className: 'kiln-edge',
                 focusable: false,
                 selectable: false,
             })),
-        [edges],
+        [edges, positions],
     );
 
     // Keyboard zoom (+ / −) and fit (shift+1), outside text fields and dialogs.
@@ -106,6 +152,7 @@ export function CanvasBoard({ services, edges, selectedId, draggable, onOpen, on
     return (
         <ReactFlow<ServiceNode>
             className="kiln-canvas"
+            colorMode={colorMode}
             nodes={nodes}
             edges={flowEdges}
             nodeTypes={nodeTypes}
@@ -131,7 +178,7 @@ export function CanvasBoard({ services, edges, selectedId, draggable, onOpen, on
             proOptions={{ hideAttribution: true }}
             deleteKeyCode={null}
         >
-            <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--grid)" bgColor="var(--bg-canvas)" />
+            <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         </ReactFlow>
     );
 }

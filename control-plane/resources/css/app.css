@@ -331,7 +331,11 @@
     background-size: 20px 20px;
 }
 
-/* Project canvas (@xyflow/react base.css) in Kiln tokens: dashed derived edges, invisible handles. */
+/* Project canvas (@xyflow/react base.css) in Kiln tokens: dotted grid, dashed derived edges, invisible handles. */
+.kiln-canvas {
+    --xy-background-color: var(--bg-canvas);
+    --xy-background-pattern-dots-color: var(--grid);
+}
 .kiln-canvas .kiln-edge .react-flow__edge-path {
     stroke: var(--border-strong);
     stroke-width: 1.25;
