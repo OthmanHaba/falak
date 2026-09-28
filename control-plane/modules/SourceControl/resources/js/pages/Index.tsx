@@ -15,16 +15,17 @@ import { cn } from '@/lib/utils';
 import { type SharedData } from '@/types';
 import { useForm, usePage } from '@inertiajs/react';
 import { FolderGit2, GitBranch, GitCommitHorizontal, Unplug } from 'lucide-react';
-import { useState, type FormEventHandler } from 'react';
+import { useEffect, useState, type FormEventHandler } from 'react';
+import { GitHubAppCard } from '../components/github-app-card';
 import { ProviderIcon } from '../components/provider-icon';
 import { RepositoryBrowser } from '../components/repository-browser';
-import { AUTH_LABELS, type ConnectionRow, type ProviderOption, type ProviderValue, type PushRow } from '../types';
+import { AUTH_LABELS, type ConnectionRow, type GitHubAppState, type ProviderOption, type ProviderValue, type PushRow } from '../types';
 
 interface Props {
     connections: ConnectionRow[];
     pushes: PushRow[];
     providers: ProviderOption[];
-    githubApp: boolean;
+    githubApp: GitHubAppState;
     canManage: boolean;
 }
 
@@ -55,7 +56,7 @@ const TOKEN_HINTS: Record<ProviderValue, string> = {
 };
 
 const DESCRIPTIONS: Record<ProviderValue, string> = {
-    github: 'Repos, branches, deploy keys and push webhooks via the API.',
+    github: 'GitHub Enterprise Server, or a token-based connection instead of the GitHub App.',
     gitlab: 'GitLab.com or self-managed, via the API.',
     bitbucket: 'Bitbucket Cloud workspaces via the API.',
     custom: 'Any SSH-reachable git server, with a deploy key per site.',
@@ -68,37 +69,59 @@ const BASE_URL: Record<ProviderValue, { label: string; placeholder: string } | n
     custom: { label: 'Server URL', placeholder: 'ssh://git@git.example.com' },
 };
 
-function ProviderTile({ option, githubApp, onManual }: { option: ProviderOption; githubApp: boolean; onManual: () => void }) {
+function ProviderTile({ option, onManual }: { option: ProviderOption; onManual: () => void }) {
+    const github = option.value === 'github';
+
     return (
         <div className="border-border bg-surface-1 flex flex-col gap-3 rounded-lg border p-4" data-testid={`provider-${option.value}`}>
             <div className="flex items-center gap-2.5">
                 <span className="border-border bg-surface-2 text-fg flex size-8 items-center justify-center rounded-md border">
                     <ProviderIcon provider={option.value} className="size-4" />
                 </span>
-                <span className="text-fg text-sm font-medium">{option.label}</span>
+                <span className="text-fg text-sm font-medium">{github ? 'GitHub (token or OAuth)' : option.label}</span>
             </div>
             <p className="text-fg-muted flex-1 text-xs">{DESCRIPTIONS[option.value]}</p>
             <div className="flex flex-wrap gap-1.5">
                 {option.oauth && (
-                    <Button asChild size="sm" variant="primary">
-                        <a href={route('source-control.connect', option.value)}>Connect</a>
+                    <Button asChild size="sm" variant={github ? 'secondary' : 'primary'}>
+                        <a href={route('source-control.connect', option.value)}>{github ? 'Connect with OAuth' : 'Connect'}</a>
                     </Button>
                 )}
-                {option.value === 'github' && githubApp && (
-                    <Button asChild size="sm">
-                        <a href={route('source-control.github-app')}>Install app</a>
-                    </Button>
-                )}
-                <Button size="sm" variant={option.oauth ? 'ghost' : 'secondary'} onClick={onManual}>
-                    {option.has_api ? 'Use a token' : 'Add server'}
+                <Button size="sm" variant={option.oauth || github ? 'ghost' : 'secondary'} onClick={onManual}>
+                    {github ? 'Use a personal access token instead' : option.has_api ? 'Use a token' : 'Add server'}
                 </Button>
             </div>
         </div>
     );
 }
 
+/** `?connect=github&return_to=/path` (the create-service flow's "Connect GitHub"): continue straight to GitHub when possible. */
+function useConnectIntent(githubApp: GitHubAppState, canManage: boolean): string | null {
+    const [returnTo] = useState(() => {
+        const params = new URLSearchParams(window.location.search);
+        const path = params.get('return_to');
+
+        return path && path.startsWith('/') && !path.startsWith('//') ? path : null;
+    });
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+
+        if (params.get('connect') !== 'github' || !canManage) return;
+
+        if (githubApp.app?.installable) {
+            window.location.assign(route('source-control.github-app', returnTo ? { return_to: returnTo } : {}));
+        } else {
+            document.querySelector('[data-testid="github-app"]')?.scrollIntoView({ block: 'center' });
+        }
+    }, [githubApp, canManage, returnTo]);
+
+    return returnTo;
+}
+
 export default function Index({ connections, pushes, providers, githubApp, canManage }: Props) {
     const { errors } = usePage<SharedData & { errors: Record<string, string | undefined> }>().props;
+    const returnTo = useConnectIntent(githubApp, canManage);
     const [connecting, setConnecting] = useState<ProviderOption | null>(null);
     const [deleting, setDeleting] = useState<ConnectionRow | null>(null);
     const [browsing, setBrowsing] = useState<ConnectionRow | null>(null);
@@ -142,13 +165,15 @@ export default function Index({ connections, pushes, providers, githubApp, canMa
         });
 
     const connectionName = (id: string) => connections.find((connection) => connection.id === id)?.name ?? '—';
+    const connectionById = (id: string) => connections.find((connection) => connection.id === id) ?? null;
+    const others = connections.filter((connection) => connection.auth_type !== 'app');
     const provider = form.data.provider;
     const baseUrl = BASE_URL[provider];
 
     const tiles = (
         <div className="grid gap-3 sm:grid-cols-2">
             {providers.map((option) => (
-                <ProviderTile key={option.value} option={option} githubApp={githubApp} onManual={() => openConnect(option)} />
+                <ProviderTile key={option.value} option={option} onManual={() => openConnect(option)} />
             ))}
         </div>
     );
@@ -156,30 +181,45 @@ export default function Index({ connections, pushes, providers, githubApp, canMa
     return (
         <SettingsLayout
             title="Source control"
-            description="Git providers Kiln deploys from. Kiln adds a deploy key and a push webhook per site, and removes them when you disconnect."
+            description="Git providers Kiln deploys from. GitHub connects through a GitHub App; other providers get a deploy key and a push webhook per site."
             wide
         >
-            {errors.oauth && (
+            {(errors.oauth ?? errors.github_app) && (
                 <Callout tone="danger" title="The provider did not connect">
-                    {errors.oauth}
+                    {errors.oauth ?? errors.github_app}
                 </Callout>
             )}
 
-            <Section title="Connections" description="Accounts, groups and servers this organization can deploy from." bare>
-                {connections.length === 0 ? (
+            <Section
+                title="GitHub"
+                description="The GitHub App gets read-only access to the repositories you pick, and sends push events for push-to-deploy."
+                bare
+            >
+                <GitHubAppCard
+                    state={githubApp}
+                    canManage={canManage}
+                    returnTo={returnTo}
+                    onBrowse={(installation) => setBrowsing(connectionById(installation.id))}
+                    onDisconnect={(installation) => setDeleting(connectionById(installation.id))}
+                />
+            </Section>
+
+            <Section title="Other connections" description="GitLab, Bitbucket, git servers and token-based GitHub accounts." bare>
+                {others.length === 0 ? (
                     <EmptyState
+                        size="sm"
                         icon={<GitBranch />}
-                        title="Connect your first git provider"
+                        title="No other connections"
                         description={
                             canManage
-                                ? 'Pick a provider below. OAuth is quickest; a token works for self-hosted instances and CI accounts.'
-                                : 'Ask an admin of this organization to connect GitHub, GitLab, Bitbucket or a git server.'
+                                ? 'Add GitLab, Bitbucket or a git server below. For GitHub, prefer the app above.'
+                                : 'Ask an admin of this organization to connect GitLab, Bitbucket or a git server.'
                         }
                     />
                 ) : (
                     <DataTable
                         label="Git connections"
-                        rows={connections}
+                        rows={others}
                         rowKey={(connection) => connection.id}
                         columns={[
                             {
@@ -249,7 +289,7 @@ export default function Index({ connections, pushes, providers, githubApp, canMa
 
             {canManage && (
                 <Section
-                    title={connections.length === 0 ? 'Choose a provider' : 'Add a connection'}
+                    title="Add a connection"
                     description="Credentials are verified with the provider, then stored encrypted and never shown again."
                     bare
                 >
@@ -417,7 +457,11 @@ export default function Index({ connections, pushes, providers, githubApp, canMa
                 open={deleting !== null}
                 onOpenChange={(open) => !open && setDeleting(null)}
                 title={`Disconnect ${deleting?.name ?? ''}`}
-                description={`Its ${deleting?.deploy_keys_count ?? 0} deploy key(s) and ${deleting?.webhooks_count ?? 0} webhook(s) are removed from the provider. Sites using it can't deploy until they point at another connection.`}
+                description={
+                    deleting?.auth_type === 'app'
+                        ? "Kiln uninstalls the GitHub App from this account. Sites using it can't deploy until they point at another connection."
+                        : `Its ${deleting?.deploy_keys_count ?? 0} deploy key(s) and ${deleting?.webhooks_count ?? 0} webhook(s) are removed from the provider. Sites using it can't deploy until they point at another connection.`
+                }
                 confirmText={deleting?.name ?? ''}
                 confirmLabel="Disconnect"
                 onConfirm={disconnect}

@@ -2,12 +2,50 @@ export type ProviderValue = 'github' | 'gitlab' | 'bitbucket' | 'custom';
 
 export type AuthType = 'oauth' | 'app' | 'token' | 'basic' | 'none';
 
+/** GitHub App installations can be suspended or uninstalled on GitHub. */
+export type ConnectionStatus = 'active' | 'suspended' | 'disconnected';
+
+/** The app new installations go through: the operator's env app, or this organization's registered one. */
+export interface GitHubAppInfo {
+    source: 'env' | 'registered';
+    name: string;
+    slug: string | null;
+    owner: string | null;
+    owner_type: 'User' | 'Organization' | null;
+    html_url: string | null;
+    settings_url: string | null;
+    installable: boolean;
+    webhook_url: string;
+    last_delivery_at: string | null;
+    created_at: string | null;
+}
+
+export interface GitHubInstallation {
+    id: string;
+    name: string;
+    account: string | null;
+    target_type: 'User' | 'Organization' | null;
+    status: ConnectionStatus;
+    installation_id: string;
+    repositories_count: number | null;
+    manage_url: string;
+    created_at: string;
+}
+
+export interface GitHubAppState {
+    app: GitHubAppInfo | null;
+    permissions: Record<string, string>;
+    events: string[];
+    installations: GitHubInstallation[];
+}
+
 export interface ConnectionRow {
     id: string;
     name: string;
     provider: ProviderValue;
     provider_label: string;
     auth_type: AuthType;
+    status: ConnectionStatus;
     account: string | null;
     base_url: string | null;
     deploy_keys_count: number;

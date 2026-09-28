@@ -491,11 +491,21 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
     if (connections.length === 0) {
         return (
             <div className="grid gap-3 p-4 text-sm">
-                <p className="text-fg-muted">Connect GitHub, GitLab, Bitbucket or a custom git server to deploy repositories.</p>
+                <p className="text-fg-muted">
+                    Connect GitHub to deploy its repositories: Kiln installs a GitHub App and you pick the repositories on GitHub.
+                </p>
                 {options.can_manage_source_control ? (
-                    <Button asChild variant="primary" className="w-fit">
-                        <Link href="/settings/source-control">Connect source control</Link>
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                        {/* Full page navigation: the settings page continues to github.com and GitHub returns here. */}
+                        <Button asChild variant="primary" className="w-fit">
+                            <a href={`/settings/source-control?connect=github&return_to=${encodeURIComponent(window.location.pathname)}`}>
+                                Connect GitHub
+                            </a>
+                        </Button>
+                        <Button asChild variant="ghost" className="w-fit">
+                            <Link href="/settings/source-control">GitLab, Bitbucket or git server</Link>
+                        </Button>
+                    </div>
                 ) : (
                     <p className="text-fg-faint text-xs">Ask an organization admin to connect one.</p>
                 )}
