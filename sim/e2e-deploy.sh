@@ -14,7 +14,7 @@ C=(docker compose -p kiln-sim --env-file sim.env --env-file .data/secrets.env)
 EDGE="https://kiln.test:${SIM_EDGE_HTTPS_PORT}"
 CURL=(curl -sS --cacert .data/edge-root.crt --resolve "kiln.test:${SIM_EDGE_HTTPS_PORT}:127.0.0.1")
 STATE=.data/e2e.env
-STAGES="${STAGES:-bootstrap servers sites deploy release rollback failure bun observability compose compose_redeploy compose_failure templates}"
+STAGES="${STAGES:-bootstrap servers sites deploy release rollback failure octane bun observability compose compose_redeploy compose_failure templates}"
 
 pass=0 fail=0 API_CODE=000 API_BODY='' KILN_TOKEN=${KILN_TOKEN:-}
 ok()   { printf '  \033[32mPASS\033[0m %s\n' "$*"; pass=$((pass + 1)); }
@@ -230,6 +230,106 @@ stage_failure() {
         local now; now=$(site_get "$c" "$SHOP_HOST" / | jq -r .release 2>/dev/null)
         [[ "$(site_get "$c" "$SHOP_HOST" /health)" == ok && $now == "$before" ]] && ok "$c still serves the previous healthy release" || bad "$c: release=$now health=$(site_get "$c" "$SHOP_HOST" /health)"
     done
+}
+
+# ---------------------------------------------------------------------------------------------- octane
+octane_get() { site_get srv-app-1 "$OCTANE_HOST" "$1"; }
+
+octane_max_served() { # octane_max_served N -> highest per-worker request counter over N requests to /octane (1 = no worker mode)
+    local max=0 n
+    for _ in $(seq 1 "$1"); do
+        n=$(octane_get /octane | jq -r '.served // 0' 2>/dev/null)
+        (( ${n:-0} > max )) && max=$n
+    done
+    echo "$max"
+}
+
+octane_wait_mode() { # octane_wait_mode on|off SECONDS -> 0 when the edge serves /octane in that mode
+    local want=$1 deadline=$((SECONDS + $2)) served=0
+    while (( SECONDS < deadline )); do
+        served=$(octane_max_served 8)
+        [[ $want == on && $served -gt 1 ]] && return 0
+        [[ $want == off && $served -eq 1 ]] && return 0
+        sleep 5
+    done
+    return 1
+}
+
+octane_load_start() { # background request loop on srv-app-1 through the edge; one HTTP status per line
+    "${C[@]}" exec -T srv-app-1 bash -c 'rm -f /tmp/octane-codes /tmp/octane-stop' >/dev/null 2>&1
+    "${C[@]}" exec -d srv-app-1 bash -c "while [ ! -f /tmp/octane-stop ]; do curl -sk -o /dev/null -w '%{http_code}\n' -m 60 --resolve '$OCTANE_HOST:443:127.0.0.1' 'https://$OCTANE_HOST/octane' >> /tmp/octane-codes; sleep 0.1; done"
+}
+
+octane_load_stop() { # -> "TOTAL FAILED" (non-200 answers, including curl errors = 000)
+    "${C[@]}" exec -T srv-app-1 bash -c 'touch /tmp/octane-stop; sleep 3; total=$(wc -l < /tmp/octane-codes); failed=$(grep -vc "^200$" /tmp/octane-codes); echo "$total $failed"; grep -v "^200$" /tmp/octane-codes | sort | uniq -c | head -5 >&2' | tr -d '\r'
+}
+
+stage_octane() {
+    step "octane: Laravel Octane (FrankenPHP worker mode) behind the edge; placeholder, zero-downtime redeploy, switch off"
+    api POST /sites "{\"name\":\"octane\",\"framework\":\"laravel\",\"runtime\":\"frankenphp\",\"php_version\":\"8.4\",\"server_ids\":[\"$SERVER_srv_app_1\"],\"source_connection_id\":\"$GIT_CONNECTION\",\"repository\":\"git://sim-git/laravel-demo.git\",\"branch\":\"main\",\"health_check_path\":\"/health\",\"test_domain_enabled\":true}"
+    [[ $API_CODE == 201 ]] || { bad "POST /sites (octane) -> $API_CODE: $API_BODY"; return 1; }
+    save SITE_OCTANE "$(jq -r .data.id <<<"$API_BODY")"
+    save OCTANE_HOST "$(jq -r '.data.test_domain // "octane.sites.kiln.test"' <<<"$API_BODY")"
+    ok "site octane created on app-1 -> $OCTANE_HOST"
+    api GET "/sites/$SITE_OCTANE/env"
+    local env; env=$(jq -r '.data.content' <<<"$API_BODY" | grep -vE '^(DB_CONNECTION|DB_DATABASE|SESSION_DRIVER|CACHE_STORE|QUEUE_CONNECTION)=')
+    env+=$'\nDB_CONNECTION=sqlite\nDB_DATABASE=:memory:\nSESSION_DRIVER=cookie\nCACHE_STORE=file\nQUEUE_CONNECTION=sync\n'
+    api PUT "/sites/$SITE_OCTANE/env" "$(jq -n --arg c "$env" '{content: $c}')"
+    [[ $API_CODE == 200 ]] && ok "environment set" || bad "PUT env -> $API_CODE: $API_BODY"
+
+    # Octane on before the first deploy: the program cannot start on the placeholder release, and the edge must
+    # keep serving the placeholder directly (never proxy to a port nothing listens on).
+    wait_targets_ready "$SITE_OCTANE" || return 1
+    api PUT "/sites/$SITE_OCTANE/laravel" '{"octane":true}'
+    [[ $API_CODE == 200 ]] || { bad "PUT laravel octane=true -> $API_CODE: $API_BODY"; return 1; }
+    local port server; port=$(jq -r .data.octane_port <<<"$API_BODY"); server=$(jq -r .data.octane_server <<<"$API_BODY")
+    save OCTANE_PORT "$port"
+    [[ $server == frankenphp && $port =~ ^[0-9]+$ ]] && ok "octane enabled via API: server $server, port $port" || bad "octane settings: $API_BODY"
+    sleep 15
+    local body; body=$(octane_get /)
+    [[ $body == *"not been deployed yet"* ]] && ok "never-deployed site still serves the placeholder through the edge" || bad "placeholder not served: ${body:0:200}"
+
+    # Healthy commit (the failure stage may have left a broken /health on main).
+    git_commit laravel-demo "Octane v1" "sed -i \"s#response('broken', 500)#response('ok')#\" routes/web.php && sed -i \"s/'app' => config('app.name')/'app' => 'Kiln Octane v1'/; s/'app' => 'Kiln Demo v2'/'app' => 'Kiln Octane v1'/\" routes/web.php" \
+        && ok "pushed Octane v1" || { bad "could not push Octane v1"; return 1; }
+    deploy_and_wait "$SITE_OCTANE" "$(git_head laravel-demo)" "octane first deploy" succeeded || return 1
+
+    if octane_wait_mode on 240; then ok "the edge proxies to Octane: /octane answers from long-lived workers (max served $(octane_max_served 8))"
+    else bad "edge not serving from Octane workers: $(octane_get /octane)"; fi
+    "${C[@]}" exec -T srv-app-1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null && ok "octane listens on 127.0.0.1:$port" || bad "nothing listens on 127.0.0.1:$port"
+    "${C[@]}" exec -T srv-app-1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$((port + 10000))" 2>/dev/null && ok "octane's FrankenPHP admin API on its own port $((port + 10000)) (edge keeps :2019)" || bad "no octane admin port $((port + 10000))"
+    [[ "$(octane_get /)" == *'"Kiln Octane v1"'* ]] && ok "serves release v1 through Octane" || bad "GET / -> $(octane_get /)"
+    [[ "$(octane_get /kiln-static.txt)" == "static.txt served by Caddy" ]] && ok "public/ files are served directly" || bad "static file -> $(octane_get /kiln-static.txt | head -c 120)"
+    [[ "$(octane_get /frankenphp-worker.php)" != *"<?php"* ]] && ok "PHP sources in public/ are never served as files" || bad "frankenphp-worker.php source exposed"
+    [[ "$(octane_get /health)" == ok ]] && ok "/health ok through Octane" || bad "/health -> $(octane_get /health)"
+
+    # Redeploy under load: Octane restarts on the new release while the edge holds requests -> no failed request.
+    git_commit laravel-demo "Octane v2" "sed -i \"s/'app' => 'Kiln Octane v1'/'app' => 'Kiln Octane v2'/\" routes/web.php" \
+        && ok "pushed Octane v2" || { bad "could not push Octane v2"; return 1; }
+    octane_load_start
+    sleep 3
+    deploy_and_wait "$SITE_OCTANE" "$(git_head laravel-demo)" "octane redeploy under load" succeeded
+    sleep 5
+    local result total failed; result=$(octane_load_stop); total=${result% *}; failed=${result#* }
+    (( ${total:-0} > 20 && ${failed:-1} == 0 )) && ok "zero failed requests during the redeploy ($total requests)" || bad "requests during the redeploy: $total total, $failed failed"
+    [[ "$(octane_get /)" == *'"Kiln Octane v2"'* ]] && ok "serves release v2 (Octane restarted on the new release)" || bad "not serving v2: $(octane_get /)"
+    octane_wait_mode on 60 && ok "still served by Octane workers after the redeploy" || bad "not in worker mode after the redeploy: $(octane_get /octane)"
+
+    # Switch off under load: the edge goes back to FrankenPHP first, then the program stops.
+    octane_load_start
+    sleep 2
+    api PUT "/sites/$SITE_OCTANE/laravel" '{"octane":false}'
+    [[ $API_CODE == 200 ]] && ok "octane disabled via API" || bad "PUT laravel octane=false -> $API_CODE: $API_BODY"
+    octane_wait_mode off 180 && ok "the edge serves the site directly again (classic FrankenPHP, served=1)" || bad "still proxied after disabling: $(octane_get /octane)"
+    local stopped=false deadline=$((SECONDS + 120))
+    while (( SECONDS < deadline )); do
+        "${C[@]}" exec -T srv-app-1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null || { stopped=true; break; }
+        sleep 5
+    done
+    [[ $stopped == true ]] && ok "the octane program stopped after the edge switched back" || bad "octane still listening on $port"
+    result=$(octane_load_stop); total=${result% *}; failed=${result#* }
+    (( ${total:-0} > 10 && ${failed:-1} == 0 )) && ok "zero failed requests while switching Octane off ($total requests)" || bad "requests while switching off: $total total, $failed failed"
+    [[ "$(octane_get /)" == *'"Kiln Octane v2"'* && "$(octane_get /health)" == ok ]] && ok "the app still serves v2 without Octane" || bad "after disabling: $(octane_get /)"
 }
 
 stage_bun() {
