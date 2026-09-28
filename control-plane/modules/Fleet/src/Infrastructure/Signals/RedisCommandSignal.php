@@ -2,17 +2,22 @@
 
 namespace Kiln\Fleet\Infrastructure\Signals;
 
+use Closure;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
 
 /**
  * Low-latency wake-up via Redis lists: notify() RPUSHes a token, waiters BLPOP on it.
  * A token pushed between the database check and BLPOP is not lost (it stays in the list).
+ *
+ * $beforeBlock runs before every BLPOP: the service provider uses it to hand the database connection back
+ * while the request only waits, so N long-polling agents do not pin N Postgres connections.
  */
 final class RedisCommandSignal implements CommandSignal
 {
     public function __construct(
         private readonly RedisFactory $redis,
         private readonly string $connection = 'default',
+        private readonly ?Closure $beforeBlock = null,
     ) {}
 
     public function notify(string $agentId): void
@@ -40,6 +45,10 @@ final class RedisCommandSignal implements CommandSignal
 
             if ($remaining <= 0) {
                 return [];
+            }
+
+            if ($this->beforeBlock !== null) {
+                ($this->beforeBlock)();
             }
 
             $redis->command('blpop', [[$this->key($agentId)], $remaining]);

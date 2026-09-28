@@ -8,7 +8,6 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
-use Inertia\Inertia;
 use Kiln\Identity\Application\Console\CreateAdminCommand;
 use Kiln\Identity\Application\Console\SyncPermissionsCommand;
 use Kiln\Identity\Application\Listeners\SyncPermissionsAfterMigrations;
@@ -30,6 +29,7 @@ use Kiln\Identity\Infrastructure\InMemoryPermissionRegistry;
 use Kiln\Identity\Infrastructure\ResolvedCurrentOrganization;
 use Kiln\Identity\Infrastructure\SpatieOrganizationAccess;
 use Kiln\Kernel\Support\ModuleServiceProvider;
+use Kiln\Kernel\Support\SharedProps;
 use Laravel\Fortify\Fortify;
 use Laravel\Sanctum\Sanctum;
 
@@ -93,18 +93,23 @@ class IdentityServiceProvider extends ModuleServiceProvider
 
     /**
      * Shared props for every Inertia page: current organization, switcher list and permissions.
+     *
+     * Registered on the boot-time {@see SharedProps} registry rather than with `Inertia::share()`: under the
+     * FrankenPHP worker (Octane) Inertia's shared props are flushed before every request. Everything is
+     * resolved from the current container (`app()`), never from `$this->app`, which under the worker is the
+     * long-lived base application instead of the per-request sandbox.
      */
     private function shareInertiaProps(): void
     {
-        Inertia::share('organization', function (Request $request) {
+        $this->app->make(SharedProps::class)->register('organization', function (Request $request) {
             $user = $request->user();
 
             if (! $user instanceof User) {
                 return null;
             }
 
-            $current = $this->app->make(ResolvedCurrentOrganization::class)->model();
-            $access = $this->app->make(SpatieOrganizationAccess::class);
+            $current = app(ResolvedCurrentOrganization::class)->model();
+            $access = app(SpatieOrganizationAccess::class);
 
             return [
                 'current' => $current ? [
@@ -120,6 +125,6 @@ class IdentityServiceProvider extends ModuleServiceProvider
                         'personal' => $organization->personal,
                     ])->values(),
             ];
-        });
+        }, authenticated: false);
     }
 }
