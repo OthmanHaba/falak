@@ -81,19 +81,21 @@ type Site struct {
 
 // Deployment of a site.
 type Deployment struct {
-	ID         string `json:"id"`
-	SiteID     string `json:"site_id,omitempty"`
-	Status     string `json:"status"` // queued|building|deploying|succeeded|failed|cancelled
-	Trigger    string `json:"trigger,omitempty"`
-	Branch     string `json:"branch,omitempty"`
-	Commit     string `json:"commit,omitempty"`
-	Message    string `json:"message,omitempty"`
-	ReleaseID  string `json:"release_id,omitempty"`
-	URL        string `json:"url,omitempty"` // panel URL
-	Error      string `json:"error,omitempty"`
-	CreatedAt  string `json:"created_at,omitempty"`
-	StartedAt  string `json:"started_at,omitempty"`
-	FinishedAt string `json:"finished_at,omitempty"`
+	ID        string `json:"id"`
+	SiteID    string `json:"site_id,omitempty"`
+	Status    string `json:"status"` // queued|waiting|building|deploying|succeeded|failed|cancelled
+	Trigger   string `json:"trigger,omitempty"`
+	Branch    string `json:"branch,omitempty"`
+	Commit    string `json:"commit,omitempty"`
+	Message   string `json:"message,omitempty"`
+	ReleaseID string `json:"release_id,omitempty"`
+	URL       string `json:"url,omitempty"` // panel URL
+	Error     string `json:"error,omitempty"`
+	// Set while Status is "waiting" (the site's servers are still being prepared; it starts on its own).
+	WaitingReason string `json:"waiting_reason,omitempty"`
+	CreatedAt     string `json:"created_at,omitempty"`
+	StartedAt     string `json:"started_at,omitempty"`
+	FinishedAt    string `json:"finished_at,omitempty"`
 }
 
 // Deployment statuses the CLI understands. Unknown statuses are treated as in progress.
