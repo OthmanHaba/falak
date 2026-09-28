@@ -63,9 +63,22 @@ in components.**
 ### Shape, space, motion
 - Radius: 6 (inputs, buttons), 8 (cards), 12 (panels, dialogs), full (status dots, avatars).
 - Spacing base 4px; page gutter 24px (16px on mobile).
-- Elevation: panels `0 8px 32px rgba(0,0,0,.45)` (dark) / `0 8px 24px rgba(20,16,40,.08)` (light); no other shadows.
-- Motion: 150ms ease-out (hover/press), 220ms cubic-bezier(.2,.8,.2,1) (panel slide, dialog); respect
-  `prefers-reduced-motion`.
+- Elevation: panels `0 8px 32px rgba(0,0,0,.45)` (dark) / `0 8px 24px rgba(20,16,40,.08)` (light); floating canvas
+  panels use `--elevation-float` (hairline ring + wide soft shadow). No other shadows.
+- Motion (tokens `--ease-spring`, `--ease-exit`, `--duration-panel`, `--duration-panel-exit`): only `transform` and
+  `opacity` animate (no layout animation), everything is instant under `prefers-reduced-motion`.
+
+  | What | Motion |
+  |---|---|
+  | hover / press | 150ms ease-out (colors, borders) |
+  | panel enter | `translateX(24px) scale(.985)` + opacity 0 → rest, 280ms `cubic-bezier(.22,1,.36,1)` (CSS animation, `backwards` fill → no flash on mount) |
+  | panel exit | → `translateX(28px) scale(.985)` + opacity 0, 180ms `cubic-bezier(.4,0,1,1)` (Web Animations API, then unmount) |
+  | stack push / pop | the layer below recedes `translateX(-22px·depth) scale(1-.028·depth)` + veil (`--panel-dim`), 280ms spring; pop reverses |
+  | tabs | underline indicator slides (`translateX` + `scaleX`, 260ms spring); new content fades + rises 3px (180ms) |
+  | cards | hover lifts 1px, drag lifts 2px + scale 1.01 (180ms spring) |
+  | groups | collapse fades members out (180ms) then hides them; expand rises them in (240ms spring) |
+  | canvas | opening a service pans the viewport (420ms) so its card isn't under the panel |
+  | cards / dialogs appearing | `rise-in` 220ms spring |
 - Focus: 2px `--accent` ring with 2px offset on every interactive element.
 
 ### Status language (one component: `<StatusDot>` + `<StatusBadge>`)
@@ -88,7 +101,7 @@ No permanent sidebar. Top-level destinations (also in ⌘K and the org menu):
 
 | Route | Page | Replaces |
 |---|---|---|
-| `/` → `/projects` | **Projects** grid (cards: name, env count, service icons, last deploy, status) | `dashboard.tsx` |
+| `/` → `/projects` | **Projects** dashboard (§3.1) | `dashboard.tsx` |
 | `/projects/{p}/{env}` | **Project canvas** (§4) | Sites/Index, Databases/Index (per project) |
 | `/projects/{p}/{env}/service/{kind}/{id}/{tab?}` | canvas + **Service panel** (§5) | Sites/*, Deployments/*, Edge/*, Processes/*, Databases/Show, Insights per site |
 | `/projects/{p}/settings` | Project settings (name, environments, members access, danger) | – |
@@ -103,18 +116,42 @@ No permanent sidebar. Top-level destinations (also in ⌘K and the org menu):
 Legacy URLs (`/sites/{id}`, `/servers`, …) **redirect** to the new locations so existing links, CLI `open`, alert
 links and API `url` fields keep working.
 
+### 3.1 Projects dashboard
+- Left **workspace sidebar** (≥ 1024px): Projects · Templates · Infrastructure · Observability · Team · Settings ·
+  Documentation (each shown only with its permission). The org switcher stays in the top bar; the canvas keeps no
+  permanent sidebar.
+- Header: title **Projects**, search field (`/` focuses it; filters by project, description and service names),
+  primary **+ New**.
+- Meta row: `N Projects | Sort by: Recent activity ⌄` (recent activity · name · date created) and a grid / list toggle
+  (both remembered per browser).
+- **Project card**: name, ☆ star (per user, starred projects are pinned first), `⋯` (open environment, settings); a
+  **dotted-grid preview** with the icons of the services of the production environment (rounded tiles, up to 6 +
+  "+N"; compose templates show their logo); footer `● production · 4/4 services online` with the dot coloured by health
+  (online / partial / deploying / failing) or `No services`, and the last activity time.
+- **List view**: compact rows with the same information.
+
 ---
 
 ## 4. Project canvas
 
 - Full-bleed below the top bar; `@xyflow/react` with dotted background, pan (drag / space+drag), zoom
   (⌘ scroll, `+`/`-`, *fit* button), minimap off by default. Positions persist per environment (Projects module).
-- **Service card** (240×~96): kind icon (framework logo for sites: Laravel, Next, Bun…; engine logo for databases),
-  name, one-line status (`● Active · 2m ago` / `● Deploying 64%`), domain (sites) or engine+size (databases),
-  server chips (`app-1 app-2`, leader starred). Hover lifts border; selected = `--border-strong` + accent glow.
-- **Edges** (thin dashed lines) show references: a site whose variables reference a database (§5.3) is
-  connected to it. Edges are derived, not drawn by hand.
-- **Groups** (optional frames) — later; not in v1.
+- **Service card** (fixed 240×112 so frames can be sized before measuring): icon + name (+ runtime badges), the domain
+  (sites) or engine · server (databases) underneath, and the live status at the bottom (`● Online`, `● Deploying 64%`,
+  coloured by tone) with the first server chip (+N). Services with persistent storage get a **volume strip** docked
+  under the card (30px): compose named volumes, a database engine's data directory (`postgresql-data · db-1`), a
+  site's shared directories. Hover lifts the card; selected (panel open) = accent border + glow; part of a
+  multi-selection = dashed accent outline.
+- **Edges** (dashed, with an arrowhead at the referenced service) show references: a site whose variables reference
+  another service (§5.3), and compose `depends_on` between compose services. Edges are derived, never drawn by hand;
+  they route orthogonally around cards (they may cross group frames) and turn accent when they touch the open service.
+- **Groups** (§4.3) frame services: compose sites are groups of their compose services; users group anything else.
+- **Toolbar** (bottom-left, vertical): snap to grid · zoom in / out / fit · undo / redo (layout changes: moves, group
+  moves, joins / leaves; ⌘Z / ⇧⌘Z) · overview map. Snap and overview are remembered per browser; the viewport is
+  remembered per environment for the session.
+- **Selection**: ⇧-drag a box or ⌘/Ctrl-click cards → a floating bar "N services selected · **Group** · ✕".
+- Opening a service pans the canvas (smoothly, only when needed) so its card stays visible left of the panel.
+  Clicking empty canvas closes the panels.
 - **"+ Create"** (top-right of canvas, also `⌘K → Create`, also right-click canvas) opens the **Create picker**:
   - *Git repository* → pick connection → repo → branch → preset auto-detected → servers → **Deploy**.
   - *Docker image* (runtime docker) · *Empty service*
@@ -124,18 +161,39 @@ links and API `url` fields keep working.
   opens on the Deployments tab with the first deploy streaming.
 - Environment switcher: `production`, `staging`, … + *New environment* (empty, or *duplicate from* an existing
   environment: copies service configs and variables, not servers/targets — user picks servers per service).
-- Canvas toolbar (bottom-left): zoom, fit, *Activity* toggle (right rail: recent deploys/events of this env).
+- Top-right: *Activity* toggle (right rail: recent deploys/events of this env), project settings, **+ Create**.
+
+### 4.3 Groups
+- A **group** is a translucent rounded frame (`--group-bg`, `--group-border`) with a 38px header: icon, name,
+  `● 3/4 online`, `⋯`. The frame always wraps its members (bounding box + 20px padding + header), so it resizes as
+  members move; it is draggable as a unit (members move with it).
+- **Compose sites** (templates or compose files) render as a group of their compose services: one card per compose
+  service with its own status (running / healthy → Online, restarting / exited / unhealthy → crashed, nothing reported
+  → the site's state), its image, public URL and named volumes; `depends_on` edges between them. Clicking the header
+  opens the site's panel, clicking a compose service opens its **Services** tab. Menu: Open service, Collapse / Expand,
+  Tidy up layout. Compose groups cannot be nested in user groups.
+- **User groups**: select cards → **Group** (starts renaming inline), or drop a card on a frame (the frame highlights);
+  drag a card out of its frame to leave. Menu: Rename, Collapse / Expand, Ungroup (cards stay where they are). A
+  group whose last card leaves or is deleted disappears.
+- **Collapsed** groups shrink to a 280×96 tile with the members' icons; edges to members attach to the tile.
+- Persistence (Projects owns layout, per environment): a group has an anchor (`x`, `y`); member positions are
+  relative to it, so moving a group is one write. Compose service positions are stored on the compose site's canvas
+  service (`layout.children`, relative to its `x`/`y`, default 2-column grid) with `layout.collapsed`.
 
 ## 5. Service panel
 
-Right-anchored panel over the canvas, width `min(960px, 62vw)` (full-screen on < 1024px), resizable,
-`Esc`/click-outside closes. Header: icon · name (inline rename) · status badge · primary action (**Deploy** for
-sites, **Connect** for databases) · `⋯` (Redeploy, Rollback…, Restart processes, Open site ↗, Copy id, Delete).
+A **floating panel** over the canvas (§5.5): inset 12px from the canvas edges below the top bar, rounded 12px,
+hairline border and `--elevation-float`; width `min(940px, 58vw)`, resizable from its left edge (remembered); the
+canvas stays visible and interactive on the left. Below 1024px it becomes a full-width sheet under the top bar.
+Header (28px padding): 40px icon tile · **name** (20px semibold, click to rename) · status badge (+ runtime tags) ·
+primary action (**Deploy** for sites, **Connect** for databases) · `⋯` (Redeploy, Rollback…, Open site ↗, Copy id,
+Delete) · ✕ (Esc). Databases show engine · server under the name. Underline tabs (14px, 28px apart) with the sliding
+indicator; `[` / `]` switch tabs while the panel is on top.
 
 ### 5.1 Tabs — site
 | Tab | Content (from module) |
 |---|---|
-| **Deployments** | Active deployment card on top (commit, author avatar, branch, age, duration, servers, *View logs*, `⋯` Rollback/Redeploy); below: history list; queued deployments shown stacked. Clicking opens **Deploy view** (§5.2). (Deployments) |
+| **Deployments** | **Meta row**: 🌐 public domain on the left; servers (📍) and `N Replicas` on the right, muted. **Featured cards**: the deployment running now (warning tint, `DEPLOYING` / `BUILDING`, footer "⟳ Deploying · migrate"), a failure newer than the live release (danger tint), and the live release (success tint + border, `ACTIVE`, footer "✓ Deployment successful"). Each: state pill, author avatar with a trigger badge, title = commit message, subtitle "12 minutes ago via git push · main@abc1234 · 1m 14s", **View logs** (secondary) and `⋮` (View logs, Cancel, Redeploy this commit, Rollback). The attached footer expands (`⌄`) to the per-server phase timeline. Below: queued and **history** as quieter cards (`QUEUED`, `REMOVED`, `FAILED`, `ROLLED BACK`). View logs / a card opens the stacked **deployment panel** (§5.5). (Deployments) |
 | **Variables** | Table (key, masked value with reveal-on-click (audited), row actions) + *New variable* inline row + **Raw editor** toggle (dotenv, monospace, diff before save) + *Expose to deploy script* per key + **reference picker** `${{ service.KEY }}` (§5.3). Shows "changes apply on next deploy" bar. (Sites env) |
 | **Metrics** | CPU/mem/requests/p95/errors charts (recharts, 1h/6h/24h/7d), per server. (Telemetry) |
 | **Logs** | Live log stream (Loki), search, level filter, server filter, pause/follow, click a line → trace. (Telemetry) |
@@ -143,12 +201,20 @@ sites, **Connect** for databases) · `⋯` (Redeploy, Rollback…, Restart proce
 | **Processes** | Web process, queue workers, Horizon, Octane, daemons, cron jobs — one list with status + inline edit. (Processes) |
 | **Settings** | Long scrolling page with anchored sections + left mini-nav: **Source** (repo/branch, push-to-deploy, deploy hook URL) · **Build** (mode, runtime, versions, build env prefixes) · **Deploy** (strategy, script editor with macros, retention, health check) · **Networking** (domains + TLS, test domain toggle, redirects, security rules, headers) · **Servers** (targets, leader, add/remove) · **Laravel** (scheduler/Horizon/Octane/maintenance) · **Commands** (run artisan/shell with live output) · **Danger** (delete). (Sites, Edge, Deployments settings) |
 
-### 5.2 Deploy view
-Full-height view inside the panel (back arrow to list). Header: status, commit, trigger, duration, *Redeploy*,
-*Rollback*, *Cancel*. **Phase timeline** (Build → Fetch → Prepare → Migrate → Activate → Restart → Health) as a
-horizontal stepper per server (rows = servers, cells = phase status with duration). Tabs **Build logs** /
-**Deploy logs**: virtualized monospace log (JetBrains Mono 12px, ANSI colors, line numbers, sticky phase headers,
-search, copy, download, auto-follow with "jump to live").
+### 5.2 Deployment panel (stacked, §5.5)
+Stacked over the service panel. Header: service icon · **Storefront / 4d2947b1** (service / short deployment id) ·
+status badge (`Active` for the live release, `Removed` for superseded ones, else the deployment status) · `⋯`
+(Redeploy, Rollback to this release, Cancel deployment, Copy deployment id) · start time with time zone
+(`2026-09-28 17:35 GMT+2`) · ✕. Tabs:
+- **Details**: waiting notice / error callout, summary (author, message, trigger, commit, strategy, duration,
+  number) and the **phase timeline** (Build → Fetch → Prepare → Migrate → Activate → Restart → Health) per server.
+- **Build Logs** / **Deploy Logs** (default: build while building, else deploy): the log table (§6 `LogViewer`, flush):
+  full-width "Filter and search logs" field with a `/` hint, download, pop-out (opens the same stack maximised in a
+  new tab, `&focus=1`); columns **Time (GMT+2)** · **Data**, a 3px bar per line (blue output, amber warning, red +
+  faint red row for stderr/errors), wrapped lines, sticky header, group rows per `server · phase`, settings ⚙ (wrap,
+  timestamps, line numbers, copy), live tail with a floating ↓ / ↑ button.
+- **Network Logs**: HTTP request logs from the edge. Kiln's edge does not ship per-request access logs to Loki yet,
+  so the tab says so plainly (with a link to the service's Logs tab) instead of showing anything made up.
 
 ### 5.3 Variable references
 `${{ <service-name>.<KEY> }}` in a site's variables resolves at deploy time to the referenced service's variable
@@ -157,9 +223,27 @@ in the **same environment** (database services expose `DATABASE_URL`, `DB_HOST`,
 when rendering a release's `.env`; unresolved references fail the deploy with a clear error. References drive
 canvas edges.
 
+References in the Variables tab link to their service: clicking it stacks that service's panel (§5.5 peek).
+
 ### 5.4 Tabs — database service
 **Overview** (engine, server, connection strings with copy + reveal, private-network address) · **Databases &
 users** · **Backups** (schedules, history, restore) · **Metrics** · **Settings**.
+
+### 5.5 Panel stack
+Panels are layers of one **PanelStack** (`components/kiln/panel-stack.tsx`): base service panel → optionally another
+service stacked on it (a referenced service) → optionally a **detail layer** contributed by a module (e.g. the
+deployment panel). Depth ≥ 2 is supported; only the top layer is interactive (the ones below are `inert`, veiled and
+receded so their left edge peeks out; clicking a receded layer closes what covers it).
+- **URL** (deep links, back/forward): `/projects/{p}/{env}/service/{kind}/{id}/{tab}` + `?peek={kind}:{id}&peek_tab=`
+  + `?{param}={record}&{param}_tab=` for the detail layer (deployments: `?logs={deployment}&logs_tab=build|deploy|
+  details|network`) + `&focus=1` (maximised). Legacy `…/deployments/{deployment}` opens the deployment layer.
+  Navigation is client-side (no server round trip); every change is a history entry, and back/forward between states
+  of the same canvas update the stack in place so layers animate out / in.
+- **Keyboard**: Esc closes the top layer (a focused text field is blurred first; open menus, selects and dialogs keep
+  their own Esc); ✕ does the same. Focus moves into a new layer and returns to what opened it; Tab cycles inside the
+  top layer; `/` focuses the log filter of the top layer.
+- **Screen readers**: each layer is a labelled non-modal `dialog` ("Storefront service panel", "Storefront
+  deployment 4d2947b1"); receded layers are hidden from the accessibility tree.
 
 ---
 
@@ -170,9 +254,11 @@ Build a small, owned component set (Radix primitives underneath are fine; **no s
 grouped results, recent items, actions with shortcuts), `Panel` (slide-over with tabs + URL sync), `Tabs`,
 `Button` (primary/secondary/ghost/danger, sizes sm/md), `IconButton`, `Input`, `Textarea`, `Select`, `Combobox`,
 `Switch`, `Checkbox`, `Field` (label, hint, error), `Section` (settings section with title/description/aside),
+`PanelStack` + `PanelHeader` (§5.5), `StatusPill` (uppercase state pill of deployment cards),
 `DataTable` (sortable, sticky header, row actions, empty/loading states), `StatusDot`, `StatusBadge`, `Tag`,
 `Avatar`, `Tooltip`, `Menu` (`⋯`), `Dialog`, `ConfirmDestructive` (type-to-confirm), `Toast`, `EmptyState`,
-`Skeleton`, `CodeBlock` (copy), `LogViewer` (virtualized), `MetricChart`, `KeyValue`, `Stepper`/`PhaseTimeline`,
+`Skeleton`, `CodeBlock` (copy), `LogViewer` (virtualized log table, `card` / `flush`), `MetricChart`, `KeyValue`,
+`Stepper`/`PhaseTimeline`, `MenuCheckboxItem`,
 `ChangesBar`, `CopyButton`, `RelativeTime` (live-updating), `ServiceIcon` (framework/engine logos),
 `ServiceCard` (canvas), `EmptyCanvas`.
 
@@ -236,9 +322,33 @@ type CanvasService = {
   servers: { id: string; name: string; leader: boolean; online: boolean }[];
   last_deployment: { id: string; status: string; commit: string | null; message: string | null; finished_at: string | null } | null;
 };
-type Canvas = { services: CanvasService[]; edges: { from: string; to: string }[] };  // edges by project_services.id
+// Added for groups (§4.3):
+//   CanvasService.group_id: string | null        user group; position is then relative to the group anchor
+//   CanvasService.volumes: { name: string; detail: string | null }[]
+//   CanvasService.compose: { template: string | null; collapsed: boolean; services: ComposeChild[] } | null
+type ComposeChild = { name: string; icon: string; image: string | null; status: CanvasStatus; status_label: string;
+                      url: string | null; volumes: string[]; position: { x: number; y: number } };  // relative to the card
+type CanvasGroup = { id: string; name: string; position: { x: number; y: number }; collapsed: boolean };
+type Canvas = {
+  services: CanvasService[];
+  edges: { from: string; to: string; kind: 'reference' | 'depends_on' }[];  // ids: project_services.id or `{id}:{compose service}`
+  groups: CanvasGroup[];
+};
 ```
-`PATCH /projects/{project}/{environment}/services/{service}/position {x,y}` persists card positions.
+Layout writes (Projects, `projects.manage`):
+- `PATCH /projects/{project}/{environment}/services/{service}/position {x, y, group_id?}` — `group_id` (or null)
+  moves the card into / out of a group.
+- `PATCH …/services/{service}/layout {children?: {name: {x, y}}, collapsed?}` — compose group layout.
+- `POST …/groups {name?, service_ids}` · `PATCH …/groups/{group} {name?, x?, y?, collapsed?}` · `DELETE …/groups/{group}`
+  (ungroup; cards keep their place).
+- `PUT|DELETE /projects/{project}/favorite` — star / unstar for the signed-in user (any project viewer).
+
+The Projects grid (`Projects/Index` props, `GET /projects` JSON) adds per project: `favorite`, `last_activity_at`,
+`production {name, slug, services, online, health}`, and `services` = icons of the production environment.
+
+Stacked detail layers are registered by the owning module with `registerServiceLayers({id, kinds, param, fromTab?,
+permission?, label, component})` (`resources/js/lib/registry.ts`); the panel context gains `openLayer(id, record,
+tab?)`, `openService(service, tab?)` and `layer` (what is open on top).
 
 **Page names** (Inertia): `Projects/Index`, `Projects/Canvas` (props: project, environment, canvas, `panel?: {kind, id, tab}`),
 `Projects/Settings`. Service panel tab content is loaded as **JSON from each owning module's endpoints**
