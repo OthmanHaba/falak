@@ -622,19 +622,28 @@ export function ServersSettings({ ctx }: ServiceTabProps) {
 
 // ─── Laravel ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const LARAVEL: { key: 'scheduler' | 'horizon' | 'octane' | 'maintenance'; label: string; hint: string }[] = [
+type LaravelToggleKey = 'scheduler' | 'horizon' | 'octane' | 'maintenance';
+
+const LARAVEL: { key: LaravelToggleKey; label: string; hint: string }[] = [
     { key: 'scheduler', label: 'Scheduler', hint: 'Runs schedule:run every minute on the leader.' },
     { key: 'horizon', label: 'Horizon', hint: 'Supervises php artisan horizon on every server.' },
-    { key: 'octane', label: 'Octane', hint: 'Serves the app with Octane behind Caddy.' },
+    { key: 'octane', label: 'Octane', hint: 'Keeps the app booted in Octane workers; Caddy serves public/ files and proxies the rest.' },
     { key: 'maintenance', label: 'Maintenance mode', hint: 'php artisan down on every ready server right away.' },
 ];
 
+const OCTANE_HINTS: Record<string, string> = {
+    frankenphp: 'Worker mode on the FrankenPHP binary Kiln installs.',
+    swoole: 'Needs the swoole (or openswoole) extension for this PHP version.',
+    roadrunner: 'Needs the rr binary and spiral/roadrunner-http in the app.',
+};
+
 export function LaravelSettings({ ctx }: ServiceTabProps) {
     const { data, error, reload } = useSiteSettings(ctx);
-    const { saving, save } = useSave(reload, ctx.refresh);
+    const { saving, errors, save } = useSave(reload, ctx.refresh);
 
     if (!data) return <Loading error={error} />;
     const toggles = data.settings.laravel;
+    const serverOptions = data.settings.octane_servers.map((option) => ({ ...option, description: OCTANE_HINTS[option.value] }));
 
     return (
         <Section
@@ -643,27 +652,54 @@ export function LaravelSettings({ ctx }: ServiceTabProps) {
         >
             <ul className="divide-border -my-2 divide-y">
                 {LARAVEL.map((item) => (
-                    <li key={item.key} className="flex items-center justify-between gap-4 py-2.5">
-                        <div className="grid gap-0.5">
-                            <span className="text-fg flex items-center gap-2 text-sm font-medium">
-                                {item.label}
-                                {item.key === 'maintenance' && toggles.maintenance && <Tag tone="warning">down</Tag>}
-                            </span>
-                            <span className="text-fg-muted text-xs">{item.hint}</span>
+                    <li key={item.key} className="grid gap-2.5 py-2.5">
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="grid gap-0.5">
+                                <span className="text-fg flex items-center gap-2 text-sm font-medium">
+                                    {item.label}
+                                    {item.key === 'maintenance' && toggles.maintenance && <Tag tone="warning">down</Tag>}
+                                </span>
+                                <span className="text-fg-muted text-xs">{item.hint}</span>
+                            </div>
+                            <Switch
+                                aria-label={item.label}
+                                checked={toggles[item.key]}
+                                disabled={!data.can.update || saving}
+                                onCheckedChange={(on) =>
+                                    void save(
+                                        'PUT',
+                                        `/sites/${data.site.id}/laravel`,
+                                        { ...toggles, [item.key]: on },
+                                        `${item.label} ${on ? 'enabled' : 'disabled'}`,
+                                    )
+                                }
+                            />
                         </div>
-                        <Switch
-                            aria-label={item.label}
-                            checked={toggles[item.key]}
-                            disabled={!data.can.update || saving}
-                            onCheckedChange={(on) =>
-                                void save(
-                                    'PUT',
-                                    `/sites/${data.site.id}/laravel`,
-                                    { ...toggles, [item.key]: on },
-                                    `${item.label} ${on ? 'enabled' : 'disabled'}`,
-                                )
-                            }
-                        />
+                        {item.key === 'octane' && toggles.octane && (
+                            <div className="flex flex-wrap items-end gap-3 pl-0.5">
+                                <Field label="Server" error={errors.octane_server} className="w-60">
+                                    <Select
+                                        size="sm"
+                                        aria-label="Octane server"
+                                        value={toggles.octane_server ?? undefined}
+                                        options={serverOptions}
+                                        disabled={!data.can.update || saving}
+                                        onValueChange={(server) =>
+                                            void save(
+                                                'PUT',
+                                                `/sites/${data.site.id}/laravel`,
+                                                { ...toggles, octane_server: server },
+                                                `Octane now runs on ${serverOptions.find((option) => option.value === server)?.label ?? server}`,
+                                            )
+                                        }
+                                    />
+                                </Field>
+                                {toggles.octane_port !== null && (
+                                    <KeyValue items={[{ label: 'Listens on', value: `127.0.0.1:${toggles.octane_port}`, mono: true }]} />
+                                )}
+                            </div>
+                        )}
+                        {item.key === 'octane' && errors.octane && <p className="text-danger text-xs">{errors.octane}</p>}
                     </li>
                 ))}
             </ul>

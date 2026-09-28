@@ -28,7 +28,7 @@ use Kiln\Sites\Contracts\TargetStatus;
  * Everything the canvas renders for one environment, in one request (UI_DESIGN §9 `Canvas`):
  * services with live status (deployments, targets, servers), and edges derived from variable references.
  *
- * @phpstan-type CanvasService array{id: string, kind: string, ref_id: string, name: string, icon: string, position: array{x: int, y: int}, status: string, status_label: string, url: ?string, subtitle: ?string, servers: list<array{id: string, name: string, leader: bool, online: bool}>, last_deployment: ?array{id: string, status: string, commit: ?string, message: ?string, finished_at: ?string}}
+ * @phpstan-type CanvasService array{id: string, kind: string, ref_id: string, name: string, icon: string, position: array{x: int, y: int}, status: string, status_label: string, url: ?string, subtitle: ?string, servers: list<array{id: string, name: string, leader: bool, online: bool}>, badges: list<string>, last_deployment: ?array{id: string, status: string, commit: ?string, message: ?string, finished_at: ?string}}
  */
 final class CanvasReadModel
 {
@@ -121,6 +121,8 @@ final class CanvasReadModel
             'url' => $host !== null ? "https://{$host}" : null,
             'subtitle' => $subtitle,
             'servers' => array_map(fn ($target) => $this->server($target->serverId, $target->isLeader(), $servers, $agents), $site->targets),
+            // Runtime traits worth seeing on the card (Laravel Octane serves the app behind the edge).
+            'badges' => $site->framework->isLaravel() && $site->runtime->isPhp() && $site->laravel->octane ? ['Octane'] : [],
             'last_deployment' => $deployment !== null ? [
                 'id' => $deployment->id,
                 'status' => $deployment->status,
@@ -156,6 +158,7 @@ final class CanvasReadModel
                 $servers[$database->serverId]->name ?? null,
             ])),
             'servers' => [$this->server($database->serverId, false, $servers, $agents)],
+            'badges' => [],
             'last_deployment' => null,
         ];
     }

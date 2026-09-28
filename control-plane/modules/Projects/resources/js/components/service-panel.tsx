@@ -1,4 +1,4 @@
-import { Button, Menu, Panel, ServiceIcon, Skeleton, SkeletonRows, StatusBadge, toast, type MenuAction } from '@/components/kiln';
+import { Button, Menu, Panel, ServiceIcon, Skeleton, SkeletonRows, StatusBadge, Tag, toast, type MenuAction } from '@/components/kiln';
 import { errorMessage, requestJson } from '@/lib/http';
 import { serviceActionsFor, serviceTabsFor, type ServiceAction, type ServicePanelContext } from '@/lib/registry';
 import { cn } from '@/lib/utils';
@@ -174,7 +174,16 @@ export function ServicePanel({ base, service, kind, refId, tab, renameUrl, onRen
             icon={<ServiceIcon name={service?.icon ?? kind} size={16} />}
             title={service ? <InlineName name={service.name} url={renameUrl} onRenamed={onRenamed} /> : <Skeleton className="h-5 w-40" />}
             description={service ? `${service.name} service panel` : 'Service panel'}
-            status={service && <StatusBadge status={service.status} label={service.status_label} />}
+            status={
+                service && (
+                    <span className="flex items-center gap-1.5">
+                        <StatusBadge status={service.status} label={service.status_label} />
+                        {service.badges?.map((badge) => (
+                            <Tag key={badge}>{badge}</Tag>
+                        ))}
+                    </span>
+                )
+            }
             subtitle={
                 service &&
                 (service.url ? (

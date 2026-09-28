@@ -1,13 +1,26 @@
 import { toast } from '@/components/kiln';
 import { requestJson } from '@/lib/http';
-import { registerServiceActions, registerServiceTabs } from '@/lib/registry';
+import { registerServiceActions, registerServiceSettingsSections, registerServiceTabs } from '@/lib/registry';
 import { RefreshCcw } from 'lucide-react';
 import { lazy } from 'react';
 
 const ProcessesTab = lazy(() => import('./panel/processes-tab').then((module) => ({ default: module.ProcessesTab })));
+const OctaneSection = lazy(() => import('./panel/octane-section').then((module) => ({ default: module.OctaneSection })));
 
 // Canvas service panel (docs/UI_DESIGN.md §5.1): Processes 600.
 registerServiceTabs({ id: 'processes', kinds: ['site'], title: 'Processes', order: 600, permission: 'processes.view', component: ProcessesTab });
+
+// Settings → Laravel: Octane server, port and per-server routing state (after the Sites toggles, 600).
+registerServiceSettingsSections({
+    id: 'processes.octane',
+    kinds: ['site'],
+    section: 'laravel',
+    sectionTitle: 'Laravel',
+    order: 610,
+    permission: 'processes.view',
+    when: (ctx) => ctx.service.icon === 'laravel',
+    component: OctaneSection,
+});
 
 // Service panel `⋯` → Restart processes (web process, workers, daemons of the site on every server).
 registerServiceActions({

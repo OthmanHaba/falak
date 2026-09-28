@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Kiln\Processes\Http\Controllers\DaemonController;
+use Kiln\Processes\Http\Controllers\OctaneController;
 use Kiln\Processes\Http\Controllers\ProcessesController;
 use Kiln\Processes\Http\Controllers\ProcessStatusController;
 use Kiln\Processes\Http\Controllers\QueueController;
@@ -26,5 +27,6 @@ Route::middleware(['auth', 'org'])->prefix('sites/{site}')->name('processes.')->
     Route::get('processes', [ProcessesController::class, 'index'])->name('index');
     Route::post('processes/status', [ProcessStatusController::class, 'refresh'])->middleware('throttle:30,1')->name('status.refresh');
     Route::get('processes/status', [ProcessStatusController::class, 'show'])->name('status.show');
+    Route::get('processes/octane', [OctaneController::class, 'show'])->name('octane.show');
     Route::post('processes/restart', [ProcessStatusController::class, 'restart'])->middleware('throttle:20,1')->name('restart');
 });

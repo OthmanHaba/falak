@@ -3,7 +3,7 @@ import { useJson } from '@/hooks/use-json';
 import { HttpError, errorMessage, requestJson, type HttpMethod } from '@/lib/http';
 import { type ServicePanelContext } from '@/lib/registry';
 import { useState } from 'react';
-import { type LaravelToggles, type SharedPathItem, type SiteOptions, type SiteStatus, type SiteTarget } from '../../types';
+import { type LaravelToggles, type OctaneServer, type SharedPathItem, type SiteOptions, type SiteStatus, type SiteTarget } from '../../types';
 
 /** GET /sites/{site}/settings (JSON). */
 export interface SiteSettingsData {
@@ -34,6 +34,8 @@ export interface SiteSettingsData {
         root_path: string;
         document_root: string;
         laravel: LaravelToggles;
+        /** Octane servers available for the site's runtime. */
+        octane_servers: { value: OctaneServer; label: string }[];
         shared_paths: SharedPathItem[];
         created_at: string;
     };

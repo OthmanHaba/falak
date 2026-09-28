@@ -189,3 +189,22 @@ it('moves Octane back to Starting when its server changes and validates the serv
         ->and($this->routing->listeningPort($site->id, $this->web->id))->toBeNull();
     Event::assertDispatched(OctaneRoutingChanged::class, fn ($e) => $e->port === null);
 });
+
+it('reports Octane server, port and per-server routing state for the settings section', function () {
+    $site = processes_site($this->organization->id, [$this->web], ['test_domain_enabled' => true]);
+
+    $this->getJson("/sites/{$site->id}/processes/octane")->assertOk()->assertJson(['data' => ['enabled' => false, 'servers' => []]]);
+
+    octane_toggle($this, $site, true);
+    $port = $site->refresh()->laravel->octanePort;
+
+    $this->getJson("/sites/{$site->id}/processes/octane")->assertOk()->assertJson(['data' => [
+        'enabled' => true, 'server' => 'frankenphp', 'server_label' => 'FrankenPHP', 'port' => $port, 'aux_port' => $port + 10000,
+        'servers' => [['server_id' => $this->web->id, 'status' => 'starting', 'port' => $port]],
+    ]]);
+
+    octane_settle($this, 'proc.apply');
+    $this->agents->succeed($this->agents->last('system.exec')['handle'], ['exit_code' => 0]);
+
+    expect($this->getJson("/sites/{$site->id}/processes/octane")->json('data.servers.0.status'))->toBe('listening');
+});
