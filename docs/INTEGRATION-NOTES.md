@@ -235,7 +235,7 @@ Real provisioning and deploys on Ubuntu 24.04 (`sim/e2e-deploy.sh`) surfaced the
 Also added for automation: `POST /api/v1/sites`, `POST|GET /api/v1/source-control/connections`, `kiln:admin`.
 
 ## Sim speed (feat/sim-speed)
-Measuring the E2E per stage (`sim/e2e-deploy.sh` now prints durations and a summary) surfaced one product bug and
+Measuring the E2E per stage (`sim/e2e-deploy.sh` now prints durations and a summary) surfaced two product bugs and
 one broken E2E check. The rest is sim-side caching; see `sim/README.md` → *Caches and speed*.
 - **Agent wake-up raced the transaction (product bug, fixed).** With `KILN_AGENT_WAKE_DRIVER=redis`, `QueueCommand`
   RPUSHed the wake-up token while its command row was still uncommitted. The deployment orchestrator queues every
@@ -253,6 +253,13 @@ one broken E2E check. The rest is sim-side caching; see `sim/README.md` → *Cac
   Laravel preset runs `artisan optimize`, and cached closure routes are unserialized per request, so the counter
   was always 1 even under Octane. It now counts in a class static (`App\Support\OctaneProbe`), and the stage
   decides the mode by the app's `LARAVEL_OCTANE` flag.
+- **Octane restart could drop a request (product bug, fixed).** A deploy restarts Octane while the edge holds requests
+  (`try_duration` 30 s). The old FrankenPHP closes its port at SIGTERM, but its graceful shutdown is unbounded (Caddy's
+  default grace period) and intermittently hangs until SIGKILL. The stop timeout (30 s, the supervisor default) equalled
+  the edge's window, so the first held request ran out of retries just before the SIGKILL: one 502 in about 1 of 7
+  redeploys under load. Octane programs now stop with `processes.octane_stop_timeout` (10 s); `OctaneTest` pins it to
+  at most half the edge's window. (A running program stops with the spec it was started with, so the first redeploy
+  after upgrading still uses 30 s.)
 
 ## Not covered by the E2E yet (unit/feature tested only)
 Docker/Compose runtimes and docker builds on a real BuildKit, database backups/restore to real S3, WireGuard private
