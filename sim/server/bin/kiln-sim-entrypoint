@@ -8,6 +8,7 @@ umask 022
   echo "SIM_SERVER_ROLE=${SIM_SERVER_ROLE:-app}"
   echo "SIM_PANEL_URL=${SIM_PANEL_URL:-https://kiln.test}"
   echo "SIM_OTLP_ENDPOINT=${SIM_OTLP_ENDPOINT:-http://gateway:4318}"
+  echo "SIM_APT_PROXY=${SIM_APT_PROXY:-}"
 } > /etc/kiln/sim.env
 if [ -n "${SIM_SSH_PUBKEY:-}" ]; then
   printf '%s\n' "$SIM_SSH_PUBKEY" > /root/.ssh/authorized_keys

@@ -1,0 +1,16 @@
+# Sim-only overrides merged into ../observability/compose.yml (compose.yml `include`): poll healthchecks every
+# second while the stack starts, so `make up --wait` sees it healthy as soon as it is. The shipped observability
+# compose keeps its defaults.
+services:
+  gateway:
+    healthcheck:
+      start_period: 60s
+      start_interval: 1s
+  victoriametrics:
+    healthcheck:
+      start_period: 60s
+      start_interval: 1s
+  grafana:
+    healthcheck:
+      start_period: 60s
+      start_interval: 1s

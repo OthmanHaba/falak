@@ -1,0 +1,16 @@
+#!/bin/bash
+# apt Acquire::http::Proxy-Auto-Detect helper (see server.Dockerfile): print the sim apt cache when it answers,
+# otherwise DIRECT. apt still resolves and installs everything itself; the cache only serves the downloads.
+# SIM_APT_PROXY (compose.yml, persisted by kiln-sim-entrypoint) = http://host:port; empty disables the proxy.
+SIM_APT_PROXY=""
+if [ -r /etc/kiln/sim.env ]; then
+  # shellcheck source=/dev/null
+  . /etc/kiln/sim.env
+fi
+hostport=${SIM_APT_PROXY#http://}
+hostport=${hostport%%/*}
+if [ -n "$hostport" ] && timeout 2 bash -c "exec 3<>/dev/tcp/${hostport%:*}/${hostport##*:}" 2>/dev/null; then
+  echo "$SIM_APT_PROXY"
+else
+  echo DIRECT
+fi
