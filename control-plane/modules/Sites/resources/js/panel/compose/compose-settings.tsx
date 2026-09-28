@@ -375,7 +375,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                                         >
                                             {canUpdate ? (
                                                 <DomainPicker
-                                                    label={`${item.service || 'app'}-${data.slug}`}
+                                                    label={!item.service || item.service === data.slug ? data.slug : `${item.service}-${data.slug}`}
                                                     serverIds={[]}
                                                     siteId={ctx.service.ref_id}
                                                     testDomain={known?.test_domain ?? null}

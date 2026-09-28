@@ -386,7 +386,7 @@ export function ConfigureForm({ template, target, position = null, onDeployed, h
                             <p className="text-fg-muted text-xs">Pick a server above: the domain options depend on it.</p>
                         ) : (
                             <DomainPicker
-                                label={`${entry.service}-${slug}`}
+                                label={entry.service === slug ? slug : `${entry.service}-${slug}`}
                                 serverIds={selected}
                                 testDomain={testDomain(entry.service, index)}
                                 value={domains[entry.service] ?? null}

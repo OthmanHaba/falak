@@ -185,7 +185,7 @@ final class DeployTemplate
             $field = "domains.{$service}";
 
             try {
-                $domain = $this->domains->resolveChoice($organizationId, $choices[$service] ?? null, "{$service}-{$slug}", $serverIds, $field);
+                $domain = $this->domains->resolveChoice($organizationId, $choices[$service] ?? null, $service === $slug ? $slug : "{$service}-{$slug}", $serverIds, $field);
             } catch (ValidationException $e) {
                 $errors += array_map(fn (array $messages) => $messages[0], $e->errors());
 
