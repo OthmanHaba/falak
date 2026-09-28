@@ -42,7 +42,7 @@ it('looks sites up by organization, server, repository and leader', function () 
         ->and($data->leader()->serverId)->toBe($b->id);
 
     $blog = $directory->forServer($b->id)[0];
-    expect($blog->documentRoot())->toBe('/srv/kiln/sites/blog/current/dist')->and($blog->fpmSocket())->toBeNull();
+    expect($blog->documentRoot())->toBe('/srv/kiln/sites/blog/current')->and($blog->fpmSocket())->toBeNull();
 
     $header = app(SiteHeaders::class)->for($shop->id);
     expect($header['servers'][0])->toBe(['id' => $b->id, 'name' => 'web-2', 'role' => 'leader'])

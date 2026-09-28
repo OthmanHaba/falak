@@ -141,6 +141,15 @@ it('allocates distinct app ports for node sites sharing a server', function () {
         ->and(app(SiteDirectory::class)->environment($sites->first()->id)->variables['PORT'])->toBe('3000');
 });
 
+it('serves static sites from the release root, which is the build output kiln-builder packages', function () {
+    $server = sites_server($this->organization->id);
+
+    $this->post('/sites', sites_input([$server->id], ['name' => 'Shopfront', 'framework' => 'static', 'runtime' => 'static', 'php_version' => null]))->assertSessionHasNoErrors();
+
+    $site = app(SiteDirectory::class)->find(Site::query()->firstOrFail()->id);
+    expect($site->webDirectory)->toBe('')->and($site->documentRoot())->toBe($site->currentPath());
+});
+
 it('validates runtime compatibility with the servers', function () {
     $fpm = sites_server($this->organization->id, phpRuntime: 'fpm');
     $lb = sites_server($this->organization->id, ['type' => ServerType::LoadBalancer]);

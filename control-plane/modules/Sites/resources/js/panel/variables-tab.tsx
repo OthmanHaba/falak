@@ -451,7 +451,7 @@ export function VariablesTab({ ctx }: ServiceTabProps) {
                                             Value
                                         </th>
                                         <th scope="col" className="h-8 w-28 px-3 text-center font-medium whitespace-nowrap">
-                                            <Tooltip content="Export into the deploy script’s shell (always in .env)">
+                                            <Tooltip content="Export into the deploy script’s shell and the build environment (always in .env)">
                                                 <span className="cursor-help underline decoration-dotted underline-offset-2">Deploy script</span>
                                             </Tooltip>
                                         </th>
@@ -602,7 +602,7 @@ export function VariablesTab({ ctx }: ServiceTabProps) {
                                                 <td className="px-3 py-2 text-center">
                                                     <div className="flex min-h-7 items-center justify-center">
                                                         <Switch
-                                                            aria-label={`Expose ${row.key} to the deploy script`}
+                                                            aria-label={`Expose ${row.key} to the deploy script and build`}
                                                             checked={isExposed(row.key)}
                                                             disabled={!can.update || row.status === 'removed'}
                                                             onCheckedChange={(on) => setExposed(row.key, on)}

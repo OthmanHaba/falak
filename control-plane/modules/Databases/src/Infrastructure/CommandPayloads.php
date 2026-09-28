@@ -63,7 +63,25 @@ final class CommandPayloads
             $payload['host'] = $user->host;
         }
 
+        if (self::remote($server, $user)) {
+            $payload['remote'] = true;
+        }
+
         return $payload;
+    }
+
+    /**
+     * Users of a dedicated database server connect from other servers: the agent then makes the engine
+     * listen on the network (PostgreSQL / MySQL bind to localhost out of the box). MySQL users pinned to
+     * a local host stay local. Reaching the port is still up to the server firewall.
+     */
+    public static function remote(DatabaseServer $server, DatabaseUser $user): bool
+    {
+        if (! $server->dedicated) {
+            return false;
+        }
+
+        return ! ($server->engine->isMysqlFamily() && in_array($user->host, ['localhost', '127.0.0.1', '::1'], true));
     }
 
     /**

@@ -24,6 +24,11 @@ use Throwable;
  * resolved to the server's address (so the edge's certificate and routing are exercised), or
  * http://<ip><path> when the site has no domain. Retries are delayed re-dispatches — a worker never
  * sleeps waiting.
+ *
+ * When no HTTP answer comes back through the primary domain (TLS handshake or connection error), the
+ * site's other domains are tried, then plain HTTP: a server of a multi-server site may only hold a
+ * certificate for the name that points at it (per-server DNS), and load-balancer backends serve plain
+ * HTTP. The first HTTP answer decides; an application error (e.g. 500) is never skipped over.
  */
 final class RunHealthCheck implements ShouldQueue
 {
@@ -73,12 +78,12 @@ final class RunHealthCheck implements ShouldQueue
 
             foreach ($publicServices as $i => $public) {
                 if ($i === 0) {
-                    [$host, $tls] = $this->host($deployment->site_id, $sites, $edge) ?? [null, TlsMode::Off];
+                    $host = $this->candidates($deployment->site_id, $sites, $edge);
                     // Container health is verified by `up --wait`; through the edge a redirect (e.g. to a login page)
                     // also proves the route works unless a specific status is configured.
                     $checks[] = $expect === 200
-                        ? [$host, $tls, $path, fn (int $status) => $status >= 200 && $status < 400, 'expected 2xx/3xx', $public->service]
-                        : [$host, $tls, $path, fn (int $status) => $status === $expect, "expected {$expect}", $public->service];
+                        ? [$host, null, $path, fn (int $status) => $status >= 200 && $status < 400, 'expected 2xx/3xx', $public->service]
+                        : [$host, null, $path, fn (int $status) => $status === $expect, "expected {$expect}", $public->service];
 
                     continue;
                 }
@@ -89,18 +94,17 @@ final class RunHealthCheck implements ShouldQueue
                     continue; // not routed
                 }
 
-                $checks[] = [$host, $public->domain !== null ? TlsMode::Auto : $edge->testDomainTls(), '/', fn (int $status) => $status < 500, 'expected < 500', $public->service];
+                $checks[] = [[[$host, $public->domain !== null ? TlsMode::Auto : $edge->testDomainTls()]], null, '/', fn (int $status) => $status < 500, 'expected < 500', $public->service];
             }
         } else {
-            [$host, $tls] = $this->host($deployment->site_id, $sites, $edge) ?? [null, TlsMode::Off];
-            $checks[] = [$host, $tls, $path, fn (int $status) => $status === $expect, "expected {$expect}", null];
+            $checks[] = [$this->candidates($deployment->site_id, $sites, $edge), null, $path, fn (int $status) => $status === $expect, "expected {$expect}", null];
         }
 
         $healthy = true;
         $messages = [];
 
-        foreach ($checks as [$host, $tls, $checkPath, $accepts, $expectation, $service]) {
-            [$ok, $message] = $this->check($http, $ip, $host, $tls, $checkPath, $timeout, $accepts, $expectation);
+        foreach ($checks as [$candidates, , $checkPath, $accepts, $expectation, $service]) {
+            [$ok, $message] = $this->checkAny($http, $ip, $candidates, $checkPath, $timeout, $accepts, $expectation);
             $healthy = $healthy && $ok;
             $messages[] = ($service !== null && count($checks) > 1 ? "[{$service}] " : '').$message;
         }
@@ -119,8 +123,32 @@ final class RunHealthCheck implements ShouldQueue
     }
 
     /**
+     * Tries the candidates in order until one gets an HTTP answer (see the class docblock).
+     *
+     * @param  list<array{0: ?string, 1: TlsMode}>  $candidates  host (null = the server IP) and its TLS mode
      * @param  callable(int): bool  $accepts
      * @return array{0: bool, 1: string}
+     */
+    private function checkAny(HttpFactory $http, string $ip, array $candidates, string $path, int $timeout, callable $accepts, string $expectation): array
+    {
+        $failures = [];
+
+        foreach ($candidates as [$host, $tls]) {
+            [$ok, $message, $answered] = $this->check($http, $ip, $host, $tls, $path, $timeout, $accepts, $expectation);
+
+            if ($answered) {
+                return [$ok, $failures === [] ? $message : $message.' — after: '.implode('; ', $failures)];
+            }
+
+            $failures[] = $message;
+        }
+
+        return [false, implode('; ', $failures)];
+    }
+
+    /**
+     * @param  callable(int): bool  $accepts
+     * @return array{0: bool, 1: string, 2: bool} healthy, message, whether an HTTP answer came back
      */
     private function check(HttpFactory $http, string $ip, ?string $host, TlsMode $tls, string $path, int $timeout, callable $accepts, string $expectation): array
     {
@@ -142,16 +170,19 @@ final class RunHealthCheck implements ShouldQueue
                 ->get($url);
             $status = $response->status();
 
-            return [$accepts($status), sprintf('GET %s via %s → %d in %d ms (%s)', $url, $ip, $status, (int) ((microtime(true) - $started) * 1000), $expectation)];
+            return [$accepts($status), sprintf('GET %s via %s → %d in %d ms (%s)', $url, $ip, $status, (int) ((microtime(true) - $started) * 1000), $expectation), true];
         } catch (Throwable $e) {
-            return [false, sprintf('GET %s via %s failed: %s', $url, $ip, $e->getMessage())];
+            return [false, sprintf('GET %s via %s failed: %s', $url, $ip, $e->getMessage()), false];
         }
     }
 
     /**
-     * @return array{0: string, 1: TlsMode}|null the primary domain (or test domain) and its TLS mode
+     * What to check the site through, in order: its domains (primary first), then the test domain, then plain
+     * HTTP on the primary name when it was tried over HTTPS. `[[null, Off]]` (the server IP) without any name.
+     *
+     * @return list<array{0: ?string, 1: TlsMode}>
      */
-    private function host(string $siteId, SiteDirectory $sites, EdgeRoutes $edge): ?array
+    private function candidates(string $siteId, SiteDirectory $sites, EdgeRoutes $edge): array
     {
         try {
             $domains = array_values(array_filter($edge->domainsFor($siteId), fn (DomainData $d) => ! $d->isWildcard()));
@@ -161,12 +192,21 @@ final class RunHealthCheck implements ShouldQueue
 
         usort($domains, fn (DomainData $a, DomainData $b) => (int) $b->primary <=> (int) $a->primary);
 
-        if ($domains !== []) {
-            return [$domains[0]->name, $domains[0]->tls];
-        }
-
+        $candidates = array_map(fn (DomainData $d) => [$d->name, $d->tls], $domains);
         $test = $sites->find($siteId)?->testDomain;
 
-        return $test !== null ? [$test, $edge->testDomainTls()] : null;
+        if ($test !== null) {
+            $candidates[] = [$test, $edge->testDomainTls()];
+        }
+
+        if ($candidates === []) {
+            return [[null, TlsMode::Off]];
+        }
+
+        if ($candidates[0][1] !== TlsMode::Off) {
+            $candidates[] = [$candidates[0][0], TlsMode::Off];
+        }
+
+        return $candidates;
     }
 }

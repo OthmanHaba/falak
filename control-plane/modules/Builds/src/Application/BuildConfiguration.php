@@ -28,17 +28,24 @@ final class BuildConfiguration
     }
 
     /**
-     * Build-time environment: site variables with a public front-end prefix (VITE_…, NEXT_PUBLIC_…), with
-     * `${{ service.KEY }}` references resolved (unresolvable ones stay literal; the deploy fails on them).
+     * Build-time environment: site variables with a public front-end prefix (VITE_…, NEXT_PUBLIC_…) plus the
+     * ones exposed to the deploy script (the user's opt-in for other build-time settings, e.g. Astro's SITE_URL),
+     * with `${{ service.KEY }}` references resolved (unresolvable ones stay literal; the deploy fails on them).
      *
      * @return array<string, string>
      */
     public function environment(SiteData $site): array
     {
-        $variables = $this->sites->environment($site->id)?->variables ?? [];
+        $environment = $this->sites->environment($site->id);
+        $variables = $environment->variables ?? [];
+        $exposed = array_flip($environment->exposedToDeployScript ?? []);
         $prefixes = (array) config('builds.env_prefixes', []);
 
-        $public = array_filter($variables, function ($value, $key) use ($prefixes) {
+        $public = array_filter($variables, function ($value, $key) use ($prefixes, $exposed) {
+            if (isset($exposed[$key])) {
+                return true;
+            }
+
             foreach ($prefixes as $prefix) {
                 if (str_starts_with((string) $key, (string) $prefix)) {
                     return true;
@@ -58,10 +65,27 @@ final class BuildConfiguration
         return array_intersect_key($resolved, $public);
     }
 
+    /**
+     * Native build command overrides from the site's variables (as Railway's RAILPACK_*_CMD): KILN_INSTALL_COMMAND
+     * replaces the detected dependency install, KILN_BUILD_COMMAND the build step (both run with `sh -c`).
+     *
+     * @return array{install_command?: string, build_command?: string}
+     */
+    public function commands(SiteData $site): array
+    {
+        $variables = $this->sites->environment($site->id)->variables ?? [];
+
+        return array_filter([
+            'install_command' => trim((string) ($variables['KILN_INSTALL_COMMAND'] ?? '')),
+            'build_command' => trim((string) ($variables['KILN_BUILD_COMMAND'] ?? '')),
+        ], fn (string $command) => $command !== '');
+    }
+
     public function cacheKey(SiteData $site, string $mode, ?string $commit): string
     {
         $env = $this->environment($site);
         ksort($env);
+        $commands = $mode === 'native' ? $this->commands($site) : [];
 
         return hash('sha256', (string) json_encode([
             'v' => 1,
@@ -75,7 +99,7 @@ final class BuildConfiguration
             'dockerfile' => $site->dockerfile,
             'compose_file' => $site->compose?->file,
             'env' => hash('sha256', (string) json_encode($env)),
-        ]));
+        ] + ($commands === [] ? [] : ['commands' => $commands])));
     }
 
     /** Runtime hint for kiln-builder (php|node|bun|deno|static). */

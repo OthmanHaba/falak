@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Kiln shared builder (`kiln-builder serve`) with the toolchains its native mode shells out to
-# (git, PHP 8.4 + Composer, Node 22, Bun). Multi-arch: linux/amd64, linux/arm64.
+# (git, PHP 8.4 + Composer, Node 22 with corepack pnpm/yarn, Bun). Multi-arch: linux/amd64, linux/arm64.
 #
 #   docker buildx build -f deploy/builder.Dockerfile --build-arg KILN_VERSION=v1.2.3 \
 #     --platform linux/amd64,linux/arm64 -t ghcr.io/othmanhaba/kiln-builder:v1.2.3 .
@@ -35,11 +35,15 @@ RUN apt-get update \
  && install-php-extensions intl zip bcmath pcntl gd exif \
  && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-$(dpkg --print-architecture | sed 's/amd64/x64/').tar.xz" \
     | tar -xJ -C /usr/local --strip-components=1 \
+ && corepack enable pnpm yarn \
  && rm -rf /var/lib/apt/lists/* /tmp/*
 COPY --from=binary /kiln-builder /usr/local/bin/kiln-builder
 COPY --chmod=0755 deploy/builder/entrypoint.sh /usr/local/bin/kiln-builder-entrypoint
+# pnpm/yarn are corepack shims: the version comes from the project's packageManager field.
 ENV KILN_BUILDER_DIR=/var/lib/kiln-builder \
-    COMPOSER_ALLOW_SUPERUSER=1
+    COMPOSER_ALLOW_SUPERUSER=1 \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+    COREPACK_DEFAULT_TO_LATEST=0
 VOLUME ["/var/lib/kiln-builder"]
 ENTRYPOINT ["kiln-builder-entrypoint"]
 CMD ["serve"]

@@ -62,6 +62,11 @@
         "absent"
       ],
       "default": "present"
+    },
+    "remote": {
+      "type": "boolean",
+      "default": false,
+      "description": "the user connects from other servers (dedicated database server): the engine listens on every interface and, for postgres, a scram-sha-256 host rule is kept for the user; the firewall still decides who reaches the port"
     }
   },
   "$defs": {

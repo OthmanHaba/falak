@@ -91,7 +91,8 @@ final class JobPayload
         } else {
             $key = $build->artifact_key ?? self::artifactKey($build);
             $upload = $this->storage->uploadTarget($key, max((int) config('builds.artifacts.upload_ttl', 3600), $build->timeout_s + 600));
-            $job['native'] = ['upload' => array_filter(['url' => $upload['url'], 'headers' => $upload['headers'] === [] ? null : (object) $upload['headers']])];
+            $job['native'] = ['upload' => array_filter(['url' => $upload['url'], 'headers' => $upload['headers'] === [] ? null : (object) $upload['headers']])]
+                + $this->configuration->commands($site);
         }
 
         return $job;

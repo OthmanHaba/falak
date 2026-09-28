@@ -267,3 +267,116 @@ func TestBackupDumpFailureLeavesNoFile(t *testing.T) {
 		t.Fatal("pg_dump user")
 	}
 }
+
+const debianHBA = "local   all             postgres                                peer\nlocal   all             all                                     peer\nhost    all             all             127.0.0.1/32            scram-sha-256\n"
+
+func TestUserApplyRemotePostgresOpensNetworkAccess(t *testing.T) {
+	f := &runnertest.Fake{}
+	newSim(f, "psql")
+	f.On("systemctl", runner.Result{})
+	db, root := newDB(t, f, nil)
+	for _, v := range []string{"14", "16"} {
+		dir := filepath.Join(root, "etc/postgresql", v, "main")
+		os.MkdirAll(dir, 0o755)
+		os.WriteFile(filepath.Join(dir, "postgresql.conf"), []byte("#listen_addresses = 'localhost'\n"), 0o644)
+		os.WriteFile(filepath.Join(dir, "pg_hba.conf"), []byte(debianHBA), 0o640)
+	}
+	hba := func() string {
+		b, _ := os.ReadFile(filepath.Join(root, "etc/postgresql/16/main/pg_hba.conf"))
+		return string(b)
+	}
+	restarts := func(verb string) int {
+		n := 0
+		for _, l := range f.Lines() {
+			if l == "systemctl "+verb+" postgresql" {
+				n++
+			}
+		}
+		return n
+	}
+
+	p := UserPayload{Engine: "postgres", Username: "shop", Password: "pw", Remote: true, Grants: []Grant{{Database: "shop"}}}
+	if _, err := db.UserApply(context.Background(), p, st); err != nil {
+		t.Fatal(err)
+	}
+	conf, err := os.ReadFile(filepath.Join(root, "etc/postgresql/16/main/conf.d/90-kiln-network.conf"))
+	if err != nil || !strings.Contains(string(conf), "listen_addresses = '*'") {
+		t.Fatal("listen_addresses not set on the newest cluster", string(conf), err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "etc/postgresql/14/main/conf.d")); err == nil {
+		t.Fatal("older cluster touched")
+	}
+	if h := hba(); !strings.HasPrefix(h, debianHBA) || !strings.Contains(h, "host    all    shop    0.0.0.0/0    scram-sha-256") || !strings.Contains(h, "host    all    shop    ::/0") {
+		t.Fatal(h)
+	}
+	if restarts("restart") != 1 {
+		t.Fatal("listen_addresses needs a restart", f.Lines())
+	}
+
+	// Re-applying the same state touches nothing.
+	if _, err := db.UserApply(context.Background(), p, st); err != nil {
+		t.Fatal(err)
+	}
+	if restarts("restart") != 1 || restarts("reload") != 0 {
+		t.Fatal("not idempotent", f.Lines())
+	}
+
+	// A second remote user only reloads (pg_hba.conf); the block stays single and sorted.
+	if _, err := db.UserApply(context.Background(), UserPayload{Engine: "postgres", Username: "analytics", Password: "pw2", Remote: true}, st); err != nil {
+		t.Fatal(err)
+	}
+	h := hba()
+	if strings.Count(h, hbaBegin) != 1 || strings.Index(h, " analytics ") > strings.Index(h, " shop ") || restarts("reload") != 1 {
+		t.Fatal(h, f.Lines())
+	}
+
+	// Dropping users removes their rules; the last one removes the block.
+	p.State = "absent"
+	db.UserApply(context.Background(), p, st)
+	db.UserApply(context.Background(), UserPayload{Engine: "postgres", Username: "analytics", State: "absent"}, st)
+	if h := hba(); h != debianHBA {
+		t.Fatalf("block not removed:\n%s", h)
+	}
+}
+
+func TestUserApplyLocalPostgresLeavesEngineOnLocalhost(t *testing.T) {
+	f := &runnertest.Fake{}
+	newSim(f, "psql")
+	db, root := newDB(t, f, nil)
+	dir := filepath.Join(root, "etc/postgresql/16/main")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "postgresql.conf"), nil, 0o644)
+	os.WriteFile(filepath.Join(dir, "pg_hba.conf"), []byte(debianHBA), 0o640)
+	if _, err := db.UserApply(context.Background(), UserPayload{Engine: "postgres", Username: "app", Password: "pw"}, st); err != nil {
+		t.Fatal(err)
+	}
+	if f.Ran("systemctl") || fileExists(filepath.Join(dir, "conf.d/90-kiln-network.conf")) {
+		t.Fatal("local user exposed the engine", f.Lines())
+	}
+}
+
+func TestUserApplyRemoteMySQLBindsAllInterfaces(t *testing.T) {
+	f := &runnertest.Fake{}
+	newSim(f, "mysql")
+	f.On("systemctl", runner.Result{})
+	db, root := newDB(t, f, nil)
+	os.MkdirAll(filepath.Join(root, "etc/mysql/mysql.conf.d"), 0o755)
+	p := UserPayload{Engine: "mysql", Username: "shop", Password: "pw", Remote: true}
+	db.UserApply(context.Background(), p, st)
+	db.UserApply(context.Background(), p, st)
+	b, err := os.ReadFile(filepath.Join(root, "etc/mysql/mysql.conf.d/zz-kiln-network.cnf"))
+	if err != nil || !strings.Contains(string(b), "bind-address = 0.0.0.0") {
+		t.Fatal(string(b), err)
+	}
+	n := 0
+	for _, l := range f.Lines() {
+		if l == "systemctl restart mysql" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatal("expected exactly one restart", f.Lines())
+	}
+}
+
+func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }

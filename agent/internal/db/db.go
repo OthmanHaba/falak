@@ -244,6 +244,9 @@ type UserPayload struct {
 	Host     string  `json:"host"`
 	Grants   []Grant `json:"grants"`
 	State    string  `json:"state"`
+	// Remote: the user connects from other servers (dedicated database server). The engine is made to
+	// listen on every interface and, for PostgreSQL, a scram-sha-256 host rule is kept for the user.
+	Remote bool `json:"remote"`
 }
 
 // userState is what we last applied (passwords only as a keyed fingerprint), stored 0600 so that
@@ -251,6 +254,7 @@ type UserPayload struct {
 type userState struct {
 	PasswordFP string              `json:"password_fp"`
 	Grants     map[string][]string `json:"grants"`
+	Remote     bool                `json:"remote,omitempty"`
 }
 
 func (db *DB) statePath() string { return strings.TrimRight(db.d.StateDir, "/") + "/db/users.json" }
@@ -336,9 +340,15 @@ func (db *DB) UserApply(ctx context.Context, p UserPayload, _ commands.Stream) (
 	exists := out != "" && out != "0"
 
 	if p.State == "absent" {
+		wasRemote := prev.Remote
 		delete(states, key)
+		if wasRemote {
+			if err := db.syncRemoteAccess(ctx, e, states); err != nil {
+				return nil, err
+			}
+		}
 		if !exists {
-			return ChangedResult{}, db.saveState(states)
+			return ChangedResult{Changed: wasRemote}, db.saveState(states)
 		}
 		q := "DROP USER IF EXISTS " + myLit(p.Username) + "@" + myLit(host) + ";"
 		if e.name == "postgres" {
@@ -386,7 +396,13 @@ func (db *DB) UserApply(ctx context.Context, p UserPayload, _ commands.Stream) (
 		}
 		changed = true
 	}
-	states[key] = userState{PasswordFP: fp, Grants: desired}
+	states[key] = userState{PasswordFP: fp, Grants: desired, Remote: p.Remote}
+	if p.Remote || prev.Remote {
+		if err := db.syncRemoteAccess(ctx, e, states); err != nil {
+			return nil, err
+		}
+		changed = changed || p.Remote != prev.Remote
+	}
 	return ChangedResult{Changed: changed}, db.saveState(states)
 }
 

@@ -378,3 +378,35 @@ func TestRenderOctaneProxyWithStaticPassthrough(t *testing.T) {
 		t.Errorf("plain proxy changed: %s", s)
 	}
 }
+
+func TestRenderStaticSiteFallbacks(t *testing.T) {
+	root := "/srv/kiln/sites/web/current"
+	cfg, err := Render(Payload{Sites: []Site{{ID: "web", Domains: []string{"web.test"}, Kind: "static", Root: root}}}, "/etc/kiln/certs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(cfg)
+	s := string(b)
+	// Route order: existing files, the 404 page, the SPA fallback (matchers print after their handlers).
+	matchers := []string{
+		`"file":{"root":"` + root + `","try_files":["{http.request.uri.path}","{http.request.uri.path}/"]}`,
+		`"file":{"root":"` + root + `","try_files":["/404.html"]}`,
+		`"file":{"root":"` + root + `","try_files":["/index.html"]},"not":[{"path_regexp":{"pattern":"\\.[A-Za-z0-9]+$"}}]`,
+	}
+	last := -1
+	for _, want := range matchers {
+		i := strings.Index(s, want)
+		if i < 0 || i < last {
+			t.Fatalf("missing or out of order: %s in %s", want, s)
+		}
+		last = i
+	}
+	for _, want := range []string{
+		`{"handler":"rewrite","uri":"/404.html"},{"handler":"file_server","hide":[".env",".git"],"status_code":"404"}`,
+		`{"handler":"rewrite","uri":"/index.html"},{"handler":"file_server","hide":[".env",".git"]}`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %s in %s", want, s)
+		}
+	}
+}

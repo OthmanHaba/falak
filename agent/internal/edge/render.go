@@ -256,7 +256,7 @@ func siteRoutes(s Site) ([]any, error) {
 		if s.Root == "" {
 			return nil, fmt.Errorf("root required for static")
 		}
-		sub = append(sub, obj{"handle": []any{obj{"handler": "vars", "root": s.Root}, obj{"handler": "file_server"}}})
+		sub = append(sub, staticRoutes(s.Root)...)
 	case "php_fpm", "frankenphp":
 		if s.Root == "" {
 			return nil, fmt.Errorf("root required for %s", s.Kind)
@@ -310,6 +310,26 @@ func phpRoutes(s Site) []any {
 		obj{"match": []any{tryFiles}, "handle": []any{obj{"handler": "rewrite", "uri": "{http.matchers.file.relative}"}}},
 		obj{"match": []any{obj{"path": []any{"*.php"}}}, "handle": []any{phpHandler}},
 		obj{"handle": []any{obj{"handler": "file_server", "hide": []any{".env", ".git"}}}},
+	}
+}
+
+// staticRoutes serves a static site: existing files and directories first; then, for a path that does not
+// exist, the site's top-level 404.html with status 404 when it has one, otherwise — a single-page app, as
+// Cloudflare Pages assumes — /index.html for extension-less paths (client-side routes such as /about survive a
+// reload; a missing /app.js is still a 404). Matchers stat per request, so each release decides for itself.
+func staticRoutes(root string) []any {
+	file := func(paths ...any) obj { return obj{"file": obj{"try_files": paths, "root": root}} }
+	serve := obj{"handler": "file_server", "hide": []any{".env", ".git"}}
+	return []any{
+		obj{"handle": []any{obj{"handler": "vars", "root": root}}},
+		obj{"match": []any{file("{http.request.uri.path}", "{http.request.uri.path}/")}, "handle": []any{serve}},
+		obj{"match": []any{file("/404.html")}, "handle": []any{
+			obj{"handler": "rewrite", "uri": "/404.html"},
+			obj{"handler": "file_server", "hide": []any{".env", ".git"}, "status_code": "404"},
+		}},
+		obj{"match": []any{obj{"file": obj{"try_files": []any{"/index.html"}, "root": root}, "not": []any{obj{"path_regexp": obj{"pattern": `\.[A-Za-z0-9]+$`}}}}},
+			"handle": []any{obj{"handler": "rewrite", "uri": "/index.html"}, serve}},
+		obj{"handle": []any{serve}},
 	}
 }
 

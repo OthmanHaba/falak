@@ -68,6 +68,9 @@ func Collect(ctx context.Context, r runner.Runner, fs hostfs.FS, agentVersion st
 		f.DiskBytes = int64(st.Blocks) * int64(st.Bsize)
 	}
 	f.PublicIPv4, f.PrivateIPv4 = ipv4s()
+	if f.PublicIPv4 == nil && fs.IsReal() {
+		f.PublicIPv4 = CloudPublicIPv4(ctx) // 1:1 NAT (EC2, GCP, Azure): not on any interface
+	}
 	if r != nil {
 		cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		res, err := r.Run(cctx, runner.Cmd{Name: "docker", Args: []string{"version", "--format", "{{.Server.Version}}"}})

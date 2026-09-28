@@ -295,3 +295,64 @@ func TestDecodeJob(t *testing.T) {
 		t.Fatal("bad id/subdir accepted")
 	}
 }
+
+func TestPnpmAndYarnComeFromCorepackShimsWhenNotInstalled(t *testing.T) {
+	plan := func() Plan {
+		return Plan{PackageManager: "pnpm", Steps: []Step{
+			{Name: "pnpm install", Cmd: []string{"pnpm", "install", "--frozen-lockfile"}},
+			{Name: "build", Cmd: []string{"pnpm", "run", "build"}},
+			{Name: "custom", Cmd: []string{"sh", "-c", "echo hi"}},
+		}}
+	}
+	have := func(bins ...string) func(string) (string, error) {
+		return func(name string) (string, error) {
+			for _, b := range bins {
+				if b == name {
+					return "/usr/local/bin/" + name, nil
+				}
+			}
+			return "", os.ErrNotExist
+		}
+	}
+
+	p := plan()
+	if !(&Builder{LookPath: have("node", "corepack")}).viaCorepack(&p, "/ws/bin") {
+		t.Fatal("expected corepack shims")
+	}
+	var got []string
+	for _, st := range p.Steps {
+		got = append(got, strings.Join(st.Cmd, " "))
+	}
+	want := []string{"corepack enable --install-directory /ws/bin pnpm", "/ws/bin/pnpm install --frozen-lockfile", "/ws/bin/pnpm run build", "sh -c echo hi"}
+	if strings.Join(got, " | ") != strings.Join(want, " | ") {
+		t.Fatal(got)
+	}
+
+	for name, lookPath := range map[string]func(string) (string, error){
+		"pnpm installed": have("pnpm", "corepack"),
+		"no corepack":    have("node"),
+		"npm project":    have("corepack"),
+	} {
+		p := plan()
+		if name == "npm project" {
+			p.PackageManager = "npm"
+		}
+		if (&Builder{LookPath: lookPath}).viaCorepack(&p, "/ws/bin") || p.Steps[0].Cmd[0] != "pnpm" {
+			t.Fatal(name, p.Steps[0].Cmd)
+		}
+	}
+
+	// Nested `pnpm …` calls from package scripts find the shim first on PATH.
+	env := strings.Join((&Builder{CacheDir: "/cache"}).buildEnv(&job{binDir: "/ws/bin"}), "\n")
+	if !strings.Contains(env, "PATH=/ws/bin"+string(os.PathListSeparator)) {
+		t.Fatal(env)
+	}
+}
+
+func TestBuildEnvKeepsCorepackNonInteractiveAndCached(t *testing.T) {
+	b := &Builder{CacheDir: "/cache"}
+	env := strings.Join(b.buildEnv(&job{}), "\n")
+	if !strings.Contains(env, "COREPACK_ENABLE_DOWNLOAD_PROMPT=0") || !strings.Contains(env, "COREPACK_HOME=/cache/corepack") || !strings.Contains(env, "COREPACK_DEFAULT_TO_LATEST=0") {
+		t.Fatal(env)
+	}
+}

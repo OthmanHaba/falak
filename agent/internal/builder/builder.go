@@ -77,6 +77,8 @@ type job struct {
 	steps     []StepResult
 	// cacheSuffix separates the BuildKit cache of each compose service.
 	cacheSuffix string
+	// binDir holds corepack's pnpm/yarn shims when the builder has none (prepended to PATH).
+	binDir string
 }
 
 func (j *job) logf(format string, args ...any) { fmt.Fprintf(j.out, "==> "+format+"\n", args...) }
@@ -240,6 +242,13 @@ func (b *Builder) buildNative(ctx context.Context, j *job) (*ArtifactResult, *Ma
 	for _, n := range plan.Notes {
 		fmt.Fprintf(j.out, "note: %s\n", n)
 	}
+	if b.viaCorepack(&plan, filepath.Join(j.ws, "bin")) {
+		j.binDir = filepath.Join(j.ws, "bin")
+		if err := os.MkdirAll(j.binDir, 0o755); err != nil {
+			return nil, nil, err
+		}
+		fmt.Fprintf(j.out, "note: %s is not installed; using corepack's shim (version from packageManager, else corepack's default)\n", plan.PackageManager)
+	}
 	j.st.Progress(0.2)
 	if err := b.runSteps(ctx, j, plan.Steps, 0.2, 0.8); err != nil {
 		return nil, nil, err
@@ -349,6 +358,39 @@ func applyOverrides(p *Plan, s *NativeSpec) {
 	}
 }
 
+// viaCorepack makes pnpm/yarn available through corepack (shipped with Node ≤ 24) when the builder has no
+// global install: a first step writes corepack's shim into binDir, which buildEnv puts first on PATH, so
+// nested `pnpm …` calls from package scripts resolve too and the project's packageManager pin decides the
+// version. Reports whether it did.
+func (b *Builder) viaCorepack(p *Plan, binDir string) bool {
+	pm := p.PackageManager
+	if pm != "pnpm" && pm != "yarn" {
+		return false
+	}
+	uses := false
+	for _, st := range p.Steps {
+		uses = uses || (len(st.Cmd) > 0 && st.Cmd[0] == pm)
+	}
+	if !uses {
+		return false
+	}
+	if _, err := b.LookPath(pm); err == nil {
+		return false
+	}
+	if _, err := b.LookPath("corepack"); err != nil {
+		return false
+	}
+	// Top-level steps get the shim's absolute path (exec resolves names with the builder's own PATH).
+	for i, st := range p.Steps {
+		if len(st.Cmd) > 0 && st.Cmd[0] == pm {
+			p.Steps[i].Cmd = append([]string{filepath.Join(binDir, pm)}, st.Cmd[1:]...)
+		}
+	}
+	enable := Step{Name: "corepack enable " + pm, Cmd: []string{"corepack", "enable", "--install-directory", binDir, pm}}
+	p.Steps = append([]Step{enable}, p.Steps...)
+	return true
+}
+
 // buildEnv is the environment for build steps: CI mode, caches under CacheDir, then job env.
 func (b *Builder) buildEnv(j *job) []string {
 	c := b.CacheDir
@@ -358,9 +400,15 @@ func (b *Builder) buildEnv(j *job) []string {
 		"npm_config_cache=" + filepath.Join(c, "npm"), "npm_config_store_dir=" + filepath.Join(c, "pnpm"),
 		"YARN_CACHE_FOLDER=" + filepath.Join(c, "yarn"), "BUN_INSTALL_CACHE_DIR=" + filepath.Join(c, "bun"),
 		"DENO_DIR=" + filepath.Join(c, "deno"), "NEXT_TELEMETRY_DISABLED=1",
+		"COREPACK_HOME=" + filepath.Join(c, "corepack"), "COREPACK_ENABLE_DOWNLOAD_PROMPT=0",
+		// Unpinned projects get corepack's known-good release, not "latest" (a newer major may not run under this corepack).
+		"COREPACK_DEFAULT_TO_LATEST=0",
 	}
 	if !j.checkout.Time.IsZero() {
 		env = append(env, fmt.Sprintf("SOURCE_DATE_EPOCH=%d", j.checkout.Time.Unix()))
+	}
+	if j.binDir != "" {
+		env = append(env, "PATH="+j.binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	}
 	for _, k := range sortedKeys(j.Env) {
 		env = append(env, k+"="+j.Env[k])
