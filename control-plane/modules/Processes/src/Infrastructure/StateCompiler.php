@@ -132,10 +132,13 @@ final class StateCompiler
         // Octane runs while enabled, and while draining after it was switched off (until the edge stopped proxying to it).
         $draining = $this->draining[$site->id] ?? null;
 
+        // A bounded stop: the edge holds requests while Octane restarts, and only for so long (processes.octane_stop_timeout).
+        $octaneStop = ['stop_timeout_s' => max(1, (int) config('processes.octane_stop_timeout', 10))];
+
         if ($laravel && OctaneRoutes::wantsOctane($site)) {
-            $out[] = [$this->program($site, $serverId, $release, ProgramNames::octane($site->slug), self::octaneCommand($php, $site->laravel->octaneServer ?? OctaneServer::Swoole, (int) $site->laravel->octanePort)), 'octane', 'Octane'];
+            $out[] = [$this->program($site, $serverId, $release, ProgramNames::octane($site->slug), self::octaneCommand($php, $site->laravel->octaneServer ?? OctaneServer::Swoole, (int) $site->laravel->octanePort), $octaneStop), 'octane', 'Octane'];
         } elseif ($draining !== null) {
-            $out[] = [$this->program($site, $serverId, $release, ProgramNames::octane($site->slug), self::octaneCommand($php, $draining->octane_server, $draining->port)), 'octane', 'Octane (stopping)'];
+            $out[] = [$this->program($site, $serverId, $release, ProgramNames::octane($site->slug), self::octaneCommand($php, $draining->octane_server, $draining->port), $octaneStop), 'octane', 'Octane (stopping)'];
         }
 
         foreach ($workers as $worker) {
