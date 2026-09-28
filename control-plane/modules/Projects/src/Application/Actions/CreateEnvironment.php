@@ -82,16 +82,19 @@ final class CreateEnvironment
                 continue;
             }
 
+            // Groups are layout of the source environment: copies land at the same place on screen, ungrouped.
+            ['x' => $x, 'y' => $y] = MoveService::absolute($service);
+
             try {
                 $copy = $this->sites->duplicate(
                     $service->ref_id,
                     ['name_suffix' => $to->slug],
-                    new SitePlacement($to->project_id, $to->id, $service->x, $service->y, $service->name),
+                    new SitePlacement($to->project_id, $to->id, $x, $y, $service->name),
                     $userId,
                 );
 
                 // Normally done by the SiteCreated listener already; linking is idempotent.
-                ($this->link)($to, ServiceKind::Site, $copy->site->id, $service->name, $service->x, $service->y);
+                ($this->link)($to, ServiceKind::Site, $copy->site->id, $service->name, $x, $y);
                 array_push($this->warnings, ...$copy->warnings);
             } catch (ValidationException $e) {
                 $this->warnings[] = "{$service->name} was not copied: ".implode(' ', array_merge(...array_values($e->errors())));

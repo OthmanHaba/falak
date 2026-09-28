@@ -19,7 +19,19 @@ export interface ProjectSummary {
     is_default: boolean;
     environments: ProjectEnvironment[];
     services_count: number;
+    /** Services of the production environment (icons for the card preview). */
     services: { kind: 'site' | 'database'; name: string; icon: string }[];
+    /** Health of the production environment ("4/4 services online"). */
+    production: {
+        name: string;
+        slug: string;
+        services: number;
+        online: number;
+        health: 'online' | 'partial' | 'pending' | 'failing' | 'empty';
+    } | null;
+    /** Starred by the signed-in user (pinned first). */
+    favorite: boolean;
+    last_activity_at: string;
     last_deployment: { id: string; site_id: string; status: string; finished_at: string | null; created_at: string } | null;
     status: 'active' | 'deploying' | 'failed' | 'inactive';
     created_at: string;

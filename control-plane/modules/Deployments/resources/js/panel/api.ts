@@ -30,7 +30,7 @@ export const TERMINAL = ['succeeded', 'failed', 'cancelled'];
 
 export const deploymentsUrl = (siteId: string) => `/sites/${siteId}/deployments`;
 
-/** Start a deployment (optionally of a given commit) and open its Deploy view. */
+/** Start a deployment (optionally of a given commit) and stack its deployment panel. */
 export async function deploy(ctx: ServicePanelContext, ref: { commit?: string | null; branch?: string | null } = {}): Promise<void> {
     try {
         const body = await requestJson<{ data: Deployment }>(deploymentsUrl(ctx.service.ref_id), 'POST', {
@@ -39,7 +39,7 @@ export async function deploy(ctx: ServicePanelContext, ref: { commit?: string | 
         });
         toast.success(`Deployment #${body.data.number} started`);
         ctx.refresh();
-        ctx.open('deployments', body.data.id);
+        ctx.openLayer('deployment', body.data.id);
     } catch (error) {
         toast.error('Could not deploy', errorMessage(error));
     }
@@ -60,7 +60,7 @@ export async function cancelDeployment(ctx: ServicePanelContext, deployment: { i
     }
 }
 
-/** Roll back to a release (a deployment of its build) and open the rollback's Deploy view. */
+/** Roll back to a release (a deployment of its build) and stack the rollback's deployment panel. */
 export async function rollback(ctx: ServicePanelContext, releaseId: string): Promise<void> {
     try {
         const body = await requestJson<{ data: { id: string; number: number } }>(
@@ -70,7 +70,7 @@ export async function rollback(ctx: ServicePanelContext, releaseId: string): Pro
         );
         toast.success(`Rollback #${body.data.number} started`);
         ctx.refresh();
-        ctx.open('deployments', body.data.id);
+        ctx.openLayer('deployment', body.data.id);
     } catch (error) {
         toast.error('Could not roll back', errorMessage(error));
     }

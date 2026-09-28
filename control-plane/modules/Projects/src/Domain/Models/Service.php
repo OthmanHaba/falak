@@ -22,9 +22,12 @@ use Kiln\Projects\Contracts\ServiceKind;
  * @property string $name
  * @property int $x
  * @property int $y
+ * @property ?string $group_id
+ * @property ?array{children?: array<string, array{x: int, y: int}>, collapsed?: bool} $layout
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read Environment $environment
+ * @property-read ?Group $group
  */
 class Service extends Model
 {
@@ -40,7 +43,7 @@ class Service extends Model
      */
     protected function casts(): array
     {
-        return ['kind' => ServiceKind::class, 'x' => 'integer', 'y' => 'integer'];
+        return ['kind' => ServiceKind::class, 'x' => 'integer', 'y' => 'integer', 'layout' => 'array'];
     }
 
     /**
@@ -49,6 +52,14 @@ class Service extends Model
     public function environment(): BelongsTo
     {
         return $this->belongsTo(Environment::class);
+    }
+
+    /**
+     * @return BelongsTo<Group, $this>
+     */
+    public function group(): BelongsTo
+    {
+        return $this->belongsTo(Group::class);
     }
 
     /**

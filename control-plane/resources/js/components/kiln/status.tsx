@@ -125,3 +125,28 @@ export function StatusBadge({ status, label, tone, pulse, className }: StatusBad
         </span>
     );
 }
+
+const PILL: Record<StatusTone, string> = {
+    success: 'border-success/30 bg-success-soft text-success',
+    warning: 'border-warning/30 bg-warning-soft text-warning',
+    info: 'border-info/30 bg-info-soft text-info',
+    danger: 'border-danger/30 bg-danger-soft text-danger',
+    faint: 'border-border bg-surface-2 text-fg-muted',
+};
+
+/** Uppercase state pill of a deployment card ("ACTIVE", "FAILED", "SUPERSEDED"). */
+export function StatusPill({ status, label, tone, className }: { status: string; label?: string; tone?: StatusTone; className?: string }) {
+    const spec = statusSpec(status);
+
+    return (
+        <span
+            className={cn(
+                'text-2xs inline-flex h-5 shrink-0 items-center rounded-md border px-1.5 font-semibold tracking-[0.06em] whitespace-nowrap uppercase',
+                PILL[tone ?? spec.tone],
+                className,
+            )}
+        >
+            {label ?? spec.label}
+        </span>
+    );
+}

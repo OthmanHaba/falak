@@ -5,8 +5,8 @@ import { storageStatePath } from './global-setup';
 import { globalAllowedConsole } from './routes';
 
 /**
- * Interactive canvas walkthrough (docs/UI_DESIGN.md §4–§5): Create picker, service panel Deployments tab, Deploy view
- * and the database panel, in both themes. Needs demo data (UiDemoSeeder); skips when the canvas has no services.
+ * Interactive canvas walkthrough (docs/UI_DESIGN.md §4–§5): Create picker, service panel Deployments tab, the stacked
+ * deployment panel, variables, processes, settings and the database panel, in both themes. Needs demo data (UiDemoSeeder); skips when the canvas has no services.
  */
 const SCREENSHOTS = join(import.meta.dirname, 'screenshots');
 
@@ -42,7 +42,7 @@ for (const theme of ['dark', 'light'] as const) {
         });
 
         await page.goto('/projects', { waitUntil: 'networkidle' });
-        await page.locator('a[href$="/production"]').first().click();
+        await page.getByRole('link', { name: 'Default', exact: true }).click();
         await page.waitForURL(/\/projects\/[0-9a-z]{26}\/production$/i);
         await page.waitForLoadState('networkidle');
         const cards = page.locator('.react-flow__node');
@@ -66,34 +66,27 @@ for (const theme of ['dark', 'light'] as const) {
         // Site panel: Deployments tab
         await page.getByRole('group', { name: /^Storefront:/ }).click();
         await page.waitForURL(/\/service\/site\//);
-        await expect(page.getByText('In progress')).toBeVisible();
+        await expect(page.getByTestId('deployment-card-running')).toBeVisible();
         await page.waitForLoadState('networkidle');
         await shot(page, theme, 'panel-deployments');
 
-        // Deploy view of the failed deployment
-        await page.getByRole('button', { name: /#1/ }).first().click();
-        await expect(page.getByTestId('deploy-view')).toBeVisible();
+        // Deployment panel of the failed deployment, stacked over the service panel
+        await page.getByRole('button', { name: /^Deployment #1:/ }).click();
+        await expect(page.getByTestId('deployment-panel')).toBeVisible();
+        await expect(page).toHaveURL(/[?&]logs=[0-9a-z]{26}/);
         await page.waitForLoadState('networkidle');
+        await page.getByRole('tab', { name: 'Details' }).click();
         await shot(page, theme, 'deploy-view');
-        await page.getByRole('tab', { name: /Deploy logs/ }).click();
+        await page.getByRole('tab', { name: /Deploy Logs/ }).click();
         await shot(page, theme, 'deploy-view-logs');
 
-        // A deployment waiting for its server to finish preparing (Blog)
+        // Esc closes the deployment panel only, then the service panel
+        await page.keyboard.press('Escape');
+        await expect(page.getByTestId('deployment-panel')).toHaveCount(0);
+        await expect(page.getByTestId('service-panel')).toBeVisible();
         await page.keyboard.press('Escape');
         await page.waitForURL(/\/production$/);
-        await page.getByRole('group', { name: /^Blog:/ }).click();
-        await page.waitForURL(/\/service\/site\//);
-        await expect(page.getByText('Waiting for servers')).toBeVisible();
-        await expect(page.getByTestId('waiting-notice')).toContainText('Waiting for 1 server to finish preparing');
-        await page.waitForLoadState('networkidle');
-        await shot(page, theme, 'panel-deployments-waiting');
-        await page.getByRole('button', { name: 'View logs' }).first().click();
-        await expect(page.getByTestId('deploy-view')).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
-        await page.waitForLoadState('networkidle');
-        await shot(page, theme, 'deploy-view-waiting');
-        await page.keyboard.press('Escape');
-        await page.waitForURL(/\/production$/);
+        await page.getByRole('button', { name: 'Fit to screen' }).click();
         await page.getByRole('group', { name: /^Storefront:/ }).click();
         await page.waitForURL(/\/service\/site\//);
 
@@ -137,6 +130,7 @@ for (const theme of ['dark', 'light'] as const) {
 
         await page.keyboard.press('Escape');
         await page.waitForURL(/\/production$/);
+        await page.getByRole('button', { name: 'Fit to screen' }).click();
 
         // Database panel
         await page.getByRole('group', { name: /^storefront_db:/ }).click();
@@ -151,6 +145,26 @@ for (const theme of ['dark', 'light'] as const) {
             await expect(page.getByRole('heading', { name: ready })).toBeVisible();
             await shot(page, theme, name);
         }
+
+        // A deployment waiting for its server to finish preparing (Blog, in the Content project)
+        await page.keyboard.press('Escape');
+        await page.goto('/projects', { waitUntil: 'networkidle' });
+        await page.getByRole('link', { name: 'Content', exact: true }).click();
+        await page.waitForURL(/\/production$/);
+        await page.getByRole('group', { name: /^Blog:/ }).click();
+        await page.waitForURL(/\/service\/site\//);
+        await expect(page.getByTestId('deployment-card-waiting')).toBeVisible();
+        await expect(page.getByTestId('waiting-notice')).toContainText('Waiting for 1 server to finish preparing');
+        await page.waitForLoadState('networkidle');
+        await shot(page, theme, 'panel-deployments-waiting');
+        await page.getByRole('button', { name: 'View logs' }).first().click();
+        await expect(page.getByTestId('deployment-panel')).toBeVisible();
+        await page.getByRole('button', { name: 'Deployment actions' }).click();
+        await expect(page.getByRole('menuitem', { name: 'Cancel deployment' })).toBeVisible();
+        await page.keyboard.press('Escape');
+        await page.getByRole('tab', { name: 'Details' }).click();
+        await page.waitForLoadState('networkidle');
+        await shot(page, theme, 'deploy-view-waiting');
 
         expect.soft(errors, 'console errors').toEqual([]);
         await context.close();

@@ -32,6 +32,10 @@ use Kiln\Processes\Domain\Models\Worker;
 use Kiln\Processes\Infrastructure\ProgramNames;
 use Kiln\Projects\Application\Actions\CreateEnvironment;
 use Kiln\Projects\Application\Actions\CreateProject;
+use Kiln\Projects\Application\Actions\GroupServices;
+use Kiln\Projects\Application\Actions\ToggleFavorite;
+use Kiln\Projects\Domain\Models\Project;
+use Kiln\Projects\Domain\Models\Service;
 use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Domain\Models\Server;
@@ -125,7 +129,9 @@ class UiDemoSeeder extends Seeder
         $created['stack'] = $this->composeSite($organization->id, $admin->id, $servers[0]);
 
         $this->database($organization->id, $servers[2]);
-        $this->variables($created['storefront'], ['APP_ENV' => 'production', 'DATABASE_URL' => '${{ storefront_db.DATABASE_URL }}', 'DB_HOST' => '${{ storefront_db.DB_HOST }}']);
+        $this->variables($created['storefront'], ['APP_ENV' => 'production', 'APP_URL' => 'https://shop.acme.dev', 'DATABASE_URL' => '${{ storefront_db.DATABASE_URL }}', 'DB_HOST' => '${{ storefront_db.DB_HOST }}']);
+        // Marketing calls the storefront API and posts leads into the automations stack (canvas reference edges).
+        $this->variables($created['marketing'], ['NEXT_PUBLIC_SHOP_URL' => '${{ storefront.APP_URL }}', 'N8N_WEBHOOK' => '${{ automations.N8N_ENCRYPTION_KEY }}']);
         $this->deployments($organization->id, $created, [$servers[0], $servers[1]]);
         $this->waitingDeployment($organization->id, $created['blog'], $servers[1]);
         $this->processes($organization->id, $created['storefront'], $created['marketing'], [$servers[0], $servers[1]]);
@@ -135,6 +141,7 @@ class UiDemoSeeder extends Seeder
         Artisan::call('projects:backfill', ['--organization' => $organization->id]);
         $platform = app(CreateProject::class)($organization->id, $admin->id, ['name' => 'Platform']);
         app(CreateEnvironment::class)($platform, 'staging', $admin->id);
+        $this->canvas($organization->id, $admin->id);
 
         $this->callWith(InfrastructureDemoSeeder::class, ['organizationId' => $organization->id, 'userId' => $admin->id]);
 
@@ -145,6 +152,33 @@ class UiDemoSeeder extends Seeder
 
         // Settings → Templates: an organization template next to the catalog.
         app(SaveCustomTemplate::class)($organization->id, $admin->id, self::CUSTOM_TEMPLATE, self::CUSTOM_COMPOSE);
+    }
+
+    /**
+     * Canvas layout (docs/UI_DESIGN.md §4.3): the Automations compose stack as a group at the top left, Storefront and
+     * its database in a "Commerce" group, Marketing beside them; Docs and Blog move to a starred "Content" project so
+     * the Projects dashboard shows several projects with what's inside.
+     */
+    private function canvas(string $organizationId, string $userId): void
+    {
+        $default = Project::query()->where('organization_id', $organizationId)->where('is_default', true)->firstOrFail();
+        $production = $default->production() ?? throw new \RuntimeException('Default project without production');
+        $services = Service::query()->where('environment_id', $production->id)->get()->keyBy('name');
+        $place = fn (string $name, int $x, int $y) => $services->get($name)?->forceFill(['x' => $x, 'y' => $y])->save();
+
+        $place('Automations', 0, 60);
+        $place('Storefront', 720, 20);
+        $place('storefront_db', 720, 240);
+        $place('Marketing', 1140, 20);
+        app(GroupServices::class)($production, 'Commerce', [$services['Storefront']->id, $services['storefront_db']->id]);
+
+        $content = app(CreateProject::class)($organizationId, $userId, ['name' => 'Content', 'description' => 'Docs and the company blog.']);
+        $contentProduction = $content->production() ?? throw new \RuntimeException('Content project without production');
+        foreach ([['Docs', 0, 0], ['Blog', 320, 0]] as [$name, $x, $y]) {
+            $services->get($name)?->forceFill(['project_id' => $content->id, 'environment_id' => $contentProduction->id, 'x' => $x, 'y' => $y])->save();
+        }
+
+        app(ToggleFavorite::class)($content, $userId, true);
     }
 
     private const CUSTOM_TEMPLATE = <<<'YAML'

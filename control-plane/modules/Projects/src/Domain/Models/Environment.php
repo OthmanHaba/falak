@@ -23,6 +23,7 @@ use Kiln\Projects\Contracts\Data\EnvironmentData;
  * @property Carbon $updated_at
  * @property-read Project $project
  * @property-read Collection<int, Service> $services
+ * @property-read Collection<int, Group> $groups
  */
 class Environment extends Model
 {
@@ -58,6 +59,14 @@ class Environment extends Model
     public function services(): HasMany
     {
         return $this->hasMany(Service::class)->orderBy('created_at')->orderBy('id');
+    }
+
+    /**
+     * @return HasMany<Group, $this>
+     */
+    public function groups(): HasMany
+    {
+        return $this->hasMany(Group::class)->orderBy('created_at')->orderBy('id');
     }
 
     public function toData(): EnvironmentData

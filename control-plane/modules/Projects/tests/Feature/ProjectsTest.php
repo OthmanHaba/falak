@@ -97,3 +97,30 @@ it('renders the settings page with environments', function () {
         ->where('project.environments.1.slug', 'staging')
         ->where('can.manage', true));
 });
+
+it('summarises the production environment of each project and stars projects per user', function () {
+    $environment = projects_default_env($this->organization);
+    projects_database($this->organization, 'db', $environment);
+    $server = sites_server($this->organization->id, ['name' => 'web-1']);
+    $web = projects_site($this->organization, 'Web', [], $environment, [$server]);
+    projects_deployment($web, 'succeeded', ['finished_at' => now()]);
+    projects_site($this->organization, 'Idle', [], $environment, [$server]);
+    $platform = $this->postJson('/projects', ['name' => 'Platform'])->assertCreated()->json('data.id');
+
+    $this->putJson("/projects/{$platform}/favorite")->assertOk()->assertJsonPath('data.favorite', true);
+    $this->putJson("/projects/{$platform}/favorite")->assertOk();
+
+    $projects = collect($this->getJson('/projects')->assertOk()->json('data'))->keyBy('name');
+
+    expect($projects['Default']['production'])->toBe(['name' => 'production', 'slug' => 'production', 'services' => 3, 'online' => 2, 'health' => 'partial'])
+        ->and($projects['Default']['favorite'])->toBeFalse()
+        ->and($projects['Default']['last_activity_at'])->not->toBeNull()
+        ->and($projects['Platform']['favorite'])->toBeTrue()
+        ->and($projects['Platform']['production'])->toMatchArray(['services' => 0, 'online' => 0, 'health' => 'empty']);
+
+    // Favorites are per user.
+    actingAsMember(Role::Viewer, $this->organization);
+    expect(collect($this->getJson('/projects')->json('data'))->firstWhere('name', 'Platform')['favorite'])->toBeFalse();
+
+    $this->deleteJson("/projects/{$platform}/favorite")->assertOk()->assertJsonPath('data.favorite', false);
+});

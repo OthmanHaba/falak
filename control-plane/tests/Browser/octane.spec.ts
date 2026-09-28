@@ -44,7 +44,7 @@ for (const theme of ['dark', 'light'] as const) {
 
         // Canvas: the Storefront card carries the Octane badge.
         await page.goto('/projects', { waitUntil: 'networkidle' });
-        const project = await page.locator('a[href$="/production"]').first().getAttribute('href');
+        const project = await page.getByRole('link', { name: 'Default', exact: true }).getAttribute('href');
         expect(project).toBeTruthy();
         await page.goto(project!, { waitUntil: 'networkidle' });
         const card = page.getByText('Storefront', { exact: true }).first();

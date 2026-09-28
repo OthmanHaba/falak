@@ -113,8 +113,17 @@ export interface ServicePanelContext {
     tab: string;
     /** Record inside the tab (…/{tab}/{item}), e.g. the deployment shown in the Deploy view. */
     item: string | null;
-    /** Navigate inside the panel without leaving the canvas. */
+    /**
+     * Navigate inside the panel without leaving the canvas. A tab + item that a stacked layer claims (`fromTab`, e.g.
+     * `open('deployments', id)`) opens that layer on top instead.
+     */
     open: (tab: string, item?: string | null) => void;
+    /** Stack a registered detail layer (§5.5) over this panel, e.g. `openLayer('deployment', id, 'deploy')`. */
+    openLayer: (layer: string, record: string, tab?: string | null) => void;
+    /** Stack another service's panel over this one (e.g. the target of a `${{ service.KEY }}` reference). */
+    openService: (service: Pick<CanvasService, 'kind' | 'ref_id'>, tab?: string | null) => void;
+    /** The detail layer open on top of this panel, if any (to highlight its row). */
+    layer: { id: string; record: string } | null;
     /** Re-fetch the canvas read model (card status, panel header). */
     refresh: () => void;
     /** Leave the panel (e.g. after deleting the service). */
@@ -198,6 +207,36 @@ export interface ServiceSettingsSection {
     component: ComponentType<ServiceTabProps>;
 }
 
+export interface ServiceLayerProps {
+    /** Context of the service panel the layer is stacked on. */
+    ctx: ServicePanelContext;
+    /** Record the layer shows (e.g. a deployment id). */
+    record: string;
+    /** Active tab of the layer (URL `?{param}_tab=`); null = the layer's default. */
+    tab: string | null;
+    onTabChange: (tab: string) => void;
+    /** Close this layer (Esc / ✕ do the same). */
+    close: () => void;
+}
+
+/**
+ * A detail panel stacked over a service panel (§5.5), contributed by the module that owns the record — e.g.
+ * Deployments' deployment panel (Details · Build logs · Deploy logs · Network logs). Deep link:
+ * `?{param}={record}&{param}_tab={tab}`; the canvas renders the panel chrome (stacking, motion, Esc, focus).
+ */
+export interface ServiceLayer {
+    id: string;
+    kinds: ServiceKind[];
+    /** Query parameter holding the record id (e.g. `logs`). */
+    param: string;
+    /** `ctx.open(fromTab, record)` opens this layer (legacy deep links `…/{fromTab}/{record}` too). */
+    fromTab?: string;
+    permission?: string;
+    /** Accessible name of the stacked dialog. */
+    label: (ctx: ServicePanelContext, record: string) => string;
+    component: ComponentType<ServiceLayerProps>;
+}
+
 /**
  * Window event that opens the canvas Create picker (⌘K → Create service). A CustomEvent with `detail.option` opens a
  * registered create option directly (e.g. `new CustomEvent(CREATE_SERVICE_EVENT, {detail: {option: 'template'}})`).
@@ -243,6 +282,24 @@ const serviceTabs = new Map<string, ServiceTab>();
 const serviceActions = new Map<string, ServiceAction>();
 const settingsSections = new Map<string, ServiceSettingsSection>();
 const createOptions = new Map<string, CreateOption>();
+const serviceLayers = new Map<string, ServiceLayer>();
+
+export function registerServiceLayers(...layers: ServiceLayer[]): void {
+    layers.forEach((layer) => serviceLayers.set(layer.id, layer));
+}
+
+/** Registered detail layers usable on a service kind. */
+export function serviceLayersFor(kind: ServiceKind, ctx: Pick<ShellContext, 'can'>): ServiceLayer[] {
+    return [...serviceLayers.values()].filter((layer) => layer.kinds.includes(kind) && (!layer.permission || ctx.can(layer.permission)));
+}
+
+export function serviceLayer(id: string): ServiceLayer | undefined {
+    return serviceLayers.get(id);
+}
+
+export function allServiceLayers(): ServiceLayer[] {
+    return [...serviceLayers.values()];
+}
 
 export function registerNavigation(...items: ModuleNavItem[]): void {
     items.forEach((item) => navItems.set(item.id, item));

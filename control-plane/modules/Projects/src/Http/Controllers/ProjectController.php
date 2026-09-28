@@ -12,6 +12,7 @@ use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Projects\Application\Actions\CreateProject;
 use Kiln\Projects\Application\Actions\DeleteProject;
+use Kiln\Projects\Application\Actions\ToggleFavorite;
 use Kiln\Projects\Application\Actions\UpdateProject;
 use Kiln\Projects\Application\Canvas\ProjectSummaries;
 use Kiln\Projects\Domain\Models\Project;
@@ -37,7 +38,7 @@ final class ProjectController extends Controller
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, ProjectPolicy::VIEW);
 
-        $projects = $summaries->forOrganization($organizationId);
+        $projects = $summaries->forOrganization($organizationId, $request->user()?->getAuthIdentifier());
 
         if ($request->wantsJson() && ! $this->isInertia($request)) {
             return response()->json(['data' => $projects]);
@@ -54,6 +55,17 @@ final class ProjectController extends Controller
             ],
             'can' => ['create' => $this->access->can($request->user(), $organizationId, ProjectPolicy::MANAGE)],
         ]);
+    }
+
+    /**
+     * PUT|DELETE /projects/{project}/favorite — star / unstar the project for the signed-in user.
+     */
+    public function favorite(Request $request, Project $project, ToggleFavorite $toggle): JsonResponse
+    {
+        $this->authorize('view', $project);
+        $toggle($project, (string) $request->user()?->getAuthIdentifier(), $request->isMethod('PUT'));
+
+        return response()->json(['data' => ['id' => $project->id, 'favorite' => $request->isMethod('PUT')]]);
     }
 
     public function store(Request $request, CreateProject $create): JsonResponse|RedirectResponse
