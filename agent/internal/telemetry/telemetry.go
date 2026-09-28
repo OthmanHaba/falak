@@ -206,6 +206,20 @@ func (s *Service) SetEndpoint(ep string) {
 	s.apply(p)
 }
 
+// SetHostName updates host.name on every signal (the hostname changed, e.g. a cloud instance renamed after
+// the agent started). Called with each facts collection; a no-op when unchanged.
+func (s *Service) SetHostName(h string) {
+	s.mu.Lock()
+	if h == "" || h == s.opts.HostName {
+		s.mu.Unlock()
+		return
+	}
+	s.opts.HostName = h
+	p := s.cur
+	s.mu.Unlock()
+	s.apply(p)
+}
+
 // Register adds telemetry.configure to the registry.
 func (s *Service) Register(reg *commands.Registry) {
 	reg.Register("telemetry.configure", commands.Typed(s.configure))
@@ -255,6 +269,12 @@ func validate(p Payload) error {
 		if src.Format != "" && src.Format != "plain" && src.Format != "json" {
 			return fmt.Errorf("log source format %q", src.Format)
 		}
+		if src.Kind != "" && src.Kind != "app" && src.Kind != "access" {
+			return fmt.Errorf("log source kind %q", src.Kind)
+		}
+		if src.Multiline != "" && src.Multiline != "laravel" {
+			return fmt.Errorf("log source multiline %q", src.Multiline)
+		}
 	}
 	for _, site := range p.Sites {
 		if site.Slug == "" || site.SiteID == "" {
@@ -274,9 +294,9 @@ func boolOr(b *bool, def bool) bool {
 // apply hot-reloads every subsystem from p (defaults per the schema).
 func (s *Service) apply(p Payload) {
 	s.mu.Lock()
-	endpoint := s.opts.Endpoint
+	endpoint, host := s.opts.Endpoint, s.opts.HostName
 	s.mu.Unlock()
-	cfg := otlp.Config{Endpoint: endpoint, Headers: p.Headers, ServerID: s.opts.ServerID, HostName: s.opts.HostName,
+	cfg := otlp.Config{Endpoint: endpoint, Headers: p.Headers, ServerID: s.opts.ServerID, HostName: host,
 		Environment: "production", Sites: p.Sites, TracesRatio: 1, BufferMax: otlp.DefaultBufferMax}
 	if p.Endpoint != "" {
 		cfg.Endpoint = p.Endpoint
@@ -310,7 +330,8 @@ func (s *Service) apply(p Payload) {
 	if s.stats != nil {
 		s.stats.Configure(enabled, interval)
 	}
-	s.tailer.SetSources(p.LogSources)
+	// The edge's per-site access logs are always shipped (edge.caddy.apply writes them; the file name is the slug).
+	s.tailer.SetSources(append(append([]logs.Source(nil), p.LogSources...), logs.AccessSource()))
 	if s.docker != nil {
 		on, labels := true, map[string]string(nil)
 		if p.DockerLogs != nil {

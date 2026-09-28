@@ -115,6 +115,20 @@
               "json"
             ],
             "default": "plain"
+          },
+          "kind": {
+            "enum": [
+              "app",
+              "access"
+            ],
+            "default": "app",
+            "description": "kiln.log.kind resource attribute (Loki label kiln_log_kind). The edge access logs (/var/log/kiln/access/<slug>.log) are always tailed as kind access; they need no entry here"
+          },
+          "multiline": {
+            "enum": [
+              "laravel"
+            ],
+            "description": "Merge continuation lines into the preceding record. laravel: records start with \"[YYYY-MM-DD HH:MM:SS\" (Monolog line format), so stack traces stay with their error"
           }
         }
       }

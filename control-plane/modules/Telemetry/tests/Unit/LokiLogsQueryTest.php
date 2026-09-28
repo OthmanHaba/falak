@@ -89,3 +89,11 @@ it('filters compose container logs by compose service (structured metadata)', fu
     expect(LogQueryBuilder::build('org', ['site_id' => 'site', 'compose_service' => 'redis', 'search' => 'ready']))
         ->toBe('{kiln_org_id="ORG", kiln_site_id="SITE"} | kiln_compose_service="redis" |= "ready"');
 });
+
+it('selects a site log kind and builds access log queries by slug', function () {
+    expect(LogQueryBuilder::build('org', ['site_id' => 'abc', 'kind' => 'app']))->toBe('{kiln_org_id="ORG", kiln_site_id="ABC", kiln_log_kind="app"}')
+        ->and(LogQueryBuilder::access('org', 'shop', ['server_id' => 'srv', 'status' => 404, 'client_ip' => '203.0.113.9']))
+        ->toBe('{kiln_org_id="ORG", service_name="shop", kiln_log_kind="access", kiln_server_id="SRV"} | http_response_status_code="404" | client_address="203.0.113.9"');
+
+    LogQueryBuilder::access('org', 'shop', ['status' => '6xx']);
+})->throws(InvalidArgumentException::class);

@@ -1,0 +1,74 @@
+<?php
+
+namespace Kiln\Fleet\Application;
+
+use Kiln\Fleet\Events\AgentVersionChanged;
+
+/**
+ * Agents decode payloads strictly (unknown fields are rejected), so optional fields added to the protocol are
+ * removed for agents whose facts do not list the feature that introduced them (`facts.features`). Modules
+ * always build the full payload; an agent that is upgraded later gets the fields on the next dispatch
+ * (listen to {@see AgentVersionChanged} to re-send state that is otherwise deduplicated).
+ */
+final class PayloadCompatibility
+{
+    /**
+     * feature => [command type => list of field paths ("*" = every list item)].
+     *
+     * @var array<string, array<string, list<string>>>
+     */
+    public const FIELDS = [
+        'edge.access_log' => [
+            'edge.caddy.apply' => ['sites.*.access_log'],
+        ],
+        'telemetry.log_kind' => [
+            'telemetry.configure' => ['log_sources.*.kind', 'log_sources.*.multiline'],
+        ],
+    ];
+
+    /**
+     * @param  list<string>  $features  the agent's reported features
+     */
+    public static function adapt(string $type, object $document, array $features): object
+    {
+        foreach (self::FIELDS as $feature => $commands) {
+            if (in_array($feature, $features, true) || ! isset($commands[$type])) {
+                continue;
+            }
+
+            foreach ($commands[$type] as $path) {
+                self::strip($document, explode('.', $path));
+            }
+        }
+
+        return $document;
+    }
+
+    /**
+     * @param  list<string>  $segments
+     */
+    private static function strip(mixed $node, array $segments): void
+    {
+        $key = array_shift($segments);
+
+        if ($key === '*') {
+            foreach (is_array($node) ? $node : [] as $item) {
+                self::strip($item, $segments);
+            }
+
+            return;
+        }
+
+        if (! is_object($node) || ! property_exists($node, (string) $key)) {
+            return;
+        }
+
+        if ($segments === []) {
+            unset($node->{$key});
+
+            return;
+        }
+
+        self::strip($node->{$key}, $segments);
+    }
+}

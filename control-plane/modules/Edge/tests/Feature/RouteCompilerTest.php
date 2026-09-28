@@ -41,7 +41,7 @@ it('compiles every runtime kind', function (SiteRuntime $runtime, array $expecte
 
     $entry = edge_entry(edge_compile($this->web->id), strtolower($site->id));
 
-    expect($entry)->toMatchArray(['domains' => ['app.example.com'], 'tls' => ['mode' => 'acme'], ...$expected]);
+    expect($entry)->toMatchArray(['domains' => ['app.example.com'], 'tls' => ['mode' => 'acme'], 'access_log' => 'app', ...$expected]);
 })->with([
     'frankenphp' => [SiteRuntime::FrankenPhp, ['kind' => 'frankenphp', 'root' => '/srv/kiln/sites/app/current/public']],
     'php-fpm' => [SiteRuntime::PhpFpm, ['kind' => 'php_fpm', 'root' => '/srv/kiln/sites/app/current/public', 'php_fpm_socket' => '/run/php/kiln-app-8.4.sock']],
@@ -203,11 +203,14 @@ it('load balances through an lb server and serves plain HTTP on the backends', f
         'lb_policy' => 'least_conn',
         'health_uri' => '/up',
         'basic_auth' => [['username' => 'ops', 'password_hash' => '$2y$10$abc']],
+        // The balancer sees the real clients: it writes the site's access log.
+        'access_log' => $site->slug,
     ]);
 
     $backend = edge_entry(edge_compile($this->web->id), $id);
     expect($backend)->toMatchArray(['kind' => 'frankenphp', 'tls' => ['mode' => 'off'], 'domains' => ['www.shop.com', 'shop.kiln.test']])
-        ->and($backend)->not->toHaveKey('basic_auth');
+        ->and($backend)->not->toHaveKey('basic_auth')
+        ->and($backend)->not->toHaveKey('access_log');
 
     expect(app(EdgeRoutes::class)->compile($lb->id))->toBe(app(EdgeRoutes::class)->compile($lb->id));
 });

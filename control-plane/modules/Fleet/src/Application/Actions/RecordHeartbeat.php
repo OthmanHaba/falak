@@ -9,6 +9,7 @@ use Kiln\Fleet\Domain\Models\Agent;
 use Kiln\Fleet\Domain\Models\AgentMetric;
 use Kiln\Fleet\Events\AgentCameOnline;
 use Kiln\Fleet\Events\AgentFactsReported;
+use Kiln\Fleet\Events\AgentVersionChanged;
 
 final class RecordHeartbeat
 {
@@ -39,6 +40,7 @@ final class RecordHeartbeat
         ];
 
         $facts = isset($heartbeat['facts']) && is_array($heartbeat['facts']) ? $heartbeat['facts'] : null;
+        $previousVersion = $agent->agent_version;
 
         if ($facts !== null) {
             $attributes += [
@@ -76,6 +78,10 @@ final class RecordHeartbeat
 
         if ($facts !== null) {
             AgentFactsReported::dispatch($agent->id, $agent->organization_id, $agent->server_id, $facts);
+
+            if (is_string($facts['agent_version'] ?? null) && $facts['agent_version'] !== $previousVersion) {
+                AgentVersionChanged::dispatch($agent->id, $agent->organization_id, $agent->server_id, $previousVersion, $facts['agent_version'], $agent->features());
+            }
         }
     }
 }

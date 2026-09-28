@@ -114,12 +114,26 @@ cannot be set. `422` for a Laravel toggle on a non-Laravel site, an unavailable 
 
 ### `GET /api/v1/sites/{site}/logs` — `telemetry.view`
 Query: `since` (seconds, default 3600, ≤ 30 days), `limit` (1–1000, default 100), `level`
-(`trace|debug|info|warn|error|fatal`), `cursor` (from the previous page). Newest first; `meta.cursor` is empty
+(`trace|debug|info|warn|error|fatal`), `kind` (`app` — the site's log files, programs, cron, containers — or
+`access` — edge requests; default both), `cursor` (from the previous page). Newest first; `meta.cursor` is empty
 on the last page.
 ```json
 {"data": [{"at": "2026-09-26T10:00:02.000000+00:00", "level": "ERROR", "source": "laravel", "server": "web-1",
            "message": "boom", "attributes": {"service_name": "laravel", "…": "…"}}],
  "meta": {"cursor": "1790000000000000001"}}
+```
+
+### `GET /api/v1/sites/{site}/access-logs` — `telemetry.view`
+The site's edge HTTP access log ("Network Logs"): one entry per request served for the site, by its servers or by
+the load balancer in front of them. Query: `since`, `limit`, `cursor` as above; filters `server` (server id),
+`deployment` (requests served while that deployment's release was live), `method`, `status` (`404` or a class
+`5xx`), `path` (substring of the request URI), `client_ip`. `503` when Loki is not configured.
+```json
+{"data": [{"ts": "1790000000000000002", "at": "2026-09-28T10:00:02.000000+00:00", "method": "GET", "path": "/cart",
+           "query": "x=1", "status": 502, "duration_ms": 12.3, "bytes": 512, "request_bytes": 0,
+           "client_ip": "203.0.113.9", "user_agent": "curl/8.5", "host": "shop.example.com",
+           "server_id": "01k…", "deployment_id": "01k…", "release_id": "01k…"}],
+ "meta": {"cursor": "1790000000000000002"}}
 ```
 
 ## Projects

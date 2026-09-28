@@ -403,7 +403,8 @@ func TestAgentRecordsGetExplicitSiteIDAndNoStaleDeployment(t *testing.T) {
 	r.EmitLog(obs.LogRecord{Body: "deployment started", Service: AgentService, Site: "shop", SiteID: "01EXPLICIT",
 		Attrs: map[string]string{"kiln.deployment.id": "01NEWDEPLOY"}})
 	r.EmitLog(obs.LogRecord{Body: "worker log", Site: "shop"})
-	waitFor(t, "logs", func() bool { _, l, _ := col.counts(); return l == 2 })
+	r.EmitLog(obs.LogRecord{Body: "GET / 200", Site: "shop", Kind: LogKindAccess})
+	waitFor(t, "logs", func() bool { _, l, _ := col.counts(); return l == 3 })
 	col.mu.Lock()
 	defer col.mu.Unlock()
 	byBody := map[string]*logspb.ResourceLogs{}
@@ -423,5 +424,18 @@ func TestAgentRecordsGetExplicitSiteIDAndNoStaleDeployment(t *testing.T) {
 	app := byBody["worker log"].Resource.Attributes
 	if v, _ := Lookup(app, "kiln.deployment.id"); v != "01OLDDEPLOY" {
 		t.Fatalf("site workload logs should still carry the active deployment id: %v", app)
+	}
+	if v, _ := Lookup(app, "kiln.log.kind"); v != LogKindApp {
+		t.Fatalf("site records default to kind app: %v", app)
+	}
+	if _, ok := Lookup(agent, "kiln.log.kind"); ok {
+		t.Fatal("agent records have no log kind")
+	}
+	access := byBody["GET / 200"].Resource.Attributes
+	if v, _ := Lookup(access, "kiln.log.kind"); v != LogKindAccess {
+		t.Fatalf("kind = %v", access)
+	}
+	if v, _ := Lookup(access, "service.name"); v != "shop" {
+		t.Fatalf("service.name = %v", access)
 	}
 }

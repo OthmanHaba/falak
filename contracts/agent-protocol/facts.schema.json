@@ -16,6 +16,7 @@
     "private_ipv4": { "type": ["string", "null"] },
     "docker": { "type": ["string", "null"], "description": "Docker engine version if present" },
     "runtimes": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } }, "examples": [{ "php": ["8.4"], "node": ["22"] }] },
-    "agent_version": { "type": "string" }
+    "agent_version": { "type": "string" },
+    "features": { "type": "array", "items": { "type": "string" }, "uniqueItems": true, "description": "Protocol additions the agent understands (e.g. edge.access_log, telemetry.log_kind, system.upgrade_agent.v2). Agents reject unknown payload fields, so the control plane sends optional fields only to agents that list the feature. Absent = none" }
   }
 }

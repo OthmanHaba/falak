@@ -17,6 +17,14 @@ var _ obs.Sink = (*Relay)(nil)
 
 var agentScope = &commonpb.InstrumentationScope{Name: "kiln-agent", Version: version.Version}
 
+// LogKindApp / LogKindAccess are the values of the kiln.log.kind resource attribute (Loki index label
+// kiln_log_kind): a site's application output (log files, supervised programs, cron, containers) vs. the
+// edge's per-site HTTP access log.
+const (
+	LogKindApp    = "app"
+	LogKindAccess = "access"
+)
+
 // agentResource builds the resource for records produced by the agent itself.
 func (r *Relay) agentResource(site, siteID, service string) *resourcepb.Resource {
 	res := &resourcepb.Resource{}
@@ -78,8 +86,16 @@ func (r *Relay) EmitLog(l obs.LogRecord) {
 	for k, v := range l.Attrs {
 		rec.Attributes = append(rec.Attributes, Str(k, v))
 	}
+	res := r.agentResource(l.Site, l.SiteID, l.Service)
+	kind := l.Kind
+	if kind == "" && l.Site != "" && l.Service == "" {
+		kind = LogKindApp // a site's own output (programs, cron, containers, log files)
+	}
+	if kind != "" {
+		res.Attributes = append(res.Attributes, Str("kiln.log.kind", kind))
+	}
 	r.SubmitLogs([]*logspb.ResourceLogs{{
-		Resource:  r.agentResource(l.Site, l.SiteID, l.Service),
+		Resource:  res,
 		ScopeLogs: []*logspb.ScopeLogs{{Scope: agentScope, LogRecords: []*logspb.LogRecord{rec}}},
 	}})
 }

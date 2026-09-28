@@ -16,6 +16,7 @@ import (
 
 	"github.com/kiln/agent/internal/hostfs"
 	"github.com/kiln/agent/internal/runner"
+	"github.com/kiln/agent/internal/version"
 )
 
 // OS identifies the distribution.
@@ -38,6 +39,7 @@ type Facts struct {
 	Docker       *string             `json:"docker"`
 	Runtimes     map[string][]string `json:"runtimes"`
 	AgentVersion string              `json:"agent_version"`
+	Features     []string            `json:"features"`
 }
 
 // Interfaces is overridable in tests.
@@ -45,7 +47,8 @@ var Interfaces = net.InterfaceAddrs
 
 // Collect gathers facts. Missing sources degrade to zero values rather than failing.
 func Collect(ctx context.Context, r runner.Runner, fs hostfs.FS, agentVersion string) (Facts, error) {
-	f := Facts{Arch: goruntime.GOARCH, CPUs: goruntime.NumCPU(), AgentVersion: agentVersion, Runtimes: map[string][]string{}}
+	f := Facts{Arch: goruntime.GOARCH, CPUs: goruntime.NumCPU(), AgentVersion: agentVersion, Runtimes: map[string][]string{},
+		Features: append([]string(nil), version.Features...)}
 	if b, err := fs.ReadFile("/etc/hostname"); err == nil && strings.TrimSpace(string(b)) != "" {
 		f.Hostname = strings.TrimSpace(string(b))
 	} else {

@@ -19,9 +19,14 @@ use Kiln\Alerting\Domain\Models\Rule;
 use Kiln\Databases\Events\BackupFailed;
 use Kiln\Databases\Events\BackupSucceeded;
 use Kiln\Databases\Events\RestoreFinished;
+use Kiln\Deployments\Contracts\Data\LiveRelease;
+use Kiln\Deployments\Contracts\LiveReleases;
+use Kiln\Deployments\Events\ReleaseActivated;
+use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Events\CertificateInstallFailed;
 use Kiln\Edge\Events\CertificateIssued;
 use Kiln\Fleet\Events\AgentRevoked;
+use Kiln\Fleet\Events\AgentVersionChanged;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Insights\Contracts\SiteNameResolver;
 use Kiln\Network\Events\FirewallApplied;
@@ -33,6 +38,7 @@ use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Sites\Contracts\BuildMode;
 use Kiln\Sites\Contracts\Data\LaravelSettings;
+use Kiln\Sites\Contracts\Data\SharedPath;
 use Kiln\Sites\Contracts\Framework;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteRuntime;
@@ -93,6 +99,56 @@ it('sends the site list upper-case in telemetry.configure and resends it when si
 
     SiteDeleted::dispatch($site->id, $organization->id, 'shop', [$server->id]);
     expect($agents->dispatched('telemetry.configure'))->toHaveCount(2);
+});
+
+it('tails PHP sites\' shared log directories and labels records with the live release', function () {
+    $agents = FakeAgentGateway::install();
+    [, $organization] = memberOf();
+    TelemetrySettings::query()->create(['organization_id' => $organization->id, 'otlp_endpoint' => 'https://otlp.example.com']);
+    $server = Server::factory()->create(['organization_id' => $organization->id, 'type' => ServerType::Web]);
+    $site = wiring_site($organization->id, $server);
+    $site->forceFill(['shared_paths' => [new SharedPath('storage'), new SharedPath('.env', 'file')]])->save();
+    $symfony = wiring_site($organization->id, $server, 'symfony');
+    $symfony->forceFill(['framework' => Framework::Symfony, 'shared_paths' => [new SharedPath('var/log')]])->save();
+    $node = wiring_site($organization->id, $server, 'node');
+    $node->forceFill(['framework' => Framework::Node, 'runtime' => SiteRuntime::Node, 'shared_paths' => [new SharedPath('storage')]])->save();
+    app()->instance(LiveReleases::class, new class($site->id, $server->id) implements LiveReleases
+    {
+        public function __construct(private string $siteId, private string $serverId) {}
+
+        public function onServer(string $serverId): array
+        {
+            return [$this->siteId => new LiveRelease($this->siteId, $this->serverId, '01jre00000000000000000000a', '01jdep0000000000000000000a', [])];
+        }
+    });
+
+    app(TelemetryConfigurator::class)->reconfigure($server->id);
+    $payload = $agents->last('telemetry.configure')['payload'];
+
+    expect($payload['log_sources'])->toBe([
+        ['path' => '/srv/kiln/sites/shop/shared/storage/logs/*.log', 'site' => 'shop', 'kind' => 'app', 'multiline' => 'laravel'],
+        ['path' => '/srv/kiln/sites/symfony/shared/var/log/*.log', 'site' => 'symfony', 'kind' => 'app'],
+    ])->and($payload['sites'])->toContain(['slug' => 'shop', 'site_id' => strtoupper($site->id), 'deployment_id' => '01JDEP0000000000000000000A', 'release_id' => '01JRE00000000000000000000A'])
+        ->and($payload['sites'])->toContain(['slug' => 'node', 'site_id' => strtoupper($node->id)]);
+
+    // An activation re-sends the configuration (new deployment / release ids).
+    ReleaseActivated::dispatch('01jre00000000000000000000b', $organization->id, $site->id, '01jdep0000000000000000000b', null, null, [$server->id]);
+    expect($agents->dispatched('telemetry.configure'))->toHaveCount(2);
+});
+
+it('re-sends edge and telemetry state after an agent upgrade', function () {
+    $agents = FakeAgentGateway::install();
+    [, $organization] = memberOf();
+    $server = Server::factory()->create(['organization_id' => $organization->id, 'type' => ServerType::Web]);
+    wiring_site($organization->id, $server);
+    app(EdgeRoutes::class)->apply($server->id);
+    $edge = count($agents->dispatched('edge.caddy.apply'));
+
+    AgentVersionChanged::dispatch('01jagent000000000000000000', $organization->id, $server->id, '1.0.0', '1.1.0', ['edge.access_log']);
+
+    // The compiled edge payload did not change, but the new agent understands more of it.
+    expect($agents->dispatched('edge.caddy.apply'))->toHaveCount($edge + 1)
+        ->and($agents->dispatched('telemetry.configure'))->toHaveCount(1);
 });
 
 it('routes every Alertable module event through Alerting with a registered type', function () {

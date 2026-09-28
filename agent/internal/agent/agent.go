@@ -217,7 +217,12 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 			s := tel.Summary()
 			return transport.Heartbeat{UptimeS: s.UptimeS, Load: s.Load, CPUPercent: s.CPUPercent, MemoryUsedBytes: s.MemUsedBytes, DiskUsedBytes: s.DiskUsedBytes}
 		},
-		Facts: func(ctx context.Context) (any, error) { return facts.Collect(ctx, r, fs, version.Version) },
+		Facts: func(ctx context.Context) (any, error) {
+			f, err := facts.Collect(ctx, r, fs, version.Version)
+			// Facts are re-collected every few minutes: a renamed host shows up in telemetry without a restart.
+			tel.SetHostName(f.Hostname)
+			return f, err
+		},
 	}
 	renewer := &transport.Renewer{
 		NeedsRenewal: id.NeedsRenewal,

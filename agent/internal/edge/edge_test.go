@@ -410,3 +410,85 @@ func TestRenderStaticSiteFallbacks(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderPerSiteAccessLogs(t *testing.T) {
+	cfg, err := Render(Payload{Sites: []Site{
+		{ID: "shop", Domains: []string{"shop.test"}, RedirectDomains: []string{"www.shop.test"}, Kind: "frankenphp", Root: "/srv/kiln/sites/shop/current/public", AccessLog: "shop"},
+		{ID: "shop-1", Domains: []string{"shop.lan"}, Kind: "frankenphp", Root: "/srv/kiln/sites/shop/current/public", AccessLog: "shop", TLS: &TLS{Mode: "off"}},
+		{ID: "api", Domains: []string{"api.test"}, Kind: "reverse_proxy", Upstreams: []Upstream{{Dial: "127.0.0.1:3000"}}},
+	}}, "/c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(cfg)
+	var got struct {
+		Apps struct {
+			HTTP struct {
+				Servers map[string]struct {
+					Logs struct {
+						LoggerNames       map[string][]string `json:"logger_names"`
+						SkipUnmappedHosts bool                `json:"skip_unmapped_hosts"`
+					} `json:"logs"`
+				} `json:"servers"`
+			} `json:"http"`
+		} `json:"apps"`
+		Logging struct {
+			Logs map[string]struct {
+				Writer struct {
+					Output   string `json:"output"`
+					Filename string `json:"filename"`
+				} `json:"writer"`
+				Encoder struct {
+					Format string `json:"format"`
+				} `json:"encoder"`
+				Include []string `json:"include"`
+				Exclude []string `json:"exclude"`
+			} `json:"logs"`
+		} `json:"logging"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	tls := got.Apps.HTTP.Servers["kiln"].Logs
+	if !tls.SkipUnmappedHosts || len(tls.LoggerNames) != 2 || tls.LoggerNames["shop.test"][0] != "kiln-access-shop" || tls.LoggerNames["www.shop.test"][0] != "kiln-access-shop" {
+		t.Fatalf("tls server logs = %+v", tls)
+	}
+	if _, ok := tls.LoggerNames["api.test"]; ok {
+		t.Fatal("sites without access_log are not logged")
+	}
+	if plain := got.Apps.HTTP.Servers["kiln_http"].Logs; plain.LoggerNames["shop.lan"][0] != "kiln-access-shop" {
+		t.Fatalf("plain server logs = %+v", plain)
+	}
+	l := got.Logging.Logs["kiln-access-shop"]
+	if l.Writer.Output != "file" || l.Writer.Filename != "/var/log/kiln/access/shop.log" || l.Encoder.Format != "json" ||
+		len(l.Include) != 1 || l.Include[0] != "http.log.access.kiln-access-shop" {
+		t.Fatalf("logger = %+v", l)
+	}
+	if d := got.Logging.Logs["default"]; len(d.Exclude) != 1 || d.Exclude[0] != "http.log.access" {
+		t.Fatalf("default logger must not duplicate access entries: %+v", d)
+	}
+	if len(got.Logging.Logs) != 2 {
+		t.Fatalf("loggers: %v", got.Logging.Logs)
+	}
+
+	// No access logs: no logging section at all.
+	cfg, _ = Render(Payload{Sites: []Site{{ID: "api", Domains: []string{"api.test"}, Kind: "reverse_proxy", Upstreams: []Upstream{{Dial: "127.0.0.1:3000"}}}}}, "/c")
+	if _, ok := cfg["logging"]; ok {
+		t.Fatal("unexpected logging section")
+	}
+	if _, err := Render(Payload{Sites: []Site{{ID: "x", Domains: []string{"x.test"}, Kind: "static", Root: "/r", AccessLog: "../etc"}}}, "/c"); err == nil {
+		t.Fatal("invalid access_log name accepted")
+	}
+}
+
+func TestApplyCreatesAccessLogDir(t *testing.T) {
+	m, _, fs := setup(t)
+	p := Payload{Sites: []Site{{ID: "web", Domains: []string{"web.test"}, Kind: "static", Root: "/srv/web", AccessLog: "web"}}}
+	if _, err := m.Apply(context.Background(), p, stream()); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(fs.P("/var/log/kiln/access"))
+	if err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o750 {
+		t.Fatalf("access log dir: %v %v", fi, err)
+	}
+}

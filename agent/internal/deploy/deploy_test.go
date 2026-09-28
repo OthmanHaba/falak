@@ -333,3 +333,11 @@ func TestPrepareRefusesWritableDirsThatEscapeTheSite(t *testing.T) {
 		t.Fatal("must not touch files outside the site")
 	}
 }
+
+func TestGroupSharedDefaultACLEncoding(t *testing.T) {
+	// user::rwx group::rwx other::--- as getfattr -e hex prints it.
+	want := "02000000" + "01000700ffffffff" + "04000700ffffffff" + "20000000ffffffff"
+	if got := hex.EncodeToString(groupSharedDefaultACL()); got != want {
+		t.Fatalf("acl = %s, want %s", got, want)
+	}
+}

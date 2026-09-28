@@ -131,6 +131,12 @@ final class RouteCompiler
 
         $groups = $this->domainGroups($site, $serverId, $role);
         $rules = $this->rules($site->id, $role);
+
+        // Per-site HTTP access log (shipped to Loki as the site's kind=access records). Backends behind a load
+        // balancer only see the balancer's requests; the balancer logs them with the real client.
+        if ($role !== 'backend') {
+            $rules['access_log'] = $site->slug;
+        }
         $routeId = self::routeId($site->id);
         $entries = $role === 'direct' ? $this->composeServiceEntries($site, $routeId, $rules) : [];
         $n = 0;

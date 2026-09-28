@@ -8,7 +8,10 @@ namespace Kiln\Telemetry\Contracts\Data;
 final readonly class SiteTelemetryTarget
 {
     /**
-     * @param  list<array{path: string, service?: string, format?: 'plain'|'json'}>  $logSources
+     * Log sources are files the agent tails as the site's logs: kind app by default, `multiline: laravel` merges
+     * stack traces into their record. The edge access logs are tailed without an entry.
+     *
+     * @param  list<array{path: string, service?: string, format?: 'plain'|'json', kind?: 'app'|'access', multiline?: 'laravel'}>  $logSources
      */
     public function __construct(
         public string $siteId,

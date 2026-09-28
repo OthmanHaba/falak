@@ -25,6 +25,7 @@ import (
 
 	"github.com/kiln/agent/internal/commands"
 	"github.com/kiln/agent/internal/hostfs"
+	"github.com/kiln/agent/internal/logs"
 )
 
 // Client is a minimal Caddy admin API client.
@@ -175,6 +176,9 @@ func (m *Manager) Apply(ctx context.Context, p Payload, s commands.Stream) (any,
 	if err := m.ensureRoots(p, s); err != nil {
 		return nil, err
 	}
+	if err := m.ensureAccessLogDir(p); err != nil {
+		return nil, err
+	}
 	if err := m.o.Client.Load(ctx, want); err != nil {
 		return nil, err
 	}
@@ -227,6 +231,27 @@ func (m *Manager) ensureRoots(p Payload, s commands.Stream) error {
 		fmt.Fprintf(s.Stdout(), "%s: not deployed yet, serving a placeholder\n", site.ID)
 	}
 	return nil
+}
+
+// ensureAccessLogDir creates the access log directory, writable by the edge user (Caddy opens the files) and
+// closed to other users (request paths and client IPs).
+func (m *Manager) ensureAccessLogDir(p Payload) error {
+	need := false
+	for _, s := range p.Sites {
+		need = need || s.AccessLog != ""
+	}
+	if !need {
+		return nil
+	}
+	if err := m.o.FS.MkdirAll(logs.AccessLogDir, 0o750); err != nil {
+		return err
+	}
+	if g := m.edgeGroup(); g != "" {
+		if err := m.o.FS.Chown(logs.AccessLogDir, g, g); err != nil {
+			return err
+		}
+	}
+	return os.Chmod(m.o.FS.P(logs.AccessLogDir), 0o750)
 }
 
 // PersistRunning snapshots the live config into bootstrap.json (after out-of-band PATCHes).

@@ -195,6 +195,45 @@ it('returns site logs newest first with a cursor', function () {
     $this->withToken($token)->getJson("/api/v1/sites/{$world->site->id}/logs?limit=5")->assertJsonPath('meta.cursor', '');
 });
 
+it('returns the site access log with filters and a cursor', function () {
+    [$world, $token] = api_world(['telemetry.view']);
+    $captured = [];
+
+    app()->instance(LogsQuery::class, new class($captured) implements LogsQuery
+    {
+        public function __construct(public array &$captured) {}
+
+        public function queryRange(string $logql, DateTimeInterface $start, DateTimeInterface $end, int $limit = 200, string $direction = 'backward'): array
+        {
+            $this->captured[] = [$logql, $limit];
+
+            return [
+                new LogLine('1790000000000000002', 'GET /cart?x=1 502 12.3ms', ['service_name' => 'shop', 'kiln_server_id' => '01JSERVER0000000000000000A', 'kiln_log_kind' => 'access'], [
+                    'http_request_method' => 'GET', 'url_path' => '/cart', 'url_query' => 'x=1', 'http_response_status_code' => '502',
+                    'http_server_duration_ms' => '12.300', 'http_response_body_size' => '512', 'client_address' => '203.0.113.9',
+                    'user_agent_original' => 'curl/8', 'server_address' => 'shop.test', 'kiln_deployment_id' => '01JDEP0000000000000000000A',
+                ]),
+            ];
+        }
+    });
+
+    $this->withToken($token)->getJson("/api/v1/sites/{$world->site->slug}/access-logs?since=600&limit=1&status=5xx&method=get&path=/cart&deployment=01jdep0000000000000000000a")->assertOk()
+        ->assertJsonPath('data.0.method', 'GET')
+        ->assertJsonPath('data.0.path', '/cart')
+        ->assertJsonPath('data.0.status', 502)
+        ->assertJsonPath('data.0.duration_ms', 12.3)
+        ->assertJsonPath('data.0.bytes', 512)
+        ->assertJsonPath('data.0.client_ip', '203.0.113.9')
+        ->assertJsonPath('data.0.server_id', '01jserver0000000000000000a')
+        ->assertJsonPath('data.0.deployment_id', '01jdep0000000000000000000a')
+        ->assertJsonPath('meta.cursor', '1790000000000000002');
+
+    expect($captured[0][0])->toBe('{kiln_org_id="'.strtoupper($world->organization->id).'", service_name="'.$world->site->slug.'", kiln_log_kind="access"}'
+        .' |= "/cart" | kiln_deployment_id="01JDEP0000000000000000000A" | http_request_method="GET" | http_response_status_code=~"5.."');
+
+    $this->withToken($token)->getJson("/api/v1/sites/{$world->site->id}/access-logs?status=99")->assertUnprocessable();
+});
+
 it('lists the token organization', function () {
     [$world, $token] = api_world(['deployments.view']);
 
