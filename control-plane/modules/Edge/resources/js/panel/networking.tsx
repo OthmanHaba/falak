@@ -398,6 +398,7 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
     const [uploading, setUploading] = useState(false);
     const [addingDns, setAddingDns] = useState(false);
     const [applying, setApplying] = useState<string | null>(null);
+    const [checking, setChecking] = useState<EdgeDomain | null>(null);
 
     if (!data) return <Loading error={error} />;
     const manage = data.can.manage;
@@ -505,6 +506,9 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
                                         <Menu
                                             label={`${domain.name} actions`}
                                             actions={[
+                                                ...(!domain.wildcard
+                                                    ? [{ label: 'Check DNS & TLS', icon: <ShieldCheck />, onSelect: () => setChecking(domain) }]
+                                                    : []),
                                                 { label: 'Edit TLS & redirect', onSelect: () => setDialog({ domain }) },
                                                 ...(!domain.is_primary
                                                     ? [
@@ -691,6 +695,14 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
                 reload={refresh}
                 onUploadCertificate={() => setUploading(true)}
             />
+            <Dialog
+                open={checking !== null}
+                onOpenChange={(open) => !open && setChecking(null)}
+                title={checking ? `DNS & TLS for ${checking.served_host}` : 'DNS & TLS'}
+                description="Where the name points now, the records it needs, and the certificate the edge serves for it."
+            >
+                {checking && <DnsInstructions name={checking.served_host} serverIds={[]} siteId={siteId} label={data.slug} />}
+            </Dialog>
             <CertificateDialog siteId={siteId} open={uploading} onOpenChange={setUploading} reload={reload} />
             {data.can.manage_dns && <DnsCredentialDialog data={data} open={addingDns} onOpenChange={setAddingDns} reload={reload} />}
         </>
