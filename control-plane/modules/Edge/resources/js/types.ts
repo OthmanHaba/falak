@@ -65,6 +65,7 @@ export interface LoadBalancerConfig {
 /** GET /sites/{site}/domains (JSON). */
 export interface DomainsData {
     testDomain: string | null;
+    slug: string;
     domains: EdgeDomain[];
     certificates: EdgeCertificate[];
     dnsCredentials: DnsCredentialOption[];
@@ -87,4 +88,60 @@ export interface RoutingData {
     settings: { allow_ips: string[]; deny_ips: string[]; max_body_bytes: number | null; encode: boolean };
     behindLoadBalancer: boolean;
     can: { manage: boolean };
+}
+
+export interface DnsTargetInfo {
+    server_id: string;
+    name: string;
+    ipv4: string | null;
+    ipv6: string | null;
+    load_balancer: boolean;
+}
+
+/** GET /domains/options (JSON). */
+export interface DomainOptionsData {
+    test_domain: string | null;
+    generated: {
+        suffix: string | null;
+        provider: string | null;
+        ipv4: string | null;
+        target: DnsTargetInfo | null;
+        available: boolean;
+        reason: string | null;
+    };
+    default: 'generated' | 'test' | 'custom';
+    targets: DnsTargetInfo[];
+}
+
+export interface DnsRecord {
+    type: string;
+    name: string;
+    host: string;
+    value: string;
+    target?: string;
+}
+
+export type DnsStatus = 'ok' | 'mismatch' | 'proxied' | 'missing' | 'error';
+
+/** GET /dns/check (JSON). */
+export interface DnsCheckData {
+    name: string;
+    status: DnsStatus;
+    message: string;
+    addresses: string[];
+    cnames: string[];
+    targets: DnsTargetInfo[];
+    matched: DnsTargetInfo[];
+    instructions: {
+        name: string;
+        zone: string;
+        host: string;
+        apex: boolean;
+        ttl: number;
+        records: DnsRecord[];
+        alternative: DnsRecord | null;
+        notes: string[];
+    };
+    certificate: { status: 'issued' | 'pending'; message: string; issuer: string | null; expires_at: string | null } | null;
+    checked_at: string;
 }

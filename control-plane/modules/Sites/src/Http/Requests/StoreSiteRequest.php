@@ -10,6 +10,7 @@ use Kiln\Projects\Contracts\ProjectDirectory;
 use Kiln\Sites\Application\Actions\CreateSite;
 use Kiln\Sites\Contracts\BuildMode;
 use Kiln\Sites\Contracts\ComposeSource;
+use Kiln\Sites\Contracts\Data\DomainChoice;
 use Kiln\Sites\Contracts\Data\SitePlacement;
 use Kiln\Sites\Contracts\Framework;
 use Kiln\Sites\Contracts\SiteFactory;
@@ -52,6 +53,8 @@ final class StoreSiteRequest extends FormRequest
             // Initial environment (encrypted); values may contain ${{ service.KEY }} references.
             'variables' => ['nullable', 'array', 'max:500'],
             'variables.*' => ['nullable', 'string', 'max:65535'],
+            // Non-compose sites: {type: generated|test|custom, name?} or a custom domain name (routed with automatic TLS).
+            'domain' => ['nullable', DomainChoice::rule()],
             'template' => ['nullable', 'array:slug,version,source'],
             'template.slug' => ['required_with:template', 'string', 'max:64', 'regex:/^[a-z0-9][a-z0-9-]*$/'],
             'template.version' => ['required_with:template', 'string', 'max:32'],
@@ -73,7 +76,7 @@ final class StoreSiteRequest extends FormRequest
             'public_services.*' => ['array:service,port,domain'],
             'public_services.*.service' => ['required', 'string', 'max:63'],
             'public_services.*.port' => ['required', 'integer', 'between:1,65535'],
-            'public_services.*.domain' => ['nullable', 'string', 'max:253'],
+            'public_services.*.domain' => ['nullable', DomainChoice::rule()],
         ];
     }
 

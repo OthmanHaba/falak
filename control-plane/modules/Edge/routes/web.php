@@ -2,8 +2,10 @@
 
 use Illuminate\Support\Facades\Route;
 use Kiln\Edge\Http\Controllers\CertificateController;
+use Kiln\Edge\Http\Controllers\DnsController;
 use Kiln\Edge\Http\Controllers\DnsCredentialController;
 use Kiln\Edge\Http\Controllers\DomainController;
+use Kiln\Edge\Http\Controllers\DomainSettingsController;
 use Kiln\Edge\Http\Controllers\LoadBalancerController;
 use Kiln\Edge\Http\Controllers\RoutingController;
 
@@ -29,6 +31,12 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::post('sites/{site}/headers', [RoutingController::class, 'storeHeader'])->name('edge.headers.store');
     Route::delete('sites/{site}/headers/{header}', [RoutingController::class, 'destroyHeader'])->name('edge.headers.destroy');
     Route::put('sites/{site}/edge-settings', [RoutingController::class, 'updateSettings'])->name('edge.settings.update');
+
+    // Domain picker (create forms, Networking) and Settings → Domains.
+    Route::get('domains/options', [DnsController::class, 'options'])->name('edge.domains.options');
+    Route::get('dns/check', [DnsController::class, 'check'])->middleware('throttle:60,1')->name('edge.dns.check');
+    Route::get('settings/domains', [DomainSettingsController::class, 'show'])->name('edge.domain-settings');
+    Route::put('settings/domains', [DomainSettingsController::class, 'update'])->name('edge.domain-settings.update');
 
     Route::post('edge/dns-credentials', [DnsCredentialController::class, 'store'])->name('edge.dns-credentials.store');
     Route::delete('edge/dns-credentials/{credential}', [DnsCredentialController::class, 'destroy'])->name('edge.dns-credentials.destroy');

@@ -243,6 +243,15 @@ class Site extends Model
         return $this->targets->pluck('server_id')->map(fn ($id) => (string) $id)->values()->all();
     }
 
+    /**
+     * @return list<string>
+     */
+    public function leaderFirstServerIds(): array
+    {
+        return $this->targets->sortByDesc(fn (SiteTarget $target) => $target->role === TargetRole::Leader)
+            ->pluck('server_id')->map(fn ($id) => (string) $id)->values()->all();
+    }
+
     public function toData(): SiteData
     {
         return new SiteData(

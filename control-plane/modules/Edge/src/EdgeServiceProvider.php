@@ -2,6 +2,7 @@
 
 namespace Kiln\Edge;
 
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\Facades\Event;
 use Kiln\Alerting\Contracts\AlertTypes;
 use Kiln\Alerting\Contracts\Severity;
@@ -12,11 +13,18 @@ use Kiln\Edge\Application\Listeners\ForgetDeletedServer;
 use Kiln\Edge\Application\Listeners\HandleEdgeCommandOutcome;
 use Kiln\Edge\Application\Listeners\ReactToSiteChanges;
 use Kiln\Edge\Application\Listeners\ReapplyAfterAgentUpgrade;
+use Kiln\Edge\Contracts\DnsCheck;
 use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Events\CertificateInstallFailed;
 use Kiln\Edge\Events\CertificateIssued;
+use Kiln\Edge\Infrastructure\Dns\DnsResolver;
+use Kiln\Edge\Infrastructure\Dns\DohResolver;
+use Kiln\Edge\Infrastructure\Dns\StreamTlsProbe;
+use Kiln\Edge\Infrastructure\Dns\SystemResolver;
+use Kiln\Edge\Infrastructure\Dns\TlsProbe;
 use Kiln\Edge\Infrastructure\EloquentEdgeRoutes;
 use Kiln\Edge\Infrastructure\EloquentSiteDomains;
+use Kiln\Edge\Infrastructure\ResolverDnsCheck;
 use Kiln\Edge\Infrastructure\RouteCompiler;
 use Kiln\Fleet\Contracts\AgentGateway;
 use Kiln\Fleet\Events\AgentVersionChanged;
@@ -47,6 +55,8 @@ class EdgeServiceProvider extends ModuleServiceProvider
      */
     public array $singletons = [
         SiteDomains::class => EloquentSiteDomains::class,
+        DnsCheck::class => ResolverDnsCheck::class,
+        TlsProbe::class => StreamTlsProbe::class,
     ];
 
     public function register(): void
@@ -71,6 +81,10 @@ class EdgeServiceProvider extends ModuleServiceProvider
             (string) config('edge.test_domain_tls', 'acme'),
         ));
 
+        $this->app->singleton(DnsResolver::class, fn ($app) => config('edge.dns.resolver') === 'system'
+            ? new SystemResolver
+            : new DohResolver($app->make(HttpFactory::class), (string) config('edge.dns.doh_url'), (int) config('edge.dns.timeout_seconds', 3)));
+
         $this->app->bind(CertificateInstaller::class, fn ($app) => new CertificateInstaller(
             $app->make(AgentGateway::class),
             $app->make(EdgeChanges::class),
@@ -83,7 +97,7 @@ class EdgeServiceProvider extends ModuleServiceProvider
         $registry = $this->app->make(PermissionRegistry::class);
         $registry->register('edge.view', [Role::Admin, Role::Developer, Role::Viewer], 'View domains, certificates and routing rules', 'edge');
         $registry->register('edge.manage', [Role::Admin, Role::Developer], 'Manage domains, certificates, redirects, security rules and load balancers', 'edge');
-        $registry->register('edge.dns.manage', [Role::Admin], 'Manage DNS provider credentials for DNS-01 certificates', 'edge');
+        $registry->register('edge.dns.manage', [Role::Admin], 'Manage DNS provider credentials for DNS-01 certificates and generated domains', 'edge');
 
         $types = $this->app->make(AlertTypes::class);
         $types->register(CertificateInstallFailed::ALERT_TYPE, 'Certificate install failed', 'Edge', Severity::Critical);

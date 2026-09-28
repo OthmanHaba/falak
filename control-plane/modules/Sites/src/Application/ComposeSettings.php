@@ -5,6 +5,8 @@ namespace Kiln\Sites\Application;
 use Illuminate\Validation\ValidationException;
 use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\ComposeSummary;
+use Kiln\Sites\Contracts\Data\DomainChoice;
+use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Domain\Models\ComposeVersion;
 use Kiln\Sites\Domain\Models\OrganizationSettings;
 use Kiln\Sites\Domain\Models\Site;
@@ -21,7 +23,34 @@ final class ComposeSettings
     public function __construct(
         private readonly YamlComposeInspector $inspector,
         private readonly SiteRules $rules,
+        private readonly SiteDomains $domains,
     ) {}
+
+    /**
+     * Explicit domain choices ({type: generated|test|custom, name?}) of public services → host names (null: the test
+     * domain). Generated names are `<service>-<slug>.<ip-with-dashes>.<suffix>` for the leader server. Plain strings
+     * (custom domains) and nulls are left for {@see publicServices()}.
+     *
+     * @param  list<array<string, mixed>>  $services
+     * @param  list<string>  $serverIds  leader first
+     * @return list<array<string, mixed>>
+     *
+     * @throws ValidationException
+     */
+    public function resolveDomainChoices(string $organizationId, array $services, string $slug, array $serverIds, ?string $siteId = null): array
+    {
+        foreach ($services as $i => $public) {
+            if (! is_array($public) || ! is_array($public['domain'] ?? null)) {
+                continue;
+            }
+
+            $field = "public_services.{$i}.domain";
+            $label = trim((string) ($public['service'] ?? ''), '-_.') ?: 'app';
+            $services[$i]['domain'] = $this->domains->resolveChoice($organizationId, DomainChoice::fromInput($public['domain'], $field), "{$label}-{$slug}", $serverIds, $field, $siteId);
+        }
+
+        return array_values($services);
+    }
 
     /**
      * Inline compose content must parse, may not build and must pass the policy (unless the organization

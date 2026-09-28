@@ -1,3 +1,4 @@
+import { DomainPicker, type DomainChoice } from '@/components/domain-picker';
 import { Button, Callout, Field, IconButton, Input, RelativeTime, Section, Segmented, Select, SkeletonRows, Tag, toast } from '@/components/kiln';
 import { useJson } from '@/hooks/use-json';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
@@ -12,7 +13,26 @@ import { DiffView, YamlEditor } from './yaml-editor';
 interface PublicDraft {
     service: string;
     port: string;
-    domain: string;
+    /** Saved domains load as custom (a generated name shows as generated); no domain = the test domain. */
+    domain: DomainChoice;
+}
+
+function choiceOf(domain: string | null, testDomain: string | null): DomainChoice {
+    if (domain) return { type: 'custom', name: domain };
+
+    return testDomain ? { type: 'test' } : { type: 'custom', name: '' };
+}
+
+/** Comparable form for dirty tracking. */
+function choiceKey(choice: DomainChoice): string {
+    return choice.type === 'custom' ? (choice.name ?? '').trim().toLowerCase() : choice.type === 'test' ? '' : '<generated>';
+}
+
+/** PUT body: a custom name, null for the test domain, or {type: generated}. */
+function choiceBody(choice: DomainChoice): string | null | { type: 'generated' } {
+    if (choice.type === 'generated') return { type: 'generated' };
+
+    return choice.type === 'custom' ? (choice.name ?? '').trim() || null : null;
 }
 
 type Source = 'repo' | 'inline';
@@ -41,7 +61,13 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
         setFile(value.file ?? '');
         setContent(value.content ?? '');
         setSummary(value.summary);
-        setPublicServices(value.public_services.map((item) => ({ service: item.service, port: String(item.port), domain: item.domain ?? '' })));
+        setPublicServices(
+            value.public_services.map((item) => ({
+                service: item.service,
+                port: String(item.port),
+                domain: choiceOf(item.domain, item.test_domain),
+            })),
+        );
         setReviewing(false);
         setErrors({});
     };
@@ -87,7 +113,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
         source,
         file,
         content: source === 'inline' ? content : (data.content ?? ''),
-        public: publicServices.map((item) => [item.service, item.port, item.domain]),
+        public: publicServices.map((item) => [item.service, item.port, choiceKey(item.domain)]),
     });
     const dirty = original !== current;
     const contentChanged = source === 'inline' && content !== (data.content ?? '');
@@ -103,7 +129,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                 compose_content: source === 'inline' ? content : null,
                 public_services: publicServices
                     .filter((item) => item.service !== '')
-                    .map((item) => ({ service: item.service, port: Number(item.port), domain: item.domain.trim() || null })),
+                    .map((item) => ({ service: item.service, port: Number(item.port), domain: choiceBody(item.domain) })),
                 base_version: data.version,
             });
             toast.success(
@@ -261,7 +287,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                             size="sm"
                             variant="ghost"
                             icon={<Plus />}
-                            onClick={() => setPublicServices((items) => [...items, { service: '', port: '', domain: '' }])}
+                            onClick={() => setPublicServices((items) => [...items, { service: '', port: '', domain: { type: 'generated' } }])}
                         >
                             Add
                         </Button>
@@ -279,7 +305,10 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                             const exposed = services.find((service) => service.name === item.service)?.ports ?? [];
 
                             return (
-                                <li key={index} className="grid items-start gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_minmax(0,1.3fr)_4.5rem]">
+                                <li
+                                    key={index}
+                                    className="border-border grid items-start gap-2 border-b pb-3 last:border-b-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_7rem_4.5rem]"
+                                >
                                     <Field
                                         label={index === 0 ? 'Service' : <span className="sr-only">Service</span>}
                                         error={errors[`public_services.${index}.service`]}
@@ -318,23 +347,6 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                                             className="font-mono"
                                         />
                                     </Field>
-                                    <Field
-                                        label={index === 0 ? 'Domain' : <span className="sr-only">Domain</span>}
-                                        hint={
-                                            known?.url && !item.domain ? (
-                                                <span className="font-mono">{known.url.replace(/^https:\/\//, '')}</span>
-                                            ) : undefined
-                                        }
-                                        error={errors[`public_services.${index}.domain`]}
-                                    >
-                                        <Input
-                                            value={item.domain}
-                                            placeholder={index === 0 ? 'Site domains (Networking)' : 'test domain'}
-                                            disabled={!canUpdate}
-                                            onChange={(event) => updatePublic(index, { domain: event.target.value })}
-                                            className="font-mono"
-                                        />
-                                    </Field>
                                     <div className={index === 0 ? 'flex items-center gap-1 pt-6' : 'flex items-center gap-1'}>
                                         {known?.url && (
                                             <IconButton
@@ -354,6 +366,27 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                                                 onClick={() => setPublicServices((items) => items.filter((_, position) => position !== index))}
                                             />
                                         )}
+                                    </div>
+                                    <div className="sm:col-span-3 sm:col-start-1 sm:row-start-2">
+                                        <Field
+                                            label={<span className="text-fg-muted">Domain</span>}
+                                            hint={index === 0 ? 'The site’s own domains (Networking) route here too.' : undefined}
+                                            error={errors[`public_services.${index}.domain`]}
+                                        >
+                                            {canUpdate ? (
+                                                <DomainPicker
+                                                    label={`${item.service || 'app'}-${data.slug}`}
+                                                    serverIds={[]}
+                                                    siteId={ctx.service.ref_id}
+                                                    testDomain={known?.test_domain ?? null}
+                                                    value={item.domain}
+                                                    onChange={(domain) => updatePublic(index, { domain })}
+                                                    ariaLabel={`${item.service || 'service'} domain`}
+                                                />
+                                            ) : (
+                                                <span className="text-fg font-mono text-xs">{known?.url?.replace(/^https:\/\//, '') ?? '—'}</span>
+                                            )}
+                                        </Field>
                                     </div>
                                 </li>
                             );

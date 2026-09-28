@@ -40,6 +40,7 @@ export interface ComposeSettingsData {
     source: 'repo' | 'inline';
     file: string | null;
     repository: string | null;
+    slug: string;
     version: number | null;
     content: string | null;
     summary: ComposeSummary | null;

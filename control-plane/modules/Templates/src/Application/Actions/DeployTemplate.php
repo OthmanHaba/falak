@@ -8,9 +8,11 @@ use Kiln\Deployments\Contracts\DeploymentTrigger;
 use Kiln\Identity\Contracts\AuditLog;
 use Kiln\Projects\Contracts\Data\EnvironmentData;
 use Kiln\Sites\Contracts\Data\CreatedSite;
+use Kiln\Sites\Contracts\Data\DomainChoice;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\Data\SitePlacement;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Contracts\SiteFactory;
 use Kiln\Templates\Application\Compose\KilnPlaceholders;
 use Kiln\Templates\Application\Inputs\InputResolver;
@@ -18,7 +20,7 @@ use Kiln\Templates\Domain\Template;
 
 /**
  * Create a compose site from a template and start its first deployment (docs/COMPOSE_TEMPLATES.md §3, §5):
- * resolve inputs (generated once), pick domains (user domain or the test domain), render the Kiln placeholders,
+ * resolve inputs (generated once), pick domains (generated, test or the user's), render the Kiln placeholders,
  * then SiteFactory::create with the §5 compose fields, placed in the environment at the given position.
  */
 final class DeployTemplate
@@ -31,11 +33,12 @@ final class DeployTemplate
         private readonly DeploymentTrigger $deployments,
         private readonly InputResolver $inputs,
         private readonly AuditLog $audit,
+        private readonly SiteDomains $domains,
     ) {}
 
     /**
      * @param  array<string, mixed>  $inputs  KEY => value entered in the configure form (generated ones may be sent back)
-     * @param  array<string, ?string>  $domains  public service => custom domain (null / missing: test domain)
+     * @param  array<string, mixed>  $domains  public service => domain name | {type: generated|test|custom, name?} (missing: the organization's default)
      * @param  list<string>  $serverIds  leader first
      *
      * @throws ValidationException
@@ -53,12 +56,14 @@ final class DeployTemplate
         bool $deploy = true,
     ): DeployedTemplate {
         $name = $this->name($environment->organizationId, $name ?: $template->name);
-        $customDomains = $this->domains($template, $domains);
+        $choices = $this->choices($template, $domains);
         $values = $this->inputs->resolve($template, $inputs);
         $base = Str::limit(trim(Str::slug($name), '-'), 44, '') ?: $template->slug;
 
         for ($attempt = 1; ; $attempt++) {
             $slug = $attempt === 1 ? $base : ($attempt < self::SLUG_ATTEMPTS ? "{$base}-{$attempt}" : $base.'-'.strtolower(Str::random(5)));
+            // Generated names embed the slug: resolve per attempt.
+            $customDomains = $this->resolveDomains($environment->organizationId, $template, $choices, $slug, $serverIds);
             $effective = $this->effectiveDomains($template, $customDomains, $slug);
 
             try {
@@ -144,38 +149,57 @@ final class DeployTemplate
     }
 
     /**
-     * @param  array<string, ?string>  $domains
-     * @return array<string, ?string> public service => custom domain or null
+     * @param  array<string, mixed>  $domains  service => domain name | {type, name?} | null
+     * @return array<string, ?DomainChoice> null: the organization's default
      *
      * @throws ValidationException
      */
-    private function domains(Template $template, array $domains): array
+    private function choices(Template $template, array $domains): array
+    {
+        $choices = [];
+
+        foreach ($template->publicServices() as $service) {
+            $choices[$service] = DomainChoice::fromInput($domains[$service] ?? null, "domains.{$service}");
+        }
+
+        return $choices;
+    }
+
+    /**
+     * Host names per public service: a generated `<service>-<slug>.<ip>.<suffix>`, the user's domain, or null for the
+     * test domain (docs/COMPOSE_TEMPLATES.md §3).
+     *
+     * @param  array<string, ?DomainChoice>  $choices
+     * @param  list<string>  $serverIds
+     * @return array<string, ?string>
+     *
+     * @throws ValidationException
+     */
+    private function resolveDomains(string $organizationId, Template $template, array $choices, string $slug, array $serverIds): array
     {
         $errors = [];
         $result = [];
         $seen = [];
 
         foreach ($template->publicServices() as $service) {
-            $domain = $domains[$service] ?? null;
-            $domain = is_string($domain) ? strtolower(trim($domain)) : null;
+            $field = "domains.{$service}";
 
-            if ($domain === null || $domain === '') {
-                $result[$service] = null;
-
-                if (self::testDomainBase() === null) {
-                    $errors["domains.{$service}"] = "Enter a domain for {$service} (no test domain is configured).";
-                }
+            try {
+                $domain = $this->domains->resolveChoice($organizationId, $choices[$service] ?? null, "{$service}-{$slug}", $serverIds, $field);
+            } catch (ValidationException $e) {
+                $errors += array_map(fn (array $messages) => $messages[0], $e->errors());
 
                 continue;
             }
 
-            if (! InputResolver::isDomain($domain)) {
-                $errors["domains.{$service}"] = 'Enter a domain name like app.example.com.';
-            } elseif (isset($seen[$domain])) {
-                $errors["domains.{$service}"] = 'Each public service needs its own domain.';
+            if ($domain !== null && isset($seen[$domain])) {
+                $errors[$field] = 'Each public service needs its own domain.';
             }
 
-            $seen[$domain] = true;
+            if ($domain !== null) {
+                $seen[$domain] = true;
+            }
+
             $result[$service] = $domain;
         }
 

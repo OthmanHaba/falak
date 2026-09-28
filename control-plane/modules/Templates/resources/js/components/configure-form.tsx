@@ -1,9 +1,10 @@
+import { domainPayload, DomainPicker, type DomainChoice } from '@/components/domain-picker';
 import { Button, Callout, Checkbox, CodeBlock, Field, IconButton, Input, Select, Skeleton, Switch, Tag, Tooltip } from '@/components/kiln';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, HttpError, requestJson } from '@/lib/http';
 import { cn } from '@/lib/utils';
 import { Link } from '@inertiajs/react';
-import { BookOpen, Cpu, Eye, EyeOff, Link2, RefreshCw, Rocket, TriangleAlert } from 'lucide-react';
+import { BookOpen, Cpu, Eye, EyeOff, RefreshCw, Rocket, TriangleAlert } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { detailUrl, slugify, type DeployResult, type TemplateDetail, type TemplateInput, type TemplateSummary } from '../types';
 import { TemplateIconTile } from './template-icon';
@@ -144,14 +145,15 @@ export interface ConfigureFormProps {
 }
 
 /**
- * Template detail → Configure → Deploy: inputs (generated secrets masked), a domain per public service (test domain by
- * default), servers (warning for stateful templates on several servers), the memory hint.
+ * Template detail → Configure → Deploy: inputs (generated secrets masked), a domain per public service (generated
+ * sslip.io name, test domain or the user's own with DNS instructions), servers (warning for stateful templates on several
+ * servers), the memory hint.
  */
 export function ConfigureForm({ template, target, position = null, onDeployed, header, compact = false }: ConfigureFormProps) {
     const detail = useJson<TemplateDetail>(detailUrl(template));
     const sites = useJson<SiteOptions>('/sites/create');
     const [values, setValues] = useState<Record<string, string>>({});
-    const [domains, setDomains] = useState<Record<string, string>>({});
+    const [domains, setDomains] = useState<Record<string, DomainChoice | null>>({});
     const [name, setName] = useState(template.name);
     const [serverIds, setServerIds] = useState<string[] | null>(null);
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -186,7 +188,12 @@ export function ConfigureForm({ template, target, position = null, onDeployed, h
                     source: template.source,
                     name,
                     inputs: values,
-                    domains: Object.fromEntries(Object.entries(domains).filter(([, domain]) => domain.trim() !== '')),
+                    // Services without a choice get the organization default (test domain, else a generated one).
+                    domains: Object.fromEntries(
+                        Object.entries(domains)
+                            .map(([service, choice]) => [service, domainPayload(choice)] as const)
+                            .filter(([, choice]) => choice !== undefined),
+                    ),
                     server_ids: selected,
                     position,
                 },
@@ -309,40 +316,6 @@ export function ConfigureForm({ template, target, position = null, onDeployed, h
                 </fieldset>
             )}
 
-            <fieldset className="grid gap-4">
-                <legend className="text-fg-muted mb-3 text-xs font-medium tracking-wide uppercase">Domains</legend>
-                {template.public.map((entry, index) => {
-                    const fallback = testDomain(entry.service, index);
-
-                    return (
-                        <Field
-                            key={entry.service}
-                            label={
-                                <span className="inline-flex items-center gap-1.5">
-                                    {entry.service}
-                                    <span className="text-fg-faint font-mono text-[11px] font-normal">:{entry.port}</span>
-                                </span>
-                            }
-                            required={!fallback}
-                            hint={
-                                fallback
-                                    ? 'Leave empty to use the test domain; add your own domain any time in Networking.'
-                                    : 'No test domain is configured — enter a domain.'
-                            }
-                            error={errors[`domains.${entry.service}`]}
-                        >
-                            <Input
-                                value={domains[entry.service] ?? ''}
-                                onChange={(event) => setDomains((current) => ({ ...current, [entry.service]: event.target.value }))}
-                                placeholder={fallback ?? 'app.example.com'}
-                                prefix={<Link2 aria-hidden />}
-                                mono
-                            />
-                        </Field>
-                    );
-                })}
-            </fieldset>
-
             <Field
                 label="Servers"
                 error={errors.server_ids ?? errors['server_ids.0']}
@@ -395,6 +368,35 @@ export function ConfigureForm({ template, target, position = null, onDeployed, h
                     clusters on its own.
                 </Callout>
             )}
+
+            <fieldset className="grid gap-4">
+                <legend className="text-fg-muted mb-3 text-xs font-medium tracking-wide uppercase">Domains</legend>
+                {template.public.map((entry, index) => (
+                    <Field
+                        key={entry.service}
+                        label={
+                            <span className="inline-flex items-center gap-1.5">
+                                {entry.service}
+                                <span className="text-fg-faint font-mono text-[11px] font-normal">:{entry.port}</span>
+                            </span>
+                        }
+                        error={errors[`domains.${entry.service}`]}
+                    >
+                        {selected.length === 0 ? (
+                            <p className="text-fg-muted text-xs">Pick a server above: the domain options depend on it.</p>
+                        ) : (
+                            <DomainPicker
+                                label={`${entry.service}-${slug}`}
+                                serverIds={selected}
+                                testDomain={testDomain(entry.service, index)}
+                                value={domains[entry.service] ?? null}
+                                onChange={(choice) => setDomains((current) => ({ ...current, [entry.service]: choice }))}
+                                ariaLabel={`${entry.service} domain`}
+                            />
+                        )}
+                    </Field>
+                ))}
+            </fieldset>
 
             <Errors errors={other} />
 
