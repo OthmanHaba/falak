@@ -23,3 +23,10 @@ Both sides validate against these schemas in their test suites.
 ## Command payloads
 `commands/<type>.schema.json` — one schema per command type in the catalogue in `ARCHITECTURE.md` §3.
 Owned by the agent implementation; the control plane builds payloads against them.
+
+## Evolving payloads (features)
+Agents decode payloads strictly: an unknown field fails the command. A new **optional** field therefore needs a
+feature name: the agent lists it in `facts.features` (`agent/internal/version.Features`) and the control plane
+removes the field for agents that do not (`Fleet\Application\PayloadCompatibility::FIELDS`). When an agent reports
+a new version (`Fleet\Events\AgentVersionChanged`), modules re-send state they would otherwise deduplicate.
+Current features: `edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`.
