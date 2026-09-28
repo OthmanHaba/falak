@@ -202,7 +202,27 @@ An update:
 2. fetches the new deploy bundle and pulls the new images (if a pull fails, nothing changes);
 3. recreates the stack. The `control-plane` service runs the migrations, and `horizon`, `reverb` and
    `scheduler` wait until it is healthy;
-4. health-checks every container and `https://<domain>/up`.
+4. recreates every service whose **mounted config files** changed (see below) and prints their names;
+5. health-checks every container and `https://<domain>/up`.
+
+**Mounted config files.** Some services read config files bind-mounted from `/opt/kiln/observability/` and
+`/opt/kiln/deploy/` (`loki.yaml`, `tempo.yaml`, the gateway `Caddyfile`, Grafana provisioning and dashboards).
+An update replaces those directories, but a running container keeps the files it was started with (the mount
+holds the old file), and `docker compose up` only recreates services whose compose definition changed. So
+after `compose up`, `kiln-ctl` compares what each running container sees at its Kiln mounts with the files on
+disk and force-recreates exactly the services that differ:
+
+```
+==> mounted config files changed: recreating loki
+  ✓ recreated loki
+```
+
+The same check runs on `kiln-ctl up`, after a restore and during a rollback. Run it on its own with
+`kiln-ctl reload-configs`, for example after editing `/opt/kiln/observability/loki/loki.yaml` by hand (such
+edits are replaced by the next update). kiln-ctl v0.2.5 and older did not do this, so Loki could keep the previous
+`loki.yaml` (access logs in **Network Logs** were then not queryable). An update is run by the kiln-ctl that is
+already installed, so after updating *from* v0.2.5 or older run `kiln-ctl reload-configs` once; it fixes such
+containers.
 
 **Upgrading from 0.2.x with the thread hotfix.** If you added `FRANKENPHP_CONFIG=num_threads 24` to
 `/opt/kiln/custom.env`, the update keeps working: a thread count in `FRANKENPHP_CONFIG` still wins over the
@@ -210,7 +230,7 @@ automatic sizing (the containers log a notice). It is no longer needed, because 
 `agent-api` service (see [Performance](#performance-php-threads-and-worker-mode)). Remove the line, then run
 `kiln-ctl up`. `kiln-ctl doctor` reports it until you do.
 
-If step 3 or 4 fails, `kiln-ctl` **rolls back automatically**. It restores the previous deploy files and
+If step 3, 4 or 5 fails, `kiln-ctl` **rolls back automatically**. It restores the previous deploy files and
 `KILN_VERSION`, restores the database, storage and Fleet CA from the pre-update backup (the new migrations
 may already have run), and starts the previous version again.
 

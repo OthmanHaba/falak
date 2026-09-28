@@ -14,6 +14,7 @@
 #   kiln-ctl admin create <email>
 #   kiln-ctl artisan <args...>              run php artisan in the control-plane container
 #   kiln-ctl compose <args...>              raw docker compose with the install's settings
+#   kiln-ctl reload-configs                 recreate services whose mounted config files changed on disk
 #   kiln-ctl version
 #
 # Environment: KILN_DIR (default /opt/kiln), KILN_PROJECT (compose project, default kiln).
@@ -133,6 +134,56 @@ legacy_thread_config() { # the 0.2.x hotfix line in custom.env, if present
 wait_healthy() { # wait_healthy [timeout]
   local timeout="${1:-300}"
   compose up -d --wait --wait-timeout "$timeout" --remove-orphans
+  recreate_drifted "$timeout"
+}
+
+# --- bind-mounted config files --------------------------------------------------------------------------
+# compose.yml bind-mounts config files and directories from deploy/ and observability/ (loki.yaml, tempo.yaml,
+# the gateway Caddyfile, Grafana provisioning). An update swaps those directories, and a running container keeps
+# the files it was started with: the mount pins the old inode. `compose up` does not recreate a service whose
+# compose definition is unchanged, so without this Loki kept running the previous loki.yaml. Compare what each
+# running container sees (docker cp reads through its mounts) with the files on disk and force-recreate exactly
+# the services that differ. This also repairs containers left stale by older kiln-ctl versions.
+mount_matches() { # mount_matches CONTAINER HOST_PATH CONTAINER_PATH -> 0 when the container sees the host content
+  local tmp rc=1
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/.kiln-mount.XXXXXX")"
+  if docker cp "$1:$3" - 2>/dev/null | tar -xf - -C "$tmp" 2>/dev/null \
+    && diff -r "$tmp/$(basename "$3")" "$2" >/dev/null 2>&1; then
+    rc=0
+  fi
+  rm -rf "$tmp"
+  return "$rc"
+}
+
+bundle_path() { # bundle_path HOST_PATH -> 0 when it lies in the install's deploy/ or observability/
+  local root
+  root="$(cd "$KILN_DIR" 2>/dev/null && pwd -P || echo "$KILN_DIR")"
+  case "$1" in
+    "$KILN_DIR"/deploy/*|"$KILN_DIR"/observability/*|"$root"/deploy/*|"$root"/observability/*) return 0 ;;
+  esac
+  return 1
+}
+
+mount_drift() { # prints each running service whose mounted Kiln config differs from the files on disk
+  local svc id src dst
+  while read -r svc id; do
+    [ -n "$id" ] || continue
+    while IFS='|' read -r src dst; do
+      if [ -z "$src" ] || ! bundle_path "$src"; then continue; fi
+      if ! mount_matches "$id" "$src" "$dst"; then echo "$svc"; break; fi
+    done < <(docker inspect -f '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}|{{.Destination}}{{"\n"}}{{end}}{{end}}' "$id" 2>/dev/null || true)
+  done < <(compose ps --format '{{.Service}} {{.ID}}' 2>/dev/null || true)
+}
+
+recreate_drifted() { # recreate_drifted [timeout] : force-recreate services whose mounted config files changed
+  local drifted
+  drifted="$(mount_drift | sort -u | tr '\n' ' ')"
+  drifted="${drifted% }"
+  [ -n "$drifted" ] || return 0
+  info "mounted config files changed: recreating $drifted"
+  # shellcheck disable=SC2086  # service names, space-separated
+  compose up -d --wait --wait-timeout "${1:-300}" --no-deps --force-recreate $drifted
+  ok "recreated $drifted"
 }
 
 # --- deploy bundle (compose.yml, edge/control-plane files, observability configs) ---------------------
@@ -671,10 +722,12 @@ main() {
     artisan) require_install; compose exec control-plane php artisan "$@" ;;
     compose) require_install; compose "$@" ;;
     health) require_install; health_check ;;
+    reload-configs) require_install; recreate_drifted 300 ;;
     version) require_install; env_get KILN_VERSION; echo ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
   esac
 }
 
-main "$@"
+# Sourced by deploy/tests/*.sh for function-level tests.
+if [ "${KILN_CTL_SOURCED:-0}" != 1 ]; then main "$@"; fi

@@ -395,6 +395,8 @@ start_stack() {
     dc logs --tail=60 control-plane agent-api edge >&2 || true
     die "the stack did not become healthy — see the logs above, then: kiln-ctl doctor"
   fi
+  # A re-run replaces deploy/ + observability/: recreate services whose mounted config files changed.
+  kctl reload-configs || die "recreating services with changed config files failed — see: kiln-ctl logs"
   ok "all services healthy"
 }
 
