@@ -9,6 +9,10 @@
 #                           entrypoint once /kiln/ca/agent-api.{pem,key} exist.
 #   KILN_GRAFANA_HOST       optional Grafana (generated site file, observability profile).
 #
+# Upstreams (both hosts): machine traffic (/agent/*, /install/*, /api/internal/*: agents, the installer and
+# builders, including their 30 s long-polls) goes to the agent-api service, everything else to the panel
+# (control-plane). Separate FrankenPHP thread pools: a busy fleet can never starve the panel.
+#
 # Agent auth (contracts/agent-protocol): client certs are verified against the Fleet CA; /agent/v1/* except
 # /agent/v1/enroll requires one. The SHA-256 of the client DER cert is forwarded as
 # X-Kiln-Client-Cert-Fingerprint; any client-supplied value of that header is always stripped.
@@ -59,12 +63,27 @@
 	}
 	@with_cert not vars {http.request.tls.client.certificate_der_base64} ""
 	@reverb path /app/* /apps/*
+	@machine_with_cert {
+		path /agent/* /install/* /api/internal/*
+		not vars {http.request.tls.client.certificate_der_base64} ""
+	}
+	@machine path /agent/* /install/* /api/internal/*
 
 	route {
 		respond @agent_without_cert `{"message":"client certificate required"}` 401
 
 		handle @reverb {
 			reverse_proxy reverb:8080
+		}
+		handle @machine_with_cert {
+			reverse_proxy agent-api:8080 {
+				header_up X-Kiln-Client-Cert-Fingerprint {http.request.tls.client.fingerprint}
+			}
+		}
+		handle @machine {
+			reverse_proxy agent-api:8080 {
+				header_up -X-Kiln-Client-Cert-Fingerprint
+			}
 		}
 		handle @with_cert {
 			reverse_proxy control-plane:8080 {

@@ -392,7 +392,7 @@ start_stack() {
   fi
   if ! dc up -d --wait --wait-timeout 600 --remove-orphans; then
     dc ps -a >&2 || true
-    dc logs --tail=60 control-plane edge >&2 || true
+    dc logs --tail=60 control-plane agent-api edge >&2 || true
     die "the stack did not become healthy — see the logs above, then: kiln-ctl doctor"
   fi
   ok "all services healthy"
