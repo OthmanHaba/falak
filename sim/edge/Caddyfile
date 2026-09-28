@@ -39,6 +39,13 @@
 	}
 	@with_cert not vars {http.request.tls.client.certificate_der_base64} ""
 	@reverb path /app/* /apps/*
+	# Machine traffic (agents, installer, builders; long-polls) -> agent-api, its own FrankenPHP thread pool
+	# (same split as deploy/edge/Caddyfile).
+	@machine_with_cert {
+		path /agent/* /install/* /api/internal/*
+		not vars {http.request.tls.client.certificate_der_base64} ""
+	}
+	@machine path /agent/* /install/* /api/internal/*
 
 	route {
 		respond @agent_without_cert `{"message":"client certificate required"}` 401
@@ -48,6 +55,16 @@
 
 		handle @reverb {
 			reverse_proxy reverb:8080
+		}
+		handle @machine_with_cert {
+			reverse_proxy agent-api:8080 {
+				header_up X-Kiln-Client-Cert-Fingerprint {http.request.tls.client.fingerprint}
+			}
+		}
+		handle @machine {
+			reverse_proxy agent-api:8080 {
+				header_up -X-Kiln-Client-Cert-Fingerprint
+			}
 		}
 		handle @with_cert {
 			reverse_proxy control-plane:8080 {
