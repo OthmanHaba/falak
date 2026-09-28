@@ -342,8 +342,9 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
   to `agent/internal/version.Features` and the field path to `PayloadCompatibility::FIELDS`.
 - Smaller: the agent refreshes OTLP `host.name` whenever facts are re-collected (every 5 min), so a renamed host (EC2)
   no longer keeps its old name until the agent restarts.
-- Not verified on a real server: Caddy's `logger_names` array form needs Caddy ≥ 2.9 (FrankenPHP ≥ 1.4; Kiln installs
-  1.9.1). The migration cannot tell a deliberate `stderr` from the old default and switches both (a user can set it
+- Verified by the sim E2E (FrankenPHP 1.9.1): access records and merged Laravel error records reach Loki with
+  `kiln_log_kind`, and `/api/v1/sites/{id}/access-logs` returns them. Not verified: the PHP-FPM + Caddy edge path,
+  and Caddy < 2.9 (`logger_names` array form). The migration cannot tell a deliberate `stderr` from the old default and switches both (a user can set it
   back; web logs of such a site then only reach the edge journal).
 
 ### Fleet agent upgrades
@@ -368,8 +369,10 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
   server page: *Upgrade agent* in the Agent section (`fleet.agents.manage`). `POST /api/v1/servers/{server}/agent/upgrade`;
   `GET /api/v1/servers[/{id}]` `agent.*` fields; `php artisan kiln:agents [--outdated --count]`; `kiln-ctl update`
   prints a hint when agents are outdated.
-- Not verified on a real fleet: the full download → restart → reconnect cycle runs only in Go/Pest tests (the sim's
-  agents already run the served build, so its E2E only checks the version report and the no-op).
+- Verified by hand in the sim (not part of the E2E, whose agents run the served build): publishing a newer build and
+  `POST …/agent/upgrade` downloaded it over HTTPS from the panel, swapped it (`.prev` kept), restarted in ~3 s and
+  reported `succeeded` with the new version; the E2E checks the version report and the no-op. Not tried on a real
+  fleet or with "Upgrade all agents" across several servers.
 
 ### Builder restarts no longer orphan builds
 - kiln-builder generates a run id per process and sends it on every poll (`run=`), and heartbeats
@@ -397,8 +400,10 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
   the site group); the closed release directory is what protects the files.
 - kiln-builder no longer ships the build's own logs: `storage/logs/*` is excluded from artifacts except
   `storage/logs/.gitignore` (the first deploy used to move the build's `laravel.log` into shared storage).
-- Not verified on a real server: the ACL path runs in the Go tests inside a Linux container; releases deployed before
-  this change stay open until they are pruned.
+- Verified in the sim (FrankenPHP): releases/shared are `drwxr-x---` with `user:caddy:r-x`, `nobody` cannot read
+  `bootstrap/cache/config.php`, the site still serves, and FrankenPHP (caddy) and the site user share the daily log
+  file. Not verified on a PHP-FPM server with a standalone Caddy edge. Releases deployed before this change stay open
+  until they are pruned.
 
 ### Smaller fixes
 - "Firewall applied again" was dispatched on every successful apply. Network now records `failed_at` on the firewall
