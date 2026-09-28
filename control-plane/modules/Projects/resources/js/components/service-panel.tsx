@@ -1,4 +1,19 @@
-import { Button, Menu, Panel, ServiceIcon, Skeleton, SkeletonRows, StatusBadge, Tag, toast, type MenuAction } from '@/components/kiln';
+import {
+    Button,
+    Menu,
+    PanelHeader,
+    ServiceIcon,
+    Skeleton,
+    SkeletonRows,
+    StatusBadge,
+    Tabs,
+    TabsContent,
+    TabsList,
+    TabsTrigger,
+    Tag,
+    toast,
+    type MenuAction,
+} from '@/components/kiln';
 import { errorMessage, requestJson } from '@/lib/http';
 import { serviceActionsFor, serviceTabsFor, type ServiceAction, type ServicePanelContext } from '@/lib/registry';
 import { cn } from '@/lib/utils';
@@ -14,6 +29,7 @@ interface ServicePanelProps {
     tab: string | null;
     renameUrl: string | null;
     onRenamed: (name: string) => void;
+    onClose: () => void;
 }
 
 /** Click-to-edit service name (canvas service name = the handle `${{ name.KEY }}` references use). */
@@ -88,7 +104,7 @@ function InlineName({ name, url, onRenamed }: { name: string; url: string | null
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={onKeyDown}
             onBlur={() => void save()}
-            className="bg-surface-2 border-border-strong text-fg -my-0.5 h-7 w-56 rounded-md border px-1.5 text-base font-semibold outline-none"
+            className="bg-surface-2 border-border-strong text-fg -my-1 h-9 w-64 rounded-md border px-2 text-xl font-semibold tracking-tight outline-none"
         />
     );
 }
@@ -152,63 +168,79 @@ function HeaderActions({ ctx }: { ctx: ServicePanelContext }) {
 }
 
 /**
- * §5 service panel: header (icon, inline rename, status, primary action, `⋯`), module-registered tabs synced to
- * /projects/{p}/{env}/service/{kind}/{id}/{tab}. Each tab loads its own data from the owning module.
+ * §5 service panel content (a layer of the canvas PanelStack): header (big icon + name with inline rename, status,
+ * primary action, `⋯`, ✕), underline tabs with a sliding indicator, and the active tab — each tab loads its own data from
+ * the owning module. `[` / `]` switch tabs while this panel is on top.
  */
-export function ServicePanel({ base, service, kind, refId, tab, renameUrl, onRenamed }: ServicePanelProps) {
+export function ServicePanel({ base, service, kind, refId, tab, renameUrl, onRenamed, onClose }: ServicePanelProps) {
     const tabs = useMemo(() => serviceTabsFor(kind, base, service), [kind, base, service]);
     const active = tabs.find((item) => item.id === tab)?.id ?? tabs[0]?.id ?? '';
     const baseUrl = `${base.canvasUrl}/service/${kind}/${refId}`;
+    const root = useRef<HTMLDivElement>(null);
 
     const ctx = useMemo<ServicePanelContext | null>(
         () => (service ? { ...base, service, tab: active, baseUrl, item: active === tab ? base.item : null } : null),
         [base, service, active, baseUrl, tab],
     );
 
+    useEffect(() => {
+        if (tabs.length < 2) return;
+        const onKeyDown = (event: globalThis.KeyboardEvent) => {
+            if (event.key !== '[' && event.key !== ']') return;
+            if (root.current?.closest<HTMLElement>('[data-kiln-panel]')?.dataset.depth !== '0') return;
+            const target = event.target as HTMLElement | null;
+            if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
+            const index = tabs.findIndex((item) => item.id === active);
+            event.preventDefault();
+            base.open(tabs[(index + (event.key === ']' ? 1 : -1) + tabs.length) % tabs.length].id);
+        };
+        window.addEventListener('keydown', onKeyDown);
+
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [tabs, active, base]);
+
     return (
-        <Panel
-            open
-            onOpenChange={(open) => !open && base.close()}
-            resizable
-            resizeKey="service"
-            icon={<ServiceIcon name={service?.icon ?? kind} size={16} />}
-            title={service ? <InlineName name={service.name} url={renameUrl} onRenamed={onRenamed} /> : <Skeleton className="h-5 w-40" />}
-            description={service ? `${service.name} service panel` : 'Service panel'}
-            status={
-                service && (
-                    <span className="flex items-center gap-1.5">
-                        <StatusBadge status={service.status} label={service.status_label} />
-                        {service.badges?.map((badge) => (
-                            <Tag key={badge}>{badge}</Tag>
+        <div ref={root} className="flex min-h-0 flex-1 flex-col" data-testid="service-panel">
+            <PanelHeader
+                icon={<ServiceIcon name={service?.icon ?? kind} size={22} />}
+                title={service ? <InlineName name={service.name} url={renameUrl} onRenamed={onRenamed} /> : <Skeleton className="h-6 w-44" />}
+                status={
+                    service && (
+                        <span className="flex items-center gap-1.5">
+                            <StatusBadge status={service.status} label={service.status_label} />
+                            {service.badges?.map((badge) => (
+                                <Tag key={badge}>{badge}</Tag>
+                            ))}
+                        </span>
+                    )
+                }
+                subtitle={service?.kind === 'database' ? service.subtitle : undefined}
+                actions={ctx && <HeaderActions ctx={ctx} />}
+                onClose={onClose}
+            />
+            {tabs.length > 0 && (
+                <Tabs value={active} onValueChange={(next) => base.open(next)} className="flex min-h-0 flex-1 flex-col">
+                    <TabsList className="gap-5 px-5 sm:gap-7 sm:px-7" aria-label={`${service?.name ?? 'Service'} sections`}>
+                        {tabs.map((item) => (
+                            <TabsTrigger key={item.id} value={item.id} className="h-10 px-0 text-[0.9rem]">
+                                {item.title}
+                            </TabsTrigger>
                         ))}
-                    </span>
-                )
-            }
-            subtitle={
-                service &&
-                (service.url ? (
-                    <a href={service.url} target="_blank" rel="noreferrer" className="hover:text-fg font-mono">
-                        {service.url.replace(/^https?:\/\//, '')}
-                    </a>
-                ) : (
-                    service.subtitle
-                ))
-            }
-            actions={ctx && <HeaderActions ctx={ctx} />}
-            tab={active}
-            onTabChange={(next) => base.open(next)}
-            tabs={tabs.map((item) => ({
-                id: item.id,
-                label: item.title,
-                content: () =>
-                    ctx ? (
-                        <Suspense fallback={<SkeletonRows rows={6} />}>
-                            <item.component key={`${refId}:${item.id}`} ctx={ctx} />
-                        </Suspense>
-                    ) : (
-                        <Skeleton className="h-40" />
-                    ),
-            }))}
-        />
+                    </TabsList>
+                    {tabs.map((item) => (
+                        <TabsContent key={item.id} value={item.id} className="min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-7">
+                            {item.id === active &&
+                                (ctx ? (
+                                    <Suspense fallback={<SkeletonRows rows={6} />}>
+                                        <item.component key={`${refId}:${item.id}`} ctx={ctx} />
+                                    </Suspense>
+                                ) : (
+                                    <Skeleton className="h-40" />
+                                ))}
+                        </TabsContent>
+                    ))}
+                </Tabs>
+            )}
+        </div>
     );
 }

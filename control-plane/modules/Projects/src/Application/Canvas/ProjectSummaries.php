@@ -161,7 +161,8 @@ final class ProjectSummaries
             }
         }
 
-        return ['kind' => 'site', 'name' => $service->name, 'icon' => CanvasReadModel::siteIcon($site), 'health' => $health];
+        // Compose sites made from a template show the template's logo (the dashboard falls back to Docker).
+        return ['kind' => 'site', 'name' => $service->name, 'icon' => $site->compose?->template['slug'] ?? CanvasReadModel::siteIcon($site), 'health' => $health];
     }
 
     /**

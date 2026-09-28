@@ -29,6 +29,7 @@ export { KilnLogo, KilnMark } from './logo';
 export {
     Menu,
     MenuActions,
+    MenuCheckboxItem,
     MenuContent,
     MenuGroup,
     MenuItem,
@@ -43,6 +44,7 @@ export {
 export { MetricChart, type MetricChartProps, type MetricPoint, type MetricSeries } from './metric-chart';
 export { OrgSwitcher } from './org-switcher';
 export { Panel, type PanelProps, type PanelTab, type PanelUrlSync } from './panel';
+export { PanelHeader, PanelStack, type PanelHeaderProps, type PanelLayer, type PanelStackProps } from './panel-stack';
 export { PhaseTimeline, Stepper, formatDuration, type PhaseCell, type PhaseRow, type Step } from './phase-timeline';
 export { ProjectSwitcher } from './project-switcher';
 export { RelativeTime, formatRelative } from './relative-time';
@@ -50,13 +52,13 @@ export { SecretInput, type SecretInputProps } from './secret-input';
 export { PageHeader, Section, type SectionProps } from './section';
 export { Segmented, type SegmentedOption, type SegmentedProps } from './segmented';
 export { Select, type SelectOption, type SelectProps } from './select';
-export { ServiceCard, type ServiceCardProps } from './service-card';
+export { SERVICE_CARD, ServiceCard, type ServiceCardProps } from './service-card';
 export { ServiceIcon, hasServiceIcon, type ServiceIconProps } from './service-icon';
 export { SetupChecklist, defaultSetupSteps, type SetupChecklistProps, type SetupProgress, type SetupStep } from './setup-checklist';
 export { Skeleton, SkeletonRows } from './skeleton';
-export { StatusBadge, StatusDot, statusSpec, type StatusBadgeProps, type StatusDotProps, type StatusTone } from './status';
+export { StatusBadge, StatusDot, StatusPill, statusSpec, type StatusBadgeProps, type StatusDotProps, type StatusTone } from './status';
 export { Switch, type SwitchProps } from './switch';
-export { Tabs, TabsContent, TabsList, TabsTrigger, tabTriggerClasses } from './tabs';
+export { Tabs, TabsContent, TabsList, TabsTrigger, tabTriggerClasses, useTabIndicator } from './tabs';
 export { Tag, type TagProps } from './tag';
 export { Toaster, toast, type ToastItem, type ToastKind } from './toast';
 export { Tooltip, TooltipProvider } from './tooltip';

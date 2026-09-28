@@ -143,6 +143,7 @@ it('draws compose sites as a group of their compose services with volumes, statu
 
     expect($canvas->json('services.0.volumes'))->toBe([])
         ->and($canvas->json('services.0.compose'))->toBe([
+            'template' => null,
             'collapsed' => false,
             'services' => [
                 ['name' => 'app', 'icon' => 'n8n', 'image' => 'n8nio/n8n:1.64.0', 'status' => 'active', 'status_label' => 'Online', 'url' => 'https://flows.example.com', 'volumes' => ['app-data'], 'position' => ['x' => 0, 'y' => 0]],

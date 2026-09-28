@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
 import { Link } from '@inertiajs/react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { MoreHorizontal } from 'lucide-react';
+import { Check, MoreHorizontal } from 'lucide-react';
 import { forwardRef, type ComponentPropsWithoutRef, type ReactNode } from 'react';
 import { IconButton } from './button';
 import { Kbd } from './kbd';
@@ -46,6 +46,19 @@ export const MenuItem = forwardRef<HTMLDivElement, MenuItemProps>(({ icon, short
     </DropdownMenu.Item>
 ));
 MenuItem.displayName = 'MenuItem';
+
+/** A toggle inside a menu (e.g. log viewer settings: wrap lines, timestamps). */
+export const MenuCheckboxItem = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<typeof DropdownMenu.CheckboxItem>>(
+    ({ className, children, ...props }, ref) => (
+        <DropdownMenu.CheckboxItem ref={ref} className={cn(itemClasses, 'pl-8', className)} {...props}>
+            <DropdownMenu.ItemIndicator className="absolute left-2 flex size-4 items-center justify-center">
+                <Check className="text-primary! size-3.5" aria-hidden />
+            </DropdownMenu.ItemIndicator>
+            <span className="min-w-0 flex-1 truncate">{children}</span>
+        </DropdownMenu.CheckboxItem>
+    ),
+);
+MenuCheckboxItem.displayName = 'MenuCheckboxItem';
 
 /** Menu entry that navigates with Inertia. */
 export function MenuLink({

@@ -59,7 +59,7 @@ final class ComposeGroup
     /**
      * @param  list<ComposeServiceState>  $states
      * @param  array{0: string, 1: string}  $siteStatus  status + label of the site (deployments / targets)
-     * @return array{collapsed: bool, services: list<ComposeChild>, edges: list<array{from: string, to: string}>}
+     * @return array{template: ?string, collapsed: bool, services: list<ComposeChild>, edges: list<array{from: string, to: string}>}
      */
     public static function for(Service $service, SiteData $site, ComposeSummary $summary, array $states, array $siteStatus): array
     {
@@ -109,7 +109,7 @@ final class ComposeGroup
             }
         }
 
-        return ['collapsed' => (bool) ($layout['collapsed'] ?? false), 'services' => $children, 'edges' => $edges];
+        return ['template' => $site->compose?->template['slug'] ?? null, 'collapsed' => (bool) ($layout['collapsed'] ?? false), 'services' => $children, 'edges' => $edges];
     }
 
     /** ServiceIcon key for a compose service's image (`build:` services show the Docker logo). */

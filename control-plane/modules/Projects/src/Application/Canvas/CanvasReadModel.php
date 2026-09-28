@@ -37,7 +37,7 @@ use Kiln\Sites\Contracts\TargetStatus;
  *
  * @phpstan-import-type ComposeChild from ComposeGroup
  *
- * @phpstan-type CanvasService array{id: string, kind: string, ref_id: string, name: string, icon: string, position: array{x: int, y: int}, group_id: ?string, status: string, status_label: string, url: ?string, subtitle: ?string, servers: list<array{id: string, name: string, leader: bool, online: bool}>, badges: list<string>, volumes: list<array{name: string, detail: ?string}>, compose: ?array{collapsed: bool, services: list<ComposeChild>}, last_deployment: ?array{id: string, status: string, commit: ?string, message: ?string, finished_at: ?string}}
+ * @phpstan-type CanvasService array{id: string, kind: string, ref_id: string, name: string, icon: string, position: array{x: int, y: int}, group_id: ?string, status: string, status_label: string, url: ?string, subtitle: ?string, servers: list<array{id: string, name: string, leader: bool, online: bool}>, badges: list<string>, volumes: list<array{name: string, detail: ?string}>, compose: ?array{template: ?string, collapsed: bool, services: list<ComposeChild>}, last_deployment: ?array{id: string, status: string, commit: ?string, message: ?string, finished_at: ?string}}
  * @phpstan-type CanvasEdge array{from: string, to: string, kind: string}
  * @phpstan-type CanvasGroup array{id: string, name: string, position: array{x: int, y: int}, collapsed: bool}
  */
@@ -154,7 +154,7 @@ final class CanvasReadModel
             'volumes' => $compose === null && $site->runtime !== SiteRuntime::Static
                 ? array_values(array_map(fn ($path) => ['name' => $path->path, 'detail' => 'shared'], array_filter($site->sharedPaths, fn ($path) => $path->type === 'directory')))
                 : [],
-            'compose' => $compose !== null ? ['collapsed' => $compose['collapsed'], 'services' => $compose['services']] : null,
+            'compose' => $compose !== null ? ['template' => $compose['template'], 'collapsed' => $compose['collapsed'], 'services' => $compose['services']] : null,
             'compose_edges' => $compose['edges'] ?? [],
             'last_deployment' => $deployment !== null ? [
                 'id' => $deployment->id,
