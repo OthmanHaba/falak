@@ -76,6 +76,8 @@ class AppManifest
             $response = Http::accept('application/vnd.github+json')
                 ->withHeaders(['X-GitHub-Api-Version' => '2022-11-28'])
                 ->timeout(20)
+                // An empty body: Http::post() would send `[]`, which GitHub rejects with 422.
+                ->withBody('', 'application/json')
                 ->post(rtrim((string) config('source_control.github.api_url'), '/').'/app-manifests/'.rawurlencode($code).'/conversions');
         } catch (ConnectionException $e) {
             throw SourceControlException::provider('GitHub', 'Could not reach the API: '.$e->getMessage());
@@ -84,9 +86,11 @@ class AppManifest
         $body = (array) $response->json();
 
         if ($response->failed() || ! isset($body['id'], $body['pem']) || ! is_string($body['pem'])) {
-            throw SourceControlException::provider('GitHub', $response->status() === 404
+            $detail = is_string($body['message'] ?? null) ? ' GitHub said: '.mb_substr($body['message'], 0, 300) : '';
+
+            throw SourceControlException::provider('GitHub', ($response->status() === 404
                 ? 'The GitHub App setup code expired or was already used. Start again.'
-                : 'GitHub did not return the new app\'s credentials.', $response->status());
+                : 'GitHub did not return the new app\'s credentials.').$detail, $response->status());
         }
 
         return [

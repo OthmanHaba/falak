@@ -116,7 +116,8 @@ describe('manifest callback', function () {
             ->and($raw->webhook_secret)->not->toBe('wh_secret')
             ->and($raw->client_secret)->not->toBe('cs_secret');
 
-        Http::assertSent(fn (Request $r) => $r->method() === 'POST' && ! $r->hasHeader('Authorization'));
+        // GitHub rejects a `[]` JSON body (what Http::post() sends by default) with 422.
+        Http::assertSent(fn (Request $r) => $r->method() === 'POST' && ! $r->hasHeader('Authorization') && $r->body() === '');
 
         // GitHub → setup URL with the installation state: the installation becomes a connection.
         fake_installation();
@@ -156,6 +157,16 @@ describe('manifest callback', function () {
         $this->get('/source-control/github-app/manifest/callback?code=old&state='.app_state($body['action']))
             ->assertRedirect('/settings/source-control')->assertSessionHasErrors('github_app');
         expect(GitHubApp::query()->count())->toBe(0);
+    });
+
+    it("passes GitHub's validation message through", function () {
+        $body = $this->postJson('/source-control/github-app/manifest')->json('data');
+        Http::fake(['api.github.com/app-manifests/*' => Http::response(['message' => 'Name has already been taken'], 422)]);
+
+        $this->get('/source-control/github-app/manifest/callback?code=c&state='.app_state($body['action']))
+            ->assertRedirect('/settings/source-control')->assertSessionHasErrors('github_app');
+
+        expect(session('errors')->first('github_app'))->toContain('GitHub said: Name has already been taken');
     });
 });
 
