@@ -64,13 +64,15 @@ means the build was cancelled and `kiln-builder` aborts it.
 - ✅ Sites' Laravel toggles (scheduler, Horizon, Octane) are converged by Processes into `proc.apply` / `cron.apply`.
 
 ## Processes (wave 3)
-- Full desired `proc.apply` + `cron.apply` per server, compiled from every **ready** site target on it (container
-  runtimes excluded) and dispatched by a debounced unique job; identical pending/applied state is never re-sent.
+- Full desired `proc.apply` + `cron.apply` per server, compiled from every **ready** site target on it that has a
+  **live release** there (container runtimes excluded; see *Deploy gaps* below) and dispatched by a debounced unique
+  job; identical pending/applied state is never re-sent.
   Triggers: Processes changes, `SiteCreated/Updated/Deleted/TargetsChanged` and the new `Sites\Events\SiteTargetReady`.
 - Names: `<slug>.horizon|octane|schedule`, `<slug>.worker-<id8>`, `<slug>.daemon-<id8>`, `<slug>.cron-<id8>` (unique per server).
 - **Deployments:** call `Processes\Contracts\ProcessControl::restartForSite($siteId, $serverId)` after activation
-  (`$KILN_RESTART_PROCS`). Horizon gets `horizon:terminate` (system.exec), other programs `proc.restart`; emits
-  `ProcessesRestarted`. Only programs the agent confirmed are restarted.
+  (`$KILN_RESTART_PROCS`). It converges the server first (the new release's env changes every program of the site,
+  so that `proc.apply` restarts them — and starts them on the first deploy); running programs it left unchanged get
+  `horizon:terminate` (Horizon, system.exec) or `proc.restart`; emits `ProcessesRestarted`.
 - Heartbeats: cron jobs carry `site` (slug); the agent maps it to the upper-case site id from `telemetry.configure`.
   Insights consumes `Processes\Contracts\ScheduleDirectory` (site attribution, removed jobs are no longer expected)
   and `Processes\Events\SchedulesApplied` (monitors are seeded, so a job that never runs is detected).
@@ -138,6 +140,41 @@ means the build was cancelled and `kiln-builder` aborts it.
   (containers stay as `up` left them); kiln-builder with registry credentials looks up the buildx builder in its
   temporary DOCKER_CONFIG (the sim registry has no auth).
 
+## Deploy gaps (roadmap step 6)
+- **Deploying while servers prepare.** `DeploymentQueue` claims a queued deployment as `waiting` (new status; holds the
+  site's queue like a running one) when any site target is `pending`/`provisioning`, with `waiting_reason` /
+  `waiting_since`. It is re-evaluated on `Sites\Events\SiteTargetReady`, the new `SiteTargetFailed` (dispatched by
+  `TargetProvisioner::fail`), `SiteTargetsChanged` (queued listener `ResumeWaitingDeployments`) and by the minute
+  reconciler. Decisions: it waits for **every** preparing server (rather than deploying the ready ones and leaving late
+  servers without a release); servers whose preparation failed are skipped with a warning (in the output) while
+  another server is ready; a failed **leader** or no preparable server fails it with the reason (`DeploymentFailed`,
+  so it alerts); `deployments.waiting.timeout_minutes` (`KILN_DEPLOY_WAIT_TIMEOUT_MINUTES`, default 30) fails it
+  too. Non-rollback triggers (panel, API/CLI, push, deploy hook, `DeploymentTrigger`) coalesce into the site's
+  waiting deployment — latest branch/commit/trigger wins, same number; rollbacks queue behind it. Cancel works on it
+  (panel, and the new `POST /api/v1/deployments/{id}/cancel`). `SiteTargetData` gained `statusMessage`.
+  Canvas: a waiting deployment reads *Waiting for servers* (tone `queued`); `DeploymentDirectory::currentForSites`
+  returns it as the current deployment.
+- **Release ids + site variables in the process env.** Deployments records the release each server runs
+  (`deployments_server_releases`, written on activate/switch/swap/compose up/revert; backfilled from active
+  releases) and the resolved variables each release's `.env` was written with (`deployments_releases.environment`,
+  encrypted; set at the first `deploy.prepare`). Contract `Deployments\Contracts\LiveReleases::onServer()`. Processes
+  builds every program and cron job env as: release variables → program env (worker/daemon env; `<slug>.app`'s
+  `PORT`/`HOST`/`PATH`, `NODE_ENV` defaulting to `production` unless the site sets it) → `KILN_SITE`,
+  `KILN_SITE_ID`, `KILN_SERVER_ID`, `KILN_RELEASE_ID`, `KILN_DEPLOYMENT_ID` (upper-case; the deployment that built
+  the release, like its `.env`, also after a rollback). Env edits still take effect on the next deploy (the release
+  snapshot, not the latest version). The agent's supervisor already restarts a program whose definition (env
+  included) changed; Deployments now settles restart steps on `proc.apply` outcomes and converges its servers when a
+  deployment finishes (static sites have no restart step). PHP sites get the same env; Laravel's dotenv doesn't
+  override existing env vars and the values are identical.
+- **No programs before the first deploy.** Processes skips a site on a server until it has a live release there
+  (programs, Horizon, Octane, scheduler, cron), so never-deployed sites no longer crash-loop or alert; they start on
+  the first activation (the restart step's `proc.apply`). Consequence: a site's daemons/cron only run once it has
+  been deployed, also on a server newly added to a deployed site (until the next deploy).
+- **CLI:** `kiln deploy` prints the waiting reason; `api.Deployment.WaitingReason`.
+- Still open from *Known limits* (not small or not safe to change here): Octane isn't proxied by Edge (other lane);
+  a failed **first** compose deploy leaves containers as `up` left them (stopping them would also discard their logs
+  for debugging); on-server builds; registry GC; the compose file-shipping limits.
+
 ## Found by the sim E2E (all fixed, with regression tests)
 Real provisioning and deploys on Ubuntu 24.04 (`sim/e2e-deploy.sh`) surfaced these; each is fixed and covered:
 1. A failed live broadcast (Reverb down) aborted provisioning/deployments → all `ShouldBroadcastNow` events are
@@ -164,13 +201,8 @@ networks, web terminal, recipes, provider APIs (Hetzner/DO/Vultr/Linode/Lightsai
 certificates, alert delivery to real Slack/Discord/Telegram, the Grafana provisioning API, Deno runtime at runtime.
 
 ## Known limits (accepted for now)
-- Node/Bun/Deno apps receive `PORT`, `KILN_SITE_ID`, `KILN_SERVER_ID` in their process env but not the release /
-  deployment ids (those are only in the release `.env`, which Bun loads but Node/Deno don't by default).
-- A deployment triggered while a site's targets are still preparing fails with "The site has no ready servers"
-  instead of waiting for them.
 - Octane runs on 127.0.0.1:`app_port` (or 8000 + crc32(site id) % 1000); Edge still serves PHP sites directly and does
   not proxy to Octane yet. Octane on php-fpm sites uses `--server=swoole` (needs the extension).
-- Programs of a site that was never deployed crash-loop (no `current/`) and may alert until the first deploy.
 - LB active health checks send the backend IP as Host, so backends whose routes are domain-only can be marked down; leave health path empty to balance without active checks. Weights are emulated by repeating upstreams.
 - SourceControl: no Bitbucket Server; OAuth for only one self-hosted GitLab (others via token).
 - Providers: AWS is Lightsail only (no EC2).

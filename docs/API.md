@@ -32,7 +32,7 @@ The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protoco
 | `sites.view` | admin, developer, viewer | list/show sites |
 | `sites.env.view` / `sites.env.manage` | admin, developer | read / replace the site environment |
 | `deployments.view` | admin, developer, viewer | deployments, output, releases |
-| `deployments.create` | admin, developer | deploy, cancel queued/building deployments |
+| `deployments.create` | admin, developer | deploy, cancel queued/waiting/building deployments |
 | `deployments.rollback` | admin, developer | roll back to an earlier release |
 | `deployments.manage` | admin, developer | strategy, health checks, retention, push-to-deploy, deploy hooks (UI) |
 | `builds.view` / `builds.manage` | view: all; manage: admin, developer | builds, logs, builders / cancel builds, manage builders (UI) |
@@ -159,20 +159,31 @@ Custom git uses `auth_type: none` (public URLs) or per-site deploy keys.
 ### Deployment resource
 ```json
 {"id": "01k…", "site_id": "01k…", "number": 42,
- "status": "queued|building|deploying|succeeded|failed|cancelled",
+ "status": "queued|waiting|building|deploying|succeeded|failed|cancelled",
  "phase": "build|fetch|prepare|migrate|activate|restart|healthcheck|rollback|null",
  "trigger": "manual|push|api|hook|rollback", "strategy": "zero-downtime",
  "branch": "main", "commit": "a1b2c3…", "message": "Fix checkout", "author": "Ada",
  "release_id": "01k…", "build_id": "01k…", "rolled_back": false,
  "url": "https://kiln.example.com/sites/01k…/deployments/01k…", "error": null,
+ "waiting_reason": null, "waiting_since": null,
  "created_at": "…", "started_at": "…", "finished_at": "…"}
 ```
 `rolled_back: true` with `status: failed` means servers that had switched were returned to the previous release.
 
+`waiting`: the deployment was triggered while some of the site's servers are still being prepared (site user,
+PHP-FPM pool, Bun/Deno runtime). It holds the site's queue, `waiting_reason` says why
+(`"Waiting for 2 servers to finish preparing: web-1, web-2"`) and `waiting_since` when it began; it starts on its
+own once every preparing server is ready (`started_at` is set then). Servers whose preparation failed are skipped
+with a warning in the output as long as another server is ready; it fails (`error` says why) when the leader's
+preparation fails, when no server can be prepared, or after `KILN_DEPLOY_WAIT_TIMEOUT_MINUTES` (default 30).
+
 ### `POST /api/v1/sites/{site}/deployments` — `deployments.create`
 Body (all optional): `{"branch": "main", "commit": "<sha>"}`. Without a commit the branch head is resolved
 through the source-control provider. → `201 {"data": Deployment}`. The deployment starts immediately
-(`building`) or waits behind the site's running deployment (`queued`).
+(`building`), waits behind the site's running deployment (`queued`), or waits for the site's servers to finish
+preparing (`waiting`). While a (non-rollback) deployment is `waiting`, further triggers — this endpoint, the CLI,
+the panel, push-to-deploy, deploy hooks — update that deployment instead of creating another: the latest
+branch/commit wins, and the response is that deployment (same `id`).
 
 ### `GET /api/v1/sites/{site}/deployments` — `deployments.view`
 Paginated, newest first.
@@ -195,6 +206,10 @@ terminal (`meta.status`). `server` is null for build/orchestration lines.
            "phase": "migrate", "stream": "stdout|stderr", "data": "Migrating: …\n"}],
  "meta": {"next": 1812, "status": "deploying"}}
 ```
+
+### `POST /api/v1/deployments/{deployment}/cancel` — `deployments.create`
+Cancels a `queued` or `waiting` deployment, or one still `building` (nothing has touched the servers yet).
+→ `200 {"data": Deployment}`; `422` otherwise.
 
 ### `POST /api/v1/sites/{site}/rollback` — `deployments.rollback`
 Body `{"release_id": "<ulid>"}` (optional; default = the newest retained release before the current one).
