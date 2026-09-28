@@ -10,6 +10,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
 use Kiln\Fleet\Application\AgentUpgradeRollout;
 use Kiln\Fleet\Application\CommandLifecycle;
+use Kiln\Fleet\Application\CommandRedelivery;
 use Kiln\Fleet\Contracts\AgentStatus;
 use Kiln\Fleet\Contracts\CommandStatus;
 use Kiln\Fleet\Domain\Models\Agent;
@@ -17,11 +18,10 @@ use Kiln\Fleet\Domain\Models\AgentMetric;
 use Kiln\Fleet\Domain\Models\Command;
 use Kiln\Fleet\Domain\Models\InstallToken;
 use Kiln\Fleet\Events\AgentWentOffline;
-use Kiln\Fleet\Infrastructure\Signals\CommandSignal;
 
 /**
- * Scheduled every minute: offline detection, command redelivery / timeouts / expiry, agent upgrade timeouts, and
- * pruning.
+ * Scheduled every minute: offline detection, lost-command redelivery (lease expiry, see CommandRedelivery),
+ * timeouts / expiry, agent upgrade timeouts, and pruning.
  */
 final class SweepFleet implements ShouldBeUnique, ShouldQueue
 {
@@ -31,10 +31,10 @@ final class SweepFleet implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 120;
 
-    public function handle(CommandLifecycle $lifecycle, CommandSignal $signal, ?AgentUpgradeRollout $upgrades = null): void
+    public function handle(CommandLifecycle $lifecycle, CommandRedelivery $redelivery, ?AgentUpgradeRollout $upgrades = null): void
     {
         $this->detectOfflineAgents();
-        $this->redeliverStalledCommands($lifecycle, $signal);
+        $redelivery->expireLeases();
         $this->timeOutCommands($lifecycle);
         ($upgrades ?? app(AgentUpgradeRollout::class))->sweep();
         $this->prune();
@@ -56,30 +56,6 @@ final class SweepFleet implements ShouldBeUnique, ShouldQueue
 
                 if ($updated === 1) {
                     AgentWentOffline::dispatch($agent->id, $agent->organization_id, $agent->server_id, $agent->last_heartbeat_at?->toDateTimeImmutable());
-                }
-            });
-    }
-
-    private function redeliverStalledCommands(CommandLifecycle $lifecycle, CommandSignal $signal): void
-    {
-        $cutoff = now()->subSeconds((int) config('fleet.commands.redeliver_after_seconds', 90));
-        $maxAttempts = (int) config('fleet.commands.max_attempts', 5);
-
-        Command::query()
-            ->where('status', CommandStatus::Delivered)
-            ->where('delivered_at', '<', $cutoff)
-            ->each(function (Command $command) use ($lifecycle, $signal, $maxAttempts) {
-                if ($command->attempts >= $maxAttempts) {
-                    $lifecycle->fail($command, CommandStatus::Failed, "The agent did not acknowledge the command after {$command->attempts} deliveries.");
-
-                    return;
-                }
-
-                $requeued = Command::query()->whereKey($command->id)->where('status', CommandStatus::Delivered)
-                    ->update(['status' => CommandStatus::Queued, 'delivered_at' => null]);
-
-                if ($requeued === 1) {
-                    $signal->notify($command->agent_id);
                 }
             });
     }

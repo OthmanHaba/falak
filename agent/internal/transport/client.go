@@ -5,7 +5,9 @@ package transport
 import (
 	"bytes"
 	"context"
+	crand "crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +28,21 @@ type Client struct {
 	hc   *http.Client
 	// UserAgent is sent on every request.
 	UserAgent string
+	// Session identifies this agent process (SessionHeader on every request). The control plane redelivers or
+	// fails commands delivered to an earlier session, and ignores long-polls left behind by one.
+	Session string
+}
+
+// SessionHeader carries Client.Session.
+const SessionHeader = "X-Kiln-Agent-Session"
+
+// NewSessionID returns a random id for one agent process ("s-" + 32 hex characters).
+func NewSessionID() string {
+	var b [16]byte
+	if _, err := crand.Read(b[:]); err != nil {
+		panic(err) // crypto/rand never fails on supported platforms
+	}
+	return "s-" + hex.EncodeToString(b[:])
 }
 
 // New creates a client; tlsConf should come from enroll.Identity.TLSConfig().
@@ -83,6 +100,9 @@ func (c *Client) do(ctx context.Context, method, path, ctype string, body []byte
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", c.UserAgent)
+	if c.Session != "" {
+		req.Header.Set(SessionHeader, c.Session)
+	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
 		return nil, err

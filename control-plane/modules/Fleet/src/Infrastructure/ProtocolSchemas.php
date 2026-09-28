@@ -15,7 +15,16 @@ final class ProtocolSchemas
 {
     public const BASE_ID = 'https://kiln.dev/agent-protocol/';
 
+    /**
+     * Schema root keyword marking a command type as safe to deliver again after it was lost (the agent restarted
+     * before running it, or never acknowledged it): declarative `*.apply` state and read-only commands.
+     */
+    public const REDELIVERABLE = 'x-kiln-redeliverable';
+
     private ?Validator $validator = null;
+
+    /** @var array<string, bool> */
+    private array $redeliverable = [];
 
     public function __construct(private readonly string $path) {}
 
@@ -28,6 +37,22 @@ final class ProtocolSchemas
     {
         return preg_match('/^[a-z_]+(\.[a-z_]+)+$/', $type) === 1
             && is_file($this->path()."/commands/{$type}.schema.json");
+    }
+
+    /**
+     * Whether a lost delivery of this command type may simply be delivered again (see REDELIVERABLE). Types that
+     * are not (deploy steps, exec, db.create, ...) fail instead, so the operation that queued them fails fast.
+     */
+    public function isRedeliverable(string $type): bool
+    {
+        if (! array_key_exists($type, $this->redeliverable)) {
+            $schema = $this->hasCommand($type)
+                ? json_decode((string) file_get_contents($this->path()."/commands/{$type}.schema.json"), true)
+                : null;
+            $this->redeliverable[$type] = is_array($schema) && ($schema[self::REDELIVERABLE] ?? false) === true;
+        }
+
+        return $this->redeliverable[$type];
     }
 
     /**

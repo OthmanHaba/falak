@@ -30,6 +30,8 @@ use Kiln\Fleet\Database\Factories\AgentFactory;
  * @property ?string $last_ip
  * @property ?Carbon $revoked_at
  * @property ?string $revocation_reason
+ * @property ?string $session_id
+ * @property ?Carbon $session_started_at
  */
 #[UseFactory(AgentFactory::class)]
 class Agent extends Model
@@ -56,6 +58,7 @@ class Agent extends Model
             'enrolled_at' => 'datetime',
             'last_heartbeat_at' => 'datetime',
             'revoked_at' => 'datetime',
+            'session_started_at' => 'datetime',
         ];
     }
 

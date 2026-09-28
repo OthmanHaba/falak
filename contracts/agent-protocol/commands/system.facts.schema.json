@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/system.facts.schema.json",
   "title": "system.facts — collect host facts",
+  "x-kiln-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [],

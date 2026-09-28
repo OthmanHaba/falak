@@ -102,4 +102,24 @@ trait ReadsProtocolDocuments
         /** @var Agent */
         return $request->attributes->get(AuthenticateAgent::AGENT);
     }
+
+    /**
+     * The kiln-agent process a request comes from (X-Kiln-Agent-Session; older agents send none).
+     *
+     * @throws ValidationException
+     */
+    protected function session(Request $request): ?string
+    {
+        $session = $request->headers->get('X-Kiln-Agent-Session');
+
+        if ($session === null || $session === '') {
+            return null;
+        }
+
+        if (preg_match('/^[A-Za-z0-9._:-]{8,64}$/', $session) !== 1) {
+            throw ValidationException::withMessages(['session' => 'X-Kiln-Agent-Session must be 8-64 characters [A-Za-z0-9._:-].']);
+        }
+
+        return $session;
+    }
 }

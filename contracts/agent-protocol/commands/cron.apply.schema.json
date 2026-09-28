@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/cron.apply.schema.json",
   "title": "cron.apply — full desired schedule set (built-in scheduler)",
+  "x-kiln-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [

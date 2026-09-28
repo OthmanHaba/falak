@@ -9,7 +9,9 @@ use Kiln\Fleet\Domain\Models\Command;
 
 /**
  * Atomically moves queued commands to "delivered" for one poll. Concurrent polls of the same
- * agent never receive the same command twice.
+ * agent never receive the same command twice. Only the agent's current process (session) claims: a long-poll
+ * left behind by a process that has since restarted keeps running on the server until its deadline, and must not
+ * take commands meant for the new process.
  */
 final class ClaimCommands
 {
@@ -18,8 +20,12 @@ final class ClaimCommands
     /**
      * @return list<Command>
      */
-    public function __invoke(Agent $agent): array
+    public function __invoke(Agent $agent, ?string $session = null): array
     {
+        if (Agent::query()->whereKey($agent->id)->value('session_id') !== $session) {
+            return [];
+        }
+
         $ids = $agent->commands()
             ->where('status', CommandStatus::Queued)
             ->orderBy('queued_at')
@@ -36,6 +42,7 @@ final class ClaimCommands
                 ->update([
                     'status' => CommandStatus::Delivered->value,
                     'delivered_at' => now(),
+                    'delivered_session' => $session,
                     'attempts' => DB::raw('attempts + 1'),
                     'updated_at' => now(),
                 ]);

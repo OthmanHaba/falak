@@ -251,6 +251,12 @@ seconds (default 600). Failures raise the *Agent upgrade failed* alert. To roll 
 `mv /usr/local/bin/kiln-agent.prev /usr/local/bin/kiln-agent && systemctl restart kiln-agent`.
 `kiln-ctl artisan kiln:agents` shows the shipped build and the number of outdated agents.
 
+Commands in flight during an agent restart are not lost: each agent process has a session id, and commands
+delivered to the previous process are delivered again (Caddy routes, telemetry, processes, cron, firewall and other
+`*.apply` state) or fail with "The agent restarted before running the command" (deploy steps, scripts). A command the
+agent never acknowledges is handled the same way after `KILN_AGENT_COMMAND_LEASE` seconds (default 90). Agents
+before this release get the new behaviour after their next upgrade; until then the lease covers them.
+
 ### Performance: PHP threads and worker mode
 
 The web tier is two FrankenPHP services built from the same image, each with its own PHP thread pool:

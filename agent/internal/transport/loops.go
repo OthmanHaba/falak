@@ -20,7 +20,8 @@ type Poller struct {
 	Log    *slog.Logger
 }
 
-// Run polls until ctx is done.
+// Run polls until ctx is done. Cancelling ctx stops accepting commands: an in-flight long-poll is abandoned and
+// commands in a response that arrives after cancellation are not submitted.
 func (p *Poller) Run(ctx context.Context) {
 	bo := Backoff{Min: time.Second, Max: 60 * time.Second}
 	log := p.Log
@@ -39,6 +40,14 @@ func (p *Poller) Run(ctx context.Context) {
 			continue
 		}
 		bo.Reset()
+		if ctx.Err() != nil {
+			// Stopping: do not start commands this process may not finish. The control plane delivers them
+			// again (or fails them) when the next process reports a new session.
+			if len(envs) > 0 {
+				log.Warn("shutting down; leaving received commands for redelivery", "count", len(envs))
+			}
+			return
+		}
 		for _, e := range envs {
 			if e.ID == "" || e.Type == "" {
 				log.Warn("ignoring malformed envelope", "id", e.ID, "type", e.Type)

@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/edge.caddy.apply.schema.json",
   "title": "edge.caddy.apply \u2014 full desired route set; rendered to Caddy JSON and POSTed atomically to the admin API /load",
+  "x-kiln-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [
