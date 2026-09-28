@@ -16,6 +16,8 @@ export interface LogFilters {
     service?: string;
     /** Compose sites: one compose service's container logs. */
     compose_service?: string;
+    /** app (a site's own output) or access (edge requests); both when unset. */
+    kind?: 'app' | 'access';
     level?: string;
     search?: string;
     regex?: boolean;

@@ -7,7 +7,29 @@ namespace Kiln\Fleet\Infrastructure;
  */
 final class AgentBinaries
 {
-    public function __construct(private readonly string $path) {}
+    public function __construct(
+        private readonly string $path,
+        private readonly ?string $version = null,
+    ) {}
+
+    /**
+     * Version of the shipped build: the `kiln-agent-linux-<arch>.version` sidecar written by `make agent`, else the
+     * configured version (KILN_AGENT_VERSION / KILN_VERSION). Null when no build is published for the arch.
+     */
+    public function version(string $arch): ?string
+    {
+        $file = $this->file($arch);
+
+        if ($file === null) {
+            return null;
+        }
+
+        if (is_file("{$file}.version") && ($v = trim((string) file_get_contents("{$file}.version"))) !== '') {
+            return mb_substr($v, 0, 64);
+        }
+
+        return $this->version !== null && $this->version !== '' ? $this->version : null;
+    }
 
     public function file(string $arch): ?string
     {

@@ -2,6 +2,7 @@
 
 namespace Kiln\Sites\Infrastructure;
 
+use Kiln\Sites\Contracts\Data\SharedPath;
 use Kiln\Sites\Contracts\TargetStatus;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Models\SiteTarget;
@@ -9,19 +10,64 @@ use Kiln\Telemetry\Contracts\Data\SiteTelemetryTarget;
 use Kiln\Telemetry\Contracts\ServerSites;
 
 /**
- * Sites hosted on a server for telemetry.configure (slug → site id mapping on the agent, which labels
- * logs, spans and cron heartbeats with it). Application logs arrive over OTLP, so no log files are tailed.
+ * Sites hosted on a server for telemetry.configure: the slug → site id mapping (the agent labels logs, spans and
+ * cron heartbeats with it) and the site's log files.
+ *
+ * PHP sites served by the edge (FrankenPHP runs PHP inside the edge process, PHP-FPM pools share the FPM master's
+ * stderr) cannot be told apart on stderr, so their application logs are read from files: the shared log directory
+ * (`storage/logs` — Laravel's `daily`/`single` channels, the default `LOG_CHANNEL` of new Laravel sites — or
+ * Symfony's `var/log`) is tailed as the site's `app` logs, with Laravel's multi-line stack traces merged into their
+ * record. Supervised programs, cron and containers are attributed by the agent itself; the edge's per-site access
+ * logs are always tailed.
  */
 final class EloquentServerSites implements ServerSites
 {
+    /** Shared directory → log files under it. */
+    private const LOG_DIRECTORIES = [
+        'storage' => 'logs/*.log',
+        'var/log' => '*.log',
+        'var' => 'log/*.log',
+    ];
+
     public function forServer(string $serverId): array
     {
         return Site::query()
             ->whereIn('id', SiteTarget::query()->select('site_id')->where('server_id', strtolower($serverId))->where('status', '!=', TargetStatus::Removing->value))
             ->orderBy('slug')
-            ->get(['id', 'slug'])
-            ->map(fn (Site $site) => new SiteTelemetryTarget($site->id, $site->slug))
+            ->get()
+            ->map(fn (Site $site) => new SiteTelemetryTarget($site->id, $site->slug, logSources: $this->logSources($site)))
             ->values()
             ->all();
+    }
+
+    /**
+     * @return list<array{path: string, kind: 'app', multiline?: 'laravel'}>
+     */
+    private function logSources(Site $site): array
+    {
+        if (! $site->runtime->isPhp()) {
+            return [];
+        }
+
+        $sources = [];
+
+        foreach ($site->shared_paths as $shared) {
+            /** @var SharedPath $shared */
+            $files = self::LOG_DIRECTORIES[trim($shared->path, '/')] ?? null;
+
+            if ($files === null || $shared->type !== 'directory') {
+                continue;
+            }
+
+            $source = ['path' => $site->rootPath().'/shared/'.trim($shared->path, '/').'/'.$files, 'kind' => 'app'];
+
+            if ($site->framework->isLaravel()) {
+                $source['multiline'] = 'laravel';
+            }
+
+            $sources[] = $source;
+        }
+
+        return $sources;
     }
 }

@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Event;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Identity\Domain\Models\AuditEntry;
 use Kiln\Projects\Contracts\ProjectDirectory;
+use Kiln\Sites\Application\Actions\SaveEnvironment;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Domain\Models\EnvironmentVersion;
 use Kiln\Sites\Domain\Models\Site;
@@ -130,4 +131,22 @@ it('lets viewers see keys but not edit', function () {
     [$viewer] = memberOf($this->organization, Role::Viewer);
     $this->actingAs($viewer)->getJson("/sites/{$this->site->id}/environment")->assertOk()->assertJsonPath('data.can.update', false);
     $this->actingAs($viewer)->put("/sites/{$this->site->id}/environment", ['content' => 'A=1', 'exposed' => []])->assertForbidden();
+});
+
+it('creates Laravel sites logging to files and migrates the old stderr default', function () {
+    expect(EnvironmentVersion::query()->where('site_id', $this->site->id)->firstOrFail()->variables['LOG_CHANNEL'])->toBe('daily');
+
+    $current = EnvironmentVersion::query()->where('site_id', $this->site->id)->firstOrFail();
+    app(SaveEnvironment::class)($this->site, ['LOG_CHANNEL' => 'stderr', 'A' => 'b'], ['A'], null);
+    $custom = Site::query()->create(array_merge($this->site->only(['organization_id', 'runtime', 'build_mode', 'framework', 'php_version', 'unix_user', 'deploy_script', 'laravel', 'shared_paths']), ['name' => 'Custom', 'slug' => 'custom']));
+    app(SaveEnvironment::class)($custom, ['LOG_CHANNEL' => 'papertrail'], [], null);
+
+    (require base_path('modules/Sites/database/migrations/2026_10_03_600001_switch_laravel_sites_to_file_logs.php'))->up();
+
+    $latest = EnvironmentVersion::query()->where('site_id', $this->site->id)->orderByDesc('version')->firstOrFail();
+    expect($latest->version)->toBe($current->version + 2)
+        ->and($latest->variables)->toBe(['LOG_CHANNEL' => 'daily', 'A' => 'b'])
+        ->and($latest->exposed)->toBe(['A'])
+        ->and($latest->changed_keys)->toBe(['LOG_CHANNEL'])
+        ->and(EnvironmentVersion::query()->where('site_id', $custom->id)->count())->toBe(1);
 });

@@ -18,8 +18,8 @@ use Kiln\Telemetry\Contracts\LogsQuery;
 use Kiln\Telemetry\Http\Controllers\LogController;
 
 /**
- * GET /api/v1/sites/{site}/logs?since=<seconds>&limit=&level=&cursor= — newest first; `meta.cursor`
- * pages to older lines (the `kiln logs` CLI).
+ * GET /api/v1/sites/{site}/logs?since=<seconds>&limit=&level=&kind=&cursor= — newest first; `meta.cursor`
+ * pages to older lines (the `kiln logs` CLI). `kind`: app (the site's own output) or access (edge requests).
  */
 final class SiteLogsApiController extends Controller
 {
@@ -41,6 +41,7 @@ final class SiteLogsApiController extends Controller
             'limit' => ['nullable', 'integer', 'min:1', 'max:1000'],
             'level' => ['nullable', Rule::in(LogController::LEVELS)],
             'cursor' => ['nullable', 'string', 'regex:/^\d{1,20}$/'],
+            'kind' => ['nullable', Rule::in(['app', 'access'])],
         ]);
 
         $limit = (int) ($input['limit'] ?? 100);
@@ -52,7 +53,7 @@ final class SiteLogsApiController extends Controller
             $end = now()->setTimestamp(intdiv((int) $input['cursor'], 1_000_000_000))->setMicrosecond(intdiv((int) $input['cursor'] % 1_000_000_000, 1000));
         }
 
-        $logql = LogQueryBuilder::build($organizationId, ['site_id' => $data->id, 'level' => $input['level'] ?? null]);
+        $logql = LogQueryBuilder::build($organizationId, ['site_id' => $data->id, 'level' => $input['level'] ?? null, 'kind' => $input['kind'] ?? null]);
 
         try {
             $lines = $start->lessThan($end) ? $logs->queryRange($logql, $start, $end, $limit, 'backward') : [];

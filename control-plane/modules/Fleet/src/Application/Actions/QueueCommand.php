@@ -3,6 +3,7 @@
 namespace Kiln\Fleet\Application\Actions;
 
 use Illuminate\Support\Str;
+use Kiln\Fleet\Application\PayloadCompatibility;
 use Kiln\Fleet\Contracts\AgentStatus;
 use Kiln\Fleet\Contracts\CommandStatus;
 use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
@@ -50,6 +51,7 @@ final class QueueCommand
             ->first() ?? throw AgentUnavailable::forServer($serverId);
 
         $timeout = max(1, min(self::MAX_TIMEOUT, $timeout));
+        $document = PayloadCompatibility::adapt($type, $document, $agent->features());
 
         if ($idempotencyKey !== null) {
             $pending = $agent->commands()

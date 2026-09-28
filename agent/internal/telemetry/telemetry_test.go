@@ -172,3 +172,15 @@ func TestServiceEndToEnd(t *testing.T) {
 		t.Fatalf("no /proc under temp root, summary should be zero: %+v", sum)
 	}
 }
+
+func TestSetHostNameRefreshesSignals(t *testing.T) {
+	s, _ := newService(t, "https://enrolled.example:4318", nil)
+	s.SetHostName("ip-10-0-0-5")
+	if got := s.Relay().Config().HostName; got != "ip-10-0-0-5" {
+		t.Fatalf("host.name = %q", got)
+	}
+	s.SetHostName("")
+	if got := s.Relay().Config().HostName; got != "ip-10-0-0-5" {
+		t.Fatalf("empty hostname must be ignored, got %q", got)
+	}
+}

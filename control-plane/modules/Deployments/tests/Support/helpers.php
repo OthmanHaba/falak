@@ -228,7 +228,11 @@ function deploy_run_all(FakeAgentGateway $agents): void
  */
 function deploy_types(FakeAgentGateway $agents, ?string $serverId = null): array
 {
-    return array_map(fn (array $c) => $c['handle']->type, $agents->dispatched(null, $serverId));
+    // Telemetry re-labels a server's logs on every activation (ReleaseActivated); it is not a deployment step.
+    return array_values(array_filter(
+        array_map(fn (array $c) => $c['handle']->type, $agents->dispatched(null, $serverId)),
+        fn (string $type) => $type !== 'telemetry.configure',
+    ));
 }
 
 /**

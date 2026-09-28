@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -19,7 +20,8 @@ import (
 func TestServePollsAndPostsEvents(t *testing.T) {
 	var mu sync.Mutex
 	var events bytes.Buffer
-	polls := 0
+	polls, heartbeats := 0, 0
+	runs := map[string]bool{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer bt_123" {
 			http.Error(w, "unauthorized", 401)
@@ -34,6 +36,7 @@ func TestServePollsAndPostsEvents(t *testing.T) {
 				http.Error(w, "bad query", 400)
 				return
 			}
+			runs[r.URL.Query().Get("run")] = true
 			if polls == 1 {
 				w.WriteHeader(http.StatusNoContent)
 				return
@@ -46,6 +49,9 @@ func TestServePollsAndPostsEvents(t *testing.T) {
 			}
 			b, _ := io.ReadAll(r.Body)
 			events.Write(b)
+		case HeartbeatPath("b-srv"):
+			heartbeats++
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.NotFound(w, r)
 		}
@@ -64,6 +70,44 @@ func TestServePollsAndPostsEvents(t *testing.T) {
 	evs := validateNDJSON(t, events.Bytes())
 	if *evs[len(evs)-1].ExitCode != 0 || polls != 2 {
 		t.Fatalf("polls=%d last=%+v", polls, evs[len(evs)-1])
+	}
+	// Every poll of one process carries the same run id; a heartbeat is sent as soon as the build starts.
+	if len(runs) != 1 || runs[""] || heartbeats < 1 {
+		t.Fatalf("runs=%v heartbeats=%d", runs, heartbeats)
+	}
+}
+
+func TestHeartbeatGoneAbortsTheBuild(t *testing.T) {
+	var mu sync.Mutex
+	beats := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.URL.Path != HeartbeatPath("b1") || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		beats++
+		if beats < 3 {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusGone)
+	}))
+	defer srv.Close()
+	s := &Server{URL: srv.URL, Token: "t", HTTP: srv.Client(), HeartbeatInterval: 5 * time.Millisecond}
+	s.Log = slogDiscard()
+	aborted := make(chan struct{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go s.heartbeat(ctx, "b1", func() { close(aborted) })
+	select {
+	case <-aborted:
+	case <-ctx.Done():
+		t.Fatal("a 410 heartbeat answer must abort the build")
+	}
+	if NewRunID() == NewRunID() || len(NewRunID()) < 8 {
+		t.Fatal("run ids must be unique")
 	}
 }
 
@@ -99,6 +143,8 @@ func TestHTTPSinkGoneCancelsBuild(t *testing.T) {
 		t.Fatalf("OnGone calls = %d", calls)
 	}
 }
+
+func slogDiscard() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 
 func commandsEvent(id string, seq int64) commands.Event {
 	return commands.Event{CommandID: id, Seq: seq, Kind: commands.KindOutput, At: time.Now(), Stream: "stdout", Data: "x\n"}

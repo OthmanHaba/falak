@@ -27,6 +27,12 @@ final readonly class AgentInfo
         public array $runningCommands = [],
     ) {}
 
+    /** Whether the agent reported the protocol feature (facts `features`, e.g. "edge.access_log"). */
+    public function supports(string $feature): bool
+    {
+        return in_array($feature, (array) ($this->facts['features'] ?? []), true);
+    }
+
     public function isOnline(): bool
     {
         return $this->status === AgentStatus::Online;

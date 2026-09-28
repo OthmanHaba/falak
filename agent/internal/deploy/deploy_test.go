@@ -150,6 +150,12 @@ func TestReleaseLifecycle(t *testing.T) {
 	if fi, _ := os.Stat(filepath.Join(root, "shared/.env")); fi.Mode().Perm() != 0o640 {
 		t.Fatalf(".env mode %v", fi.Mode().Perm())
 	}
+	// Releases and shared/ are closed to other local users (config caches and .env hold secrets).
+	for _, dir := range []string{"releases/" + r1, "shared"} {
+		if fi, _ := os.Stat(filepath.Join(root, dir)); fi.Mode().Perm() != 0o750 {
+			t.Fatalf("%s mode %v, want 0750", dir, fi.Mode().Perm())
+		}
+	}
 	if again, _ := d.Prepare(context.Background(), PreparePayload{Site: "shop", ReleaseID: r1, EnvFile: &EnvFile{Content: "APP_KEY=secret\n"}, WritableDirs: []string{"bootstrap/cache"}}, st()); again.(PrepareResult).Changed {
 		t.Fatal("second prepare should be unchanged")
 	}
@@ -331,5 +337,18 @@ func TestPrepareRefusesWritableDirsThatEscapeTheSite(t *testing.T) {
 	}
 	if fi, _ := os.Stat(outside); fi.Mode()&fs.ModeSetgid != 0 {
 		t.Fatal("must not touch files outside the site")
+	}
+}
+
+func TestGroupSharedDefaultACLEncoding(t *testing.T) {
+	// user::rwx group::rwx other::r-x as getfattr -e hex prints it.
+	want := "02000000" + "01000700ffffffff" + "04000700ffffffff" + "20000500ffffffff"
+	if got := hex.EncodeToString(groupSharedDefaultACL()); got != want {
+		t.Fatalf("acl = %s, want %s", got, want)
+	}
+	// user::rwx user:caddy(998):r-x group::r-x mask::r-x other::---
+	want = "02000000" + "01000700ffffffff" + "02000500e6030000" + "04000500ffffffff" + "10000500ffffffff" + "20000000ffffffff"
+	if got := hex.EncodeToString(edgeAccessACL(0o750, 998)); got != want {
+		t.Fatalf("access acl = %s, want %s", got, want)
 	}
 }

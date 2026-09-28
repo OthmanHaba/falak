@@ -52,6 +52,8 @@ final class TelemetryPayload
                     'service' => $source['service'] ?? null,
                     'site' => $site->slug,
                     'format' => $source['format'] ?? null,
+                    'kind' => $source['kind'] ?? null,
+                    'multiline' => $source['multiline'] ?? null,
                 ], fn ($v) => $v !== null && $v !== '');
             }
         }

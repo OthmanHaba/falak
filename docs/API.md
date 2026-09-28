@@ -36,7 +36,9 @@ The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protoco
 | `deployments.rollback` | admin, developer | roll back to an earlier release |
 | `deployments.manage` | admin, developer | strategy, health checks, retention, push-to-deploy, deploy hooks (UI) |
 | `builds.view` / `builds.manage` | view: all; manage: admin, developer | builds, logs, builders / cancel builds, manage builders (UI) |
-| `telemetry.view` | admin, developer, viewer | site logs |
+| `telemetry.view` | admin, developer, viewer | site logs, access logs |
+| `servers.view` | admin, developer, viewer | list/show servers (incl. agent version) |
+| `fleet.agents.manage` | admin | upgrade server agents |
 | `projects.view` / `projects.manage` | view: all; manage: admin, developer | projects + environments / create, rename, delete, duplicate environments |
 
 ## Identity
@@ -52,6 +54,24 @@ The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protoco
 Token requests return the token's organization only; session requests every membership.
 ```json
 {"data": [{"id": "…", "name": "Acme", "slug": "acme", "role": "owner", "current": true}]}
+```
+
+## Servers
+
+### `GET /api/v1/servers` · `GET /api/v1/servers/{server}` — `servers.view`
+`agent` (null until an agent enrolled) carries `status`, `last_heartbeat_at`, `version`, `available_version` (the
+build this control plane ships), `update_available` and `upgrade` (the latest upgrade: `status`
+`queued|running|succeeded|failed|cancelled`, `from_version`, `to_version`, `error`, `requested_at`, `finished_at`).
+
+### `POST /api/v1/servers/{server}/agent/upgrade` — `fleet.agents.manage`
+Upgrades the server's agent to the shipped build (`system.upgrade_agent` with the panel download URL and its
+SHA-256). `202` with the upgrade (`status: running`; the same upgrade when one is already in progress); it succeeds
+once the restarted agent reports the new build, fails on a download/checksum/pre-flight error or after
+`KILN_AGENT_UPGRADE_TIMEOUT`. `409` with `message` when it cannot run: no agent, agent offline, no verifiable build
+for the server's architecture, or the agent already runs it.
+```json
+{"data": {"id": "01k…", "server_id": "01k…", "status": "running", "from_version": "v0.3.0", "to_version": "v0.4.0",
+          "rollout_id": null, "error": null, "requested_at": "2026-09-28T10:00:00+00:00", "finished_at": null}}
 ```
 
 ## Sites
@@ -114,12 +134,26 @@ cannot be set. `422` for a Laravel toggle on a non-Laravel site, an unavailable 
 
 ### `GET /api/v1/sites/{site}/logs` — `telemetry.view`
 Query: `since` (seconds, default 3600, ≤ 30 days), `limit` (1–1000, default 100), `level`
-(`trace|debug|info|warn|error|fatal`), `cursor` (from the previous page). Newest first; `meta.cursor` is empty
+(`trace|debug|info|warn|error|fatal`), `kind` (`app` — the site's log files, programs, cron, containers — or
+`access` — edge requests; default both), `cursor` (from the previous page). Newest first; `meta.cursor` is empty
 on the last page.
 ```json
 {"data": [{"at": "2026-09-26T10:00:02.000000+00:00", "level": "ERROR", "source": "laravel", "server": "web-1",
            "message": "boom", "attributes": {"service_name": "laravel", "…": "…"}}],
  "meta": {"cursor": "1790000000000000001"}}
+```
+
+### `GET /api/v1/sites/{site}/access-logs` — `telemetry.view`
+The site's edge HTTP access log ("Network Logs"): one entry per request served for the site, by its servers or by
+the load balancer in front of them. Query: `since`, `limit`, `cursor` as above; filters `server` (server id),
+`deployment` (requests served while that deployment's release was live), `method`, `status` (`404` or a class
+`5xx`), `path` (substring of the request URI), `client_ip`. `503` when Loki is not configured.
+```json
+{"data": [{"ts": "1790000000000000002", "at": "2026-09-28T10:00:02.000000+00:00", "method": "GET", "path": "/cart",
+           "query": "x=1", "status": 502, "duration_ms": 12.3, "bytes": 512, "request_bytes": 0,
+           "client_ip": "203.0.113.9", "user_agent": "curl/8.5", "host": "shop.example.com",
+           "server_id": "01k…", "deployment_id": "01k…", "release_id": "01k…"}],
+ "meta": {"cursor": "1790000000000000002"}}
 ```
 
 ## Projects
@@ -261,8 +295,11 @@ Rate limited to 30/min.
 organization); builder servers get one installed automatically when they finish provisioning; external
 builders are created under *Builds → Builders* (organization-scoped). `401` for unknown/disabled tokens.
 
-### `GET /api/internal/builds/next?wait=<s>&builder=<name>`
-Long-poll (≤ 25 s). `204` when nothing is queued for the builder (organization + mode eligibility), else
+### `GET /api/internal/builds/next?wait=<s>&builder=<name>&run=<run id>`
+`run` identifies the kiln-builder process (random, new at every start). A poll with a new run id first fails the
+builds that an earlier run with the same `builder` name had claimed (`Builder <name> restarted during the build.`),
+so a restarted builder (e.g. `kiln-ctl update` recreating the container) does not leave them running until the
+build timeout. Long-poll (≤ 25 s). `204` when nothing is queued for the builder (organization + mode eligibility), else
 `200` with a job (`agent/internal/builder/job.go` `Job`):
 ```json
 {"id": "01k…", "mode": "native", "timeout_s": 1800, "runtime": "php",
@@ -289,6 +326,11 @@ into the deployment output as phase `build`); `progress`; `finished` with `exit_
 (`124` → timed out). With the local artifact driver the uploaded file's SHA-256 must match.
 Responses: `204`; `404` build unknown or assigned to another builder; `413` batch > 8 MiB; `422` malformed line;
 **`410` the build was cancelled — the builder aborts it** (`HTTPSink.OnGone`).
+
+### `POST /api/internal/builds/{build}/heartbeat`
+Sent every 20 s while a build runs. `204`; `404` unknown build or another builder's; `410` the build is over on the
+control plane (cancelled, failed by the watchdog, reaped) — the builder aborts it. A running build of a builder that
+reports run ids fails after `KILN_BUILD_HEARTBEAT_TIMEOUT` seconds (default 90) without a heartbeat or event.
 
 ### Artifacts (local driver)
 `PUT /api/internal/artifacts/{key}` (builder upload) and `GET /api/internal/artifacts/{key}` (agent

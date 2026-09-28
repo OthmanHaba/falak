@@ -62,6 +62,7 @@ final class BuildEventsController extends Controller
         }
 
         if (! $model->status->isTerminal()) {
+            $model->forceFill(['heartbeat_at' => now()])->save();
             $ingest($model, $events);
         }
 

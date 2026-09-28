@@ -26,7 +26,8 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
  && mkdir -p /out \
  && for f in kiln-agent-linux-amd64 kiln-agent-linux-arm64 kiln-builder-linux-amd64 kiln-builder-linux-arm64 kiln-linux-amd64 kiln-linux-arm64; do \
       cp "bin/$f" "/out/$f"; (cd /out && sha256sum "$f" > "$f.sha256"); \
-    done
+    done \
+ && cp bin/kiln-agent-linux-amd64.version bin/kiln-agent-linux-arm64.version /out/
 
 # --- base: PHP runtime + extensions -----------------------------------------------------------------
 FROM ${PHP_IMAGE} AS base

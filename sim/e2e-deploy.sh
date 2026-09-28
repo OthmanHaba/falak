@@ -117,6 +117,15 @@ stage_servers() {
     for c in srv-app-1 srv-app-2 srv-db-1; do
         if sx "$c" bash -c 'nft list ruleset 2>/dev/null | grep -q "dport 22"'; then ok "$c: nftables firewall applied"; else bad "$c: firewall ruleset missing"; fi
     done
+    # The sim's agents run the very build the control plane serves: reported as current, and an upgrade is a no-op.
+    if [[ -n ${SERVER_srv_app_1:-} ]]; then
+        api GET "/servers/$SERVER_srv_app_1"
+        if jq -e '.data.agent.version != null and .data.agent.available_version != null and .data.agent.update_available == false' >/dev/null 2>&1 <<<"$API_BODY"; then
+            ok "srv-app-1 runs the shipped agent build ($(jq -r .data.agent.version <<<"$API_BODY"))"
+        else bad "agent version report: $(jq -c .data.agent <<<"$API_BODY")"; fi
+        api POST "/servers/$SERVER_srv_app_1/agent/upgrade" '{}'
+        if [[ $API_CODE == 409 ]] && jq -e '.message | test("already runs")' >/dev/null 2>&1 <<<"$API_BODY"; then ok "agent upgrade API: nothing to do for a current agent"; else bad "agent upgrade API -> $API_CODE: $API_BODY"; fi
+    fi
 }
 
 # ---------------------------------------------------------------------------------------------- sites/deploys
@@ -456,6 +465,27 @@ stage_observability() {
         sleep 2
     done
     if (( ${deploys:-0} > 0 )); then ok "Loki has $deploys deployment lifecycle events from the agents"; else bad "no deployment events in Loki"; fi
+    # Per-site logs of the web requests themselves (FrankenPHP): the edge's access log and the app's log files.
+    local access=0 applog=0
+    while (( SECONDS < deadline )); do
+        access=$(loki_count '{service_name="shop", kiln_log_kind="access"} | url_path="/boom" | http_response_status_code="500"')
+        (( ${access:-0} > 0 )) && break
+        sleep 2
+    done
+    if (( ${access:-0} > 0 )); then ok "edge access log of shop reached Loki (kiln_log_kind=access, $access x GET /boom 500)"; else bad "no access log records for shop in Loki"; fi
+    while (( SECONDS < deadline )); do
+        applog=$(loki_count '{service_name="shop", kiln_log_kind="app"} |= "Kiln E2E demo exception" |= "#0 "')
+        (( ${applog:-0} > 0 )) && break
+        sleep 2
+    done
+    if (( ${applog:-0} > 0 )); then ok "shop's storage/logs reached Loki with the stack trace merged into the error record ($applog)"; else bad "no merged Laravel error record for shop in Loki"; fi
+    api GET "/sites/$SITE_SHOP/access-logs?since=3600&path=/boom&status=5xx"
+    if [[ $API_CODE == 200 ]] && jq -e '.data | length > 0 and (.[0].status == 500) and (.[0].method == "GET")' >/dev/null 2>&1 <<<"$API_BODY"; then ok "GET /sites/{id}/access-logs returns the requests"; else bad "access-logs API -> $API_CODE: ${API_BODY:0:300}"; fi
+}
+
+loki_count() { # loki_count LOGQL -> number of lines in the last hour
+    curl -sS -G "http://127.0.0.1:${KILN_LOKI_PORT}/loki/api/v1/query_range" --data-urlencode "query=$1" \
+        --data-urlencode "start=$(( $(date +%s) - 3600 ))000000000" | jq '[.data.result[].values[]] | length' 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------------------------- compose

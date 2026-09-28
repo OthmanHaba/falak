@@ -5,6 +5,8 @@ return [
     'timeout' => (int) env('KILN_BUILD_TIMEOUT', 1800),
     // Extra time after timeout_s before the watchdog marks a running build timed out.
     'grace_seconds' => 120,
+    // A running build whose builder (one that reports run ids) sent no heartbeat or event for this long is failed.
+    'heartbeat_timeout_seconds' => (int) env('KILN_BUILD_HEARTBEAT_TIMEOUT', 90),
     // Queued builds no builder picks up fail after this long.
     'queue_ttl_seconds' => (int) env('KILN_BUILD_QUEUE_TTL', 3600),
     // Assigned builds that never report `started` are re-queued after this long (builder died).

@@ -121,8 +121,15 @@ dashboards also depend on the following, which the agent and APM packages must e
 
 **Resource attributes → labels.** `service.name`→`service_name`, `host.name`→`host_name`,
 `kiln.site.id`→`kiln_site_id`, `kiln.server.id`→`kiln_server_id`. In Loki, `host.name`,
-`kiln.org.id`, `kiln.server.id` and `kiln.site.id` are index labels. Other attributes
+`kiln.org.id`, `kiln.server.id`, `kiln.site.id` and `kiln.log.kind` are index labels. Other attributes
 (including `trace_id`) are structured metadata.
+
+**Site logs.** Every record the agent ships for a site has `service_name=<site slug>` and
+`kiln_log_kind`: `app` (the site's log files such as `storage/logs/*.log` with stack traces merged into one
+record, supervised programs, cron, containers) or `access` (the edge's per-site HTTP access log, one record per
+request with structured metadata `http_request_method`, `url_path`, `url_query`, `http_response_status_code`,
+`http_server_duration_ms`, `http_response_body_size`, `client_address`, `user_agent_original`,
+`server_address`). Example: `{kiln_site_id="01…", kiln_log_kind="access"} | http_response_status_code >= 500`.
 
 **Span metrics** (from Tempo, no app work needed): `traces_spanmetrics_calls_total`,
 `traces_spanmetrics_latency_{bucket,sum,count}` with `service`, `span_name`, `span_kind`,

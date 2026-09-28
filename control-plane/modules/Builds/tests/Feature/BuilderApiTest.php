@@ -425,3 +425,52 @@ it('does not hand docker jobs to a native-only host builder (the default)', func
 
     next_job()->assertNoContent();
 });
+
+it('fails the builds of a builder process that restarted, and the deployment with them', function () {
+    $world = builds_world();
+    $deployment = app(TriggerDeployment::class)(app(SiteDirectory::class)->find($world->site->id), Trigger::Manual);
+    $build = Build::query()->where('deployment_id', $deployment->id)->sole();
+    $poll = fn (string $run, string $name = 'cp-1') => test()->withToken('local-builder-token-123')->getJson("/api/internal/builds/next?wait=0&builder={$name}&run={$run}");
+
+    $poll('run-aaaaaaaa')->assertOk()->assertJsonPath('id', $build->id);
+    post_events($build->id, [['command_id' => $build->id, 'seq' => 0, 'kind' => 'started', 'at' => now()->toIso8601ZuluString()]])->assertNoContent();
+    expect($build->refresh())->builder_run_id->toBe('run-aaaaaaaa')->builder_name->toBe('cp-1');
+
+    // Same run polling again (it would not while busy) or another builder name: nothing happens.
+    $poll('run-aaaaaaaa')->assertNoContent();
+    $poll('run-bbbbbbbb', 'other-builder')->assertNoContent();
+    expect($build->refresh()->status)->toBe(BuildStatus::Running);
+
+    // The process restarted: the next poll carries a new run id.
+    $poll('run-cccccccc')->assertNoContent();
+
+    expect($build->refresh())->status->toBe(BuildStatus::Failed)->error->toBe('Builder cp-1 restarted during the build.')
+        ->and($deployment->refresh()->status)->toBe(DeploymentStatus::Failed);
+});
+
+it('fails a running build whose builder stops heartbeating, and answers heartbeats', function () {
+    $world = builds_world();
+    $build = request_build($world);
+    test()->withToken('local-builder-token-123')->getJson('/api/internal/builds/next?wait=0&builder=cp-1&run=run-aaaaaaaa')->assertOk();
+    post_events($build->id, [['command_id' => $build->id, 'seq' => 0, 'kind' => 'started', 'at' => now()->toIso8601ZuluString()]])->assertNoContent();
+
+    $this->travel(60)->seconds();
+    test()->withToken('local-builder-token-123')->postJson("/api/internal/builds/{$build->id}/heartbeat")->assertNoContent();
+    $this->travel(60)->seconds();
+    (new ExpireBuilds)->handle(app(BuildProgress::class));
+    expect($build->refresh()->status)->toBe(BuildStatus::Running);
+
+    $this->travel(40)->seconds();
+    (new ExpireBuilds)->handle(app(BuildProgress::class));
+    expect($build->refresh())->status->toBe(BuildStatus::Failed)->error->toBe('The builder stopped responding (no heartbeat for 90s).');
+
+    // The builder learns it on its next heartbeat and aborts.
+    test()->withToken('local-builder-token-123')->postJson("/api/internal/builds/{$build->id}/heartbeat")->assertStatus(410);
+
+    // Builders without run ids (older kiln-builder) are left to the build timeout.
+    $legacy = request_build($world, str_repeat('d', 40));
+    next_job();
+    $legacy->refresh()->forceFill(['status' => BuildStatus::Running, 'started_at' => now()->subMinutes(5), 'heartbeat_at' => now()->subMinutes(5)])->save();
+    (new ExpireBuilds)->handle(app(BuildProgress::class));
+    expect($legacy->refresh()->status)->toBe(BuildStatus::Running);
+});

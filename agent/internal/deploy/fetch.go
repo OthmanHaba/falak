@@ -140,6 +140,13 @@ func (d *Deployer) Fetch(ctx context.Context, p FetchPayload, s commands.Stream)
 	if err := os.WriteFile(filepath.Join(staging, markerFile), mb, 0o644); err != nil {
 		return nil, err
 	}
+	// Other local users never enter a release (config caches and .env links hold secrets); owner, site group and
+	// the edge user keep access.
+	if closed, err := closeDir(staging); err != nil {
+		return nil, err
+	} else if !closed {
+		fmt.Fprintln(s.Stderr(), "warning: this filesystem has no POSIX ACLs; the release stays readable by other local users")
+	}
 	if p.Owner != nil && p.Owner.User != "" && d.o.FS.IsReal() {
 		if err := d.o.FS.ChownR(filepath.Join(st.host, "releases", filepath.Base(staging)), p.Owner.User, p.Owner.Group); err != nil {
 			return nil, err

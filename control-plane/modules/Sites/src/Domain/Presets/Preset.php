@@ -51,7 +51,9 @@ final readonly class Preset
                 'APP_KEY' => '',
                 'APP_DEBUG' => 'false',
                 'APP_URL' => '',
-                'LOG_CHANNEL' => 'stderr',
+                // Files, not stderr: under FrankenPHP / PHP-FPM the web requests' stderr is shared by every site on the
+                // server; the agent tails storage/logs per site (see EloquentServerSites).
+                'LOG_CHANNEL' => 'daily',
             ], ['scheduler' => true, 'horizon' => false, 'octane' => false], '/up'),
             Framework::Statamic => new self($framework, $php, 'public', self::paths(['storage', 'directory'], ['.env', 'file'], ['content', 'directory'], ['users', 'directory'], ['public/assets', 'directory']), self::laravelScript("\$KILN_PHP please stache:warm\n"), [
                 'APP_NAME' => '',

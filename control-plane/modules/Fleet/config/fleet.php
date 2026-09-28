@@ -33,6 +33,14 @@ return [
             'amd64' => env('KILN_AGENT_SHA256_AMD64'),
             'arm64' => env('KILN_AGENT_SHA256_ARM64'),
         ]),
+        // Version of the shipped build, when binaries_path has no kiln-agent-linux-<arch>.version sidecar.
+        'version' => env('KILN_AGENT_VERSION', env('KILN_VERSION')),
+        'upgrade' => [
+            // "Upgrade all agents" upgrades this many servers at a time and stops at the first failure.
+            'batch_size' => max(1, (int) env('KILN_AGENT_UPGRADE_BATCH_SIZE', 2)),
+            // An upgrade fails when the agent has not reported the new build this long after it was sent.
+            'timeout_seconds' => max(60, (int) env('KILN_AGENT_UPGRADE_TIMEOUT', 600)),
+        ],
     ],
 
     // Heartbeats arrive every 15s; an agent is offline after this many seconds of silence.

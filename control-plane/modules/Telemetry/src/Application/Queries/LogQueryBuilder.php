@@ -12,7 +12,7 @@ use Kiln\Telemetry\Contracts\PromQl;
 final class LogQueryBuilder
 {
     /**
-     * @param  array{server_id?: ?string, site_id?: ?string, service?: ?string, compose_service?: ?string, level?: ?string, search?: ?string, regex?: bool, trace_id?: ?string}  $filters
+     * @param  array{server_id?: ?string, site_id?: ?string, service?: ?string, kind?: ?string, compose_service?: ?string, level?: ?string, search?: ?string, regex?: bool, trace_id?: ?string}  $filters
      */
     public static function build(string $organizationId, array $filters): string
     {
@@ -22,6 +22,12 @@ final class LogQueryBuilder
             if (($value = $filters[$filter] ?? null) !== null && $value !== '') {
                 $matchers[] = PromQl::label($label, $filter === 'service' ? (string) $value : strtoupper((string) $value));
             }
+        }
+
+        // kind: "app" (the site's own output) or "access" (edge HTTP access log), see observability/README.md. App is
+        // "not access", so records of agents that predate the label still match.
+        if (($kind = $filters['kind'] ?? null) !== null && $kind !== '') {
+            $matchers[] = $kind === 'access' ? PromQl::label('kiln_log_kind', 'access') : 'kiln_log_kind!='.PromQl::quote('access');
         }
 
         $query = '{'.implode(', ', $matchers).'}';
@@ -50,6 +56,59 @@ final class LogQueryBuilder
         if (($level = $filters['level'] ?? null) !== null && $level !== '') {
             $pattern = '(?i)'.preg_quote(strtolower($level), '/').'.*';
             $query .= ' | severity_text=~'.PromQl::quote($pattern).' or detected_level=~'.PromQl::quote($pattern);
+        }
+
+        return $query;
+    }
+
+    /**
+     * A site's edge access log. Selected by slug (`service_name`), not site id: load balancers route sites that are
+     * not deployed on them, and their agents only know the slug of such a site.
+     *
+     * @param  array{server_id?: ?string, deployment_id?: ?string, release_id?: ?string, method?: ?string, status?: int|string|null, path?: ?string, client_ip?: ?string}  $filters
+     */
+    public static function access(string $organizationId, string $siteSlug, array $filters): string
+    {
+        $matchers = [
+            PromQl::label('kiln_org_id', strtoupper($organizationId)),
+            PromQl::label('service_name', $siteSlug),
+            PromQl::label('kiln_log_kind', 'access'),
+        ];
+
+        if (($server = $filters['server_id'] ?? null) !== null && $server !== '') {
+            $matchers[] = PromQl::label('kiln_server_id', strtoupper((string) $server));
+        }
+
+        $query = '{'.implode(', ', $matchers).'}';
+
+        if (($path = $filters['path'] ?? null) !== null && $path !== '') {
+            $query .= ' |= '.PromQl::quote((string) $path);
+        }
+
+        if (($deployment = $filters['deployment_id'] ?? null) !== null && $deployment !== '') {
+            $query .= ' | kiln_deployment_id='.PromQl::quote(strtoupper((string) $deployment));
+        }
+
+        if (($release = $filters['release_id'] ?? null) !== null && $release !== '') {
+            $query .= ' | kiln_release_id='.PromQl::quote(strtoupper((string) $release));
+        }
+
+        if (($method = $filters['method'] ?? null) !== null && $method !== '') {
+            $query .= ' | http_request_method='.PromQl::quote(strtoupper((string) $method));
+        }
+
+        $status = $filters['status'] ?? null;
+
+        if (is_int($status) || (is_string($status) && preg_match('/^[1-5]\d\d$/', $status) === 1)) {
+            $query .= ' | http_response_status_code='.PromQl::quote((string) $status);
+        } elseif (is_string($status) && preg_match('/^([1-5])xx$/i', $status, $m) === 1) {
+            $query .= ' | http_response_status_code=~'.PromQl::quote($m[1].'..');
+        } elseif ($status !== null && $status !== '') {
+            throw new InvalidArgumentException('status must be a code (e.g. 404) or a class (e.g. 5xx).');
+        }
+
+        if (($ip = $filters['client_ip'] ?? null) !== null && $ip !== '') {
+            $query .= ' | client_address='.PromQl::quote((string) $ip);
         }
 
         return $query;

@@ -14,6 +14,8 @@ use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Telemetry\Application\Queries\ServerMetricQueries;
 use Kiln\Telemetry\Application\Queries\SiteMetricQueries;
+use Kiln\Telemetry\Contracts\AccessLogs;
+use Kiln\Telemetry\Contracts\Data\AccessLogEntry;
 use Kiln\Telemetry\Contracts\Data\MetricSeries;
 use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
 use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
@@ -88,6 +90,59 @@ final class SiteTelemetryController extends Controller
             'servers' => $this->serversOf($site),
             'charts' => $charts,
             'errors' => (object) $errors,
+        ]);
+    }
+
+    /**
+     * GET /telemetry/sites/{siteId}/access-logs/data?release=&deployment=&since=&before=&status=&method=&path=&limit=
+     * — the site's edge access log (Network Logs of a deployment panel), newest first; `cursor` pages to older requests.
+     */
+    public function accessLogs(Request $request, string $siteId, AccessLogs $logs): JsonResponse
+    {
+        $site = $this->site($request, $siteId);
+        $input = $request->validate([
+            'release' => ['nullable', 'string', 'max:26'],
+            'deployment' => ['nullable', 'string', 'max:26'],
+            'server' => ['nullable', 'string', 'max:26'],
+            'since' => ['nullable', 'date'],
+            'before' => ['nullable', 'string', 'regex:/^\d{1,20}$/'],
+            'status' => ['nullable', 'string', 'regex:/^([1-5]\d\d|[1-5]xx)$/i'],
+            'method' => ['nullable', 'string', 'regex:/^[A-Za-z]{1,16}$/'],
+            'path' => ['nullable', 'string', 'max:512'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:1000'],
+        ]);
+
+        if ((string) config('telemetry.loki.url') === '') {
+            return response()->json(['configured' => false, 'entries' => [], 'cursor' => null]);
+        }
+
+        $limit = (int) ($input['limit'] ?? 500);
+        $end = isset($input['before'])
+            ? CarbonImmutable::createFromTimestamp(intdiv((int) $input['before'], 1_000_000_000))->setMicrosecond(intdiv((int) $input['before'] % 1_000_000_000, 1000))
+            : CarbonImmutable::now();
+        // Loki bounds a query's range; a deployment's requests older than a week are not listed.
+        $start = isset($input['since']) ? CarbonImmutable::parse($input['since'])->max($end->subDays(7)) : $end->subDay();
+        $names = collect($this->serversOf($site))->pluck('name', 'id');
+
+        try {
+            $entries = $start->lessThan($end) ? $logs->forSite($site->organizationId, $site->id, $start, $end, [
+                'release_id' => $input['release'] ?? null,
+                'deployment_id' => $input['deployment'] ?? null,
+                'server_id' => $input['server'] ?? null,
+                'status' => $input['status'] ?? null,
+                'method' => $input['method'] ?? null,
+                'path' => $input['path'] ?? null,
+            ], $limit) : [];
+        } catch (TelemetryUnavailable $e) {
+            return response()->json(['message' => $e->getMessage()], 503);
+        } catch (TelemetryQueryFailed $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'configured' => true,
+            'entries' => array_map(fn (AccessLogEntry $e) => [...$e->toArray(), 'server' => $e->serverId !== null ? ($names[$e->serverId] ?? null) : null], $entries),
+            'cursor' => count($entries) >= $limit ? $entries[array_key_last($entries)]->timestampNs : null,
         ]);
     }
 

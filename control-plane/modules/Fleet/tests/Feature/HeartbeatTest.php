@@ -9,6 +9,7 @@ use Kiln\Fleet\Contracts\AgentStatus;
 use Kiln\Fleet\Domain\Models\AgentMetric;
 use Kiln\Fleet\Events\AgentCameOnline;
 use Kiln\Fleet\Events\AgentFactsReported;
+use Kiln\Fleet\Events\AgentVersionChanged;
 use Kiln\Fleet\Events\AgentWentOffline;
 use Kiln\Fleet\Infrastructure\Signals\CommandSignal;
 
@@ -86,4 +87,20 @@ it('prunes metrics older than the retention window', function () {
     SweepFleet::dispatchSync();
 
     expect(AgentMetric::query()->count())->toBe(1);
+});
+
+it('announces a changed agent version with the features it reports', function () {
+    Event::fake([AgentVersionChanged::class]);
+
+    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(['facts' => fleet_facts()]), $this->headers)->assertNoContent();
+    Event::assertNotDispatched(AgentVersionChanged::class);
+
+    $facts = fleet_facts(['agent_version' => '1.1.0', 'features' => ['edge.access_log']]);
+    expect(fleet_schema_errors('facts.schema.json', $facts))->toBe([]);
+    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(['facts' => $facts]), $this->headers)->assertNoContent();
+
+    Event::assertDispatched(AgentVersionChanged::class, fn (AgentVersionChanged $e) => $e->serverId === $this->serverId
+        && $e->previousVersion === '1.0.0' && $e->version === '1.1.0' && $e->features === ['edge.access_log']);
+    expect(app(AgentDirectory::class)->forServer($this->serverId)->supports('edge.access_log'))->toBeTrue()
+        ->and(app(AgentDirectory::class)->forServer($this->serverId)->supports('telemetry.log_kind'))->toBeFalse();
 });

@@ -33,6 +33,7 @@ Route::middleware(['auth', 'org'])->prefix('telemetry')->name('telemetry.')->gro
     // Service panel Metrics / Logs tabs (JSON).
     Route::get('sites/{siteId}', [SiteTelemetryController::class, 'context'])->where('siteId', $ulid)->name('sites.context');
     Route::get('sites/{siteId}/metrics/data', [SiteTelemetryController::class, 'metrics'])->where('siteId', $ulid)->name('sites.metrics.data');
+    Route::get('sites/{siteId}/access-logs/data', [SiteTelemetryController::class, 'accessLogs'])->where('siteId', $ulid)->name('sites.access-logs.data');
 
     Route::get('logs/data', [LogController::class, 'data'])->name('logs.data');
     Route::get('traces/search', [TraceController::class, 'search'])->name('traces.search');

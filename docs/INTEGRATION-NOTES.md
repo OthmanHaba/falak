@@ -294,6 +294,123 @@ one broken E2E check. The rest is sim-side caching; see `sim/README.md` → *Cac
 - Not verified against real GitHub (faked in Pest and in `tests/Browser/github-app.spec.ts`): the real manifest
   confirmation page, GitHub's exact redirect parameters on `setup_on_update`, and webhook delivery over the internet.
 
+## Gaps found on AWS (fix/gaps)
+A real-server test on AWS surfaced these; each is fixed and covered by tests.
+
+### Site web logs reach Loki
+- **Problem.** Laravel sites defaulted to `LOG_CHANNEL=stderr`. PHP under FrankenPHP runs inside the edge process and
+  PHP-FPM pools share the FPM master's stderr, so web request logs landed in the kiln-edge journal with no site
+  attribution; only supervised programs (workers, scheduler) reached Loki.
+- **App logs = files.** New Laravel sites get `LOG_CHANNEL=daily`; the data migration
+  `switch_laravel_sites_to_file_logs` moves Laravel sites on `stderr` (Kiln's old default) to `daily` (PHP runtimes
+  only; a new env version, effective on the next deploy; other values untouched). `Sites\Infrastructure\EloquentServerSites` sends
+  each PHP site's shared log directory as a `telemetry.configure` log source (`<root>/shared/storage/logs/*.log`, or
+  Symfony's `var/log`), `kind: app`, `multiline: laravel` for Laravel/Statamic. The agent tailer merges continuation
+  lines into the record they belong to (a record starts with `[YYYY-MM-DD HH:MM:SS`; flushed after one quiet poll,
+  capped at 256 KiB; the saved offset excludes the pending record so a restart re-reads it).
+- **Shared log files.** PHP under FrankenPHP writes as the edge user, workers/cron as the site user; whoever creates
+  the day's file first would lock the other out (Monolog then throws). `deploy.prepare` writable dirs get a default
+  POSIX ACL `user::rwx group::rwx other::---` (set through the `system.posix_acl_default` xattr, skipped where the
+  filesystem has no ACLs), so new files are group-writable whatever the creator's umask, and not world-readable.
+- **Access logs.** `edge.caddy.apply` `sites[].access_log` (= site slug; Edge sets it on direct and load-balancer
+  routes, not on backends behind an LB, which only see the LB) makes Caddy write that route's requests as JSON to
+  `/var/log/kiln/access/<slug>.log` (10 MB × 3 rotation; excluded from the edge journal). The agent always tails that
+  directory, attributes by file name, and flattens Caddy's entry into OTel HTTP attributes (headers other than
+  `User-Agent` are dropped). 5xx → ERROR, 4xx → WARN.
+- **Labels.** Every site record carries `service_name=<slug>`, `kiln_server_id`, `kiln_site_id` (when the agent knows
+  the site) and the new index label **`kiln_log_kind`** (`app` | `access`; resource attribute `kiln.log.kind`,
+  records attributed to a site default to `app`). Deployment/release ids: Telemetry now fills `sites[].deployment_id|
+  release_id` from `Deployments\Contracts\LiveReleases` and re-sends `telemetry.configure` on `ReleaseActivated`,
+  so records carry `kiln_deployment_id` / `kiln_release_id` structured metadata.
+- **Contract for the UI (Logs / Network Logs tabs).** `Telemetry\Contracts\AccessLogs::forSite($organizationId,
+  $siteId, $from, $to, $filters, $limit)` → `list<Data\AccessLogEntry>` (method, path, query, status, durationMs,
+  bytes, requestBytes, clientIp, userAgent, host, serverId, deploymentId, releaseId, `toArray()`), newest first;
+  filters `server_id`, `deployment_id`, `release_id`, `method`, `status` (code or `5xx`), `path`, `client_ip`. Access logs are
+  selected by slug (`service_name`), because an LB's agent may not know the site id. App logs: the existing
+  `LogQueryBuilder` filters gained `kind` (`app` = `kiln_log_kind!="access"`, so records of agents that predate the
+  label still match). HTTP: `GET /api/v1/sites/{site}/access-logs`, `…/logs?kind=` (docs/API.md).
+- **UI.** The deployment panel's *Network Logs* tab (Deployments `panel/network-logs.tsx`) lists the requests served by
+  the deployment's release (`release_id` filter, since the deployment started, status filter, 10 s refresh while live)
+  from `GET /telemetry/sites/{site}/access-logs/data`. The service panel's *Logs* tab now asks for `kind=app` (edge
+  requests live in Network Logs).
+- **Agent compatibility.** Agents reject unknown payload fields, so new optional fields must not reach old agents.
+  Agents now report `facts.features` (`edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`);
+  `Fleet\Application\PayloadCompatibility` strips fields of features an agent does not list when a command is queued
+  (`AgentInfo::supports()` for callers that need to know). Heartbeats that report a new `agent_version` dispatch
+  `Fleet\Events\AgentVersionChanged`; Edge force-applies and Telemetry reconfigures on it, so an upgraded agent
+  gets the fields even though the compiled payloads are unchanged. **Rule for new protocol fields:** add a feature
+  to `agent/internal/version.Features` and the field path to `PayloadCompatibility::FIELDS`.
+- Smaller: the agent refreshes OTLP `host.name` whenever facts are re-collected (every 5 min), so a renamed host (EC2)
+  no longer keeps its old name until the agent restarts.
+- Verified by the sim E2E (FrankenPHP 1.9.1): access records and merged Laravel error records reach Loki with
+  `kiln_log_kind`, and `/api/v1/sites/{id}/access-logs` returns them. Not verified: the PHP-FPM + Caddy edge path,
+  and Caddy < 2.9 (`logger_names` array form). The migration cannot tell a deliberate `stderr` from the old default and switches both (a user can set it
+  back; web logs of such a site then only reach the edge journal).
+
+### Fleet agent upgrades
+- **Versions.** Agents report `facts.agent_version`, `features` and `agent_sha256` (checksum of the running binary).
+  The shipped build per arch is `Fleet\Application\ShippedAgent` (sha256 from `KILN_AGENT_SHA256_*` or the served file;
+  version from the `kiln-agent-linux-<arch>.version` sidecar that `make agent` now writes and the image copies, else
+  `KILN_AGENT_VERSION` / `KILN_VERSION`). *Outdated* = checksums differ (dev/CI builds share version strings), except
+  that a newer release than the shipped one never is; without a checksum, semver or string comparison.
+- **Contract** `Fleet\Contracts\AgentUpgrades`: `versionsFor()` (→ `AgentVersionInfo`: version, availableVersion,
+  updateAvailable, latest `AgentUpgradeData`), `upgrade()`, `upgradeOrganization()`, `outdatedCount()`; exception
+  `AgentUpgradeUnavailable`. Table `fleet_agent_upgrades`; `AgentUpgradeRollout` sends `system.upgrade_agent` (panel
+  URL + sha256, idempotency key per upgrade), marks it installed on `CommandFinished`, succeeded when the agent's facts
+  show the shipped checksum (or version), failed on `CommandFailed` or after `fleet.agent.upgrade.timeout_seconds`
+  (SweepFleet). Rollouts share a `rollout_id`, run `batch_size` at a time, and cancel their queued rest after a
+  failure. Events `AgentUpgradeSucceeded` (recovery) / `AgentUpgradeFailed` (Alertable `fleet.agent_upgrade_failed`).
+- **Agent.** `system.upgrade_agent` now also pre-flights the download (`<bin>.new version` must run, so a
+  wrong-arch or truncated build never replaces a working agent), replaces the installed `/usr/local/bin/kiln-agent`
+  (not the resolved executable, so symlinked installs such as the sim work), keeps `.prev` (copy when a hard link is
+  impossible), and restarts again when the binary is current but the running process is not. Schema `version` is any
+  string now (dev/CI builds).
+- **UI/API.** Servers list: *Agent* column (version, *update available*, upgrade state) and *Upgrade all agents*;
+  server page: *Upgrade agent* in the Agent section (`fleet.agents.manage`). `POST /api/v1/servers/{server}/agent/upgrade`;
+  `GET /api/v1/servers[/{id}]` `agent.*` fields; `php artisan kiln:agents [--outdated --count]`; `kiln-ctl update`
+  prints a hint when agents are outdated.
+- Verified by hand in the sim (not part of the E2E, whose agents run the served build): publishing a newer build and
+  `POST …/agent/upgrade` downloaded it over HTTPS from the panel, swapped it (`.prev` kept), restarted in ~3 s and
+  reported `succeeded` with the new version; the E2E checks the version report and the no-op. Not tried on a real
+  fleet or with "Upgrade all agents" across several servers.
+
+### Builder restarts no longer orphan builds
+- kiln-builder generates a run id per process and sends it on every poll (`run=`), and heartbeats
+  (`POST /api/internal/builds/{id}/heartbeat`, every 20 s) while building. Builds record `builder_name`,
+  `builder_run_id` and `heartbeat_at` (events count as heartbeats).
+- A poll with a new run id fails the builds (assigned or running) that the same builder name claimed under another run
+  (`ReapOrphanedBuilds`: "Builder <name> restarted during the build."); `BuildFailed` fails the deployment as before.
+  `ExpireBuilds` fails running builds of run-id builders after `builds.heartbeat_timeout_seconds` (90) of silence;
+  a `410` heartbeat answer makes the builder abort. Builders without run ids (older kiln-builder) keep the old
+  behaviour (build timeout + grace). Assigned-but-never-started builds are still re-queued (`assign_timeout_seconds`).
+- Two builder processes sharing one token must use different `--name`s (a poll by one would otherwise fail the
+  other's build).
+
+### Release files are not world-readable
+- `artisan optimize` writes `bootstrap/cache/config.php` (database password, `APP_KEY`) with the deploy user's umask
+  (0644), and releases were 0755, so any local user could read it (and `.env` through `shared/` was protected only by
+  its own mode). `deploy.fetch` now closes every release directory and `deploy.prepare` the site's `shared/`: mode
+  0750 (owner = site user, group = site group) plus a POSIX ACL entry `user:caddy:r-x` for the edge (it serves
+  static files, and under FrankenPHP runs PHP; on PHP-FPM servers Caddy is not in the site groups). Other local users
+  cannot enter them, whatever the file modes inside. PHP-FPM pools, workers, cron and hooks run as the site user.
+  Without ACL support the directories stay 0755 and fetch prints a warning.
+- The writable dirs' default ACL (see *Site web logs*) is `user::rwx group::rwx other::r-x` (the closed parents keep
+  others out; `other` read keeps public uploads servable by a Caddy edge outside the site group).
+- Hooks keep the user's umask (a `umask 027` in hooks would hide generated public assets from a Caddy edge outside
+  the site group); the closed release directory is what protects the files.
+- kiln-builder no longer ships the build's own logs: `storage/logs/*` is excluded from artifacts except
+  `storage/logs/.gitignore` (the first deploy used to move the build's `laravel.log` into shared storage).
+- Verified in the sim (FrankenPHP): releases/shared are `drwxr-x---` with `user:caddy:r-x`, `nobody` cannot read
+  `bootstrap/cache/config.php`, the site still serves, and FrankenPHP (caddy) and the site user share the daily log
+  file. Not verified on a PHP-FPM server with a standalone Caddy edge. Releases deployed before this change stay open
+  until they are pruned.
+
+### Smaller fixes
+- "Firewall applied again" was dispatched on every successful apply. Network now records `failed_at` on the firewall
+  state: `FirewallApplyFailed` fires when applies start failing (not on every failing retry) and `FirewallApplied`
+  (the recovery) only on the first success after that.
+- The agent refreshes OTLP `host.name` with every facts collection (see *Site web logs*).
+
 ## Not covered by the E2E yet (unit/feature tested only)
 Docker/Compose runtimes and docker builds on a real BuildKit, database backups/restore to real S3, WireGuard private
 networks, web terminal, recipes, provider APIs (Hetzner/DO/Vultr/Linode/Lightsail), load balancers, DNS-01 wildcard

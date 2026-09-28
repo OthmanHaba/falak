@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/system.upgrade_agent.schema.json",
-  "title": "system.upgrade_agent — replace the agent binary and restart",
+  "title": "system.upgrade_agent — download (sha256-verified), pre-flight `<new> version`, swap atomically (previous kept as <bin>.prev) and restart",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,7 +12,9 @@
   "properties": {
     "version": {
       "type": "string",
-      "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+"
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Version the control plane ships (release tag, or a dev/CI build id); the result reports what the new binary prints"
     },
     "url": {
       "type": "string",

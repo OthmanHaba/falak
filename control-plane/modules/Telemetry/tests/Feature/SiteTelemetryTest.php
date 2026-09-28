@@ -86,3 +86,25 @@ it('hides other organizations\' sites', function () {
     $this->getJson("/telemetry/sites/{$this->site->id}/metrics/data")->assertNotFound();
     $this->getJson('/telemetry/sites/not-a-site')->assertNotFound();
 });
+
+it('serves the site access log of one release for the deployment panel', function () {
+    Http::fake(['loki:3100/loki/api/v1/query_range*' => Http::response(['status' => 'success', 'data' => ['resultType' => 'streams', 'result' => [
+        ['stream' => ['service_name' => 'shop', 'kiln_log_kind' => 'access', 'kiln_server_id' => strtoupper($this->servers[0]->id)], 'values' => [
+            ['1790000000000000002', 'GET /cart 503 4.0ms', ['http_request_method' => 'GET', 'url_path' => '/cart', 'http_response_status_code' => '503', 'http_server_duration_ms' => '4.000', 'kiln_release_id' => '01JRE00000000000000000000A']],
+        ]],
+    ]]])]);
+
+    $this->getJson("/telemetry/sites/{$this->site->id}/access-logs/data?release=01jre00000000000000000000a&status=5xx&since=2026-09-28T10:00:00Z")->assertOk()
+        ->assertJsonPath('configured', true)
+        ->assertJsonPath('entries.0.method', 'GET')
+        ->assertJsonPath('entries.0.status', 503)
+        ->assertJsonPath('entries.0.release_id', '01jre00000000000000000000a')
+        ->assertJsonPath('entries.0.server', $this->servers[0]->name)
+        ->assertJsonPath('cursor', null);
+
+    Http::assertSent(fn (Request $r) => str_contains($r['query'], 'service_name="shop", kiln_log_kind="access"')
+        && str_contains($r['query'], 'kiln_release_id="01JRE00000000000000000000A"') && str_contains($r['query'], 'http_response_status_code=~"5.."'));
+
+    config(['telemetry.loki.url' => '']);
+    $this->getJson("/telemetry/sites/{$this->site->id}/access-logs/data")->assertOk()->assertJsonPath('configured', false);
+});

@@ -14,9 +14,9 @@ import InfrastructureLayout from '@/layouts/infrastructure-layout';
 import { serverState, ServerStatusBadge } from '@/layouts/server-layout';
 import { echo } from '@/lib/echo';
 import { Link, router, usePoll } from '@inertiajs/react';
-import { Activity, Copy, Plus, Search, Server as ServerIcon, Settings, SquareTerminal, X } from 'lucide-react';
+import { Activity, ArrowUpCircle, Copy, Plus, Search, Server as ServerIcon, Settings, SquareTerminal, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ProviderIcon, Sparkline, UsageMeter } from '../components/server-ui';
+import { AgentVersion, ProviderIcon, Sparkline, UsageMeter } from '../components/server-ui';
 import { type FleetService, type ServerSummary, type SparklinePoint } from '../types';
 
 type FleetServer = ServerSummary & { services: FleetService[] };
@@ -27,7 +27,7 @@ interface Props {
     sparklines?: Record<string, SparklinePoint[]>;
     filters: { search?: string; type?: string; status?: string };
     types: { value: string; label: string }[];
-    can: { create: boolean };
+    can: { create: boolean; upgrade_agents: boolean };
 }
 
 const ALL = 'all';
@@ -92,7 +92,9 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
     const [state, setState] = useState(ALL);
     const searchRef = useRef<HTMLInputElement>(null);
 
-    const transitional = servers.some((server) => TRANSITIONAL.has(server.status));
+    const transitional = servers.some(
+        (server) => TRANSITIONAL.has(server.status) || ['queued', 'running'].includes(server.agent?.upgrade?.status ?? ''),
+    );
     usePoll(transitional ? 5_000 : 30_000, { only: ['servers', 'sparklines'] });
     useFleetChannels(
         servers.map((server) => server.id),
@@ -241,6 +243,17 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
             cell: (server) => <ServiceStack services={server.services} />,
         },
         {
+            id: 'agent',
+            header: 'Agent',
+            hideOnMobile: true,
+            sortValue: (server) => server.agent?.version ?? '',
+            cell: (server) => (
+                <span className="text-xs">
+                    <AgentVersion agent={server.agent} compact />
+                </span>
+            ),
+        },
+        {
             id: 'seen',
             header: 'Last seen',
             hideOnMobile: true,
@@ -249,6 +262,11 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
             cell: (server) => <RelativeTime value={server.agent?.last_heartbeat_at} className="text-fg-muted text-xs" fallback="never" />,
         },
     ];
+
+    const outdatedAgents = servers.filter(
+        (server) =>
+            server.agent?.status === 'online' && server.agent.update_available && !['queued', 'running'].includes(server.agent.upgrade?.status ?? ''),
+    ).length;
 
     const summary = [
         { key: 'online', label: 'online' },
@@ -264,13 +282,24 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
             title="Servers"
             description="The machines your services run on, managed by the Kiln agent."
             actions={
-                can.create && (
-                    <Button variant="primary" asChild>
-                        <Link href="/servers/create">
-                            <Plus aria-hidden /> Add server
-                        </Link>
-                    </Button>
-                )
+                <>
+                    {can.upgrade_agents && outdatedAgents > 0 && (
+                        <Button
+                            variant="secondary"
+                            icon={<ArrowUpCircle />}
+                            onClick={() => router.post('/servers/agents/upgrade', {}, { preserveScroll: true, only: ['servers', 'flash'] })}
+                        >
+                            Upgrade {outdatedAgents === 1 ? 'agent' : `all agents (${outdatedAgents})`}
+                        </Button>
+                    )}
+                    {can.create && (
+                        <Button variant="primary" asChild>
+                            <Link href="/servers/create">
+                                <Plus aria-hidden /> Add server
+                            </Link>
+                        </Button>
+                    )}
+                </>
             }
         >
             {servers.length === 0 ? (

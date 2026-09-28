@@ -5,7 +5,10 @@ package edge
 import (
 	"fmt"
 	"path"
+	"regexp"
 	"sort"
+
+	"github.com/kiln/agent/internal/logs"
 )
 
 // Payload is edge.caddy.apply.
@@ -37,7 +40,18 @@ type Site struct {
 	AllowIPs        []string          `json:"allow_ips,omitempty"`
 	MaxBodyBytes    int64             `json:"max_body_bytes,omitempty"`
 	Encode          *bool             `json:"encode,omitempty"`
+	// AccessLog names the site's HTTP access log (the site slug): JSON lines in logs.AccessLogDir/<name>.log,
+	// shipped by the agent as kind=access records of that site. Routes sharing a name share the file.
+	AccessLog string `json:"access_log,omitempty"`
 }
+
+var accessLogName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+
+// AccessLogger is the Caddy logger of a site's access log (http.log.access.<AccessLogger>).
+func AccessLogger(name string) string { return "kiln-access-" + name }
+
+// AccessLogPath is the file a site's access log is written to.
+func AccessLogPath(name string) string { return path.Join(logs.AccessLogDir, name+".log") }
 
 // TLS settings.
 type TLS struct {
@@ -101,6 +115,8 @@ func Render(p Payload, certDir string) (obj, error) {
 	var acmeSubjects, internalSubjects, skipCerts []string
 	var dnsPolicies []any
 	var loadFiles []any
+	tlsLoggers, plainLoggers := obj{}, obj{}
+	accessLogs := map[string]bool{}
 	sites := append([]Site(nil), p.Sites...)
 	sort.SliceStable(sites, func(i, j int) bool { return sites[i].ID < sites[j].ID })
 	for _, s := range sites {
@@ -118,6 +134,19 @@ func Render(p Payload, certDir string) (obj, error) {
 			return nil, fmt.Errorf("site %s: %w", s.ID, err)
 		}
 		hosts := append(append([]string{}, s.Domains...), s.RedirectDomains...)
+		if s.AccessLog != "" {
+			if !accessLogName.MatchString(s.AccessLog) {
+				return nil, fmt.Errorf("site %s: invalid access_log %q", s.ID, s.AccessLog)
+			}
+			accessLogs[s.AccessLog] = true
+			loggers := tlsLoggers
+			if s.tlsMode() == "off" {
+				loggers = plainLoggers
+			}
+			for _, h := range hosts {
+				loggers[h] = []any{AccessLogger(s.AccessLog)}
+			}
+		}
 		switch s.tlsMode() {
 		case "off":
 			plainRoutes = append(plainRoutes, routes...)
@@ -157,15 +186,25 @@ func Render(p Payload, certDir string) (obj, error) {
 		if len(skipCerts) > 0 {
 			srv["automatic_https"] = obj{"skip_certificates": toAny(skipCerts)}
 		}
+		if len(tlsLoggers) > 0 {
+			srv["logs"] = serverLogs(tlsLoggers)
+		}
 		servers["kiln"] = srv
 	}
 	if len(plainRoutes) > 0 {
 		// Caddy adds its HTTP→HTTPS redirects for TLS sites to this existing :80 server.
-		servers["kiln_http"] = obj{"listen": []any{":80"}, "routes": plainRoutes}
+		srv := obj{"listen": []any{":80"}, "routes": plainRoutes}
+		if len(plainLoggers) > 0 {
+			srv["logs"] = serverLogs(plainLoggers)
+		}
+		servers["kiln_http"] = srv
 	}
 	cfg := obj{
 		"admin": obj{"listen": AdminListen},
 		"apps":  obj{"http": obj{"servers": servers}},
+	}
+	if len(accessLogs) > 0 {
+		cfg["logging"] = accessLogging(accessLogs)
 	}
 	tlsApp := obj{}
 	var policies []any
@@ -369,6 +408,32 @@ func reverseProxy(s Site) obj {
 		h["health_checks"] = obj{"active": obj{"uri": s.HealthURI, "interval": "10s", "timeout": "5s"}}
 	}
 	return h
+}
+
+// serverLogs maps each logged host to its site's access logger; other hosts (and Caddy's own redirects) are
+// not access-logged.
+func serverLogs(loggers obj) obj {
+	return obj{"logger_names": loggers, "skip_unmapped_hosts": true}
+}
+
+// accessLogging writes every site's access log to its own JSON file (rotated by Caddy at 10 MB, 3 kept) and
+// keeps access entries out of the default log (the kiln-edge journal).
+func accessLogging(names map[string]bool) obj {
+	keys := make([]string, 0, len(names))
+	for n := range names {
+		keys = append(keys, n)
+	}
+	sort.Strings(keys)
+	out := obj{"default": obj{"exclude": []any{"http.log.access"}}}
+	for _, n := range keys {
+		out[AccessLogger(n)] = obj{
+			"writer": obj{"output": "file", "filename": AccessLogPath(n), "roll_size_mb": 10, "roll_keep": 3,
+				"roll_keep_days": 7},
+			"encoder": obj{"format": "json"},
+			"include": []any{"http.log.access." + AccessLogger(n)},
+		}
+	}
+	return obj{"logs": out}
 }
 
 func acmeIssuer(p Payload) obj {

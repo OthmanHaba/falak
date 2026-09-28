@@ -18,7 +18,12 @@ import (
 
 // DefaultExcludes never ship in a release. A pattern with a leading "/" is anchored at the archive root;
 // otherwise it matches a path's base name at any depth. Patterns use path.Match syntax.
-var DefaultExcludes = []string{".git", ".DS_Store", "/.env", "/.env.*.local", "/.kiln-build", "Thumbs.db"}
+// storage/logs/* is what the build itself logged (e.g. laravel.log from composer scripts); it would otherwise be moved
+// into the site's shared storage on the first deploy.
+var DefaultExcludes = []string{".git", ".DS_Store", "/.env", "/.env.*.local", "/.kiln-build", "Thumbs.db", "/storage/logs/*"}
+
+// keptAlways ship even when an exclude pattern matches them (the directory placeholder Laravel commits).
+var keptAlways = []string{"storage/logs/.gitignore"}
 
 // TarballInfo describes a written archive.
 type TarballInfo struct {
@@ -128,6 +133,11 @@ func WriteTarball(w io.Writer, root string, excludes []string, mtime time.Time) 
 }
 
 func excluded(rel string, patterns []string) bool {
+	for _, k := range keptAlways {
+		if rel == k {
+			return false
+		}
+	}
 	base := path.Base(rel)
 	for _, p := range patterns {
 		if strings.HasPrefix(p, "/") {

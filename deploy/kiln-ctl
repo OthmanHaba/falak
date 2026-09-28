@@ -444,6 +444,7 @@ cmd_update() {
   if [ "$failed" = 0 ] && ! health_check; then failed=1; fi
   if [ "$failed" = 0 ]; then
     ok "Kiln $target is up"
+    agents_hint
     return 0
   fi
 
@@ -459,6 +460,16 @@ cmd_update() {
   fi
   ok "rolled back to $prev"
   return 1
+}
+
+# Servers keep their agent until it is upgraded from the panel: say so when the new release ships a newer one.
+agents_hint() {
+  local n
+  n="$(compose exec -T control-plane php artisan kiln:agents --outdated --count 2>/dev/null | tr -dc '0-9')"
+  if [ -n "$n" ] && [ "$n" -gt 0 ]; then
+    warn "$n server agent(s) run an older kiln-agent than this release ships."
+    say "  Upgrade them in the panel (Servers → Upgrade all agents) or: curl -X POST -H 'Authorization: Bearer …' https://$(env_get KILN_DOMAIN)/api/v1/servers/<id>/agent/upgrade"
+  fi
 }
 
 cmd_doctor() {

@@ -78,6 +78,14 @@ func (d *Deployer) Prepare(ctx context.Context, p PreparePayload, s commands.Str
 		}
 		return d.o.FS.Chown(real, p.Owner.User, p.Owner.Group)
 	}
+	// shared/ holds .env and storage (logs, sessions, uploads): owned by the site user and closed to other local
+	// users like the releases (the site group and the edge user keep access).
+	if err := chownHost(filepath.Join(st.host, "shared")); err != nil {
+		return nil, err
+	}
+	if _, err := closeDir(st.shared()); err != nil {
+		return nil, err
+	}
 	if p.EnvFile != nil {
 		envPath := p.EnvFile.Path
 		if envPath == "" {
@@ -527,7 +535,8 @@ func (d *Deployer) reload(ctx context.Context, rs []Reload, s commands.Stream) e
 }
 
 // groupWritable makes a writable dir (often a symlink into shared/, e.g. storage) group-writable all
-// the way down: dirs 2775 (setgid keeps the site group on new files), files g+w. The web server joins
+// the way down: dirs 2775 (setgid keeps the site group on new files) with a default ACL that gives new
+// files group write regardless of the creating process's umask, files g+w. The web server joins
 // the site group, so under FrankenPHP (which runs PHP as the edge user) Laravel can write logs, cache
 // and sessions. The target must stay inside the site root, and symlinks inside it are never followed.
 func groupWritable(siteRoot, dir string) (bool, error) {
@@ -557,6 +566,12 @@ func groupWritable(siteRoot, dir string) (bool, error) {
 		want := info.Mode().Perm() | 0o020
 		if e.IsDir() {
 			want = 0o775 | fs.ModeSetgid
+			// New files get group write whoever creates them (see groupSharedDefaultACL).
+			ch, err := setGroupSharedACL(p)
+			if err != nil {
+				return fmt.Errorf("default ACL on %s: %w", p, err)
+			}
+			changed = changed || ch
 		}
 		if info.Mode()&(fs.ModePerm|fs.ModeSetgid) == want {
 			return nil

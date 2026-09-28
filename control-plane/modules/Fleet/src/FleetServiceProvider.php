@@ -6,21 +6,31 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Kiln\Alerting\Contracts\AlertTypes;
 use Kiln\Alerting\Contracts\Severity;
 use Kiln\Fleet\Application\Actions\IssueInstallToken;
+use Kiln\Fleet\Application\Console\AgentsCommand;
 use Kiln\Fleet\Application\Console\CaInitCommand;
 use Kiln\Fleet\Application\Console\CaServerCertificateCommand;
 use Kiln\Fleet\Application\Jobs\SweepFleet;
+use Kiln\Fleet\Application\Listeners\TrackAgentUpgrades;
 use Kiln\Fleet\Contracts\AgentDirectory;
 use Kiln\Fleet\Contracts\AgentGateway;
+use Kiln\Fleet\Contracts\AgentUpgrades;
 use Kiln\Fleet\Contracts\Enrollment;
+use Kiln\Fleet\Events\AgentFactsReported;
 use Kiln\Fleet\Events\AgentRevoked;
+use Kiln\Fleet\Events\AgentUpgradeFailed;
+use Kiln\Fleet\Events\AgentUpgradeSucceeded;
+use Kiln\Fleet\Events\CommandFailed;
+use Kiln\Fleet\Events\CommandFinished;
 use Kiln\Fleet\Http\Channels\CommandChannel;
 use Kiln\Fleet\Infrastructure\AgentBinaries;
 use Kiln\Fleet\Infrastructure\EloquentAgentDirectory;
+use Kiln\Fleet\Infrastructure\EloquentAgentUpgrades;
 use Kiln\Fleet\Infrastructure\FleetAgentGateway;
 use Kiln\Fleet\Infrastructure\FleetEnrollment;
 use Kiln\Fleet\Infrastructure\InstallScript;
@@ -63,6 +73,8 @@ class FleetServiceProvider extends ModuleServiceProvider
             (int) config('fleet.cert_validity_days', 90),
         ));
 
+        $this->app->bind(AgentUpgrades::class, EloquentAgentUpgrades::class);
+
         $this->app->singleton(PanelUrls::class, fn ($app) => new PanelUrls(
             $app->make('url'),
             config('fleet.panel_url'),
@@ -70,7 +82,7 @@ class FleetServiceProvider extends ModuleServiceProvider
             config('fleet.agent.download_url'),
         ));
 
-        $this->app->singleton(AgentBinaries::class, fn () => new AgentBinaries((string) config('fleet.agent.binaries_path')));
+        $this->app->singleton(AgentBinaries::class, fn () => new AgentBinaries((string) config('fleet.agent.binaries_path'), config('fleet.agent.version')));
 
         $this->app->bind(InstallScript::class, fn ($app) => new InstallScript(
             $app->make(PanelUrls::class),
@@ -110,7 +122,14 @@ class FleetServiceProvider extends ModuleServiceProvider
         $registry->register('fleet.commands.view', [Role::Admin, Role::Developer, Role::Viewer], 'View agent command output', 'fleet');
         $registry->register('fleet.agents.manage', [Role::Admin], 'Issue install commands and revoke agents', 'fleet');
 
-        $this->app->make(AlertTypes::class)->register(AgentRevoked::ALERT_TYPE, 'Server agent revoked', 'Fleet', Severity::Warning);
+        $types = $this->app->make(AlertTypes::class);
+        $types->register(AgentRevoked::ALERT_TYPE, 'Server agent revoked', 'Fleet', Severity::Warning);
+        $types->register(AgentUpgradeFailed::ALERT_TYPE, 'Agent upgrade failed', 'Fleet', Severity::Warning);
+        $types->register(AgentUpgradeSucceeded::ALERT_TYPE, 'Agent upgraded after a failure', 'Fleet', Severity::Info);
+
+        Event::listen(CommandFinished::class, [TrackAgentUpgrades::class, 'finished']);
+        Event::listen(CommandFailed::class, [TrackAgentUpgrades::class, 'failed']);
+        Event::listen(AgentFactsReported::class, [TrackAgentUpgrades::class, 'facts']);
 
         Broadcast::channel(CommandChannel::NAME, CommandChannel::class);
 
@@ -119,7 +138,7 @@ class FleetServiceProvider extends ModuleServiceProvider
         });
 
         if ($this->app->runningInConsole()) {
-            $this->commands([CaInitCommand::class, CaServerCertificateCommand::class]);
+            $this->commands([CaInitCommand::class, CaServerCertificateCommand::class, AgentsCommand::class]);
         }
     }
 }

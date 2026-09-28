@@ -215,29 +215,42 @@ func TestSSHKeySync(t *testing.T) {
 	}
 }
 
+func upgradeServer(t *testing.T, body []byte) (*httptest.Server, string) {
+	sum := sha256.Sum256(body)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(body) }))
+	t.Cleanup(srv.Close)
+	return srv, hex.EncodeToString(sum[:])
+}
+
 func TestUpgradeAgent(t *testing.T) {
 	newBin := []byte("#!new-binary")
-	sum := sha256.Sum256(newBin)
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(newBin) }))
-	defer srv.Close()
+	srv, sum := upgradeServer(t, newBin)
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "kiln-agent")
 	os.WriteFile(bin, []byte("old"), 0o755)
-	restarted := make(chan struct{}, 1)
-	s := New(Deps{Runner: &runnertest.Fake{}, HTTP: srv.Client(), BinaryPath: bin, AgentVersion: "v1.0.0",
+	restarted := make(chan struct{}, 2)
+	run := (&runnertest.Fake{}).On(bin+".new version", runner.Result{Stdout: []byte("v1.1.0\n")})
+	running := "old-running-sum"
+	s := New(Deps{Runner: run, HTTP: srv.Client(), BinaryPath: bin, AgentVersion: "v1.0.0", RunningSHA256: func() string { return running },
 		RestartDelay: time.Millisecond, Restart: func() error { restarted <- struct{}{}; return nil }})
 	st := commands.NewTestStream("c", &commands.Collector{})
 	// sha mismatch is rejected and leaves the binary untouched
-	if _, err := s.UpgradeAgent(context.Background(), UpgradePayload{Version: "v1.1.0", URL: srv.URL, SHA256: strings.Repeat("0", 64)}, st); err == nil {
-		t.Fatal("expected mismatch")
+	if _, err := s.UpgradeAgent(context.Background(), UpgradePayload{Version: "v1.1.0", URL: srv.URL, SHA256: strings.Repeat("0", 64)}, st); err == nil || !strings.Contains(err.Error(), "sha256") {
+		t.Fatalf("expected a checksum mismatch, got %v", err)
 	}
 	if b, _ := os.ReadFile(bin); string(b) != "old" {
 		t.Fatal("binary modified")
 	}
-	p := UpgradePayload{Version: "v1.1.0", URL: srv.URL, SHA256: hex.EncodeToString(sum[:])}
+	if _, err := os.Stat(bin + ".new"); !os.IsNotExist(err) {
+		t.Fatal("mismatching download left behind")
+	}
+	p := UpgradePayload{Version: "v1.1.0", URL: srv.URL, SHA256: sum}
 	r, err := s.UpgradeAgent(context.Background(), p, st)
-	if err != nil || !r.(UpgradeResult).Changed {
+	if err != nil || !r.(UpgradeResult).Changed || r.(UpgradeResult).Version != "v1.1.0" || r.(UpgradeResult).PreviousVersion != "v1.0.0" {
 		t.Fatal(r, err)
+	}
+	if !run.Ran(bin + ".new version") {
+		t.Fatal("the new binary was not pre-flighted")
 	}
 	if b, _ := os.ReadFile(bin); string(b) != string(newBin) {
 		t.Fatal("not replaced")
@@ -250,12 +263,73 @@ func TestUpgradeAgent(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("no restart")
 	}
+	// Installed but the process is still the old build (restart lost): restart again, nothing downloaded.
+	r, _ = s.UpgradeAgent(context.Background(), p, st)
+	if !r.(UpgradeResult).Changed {
+		t.Fatal("a pending restart should be reported as a change")
+	}
+	select {
+	case <-restarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no restart for the installed-but-not-running build")
+	}
+	running = sum
 	r, _ = s.UpgradeAgent(context.Background(), p, st)
 	if r.(UpgradeResult).Changed {
 		t.Fatal("not idempotent")
 	}
 	if _, _, err := Download(context.Background(), nil, "http://x", "", filepath.Join(dir, "y"), 0o644, nil); err == nil {
 		t.Fatal("http allowed")
+	}
+}
+
+func TestUpgradeAgentKeepsWorkingBinaryWhenTheNewOneDoesNotRun(t *testing.T) {
+	srv, sum := upgradeServer(t, []byte("wrong-arch"))
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "kiln-agent")
+	os.WriteFile(bin, []byte("old"), 0o755)
+	run := (&runnertest.Fake{}).On(bin+".new version", runner.Result{ExitCode: 126, Stderr: []byte("exec format error")})
+	restarted := false
+	s := New(Deps{Runner: run, HTTP: srv.Client(), BinaryPath: bin, AgentVersion: "v1.0.0", Restart: func() error { restarted = true; return nil }})
+	_, err := s.UpgradeAgent(context.Background(), UpgradePayload{Version: "v1.1.0", URL: srv.URL, SHA256: sum}, commands.NewTestStream("c", &commands.Collector{}))
+	if err == nil || !strings.Contains(err.Error(), "does not run") {
+		t.Fatalf("err = %v", err)
+	}
+	if b, _ := os.ReadFile(bin); string(b) != "old" {
+		t.Fatal("working binary replaced")
+	}
+	if _, err := os.Stat(bin + ".new"); !os.IsNotExist(err) {
+		t.Fatal("broken download left behind")
+	}
+	time.Sleep(10 * time.Millisecond)
+	if restarted {
+		t.Fatal("restarted after a failed upgrade")
+	}
+}
+
+func TestUpgradeAgentReplacesASymlinkedBinary(t *testing.T) {
+	srv, sum := upgradeServer(t, []byte("new"))
+	dir := t.TempDir()
+	target := filepath.Join(dir, "ro", "kiln-agent-linux-amd64")
+	os.MkdirAll(filepath.Dir(target), 0o755)
+	os.WriteFile(target, []byte("old"), 0o755)
+	bin := filepath.Join(dir, "kiln-agent")
+	os.Symlink(target, bin)
+	s := New(Deps{Runner: &runnertest.Fake{}, HTTP: srv.Client(), BinaryPath: bin, AgentVersion: "dev"})
+	if _, err := s.UpgradeAgent(context.Background(), UpgradePayload{Version: "v1.1.0", URL: srv.URL, SHA256: sum, Restart: new(bool)}, commands.NewTestStream("c", &commands.Collector{})); err != nil {
+		t.Fatal(err)
+	}
+	if li, _ := os.Lstat(bin); li.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("still a symlink")
+	}
+	if b, _ := os.ReadFile(bin); string(b) != "new" {
+		t.Fatal("not replaced")
+	}
+	if b, _ := os.ReadFile(target); string(b) != "old" {
+		t.Fatal("symlink target modified")
+	}
+	if b, _ := os.ReadFile(bin + ".prev"); string(b) != "old" {
+		t.Fatal("no backup")
 	}
 }
 

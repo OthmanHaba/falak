@@ -1,6 +1,5 @@
 import {
     Avatar,
-    Button,
     copyText,
     EmptyState,
     formatDuration,
@@ -24,11 +23,12 @@ import { timeZoneLabel } from '@/components/kiln/log-viewer';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, requestJson } from '@/lib/http';
 import { type ServiceLayerProps } from '@/lib/registry';
-import { AlertTriangle, Ban, Copy, Globe, Rocket, RotateCcw, ScrollText } from 'lucide-react';
+import { AlertTriangle, Ban, Copy, Globe, Rocket, RotateCcw } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { type Deployment } from '../types';
 import { deploy, deploymentsUrl, durationMs, firstLine, rollback, type DeploymentsOverview } from './api';
 import { CommitTag, triggerLabel } from './deployment-row';
+import { NetworkLogs } from './network-logs';
 import { PHASES, timelineRows, useDeployment } from './use-deployment';
 import { WaitingNotice } from './waiting-notice';
 
@@ -306,19 +306,18 @@ export function DeploymentPanel({ ctx, record, tab, onTabChange, close }: Servic
                                 emptyText={terminal ? 'No deploy output.' : 'Waiting for the servers…'}
                             />
                         </TabsContent>
-                        <TabsContent value="network" className="min-h-0 flex-1 overflow-y-auto px-5 pt-5 pb-8 sm:px-7">
-                            <EmptyState
-                                icon={<Globe />}
-                                title="No HTTP request logs for this deployment"
-                                description="Kiln's edge doesn't ship per-request access logs yet, so there is nothing to show here. Application logs (including request logs your app writes) are in the service's Logs tab."
-                                action={
-                                    ctx.can('telemetry.view') && (
-                                        <Button icon={<ScrollText />} onClick={() => ctx.open('logs')}>
-                                            Open service logs
-                                        </Button>
-                                    )
-                                }
-                            />
+                        <TabsContent value="network" className="flex min-h-0 flex-1 flex-col pt-4">
+                            {ctx.can('telemetry.view') ? (
+                                <NetworkLogs ctx={ctx} deployment={deployment} live={live} />
+                            ) : (
+                                <div className="px-5 pt-1 pb-8 sm:px-7">
+                                    <EmptyState
+                                        icon={<Globe />}
+                                        title="No access to logs"
+                                        description="Network logs need the telemetry.view permission."
+                                    />
+                                </div>
+                            )}
                         </TabsContent>
                     </>
                 )}

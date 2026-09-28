@@ -30,7 +30,34 @@ type Source struct {
 	Service string `json:"service,omitempty"`
 	Site    string `json:"site,omitempty"`
 	Format  string `json:"format,omitempty"` // plain | json
+	// Kind is the kiln.log.kind of the records: "app" (default for site sources) or "access" (edge HTTP
+	// access log in Caddy's JSON format, flattened into http.* / url.* / client.* attributes).
+	Kind string `json:"kind,omitempty"`
+	// Multiline merges continuation lines into the record they belong to. "laravel": a record starts
+	// with "[YYYY-MM-DD" (Monolog's line format), so stack traces become part of the error record.
+	Multiline string `json:"multiline,omitempty"`
+	// SiteFromFile takes the site slug from the file name (<slug>.log); the edge access logs use it.
+	SiteFromFile bool `json:"-"`
 }
+
+// AccessLogDir holds the edge's per-site HTTP access logs (<slug>.log, Caddy JSON). kiln-edge writes
+// them (edge.caddy.apply sites[].access_log) and the telemetry service always tails them.
+const AccessLogDir = "/var/log/kiln/access"
+
+// AccessSource is the built-in source for AccessLogDir.
+func AccessSource() Source {
+	return Source{Path: AccessLogDir + "/*.log", Kind: "access", Format: "json", SiteFromFile: true}
+}
+
+// MaxRecord bounds a merged multi-line record (a long stack trace); beyond it a new record starts.
+const MaxRecord = 256 << 10
+
+// multilineStart matches the first line of a record per Multiline mode.
+var multilineStart = map[string]*regexp.Regexp{
+	"laravel": regexp.MustCompile(`^\[\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}`),
+}
+
+var slugRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 // MaxLine bounds a single line; longer lines are split.
 const MaxLine = 64 << 10
@@ -45,6 +72,10 @@ type fileState struct {
 	offset  int64
 	partial []byte
 	head    []byte // first ≤ headLen bytes; a change means the file was truncated and rewritten
+	// pending is a multi-line record still collecting continuation lines; pendingN is the number of
+	// file bytes it spans (excluded from the saved offset so a restart re-reads it).
+	pending  []byte
+	pendingN int64
 }
 
 const headLen = 64
@@ -157,6 +188,7 @@ func (t *Tailer) Poll() {
 			// Path vanished (rotated away, not yet recreated): drain what is left, then close.
 			t.readAvailable(real, st)
 			t.flushPartial(real, st)
+			t.flushPending(real, st)
 			st.f.Close()
 			delete(t.files, real)
 		}
@@ -177,6 +209,7 @@ func (t *Tailer) pollFile(real string, src Source, first bool) {
 		// Rotated: finish the old file first, then switch to the new one from the start.
 		t.readAvailable(real, st)
 		t.flushPartial(real, st)
+		t.flushPending(real, st)
 		st.f.Close()
 		delete(t.files, real)
 		st = nil
@@ -201,12 +234,16 @@ func (t *Tailer) pollFile(real string, src Source, first bool) {
 	st.src = src
 	if cur := readHead(st.f); fi.Size() < st.offset || !bytes.HasPrefix(cur, st.head) {
 		// Truncated (copytruncate rotation).
+		t.flushPending(real, st)
 		st.offset = 0
 		st.partial = nil
 		st.head = nil
 		t.dirty = true
 	}
-	t.readAvailable(real, st)
+	if t.readAvailable(real, st) == 0 {
+		// Nothing new for a whole poll interval: the collected record is complete.
+		t.flushPending(real, st)
+	}
 	if len(st.head) < headLen {
 		st.head = readHead(st.f)
 	}
@@ -218,9 +255,10 @@ func readHead(f *os.File) []byte {
 	return b[:n]
 }
 
-func (t *Tailer) readAvailable(real string, st *fileState) {
+// readAvailable consumes new bytes and returns how many were read.
+func (t *Tailer) readAvailable(real string, st *fileState) int {
 	if _, err := st.f.Seek(st.offset, io.SeekStart); err != nil {
-		return
+		return 0
 	}
 	buf := make([]byte, 64<<10)
 	read := 0
@@ -236,6 +274,7 @@ func (t *Tailer) readAvailable(real string, st *fileState) {
 			break
 		}
 	}
+	return read
 }
 
 func (t *Tailer) consume(real string, st *fileState, b []byte) {
@@ -245,11 +284,11 @@ func (t *Tailer) consume(real string, st *fileState, b []byte) {
 		if i < 0 {
 			break
 		}
-		t.emitLine(real, st.src, data[:i])
+		t.line(real, st, data[:i], int64(i+1))
 		data = data[i+1:]
 	}
 	for len(data) >= MaxLine {
-		t.emitLine(real, st.src, data[:MaxLine])
+		t.line(real, st, data[:MaxLine], MaxLine)
 		data = data[MaxLine:]
 	}
 	st.partial = append([]byte(nil), data...)
@@ -257,8 +296,35 @@ func (t *Tailer) consume(real string, st *fileState, b []byte) {
 
 func (t *Tailer) flushPartial(real string, st *fileState) {
 	if len(st.partial) > 0 {
-		t.emitLine(real, st.src, st.partial)
+		t.line(real, st, st.partial, int64(len(st.partial)))
 		st.partial = nil
+	}
+}
+
+// line handles one complete line (n file bytes): emitted directly, or merged into the pending
+// multi-line record when the source groups continuation lines.
+func (t *Tailer) line(real string, st *fileState, line []byte, n int64) {
+	start := multilineStart[st.src.Multiline]
+	if start == nil {
+		t.emitLine(real, st.src, line)
+		return
+	}
+	line = bytes.TrimRight(line, "\r")
+	if st.pending != nil && !start.Match(line) && len(st.pending)+1+len(line) <= MaxRecord {
+		st.pending = append(append(st.pending, '\n'), line...)
+		st.pendingN += n
+		return
+	}
+	t.flushPending(real, st)
+	st.pending = append([]byte(nil), line...)
+	st.pendingN = n
+}
+
+func (t *Tailer) flushPending(real string, st *fileState) {
+	if st.pending != nil {
+		t.emitLine(real, st.src, st.pending)
+		st.pending, st.pendingN = nil, 0
+		t.dirty = true
 	}
 }
 
@@ -271,9 +337,20 @@ func (t *Tailer) emitLine(real string, src Source, line []byte) {
 	if !t.fs.IsReal() {
 		hostPath = "/" + strings.TrimPrefix(strings.TrimPrefix(real, filepath.Clean(t.fs.Root)), "/")
 	}
-	rec := ParseLine(line, src.Format)
+	var rec obs.LogRecord
+	if src.Kind == "access" {
+		rec = ParseAccessLine(line)
+	} else {
+		rec = ParseLine(line, src.Format)
+	}
 	rec.Site = src.Site
+	if src.SiteFromFile {
+		if slug := strings.TrimSuffix(filepath.Base(hostPath), ".log"); slugRE.MatchString(slug) {
+			rec.Site = slug
+		}
+	}
 	rec.Service = src.Service
+	rec.Kind = src.Kind
 	if rec.Attrs == nil {
 		rec.Attrs = map[string]string{}
 	}
@@ -288,8 +365,8 @@ func (t *Tailer) saveLocked() {
 		out[k] = v
 	}
 	for real, st := range t.files {
-		// Offsets exclude the buffered partial line so it is re-read after a restart.
-		out[real] = savedOffset{Ino: st.ino, Offset: st.offset - int64(len(st.partial)), Head: st.head}
+		// Offsets exclude the buffered partial line and pending record so they are re-read after a restart.
+		out[real] = savedOffset{Ino: st.ino, Offset: st.offset - int64(len(st.partial)) - st.pendingN, Head: st.head}
 	}
 	t.saved = out
 	b, _ := json.Marshal(out)

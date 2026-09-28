@@ -3,6 +3,7 @@
 namespace Kiln\Servers\Http\Controllers;
 
 use Kiln\Fleet\Contracts\Data\AgentInfo;
+use Kiln\Fleet\Contracts\Data\AgentVersionInfo;
 use Kiln\Providers\Contracts\ProviderType;
 use Kiln\Servers\Domain\Models\PhpVersion;
 use Kiln\Servers\Domain\Models\Server;
@@ -12,7 +13,7 @@ trait PresentsServers
     /**
      * @return array<string, mixed>
      */
-    protected function summary(Server $server, ?AgentInfo $agent): array
+    protected function summary(Server $server, ?AgentInfo $agent, ?AgentVersionInfo $version = null): array
     {
         $metrics = $agent?->metrics ?? [];
 
@@ -31,6 +32,11 @@ trait PresentsServers
             'agent' => $agent ? [
                 'status' => $agent->status->value,
                 'last_heartbeat_at' => $agent->lastHeartbeatAt?->format(DATE_ATOM),
+                'version' => $agent->version,
+                // The build this control plane ships; update_available when the server runs an older one.
+                'available_version' => $version?->availableVersion,
+                'update_available' => $version->updateAvailable ?? false,
+                'upgrade' => $version?->upgrade?->toArray(),
             ] : null,
             'load1' => isset($metrics['load'][0]) ? (float) $metrics['load'][0] : null,
             'cpu_percent' => is_numeric($metrics['cpu_percent'] ?? null) ? round((float) $metrics['cpu_percent'], 1) : null,

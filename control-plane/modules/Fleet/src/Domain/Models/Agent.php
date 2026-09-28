@@ -80,6 +80,16 @@ class Agent extends Model
         return $this->status === AgentStatus::Revoked;
     }
 
+    /**
+     * Protocol features the agent reported in its facts (see facts.schema.json `features`).
+     *
+     * @return list<string>
+     */
+    public function features(): array
+    {
+        return array_values(array_filter((array) (($this->facts ?? [])['features'] ?? []), 'is_string'));
+    }
+
     public function toInfo(): AgentInfo
     {
         $expires = $this->certificates()->whereNull('revoked_at')->max('not_after');
