@@ -29,11 +29,7 @@ RUN apt-get update \
  # Per-container SSH host keys are generated at first boot, not baked into the image.
  && rm -f /etc/ssh/ssh_host_* \
  && mkdir -p /etc/kiln /root/.ssh /run/sshd && chmod 700 /root/.ssh \
- && printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\n' > /etc/ssh/sshd_config.d/10-kiln-sim.conf \
- # Sim only: the registry of docker/compose builds is plain HTTP on the fleet network; Docker Hub pulls go
- # through the sim's pull-through cache (dockerd falls back to Docker Hub when the mirror is unreachable).
- && mkdir -p /etc/docker \
- && printf '{"insecure-registries": ["sim-registry:5000", "sim-hub-mirror:5000"], "registry-mirrors": ["http://sim-hub-mirror:5000"]}\n' > /etc/docker/daemon.json
+ && printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\n' > /etc/ssh/sshd_config.d/10-kiln-sim.conf
 
 COPY server/units/ /etc/systemd/system/
 COPY server/bin/ /usr/local/sbin/
@@ -41,6 +37,10 @@ RUN chmod +x /usr/local/sbin/kiln-sim-* \
  # Sim only: apt downloads through the sim apt cache when it is reachable (DIRECT otherwise). Written after the
  # image's own apt-get, so it applies to what the agent installs at runtime.
  && printf 'Acquire::http::Proxy-Auto-Detect "/usr/local/sbin/kiln-sim-apt-proxy";\n' > /etc/apt/apt.conf.d/01kiln-sim-proxy \
+ # Sim only: the registry of docker/compose builds is plain HTTP on the fleet network; Docker Hub pulls go
+ # through the sim's pull-through cache (dockerd falls back to Docker Hub when the mirror is unreachable).
+ && mkdir -p /etc/docker \
+ && printf '{"insecure-registries": ["sim-registry:5000", "sim-hub-mirror:5000"], "registry-mirrors": ["http://sim-hub-mirror:5000"]}\n' > /etc/docker/daemon.json \
  && systemctl disable ssh.service \
  # Stock Ubuntu 24.04 socket activation (ssh.socket -> ssh.service). Enabling ssh.service as
  # well makes both bind :22 and one of them fail.

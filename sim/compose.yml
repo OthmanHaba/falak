@@ -127,7 +127,12 @@ x-server: &server
     - ..:/opt/kiln/src:ro                   # agent binary: /opt/kiln/src/agent/bin/kiln-agent-linux-$SIM_AGENT_ARCH
     - edge-pki:/etc/kiln/edge-pki:ro        # edge TLS root CA (trusted at boot)
   # caches: ppa.launchpadcontent.net and ghcr.io resolve to the edge (pull-through caches) on this network only.
-  networks: [fleet, observability, caches]
+  # fleet stays eth0 (connected first): agents report the first private address as the server's IP, which the
+  # control plane uses for health checks.
+  networks:
+    fleet: { priority: 100 }
+    observability: {}
+    caches: {}
   depends_on:
     edge: { condition: service_healthy }
     sim-apt-cache: { condition: service_healthy }

@@ -19,8 +19,9 @@ endif
 # Persistent caches (apt, runtime downloads + PPA, Docker Hub, GHCR, builder). External volumes, so
 # `make reset` (down -v) keeps them; `make clean-cache` / `make reset-all` remove them.
 CACHE_VOLUMES := kiln-sim-cache-apt kiln-sim-cache-downloads kiln-sim-cache-hub kiln-sim-cache-ghcr kiln-sim-cache-builder
-# kiln-builder's buildx builder (docker-container driver) and its BuildKit state volume, on the host daemon.
-BUILDX_BUILDER := kiln
+# kiln-builder's buildx builder "kiln" (docker-container driver, created from inside the builder container, so
+# the host CLI does not know it by name) and its BuildKit state volume, on the host daemon.
+BUILDX_CONTAINER := buildx_buildkit_kiln0
 BUILDX_STATE := buildx_buildkit_kiln0_state
 
 # Sim-only secrets, generated once per sim (removed by `make reset`).
@@ -70,7 +71,7 @@ reset-all: .data/secrets.env
 	rm -rf .data
 
 define drop-caches
-	-docker buildx rm $(BUILDX_BUILDER) >/dev/null 2>&1
+	docker rm -f $(BUILDX_CONTAINER) >/dev/null 2>&1 || true
 	docker volume rm -f $(CACHE_VOLUMES) $(BUILDX_STATE) >/dev/null
 endef
 
