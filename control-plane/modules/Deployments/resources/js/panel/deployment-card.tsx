@@ -41,7 +41,7 @@ export function SourceAvatar({ deployment }: { deployment: Pick<Deployment, 'aut
     const Icon = TRIGGER_ICONS[deployment.trigger] ?? Terminal;
 
     return (
-        <span className="relative inline-flex shrink-0">
+        <span className="relative hidden shrink-0 sm:inline-flex">
             <Avatar name={deployment.author ?? triggerLabel(deployment.trigger)} size="md" />
             <span
                 className="border-surface-1 bg-surface-3 text-fg-muted absolute -right-1 -bottom-1 flex size-4 items-center justify-center rounded-full border-2 [&_svg]:size-2.5"
@@ -132,7 +132,7 @@ export function DeploymentCard({
             className={cn('animate-rise-in overflow-hidden rounded-xl border transition-shadow', style.card, selected && 'ring-primary/60 ring-2')}
         >
             <div className="flex items-center gap-3 px-3.5 py-3 sm:gap-4 sm:px-4">
-                <StatusPill status={deployment.status} tone={style.tone} label={label} className="w-[4.75rem] justify-center" />
+                <StatusPill status={deployment.status} tone={style.tone} label={label} className="justify-center sm:w-[4.75rem]" />
                 <SourceAvatar deployment={deployment} />
                 <div className="grid min-w-0 flex-1 gap-0.5">
                     <p className="text-fg truncate text-sm font-medium">{firstLine(deployment.message) ?? triggerLabel(deployment.trigger)}</p>
@@ -169,7 +169,7 @@ export function DeploymentCard({
                 onClick={() => setOpen((value) => !value)}
                 className={cn('flex w-full items-center gap-2.5 border-t px-3.5 py-2 text-left text-sm transition-colors sm:px-4', style.footer)}
             >
-                <span className="flex w-[4.75rem] shrink-0 justify-center">
+                <span className="flex shrink-0 justify-center sm:w-[4.75rem]">
                     <footer.icon className={cn('size-4', footer.spin && 'animate-spin')} aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1 truncate font-medium">{footer.text}</span>
@@ -212,7 +212,7 @@ export function HistoryCard({
             )}
             data-testid="deployment-history-card"
         >
-            <StatusPill status={status} label={label || undefined} tone={tone} className="w-[4.75rem] justify-center" />
+            <StatusPill status={status} label={label || undefined} tone={tone} className="justify-center sm:w-[4.75rem]" />
             <SourceAvatar deployment={deployment} />
             <button
                 type="button"

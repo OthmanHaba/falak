@@ -130,13 +130,20 @@ function toneOf(line: LogLine): { bar: string; row: string } {
 
 const pad = (value: number) => String(value).padStart(2, '0');
 
-/** "2026-09-28 17:35:43" in the viewer's time zone for ISO timestamps; anything else is shown as given. */
-function formatTime(value: string): string {
-    if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) return value;
+/** ["2026-09-28", "17:35:43"] in the viewer's time zone for ISO timestamps; anything else is shown as given. */
+function timeParts(value: string): [string, string] {
+    if (!/^\d{4}-\d{2}-\d{2}T/.test(value)) return ['', value];
     const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
+    if (Number.isNaN(date.getTime())) return ['', value];
 
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    return [
+        `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+        `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`,
+    ];
+}
+
+function formatTime(value: string): string {
+    return timeParts(value).filter(Boolean).join(' ');
 }
 
 /** "GMT+2" for the header of the time column. */
@@ -368,8 +375,8 @@ export function LogViewer({
                         {showNumbers && '#'}
                     </span>
                     {showTime && (
-                        <span className="w-44 shrink-0 pl-2" data-testid="log-time-header">
-                            Time{isoTimes ? ` (${timeZoneLabel()})` : ''}
+                        <span className="w-20 shrink-0 truncate pl-2 sm:w-44" data-testid="log-time-header">
+                            Time{isoTimes && <span className="hidden sm:inline"> ({timeZoneLabel()})</span>}
                         </span>
                     )}
                     <span className="min-w-0 flex-1 pl-2">Data</span>
@@ -486,8 +493,13 @@ export function LogViewer({
                                             {showNumbers ? row.index + 1 : ''}
                                         </span>
                                         {showTime && (
-                                            <span className="text-fg-muted w-44 shrink-0 pl-2 whitespace-nowrap select-none">
-                                                {line.time ? formatTime(line.time) : ''}
+                                            <span className="text-fg-muted w-20 shrink-0 pl-2 whitespace-nowrap select-none sm:w-44">
+                                                {line.time && (
+                                                    <>
+                                                        <span className="hidden sm:inline">{timeParts(line.time)[0]} </span>
+                                                        {timeParts(line.time)[1]}
+                                                    </>
+                                                )}
                                             </span>
                                         )}
                                         <span

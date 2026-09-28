@@ -1,4 +1,4 @@
-import { Menu, SERVICE_CARD, ServiceCard, ServiceIcon, StatusDot, hasServiceIcon, type MenuAction } from '@/components/kiln';
+import { Menu, SERVICE_CARD, ServiceCard, ServiceIcon, StatusDot, serviceIconKey, type MenuAction } from '@/components/kiln';
 import { cn } from '@/lib/utils';
 import { type CanvasEdge, type CanvasGroup, type CanvasService, type ComposeChild } from '@/types';
 import {
@@ -176,7 +176,7 @@ function GroupFrame({
                       ? 'border-primary/70'
                       : 'border-group-border hover:border-border-strong',
             )}
-            aria-label={label}
+            data-label={label}
         >
             <Handles />
             <div className="flex h-[38px] items-center gap-2 pr-1.5 pl-3">
@@ -273,7 +273,7 @@ const ComposeNodeView = memo(function ComposeNodeView({ data }: NodeProps<Compos
     const { service } = data;
     const children = service.compose?.services ?? [];
     const collapsed = service.compose?.collapsed ?? false;
-    const icon = service.compose?.template && hasServiceIcon(service.compose.template) ? service.compose.template : service.icon;
+    const icon = serviceIconKey(service);
     const menu: MenuAction[] = [
         { label: 'Open service', icon: <PanelRightOpen />, onSelect: () => board.onCompose(service, 'open') },
         collapsed
@@ -351,6 +351,8 @@ export interface CanvasBoardProps {
     onCompose: (service: CanvasService, action: ComposeAction) => void;
     /** Top-level services picked with ⇧-drag / ⌘-click (to group them). */
     onSelectionChange: (ids: string[]) => void;
+    /** Bump to clear the multi-selection. */
+    selectionReset: number;
     /** Right-click on empty canvas, with the flow coordinates of the click. */
     onContextMenu?: (flow: { x: number; y: number }, screen: { x: number; y: number }) => void;
 }
@@ -389,7 +391,6 @@ function layout(services: CanvasService[], groups: CanvasGroup[], editable: bool
             data: { group, members, box },
             draggable: editable,
             selectable: false,
-            focusable: false,
             zIndex: 0,
             ariaLabel: `${group.name} group`,
         });
@@ -503,6 +504,7 @@ export function CanvasBoard({
     onRename,
     onCompose,
     onSelectionChange,
+    selectionReset,
     onContextMenu,
 }: CanvasBoardProps) {
     const flow = useReactFlow();
@@ -537,6 +539,7 @@ export function CanvasBoard({
     const [nodes, setNodes, onNodesChange] = useNodesState<BoardNode>([]);
 
     // Server data wins, except for nodes being dragged right now (and the current multi-selection).
+    const resetSeen = useRef(selectionReset);
     useEffect(() => {
         setNodes((current) => {
             const live = new Map(current.map((node) => [node.id, node]));
@@ -545,10 +548,12 @@ export function CanvasBoard({
                 const existing = live.get(node.id);
                 if (existing?.dragging) return { ...node, position: existing.position, dragging: true } as BoardNode;
 
-                return { ...node, selected: existing?.selected ?? false } as BoardNode;
+                // Cards that just moved into a group leave the multi-selection.
+                return { ...node, selected: Boolean(existing?.selected) && !node.parentId && selectionReset === resetSeen.current } as BoardNode;
             });
         });
-    }, [computed, setNodes]);
+        resetSeen.current = selectionReset;
+    }, [computed, setNodes, selectionReset]);
 
     const endpoint = (id: string) => computed.alias.get(id) ?? id;
     const flowEdges = useMemo<RoutedEdge[]>(() => {

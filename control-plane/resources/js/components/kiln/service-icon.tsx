@@ -155,3 +155,10 @@ export function ServiceIcon({ name, size = 16, mono = false, title, className }:
 
     return <Generic width={size} height={size} className={cn('text-fg-muted shrink-0', className)} {...a11y} />;
 }
+
+/** Icon key of a canvas service: a compose site made from a template shows the template's logo when there is one. */
+export function serviceIconKey(service: { icon: string; kind: string; compose?: { template: string | null } | null }): string {
+    const template = service.compose?.template;
+
+    return template && hasServiceIcon(template) ? template : service.icon || service.kind;
+}

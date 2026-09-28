@@ -3,6 +3,7 @@ import {
     Menu,
     PanelHeader,
     ServiceIcon,
+    serviceIconKey,
     Skeleton,
     SkeletonRows,
     StatusBadge,
@@ -202,7 +203,7 @@ export function ServicePanel({ base, service, kind, refId, tab, renameUrl, onRen
     return (
         <div ref={root} className="flex min-h-0 flex-1 flex-col" data-testid="service-panel">
             <PanelHeader
-                icon={<ServiceIcon name={service?.icon ?? kind} size={22} />}
+                icon={<ServiceIcon name={service ? serviceIconKey(service) : kind} size={22} />}
                 title={service ? <InlineName name={service.name} url={renameUrl} onRenamed={onRenamed} /> : <Skeleton className="h-6 w-44" />}
                 status={
                     service && (

@@ -1,31 +1,33 @@
 import {
     Avatar,
     Button,
+    copyText,
     EmptyState,
+    formatDuration,
     LogViewer,
     Menu,
     PanelHeader,
     PhaseTimeline,
     RelativeTime,
     ServiceIcon,
+    serviceIconKey,
     SkeletonRows,
     StatusBadge,
     Tabs,
     TabsContent,
     TabsList,
     TabsTrigger,
-    copyText,
-    formatDuration,
     toast,
     type MenuAction,
 } from '@/components/kiln';
 import { timeZoneLabel } from '@/components/kiln/log-viewer';
+import { useJson } from '@/hooks/use-json';
 import { errorMessage, requestJson } from '@/lib/http';
 import { type ServiceLayerProps } from '@/lib/registry';
 import { AlertTriangle, Ban, Copy, Globe, Rocket, RotateCcw, ScrollText } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { type Deployment } from '../types';
-import { deploy, durationMs, firstLine, rollback } from './api';
+import { deploy, deploymentsUrl, durationMs, firstLine, rollback, type DeploymentsOverview } from './api';
 import { CommitTag, triggerLabel } from './deployment-row';
 import { PHASES, timelineRows, useDeployment } from './use-deployment';
 import { WaitingNotice } from './waiting-notice';
@@ -134,6 +136,17 @@ export function DeploymentPanel({ ctx, record, tab, onTabChange, close }: Servic
     const { url, detail, error, terminal, refresh, buildLines, deployLines } = useDeployment(siteId, record, ctx.refresh);
     const [busy, setBusy] = useState<string | null>(null);
     const deployment = detail?.deployment;
+    // Shared (cached) with the Deployments tab underneath: is this the deployment whose release is live?
+    const { data: overview } = useJson<DeploymentsOverview>(deploymentsUrl(siteId));
+    const live = overview?.current?.deployment_id === record;
+    const [badgeStatus, badgeLabel] =
+        deployment?.status === 'succeeded'
+            ? live
+                ? ['active', 'Active']
+                : deployment.rolled_back
+                  ? ['degraded', 'Rolled back']
+                  : ['removed', 'Removed']
+            : [deployment?.status ?? 'queued', deployment?.status === 'waiting' ? 'Waiting' : undefined];
 
     // Default view: build output while building, else the deploy log (build output when a release has no deploy log).
     const fallbackTab: DeploymentTab =
@@ -221,10 +234,10 @@ export function DeploymentPanel({ ctx, record, tab, onTabChange, close }: Servic
         <div className="flex min-h-0 flex-1 flex-col" data-testid="deployment-panel">
             <PanelHeader
                 size="md"
-                icon={<ServiceIcon name={ctx.service.icon || ctx.service.kind} size={18} />}
+                icon={<ServiceIcon name={serviceIconKey(ctx.service)} size={18} />}
                 parent={ctx.service.name}
                 title={<span className="font-mono text-[0.95em] font-medium">{shortId(record)}</span>}
-                status={deployment && <StatusBadge status={deployment.status} label={deployment.status === 'waiting' ? 'Waiting' : undefined} />}
+                status={deployment && <StatusBadge status={badgeStatus} label={badgeLabel} />}
                 actions={
                     <>
                         {menu.length > 0 && <Menu actions={menu} label="Deployment actions" />}

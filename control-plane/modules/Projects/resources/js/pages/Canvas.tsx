@@ -169,6 +169,7 @@ function CanvasPage({ project, environment, canvas: initial, can }: CanvasPagePr
     const [snap, setSnap] = useState(() => readFlag('kiln:canvas-snap', true));
     const [minimap, setMinimap] = useState(() => readFlag('kiln:canvas-minimap', false));
     const [selection, setSelection] = useState<string[]>([]);
+    const [selectionReset, setSelectionReset] = useState(0);
     const [renaming, setRenaming] = useState<string | null>(null);
     const [history, setHistory] = useState<{ undo: LayoutChange[][]; redo: LayoutChange[][] }>({ undo: [], redo: [] });
     const canCreate = can.create_sites || can.create_databases;
@@ -331,6 +332,7 @@ function CanvasPage({ project, environment, canvas: initial, can }: CanvasPagePr
     const createGroup = async () => {
         const ids = selection;
         setSelection([]);
+        setSelectionReset((value) => value + 1);
         try {
             const body = await requestJson<{ data: CanvasGroup }>(`${home}/groups`, 'POST', { name: 'Group', service_ids: ids });
             await refresh();
@@ -580,6 +582,7 @@ function CanvasPage({ project, environment, canvas: initial, can }: CanvasPagePr
                         onRename={(group, name) => void onRename(group, name)}
                         onCompose={(service, action) => void onCompose(service, action)}
                         onSelectionChange={(ids) => setSelection((current) => (current.join() === ids.join() ? current : ids))}
+                        selectionReset={selectionReset}
                         onContextMenu={canCreate ? (position, anchor) => setPicker({ position, anchor }) : undefined}
                     />
                 </div>
@@ -639,7 +642,14 @@ function CanvasPage({ project, environment, canvas: initial, can }: CanvasPagePr
                 />
 
                 {can.manage && selection.length > 0 && (
-                    <SelectionBar count={selection.length} onGroup={() => void createGroup()} onClear={() => setSelection([])} />
+                    <SelectionBar
+                        count={selection.length}
+                        onGroup={() => void createGroup()}
+                        onClear={() => {
+                            setSelection([]);
+                            setSelectionReset((value) => value + 1);
+                        }}
+                    />
                 )}
 
                 {activity && (

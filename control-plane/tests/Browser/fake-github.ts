@@ -75,7 +75,11 @@ export function startFakeGitHub(port: number): Promise<Server> {
             }
             if (installation[2]) return json(res, 201, { token: 'ghs_e2e', expires_at: new Date(Date.now() + 3600_000).toISOString() });
             const account = lastApp?.owner ?? 'ada-e2e';
-            return json(res, 200, { id: Number(installation[1]), account: { login: account }, target_type: lastApp?.owner ? 'Organization' : 'User' });
+            return json(res, 200, {
+                id: Number(installation[1]),
+                account: { login: account },
+                target_type: lastApp?.owner ? 'Organization' : 'User',
+            });
         }
 
         if (req.method === 'GET' && path === '/installation/repositories') {

@@ -74,7 +74,7 @@ export function ServiceCard({ service, selected = false, marked = false, classNa
                     </span>
                     {servers.length > 0 && (
                         <span className="flex shrink-0 items-center gap-1">
-                            {servers.slice(0, 2).map((server) => (
+                            {servers.slice(0, 1).map((server) => (
                                 <span
                                     key={server.id}
                                     title={`${server.name}${server.leader ? ' (leader)' : ''}${server.online ? '' : ' · offline'}`}
@@ -89,7 +89,7 @@ export function ServiceCard({ service, selected = false, marked = false, classNa
                                     {server.name}
                                 </span>
                             ))}
-                            {servers.length > 2 && <span className="text-fg-faint text-2xs">+{servers.length - 2}</span>}
+                            {servers.length > 1 && <span className="text-fg-faint text-2xs">+{servers.length - 1}</span>}
                         </span>
                     )}
                 </div>

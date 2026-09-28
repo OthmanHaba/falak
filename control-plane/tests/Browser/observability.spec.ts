@@ -26,7 +26,11 @@ for (const theme of ['dark', 'light'] as const) {
         await page.locator('a[href$="/production"]').first().click();
         await page.waitForURL(/\/projects\/[0-9a-z]{26}\/production$/i);
         await page.waitForLoadState('networkidle');
-        await page.locator('.react-flow__node').first().waitFor({ timeout: 10_000 }).catch(() => undefined);
+        await page
+            .locator('.react-flow__node')
+            .first()
+            .waitFor({ timeout: 10_000 })
+            .catch(() => undefined);
         const storefront = page.getByRole('group', { name: /^Storefront:/ });
         test.skip((await storefront.count()) === 0, 'no demo data');
         await storefront.click();

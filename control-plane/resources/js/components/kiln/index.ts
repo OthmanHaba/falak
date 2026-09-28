@@ -53,7 +53,7 @@ export { PageHeader, Section, type SectionProps } from './section';
 export { Segmented, type SegmentedOption, type SegmentedProps } from './segmented';
 export { Select, type SelectOption, type SelectProps } from './select';
 export { SERVICE_CARD, ServiceCard, type ServiceCardProps } from './service-card';
-export { ServiceIcon, hasServiceIcon, type ServiceIconProps } from './service-icon';
+export { ServiceIcon, hasServiceIcon, serviceIconKey, type ServiceIconProps } from './service-icon';
 export { SetupChecklist, defaultSetupSteps, type SetupChecklistProps, type SetupProgress, type SetupStep } from './setup-checklist';
 export { Skeleton, SkeletonRows } from './skeleton';
 export { StatusBadge, StatusDot, StatusPill, statusSpec, type StatusBadgeProps, type StatusDotProps, type StatusTone } from './status';
