@@ -238,6 +238,18 @@ it('installs the Bun or Deno runtime on each target before it is ready', functio
     'deno' => ['deno', 'runtime.deno.install', '2.9.7'],
 ]);
 
+it('downloads Bun or Deno from a configured mirror', function (string $runtime, string $command, string $key) {
+    config(["sites.{$key}" => 'https://mirror.example.test/github/runtime/releases/download/']);
+    $server = sites_server($this->organization->id);
+
+    $this->post('/sites', sites_input([$server->id], ['name' => 'api', 'framework' => 'node', 'runtime' => $runtime, 'php_version' => null]))->assertSessionHasNoErrors();
+
+    expect($this->agents->last($command)['payload']['mirror'])->toBe('https://mirror.example.test/github/runtime/releases/download');
+})->with([
+    'bun' => ['bun', 'runtime.bun.install', 'bun_mirror'],
+    'deno' => ['deno', 'runtime.deno.install', 'deno_mirror'],
+]);
+
 it('reports a failed runtime install on the target', function () {
     $server = sites_server($this->organization->id);
     $this->post('/sites', sites_input([$server->id], ['name' => 'api', 'framework' => 'node', 'runtime' => 'bun', 'php_version' => null]));

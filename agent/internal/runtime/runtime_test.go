@@ -280,6 +280,37 @@ func TestFrankenPHP(t *testing.T) {
 	}
 }
 
+func TestFrankenPHPDownloadsFromThePayloadMirror(t *testing.T) {
+	bin := []byte("frankenphp-binary")
+	var paths []string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if r.URL.Path != "/mirror/php/frankenphp/v1.4.0/frankenphp-linux-aarch64" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write(bin)
+	}))
+	defer srv.Close()
+	f := &runnertest.Fake{}
+	f.On("getent passwd caddy", runner.Result{Stdout: []byte("caddy:x:998:998::/var/lib/caddy:/usr/sbin/nologin\n")})
+	f.On("systemctl is-enabled --quiet caddy.service", runner.Result{ExitCode: 1})
+	rt, root, st := setup(t, f, srv.Client())
+	rt.d.Arch = "arm64"
+	rt.d.FrankenPHPBase = srv.URL + "/default-base-must-not-be-used"
+	off := false
+	r, err := rt.FrankenPHPConfigure(context.Background(), FrankenPHPPayload{Version: "1.4.0", Mirror: srv.URL + "/mirror/php/frankenphp/", AsEdge: &off}, st)
+	if err != nil || !r.(BinaryResult).Changed {
+		t.Fatal(r, err, paths)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "usr/local/bin/frankenphp")); string(b) != string(bin) {
+		t.Fatal("binary not downloaded from the mirror", paths)
+	}
+	if len(paths) != 1 {
+		t.Fatal(paths)
+	}
+}
+
 func TestFPMPool(t *testing.T) {
 	f := &runnertest.Fake{}
 	rt, root, st := setup(t, f, nil)

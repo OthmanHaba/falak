@@ -16,6 +16,12 @@
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
     },
+    "mirror": {
+      "type": "string",
+      "format": "uri",
+      "default": "https://github.com/php/frankenphp/releases/download",
+      "description": "Release download base: <mirror>/v<version>/frankenphp-linux-<arch> (an HTTPS mirror or caching proxy of GitHub releases)"
+    },
     "ini": {
       "type": "object",
       "additionalProperties": {

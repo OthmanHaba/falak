@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/kiln/agent/internal/commands"
@@ -199,6 +200,41 @@ func TestApplyConvergesAndIsIdempotent(t *testing.T) {
 				t.Fatalf("mutating command on second run: %s", l)
 			}
 		}
+	}
+}
+
+func TestRuntimeMirrorsArePassedToTheInstallers(t *testing.T) {
+	root := t.TempDir()
+	f := &runnertest.Fake{}
+	newHost(f, root)
+	var mu sync.Mutex
+	var paths []string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		http.NotFound(w, r) // the installs fail; only the URLs they fetched matter here
+	}))
+	defer srv.Close()
+	p := New(Deps{Runner: f, FS: hostfs.FS{Root: root}, HTTP: srv.Client(), Arch: "amd64", FrankenPHPBase: srv.URL + "/default"})
+	plan, err := commands.Decode[Plan](json.RawMessage(`{"runtimes": {
+		"frankenphp": {"version": "1.4.0", "mirror": "` + srv.URL + `/gh/php/frankenphp/releases/download"},
+		"node": {"versions": ["22.11.0"], "default": "22.11.0", "mirror": "` + srv.URL + `/nodejs"}
+	}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Apply(context.Background(), plan, commands.NewTestStream("c", &commands.Collector{})); err == nil {
+		t.Fatal("expected the downloads to fail against the stub mirror")
+	}
+	got := strings.Join(paths, " ")
+	for _, want := range []string{"/gh/php/frankenphp/releases/download/v1.4.0/frankenphp-linux-x86_64", "/nodejs/v22.11.0/SHASUMS256.txt"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("mirror not used: want %s in %s", want, got)
+		}
+	}
+	if strings.Contains(got, "/default") {
+		t.Fatalf("default base used despite a mirror: %s", got)
 	}
 }
 

@@ -123,3 +123,25 @@ it('sizes swap by memory', function (?int $memory, int $swap) {
     [4 * 1024 ** 3, 4096],
     [32 * 1024 ** 3, 0],
 ]);
+
+it('points FrankenPHP and Node downloads at configured mirrors', function () {
+    config([
+        'servers.mirrors.frankenphp' => 'https://mirror.example.test/github/php/frankenphp/releases/download/',
+        'servers.mirrors.node' => 'https://mirror.example.test/nodejs',
+    ]);
+
+    $plan = planFor(ServerType::App);
+
+    expect($plan['runtimes']['frankenphp']['mirror'])->toBe('https://mirror.example.test/github/php/frankenphp/releases/download')
+        ->and($plan['runtimes']['node']['mirror'])->toBe('https://mirror.example.test/nodejs')
+        ->and(provisionSchemaErrors($plan))->toBe([]);
+});
+
+it('uses the upstream download URLs when no mirror is configured', function () {
+    config(['servers.mirrors' => ['frankenphp' => null, 'node' => '']]);
+
+    $plan = planFor(ServerType::App);
+
+    expect($plan['runtimes']['frankenphp'])->not->toHaveKey('mirror')
+        ->and($plan['runtimes']['node'])->not->toHaveKey('mirror');
+});

@@ -18,6 +18,9 @@ type FrankenPHPPayload struct {
 	SHA256  string         `json:"sha256"`
 	INI     map[string]any `json:"ini"`
 	AsEdge  *bool          `json:"as_edge"`
+	// Mirror replaces the release download base (default https://github.com/php/frankenphp/releases/download):
+	// <mirror>/v<version>/frankenphp-linux-<arch>.
+	Mirror string `json:"mirror"`
 	// EdgeGroups are extra groups for the edge user (set by provisioning, not the wire payload): PHP runs
 	// as the edge user under FrankenPHP and must read site .env files and write storage/.
 	EdgeGroups []string `json:"-"`
@@ -68,7 +71,11 @@ func (rt *Runtime) FrankenPHPConfigure(ctx context.Context, p FrankenPHPPayload,
 	}
 	binChanged := false
 	if !binOK {
-		url := fmt.Sprintf("%s/v%s/frankenphp-linux-%s", strings.TrimRight(rt.d.FrankenPHPBase, "/"), ver, arch)
+		base := p.Mirror
+		if base == "" {
+			base = rt.d.FrankenPHPBase
+		}
+		url := fmt.Sprintf("%s/v%s/frankenphp-linux-%s", strings.TrimRight(base, "/"), ver, arch)
 		fmt.Fprintf(st.Stdout(), "downloading %s\n", url)
 		if _, _, err := Download(ctx, rt.d.HTTP, url, p.SHA256, rt.d.FS.P(FrankenPHPBinary), 0o755, nil); err != nil {
 			return nil, err
