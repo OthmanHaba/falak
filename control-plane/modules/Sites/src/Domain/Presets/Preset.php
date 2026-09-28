@@ -86,7 +86,8 @@ final readonly class Preset
             Framework::Next => new self($framework, $js, '', [], self::nodeScript(), ['NODE_ENV' => 'production', 'NEXT_TELEMETRY_DISABLED' => '1'], healthCheckPath: '/'),
             Framework::Nuxt => new self($framework, $js, '', [], self::nodeScript(), ['NODE_ENV' => 'production', 'NITRO_PRESET' => 'node-server'], healthCheckPath: '/'),
             Framework::Node => new self($framework, $js, '', [], self::nodeScript(), ['NODE_ENV' => 'production'], healthCheckPath: '/'),
-            Framework::Static => new self($framework, [SiteRuntime::Static], 'dist', [], <<<'SH'
+            // Built sites: kiln-builder packages the detected output dir (dist/, build/, out/, public/) as the release root.
+            Framework::Static => new self($framework, [SiteRuntime::Static], '', [], <<<'SH'
                 $KILN_FETCH
 
                 $KILN_ACTIVATE
