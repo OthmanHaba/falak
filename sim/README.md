@@ -82,15 +82,17 @@ binaries, dockerd still pulls, the builder still runs composer/npm/bun and Build
 | Cache | What it serves | How the sim uses it |
 |---|---|---|
 | `sim-apt-cache` (apt-cacher-ng, `kiln-sim-cache-apt`) | Ubuntu archive (HTTP) | the server image sets `Acquire::http::Proxy-Auto-Detect` to `server/bin/kiln-sim-apt-proxy`: the cache when it answers, `DIRECT` otherwise (`SIM_APT_PROXY`, empty = off) |
-| `sim-downloads` (caching nginx, `kiln-sim-cache-downloads`) | FrankenPHP / Bun / Deno GitHub releases, Node.js dist, the ondrej/php PPA | the control plane's **product** mirror settings `KILN_{FRANKENPHP,NODE,BUN,DENO}_MIRROR` point at `https://downloads.kiln.test/{github,nodejs}/…` (the edge terminates TLS). The PPA is HTTPS, so on the sim-only `caches` network the servers resolve `ppa.launchpadcontent.net` to the edge, which proxies to this cache (package files cached for a year, `dists/` indexes revalidated every 5 min) |
+| `sim-downloads` (caching nginx, `kiln-sim-cache-downloads`) | FrankenPHP / Bun / Deno GitHub releases, Node.js dist, the ondrej/php PPA | the control plane's **product** mirror settings `KILN_{FRANKENPHP,NODE,BUN,DENO}_MIRROR` point at `https://downloads.kiln.test/{github,nodejs}/…` (the edge terminates TLS). The PPA is HTTPS, so the servers resolve `ppa.launchpadcontent.net` to the edge (`extra_hosts`, the edge has a static fleet address), which proxies to this cache (package files cached for a year, `dists/` indexes revalidated every 5 min) |
 | `sim-hub-mirror` (registry proxy, `kiln-sim-cache-hub`) | Docker Hub | `registry-mirrors` in the servers' `/etc/docker/daemon.json` and a `docker.io` mirror in the builder's BuildKit config |
-| `sim-ghcr-mirror` (registry proxy, `kiln-sim-cache-ghcr`) | ghcr.io | `ghcr.io` resolves to the edge on the `caches` network (dockerd only mirrors Docker Hub) |
+| `sim-ghcr-mirror` (registry proxy, `kiln-sim-cache-ghcr`) | ghcr.io | the servers resolve `ghcr.io` to the edge (`extra_hosts`; dockerd only mirrors Docker Hub) |
 | builder (`kiln-sim-cache-builder`) | composer / npm / bun caches, BuildKit export cache | `KILN_BUILDER_CACHE_DIR=/root/.cache/kiln-builder`; the buildx builder keeps its state volume (`buildx_buildkit_kiln0_state`) across restarts |
 
-The `caches` network (servers + edge only) exists so that the interception never reaches the caches
-themselves or BuildKit, which do resolve the real upstreams. It must never be a server's `eth0`: agents report
-their first private address, and the control plane health-checks sites through it (network priority in
-`compose.yml`).
+The host overrides exist only on the three servers, so the caches themselves and BuildKit resolve the real
+upstreams. (A separate network for this was tried and dropped: Docker assigns interface names in no stable order,
+and agents report their first private address, which the control plane health-checks sites through.)
+`sim-prefetch` warms the two registry caches with the E2E's compose and template images right after `make up`:
+the pull-through registry fetches an uncached blob upstream twice, so without it a cold pull inside a deployment
+is ~2.5x slower than pulling directly.
 
 `./e2e-deploy.sh` prints each stage's duration and a summary table at the end, and appends the timings to
 `.data/e2e-timings.tsv`. Pick stages for quick iteration: `ONLY=deploy,release` (comma or space separated;

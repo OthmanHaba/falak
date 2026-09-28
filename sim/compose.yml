@@ -12,7 +12,7 @@
 #   sim-apt-cache (apt-cacher-ng)    HTTP apt proxy of the servers (Proxy-Auto-Detect)       volume kiln-sim-cache-apt
 #   sim-downloads (nginx)            runtime release mirror (KILN_*_MIRROR) + ondrej PPA      volume kiln-sim-cache-downloads
 #   sim-hub-mirror (registry proxy)  Docker Hub registry-mirror for srv-app-2 + BuildKit     volume kiln-sim-cache-hub
-#   sim-ghcr-mirror (registry proxy) ghcr.io for srv-app-2 (via the edge, `caches` network)  volume kiln-sim-cache-ghcr
+#   sim-ghcr-mirror (registry proxy) ghcr.io for srv-app-2 (via the edge, servers' /etc/hosts) volume kiln-sim-cache-ghcr
 #   sim-prefetch (crane)             warms both registry caches with the E2E's images in the background
 #   builder-cache                    kiln-builder composer/npm/bun/BuildKit caches           volume kiln-sim-cache-builder
 # The product code paths are unchanged: apt, runtime downloads (sha256-verified), docker pulls and builds all
@@ -127,14 +127,12 @@ x-server: &server
   volumes:
     - ..:/opt/kiln/src:ro                   # agent binary: /opt/kiln/src/agent/bin/kiln-agent-linux-$SIM_AGENT_ARCH
     - edge-pki:/etc/kiln/edge-pki:ro        # edge TLS root CA (trusted at boot)
-  # caches: ppa.launchpadcontent.net and ghcr.io resolve to the edge (pull-through caches) on this network only.
-  # Agents report their first private address as the server's IP, and the control plane health-checks sites
-  # through it: the caches network (unreachable from the control plane) must not become eth0. The priority
-  # keeps the pre-cache order (eth0 on a network the control plane shares).
-  networks:
-    fleet: { priority: 100 }
-    observability: {}
-    caches: {}
+  networks: [fleet, observability]
+  # Only on the servers: the ondrej/php PPA and GHCR resolve to the edge, which fronts pull-through caches of the
+  # real upstreams (see the edge Caddyfile). Everything else (the caches themselves, BuildKit) resolves normally.
+  extra_hosts:
+    - "ppa.launchpadcontent.net=${SIM_EDGE_FLEET_IP:-10.77.20.250}"
+    - "ghcr.io=${SIM_EDGE_FLEET_IP:-10.77.20.250}"
   depends_on:
     edge: { condition: service_healthy }
     sim-apt-cache: { condition: service_healthy }
@@ -259,8 +257,7 @@ services:
       backend: {}
       fleet:
         aliases: [kiln.test, agents.kiln.test, downloads.kiln.test]
-      caches:
-        aliases: [ppa.launchpadcontent.net, ghcr.io]
+        ipv4_address: ${SIM_EDGE_FLEET_IP:-10.77.20.250}   # static: the servers' extra_hosts point here
     healthcheck:
       # Caddy is serving TLS and has published its root CA for the servers.
       test: ["CMD-SHELL", "test -s /kiln/edge-pki/root.crt && curl -fsS -o /dev/null http://localhost:2019/config/"]
@@ -474,10 +471,7 @@ networks:
     ipam:
       config: [{ subnet: 10.77.10.0/24 }]
   fleet:
-    # The "private network" between managed servers (and the edge they dial out to).
+    # The "private network" between managed servers (and the edge they dial out to). Dynamic addresses come from
+    # the lower half, so the edge's static address can never be taken.
     ipam:
-      config: [{ subnet: 10.77.20.0/24 }]
-  caches:
-    # Servers + edge only: upstream hostnames served by pull-through caches (see the edge Caddyfile).
-    ipam:
-      config: [{ subnet: 10.77.30.0/24 }]
+      config: [{ subnet: 10.77.20.0/24, ip_range: 10.77.20.0/25 }]
