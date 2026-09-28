@@ -240,6 +240,9 @@ func (b *Builder) buildNative(ctx context.Context, j *job) (*ArtifactResult, *Ma
 	for _, n := range plan.Notes {
 		fmt.Fprintf(j.out, "note: %s\n", n)
 	}
+	if b.viaCorepack(&plan) {
+		fmt.Fprintf(j.out, "note: %s is not installed; running it through corepack (version from packageManager, else corepack's default)\n", plan.PackageManager)
+	}
 	j.st.Progress(0.2)
 	if err := b.runSteps(ctx, j, plan.Steps, 0.2, 0.8); err != nil {
 		return nil, nil, err
@@ -349,6 +352,30 @@ func applyOverrides(p *Plan, s *NativeSpec) {
 	}
 }
 
+// viaCorepack rewrites pnpm/yarn steps to `corepack <pm> …` when the package manager is not on PATH but
+// corepack (shipped with Node ≤ 24) is: builders then need no global pnpm/yarn, and corepack honours the
+// project's packageManager pin. Reports whether it rewrote anything.
+func (b *Builder) viaCorepack(p *Plan) bool {
+	pm := p.PackageManager
+	if pm != "pnpm" && pm != "yarn" {
+		return false
+	}
+	if _, err := b.LookPath(pm); err == nil {
+		return false
+	}
+	if _, err := b.LookPath("corepack"); err != nil {
+		return false
+	}
+	rewrote := false
+	for i, st := range p.Steps {
+		if len(st.Cmd) > 0 && st.Cmd[0] == pm {
+			p.Steps[i].Cmd = append([]string{"corepack"}, st.Cmd...)
+			rewrote = true
+		}
+	}
+	return rewrote
+}
+
 // buildEnv is the environment for build steps: CI mode, caches under CacheDir, then job env.
 func (b *Builder) buildEnv(j *job) []string {
 	c := b.CacheDir
@@ -358,6 +385,9 @@ func (b *Builder) buildEnv(j *job) []string {
 		"npm_config_cache=" + filepath.Join(c, "npm"), "npm_config_store_dir=" + filepath.Join(c, "pnpm"),
 		"YARN_CACHE_FOLDER=" + filepath.Join(c, "yarn"), "BUN_INSTALL_CACHE_DIR=" + filepath.Join(c, "bun"),
 		"DENO_DIR=" + filepath.Join(c, "deno"), "NEXT_TELEMETRY_DISABLED=1",
+		"COREPACK_HOME=" + filepath.Join(c, "corepack"), "COREPACK_ENABLE_DOWNLOAD_PROMPT=0",
+		// Unpinned projects get corepack's known-good release, not "latest" (a newer major may not run under this corepack).
+		"COREPACK_DEFAULT_TO_LATEST=0",
 	}
 	if !j.checkout.Time.IsZero() {
 		env = append(env, fmt.Sprintf("SOURCE_DATE_EPOCH=%d", j.checkout.Time.Unix()))

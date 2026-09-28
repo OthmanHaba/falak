@@ -295,3 +295,53 @@ func TestDecodeJob(t *testing.T) {
 		t.Fatal("bad id/subdir accepted")
 	}
 }
+
+func TestPnpmAndYarnRunThroughCorepackWhenNotInstalled(t *testing.T) {
+	plan := func() Plan {
+		return Plan{PackageManager: "pnpm", Steps: []Step{
+			{Name: "pnpm install", Cmd: []string{"pnpm", "install", "--frozen-lockfile"}},
+			{Name: "build", Cmd: []string{"pnpm", "run", "build"}},
+			{Name: "custom", Cmd: []string{"sh", "-c", "echo hi"}},
+		}}
+	}
+	have := func(bins ...string) func(string) (string, error) {
+		return func(name string) (string, error) {
+			for _, b := range bins {
+				if b == name {
+					return "/usr/local/bin/" + name, nil
+				}
+			}
+			return "", os.ErrNotExist
+		}
+	}
+
+	p := plan()
+	if !(&Builder{LookPath: have("node", "corepack")}).viaCorepack(&p) {
+		t.Fatal("expected a rewrite")
+	}
+	if got := strings.Join(p.Steps[0].Cmd, " ") + " | " + strings.Join(p.Steps[1].Cmd, " ") + " | " + strings.Join(p.Steps[2].Cmd, " "); got != "corepack pnpm install --frozen-lockfile | corepack pnpm run build | sh -c echo hi" {
+		t.Fatal(got)
+	}
+
+	for name, lookPath := range map[string]func(string) (string, error){
+		"pnpm installed": have("pnpm", "corepack"),
+		"no corepack":    have("node"),
+		"npm project":    have("corepack"),
+	} {
+		p := plan()
+		if name == "npm project" {
+			p.PackageManager = "npm"
+		}
+		if (&Builder{LookPath: lookPath}).viaCorepack(&p) || p.Steps[0].Cmd[0] != "pnpm" {
+			t.Fatal(name, p.Steps[0].Cmd)
+		}
+	}
+}
+
+func TestBuildEnvKeepsCorepackNonInteractiveAndCached(t *testing.T) {
+	b := &Builder{CacheDir: "/cache"}
+	env := strings.Join(b.buildEnv(&job{}), "\n")
+	if !strings.Contains(env, "COREPACK_ENABLE_DOWNLOAD_PROMPT=0") || !strings.Contains(env, "COREPACK_HOME=/cache/corepack") || !strings.Contains(env, "COREPACK_DEFAULT_TO_LATEST=0") {
+		t.Fatal(env)
+	}
+}
