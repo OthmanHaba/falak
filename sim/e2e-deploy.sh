@@ -14,7 +14,7 @@ C=(docker compose -p kiln-sim --env-file sim.env --env-file .data/secrets.env)
 EDGE="https://kiln.test:${SIM_EDGE_HTTPS_PORT}"
 CURL=(curl -sS --cacert .data/edge-root.crt --resolve "kiln.test:${SIM_EDGE_HTTPS_PORT}:127.0.0.1")
 STATE=.data/e2e.env
-STAGES="${STAGES:-bootstrap servers sites deploy release rollback failure bun observability compose compose_redeploy compose_failure templates}"
+STAGES="${STAGES:-bootstrap servers sites deploy release rollback failure bun release_env waiting observability compose compose_redeploy compose_failure templates}"
 
 pass=0 fail=0 API_CODE=000 API_BODY='' KILN_TOKEN=${KILN_TOKEN:-}
 ok()   { printf '  \033[32mPASS\033[0m %s\n' "$*"; pass=$((pass + 1)); }
@@ -242,6 +242,82 @@ stage_bun() {
     deploy_and_wait "$SITE_API" "$(git_head bun-demo)" "bun deploy" succeeded || return 1
     local body; body=$(site_get srv-app-2 "$API_HOST" /)
     jq -e '.app == "kiln-bun-demo"' >/dev/null 2>&1 <<<"$body" && ok "srv-app-2 serves the Bun app ($body)" || bad "bun GET / -> ${body:0:200}"
+}
+
+proc_env() { # proc_env CONTAINER PATTERN VAR -> VAR from the process environment (/proc/<pid>/environ) of the newest match
+    "${C[@]}" exec -T "$1" bash -c "pid=\$(pgrep -nf '$2') && tr '\\0' '\\n' < /proc/\$pid/environ | sed -n 's/^$3=//p'" 2>/dev/null | tr -d '\r'
+}
+
+active_release() { # active_release SITE_ID -> upper-case id of the active release
+    api GET "/sites/$1/releases"
+    jq -r '[.data[] | select(.active)][0].id // empty | ascii_upcase' <<<"$API_BODY"
+}
+
+stage_release_env() {
+    step "release env: the Bun app's process env carries KILN_RELEASE_ID / KILN_DEPLOYMENT_ID + site variables, and follows each deploy"
+    local env
+    api GET "/sites/$SITE_API/env"
+    env=$(jq -r '.data.content' <<<"$API_BODY" | grep -v '^KILN_E2E_GREETING=')$'\nKILN_E2E_GREETING=hello-from-env\n'
+    api PUT "/sites/$SITE_API/env" "$(jq -n --arg c "$env" '{content: $c}')"
+    [[ $API_CODE == 200 ]] && ok "site variable KILN_E2E_GREETING set" || bad "PUT env -> $API_CODE: $API_BODY"
+
+    for round in 1 2; do
+        git_commit bun-demo "Release env round $round" "echo '// round $round' >> src/index.ts" && ok "pushed bun commit $round" || { bad "could not push bun commit"; return 1; }
+        deploy_and_wait "$SITE_API" "$(git_head bun-demo)" "bun deploy (env round $round)" succeeded || return 1
+        local want deployment body proc_rel proc_dep proc_greet deadline=$((SECONDS + 60))
+        want=$(active_release "$SITE_API")
+        api GET "/sites/$SITE_API/releases"; deployment=$(jq -r '[.data[] | select(.active)][0].deployment_id // empty | ascii_upcase' <<<"$API_BODY")
+        while (( SECONDS < deadline )); do body=$(site_get srv-app-2 "$API_HOST" /); [[ "$(jq -r .release <<<"$body" 2>/dev/null)" == "$want" ]] && break; sleep 2; done
+        [[ "$(jq -r .release <<<"$body" 2>/dev/null)" == "$want" && "$(jq -r .deployment <<<"$body" 2>/dev/null)" == "$deployment" ]] \
+            && ok "GET / reports KILN_RELEASE_ID=$want KILN_DEPLOYMENT_ID=$deployment (the active release)" || bad "GET / -> ${body:0:300} (want release $want, deployment $deployment)"
+        [[ "$(jq -r .greeting <<<"$body" 2>/dev/null)" == hello-from-env ]] && ok "the site variable reaches the app" || bad "greeting: $(jq -r .greeting <<<"$body" 2>/dev/null)"
+        # Straight from the supervised process (not a .env the runtime loaded): what proc.apply put into its env.
+        proc_rel=$(proc_env srv-app-2 '[s]rc/index.ts' KILN_RELEASE_ID)
+        proc_dep=$(proc_env srv-app-2 '[s]rc/index.ts' KILN_DEPLOYMENT_ID)
+        proc_greet=$(proc_env srv-app-2 '[s]rc/index.ts' KILN_E2E_GREETING)
+        [[ $proc_rel == "$want" && $proc_dep == "$deployment" && $proc_greet == hello-from-env ]] \
+            && ok "api.app process env: KILN_RELEASE_ID=$proc_rel KILN_DEPLOYMENT_ID=$proc_dep KILN_E2E_GREETING=$proc_greet" \
+            || bad "api.app process env: release='$proc_rel' deployment='$proc_dep' greeting='$proc_greet' (want $want / $deployment)"
+    done
+}
+
+stage_waiting() {
+    step "waiting: a deployment triggered while the new site's server is still preparing waits, coalesces, then succeeds"
+    api POST /sites "{\"name\":\"early\",\"framework\":\"node\",\"runtime\":\"bun\",\"app_port\":3101,\"server_ids\":[\"$SERVER_srv_app_1\"],\"source_connection_id\":\"$GIT_CONNECTION\",\"repository\":\"git://sim-git/bun-demo.git\",\"branch\":\"main\",\"health_check_path\":\"/health\",\"test_domain_enabled\":true}"
+    [[ $API_CODE == 201 ]] || { bad "POST /sites (early) -> $API_CODE: $API_BODY"; return 1; }
+    save SITE_EARLY "$(jq -r .data.id <<<"$API_BODY")"
+    save EARLY_HOST "$(jq -r '.data.test_domain // .data.domains[0].name // .data.domains[0] // "early.sites.kiln.test"' <<<"$API_BODY")"
+    local targets; targets=$(jq -r '[.data.targets[].status] | join(",")' <<<"$API_BODY")
+    ok "site early created on app-1 (targets: $targets)"
+
+    # Immediately: no wait_targets_ready.
+    api POST "/sites/$SITE_EARLY/deployments" '{}'
+    [[ $API_CODE == 201 ]] || { bad "POST deployments (early) -> $API_CODE: $API_BODY"; return 1; }
+    local id status reason
+    id=$(jq -r .data.id <<<"$API_BODY"); status=$(jq -r .data.status <<<"$API_BODY"); reason=$(jq -r '.data.waiting_reason // empty' <<<"$API_BODY")
+    if [[ $status == waiting ]]; then
+        ok "deployment $id waits: $reason"
+        api POST "/sites/$SITE_EARLY/deployments" "{\"commit\":\"$(git_head bun-demo)\"}"
+        if [[ $(deployment_status "$id") == waiting ]]; then
+            [[ $(jq -r .data.id <<<"$API_BODY") == "$id" ]] && ok "a second trigger coalesced into the waiting deployment" || bad "second trigger created another deployment: $API_BODY"
+        else
+            ok "the server finished preparing before the second trigger (not coalesced)"
+        fi
+    elif [[ $status == building || $status == deploying ]]; then
+        ok "the server was already prepared when the deployment was triggered ($status); waiting not exercised"
+    else
+        bad "deployment triggered during preparation ended up '$status': $(jq -c '.data | {status, error}' <<<"$API_BODY")"; return 1
+    fi
+
+    status=$(wait_deployment "$id")
+    [[ $status == succeeded ]] && ok "the waiting deployment started by itself and succeeded" || {
+        bad "early deployment ended '$status': $(jq -c '.data | {phase, error}' <<<"$API_BODY")"
+        api GET "/deployments/$id/output?after=-1"; jq -r '.data[-25:][] | "      [\(.server // "-")/\(.phase // "-")] \(.data | rtrimstr("\n"))"' <<<"$API_BODY" 2>/dev/null
+        return 1; }
+    api GET "/deployments/$id/output?after=-1"
+    jq -e '[.data[].data] | any(test("finish preparing"))' >/dev/null 2>&1 <<<"$API_BODY" && ok "its log explains the wait" || ok "no wait recorded in its log (the server was ready)"
+    local body; body=$(site_get srv-app-1 "$EARLY_HOST" /)
+    [[ "$(jq -r .release <<<"$body" 2>/dev/null)" == "$(active_release "$SITE_EARLY")" ]] && ok "srv-app-1 serves early from its active release" || bad "early GET / -> ${body:0:200}"
 }
 
 stage_observability() {
