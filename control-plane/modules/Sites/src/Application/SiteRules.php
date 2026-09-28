@@ -148,7 +148,8 @@ final class SiteRules
     }
 
     /**
-     * Loopback ports used by sites on the servers: app ports and compose public service ports.
+     * Loopback ports used by sites on the servers: app ports, compose public service ports and the
+     * ports of Octane-enabled sites (server + admin/RPC port).
      *
      * @param  list<string>  $serverIds
      * @return list<int>
@@ -158,8 +159,7 @@ final class SiteRules
         $sites = Site::query()
             ->when($exceptSiteId, fn ($q, $id) => $q->whereKeyNot($id))
             ->whereIn('id', SiteTarget::query()->select('site_id')->whereIn('server_id', $serverIds))
-            ->where(fn ($q) => $q->whereNotNull('app_port')->orWhereNotNull('public_services'))
-            ->get(['id', 'app_port', 'public_services']);
+            ->get(['id', 'app_port', 'public_services', 'laravel']);
 
         $ports = [];
 
@@ -172,6 +172,11 @@ final class SiteRules
                 if (is_array($public) && isset($public['host_port'])) {
                     $ports[] = (int) $public['host_port'];
                 }
+            }
+
+            if ($site->laravel->servesOctane()) {
+                $ports[] = (int) $site->laravel->octanePort;
+                $ports[] = (int) $site->laravel->octaneAuxPort();
             }
         }
 

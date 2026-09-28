@@ -24,6 +24,8 @@ use Kiln\Identity\Contracts\PermissionRegistry;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Identity\Events\OrganizationDeleted;
 use Kiln\Kernel\Support\ModuleServiceProvider;
+use Kiln\Processes\Contracts\OctaneRouting;
+use Kiln\Processes\Events\OctaneRoutingChanged;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Servers\Events\ServerDeleted;
 use Kiln\Sites\Contracts\SiteDirectory;
@@ -52,6 +54,7 @@ class EdgeServiceProvider extends ModuleServiceProvider
         $this->app->bind(RouteCompiler::class, fn ($app) => new RouteCompiler(
             $app->make(SiteDirectory::class),
             $app->make(ServerDirectory::class),
+            $app->make(OctaneRouting::class),
             config('edge.acme_email') ?: null,
             config('edge.acme_ca') ?: null,
             (string) config('edge.test_domain_tls', 'acme'),
@@ -88,6 +91,7 @@ class EdgeServiceProvider extends ModuleServiceProvider
         Event::listen(SiteUpdated::class, [ReactToSiteChanges::class, 'updated']);
         Event::listen(SiteTargetsChanged::class, [ReactToSiteChanges::class, 'targetsChanged']);
         Event::listen(SiteDeleted::class, [ReactToSiteChanges::class, 'deleted']);
+        Event::listen(OctaneRoutingChanged::class, [ReactToSiteChanges::class, 'octaneRoutingChanged']);
         Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
         Event::listen(OrganizationDeleted::class, ForgetDeletedOrganization::class);
         Event::listen(CommandFinished::class, [HandleEdgeCommandOutcome::class, 'handleFinished']);

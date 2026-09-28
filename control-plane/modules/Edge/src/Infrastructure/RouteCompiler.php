@@ -13,6 +13,7 @@ use Kiln\Edge\Domain\Models\Redirect;
 use Kiln\Edge\Domain\Models\SecurityRule;
 use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Edge\Domain\Models\Upstream;
+use Kiln\Processes\Contracts\OctaneRouting;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
@@ -27,12 +28,19 @@ use Kiln\Sites\Contracts\SiteRuntime;
  *
  * Domains of one site are grouped by TLS configuration; the first group keeps the site's stable route id
  * (see {@see routeId()}), further groups get "<routeId>-<n>". Output is deterministic.
+ *
+ * Laravel Octane: a PHP site with Octane on is served by `reverse_proxy 127.0.0.1:<octane port>` with `root` set
+ * (the agent serves existing non-PHP files under the document root directly and proxies everything else) —
+ * but only once Processes verified Octane answers on that port ({@see OctaneRouting}); until then (never
+ * deployed / placeholder release, still starting, broken) the site keeps being served by FrankenPHP /
+ * PHP-FPM directly. Domains, test domain, TLS, redirects, headers, auth and LB backends are unchanged.
  */
 final class RouteCompiler
 {
     public function __construct(
         private readonly SiteDirectory $sites,
         private readonly ServerDirectory $servers,
+        private readonly OctaneRouting $octane,
         private readonly ?string $acmeEmail = null,
         private readonly ?string $acmeCa = null,
         private readonly string $testDomainTls = 'acme',
@@ -202,6 +210,10 @@ final class RouteCompiler
 
         $local = $site->appPort ? "127.0.0.1:{$site->appPort}" : null;
 
+        if ($site->runtime->isPhp() && ($octane = $this->octaneHandler($site, $serverId)) !== null) {
+            return $octane;
+        }
+
         return match ($site->runtime) {
             SiteRuntime::FrankenPhp => ['kind' => 'frankenphp', 'root' => $site->documentRoot()],
             SiteRuntime::PhpFpm => $site->fpmSocket() ? ['kind' => 'php_fpm', 'root' => $site->documentRoot(), 'php_fpm_socket' => $site->fpmSocket()] : null,
@@ -211,6 +223,49 @@ final class RouteCompiler
                 Upstream::query()->where('site_id', $site->id)->where('server_id', $serverId)->value('upstream') ?? $local,
             ),
         };
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function octaneHandler(SiteData $site, string $serverId): ?array
+    {
+        if (! $site->framework->isLaravel() || ! $site->laravel->servesOctane()) {
+            return null;
+        }
+
+        $port = $this->octane->listeningPort($site->id, $serverId);
+
+        if ($port === null || $port !== $site->laravel->octanePort) {
+            return null;
+        }
+
+        return [
+            'kind' => 'reverse_proxy',
+            'root' => $site->documentRoot(),
+            'upstreams' => [['dial' => "127.0.0.1:{$port}"]],
+            // Deploys restart Octane (new release): the edge holds requests until it listens again instead of failing them.
+            'try_duration_s' => max(1, (int) config('edge.octane_try_duration_seconds', 30)),
+        ];
+    }
+
+    /**
+     * Ids of the sites a compiled payload reverse-proxies to Octane (PHP site routes with a root are Octane routes).
+     *
+     * @param  array<string, mixed>  $payload
+     * @return list<string>
+     */
+    public static function octaneSites(array $payload): array
+    {
+        $ids = [];
+
+        foreach ((array) ($payload['sites'] ?? []) as $entry) {
+            if (is_array($entry) && ($entry['kind'] ?? null) === 'reverse_proxy' && isset($entry['root'], $entry['try_duration_s'])) {
+                $ids[] = substr((string) $entry['id'], 0, 26);
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 
     /**

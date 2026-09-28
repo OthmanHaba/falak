@@ -7,7 +7,7 @@ use Kiln\Processes\Contracts\ProcessControl;
 use Kiln\Sites\Contracts\Data\SiteData;
 
 /**
- * Restart a site's programs from the UI.
+ * Restart a site's programs from the UI (same release: Octane gets a graceful `octane:reload`).
  */
 final class RestartSiteProcesses
 {
@@ -21,7 +21,7 @@ final class RestartSiteProcesses
      */
     public function __invoke(SiteData $site, ?string $serverId): int
     {
-        $handles = $this->processes->restartForSite($site->id, $serverId);
+        $handles = $this->processes->restartForSite($site->id, $serverId, newRelease: false);
 
         $this->audit->record('processes.restarted', 'site', $site->id, ['server_id' => $serverId, 'commands' => count($handles)], $site->organizationId);
 

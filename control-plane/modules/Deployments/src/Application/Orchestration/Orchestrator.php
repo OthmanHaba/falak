@@ -709,7 +709,8 @@ final class Orchestrator
         try {
             if ($step->kind === StepKind::Restart || $step->kind === StepKind::RevertRestart) {
                 // Processes restarts the site's programs (Horizon: horizon:terminate; others: proc.restart).
-                $handles = $this->processes->restartForSite($site->id, (string) $step->server_id);
+                // A new release: Octane is restarted (octane:reload would keep the old release), the edge holds requests meanwhile.
+                $handles = $this->processes->restartForSite($site->id, (string) $step->server_id, newRelease: true);
             } else {
                 $payload = $this->payloads->for($step, $deployment, $site);
 

@@ -19,6 +19,8 @@ use Kiln\Edge\Domain\Enums\ApplyStatus;
  * @property ?string $error
  * @property ?Carbon $dispatched_at
  * @property ?Carbon $applied_at
+ * @property ?list<string> $octane_sites site ids the last dispatched config proxies to Octane
+ * @property ?list<string> $applied_octane_sites site ids the applied config proxies to Octane
  */
 class ServerState extends Model
 {
@@ -38,6 +40,13 @@ class ServerState extends Model
      */
     protected function casts(): array
     {
-        return ['status' => ApplyStatus::class, 'routes' => 'integer', 'dispatched_at' => 'datetime', 'applied_at' => 'datetime'];
+        return [
+            'status' => ApplyStatus::class,
+            'routes' => 'integer',
+            'dispatched_at' => 'datetime',
+            'applied_at' => 'datetime',
+            'octane_sites' => 'array',
+            'applied_octane_sites' => 'array',
+        ];
     }
 }

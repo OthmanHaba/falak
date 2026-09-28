@@ -3,10 +3,14 @@
 namespace Kiln\Processes\Infrastructure;
 
 use Illuminate\Support\Collection;
+use Kiln\Processes\Application\OctaneRoutes;
 use Kiln\Processes\Domain\Models\Daemon;
+use Kiln\Processes\Domain\Models\OctaneRoute;
 use Kiln\Processes\Domain\Models\Schedule;
 use Kiln\Processes\Domain\Models\Worker;
+use Kiln\Sites\Contracts\Data\LaravelSettings;
 use Kiln\Sites\Contracts\Data\SiteData;
+use Kiln\Sites\Contracts\OctaneServer;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Contracts\TargetStatus;
@@ -19,6 +23,9 @@ use Kiln\Sites\Contracts\TargetStatus;
  */
 final class StateCompiler
 {
+    /** @var array<string, OctaneRoute> draining Octane routes of the server being compiled, by site id */
+    private array $draining = [];
+
     public function __construct(private readonly SiteDirectory $sites) {}
 
     public function compile(string $serverId): CompiledState
@@ -32,6 +39,8 @@ final class StateCompiler
         $workers = Worker::query()->whereIn('site_id', $siteIds)->orderBy('created_at')->orderBy('id')->get()->groupBy('site_id');
         $daemons = Daemon::query()->whereIn('site_id', $siteIds)->orderBy('created_at')->orderBy('id')->get()->groupBy('site_id');
         $schedules = Schedule::query()->whereIn('site_id', $siteIds)->where('enabled', true)->orderBy('created_at')->orderBy('id')->get()->groupBy('site_id');
+        $this->draining = OctaneRoute::query()->where('server_id', $serverId)->whereIn('site_id', $siteIds)
+            ->where('status', 'draining')->get()->keyBy('site_id')->all();
 
         $programs = [];
         $programMeta = [];
@@ -104,11 +113,13 @@ final class StateCompiler
             ]), 'horizon', 'Horizon'];
         }
 
-        if ($laravel && $site->laravel->octane) {
-            $server = $site->runtime === SiteRuntime::FrankenPhp ? 'frankenphp' : 'swoole';
-            $out[] = [$this->program($site, $serverId, ProgramNames::octane($site->slug), [
-                $php, 'artisan', 'octane:start', "--server={$server}", '--host=127.0.0.1', '--port='.self::octanePort($site),
-            ]), 'octane', 'Octane'];
+        // Octane runs while enabled, and while draining after it was switched off (until the edge stopped proxying to it).
+        $draining = $this->draining[$site->id] ?? null;
+
+        if ($laravel && OctaneRoutes::wantsOctane($site)) {
+            $out[] = [$this->program($site, $serverId, ProgramNames::octane($site->slug), self::octaneCommand($php, $site->laravel->octaneServer ?? OctaneServer::Swoole, (int) $site->laravel->octanePort)), 'octane', 'Octane'];
+        } elseif ($draining !== null) {
+            $out[] = [$this->program($site, $serverId, ProgramNames::octane($site->slug), self::octaneCommand($php, $draining->octane_server, $draining->port)), 'octane', 'Octane (stopping)'];
         }
 
         foreach ($workers as $worker) {
@@ -276,15 +287,25 @@ final class StateCompiler
         ];
     }
 
-    public static function octanePort(SiteData $site): int
+    /**
+     * `php artisan octane:start` on 127.0.0.1:<port>. FrankenPHP gets its own Caddy admin port (the default :2019
+     * belongs to the edge) and RoadRunner its RPC port: both port + LaravelSettings::OCTANE_AUX_PORT_OFFSET, which
+     * Sites keeps free when allocating the port.
+     *
+     * @return list<string>
+     */
+    public static function octaneCommand(string $php, OctaneServer $server, int $port): array
     {
-        if ($site->appPort !== null) {
-            return $site->appPort;
-        }
+        $aux = $port + LaravelSettings::OCTANE_AUX_PORT_OFFSET;
 
-        $span = max(1, (int) config('processes.octane_port_span', 1000));
-
-        return (int) config('processes.octane_port_base', 8000) + (crc32($site->id) % $span);
+        return [
+            $php, 'artisan', 'octane:start', "--server={$server->value}", '--host=127.0.0.1', "--port={$port}",
+            ...match ($server) {
+                OctaneServer::FrankenPhp => ["--admin-port={$aux}"],
+                OctaneServer::RoadRunner => ["--rpc-port={$aux}"],
+                OctaneServer::Swoole => [],
+            },
+        ];
     }
 
     public static function workerLabel(Worker $worker): string

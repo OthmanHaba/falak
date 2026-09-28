@@ -6,6 +6,7 @@ use Kiln\Sites\Contracts\BuildMode;
 use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Framework;
 use Kiln\Sites\Contracts\SiteRuntime;
+use Kiln\Sites\Contracts\TargetStatus;
 
 final readonly class SiteData
 {
@@ -115,5 +116,18 @@ final readonly class SiteData
     public function serverIds(): array
     {
         return array_map(fn (SiteTargetData $target) => $target->serverId, $this->targets);
+    }
+
+    /**
+     * Servers whose target is ready (the site user and directories exist).
+     *
+     * @return list<string>
+     */
+    public function readyServerIds(): array
+    {
+        return array_values(array_map(
+            fn (SiteTargetData $target) => $target->serverId,
+            array_filter($this->targets, fn (SiteTargetData $target) => $target->status === TargetStatus::Ready),
+        ));
     }
 }

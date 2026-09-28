@@ -26,7 +26,7 @@ final class FakeProcessControl implements ProcessControl
         return $fake;
     }
 
-    public function restartForSite(string $siteId, ?string $serverId = null): array
+    public function restartForSite(string $siteId, ?string $serverId = null, bool $newRelease = true): array
     {
         $this->restarts[] = ['site' => $siteId, 'server' => $serverId];
 

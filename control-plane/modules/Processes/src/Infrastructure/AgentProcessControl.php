@@ -4,8 +4,10 @@ namespace Kiln\Processes\Infrastructure;
 
 use Illuminate\Support\Str;
 use Kiln\Fleet\Contracts\AgentGateway;
+use Kiln\Fleet\Contracts\Data\CommandHandle;
 use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Kiln\Processes\Application\ServerConverger;
+use Kiln\Processes\Contracts\OctaneRouting;
 use Kiln\Processes\Contracts\ProcessControl;
 use Kiln\Processes\Domain\Models\ServerState;
 use Kiln\Processes\Events\ProcessesRestarted;
@@ -18,9 +20,12 @@ final class AgentProcessControl implements ProcessControl
         private readonly SiteDirectory $sites,
         private readonly AgentGateway $agents,
         private readonly ServerConverger $converger,
+        private readonly OctaneRouting $octane,
     ) {}
 
-    public function restartForSite(string $siteId, ?string $serverId = null): array
+    public const RELOAD_PREFIX = 'processes.octane-reload:';
+
+    public function restartForSite(string $siteId, ?string $serverId = null, bool $newRelease = true): array
     {
         $site = $this->sites->find(strtolower($siteId));
 
@@ -50,8 +55,12 @@ final class AgentProcessControl implements ProcessControl
             }
 
             $horizon = ProgramNames::horizon($site->slug);
-            $others = array_values(array_diff($running, [$horizon]));
+            $octane = ProgramNames::octane($site->slug);
+            $reload = ! $newRelease && in_array($octane, $running, true) && $site->laravel->octaneServer !== null
+                && $this->octane->listeningPort($site->id, $target->serverId) !== null;
+            $others = array_values(array_diff($running, $reload ? [$horizon, $octane] : [$horizon]));
             $key = "processes.restart:{$site->id}:{$target->serverId}:".Str::ulid();
+            $env = ['KILN_SITE_ID' => strtoupper($site->id), 'KILN_SERVER_ID' => strtoupper($target->serverId)];
 
             try {
                 if (in_array($horizon, $running, true)) {
@@ -61,8 +70,20 @@ final class AgentProcessControl implements ProcessControl
                         'shell' => '/bin/bash',
                         'user' => $site->unixUser,
                         'cwd' => $site->currentPath(),
-                        'env' => ['KILN_SITE_ID' => strtoupper($site->id), 'KILN_SERVER_ID' => strtoupper($target->serverId)],
+                        'env' => $env,
                     ], $timeout, "{$key}:horizon");
+                }
+
+                if ($reload) {
+                    // Graceful: Octane re-boots its workers behind the open port. A failure falls back to proc.restart
+                    // (HandleCommandOutcome).
+                    $handles[] = $this->agents->dispatch($target->serverId, 'system.exec', [
+                        'script' => $site->phpBinary().' artisan octane:reload --server='.$site->laravel->octaneServer?->value,
+                        'shell' => '/bin/bash',
+                        'user' => $site->unixUser,
+                        'cwd' => $site->currentPath(),
+                        'env' => $env,
+                    ], $timeout, self::RELOAD_PREFIX."{$site->id}:{$target->serverId}:".Str::ulid());
                 }
 
                 if ($others !== []) {
@@ -85,5 +106,24 @@ final class AgentProcessControl implements ProcessControl
     public function converge(string ...$serverIds): void
     {
         $this->converger->schedule(...array_map('strtolower', $serverIds));
+    }
+
+    /**
+     * `octane:reload` failed (not running, state file missing …): restart the program instead.
+     */
+    public function reloadFailed(string $idempotencyKey): ?CommandHandle
+    {
+        [$siteId, $serverId] = array_pad(explode(':', substr($idempotencyKey, strlen(self::RELOAD_PREFIX))), 2, '');
+        $site = $this->sites->find($siteId);
+
+        if ($site === null || $serverId === '') {
+            return null;
+        }
+
+        try {
+            return $this->agents->dispatch($serverId, 'proc.restart', ['names' => [ProgramNames::octane($site->slug)], 'site' => $site->slug], (int) config('processes.restart_timeout_seconds', 300), "processes.restart:{$site->id}:{$serverId}:".Str::ulid().':octane');
+        } catch (AgentUnavailable) {
+            return null;
+        }
     }
 }

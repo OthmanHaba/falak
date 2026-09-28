@@ -47,4 +47,10 @@ interface EdgeRoutes
      * TLS used for hosted test domains (<slug>.<KILN_TEST_DOMAIN>): Auto (ACME) or Internal.
      */
     public function testDomainTls(): TlsMode;
+
+    /**
+     * Whether the server's applied edge config — or one dispatched and not settled yet — reverse-proxies the site
+     * to its Octane server (Processes waits for false before stopping a switched-off Octane).
+     */
+    public function proxiesToOctane(string $siteId, string $serverId): bool;
 }

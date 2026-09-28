@@ -55,8 +55,9 @@ final class ProcessesController extends Controller
             $items[] = ['kind' => 'horizon', 'id' => null, 'program' => ProgramNames::horizon($site->slug), 'label' => 'Horizon', 'command' => $site->phpBinary().' artisan horizon', 'detail' => null, 'instances' => 1, 'server_ids' => []];
         }
 
-        if ($laravel && $site->laravel->octane) {
-            $items[] = ['kind' => 'octane', 'id' => null, 'program' => ProgramNames::octane($site->slug), 'label' => 'Octane', 'command' => $site->phpBinary().' artisan octane:start', 'detail' => 'port '.StateCompiler::octanePort($site), 'instances' => 1, 'server_ids' => []];
+        if ($laravel && $site->laravel->servesOctane()) {
+            $server = $site->laravel->octaneServer?->value ?? 'swoole';
+            $items[] = ['kind' => 'octane', 'id' => null, 'program' => ProgramNames::octane($site->slug), 'label' => 'Octane', 'command' => $site->phpBinary()." artisan octane:start --server={$server}", 'detail' => "127.0.0.1:{$site->laravel->octanePort}", 'instances' => 1, 'server_ids' => []];
         }
 
         foreach (Worker::query()->where('site_id', $site->id)->orderBy('created_at')->orderBy('id')->get() as $worker) {

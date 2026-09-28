@@ -22,6 +22,11 @@ return [
     // Ports handed out to node/bun/deno/docker sites (unique per server).
     'app_port_range' => [3000, 3999],
 
+    // Laravel Octane listens on 127.0.0.1:<port> from base..base+span-1 (unique per server, persisted per site);
+    // its admin / RPC port is port + 10000 (LaravelSettings::OCTANE_AUX_PORT_OFFSET).
+    'octane_port_base' => 8000,
+    'octane_port_span' => 1000,
+
     // Docker Compose sites (docs/COMPOSE_TEMPLATES.md §1).
     'compose' => [
         // cap_add values allowed without "Allow privileged compose" (Docker's default capability set).
