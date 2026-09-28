@@ -117,6 +117,42 @@ The agent binaries come from the control-plane image, so servers download them f
 For e-mail, set `MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` and
 `MAIL_FROM_ADDRESS` in `/opt/kiln/.env`, then run `kiln-ctl up`.
 
+### Connect GitHub (GitHub App, one click)
+
+Open **Settings → Source control → Connect GitHub**. Kiln registers a private GitHub App for your Kiln organization
+(on your personal GitHub account, or on a GitHub organization you own: type its name) using GitHub's
+[app manifest flow](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest):
+you confirm the app on github.com, Kiln stores its id, private key and webhook secret **encrypted in its database**,
+and GitHub continues straight to the installation page, where you pick the repositories Kiln may deploy. Change
+that selection any time with **Manage access on GitHub**; GitHub sends you back to Kiln afterwards.
+
+- **Access requested:** repository contents and metadata, **read-only**, plus `push` events. No deploy keys and no
+  per-repository webhooks: builds clone over HTTPS with installation tokens minted per build (valid for one hour,
+  cached for at most 50 minutes, never stored or logged).
+- **Kiln's URL must be reachable from GitHub** for push-to-deploy: the app's single webhook is
+  `https://<panel>/api/webhooks/source-control/github-app/<id>` (shown on the card). `KILN_WEBHOOK_URL` overrides the
+  base URL if GitHub must reach Kiln through a different host. Creating the app and cloning work without it; only
+  push-triggered deploys and installation status updates (suspended / uninstalled on GitHub) need the webhook.
+- **One app per Kiln organization.** GitHub only lets a private app be installed on the account that owns it, so
+  repositories from a second GitHub account need their own app (another Kiln organization), or a token connection.
+- **Remove:** *Disconnect* on an installation uninstalls the app from that account; *Delete app* uninstalls it
+  everywhere and forgets the credentials. Delete the app registration itself on GitHub (App settings → Advanced).
+- **Personal access tokens** still work (*Use a personal access token instead*), e.g. for GitHub Enterprise Server.
+
+**Operator-managed app (optional).** To use one app you created yourself for every Kiln organization, set these in
+`/opt/kiln/.env` and run `kiln-ctl up`. When set, they take precedence over registered apps for new installations
+(existing installations keep the app they were made with), and the one-click registration is hidden.
+
+| Variable | Value |
+|---|---|
+| `GITHUB_APP_ID` | the app's numeric id |
+| `GITHUB_APP_SLUG` | the app's URL name (`github.com/apps/<slug>`) |
+| `GITHUB_APP_PRIVATE_KEY` | the PEM private key (newlines may be written as `\n`) |
+| `GITHUB_APP_WEBHOOK_SECRET` | the webhook secret; webhook URL `https://<panel>/api/webhooks/source-control/github-app/env` |
+
+Configure that app with Setup URL `https://<panel>/source-control/github-app/setup` ("Redirect on update" on),
+permissions Contents: read and Metadata: read, and the `push` event.
+
 ### Runtime download mirrors (optional)
 
 Servers download FrankenPHP, Node.js, Bun and Deno release binaries during provisioning (sha256-verified).
