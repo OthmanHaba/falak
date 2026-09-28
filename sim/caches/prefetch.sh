@@ -33,16 +33,22 @@ mirror_ref() {
     esac
 }
 
+pull() { # pull REF MIRROR_REF (all pulls run in parallel)
+    t0=$(date +%s) err=$(mktemp)
+    if crane pull --insecure --platform "$platform" "$2" /dev/null >/dev/null 2>"$err"; then
+        echo "prefetch: $1 ($(( $(date +%s) - t0 ))s)"
+    else
+        echo "prefetch: FAILED $1: $(tail -1 "$err")"
+    fi
+    rm -f "$err"
+}
+
 start=$(date +%s)
 for ref in $(images | sort -u); do
     m=$(mirror_ref "$ref")
     if [ -z "$m" ]; then echo "prefetch: skip $ref (no sim cache for its registry)"; continue; fi
-    t0=$(date +%s)
-    if crane pull --insecure --platform "$platform" "$m" /dev/null >/dev/null 2>/tmp/err; then
-        echo "prefetch: $ref ($(( $(date +%s) - t0 ))s)"
-    else
-        echo "prefetch: FAILED $ref: $(tail -1 /tmp/err)"
-    fi
+    pull "$ref" "$m" &
 done
+wait
 echo "prefetch: done in $(( $(date +%s) - start ))s"
 while :; do sleep 3600; done
