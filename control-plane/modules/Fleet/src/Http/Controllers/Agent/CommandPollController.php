@@ -21,7 +21,8 @@ final class CommandPollController extends Controller
         $agent = $this->agent($request);
         $wait = max(0, min((int) $request->query('wait', '0'), (int) config('fleet.long_poll_max_seconds', 60)));
 
-        if ($wait > 0) {
+        // Not under tests: the limit would apply to the whole test process and kill later tests.
+        if ($wait > 0 && ! app()->runningUnitTests()) {
             set_time_limit($wait + 15);
         }
 
