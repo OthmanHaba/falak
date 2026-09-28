@@ -1,6 +1,8 @@
 <?php
 
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\Log;
 use Kiln\Sites\Application\Actions\SaveEnvironment;
 use Kiln\Sites\Domain\Models\EnvironmentVersion;
 use Kiln\Sites\Domain\Models\Site;
@@ -22,9 +24,16 @@ return new class extends Migration
                 return;
             }
 
-            /** @var ?EnvironmentVersion $current */
-            $current = EnvironmentVersion::query()->where('site_id', $site->id)->orderByDesc('version')->first();
-            $variables = $current?->variables ?? [];
+            try {
+                /** @var ?EnvironmentVersion $current */
+                $current = EnvironmentVersion::query()->where('site_id', $site->id)->orderByDesc('version')->first();
+                $variables = $current?->variables ?? [];
+            } catch (DecryptException) {
+                // Encrypted with another APP_KEY (a restored or copied database): leave it to its owner.
+                Log::warning('sites: could not read the environment to switch LOG_CHANNEL', ['site_id' => $site->id]);
+
+                return;
+            }
 
             if (($variables['LOG_CHANNEL'] ?? null) !== 'stderr') {
                 return;
