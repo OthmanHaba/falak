@@ -247,21 +247,24 @@ stage_failure() {
 # ---------------------------------------------------------------------------------------------- octane
 octane_get() { site_get srv-app-1 "$OCTANE_HOST" "$1"; }
 
-octane_max_served() { # octane_max_served N -> highest per-worker request counter over N requests to /octane (1 = no worker mode)
-    local max=0 n
-    for _ in $(seq 1 "$1"); do
-        n=$(octane_get /octane | jq -r '.served // 0' 2>/dev/null)
-        (( ${n:-0} > max )) && max=$n
-    done
-    echo "$max"
+# FrankenPHP runs Octane workers as threads of one process (2 x CPUs by default), and requests spread across
+# them: a handful of samples can all land on different workers. Probe with more requests than workers, in one
+# exec on the server, and decide the mode by the app's LARAVEL_OCTANE flag.
+OCTANE_SAMPLES=48
+
+octane_probe() { # -> "<any response under Octane: true|false> <highest per-worker request counter>"
+    sx srv-app-1 bash -c "for _ in \$(seq 1 $OCTANE_SAMPLES); do curl -sk -m 15 --resolve '$OCTANE_HOST:443:127.0.0.1' 'https://$OCTANE_HOST/octane'; echo; done" 2>/dev/null \
+        | jq -rs '[.[] | objects] | "\(map(.octane == true) | any) \(map(.served // 0) | max // 0)"' 2>/dev/null
 }
 
 octane_wait_mode() { # octane_wait_mode on|off SECONDS -> 0 when the edge serves /octane in that mode
-    local want=$1 deadline=$((SECONDS + $2)) served=0
+    local want=$1 deadline=$((SECONDS + $2)) probe flag served
     while (( SECONDS < deadline )); do
-        served=$(octane_max_served 8)
-        [[ $want == on && $served -gt 1 ]] && return 0
-        [[ $want == off && $served -eq 1 ]] && return 0
+        probe=$(octane_probe); flag=${probe% *}; served=${probe#* }
+        # on: answered by Octane, and some long-lived worker served more than one request.
+        if [[ $want == on && $flag == true && ${served:-0} -gt 1 ]]; then return 0; fi
+        # off: classic FrankenPHP (no Octane flag, every request starts fresh).
+        if [[ $want == off && $flag == false && ${served:-0} -eq 1 ]]; then return 0; fi
         sleep 1
     done
     return 1
@@ -305,7 +308,7 @@ stage_octane() {
     if git_commit laravel-demo "Octane v1" "sed -i \"s#response('broken', 500)#response('ok')#\" routes/web.php && sed -i \"s/'app' => config('app.name')/'app' => 'Kiln Octane v1'/; s/'app' => 'Kiln Demo v2'/'app' => 'Kiln Octane v1'/\" routes/web.php"; then ok "pushed Octane v1"; else bad "could not push Octane v1"; return 1; fi
     deploy_and_wait "$SITE_OCTANE" "$(git_head laravel-demo)" "octane first deploy" succeeded || return 1
 
-    if octane_wait_mode on 240; then ok "the edge proxies to Octane: /octane answers from long-lived workers (max served $(octane_max_served 8))"
+    if octane_wait_mode on 240; then ok "the edge proxies to Octane: /octane answers from long-lived workers (octane, max served: $(octane_probe))"
     else bad "edge not serving from Octane workers: $(octane_get /octane)"; fi
     if sx srv-app-1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null; then ok "octane listens on 127.0.0.1:$port"; else bad "nothing listens on 127.0.0.1:$port"; fi
     if sx srv-app-1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$((port + 10000))" 2>/dev/null; then ok "octane's FrankenPHP admin API on its own port $((port + 10000)) (edge keeps :2019)"; else bad "no octane admin port $((port + 10000))"; fi

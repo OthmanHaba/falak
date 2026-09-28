@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\RecordVisit;
+use App\Support\OctaneProbe;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
@@ -17,15 +18,14 @@ Route::get('/', function () {
 
 Route::get('/health', fn () => response('ok'));
 
-// Octane E2E: in a long-lived Octane worker the static counter keeps growing across requests; under classic
+// Octane E2E: in a long-lived Octane worker the counter keeps growing across requests; under classic
 // FrankenPHP / PHP-FPM every request starts fresh (served is always 1).
 Route::get('/octane', function () {
-    static $served = 0;
-    $served++;
+    OctaneProbe::$served++;
 
     return response()->json([
         'octane' => (bool) ($_SERVER['LARAVEL_OCTANE'] ?? $_ENV['LARAVEL_OCTANE'] ?? getenv('LARAVEL_OCTANE')),
-        'served' => $served,
+        'served' => OctaneProbe::$served,
         'pid' => getmypid(),
         'release' => config('app.release'),
     ]);

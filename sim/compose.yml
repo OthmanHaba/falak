@@ -13,6 +13,7 @@
 #   sim-downloads (nginx)            runtime release mirror (KILN_*_MIRROR) + ondrej PPA      volume kiln-sim-cache-downloads
 #   sim-hub-mirror (registry proxy)  Docker Hub registry-mirror for srv-app-2 + BuildKit     volume kiln-sim-cache-hub
 #   sim-ghcr-mirror (registry proxy) ghcr.io for srv-app-2 (via the edge, `caches` network)  volume kiln-sim-cache-ghcr
+#   sim-prefetch (crane)             warms both registry caches with the E2E's images in the background
 #   builder-cache                    kiln-builder composer/npm/bun/BuildKit caches           volume kiln-sim-cache-builder
 # The product code paths are unchanged: apt, runtime downloads (sha256-verified), docker pulls and builds all
 # still run for real; only the bytes come from a local cache after the first run.
@@ -127,8 +128,9 @@ x-server: &server
     - ..:/opt/kiln/src:ro                   # agent binary: /opt/kiln/src/agent/bin/kiln-agent-linux-$SIM_AGENT_ARCH
     - edge-pki:/etc/kiln/edge-pki:ro        # edge TLS root CA (trusted at boot)
   # caches: ppa.launchpadcontent.net and ghcr.io resolve to the edge (pull-through caches) on this network only.
-  # fleet stays eth0 (connected first): agents report the first private address as the server's IP, which the
-  # control plane uses for health checks.
+  # Agents report their first private address as the server's IP, and the control plane health-checks sites
+  # through it: the caches network (unreachable from the control plane) must not become eth0. The priority
+  # keeps the pre-cache order (eth0 on a network the control plane shares).
   networks:
     fleet: { priority: 100 }
     observability: {}
@@ -413,6 +415,26 @@ services:
       retries: 10
       start_period: 30s
       start_interval: 1s
+
+  # Cache warmer: pulls the compose fixture and template images through sim-hub-mirror / sim-ghcr-mirror in the
+  # background after `make up` (the pull-through registry fetches an uncached blob upstream twice, so a cold pull
+  # inside a deployment is ~2x slower than a direct one). The servers still pull everything themselves.
+  sim-prefetch:
+    image: gcr.io/go-containerregistry/crane:debug@sha256:e78770b31258a3846f878036d9c1f63fbe4c871f9f56990bf77fd95c013e3c1b
+    entrypoint: ["/busybox/sh", "/prefetch.sh"]
+    logging: *logging
+    restart: "no"
+    environment:
+      SIM_PREFETCH_TEMPLATES: uptime-kuma umami   # the templates e2e-deploy.sh deploys
+      SIM_PLATFORM: linux/${SIM_AGENT_ARCH:-arm64}
+    volumes:
+      - ./caches/prefetch.sh:/prefetch.sh:ro
+      - ../templates:/templates:ro
+      - ./fixtures:/fixtures:ro
+    depends_on:
+      sim-hub-mirror: { condition: service_healthy }
+      sim-ghcr-mirror: { condition: service_healthy }
+    networks: [fleet]
 
   # Read-only git server with the demo apps (git://sim-git/<app>.git), used by builders in E2E.
   sim-git:
