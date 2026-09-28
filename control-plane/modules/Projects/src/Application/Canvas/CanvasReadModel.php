@@ -12,11 +12,14 @@ use Kiln\Fleet\Contracts\AgentDirectory;
 use Kiln\Projects\Contracts\ServiceKind;
 use Kiln\Projects\Contracts\VariableReferences;
 use Kiln\Projects\Domain\Models\Environment;
+use Kiln\Projects\Domain\Models\Group;
 use Kiln\Projects\Domain\Models\Service;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\ComposeInspector;
 use Kiln\Sites\Contracts\ComposeSites;
+use Kiln\Sites\Contracts\Data\ComposeServiceState;
+use Kiln\Sites\Contracts\Data\ComposeSummary;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\Framework;
 use Kiln\Sites\Contracts\SiteDirectory;
@@ -28,7 +31,15 @@ use Kiln\Sites\Contracts\TargetStatus;
  * Everything the canvas renders for one environment, in one request (UI_DESIGN §9 `Canvas`):
  * services with live status (deployments, targets, servers), and edges derived from variable references.
  *
- * @phpstan-type CanvasService array{id: string, kind: string, ref_id: string, name: string, icon: string, position: array{x: int, y: int}, status: string, status_label: string, url: ?string, subtitle: ?string, servers: list<array{id: string, name: string, leader: bool, online: bool}>, badges: list<string>, last_deployment: ?array{id: string, status: string, commit: ?string, message: ?string, finished_at: ?string}}
+ * Groups (§4.3): user groups frame services (`group_id`, positions relative to the group anchor); compose sites carry
+ * `compose` — their compose services, drawn as a group of cards with `depends_on` edges. `volumes` are the persistent
+ * storage a card shows as a strip: compose named volumes, a database engine's data directory, a site's shared paths.
+ *
+ * @phpstan-import-type ComposeChild from ComposeGroup
+ *
+ * @phpstan-type CanvasService array{id: string, kind: string, ref_id: string, name: string, icon: string, position: array{x: int, y: int}, group_id: ?string, status: string, status_label: string, url: ?string, subtitle: ?string, servers: list<array{id: string, name: string, leader: bool, online: bool}>, badges: list<string>, volumes: list<array{name: string, detail: ?string}>, compose: ?array{collapsed: bool, services: list<ComposeChild>}, last_deployment: ?array{id: string, status: string, commit: ?string, message: ?string, finished_at: ?string}}
+ * @phpstan-type CanvasEdge array{from: string, to: string, kind: string}
+ * @phpstan-type CanvasGroup array{id: string, name: string, position: array{x: int, y: int}, collapsed: bool}
  */
 final class CanvasReadModel
 {
@@ -45,7 +56,7 @@ final class CanvasReadModel
     ) {}
 
     /**
-     * @return array{services: list<CanvasService>, edges: list<array{from: string, to: string}>}
+     * @return array{services: list<CanvasService>, edges: list<CanvasEdge>, groups: list<CanvasGroup>}
      */
     public function for(Environment $environment): array
     {
@@ -76,6 +87,7 @@ final class CanvasReadModel
         $agents = $this->agents->forServers($serverIds);
 
         $cards = [];
+        $composeEdges = [];
 
         foreach ($services as $service) {
             $card = match ($service->kind) {
@@ -88,11 +100,22 @@ final class CanvasReadModel
             };
 
             if ($card !== null) {
+                $composeEdges = [...$composeEdges, ...($card['compose_edges'] ?? [])];
+                unset($card['compose_edges']);
                 $cards[] = $card;
             }
         }
 
-        return ['services' => $cards, 'edges' => $this->edges($services, $sites)];
+        $edges = [
+            ...array_map(fn (array $edge) => [...$edge, 'kind' => 'reference'], $this->edges($services, $sites)),
+            ...array_map(fn (array $edge) => [...$edge, 'kind' => 'depends_on'], $composeEdges),
+        ];
+
+        return [
+            'services' => $cards,
+            'edges' => $edges,
+            'groups' => $environment->groups()->get()->map(fn (Group $group) => $group->toCanvas())->values()->all(),
+        ];
     }
 
     /**
@@ -109,8 +132,12 @@ final class CanvasReadModel
             $site->runtime->isPhp() && $site->phpVersion ? "PHP {$site->phpVersion}" : $site->runtime->label(),
         ]));
 
+        $compose = null;
+
         if ($site->compose !== null) {
-            [$subtitle, $status, $label] = $this->composeCard($site, $status, $label);
+            [$states, $summary] = $this->composeState($site);
+            $compose = ComposeGroup::for($service, $site, $summary, $states, [$status, $label]);
+            [$subtitle, $status, $label] = $this->composeCard($summary, $states, $status, $label);
         }
 
         return [
@@ -123,6 +150,12 @@ final class CanvasReadModel
             'servers' => array_map(fn ($target) => $this->server($target->serverId, $target->isLeader(), $servers, $agents), $site->targets),
             // Runtime traits worth seeing on the card (Laravel Octane serves the app behind the edge).
             'badges' => $site->framework->isLaravel() && $site->runtime->isPhp() && $site->laravel->octane ? ['Octane'] : [],
+            // Shared paths persist across releases on every server: the site's "volume".
+            'volumes' => $compose === null && $site->runtime !== SiteRuntime::Static
+                ? array_values(array_map(fn ($path) => ['name' => $path->path, 'detail' => 'shared'], array_filter($site->sharedPaths, fn ($path) => $path->type === 'directory')))
+                : [],
+            'compose' => $compose !== null ? ['collapsed' => $compose['collapsed'], 'services' => $compose['services']] : null,
+            'compose_edges' => $compose['edges'] ?? [],
             'last_deployment' => $deployment !== null ? [
                 'id' => $deployment->id,
                 'status' => $deployment->status,
@@ -159,12 +192,15 @@ final class CanvasReadModel
             ])),
             'servers' => [$this->server($database->serverId, false, $servers, $agents)],
             'badges' => [],
+            // The engine's data directory on its server.
+            'volumes' => [['name' => $database->engine.'-data', 'detail' => $servers[$database->serverId]->name ?? null]],
+            'compose' => null,
             'last_deployment' => null,
         ];
     }
 
     /**
-     * @return array{id: string, kind: string, ref_id: string, name: string, position: array{x: int, y: int}}
+     * @return array{id: string, kind: string, ref_id: string, name: string, position: array{x: int, y: int}, group_id: ?string}
      */
     private function base(Service $service): array
     {
@@ -174,23 +210,32 @@ final class CanvasReadModel
             'ref_id' => $service->ref_id,
             'name' => $service->name,
             'position' => ['x' => $service->x, 'y' => $service->y],
+            'group_id' => $service->group_id,
         ];
+    }
+
+    /**
+     * Reported container states and the parsed compose file of a compose site.
+     *
+     * @return array{0: list<ComposeServiceState>, 1: ComposeSummary}
+     */
+    private function composeState(SiteData $site): array
+    {
+        $content = $this->compose->content($site->id);
+
+        return [$this->compose->status($site->id), $this->inspector->parse($content->content ?? '')];
     }
 
     /**
      * Compose sites: "Compose · 3 services"; an active site whose services report unhealthy / exited
      * containers is shown as crashed.
      *
+     * @param  list<ComposeServiceState>  $states
      * @return array{0: string, 1: string, 2: string}
      */
-    private function composeCard(SiteData $site, string $status, string $label): array
+    private function composeCard(ComposeSummary $summary, array $states, string $status, string $label): array
     {
-        $states = $this->compose->status($site->id);
-        $names = array_values(array_unique(array_map(fn ($state) => $state->service, $states)));
-
-        if ($names === [] && ($content = $this->compose->content($site->id)) !== null) {
-            $names = $this->inspector->parse($content->content)->serviceNames();
-        }
+        $names = array_values(array_unique([...$summary->serviceNames(), ...array_map(fn ($state) => $state->service, $states)]));
 
         $count = count($names);
         $subtitle = 'Compose'.($count > 0 ? ' · '.$count.' '.($count === 1 ? 'service' : 'services') : '');
