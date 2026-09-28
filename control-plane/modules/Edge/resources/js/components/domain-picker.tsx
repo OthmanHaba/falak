@@ -120,6 +120,8 @@ export function DnsInstructions({ name, serverIds, siteId, label }: { name: stri
     }
 
     const { instructions } = check;
+    // Name the server per record only when the records point at several (round-robin).
+    const severalTargets = new Set(instructions.records.map((record) => record.target)).size > 1;
 
     return (
         <div className="border-border bg-surface-1 grid gap-3 rounded-lg border p-3" aria-label={`DNS for ${name}`}>
@@ -167,7 +169,9 @@ export function DnsInstructions({ name, serverIds, siteId, label }: { name: stri
                                         <span className="inline-flex items-center gap-1">
                                             <span className="text-fg font-mono">{record.value}</span>
                                             <CopyButton value={record.value} size="xs" label={`Copy value ${record.value}`} />
-                                            {record.target && <span className="text-fg-faint">{record.target}</span>}
+                                            {severalTargets && record.target && (
+                                                <span className="text-fg-faint whitespace-nowrap">{record.target}</span>
+                                            )}
                                         </span>
                                     </td>
                                 </tr>
