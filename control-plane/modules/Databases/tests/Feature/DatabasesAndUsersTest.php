@@ -71,6 +71,28 @@ it('creates a user with the database and applies its grant once the database exi
     expect($user->refresh()->status)->toBe(ResourceStatus::Active);
 });
 
+it('flags users of dedicated database servers as remote so the engine listens on the network', function () {
+    $dedicatedPg = databases_engine($this->organization, 'postgresql', ServerType::Database);
+    databases_active_db($dedicatedPg, 'shop');
+    databases_active_db($this->mysql, 'shop');
+    databases_active_db($this->pg, 'shop');
+
+    $this->post("/databases/servers/{$dedicatedPg->id}/users", ['username' => 'shop', 'grants' => []])->assertSessionHasNoErrors();
+    $pgApply = $this->agents->last('db.user.apply');
+    expect($pgApply['payload'])->toMatchArray(['engine' => 'postgres', 'remote' => true])
+        ->and(databases_schema_errors($pgApply))->toBe([]);
+
+    // Dedicated MySQL: remote unless the user is pinned to a local host.
+    $this->post("/databases/servers/{$this->mysql->id}/users", ['username' => 'web', 'grants' => []])->assertSessionHasNoErrors();
+    expect($this->agents->last('db.user.apply')['payload'])->toMatchArray(['host' => '%', 'remote' => true]);
+    $this->post("/databases/servers/{$this->mysql->id}/users", ['username' => 'cron', 'host' => 'localhost', 'grants' => []])->assertSessionHasNoErrors();
+    expect($this->agents->last('db.user.apply')['payload'])->toMatchArray(['host' => 'localhost'])->not->toHaveKey('remote');
+
+    // An engine on an app server stays on localhost.
+    $this->post("/databases/servers/{$this->pg->id}/users", ['username' => 'local', 'grants' => []])->assertSessionHasNoErrors();
+    expect($this->agents->last('db.user.apply')['payload'])->not->toHaveKey('remote');
+});
+
 it('stores passwords encrypted and only reveals them with permission, audited', function () {
     databases_active_db($this->mysql, 'shop');
     $this->post("/databases/servers/{$this->mysql->id}/users", ['username' => 'shop', 'password' => 'correct-horse-battery', 'grants' => []])->assertSessionHasNoErrors();
