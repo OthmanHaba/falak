@@ -39,7 +39,7 @@ Every module lives in `control-plane/modules/<Module>/` and is registered by its
 | 2 | **Providers** | Cloud provider credentials + adapters (Hetzner, DigitalOcean, Vultr, Linode, AWS, Custom) | Identity |
 | 3 | **Fleet** | Agent enrollment, mTLS CA + cert issuance, command bus to agents, heartbeats, output streams | Identity |
 | 4 | **Servers** | Server lifecycle, types (app/web/db/cache/worker/lb/builder), provisioning plans, PHP versions, packages, SSH keys, php.ini | Providers, Fleet |
-| 5 | **SourceControl** | GitHub/GitLab/Bitbucket/custom git, OAuth, deploy keys, inbound push webhooks | Identity |
+| 5 | **SourceControl** | GitHub/GitLab/Bitbucket/custom git, GitHub Apps (manifest flow), OAuth, deploy keys, inbound push webhooks | Identity |
 | 6 | **Sites** | Sites, runtimes, domains/aliases, env vars (encrypted), shared paths, user isolation, commands | Servers, SourceControl |
 | 7 | **Edge** | Caddy/FrankenPHP routes, TLS (ACME + custom certs), redirects, basic-auth/security rules, load-balancer upstreams, Octane proxying | Sites, Fleet, Processes (Octane routing) |
 | 8 | **Builds** | Build pipeline (Railpack native, BuildKit Docker), artifacts, built-in registry, build cache | Sites, SourceControl, Fleet |

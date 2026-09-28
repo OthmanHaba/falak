@@ -40,7 +40,8 @@ export interface SiteSettingsData {
         created_at: string;
     };
     source: {
-        connection: { id: string; name: string; provider: string; provider_label: string } | null;
+        /** `github_app`: cloned with short-lived installation tokens, no deploy key. */
+        connection: { id: string; name: string; provider: string; provider_label: string; github_app: boolean } | null;
         deploy_key: { public_key: string; fingerprint: string; installed: boolean; install_error: string | null } | null;
         error: string | null;
     };

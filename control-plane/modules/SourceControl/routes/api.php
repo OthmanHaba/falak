@@ -2,9 +2,14 @@
 
 use Illuminate\Support\Facades\Route;
 use Kiln\SourceControl\Http\Controllers\Api\ConnectionApiController;
+use Kiln\SourceControl\Http\Controllers\GitHubAppWebhookController;
 use Kiln\SourceControl\Http\Controllers\WebhookController;
 
-// Public endpoint (authenticated by per-webhook signatures / tokens, not sessions).
+// Public endpoints (authenticated by per-webhook signatures / tokens, not sessions).
+Route::post('webhooks/source-control/github-app/{app}', GitHubAppWebhookController::class)
+    ->middleware('throttle:source-control-github-app-webhooks')
+    ->name('source-control.github-app.webhook');
+
 Route::post('webhooks/source-control/{webhook}', WebhookController::class)
     ->middleware('throttle:source-control-webhooks')
     ->name('source-control.webhooks.receive');

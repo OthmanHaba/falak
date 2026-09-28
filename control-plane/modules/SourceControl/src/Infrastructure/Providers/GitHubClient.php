@@ -3,6 +3,7 @@
 namespace Kiln\SourceControl\Infrastructure\Providers;
 
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Kiln\SourceControl\Contracts\Data\BranchData;
 use Kiln\SourceControl\Contracts\Data\CommitData;
@@ -31,7 +32,7 @@ class GitHubClient extends HttpProviderClient
 
     public function account(Connection $connection): string
     {
-        if ($connection->auth_type === 'app') {
+        if ($connection->isApp()) {
             $body = $this->json($connection, '/installation/repositories', ['per_page' => 1]);
 
             return (string) ($body['repositories'][0]['owner']['login'] ?? $connection->account ?? '');
@@ -42,14 +43,17 @@ class GitHubClient extends HttpProviderClient
 
     public function repositories(Connection $connection, ?string $search = null): array
     {
-        $app = $connection->auth_type === 'app';
-        $path = $app ? '/installation/repositories' : '/user/repos';
-        $query = $app ? ['per_page' => 100] : ['per_page' => 100, 'sort' => 'updated', 'affiliation' => 'owner,collaborator,organization_member'];
+        if ($connection->isApp()) {
+            return array_values(array_filter(
+                $this->installationRepositories($connection),
+                fn (RepositoryData $repo) => self::matches($repo->fullName, $search),
+            ));
+        }
 
         $repositories = [];
 
-        foreach ($this->pages($connection, $path, $query) as $page) {
-            foreach ($app ? ($page['repositories'] ?? []) : $page as $repo) {
+        foreach ($this->pages($connection, '/user/repos', ['per_page' => 100, 'sort' => 'updated', 'affiliation' => 'owner,collaborator,organization_member']) as $page) {
+            foreach ($page as $repo) {
                 if (is_array($repo) && self::matches((string) ($repo['full_name'] ?? ''), $search)) {
                     $repositories[] = $this->toRepository($repo);
                 }
@@ -57,6 +61,61 @@ class GitHubClient extends HttpProviderClient
         }
 
         return $repositories;
+    }
+
+    /**
+     * Every repository the installation was granted (GET /installation/repositories, paginated). Cached for ten
+     * minutes so the pickers can search as the user types; the installation webhooks and the setup callback
+     * refresh it when access changes on GitHub.
+     *
+     * @return list<RepositoryData>
+     */
+    public function installationRepositories(Connection $connection, bool $fresh = false): array
+    {
+        $key = self::repositoriesCacheKey($connection->id);
+        $cached = $fresh ? null : Cache::get($key);
+
+        if (is_array($cached)) {
+            return array_map(fn (array $repo) => new RepositoryData(...$repo), $cached);
+        }
+
+        $repositories = [];
+
+        foreach ($this->pages($connection, '/installation/repositories', ['per_page' => 100]) as $page) {
+            foreach ((array) ($page['repositories'] ?? []) as $repo) {
+                if (is_array($repo) && isset($repo['full_name'])) {
+                    $repositories[] = $this->toRepository($repo);
+                }
+            }
+        }
+
+        Cache::put($key, array_map(fn (RepositoryData $repo) => get_object_vars($repo), $repositories), 600);
+        Cache::forever(self::repositoryCountCacheKey($connection->id), count($repositories));
+
+        return $repositories;
+    }
+
+    public static function forgetRepositories(string $connectionId): void
+    {
+        Cache::forget(self::repositoriesCacheKey($connectionId));
+    }
+
+    /** Last known number of repositories an app installation can access (null until first listed). */
+    public static function knownRepositoryCount(string $connectionId): ?int
+    {
+        $count = Cache::get(self::repositoryCountCacheKey($connectionId));
+
+        return is_int($count) ? $count : null;
+    }
+
+    private static function repositoriesCacheKey(string $connectionId): string
+    {
+        return "source-control:github-app:repos:{$connectionId}";
+    }
+
+    private static function repositoryCountCacheKey(string $connectionId): string
+    {
+        return "source-control:github-app:repo-count:{$connectionId}";
     }
 
     public function repository(Connection $connection, string $repository): ?RepositoryData

@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Kiln\Kernel\Http\LegacyRedirect;
 use Kiln\SourceControl\Http\Controllers\ConnectionController;
+use Kiln\SourceControl\Http\Controllers\GitHubAppController;
 use Kiln\SourceControl\Http\Controllers\OAuthController;
 
 Route::middleware(['auth', 'org'])->group(function () {
@@ -17,8 +18,12 @@ Route::middleware(['auth', 'org'])->prefix('source-control')->name('source-contr
     Route::get('connections/{connection}/repositories', [ConnectionController::class, 'repositories'])->name('connections.repositories');
     Route::get('connections/{connection}/branches', [ConnectionController::class, 'branches'])->name('connections.branches');
 
-    Route::get('connect/github-app', [OAuthController::class, 'githubApp'])->name('github-app');
-    Route::get('github-app/setup', [OAuthController::class, 'githubAppSetup'])->name('github-app.setup');
+    // GitHub App: manifest registration, installation and GitHub's setup URL (kept stable for existing apps).
+    Route::post('github-app/manifest', [GitHubAppController::class, 'manifest'])->name('github-app.manifest');
+    Route::get('github-app/manifest/callback', [GitHubAppController::class, 'manifestCallback'])->name('github-app.manifest.callback');
+    Route::get('connect/github-app', [GitHubAppController::class, 'install'])->name('github-app');
+    Route::get('github-app/setup', [GitHubAppController::class, 'setup'])->name('github-app.setup');
+    Route::delete('github-app', [GitHubAppController::class, 'destroy'])->name('github-app.destroy');
     Route::get('connect/{provider}', [OAuthController::class, 'redirect'])->name('connect');
     Route::get('callback/{provider}', [OAuthController::class, 'callback'])->name('callback');
 });

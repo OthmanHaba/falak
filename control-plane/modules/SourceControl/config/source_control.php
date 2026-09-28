@@ -7,11 +7,15 @@ return [
         'client_secret' => env('GITHUB_CLIENT_SECRET'),
         'url' => env('GITHUB_URL', 'https://github.com'),
         'api_url' => env('GITHUB_API_URL', 'https://api.github.com'),
-        // GitHub App (installation tokens). Setup URL: <app>/source-control/github-app/setup
+        // GitHub App. Normally registered in one click from Settings → Source control (stored encrypted in the
+        // database, one per organization). Setting GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY instead configures one
+        // instance-wide app that overrides the registered ones for new installations.
+        // Setup URL: <app>/source-control/github-app/setup · Webhook URL: <app>/api/webhooks/source-control/github-app/env
         'app' => [
             'id' => env('GITHUB_APP_ID'),
             'slug' => env('GITHUB_APP_SLUG'),
             'private_key' => env('GITHUB_APP_PRIVATE_KEY'),
+            'webhook_secret' => env('GITHUB_APP_WEBHOOK_SECRET'),
         ],
     ],
 
@@ -35,6 +39,9 @@ return [
 
     // Webhook deliveries accepted per minute per webhook.
     'webhook_rate_limit' => (int) env('KILN_WEBHOOK_RATE_LIMIT', 120),
+
+    // Deliveries accepted per minute per GitHub App webhook (one webhook covers every installed repository).
+    'github_app_webhook_rate_limit' => (int) env('KILN_GITHUB_APP_WEBHOOK_RATE_LIMIT', 600),
 
     // known_hosts lines handed to builders for well-known git hosts.
     'known_hosts' => [

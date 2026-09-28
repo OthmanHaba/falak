@@ -162,6 +162,9 @@ Unknown services/keys and cycles fail the deployment: `Unresolved variable refer
 `{provider: github|gitlab|bitbucket|custom, auth_type: token|basic|none, name?, base_url?, token?, username?, password?}`.
 Tokens are verified against the provider before saving. Credentials are write-only and never returned.
 Custom git uses `auth_type: none` (public URLs) or per-site deploy keys.
+GitHub App connections (`auth_type: app`) are created only through the browser flow (Settings → Source control →
+Connect GitHub), since GitHub asks the user to confirm the app and pick repositories; they are listed like any
+other connection and can be used as `source_connection_id` for sites.
 
 ## Deployments
 

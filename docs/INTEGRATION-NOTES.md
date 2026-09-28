@@ -261,6 +261,39 @@ one broken E2E check. The rest is sim-side caching; see `sim/README.md` → *Cac
   at most half the edge's window. (A running program stops with the spec it was started with, so the first redeploy
   after upgrading still uses 30 s.)
 
+## GitHub App (feat/github-app)
+"Connect GitHub" registers a GitHub App through the manifest flow instead of asking for a personal access token.
+- **Scoping decision: one registered app per Kiln organization** (`source_control_github_apps.organization_id` is
+  unique), created by its owners/admins (`source_control.manage`). Not instance-wide, because Kiln has open
+  registration and multiple organizations: an instance-wide app would hand its private key and every installation's
+  pushes to whichever tenant created it, and GitHub only lets a private (`public: false`) app be installed on its
+  owning account anyway. An operator who wants one shared app sets `GITHUB_APP_*` (instance-wide, overrides registered
+  apps for new installations; connections remember their app in `github_app_id` = `env` | app id).
+- Flow: `POST /source-control/github-app/manifest` (JSON: form action + manifest, state in the session bound to user +
+  organization + a pre-generated app id that the webhook URL embeds) → the browser POSTs the manifest to
+  `github.com/[organizations/<org>/]settings/apps/new?state=` → `GET /source-control/github-app/manifest/callback`
+  converts the code (`POST /app-manifests/{code}/conversions`), stores pem/webhook secret/client secret encrypted, and
+  redirects to `github.com/apps/<slug>/installations/new?state=` → the existing setup URL creates the connection after
+  verifying the installation with the app's JWT. `setup_on_update` redirects (no state) only refresh a connection the
+  organization already has; a new installation needs a state. An installation already connected to another Kiln
+  organization is refused; reinstalling on the same account revives the organization's `disconnected` connection.
+- Manifest: permissions `contents: read`, `metadata: read`; events `push` (`installation` and
+  `installation_repositories` are always delivered to apps). No `statuses`/`checks` (Kiln reports no commit status)
+  and no `pull_requests` (no previews yet): add them to `AppManifest::PERMISSIONS` when those features land.
+- One webhook per app: `POST /api/webhooks/source-control/github-app/{app|env}`, `X-Hub-Signature-256` with the app's
+  secret, throttled per app (`KILN_GITHUB_APP_WEBHOOK_RATE_LIMIT`, 600/min). `push` → push log + `PushReceived` for
+  repositories a push-to-deploy site uses (the `source_control_webhooks` row `ensureWebhook()` keeps, with no provider
+  hook); `installation` deleted/suspend/unsuspend → connection `status` disconnected/suspended/active (tokens refused
+  while not active); `installation_repositories` → repository list re-fetched (queued `RefreshInstallationRepositories`).
+- App connections: `SourceControlLinker` skips deploy keys (the app has no `administration` permission);
+  `checkoutCredentials()` always returns HTTPS + `x-access-token` + a fresh installation token (50 min cache, per app
+  and installation). `ConnectionData` gained `status` and `isGitHubApp()`. `GET /installation/repositories` is
+  paginated and cached 10 min per connection so the pickers can search as you type.
+- Disconnect uninstalls the app from the account (`DELETE /app/installations/{id}`, best effort); *Delete app*
+  does that for every installation and deletes the stored credentials (the registration is deleted on GitHub).
+- Not verified against real GitHub (faked in Pest and in `tests/Browser/github-app.spec.ts`): the real manifest
+  confirmation page, GitHub's exact redirect parameters on `setup_on_update`, and webhook delivery over the internet.
+
 ## Not covered by the E2E yet (unit/feature tested only)
 Docker/Compose runtimes and docker builds on a real BuildKit, database backups/restore to real S3, WireGuard private
 networks, web terminal, recipes, provider APIs (Hetzner/DO/Vultr/Linode/Lightsail), load balancers, DNS-01 wildcard

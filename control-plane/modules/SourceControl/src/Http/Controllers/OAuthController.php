@@ -12,16 +12,16 @@ use Kiln\Kernel\Http\Controller;
 use Kiln\SourceControl\Application\Actions\CreateConnection;
 use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
 use Kiln\SourceControl\Contracts\ProviderType;
-use Kiln\SourceControl\Infrastructure\Providers\GitHubAppTokens;
+use Kiln\SourceControl\Http\Controllers\Concerns\ConnectFlowState;
 use Kiln\SourceControl\Infrastructure\Providers\OAuthProviders;
 
 /**
- * OAuth connect flows (GitHub OAuth app, GitLab, Bitbucket) and the GitHub App installation flow.
+ * OAuth connect flows (GitHub OAuth app, GitLab, Bitbucket); GitHub Apps live in {@see GitHubAppController}.
  * The `state` parameter binds the callback to the session + organization that started it.
  */
 final class OAuthController extends Controller
 {
-    private const SESSION_KEY = 'source_control.oauth';
+    use ConnectFlowState;
 
     public function __construct(
         private readonly CurrentOrganization $organization,
@@ -66,37 +66,6 @@ final class OAuthController extends Controller
         return to_route('source-control.index')->with('success', "{$type->label()} connected.");
     }
 
-    public function githubApp(Request $request, GitHubAppTokens $app): RedirectResponse
-    {
-        $organizationId = $this->authorizeManage($request);
-        $slug = (string) config('source_control.github.app.slug');
-
-        abort_unless($app->configured() && $slug !== '', 404);
-
-        $state = $this->remember($request, 'github-app', $organizationId);
-
-        return redirect()->away(rtrim((string) config('source_control.github.url'), '/')."/apps/{$slug}/installations/new?".http_build_query(['state' => $state]));
-    }
-
-    public function githubAppSetup(Request $request, GitHubAppTokens $app, CreateConnection $create): RedirectResponse
-    {
-        $organizationId = $this->authorizeManage($request);
-        $this->verifyState($request, 'github-app', $organizationId);
-
-        $installationId = (string) $request->query('installation_id', '');
-        abort_unless(ctype_digit($installationId), 400, 'Missing installation id.');
-
-        try {
-            // Proves the installation belongs to this app (the id alone is guessable).
-            $installation = $app->installation($installationId);
-            $create($organizationId, $request->user()?->getAuthIdentifier(), ProviderType::GitHub, 'app', ['installation_id' => $installationId], account: $installation['account'] ?: null, name: 'GitHub App ('.($installation['account'] ?: $installationId).')');
-        } catch (SourceControlException $e) {
-            return to_route('source-control.index')->withErrors(['oauth' => $e->getMessage()]);
-        }
-
-        return to_route('source-control.index')->with('success', 'GitHub App installed.');
-    }
-
     private function oauthProvider(string $provider): ProviderType
     {
         $type = ProviderType::tryFrom($provider);
@@ -111,28 +80,5 @@ final class OAuthController extends Controller
         $this->access->authorize($request->user(), $organizationId, 'source_control.manage');
 
         return $organizationId;
-    }
-
-    private function remember(Request $request, string $flow, string $organizationId): string
-    {
-        $state = Str::random(40);
-        $request->session()->put(self::SESSION_KEY, ['state' => $state, 'flow' => $flow, 'organization_id' => $organizationId, 'at' => time()]);
-
-        return $state;
-    }
-
-    private function verifyState(Request $request, string $flow, string $organizationId): void
-    {
-        $stored = $request->session()->pull(self::SESSION_KEY);
-        $state = (string) $request->query('state', '');
-
-        $valid = is_array($stored)
-            && $state !== ''
-            && hash_equals((string) ($stored['state'] ?? ''), $state)
-            && ($stored['flow'] ?? null) === $flow
-            && ($stored['organization_id'] ?? null) === $organizationId
-            && (int) ($stored['at'] ?? 0) > time() - 900;
-
-        abort_unless($valid, 403, 'Invalid or expired OAuth state. Start the connection again.');
     }
 }
