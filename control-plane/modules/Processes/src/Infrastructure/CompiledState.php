@@ -10,7 +10,7 @@ final readonly class CompiledState
     /**
      * @param  list<array<string, mixed>>  $programs  proc.apply `programs`
      * @param  list<array<string, mixed>>  $jobs  cron.apply `jobs`
-     * @param  array<string, array{site_id: string, kind: string, label: string, numprocs: int}>  $programMeta
+     * @param  array<string, array{site_id: string, kind: string, label: string, numprocs: int, hash?: string}>  $programMeta
      * @param  array<string, array{site_id: string, kind: string, label: string, schedule: string, timezone: string, heartbeat: bool}>  $jobMeta
      */
     public function __construct(

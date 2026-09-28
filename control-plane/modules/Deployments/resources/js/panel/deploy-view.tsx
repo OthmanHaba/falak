@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { type OutputLine, type Step, type StepStatus, type Target } from '../types';
 import { TERMINAL, deploy, deploymentsUrl, durationMs, firstLine, rollback, type DeploymentDetail } from './api';
 import { CommitTag, triggerLabel } from './deployment-row';
+import { WaitingNotice } from './waiting-notice';
 
 const PHASES = [
     { id: 'build', label: 'Build' },
@@ -220,7 +221,7 @@ export function DeployView({ ctx, deploymentId }: { ctx: ServicePanelContext; de
                 <div className="grid min-w-0 flex-1 gap-1">
                     <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-fg text-sm font-semibold">Deployment #{deployment.number}</h3>
-                        <StatusBadge status={deployment.status} />
+                        <StatusBadge status={deployment.status} label={deployment.status === 'waiting' ? 'Waiting' : undefined} />
                         {deployment.rolled_back && <StatusBadge status="degraded" label="Rolled back" />}
                     </div>
                     <p className="text-fg truncate text-sm">{firstLine(deployment.message) ?? triggerLabel(deployment.trigger)}</p>
@@ -266,6 +267,8 @@ export function DeployView({ ctx, deploymentId }: { ctx: ServicePanelContext; de
                 </div>
             </div>
 
+            {deployment.status === 'waiting' && <WaitingNotice deployment={deployment} />}
+
             {deployment.error && (
                 <div role="alert" className="border-danger/40 bg-danger-soft flex gap-2.5 rounded-lg border px-3 py-2.5 text-sm">
                     <AlertTriangle className="text-danger mt-0.5 size-4 shrink-0" aria-hidden />
@@ -283,7 +286,11 @@ export function DeployView({ ctx, deploymentId }: { ctx: ServicePanelContext; de
                 <PhaseTimeline phases={usedPhases} rows={rows} />
             ) : (
                 <p className="text-fg-faint text-xs">
-                    {deployment.status === 'queued' ? 'Waiting for the deployment ahead of this one.' : 'No servers in this deployment.'}
+                    {deployment.status === 'queued'
+                        ? 'Waiting for the deployment ahead of this one.'
+                        : deployment.status === 'waiting'
+                          ? 'Servers are added here once they finish preparing.'
+                          : 'No servers in this deployment.'}
                 </p>
             )}
 
@@ -304,7 +311,7 @@ export function DeployView({ ctx, deploymentId }: { ctx: ServicePanelContext; de
                         streaming={!terminal}
                         height="min(56vh, 520px)"
                         emptyText={
-                            deployment.status === 'queued'
+                            deployment.status === 'queued' || deployment.status === 'waiting'
                                 ? 'Waiting to start…'
                                 : 'No build output (the release reuses an existing build or builds on the servers).'
                         }

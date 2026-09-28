@@ -2,6 +2,7 @@
 
 namespace Kiln\Processes\Infrastructure;
 
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Kiln\Fleet\Contracts\AgentGateway;
 use Kiln\Fleet\Contracts\Data\CommandHandle;
@@ -13,6 +14,7 @@ use Kiln\Processes\Domain\Models\ServerState;
 use Kiln\Processes\Events\ProcessesRestarted;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\TargetStatus;
+use Throwable;
 
 final class AgentProcessControl implements ProcessControl
 {
@@ -43,12 +45,31 @@ final class AgentProcessControl implements ProcessControl
                 continue;
             }
 
+            // Converge first: after a deploy the site's programs carry the new release's ids + environment, so
+            // proc.apply restarts every program whose definition changed (and starts them on the first deploy).
+            // Only the site's running programs it leaves unchanged still need a restart.
+            $before = ServerState::query()->find($target->serverId)?->programs ?? [];
+            $apply = null;
+
+            try {
+                $apply = $this->converger->converge($target->serverId)['proc'];
+            } catch (Throwable $e) {
+                Log::warning('processes: converge before restart failed', ['site_id' => $site->id, 'server_id' => $target->serverId, 'error' => $e->getMessage()]);
+            }
+
             $state = ServerState::query()->find($target->serverId);
             $programs = $state?->programs ?? [];
             $running = array_values(array_filter(
                 $state?->applied_programs ?? [],
                 fn (string $name) => ($programs[$name]['site_id'] ?? null) === $site->id,
             ));
+
+            if ($apply !== null) {
+                $handles[] = $apply;
+                $servers[] = $target->serverId;
+                $running = array_values(array_filter($running, fn (string $name) => isset($programs[$name]['hash'], $before[$name]['hash'])
+                    && $programs[$name]['hash'] === $before[$name]['hash']));
+            }
 
             if ($running === []) {
                 continue;

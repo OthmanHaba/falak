@@ -44,7 +44,7 @@ final class DeploymentController extends Controller
     {
         $settings = SiteSettings::for($data);
 
-        $active = Deployment::query()->where('site_id', $data->id)->whereIn('status', DeploymentStatus::active())->latest('number')->first();
+        $active = Deployment::query()->where('site_id', $data->id)->whereIn('status', DeploymentStatus::occupying())->latest('number')->first();
         $queued = Deployment::query()->where('site_id', $data->id)->where('status', DeploymentStatus::Queued)->orderBy('number')->get();
         $history = Deployment::query()->where('site_id', $data->id)->whereIn('status', [DeploymentStatus::Succeeded, DeploymentStatus::Failed, DeploymentStatus::Cancelled])
             ->orderByDesc('number')->paginate(20)->withQueryString();
@@ -99,7 +99,7 @@ final class DeploymentController extends Controller
             'steps' => $this->globalSteps($model),
             'lines' => $model->output()->limit(5000)->get()->map(fn (OutputLine $l) => $l->toLine())->values(),
             'can' => [
-                'cancel' => in_array($model->status, [DeploymentStatus::Queued, DeploymentStatus::Building], true) && $this->can($request->user(), $data, DeploymentPermissions::CREATE),
+                'cancel' => in_array($model->status, [DeploymentStatus::Queued, DeploymentStatus::Waiting, DeploymentStatus::Building], true) && $this->can($request->user(), $data, DeploymentPermissions::CREATE),
                 'redeploy' => $this->can($request->user(), $data, DeploymentPermissions::CREATE),
                 'rollback' => $model->release_id !== null && $model->status === DeploymentStatus::Succeeded && $this->can($request->user(), $data, DeploymentPermissions::ROLLBACK),
             ],
@@ -139,8 +139,8 @@ final class DeploymentController extends Controller
 
         if (! $orchestrator->cancel($model->id)) {
             return $this->wantsPanelJson($request)
-                ? response()->json(['message' => 'Only queued deployments or deployments still building can be cancelled.'], 422)
-                : back()->withErrors(['deployment' => 'Only queued deployments or deployments still building can be cancelled.']);
+                ? response()->json(['message' => 'Only queued or waiting deployments, or deployments still building, can be cancelled.'], 422)
+                : back()->withErrors(['deployment' => 'Only queued or waiting deployments, or deployments still building, can be cancelled.']);
         }
 
         return $this->wantsPanelJson($request) ? response()->json(['data' => $this->deploymentResource($model->refresh())]) : back();

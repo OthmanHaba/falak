@@ -287,3 +287,26 @@ func TestValidation(t *testing.T) {
 		t.Fatalf("expected payload error, got %v", err)
 	}
 }
+
+// A deploy changes a program's env (KILN_RELEASE_ID …): proc.apply restarts it and the new process sees the new env.
+func TestEnvChangeRestartsWithNewEnv(t *testing.T) {
+	s, _, dir := newSup(t)
+	ctx := context.Background()
+	out := filepath.Join(dir, "release")
+	p := Program{Name: "shop.app", Command: sh(`echo "$KILN_RELEASE_ID" > ` + out + `; exec sleep 30`), StopTimeoutS: 2,
+		Env: map[string]string{"KILN_RELEASE_ID": "01RELEASEONE"}}
+	if _, err := s.Apply(ctx, []Program{p}); err != nil {
+		t.Fatal(err)
+	}
+	read := func() string { b, _ := os.ReadFile(out); return strings.TrimSpace(string(b)) }
+	eventually(t, 3*time.Second, func() bool { return read() == "01RELEASEONE" }, "first release env")
+	pid := s.Status(nil)[0].PID
+
+	p.Env = map[string]string{"KILN_RELEASE_ID": "01RELEASETWO"}
+	res, err := s.Apply(ctx, []Program{p})
+	if err != nil || len(res.Restarted) != 1 {
+		t.Fatalf("res %+v err %v", res, err)
+	}
+	eventually(t, 3*time.Second, func() bool { return read() == "01RELEASETWO" }, "second release env")
+	eventually(t, 3*time.Second, func() bool { st := s.Status(nil); return len(st) == 1 && st[0].PID > 0 && st[0].PID != pid }, "new process")
+}

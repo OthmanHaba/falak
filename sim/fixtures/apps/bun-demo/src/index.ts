@@ -7,6 +7,8 @@ app.get('/', (c) =>
     c.json({
         app: 'kiln-bun-demo',
         release: process.env.KILN_RELEASE_ID ?? null,
+        deployment: process.env.KILN_DEPLOYMENT_ID ?? null,
+        greeting: process.env.KILN_E2E_GREETING ?? null,
         server: process.env.HOSTNAME ?? null,
     }),
 );

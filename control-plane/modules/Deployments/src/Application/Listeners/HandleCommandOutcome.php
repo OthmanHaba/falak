@@ -8,12 +8,13 @@ use Kiln\Fleet\Events\CommandFailed;
 use Kiln\Fleet\Events\CommandFinished;
 
 /**
- * Advances deployments when their agent commands finish. Idempotent: a re-delivered event for a
+ * Advances deployments when their agent commands finish (proc.apply: the restart step converges the new
+ * release's program env through Processes). Idempotent: a re-delivered event for a
  * settled step is ignored by the Orchestrator.
  */
 final class HandleCommandOutcome implements ShouldQueue
 {
-    private const TYPES = ['deploy.fetch', 'deploy.prepare', 'deploy.hook', 'deploy.activate', 'deploy.rollback', 'deploy.container.swap', 'proc.restart', 'system.exec', 'docker.compose.pull', 'docker.compose.up'];
+    private const TYPES = ['deploy.fetch', 'deploy.prepare', 'deploy.hook', 'deploy.activate', 'deploy.rollback', 'deploy.container.swap', 'proc.restart', 'proc.apply', 'system.exec', 'docker.compose.pull', 'docker.compose.up'];
 
     public function __construct(private readonly Orchestrator $orchestrator) {}
 

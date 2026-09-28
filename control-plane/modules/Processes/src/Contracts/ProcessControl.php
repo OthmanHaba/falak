@@ -13,17 +13,20 @@ use Kiln\Processes\Events\ProcessesRestarted;
 interface ProcessControl
 {
     /**
-     * Gracefully restart the site's programs on its ready servers (or only on $serverId): Horizon gets
-     * `horizon:terminate` (the supervisor starts it again), everything else `proc.restart`.
+     * Restart the site's programs on its ready servers (or only on $serverId) on their live release. The server is
+     * converged first: a proc.apply carrying changed definitions (after a deploy: the new KILN_RELEASE_ID and the
+     * release's environment) restarts those programs itself — and starts them on a site's first deploy. Running
+     * programs it leaves unchanged are restarted gracefully: Horizon with `horizon:terminate` (the supervisor
+     * starts it again), everything else with `proc.restart`.
      * Servers without a connected agent are skipped. Emits {@see ProcessesRestarted}.
      *
-     * Octane: after a deploy ($newRelease) the program is restarted — `octane:reload` would re-boot the workers
-     * from the release directory the server was started in (Octane resolves `current` once, at start), i.e. keep
-     * serving the old code. The edge holds requests while it restarts (reverse_proxy retries for 30s), so no
-     * request fails. Without a new release (restart from the UI) a verified-listening Octane gets
+     * Octane: after a deploy ($newRelease) the program is restarted (its definition carries the new release, so the
+     * proc.apply does it) — `octane:reload` would re-boot the workers from the release directory the server was
+     * started in (Octane resolves `current` once, at start), i.e. keep serving the old code. The edge holds requests
+     * while it restarts (reverse_proxy retries for 30s), so no request fails. Without a new release (restart from the UI) a verified-listening Octane gets
      * `octane:reload` (graceful worker reload, the port never closes), falling back to `proc.restart`.
      *
-     * @return list<CommandHandle> the dispatched commands (empty when the site has no running programs)
+     * @return list<CommandHandle> the dispatched commands (empty when the site has no programs to restart)
      */
     public function restartForSite(string $siteId, ?string $serverId = null, bool $newRelease = true): array;
 

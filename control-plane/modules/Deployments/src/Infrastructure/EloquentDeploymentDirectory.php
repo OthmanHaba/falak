@@ -23,7 +23,7 @@ final class EloquentDeploymentDirectory implements DeploymentDirectory
 
         $active = Deployment::query()
             ->whereIn('site_id', $siteIds)
-            ->whereIn('status', DeploymentStatus::active())
+            ->whereIn('status', DeploymentStatus::occupying())
             ->orderByDesc('number')
             ->get()
             ->unique('site_id')

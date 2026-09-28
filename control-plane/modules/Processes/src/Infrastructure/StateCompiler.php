@@ -3,6 +3,8 @@
 namespace Kiln\Processes\Infrastructure;
 
 use Illuminate\Support\Collection;
+use Kiln\Deployments\Contracts\Data\LiveRelease;
+use Kiln\Deployments\Contracts\LiveReleases;
 use Kiln\Processes\Application\OctaneRoutes;
 use Kiln\Processes\Domain\Models\Daemon;
 use Kiln\Processes\Domain\Models\OctaneRoute;
@@ -17,7 +19,13 @@ use Kiln\Sites\Contracts\TargetStatus;
 
 /**
  * Compiles the complete desired proc.apply and cron.apply payloads of one server from every site
- * targeting it (ready targets only: the site user must exist before anything runs as it).
+ * targeting it — ready targets only (the site user must exist before anything runs as it), and only once
+ * the site has a live release on that server (Deployments' {@see LiveReleases}): before the first deploy
+ * there is no `current/` to run in, so a site's programs and schedules start on its first activation.
+ *
+ * Every program / job env carries the live release's site variables (the ones its `.env` was written
+ * with — Node and Deno don't read `.env`) plus KILN_RELEASE_ID / KILN_DEPLOYMENT_ID, so a deploy changes
+ * the program definitions and proc.apply restarts them with the new release's environment.
  *
  * Ids cross the agent boundary upper-case (KILN_SITE_ID / KILN_SERVER_ID), like telemetry.configure.
  */
@@ -26,13 +34,17 @@ final class StateCompiler
     /** @var array<string, OctaneRoute> draining Octane routes of the server being compiled, by site id */
     private array $draining = [];
 
-    public function __construct(private readonly SiteDirectory $sites) {}
+    public function __construct(
+        private readonly SiteDirectory $sites,
+        private readonly LiveReleases $releases,
+    ) {}
 
     public function compile(string $serverId): CompiledState
     {
+        $live = $this->releases->onServer($serverId);
         $sites = array_values(array_filter(
             $this->sites->forServer($serverId),
-            fn (SiteData $site) => ! $site->runtime->isContainer() && $site->target($serverId)?->status === TargetStatus::Ready,
+            fn (SiteData $site) => ! $site->runtime->isContainer() && $site->target($serverId)?->status === TargetStatus::Ready && isset($live[$site->id]),
         ));
 
         $siteIds = array_map(fn (SiteData $site) => $site->id, $sites);
@@ -50,12 +62,15 @@ final class StateCompiler
         foreach ($sites as $site) {
             $isLeader = $site->target($serverId)?->isLeader() ?? false;
 
-            foreach ($this->sitePrograms($site, $serverId, $workers->get($site->id, new Collection), $daemons->get($site->id, new Collection)) as [$program, $kind, $label]) {
+            $release = $live[$site->id];
+
+            foreach ($this->sitePrograms($site, $serverId, $release, $workers->get($site->id, new Collection), $daemons->get($site->id, new Collection)) as [$program, $kind, $label]) {
                 $programs[] = $program;
-                $programMeta[$program['name']] = ['site_id' => $site->id, 'kind' => $kind, 'label' => $label, 'numprocs' => $program['numprocs'] ?? 1];
+                // `hash` tells restartForSite() which programs a proc.apply restarts anyway (changed definition).
+                $programMeta[$program['name']] = ['site_id' => $site->id, 'kind' => $kind, 'label' => $label, 'numprocs' => $program['numprocs'] ?? 1, 'hash' => PayloadHash::of($program)];
             }
 
-            foreach ($this->siteJobs($site, $serverId, $isLeader, $schedules->get($site->id, new Collection)) as [$job, $kind, $label]) {
+            foreach ($this->siteJobs($site, $serverId, $release, $isLeader, $schedules->get($site->id, new Collection)) as [$job, $kind, $label]) {
                 $jobs[] = $job;
                 $jobMeta[$job['name']] = [
                     'site_id' => $site->id,
@@ -83,7 +98,7 @@ final class StateCompiler
      * @param  Collection<int, Daemon>  $daemons
      * @return list<array{0: array<string, mixed>, 1: string, 2: string}>
      */
-    private function sitePrograms(SiteData $site, string $serverId, Collection $workers, Collection $daemons): array
+    private function sitePrograms(SiteData $site, string $serverId, LiveRelease $release, Collection $workers, Collection $daemons): array
     {
         $out = [];
         $php = $site->phpBinary();
@@ -99,16 +114,17 @@ final class StateCompiler
         };
 
         if ($start !== null && $site->appPort !== null) {
-            $out[] = [$this->program($site, $serverId, ProgramNames::app($site->slug), $start, [], [
+            $out[] = [$this->program($site, $serverId, $release, ProgramNames::app($site->slug), $start, [], [
+                // The site's NODE_ENV wins; PORT/HOST must match what Caddy proxies to.
+                'NODE_ENV' => $release->environment['NODE_ENV'] ?? 'production',
                 'PORT' => (string) $site->appPort,
                 'HOST' => '127.0.0.1',
-                'NODE_ENV' => 'production',
                 'PATH' => '/usr/local/bin:/usr/bin:/bin',
             ]), 'app', 'Web process'];
         }
 
         if ($laravel && $site->laravel->horizon) {
-            $out[] = [$this->program($site, $serverId, ProgramNames::horizon($site->slug), [$php, 'artisan', 'horizon'], [
+            $out[] = [$this->program($site, $serverId, $release, ProgramNames::horizon($site->slug), [$php, 'artisan', 'horizon'], [
                 'stop_timeout_s' => max(1, (int) config('processes.horizon_stop_timeout', 120)),
             ]), 'horizon', 'Horizon'];
         }
@@ -117,9 +133,9 @@ final class StateCompiler
         $draining = $this->draining[$site->id] ?? null;
 
         if ($laravel && OctaneRoutes::wantsOctane($site)) {
-            $out[] = [$this->program($site, $serverId, ProgramNames::octane($site->slug), self::octaneCommand($php, $site->laravel->octaneServer ?? OctaneServer::Swoole, (int) $site->laravel->octanePort)), 'octane', 'Octane'];
+            $out[] = [$this->program($site, $serverId, $release, ProgramNames::octane($site->slug), self::octaneCommand($php, $site->laravel->octaneServer ?? OctaneServer::Swoole, (int) $site->laravel->octanePort)), 'octane', 'Octane'];
         } elseif ($draining !== null) {
-            $out[] = [$this->program($site, $serverId, ProgramNames::octane($site->slug), self::octaneCommand($php, $draining->octane_server, $draining->port)), 'octane', 'Octane (stopping)'];
+            $out[] = [$this->program($site, $serverId, $release, ProgramNames::octane($site->slug), self::octaneCommand($php, $draining->octane_server, $draining->port)), 'octane', 'Octane (stopping)'];
         }
 
         foreach ($workers as $worker) {
@@ -133,7 +149,7 @@ final class StateCompiler
                 continue;
             }
 
-            $out[] = [$this->program($site, $serverId, ProgramNames::worker($site->slug, $worker->id), $command, [
+            $out[] = [$this->program($site, $serverId, $release, ProgramNames::worker($site->slug, $worker->id), $command, [
                 'numprocs' => max(1, min(64, $worker->processes)),
                 // queue:work finishes the current job on SIGTERM; give it the job timeout plus a margin.
                 'stop_timeout_s' => max(1, $worker->timeout + 15),
@@ -145,7 +161,7 @@ final class StateCompiler
                 continue;
             }
 
-            $out[] = [$this->program($site, $serverId, ProgramNames::daemon($site->slug, $daemon->id), ['/bin/bash', '-c', $daemon->command], [
+            $out[] = [$this->program($site, $serverId, $release, ProgramNames::daemon($site->slug, $daemon->id), ['/bin/bash', '-c', $daemon->command], [
                 'numprocs' => max(1, min(64, $daemon->instances)),
                 'restart' => $daemon->restart,
                 'stop_signal' => $daemon->stop_signal,
@@ -162,7 +178,7 @@ final class StateCompiler
      * @param  Collection<int, Schedule>  $schedules
      * @return list<array{0: array<string, mixed>, 1: string, 2: string}>
      */
-    private function siteJobs(SiteData $site, string $serverId, bool $isLeader, Collection $schedules): array
+    private function siteJobs(SiteData $site, string $serverId, LiveRelease $release, bool $isLeader, Collection $schedules): array
     {
         $out = [];
 
@@ -173,7 +189,7 @@ final class StateCompiler
                 'command' => $site->phpBinary().' artisan schedule:run',
                 'user' => $site->unixUser,
                 'cwd' => $site->currentPath(),
-                'env' => $this->env($site, $serverId),
+                'env' => $this->env($site, $serverId, $release),
                 'timezone' => 'UTC',
                 // Laravel handles overlapping itself (withoutOverlapping); a slow run must not skip the next minute.
                 'overlap' => 'allow',
@@ -194,7 +210,7 @@ final class StateCompiler
                 'command' => $schedule->command,
                 'user' => $schedule->user ?: $site->unixUser,
                 'cwd' => $site->currentPath(),
-                'env' => $this->env($site, $serverId),
+                'env' => $this->env($site, $serverId, $release),
                 'timezone' => $schedule->timezone ?: 'UTC',
                 'overlap' => $schedule->overlap,
                 'timeout_s' => max(1, $schedule->timeout),
@@ -255,14 +271,14 @@ final class StateCompiler
      * @param  array<string, string>  $env
      * @return array<string, mixed>
      */
-    private function program(SiteData $site, string $serverId, string $name, array $command, array $overrides = [], array $env = []): array
+    private function program(SiteData $site, string $serverId, LiveRelease $release, string $name, array $command, array $overrides = [], array $env = []): array
     {
         return array_filter([
             'name' => $name,
             'command' => $command,
             'user' => $site->unixUser,
             'cwd' => $site->currentPath(),
-            'env' => $this->env($site, $serverId, $env),
+            'env' => $this->env($site, $serverId, $release, $env),
             'numprocs' => 1,
             'autostart' => true,
             'restart' => 'always',
@@ -274,16 +290,23 @@ final class StateCompiler
     }
 
     /**
+     * The release's site variables, then the program's own env, then Kiln's ids (which always win).
+     *
      * @param  array<string, string>  $extra
      * @return array<string, string>
      */
-    private function env(SiteData $site, string $serverId, array $extra = []): array
+    private function env(SiteData $site, string $serverId, LiveRelease $release, array $extra = []): array
     {
+        $variables = array_filter($release->environment, fn ($value, $key) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $key) === 1, ARRAY_FILTER_USE_BOTH);
+
         return [
+            ...array_map('strval', $variables),
             ...array_map('strval', $extra),
             'KILN_SITE' => $site->slug,
             'KILN_SITE_ID' => strtoupper($site->id),
             'KILN_SERVER_ID' => strtoupper($serverId),
+            'KILN_RELEASE_ID' => strtoupper($release->releaseId),
+            'KILN_DEPLOYMENT_ID' => strtoupper($release->deploymentId),
         ];
     }
 

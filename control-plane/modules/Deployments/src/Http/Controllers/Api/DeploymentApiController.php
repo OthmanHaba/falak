@@ -5,6 +5,7 @@ namespace Kiln\Deployments\Http\Controllers\Api;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
+use Kiln\Deployments\Application\Orchestration\Orchestrator;
 use Kiln\Deployments\Domain\Enums\ReleaseStatus;
 use Kiln\Deployments\Domain\Enums\Trigger;
 use Kiln\Deployments\Domain\Models\Deployment;
@@ -13,6 +14,7 @@ use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
 use Kiln\Deployments\Http\Controllers\PresentsDeployments;
 use Kiln\Deployments\Http\Controllers\ResolvesSites;
+use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
 
 /**
@@ -75,6 +77,17 @@ final class DeploymentApiController extends Controller
             'data' => $lines->map(fn (OutputLine $l) => $l->toLine())->values(),
             'meta' => ['next' => $lines->isEmpty() ? $after : (int) $lines->last()->id, 'status' => $model->status->value],
         ]);
+    }
+
+    /** POST /api/v1/deployments/{deployment}/cancel — queued, waiting or still-building deployments only (else 422). */
+    public function cancel(Request $request, string $deployment, Orchestrator $orchestrator): JsonResponse
+    {
+        $model = $this->deployment($request->user(), $deployment);
+        app(OrganizationAccess::class)->authorize($request->user(), $model->organization_id, DeploymentPermissions::CREATE);
+
+        abort_unless($orchestrator->cancel($model->id), 422, 'Only queued or waiting deployments, or deployments still building, can be cancelled.');
+
+        return response()->json(['data' => $this->deploymentResource($model->refresh())]);
     }
 
     /** POST /api/v1/sites/{site}/rollback {release_id?} */

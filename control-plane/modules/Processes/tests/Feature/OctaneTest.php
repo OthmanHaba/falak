@@ -84,26 +84,53 @@ it('enables Octane in order: program started, probe answered, then the edge prox
         ->toMatchArray(['kind' => 'reverse_proxy', 'upstreams' => [['dial' => "127.0.0.1:{$port}"]], 'root' => '/srv/kiln/sites/shop/current/public']);
 });
 
-it('keeps serving a never-deployed site directly: the probe fails, the first deploy restart re-probes', function () {
-    $site = processes_site($this->organization->id, [$this->web], ['test_domain_enabled' => true]);
+it('keeps serving a never-deployed site directly until its first release runs Octane', function () {
+    $site = processes_site($this->organization->id, [$this->web], ['test_domain_enabled' => true], deployed: false);
     octane_toggle($this, $site, true);
+
+    // No release yet: no program, nothing probed, the edge serves the placeholder release directly.
+    expect(OctaneRoute::query()->sole()->status)->toBe(OctaneRouteStatus::Starting)
+        ->and($this->agents->dispatched('proc.apply'))->toBe([])
+        ->and($this->agents->dispatched('system.exec'))->toBe([])
+        ->and(octane_edge_kind($this, $site->id))->toBe('frankenphp');
+    app()->call([new PollProcessStatus, 'handle']);
+    expect($this->agents->dispatched('system.exec'))->toBe([]);
+
+    // First deploy: activation makes the release live, the restart step converges → Octane starts → probed.
+    processes_deploy($site, [$this->web]);
+    app(ProcessControl::class)->restartForSite($site->id, $this->web->id, newRelease: true);
+    expect(processes_programs($this->agents->last('proc.apply')))->toHaveKey('shop.octane');
     octane_settle($this, 'proc.apply');
 
-    // current/ is the placeholder release: octane:start cannot run, nothing answers.
+    // It crashed on start (e.g. missing extension): the probe fails and the edge keeps serving directly.
     $this->agents->fail($this->agents->last('system.exec')['handle'], 'Octane is not answering', 1);
-
     expect(OctaneRoute::query()->sole())->status->toBe(OctaneRouteStatus::Failed)->error->toContain('not answering')
         ->and(octane_edge_kind($this, $site->id))->toBe('frankenphp');
 
-    // First deploy: Deployments restarts the programs (new release) → Octane starts → probed again.
-    $restart = app(ProcessControl::class)->restartForSite($site->id, $this->web->id, newRelease: true);
-    $restartCommand = $this->agents->last('proc.restart', $this->web->id);
-    expect($restart)->toHaveCount(1)->and($restartCommand['payload']['names'])->toBe(['shop.octane']);
-
-    $this->agents->succeed($restartCommand['handle'], ['restarted' => ['shop.octane']]);
+    // The periodic poll probes it again; once it answers, the edge proxies to it.
+    app()->call([new PollProcessStatus, 'handle']);
     $this->agents->succeed($this->agents->last('system.exec')['handle'], ['exit_code' => 0]);
 
     expect(octane_edge_kind($this, $site->id))->toBe('reverse_proxy:octane');
+});
+
+it('restarts Octane on a new release through the converge (never octane:reload) and keeps it proxied', function () {
+    $site = processes_site($this->organization->id, [$this->web], ['test_domain_enabled' => true]);
+    octane_toggle($this, $site, true);
+    octane_settle($this, 'proc.apply');
+    $this->agents->succeed($this->agents->last('system.exec')['handle'], ['exit_code' => 0]);
+    $before = processes_programs($this->agents->last('proc.apply'))['shop.octane'];
+
+    $release = processes_deploy($site, [$this->web]);
+    $handles = app(ProcessControl::class)->restartForSite($site->id, $this->web->id, newRelease: true);
+    $after = processes_programs($this->agents->last('proc.apply'))['shop.octane'];
+
+    expect($handles)->toHaveCount(1)
+        ->and($handles[0]->type)->toBe('proc.apply')
+        ->and($after['env']['KILN_RELEASE_ID'])->toBe(strtoupper($release->id))->not->toBe($before['env']['KILN_RELEASE_ID'])
+        ->and(collect($this->agents->dispatched('system.exec'))->pluck('payload.script')->filter(fn ($s) => str_contains($s, 'octane:reload')))->toBeEmpty()
+        // Still verified: the edge keeps proxying (it retries while Octane restarts).
+        ->and($this->routing->listeningPort($site->id, $this->web->id))->toBe($site->refresh()->laravel->octanePort);
 });
 
 it('disables Octane in order: the edge switches back first, the program stops once that config is applied', function () {

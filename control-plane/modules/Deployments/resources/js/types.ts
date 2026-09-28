@@ -1,4 +1,5 @@
-export type DeploymentStatus = 'queued' | 'building' | 'deploying' | 'succeeded' | 'failed' | 'cancelled';
+/** `waiting`: claimed but held until the site's servers finish preparing (see `waiting_reason`). */
+export type DeploymentStatus = 'queued' | 'waiting' | 'building' | 'deploying' | 'succeeded' | 'failed' | 'cancelled';
 export type StepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped';
 export type Phase = 'build' | 'fetch' | 'prepare' | 'migrate' | 'activate' | 'restart' | 'healthcheck' | 'rollback';
 
@@ -21,6 +22,9 @@ export interface Deployment {
     rolled_back: boolean;
     url: string;
     error: string | null;
+    /** "Waiting for 2 servers to finish preparing: web-1, web-2" while status is `waiting`. */
+    waiting_reason: string | null;
+    waiting_since: string | null;
     created_at: string;
     started_at: string | null;
     finished_at: string | null;

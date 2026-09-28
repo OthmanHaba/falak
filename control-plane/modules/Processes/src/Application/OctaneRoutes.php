@@ -8,7 +8,9 @@ use Kiln\Fleet\Contracts\AgentGateway;
 use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Kiln\Processes\Domain\Enums\OctaneRouteStatus;
 use Kiln\Processes\Domain\Models\OctaneRoute;
+use Kiln\Processes\Domain\Models\ServerState;
 use Kiln\Processes\Events\OctaneRoutingChanged;
+use Kiln\Processes\Infrastructure\ProgramNames;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\TargetStatus;
@@ -131,6 +133,12 @@ final class OctaneRoutes
         $target = $site?->target($route->server_id);
 
         if ($site === null || $target === null || $target->status !== TargetStatus::Ready) {
+            return;
+        }
+
+        // No program yet (programs start with the site's first release): nothing to wait for; the proc.apply that
+        // starts it triggers the probe.
+        if (! array_key_exists(ProgramNames::octane($site->slug), ServerState::query()->find($route->server_id)?->programs ?? [])) {
             return;
         }
 

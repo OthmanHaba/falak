@@ -18,7 +18,7 @@ use Kiln\Processes\Domain\Enums\ApplyStatus;
  * @property ?string $proc_command_id
  * @property ?ApplyStatus $proc_status
  * @property ?string $proc_error
- * @property ?array<string, array{site_id: string, kind: string, label: string, numprocs: int}> $programs
+ * @property ?array<string, array{site_id: string, kind: string, label: string, numprocs: int, hash?: string}> $programs
  * @property ?list<string> $applied_programs
  * @property ?Carbon $proc_dispatched_at
  * @property ?Carbon $proc_applied_at
