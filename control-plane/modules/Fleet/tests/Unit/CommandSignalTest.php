@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Contracts\Redis\Factory;
+use Illuminate\Support\Facades\DB;
 use Kiln\Fleet\Infrastructure\Signals\CommandSignal;
 use Kiln\Fleet\Infrastructure\Signals\DatabaseCommandSignal;
 use Kiln\Fleet\Infrastructure\Signals\RedisCommandSignal;
@@ -58,6 +59,33 @@ it('wakes waiters through Redis lists (RPUSH on notify, BLPOP while waiting)', f
     expect($result)->toBe(['cmd'])->and($checks)->toBe(2);
 });
 
+it('runs the before-block hook ahead of every BLPOP (releases the database connection while waiting)', function () {
+    $events = [];
+    $connection = Mockery::mock();
+    $connection->shouldReceive('command')->with('blpop', Mockery::any())->twice()->andReturnUsing(function () use (&$events) {
+        $events[] = 'blpop';
+
+        return null;
+    });
+
+    $redis = Mockery::mock(Factory::class);
+    $redis->shouldReceive('connection')->with('default')->andReturn($connection);
+
+    $signal = new RedisCommandSignal($redis, 'default', function () use (&$events) {
+        $events[] = 'release';
+    });
+
+    $checks = 0;
+    $result = $signal->wait('agent-1', 30, function () use (&$checks, &$events) {
+        $events[] = 'check';
+
+        return ++$checks === 3 ? ['cmd'] : [];
+    });
+
+    expect($result)->toBe(['cmd'])
+        ->and($events)->toBe(['check', 'release', 'blpop', 'check', 'release', 'blpop', 'check']);
+});
+
 it('binds the signal driver from configuration', function () {
     config(['fleet.wake_driver' => 'redis']);
     app()->forgetInstance(CommandSignal::class);
@@ -66,4 +94,23 @@ it('binds the signal driver from configuration', function () {
     config(['fleet.wake_driver' => 'database']);
     app()->forgetInstance(CommandSignal::class);
     expect(app(CommandSignal::class))->toBeInstanceOf(DatabaseCommandSignal::class);
+});
+
+it('releases the idle database connection before blocking, but never inside a transaction', function () {
+    config(['fleet.wake_driver' => 'redis']);
+    app()->forgetInstance(CommandSignal::class);
+    $hook = (new ReflectionProperty(RedisCommandSignal::class, 'beforeBlock'))->getValue(app(CommandSignal::class));
+    $connected = fn () => DB::connection()->getRawPdo() !== null;
+
+    DB::connection()->getPdo();
+    DB::beginTransaction();
+    $hook();
+    expect($connected())->toBeTrue();
+    DB::rollBack();
+
+    $hook();
+    expect($connected())->toBeFalse();
+
+    $hook(); // already released: no-op
+    expect($connected())->toBeFalse();
 });

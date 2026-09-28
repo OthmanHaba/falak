@@ -7,8 +7,9 @@
 # Build context: the REPOSITORY ROOT (the image bakes agent/CLI/builder binaries, the agent protocol
 # schemas and the Grafana dashboards next to the Laravel app). Ignore rules: Dockerfile.dockerignore.
 #
-# One image, four roles (entrypoint argument): web (FrankenPHP; runs migrations when KILN_MIGRATE=1),
-# horizon, reverb, scheduler. Runs as www-data. Proven topology: sim/compose.yml; production: deploy/compose.yml.
+# One image, five roles (entrypoint argument): web (the panel: FrankenPHP worker mode; runs migrations when
+# KILN_MIGRATE=1), agent-api (FrankenPHP for agent/builder long-polls, own thread pool), horizon, reverb,
+# scheduler. Runs as www-data. Proven topology: sim/compose.yml; production: deploy/compose.yml.
 
 ARG PHP_IMAGE=dunglas/frankenphp:1.12.7-php8.4-trixie
 ARG GO_IMAGE=golang:1.25-trixie
@@ -29,8 +30,12 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
 
 # --- base: PHP runtime + extensions -----------------------------------------------------------------
 FROM ${PHP_IMAGE} AS base
+# php.ini (FrankenPHP) and php-cli.ini (CLI SAPI: artisan, Horizon, Reverb, scheduler) differ only in OPcache.
+COPY deploy/control-plane/php-server.ini deploy/control-plane/php-cli.ini /tmp/kiln-ini/
 RUN install-php-extensions pdo_pgsql redis pcntl intl zip bcmath gmp sockets opcache \
- && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+ && cat "$PHP_INI_DIR/php.ini-production" /tmp/kiln-ini/php-server.ini > "$PHP_INI_DIR/php.ini" \
+ && cat "$PHP_INI_DIR/php.ini-production" /tmp/kiln-ini/php-cli.ini > "$PHP_INI_DIR/php-cli.ini" \
+ && rm -rf /tmp/kiln-ini && mkdir -p /tmp/kiln-opcache
 COPY deploy/control-plane/php.ini "$PHP_INI_DIR/conf.d/zz-kiln.ini"
 WORKDIR /app
 
@@ -67,17 +72,18 @@ COPY --from=binaries /out/ /opt/kiln/bin/
 COPY contracts/ /opt/kiln/contracts/
 COPY templates/ /opt/kiln/templates/
 COPY observability/grafana/dashboards/ /opt/kiln/observability/grafana/dashboards/
-COPY deploy/control-plane/Caddyfile /etc/frankenphp/Caddyfile
+COPY deploy/control-plane/Caddyfile deploy/control-plane/php-classic.caddyfile deploy/control-plane/php-worker.caddyfile /etc/frankenphp/
 COPY --chmod=0755 deploy/control-plane/entrypoint.sh /usr/local/bin/kiln-entrypoint
 COPY --chmod=0755 deploy/control-plane/healthcheck.sh /usr/local/bin/kiln-healthcheck
 RUN rm -f bootstrap/cache/*.php .env \
- && COMPOSER_ALLOW_SUPERUSER=1 composer dump-autoload --optimize --no-dev --no-interaction \
+ && COMPOSER_ALLOW_SUPERUSER=1 composer dump-autoload --classmap-authoritative --no-dev --no-interaction \
  && APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= php artisan package:discover --ansi \
  && rm /usr/bin/composer \
  && ln -sfn /app/storage/app/public /app/public/storage \
  && mkdir -p storage/app/public storage/framework/cache storage/framework/sessions storage/framework/views \
              storage/logs storage/kiln /kiln/ca \
  && echo "${KILN_VERSION}" > /opt/kiln/VERSION \
+ && rm -rf /tmp/kiln-opcache && install -d -o www-data -g www-data -m 0700 /tmp/kiln-opcache \
  && chown -R www-data:www-data storage bootstrap/cache /kiln/ca /data/caddy /config/caddy \
  # File capabilities are not needed (port 8080) and would break under no-new-privileges.
  && setcap -r /usr/local/bin/frankenphp

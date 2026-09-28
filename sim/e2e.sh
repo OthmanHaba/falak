@@ -36,7 +36,7 @@ while IFS='|' read -r svc state health; do
     bad "$(printf '%-16s %s%s' "$svc" "$state" "${health:+ ($health)}")"
   fi
 done <<<"$report"
-for s in postgres valkey control-plane horizon reverb edge gateway loki tempo grafana "${SERVERS[@]}"; do
+for s in postgres valkey control-plane agent-api horizon reverb edge gateway loki tempo grafana "${SERVERS[@]}"; do
   grep -q "^${s}|" <<<"$report" || bad "service ${s} is not running"
 done
 

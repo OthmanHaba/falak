@@ -85,7 +85,18 @@ class FleetServiceProvider extends ModuleServiceProvider
         ));
 
         $this->app->singleton(CommandSignal::class, fn ($app) => config('fleet.wake_driver') === 'redis'
-            ? new RedisCommandSignal($app->make('redis'), (string) config('fleet.wake_redis_connection', 'default'))
+            ? new RedisCommandSignal(
+                $app->make('redis'),
+                (string) config('fleet.wake_redis_connection', 'default'),
+                // Idle long-polls release their database connection (reconnected lazily on the next check),
+                // unless a transaction is open (tests, or a caller that wraps the poll).
+                function () use ($app): void {
+                    $db = $app->make('db');
+                    if ($db->getConnections() !== [] && $db->connection()->transactionLevel() === 0) {
+                        $db->disconnect();
+                    }
+                },
+            )
             : new DatabaseCommandSignal((int) config('fleet.database_poll_interval_ms', 500)));
     }
 

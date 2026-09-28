@@ -61,7 +61,8 @@ class ProjectsServiceProvider extends ModuleServiceProvider
         Event::listen(DatabaseCreated::class, [PlaceCreatedServices::class, 'databaseCreated']);
         Event::listen(DatabaseDeleted::class, [PlaceCreatedServices::class, 'databaseDeleted']);
 
-        $this->app->make(SharedProps::class)->register('kiln', fn (Request $request) => $this->app->make(KilnNavigation::class)->for($request));
+        // app(), not $this->app: under the FrankenPHP worker the latter is the base app, not the request sandbox.
+        $this->app->make(SharedProps::class)->register('kiln', fn (Request $request) => app(KilnNavigation::class)->for($request));
 
         if ($this->app->runningInConsole()) {
             $this->commands([BackfillProjectsCommand::class]);

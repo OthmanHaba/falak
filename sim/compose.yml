@@ -2,11 +2,14 @@
 #
 #   make up        (= docker compose -p kiln-sim --env-file sim.env --profile victoriametrics up -d --build)
 #
-#   host ──https :8443──► edge (Caddy, internal CA TLS + agent mTLS) ──► control-plane (FrankenPHP)
+#   host ──https :8443──► edge (Caddy, internal CA TLS + agent mTLS) ──► control-plane (panel, FrankenPHP worker mode)
+#                                                                      ├► agent-api (/agent/*, /install/*, /api/internal/*)
 #                                                                      └► reverb
 #   srv-app-1, srv-app-2, srv-db-1 (Ubuntu 24.04 + systemd) ── fleet network ──► edge as https://kiln.test
 #                                                          └─ observability network ──► gateway:4318 (OTLP)
-#   control-plane, horizon, reverb ── backend network ──► postgres, valkey
+#   control-plane, agent-api, horizon, reverb ── backend network ──► postgres, valkey
+# control-plane and agent-api run the production runtime (deploy/control-plane: Caddyfile, entrypoint, php.ini):
+# agents and the builder long-poll agent-api, which has its own PHP thread pool, so they never starve the panel.
 #
 # Caches (make up creates them; they survive `make reset`, `make clean-cache` / `make reset-all` wipe them):
 #   sim-apt-cache (apt-cacher-ng)    HTTP apt proxy of the servers (Proxy-Auto-Detect)       volume kiln-sim-cache-apt
@@ -198,8 +201,11 @@ services:
       context: ../control-plane
       dockerfile: ../sim/control-plane.Dockerfile
       additional_contexts:
-        sim: .
+        deploy: ../deploy/control-plane
     command: ["web"]
+    environment:
+      <<: *cp-env
+      KILN_MIGRATE: "1"
     depends_on:
       postgres: { condition: service_healthy }
       valkey: { condition: service_healthy }
@@ -209,6 +215,20 @@ services:
       timeout: 5s
       retries: 30
       start_period: 120s
+      start_interval: 1s
+
+  # Agents, installer and builders (the edge routes /agent/*, /install/*, /api/internal/* here).
+  agent-api:
+    <<: *control-plane
+    command: ["agent-api"]
+    depends_on:
+      control-plane: { condition: service_healthy }   # migrations have run
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8080/up"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
       start_interval: 1s
 
   horizon:
@@ -319,6 +339,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       edge: { condition: service_healthy }
+      agent-api: { condition: service_healthy }
       sim-git: { condition: service_healthy }
       sim-hub-mirror: { condition: service_healthy }
     networks: [fleet]

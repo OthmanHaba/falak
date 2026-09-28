@@ -1,0 +1,15 @@
+# Worker mode (panel): Laravel boots once per worker thread and serves request after request
+# (Laravel Octane's FrankenPHP worker; request state is reset by config/octane.php listeners).
+php_server {
+	index frankenphp-worker.php
+	try_files {path} frankenphp-worker.php
+	resolve_root_symlink
+	worker {
+		file /app/public/frankenphp-worker.php
+		num {$KILN_PHP_WORKERS}
+		env APP_BASE_PATH /app
+		env LARAVEL_OCTANE 1
+		# Recycle a worker after this many requests (bounds any slow leak).
+		env MAX_REQUESTS {$KILN_WORKER_MAX_REQUESTS:1000}
+	}
+}

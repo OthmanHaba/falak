@@ -1,16 +1,32 @@
 #!/bin/sh
 # Kiln control-plane entrypoint.
-#   roles: web (default) | horizon | reverb | scheduler | <any command, e.g. php artisan ...>
+#   roles: web (default) | agent-api | horizon | reverb | scheduler | <any command, e.g. php artisan ...>
+#
+#   web        the panel (FrankenPHP). Worker mode by default: Laravel boots once per worker thread.
+#   agent-api  FrankenPHP for machine traffic: agent API (/agent/*), installer (/install/*) and the builder's
+#              internal API (/api/internal/*). Agents and builders hold long-polls (one PHP thread each for
+#              up to 30 s), so they get their own thread pool and can never starve the panel.
 #
 #   KILN_MIGRATE=1          web role runs `migrate --force` before serving (set on exactly one service)
 #   KILN_WAIT_TIMEOUT=120   seconds to wait for Postgres/Valkey before giving up
 #   KILN_EDGE_AGENT_API_HOST  issue/renew the agent-API server certificate from the Fleet CA into
 #                           $KILN_CA_PATH (agent-api.pem/.key) — the edge serves the agents host with it.
+#
+# PHP thread pool (docs/INSTALL.md, "Performance"; defaults scale with the CPUs visible to the container):
+#   KILN_WORKER_MODE=1          web: FrankenPHP worker mode (Laravel Octane); 0 = classic, boot per request
+#   KILN_PHP_WORKERS            web, worker mode: worker threads kept booted            (default 2 x CPUs)
+#   KILN_PHP_THREADS            web, classic mode: threads started                      (default 2 x CPUs, >= 4)
+#   KILN_PHP_MAX_THREADS        web: ceiling the pool autoscales to under load          (default 4 x CPUs, >= 8)
+#   KILN_AGENT_API_THREADS      agent-api: ceiling; size it >= servers + builders + 8   (default 128; 32 started)
+# A `num_threads`/`max_threads` in FRANKENPHP_CONFIG (the 0.2.x hotfix in custom.env) takes precedence.
 set -eu
 cd /app
 
 role="${1:-web}"
 ca_dir="${KILN_CA_PATH:-/kiln/ca}"
+# CLI OPcache file cache (php-cli.ini): start every container from an empty cache.
+rm -rf /tmp/kiln-opcache/* 2>/dev/null || true
+mkdir -p /tmp/kiln-opcache 2>/dev/null || true
 mkdir -p "$ca_dir" storage/app/public storage/framework/cache storage/framework/sessions \
   storage/framework/views storage/logs storage/kiln 2>/dev/null || true
 
@@ -70,6 +86,71 @@ ensure_agent_api_cert() {
     || log "agent API certificate issuance failed (agents cannot connect until this succeeds)"
 }
 
+# Non-negative integer or the default.
+int_or() {
+  case "${1:-}" in
+    '' | *[!0-9]*) echo "$2" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+max() { if [ "$1" -gt "$2" ]; then echo "$1"; else echo "$2"; fi; }
+min() { if [ "$1" -lt "$2" ]; then echo "$1"; else echo "$2"; fi; }
+
+# Size the FrankenPHP thread pool for $1 (web | agent-api) and pick the PHP mode. Exports the variables the
+# Caddyfile reads: KILN_FRANKENPHP_THREADS, KILN_PHP_SERVER, KILN_PHP_WORKERS.
+configure_php() {
+  cpus="$(nproc 2>/dev/null || echo 2)"
+  cpus="$(int_or "$cpus" 2)"
+  [ "$cpus" -ge 1 ] || cpus=2
+  # 0.2.x hotfix: FRANKENPHP_CONFIG=num_threads N in custom.env. Declaring the counts twice would fail
+  # (max_threads < num_threads), so the legacy value wins; the KILN_* defaults apply once it is removed.
+  legacy="$(printf '%s\n' "${FRANKENPHP_CONFIG:-}" | sed -n 's/.*num_threads[[:space:]]\{1,\}\([0-9]\{1,\}\).*/\1/p' | head -n 1)"
+  legacy_max=0
+  if printf '%s' "${FRANKENPHP_CONFIG:-}" | grep -q 'max_threads'; then legacy_max=1; fi
+
+  workers=0
+  mode=classic
+  case "$1" in
+    web)
+      if [ "${KILN_WORKER_MODE:-1}" != "0" ]; then
+        mode=worker
+        workers="$(max 1 "$(int_or "${KILN_PHP_WORKERS:-}" $((cpus * 2)))")"
+        # Worker threads plus two regular threads (direct /index.php hits, e.g. from old links).
+        threads=$((workers + 2))
+      else
+        threads="$(max 1 "$(int_or "${KILN_PHP_THREADS:-}" "$(max 4 $((cpus * 2)))")")"
+      fi
+      ceiling="$(int_or "${KILN_PHP_MAX_THREADS:-}" "$(max 8 $((cpus * 4)))")"
+      ;;
+    agent-api)
+      ceiling="$(max 2 "$(int_or "${KILN_AGENT_API_THREADS:-}" 128)")"
+      threads="$(min 32 "$ceiling")"
+      ;;
+  esac
+  ceiling="$(max "$ceiling" "$threads")"
+
+  if [ -n "$legacy" ] || [ "$legacy_max" = 1 ]; then
+    log "FRANKENPHP_CONFIG sets the PHP thread count (${FRANKENPHP_CONFIG}); it overrides the $1 defaults. Remove it from custom.env to use the KILN_* sizing (docs/INSTALL.md)."
+    KILN_FRANKENPHP_THREADS=""
+    if [ "$mode" = worker ] && [ -n "$legacy" ] && [ "$workers" -ge "$legacy" ]; then
+      workers="$(max 1 $((legacy - 1)))"
+    fi
+  else
+    KILN_FRANKENPHP_THREADS="num_threads $threads
+max_threads $ceiling"
+  fi
+  KILN_PHP_SERVER="$mode"
+  KILN_PHP_WORKERS="$(max 1 "$workers")"
+  export KILN_FRANKENPHP_THREADS KILN_PHP_SERVER KILN_PHP_WORKERS
+  summary="PHP $mode mode"
+  if [ "$mode" = worker ]; then summary="$summary, $KILN_PHP_WORKERS workers"; fi
+  if [ -n "$KILN_FRANKENPHP_THREADS" ]; then
+    summary="$summary, $(printf '%s' "$KILN_FRANKENPHP_THREADS" | tr '\n' ' ')"
+  fi
+  log "$1: $summary"
+}
+
 echo "$role" > /tmp/kiln-role 2>/dev/null || true
 
 case "$role" in
@@ -83,6 +164,13 @@ case "$role" in
     ensure_agent_api_cert
     # Renew the agent API certificate daily while running (cheap no-op when still valid).
     ( while sleep 86400; do ensure_agent_api_cert; done ) &
+    configure_php web
+    exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile
+    ;;
+  agent-api)
+    wait_for_services
+    cache_config
+    configure_php agent-api
     exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile
     ;;
   horizon)
