@@ -1,4 +1,5 @@
-import { registerServiceSettingsSections } from '@/lib/registry';
+import { registerDomainPicker, registerServiceSettingsSections, registerSettingsNav } from '@/lib/registry';
+import { Globe } from 'lucide-react';
 import { lazy } from 'react';
 
 // Settings tab → Networking (docs/UI_DESIGN.md §5.1): domains + TLS, certificates, edge servers, load balancer
@@ -25,3 +26,19 @@ registerServiceSettingsSections(
         component: lazy(() => networking().then((module) => ({ default: module.RoutingSettings }))),
     },
 );
+
+// Domain choices in create forms (templates, git / image services) and Settings → Compose: generated, test or custom.
+registerDomainPicker(lazy(() => import('./components/domain-picker').then((module) => ({ default: module.DomainPicker }))));
+
+// Organization settings → Domains: which service generates domains (sslip.io, nip.io, off).
+registerSettingsNav({
+    id: 'domains',
+    title: 'Domains',
+    url: '/settings/domains',
+    group: 'organization',
+    order: 145,
+    icon: Globe,
+    permission: 'edge.view',
+    requiresOrganization: true,
+    keywords: ['domain', 'dns', 'sslip', 'nip.io', 'generated', 'test domain'],
+});

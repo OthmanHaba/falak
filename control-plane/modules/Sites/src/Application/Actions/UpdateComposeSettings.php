@@ -54,7 +54,7 @@ final class UpdateComposeSettings
         }
 
         $public = array_key_exists('public_services', $data)
-            ? $this->settings->publicServices(array_values((array) $data['public_services']), $site->serverIds(), $summary, $site)
+            ? $this->settings->publicServices($this->settings->resolveDomainChoices($site->organization_id, array_values((array) $data['public_services']), $site->slug, $site->leaderFirstServerIds(), $site->id), $site->serverIds(), $summary, $site)
             : ($summary !== null ? $this->settings->publicServices(array_values(array_map(fn ($p) => (array) $p, (array) $site->public_services)), $site->serverIds(), $summary, $site) : (array) $site->public_services);
 
         $version = null;

@@ -13,8 +13,10 @@ use Kiln\Sites\Application\SourceControlLinker;
 use Kiln\Sites\Application\TargetProvisioner;
 use Kiln\Sites\Contracts\BuildMode;
 use Kiln\Sites\Contracts\ComposeSource;
+use Kiln\Sites\Contracts\Data\DomainChoice;
 use Kiln\Sites\Contracts\Data\SitePlacement;
 use Kiln\Sites\Contracts\Framework;
+use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Contracts\TargetRole;
 use Kiln\Sites\Contracts\TargetStatus;
@@ -37,6 +39,7 @@ final class CreateSite
         private readonly SourceControlLinker $sourceControl,
         private readonly AuditLog $audit,
         private readonly ComposeSettings $composeSettings,
+        private readonly SiteDomains $domains,
     ) {}
 
     /**
@@ -116,6 +119,20 @@ final class CreateSite
 
         $appPort = null;
         $compose = null;
+        $slug = $this->slug((string) ($data['slug'] ?? '') ?: (string) $data['name']);
+        $domain = null;
+
+        // An explicit domain choice (create forms, API): a generated name for the leader, the test domain (null) or the
+        // user's own domain, routed right after the site exists.
+        if ($runtime === SiteRuntime::Compose) {
+            if (isset($data['domain'])) {
+                throw ValidationException::withMessages(['domain' => 'Compose sites take a domain per public service (public_services[].domain).']);
+            }
+
+            $data['public_services'] = $this->composeSettings->resolveDomainChoices($organizationId, array_values((array) ($data['public_services'] ?? [])), $slug, $this->leaderFirst($serverIds, $leaderId));
+        } elseif (isset($data['domain'])) {
+            $domain = $this->domains->resolveChoice($organizationId, DomainChoice::fromInput($data['domain'], 'domain'), $slug, $this->leaderFirst($serverIds, $leaderId), 'domain');
+        }
 
         if ($runtime === SiteRuntime::Compose) {
             $compose = $this->composeFields($organizationId, $data, $serverIds);
@@ -125,12 +142,11 @@ final class CreateSite
             $this->rules->portAvailable($appPort, $serverIds);
         }
 
-        $slug = $this->slug((string) ($data['slug'] ?? '') ?: (string) $data['name']);
         $isolated = (bool) ($data['isolated'] ?? false);
 
         $variables = $this->variables($data['variables'] ?? null);
 
-        $site = DB::transaction(function () use ($organizationId, $userId, $data, $framework, $preset, $runtime, $buildMode, $phpVersion, $serverIds, $leaderId, $appPort, $slug, $isolated, $configure, $compose, $variables) {
+        $site = DB::transaction(function () use ($organizationId, $userId, $data, $framework, $preset, $runtime, $buildMode, $phpVersion, $serverIds, $leaderId, $appPort, $slug, $isolated, $configure, $compose, $variables, $domain) {
             $site = Site::query()->create([
                 'organization_id' => $organizationId,
                 'name' => $data['name'],
@@ -174,7 +190,7 @@ final class CreateSite
             EnvironmentVersion::query()->create([
                 'site_id' => $site->id,
                 'version' => 1,
-                'variables' => [...$this->initialEnvironment($site, $preset), ...$variables],
+                'variables' => [...$this->initialEnvironment($site, $preset, $domain), ...$variables],
                 'exposed' => [],
                 'changed_keys' => [],
                 'created_by' => $userId,
@@ -200,6 +216,14 @@ final class CreateSite
             $this->provisioner->start($target);
         }
 
+        if ($domain !== null) {
+            try {
+                $this->domains->attach($site->id, $domain);
+            } catch (ValidationException $e) {
+                $this->warnings[] = "The site was created, but {$domain} could not be added: ".collect($e->errors())->flatten()->first();
+            }
+        }
+
         $this->audit->record('site.created', 'site', $site->id, [
             'name' => $site->name,
             'runtime' => $runtime->value,
@@ -211,6 +235,15 @@ final class CreateSite
         SiteCreated::dispatch($site->id, $organizationId, $site->slug, $runtime->value, $serverIds, $placement);
 
         return $site->refresh()->load('targets');
+    }
+
+    /**
+     * @param  list<string>  $serverIds
+     * @return list<string>
+     */
+    private function leaderFirst(array $serverIds, string $leaderId): array
+    {
+        return $leaderId === '' ? $serverIds : [$leaderId, ...array_values(array_diff($serverIds, [$leaderId]))];
     }
 
     private function slug(string $source): string
@@ -244,7 +277,7 @@ final class CreateSite
     /**
      * @return array<string, string>
      */
-    private function initialEnvironment(Site $site, Preset $preset): array
+    private function initialEnvironment(Site $site, Preset $preset, ?string $domain = null): array
     {
         $variables = $preset->environment;
 
@@ -261,7 +294,7 @@ final class CreateSite
         }
 
         if (array_key_exists('APP_URL', $variables)) {
-            $variables['APP_URL'] = ($domain = $site->testDomain()) ? "https://{$domain}" : '';
+            $variables['APP_URL'] = ($host = $domain ?? $site->testDomain()) ? "https://{$host}" : '';
         }
 
         if ($site->app_port !== null && $site->runtime !== SiteRuntime::Compose) {

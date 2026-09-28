@@ -177,6 +177,29 @@ an HTTPS mirror with the same path layout. Set these in `/opt/kiln/custom.env`, 
 Unset (the default) means the upstream URLs. The mirror applies to servers provisioned (or runtimes
 installed) after the change.
 
+### Domains for new services
+
+When a service is created (template, Git repository, Docker image) each public endpoint gets a domain:
+
+- **Generate** — `<name>.<server-ip-with-dashes>.sslip.io` (e.g. `minio-files.63-182-218-247.sslip.io`). Works at
+  once, with a Let's Encrypt certificate, no DNS setup. The default when no test domain is configured. It points at the
+  leader server (or the site's load balancer); a service on several servers without a load balancer is reached on the
+  leader only. sslip.io / nip.io names are shared by all their users (common certificate rate limits, no cookie
+  isolation): fine for trying things out, use your own domain for production.
+- **Test domain** — `<slug>.<KILN_TEST_DOMAIN>` when you run a wildcard test domain (the default then).
+- **Custom domain** — Kiln shows the record(s) to add (`A` → the server's IPv4, `AAAA` → its IPv6; one per server for
+  DNS round-robin, or the load balancer only) and checks DNS live until the name points at the server. Cloudflare
+  proxying ("orange cloud") is detected: keep the record "DNS only" until the certificate is issued.
+
+Organizations pick the generated-domain provider (sslip.io, nip.io, off) in **Settings → Domains**. Server-wide settings
+in `.env` (then `kiln-ctl up`):
+
+| Variable | Default | |
+|---|---|---|
+| `KILN_GENERATED_DOMAIN_SUFFIX` | `sslip.io` | `nip.io`, the domain of a self-hosted [sslip.io server](https://github.com/cunnie/sslip.io), or `off` |
+| `KILN_DNS_RESOLVER` | `doh` | how the DNS check resolves: `doh` (DNS-over-HTTPS, no local cache) or `system` (the host's resolver) |
+| `KILN_DNS_DOH_URL` | `https://cloudflare-dns.com/dns-query` | any DNS-over-HTTPS JSON endpoint (e.g. `https://dns.google/resolve`) |
+
 ## 4. Operate: `kiln-ctl`
 
 ```bash
@@ -202,7 +225,27 @@ An update:
 2. fetches the new deploy bundle and pulls the new images (if a pull fails, nothing changes);
 3. recreates the stack. The `control-plane` service runs the migrations, and `horizon`, `reverb` and
    `scheduler` wait until it is healthy;
-4. health-checks every container and `https://<domain>/up`.
+4. recreates every service whose **mounted config files** changed (see below) and prints their names;
+5. health-checks every container and `https://<domain>/up`.
+
+**Mounted config files.** Some services read config files bind-mounted from `/opt/kiln/observability/` and
+`/opt/kiln/deploy/` (`loki.yaml`, `tempo.yaml`, the gateway `Caddyfile`, Grafana provisioning and dashboards).
+An update replaces those directories, but a running container keeps the files it was started with (the mount
+holds the old file), and `docker compose up` only recreates services whose compose definition changed. So
+after `compose up`, `kiln-ctl` compares what each running container sees at its Kiln mounts with the files on
+disk and force-recreates exactly the services that differ:
+
+```
+==> mounted config files changed: recreating loki
+  ✓ recreated loki
+```
+
+The same check runs on `kiln-ctl up`, after a restore and during a rollback. Run it on its own with
+`kiln-ctl reload-configs`, for example after editing `/opt/kiln/observability/loki/loki.yaml` by hand (such
+edits are replaced by the next update). kiln-ctl v0.2.5 and older did not do this, so Loki could keep the previous
+`loki.yaml` (access logs in **Network Logs** were then not queryable). An update is run by the kiln-ctl that is
+already installed, so after updating *from* v0.2.5 or older run `kiln-ctl reload-configs` once; it fixes such
+containers.
 
 **Upgrading from 0.2.x with the thread hotfix.** If you added `FRANKENPHP_CONFIG=num_threads 24` to
 `/opt/kiln/custom.env`, the update keeps working: a thread count in `FRANKENPHP_CONFIG` still wins over the
@@ -210,7 +253,7 @@ automatic sizing (the containers log a notice). It is no longer needed, because 
 `agent-api` service (see [Performance](#performance-php-threads-and-worker-mode)). Remove the line, then run
 `kiln-ctl up`. `kiln-ctl doctor` reports it until you do.
 
-If step 3 or 4 fails, `kiln-ctl` **rolls back automatically**. It restores the previous deploy files and
+If step 3, 4 or 5 fails, `kiln-ctl` **rolls back automatically**. It restores the previous deploy files and
 `KILN_VERSION`, restores the database, storage and Fleet CA from the pre-update backup (the new migrations
 may already have run), and starts the previous version again.
 
@@ -230,6 +273,12 @@ failure; an upgrade fails when the agent has not come back with the new build wi
 seconds (default 600). Failures raise the *Agent upgrade failed* alert. To roll a server back by hand:
 `mv /usr/local/bin/kiln-agent.prev /usr/local/bin/kiln-agent && systemctl restart kiln-agent`.
 `kiln-ctl artisan kiln:agents` shows the shipped build and the number of outdated agents.
+
+Commands in flight during an agent restart are not lost: each agent process has a session id, and commands
+delivered to the previous process are delivered again (Caddy routes, telemetry, processes, cron, firewall and other
+`*.apply` state) or fail with "The agent restarted before running the command" (deploy steps, scripts). A command the
+agent never acknowledges is handled the same way after `KILN_AGENT_COMMAND_LEASE` seconds (default 90). Agents
+before this release get the new behaviour after their next upgrade; until then the lease covers them.
 
 ### Performance: PHP threads and worker mode
 

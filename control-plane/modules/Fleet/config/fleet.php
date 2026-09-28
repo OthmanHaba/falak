@@ -53,8 +53,10 @@ return [
     'long_poll_max_seconds' => 60,
 
     'commands' => [
-        // Delivered-but-not-started commands are re-queued after this long (agents dedupe by id).
-        'redeliver_after_seconds' => 90,
+        // Lease: a delivered command the agent has not reported as started/running/finished after this long was
+        // lost (e.g. the agent restarted). Redeliverable types (x-kiln-redeliverable in the command schema) are
+        // queued again, others fail. Agent restarts are also detected sooner through the agent session id.
+        'lease_seconds' => max(10, (int) env('KILN_AGENT_COMMAND_LEASE', 90)),
         'max_attempts' => 5,
         // Queued commands the agent never picks up expire after this long.
         'queue_ttl_seconds' => 3600,

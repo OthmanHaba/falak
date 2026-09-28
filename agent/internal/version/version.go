@@ -29,14 +29,12 @@ var (
 )
 
 // BinarySHA256 is the SHA-256 of the running executable (computed once; "" when unreadable), reported in facts
-// so the control plane can tell whether a server runs the agent build it ships.
+// so the control plane can tell whether a server runs the agent build it ships. It hashes the running image
+// (/proc/self/exe keeps pointing at it after system.upgrade_agent renamed a new build over the path), never the
+// file now at the path: a process that swapped its binary still reports its own build until it restarts.
 func BinarySHA256() string {
 	binaryOnce.Do(func() {
-		exe, err := os.Executable()
-		if err != nil {
-			return
-		}
-		f, err := os.Open(exe)
+		f, err := openRunningExecutable()
 		if err != nil {
 			return
 		}
@@ -47,4 +45,16 @@ func BinarySHA256() string {
 		}
 	})
 	return binarySum
+}
+
+// openRunningExecutable opens the executable image of this process.
+func openRunningExecutable() (*os.File, error) {
+	if f, err := os.Open("/proc/self/exe"); err == nil {
+		return f, nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return nil, err
+	}
+	return os.Open(exe)
 }

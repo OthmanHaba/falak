@@ -1,0 +1,67 @@
+<?php
+
+namespace Kiln\Edge\Http\Controllers;
+
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
+use Kiln\Edge\Application\GeneratedDomains;
+use Kiln\Edge\Domain\Models\OrganizationSetting;
+use Kiln\Edge\Infrastructure\EloquentSiteDomains;
+use Kiln\Identity\Contracts\AuditLog;
+use Kiln\Identity\Contracts\CurrentOrganization;
+use Kiln\Identity\Contracts\OrganizationAccess;
+use Kiln\Kernel\Http\Controller;
+
+/**
+ * Organization settings → Domains: which service generated domains use (or off), and the test domain in effect.
+ */
+final class DomainSettingsController extends Controller
+{
+    public function __construct(
+        private readonly CurrentOrganization $organization,
+        private readonly OrganizationAccess $access,
+        private readonly GeneratedDomains $generated,
+    ) {}
+
+    public function show(Request $request): Response
+    {
+        $organizationId = $this->organization->requireId();
+        $this->access->authorize($request->user(), $organizationId, 'edge.view');
+
+        return Inertia::render('Edge/DomainSettings', [
+            'settings' => [
+                'provider' => OrganizationSetting::for($organizationId)->generated_domain_provider ?? 'default',
+                'effective_suffix' => $this->generated->suffix($organizationId),
+                'default_suffix' => $this->generated->defaultSuffix(),
+                'providers' => GeneratedDomains::PROVIDERS,
+                'test_domain' => EloquentSiteDomains::testDomainBase(),
+            ],
+            'can' => ['manage' => $this->access->can($request->user(), $organizationId, 'edge.dns.manage')],
+        ]);
+    }
+
+    public function update(Request $request, AuditLog $audit): RedirectResponse
+    {
+        $organizationId = $this->organization->requireId();
+        $this->access->authorize($request->user(), $organizationId, 'edge.dns.manage');
+        $choices = ['default', GeneratedDomains::OFF, ...GeneratedDomains::PROVIDERS];
+        $default = $this->generated->defaultSuffix();
+
+        if ($default !== null) {
+            $choices[] = $default;
+        }
+
+        $provider = $request->validate(['provider' => ['required', 'string', Rule::in(array_values(array_unique($choices)))]])['provider'];
+        OrganizationSetting::for($organizationId)->forceFill(['generated_domain_provider' => $provider === 'default' ? null : $provider])->save();
+        $audit->record('edge.generated_domains_updated', 'organization', $organizationId, ['provider' => $provider], $organizationId);
+
+        return back()->with('success', match ($provider) {
+            GeneratedDomains::OFF => 'Generated domains are off. New services need a test domain or your own domain.',
+            'default' => 'Generated domains use the server default.',
+            default => "Generated domains now use {$provider}.",
+        });
+    }
+}

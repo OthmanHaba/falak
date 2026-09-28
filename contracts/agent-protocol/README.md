@@ -30,3 +30,26 @@ feature name: the agent lists it in `facts.features` (`agent/internal/version.Fe
 removes the field for agents that do not (`Fleet\Application\PayloadCompatibility::FIELDS`). When an agent reports
 a new version (`Fleet\Events\AgentVersionChanged`), modules re-send state they would otherwise deduplicate.
 Current features: `edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`.
+
+## Agent sessions and lost deliveries
+Every `kiln-agent` process sends a random session id (`X-Kiln-Agent-Session: s-<32 hex>`, 8-64 characters of
+`[A-Za-z0-9._:-]`) on every mTLS request. Agents from before sessions send none; that is accepted.
+
+- A command records the session it was delivered to. When a request arrives with a **new** session (the agent
+  restarted: upgrade, crash, reboot), commands still `delivered` or `running` under an older session were lost.
+- Only the current session claims commands: a long-poll the old process abandoned keeps waiting on the server, and
+  it no longer takes commands meant for the new process.
+- A `delivered` command the agent does not report as started, running (heartbeat `running_commands`) or finished
+  within the lease (`KILN_AGENT_COMMAND_LEASE`, default 90 s) was lost too.
+
+A lost command whose schema has `"x-kiln-redeliverable": true` at its root is queued again (up to 5 deliveries);
+the agent answers a command id it already finished from its journal, so nothing runs twice. Redeliverable:
+declarative state (`edge.caddy.apply`, `edge.cert.install`, `telemetry.configure`, `proc.apply`, `cron.apply`,
+`net.firewall.apply`, `net.wireguard.apply`, `db.user.apply`, `system.ssh_key.sync`), read-only commands
+(`proc.status`, `system.facts`, `docker.compose.ps`) and `system.upgrade_agent` (a no-op once installed). Any
+other type fails instead, so the deployment waiting on it fails fast: `failed` with "The agent restarted before
+running the command" when it was never started, `timed_out` otherwise (a late result still overrides a
+`timed_out`).
+
+On shutdown the agent stops long-polling first and does not start commands from a response that arrives while it
+stops; running commands get 20 s to finish (heartbeats keep reporting them) before they are cancelled.

@@ -53,6 +53,7 @@ final class ComposeController extends Controller
             'source' => ($site->compose_source ?? ComposeSource::Repo)->value,
             'file' => $site->compose_file,
             'repository' => $site->repository,
+            'slug' => $site->slug,
             'version' => $current?->version,
             'content' => $current?->content,
             'summary' => $current !== null ? $inspector->parse($current->content)->toArray() : null,

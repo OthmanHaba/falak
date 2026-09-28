@@ -17,7 +17,7 @@ final class HeartbeatController extends Controller
 
     public function __invoke(Request $request, ProtocolSchemas $schemas, RecordHeartbeat $record): Response
     {
-        $record($this->agent($request), $this->document($request, $schemas, 'heartbeat.schema.json'), $request->ip());
+        $record($this->agent($request), $this->document($request, $schemas, 'heartbeat.schema.json'), $request->ip(), $this->session($request));
 
         return response()->noContent();
     }

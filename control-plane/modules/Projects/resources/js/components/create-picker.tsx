@@ -1,3 +1,4 @@
+import { domainPayload, DomainPicker, type DomainChoice } from '@/components/domain-picker';
 import { Button, Checkbox, Combobox, Field, IconButton, Input, Select, ServiceIcon, Skeleton, Tag, toast } from '@/components/kiln';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, HttpError, requestJson } from '@/lib/http';
@@ -154,6 +155,38 @@ function ServersField({
                     })}
                 </div>
             )}
+        </Field>
+    );
+}
+
+/** The site slug Sites derives from the service name (lowercase, dashes). */
+function siteSlug(name: string): string {
+    return name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 50);
+}
+
+/** Generated sslip.io name, the test domain or the user's own (with DNS instructions); needs the servers first. */
+function DomainField({
+    name,
+    serverIds,
+    value,
+    onChange,
+    error,
+}: {
+    name: string;
+    serverIds: string[];
+    value: DomainChoice | null;
+    onChange: (value: DomainChoice) => void;
+    error?: string;
+}) {
+    if (serverIds.length === 0) return null;
+
+    return (
+        <Field label="Domain" error={error}>
+            <DomainPicker label={siteSlug(name) || 'app'} serverIds={serverIds} value={value} onChange={onChange} ariaLabel="Domain" />
         </Field>
     );
 }
@@ -432,6 +465,7 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
             .map((server) => server.id),
     );
     const [name, setName] = useState('');
+    const [domain, setDomain] = useState<DomainChoice | null>(null);
     const frameworkValues = useMemo(() => frameworks.map((item) => item.value), [frameworks]);
 
     useEffect(() => {
@@ -530,6 +564,7 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
                     push_to_deploy: true,
                     server_ids: serverIds,
                     leader_server_id: serverIds[0],
+                    domain: domainPayload(domain),
                 });
             }}
         >
@@ -606,7 +641,8 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
                         <Input value={name} onChange={(event) => setName(event.target.value)} />
                     </Field>
                     <ServersField servers={servers} value={serverIds} onChange={setServerIds} error={errors.server_ids} />
-                    <Errors errors={otherErrors(errors, ['branch', 'framework', 'name', 'server_ids'])} />
+                    <DomainField name={name} serverIds={serverIds} value={domain} onChange={setDomain} error={errors.domain} />
+                    <Errors errors={otherErrors(errors, ['branch', 'framework', 'name', 'server_ids', 'domain'])} />
                     <Button
                         variant="primary"
                         type="submit"
@@ -641,6 +677,7 @@ function DockerStep({ options, submitting, errors, onSubmit }: StepProps) {
     const [image, setImage] = useState('');
     const [port, setPort] = useState('');
     const [name, setName] = useState('');
+    const [domain, setDomain] = useState<DomainChoice | null>(null);
     const [serverIds, setServerIds] = useState<string[]>(() =>
         options.options.servers
             .filter((server) => server.docker && server.status === 'active')
@@ -662,6 +699,7 @@ function DockerStep({ options, submitting, errors, onSubmit }: StepProps) {
                     app_port: port ? Number(port) : null,
                     server_ids: serverIds,
                     leader_server_id: serverIds[0],
+                    domain: domainPayload(domain),
                 });
             }}
         >
@@ -681,7 +719,14 @@ function DockerStep({ options, submitting, errors, onSubmit }: StepProps) {
                 </Field>
             </div>
             <ServersField servers={options.options.servers} value={serverIds} onChange={setServerIds} error={errors.server_ids} requireDocker />
-            <Errors errors={otherErrors(errors, ['docker_image', 'name', 'app_port', 'server_ids'])} />
+            <DomainField
+                name={name || slugName(image.split(':')[0])}
+                serverIds={serverIds}
+                value={domain}
+                onChange={setDomain}
+                error={errors.domain}
+            />
+            <Errors errors={otherErrors(errors, ['docker_image', 'name', 'app_port', 'server_ids', 'domain'])} />
             <Button variant="primary" type="submit" icon={<Rocket />} loading={submitting} disabled={!image || serverIds.length === 0}>
                 Deploy
             </Button>

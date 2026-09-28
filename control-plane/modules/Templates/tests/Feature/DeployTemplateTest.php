@@ -115,10 +115,52 @@ it('validates inputs, domains and servers', function () {
     $this->postJson($this->url, deploy_payload(['domains' => ['web' => 'x.example.com', 'admin' => 'x.example.com']]))->assertUnprocessable()->assertJsonValidationErrors('domains.admin');
     $this->postJson($this->url, [...deploy_payload(), 'server_ids' => []])->assertUnprocessable()->assertJsonValidationErrors('server_ids');
 
-    config(['sites.test_domain' => null]);
+    // No test domain and generated domains off: the web service needs a domain.
+    config(['sites.test_domain' => null, 'edge.generated_domain_suffix' => 'off']);
     $this->postJson($this->url, deploy_payload())->assertUnprocessable()->assertJsonValidationErrors('domains.web');
+    $this->postJson($this->url, deploy_payload(['domains' => ['web' => ['type' => 'test']]]))->assertUnprocessable()->assertJsonValidationErrors('domains.web');
+    $this->postJson($this->url, deploy_payload(['domains' => ['web' => ['type' => 'bogus']]]))->assertUnprocessable()->assertJsonValidationErrors('domains.web');
+    $this->postJson($this->url, deploy_payload(['domains' => ['web' => ['type' => 'custom']]]))->assertUnprocessable()->assertJsonValidationErrors('domains.web');
 
     expect($this->fakes['sites']->created)->toBe([]);
+});
+
+it('generates a domain per public service when no test domain is configured', function () {
+    config(['sites.test_domain' => null]);
+    $this->server->forceFill(['ipv4' => '63.182.218.247'])->save();
+
+    $response = $this->postJson($this->url, deploy_payload(['domains' => ['admin' => ['type' => 'custom', 'name' => 'https://Admin.Example.com/']]]))->assertCreated();
+
+    expect($this->fakes['sites']->last()['public_services'])->toBe([
+        ['service' => 'web', 'port' => 8080, 'domain' => 'web-hello-stack.63-182-218-247.sslip.io'],
+        ['service' => 'admin', 'port' => 9000, 'domain' => 'admin.example.com'],
+    ])->and($response->json('data.domains'))->toBe([
+        'web' => 'web-hello-stack.63-182-218-247.sslip.io',
+        'admin' => 'admin.example.com',
+    ])->and($this->fakes['sites']->last()['compose_content'])->toContain('APP_URL: https://web-hello-stack.63-182-218-247.sslip.io');
+});
+
+it('accepts explicit generated, test and custom domain choices', function () {
+    $this->server->forceFill(['ipv4' => '203.0.113.9'])->save();
+
+    $this->postJson($this->url, deploy_payload(['domains' => [
+        'web' => ['type' => 'generated'],
+        'admin' => ['type' => 'test'],
+    ]]))->assertCreated();
+
+    expect($this->fakes['sites']->last()['public_services'])->toBe([
+        ['service' => 'web', 'port' => 8080, 'domain' => 'web-hello-stack.203-0-113-9.sslip.io'],
+        ['service' => 'admin', 'port' => 9000, 'domain' => null],
+    ]);
+});
+
+it('explains why a domain cannot be generated', function () {
+    config(['sites.test_domain' => null]);
+    $this->server->forceFill(['ipv4' => null])->save();
+
+    $errors = $this->postJson($this->url, deploy_payload(['domains' => ['web' => ['type' => 'generated']]]))->assertUnprocessable()->json('errors');
+
+    expect($errors['domains.web'][0])->toContain('has no public IPv4 address yet');
 });
 
 it('surfaces a failed first deploy as a warning', function () {

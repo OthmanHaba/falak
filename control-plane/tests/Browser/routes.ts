@@ -192,6 +192,7 @@ export const routes: BrowserRoute[] = [
     { path: '/projects/:canvas/service/site/:composeSite/settings/compose' },
     { path: '/projects/:canvas/service/site/:composeSite/logs/redis', allowedFailures: observability },
     { path: '/settings/compose' },
+    { path: '/settings/domains' },
 
     // templates
     { path: '/templates' },

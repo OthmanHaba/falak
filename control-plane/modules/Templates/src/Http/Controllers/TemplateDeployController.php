@@ -11,6 +11,7 @@ use Kiln\Kernel\Http\Controller;
 use Kiln\Projects\Contracts\Data\EnvironmentData;
 use Kiln\Projects\Contracts\ProjectDirectory;
 use Kiln\Projects\Contracts\ServiceKind;
+use Kiln\Sites\Contracts\Data\DomainChoice;
 use Kiln\Templates\Application\Actions\DeployTemplate;
 use Kiln\Templates\Application\Catalog\TemplateRepository;
 use Kiln\Templates\Domain\TemplateSource;
@@ -45,7 +46,8 @@ final class TemplateDeployController extends Controller
             'name' => ['nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/'],
             'inputs' => ['nullable', 'array', 'max:200'],
             'domains' => ['nullable', 'array', 'max:50'],
-            'domains.*' => ['nullable', 'string', 'max:253'],
+            // service => a domain name, or {type: generated|test|custom, name?}; missing: the organization's default.
+            'domains.*' => ['nullable', DomainChoice::rule()],
             'server_ids' => ['required', 'array', 'min:1', 'max:50'],
             'server_ids.*' => ['string', 'size:26'],
             'position' => ['nullable', 'array'],

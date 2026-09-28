@@ -93,6 +93,8 @@ Agent **dials out** (no inbound SSH required; SSH stays as bootstrap fallback).
 - **Command channel:** agent long-polls `GET /agent/v1/commands?wait=30`. Returns 0..N commands.
 - **Results/streams:** `POST /agent/v1/commands/{id}/events` (batched NDJSON: `started`, `output`, `progress`, `finished`).
 - **Heartbeat:** `POST /agent/v1/heartbeat` every 15s with facts + lightweight metrics summary.
+- **Sessions:** each agent process sends `X-Kiln-Agent-Session`; commands lost to a restart (or unacknowledged past
+  a 90 s lease) are redelivered when their schema is `x-kiln-redeliverable`, else failed (`contracts/agent-protocol/README.md`).
 - **Telemetry** does **not** go to the control plane — agent relays OTLP straight to the observability box. Only Insights-relevant summaries (exceptions, threshold breaches) are teed to `POST /agent/v1/insights`.
 
 Schemas live in `contracts/agent-protocol/*.schema.json`. Command envelope:

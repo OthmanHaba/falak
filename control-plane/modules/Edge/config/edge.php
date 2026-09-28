@@ -8,6 +8,19 @@ return [
     // TLS for hosted test domains (<slug>.<KILN_TEST_DOMAIN>): "acme" or "internal" (local / private setups).
     'test_domain_tls' => env('KILN_TEST_DOMAIN_TLS', 'acme'),
 
+    // Generated domains for new sites: <label>.<ip-with-dashes>.<suffix>, resolved by a wildcard DNS service to the IP
+    // in the name (no DNS setup; Let's Encrypt HTTP-01 works). "sslip.io" (default), "nip.io", your own sslip.io-style
+    // server's domain, or "off". Organizations can pick another provider in Settings → Domains.
+    'generated_domain_suffix' => env('KILN_GENERATED_DOMAIN_SUFFIX', 'sslip.io'),
+
+    // Live DNS checks for custom domains: "doh" (DNS-over-HTTPS JSON API; bypasses the host's resolver cache, so a new
+    // record shows up as soon as it is published) or "system" (the control plane's resolver).
+    'dns' => [
+        'resolver' => env('KILN_DNS_RESOLVER', 'doh'),
+        'doh_url' => env('KILN_DNS_DOH_URL', 'https://cloudflare-dns.com/dns-query'),
+        'timeout_seconds' => 3,
+    ],
+
     // Debounce window: bursts of changes within this many seconds collapse into one apply per server.
     'apply_delay_seconds' => (int) env('KILN_EDGE_APPLY_DELAY', 2),
 

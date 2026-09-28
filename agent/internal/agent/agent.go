@@ -168,6 +168,9 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	log = log.With("agent_id", id.State.AgentID)
 	client := transport.New(id.State.Endpoints.API, id.TLSConfig())
 	client.UserAgent = "kiln-agent/" + version.Version
+	client.Session = transport.NewSessionID()
+	// Checksum the running build now, before a system.upgrade_agent could replace the file on disk.
+	_ = version.BinarySHA256()
 	host, _ := os.Hostname()
 	r := runner.Exec{}
 
@@ -188,7 +191,8 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		},
 	})
 
-	runCtx, cancel := context.WithCancel(ctx)
+	// Not derived from ctx: on shutdown the subsystems keep running while commands drain (see gracefulStop).
+	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	if err := tel.Start(runCtx); err != nil {
 		return fmt.Errorf("telemetry: %w", err)
@@ -230,24 +234,44 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Renew:        func(ctx context.Context) error { return id.Renew(ctx, client.Renew) },
 		Log:          log.With("component", "renew"),
 	}
-	var loops sync.WaitGroup
-	for _, fn := range []func(context.Context){poller.Run, hb.Run, renewer.Run} {
+	pollCtx, stopPolling := context.WithCancel(runCtx)
+	var polling, loops sync.WaitGroup
+	polling.Add(1)
+	go func() { defer polling.Done(); poller.Run(pollCtx) }()
+	for _, fn := range []func(context.Context){hb.Run, renewer.Run} {
 		loops.Add(1)
 		go func(f func(context.Context)) { defer loops.Done(); f(runCtx) }(fn)
 	}
-	log.Info("kiln-agent running", "version", version.Version, "commands", len(comps.Registry.Types()))
+	log.Info("kiln-agent running", "version", version.Version, "session", client.Session, "commands", len(comps.Registry.Types()))
 
 	<-ctx.Done()
 	log.Info("shutting down")
-	cancel()
+	gracefulStop(stopPolling, polling.Wait, disp.Wait, shutdownDrain, cancel)
 	loops.Wait()
-	waitTimeout(disp.Wait, 30*time.Second)
+	waitTimeout(disp.Wait, 10*time.Second)
 	comps.PTY.CloseAll()
 	comps.Supervisor.Shutdown()
 	comps.Cron.Wait()
 	stopOutbox()
 	outboxDone.Wait()
 	return nil
+}
+
+// shutdownDrain is how long running commands may finish on shutdown before they are cancelled (the systemd unit
+// allows 90s in total).
+const shutdownDrain = 20 * time.Second
+
+// gracefulStop shuts the command path down in order:
+//
+//  1. stop long-polling and wait until the poller has returned: from here on no command is accepted, so none is
+//     received by a process that is about to exit (the control plane redelivers to the next session instead);
+//  2. let running commands finish for up to drain, while heartbeats keep reporting them;
+//  3. cancel everything else (still-running commands, heartbeats, telemetry, supervisor).
+func gracefulStop(stopPolling, pollerStopped, commandsDone func(), drain time.Duration, cancelRest func()) {
+	stopPolling()
+	pollerStopped()
+	waitTimeout(commandsDone, drain)
+	cancelRest()
 }
 
 func waitTimeout(fn func(), d time.Duration) {

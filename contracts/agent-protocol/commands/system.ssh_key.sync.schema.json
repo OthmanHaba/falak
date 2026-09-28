@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/system.ssh_key.sync.schema.json",
   "title": "system.ssh_key.sync — converge ~user/.ssh/authorized_keys to the given set",
+  "x-kiln-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [

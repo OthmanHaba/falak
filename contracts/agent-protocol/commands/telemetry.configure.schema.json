@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/telemetry.configure.schema.json",
   "title": "telemetry.configure — OTLP relay configuration (persisted to /etc/kiln/telemetry.json, hot reloaded)",
+  "x-kiln-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [],

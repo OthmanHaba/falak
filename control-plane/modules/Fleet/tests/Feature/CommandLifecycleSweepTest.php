@@ -20,10 +20,10 @@ beforeEach(function () {
     $this->gateway = app(AgentGateway::class);
 });
 
-it('re-queues delivered commands that were never started and fails them after max attempts', function () {
+it('re-queues delivered redeliverable commands that were never started and fails them after max attempts', function () {
     Event::fake([CommandFailed::class]);
     config(['fleet.commands.max_attempts' => 2]);
-    $handle = $this->gateway->dispatch($this->serverId, 'system.exec', ['script' => 'x']);
+    $handle = $this->gateway->dispatch($this->serverId, 'cron.apply', ['jobs' => []]);
 
     $this->getJson('/agent/v1/commands?wait=0', $this->headers)->assertJsonCount(1, 'commands');
     $this->travel(91)->seconds();

@@ -32,6 +32,7 @@ use Kiln\Fleet\Contracts\Data\CommandResult;
  * @property ?Carbon $delivered_at
  * @property ?Carbon $started_at
  * @property ?Carbon $finished_at
+ * @property ?string $delivered_session
  */
 class Command extends Model
 {

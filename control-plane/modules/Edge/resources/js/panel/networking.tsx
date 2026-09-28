@@ -9,6 +9,7 @@ import {
     Menu,
     RelativeTime,
     Section,
+    Segmented,
     Select,
     SkeletonRows,
     StatusBadge,
@@ -24,6 +25,7 @@ import { HttpError, errorMessage, requestJson, type HttpMethod } from '@/lib/htt
 import { type ServiceTabProps } from '@/lib/registry';
 import { Globe, Lock, Plus, RotateCw, ShieldCheck, Star, Trash2, Upload } from 'lucide-react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { DnsInstructions, GeneratedDomainPreview } from '../components/domain-picker';
 import { type DomainsData, type EdgeDomain, type RoutingData, type TlsMode, type WwwRedirect } from '../types';
 
 const domainsUrl = (siteId: string) => `/sites/${siteId}/domains`;
@@ -88,6 +90,7 @@ function DomainDialog({
     reload: () => Promise<void>;
     onUploadCertificate: () => void;
 }) {
+    const [kind, setKind] = useState<'custom' | 'generated'>('custom');
     const [form, setForm] = useState({
         name: '',
         tls_mode: 'auto' as TlsMode,
@@ -101,6 +104,7 @@ function DomainDialog({
     useEffect(() => {
         if (!open) return;
         setErrors({});
+        setKind('custom');
         setForm({
             name: domain?.name ?? '',
             tls_mode: domain?.tls_mode ?? 'auto',
@@ -116,8 +120,9 @@ function DomainDialog({
     const submit = async (event: FormEvent) => {
         event.preventDefault();
         setSaving(true);
+        const generated = !domain && kind === 'generated';
         const body = {
-            ...(domain ? {} : { name: form.name.trim() }),
+            ...(domain ? {} : generated ? { type: 'generated' } : { name: form.name.trim() }),
             tls_mode: form.tls_mode,
             www_redirect: wwwAllowed ? form.www_redirect : 'none',
             certificate_id: form.tls_mode === 'custom' ? form.certificate_id || null : null,
@@ -127,7 +132,7 @@ function DomainDialog({
             domain ? 'PATCH' : 'POST',
             domain ? `${domainsUrl(siteId)}/${domain.id}` : domainsUrl(siteId),
             body,
-            domain ? `${domain.name} updated` : `${body.name} added — the edge is being updated`,
+            domain ? `${domain.name} updated` : `${generated ? 'Generated domain' : form.name.trim()} added — the edge is being updated`,
             reload,
         );
         setSaving(false);
@@ -140,7 +145,7 @@ function DomainDialog({
             open={open}
             onOpenChange={onOpenChange}
             title={domain ? `Edit ${domain.name}` : 'Add domain'}
-            description="Point the domain’s DNS (A/AAAA) at the site’s server — or its load balancer — before enabling automatic TLS."
+            description="Bring your own domain (Kiln shows the DNS record and checks it), or generate one that works right away."
             footer={
                 <>
                     <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -155,13 +160,34 @@ function DomainDialog({
             <form id="domain-form" onSubmit={submit} className="grid gap-4">
                 {!domain && (
                     <Field label="Domain" error={errors.name}>
-                        <Input
-                            mono
-                            autoFocus
-                            placeholder="shop.example.com or *.example.com"
-                            value={form.name}
-                            onChange={(event) => setForm({ ...form, name: event.target.value })}
-                        />
+                        <div className="grid gap-2.5">
+                            <Segmented
+                                label="Domain kind"
+                                value={kind}
+                                onValueChange={setKind}
+                                options={[
+                                    { value: 'custom', label: 'Your domain' },
+                                    { value: 'generated', label: 'Generate one' },
+                                ]}
+                            />
+                            {kind === 'custom' ? (
+                                <>
+                                    <Input
+                                        mono
+                                        autoFocus
+                                        aria-label="Domain name"
+                                        placeholder="shop.example.com or *.example.com"
+                                        value={form.name}
+                                        onChange={(event) => setForm({ ...form, name: event.target.value })}
+                                    />
+                                    {/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/.test(form.name.trim().toLowerCase()) && (
+                                        <DnsInstructions name={form.name.trim().toLowerCase()} serverIds={[]} siteId={siteId} label={data.slug} />
+                                    )}
+                                </>
+                            ) : (
+                                <GeneratedDomainPreview label={data.slug} serverIds={[]} siteId={siteId} />
+                            )}
+                        </div>
                     </Field>
                 )}
                 <Field
@@ -212,7 +238,7 @@ function DomainDialog({
                         />
                     </Field>
                 )}
-                {wwwAllowed && (
+                {wwwAllowed && kind === 'custom' && (
                     <Field label="www redirect" error={errors.www_redirect}>
                         <Select value={form.www_redirect} onValueChange={(value) => setForm({ ...form, www_redirect: value })} options={WWW} />
                     </Field>
@@ -372,6 +398,7 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
     const [uploading, setUploading] = useState(false);
     const [addingDns, setAddingDns] = useState(false);
     const [applying, setApplying] = useState<string | null>(null);
+    const [checking, setChecking] = useState<EdgeDomain | null>(null);
 
     if (!data) return <Loading error={error} />;
     const manage = data.can.manage;
@@ -479,6 +506,9 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
                                         <Menu
                                             label={`${domain.name} actions`}
                                             actions={[
+                                                ...(!domain.wildcard
+                                                    ? [{ label: 'Check DNS & TLS', icon: <ShieldCheck />, onSelect: () => setChecking(domain) }]
+                                                    : []),
                                                 { label: 'Edit TLS & redirect', onSelect: () => setDialog({ domain }) },
                                                 ...(!domain.is_primary
                                                     ? [
@@ -665,6 +695,14 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
                 reload={refresh}
                 onUploadCertificate={() => setUploading(true)}
             />
+            <Dialog
+                open={checking !== null}
+                onOpenChange={(open) => !open && setChecking(null)}
+                title={checking ? `DNS & TLS for ${checking.served_host}` : 'DNS & TLS'}
+                description="Where the name points now, the records it needs, and the certificate the edge serves for it."
+            >
+                {checking && <DnsInstructions name={checking.served_host} serverIds={[]} siteId={siteId} label={data.slug} />}
+            </Dialog>
             <CertificateDialog siteId={siteId} open={uploading} onOpenChange={setUploading} reload={reload} />
             {data.can.manage_dns && <DnsCredentialDialog data={data} open={addingDns} onOpenChange={setAddingDns} reload={reload} />}
         </>

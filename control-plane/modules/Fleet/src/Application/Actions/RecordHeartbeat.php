@@ -3,6 +3,7 @@
 namespace Kiln\Fleet\Application\Actions;
 
 use Illuminate\Support\Carbon;
+use Kiln\Fleet\Application\CommandRedelivery;
 use Kiln\Fleet\Contracts\AgentStatus;
 use Kiln\Fleet\Contracts\CommandStatus;
 use Kiln\Fleet\Domain\Models\Agent;
@@ -13,11 +14,18 @@ use Kiln\Fleet\Events\AgentVersionChanged;
 
 final class RecordHeartbeat
 {
+    public function __construct(private readonly CommandRedelivery $redelivery) {}
+
     /**
      * @param  array<string, mixed>  $heartbeat  validated heartbeat.schema.json document
+     * @param  ?string  $session  the reporting agent process (X-Kiln-Agent-Session)
      */
-    public function __invoke(Agent $agent, array $heartbeat, ?string $ip = null): void
+    public function __invoke(Agent $agent, array $heartbeat, ?string $ip = null, ?string $session = null): void
     {
+        // A new process first: commands delivered to the previous one are redelivered or failed before the
+        // running list below is applied.
+        $this->redelivery->observeSession($agent, $session);
+
         $wasOffline = $agent->status === AgentStatus::Offline;
         $previousHeartbeat = $agent->last_heartbeat_at;
         $at = Carbon::parse((string) $heartbeat['at']);
@@ -66,9 +74,10 @@ final class RecordHeartbeat
             'disk_used_bytes' => (int) $heartbeat['disk_used_bytes'],
         ]);
 
-        // Commands the agent reports as running were evidently delivered.
+        // Commands the agent reports as running were evidently delivered (to this process).
         if ($running !== []) {
             $agent->commands()->whereIn('id', $running)->where('status', CommandStatus::Delivered)
+                ->where(fn ($q) => $session === null ? $q->whereNull('delivered_session') : $q->where('delivered_session', $session))
                 ->update(['status' => CommandStatus::Running, 'started_at' => now()]);
         }
 

@@ -274,6 +274,49 @@ export interface CreateOption {
     component: ComponentType<CreateOptionProps>;
 }
 
+/** How a new site / compose public service gets its public name. */
+export type DomainChoiceType = 'generated' | 'test' | 'custom';
+
+/** Sent to the create endpoints as `domain` / `domains.<service>` / `public_services[].domain`. */
+export interface DomainChoice {
+    type: DomainChoiceType;
+    /** The user's domain (custom only). */
+    name?: string;
+}
+
+export interface DomainPickerProps {
+    /** Label of the generated name (`<label>.<ip-with-dashes>.sslip.io`): the site slug, or `<service>-<slug>`. */
+    label: string;
+    /** Servers the site runs on, leader first (the generated name points at the leader). */
+    serverIds: string[];
+    /** An existing site: its load balancer (if any) is where DNS must point; its certificate status is shown. */
+    siteId?: string | null;
+    /** The test domain this endpoint gets when "Test domain" is picked (null hides the option; omitted: `<label>.<base>`). */
+    testDomain?: string | null;
+    value: DomainChoice | null;
+    onChange: (value: DomainChoice) => void;
+    error?: string | null;
+    /** Accessible name of the choice group, e.g. "minio domain". */
+    ariaLabel: string;
+    /** Custom only (e.g. Networking → Add domain). */
+    customOnly?: boolean;
+}
+
+let domainPicker: ComponentType<DomainPickerProps> | null = null;
+
+/**
+ * The domain picker (generate an sslip.io name, the Kiln test domain, or your own domain with DNS instructions and a
+ * live DNS check). Edge owns domains and registers it; forms render it through `<DomainPicker>`
+ * (`@/components/domain-picker`), which falls back to a plain domain input.
+ */
+export function registerDomainPicker(component: ComponentType<DomainPickerProps>): void {
+    domainPicker = component;
+}
+
+export function registeredDomainPicker(): ComponentType<DomainPickerProps> | null {
+    return domainPicker;
+}
+
 const navItems = new Map<string, ModuleNavItem>();
 const settingsItems = new Map<string, SettingsNavItem>();
 const headerItems = new Map<string, HeaderItem>();

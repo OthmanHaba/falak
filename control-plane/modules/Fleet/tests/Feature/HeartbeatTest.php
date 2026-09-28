@@ -2,7 +2,6 @@
 
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Application\CommandLifecycle;
 use Kiln\Fleet\Application\Jobs\SweepFleet;
 use Kiln\Fleet\Contracts\AgentDirectory;
 use Kiln\Fleet\Contracts\AgentStatus;
@@ -11,7 +10,6 @@ use Kiln\Fleet\Events\AgentCameOnline;
 use Kiln\Fleet\Events\AgentFactsReported;
 use Kiln\Fleet\Events\AgentVersionChanged;
 use Kiln\Fleet\Events\AgentWentOffline;
-use Kiln\Fleet\Infrastructure\Signals\CommandSignal;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -63,7 +61,7 @@ it('marks silent agents offline and back online on the next heartbeat', function
     Event::fake([AgentWentOffline::class, AgentCameOnline::class]);
 
     $this->travel(30)->seconds();
-    (new SweepFleet)->handle(app(CommandLifecycle::class), app(CommandSignal::class));
+    SweepFleet::dispatchSync();
     expect($this->agent->refresh()->status)->toBe(AgentStatus::Online);
 
     $this->travel(61)->seconds();

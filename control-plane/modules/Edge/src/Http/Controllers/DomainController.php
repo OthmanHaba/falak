@@ -21,11 +21,15 @@ use Kiln\Edge\Domain\Models\DnsCredential;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Domain\Models\LoadBalancer;
 use Kiln\Edge\Domain\Models\ServerState;
+use Kiln\Edge\Infrastructure\EloquentSiteDomains;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Servers\Contracts\ServerType;
+use Kiln\Sites\Contracts\Data\DomainChoice;
+use Kiln\Sites\Contracts\DomainType;
+use Kiln\Sites\Contracts\TargetRole;
 
 final class DomainController extends Controller
 {
@@ -53,6 +57,7 @@ final class DomainController extends Controller
 
         return response()->json(['data' => [
             'testDomain' => $siteData->testDomain,
+            'slug' => $siteData->slug,
             'domains' => Domain::query()->where('site_id', $siteData->id)->orderByDesc('is_primary')->orderBy('name')->get()->map(fn (Domain $domain) => [
                 'id' => $domain->id,
                 'name' => $domain->name,
@@ -121,9 +126,24 @@ final class DomainController extends Controller
         ]]);
     }
 
-    public function store(Request $request, string $site, AddDomain $add): RedirectResponse
+    public function store(Request $request, string $site, AddDomain $add, EloquentSiteDomains $domains): RedirectResponse
     {
         $siteData = $this->site($request, $site, 'edge.manage');
+
+        // {type: generated}: `<slug>.<ip-with-dashes>.<suffix>` for the leader (or the load balancer).
+        if ($request->input('type') === DomainType::Generated->value) {
+            $targets = $siteData->targets;
+            usort($targets, fn ($a, $b) => ($b->role === TargetRole::Leader) <=> ($a->role === TargetRole::Leader));
+            $request->merge(['name' => $domains->resolveChoice(
+                $siteData->organizationId,
+                new DomainChoice(DomainType::Generated),
+                $siteData->slug,
+                array_map(fn ($target) => $target->serverId, $targets),
+                'name',
+                $siteData->id,
+            )]);
+        }
+
         $data = $this->validated($request, withName: true);
 
         $add($siteData, $data['name'], TlsMode::from($data['tls_mode'] ?? 'auto'), WwwRedirect::from($data['www_redirect'] ?? 'none'), $data['certificate_id'] ?? null, $data['dns_credential_id'] ?? null);
