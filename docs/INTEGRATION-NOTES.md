@@ -383,6 +383,29 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
 - Two builder processes sharing one token must use different `--name`s (a poll by one would otherwise fail the
   other's build).
 
+### Release files are not world-readable
+- `artisan optimize` writes `bootstrap/cache/config.php` (database password, `APP_KEY`) with the deploy user's umask
+  (0644), and releases were 0755, so any local user could read it (and `.env` through `shared/` was protected only by
+  its own mode). `deploy.fetch` now closes every release directory and `deploy.prepare` the site's `shared/`: mode
+  0750 (owner = site user, group = site group) plus a POSIX ACL entry `user:caddy:r-x` for the edge (it serves
+  static files, and under FrankenPHP runs PHP; on PHP-FPM servers Caddy is not in the site groups). Other local users
+  cannot enter them, whatever the file modes inside. PHP-FPM pools, workers, cron and hooks run as the site user.
+  Without ACL support the directories stay 0755 and fetch prints a warning.
+- The writable dirs' default ACL (see *Site web logs*) is `user::rwx group::rwx other::r-x` (the closed parents keep
+  others out; `other` read keeps public uploads servable by a Caddy edge outside the site group).
+- Hooks keep the user's umask (a `umask 027` in hooks would hide generated public assets from a Caddy edge outside
+  the site group); the closed release directory is what protects the files.
+- kiln-builder no longer ships the build's own logs: `storage/logs/*` is excluded from artifacts except
+  `storage/logs/.gitignore` (the first deploy used to move the build's `laravel.log` into shared storage).
+- Not verified on a real server: the ACL path runs in the Go tests inside a Linux container; releases deployed before
+  this change stay open until they are pruned.
+
+### Smaller fixes
+- "Firewall applied again" was dispatched on every successful apply. Network now records `failed_at` on the firewall
+  state: `FirewallApplyFailed` fires when applies start failing (not on every failing retry) and `FirewallApplied`
+  (the recovery) only on the first success after that.
+- The agent refreshes OTLP `host.name` with every facts collection (see *Site web logs*).
+
 ## Not covered by the E2E yet (unit/feature tested only)
 Docker/Compose runtimes and docker builds on a real BuildKit, database backups/restore to real S3, WireGuard private
 networks, web terminal, recipes, provider APIs (Hetzner/DO/Vultr/Linode/Lightsail), load balancers, DNS-01 wildcard

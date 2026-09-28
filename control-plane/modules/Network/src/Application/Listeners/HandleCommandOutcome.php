@@ -53,13 +53,18 @@ final class HandleCommandOutcome implements ShouldQueue
 
     private function firewallFailed(CommandFailed $event, string $reason): void
     {
-        $updated = FirewallState::query()
-            ->where('command_id', $event->commandId)
-            ->where('organization_id', $event->organizationId)
-            ->update(['status' => ApplyStatus::Failed, 'error' => $reason, 'updated_at' => now()]);
+        $state = FirewallState::query()->where('command_id', $event->commandId)->where('organization_id', $event->organizationId)->first();
 
-        // Only the tracked (latest) apply alerts; superseded commands are ignored.
-        if ($updated > 0) {
+        // Only the tracked (latest) apply counts; superseded commands are ignored.
+        if (! $state) {
+            return;
+        }
+
+        $firstFailure = $state->failed_at === null;
+        $state->forceFill(['status' => ApplyStatus::Failed, 'error' => $reason, 'failed_at' => $state->failed_at ?? now()])->save();
+
+        // Alert when the firewall starts failing, not on every retry of a failing apply.
+        if ($firstFailure) {
             FirewallApplyFailed::dispatch($event->serverId, $event->organizationId, $event->commandId, $reason);
         }
     }
@@ -74,15 +79,21 @@ final class HandleCommandOutcome implements ShouldQueue
 
         $sha = is_string($event->result['ruleset_sha256'] ?? null) ? $event->result['ruleset_sha256'] : null;
 
+        $recovered = $state->failed_at !== null;
+
         $state->forceFill([
             'status' => ApplyStatus::Applied,
             'applied_hash' => $state->desired_hash,
             'ruleset_sha256' => $sha,
             'error' => null,
             'applied_at' => now(),
+            'failed_at' => null,
         ])->save();
 
-        FirewallApplied::dispatch($state->server_id, $state->organization_id, $event->commandId, $sha);
+        // The recovery alert ("Firewall applied again") only after a failure, not on every successful apply.
+        if ($recovered) {
+            FirewallApplied::dispatch($state->server_id, $state->organization_id, $event->commandId, $sha);
+        }
     }
 
     private function keyInstalled(CommandFinished $event): void

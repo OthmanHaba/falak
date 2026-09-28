@@ -19,6 +19,7 @@ use Kiln\Network\Domain\Enums\ApplyStatus;
  * @property ?string $ruleset_sha256
  * @property ?string $error
  * @property ?Carbon $applied_at
+ * @property ?Carbon $failed_at first failure of the current failing streak (null while applies succeed)
  */
 class FirewallState extends Model
 {
@@ -42,6 +43,7 @@ class FirewallState extends Model
             'status' => ApplyStatus::class,
             'revision' => 'integer',
             'applied_at' => 'datetime',
+            'failed_at' => 'datetime',
         ];
     }
 }

@@ -8,7 +8,7 @@ use Kiln\Alerting\Contracts\Data\AlertData;
 use Kiln\Alerting\Contracts\Severity;
 
 /**
- * A server converged to its desired nftables ruleset.
+ * A server's firewall applies again after failing (dispatched on that transition only).
  */
 final class FirewallApplied implements Alertable
 {

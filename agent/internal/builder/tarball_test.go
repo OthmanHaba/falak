@@ -152,7 +152,10 @@ func TestTarballLongNames(t *testing.T) {
 }
 
 func TestExcluded(t *testing.T) {
-	cases := map[string]bool{".git": true, "vendor/pkg/.git": true, "node_modules": false, ".env": true, "config/.env": false, ".env.production.local": true, ".env.example": false}
+	cases := map[string]bool{".git": true, "vendor/pkg/.git": true, "node_modules": false, ".env": true, "config/.env": false, ".env.production.local": true, ".env.example": false,
+		// The build's own logs never ship (they would land in shared storage); the directory placeholder does.
+		"storage/logs/laravel.log": true, "storage/logs/laravel-2026-09-28.log": true, "storage/logs/.gitignore": false, "storage/logs": false,
+		"vendor/pkg/storage/logs/x.log": false}
 	for rel, want := range cases {
 		if got := excluded(rel, DefaultExcludes); got != want {
 			t.Errorf("excluded(%q) = %v want %v", rel, got, want)

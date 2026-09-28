@@ -8,6 +8,7 @@ use Kiln\Network\Domain\Enums\ApplyStatus;
 use Kiln\Network\Domain\Models\FirewallRule;
 use Kiln\Network\Domain\Models\FirewallState;
 use Kiln\Network\Events\FirewallApplied;
+use Kiln\Network\Events\FirewallApplyFailed;
 use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Events\ServerDeleted;
@@ -124,8 +125,8 @@ it('does not re-dispatch an unchanged ruleset and uses a new key for A → B →
     expect($this->agents->dispatched('net.firewall.apply'))->toHaveCount(4);
 });
 
-it('records the outcome and announces FirewallApplied', function () {
-    Event::fake([FirewallApplied::class]);
+it('records the outcome and alerts only when the firewall starts failing and when it recovers', function () {
+    Event::fake([FirewallApplied::class, FirewallApplyFailed::class]);
     $this->get("/servers/{$this->server->id}/firewall");
     $command = $this->agents->last('net.firewall.apply');
 
@@ -137,13 +138,28 @@ it('records the outcome and announces FirewallApplied', function () {
         ->and($state->ruleset_sha256)->toBe(str_repeat('b', 64))
         ->and($state->applied_at)->not->toBeNull();
 
-    Event::assertDispatched(FirewallApplied::class, fn ($e) => $e->serverId === $this->server->id && $e->commandId === $command['handle']->id && $e->rulesetSha256 === str_repeat('b', 64));
+    // A routine successful apply is not an alert ("Firewall applied again" was noisy).
+    Event::assertNotDispatched(FirewallApplied::class);
 
     $this->post("/network/servers/{$this->server->id}/firewall/rules", ['name' => 'Redis', 'action' => 'allow', 'protocol' => 'tcp', 'port' => '6379', 'source' => '10.0.0.5']);
     $this->agents->fail($this->agents->last('net.firewall.apply')['handle'], 'nft: syntax error');
 
     expect($state->refresh()->status)->toBe(ApplyStatus::Failed)
-        ->and($state->error)->toBe('nft: syntax error');
+        ->and($state->error)->toBe('nft: syntax error')
+        ->and($state->failed_at)->not->toBeNull();
+    Event::assertDispatchedTimes(FirewallApplyFailed::class, 1);
+
+    // Still failing on the next attempt: no second alert.
+    app(ApplyFirewall::class)($this->server->id, force: true);
+    $this->agents->fail($this->agents->last('net.firewall.apply')['handle'], 'nft: syntax error');
+    Event::assertDispatchedTimes(FirewallApplyFailed::class, 1);
+
+    // Recovers: one recovery alert.
+    app(ApplyFirewall::class)($this->server->id, force: true);
+    $recovered = $this->agents->last('net.firewall.apply');
+    $this->agents->succeed($recovered['handle'], ['changed' => true, 'ruleset_sha256' => str_repeat('c', 64)]);
+    Event::assertDispatched(FirewallApplied::class, fn ($e) => $e->serverId === $this->server->id && $e->commandId === $recovered['handle']->id && $e->rulesetSha256 === str_repeat('c', 64));
+    expect($state->refresh()->failed_at)->toBeNull();
 });
 
 it('ignores results of superseded commands', function () {

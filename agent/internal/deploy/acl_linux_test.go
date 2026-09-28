@@ -30,7 +30,37 @@ func TestGroupWritableDefaultACLOverridesUmask(t *testing.T) {
 	}
 	f.Close()
 	fi, _ := os.Stat(filepath.Join(dir, "laravel.log"))
-	if fi.Mode().Perm() != 0o660 {
-		t.Fatalf("new log file mode %v, want 0660 (group-writable, not world-readable)", fi.Mode().Perm())
+	if fi.Mode().Perm() != 0o664 {
+		t.Fatalf("new log file mode %v, want 0664 (group-writable whatever the umask)", fi.Mode().Perm())
+	}
+}
+
+func TestCloseDirKeepsOthersOutButTheEdgeIn(t *testing.T) {
+	dir := t.TempDir()
+	old := EdgeUser
+	defer func() { EdgeUser = old }()
+	EdgeUser = "root" // an existing user stands in for the edge user
+	closed, err := closeDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fi, _ := os.Stat(dir)
+	if !closed {
+		if fi.Mode().Perm() != 0o755 {
+			t.Fatalf("without ACLs the dir must stay open, got %v", fi.Mode().Perm())
+		}
+		t.Skip("filesystem without POSIX ACLs")
+	}
+	if fi.Mode().Perm() != 0o750 {
+		t.Fatalf("mode %v, want 0750", fi.Mode().Perm())
+	}
+	buf := make([]byte, 128)
+	n, err := syscall.Getxattr(dir, aclAccessXattr, buf)
+	if err != nil || n != len(edgeAccessACL(0o750, 0)) {
+		t.Fatalf("access ACL: %d bytes, %v", n, err)
+	}
+	EdgeUser = "kiln-no-such-user"
+	if _, err := closeDir(dir); err != nil {
+		t.Fatal(err)
 	}
 }
