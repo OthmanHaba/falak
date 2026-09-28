@@ -76,7 +76,11 @@ final class QueueCommand
             'queued_at' => now(),
         ]);
 
-        $this->signal->notify($agent->id);
+        // Wake the agent's long-poll only once the row is visible to it. Callers often queue inside a
+        // transaction (e.g. the deployment orchestrator): a wake-up sent before COMMIT is consumed by a poll
+        // that cannot see the command yet, which then sleeps out the rest of its wait window.
+        $agentId = $agent->id;
+        $command->getConnection()->afterCommit(fn () => $this->signal->notify($agentId));
 
         return $command;
     }
