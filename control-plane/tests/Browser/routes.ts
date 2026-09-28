@@ -41,10 +41,16 @@ export const params: Record<string, ParamSource> = {
     recording: { from: '/terminal', match: new RegExp(`^/terminal/sessions/${ULID}/recording$`) },
     privateNetwork: { from: '/network', match: new RegExp(`^/network/private-networks/${ULID}$`) },
     // compose: the demo "Automations" compose site (UiDemoSeeder)
-    composeSite: { from: '/servers/:server', match: new RegExp(`^/projects/[0-9a-z]{26}/production/service/site/${ULID}$`, 'i'), text: /Automations/ },
+    composeSite: {
+        from: '/servers/:server',
+        match: new RegExp(`^/projects/[0-9a-z]{26}/production/service/site/${ULID}$`, 'i'),
+        text: /Automations/,
+    },
     // canvas
-    project: { from: '/projects', match: new RegExp(`^/projects/${ULID}/production$`) },
-    canvas: { from: '/projects', match: new RegExp(`^/projects/(${ULID.slice(1, -1)}/production)$`) },
+    // The demo "Default" project (the starred "Content" project is listed first).
+    project: { from: '/projects', match: new RegExp(`^/projects/${ULID}/production$`), text: /^Default$/ },
+    canvas: { from: '/projects', match: new RegExp(`^/projects/(${ULID.slice(1, -1)}/production)$`), text: /^Default$/ },
+    contentCanvas: { from: '/projects', match: new RegExp(`^/projects/(${ULID.slice(1, -1)}/production)$`), text: /^Content$/ },
 };
 
 /** Requests allowed to fail on every page (optional backends in local/sim setups). */
@@ -163,6 +169,7 @@ export const routes: BrowserRoute[] = [
     // canvas
     { path: '/projects' },
     { path: '/projects/:canvas' },
+    { path: '/projects/:contentCanvas' },
     { path: '/projects/:project/settings' },
 
     // panel — every service panel tab of a site, and deep links into the Settings sections
@@ -180,6 +187,7 @@ export const routes: BrowserRoute[] = [
     { path: '/projects/:canvas/service/site/:site/settings/commands' },
 
     // compose — Services tab, Settings → Compose section, logs of one compose service, organization compose policy
+    { path: '/projects/:canvas/service/site/:composeSite' },
     { path: '/projects/:canvas/service/site/:composeSite/services' },
     { path: '/projects/:canvas/service/site/:composeSite/settings/compose' },
     { path: '/projects/:canvas/service/site/:composeSite/logs/redis', allowedFailures: observability },

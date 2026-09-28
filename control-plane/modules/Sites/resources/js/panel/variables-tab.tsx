@@ -20,7 +20,23 @@ import { useJson } from '@/hooks/use-json';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
 import { cn } from '@/lib/utils';
-import { Check, Eye, EyeOff, History, KeyRound, Link2, Lock, Pencil, Plus, RotateCcw, Trash2, TriangleAlert, Undo2, X } from 'lucide-react';
+import {
+    ArrowUpRight,
+    Check,
+    Eye,
+    EyeOff,
+    History,
+    KeyRound,
+    Link2,
+    Lock,
+    Pencil,
+    Plus,
+    RotateCcw,
+    Trash2,
+    TriangleAlert,
+    Undo2,
+    X,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import {
     deployNow,
@@ -582,6 +598,32 @@ export function VariablesTab({ ctx }: ServiceTabProps) {
                                                             ) : (
                                                                 <span className="text-fg-faint font-mono tracking-widest">{MASK}</span>
                                                             )}
+                                                            {row.visible &&
+                                                                row.value !== null &&
+                                                                referencesIn(row.value)
+                                                                    .map((reference) =>
+                                                                        targets?.find((target) => target.handle === serviceHandle(reference.service)),
+                                                                    )
+                                                                    .filter(
+                                                                        (target, index, all): target is ReferenceTarget =>
+                                                                            Boolean(target) && all.indexOf(target) === index,
+                                                                    )
+                                                                    .filter((target) => target.ref_id !== ctx.service.ref_id)
+                                                                    .map((target) => (
+                                                                        <button
+                                                                            key={target.id}
+                                                                            type="button"
+                                                                            onClick={() =>
+                                                                                ctx.openService({ kind: target.kind, ref_id: target.ref_id })
+                                                                            }
+                                                                            className="border-border bg-surface-2 text-fg-muted hover:border-border-strong hover:text-fg ml-1 inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border px-1.5 text-xs transition-colors"
+                                                                            aria-label={`Open ${target.name}`}
+                                                                            data-testid="reference-target"
+                                                                        >
+                                                                            {target.name}
+                                                                            <ArrowUpRight className="size-3" aria-hidden />
+                                                                        </button>
+                                                                    ))}
                                                             {can.reveal && !row.reference && !(row.key in draft.set) && row.status !== 'new' && (
                                                                 <IconButton
                                                                     size="sm"

@@ -44,6 +44,7 @@ it('returns every service of the environment with live status, servers and refer
             'ref_id' => $database->id,
             'name' => 'shop',
             'position' => ['x' => 0, 'y' => 0],
+            'group_id' => null,
             'icon' => 'postgresql',
             'status' => 'active',
             'status_label' => 'Active',
@@ -51,6 +52,8 @@ it('returns every service of the environment with live status, servers and refer
             'subtitle' => 'PostgreSQL 16 · '.$engineServer->name,
             'servers' => [['id' => $engineServer->id, 'name' => $engineServer->name, 'leader' => false, 'online' => false]],
             'badges' => [],
+            'volumes' => [['name' => 'postgresql-data', 'detail' => $engineServer->name]],
+            'compose' => null,
             'last_deployment' => null,
         ])
         ->and($response->json('services.1'))->toBe([
@@ -59,6 +62,7 @@ it('returns every service of the environment with live status, servers and refer
             'ref_id' => $shop->id,
             'name' => 'Storefront',
             'position' => ['x' => 300, 'y' => 0],
+            'group_id' => null,
             'icon' => 'laravel',
             'status' => 'active',
             'status_label' => 'Active · 2m ago',
@@ -69,6 +73,8 @@ it('returns every service of the environment with live status, servers and refer
                 ['id' => $web2->id, 'name' => 'web-2', 'leader' => false, 'online' => false],
             ],
             'badges' => [],
+            'volumes' => [['name' => 'storage', 'detail' => 'shared']],
+            'compose' => null,
             'last_deployment' => [
                 'id' => $done->id,
                 'status' => 'succeeded',
@@ -82,9 +88,9 @@ it('returns every service of the environment with live status, servers and refer
         ->and($response->json('services.2.status_label'))->toBe('Deploying 66%')
         ->and($response->json('services.2.last_deployment.finished_at'))->toBeNull()
         ->and($response->json('edges'))->toEqualCanonicalizing([
-            ['from' => $serviceIds[$shop->id], 'to' => $serviceIds[$database->id]],
-            ['from' => $serviceIds[$shop->id], 'to' => $serviceIds[$api->id]],
-            ['from' => $serviceIds[$api->id], 'to' => $serviceIds[$database->id]],
+            ['from' => $serviceIds[$shop->id], 'to' => $serviceIds[$database->id], 'kind' => 'reference'],
+            ['from' => $serviceIds[$shop->id], 'to' => $serviceIds[$api->id], 'kind' => 'reference'],
+            ['from' => $serviceIds[$api->id], 'to' => $serviceIds[$database->id], 'kind' => 'reference'],
         ]);
 });
 
@@ -130,7 +136,7 @@ it('shows pending databases as provisioning', function () {
 });
 
 it('accepts environment ids as well as slugs and 404s unknown environments', function () {
-    $this->getJson("/projects/{$this->environment->project_id}/{$this->environment->id}/canvas")->assertOk()->assertExactJson(['services' => [], 'edges' => []]);
+    $this->getJson("/projects/{$this->environment->project_id}/{$this->environment->id}/canvas")->assertOk()->assertExactJson(['services' => [], 'edges' => [], 'groups' => []]);
     $this->getJson("/projects/{$this->environment->project_id}/nope/canvas")->assertNotFound();
 });
 

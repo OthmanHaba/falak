@@ -124,10 +124,44 @@ export interface CanvasService {
     servers: { id: string; name: string; leader: boolean; online: boolean }[];
     /** Runtime traits shown on the card and panel header (e.g. "Octane"). Optional for older payloads / fixtures. */
     badges?: string[];
+    /** User group the card sits in (its position is then relative to the group's anchor). */
+    group_id?: string | null;
+    /** Persistent storage drawn as a strip under the card (compose volumes, engine data dir, shared paths). */
+    volumes?: { name: string; detail: string | null }[];
+    /** Compose sites: drawn as a group of their compose services (§4.3). */
+    compose?: { template: string | null; collapsed: boolean; services: ComposeChild[] } | null;
     last_deployment: { id: string; status: string; commit: string | null; message: string | null; finished_at: string | null } | null;
+}
+
+/** One service of a compose site on the canvas; position relative to the site card's position. */
+export interface ComposeChild {
+    name: string;
+    icon: string;
+    image: string | null;
+    status: CanvasStatus;
+    status_label: string;
+    url: string | null;
+    volumes: string[];
+    position: { x: number; y: number };
+}
+
+/** A user-created canvas group: `position` is the anchor its members' positions are relative to. */
+export interface CanvasGroup {
+    id: string;
+    name: string;
+    position: { x: number; y: number };
+    collapsed: boolean;
+}
+
+/** `reference`: `${{ service.KEY }}` variables; `depends_on`: compose dependencies (ids `serviceId:composeService`). */
+export interface CanvasEdge {
+    from: string;
+    to: string;
+    kind?: 'reference' | 'depends_on';
 }
 
 export interface Canvas {
     services: CanvasService[];
-    edges: { from: string; to: string }[];
+    edges: CanvasEdge[];
+    groups?: CanvasGroup[];
 }

@@ -1,10 +1,11 @@
-import { registerServiceActions, registerServiceSettingsSections, registerServiceTabs } from '@/lib/registry';
+import { registerServiceActions, registerServiceLayers, registerServiceSettingsSections, registerServiceTabs } from '@/lib/registry';
 import { Rocket, RotateCcw, RotateCw } from 'lucide-react';
 import { lazy } from 'react';
 import { deploy } from './panel/api';
 
 // Panel code loads with the canvas, not with every page.
 const DeploymentsTab = lazy(() => import('./panel/deployments-tab').then((module) => ({ default: module.DeploymentsTab })));
+const DeploymentPanel = lazy(() => import('./panel/deployment-panel').then((module) => ({ default: module.DeploymentPanel })));
 const RollbackDialog = lazy(() => import('./panel/rollback-dialog').then((module) => ({ default: module.RollbackDialog })));
 
 // Canvas service panel (§5.1 / §5.2).
@@ -15,6 +16,17 @@ registerServiceTabs({
     order: 100,
     permission: 'deployments.view',
     component: DeploymentsTab,
+});
+
+// §5.5 stacked deployment panel: "View logs" / `ctx.open('deployments', id)` / `?logs={id}&logs_tab=deploy`.
+registerServiceLayers({
+    id: 'deployment',
+    kinds: ['site'],
+    param: 'logs',
+    fromTab: 'deployments',
+    permission: 'deployments.view',
+    label: (ctx, record) => `${ctx.service.name} deployment ${record.slice(-8).toLowerCase()}`,
+    component: DeploymentPanel,
 });
 
 // Settings tab blocks (§5.1): push to deploy (Source), strategy / retention / health check and the deploy hook (Deploy).

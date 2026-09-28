@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Kiln\Projects\Http\Controllers\CanvasController;
 use Kiln\Projects\Http\Controllers\EnvironmentController;
+use Kiln\Projects\Http\Controllers\GroupController;
 use Kiln\Projects\Http\Controllers\ProjectController;
 use Kiln\Projects\Http\Controllers\ServiceController;
 
@@ -18,6 +19,7 @@ Route::middleware(['auth', 'org'])->prefix('projects')->name('projects.')->group
     Route::patch('{project}', [ProjectController::class, 'update'])->where($patterns)->name('update');
     Route::delete('{project}', [ProjectController::class, 'destroy'])->where($patterns)->name('destroy');
     Route::get('{project}/settings', [ProjectController::class, 'settings'])->where($patterns)->name('settings');
+    Route::match(['put', 'delete'], '{project}/favorite', [ProjectController::class, 'favorite'])->where($patterns)->name('favorite');
 
     Route::post('{project}/environments', [EnvironmentController::class, 'store'])->where($patterns)->name('environments.store');
     Route::patch('{project}/environments/{environment}', [EnvironmentController::class, 'update'])->where($patterns)->name('environments.update');
@@ -36,4 +38,10 @@ Route::middleware(['auth', 'org'])->prefix('projects')->name('projects.')->group
     Route::patch('{project}/{environment}/services/{service}', [ServiceController::class, 'update'])->where($patterns)->name('services.update');
     Route::delete('{project}/{environment}/services/{service}', [ServiceController::class, 'destroy'])->where($patterns)->name('services.destroy');
     Route::patch('{project}/{environment}/services/{service}/position', [ServiceController::class, 'position'])->where($patterns)->name('services.position');
+    Route::patch('{project}/{environment}/services/{service}/layout', [ServiceController::class, 'layout'])->where($patterns)->name('services.layout');
+
+    // Canvas groups (layout only).
+    Route::post('{project}/{environment}/groups', [GroupController::class, 'store'])->where($patterns)->name('groups.store');
+    Route::patch('{project}/{environment}/groups/{group}', [GroupController::class, 'update'])->where([...$patterns, 'group' => $ulid])->name('groups.update');
+    Route::delete('{project}/{environment}/groups/{group}', [GroupController::class, 'destroy'])->where([...$patterns, 'group' => $ulid])->name('groups.destroy');
 });

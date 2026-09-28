@@ -91,7 +91,7 @@ it('persists card positions per environment', function () {
 
     $this->patchJson("{$this->base}/services/{$service->id}/position", ['x' => -250, 'y' => 480])
         ->assertOk()
-        ->assertExactJson(['data' => ['id' => $service->id, 'position' => ['x' => -250, 'y' => 480]]]);
+        ->assertExactJson(['data' => ['id' => $service->id, 'position' => ['x' => -250, 'y' => 480], 'group_id' => null]]);
 
     expect($service->refresh()->only(['x', 'y']))->toBe(['x' => -250, 'y' => 480]);
     $this->getJson("{$this->base}/canvas")->assertJsonPath('services.0.position', ['x' => -250, 'y' => 480]);

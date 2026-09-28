@@ -1,21 +1,41 @@
 import { cn } from '@/lib/utils';
 import { Box, Code2, Database, FileCode2, Globe, HardDrive, Server, type LucideIcon } from 'lucide-react';
 import {
+    siAppsmith,
     siBun,
     siCaddy,
+    siClickhouse,
     siDeno,
+    siDirectus,
     siDocker,
+    siElasticsearch,
+    siGhost,
+    siGitea,
+    siGrafana,
     siLaravel,
+    siListmonk,
     siMariadb,
+    siMeilisearch,
+    siMetabase,
+    siMinio,
+    siMongodb,
     siMysql,
+    siN8n,
     siNextdotjs,
+    siNginx,
     siNodedotjs,
     siNuxt,
     siPhp,
+    siPlausibleanalytics,
     siPostgresql,
+    siRabbitmq,
     siRedis,
     siStatamic,
     siSymfony,
+    siTraefikproxy,
+    siUmami,
+    siUptimekuma,
+    siVaultwarden,
     siWordpress,
     type SimpleIcon,
 } from 'simple-icons';
@@ -48,6 +68,27 @@ const BRANDS: Record<string, SimpleIcon> = {
     redis: siRedis,
     valkey: siRedis,
     caddy: siCaddy,
+    // Compose services (icon keys from their image, see Projects ComposeGroup::icon) and template brands.
+    n8n: siN8n,
+    grafana: siGrafana,
+    minio: siMinio,
+    meilisearch: siMeilisearch,
+    clickhouse: siClickhouse,
+    elasticsearch: siElasticsearch,
+    rabbitmq: siRabbitmq,
+    mongodb: siMongodb,
+    nginx: siNginx,
+    traefik: siTraefikproxy,
+    ghost: siGhost,
+    gitea: siGitea,
+    metabase: siMetabase,
+    directus: siDirectus,
+    umami: siUmami,
+    plausibleanalytics: siPlausibleanalytics,
+    uptimekuma: siUptimekuma,
+    vaultwarden: siVaultwarden,
+    listmonk: siListmonk,
+    appsmith: siAppsmith,
 };
 
 /** Generic fallbacks for kinds without a brand logo. */
@@ -63,6 +104,13 @@ const GENERIC: Record<string, LucideIcon> = {
 
 // Logos whose brand color is (near) black/white read poorly on one theme: draw them in the text color instead.
 const MONOCHROME = new Set(['nextdotjs', 'bun', 'deno', 'symfony']);
+
+function nearBlackOrWhite(hex: string): boolean {
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+    return luminance < 0.2 || luminance > 0.9;
+}
 
 export function hasServiceIcon(name: string | null | undefined): boolean {
     return Boolean(name && (BRANDS[name.toLowerCase()] || GENERIC[name.toLowerCase()]));
@@ -85,7 +133,7 @@ export function ServiceIcon({ name, size = 16, mono = false, title, className }:
     const a11y = title ? { role: 'img' as const, 'aria-label': title } : { 'aria-hidden': true as const };
 
     if (brand) {
-        const monochrome = mono || MONOCHROME.has(brand.slug);
+        const monochrome = mono || MONOCHROME.has(brand.slug) || nearBlackOrWhite(brand.hex);
 
         return (
             <svg
@@ -106,4 +154,11 @@ export function ServiceIcon({ name, size = 16, mono = false, title, className }:
     const Generic = GENERIC[key] ?? Box;
 
     return <Generic width={size} height={size} className={cn('text-fg-muted shrink-0', className)} {...a11y} />;
+}
+
+/** Icon key of a canvas service: a compose site made from a template shows the template's logo when there is one. */
+export function serviceIconKey(service: { icon: string; kind: string; compose?: { template: string | null } | null }): string {
+    const template = service.compose?.template;
+
+    return template && hasServiceIcon(template) ? template : service.icon || service.kind;
 }

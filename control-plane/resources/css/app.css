@@ -50,6 +50,13 @@
 
     --overlay: rgba(5, 4, 8, 0.64);
     --elevation-panel: 0 8px 32px rgba(0, 0, 0, 0.45);
+    /* Floating panels over the canvas: a hairline ring plus a soft, wide shadow. */
+    --elevation-float: 0 0 0 1px rgba(255, 255, 255, 0.02), 0 24px 64px -12px rgba(0, 0, 0, 0.6), 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+    /* Veil over a panel that recedes under a stacked one. */
+    --panel-dim: rgba(5, 4, 8, 0.45);
+    /* Canvas groups: a tinted, translucent frame. */
+    --group-bg: rgba(255, 255, 255, 0.025);
+    --group-border: rgba(255, 255, 255, 0.07);
 
     /* Chart series (MetricChart), fixed order; validated for CVD separation + contrast on --surface-1. */
     --chart-1: #8b5cf6;
@@ -101,6 +108,10 @@
 
     --overlay: rgba(23, 21, 31, 0.28);
     --elevation-panel: 0 8px 24px rgba(20, 16, 40, 0.08);
+    --elevation-float: 0 0 0 1px rgba(20, 16, 40, 0.02), 0 24px 56px -16px rgba(20, 16, 40, 0.16), 0 6px 16px -6px rgba(20, 16, 40, 0.08);
+    --panel-dim: rgba(246, 246, 248, 0.55);
+    --group-bg: rgba(23, 21, 31, 0.028);
+    --group-border: rgba(23, 21, 31, 0.08);
 
     --chart-1: #7c3aed;
     --chart-2: #eb6834;
@@ -145,6 +156,7 @@
 
     /* §2 Elevation: only floating surfaces (panels, dialogs, menus) cast a shadow. */
     --shadow-panel: var(--elevation-panel);
+    --shadow-float: var(--elevation-float);
     --shadow-2xs: none;
     --shadow-xs: none;
     --shadow-sm: none;
@@ -169,6 +181,8 @@
     --color-fg-faint: var(--text-faint);
     --color-on-accent: var(--text-on-accent);
     --color-overlay: var(--overlay);
+    --color-group: var(--group-bg);
+    --color-group-border: var(--group-border);
 
     /* `primary` IS the Kiln accent (violet). */
     --color-primary: var(--accent);
@@ -222,8 +236,16 @@
     --color-sidebar-border: var(--border);
     --color-sidebar-ring: var(--accent);
 
+    /* Motion (§2): spring-like ease-out for things that arrive, a quick ease-in for things that leave. */
+    --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+    --duration-panel: 280ms;
+    --duration-panel-exit: 180ms;
+
     --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
-    --animate-panel-in: panel-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    --animate-panel-in: panel-in 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    --animate-tab-in: tab-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    --animate-rise-in: rise-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
     --animate-fade-in: fade-in 150ms ease-out;
     --animate-dialog-in: dialog-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 
@@ -240,11 +262,31 @@
     }
     @keyframes panel-in {
         from {
-            transform: translateX(24px);
+            transform: translateX(24px) scale(0.985);
             opacity: 0;
         }
         to {
-            transform: translateX(0);
+            transform: none;
+            opacity: 1;
+        }
+    }
+    @keyframes tab-in {
+        from {
+            transform: translateY(3px);
+            opacity: 0;
+        }
+        to {
+            transform: none;
+            opacity: 1;
+        }
+    }
+    @keyframes rise-in {
+        from {
+            transform: translateY(6px) scale(0.98);
+            opacity: 0;
+        }
+        to {
+            transform: none;
             opacity: 1;
         }
     }
@@ -337,9 +379,11 @@
     --xy-background-pattern-dots-color: var(--grid);
 }
 .kiln-canvas .kiln-edge .react-flow__edge-path {
-    stroke: var(--border-strong);
+    stroke: var(--text-faint);
+    stroke-opacity: 0.55;
     stroke-width: 1.25;
-    stroke-dasharray: 5 4;
+    stroke-dasharray: 4 4;
+    transition: stroke 150ms ease-out;
 }
 .kiln-canvas .kiln-handle {
     width: 1px;
@@ -354,4 +398,104 @@
     border-radius: var(--radius-lg);
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+}
+
+/*
+ * Floating panel stack over the canvas (§5, §5.5). Layers enter from the right with a short fade and scale (CSS
+ * animation, `backwards` fill so the depth transform below wins once it ends); a layer covered by another recedes
+ * (translate left + scale + veil) with a transform transition. Exit animations run through the Web Animations API
+ * (panel-stack.tsx). Only transform and opacity animate.
+ */
+.kiln-panel {
+    --stack-depth: 0;
+    transform-origin: 0% 50%;
+    transition: transform var(--duration-panel) var(--ease-spring);
+    animation: panel-in var(--duration-panel) var(--ease-spring) backwards;
+    will-change: transform;
+}
+.kiln-panel[data-depth]:not([data-depth='0']) {
+    transform: translateX(calc(var(--stack-depth) * -22px)) scale(calc(1 - var(--stack-depth) * 0.028));
+}
+.kiln-panel > .kiln-panel-veil {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    border-radius: inherit;
+    background: var(--panel-dim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-panel) var(--ease-spring);
+}
+.kiln-panel[data-depth]:not([data-depth='0']) > .kiln-panel-veil {
+    opacity: 1;
+    pointer-events: auto;
+    cursor: pointer;
+}
+@media (prefers-reduced-motion: reduce) {
+    .kiln-panel,
+    .kiln-panel > .kiln-panel-veil {
+        animation: none;
+        transition: none;
+    }
+}
+
+/* Sliding underline of tab lists (tabs.tsx): one bar, moved and scaled with transforms. */
+.kiln-tab-indicator {
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    height: 2px;
+    width: 100px;
+    border-radius: 2px;
+    background: var(--accent);
+    transform-origin: 0 50%;
+    transition:
+        transform 260ms var(--ease-spring),
+        opacity 150ms ease-out;
+    pointer-events: none;
+}
+
+/* Canvas cards lift on hover; groups fade their members in / out when expanding / collapsing. */
+.kiln-canvas .react-flow__node-service:hover .kiln-card,
+.kiln-canvas .react-flow__node-child:hover .kiln-card {
+    transform: translateY(-1px);
+}
+.kiln-canvas .react-flow__node.dragging .kiln-card {
+    transform: translateY(-2px) scale(1.01);
+}
+.kiln-canvas .kiln-card {
+    transition:
+        transform 180ms var(--ease-spring),
+        border-color 150ms ease-out,
+        box-shadow 180ms ease-out;
+}
+.kiln-canvas .react-flow__node.kiln-leaving {
+    opacity: 0;
+    transition: opacity 180ms ease-out;
+}
+.kiln-canvas .react-flow__node.kiln-enter > .group\/card {
+    animation: rise-in 240ms var(--ease-spring) backwards;
+}
+.kiln-canvas .kiln-edge.kiln-edge-active .react-flow__edge-path {
+    stroke: var(--accent);
+    stroke-opacity: 0.8;
+}
+.kiln-canvas .react-flow__minimap {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+.kiln-canvas .react-flow__nodesselection-rect,
+.kiln-canvas .react-flow__selection {
+    background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+    border-radius: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .kiln-canvas .kiln-card,
+    .kiln-canvas .react-flow__node {
+        animation: none !important;
+        transition: none !important;
+    }
 }

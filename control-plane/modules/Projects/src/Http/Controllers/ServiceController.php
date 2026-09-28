@@ -5,17 +5,21 @@ namespace Kiln\Projects\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
+use Kiln\Projects\Application\Actions\ArrangeCompose;
 use Kiln\Projects\Application\Actions\CreateService;
 use Kiln\Projects\Application\Actions\DeleteService;
 use Kiln\Projects\Application\Actions\MoveService;
 use Kiln\Projects\Application\Actions\RenameService;
 use Kiln\Projects\Application\Canvas\CanvasReadModel;
 use Kiln\Projects\Contracts\ServiceKind;
+use Kiln\Projects\Domain\Models\Group;
 use Kiln\Projects\Domain\Models\Project;
 use Kiln\Projects\Domain\Models\Service;
 use Kiln\Projects\Http\Requests\ProjectRules;
+use Kiln\Sites\Contracts\SiteDirectory;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -25,7 +29,10 @@ final class ServiceController extends Controller
 {
     use PresentsProjects;
 
-    public function __construct(private readonly OrganizationAccess $access) {}
+    public function __construct(
+        private readonly OrganizationAccess $access,
+        private readonly SiteDirectory $sites,
+    ) {}
 
     /**
      * POST /projects/{project}/{environment}/services
@@ -100,7 +107,9 @@ final class ServiceController extends Controller
     }
 
     /**
-     * PATCH /projects/{project}/{environment}/services/{service}/position {x, y}
+     * PATCH /projects/{project}/{environment}/services/{service}/position {x, y, group_id?}
+     * With `group_id` (a group id, or null to leave the group) the card moves into / out of a group; positions of
+     * grouped cards are relative to their group's anchor.
      */
     public function position(Request $request, Project $project, string $environment, string $service, MoveService $move): JsonResponse
     {
@@ -110,11 +119,48 @@ final class ServiceController extends Controller
         $data = $request->validate([
             'x' => ['required', ...ProjectRules::COORDINATE],
             'y' => ['required', ...ProjectRules::COORDINATE],
+            'group_id' => ['sometimes', 'nullable', 'string', 'size:26'],
         ]);
 
         $record = Service::query()->where('environment_id', $model->id)->find(strtolower($service)) ?? throw new NotFoundHttpException('Service not found.');
-        $move($record, (int) $data['x'], (int) $data['y']);
+        $group = false;
 
-        return response()->json(['data' => ['id' => $record->id, 'position' => ['x' => $record->x, 'y' => $record->y]]]);
+        if (array_key_exists('group_id', $data)) {
+            $group = $data['group_id'] !== null
+                ? (Group::query()->where('environment_id', $model->id)->find(strtolower((string) $data['group_id'])) ?? throw ValidationException::withMessages(['group_id' => 'That group does not exist.']))
+                : null;
+
+            if ($group !== null && $record->kind === ServiceKind::Site && $this->sites->find($record->ref_id)?->compose !== null) {
+                throw ValidationException::withMessages(['group_id' => 'Compose services are already grouped by their site.']);
+            }
+        }
+
+        $move($record, (int) $data['x'], (int) $data['y'], $group);
+
+        return response()->json(['data' => ['id' => $record->id, 'position' => ['x' => $record->x, 'y' => $record->y], 'group_id' => $record->group_id]]);
+    }
+
+    /**
+     * PATCH /projects/{project}/{environment}/services/{service}/layout {children?: {name: {x, y}}, collapsed?}
+     * A compose site's group: positions of its compose services (relative to the card) and collapsed state.
+     */
+    public function layout(Request $request, Project $project, string $environment, string $service, ArrangeCompose $arrange): JsonResponse
+    {
+        $this->authorize('manage', $project);
+        $model = $this->resolveEnvironment($project, $environment);
+
+        $data = $request->validate([
+            'children' => ['sometimes', 'array', 'max:100'],
+            'children.*.x' => ['required', ...ProjectRules::COORDINATE],
+            'children.*.y' => ['required', ...ProjectRules::COORDINATE],
+            'collapsed' => ['sometimes', 'boolean'],
+        ]);
+
+        $record = Service::query()->where('environment_id', $model->id)->find(strtolower($service)) ?? throw new NotFoundHttpException('Service not found.');
+        /** @var array<string, array{x: int, y: int}> $children */
+        $children = $data['children'] ?? [];
+        $arrange($record, $children, isset($data['collapsed']) ? (bool) $data['collapsed'] : null);
+
+        return response()->json(['data' => ['id' => $record->id, 'layout' => $record->layout]]);
     }
 }
