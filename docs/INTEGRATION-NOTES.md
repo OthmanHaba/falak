@@ -171,9 +171,48 @@ means the build was cancelled and `kiln-builder` aborts it.
   the first activation (the restart step's `proc.apply`). Consequence: a site's daemons/cron only run once it has
   been deployed, also on a server newly added to a deployed site (until the next deploy).
 - **CLI:** `kiln deploy` prints the waiting reason; `api.Deployment.WaitingReason`.
-- Still open from *Known limits* (not small or not safe to change here): Octane isn't proxied by Edge (other lane);
-  a failed **first** compose deploy leaves containers as `up` left them (stopping them would also discard their logs
+- Still open from *Known limits* (not small or not safe to change here): a failed **first** compose deploy leaves containers as `up` left them (stopping them would also discard their logs
   for debugging); on-server builds; registry GC; the compose file-shipping limits.
+
+## Octane routing (roadmap step 5)
+- **Port + server (Sites).** `LaravelSettings` gained `octaneServer` (`Sites\Contracts\OctaneServer`: `frankenphp` — FrankenPHP
+  runtime only, its default — `swoole` (PHP-FPM default) or `roadrunner`) and `octanePort`, persisted in the site's
+  `laravel` JSON when Octane is enabled (`Sites\Application\OctanePorts`): first candidate `8000 + crc32(site id) % 1000`
+  (`sites.octane_port_base|span`), then the next free port. Free = not another site's app port, compose host port, Octane
+  port or Octane aux port (port + 10000: FrankenPHP's `--admin-port` — the edge owns :2019 — or RoadRunner's `--rpc-port`)
+  on **any** server of the site, and its own aux port free too. Re-checked when servers are added (`SetSiteTargets`),
+  on duplication, and by the backfill migration (legacy `app_port`/crc32 ports kept when free). The port is never taken
+  from a request; it survives switching Octane off. Edge and Processes both read it from `SiteData::$laravel`.
+- **Processes** supervises `<slug>.octane` = `php artisan octane:start --server=<s> --host=127.0.0.1 --port=<p>`
+  (+ `--admin-port`/`--rpc-port`) and owns the routing state `processes_octane_routes` (per site × server:
+  `starting | listening | failed | draining`), exposed as `Processes\Contracts\OctaneRouting::listeningPort()` and
+  `Processes\Events\OctaneRoutingChanged`. A probe (`system.exec`, waits ≤ `processes.octane_probe_seconds` for any HTTP
+  answer on 127.0.0.1:<port>) runs after a `proc.apply` / `proc.restart` that involves the program and on every status
+  poll for unverified routes; only a verified route is proxied. Programs only exist once a release is live (deploy
+  gaps), so never-deployed sites are never probed.
+- **Edge** renders a verified Octane site (direct and LB-backend roles, domains + test domain) as `kind: reverse_proxy`
+  with `root` = document root and `try_duration_s: 30`: the agent serves existing files under `root` with `file_server`
+  (never `*.php`, dotfiles or directories) and proxies the rest, retrying the upstream for 30s. TLS, redirects, headers,
+  basic auth, IP rules and body limits are unchanged. Anything else (starting, failed, placeholder release, port moved)
+  keeps the FrankenPHP `php_server` / PHP-FPM route. `edge_server_states.octane_sites|applied_octane_sites` record which
+  sites the dispatched / applied config proxies (`EdgeRoutes::proxiesToOctane()`).
+- **Ordering.** Enable: program converged → probe answers → `OctaneRoutingChanged` → edge switches to the proxy. Disable:
+  a verified route turns `draining` (edge serves directly again; the program is kept in `proc.apply`) until neither the
+  applied nor a pending edge config proxies to it (`StopDrainedOctane` on `EdgeApplied`, the status poll, or a 10 min
+  grace), then it is dropped and the program stops. Port/server change: back to `starting` (served directly until the
+  new process answers).
+- **Deploys restart, UI restarts reload.** Octane resolves `current` once at start (PHP resolves `__DIR__`/`base_path()`
+  through the symlink), so `octane:reload` after a release swap would re-boot the workers on the **old** release. After an
+  activation the program is restarted — its definition carries the new `KILN_RELEASE_ID`, so the restart step's
+  `proc.apply` does it — while the edge holds requests (`try_duration`) until the new server listens: no failed requests,
+  a short latency spike. `ProcessControl::restartForSite(..., newRelease: false)` (Restart processes in the UI, same
+  release) sends `php artisan octane:reload --server=<s>` to a verified Octane instead (graceful worker reload behind the
+  open port); a failed reload falls back to `proc.restart`.
+- API: `PUT /api/v1/sites/{site}/laravel` (docs/API.md). UI: Settings → Laravel (server select, port) + a Processes
+  block with per-server routing state; canvas cards / panel header carry an **Octane** badge (`CanvasService.badges`).
+- Sim E2E stage `octane` (fixture `laravel-demo` now requires `laravel/octane`, ships `public/frankenphp-worker.php` and a
+  `/octane` route whose per-worker counter proves worker mode): placeholder kept before the first deploy, worker mode
+  through the edge, static passthrough, zero failed requests during a redeploy and while switching Octane off.
 
 ## Found by the sim E2E (all fixed, with regression tests)
 Real provisioning and deploys on Ubuntu 24.04 (`sim/e2e-deploy.sh`) surfaced these; each is fixed and covered:
@@ -201,8 +240,12 @@ networks, web terminal, recipes, provider APIs (Hetzner/DO/Vultr/Linode/Lightsai
 certificates, alert delivery to real Slack/Discord/Telegram, the Grafana provisioning API, Deno runtime at runtime.
 
 ## Known limits (accepted for now)
-- Octane runs on 127.0.0.1:`app_port` (or 8000 + crc32(site id) % 1000); Edge still serves PHP sites directly and does
-  not proxy to Octane yet. Octane on php-fpm sites uses `--server=swoole` (needs the extension).
+- Octane: Swoole needs the `swoole`/`openswoole` extension and RoadRunner the `rr` binary + `spiral/roadrunner-http` in
+  the app (Kiln installs neither; the probe keeps the site served directly until they work). Octane's FrankenPHP
+  server binds `:<port>` on all interfaces (Octane gives no bind option; the nftables default policy drops it) and
+  uses the FrankenPHP binary's embedded PHP, not the site's `phpX.Y` CLI. A verified Octane that crashes later is not
+  un-routed automatically (502 after the 30s retry window; the crash-loop alert fires) — the next restart/poll re-probes
+  only unverified routes.
 - LB active health checks send the backend IP as Host, so backends whose routes are domain-only can be marked down; leave health path empty to balance without active checks. Weights are emulated by repeating upstreams.
 - SourceControl: no Bitbucket Server; OAuth for only one self-hosted GitLab (others via token).
 - Providers: AWS is Lightsail only (no EC2).

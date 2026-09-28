@@ -50,6 +50,7 @@ it('returns every service of the environment with live status, servers and refer
             'url' => null,
             'subtitle' => 'PostgreSQL 16 · '.$engineServer->name,
             'servers' => [['id' => $engineServer->id, 'name' => $engineServer->name, 'leader' => false, 'online' => false]],
+            'badges' => [],
             'last_deployment' => null,
         ])
         ->and($response->json('services.1'))->toBe([
@@ -67,6 +68,7 @@ it('returns every service of the environment with live status, servers and refer
                 ['id' => $web1->id, 'name' => 'web-1', 'leader' => true, 'online' => true],
                 ['id' => $web2->id, 'name' => 'web-2', 'leader' => false, 'online' => false],
             ],
+            'badges' => [],
             'last_deployment' => [
                 'id' => $done->id,
                 'status' => 'succeeded',
@@ -107,6 +109,16 @@ it('derives statuses from targets and deployments', function (?string $deploymen
     'failed' => ['failed', TargetStatus::Ready, true, 'failed', 'Failed · 5m ago'],
     'cancelled' => ['cancelled', TargetStatus::Ready, true, 'inactive', 'Cancelled · 5m ago'],
 ]);
+
+it('badges Laravel sites served by Octane', function () {
+    $site = projects_site($this->organization, 'Shop', [], $this->environment, [sites_server($this->organization->id)]);
+
+    $this->getJson("{$this->url}/canvas")->assertJsonPath('services.0.badges', []);
+
+    $site->forceFill(['laravel' => ['octane' => true, 'octane_server' => 'frankenphp', 'octane_port' => 8100]])->save();
+
+    $this->getJson("{$this->url}/canvas")->assertJsonPath('services.0.badges', ['Octane']);
+});
 
 it('shows pending databases as provisioning', function () {
     [$database] = projects_database($this->organization, 'shop', $this->environment);
