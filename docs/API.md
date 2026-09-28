@@ -36,7 +36,9 @@ The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protoco
 | `deployments.rollback` | admin, developer | roll back to an earlier release |
 | `deployments.manage` | admin, developer | strategy, health checks, retention, push-to-deploy, deploy hooks (UI) |
 | `builds.view` / `builds.manage` | view: all; manage: admin, developer | builds, logs, builders / cancel builds, manage builders (UI) |
-| `telemetry.view` | admin, developer, viewer | site logs |
+| `telemetry.view` | admin, developer, viewer | site logs, access logs |
+| `servers.view` | admin, developer, viewer | list/show servers (incl. agent version) |
+| `fleet.agents.manage` | admin | upgrade server agents |
 | `projects.view` / `projects.manage` | view: all; manage: admin, developer | projects + environments / create, rename, delete, duplicate environments |
 
 ## Identity
@@ -52,6 +54,24 @@ The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protoco
 Token requests return the token's organization only; session requests every membership.
 ```json
 {"data": [{"id": "…", "name": "Acme", "slug": "acme", "role": "owner", "current": true}]}
+```
+
+## Servers
+
+### `GET /api/v1/servers` · `GET /api/v1/servers/{server}` — `servers.view`
+`agent` (null until an agent enrolled) carries `status`, `last_heartbeat_at`, `version`, `available_version` (the
+build this control plane ships), `update_available` and `upgrade` (the latest upgrade: `status`
+`queued|running|succeeded|failed|cancelled`, `from_version`, `to_version`, `error`, `requested_at`, `finished_at`).
+
+### `POST /api/v1/servers/{server}/agent/upgrade` — `fleet.agents.manage`
+Upgrades the server's agent to the shipped build (`system.upgrade_agent` with the panel download URL and its
+SHA-256). `202` with the upgrade (`status: running`; the same upgrade when one is already in progress); it succeeds
+once the restarted agent reports the new build, fails on a download/checksum/pre-flight error or after
+`KILN_AGENT_UPGRADE_TIMEOUT`. `409` with `message` when it cannot run: no agent, agent offline, no verifiable build
+for the server's architecture, or the agent already runs it.
+```json
+{"data": {"id": "01k…", "server_id": "01k…", "status": "running", "from_version": "v0.3.0", "to_version": "v0.4.0",
+          "rollout_id": null, "error": null, "requested_at": "2026-09-28T10:00:00+00:00", "finished_at": null}}
 ```
 
 ## Sites

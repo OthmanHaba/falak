@@ -8,6 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
+use Kiln\Fleet\Application\AgentUpgradeRollout;
 use Kiln\Fleet\Application\CommandLifecycle;
 use Kiln\Fleet\Contracts\AgentStatus;
 use Kiln\Fleet\Contracts\CommandStatus;
@@ -19,7 +20,8 @@ use Kiln\Fleet\Events\AgentWentOffline;
 use Kiln\Fleet\Infrastructure\Signals\CommandSignal;
 
 /**
- * Scheduled every minute: offline detection, command redelivery / timeouts / expiry, and pruning.
+ * Scheduled every minute: offline detection, command redelivery / timeouts / expiry, agent upgrade timeouts, and
+ * pruning.
  */
 final class SweepFleet implements ShouldBeUnique, ShouldQueue
 {
@@ -29,11 +31,12 @@ final class SweepFleet implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 120;
 
-    public function handle(CommandLifecycle $lifecycle, CommandSignal $signal): void
+    public function handle(CommandLifecycle $lifecycle, CommandSignal $signal, ?AgentUpgradeRollout $upgrades = null): void
     {
         $this->detectOfflineAgents();
         $this->redeliverStalledCommands($lifecycle, $signal);
         $this->timeOutCommands($lifecycle);
+        ($upgrades ?? app(AgentUpgradeRollout::class))->sweep();
         $this->prune();
     }
 

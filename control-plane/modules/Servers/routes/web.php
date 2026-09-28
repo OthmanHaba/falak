@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Kiln\Servers\Http\Controllers\PhpController;
+use Kiln\Servers\Http\Controllers\ServerAgentController;
 use Kiln\Servers\Http\Controllers\ServerController;
 use Kiln\Servers\Http\Controllers\ServerTabController;
 use Kiln\Servers\Http\Controllers\SshKeyController;
@@ -10,11 +11,13 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::get('servers', [ServerController::class, 'index'])->name('servers.index');
     Route::get('servers/create', [ServerController::class, 'create'])->name('servers.create');
     Route::get('servers/search', [ServerController::class, 'search'])->name('servers.search');
+    Route::post('servers/agents/upgrade', [ServerAgentController::class, 'upgradeAll'])->name('servers.agents.upgrade');
     Route::post('servers', [ServerController::class, 'store'])->name('servers.store');
     Route::get('servers/{server}', [ServerController::class, 'show'])->name('servers.show');
     Route::patch('servers/{server}', [ServerController::class, 'update'])->name('servers.update');
     Route::delete('servers/{server}', [ServerController::class, 'destroy'])->name('servers.destroy');
     Route::post('servers/{server}/reprovision', [ServerController::class, 'reprovision'])->name('servers.reprovision');
+    Route::post('servers/{server}/agent/upgrade', [ServerAgentController::class, 'upgrade'])->name('servers.agent.upgrade');
     Route::post('servers/{server}/install-command', [ServerController::class, 'installCommand'])->name('servers.install-command');
     Route::get('servers/{server}/metrics', [ServerController::class, 'metrics'])->name('servers.metrics');
 

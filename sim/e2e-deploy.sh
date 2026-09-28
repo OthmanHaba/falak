@@ -117,6 +117,15 @@ stage_servers() {
     for c in srv-app-1 srv-app-2 srv-db-1; do
         if sx "$c" bash -c 'nft list ruleset 2>/dev/null | grep -q "dport 22"'; then ok "$c: nftables firewall applied"; else bad "$c: firewall ruleset missing"; fi
     done
+    # The sim's agents run the very build the control plane serves: reported as current, and an upgrade is a no-op.
+    if [[ -n ${SERVER_srv_app_1:-} ]]; then
+        api GET "/servers/$SERVER_srv_app_1"
+        if jq -e '.data.agent.version != null and .data.agent.available_version != null and .data.agent.update_available == false' >/dev/null 2>&1 <<<"$API_BODY"; then
+            ok "srv-app-1 runs the shipped agent build ($(jq -r .data.agent.version <<<"$API_BODY"))"
+        else bad "agent version report: $(jq -c .data.agent <<<"$API_BODY")"; fi
+        api POST "/servers/$SERVER_srv_app_1/agent/upgrade" '{}'
+        if [[ $API_CODE == 409 ]] && jq -e '.message | test("already runs")' >/dev/null 2>&1 <<<"$API_BODY"; then ok "agent upgrade API: nothing to do for a current agent"; else bad "agent upgrade API -> $API_CODE: $API_BODY"; fi
+    fi
 }
 
 # ---------------------------------------------------------------------------------------------- sites/deploys

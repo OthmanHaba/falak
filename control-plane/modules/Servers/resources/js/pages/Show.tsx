@@ -14,9 +14,9 @@ import { Tag } from '@/components/kiln/tag';
 import { toast } from '@/components/kiln/toast';
 import ServerLayout from '@/layouts/server-layout';
 import { Link, router, usePoll } from '@inertiajs/react';
-import { ChevronRight, Copy, Globe, RefreshCw, RotateCw, Settings, SquareTerminal, Trash2 } from 'lucide-react';
+import { ArrowUpCircle, ChevronRight, Copy, Globe, RefreshCw, RotateCw, Settings, SquareTerminal, Trash2 } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { formatBytes, formatUptime, Sparkline } from '../components/server-ui';
+import { AgentVersion, formatBytes, formatUptime, Sparkline } from '../components/server-ui';
 import { type AgentDetails, type MetricSample, type ServerDetails, type ServerService } from '../types';
 
 interface Props {
@@ -24,7 +24,7 @@ interface Props {
     agent: AgentDetails | null;
     metrics: MetricSample[];
     services: ServerService[];
-    can: { update: boolean; delete: boolean };
+    can: { update: boolean; delete: boolean; upgrade_agent: boolean };
 }
 
 const RELOAD = ['server', 'agent', 'metrics', 'services'];
@@ -81,13 +81,14 @@ function serviceStatus(service: ServerService): string {
 
 export default function Show({ server, agent, metrics, services, can }: Props) {
     const awaitingAgent = server.install_command !== null && ['creating', 'error'].includes(server.status) && !agent;
+    const upgrading = ['queued', 'running'].includes(server.agent?.upgrade?.status ?? '');
     const settling = ['creating', 'provisioning', 'deleting'].includes(server.status);
     const [showLog, setShowLog] = useState(server.status !== 'active');
     const [regenerating, setRegenerating] = useState(false);
     const [reprovisioning, setReprovisioning] = useState(false);
 
     // Live: the layout listens for `server.updated`; poll while the server is settling in case Reverb is down.
-    usePoll(settling ? 4_000 : 60_000, { only: RELOAD });
+    usePoll(settling || upgrading ? 4_000 : 60_000, { only: RELOAD });
 
     const previousLogStatus = useRef<CommandStatus | null>(null);
     const onProvisionStatus = (status: CommandStatus) => {
@@ -362,13 +363,32 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                             ]}
                         />
                     </Section>
-                    <Section title="Agent">
+                    <Section
+                        title="Agent"
+                        aside={
+                            can.upgrade_agent &&
+                            agent &&
+                            server.agent?.update_available && (
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    icon={<ArrowUpCircle />}
+                                    disabled={upgrading || agent.status !== 'online'}
+                                    onClick={() =>
+                                        router.post(`/servers/${server.id}/agent/upgrade`, {}, { preserveScroll: true, only: [...RELOAD, 'flash'] })
+                                    }
+                                >
+                                    Upgrade agent
+                                </Button>
+                            )
+                        }
+                    >
                         {agent ? (
                             <KeyValue
                                 columns={2}
                                 items={[
                                     { label: 'Status', value: <StatusBadge status={agent.status === 'online' ? 'online' : 'offline'} /> },
-                                    { label: 'Version', value: agent.version, mono: true },
+                                    { label: 'Version', value: <AgentVersion agent={server.agent} />, mono: true },
                                     { label: 'Last heartbeat', value: <RelativeTime value={agent.last_heartbeat_at} /> },
                                     { label: 'Enrolled', value: <RelativeTime value={agent.enrolled_at} /> },
                                     { label: 'Certificate expires', value: <RelativeTime value={agent.certificate_expires_at} /> },

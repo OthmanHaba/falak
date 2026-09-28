@@ -1,6 +1,9 @@
+import { Tag } from '@/components/kiln/tag';
+import { Tooltip } from '@/components/kiln/tooltip';
 import { cn } from '@/lib/utils';
 import { Server } from 'lucide-react';
 import { siAkamai, siDigitalocean, siHetzner, siVultr, type SimpleIcon } from 'simple-icons';
+import { type ServerSummary } from '../types';
 
 const PROVIDER_ICONS: Record<string, SimpleIcon> = {
     hetzner: siHetzner,
@@ -150,4 +153,27 @@ export async function requestJson<T>(url: string, init: { method?: 'GET' | 'POST
     }
 
     return body;
+}
+
+/** "v1.2.0" plus whether the control plane ships a newer build, and the state of an upgrade in progress or failed. */
+export function AgentVersion({ agent, compact = false }: { agent: ServerSummary['agent']; compact?: boolean }) {
+    if (!agent) return <span className="text-fg-faint">—</span>;
+    const upgrade = agent.upgrade;
+    const inProgress = upgrade && ['queued', 'running'].includes(upgrade.status);
+    const failed = upgrade?.status === 'failed' && agent.update_available;
+
+    return (
+        <span className="inline-flex max-w-full flex-wrap items-center gap-1.5">
+            <span className="font-mono">{agent.version ?? 'unknown'}</span>
+            {inProgress ? (
+                <Tag tone="info">{upgrade.status === 'queued' ? 'upgrade queued' : `upgrading to ${upgrade.to_version}`}</Tag>
+            ) : failed ? (
+                <Tooltip content={upgrade.error ?? 'The upgrade failed.'}>
+                    <Tag tone="danger">upgrade failed</Tag>
+                </Tooltip>
+            ) : (
+                agent.update_available && <Tag tone="warning">{compact ? 'update available' : `update available: ${agent.available_version}`}</Tag>
+            )}
+        </span>
+    );
 }

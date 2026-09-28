@@ -341,6 +341,31 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
   1.9.1). The migration cannot tell a deliberate `stderr` from the old default and switches both (a user can set it
   back; web logs of such a site then only reach the edge journal).
 
+### Fleet agent upgrades
+- **Versions.** Agents report `facts.agent_version`, `features` and `agent_sha256` (checksum of the running binary).
+  The shipped build per arch is `Fleet\Application\ShippedAgent` (sha256 from `KILN_AGENT_SHA256_*` or the served file;
+  version from the `kiln-agent-linux-<arch>.version` sidecar that `make agent` now writes and the image copies, else
+  `KILN_AGENT_VERSION` / `KILN_VERSION`). *Outdated* = checksums differ (dev/CI builds share version strings), except
+  that a newer release than the shipped one never is; without a checksum, semver or string comparison.
+- **Contract** `Fleet\Contracts\AgentUpgrades`: `versionsFor()` (→ `AgentVersionInfo`: version, availableVersion,
+  updateAvailable, latest `AgentUpgradeData`), `upgrade()`, `upgradeOrganization()`, `outdatedCount()`; exception
+  `AgentUpgradeUnavailable`. Table `fleet_agent_upgrades`; `AgentUpgradeRollout` sends `system.upgrade_agent` (panel
+  URL + sha256, idempotency key per upgrade), marks it installed on `CommandFinished`, succeeded when the agent's facts
+  show the shipped checksum (or version), failed on `CommandFailed` or after `fleet.agent.upgrade.timeout_seconds`
+  (SweepFleet). Rollouts share a `rollout_id`, run `batch_size` at a time, and cancel their queued rest after a
+  failure. Events `AgentUpgradeSucceeded` (recovery) / `AgentUpgradeFailed` (Alertable `fleet.agent_upgrade_failed`).
+- **Agent.** `system.upgrade_agent` now also pre-flights the download (`<bin>.new version` must run, so a
+  wrong-arch or truncated build never replaces a working agent), replaces the installed `/usr/local/bin/kiln-agent`
+  (not the resolved executable, so symlinked installs such as the sim work), keeps `.prev` (copy when a hard link is
+  impossible), and restarts again when the binary is current but the running process is not. Schema `version` is any
+  string now (dev/CI builds).
+- **UI/API.** Servers list: *Agent* column (version, *update available*, upgrade state) and *Upgrade all agents*;
+  server page: *Upgrade agent* in the Agent section (`fleet.agents.manage`). `POST /api/v1/servers/{server}/agent/upgrade`;
+  `GET /api/v1/servers[/{id}]` `agent.*` fields; `php artisan kiln:agents [--outdated --count]`; `kiln-ctl update`
+  prints a hint when agents are outdated.
+- Not verified on a real fleet: the full download → restart → reconnect cycle runs only in Go/Pest tests (the sim's
+  agents already run the served build, so its E2E only checks the version report and the no-op).
+
 ## Not covered by the E2E yet (unit/feature tested only)
 Docker/Compose runtimes and docker builds on a real BuildKit, database backups/restore to real S3, WireGuard private
 networks, web terminal, recipes, provider APIs (Hetzner/DO/Vultr/Linode/Lightsail), load balancers, DNS-01 wildcard

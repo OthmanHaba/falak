@@ -100,7 +100,8 @@ func Build(d Deps) *Components {
 	dep := deploy.New(deploy.Options{FS: d.FS, Runner: d.Runner, HTTP: d.HTTP, SitesRoot: cfg.SitesRoot, Procs: sup, Workers: edgeClient, Events: sink, Logger: log.With("component", "deploy")})
 	terms := pty.New(pty.Options{Logger: log.With("component", "pty")})
 
-	system.New(system.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, AgentVersion: version.Version, Restart: d.RestartAgent}).Register(reg)
+	system.New(system.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, AgentVersion: version.Version, Restart: d.RestartAgent,
+		BinaryPath: installedBinary(d.FS), RunningSHA256: version.BinarySHA256}).Register(reg)
 	provision.New(provision.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
 	runtime.New(runtime.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
 	edgeMgr.Register(reg)
@@ -256,4 +257,13 @@ func waitTimeout(fn func(), d time.Duration) {
 	case <-done:
 	case <-time.After(d):
 	}
+}
+
+// installedBinary is the path system.upgrade_agent replaces: the systemd unit's binary (BinaryPath) when the
+// agent is installed, else the running executable ("" = os.Executable()).
+func installedBinary(fs hostfs.FS) string {
+	if fs.Exists(BinaryPath) {
+		return fs.P(BinaryPath)
+	}
+	return ""
 }

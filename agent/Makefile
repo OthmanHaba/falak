@@ -28,8 +28,10 @@ define gobuild
 endef
 
 # Static pattern rules: kiln-builder-* and kiln-agent-* must not fall into the kiln-% CLI rule.
+# <binary>.version: the version the control plane announces when it serves this build (agent upgrades).
 $(foreach p,$(AGENT_PLATFORMS),bin/kiln-agent-$(p)): bin/kiln-agent-%: FORCE
 	$(call gobuild,kiln-agent,$*)
+	@echo '$(VERSION)' > $@.version
 
 $(foreach p,$(BUILDER_PLATFORMS),bin/kiln-builder-$(p)): bin/kiln-builder-%: FORCE
 	$(call gobuild,kiln-builder,$*)
@@ -38,7 +40,7 @@ $(foreach p,$(CLI_PLATFORMS),bin/kiln-$(p)): bin/kiln-%: FORCE
 	$(call gobuild,kiln,$*)
 
 sizes:
-	@ls -l bin/ | awk 'NR>1 {printf "%-30s %6.2f MB\n", $$9, $$5/1048576}'
+	@ls -l bin/ | awk 'NR>1 && $$9 !~ /\.version$$/ {printf "%-30s %6.2f MB\n", $$9, $$5/1048576}'
 
 test:
 	go test ./...

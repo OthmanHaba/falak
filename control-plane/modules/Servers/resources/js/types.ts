@@ -22,7 +22,15 @@ export interface ServerSummary {
     region: string | null;
     ipv4: string | null;
     php: string | null;
-    agent: { status: 'online' | 'offline' | 'revoked'; last_heartbeat_at: string | null } | null;
+    agent: {
+        status: 'online' | 'offline' | 'revoked';
+        last_heartbeat_at: string | null;
+        version: string | null;
+        /** The agent build this control plane ships. */
+        available_version: string | null;
+        update_available: boolean;
+        upgrade: AgentUpgrade | null;
+    } | null;
     load1: number | null;
     cpu_percent: number | null;
     memory_percent: number | null;
@@ -126,4 +134,14 @@ export interface SparklinePoint {
     t: string;
     cpu: number | null;
     mem: number | null;
+}
+
+export interface AgentUpgrade {
+    id: string;
+    status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+    from_version: string | null;
+    to_version: string;
+    error: string | null;
+    requested_at: string;
+    finished_at: string | null;
 }

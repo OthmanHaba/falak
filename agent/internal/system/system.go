@@ -26,9 +26,11 @@ type Deps struct {
 	Logger       *slog.Logger
 	HTTP         *http.Client // for system.upgrade_agent; default http.DefaultClient
 	AgentVersion string
-	BinaryPath   string       // running agent binary; default os.Executable()
-	Restart      func() error // restarts the agent service after an upgrade
-	RestartDelay time.Duration
+	BinaryPath   string // installed agent binary; default os.Executable()
+	// RunningSHA256 reports the checksum of the running executable (version.BinarySHA256).
+	RunningSHA256 func() string
+	Restart       func() error // restarts the agent service after an upgrade
+	RestartDelay  time.Duration
 }
 
 // System holds the executors.

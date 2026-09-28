@@ -40,6 +40,7 @@ type Facts struct {
 	Runtimes     map[string][]string `json:"runtimes"`
 	AgentVersion string              `json:"agent_version"`
 	Features     []string            `json:"features"`
+	AgentSHA256  string              `json:"agent_sha256,omitempty"`
 }
 
 // Interfaces is overridable in tests.
@@ -48,7 +49,7 @@ var Interfaces = net.InterfaceAddrs
 // Collect gathers facts. Missing sources degrade to zero values rather than failing.
 func Collect(ctx context.Context, r runner.Runner, fs hostfs.FS, agentVersion string) (Facts, error) {
 	f := Facts{Arch: goruntime.GOARCH, CPUs: goruntime.NumCPU(), AgentVersion: agentVersion, Runtimes: map[string][]string{},
-		Features: append([]string(nil), version.Features...)}
+		Features: append([]string(nil), version.Features...), AgentSHA256: version.BinarySHA256()}
 	if b, err := fs.ReadFile("/etc/hostname"); err == nil && strings.TrimSpace(string(b)) != "" {
 		f.Hostname = strings.TrimSpace(string(b))
 	} else {

@@ -43,6 +43,16 @@ final class PanelUrls
         return $this->panel().'/install/agent/linux-${ARCH}';
     }
 
+    /** Download URL of the agent build for one architecture (amd64|arm64). */
+    public function agentDownload(string $arch): string
+    {
+        if ($this->downloadUrl) {
+            return str_replace('{arch}', $arch, $this->downloadUrl);
+        }
+
+        return $this->panel().'/install/agent/linux-'.$arch;
+    }
+
     public function isLocalDownload(): bool
     {
         return ! $this->downloadUrl;

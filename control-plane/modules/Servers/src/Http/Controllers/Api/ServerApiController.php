@@ -6,6 +6,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Kiln\Fleet\Contracts\AgentDirectory;
+use Kiln\Fleet\Contracts\AgentUpgrades;
+use Kiln\Fleet\Contracts\Exceptions\AgentUpgradeUnavailable;
+use Kiln\Identity\Contracts\AuditLog;
 use Kiln\Identity\Contracts\CurrentOrganization;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
@@ -26,6 +29,7 @@ final class ServerApiController extends Controller
         private readonly CurrentOrganization $organization,
         private readonly OrganizationAccess $access,
         private readonly AgentDirectory $agents,
+        private readonly AgentUpgrades $upgrades,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -35,8 +39,9 @@ final class ServerApiController extends Controller
 
         $servers = Server::query()->with('phpVersions')->where('organization_id', $organizationId)->orderBy('name')->get();
         $agents = $this->agents->forServers($servers->pluck('id')->all());
+        $versions = $this->upgrades->versionsFor($servers->pluck('id')->all());
 
-        return response()->json(['data' => $servers->map(fn (Server $server) => $this->summary($server, $agents[$server->id] ?? null))->values()]);
+        return response()->json(['data' => $servers->map(fn (Server $server) => $this->summary($server, $agents[$server->id] ?? null, $versions[$server->id] ?? null))->values()]);
     }
 
     public function show(Server $server): JsonResponse
@@ -45,7 +50,7 @@ final class ServerApiController extends Controller
         $server->load('phpVersions');
 
         return response()->json(['data' => [
-            ...$this->summary($server, $this->agents->forServer($server->id)),
+            ...$this->summary($server, $this->agents->forServer($server->id), $this->upgrades->versionsFor([$server->id])[$server->id] ?? null),
             'stack' => $server->stack->toArray(),
             'php_versions' => $server->phpVersions->map(fn ($php) => $this->phpVersion($php))->values(),
         ]]);
@@ -60,6 +65,25 @@ final class ServerApiController extends Controller
         $server->load('phpVersions');
 
         return response()->json(['data' => [...$this->summary($server, null), 'install_command' => $server->isCustom() ? $server->install_command : null]], 201);
+    }
+
+    /**
+     * POST /api/v1/servers/{server}/agent/upgrade — upgrade the server's agent to the build this control plane ships.
+     */
+    public function upgradeAgent(Request $request, Server $server, AuditLog $audit): JsonResponse
+    {
+        $this->authorize('view', $server);
+        $this->access->authorize($request->user(), $server->organization_id, 'fleet.agents.manage');
+
+        try {
+            $upgrade = $this->upgrades->upgrade($server->id, $request->user()?->getAuthIdentifier());
+        } catch (AgentUpgradeUnavailable $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        }
+
+        $audit->record('server.agent_upgrade', 'server', $server->id, ['to_version' => $upgrade->toVersion], $server->organization_id);
+
+        return response()->json(['data' => $upgrade->toArray()], 202);
     }
 
     public function destroy(Request $request, Server $server, DeleteServer $delete): Response

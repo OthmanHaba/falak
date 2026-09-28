@@ -9,6 +9,7 @@ use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Kiln\Fleet\Contracts\AgentDirectory;
+use Kiln\Fleet\Contracts\AgentUpgrades;
 use Kiln\Fleet\Contracts\Data\MetricSample;
 use Kiln\Identity\Contracts\CurrentOrganization;
 use Kiln\Identity\Contracts\OrganizationAccess;
@@ -41,6 +42,7 @@ final class ServerController extends Controller
         private readonly OrganizationAccess $access,
         private readonly AgentDirectory $agents,
         private readonly ServerServices $services,
+        private readonly AgentUpgrades $upgrades,
     ) {}
 
     public function index(Request $request): Response
@@ -65,11 +67,12 @@ final class ServerController extends Controller
 
         $serverIds = $servers->pluck('id')->all();
         $agents = $this->agents->forServers($serverIds);
+        $versions = $this->upgrades->versionsFor($serverIds);
         $services = $this->services->forServers($organizationId, $serverIds);
 
         return Inertia::render('Servers/Index', [
             'servers' => $servers->map(fn (Server $server) => [
-                ...$this->summary($server, $agents[$server->id] ?? null),
+                ...$this->summary($server, $agents[$server->id] ?? null, $versions[$server->id] ?? null),
                 'services' => $services[$server->id] ?? [],
             ])->values(),
             // CPU / memory sparklines (last hour) load after the first paint.
@@ -79,7 +82,10 @@ final class ServerController extends Controller
                 ->all()),
             'filters' => array_filter($filters),
             'types' => collect(ServerType::cases())->map(fn (ServerType $type) => ['value' => $type->value, 'label' => $type->label()]),
-            'can' => ['create' => $this->access->can($request->user(), $organizationId, 'servers.create')],
+            'can' => [
+                'create' => $this->access->can($request->user(), $organizationId, 'servers.create'),
+                'upgrade_agents' => $this->access->can($request->user(), $organizationId, 'fleet.agents.manage'),
+            ],
         ]);
     }
 
@@ -136,7 +142,7 @@ final class ServerController extends Controller
 
         return Inertia::render('Servers/Show', [
             'server' => [
-                ...$this->summary($server, $agent),
+                ...$this->summary($server, $agent, $this->upgrades->versionsFor([$server->id])[$server->id] ?? null),
                 'size' => $server->size,
                 'image' => $server->image,
                 'provider_server_id' => $server->provider_server_id,
@@ -174,6 +180,7 @@ final class ServerController extends Controller
             'can' => [
                 'update' => $canUpdate,
                 'delete' => $request->user()?->can('delete', $server) ?? false,
+                'upgrade_agent' => $canManageAgents,
             ],
         ]);
     }
