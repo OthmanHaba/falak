@@ -11,8 +11,8 @@ use Kiln\Builds\Contracts\BuildStatus;
 use Kiln\Builds\Domain\Models\Build;
 
 /**
- * Watchdog (every minute): builds nobody picks up, builders that died after claiming a build, and
- * builds running past their timeout.
+ * Watchdog (every minute): builds nobody picks up, builders that died after claiming a build (no start, or no
+ * heartbeat), and builds running past their timeout.
  */
 final class ExpireBuilds implements ShouldQueue
 {
@@ -40,6 +40,13 @@ final class ExpireBuilds implements ShouldQueue
                     $progress->log($build->refresh(), ["The builder did not start the build; re-queued.\n"], 'stderr');
                 }
             });
+
+        // Builders with run ids heartbeat every 20 s while building (events count too): silence means the process is
+        // gone (container recreated, host down) — no need to wait for the build timeout.
+        $silence = (int) config('builds.heartbeat_timeout_seconds', 90);
+        Build::query()->where('status', BuildStatus::Running)->whereNotNull('builder_run_id')
+            ->where('heartbeat_at', '<', now()->subSeconds($silence))->get()
+            ->each(fn (Build $build) => $progress->fail($build, "The builder stopped responding (no heartbeat for {$silence}s)."));
 
         $grace = (int) config('builds.grace_seconds', 120);
         Build::query()->where('status', BuildStatus::Running)->whereNotNull('started_at')->get()

@@ -41,6 +41,9 @@ use Kiln\Builds\Contracts\Data\BuildData;
  * @property ?string $error
  * @property ?int $duration_ms
  * @property ?string $requested_by
+ * @property ?string $builder_name name the claiming kiln-builder reported (--name)
+ * @property ?string $builder_run_id run id of the claiming kiln-builder process (null: builder without run ids)
+ * @property ?Carbon $heartbeat_at last heartbeat or event from the builder
  * @property ?Carbon $assigned_at
  * @property ?Carbon $started_at
  * @property ?Carbon $finished_at
@@ -74,6 +77,7 @@ class Build extends Model
             'duration_ms' => 'integer',
             'assigned_at' => 'datetime',
             'started_at' => 'datetime',
+            'heartbeat_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
     }

@@ -295,8 +295,11 @@ Rate limited to 30/min.
 organization); builder servers get one installed automatically when they finish provisioning; external
 builders are created under *Builds → Builders* (organization-scoped). `401` for unknown/disabled tokens.
 
-### `GET /api/internal/builds/next?wait=<s>&builder=<name>`
-Long-poll (≤ 25 s). `204` when nothing is queued for the builder (organization + mode eligibility), else
+### `GET /api/internal/builds/next?wait=<s>&builder=<name>&run=<run id>`
+`run` identifies the kiln-builder process (random, new at every start). A poll with a new run id first fails the
+builds that an earlier run with the same `builder` name had claimed (`Builder <name> restarted during the build.`),
+so a restarted builder (e.g. `kiln-ctl update` recreating the container) does not leave them running until the
+build timeout. Long-poll (≤ 25 s). `204` when nothing is queued for the builder (organization + mode eligibility), else
 `200` with a job (`agent/internal/builder/job.go` `Job`):
 ```json
 {"id": "01k…", "mode": "native", "timeout_s": 1800, "runtime": "php",
@@ -323,6 +326,11 @@ into the deployment output as phase `build`); `progress`; `finished` with `exit_
 (`124` → timed out). With the local artifact driver the uploaded file's SHA-256 must match.
 Responses: `204`; `404` build unknown or assigned to another builder; `413` batch > 8 MiB; `422` malformed line;
 **`410` the build was cancelled — the builder aborts it** (`HTTPSink.OnGone`).
+
+### `POST /api/internal/builds/{build}/heartbeat`
+Sent every 20 s while a build runs. `204`; `404` unknown build or another builder's; `410` the build is over on the
+control plane (cancelled, failed by the watchdog, reaped) — the builder aborts it. A running build of a builder that
+reports run ids fails after `KILN_BUILD_HEARTBEAT_TIMEOUT` seconds (default 90) without a heartbeat or event.
 
 ### Artifacts (local driver)
 `PUT /api/internal/artifacts/{key}` (builder upload) and `GET /api/internal/artifacts/{key}` (agent

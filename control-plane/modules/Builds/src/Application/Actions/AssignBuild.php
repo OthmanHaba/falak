@@ -25,7 +25,7 @@ final class AssignBuild
     /**
      * @return ?array{build: Build, job: array<string, mixed>}
      */
-    public function __invoke(Builder $builder): ?array
+    public function __invoke(Builder $builder, ?string $runId = null, ?string $name = null): ?array
     {
         if (! $builder->enabled) {
             return null;
@@ -48,6 +48,9 @@ final class AssignBuild
                 'builder_id' => $builder->id,
                 'assigned_at' => now(),
                 'attempts' => DB::raw('attempts + 1'),
+                'builder_name' => $name,
+                'builder_run_id' => $runId,
+                'heartbeat_at' => now(),
                 'artifact_key' => $key,
                 'updated_at' => now(),
             ]);

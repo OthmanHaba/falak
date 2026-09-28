@@ -371,6 +371,18 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
 - Not verified on a real fleet: the full download → restart → reconnect cycle runs only in Go/Pest tests (the sim's
   agents already run the served build, so its E2E only checks the version report and the no-op).
 
+### Builder restarts no longer orphan builds
+- kiln-builder generates a run id per process and sends it on every poll (`run=`), and heartbeats
+  (`POST /api/internal/builds/{id}/heartbeat`, every 20 s) while building. Builds record `builder_name`,
+  `builder_run_id` and `heartbeat_at` (events count as heartbeats).
+- A poll with a new run id fails the builds (assigned or running) that the same builder name claimed under another run
+  (`ReapOrphanedBuilds`: "Builder <name> restarted during the build."); `BuildFailed` fails the deployment as before.
+  `ExpireBuilds` fails running builds of run-id builders after `builds.heartbeat_timeout_seconds` (90) of silence;
+  a `410` heartbeat answer makes the builder abort. Builders without run ids (older kiln-builder) keep the old
+  behaviour (build timeout + grace). Assigned-but-never-started builds are still re-queued (`assign_timeout_seconds`).
+- Two builder processes sharing one token must use different `--name`s (a poll by one would otherwise fail the
+  other's build).
+
 ## Not covered by the E2E yet (unit/feature tested only)
 Docker/Compose runtimes and docker builds on a real BuildKit, database backups/restore to real S3, WireGuard private
 networks, web terminal, recipes, provider APIs (Hetzner/DO/Vultr/Linode/Lightsail), load balancers, DNS-01 wildcard
