@@ -122,7 +122,7 @@ function CreateApp({ state, returnTo }: { state: GitHubAppState; returnTo: strin
                     <span className="text-fg-faint text-xs">You confirm the app on github.com, then pick repositories.</span>
                 </div>
             </div>
-            <div className="border-border grid content-start gap-3 rounded-md border p-3.5">
+            <div className="border-border grid content-start gap-3 self-start rounded-md border p-3.5">
                 <span className="text-fg text-xs font-medium">Kiln asks for</span>
                 <Permissions state={state} />
             </div>
@@ -166,7 +166,7 @@ export function GitHubAppCard({
                 </span>
                 <div className="grid min-w-0 flex-1">
                     <span className="text-fg flex items-center gap-2 text-sm font-medium">
-                        {app ? app.name : 'GitHub'}
+                        <span data-testid="github-app-name">{app ? app.name : 'GitHub'}</span>
                         {app?.source === 'env' ? <Tag>Configured by the operator</Tag> : !app && <Tag>Recommended</Tag>}
                     </span>
                     <span className="text-fg-muted truncate text-xs">
