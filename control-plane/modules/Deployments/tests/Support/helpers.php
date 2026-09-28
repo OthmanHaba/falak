@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Kiln\Deployments\Domain\Models\Release;
@@ -89,6 +90,10 @@ function deploy_world(int $servers = 1, array $site = [], Role $role = Role::Own
 
         foreach ($GLOBALS['deploy_http'] as $prefix => $status) {
             if (str_starts_with($request->url(), $prefix)) {
+                if ($status === 0) { // no HTTP answer (TLS handshake / connection failure)
+                    throw new ConnectionException('cURL error 35: TLS connect error');
+                }
+
                 return Http::response('status '.$status, $status);
             }
         }

@@ -2,6 +2,8 @@
 
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
 use Kiln\Deployments\Domain\Enums\Trigger;
+use Kiln\Deployments\Domain\Models\Deployment;
+use Kiln\Deployments\Domain\Models\SiteSettings;
 use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Sites\Contracts\SiteDirectory;
 
@@ -62,4 +64,66 @@ it('follows the configured TLS of hosted test domains', function () {
     $r = health_request($world);
 
     expect($r['url'])->toContain('.sites.kiln.test/')->and($r['options']['verify'])->toBeFalse();
+});
+
+/**
+ * Deploys through every phase; returns every health check request and the deployment's final status.
+ *
+ * @return array{0: list<array{url: string, options: array<string, mixed>}>, 1: string}
+ */
+function health_requests(DeployWorld $world): array
+{
+    $deployment = app(TriggerDeployment::class)(app(SiteDirectory::class)->find($world->site->id), Trigger::Manual);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    return [$GLOBALS['deploy_http_requests'], $deployment->refresh()->status->value];
+}
+
+it('falls back to the next domain when the primary gets no HTTP answer on the server (per-server DNS)', function () {
+    $world = deploy_world();
+    $world->edge->domains[$world->site->id] = ['api.18-194-183-232.sslip.io', 'api.63-182-218-247.sslip.io'];
+    $GLOBALS['deploy_http'] = ['https://api.18-194-183-232.sslip.io/' => 0];
+
+    [$requests, $status] = health_requests($world);
+
+    expect(array_column($requests, 'url'))->toBe(['https://api.18-194-183-232.sslip.io/up', 'https://api.63-182-218-247.sslip.io/up'])
+        ->and($requests[1]['options']['curl'][CURLOPT_RESOLVE])->toBe(['api.63-182-218-247.sslip.io:443:203.0.113.1'])
+        ->and($status)->toBe('succeeded');
+});
+
+it('never skips over an application error on the primary domain', function () {
+    $world = deploy_world();
+    $world->edge->domains[$world->site->id] = ['shop.example.com', 'www.shop.example.com'];
+    $GLOBALS['deploy_http'] = ['https://shop.example.com/' => 500];
+    SiteSettings::for(app(SiteDirectory::class)->find($world->site->id))->forceFill(['health_retries' => 1])->save();
+
+    [$requests, $status] = health_requests($world);
+
+    expect(array_column($requests, 'url'))->toBe(['https://shop.example.com/up'])->and($status)->toBe('failed');
+});
+
+it('checks load-balancer backends over plain HTTP when HTTPS gets no answer', function () {
+    $world = deploy_world();
+    $world->edge->domains[$world->site->id] = ['shop.example.com'];
+    $GLOBALS['deploy_http'] = ['https://shop.example.com/' => 0];
+
+    [$requests, $status] = health_requests($world);
+
+    expect(array_column($requests, 'url'))->toBe(['https://shop.example.com/up', 'http://shop.example.com/up'])
+        ->and($requests[1]['options']['curl'][CURLOPT_RESOLVE])->toBe(['shop.example.com:80:203.0.113.1'])
+        ->and($status)->toBe('succeeded');
+});
+
+it('fails with every attempt in the message when nothing answers', function () {
+    $world = deploy_world();
+    $world->edge->domains[$world->site->id] = ['shop.example.com'];
+    $GLOBALS['deploy_http'] = ['https://shop.example.com/' => 0, 'http://shop.example.com/' => 0];
+    SiteSettings::for(app(SiteDirectory::class)->find($world->site->id))->forceFill(['health_retries' => 1])->save();
+
+    [, $status] = health_requests($world);
+
+    $deployment = Deployment::query()->latest('id')->firstOrFail();
+    expect($status)->toBe('failed')
+        ->and($deployment->error)->toContain('https://shop.example.com/')->toContain('http://shop.example.com/');
 });
