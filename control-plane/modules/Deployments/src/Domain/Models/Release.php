@@ -20,6 +20,7 @@ use Kiln\Deployments\Domain\Enums\ReleaseStatus;
  * @property ?string $commit_author
  * @property ?string $image
  * @property ?array{yaml: string, env: array<string, string>, leader: array<string, list<string>>, source: string, version?: ?int, pinned?: bool, registry?: bool} $compose rendered compose release
+ * @property ?array<string, string> $environment the site variables its `.env` was written with (references resolved)
  * @property ReleaseStatus $status
  * @property ?Carbon $activated_at
  * @property Carbon $created_at
@@ -36,14 +37,14 @@ class Release extends Model
     protected $guarded = [];
 
     /** @var list<string> */
-    protected $hidden = ['compose'];
+    protected $hidden = ['compose', 'environment'];
 
     /**
      * @return array<string, string>
      */
     protected function casts(): array
     {
-        return ['status' => ReleaseStatus::class, 'activated_at' => 'datetime', 'compose' => 'encrypted:array'];
+        return ['status' => ReleaseStatus::class, 'activated_at' => 'datetime', 'compose' => 'encrypted:array', 'environment' => 'encrypted:array'];
     }
 
     public static function current(string $siteId): ?self

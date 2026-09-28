@@ -25,6 +25,7 @@ use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Deployments\Domain\Models\DeploymentStep;
 use Kiln\Deployments\Domain\Models\DeploymentTarget;
 use Kiln\Deployments\Domain\Models\Release;
+use Kiln\Deployments\Domain\Models\ServerRelease;
 use Kiln\Deployments\Domain\Models\SiteSettings;
 use Kiln\Deployments\Domain\Models\StepCommand;
 use Kiln\Deployments\Events\DeploymentFailed;
@@ -47,7 +48,6 @@ use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\Data\SiteTargetData;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetStatus as SiteTargetStatus;
 use Kiln\Telemetry\Contracts\Annotations;
 use RuntimeException;
 use Throwable;
@@ -245,17 +245,25 @@ final class Orchestrator
     }
 
     /**
-     * Cancel a queued deployment, or one still building (nothing has touched the servers yet).
+     * Cancel a queued or waiting deployment, or one still building (nothing has touched the servers yet).
      */
     public function cancel(string $deploymentId): bool
     {
         $cancelled = false;
 
         $this->locked($deploymentId, function (Deployment $deployment) use (&$cancelled) {
-            if ($deployment->status === DeploymentStatus::Queued) {
-                $deployment->forceFill(['status' => DeploymentStatus::Cancelled, 'finished_at' => now(), 'error' => 'Cancelled before it started.'])->save();
+            if ($deployment->status === DeploymentStatus::Queued || $deployment->status === DeploymentStatus::Waiting) {
+                $waiting = $deployment->status === DeploymentStatus::Waiting;
+                $deployment->forceFill(['status' => DeploymentStatus::Cancelled, 'finished_at' => now(), 'error' => 'Cancelled before it started.', 'waiting_reason' => null])->save();
+                $this->log->note($deployment->id, 'Deployment cancelled before it started.');
                 $this->updated($deployment);
                 $cancelled = true;
+
+                if ($waiting) {
+                    // A waiting deployment held the site's queue: let the next one go.
+                    $siteId = $deployment->site_id;
+                    $this->afterCommit(fn () => $this->queue->startNext($siteId));
+                }
 
                 return;
             }
@@ -292,10 +300,21 @@ final class Orchestrator
             throw new InvalidArgumentException('On-server builds are not supported yet; switch the site to native builds.');
         }
 
-        $ready = array_values(array_filter($site->targets, fn (SiteTargetData $t) => $t->status === SiteTargetStatus::Ready));
+        $readiness = TargetReadiness::of($site, $this->servers);
+        $blocker = $readiness->blocker();
+
+        if ($blocker !== null) {
+            throw new InvalidArgumentException($blocker);
+        }
+
+        $ready = $readiness->ready;
 
         if ($ready === []) {
             throw new InvalidArgumentException('The site has no ready servers.');
+        }
+
+        foreach ($readiness->skipped() as $warning) {
+            $this->log->note($deployment->id, $warning, stream: 'stderr');
         }
 
         usort($ready, fn (SiteTargetData $a, SiteTargetData $b) => (int) $b->isLeader() <=> (int) $a->isLeader());
@@ -794,6 +813,8 @@ final class Orchestrator
             return;
         }
 
+        $this->recordLiveRelease($deployment, $step, $target);
+
         if ($step->command_type === 'docker.compose.up') {
             $this->composeUpSettled($deployment, $step, $target, $result ?? []);
 
@@ -808,6 +829,24 @@ final class Orchestrator
             StepKind::HealthCheck => $this->markTargetDone($deployment, $step),
             default => null,
         };
+    }
+
+    /**
+     * The server now runs another release: remember it (Processes supervises the site's programs there with that
+     * release's ids and environment; the restart step that follows converges them).
+     */
+    private function recordLiveRelease(Deployment $deployment, DeploymentStep $step, DeploymentTarget $target): void
+    {
+        $releaseId = match ($step->kind) {
+            StepKind::Activate, StepKind::Switch, StepKind::Swap => $deployment->release_id,
+            StepKind::Revert => is_string($step->meta['release_id'] ?? null) ? $step->meta['release_id'] : null,
+            StepKind::RevertSwap => $deployment->previous_release_id,
+            default => null,
+        };
+
+        if ($releaseId !== null && $releaseId !== '') {
+            ServerRelease::record($deployment->site_id, $target->server_id, $releaseId, $deployment->id);
+        }
     }
 
     /**
@@ -914,6 +953,9 @@ final class Orchestrator
                 DeploymentRolledBack::dispatch($deployment->id, $deployment->organization_id, $deployment->site_id, $site->slug ?? $deployment->site_slug, $deployment->release_id, $serverIds, false);
             }
 
+            // Programs and schedules follow the live release (sites without a restart step, e.g. static, included).
+            $this->processes->converge(...$serverIds);
+
             $this->queue->startNext($deployment->site_id);
         });
     }
@@ -981,7 +1023,9 @@ final class Orchestrator
         $this->log->note($deployment->id, $cancelled ? 'Deployment cancelled.' : 'Deployment failed'.($rolledBack ? '; '.count($rolledBackServers).' server(s) rolled back.' : '.'), stream: $cancelled ? 'stdout' : 'stderr');
         $this->updated($deployment);
 
-        $this->afterCommit(function () use ($deployment, $cancelled, $rolledBack, $rolledBackServers, $failedPhase) {
+        $activatedServers = $deployment->targets()->where('activated', true)->pluck('server_id')->all();
+
+        $this->afterCommit(function () use ($deployment, $cancelled, $rolledBack, $rolledBackServers, $failedPhase, $activatedServers) {
             $this->annotate($deployment, $rolledBack ? 'rolled_back' : 'failed');
 
             if (! $cancelled) {
@@ -991,6 +1035,10 @@ final class Orchestrator
 
             if ($rolledBack) {
                 DeploymentRolledBack::dispatch($deployment->id, $deployment->organization_id, $deployment->site_id, $deployment->site_slug, $deployment->previous_release_id, $rolledBackServers, true);
+            }
+
+            if ($activatedServers !== []) {
+                $this->processes->converge(...$activatedServers);
             }
 
             $this->queue->startNext($deployment->site_id);

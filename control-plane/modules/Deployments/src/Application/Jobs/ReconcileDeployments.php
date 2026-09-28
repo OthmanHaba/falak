@@ -16,7 +16,7 @@ use Kiln\Deployments\Domain\Models\DeploymentStep;
 /**
  * Every minute: resume deployments whose progress events were lost (worker crash, missed event)
  * by reconciling long-running steps against the agent / build status, and start queued
- * deployments of idle sites.
+ * deployments of idle sites; start (or time out) deployments waiting for their servers.
  */
 final class ReconcileDeployments implements ShouldQueue
 {
@@ -36,6 +36,11 @@ final class ReconcileDeployments implements ShouldQueue
         // Active deployments with nothing running (e.g. crashed between settle and dispatch).
         Deployment::query()->whereIn('status', DeploymentStatus::active())->where('updated_at', '<', $stale)->pluck('id')
             ->each(fn ($id) => $orchestrator->reconcile((string) $id));
+
+        // Waiting deployments: start them if a readiness event was missed, or fail them after the timeout.
+        foreach (DeploymentQueue::waitingSites() as $siteId) {
+            $queue->resume($siteId);
+        }
 
         Deployment::query()->where('status', DeploymentStatus::Queued)->distinct()->pluck('site_id')
             ->each(fn ($siteId) => $queue->startNext((string) $siteId));

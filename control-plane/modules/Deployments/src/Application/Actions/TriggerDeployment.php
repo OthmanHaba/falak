@@ -11,6 +11,7 @@ use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\Trigger;
 use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Deployments\Domain\Models\Release;
+use Kiln\Deployments\Events\DeploymentUpdated;
 use Kiln\Identity\Contracts\AuditLog;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\SourceControl\Contracts\SourceControlGateway;
@@ -18,7 +19,8 @@ use Throwable;
 
 /**
  * Queue a deployment (manual, push, API/CLI, deploy hook, rollback) and start it when the site has
- * no deployment running.
+ * no deployment running. While the site's deployment waits for its servers to finish preparing, new
+ * (non-rollback) triggers update that deployment instead of queueing another one.
  */
 final class TriggerDeployment
 {
@@ -74,6 +76,21 @@ final class TriggerDeployment
             throw ValidationException::withMessages(['commit' => 'The commit must be a hexadecimal SHA.']);
         }
 
+        if ($trigger !== Trigger::Rollback) {
+            $coalesced = $this->coalesce($site, $trigger, [
+                'branch' => $branch,
+                'commit' => $commit !== null ? strtolower($commit) : null,
+                'commit_message' => $message !== null ? mb_substr($message, 0, 1000) : null,
+                'commit_author' => $author !== null ? mb_substr($author, 0, 255) : null,
+                'variables' => $variables === [] ? null : $variables,
+                'requested_by' => $requestedBy,
+            ]);
+
+            if ($coalesced !== null) {
+                return $coalesced;
+            }
+        }
+
         $deployment = $this->create($site, [
             'trigger' => $trigger,
             'status' => DeploymentStatus::Queued,
@@ -93,6 +110,46 @@ final class TriggerDeployment
         $this->log->note($deployment->id, sprintf('Queued by %s%s.', $trigger->label(), $deployment->commit ? ' at '.substr($deployment->commit, 0, 7) : ''));
 
         $this->queue->startNext($site->id);
+
+        return $deployment->refresh();
+    }
+
+    /**
+     * Repeated triggers while the site's deployment waits for its servers fold into that deployment: the latest
+     * trigger's branch/commit wins (like a push superseding an older one), and it keeps its place and number.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function coalesce(SiteData $site, Trigger $trigger, array $attributes): ?Deployment
+    {
+        $deployment = DB::transaction(function () use ($site, $trigger, $attributes) {
+            $waiting = Deployment::query()->where('site_id', $site->id)->where('status', DeploymentStatus::Waiting)
+                ->where('trigger', '!=', Trigger::Rollback)->lockForUpdate()->first();
+
+            if ($waiting === null) {
+                return null;
+            }
+
+            $waiting->forceFill(['trigger' => $trigger, ...$attributes])->save();
+
+            return $waiting;
+        });
+
+        if ($deployment === null) {
+            return null;
+        }
+
+        $this->audit->record('deployments.triggered', 'deployment', $deployment->id, array_filter([
+            'site_id' => $site->id, 'trigger' => $trigger->value, 'commit' => $deployment->commit, 'coalesced' => true,
+        ]), $site->organizationId, $attributes['requested_by'] ?? null);
+
+        $this->log->note($deployment->id, sprintf('Updated by %s%s while waiting for the servers (the latest trigger wins).',
+            $trigger->label(), $deployment->commit ? ' to '.substr($deployment->commit, 0, 7) : ''));
+
+        DeploymentUpdated::dispatch($deployment->id, $deployment->site_id, $deployment->status->value, $deployment->phase);
+
+        // The servers may have become ready meanwhile.
+        $this->queue->resume($site->id);
 
         return $deployment->refresh();
     }

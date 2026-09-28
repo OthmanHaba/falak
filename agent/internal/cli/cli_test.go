@@ -28,6 +28,7 @@ type fakeCP struct {
 
 	orgsMissing  bool
 	deployStatus []string // successive statuses returned by GET /deployments/{id}
+	waiting      string   // when set, POST /deployments answers a waiting deployment with this reason
 	deployPolls  int
 	output       []api.OutputLine
 	lastBody     map[string]any
@@ -109,6 +110,10 @@ func (f *fakeCP) serve(w http.ResponseWriter, r *http.Request) {
 	case p == api.Path(api.PathSite, "site", "acme"):
 		f.json(w, 200, map[string]any{"data": site})
 	case p == api.Path(api.PathSiteDeployments, "site", "acme") && r.Method == http.MethodPost:
+		if f.waiting != "" {
+			f.json(w, 201, map[string]any{"data": api.Deployment{ID: "01JDEP", Status: "waiting", WaitingReason: f.waiting}})
+			return
+		}
 		f.json(w, 201, map[string]any{"data": api.Deployment{ID: "01JDEP", Status: "queued", URL: f.srv.URL + "/deployments/01JDEP"}})
 	case p == api.Path(api.PathSiteRollback, "site", "acme") && r.Method == http.MethodPost:
 		f.json(w, 201, map[string]any{"data": api.Deployment{ID: "01JDEP", Status: "queued", Trigger: "rollback"}})
@@ -373,6 +378,19 @@ func TestDeployPostsBranch(t *testing.T) {
 	}
 	if cp.requests[len(cp.requests)-1] != "POST /api/v1/sites/acme/deployments" {
 		t.Fatalf("requests %v", cp.requests)
+	}
+}
+
+func TestDeployWhileServersPrepare(t *testing.T) {
+	cp := newFakeCP(t)
+	cp.waiting = "Waiting for 1 server to finish preparing: web-1"
+	h := newHarness(t, cp)
+	if code := h.run("deploy", "acme"); code != 0 {
+		t.Fatal(h.err.String())
+	}
+	want := "Deployment 01JDEP waiting for acme\nWaiting for 1 server to finish preparing: web-1; it starts automatically once they are ready\n"
+	if h.out.String() != want {
+		t.Fatalf("output:\n%s\nwant:\n%s", h.out.String(), want)
 	}
 }
 

@@ -45,6 +45,21 @@ export async function deploy(ctx: ServicePanelContext, ref: { commit?: string | 
     }
 }
 
+/** Cancel a queued or waiting deployment (or one still building). */
+export async function cancelDeployment(ctx: ServicePanelContext, deployment: { id: string; number: number }): Promise<boolean> {
+    try {
+        await requestJson(`${deploymentsUrl(ctx.service.ref_id)}/${deployment.id}/cancel`, 'POST', {});
+        toast.success(`Deployment #${deployment.number} cancelled`);
+        ctx.refresh();
+
+        return true;
+    } catch (error) {
+        toast.error('Could not cancel', errorMessage(error));
+
+        return false;
+    }
+}
+
 /** Roll back to a release (a deployment of its build) and open the rollback's Deploy view. */
 export async function rollback(ctx: ServicePanelContext, releaseId: string): Promise<void> {
     try {

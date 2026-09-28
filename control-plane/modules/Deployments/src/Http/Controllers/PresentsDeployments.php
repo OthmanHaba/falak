@@ -32,6 +32,9 @@ trait PresentsDeployments
             'rolled_back' => $deployment->rolled_back,
             'url' => $deployment->url(),
             'error' => $deployment->error,
+            // Set while status is `waiting`: "Waiting for 2 servers to finish preparing: web-1, web-2".
+            'waiting_reason' => $deployment->waiting_reason,
+            'waiting_since' => $deployment->waiting_since?->toIso8601String(),
             'created_at' => $deployment->created_at->toIso8601String(),
             'started_at' => $deployment->started_at?->toIso8601String(),
             'finished_at' => $deployment->finished_at?->toIso8601String(),

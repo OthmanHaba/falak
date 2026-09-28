@@ -40,6 +40,8 @@ use Kiln\Projects\Contracts\ServiceKind;
  * @property ?array<string, mixed> $settings
  * @property ?string $error
  * @property ?string $requested_by
+ * @property ?Carbon $waiting_since
+ * @property ?string $waiting_reason
  * @property ?Carbon $started_at
  * @property ?Carbon $finished_at
  * @property Carbon $created_at
@@ -76,6 +78,7 @@ class Deployment extends Model
             'settings' => 'array',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
+            'waiting_since' => 'datetime',
         ];
     }
 

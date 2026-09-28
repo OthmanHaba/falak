@@ -1,6 +1,8 @@
 <?php
 
 use Illuminate\Support\Str;
+use Kiln\Deployments\Domain\Models\Release;
+use Kiln\Deployments\Domain\Models\ServerRelease;
 use Kiln\Fleet\Infrastructure\ProtocolSchemas;
 use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Domain\Models\Server;
@@ -27,7 +29,7 @@ function processes_server(string $organizationId, string $name = 'web'): Server
  * @param  list<Server>  $servers
  * @param  array<string, mixed>  $attributes
  */
-function processes_site(string $organizationId, array $servers, array $attributes = [], TargetStatus $status = TargetStatus::Ready): Site
+function processes_site(string $organizationId, array $servers, array $attributes = [], TargetStatus $status = TargetStatus::Ready, bool $deployed = true): Site
 {
     $slug = $attributes['slug'] ?? 'shop';
 
@@ -57,7 +59,37 @@ function processes_site(string $organizationId, array $servers, array $attribute
         ]);
     }
 
+    if ($deployed) {
+        processes_deploy($site, $servers);
+    }
+
     return $site->load('targets');
+}
+
+/**
+ * Make a release of the site live on the servers, as Deployments does on activation (programs are only
+ * supervised once a site has a live release on a server).
+ *
+ * @param  list<Server>  $servers
+ * @param  array<string, string>  $environment  site variables the release was written with
+ */
+function processes_deploy(Site $site, array $servers, array $environment = []): Release
+{
+    $release = Release::query()->forceCreate([
+        'id' => strtolower((string) Str::ulid()),
+        'organization_id' => $site->organization_id,
+        'site_id' => $site->id,
+        'deployment_id' => strtolower((string) Str::ulid()),
+        'status' => 'active',
+        'environment' => $environment,
+        'activated_at' => now(),
+    ]);
+
+    foreach ($servers as $server) {
+        ServerRelease::record($site->id, $server->id, $release->id, $release->deployment_id);
+    }
+
+    return $release;
 }
 
 function processes_fake_agents(): FakeAgentGateway

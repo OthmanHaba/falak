@@ -320,6 +320,9 @@ func (a *App) afterTrigger(ctx context.Context, c api.API, what, site string, d 
 			return a.printJSON(d)
 		}
 		fmt.Fprintf(a.Stdout, "%s %s %s for %s\n", what, d.ID, dash(d.Status), site)
+		if d.Status == "waiting" && d.WaitingReason != "" {
+			fmt.Fprintf(a.Stdout, "%s; it starts automatically once they are ready\n", d.WaitingReason)
+		}
 		if d.URL != "" {
 			fmt.Fprintln(a.Stdout, d.URL)
 		}

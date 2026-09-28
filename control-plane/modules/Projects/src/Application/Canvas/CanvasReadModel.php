@@ -233,6 +233,7 @@ final class CanvasReadModel
         return match ($deployment?->status) {
             null => ['inactive', 'Not deployed'],
             'queued' => ['queued', 'Queued'],
+            'waiting' => ['queued', 'Waiting for servers'],
             'succeeded' => ['active', 'Active · '.self::ago($deployment->finishedAt ?? $deployment->createdAt)],
             'failed' => ['failed', 'Failed · '.self::ago($deployment->finishedAt ?? $deployment->createdAt)],
             default => ['inactive', 'Cancelled · '.self::ago($deployment->finishedAt ?? $deployment->createdAt)],

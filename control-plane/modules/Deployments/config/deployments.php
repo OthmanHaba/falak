@@ -31,6 +31,12 @@ return [
         ],
     ],
 
+    // A deployment triggered while some of the site's servers are still being prepared waits for them (status
+    // `waiting`), and fails if they are not ready after this many minutes.
+    'waiting' => [
+        'timeout_minutes' => (int) env('KILN_DEPLOY_WAIT_TIMEOUT_MINUTES', 30),
+    ],
+
     // A deployment step still running after its timeout + this grace is reconciled from the agent.
     'reconcile_after_seconds' => 120,
 

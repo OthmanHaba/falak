@@ -65,6 +65,6 @@ class SiteTarget extends Model
 
     public function toData(): SiteTargetData
     {
-        return new SiteTargetData($this->id, $this->site_id, $this->server_id, $this->role, $this->status);
+        return new SiteTargetData($this->id, $this->site_id, $this->server_id, $this->role, $this->status, $this->status_message);
     }
 }
