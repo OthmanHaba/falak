@@ -71,16 +71,20 @@ func (d *Deployer) Prepare(ctx context.Context, p PreparePayload, s commands.Str
 	if err := os.MkdirAll(st.shared(), 0o755); err != nil {
 		return nil, err
 	}
-	// shared/ holds .env and storage (logs, sessions, uploads): closed to other local users like releases.
-	if _, err := closeDir(st.shared()); err != nil {
-		return nil, err
-	}
 	res := PrepareResult{Links: []string{}}
 	chownHost := func(real string) error {
 		if p.Owner == nil || p.Owner.User == "" || !d.o.FS.IsReal() {
 			return nil
 		}
 		return d.o.FS.Chown(real, p.Owner.User, p.Owner.Group)
+	}
+	// shared/ holds .env and storage (logs, sessions, uploads): owned by the site user and closed to other local
+	// users like the releases (the site group and the edge user keep access).
+	if err := chownHost(filepath.Join(st.host, "shared")); err != nil {
+		return nil, err
+	}
+	if _, err := closeDir(st.shared()); err != nil {
+		return nil, err
 	}
 	if p.EnvFile != nil {
 		envPath := p.EnvFile.Path
