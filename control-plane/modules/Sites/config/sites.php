@@ -18,6 +18,10 @@ return [
     // Installed on a server when a Bun / Deno site first targets it (official release binaries).
     'bun_version' => env('KILN_BUN_VERSION', '1.4.2'),
     'deno_version' => env('KILN_DENO_VERSION', '2.9.7'),
+    // Optional release download mirrors (unset = GitHub releases): KILN_BUN_MIRROR replaces
+    // https://github.com/oven-sh/bun/releases/download, KILN_DENO_MIRROR https://github.com/denoland/deno/releases/download.
+    'bun_mirror' => env('KILN_BUN_MIRROR'),
+    'deno_mirror' => env('KILN_DENO_MIRROR'),
 
     // Ports handed out to node/bun/deno/docker sites (unique per server).
     'app_port_range' => [3000, 3999],

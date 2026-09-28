@@ -25,9 +25,9 @@ Requirements: Docker (with ~8 GB RAM for Docker), Go 1.25, `make`, `jq`, `curl`,
 ```bash
 cd agent && make build && cd ..          # agent, CLI and builder binaries (mounted into the sim)
 cd sim
-make up                                   # builds + starts everything, waits until healthy (~5–8 min first time)
+make up                                   # builds + starts everything, waits until healthy (~1 min once images are built)
 make e2e                                  # infrastructure checks (TLS, mTLS edge, observability, servers)
-make e2e-deploy                           # full product flow (below), ~15–20 min
+make e2e-deploy                           # full product flow (below), ~13 min cold, less warm; ONLY=deploy,release to iterate
 ```
 
 `make e2e-deploy` drives the product **only through public surfaces** — `artisan kiln:admin`, the REST
@@ -53,7 +53,8 @@ Useful while it runs:
 | Control plane UI | `https://localhost:8443` (trust `sim/.data/edge-root.crt`, created by `make ca`) — log in as `admin@kiln.test` after setting a password: `cd sim && docker compose -p kiln-sim --env-file sim.env --env-file .data/secrets.env exec control-plane php artisan kiln:admin admin@kiln.test --reset-password --password='choose-one'` |
 | Grafana | `http://localhost:13000` (admin / admin) |
 | Logs | `make logs` · `make shell` |
-| Reset | `make reset` (wipes all volumes and generated secrets) |
+| Reset | `make reset` (wipes all volumes and generated secrets, keeps the package/image/download caches) · `make reset-all` (also wipes the caches) |
+| Timings | each E2E stage prints its duration; summary table at the end, history in `sim/.data/e2e-timings.tsv` |
 
 Ports differ from the defaults (13000, 14318, 8443, …) to avoid clashing with other stacks; see `sim/sim.env`.
 

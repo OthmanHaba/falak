@@ -117,6 +117,22 @@ The agent binaries come from the control-plane image, so servers download them f
 For e-mail, set `MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` and
 `MAIL_FROM_ADDRESS` in `/opt/kiln/.env`, then run `kiln-ctl up`.
 
+### Runtime download mirrors (optional)
+
+Servers download FrankenPHP, Node.js, Bun and Deno release binaries during provisioning (sha256-verified).
+If servers cannot reach GitHub / nodejs.org, or you run a caching proxy in front of them, point the agents at
+an HTTPS mirror with the same path layout. Set these in `/opt/kiln/custom.env`, then `kiln-ctl up`:
+
+| Variable | Replaces | Fetched path |
+|---|---|---|
+| `KILN_FRANKENPHP_MIRROR` | `https://github.com/php/frankenphp/releases/download` | `<mirror>/v<version>/frankenphp-linux-<arch>` |
+| `KILN_NODE_MIRROR` | `https://nodejs.org/dist` | `<mirror>/v<version>/SHASUMS256.txt`, `node-v<version>-linux-<arch>.tar.gz` |
+| `KILN_BUN_MIRROR` | `https://github.com/oven-sh/bun/releases/download` | `<mirror>/bun-v<version>/SHASUMS256.txt`, `bun-linux-<arch>.zip` |
+| `KILN_DENO_MIRROR` | `https://github.com/denoland/deno/releases/download` | `<mirror>/v<version>/deno-<arch>-unknown-linux-gnu.zip{,.sha256sum}` |
+
+Unset (the default) means the upstream URLs. The mirror applies to servers provisioned (or runtimes
+installed) after the change.
+
 ## 4. Operate: `kiln-ctl`
 
 ```bash

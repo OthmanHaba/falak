@@ -14,7 +14,19 @@ if [ -S /var/run/docker.sock ] && docker version >/dev/null 2>&1; then
   http = true
   insecure = true
 TOML
-    docker buildx rm kiln >/dev/null 2>&1 || true
+    # Base images (FROM docker.io/...) through the sim's Docker Hub pull-through cache.
+    if [ -n "${SIM_HUB_MIRROR:-}" ]; then
+        cat >> /etc/buildkit/buildkitd.toml <<TOML
+[registry."docker.io"]
+  mirrors = ["${SIM_HUB_MIRROR}"]
+[registry."${SIM_HUB_MIRROR}"]
+  http = true
+  insecure = true
+TOML
+    fi
+    # Recreate the builder (config may have changed) but keep its state volume: BuildKit's layer cache survives
+    # builder restarts and `make reset` (`make clean-cache` removes it).
+    docker buildx rm --keep-state kiln >/dev/null 2>&1 || true
     docker buildx create --name kiln --driver docker-container \
         --driver-opt "network=${SIM_BUILDKIT_NETWORK:-kiln-sim_fleet}" \
         --buildkitd-config /etc/buildkit/buildkitd.toml --bootstrap >/dev/null \

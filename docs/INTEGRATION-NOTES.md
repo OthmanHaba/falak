@@ -234,6 +234,33 @@ Real provisioning and deploys on Ubuntu 24.04 (`sim/e2e-deploy.sh`) surfaced the
     preparation; Processes supervises `<slug>.app` (`npm|bun run start` / `deno task start`) on `app_port`.
 Also added for automation: `POST /api/v1/sites`, `POST|GET /api/v1/source-control/connections`, `kiln:admin`.
 
+## Sim speed (feat/sim-speed)
+Measuring the E2E per stage (`sim/e2e-deploy.sh` now prints durations and a summary) surfaced two product bugs and
+one broken E2E check. The rest is sim-side caching; see `sim/README.md` → *Caches and speed*.
+- **Agent wake-up raced the transaction (product bug, fixed).** With `KILN_AGENT_WAKE_DRIVER=redis`, `QueueCommand`
+  RPUSHed the wake-up token while its command row was still uncommitted. The deployment orchestrator queues every
+  step inside its `lockForUpdate` transaction, so the woken long-poll re-checked, saw nothing, consumed the token
+  and slept out the rest of its 30 s window: **~29 s of dead time per deployment step**, 1.5–2 min per deploy.
+  `QueueCommand` now notifies through the connection's `afterCommit` (immediate outside a transaction, dropped on
+  rollback). Covered in `Fleet/tests/Feature/CommandChannelTest.php`. The database driver (the default) polls
+  every 500 ms and was not affected.
+- **Runtime download mirrors (product feature).** `KILN_FRANKENPHP_MIRROR`, `KILN_NODE_MIRROR`, `KILN_BUN_MIRROR`,
+  `KILN_DENO_MIRROR` (unset by default) replace the GitHub / nodejs.org release bases in `provision.apply`
+  (`runtimes.frankenphp|node.mirror`, new optional schema fields), `runtime.frankenphp.configure` (`mirror`, new)
+  and `runtime.bun|deno.install` (`mirror`, which existed but was never set). Documented in `docs/INSTALL.md`.
+  The sim points them at its caching proxy.
+- **Octane E2E check.** The demo app's `/octane` counted requests in a `static` inside the route closure, but the
+  Laravel preset runs `artisan optimize`, and cached closure routes are unserialized per request, so the counter
+  was always 1 even under Octane. It now counts in a class static (`App\Support\OctaneProbe`), and the stage
+  decides the mode by the app's `LARAVEL_OCTANE` flag.
+- **Octane restart could drop a request (product bug, fixed).** A deploy restarts Octane while the edge holds requests
+  (`try_duration` 30 s). The old FrankenPHP closes its port at SIGTERM, but its graceful shutdown is unbounded (Caddy's
+  default grace period) and intermittently hangs until SIGKILL. The stop timeout (30 s, the supervisor default) equalled
+  the edge's window, so the first held request ran out of retries just before the SIGKILL: one 502 in about 1 of 7
+  redeploys under load. Octane programs now stop with `processes.octane_stop_timeout` (10 s); `OctaneTest` pins it to
+  at most half the edge's window. (A running program stops with the spec it was started with, so the first redeploy
+  after upgrading still uses 30 s.)
+
 ## Not covered by the E2E yet (unit/feature tested only)
 Docker/Compose runtimes and docker builds on a real BuildKit, database backups/restore to real S3, WireGuard private
 networks, web terminal, recipes, provider APIs (Hetzner/DO/Vultr/Linode/Lightsail), load balancers, DNS-01 wildcard

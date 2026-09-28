@@ -26,7 +26,10 @@ make enroll TOKEN=<t> [SERVERS="srv-app-1"]   # enroll with a token minted by th
 make token               # mint one install token via Fleet's Enrollment contract
 make ca                  # export the edge TLS root to .data/edge-root.crt
 make logs S=edge | make shell S=srv-db-1 | make ps
-make down                # stop (keeps volumes) | make reset (also wipes volumes and .data/)
+make down                # stop (keeps volumes) | make reset (also wipes volumes and .data/, keeps the caches)
+make reset-all           # make reset + wipe the download/package caches (next run is cold)
+make clean-cache         # stop the sim and wipe the caches | make cache-stats: cache volume sizes
+make e2e-deploy          # full product E2E (./e2e-deploy.sh; ONLY=deploy,release / SKIP=... / FAST=1)
 ```
 
 Endpoints on the host:
@@ -51,7 +54,10 @@ use `SIM_AGENT_ARCH=amd64 make up`. Emulation is required on arm64 hosts.
 | valkey | `valkey/valkey:9.1.2-alpine` |
 | edge | `edge/Dockerfile` (`caddy:2.11.4-alpine` + openssl, curl) |
 | srv-app-1, srv-app-2, srv-db-1 | `server.Dockerfile` (`ubuntu:noble-20260911` + systemd, openssh-server), privileged, private cgroupns |
-| gateway, loki, tempo, victoriametrics or mimir, grafana | included from `../observability/compose.yml` |
+| gateway, loki, tempo, victoriametrics or mimir, grafana | included from `../observability/compose.yml` (+ `observability.override.yml`: faster start-up healthchecks, sim only) |
+| sim-apt-cache | `caches/apt-cache.Dockerfile` (apt-cacher-ng) |
+| sim-downloads | `nginx:1.31.6-alpine` + `caches/downloads.conf` |
+| sim-hub-mirror, sim-ghcr-mirror | `registry:2.8.3` in pull-through (proxy) mode for Docker Hub / ghcr.io |
 
 The servers are privileged with their own cgroup namespace so that systemd can run as PID 1.
 Units that don't work in a container (udev, getty, timesyncd, …) are masked, and sshd uses
@@ -63,6 +69,36 @@ The agent binary is mounted, not baked in. The repository is mounted read-only a
 `agent/bin/kiln-agent-linux-$SIM_AGENT_ARCH` to `/usr/local/bin/kiln-agent` if the file
 exists. If the agent hasn't been built, the servers still boot. The control plane serves the
 same binaries to the installer (`KILN_AGENT_BINARIES_PATH=/opt/kiln/src/agent/bin`).
+
+## Caches and speed
+
+A full `make reset && make up && ./e2e-deploy.sh` provisions three servers for real, builds and deploys a
+dozen releases and pulls third-party images. Everything the servers and the builder download goes through
+local caches that **survive `make reset`** (external volumes `kiln-sim-cache-*`, created by `make up`), so only
+the first run after `make reset-all` / `make clean-cache` fetches from the internet. The product code paths do
+not change: apt still resolves and installs packages, the agent still downloads and sha256-verifies runtime
+binaries, dockerd still pulls, the builder still runs composer/npm/bun and BuildKit. Only the bytes are local.
+
+| Cache | What it serves | How the sim uses it |
+|---|---|---|
+| `sim-apt-cache` (apt-cacher-ng, `kiln-sim-cache-apt`) | Ubuntu archive (HTTP) | the server image sets `Acquire::http::Proxy-Auto-Detect` to `server/bin/kiln-sim-apt-proxy`: the cache when it answers, `DIRECT` otherwise (`SIM_APT_PROXY`, empty = off) |
+| `sim-downloads` (caching nginx, `kiln-sim-cache-downloads`) | FrankenPHP / Bun / Deno GitHub releases, Node.js dist, the ondrej/php PPA | the control plane's **product** mirror settings `KILN_{FRANKENPHP,NODE,BUN,DENO}_MIRROR` point at `https://downloads.kiln.test/{github,nodejs}/…` (the edge terminates TLS). The PPA is HTTPS, so the servers resolve `ppa.launchpadcontent.net` to the edge (`extra_hosts`, the edge has a static fleet address), which proxies to this cache (package files cached for a year, `dists/` indexes revalidated every 5 min) |
+| `sim-hub-mirror` (registry proxy, `kiln-sim-cache-hub`) | Docker Hub | `registry-mirrors` in the servers' `/etc/docker/daemon.json` and a `docker.io` mirror in the builder's BuildKit config |
+| `sim-ghcr-mirror` (registry proxy, `kiln-sim-cache-ghcr`) | ghcr.io | the servers resolve `ghcr.io` to the edge (`extra_hosts`; dockerd only mirrors Docker Hub) |
+| builder (`kiln-sim-cache-builder`) | composer / npm / bun caches, BuildKit export cache | `KILN_BUILDER_CACHE_DIR=/root/.cache/kiln-builder`; the buildx builder keeps its state volume (`buildx_buildkit_kiln0_state`) across restarts |
+
+The host overrides exist only on the three servers, so the caches themselves and BuildKit resolve the real
+upstreams. (A separate network for this was tried and dropped: Docker assigns interface names in no stable order,
+and agents report their first private address, which the control plane health-checks sites through.)
+`sim-prefetch` warms the two registry caches with the E2E's compose and template images right after `make up`:
+the pull-through registry fetches an uncached blob upstream twice, so without it a cold pull inside a deployment
+is ~2.5x slower than pulling directly.
+
+`./e2e-deploy.sh` prints each stage's duration and a summary table at the end, and appends the timings to
+`.data/e2e-timings.tsv`. Pick stages for quick iteration: `ONLY=deploy,release` (comma or space separated;
+state from the previous run is in `.data/e2e.env`), `SKIP=templates`, or `FAST=1` (skips the third-party
+template stage). Status polls run every `POLL=1` second. `make up` prints how long the stack took to become
+healthy; healthchecks poll every 1–2 s while containers start.
 
 ## Integration points
 

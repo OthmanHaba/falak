@@ -69,4 +69,18 @@ kiln.test, localhost, edge {
 	import kiln_routes
 }
 
+# Sim caches (compose.yml, `make clean-cache`), TLS from the same internal CA the servers trust:
+#   downloads.kiln.test         runtime release mirror (KILN_*_MIRROR) -> sim-downloads (caching nginx)
+#   ppa.launchpadcontent.net    resolve to the edge only on the servers (compose extra_hosts): the ondrej/php
+#   ghcr.io                     PPA and GHCR, served through pull-through caches of the real upstreams.
+downloads.kiln.test, ppa.launchpadcontent.net {
+	tls internal
+	reverse_proxy sim-downloads:80
+}
+
+ghcr.io {
+	tls internal
+	reverse_proxy sim-ghcr-mirror:5000
+}
+
 import sites/*.caddyfile

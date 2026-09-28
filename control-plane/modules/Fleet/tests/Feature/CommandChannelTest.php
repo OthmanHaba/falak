@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -15,6 +16,7 @@ use Kiln\Fleet\Events\CommandFailed;
 use Kiln\Fleet\Events\CommandFinished;
 use Kiln\Fleet\Events\CommandOutputReceived;
 use Kiln\Fleet\Events\InsightsReceived;
+use Kiln\Fleet\Infrastructure\Signals\CommandSignal;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -245,4 +247,44 @@ it('checks finished results against the command result schema on raw JSON (empty
 
     Log::shouldHaveReceived('warning')->once();
     expect($this->gateway->status($bad)->isSuccessful())->toBeTrue();
+});
+
+it('wakes the agent only after the transaction that queued the command commits', function () {
+    $signal = new class implements CommandSignal
+    {
+        /** @var list<string> */
+        public array $notified = [];
+
+        public function notify(string $agentId): void
+        {
+            $this->notified[] = $agentId;
+        }
+
+        public function wait(string $agentId, int $seconds, callable $check): array
+        {
+            return $check();
+        }
+    };
+    app()->instance(CommandSignal::class, $signal);
+    app()->forgetInstance(AgentGateway::class);
+    $gateway = app(AgentGateway::class);
+    $agentId = $this->enrolled['agent']->id;
+
+    DB::transaction(function () use ($gateway, $signal) {
+        $gateway->dispatch($this->serverId, 'system.facts', []);
+        expect($signal->notified)->toBe([]);
+    });
+    expect($signal->notified)->toBe([$agentId]);
+
+    try {
+        DB::transaction(function () use ($gateway) {
+            $gateway->dispatch($this->serverId, 'system.facts', []);
+            throw new RuntimeException('rollback');
+        });
+    } catch (RuntimeException) {
+    }
+    expect($signal->notified)->toBe([$agentId]);
+
+    $gateway->dispatch($this->serverId, 'system.exec', ['script' => 'uptime']);
+    expect($signal->notified)->toBe([$agentId, $agentId]);
 });

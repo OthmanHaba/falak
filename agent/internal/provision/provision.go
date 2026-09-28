@@ -89,10 +89,12 @@ type Runtimes struct {
 	FrankenPHP *struct {
 		Version string `json:"version"`
 		SHA256  string `json:"sha256"`
+		Mirror  string `json:"mirror"` // optional release download base (see runtime.frankenphp.configure)
 	} `json:"frankenphp"`
 	Node *struct {
 		Versions []string `json:"versions"`
 		Default  string   `json:"default"`
+		Mirror   string   `json:"mirror"` // optional nodejs.org/dist mirror (see runtime.node.install)
 	} `json:"node"`
 	Caddy *struct {
 		Enabled *bool  `json:"enabled"`
@@ -215,7 +217,7 @@ func (p *Provisioner) steps(plan Plan) []step {
 		if rt.FrankenPHP != nil {
 			add("frankenphp", func(ctx context.Context, st commands.Stream) (bool, error) {
 				t := true
-				r, err := p.rt.FrankenPHPConfigure(ctx, runtime.FrankenPHPPayload{Version: rt.FrankenPHP.Version, SHA256: rt.FrankenPHP.SHA256, AsEdge: &t, EdgeGroups: siteGroups(plan.Users)}, st)
+				r, err := p.rt.FrankenPHPConfigure(ctx, runtime.FrankenPHPPayload{Version: rt.FrankenPHP.Version, SHA256: rt.FrankenPHP.SHA256, Mirror: rt.FrankenPHP.Mirror, AsEdge: &t, EdgeGroups: siteGroups(plan.Users)}, st)
 				return changedOf(r), err
 			})
 		}
@@ -223,7 +225,7 @@ func (p *Provisioner) steps(plan Plan) []step {
 			for _, v := range rt.Node.Versions {
 				v := v
 				add("node:"+v, func(ctx context.Context, st commands.Stream) (bool, error) {
-					r, err := p.rt.NodeInstall(ctx, runtime.NodePayload{Version: v, Default: v == rt.Node.Default}, st)
+					r, err := p.rt.NodeInstall(ctx, runtime.NodePayload{Version: v, Default: v == rt.Node.Default, Mirror: rt.Node.Mirror}, st)
 					return changedOf(r), err
 				})
 			}

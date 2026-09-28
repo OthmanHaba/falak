@@ -84,6 +84,24 @@ it('enables Octane in order: program started, probe answered, then the edge prox
         ->toMatchArray(['kind' => 'reverse_proxy', 'upstreams' => [['dial' => "127.0.0.1:{$port}"]], 'root' => '/srv/kiln/sites/shop/current/public']);
 });
 
+it('stops Octane with a short timeout, well inside the window the edge holds requests for', function () {
+    $site = processes_site($this->organization->id, [$this->web], ['test_domain_enabled' => true]);
+
+    octane_toggle($this, $site, true);
+    $program = processes_programs($this->agents->last('proc.apply'))['shop.octane'];
+
+    // A deploy restarts Octane: the old server closes its port at SIGTERM but may hang in its graceful shutdown. It must
+    // be killed early enough for the requests the edge holds meanwhile (try_duration) to reach the new server.
+    expect($program['stop_signal'])->toBe('TERM')
+        ->and($program['stop_timeout_s'])->toBe(config('processes.octane_stop_timeout'))
+        ->and($program['stop_timeout_s'] * 2)->toBeLessThanOrEqual(config('edge.octane_try_duration_seconds'));
+
+    config(['processes.octane_stop_timeout' => 5]);
+    octane_toggle($this, $site, false);
+    octane_toggle($this, $site, true);
+    expect(processes_programs($this->agents->last('proc.apply'))['shop.octane']['stop_timeout_s'])->toBe(5);
+});
+
 it('keeps serving a never-deployed site directly until its first release runs Octane', function () {
     $site = processes_site($this->organization->id, [$this->web], ['test_domain_enabled' => true], deployed: false);
     octane_toggle($this, $site, true);

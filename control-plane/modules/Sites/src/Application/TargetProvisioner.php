@@ -82,14 +82,20 @@ final class TargetProvisioner
 
         // Servers provision Node; Bun and Deno are installed where a site needs them.
         $js = match ($site->runtime) {
-            SiteRuntime::Bun => ['runtime.bun.install', (string) config('sites.bun_version')],
-            SiteRuntime::Deno => ['runtime.deno.install', (string) config('sites.deno_version')],
+            SiteRuntime::Bun => ['runtime.bun.install', (string) config('sites.bun_version'), (string) config('sites.bun_mirror')],
+            SiteRuntime::Deno => ['runtime.deno.install', (string) config('sites.deno_version'), (string) config('sites.deno_mirror')],
             default => null,
         };
 
         if ($js !== null) {
+            $payload = ['version' => $js[1], 'default' => true];
+
+            if (trim($js[2]) !== '') {
+                $payload['mirror'] = rtrim(trim($js[2]), '/');
+            }
+
             // Runtime zips are 30–45 MB from GitHub releases; allow slow links (downloads retry on stalls).
-            $this->dispatch($target, SiteTarget::STEP_RUNTIME, $js[0], ['version' => $js[1], 'default' => true], 1800);
+            $this->dispatch($target, SiteTarget::STEP_RUNTIME, $js[0], $payload, 1800);
 
             return;
         }

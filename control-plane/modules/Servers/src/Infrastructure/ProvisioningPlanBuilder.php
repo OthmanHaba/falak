@@ -154,13 +154,14 @@ final class ProvisioningPlanBuilder
                 $runtimes['frankenphp'] = array_filter([
                     'version' => (string) $this->config['frankenphp']['version'],
                     'sha256' => $this->config['frankenphp']['sha256'] ?? null,
+                    'mirror' => $this->mirror('frankenphp'),
                 ]);
             }
         }
 
         if ($stack->node !== null) {
             $version = (string) $this->config['node_versions'][$stack->node];
-            $runtimes['node'] = ['versions' => [$version], 'default' => $version];
+            $runtimes['node'] = array_filter(['versions' => [$version], 'default' => $version, 'mirror' => $this->mirror('node')]);
         }
 
         // FrankenPHP embeds Caddy; standalone Caddy fronts PHP-FPM sites and load balancers.
@@ -169,5 +170,12 @@ final class ProvisioningPlanBuilder
         }
 
         return $runtimes;
+    }
+
+    private function mirror(string $runtime): ?string
+    {
+        $mirror = trim((string) ($this->config['mirrors'][$runtime] ?? ''));
+
+        return $mirror === '' ? null : rtrim($mirror, '/');
     }
 }

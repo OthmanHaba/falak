@@ -170,6 +170,12 @@
             "sha256": {
               "type": "string",
               "pattern": "^[a-f0-9]{64}$"
+            },
+            "mirror": {
+              "type": "string",
+              "format": "uri",
+              "default": "https://github.com/php/frankenphp/releases/download",
+              "description": "Release download base: <mirror>/v<version>/frankenphp-linux-<arch> (an HTTPS mirror or caching proxy of GitHub releases)"
             }
           }
         },
@@ -191,6 +197,12 @@
             },
             "default": {
               "type": "string"
+            },
+            "mirror": {
+              "type": "string",
+              "format": "uri",
+              "default": "https://nodejs.org/dist",
+              "description": "nodejs.org/dist mirror used for every version (see runtime.node.install)"
             }
           }
         },

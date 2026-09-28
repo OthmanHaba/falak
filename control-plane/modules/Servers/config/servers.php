@@ -21,6 +21,15 @@ return [
         'sha256' => env('KILN_FRANKENPHP_SHA256'),
     ],
 
+    // Optional download mirrors for runtimes fetched over HTTPS during provisioning (air-gapped installs, a
+    // caching proxy in front of GitHub / nodejs.org). Unset = the upstream release URLs.
+    //   KILN_FRANKENPHP_MIRROR  replaces https://github.com/php/frankenphp/releases/download
+    //   KILN_NODE_MIRROR        replaces https://nodejs.org/dist
+    'mirrors' => [
+        'frankenphp' => env('KILN_FRANKENPHP_MIRROR'),
+        'node' => env('KILN_NODE_MIRROR'),
+    ],
+
     // Engine => Ubuntu packages + systemd service.
     'databases' => [
         'postgresql' => ['label' => 'PostgreSQL', 'packages' => ['postgresql', 'postgresql-contrib'], 'service' => 'postgresql'],
