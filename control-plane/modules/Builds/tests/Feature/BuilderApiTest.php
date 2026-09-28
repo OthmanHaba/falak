@@ -112,6 +112,17 @@ it('hands out a native job with short-lived clone credentials and a presigned up
     next_job()->assertNoContent();
 });
 
+it('passes variables exposed to the deploy script to the build as well (non-prefixed build-time settings)', function () {
+    $world = builds_world();
+    $world->site->environmentVersions()->first()->forceFill([
+        'variables' => ['VITE_APP_NAME' => 'Shop', 'SITE_URL' => 'https://shop.example.com', 'APP_KEY' => 'secret'],
+        'exposed' => ['SITE_URL'],
+    ])->save();
+    request_build($world);
+
+    expect(next_job()->assertOk()->json('env'))->toBe(['VITE_APP_NAME' => 'Shop', 'SITE_URL' => 'https://shop.example.com']);
+});
+
 it('runs the build lifecycle from builder events and verifies the uploaded artifact', function () {
     Event::fake([BuildSucceeded::class, BuildFailed::class]);
     $world = builds_world();
@@ -209,6 +220,7 @@ it('hands docker jobs the registry image and credentials', function () {
     expect($job['docker'])->toBe([
         'image' => "registry.kiln.local/kiln/{$world->site->slug}:{$build->id}",
         'dockerfile' => 'docker/Dockerfile',
+        'build_args' => ['APP_ENV' => 'production'], // exposed to the deploy script by the fixture
         'registry' => ['server' => 'registry.kiln.local', 'username' => 'kiln', 'password' => 'registry-secret'],
         'push' => true,
     ])->and($job)->not->toHaveKey('native');
@@ -232,6 +244,7 @@ it('hands compose sites a compose build job and stores the built images', functi
             'file' => 'deploy/compose.yaml',
             'image_prefix' => $prefix,
             'tag' => $build->id,
+            'build_args' => ['APP_ENV' => 'production'], // exposed to the deploy script by the fixture
             'registry' => ['server' => 'registry.kiln.local', 'username' => 'kiln', 'password' => 'registry-secret'],
         ]);
 

@@ -276,7 +276,8 @@ Docker jobs carry `"docker": {"image": "<registry>/<namespace>/<site-slug>:<buil
 "build_args": {…}, "registry": {"server", "username", "password"}, "push": true}` instead of `native`.
 Clone credentials come from SourceControl at hand-out time and are never stored. HTTPS clones use
 `token`/`username` instead of `deploy_key`. `env` holds site variables with public front-end prefixes
-(`builds.env_prefixes`).
+(`builds.env_prefixes`) plus the variables exposed to the deploy script (the per-variable opt-in for other
+build-time settings, e.g. Astro's `SITE_URL`).
 
 ### `POST /api/internal/builds/{build}/events`
 NDJSON body, one `contracts/agent-protocol/event.schema.json` object per line with `command_id` = build id.

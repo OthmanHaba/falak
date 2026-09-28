@@ -16,7 +16,8 @@ return [
     // A builder counts as online when it polled within this window.
     'builder_online_seconds' => 120,
 
-    // Site environment variables with these prefixes are passed to builds (public front-end config).
+    // Site environment variables with these prefixes are passed to builds (public front-end config), as are
+    // the variables exposed to the deploy script (the user's opt-in for other build-time settings).
     'env_prefixes' => ['VITE_', 'NEXT_PUBLIC_', 'NUXT_PUBLIC_', 'PUBLIC_', 'REACT_APP_'],
 
     // The builder on the control-plane host (`kiln-builder serve --token $KILN_LOCAL_BUILDER_TOKEN`).

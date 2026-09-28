@@ -28,17 +28,24 @@ final class BuildConfiguration
     }
 
     /**
-     * Build-time environment: site variables with a public front-end prefix (VITE_…, NEXT_PUBLIC_…), with
-     * `${{ service.KEY }}` references resolved (unresolvable ones stay literal; the deploy fails on them).
+     * Build-time environment: site variables with a public front-end prefix (VITE_…, NEXT_PUBLIC_…) plus the
+     * ones exposed to the deploy script (the user's opt-in for other build-time settings, e.g. Astro's SITE_URL),
+     * with `${{ service.KEY }}` references resolved (unresolvable ones stay literal; the deploy fails on them).
      *
      * @return array<string, string>
      */
     public function environment(SiteData $site): array
     {
-        $variables = $this->sites->environment($site->id)?->variables ?? [];
+        $environment = $this->sites->environment($site->id);
+        $variables = $environment->variables ?? [];
+        $exposed = array_flip($environment->exposedToDeployScript ?? []);
         $prefixes = (array) config('builds.env_prefixes', []);
 
-        $public = array_filter($variables, function ($value, $key) use ($prefixes) {
+        $public = array_filter($variables, function ($value, $key) use ($prefixes, $exposed) {
+            if (isset($exposed[$key])) {
+                return true;
+            }
+
             foreach ($prefixes as $prefix) {
                 if (str_starts_with((string) $key, (string) $prefix)) {
                     return true;
