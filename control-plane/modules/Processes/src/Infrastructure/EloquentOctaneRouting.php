@@ -11,8 +11,8 @@ final class EloquentOctaneRouting implements OctaneRouting
     public function listeningPort(string $siteId, string $serverId): ?int
     {
         $port = OctaneRoute::query()
-            ->where('site_id', strtolower($siteId))
-            ->where('server_id', strtolower($serverId))
+            ->where('site_id', $siteId)
+            ->where('server_id', $serverId)
             ->where('status', OctaneRouteStatus::Listening)
             ->value('port');
 

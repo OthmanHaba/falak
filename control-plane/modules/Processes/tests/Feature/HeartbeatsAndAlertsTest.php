@@ -104,7 +104,7 @@ it('raises crash-loop alerts from proc.status and resolves them on recovery', fu
     processes_site($this->organization->id, [$this->server], ['laravel' => ['horizon' => true]]);
     processes_apply($this);
 
-    (new PollProcessStatus)->handle(app(StatusPoller::class));
+    app()->call([new PollProcessStatus, 'handle']);
     $status = $this->agents->last('proc.status');
     expect(processes_schema_errors($status))->toBe([]);
 

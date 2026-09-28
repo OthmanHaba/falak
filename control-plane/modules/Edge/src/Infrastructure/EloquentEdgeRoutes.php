@@ -127,7 +127,7 @@ final class EloquentEdgeRoutes implements EdgeRoutes
 
     public function proxiesToOctane(string $siteId, string $serverId): bool
     {
-        $state = ServerState::query()->find(strtolower($serverId));
+        $state = ServerState::query()->find($serverId);
 
         if ($state === null) {
             return false;
