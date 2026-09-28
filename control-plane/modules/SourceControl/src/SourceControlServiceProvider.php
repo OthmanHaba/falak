@@ -44,6 +44,8 @@ class SourceControlServiceProvider extends ModuleServiceProvider
 
         RateLimiter::for('source-control-webhooks', fn (Request $request) => Limit::perMinute(max(1, (int) config('source_control.webhook_rate_limit', 120)))
             ->by('webhook:'.(string) $request->route('webhook')));
+        RateLimiter::for('source-control-github-app-webhooks', fn (Request $request) => Limit::perMinute(max(1, (int) config('source_control.github_app_webhook_rate_limit', 600)))
+            ->by('github-app:'.(string) $request->route('app')));
 
         Event::listen(OrganizationDeleted::class, DeleteOrganizationConnections::class);
     }

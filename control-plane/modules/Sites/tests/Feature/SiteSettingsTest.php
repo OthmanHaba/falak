@@ -70,6 +70,18 @@ it('relinks the repository with a new deploy key', function () {
         ->and($this->git->webhooks)->toHaveKey("{$connection->id}|acme/store");
 });
 
+it('links GitHub App repositories without a deploy key', function () {
+    $connection = $this->git->addConnection($this->organization->id, authType: 'app');
+
+    $this->patch("/sites/{$this->site->id}", ['source_connection_id' => $connection->id, 'repository' => 'acme/shop', 'branch' => 'main', 'push_to_deploy' => true])->assertSessionHasNoErrors();
+
+    expect($this->site->refresh()->deploy_key_id)->toBeNull()
+        ->and($this->git->keys)->toBe([])
+        ->and($this->git->webhooks)->toHaveKey("{$connection->id}|acme/shop");
+
+    $this->getJson("/sites/{$this->site->id}/settings")->assertJsonPath('data.source.connection.github_app', true);
+});
+
 it('adds and removes servers and changes the leader', function () {
     Event::fake([SiteTargetsChanged::class]);
 

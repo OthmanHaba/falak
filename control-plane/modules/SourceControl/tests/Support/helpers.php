@@ -3,7 +3,9 @@
 use Illuminate\Testing\TestResponse;
 use Kiln\SourceControl\Contracts\ProviderType;
 use Kiln\SourceControl\Domain\Models\Connection;
+use Kiln\SourceControl\Domain\Models\GitHubApp;
 use Kiln\SourceControl\Domain\Models\Webhook;
+use phpseclib3\Crypt\RSA;
 
 /**
  * @param  array<string, mixed>  $credentials
@@ -70,4 +72,63 @@ function sc_github_push(string $ref = 'refs/heads/main', array $overrides = []):
         ],
         'pusher' => ['name' => 'ada'],
     ], $overrides);
+}
+
+/** One RSA key per test process (generation is slow). */
+function sc_rsa_pem(): string
+{
+    static $pem = null;
+
+    return $pem ??= RSA::createKey(2048)->toString('PKCS1');
+}
+
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function sc_github_app(string $organizationId, array $attributes = []): GitHubApp
+{
+    $app = new GitHubApp(array_merge([
+        'organization_id' => $organizationId,
+        'app_id' => '4242',
+        'slug' => 'kiln-acme',
+        'name' => 'Kiln (acme)',
+        'owner_login' => 'acme',
+        'owner_type' => 'Organization',
+        'html_url' => 'https://github.com/apps/kiln-acme',
+        'client_id' => 'Iv1.abc',
+    ], $attributes));
+    $app->client_secret = 'client-secret';
+    $app->webhook_secret = 'hook-secret';
+    $app->private_key = sc_rsa_pem();
+    $app->save();
+
+    return $app;
+}
+
+/**
+ * @param  array<string, mixed>  $attributes
+ */
+function sc_app_connection(string $organizationId, GitHubApp|string $app, string $installationId = '555', array $attributes = []): Connection
+{
+    $connection = sc_connection($organizationId, ProviderType::GitHub, 'app', ['installation_id' => $installationId, 'target_type' => 'Organization'], array_merge(['account' => 'acme'], $attributes));
+    $connection->forceFill(['github_app_id' => $app instanceof GitHubApp ? $app->id : $app, 'installation_id' => $installationId])->save();
+
+    return $connection;
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ * @param  array<string, string>  $headers
+ */
+function sc_post_app_webhook(string $appKey, string $event, array $payload, string $secret = 'hook-secret', array $headers = []): TestResponse
+{
+    $body = (string) json_encode($payload, JSON_UNESCAPED_SLASHES);
+    $server = test()->transformHeadersToServerVars(array_merge([
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json',
+        'X-GitHub-Event' => $event,
+        'X-Hub-Signature-256' => 'sha256='.hash_hmac('sha256', $body, $secret),
+    ], $headers));
+
+    return test()->call('POST', "/api/webhooks/source-control/github-app/{$appKey}", [], [], [], $server, $body);
 }

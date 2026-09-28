@@ -162,6 +162,11 @@ export function SourceSettings({ ctx }: ServiceTabProps) {
                         />
                         {data.source.deploy_key.install_error && <Callout tone="warning">{data.source.deploy_key.install_error}</Callout>}
                     </>
+                ) : data.source.connection?.github_app ? (
+                    <p className="text-fg-muted flex items-center gap-2 text-sm">
+                        <KeyRound className="size-4" aria-hidden /> Not needed — {data.source.connection.name} clones with short-lived GitHub App
+                        installation tokens.
+                    </p>
                 ) : (
                     <p className="text-fg-muted flex items-center gap-2 text-sm">
                         <KeyRound className="size-4" aria-hidden />{' '}

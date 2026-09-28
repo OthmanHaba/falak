@@ -37,9 +37,9 @@ final class FakeSourceControlGateway implements SourceControlGateway
 
     public ?string $failKeysWith = null;
 
-    public function addConnection(string $organizationId, ProviderType $provider = ProviderType::GitHub): ConnectionData
+    public function addConnection(string $organizationId, ProviderType $provider = ProviderType::GitHub, string $authType = 'token'): ConnectionData
     {
-        $connection = new ConnectionData((string) Str::ulid(), $organizationId, $provider, $provider->label(), 'token', 'acme', null);
+        $connection = new ConnectionData((string) Str::ulid(), $organizationId, $provider, $provider->label(), $authType, 'acme', null);
 
         return $this->connections[$connection->id] = $connection;
     }

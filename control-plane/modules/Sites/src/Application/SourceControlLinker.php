@@ -27,6 +27,11 @@ final class SourceControlLinker
 
         $warnings = [];
 
+        // GitHub App connections clone with short-lived installation tokens: no deploy key to manage.
+        if ($this->gateway->connection($site->source_connection_id)?->isGitHubApp()) {
+            return $this->syncWebhook($site);
+        }
+
         try {
             $key = $this->gateway->installDeployKey($site->source_connection_id, $site->repository, "Kiln · {$site->name}");
             $site->forceFill(['deploy_key_id' => $key->id])->save();

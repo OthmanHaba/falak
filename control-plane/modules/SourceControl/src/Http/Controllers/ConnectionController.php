@@ -5,6 +5,7 @@ namespace Kiln\SourceControl\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -19,9 +20,12 @@ use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
 use Kiln\SourceControl\Contracts\ProviderType;
 use Kiln\SourceControl\Contracts\SourceControlGateway;
 use Kiln\SourceControl\Domain\Models\Connection;
+use Kiln\SourceControl\Domain\Models\GitHubApp;
 use Kiln\SourceControl\Domain\Models\Push;
 use Kiln\SourceControl\Http\Requests\StoreConnectionRequest;
-use Kiln\SourceControl\Infrastructure\Providers\GitHubAppTokens;
+use Kiln\SourceControl\Infrastructure\GitHubApp\AppManifest;
+use Kiln\SourceControl\Infrastructure\GitHubApp\GitHubAppResolver;
+use Kiln\SourceControl\Infrastructure\Providers\GitHubClient;
 use Kiln\SourceControl\Infrastructure\Providers\OAuthProviders;
 
 final class ConnectionController extends Controller
@@ -31,7 +35,7 @@ final class ConnectionController extends Controller
         private readonly OrganizationAccess $access,
     ) {}
 
-    public function index(Request $request, OAuthProviders $oauth, GitHubAppTokens $githubApp): Response
+    public function index(Request $request, OAuthProviders $oauth, GitHubAppResolver $apps): Response
     {
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, 'source_control.view');
@@ -49,6 +53,7 @@ final class ConnectionController extends Controller
                 'provider' => $connection->provider->value,
                 'provider_label' => $connection->provider->label(),
                 'auth_type' => $connection->auth_type,
+                'status' => $connection->status,
                 'account' => $connection->account,
                 'base_url' => $connection->base_url,
                 'deploy_keys_count' => (int) $connection->getAttribute('deploy_keys_count'),
@@ -78,9 +83,74 @@ final class ConnectionController extends Controller
                 'has_api' => $type->hasApi(),
                 'oauth' => $oauth->configured($type),
             ])->values(),
-            'githubApp' => $githubApp->configured() && config('source_control.github.app.slug'),
+            'githubApp' => $this->githubApp($apps, $organizationId, $connections),
             'canManage' => $this->access->can($request->user(), $organizationId, 'source_control.manage'),
         ]);
+    }
+
+    /**
+     * The GitHub App card: which app new installations use (operator's env app, this organization's registered
+     * app, or none yet) and its installations in this organization.
+     *
+     * @param  Collection<int, Connection>  $connections
+     * @return array<string, mixed>
+     */
+    private function githubApp(GitHubAppResolver $apps, string $organizationId, Collection $connections): array
+    {
+        $github = rtrim((string) config('source_control.github.url'), '/');
+        $env = $apps->env();
+        $registered = GitHubApp::query()->where('organization_id', $organizationId)->first();
+
+        $app = match (true) {
+            $env !== null => [
+                'source' => 'env',
+                'name' => $env->slug ?: 'GitHub App '.$env->appId,
+                'slug' => $env->slug,
+                'owner' => null,
+                'owner_type' => null,
+                'html_url' => $env->slug ? "{$github}/apps/{$env->slug}" : null,
+                'settings_url' => null,
+                'installable' => $env->installable(),
+                'webhook_url' => AppManifest::webhookUrl('env'),
+                'last_delivery_at' => null,
+                'created_at' => null,
+            ],
+            $registered !== null => [
+                'source' => 'registered',
+                'name' => $registered->name,
+                'slug' => $registered->slug,
+                'owner' => $registered->owner_login,
+                'owner_type' => $registered->owner_type,
+                'html_url' => $registered->html_url ?: "{$github}/apps/{$registered->slug}",
+                'settings_url' => $registered->owner_type === 'Organization' && $registered->owner_login
+                    ? "{$github}/organizations/{$registered->owner_login}/settings/apps/{$registered->slug}"
+                    : "{$github}/settings/apps/{$registered->slug}",
+                'installable' => true,
+                'webhook_url' => AppManifest::webhookUrl($registered->id),
+                'last_delivery_at' => $registered->last_delivery_at?->toIso8601String(),
+                'created_at' => $registered->created_at->toIso8601String(),
+            ],
+            default => null,
+        };
+
+        return [
+            'app' => $app,
+            'permissions' => AppManifest::PERMISSIONS,
+            'events' => AppManifest::EVENTS,
+            'installations' => $connections->filter(fn (Connection $connection) => $connection->isApp())->map(fn (Connection $connection) => [
+                'id' => $connection->id,
+                'name' => $connection->name,
+                'account' => $connection->account,
+                'target_type' => $connection->credential('target_type'),
+                'status' => $connection->status,
+                'installation_id' => $connection->installationId(),
+                'repositories_count' => GitHubClient::knownRepositoryCount($connection->id),
+                'manage_url' => $connection->credential('target_type') === 'Organization' && $connection->account
+                    ? "{$github}/organizations/{$connection->account}/settings/installations/{$connection->installationId()}"
+                    : "{$github}/settings/installations/{$connection->installationId()}",
+                'created_at' => $connection->created_at->toIso8601String(),
+            ])->values(),
+        ];
     }
 
     public function store(StoreConnectionRequest $request, CreateConnection $create): RedirectResponse

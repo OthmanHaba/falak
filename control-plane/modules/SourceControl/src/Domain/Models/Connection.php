@@ -19,6 +19,9 @@ use Kiln\SourceControl\Contracts\ProviderType;
  * @property ?string $account
  * @property array<string, mixed> $credentials access_token, refresh_token, expires_at | installation_id | token | username, password
  * @property ?string $created_by
+ * @property string $status active | suspended | disconnected (GitHub App installations suspended / removed on GitHub)
+ * @property ?string $github_app_id GitHub App connections: "env" or a source_control_github_apps id
+ * @property ?string $installation_id GitHub App connections: the installation id
  * @property Carbon $created_at
  */
 class Connection extends Model
@@ -27,6 +30,8 @@ class Connection extends Model
 
     public const AUTH_TYPES = ['oauth', 'app', 'token', 'basic', 'none'];
 
+    public const STATUSES = ['active', 'suspended', 'disconnected'];
+
     protected $table = 'source_control_connections';
 
     /** @var list<string> */
@@ -34,6 +39,9 @@ class Connection extends Model
 
     /** @var list<string> */
     protected $hidden = ['credentials'];
+
+    /** @var array<string, mixed> */
+    protected $attributes = ['status' => 'active'];
 
     /**
      * @return array<string, string>
@@ -62,6 +70,16 @@ class Connection extends Model
         return $this->hasMany(Webhook::class);
     }
 
+    public function isApp(): bool
+    {
+        return $this->auth_type === 'app';
+    }
+
+    public function installationId(): string
+    {
+        return (string) ($this->installation_id ?: $this->credential('installation_id'));
+    }
+
     public function credential(string $key): mixed
     {
         return ($this->credentials ?? [])[$key] ?? null;
@@ -86,6 +104,7 @@ class Connection extends Model
             authType: $this->auth_type,
             account: $this->account,
             baseUrl: $this->base_url,
+            status: $this->status ?? 'active',
         );
     }
 }

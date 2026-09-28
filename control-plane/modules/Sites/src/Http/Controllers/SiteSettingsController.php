@@ -87,7 +87,7 @@ final class SiteSettingsController extends Controller
                 'created_at' => $site->created_at->toIso8601String(),
             ],
             'source' => [
-                'connection' => $connection ? ['id' => $connection->id, 'name' => $connection->name, 'provider' => $connection->provider->value, 'provider_label' => $connection->provider->label()] : null,
+                'connection' => $connection ? ['id' => $connection->id, 'name' => $connection->name, 'provider' => $connection->provider->value, 'provider_label' => $connection->provider->label(), 'github_app' => $connection->isGitHubApp()] : null,
                 'deploy_key' => $deployKey ? ['public_key' => $deployKey->publicKey, 'fingerprint' => $deployKey->fingerprint, 'installed' => $deployKey->installed, 'install_error' => $deployKey->installError] : null,
                 'error' => $sourceError,
             ],

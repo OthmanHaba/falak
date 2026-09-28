@@ -16,6 +16,8 @@ use Kiln\SourceControl\Contracts\SourceControlGateway;
 use Kiln\SourceControl\Domain\Models\Connection;
 use Kiln\SourceControl\Domain\Models\DeployKey;
 use Kiln\SourceControl\Domain\Models\Webhook;
+use Kiln\SourceControl\Infrastructure\GitHubApp\AppCredentials;
+use Kiln\SourceControl\Infrastructure\GitHubApp\AppManifest;
 use Kiln\SourceControl\Infrastructure\Providers\CustomGitClient;
 use Kiln\SourceControl\Infrastructure\Providers\ProviderClient;
 use Kiln\SourceControl\Infrastructure\Providers\ProviderClients;
@@ -94,7 +96,8 @@ final class EloquentSourceControlGateway implements SourceControlGateway
             'fingerprint' => $generated['fingerprint'],
         ]);
 
-        if ($connection->provider->hasApi()) {
+        // GitHub App connections clone over HTTPS with installation tokens (no administration permission to add keys).
+        if ($connection->provider->hasApi() && ! $connection->isApp()) {
             try {
                 $providerId = $this->client($connection)->addDeployKey($connection, $repository, $title, $generated['public_key']);
                 $key->forceFill(['provider_key_id' => $providerId, 'installed_at' => now()])->save();
@@ -148,6 +151,18 @@ final class EloquentSourceControlGateway implements SourceControlGateway
             ['organization_id' => $connection->organization_id, 'secret' => Str::random(40), 'installed' => false],
         );
 
+        if ($connection->isApp()) {
+            // The app's own webhook delivers pushes for every repository of the installation; the row only marks
+            // the repository as one Kiln deploys from.
+            if (! $webhook->installed) {
+                $webhook->forceFill(['installed' => true, 'install_error' => null])->save();
+            }
+
+            $data = $webhook->toData();
+
+            return new WebhookData($data->id, $data->connectionId, $data->repository, AppManifest::webhookUrl($connection->github_app_id ?: AppCredentials::ENV), true);
+        }
+
         if ($webhook->installed || ! $connection->provider->hasApi()) {
             return $webhook->toData();
         }
@@ -173,7 +188,7 @@ final class EloquentSourceControlGateway implements SourceControlGateway
             return;
         }
 
-        if ($webhook->provider_hook_id) {
+        if ($webhook->provider_hook_id && ! $connection->isApp()) {
             try {
                 $this->client($connection)->deleteWebhook($connection, $repository, $webhook->provider_hook_id);
             } catch (SourceControlException) {
@@ -198,7 +213,8 @@ final class EloquentSourceControlGateway implements SourceControlGateway
         $connection = $this->find($connectionId);
         $client = $this->client($connection);
 
-        if ($deployKeyId !== null) {
+        // App installations clone with a fresh installation token even if an older deploy key is still linked.
+        if ($deployKeyId !== null && ! $connection->isApp()) {
             $key = DeployKey::query()->where('connection_id', $connection->id)->find($deployKeyId);
 
             if (! $key) {

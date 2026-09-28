@@ -4,6 +4,7 @@ namespace Kiln\SourceControl\Infrastructure\Providers;
 
 use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
 use Kiln\SourceControl\Domain\Models\Connection;
+use Kiln\SourceControl\Infrastructure\GitHubApp\GitHubAppResolver;
 
 /**
  * Resolves a usable API token for a connection: refreshes expiring OAuth tokens and mints
@@ -14,12 +15,13 @@ class AccessTokens
     public function __construct(
         private readonly OAuthProviders $oauth,
         private readonly GitHubAppTokens $githubApp,
+        private readonly GitHubAppResolver $apps,
     ) {}
 
     public function token(Connection $connection): string
     {
         $token = match ($connection->auth_type) {
-            'app' => $this->githubApp->installationToken((string) $connection->credential('installation_id')),
+            'app' => $this->installationToken($connection),
             'oauth' => $this->oauthToken($connection),
             'token' => $connection->credential('token'),
             default => null,
@@ -30,6 +32,20 @@ class AccessTokens
         }
 
         return $token;
+    }
+
+    private function installationToken(Connection $connection): string
+    {
+        if ($connection->status !== 'active') {
+            throw SourceControlException::provider('GitHub', $connection->status === 'suspended'
+                ? 'The GitHub App installation is suspended on GitHub. Unsuspend it to deploy again.'
+                : 'The GitHub App was uninstalled on GitHub. Install it again from Settings → Source control.');
+        }
+
+        $app = $this->apps->forConnection($connection)
+            ?? throw SourceControlException::provider('GitHub', 'The GitHub App of this connection is no longer configured.');
+
+        return $this->githubApp->installationToken($app, $connection->installationId());
     }
 
     private function oauthToken(Connection $connection): ?string

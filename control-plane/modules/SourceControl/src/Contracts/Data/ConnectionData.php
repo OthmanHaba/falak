@@ -17,5 +17,13 @@ final readonly class ConnectionData
         public string $authType,
         public ?string $account,
         public ?string $baseUrl,
+        /** active | suspended | disconnected (a GitHub App installation suspended or removed on GitHub) */
+        public string $status = 'active',
     ) {}
+
+    /** GitHub App connections clone with short-lived installation tokens and need no deploy keys or repo webhooks. */
+    public function isGitHubApp(): bool
+    {
+        return $this->authType === 'app';
+    }
 }

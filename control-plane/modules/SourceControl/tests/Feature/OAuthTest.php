@@ -4,7 +4,6 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Kiln\Identity\Contracts\Role;
 use Kiln\SourceControl\Domain\Models\Connection;
-use phpseclib3\Crypt\RSA;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -106,29 +105,4 @@ it('returns 404 for unconfigured or unknown providers', function () {
     $this->get('/source-control/connect/custom')->assertNotFound();
     $this->get('/source-control/connect/svn')->assertNotFound();
     $this->get('/source-control/connect/github-app')->assertNotFound();
-});
-
-it('connects a verified GitHub App installation', function () {
-    config(['source_control.github.app' => ['id' => '7', 'slug' => 'kiln-test', 'private_key' => RSA::createKey(2048)->toString('PKCS1')]]);
-
-    $location = $this->get('/source-control/connect/github-app')->headers->get('Location');
-    expect($location)->toStartWith('https://github.com/apps/kiln-test/installations/new?state=');
-
-    Http::fake(['api.github.com/app/installations/555' => Http::response(['id' => 555, 'account' => ['login' => 'acme'], 'target_type' => 'Organization'])]);
-
-    $this->get('/source-control/github-app/setup?installation_id=555&setup_action=install&state='.oauth_state($location))->assertRedirect('/settings/source-control')->assertSessionHasNoErrors();
-
-    $connection = Connection::query()->sole();
-    expect($connection->auth_type)->toBe('app')
-        ->and($connection->account)->toBe('acme')
-        ->and($connection->name)->toBe('GitHub App (acme)')
-        ->and($connection->credential('installation_id'))->toBe('555');
-
-    Http::assertSent(fn (Request $r) => str_starts_with($r->header('Authorization')[0], 'Bearer ey'));
-});
-
-it('requires state for GitHub App setup callbacks', function () {
-    config(['source_control.github.app' => ['id' => '7', 'slug' => 'kiln-test', 'private_key' => 'x']]);
-
-    $this->get('/source-control/github-app/setup?installation_id=555')->assertForbidden();
 });
