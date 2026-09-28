@@ -21,7 +21,8 @@ jobs:
       - name: shellcheck
         run: shellcheck deploy/install.sh deploy/kiln-ctl deploy/tools/*.sh deploy/tests/*.sh deploy/control-plane/*.sh deploy/edge/entrypoint.sh deploy/builder/entrypoint.sh
       - name: kiln-ctl tests
-        run: for t in deploy/tests/*.sh; do bash "$t"; done
+        # As root, like kiln-ctl on a server: drift detection reads containers' mount namespaces via /proc.
+        run: for t in deploy/tests/*.sh; do sudo -E bash "$t"; done
       - name: compose config
         run: |
           deploy/tools/test-env.sh > /tmp/kiln.env
