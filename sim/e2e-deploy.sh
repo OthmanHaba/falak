@@ -425,8 +425,9 @@ deploy_template() { # deploy_template SLUG NAME INPUTS_JSON PROBE_PATH GREP_PATT
     status=""
     [[ -n $deployment ]] && status=$(wait_deployment "$deployment")
     if [[ $status != succeeded ]]; then
-        # The first deployment can start before the site's targets finished preparing; deploy again once ready.
-        [[ -n $status ]] && ok "$slug: first deployment ended '$status' ($(jq -r '.data.error // ""' <<<"$API_BODY" | head -c 120)); redeploying"
+        # The first deployment is triggered while the site's targets are still preparing: it must wait for them
+        # (status `waiting`) rather than fail. Redeploy anyway so the remaining checks still run.
+        [[ -n $status ]] && bad "$slug: first deployment ended '$status' ($(jq -r '.data.error // ""' <<<"$API_BODY" | head -c 120)); redeploying"
         wait_targets_ready "$site" || return 1
         api POST "/sites/$site/deployments" '{}'
         [[ $API_CODE == 201 ]] || { bad "$slug: POST deployments -> $API_CODE: $API_BODY"; return 1; }
