@@ -28,6 +28,7 @@ type Site struct {
 	Upstreams       []Upstream        `json:"upstreams,omitempty"`
 	LBPolicy        string            `json:"lb_policy,omitempty"`
 	HealthURI       string            `json:"health_uri,omitempty"`
+	TryDurationS    int               `json:"try_duration_s,omitempty"`
 	RedirectTo      string            `json:"redirect_to,omitempty"`
 	Headers         map[string]string `json:"headers,omitempty"`
 	BasicAuth       []BasicAuth       `json:"basic_auth,omitempty"`
@@ -268,6 +269,9 @@ func siteRoutes(s Site) ([]any, error) {
 		if len(s.Upstreams) == 0 {
 			return nil, fmt.Errorf("upstreams required for reverse_proxy")
 		}
+		if s.Root != "" {
+			sub = append(sub, staticPassthrough(s.Root)...)
+		}
 		sub = append(sub, obj{"handle": []any{reverseProxy(s)}})
 	case "redirect":
 		if s.RedirectTo == "" {
@@ -309,6 +313,23 @@ func phpRoutes(s Site) []any {
 	}
 }
 
+// staticPassthrough serves files that exist under root directly (Laravel Octane: public/ assets never reach the
+// app server); PHP sources, dotfiles and directories are never served and fall through to the proxy. The file
+// matcher stats per request, so a `current` symlink swap is picked up without a reload.
+func staticPassthrough(root string) []any {
+	return []any{
+		obj{"handle": []any{obj{"handler": "vars", "root": root}}},
+		obj{
+			"match": []any{obj{
+				"file": obj{"try_files": []any{"{http.request.uri.path}"}, "root": root},
+				"not":  []any{obj{"path": []any{"*.php", "*/", "/.*", "*/.*"}}},
+			}},
+			"handle":   []any{obj{"handler": "file_server", "hide": []any{".env", ".git"}}},
+			"terminal": true,
+		},
+	}
+}
+
 func reverseProxy(s Site) obj {
 	var ups []any
 	for _, u := range s.Upstreams {
@@ -319,7 +340,11 @@ func reverseProxy(s Site) obj {
 	if policy == "" {
 		policy = "round_robin"
 	}
-	h["load_balancing"] = obj{"selection_policy": obj{"policy": policy}, "try_duration": "5s"}
+	tryFor := 5
+	if s.TryDurationS > 0 {
+		tryFor = s.TryDurationS
+	}
+	h["load_balancing"] = obj{"selection_policy": obj{"policy": policy}, "try_duration": fmt.Sprintf("%ds", tryFor)}
 	if s.HealthURI != "" {
 		h["health_checks"] = obj{"active": obj{"uri": s.HealthURI, "interval": "10s", "timeout": "5s"}}
 	}

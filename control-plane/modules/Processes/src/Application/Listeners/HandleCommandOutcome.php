@@ -6,10 +6,12 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Str;
 use Kiln\Fleet\Events\CommandFailed;
 use Kiln\Fleet\Events\CommandFinished;
+use Kiln\Processes\Application\OctaneRoutes;
 use Kiln\Processes\Application\StatusPoller;
 use Kiln\Processes\Domain\Enums\ApplyStatus;
 use Kiln\Processes\Domain\Models\ServerState;
 use Kiln\Processes\Events\SchedulesApplied;
+use Kiln\Processes\Infrastructure\AgentProcessControl;
 use Kiln\Processes\Infrastructure\StateScheduleDirectory;
 
 /**
@@ -18,7 +20,11 @@ use Kiln\Processes\Infrastructure\StateScheduleDirectory;
  */
 final class HandleCommandOutcome implements ShouldQueue
 {
-    public function __construct(private readonly StatusPoller $status) {}
+    public function __construct(
+        private readonly StatusPoller $status,
+        private readonly OctaneRoutes $octane,
+        private readonly AgentProcessControl $processes,
+    ) {}
 
     public function handleFinished(CommandFinished $event): void
     {
@@ -26,18 +32,34 @@ final class HandleCommandOutcome implements ShouldQueue
             'proc.apply' => $this->applied($event, 'proc'),
             'cron.apply' => $this->applied($event, 'cron'),
             'proc.status' => StatusPoller::isStatusCommand($event->idempotencyKey) ? $this->status->record($event->serverId, $event->result) : null,
+            // A restarted Octane that was never verified (e.g. the first deploy replaced the placeholder) is probed now.
+            'proc.restart' => $this->restarted($event->idempotencyKey, $event->serverId),
+            'system.exec' => OctaneRoutes::isProbe($event->idempotencyKey) ? $this->octane->settleProbe($event->commandId, true, null) : null,
             default => null,
         };
     }
 
     public function handleFailed(CommandFailed $event): void
     {
+        $reason = $event->error ?: "Command {$event->status}".($event->exitCode !== null ? " (exit code {$event->exitCode})" : '');
+
+        if ($event->type === 'system.exec' && OctaneRoutes::isProbe($event->idempotencyKey)) {
+            $this->octane->settleProbe($event->commandId, false, $reason);
+
+            return;
+        }
+
+        if ($event->type === 'system.exec' && str_starts_with($event->idempotencyKey, AgentProcessControl::RELOAD_PREFIX)) {
+            $this->processes->reloadFailed($event->idempotencyKey);
+
+            return;
+        }
+
         if (! in_array($event->type, ['proc.apply', 'cron.apply'], true)) {
             return;
         }
 
         $prefix = $event->type === 'proc.apply' ? 'proc' : 'cron';
-        $reason = $event->error ?: "Command {$event->status}".($event->exitCode !== null ? " (exit code {$event->exitCode})" : '');
 
         ServerState::query()
             ->where('server_id', $event->serverId)
@@ -63,6 +85,9 @@ final class HandleCommandOutcome implements ShouldQueue
                 'crash_looping' => array_values(array_intersect($state->crash_looping ?? [], array_keys($state->programs ?? []))) ?: null,
             ])->save();
 
+            // Octane programs that were (re)configured: the edge switches to them once they answer.
+            $this->octane->probeServer($state->server_id);
+
             return;
         }
 
@@ -74,5 +99,18 @@ final class HandleCommandOutcome implements ShouldQueue
         ])->save();
 
         SchedulesApplied::dispatch($state->server_id, $state->organization_id, StateScheduleDirectory::jobsOf($state));
+    }
+
+    private function restarted(string $idempotencyKey, string $serverId): void
+    {
+        if (! str_starts_with($idempotencyKey, 'processes.restart:')) {
+            return;
+        }
+
+        $siteId = explode(':', $idempotencyKey)[1] ?? '';
+
+        if ($siteId !== '') {
+            $this->octane->probeServer($serverId, $siteId);
+        }
     }
 }

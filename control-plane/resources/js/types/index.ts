@@ -122,6 +122,8 @@ export interface CanvasService {
     url: string | null;
     subtitle: string | null;
     servers: { id: string; name: string; leader: boolean; online: boolean }[];
+    /** Runtime traits shown on the card and panel header (e.g. "Octane"). Optional for older payloads / fixtures. */
+    badges?: string[];
     last_deployment: { id: string; status: string; commit: string | null; message: string | null; finished_at: string | null } | null;
 }
 

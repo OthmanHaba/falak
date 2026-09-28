@@ -16,6 +16,7 @@ use Kiln\Sites\Application\Actions\UpdateSharedPaths;
 use Kiln\Sites\Application\Actions\UpdateSite;
 use Kiln\Sites\Contracts\BuildMode;
 use Kiln\Sites\Contracts\Data\LaravelSettings;
+use Kiln\Sites\Contracts\OctaneServer;
 use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Models\SiteTarget;
@@ -81,6 +82,7 @@ final class SiteSettingsController extends Controller
                 'root_path' => $site->rootPath(),
                 'document_root' => $site->toData()->documentRoot(),
                 'laravel' => $site->laravel->toArray(),
+                'octane_servers' => array_map(fn (OctaneServer $server) => ['value' => $server->value, 'label' => $server->label()], OctaneServer::for($site->runtime)),
                 'shared_paths' => array_map(fn ($path) => $path->toArray(), $site->shared_paths),
                 'created_at' => $site->created_at->toIso8601String(),
             ],
@@ -170,6 +172,7 @@ final class SiteSettingsController extends Controller
             'horizon' => ['required', 'boolean'],
             'octane' => ['required', 'boolean'],
             'maintenance' => ['required', 'boolean'],
+            'octane_server' => ['nullable', Rule::enum(OctaneServer::class)],
         ]);
 
         $update($site, LaravelSettings::fromArray($data), $request->user()?->getAuthIdentifier());

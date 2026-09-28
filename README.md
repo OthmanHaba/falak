@@ -40,8 +40,10 @@ API, and the install command each server prints:
 4. deploys it: one native build → fetch + prepare on both → migrations on the leader only → activation →
    health checks; then a second commit (zero-downtime), a rollback, and a broken release that must be
    **rolled back automatically**;
-5. deploys a Bun + Hono **TypeScript** site (runtime installed on demand, supervised web process);
-6. checks observability: APM traces in Tempo, the demo exception grouped into an Insights issue,
+5. serves a Laravel site through **Octane** (FrankenPHP worker mode behind the edge): the placeholder stays up until
+   the first deploy, a redeploy and switching Octane off happen with zero failed requests;
+6. deploys a Bun + Hono **TypeScript** site (runtime installed on demand, supervised web process);
+7. checks observability: APM traces in Tempo, the demo exception grouped into an Insights issue,
    deployment lifecycle events in Loki.
 
 Useful while it runs:
@@ -103,6 +105,9 @@ UI: **Sites → Create** — pick server(s) (first = leader for migrations), fra
 (Laravel, Symfony, Statamic, WordPress, PHP, Next, Nuxt, Node, static, Docker), runtime
 (FrankenPHP default, php-fpm, Node, Bun, Deno, static, Docker), repository and branch.
 Then **Deploy**, or enable push-to-deploy, or call the deploy hook URL from CI.
+Laravel sites can switch on **Octane** under Settings → Laravel (FrankenPHP worker mode on FrankenPHP servers, Swoole or
+RoadRunner on PHP-FPM): Kiln picks a free port per server, and Caddy serves `public/` files itself and proxies the rest
+to Octane once it answers; deploys restart Octane while Caddy holds requests.
 
 ### CLI (`agent/bin/kiln-<os>-<arch>`)
 ```bash

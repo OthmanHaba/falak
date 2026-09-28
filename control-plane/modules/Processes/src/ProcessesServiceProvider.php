@@ -6,6 +6,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Event;
 use Kiln\Alerting\Contracts\AlertTypes;
 use Kiln\Alerting\Contracts\Severity;
+use Kiln\Edge\Events\EdgeApplied;
 use Kiln\Fleet\Events\CommandFailed;
 use Kiln\Fleet\Events\CommandFinished;
 use Kiln\Identity\Contracts\PermissionRegistry;
@@ -17,11 +18,14 @@ use Kiln\Processes\Application\Listeners\ConvergeOnSiteChanges;
 use Kiln\Processes\Application\Listeners\DeleteOrganizationProcesses;
 use Kiln\Processes\Application\Listeners\ForgetDeletedServer;
 use Kiln\Processes\Application\Listeners\HandleCommandOutcome;
+use Kiln\Processes\Application\Listeners\StopDrainedOctane;
+use Kiln\Processes\Contracts\OctaneRouting;
 use Kiln\Processes\Contracts\ProcessControl;
 use Kiln\Processes\Contracts\ScheduleDirectory;
 use Kiln\Processes\Events\ProgramCrashLooping;
 use Kiln\Processes\Events\ProgramRecovered;
 use Kiln\Processes\Infrastructure\AgentProcessControl;
+use Kiln\Processes\Infrastructure\EloquentOctaneRouting;
 use Kiln\Processes\Infrastructure\StateScheduleDirectory;
 use Kiln\Servers\Events\ServerDeleted;
 use Kiln\Sites\Events\SiteCreated;
@@ -39,6 +43,7 @@ class ProcessesServiceProvider extends ModuleServiceProvider
      */
     public array $singletons = [
         ScheduleDirectory::class => StateScheduleDirectory::class,
+        OctaneRouting::class => EloquentOctaneRouting::class,
     ];
 
     public function register(): void
@@ -67,6 +72,7 @@ class ProcessesServiceProvider extends ModuleServiceProvider
         Event::listen(CommandFinished::class, [HandleCommandOutcome::class, 'handleFinished']);
         Event::listen(CommandFailed::class, [HandleCommandOutcome::class, 'handleFailed']);
         Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
+        Event::listen(EdgeApplied::class, StopDrainedOctane::class);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationProcesses::class);
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {

@@ -36,7 +36,7 @@ function processes_worker(string $organizationId, string $siteId, array $attribu
 it('compiles schema-valid proc.apply and cron.apply for mixed sites on one server', function () {
     $shop = processes_site($this->organization->id, [$this->web1, $this->web2], [
         'slug' => 'shop',
-        'laravel' => ['scheduler' => true, 'horizon' => true, 'octane' => true],
+        'laravel' => ['scheduler' => true, 'horizon' => true, 'octane' => true, 'octane_server' => 'frankenphp', 'octane_port' => 8042],
     ]);
     $blog = processes_site($this->organization->id, [$this->web2, $this->web1], ['slug' => 'blog', 'runtime' => SiteRuntime::PhpFpm, 'framework' => Framework::Symfony, 'php_version' => '8.3']);
     $api = processes_site($this->organization->id, [$this->web1], ['slug' => 'api', 'runtime' => SiteRuntime::Bun, 'framework' => Framework::Node, 'php_version' => null, 'app_port' => 3001]);
@@ -72,7 +72,7 @@ it('compiles schema-valid proc.apply and cron.apply for mixed sites on one serve
         ->and($programs['shop.horizon']['user'])->toBe('shop')
         ->and($programs['shop.horizon']['cwd'])->toBe('/srv/kiln/sites/shop/current')
         ->and($programs['shop.horizon']['site'])->toBe('shop')
-        ->and($programs['shop.octane']['command'])->toContain('octane:start', '--server=frankenphp', '--host=127.0.0.1')
+        ->and($programs['shop.octane']['command'])->toContain('octane:start', '--server=frankenphp', '--host=127.0.0.1', '--port=8042', '--admin-port=18042')
         ->and($programs[$workerName]['command'])->toBe(['php8.4', 'artisan', 'queue:work', 'redis', '--queue=high,default', '--sleep=3', '--tries=5', '--timeout=90', '--memory=256', '--max-jobs=500', '--max-time=3600'])
         ->and($programs[$workerName]['numprocs'])->toBe(3)
         ->and($programs[$workerName]['stop_timeout_s'])->toBe(105)
@@ -113,12 +113,17 @@ it('turns the stored Sites Laravel toggles into programs and schedules', functio
         ->and($this->agents->last('cron.apply')['payload'])->toBe(['jobs' => []]);
 });
 
-it('uses swoole for Octane on php-fpm sites and the site app port when set', function () {
-    processes_site($this->organization->id, [$this->web1], ['runtime' => SiteRuntime::PhpFpm, 'app_port' => 8123, 'laravel' => ['octane' => true]]);
+it('runs the persisted Octane server and port (swoole / roadrunner with its RPC port)', function () {
+    $site = processes_site($this->organization->id, [$this->web1], ['runtime' => SiteRuntime::PhpFpm, 'laravel' => ['octane' => true, 'octane_server' => 'swoole', 'octane_port' => 8123]]);
 
     $this->converger->converge($this->web1->id);
 
     expect(processes_programs($this->agents->last('proc.apply'))['shop.octane']['command'])->toBe(['php8.4', 'artisan', 'octane:start', '--server=swoole', '--host=127.0.0.1', '--port=8123']);
+
+    $site->forceFill(['laravel' => ['octane' => true, 'octane_server' => 'roadrunner', 'octane_port' => 8124]])->save();
+    $this->converger->converge($this->web1->id);
+
+    expect(processes_programs($this->agents->last('proc.apply'))['shop.octane']['command'])->toBe(['php8.4', 'artisan', 'octane:start', '--server=roadrunner', '--host=127.0.0.1', '--port=8124', '--rpc-port=18124']);
 });
 
 it('debounces convergence into one unique job per server', function () {

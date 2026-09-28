@@ -78,6 +78,7 @@ final class EloquentEdgeRoutes implements EdgeRoutes
 
         $state->forceFill([
             'payload_sha256' => $sha,
+            'octane_sites' => RouteCompiler::octaneSites($payload),
             'command_id' => $handle->id,
             'status' => ApplyStatus::Pending,
             'error' => null,
@@ -122,5 +123,19 @@ final class EloquentEdgeRoutes implements EdgeRoutes
             ->map(fn (Domain $domain): DomainData => $domain->toData())
             ->values()
             ->all();
+    }
+
+    public function proxiesToOctane(string $siteId, string $serverId): bool
+    {
+        $state = ServerState::query()->find($serverId);
+
+        if ($state === null) {
+            return false;
+        }
+
+        $siteId = strtolower($siteId);
+
+        return in_array($siteId, $state->applied_octane_sites ?? [], true)
+            || ($state->status === ApplyStatus::Pending && in_array($siteId, $state->octane_sites ?? [], true));
     }
 }

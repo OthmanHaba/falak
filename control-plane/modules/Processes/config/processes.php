@@ -9,9 +9,11 @@ return [
     // Horizon finishes running jobs before it exits; SIGKILL after this.
     'horizon_stop_timeout' => 120,
 
-    // Octane listens on the site's app_port, else on base + (crc32(site id) % span) on 127.0.0.1.
-    'octane_port_base' => 8000,
-    'octane_port_span' => 1000,
+    // Octane listens on 127.0.0.1:<port> (allocated by Sites, see sites.octane_port_base). The edge proxies to it only
+    // after a probe got an HTTP answer within this many seconds of a (re)start.
+    'octane_probe_seconds' => 60,
+    // Octane switched off: the program stops once the edge stopped proxying to it, or after this grace period.
+    'octane_drain_timeout_seconds' => 600,
 
     // Laravel scheduler job (`schedule:run` every minute on the leader).
     'scheduler_timeout' => 3600,

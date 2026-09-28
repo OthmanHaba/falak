@@ -20,9 +20,15 @@ interface ProcessControl
      * starts it again), everything else with `proc.restart`.
      * Servers without a connected agent are skipped. Emits {@see ProcessesRestarted}.
      *
+     * Octane: after a deploy ($newRelease) the program is restarted (its definition carries the new release, so the
+     * proc.apply does it) — `octane:reload` would re-boot the workers from the release directory the server was
+     * started in (Octane resolves `current` once, at start), i.e. keep serving the old code. The edge holds requests
+     * while it restarts (reverse_proxy retries for 30s), so no request fails. Without a new release (restart from the UI) a verified-listening Octane gets
+     * `octane:reload` (graceful worker reload, the port never closes), falling back to `proc.restart`.
+     *
      * @return list<CommandHandle> the dispatched commands (empty when the site has no programs to restart)
      */
-    public function restartForSite(string $siteId, ?string $serverId = null): array;
+    public function restartForSite(string $siteId, ?string $serverId = null, bool $newRelease = true): array;
 
     /**
      * Queue a (debounced) convergence of proc.apply / cron.apply for the servers.

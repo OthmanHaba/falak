@@ -6,7 +6,7 @@ import { ServiceIcon } from './service-icon';
 import { StatusDot } from './status';
 
 export interface ServiceCardProps extends HTMLAttributes<HTMLDivElement> {
-    service: Pick<CanvasService, 'kind' | 'name' | 'icon' | 'status' | 'status_label' | 'url' | 'subtitle' | 'servers'>;
+    service: Pick<CanvasService, 'kind' | 'name' | 'icon' | 'status' | 'status_label' | 'url' | 'subtitle' | 'servers' | 'badges'>;
     selected?: boolean;
 }
 
@@ -16,7 +16,7 @@ function host(url: string): string {
 }
 
 /**
- * The canvas card of a service (§4, 240×~96): kind icon, name, one-line live status, domain (sites) or
+ * The canvas card of a service (§4, 240×~96): kind icon, name (+ runtime badges like "Octane"), one-line live status, domain (sites) or
  * engine + server (databases), server chips with the leader starred. Selected = strong border + accent glow.
  */
 export function ServiceCard({ service, selected = false, className, ...props }: ServiceCardProps) {
@@ -40,7 +40,17 @@ export function ServiceCard({ service, selected = false, className, ...props }: 
                     <ServiceIcon name={service.icon || service.kind} size={15} />
                 </span>
                 <div className="grid min-w-0 flex-1">
-                    <span className="text-fg truncate text-sm font-medium">{service.name}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="text-fg truncate text-sm font-medium">{service.name}</span>
+                        {service.badges?.map((badge) => (
+                            <span
+                                key={badge}
+                                className="border-border bg-surface-2 text-fg-muted text-2xs inline-flex h-4 shrink-0 items-center rounded-sm border px-1 font-medium"
+                            >
+                                {badge}
+                            </span>
+                        ))}
+                    </span>
                     <span className="text-fg-muted flex min-w-0 items-center gap-1.5 text-xs">
                         <StatusDot status={service.status} size="sm" />
                         <span className="truncate">{service.status_label}</span>

@@ -5,6 +5,7 @@ namespace Kiln\Sites\Application\Actions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Kiln\Identity\Contracts\AuditLog;
+use Kiln\Sites\Application\OctanePorts;
 use Kiln\Sites\Application\SiteRules;
 use Kiln\Sites\Application\TargetProvisioner;
 use Kiln\Sites\Contracts\SiteRuntime;
@@ -23,6 +24,7 @@ final class SetSiteTargets
         private readonly SiteRules $rules,
         private readonly TargetProvisioner $provisioner,
         private readonly AuditLog $audit,
+        private readonly OctanePorts $octanePorts,
     ) {}
 
     /**
@@ -87,6 +89,11 @@ final class SetSiteTargets
         }
 
         $site->load('targets');
+
+        // The Octane port must stay free on the new servers too: move it when one of them already uses it.
+        if ($added !== []) {
+            $this->octanePorts->reassign($site);
+        }
 
         $this->audit->record('site.targets_updated', 'site', $site->id, ['added' => $added, 'removed' => $removed, 'leader' => $leaderServerId], $site->organization_id);
         SiteTargetsChanged::dispatch($site->id, $site->organization_id, $added, $removed, $site->serverIds(), $leaderServerId);

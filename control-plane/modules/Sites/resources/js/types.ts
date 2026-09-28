@@ -23,11 +23,17 @@ export interface SharedPathItem {
     type: 'directory' | 'file';
 }
 
+export type OctaneServer = 'frankenphp' | 'swoole' | 'roadrunner';
+
 export interface LaravelToggles {
     scheduler: boolean;
     horizon: boolean;
     octane: boolean;
     maintenance: boolean;
+    /** Set by the control plane when Octane is first enabled (defaults per runtime). */
+    octane_server: OctaneServer | null;
+    /** 127.0.0.1 port Octane listens on; allocated and persisted by the control plane (read only). */
+    octane_port: number | null;
 }
 
 export interface FrameworkOption extends Option {

@@ -58,6 +58,7 @@ final class HandleEdgeCommandOutcome implements ShouldQueue
             'status' => ApplyStatus::Applied,
             'config_sha256' => is_string($result['config_sha256'] ?? null) ? $result['config_sha256'] : null,
             'routes' => is_int($result['routes'] ?? null) ? $result['routes'] : null,
+            'applied_octane_sites' => $state->octane_sites ?? [],
             'error' => null,
             'applied_at' => now(),
         ])->save();

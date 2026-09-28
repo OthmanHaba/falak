@@ -59,4 +59,9 @@ final class FakeEdgeRoutes implements EdgeRoutes
     {
         return $this->testDomainTlsMode;
     }
+
+    public function proxiesToOctane(string $siteId, string $serverId): bool
+    {
+        return false;
+    }
 }

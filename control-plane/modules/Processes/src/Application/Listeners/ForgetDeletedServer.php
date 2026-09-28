@@ -3,6 +3,7 @@
 namespace Kiln\Processes\Application\Listeners;
 
 use Kiln\Processes\Domain\Models\Daemon;
+use Kiln\Processes\Domain\Models\OctaneRoute;
 use Kiln\Processes\Domain\Models\ServerState;
 use Kiln\Processes\Domain\Models\Worker;
 use Kiln\Servers\Events\ServerDeleted;
@@ -12,6 +13,7 @@ final class ForgetDeletedServer
     public function handle(ServerDeleted $event): void
     {
         ServerState::query()->where('server_id', $event->serverId)->delete();
+        OctaneRoute::query()->where('server_id', $event->serverId)->delete();
 
         // Drop the server from explicit per-server restrictions.
         foreach ([Worker::class, Daemon::class] as $model) {

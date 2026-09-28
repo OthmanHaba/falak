@@ -5,6 +5,7 @@ namespace Kiln\Sites\Http\Controllers\Api;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use Kiln\Identity\Contracts\AuditLog;
@@ -14,6 +15,9 @@ use Kiln\Kernel\Http\Controller;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Application\Actions\CreateSite;
 use Kiln\Sites\Application\Actions\SaveEnvironment;
+use Kiln\Sites\Application\Actions\UpdateLaravelSettings;
+use Kiln\Sites\Contracts\Data\LaravelSettings;
+use Kiln\Sites\Contracts\OctaneServer;
 use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Contracts\SiteResourceExtension;
 use Kiln\Sites\Domain\Dotenv;
@@ -110,6 +114,26 @@ final class SiteApiController extends Controller
             'changed' => $version !== null,
             'keys' => array_keys($variables),
         ]]);
+    }
+
+    /**
+     * PUT /api/v1/sites/{site}/laravel {scheduler, horizon, octane, maintenance, octane_server?} → the site's Laravel
+     * settings (Octane server + allocated port included).
+     */
+    public function updateLaravel(Request $request, string $site, UpdateLaravelSettings $update): JsonResponse
+    {
+        $model = $this->resolve($request, $site, 'sites.manage');
+        $data = $request->validate([
+            'scheduler' => ['sometimes', 'boolean'],
+            'horizon' => ['sometimes', 'boolean'],
+            'octane' => ['sometimes', 'boolean'],
+            'maintenance' => ['sometimes', 'boolean'],
+            'octane_server' => ['nullable', Rule::enum(OctaneServer::class)],
+        ]);
+
+        $update($model, LaravelSettings::fromArray([...$model->laravel->toArray(), ...$data]), (string) $request->user()?->getAuthIdentifier());
+
+        return response()->json(['data' => $model->refresh()->laravel->toArray()]);
     }
 
     private function resolve(Request $request, string $idOrSlug, string $permission): Site

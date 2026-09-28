@@ -11,6 +11,9 @@ return [
     // Debounce window: bursts of changes within this many seconds collapse into one apply per server.
     'apply_delay_seconds' => (int) env('KILN_EDGE_APPLY_DELAY', 2),
 
+    // Octane sites: how long the edge retries connecting to Octane (it restarts on every deploy) before a 502.
+    'octane_try_duration_seconds' => 30,
+
     'apply_timeout_seconds' => 120,
     'cert_install_timeout_seconds' => 60,
 ];

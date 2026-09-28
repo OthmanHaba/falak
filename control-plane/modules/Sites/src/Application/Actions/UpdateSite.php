@@ -8,6 +8,7 @@ use Kiln\Sites\Application\SiteRules;
 use Kiln\Sites\Application\SourceControlLinker;
 use Kiln\Sites\Application\TargetProvisioner;
 use Kiln\Sites\Contracts\BuildMode;
+use Kiln\Sites\Contracts\OctaneServer;
 use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Models\SiteTarget;
@@ -83,6 +84,14 @@ final class UpdateSite
         }
 
         $site->fill($attributes);
+
+        // Octane follows the runtime: FrankenPHP's Octane server needs the FrankenPHP runtime, and non-PHP runtimes have no Octane.
+        if ($site->laravel->octane && $site->isDirty('runtime')) {
+            $site->laravel = ! $runtime->isPhp()
+                ? $site->laravel->with(octane: false)
+                : $site->laravel->with(octaneServer: $site->laravel->octaneServer?->supports($runtime) ? $site->laravel->octaneServer : OctaneServer::defaultFor($runtime));
+        }
+
         $changed = array_keys($site->getDirty());
 
         if ($changed === []) {

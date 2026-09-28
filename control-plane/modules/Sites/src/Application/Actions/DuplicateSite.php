@@ -3,6 +3,7 @@
 namespace Kiln\Sites\Application\Actions;
 
 use Illuminate\Support\Str;
+use Kiln\Sites\Application\OctanePorts;
 use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\SitePlacement;
@@ -18,7 +19,10 @@ final class DuplicateSite
     /** Overrides callers may set; everything else is copied from the source. */
     public const OVERRIDES = ['name', 'name_suffix', 'branch', 'server_ids', 'leader_server_id', 'push_to_deploy'];
 
-    public function __construct(private readonly CreateSite $create) {}
+    public function __construct(
+        private readonly CreateSite $create,
+        private readonly OctanePorts $octanePorts,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $overrides  see {@see self::OVERRIDES}
@@ -71,6 +75,9 @@ final class DuplicateSite
                     'laravel' => $source->laravel,
                     'shared_paths' => $source->shared_paths,
                 ])->save();
+
+                // The copy may share servers with the source: it gets its own Octane port.
+                $this->octanePorts->reassign($copy->load('targets'));
 
                 $environment = $source->latestEnvironment;
 

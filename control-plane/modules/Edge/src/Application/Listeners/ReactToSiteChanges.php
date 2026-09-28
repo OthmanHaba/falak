@@ -15,6 +15,7 @@ use Kiln\Edge\Domain\Models\SecurityRule;
 use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Edge\Domain\Models\Upstream;
 use Kiln\Edge\Events\DomainRemoved;
+use Kiln\Processes\Events\OctaneRoutingChanged;
 use Kiln\Sites\Events\SiteCreated;
 use Kiln\Sites\Events\SiteDeleted;
 use Kiln\Sites\Events\SiteTargetsChanged;
@@ -39,6 +40,12 @@ final class ReactToSiteChanges implements ShouldQueue
     public function updated(SiteUpdated $event): void
     {
         $this->changes->siteChanged($event->siteId, $event->serverIds);
+    }
+
+    /** Octane became reachable (proxy to it) or is being switched off (serve directly again) on one server. */
+    public function octaneRoutingChanged(OctaneRoutingChanged $event): void
+    {
+        $this->routes->schedule($event->serverId);
     }
 
     public function targetsChanged(SiteTargetsChanged $event): void

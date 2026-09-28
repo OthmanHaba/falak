@@ -23,7 +23,9 @@ use Kiln\Identity\Application\Actions\CreateOrganization;
 use Kiln\Identity\Application\Actions\RegisterUser;
 use Kiln\Identity\Domain\Models\User;
 use Kiln\Processes\Domain\Enums\ApplyStatus;
+use Kiln\Processes\Domain\Enums\OctaneRouteStatus;
 use Kiln\Processes\Domain\Models\Daemon;
+use Kiln\Processes\Domain\Models\OctaneRoute;
 use Kiln\Processes\Domain\Models\Schedule;
 use Kiln\Processes\Domain\Models\ServerState;
 use Kiln\Processes\Domain\Models\Worker;
@@ -39,6 +41,7 @@ use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\LaravelSettings;
 use Kiln\Sites\Contracts\Framework;
+use Kiln\Sites\Contracts\OctaneServer;
 use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Contracts\TargetRole;
 use Kiln\Sites\Contracts\TargetStatus;
@@ -336,15 +339,23 @@ YAML;
     }
 
     /**
-     * Storefront runs Horizon, a queue worker, a Reverb daemon, the scheduler and two cron jobs on app-1/app-2
-     * (one worker instance crash-looping on app-2); Marketing's Next.js web process runs on app-2. Job names match
+     * Storefront runs Octane (FrankenPHP; proxied on app-1, still starting on app-2), Horizon, a queue worker, a Reverb
+     * daemon, the scheduler and two cron jobs on app-1/app-2 (one worker instance crash-looping on app-2); Marketing's Next.js web process runs on app-2. Job names match
      * the heartbeats ObservabilityDemoSeeder sends.
      *
      * @param  list<Server>  $servers
      */
     private function processes(string $organizationId, Site $storefront, Site $marketing, array $servers): void
     {
-        $storefront->forceFill(['laravel' => LaravelSettings::fromArray(['scheduler' => true, 'horizon' => true, 'octane' => false, 'maintenance' => false])])->save();
+        $storefront->forceFill(['laravel' => LaravelSettings::fromArray(['scheduler' => true, 'horizon' => true, 'octane' => true, 'maintenance' => false, 'octane_server' => 'frankenphp', 'octane_port' => 8412])])->save();
+
+        foreach ($servers as $index => $server) {
+            OctaneRoute::query()->create([
+                'organization_id' => $organizationId, 'site_id' => $storefront->id, 'server_id' => $server->id, 'octane_server' => OctaneServer::FrankenPhp, 'port' => 8412,
+                'status' => $index === 0 ? OctaneRouteStatus::Listening : OctaneRouteStatus::Starting,
+                'checked_at' => now()->subMinutes(2), 'listening_at' => $index === 0 ? now()->subHours(3) : null,
+            ]);
+        }
 
         $worker = Worker::query()->create([
             'organization_id' => $organizationId, 'site_id' => $storefront->id, 'connection' => 'redis', 'queue' => 'emails,default', 'processes' => 2,
@@ -363,6 +374,7 @@ YAML;
         ]));
 
         $programs = [
+            ProgramNames::octane('storefront') => ['site_id' => $storefront->id, 'kind' => 'octane', 'label' => 'Octane', 'numprocs' => 1],
             ProgramNames::horizon('storefront') => ['site_id' => $storefront->id, 'kind' => 'horizon', 'label' => 'Horizon', 'numprocs' => 1],
             ProgramNames::worker('storefront', $worker->id) => ['site_id' => $storefront->id, 'kind' => 'worker', 'label' => 'redis: emails,default', 'numprocs' => 2],
             ProgramNames::daemon('storefront', $daemon->id) => ['site_id' => $storefront->id, 'kind' => 'daemon', 'label' => 'Reverb', 'numprocs' => 1],

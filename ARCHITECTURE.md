@@ -41,10 +41,10 @@ Every module lives in `control-plane/modules/<Module>/` and is registered by its
 | 4 | **Servers** | Server lifecycle, types (app/web/db/cache/worker/lb/builder), provisioning plans, PHP versions, packages, SSH keys, php.ini | Providers, Fleet |
 | 5 | **SourceControl** | GitHub/GitLab/Bitbucket/custom git, OAuth, deploy keys, inbound push webhooks | Identity |
 | 6 | **Sites** | Sites, runtimes, domains/aliases, env vars (encrypted), shared paths, user isolation, commands | Servers, SourceControl |
-| 7 | **Edge** | Caddy/FrankenPHP routes, TLS (ACME + custom certs), redirects, basic-auth/security rules, load-balancer upstreams | Sites, Fleet |
+| 7 | **Edge** | Caddy/FrankenPHP routes, TLS (ACME + custom certs), redirects, basic-auth/security rules, load-balancer upstreams, Octane proxying | Sites, Fleet, Processes (Octane routing) |
 | 8 | **Builds** | Build pipeline (Railpack native, BuildKit Docker), artifacts, built-in registry, build cache | Sites, SourceControl, Fleet |
 | 9 | **Deployments** | Deploy plans, strategies, multi-server orchestration, releases, rollback, health checks, deploy hooks, deploy scripts & macros | Sites, Builds, Edge, Fleet |
-| 10 | **Processes** | Queue workers, Horizon, daemons, scheduler/cron, heartbeats (missed-run detection) | Sites, Servers, Fleet |
+| 10 | **Processes** | Queue workers, Horizon, Octane (+ its routing state), daemons, scheduler/cron, heartbeats (missed-run detection) | Sites, Servers, Fleet, Deployments (live releases), Edge (Octane drain) |
 | 11 | **Databases** | DB engines, databases, users, backups (S3/R2/B2/local), restore, storage providers | Servers, Fleet |
 | 12 | **Network** | Firewall rules (nftables via agent), private networks, load balancers | Servers, Fleet |
 | 13 | **Recipes** | Saved scripts, run on N servers, run history | Servers, Fleet |
@@ -150,6 +150,11 @@ Budgets: static binary ≤ 20 MB, RSS ≤ 30 MB idle, ≤ 1% CPU idle on 1 vCPU.
 
 ### Runtimes (per site)
 `frankenphp` (default for PHP) · `php-fpm` (+ Caddy) · `node` · `bun` · `deno` · `static` · `docker` (image or Dockerfile) · `compose`
+
+Laravel **Octane** (PHP runtimes): Processes supervises `octane:start` (FrankenPHP worker mode / Swoole / RoadRunner) on a
+per-server unique loopback port that Sites allocates; Edge switches the site to `reverse_proxy` (existing `public/` files
+still served by Caddy) only after Processes verified Octane answers (`Processes\Contracts\OctaneRouting`), and switches
+back before Octane is stopped. Deploys restart Octane (a reload would keep the old release) while Caddy holds requests.
 
 ### Build modes
 - `native` — Railpack detects stack → produces release tarball (vendor/ + node_modules/ + built assets).

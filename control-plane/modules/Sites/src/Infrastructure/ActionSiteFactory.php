@@ -7,6 +7,7 @@ use Illuminate\Validation\ValidationException;
 use Kiln\Sites\Application\Actions\CreateSite;
 use Kiln\Sites\Application\Actions\DeleteSite;
 use Kiln\Sites\Application\Actions\DuplicateSite;
+use Kiln\Sites\Application\OctanePorts;
 use Kiln\Sites\Contracts\Data\CreatedSite;
 use Kiln\Sites\Contracts\Data\SitePlacement;
 use Kiln\Sites\Contracts\SiteFactory;
@@ -35,7 +36,7 @@ final class ActionSiteFactory implements SiteFactory
         }
 
         $create = app(CreateSite::class);
-        $site = (new DuplicateSite($create))($source, $overrides, $placement, $userId);
+        $site = (new DuplicateSite($create, app(OctanePorts::class)))($source, $overrides, $placement, $userId);
 
         return new CreatedSite($site->toData(), array_values($create->warnings));
     }
