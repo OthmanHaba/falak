@@ -27,20 +27,28 @@ Releases are published from [github.com/OthmanHaba/kiln](https://github.com/Othm
 
 This host runs only Kiln. The servers Kiln manages are separate machines.
 
-**Memory budget** (limits are caps, not reservations; steady state measured in the sim):
+**Resource budget** (limits are caps, not reservations). Idle values were measured with three managed servers enrolled and a site deployed (sim) and on a 2-CPU host profile (bench):
 
-| Service | Limit | Typical |
-|---|---|---|
-| control-plane (web) | 512 MB | 120 MB |
-| horizon (4 workers, `KILN_HORIZON_MAX_PROCESSES`) | 512 MB | 150–250 MB |
-| reverb | 192 MB | 50 MB |
-| scheduler | 256 MB | 60 MB |
-| postgres (`shared_buffers=128MB`) | 512 MB | 50–150 MB |
-| valkey (`maxmemory 128mb`, AOF) | 192 MB | 15 MB |
-| edge | 128 MB | 35 MB |
-| builder | 1.5 GB | idle 10 MB, builds up to ~1 GB |
-| **core total** | **≈ 3.8 GB** | **≈ 0.8 GB idle** |
-| observability: gateway, loki, tempo, victoriametrics, grafana | 64 + 384 + 384 + 384 + 512 MB | ≈ 0.7 GB |
+| Service | Limit | Idle | Notes |
+|---|---|---|---|
+| control-plane (panel, FrankenPHP worker mode) | 512 MB | 130–150 MB | ~12 MB per booted worker (2 × CPUs), autoscales under load |
+| agent-api (agents, installer, builders) | 512 MB | 70–100 MB | +2–3 MB per waiting long-poll (one per server and builder) |
+| horizon (`KILN_HORIZON_MAX_PROCESSES`, default 4, auto-balanced from 1) | 512 MB | 130–150 MB | |
+| reverb | 192 MB | 50 MB | |
+| scheduler | 256 MB | 45 MB | a short `schedule:run` process every minute |
+| postgres (`shared_buffers=128MB`) | 512 MB | 40–150 MB | agents' long-polls hold no connection |
+| valkey (`maxmemory 128mb`, AOF) | 192 MB | 15 MB | |
+| edge | 128 MB | 25–35 MB | |
+| builder | 1.5 GB | 10–120 MB | builds use up to ~1 GB |
+| **core total** | **≈ 4.3 GB** | **≈ 0.6–0.8 GB** | idle CPU: a few % of one core |
+| observability: gateway, loki, tempo, victoriametrics, grafana | 64 + 384 + 384 + 384 + 512 MB | 20 + 75 + 75 + 65 + 320–360 MB (≈ 0.6 GB) | |
+
+The scheduler stays a separate container. Running `schedule:work` inside Horizon would save only its ~45 MB
+and would tie the two services' restarts and health together. Grafana 12+ downloads its Drilldown, Advisor
+and Pyroscope apps on first start. Kiln does not use them, and they add about 110 MB, which put a fresh
+Grafana at ~470 MB against its 512 MB limit. The stack therefore skips that step
+(`KILN_GRAFANA_PREINSTALL_DISABLED=false` in `.env` restores it). On a 2-vCPU / 4 GB host the core stack
+leaves more than 3 GB free. With `--observability`, plan for 8 GB so builds have room.
 
 ## 2. DNS
 
@@ -172,9 +180,9 @@ installed) after the change.
 ## 4. Operate: `kiln-ctl`
 
 ```bash
-kiln-ctl status                          # services, health, version, URLs, last backup
+kiln-ctl status                          # services, health, version, URLs, PHP thread usage, last backup
 kiln-ctl logs [service] [-f]             # e.g. kiln-ctl logs control-plane -f
-kiln-ctl doctor                          # DNS, certificates, ports, disk, containers, agent API (mTLS), backups
+kiln-ctl doctor                          # DNS, certificates, ports, disk, containers, agent API (mTLS), PHP threads, backups
 kiln-ctl admin reset-password you@example.com [--password=...]
 kiln-ctl admin create ops@example.com [--token=cli]
 kiln-ctl artisan <command>               # php artisan in the control-plane container
@@ -196,9 +204,60 @@ An update:
    `scheduler` wait until it is healthy;
 4. health-checks every container and `https://<domain>/up`.
 
+**Upgrading from 0.2.x with the thread hotfix.** If you added `FRANKENPHP_CONFIG=num_threads 24` to
+`/opt/kiln/custom.env`, the update keeps working: a thread count in `FRANKENPHP_CONFIG` still wins over the
+automatic sizing (the containers log a notice). It is no longer needed, because agents now long-poll their own
+`agent-api` service (see [Performance](#performance-php-threads-and-worker-mode)). Remove the line, then run
+`kiln-ctl up`. `kiln-ctl doctor` reports it until you do.
+
 If step 3 or 4 fails, `kiln-ctl` **rolls back automatically**. It restores the previous deploy files and
 `KILN_VERSION`, restores the database, storage and Fleet CA from the pre-update backup (the new migrations
 may already have run), and starts the previous version again.
+
+### Performance: PHP threads and worker mode
+
+The web tier is two FrankenPHP services built from the same image, each with its own PHP thread pool:
+
+| Service | Serves (edge routing, both hosts) | PHP mode | Threads |
+|---|---|---|---|
+| `control-plane` | the panel and the REST API: everything not listed below | **worker mode**: Laravel boots once per thread (Laravel Octane's FrankenPHP worker) | `KILN_PHP_WORKERS` workers (default 2 × CPUs), autoscaled up to `KILN_PHP_MAX_THREADS` (default max(8, 4 × CPUs)) |
+| `agent-api` | `/agent/*` (agents), `/install/*` (installer), `/api/internal/*` (builders, artifacts) | classic (one boot per request) | 32 started, autoscaled up to `KILN_AGENT_API_THREADS` (default 128) |
+
+The split matters because each agent and each builder holds a 30-second long-poll open all the time (it
+returns as soon as a command or build is queued). A waiting long-poll occupies one PHP thread. Up to
+v0.2.x, the panel and the agents shared FrankenPHP's default pool of 2 × CPUs threads. On a 2-vCPU host that
+is 4 threads, so three servers plus the builder took all of them, and every page queued for 5–11 s behind
+the long-polls. Now the panel's threads serve only people. A waiting long-poll costs about 2–3 MB and no
+CPU, and it does not hold a database connection (agents wait on Valkey).
+
+Sizing (in `/opt/kiln/.env`, then `kiln-ctl up`):
+
+- `KILN_AGENT_API_THREADS`: at least *managed servers + builders + 8*. The default of 128 covers about
+  120 servers within the 512 MB limit of `agent-api`. For bigger fleets, raise it together with that
+  limit (about 3 MB per thread).
+- `KILN_PHP_WORKERS` / `KILN_PHP_MAX_THREADS`: the defaults suit 2–8 CPUs. Each panel worker keeps a
+  booted app, about 12 MB.
+- `KILN_WORKER_MODE=0`: fallback to classic mode for the panel. It is about 2–4× slower per request but
+  keeps no state between requests. `KILN_PHP_THREADS` then sets the starting thread count.
+- Each container logs its pool at start, e.g. `kiln: web: PHP worker mode, 4 workers, num_threads 6
+  max_threads 8`. `kiln-ctl status` shows live usage (`PHP threads: panel 1/8 busy · agent-api 5/128
+  busy`), and `kiln-ctl doctor` flags a pool that is ≥ 80 % busy or saturated.
+
+Measured on the production image with 2 pinned CPUs, Postgres and Valkey. Panel TTFB is the median of 20
+requests. Before = v0.2.0 (one shared pool of 4 threads).
+
+| | before, idle | before, 4 long-polls | before, 10 long-polls | after, idle | after, 50 long-polls |
+|---|---|---|---|---|---|
+| `/up` | 5.4 ms | 7.6 s | timeout (> 15 s) | 1.8 ms | 2.7 ms |
+| `/login` | 11 ms | 11.1 s | timeout | 3.9 ms | 3.5 ms |
+| `/servers` | 32 ms | 11.1 s | timeout | 16.6 ms | 16.2 ms |
+| project canvas | 38 ms | 11.0 s | timeout | 23 ms | 23 ms |
+
+Throughput with 16 concurrent clients: `/login` 212 → 978 req/s and the canvas 66 → 119 req/s (classic
+→ worker). The image also ships `config:cache`, `route:cache`, `event:cache` and `view:cache` at start, an
+authoritative Composer classmap, and OPcache without timestamp checks and with a 4 MB realpath cache. The
+CLI (Horizon, Reverb, scheduler, healthchecks) gets an OPcache file cache, which cuts an artisan boot from
+86 to 40 ms with no extra RAM. JIT stays off: tracing JIT measured within noise (+2–7 %) for +15 MB.
 
 ## 6. Backup and restore
 
@@ -273,6 +332,8 @@ data. Managed servers keep running. Remove the agent there with `systemctl disab
 | Live updates in the UI don't refresh | Check that the `reverb` service is healthy. Browsers connect to `wss://<domain>/app/…` through the edge. |
 | `KILN_EDGE_SUBNET ... overlaps` | Pick another private /24 in `.env` and re-run the installer. The app trusts proxy headers only from that subnet. |
 | Builds stay queued | `kiln-ctl logs builder`. The builder polls `https://<domain>` with `KILN_BUILDER_TOKEN`. Docker-mode builds need a `builder` server: the bundled builder does native builds only (`KILN_LOCAL_BUILDER_MODES=native`, the default). |
+| Panel slow (seconds per page) | `kiln-ctl doctor`, section *PHP threads*. A saturated `agent-api` pool delays agents, not the panel. Raise `KILN_AGENT_API_THREADS` (or `KILN_PHP_MAX_THREADS` for the panel) in `.env`, then `kiln-ctl up`. See [Performance](#performance-php-threads-and-worker-mode). |
+| Something only breaks in worker mode | Set `KILN_WORKER_MODE=0` in `.env`, run `kiln-ctl up` and report it. The panel then boots Laravel for every request (classic mode). |
 | Low memory | Lower `KILN_HORIZON_MAX_PROCESSES` in `.env`, or move observability to its own host. |
 
 ## 10. Testing the installer locally (`--tls internal`)
