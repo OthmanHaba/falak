@@ -176,6 +176,7 @@ export const routes: BrowserRoute[] = [
     { path: '/projects/:canvas/service/site/:site/settings/deploy' },
     { path: '/projects/:canvas/service/site/:site/settings/networking' },
     { path: '/projects/:canvas/service/site/:site/settings/servers' },
+    { path: '/projects/:canvas/service/site/:site/settings/laravel' },
     { path: '/projects/:canvas/service/site/:site/settings/commands' },
 
     // compose — Services tab, Settings → Compose section, logs of one compose service, organization compose policy

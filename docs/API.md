@@ -103,6 +103,15 @@ Body `{"content": "<dotenv>"}` replaces all variables (deploy-script exposure of
 {"data": {"version": 4, "changed": true, "keys": ["APP_ENV", "APP_KEY"]}}
 ```
 
+### `PUT /api/v1/sites/{site}/laravel` — `sites.manage`
+Laravel toggles, each optional (unchanged when omitted): `scheduler`, `horizon`, `octane`, `maintenance`, and
+`octane_server` (`frankenphp` — FrankenPHP runtime only, the default there — `swoole` (default on PHP-FPM) or
+`roadrunner`). The Octane port is allocated by Kiln (unique on every server of the site, persisted) and returned; it
+cannot be set. `422` for a Laravel toggle on a non-Laravel site, an unavailable server, or no free port.
+```json
+{"data": {"scheduler": true, "horizon": false, "octane": true, "maintenance": false, "octane_server": "frankenphp", "octane_port": 8412}}
+```
+
 ### `GET /api/v1/sites/{site}/logs` — `telemetry.view`
 Query: `since` (seconds, default 3600, ≤ 30 days), `limit` (1–1000, default 100), `level`
 (`trace|debug|info|warn|error|fatal`), `cursor` (from the previous page). Newest first; `meta.cursor` is empty

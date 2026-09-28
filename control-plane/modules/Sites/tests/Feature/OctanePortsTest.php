@@ -130,3 +130,16 @@ it('gives a duplicated site sharing the servers its own Octane port', function (
     expect($copy->site->laravel->octane)->toBeTrue()
         ->and($copy->site->laravel->octanePort)->not->toBe($port);
 });
+
+it('switches Octane through the API', function () {
+    $site = octane_site($this, 'Shop', [$this->a->id]);
+    $token = $this->user->createToken('e2e')->plainTextToken;
+
+    $response = $this->withToken($token)->putJson("/api/v1/sites/{$site->id}/laravel", ['octane' => true])->assertOk();
+
+    expect($response->json('data'))->toMatchArray(['octane' => true, 'octane_server' => 'frankenphp', 'scheduler' => $site->laravel->scheduler])
+        ->and($response->json('data.octane_port'))->toBeInt();
+
+    $this->withToken($token)->putJson("/api/v1/sites/{$site->id}/laravel", ['octane_server' => 'bogus'])->assertUnprocessable();
+    $this->withToken($token)->putJson("/api/v1/sites/{$site->id}/laravel", ['octane' => false])->assertOk()->assertJsonPath('data.octane', false);
+});

@@ -17,6 +17,20 @@ Route::get('/', function () {
 
 Route::get('/health', fn () => response('ok'));
 
+// Octane E2E: in a long-lived Octane worker the static counter keeps growing across requests; under classic
+// FrankenPHP / PHP-FPM every request starts fresh (served is always 1).
+Route::get('/octane', function () {
+    static $served = 0;
+    $served++;
+
+    return response()->json([
+        'octane' => (bool) ($_SERVER['LARAVEL_OCTANE'] ?? $_ENV['LARAVEL_OCTANE'] ?? getenv('LARAVEL_OCTANE')),
+        'served' => $served,
+        'pid' => getmypid(),
+        'release' => config('app.release'),
+    ]);
+});
+
 Route::get('/work', function () {
     Cache::increment('visits.total');
     RecordVisit::dispatch(now()->toIso8601String());
