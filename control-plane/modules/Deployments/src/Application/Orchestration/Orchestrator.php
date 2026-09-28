@@ -25,6 +25,7 @@ use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Deployments\Domain\Models\DeploymentStep;
 use Kiln\Deployments\Domain\Models\DeploymentTarget;
 use Kiln\Deployments\Domain\Models\Release;
+use Kiln\Deployments\Domain\Models\ServerRelease;
 use Kiln\Deployments\Domain\Models\SiteSettings;
 use Kiln\Deployments\Domain\Models\StepCommand;
 use Kiln\Deployments\Events\DeploymentFailed;
@@ -812,6 +813,8 @@ final class Orchestrator
             return;
         }
 
+        $this->recordLiveRelease($deployment, $step, $target);
+
         if ($step->command_type === 'docker.compose.up') {
             $this->composeUpSettled($deployment, $step, $target, $result ?? []);
 
@@ -826,6 +829,24 @@ final class Orchestrator
             StepKind::HealthCheck => $this->markTargetDone($deployment, $step),
             default => null,
         };
+    }
+
+    /**
+     * The server now runs another release: remember it (Processes supervises the site's programs there with that
+     * release's ids and environment; the restart step that follows converges them).
+     */
+    private function recordLiveRelease(Deployment $deployment, DeploymentStep $step, DeploymentTarget $target): void
+    {
+        $releaseId = match ($step->kind) {
+            StepKind::Activate, StepKind::Switch, StepKind::Swap => $deployment->release_id,
+            StepKind::Revert => is_string($step->meta['release_id'] ?? null) ? $step->meta['release_id'] : null,
+            StepKind::RevertSwap => $deployment->previous_release_id,
+            default => null,
+        };
+
+        if ($releaseId !== null && $releaseId !== '') {
+            ServerRelease::record($deployment->site_id, $target->server_id, $releaseId, $deployment->id);
+        }
     }
 
     /**
@@ -932,6 +953,9 @@ final class Orchestrator
                 DeploymentRolledBack::dispatch($deployment->id, $deployment->organization_id, $deployment->site_id, $site->slug ?? $deployment->site_slug, $deployment->release_id, $serverIds, false);
             }
 
+            // Programs and schedules follow the live release (sites without a restart step, e.g. static, included).
+            $this->processes->converge(...$serverIds);
+
             $this->queue->startNext($deployment->site_id);
         });
     }
@@ -999,7 +1023,9 @@ final class Orchestrator
         $this->log->note($deployment->id, $cancelled ? 'Deployment cancelled.' : 'Deployment failed'.($rolledBack ? '; '.count($rolledBackServers).' server(s) rolled back.' : '.'), stream: $cancelled ? 'stdout' : 'stderr');
         $this->updated($deployment);
 
-        $this->afterCommit(function () use ($deployment, $cancelled, $rolledBack, $rolledBackServers, $failedPhase) {
+        $activatedServers = $deployment->targets()->where('activated', true)->pluck('server_id')->all();
+
+        $this->afterCommit(function () use ($deployment, $cancelled, $rolledBack, $rolledBackServers, $failedPhase, $activatedServers) {
             $this->annotate($deployment, $rolledBack ? 'rolled_back' : 'failed');
 
             if (! $cancelled) {
@@ -1009,6 +1035,10 @@ final class Orchestrator
 
             if ($rolledBack) {
                 DeploymentRolledBack::dispatch($deployment->id, $deployment->organization_id, $deployment->site_id, $deployment->site_slug, $deployment->previous_release_id, $rolledBackServers, true);
+            }
+
+            if ($activatedServers !== []) {
+                $this->processes->converge(...$activatedServers);
             }
 
             $this->queue->startNext($deployment->site_id);

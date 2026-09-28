@@ -202,11 +202,13 @@ it('restarts a site: horizon:terminate for Horizon, proc.restart for the rest', 
     $other = processes_site($this->organization->id, [$this->web1], ['slug' => 'other', 'laravel' => ['horizon' => true]]);
 
     $control = app(ProcessControl::class);
-    expect($control->restartForSite($site->id))->toBe([]);
 
-    foreach ([$this->web1, $this->web2] as $server) {
-        $this->converger->converge($server->id);
-        $this->agents->succeed($this->agents->last('proc.apply', $server->id)['handle'], ['changed' => true]);
+    // Nothing applied yet: restarting converges first, and that proc.apply starts the programs.
+    $applies = $control->restartForSite($site->id);
+    expect(array_map(fn ($h) => $h->type, $applies))->toBe(['proc.apply', 'proc.apply']);
+
+    foreach ($applies as $handle) {
+        $this->agents->succeed($handle, ['changed' => true]);
     }
 
     $handles = $control->restartForSite(strtoupper($site->id));

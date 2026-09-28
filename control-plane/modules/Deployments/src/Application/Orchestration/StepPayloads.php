@@ -335,6 +335,7 @@ final class StepPayloads
     private function prepare(Deployment $deployment, SiteData $site, string $serverId): array
     {
         $env = $this->releaseVariables($site);
+        $this->rememberEnvironment($deployment, $env);
 
         return [
             ...$this->base($deployment, $site),
@@ -344,6 +345,21 @@ final class StepPayloads
             'writable_dirs' => $site->framework->isLaravel() ? ['bootstrap/cache', 'storage'] : [],
             'context' => $this->context($deployment, $site),
         ];
+    }
+
+    /**
+     * Keep the variables the release's `.env` is written with (first prepare wins; all servers get the same file),
+     * so Processes can put the same environment into the release's program env — and a rollback restores it.
+     *
+     * @param  array<string, string>  $env
+     */
+    private function rememberEnvironment(Deployment $deployment, array $env): void
+    {
+        $release = $deployment->release_id !== null ? Release::query()->find($deployment->release_id) : null;
+
+        if ($release !== null && $release->environment === null) {
+            $release->forceFill(['environment' => $env])->save();
+        }
     }
 
     /**

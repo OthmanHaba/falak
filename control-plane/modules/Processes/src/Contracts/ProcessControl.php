@@ -13,11 +13,14 @@ use Kiln\Processes\Events\ProcessesRestarted;
 interface ProcessControl
 {
     /**
-     * Gracefully restart the site's programs on its ready servers (or only on $serverId): Horizon gets
-     * `horizon:terminate` (the supervisor starts it again), everything else `proc.restart`.
+     * Restart the site's programs on its ready servers (or only on $serverId) on their live release. The server is
+     * converged first: a proc.apply carrying changed definitions (after a deploy: the new KILN_RELEASE_ID and the
+     * release's environment) restarts those programs itself — and starts them on a site's first deploy. Running
+     * programs it leaves unchanged are restarted gracefully: Horizon with `horizon:terminate` (the supervisor
+     * starts it again), everything else with `proc.restart`.
      * Servers without a connected agent are skipped. Emits {@see ProcessesRestarted}.
      *
-     * @return list<CommandHandle> the dispatched commands (empty when the site has no running programs)
+     * @return list<CommandHandle> the dispatched commands (empty when the site has no programs to restart)
      */
     public function restartForSite(string $siteId, ?string $serverId = null): array;
 
