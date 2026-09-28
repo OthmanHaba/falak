@@ -65,10 +65,27 @@ final class BuildConfiguration
         return array_intersect_key($resolved, $public);
     }
 
+    /**
+     * Native build command overrides from the site's variables (as Railway's RAILPACK_*_CMD): KILN_INSTALL_COMMAND
+     * replaces the detected dependency install, KILN_BUILD_COMMAND the build step (both run with `sh -c`).
+     *
+     * @return array{install_command?: string, build_command?: string}
+     */
+    public function commands(SiteData $site): array
+    {
+        $variables = $this->sites->environment($site->id)->variables ?? [];
+
+        return array_filter([
+            'install_command' => trim((string) ($variables['KILN_INSTALL_COMMAND'] ?? '')),
+            'build_command' => trim((string) ($variables['KILN_BUILD_COMMAND'] ?? '')),
+        ], fn (string $command) => $command !== '');
+    }
+
     public function cacheKey(SiteData $site, string $mode, ?string $commit): string
     {
         $env = $this->environment($site);
         ksort($env);
+        $commands = $mode === 'native' ? $this->commands($site) : [];
 
         return hash('sha256', (string) json_encode([
             'v' => 1,
@@ -82,7 +99,7 @@ final class BuildConfiguration
             'dockerfile' => $site->dockerfile,
             'compose_file' => $site->compose?->file,
             'env' => hash('sha256', (string) json_encode($env)),
-        ]));
+        ] + ($commands === [] ? [] : ['commands' => $commands])));
     }
 
     /** Runtime hint for kiln-builder (php|node|bun|deno|static). */

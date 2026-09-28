@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Kiln\Builds\Application\Actions\CreateExternalBuilder;
 use Kiln\Builds\Application\Artifacts\ArtifactStorage;
+use Kiln\Builds\Application\BuildConfiguration;
 use Kiln\Builds\Application\BuildProgress;
 use Kiln\Builds\Application\JobPayload;
 use Kiln\Builds\Application\Jobs\ExpireBuilds;
@@ -121,6 +122,22 @@ it('passes variables exposed to the deploy script to the build as well (non-pref
     request_build($world);
 
     expect(next_job()->assertOk()->json('env'))->toBe(['VITE_APP_NAME' => 'Shop', 'SITE_URL' => 'https://shop.example.com']);
+});
+
+it('hands native jobs the build and install command overrides from KILN_BUILD_COMMAND / KILN_INSTALL_COMMAND', function () {
+    $world = builds_world();
+    $version = $world->site->environmentVersions()->first();
+    $plain = app(BuildConfiguration::class)->cacheKey(app(SiteDirectory::class)->find($world->site->id), 'native', str_repeat('a', 40));
+    $version->forceFill(['variables' => ['KILN_BUILD_COMMAND' => 'pnpm exec playwright install chromium && pnpm run build', 'KILN_INSTALL_COMMAND' => ' ']])->save();
+    request_build($world);
+
+    $native = next_job()->assertOk()->json('native');
+
+    expect($native['build_command'])->toBe('pnpm exec playwright install chromium && pnpm run build')
+        ->and($native)->not->toHaveKey('install_command')
+        ->and($native)->toHaveKey('upload')
+        // A different build command is a different artifact.
+        ->and(app(BuildConfiguration::class)->cacheKey(app(SiteDirectory::class)->find($world->site->id), 'native', str_repeat('a', 40)))->not->toBe($plain);
 });
 
 it('runs the build lifecycle from builder events and verifies the uploaded artifact', function () {

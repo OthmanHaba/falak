@@ -277,7 +277,9 @@ Docker jobs carry `"docker": {"image": "<registry>/<namespace>/<site-slug>:<buil
 Clone credentials come from SourceControl at hand-out time and are never stored. HTTPS clones use
 `token`/`username` instead of `deploy_key`. `env` holds site variables with public front-end prefixes
 (`builds.env_prefixes`) plus the variables exposed to the deploy script (the per-variable opt-in for other
-build-time settings, e.g. Astro's `SITE_URL`).
+build-time settings, e.g. Astro's `SITE_URL`). Native jobs carry `native.install_command` / `native.build_command`
+when the site defines the variables `KILN_INSTALL_COMMAND` / `KILN_BUILD_COMMAND` (run with `sh -c`, replacing the
+detected install / build step).
 
 ### `POST /api/internal/builds/{build}/events`
 NDJSON body, one `contracts/agent-protocol/event.schema.json` object per line with `command_id` = build id.
