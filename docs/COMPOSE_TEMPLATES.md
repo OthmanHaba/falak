@@ -29,7 +29,9 @@ Kiln renders the compose file the agent receives:
   in the release so rollback is exact) **[decision]**.
 - **Public services**: `public_services: [{service, port, domain?}]`. For each, Kiln publishes
   `127.0.0.1:<allocated host port>:<port>` on that service (removing any other host port mapping for it) and Edge
-  routes the domain (or test domain `<service>-<slug>.<KILN_TEST_DOMAIN>` / `<slug>` for the first) to it.
+  routes the domain (or test domain `<service>-<slug>.<KILN_TEST_DOMAIN>` / `<slug>` for the first) to it. On
+  creation `domain` may also be a choice `{type: generated|test|custom, name?}`; a generated one is
+  `<service>-<slug>.<leader-ip-with-dashes>.sslip.io` (docs/API.md → Domains and DNS).
 - Labels `kiln.site`, `kiln.release`, `kiln.service` on every service (logs/metrics attribution).
 - **Policy** (org setting "Allow privileged compose", off by default): reject `privileged: true`, `network_mode: host`,
   `pid: host`, `cap_add` beyond a safe list, host bind mounts outside the release dir, `devices`, and
@@ -112,7 +114,8 @@ NocoDB · Redis Stack · Grafana OSS · Appsmith.
 - **Create picker → Template**: gallery with search, categories, popular; card = icon, name, description,
   services count. Also `/templates` full page and ⌘K "Deploy template…".
 - **Template detail → Configure**: inputs form (generated secrets hidden behind "Show / Regenerate"), domains per
-  public service (test domain default), server picker (warning if `stateful` and >1), resources hint → **Deploy**:
+  public service (the domain picker: generated sslip.io name — the default without a test domain —, the test domain,
+  or your own with the DNS records to add and a live DNS check), server picker (warning if `stateful` and >1), resources hint → **Deploy**:
   creates the compose site at the chosen canvas position and opens its panel on the deploy stream.
 - **Settings → Templates** (org): custom templates list, import YAML (paste/upload/URL), edit, delete,
   "Save as template" action in a compose site's panel `⋯` menu.

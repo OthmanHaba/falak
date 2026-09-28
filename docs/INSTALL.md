@@ -177,6 +177,29 @@ an HTTPS mirror with the same path layout. Set these in `/opt/kiln/custom.env`, 
 Unset (the default) means the upstream URLs. The mirror applies to servers provisioned (or runtimes
 installed) after the change.
 
+### Domains for new services
+
+When a service is created (template, Git repository, Docker image) each public endpoint gets a domain:
+
+- **Generate** — `<name>.<server-ip-with-dashes>.sslip.io` (e.g. `minio-files.63-182-218-247.sslip.io`). Works at
+  once, with a Let's Encrypt certificate, no DNS setup. The default when no test domain is configured. It points at the
+  leader server (or the site's load balancer); a service on several servers without a load balancer is reached on the
+  leader only. sslip.io / nip.io names are shared by all their users (common certificate rate limits, no cookie
+  isolation): fine for trying things out, use your own domain for production.
+- **Test domain** — `<slug>.<KILN_TEST_DOMAIN>` when you run a wildcard test domain (the default then).
+- **Custom domain** — Kiln shows the record(s) to add (`A` → the server's IPv4, `AAAA` → its IPv6; one per server for
+  DNS round-robin, or the load balancer only) and checks DNS live until the name points at the server. Cloudflare
+  proxying ("orange cloud") is detected: keep the record "DNS only" until the certificate is issued.
+
+Organizations pick the generated-domain provider (sslip.io, nip.io, off) in **Settings → Domains**. Server-wide settings
+in `.env` (then `kiln-ctl up`):
+
+| Variable | Default | |
+|---|---|---|
+| `KILN_GENERATED_DOMAIN_SUFFIX` | `sslip.io` | `nip.io`, the domain of a self-hosted [sslip.io server](https://github.com/cunnie/sslip.io), or `off` |
+| `KILN_DNS_RESOLVER` | `doh` | how the DNS check resolves: `doh` (DNS-over-HTTPS, no local cache) or `system` (the host's resolver) |
+| `KILN_DNS_DOH_URL` | `https://cloudflare-dns.com/dns-query` | any DNS-over-HTTPS JSON endpoint (e.g. `https://dns.google/resolve`) |
+
 ## 4. Operate: `kiln-ctl`
 
 ```bash

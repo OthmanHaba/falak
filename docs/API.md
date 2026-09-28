@@ -102,10 +102,17 @@ Same body and validation as the web form (`name`, `framework`, `server_ids[]`, o
 Optional `project_id` / `environment_id` place the site (Projects); without them it lands in the organization's
 Default project, `production` environment. An environment of another organization/project is a `422`.
 
+Optional `domain` (not for compose sites) — a [domain choice](#domains-and-dns): `{"type": "generated"}` routes
+`<slug>.<leader-ip-with-dashes>.sslip.io`, `{"type": "custom", "name": "shop.example.com"}` (or just the name as a
+string) routes your domain, `{"type": "test"}` keeps only the test domain (`422` when none is configured). Both are added
+as the site's primary domain with automatic TLS, and `APP_URL` in the initial environment uses it. Without `domain` the
+site only gets its test domain (as before). A name used by another site is a `422`.
+
 Docker Compose sites (`runtime: compose`, `framework` optional — defaults to `docker`; docs/COMPOSE_TEMPLATES.md §5):
 `compose_source` `repo` (`compose_file`, default `compose.yaml` then `docker-compose.yml`, built by kiln-builder) or
 `inline` (`compose_content`, versioned; no `build:`), `public_services` `[{service, port, domain?}]` (Kiln allocates a
-loopback host port per service), `variables` `{KEY: value}` (initial environment; `${{ service.KEY }}` allowed) and
+loopback host port per service; `domain` is a name or a domain choice — generated names are
+`<service>-<slug>.<ip-with-dashes>.<suffix>`, `null` / `{"type": "test"}` means the test domain), `variables` `{KEY: value}` (initial environment; `${{ service.KEY }}` allowed) and
 `template` `{slug, version, source: catalog|custom}`. Inline files must pass the compose policy (`422` otherwise) unless
 the organization allows privileged compose. The site resource then carries `compose {source, file, version,
 public_services[] (with host_port, test_domain, url), template}`.
@@ -155,6 +162,48 @@ the load balancer in front of them. Query: `since`, `limit`, `cursor` as above; 
            "server_id": "01k…", "deployment_id": "01k…", "release_id": "01k…"}],
  "meta": {"cursor": "1790000000000000002"}}
 ```
+
+## Domains and DNS
+
+A **domain choice** is `{"type": "generated" | "test" | "custom", "name"?: string}` (a plain string is a custom
+domain). It is accepted by `POST /api/v1/sites` (`domain`), compose `public_services[].domain` and template deploys
+(`domains.<service>`; a service without a choice gets the organization default: the test domain when
+`KILN_TEST_DOMAIN` is set, else a generated name, else a domain is required).
+
+- **generated** — `<label>.<ipv4-with-dashes>.<suffix>`, e.g. `minio-files.63-182-218-247.sslip.io`. The label is the
+  site slug (compose: `<service>-<slug>`); the IP is the leader server's public IPv4 (a site behind a load balancer: the
+  `lb` server's). Wildcard DNS services (`sslip.io` by default, `nip.io`, or a self-hosted one via
+  `KILN_GENERATED_DOMAIN_SUFFIX`; per organization in Settings → Domains) resolve it to that IP, so it works without DNS
+  setup and Let's Encrypt issues its certificate over HTTP-01. `422` when generated names are off or the server has no
+  public IPv4 yet. One name per endpoint: sites on several servers without a load balancer are reached on the leader.
+- **test** — `<slug>.<KILN_TEST_DOMAIN>` (compose: `<service>-<slug>.…` after the first service).
+- **custom** — your domain, routed with automatic TLS once DNS points at the server (see the check below).
+
+### `GET /api/v1/domains/options?server=<id>[,<id>…]` · `?site=<site>` — `edge.view`
+What a create form offers: `{test_domain, generated: {suffix, ipv4, target, available, reason}, default, targets[]}`
+(`targets`: `{server_id, name, ipv4, ipv6, load_balancer}` — where DNS must point: the site's load balancer, else each
+server, leader first). `server` may repeat (`server[]=`) or be comma-separated; `site` uses the site's servers.
+
+### `GET /api/v1/dns/check?name=<domain>&server=<id>…` · `&site=<site>` — `edge.view` (60/min)
+Resolves `name` from the control plane (DNS-over-HTTPS, `KILN_DNS_RESOLVER=doh|system`, 3 s timeout) and compares it
+with the targets:
+
+```json
+{"data": {
+  "name": "shop.example.com", "status": "ok", "message": "Points to app-2 (63.182.218.247)",
+  "addresses": ["63.182.218.247"], "cnames": [], "targets": [...], "matched": [...],
+  "instructions": {"zone": "example.com", "host": "shop", "apex": false, "ttl": 300,
+    "records": [{"type": "A", "name": "shop.example.com", "host": "shop", "value": "63.182.218.247", "target": "app-2"}],
+    "alternative": {"type": "CNAME", "host": "shop", "value": "shop.63-182-218-247.sslip.io"}, "notes": ["…"]},
+  "certificate": null, "checked_at": "2026-09-28T12:00:00+00:00"}}
+```
+
+`status`: `ok` (every address is a target), `mismatch` ("Resolves to 1.2.3.4 — expected …", or extra records to
+remove), `proxied` (Cloudflare proxy addresses: HTTP-01 fails until the record is "DNS only"), `missing` (no A/AAAA
+yet), `error` (lookup failed, invalid name, or no server IP to compare with). `instructions` lists the records to add
+(A per target IPv4, AAAA per IPv6; apex vs subdomain; a CNAME to the generated name as an alternative for subdomains of
+single-target sites). With `site` and `tls=1`, `certificate` reports what the site's server serves for the name:
+`{status: issued|pending, issuer, expires_at, message}` (probed only when the name points at the site).
 
 ## Projects
 
