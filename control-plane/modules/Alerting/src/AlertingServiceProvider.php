@@ -90,7 +90,8 @@ class AlertingServiceProvider extends ModuleServiceProvider
         // Any module event implementing Alerting\Contracts\Alertable (instanceof check before resolving anything).
         Event::listen('*', function (string $eventName, array $payload) {
             if (($payload[0] ?? null) instanceof Alertable) {
-                $this->app->make(RouteAlertableEvents::class)->handle($eventName, $payload);
+                // app(), not $this->app: under the FrankenPHP worker the latter is the base app, not the request sandbox.
+                app(RouteAlertableEvents::class)->handle($eventName, $payload);
             }
         });
 

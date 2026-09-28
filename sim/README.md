@@ -7,13 +7,18 @@ runs systemd as PID 1 and sshd.
 
 ```
 host ──https://localhost:8443──► edge (Caddy)
-                                  ├─ kiln.test / localhost   TLS: Caddy internal CA ─► control-plane :8080 (FrankenPHP)
+                                  ├─ kiln.test / localhost   TLS: Caddy internal CA ─► control-plane :8080 (panel, FrankenPHP worker mode)
+                                  │                                                ├► agent-api :8080 (/agent/*, /install/*, /api/internal/*)
                                   │                                                └► reverb :8080 (/app, /apps)
-                                  └─ agents.kiln.test        TLS: Fleet-issued cert + agent mTLS ─► control-plane
+                                  └─ agents.kiln.test        TLS: Fleet-issued cert + agent mTLS ─► agent-api
 srv-app-1 · srv-app-2 · srv-db-1  ── fleet network (10.77.20.0/24) ──► edge as kiln.test / agents.kiln.test
   (Ubuntu 24.04, systemd, sshd)   └─ observability network ─────────► gateway:4318 (OTLP)
-control-plane · horizon · reverb  ── backend network (10.77.10.0/24) ► postgres · valkey
+control-plane · agent-api · horizon · reverb ── backend network (10.77.10.0/24) ► postgres · valkey
 ```
+
+control-plane and agent-api run the production runtime (`deploy/control-plane`: Caddyfile, entrypoint, php.ini).
+Agents and the builder long-poll agent-api, which has its own PHP thread pool, so they cannot starve the panel
+(docs/INSTALL.md, "Performance").
 
 ## Usage
 
@@ -49,7 +54,7 @@ use `SIM_AGENT_ARCH=amd64 make up`. Emulation is required on arm64 hosts.
 
 | Service | Built from / image |
 |---|---|
-| control-plane / horizon / reverb | `control-plane.Dockerfile` (context `../control-plane`): `dunglas/frankenphp:1.12.7-php8.4-trixie` + pdo_pgsql, redis, pcntl, intl, zip, bcmath, gmp, sockets. Composer deps come from `composer:2.10.3`, the frontend is built with `oven/bun:1.4.2`. Entrypoint roles `web` (runs migrations, then FrankenPHP), `horizon`, `reverb`. |
+| control-plane / agent-api / horizon / reverb | `control-plane.Dockerfile` (context `../control-plane`, plus `../deploy/control-plane` for the production Caddyfile, php.ini and entrypoint): `dunglas/frankenphp:1.12.7-php8.4-trixie` + pdo_pgsql, redis, pcntl, intl, zip, bcmath, gmp, sockets. Composer deps come from `composer:2.10.3`, the frontend is built with `oven/bun:1.4.2`. Entrypoint roles `web` (runs migrations with `KILN_MIGRATE=1`, then the panel in worker mode), `agent-api`, `horizon`, `reverb`. |
 | postgres | `postgres:17.11` |
 | valkey | `valkey/valkey:9.1.2-alpine` |
 | edge | `edge/Dockerfile` (`caddy:2.11.4-alpine` + openssl, curl) |

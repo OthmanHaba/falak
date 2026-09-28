@@ -70,4 +70,10 @@ jobs:
             done
             test -d /opt/kiln/contracts/agent-protocol
             php -m | grep -q pdo_pgsql
+            php --ini | grep -q "Loaded Configuration File: *.*/php-cli.ini"
+            test -f /app/public/frankenphp-worker.php
+            for mode in worker classic; do
+              KILN_PHP_SERVER=$mode KILN_PHP_WORKERS=2 KILN_FRANKENPHP_THREADS="num_threads 4" \
+                frankenphp adapt --config /etc/frankenphp/Caddyfile >/dev/null
+            done
             APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= php artisan --version'

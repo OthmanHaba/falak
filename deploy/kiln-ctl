@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # kiln-ctl — operate a Kiln install (Docker Compose stack in /opt/kiln, created by install.sh).
 #
-#   kiln-ctl status                         containers, health, version, URLs
+#   kiln-ctl status                         containers, health, version, URLs, PHP thread usage
 #   kiln-ctl logs [service] [-f]            recent logs (all services, or one)
 #   kiln-ctl up | down | restart [svc]      start / stop / restart the stack
 #   kiln-ctl update [--version vX.Y.Z]      backup -> pull -> migrate -> restart -> health check,
 #                                           automatic rollback (previous version + DB restore) on failure
 #   kiln-ctl backup [--label NAME]          Postgres dump + app storage + Fleet CA + .env -> backups/
 #   kiln-ctl restore <file> [--yes]         restore a backup (stops the app while restoring)
-#   kiln-ctl doctor                         DNS, certificates, ports, disk, containers, agent API
+#   kiln-ctl doctor                         DNS, certificates, ports, disk, containers, agent API, PHP threads
 #   kiln-ctl domain set <domain> [--keep-old]   move the panel to a new domain
 #   kiln-ctl admin reset-password <email> [--password=...]
 #   kiln-ctl admin create <email>
@@ -25,7 +25,7 @@ KILN_PROJECT="${KILN_PROJECT:-kiln}"
 ENV_FILE="$KILN_DIR/.env"
 COMPOSE_FILE="$KILN_DIR/deploy/compose.yml"
 BACKUP_DIR="$KILN_DIR/backups"
-APP_SERVICES="control-plane horizon reverb scheduler builder"
+APP_SERVICES="control-plane agent-api horizon reverb scheduler builder"
 KILN_REPO_DEFAULT="OthmanHaba/kiln"
 TMP_LIST=""
 # shellcheck disable=SC2086  # mktemp paths, space-separated
@@ -107,6 +107,29 @@ health_check() { # quiet health check used by update/restore; prints problems
   return "$failed"
 }
 
+# --- PHP threads (FrankenPHP admin API inside the container) -------------------------------------------
+# The panel (control-plane) and the agent API (agent-api) each have their own PHP thread pool. A request that
+# finds every thread busy waits in a queue, so a saturated pool shows up as slow pages / late heartbeats.
+PHP_POOLS="control-plane agent-api"
+
+pool_label() { case "$1" in control-plane) echo panel ;; *) echo "$1" ;; esac; }
+
+pool_knob() { case "$1" in agent-api) echo KILN_AGENT_API_THREADS ;; *) echo KILN_PHP_MAX_THREADS ;; esac; }
+
+php_threads() { # php_threads SERVICE -> "BUSY CAPACITY" (capacity = started + reserved for autoscaling)
+  # shellcheck disable=SC2016  # PHP code
+  compose exec -T "$1" php -r '
+    $j = json_decode((string) @file_get_contents("http://localhost:2019/frankenphp/threads"), true);
+    if (! is_array($j)) { exit(1); }
+    $t = $j["ThreadDebugStates"] ?? [];
+    echo count(array_filter($t, fn ($x) => (bool) ($x["IsBusy"] ?? false))), " ", count($t) + (int) ($j["ReservedThreadCount"] ?? 0), "\n";
+  ' 2>/dev/null
+}
+
+legacy_thread_config() { # the 0.2.x hotfix line in custom.env, if present
+  grep -E '^[[:space:]]*FRANKENPHP_CONFIG=.*(num|max)_threads' "$KILN_DIR/custom.env" 2>/dev/null | tail -1 || true
+}
+
 wait_healthy() { # wait_healthy [timeout]
   local timeout="${1:-300}"
   compose up -d --wait --wait-timeout "$timeout" --remove-orphans
@@ -178,6 +201,13 @@ cmd_status() {
   say "  panel:      $(env_get KILN_URL)"
   say "  agent API:  $(env_get KILN_AGENT_API_URL)"
   if [ -n "$(env_get KILN_GRAFANA_HOST)" ]; then say "  grafana:    $(env_get KILN_GRAFANA_PUBLIC_URL)"; fi
+  local svc usage threads=""
+  for svc in $PHP_POOLS; do
+    usage="$(php_threads "$svc" || true)"
+    [ -n "$usage" ] || continue
+    threads="${threads:+$threads · }$(pool_label "$svc") ${usage% *}/${usage#* } busy"
+  done
+  say "  PHP threads: ${threads:-unavailable}"
   local last
   last="$(latest_backup)"
   say "  last backup: ${last:-none}"
@@ -486,6 +516,37 @@ cmd_doctor() {
   code="$(edge_curl "$domain" /install/agent/linux-amd64 -o /dev/null -w '%{http_code}' -r 0-0 2>/dev/null || true)"
   case "$code" in 200|206) ok "agent binaries served (/install/agent/linux-amd64)";; *) bad "agent binary download -> ${code:-no response}"; problems=$((problems + 1));; esac
   rm -f "$ca"
+
+  info "PHP threads"
+  local svc samples usage busy cap min_busy knob legacy
+  for svc in $PHP_POOLS; do
+    # Three samples a second apart; the least busy one counts (a short burst is normal, a full pool is not).
+    min_busy=""; cap=""
+    for samples in 1 2 3; do
+      usage="$(php_threads "$svc" || true)"
+      [ -n "$usage" ] || continue
+      busy="${usage% *}"; cap="${usage#* }"
+      if [ -z "$min_busy" ] || [ "$busy" -lt "$min_busy" ]; then min_busy="$busy"; fi
+      [ "$samples" = 3 ] || sleep 1
+    done
+    knob="$(pool_knob "$svc")"
+    if [ -z "$cap" ]; then
+      bad "$(pool_label "$svc"): thread usage unavailable ($svc not running?)"; problems=$((problems + 1))
+    elif [ "$min_busy" -ge "$cap" ]; then
+      bad "$(pool_label "$svc"): all $cap PHP threads busy — requests are queueing. Raise $knob in $ENV_FILE, then kiln-ctl up"
+      problems=$((problems + 1))
+    elif [ $((min_busy * 100)) -ge $((cap * 80)) ]; then
+      warn "$(pool_label "$svc"): $min_busy/$cap PHP threads busy (>= 80%) — consider raising $knob"
+      problems=$((problems + 1))
+    else
+      ok "$(pool_label "$svc"): $min_busy/$cap PHP threads busy"
+    fi
+  done
+  legacy="$(legacy_thread_config)"
+  if [ -n "$legacy" ]; then
+    warn "custom.env: '$legacy' (0.2.x hotfix) overrides the automatic thread sizing — remove the line, then kiln-ctl up"
+    problems=$((problems + 1))
+  fi
 
   info "Disk & memory"
   local avail
