@@ -91,7 +91,8 @@ it('filters compose container logs by compose service (structured metadata)', fu
 });
 
 it('selects a site log kind and builds access log queries by slug', function () {
-    expect(LogQueryBuilder::build('org', ['site_id' => 'abc', 'kind' => 'app']))->toBe('{kiln_org_id="ORG", kiln_site_id="ABC", kiln_log_kind="app"}')
+    expect(LogQueryBuilder::build('org', ['site_id' => 'abc', 'kind' => 'app']))->toBe('{kiln_org_id="ORG", kiln_site_id="ABC", kiln_log_kind!="access"}')
+        ->and(LogQueryBuilder::build('org', ['site_id' => 'abc', 'kind' => 'access']))->toBe('{kiln_org_id="ORG", kiln_site_id="ABC", kiln_log_kind="access"}')
         ->and(LogQueryBuilder::access('org', 'shop', ['server_id' => 'srv', 'status' => 404, 'client_ip' => '203.0.113.9']))
         ->toBe('{kiln_org_id="ORG", service_name="shop", kiln_log_kind="access", kiln_server_id="SRV"} | http_response_status_code="404" | client_address="203.0.113.9"');
 

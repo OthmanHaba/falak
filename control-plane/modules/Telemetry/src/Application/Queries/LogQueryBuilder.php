@@ -24,9 +24,10 @@ final class LogQueryBuilder
             }
         }
 
-        // kind: "app" (the site's own output) or "access" (edge HTTP access log), see observability/README.md.
+        // kind: "app" (the site's own output) or "access" (edge HTTP access log), see observability/README.md. App is
+        // "not access", so records of agents that predate the label still match.
         if (($kind = $filters['kind'] ?? null) !== null && $kind !== '') {
-            $matchers[] = PromQl::label('kiln_log_kind', (string) $kind);
+            $matchers[] = $kind === 'access' ? PromQl::label('kiln_log_kind', 'access') : 'kiln_log_kind!='.PromQl::quote('access');
         }
 
         $query = '{'.implode(', ', $matchers).'}';
@@ -64,7 +65,7 @@ final class LogQueryBuilder
      * A site's edge access log. Selected by slug (`service_name`), not site id: load balancers route sites that are
      * not deployed on them, and their agents only know the slug of such a site.
      *
-     * @param  array{server_id?: ?string, deployment_id?: ?string, method?: ?string, status?: int|string|null, path?: ?string, client_ip?: ?string}  $filters
+     * @param  array{server_id?: ?string, deployment_id?: ?string, release_id?: ?string, method?: ?string, status?: int|string|null, path?: ?string, client_ip?: ?string}  $filters
      */
     public static function access(string $organizationId, string $siteSlug, array $filters): string
     {
@@ -86,6 +87,10 @@ final class LogQueryBuilder
 
         if (($deployment = $filters['deployment_id'] ?? null) !== null && $deployment !== '') {
             $query .= ' | kiln_deployment_id='.PromQl::quote(strtoupper((string) $deployment));
+        }
+
+        if (($release = $filters['release_id'] ?? null) !== null && $release !== '') {
+            $query .= ' | kiln_release_id='.PromQl::quote(strtoupper((string) $release));
         }
 
         if (($method = $filters['method'] ?? null) !== null && $method !== '') {

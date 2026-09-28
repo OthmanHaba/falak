@@ -325,9 +325,14 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
 - **Contract for the UI (Logs / Network Logs tabs).** `Telemetry\Contracts\AccessLogs::forSite($organizationId,
   $siteId, $from, $to, $filters, $limit)` → `list<Data\AccessLogEntry>` (method, path, query, status, durationMs,
   bytes, requestBytes, clientIp, userAgent, host, serverId, deploymentId, releaseId, `toArray()`), newest first;
-  filters `server_id`, `deployment_id`, `method`, `status` (code or `5xx`), `path`, `client_ip`. Access logs are
+  filters `server_id`, `deployment_id`, `release_id`, `method`, `status` (code or `5xx`), `path`, `client_ip`. Access logs are
   selected by slug (`service_name`), because an LB's agent may not know the site id. App logs: the existing
-  `LogQueryBuilder` filters gained `kind`. HTTP: `GET /api/v1/sites/{site}/access-logs`, `…/logs?kind=` (docs/API.md).
+  `LogQueryBuilder` filters gained `kind` (`app` = `kiln_log_kind!="access"`, so records of agents that predate the
+  label still match). HTTP: `GET /api/v1/sites/{site}/access-logs`, `…/logs?kind=` (docs/API.md).
+- **UI.** The deployment panel's *Network Logs* tab (Deployments `panel/network-logs.tsx`) lists the requests served by
+  the deployment's release (`release_id` filter, since the deployment started, status filter, 10 s refresh while live)
+  from `GET /telemetry/sites/{site}/access-logs/data`. The service panel's *Logs* tab now asks for `kind=app` (edge
+  requests live in Network Logs).
 - **Agent compatibility.** Agents reject unknown payload fields, so new optional fields must not reach old agents.
   Agents now report `facts.features` (`edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`);
   `Fleet\Application\PayloadCompatibility` strips fields of features an agent does not list when a command is queued

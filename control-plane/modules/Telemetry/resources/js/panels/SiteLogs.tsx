@@ -26,7 +26,8 @@ export default function SiteLogs({ siteId, composeService, onClearComposeService
     const [following, setFollowing] = useState(true);
     const configured = context.status === 'ready' && context.data.configured.logs;
     const filters = useMemo<LogFilters>(
-        () => ({ site_id: siteId, level, server_id: server, range, compose_service: composeService }),
+        // Edge requests are the deployment panel's Network Logs; this tab shows what the app itself logs.
+        () => ({ site_id: siteId, kind: 'app', level, server_id: server, range, compose_service: composeService }),
         [siteId, level, server, range, composeService],
     );
     const stream = useLogStream(filters, { enabled: configured, follow: following });

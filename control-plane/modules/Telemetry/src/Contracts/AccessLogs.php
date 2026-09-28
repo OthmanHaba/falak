@@ -17,10 +17,11 @@ interface AccessLogs
     /**
      * Newest first, from $from up to $to (exclusive): page with the last entry's `at()` as the next `$to`.
      *
-     * Filters: `server_id`; `deployment_id` (requests served while that deployment's release was live on the server);
+     * Filters: `server_id`; `deployment_id` (requests served by releases that deployment built) or `release_id`
+     * (requests served by that release);
      * `method`; `status` — an exact code (404) or a class ("5xx"); `path` — substring of the request URI; `client_ip`.
      *
-     * @param  array{server_id?: ?string, deployment_id?: ?string, method?: ?string, status?: int|string|null, path?: ?string, client_ip?: ?string}  $filters
+     * @param  array{server_id?: ?string, deployment_id?: ?string, release_id?: ?string, method?: ?string, status?: int|string|null, path?: ?string, client_ip?: ?string}  $filters
      * @return list<AccessLogEntry>
      *
      * @throws TelemetryUnavailable
