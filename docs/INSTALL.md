@@ -262,13 +262,14 @@ may already have run), and starts the previous version again.
 An update does not touch your servers: each keeps running its `kiln-agent` until you upgrade it. The new
 control-plane image ships the matching agent build (`/install/agent/linux-{amd64,arm64}`), and after an update
 `kiln-ctl update` prints how many agents are older. **Servers** shows each agent's version with *update
-available*; organization admins upgrade one server (**Upgrade agent** on the server page,
-`POST /api/v1/servers/{server}/agent/upgrade`) or all of them (**Upgrade all agents**).
+available*; organization admins update one server (**Update** next to the version in the list, or **Update agent**
+on the server page, `POST /api/v1/servers/{server}/agent/upgrade`), the servers they tick in the list (**Update
+selected**), or every outdated one (**Update all agents**).
 
 The agent downloads the build from the panel, verifies its SHA-256, checks that it runs (`kiln-agent version`),
 swaps it atomically (the previous binary stays as `/usr/local/bin/kiln-agent.prev`), restarts, and reports the new
 version and binary checksum in its next heartbeat. Supervised programs restart with it (`KillMode=mixed`).
-"Upgrade all agents" upgrades `KILN_AGENT_UPGRADE_BATCH_SIZE` servers at a time (default 2) and stops at the first
+A bulk update upgrades `KILN_AGENT_UPGRADE_BATCH_SIZE` servers at a time (default 2) and stops at the first
 failure; an upgrade fails when the agent has not come back with the new build within `KILN_AGENT_UPGRADE_TIMEOUT`
 seconds (default 600). Failures raise the *Agent upgrade failed* alert. To roll a server back by hand:
 `mv /usr/local/bin/kiln-agent.prev /usr/local/bin/kiln-agent && systemctl restart kiln-agent`.

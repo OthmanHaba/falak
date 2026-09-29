@@ -1,5 +1,6 @@
 import { CommandLog, TERMINAL_COMMAND_STATUSES, type CommandStatus } from '@/components/command-log';
 import { Button } from '@/components/kiln/button';
+import { Callout } from '@/components/kiln/callout';
 import { CodeBlock } from '@/components/kiln/code-block';
 import { copyText } from '@/components/kiln/copy-button';
 import { EmptyState } from '@/components/kiln/empty-state';
@@ -82,6 +83,9 @@ function serviceStatus(service: ServerService): string {
 export default function Show({ server, agent, metrics, services, can }: Props) {
     const awaitingAgent = server.install_command !== null && ['creating', 'error'].includes(server.status) && !agent;
     const upgrading = ['queued', 'running'].includes(server.agent?.upgrade?.status ?? '');
+    // Offered wherever "update available" shows: the header, a banner and the Agent section.
+    const canUpdateAgent = can.upgrade_agent && !!agent && !!server.agent?.update_available && !upgrading;
+    const updateAgent = () => router.post(`/servers/${server.id}/agent/upgrade`, {}, { preserveScroll: true, only: [...RELOAD, 'flash'] });
     const settling = ['creating', 'provisioning', 'deleting'].includes(server.status);
     const [showLog, setShowLog] = useState(server.status !== 'active');
     const [regenerating, setRegenerating] = useState(false);
@@ -166,6 +170,11 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
             reloadOnly={RELOAD}
             actions={
                 <>
+                    {canUpdateAgent && (
+                        <Button variant="primary" icon={<ArrowUpCircle />} disabled={agent?.status !== 'online'} onClick={updateAgent}>
+                            Update agent
+                        </Button>
+                    )}
                     {server.status === 'active' && (
                         <Button variant="secondary" asChild>
                             <Link href={`/servers/${server.id}/terminal`}>
@@ -182,6 +191,21 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                 </>
             }
         >
+            {canUpdateAgent && (
+                <Callout
+                    tone="warning"
+                    title={`Agent ${server.agent?.available_version} is available`}
+                    action={
+                        <Button variant="secondary" size="sm" icon={<ArrowUpCircle />} disabled={agent?.status !== 'online'} onClick={updateAgent}>
+                            Update now
+                        </Button>
+                    }
+                >
+                    {agent?.status === 'online'
+                        ? `This server runs ${server.agent?.version ?? 'an older build'}. The agent downloads the new build, verifies its checksum and restarts in a few seconds. Containers and the edge keep serving; Node processes and workers restart with it.`
+                        : 'The agent is offline; update it once it reconnects.'}
+                </Callout>
+            )}
             {server.status_message && !['active', 'error'].includes(server.status) && (
                 <div
                     role={server.status === 'error' ? 'alert' : 'status'}
@@ -374,11 +398,9 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                                     size="sm"
                                     icon={<ArrowUpCircle />}
                                     disabled={upgrading || agent.status !== 'online'}
-                                    onClick={() =>
-                                        router.post(`/servers/${server.id}/agent/upgrade`, {}, { preserveScroll: true, only: [...RELOAD, 'flash'] })
-                                    }
+                                    onClick={updateAgent}
                                 >
-                                    Upgrade agent
+                                    Update agent
                                 </Button>
                             )
                         }

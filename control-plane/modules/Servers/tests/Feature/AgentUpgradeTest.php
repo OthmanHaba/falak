@@ -71,3 +71,21 @@ it('upgrades an agent through the API', function () {
     $other = Server::factory()->create(['organization_id' => $this->organization->id]);
     $this->withToken($token)->postJson("/api/v1/servers/{$other->id}/agent/upgrade")->assertStatus(409)->assertJsonPath('message', 'This server has no agent.');
 });
+
+it('upgrades only the selected agents of the organization', function () {
+    $second = Server::factory()->create(['organization_id' => $this->organization->id, 'name' => 'web-2']);
+    fleet_enroll($this->organization->id, $second->id, ['agent_version' => 'v1.0.0', 'agent_sha256' => str_repeat('b', 64)]);
+    [, $other] = memberOf();
+    $foreign = Server::factory()->create(['organization_id' => $other->id, 'name' => 'theirs']);
+    fleet_enroll($other->id, $foreign->id, ['agent_version' => 'v1.0.0', 'agent_sha256' => str_repeat('c', 64)]);
+
+    $this->actingAs($this->owner)->post('/servers/agents/upgrade', ['server_ids' => [$second->id, $foreign->id]])
+        ->assertRedirect()->assertSessionHas('success');
+
+    $upgraded = Command::query()->where('type', 'system.upgrade_agent')->pluck('server_id')->all();
+    expect($upgraded)->toBe([$second->id]);
+
+    $this->actingAs($this->owner)->post('/servers/agents/upgrade', ['server_ids' => [$foreign->id]])
+        ->assertRedirect()->assertSessionHas('success', 'The selected agents are offline, already upgrading or up to date.');
+    $this->actingAs($this->owner)->post('/servers/agents/upgrade', ['server_ids' => ['nope']])->assertSessionHasErrors('server_ids.0');
+});

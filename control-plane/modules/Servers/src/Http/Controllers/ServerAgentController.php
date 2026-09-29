@@ -44,14 +44,16 @@ final class ServerAgentController extends Controller
     {
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, 'fleet.agents.manage');
+        $data = $request->validate(['server_ids' => ['sometimes', 'array', 'min:1', 'max:500'], 'server_ids.*' => ['string', 'size:26']]);
 
-        $queued = $this->upgrades->upgradeOrganization($organizationId, $request->user()?->getAuthIdentifier());
+        // Servers of other organizations never match: the rollout is scoped to the current one.
+        $queued = $this->upgrades->upgradeOrganization($organizationId, $request->user()?->getAuthIdentifier(), $data['server_ids'] ?? null);
 
         if ($queued === []) {
-            return back()->with('success', 'Every connected agent already runs the latest build.');
+            return back()->with('success', isset($data['server_ids']) ? 'The selected agents are offline, already upgrading or up to date.' : 'Every connected agent already runs the latest build.');
         }
 
-        $this->audit->record('server.agents_upgrade', null, null, ['servers' => count($queued), 'to_version' => $queued[0]->toVersion], $organizationId);
+        $this->audit->record('server.agents_upgrade', null, null, ['servers' => count($queued), 'to_version' => $queued[0]->toVersion, 'selected' => isset($data['server_ids'])], $organizationId);
         $batch = (int) config('fleet.agent.upgrade.batch_size', 2);
 
         return back()->with('success', 'Upgrading '.count($queued).' '.str('agent')->plural(count($queued))." to {$queued[0]->toVersion}, {$batch} at a time. The rollout stops if one fails.");
