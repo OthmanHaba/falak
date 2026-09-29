@@ -157,14 +157,18 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
     const [selected, setSelected] = useState<string[]>([]);
     const selection = selected.filter((id) => updatableIds.includes(id));
     const toggle = (id: string, on: boolean) => setSelected((ids) => (on ? [...new Set([...ids, id])] : ids.filter((other) => other !== id)));
+    // One update request at a time: double clicks do not queue duplicates.
+    const [updating, setUpdating] = useState(false);
+    const pending = { onStart: () => setUpdating(true), onFinish: () => setUpdating(false) };
     const updateAgents = (ids?: string[]) =>
         router.post('/servers/agents/upgrade', ids ? { server_ids: ids } : {}, {
             preserveScroll: true,
             only: ['servers', 'flash'],
             onSuccess: () => setSelected([]),
+            ...pending,
         });
     const updateAgent = (server: FleetServer) =>
-        router.post(`/servers/${server.id}/agent/upgrade`, {}, { preserveScroll: true, only: ['servers', 'flash'] });
+        router.post(`/servers/${server.id}/agent/upgrade`, {}, { preserveScroll: true, only: ['servers', 'flash'], ...pending });
 
     const columns: DataTableColumn<FleetServer>[] = [
         ...(updatableIds.length > 0
@@ -301,6 +305,7 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
                             size="sm"
                             className="h-6 px-2 text-xs"
                             icon={<ArrowUpCircle />}
+                            disabled={updating}
                             onClick={(event) => {
                                 event.stopPropagation();
                                 updateAgent(server);
@@ -339,12 +344,12 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
             actions={
                 <>
                     {selection.length > 0 ? (
-                        <Button variant="primary" icon={<ArrowUpCircle />} onClick={() => updateAgents(selection)}>
+                        <Button variant="primary" icon={<ArrowUpCircle />} loading={updating} onClick={() => updateAgents(selection)}>
                             Update selected ({selection.length})
                         </Button>
                     ) : (
                         updatableIds.length > 0 && (
-                            <Button variant="secondary" icon={<ArrowUpCircle />} onClick={() => updateAgents()}>
+                            <Button variant="secondary" icon={<ArrowUpCircle />} loading={updating} onClick={() => updateAgents()}>
                                 {updatableIds.length === 1 ? 'Update agent' : `Update all agents (${updatableIds.length})`}
                             </Button>
                         )

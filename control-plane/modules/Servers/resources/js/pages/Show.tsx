@@ -85,7 +85,13 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
     const upgrading = ['queued', 'running'].includes(server.agent?.upgrade?.status ?? '');
     // Offered wherever "update available" shows: the header, a banner and the Agent section.
     const canUpdateAgent = can.upgrade_agent && !!agent && !!server.agent?.update_available && !upgrading;
-    const updateAgent = () => router.post(`/servers/${server.id}/agent/upgrade`, {}, { preserveScroll: true, only: [...RELOAD, 'flash'] });
+    const [updating, setUpdating] = useState(false);
+    const updateAgent = () =>
+        router.post(
+            `/servers/${server.id}/agent/upgrade`,
+            {},
+            { preserveScroll: true, only: [...RELOAD, 'flash'], onStart: () => setUpdating(true), onFinish: () => setUpdating(false) },
+        );
     const settling = ['creating', 'provisioning', 'deleting'].includes(server.status);
     const [showLog, setShowLog] = useState(server.status !== 'active');
     const [regenerating, setRegenerating] = useState(false);
@@ -171,7 +177,13 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
             actions={
                 <>
                     {canUpdateAgent && (
-                        <Button variant="primary" icon={<ArrowUpCircle />} disabled={agent?.status !== 'online'} onClick={updateAgent}>
+                        <Button
+                            variant="primary"
+                            icon={<ArrowUpCircle />}
+                            disabled={agent?.status !== 'online'}
+                            loading={updating}
+                            onClick={updateAgent}
+                        >
                             Update agent
                         </Button>
                     )}
@@ -196,7 +208,14 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                     tone="warning"
                     title={`Agent ${server.agent?.available_version} is available`}
                     action={
-                        <Button variant="secondary" size="sm" icon={<ArrowUpCircle />} disabled={agent?.status !== 'online'} onClick={updateAgent}>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            icon={<ArrowUpCircle />}
+                            disabled={agent?.status !== 'online'}
+                            loading={updating}
+                            onClick={updateAgent}
+                        >
                             Update now
                         </Button>
                     }
@@ -398,6 +417,7 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                                     size="sm"
                                     icon={<ArrowUpCircle />}
                                     disabled={upgrading || agent.status !== 'online'}
+                                    loading={updating}
                                     onClick={updateAgent}
                                 >
                                     Update agent
