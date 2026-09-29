@@ -84,7 +84,7 @@ for the server's architecture, or the agent already runs it.
   "php_version": "8.4", "node_version": null,
   "repository": "acme/shop", "branch": "main", "push_to_deploy": true,
   "domain": "shop.example.com", "url": "https://shop.example.com",
-  "web_directory": "public", "root_path": "/srv/kiln/sites/shop", "app_port": null, "test_domain": null,
+  "web_directory": "public", "root_path": "/srv/kiln/sites/shop", "app_port": null, "container_port": null, "test_domain": null,
   "server_ids": ["01k…"],
   "targets": [{"id": "…", "server_id": "…", "server_name": "web-1", "server_ip": "203.0.113.1", "role": "leader", "status": "ready", "status_message": null, "command_id": null}],
   "strategy": "zero-downtime",
@@ -98,7 +98,11 @@ Deployments through `Sites\Contracts\SiteResourceExtension`.
 ### `POST /api/v1/sites` — `sites.create`
 Same body and validation as the web form (`name`, `framework`, `server_ids[]`, optional `leader_server_id`, `runtime`,
 `build_mode`, `source_connection_id` + `repository` + `branch`, `push_to_deploy`, `php_version`, `web_directory`,
-`app_port`, `health_check_path`, …). `201` with the site resource plus `warnings[]` from the git provider; `422` on errors.
+`app_port`, `container_port`, `health_check_path`, …). `201` with the site resource plus `warnings[]` from the git provider;
+`422` on errors. Docker sites take `container_port` (the port the app listens on inside its container, default 3000, may
+repeat across sites; an `app_port` sent for a docker site is read as it); their `app_port` is the loopback host port Kiln
+allocates. Changing a docker site's `container_port` (`PATCH /sites/{id}`) redeploys it. `DELETE /sites/{id}` stops the
+site's containers (compose: `docker compose down`; `delete_volumes: true` also removes named volumes).
 Optional `project_id` / `environment_id` place the site (Projects); without them it lands in the organization's
 Default project, `production` environment. An environment of another organization/project is a `422`.
 

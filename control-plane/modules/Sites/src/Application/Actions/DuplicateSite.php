@@ -47,6 +47,7 @@ final class DuplicateSite
             'web_directory' => $source->web_directory,
             // Without servers the port cannot collide; with servers a free one is picked.
             'app_port' => $serverIds === [] ? $source->app_port : null,
+            'container_port' => $source->container_port,
             'docker_image' => $source->docker_image,
             'dockerfile' => $source->dockerfile,
             'compose_file' => $source->compose_file,
@@ -110,7 +111,7 @@ final class DuplicateSite
         }
 
         if ($copy->app_port !== null && array_key_exists('PORT', $variables)) {
-            $variables['PORT'] = (string) $copy->app_port;
+            $variables['PORT'] = (string) ($copy->container_port ?? $copy->app_port);
         }
 
         return $variables;

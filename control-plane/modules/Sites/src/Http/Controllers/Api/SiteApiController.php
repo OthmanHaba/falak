@@ -190,6 +190,7 @@ final class SiteApiController extends Controller
                 'web_directory' => $site->web_directory,
                 'root_path' => $site->rootPath(),
                 'app_port' => $site->app_port,
+                'container_port' => $site->container_port,
                 'test_domain' => $site->testDomain(),
                 'server_ids' => $site->serverIds(),
                 'targets' => $this->targets($site, $servers),

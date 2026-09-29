@@ -561,7 +561,9 @@ final class StepPayloads
         }
 
         $env = $this->releaseVariables($site);
-        $env = array_filter([...$env, 'PORT' => (string) $site->appPort, ...$this->injected($deployment, $site, $serverId)], fn ($v, $k) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH);
+        // The app listens on its container port; Kiln publishes it on the site's loopback host ports (blue/green).
+        $listen = $site->listenPort();
+        $env = array_filter([...$env, 'PORT' => (string) $listen, ...$this->injected($deployment, $site, $serverId)], fn ($v, $k) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH);
         $health = (array) $deployment->setting('health', []);
 
         return array_filter([
@@ -569,7 +571,7 @@ final class StepPayloads
             'image' => $ref,
             'pull' => 'missing',
             'registry_auth' => $auth,
-            'container_port' => $site->appPort,
+            'container_port' => $listen,
             'ports' => ['blue' => $site->appPort, 'green' => $green],
             'env' => (object) array_map('strval', $env),
             'health' => [

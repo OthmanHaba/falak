@@ -77,9 +77,12 @@ final class SiteController extends Controller
     {
         $this->authorize('delete', $site);
 
-        $request->validate(['name' => ['required', 'string', Rule::in([$site->name])]], ['name.in' => 'Type the site name to confirm.']);
+        $data = $request->validate([
+            'name' => ['required', 'string', Rule::in([$site->name])],
+            'delete_volumes' => ['sometimes', 'boolean'],
+        ], ['name.in' => 'Type the site name to confirm.']);
 
-        $delete($site);
+        $delete($site, deleteVolumes: (bool) ($data['delete_volumes'] ?? false));
 
         return $request->wantsJson() && $request->header('X-Inertia') === null ? response()->json(null, 204) : to_route('sites.index');
     }

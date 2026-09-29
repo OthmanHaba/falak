@@ -71,6 +71,7 @@ final class SiteSettingsController extends Controller
                 'push_to_deploy' => $site->push_to_deploy,
                 'web_directory' => $site->web_directory,
                 'app_port' => $site->app_port,
+                'container_port' => $site->container_port,
                 'docker_image' => $site->docker_image,
                 'dockerfile' => $site->dockerfile,
                 'compose_file' => $site->compose_file,

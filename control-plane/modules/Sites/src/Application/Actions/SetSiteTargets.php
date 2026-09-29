@@ -14,6 +14,7 @@ use Kiln\Sites\Contracts\TargetStatus;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Models\SiteTarget;
 use Kiln\Sites\Events\SiteTargetsChanged;
+use Kiln\Sites\Events\SiteUpdated;
 
 /**
  * Change the servers a site deploys to (the multi-server deployment group) and its leader.
@@ -47,8 +48,18 @@ final class SetSiteTargets
             $this->rules->targets($site->organization_id, $added, $site->runtime, $site->php_version, $site->build_mode);
         }
 
+        $movedHostPort = false;
+
         if ($site->app_port !== null && $added !== []) {
-            $this->rules->portAvailable($site->app_port, $added, $site->id);
+            if ($site->runtime === SiteRuntime::Docker) {
+                // A docker site's host port is Kiln's own: move it when a new server already uses it.
+                if (in_array($site->app_port, $this->rules->portsInUse($added, $site->id), true)) {
+                    $site->forceFill(['app_port' => $this->rules->freePort($serverIds, $site->id)])->save();
+                    $movedHostPort = true;
+                }
+            } else {
+                $this->rules->portAvailable($site->app_port, $added, $site->id);
+            }
         }
 
         $leaderChanged = $site->leaderTarget()?->server_id !== $leaderServerId;
@@ -81,6 +92,8 @@ final class SetSiteTargets
             if ($site->runtime === SiteRuntime::PhpFpm && $site->php_version) {
                 $this->provisioner->removePool($site, $serverId, $site->php_version);
             }
+
+            $this->provisioner->removeContainers($site, $serverId);
         }
 
         foreach ($newTargets as $target) {
@@ -97,5 +110,10 @@ final class SetSiteTargets
 
         $this->audit->record('site.targets_updated', 'site', $site->id, ['added' => $added, 'removed' => $removed, 'leader' => $leaderServerId], $site->organization_id);
         SiteTargetsChanged::dispatch($site->id, $site->organization_id, $added, $removed, $site->serverIds(), $leaderServerId);
+
+        // The running containers still publish the old host port: Deployments redeploys the site (RedeployOnPortChange).
+        if ($movedHostPort) {
+            SiteUpdated::dispatch($site->id, $site->organization_id, ['app_port'], $site->serverIds());
+        }
     }
 }

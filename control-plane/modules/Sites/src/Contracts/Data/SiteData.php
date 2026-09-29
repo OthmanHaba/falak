@@ -14,11 +14,12 @@ final readonly class SiteData
      * @param  string  $slug  directory name under /srv/kiln/sites and FPM pool name (^[a-z0-9][a-z0-9-]{0,62}$)
      * @param  string  $rootPath  /srv/kiln/sites/<slug>
      * @param  string  $webDirectory  document root relative to the release ("public", "" for the release root)
-     * @param  ?int  $appPort  local port the app listens on (node/bun/deno/docker/compose)
+     * @param  ?int  $appPort  loopback host port Caddy proxies to (node/bun/deno listen on it; docker/compose publish to it)
      * @param  ?string  $testDomain  <slug>.<KILN_TEST_DOMAIN> when enabled
      * @param  list<SharedPath>  $sharedPaths
      * @param  list<SiteTargetData>  $targets
      * @param  ?ComposeConfig  $compose  compose runtime only
+     * @param  ?int  $containerPort  docker runtime: the port the app listens on inside its container
      */
     public function __construct(
         public string $id,
@@ -50,7 +51,14 @@ final readonly class SiteData
         public array $sharedPaths,
         public array $targets,
         public ?ComposeConfig $compose = null,
+        public ?int $containerPort = null,
     ) {}
+
+    /** Docker runtime: the in-container port (sites from before container_port listen on their host port). */
+    public function listenPort(): ?int
+    {
+        return $this->containerPort ?? $this->appPort;
+    }
 
     /** Something to deploy: a repository, a docker image, or an inline compose file. */
     public function hasDeploySource(): bool

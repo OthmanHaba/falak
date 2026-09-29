@@ -36,6 +36,7 @@ interface SiteFactory
 
     /**
      * Delete a site like DELETE /sites/{id} does (removes it from its servers, SiteDeleted). Unknown ids are ignored.
+     * $deleteVolumes also removes a compose site's named volumes.
      */
-    public function delete(string $siteId): void;
+    public function delete(string $siteId, bool $deleteVolumes = false): void;
 }

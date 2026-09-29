@@ -25,6 +25,8 @@ return [
 
     // Ports handed out to node/bun/deno/docker sites (unique per server).
     'app_port_range' => [3000, 3999],
+    // Docker sites: the in-container port when the create form / API gives none.
+    'default_container_port' => (int) env('KILN_DEFAULT_CONTAINER_PORT', 3000),
 
     // Laravel Octane listens on 127.0.0.1:<port> from base..base+span-1 (unique per server, persisted per site);
     // its admin / RPC port is port + 10000 (LaravelSettings::OCTANE_AUX_PORT_OFFSET).

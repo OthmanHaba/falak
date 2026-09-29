@@ -10,8 +10,9 @@ use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Events\SiteDeleted;
 
 /**
- * Delete a site: remove PHP-FPM pools and provider hooks; Edge drops its routes on SiteDeleted.
- * Files under /srv/kiln/sites/<slug> are left on the servers.
+ * Delete a site: remove PHP-FPM pools, containers / compose projects and provider hooks; Edge drops its routes and
+ * Processes its programs on SiteDeleted. Files under /srv/kiln/sites/<slug> are left on the servers, and compose
+ * named volumes too unless $deleteVolumes.
  */
 final class DeleteSite
 {
@@ -21,7 +22,7 @@ final class DeleteSite
         private readonly AuditLog $audit,
     ) {}
 
-    public function __invoke(Site $site, bool $cleanupRemote = true): void
+    public function __invoke(Site $site, bool $cleanupRemote = true, bool $deleteVolumes = false): void
     {
         $site->loadMissing('targets');
         $serverIds = $site->serverIds();
@@ -29,6 +30,12 @@ final class DeleteSite
         if ($cleanupRemote && $site->runtime === SiteRuntime::PhpFpm && $site->php_version) {
             foreach ($serverIds as $serverId) {
                 $this->provisioner->removePool($site, $serverId, $site->php_version);
+            }
+        }
+
+        if ($cleanupRemote && $site->runtime->isContainer()) {
+            foreach ($serverIds as $serverId) {
+                $this->provisioner->removeContainers($site, $serverId, $deleteVolumes);
             }
         }
 

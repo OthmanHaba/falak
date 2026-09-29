@@ -21,7 +21,7 @@ final class UpdateSite
 {
     public const FIELDS = [
         'name', 'runtime', 'build_mode', 'php_version', 'node_version', 'source_connection_id', 'repository', 'branch',
-        'push_to_deploy', 'web_directory', 'app_port', 'docker_image', 'dockerfile', 'compose_file', 'health_check_path',
+        'push_to_deploy', 'web_directory', 'app_port', 'container_port', 'docker_image', 'dockerfile', 'compose_file', 'health_check_path',
         'test_domain_enabled',
     ];
 
@@ -75,12 +75,22 @@ final class UpdateSite
         if ($runtime === SiteRuntime::Compose) {
             // Compose sites: the app port is the primary public service's host port (Settings → Compose).
             unset($attributes['app_port']);
+            $attributes['container_port'] = null;
+        } elseif ($runtime === SiteRuntime::Docker) {
+            // Users set the container port only (app_port from older clients meant it); the loopback host port stays Kiln's.
+            $listen = $attributes['container_port'] ?? $attributes['app_port'] ?? $site->container_port ?? $site->app_port ?? config('sites.default_container_port', 3000);
+            $attributes['container_port'] = (int) $listen;
+            $attributes['app_port'] = $site->app_port ?? $this->rules->freePort($site->serverIds(), $site->id);
         } elseif ($runtime->proxiesToPort()) {
             $port = isset($attributes['app_port']) ? (int) $attributes['app_port'] : ($site->app_port ?? $this->rules->freePort($site->serverIds(), $site->id));
             $this->rules->portAvailable($port, $site->serverIds(), $site->id);
             $attributes['app_port'] = $port;
         } else {
             $attributes['app_port'] = null;
+        }
+
+        if ($runtime !== SiteRuntime::Docker) {
+            $attributes['container_port'] = null;
         }
 
         $site->fill($attributes);

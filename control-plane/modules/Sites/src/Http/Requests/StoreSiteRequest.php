@@ -96,6 +96,7 @@ final class StoreSiteRequest extends FormRequest
             'push_to_deploy' => ['boolean'],
             'web_directory' => ['nullable', 'string', 'max:255', 'regex:#^[A-Za-z0-9_.\-/]*$#', 'not_regex:#(^|/)\.\.?(/|$)#'],
             'app_port' => ['nullable', 'integer', 'between:1024,65535'],
+            'container_port' => ['nullable', 'integer', 'between:1,65535'],
             'docker_image' => ['nullable', 'string', 'max:255', 'regex:#^[a-z0-9][a-z0-9._\-/:@]*$#'],
             'dockerfile' => ['nullable', 'string', 'max:255', 'regex:#^[A-Za-z0-9_.\-/]+$#', 'not_regex:#(^|/)\.\.(/|$)#'],
             'compose_file' => ['nullable', 'string', 'max:255', 'regex:#^[A-Za-z0-9_.\-/]+$#', 'not_regex:#(^|/)\.\.(/|$)#'],

@@ -23,6 +23,7 @@ use Kiln\Fleet\Contracts\CommandStatus;
 use Kiln\Fleet\Events\CommandFinished;
 use Kiln\Fleet\Events\CommandOutputReceived;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Events\SiteUpdated;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -450,6 +451,51 @@ it('swaps containers blue/green and records the new upstream with Edge', functio
         ->and($world->edge->upstreams)->toHaveCount(2)
         ->and($world->edge->upstreams[0])->toMatchArray(['site' => $world->site->id, 'upstream' => '127.0.0.1:4100'])
         ->and(Release::current($world->site->id)->image)->toStartWith('registry.kiln.local/');
+});
+
+it('runs a docker site on its container port, published on its host ports', function () {
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 8080, 'deploy_script' => '$KILN_FETCH']);
+    deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    $swap = $world->agents->last('deploy.container.swap')['payload'];
+    expect($swap['container_port'])->toBe(8080)
+        ->and($swap['env']['PORT'])->toBe('8080')
+        ->and($swap['ports'])->toBe(['blue' => 3100, 'green' => 4100]);
+});
+
+it('redeploys the live commit of a docker site when its container port changes', function () {
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 3000, 'deploy_script' => '$KILN_FETCH']);
+    $live = str_repeat('a', 40);
+    deploy($world, commit: $live);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    $world->site->forceFill(['container_port' => 8080])->save();
+    SiteUpdated::dispatch($world->site->id, $world->organization->id, ['container_port'], $world->site->serverIds());
+
+    $redeploy = Deployment::query()->where('site_id', $world->site->id)->latest('created_at')->orderByDesc('id')->first();
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2)
+        ->and($redeploy->commit)->toBe($live);
+
+    // Other changes, and sites that were never deployed, do not redeploy.
+    SiteUpdated::dispatch($world->site->id, $world->organization->id, ['name'], $world->site->serverIds());
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2);
+});
+
+it('follows a docker deployment in progress after a port change and leaves a queued one alone', function () {
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 3000, 'deploy_script' => '$KILN_FETCH']);
+    $building = deploy($world, commit: str_repeat('b', 40));
+
+    SiteUpdated::dispatch($world->site->id, $world->organization->id, ['container_port'], $world->site->serverIds());
+    $follow = Deployment::query()->where('site_id', $world->site->id)->whereKeyNot($building->id)->sole();
+    expect($follow->commit)->toBe($building->commit)->and($follow->status)->toBeIn([DeploymentStatus::Queued, DeploymentStatus::Waiting]);
+
+    // The queued deployment picks the new ports up when it runs: nothing more is triggered or coalesced over it.
+    SiteUpdated::dispatch($world->site->id, $world->organization->id, ['container_port'], $world->site->serverIds());
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2)
+        ->and($follow->refresh()->commit)->toBe($building->commit);
 });
 
 it('resumes a deployment whose command events were lost', function () {
