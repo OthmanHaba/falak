@@ -41,10 +41,10 @@ final class ActionSiteFactory implements SiteFactory
         return new CreatedSite($site->toData(), array_values($create->warnings));
     }
 
-    public function delete(string $siteId): void
+    public function delete(string $siteId, bool $deleteVolumes = false): void
     {
         if ($site = Site::query()->find(strtolower($siteId))) {
-            app(DeleteSite::class)($site);
+            app(DeleteSite::class)($site, deleteVolumes: $deleteVolumes);
         }
     }
 }

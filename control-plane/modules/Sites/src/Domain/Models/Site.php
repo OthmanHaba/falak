@@ -37,7 +37,8 @@ use Kiln\Sites\Contracts\TargetRole;
  * @property string $web_directory
  * @property string $unix_user
  * @property bool $isolated
- * @property ?int $app_port
+ * @property ?int $app_port loopback host port Caddy proxies to (Kiln-allocated for Docker sites)
+ * @property ?int $container_port Docker sites: the port the app listens on inside its container
  * @property ?string $docker_image
  * @property ?string $dockerfile
  * @property ?string $compose_file
@@ -74,6 +75,7 @@ class Site extends Model
             'push_to_deploy' => 'boolean',
             'isolated' => 'boolean',
             'app_port' => 'integer',
+            'container_port' => 'integer',
             'test_domain_enabled' => 'boolean',
             'compose_source' => ComposeSource::class,
             'public_services' => 'array',
@@ -284,6 +286,7 @@ class Site extends Model
             sharedPaths: $this->shared_paths,
             targets: $this->targets->map(fn (SiteTarget $target) => $target->toData())->values()->all(),
             compose: $this->composeConfig(),
+            containerPort: $this->container_port,
         );
     }
 }

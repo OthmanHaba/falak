@@ -99,9 +99,12 @@ final class ServiceController extends Controller
         $record = Service::query()->where('environment_id', $model->id)->find(strtolower($service)) ?? throw new NotFoundHttpException('Service not found.');
 
         $this->access->authorize($request->user(), $project->organization_id, $record->kind === ServiceKind::Site ? 'sites.delete' : 'databases.manage');
-        $request->validate(['confirm' => ['required', 'string', Rule::in([$record->name])]], ['confirm.in' => 'Type the service name to confirm.']);
+        $data = $request->validate([
+            'confirm' => ['required', 'string', Rule::in([$record->name])],
+            'delete_volumes' => ['sometimes', 'boolean'],
+        ], ['confirm.in' => 'Type the service name to confirm.']);
 
-        $delete($record);
+        $delete($record, (bool) ($data['delete_volumes'] ?? false));
 
         return response()->json(null, 204);
     }

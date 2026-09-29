@@ -23,6 +23,8 @@ export interface SiteSettingsData {
         push_to_deploy: boolean;
         web_directory: string | null;
         app_port: number | null;
+        /** Docker sites: the port the app listens on inside its container (app_port is then Kiln's loopback host port). */
+        container_port: number | null;
         docker_image: string | null;
         dockerfile: string | null;
         compose_file: string | null;

@@ -18,6 +18,7 @@ use Kiln\Deployments\Application\Listeners\HandleBuildEvents;
 use Kiln\Deployments\Application\Listeners\HandleCommandOutcome;
 use Kiln\Deployments\Application\Listeners\RecordBuildOutput;
 use Kiln\Deployments\Application\Listeners\RecordCommandOutput;
+use Kiln\Deployments\Application\Listeners\RedeployOnContainerPortChange;
 use Kiln\Deployments\Application\Listeners\ResumeWaitingDeployments;
 use Kiln\Deployments\Contracts\DeploymentDirectory;
 use Kiln\Deployments\Contracts\DeploymentTrigger;
@@ -41,6 +42,7 @@ use Kiln\Sites\Events\SiteDeleted;
 use Kiln\Sites\Events\SiteTargetFailed;
 use Kiln\Sites\Events\SiteTargetReady;
 use Kiln\Sites\Events\SiteTargetsChanged;
+use Kiln\Sites\Events\SiteUpdated;
 use Kiln\SourceControl\Events\PushReceived;
 
 class DeploymentsServiceProvider extends ModuleServiceProvider
@@ -89,6 +91,7 @@ class DeploymentsServiceProvider extends ModuleServiceProvider
         Event::listen(BuildCancelled::class, [HandleBuildEvents::class, 'cancelled']);
         Event::listen(BuildOutputReceived::class, RecordBuildOutput::class);
         Event::listen(PushReceived::class, DeployOnPush::class);
+        Event::listen(SiteUpdated::class, RedeployOnContainerPortChange::class);
         Event::listen(SiteDeleted::class, [ForgetDeletedResources::class, 'siteDeleted']);
         Event::listen([SiteTargetReady::class, SiteTargetFailed::class, SiteTargetsChanged::class], ResumeWaitingDeployments::class);
         Event::listen(OrganizationDeleted::class, [ForgetDeletedResources::class, 'organizationDeleted']);

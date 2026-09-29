@@ -48,7 +48,14 @@ final class SetSiteTargets
         }
 
         if ($site->app_port !== null && $added !== []) {
-            $this->rules->portAvailable($site->app_port, $added, $site->id);
+            if ($site->runtime === SiteRuntime::Docker) {
+                // A docker site's host port is Kiln's own: move it when a new server already uses it.
+                if (in_array($site->app_port, $this->rules->portsInUse($added, $site->id), true)) {
+                    $site->forceFill(['app_port' => $this->rules->freePort($serverIds, $site->id)])->save();
+                }
+            } else {
+                $this->rules->portAvailable($site->app_port, $added, $site->id);
+            }
         }
 
         $leaderChanged = $site->leaderTarget()?->server_id !== $leaderServerId;
@@ -81,6 +88,8 @@ final class SetSiteTargets
             if ($site->runtime === SiteRuntime::PhpFpm && $site->php_version) {
                 $this->provisioner->removePool($site, $serverId, $site->php_version);
             }
+
+            $this->provisioner->removeContainers($site, $serverId);
         }
 
         foreach ($newTargets as $target) {

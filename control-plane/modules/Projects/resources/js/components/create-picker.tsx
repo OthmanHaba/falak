@@ -696,7 +696,7 @@ function DockerStep({ options, submitting, errors, onSubmit }: StepProps) {
                     framework: 'docker',
                     runtime: 'docker',
                     docker_image: image,
-                    app_port: port ? Number(port) : null,
+                    container_port: port ? Number(port) : null,
                     server_ids: serverIds,
                     leader_server_id: serverIds[0],
                     domain: domainPayload(domain),
@@ -714,8 +714,8 @@ function DockerStep({ options, submitting, errors, onSubmit }: StepProps) {
                         placeholder={image ? slugName(image.split(':')[0]) : 'api'}
                     />
                 </Field>
-                <Field label="Port" hint="Container port" error={errors.app_port}>
-                    <Input value={port} onChange={(event) => setPort(event.target.value.replace(/\D/g, ''))} placeholder="auto" inputMode="numeric" />
+                <Field label="Container port" hint="The port the app listens on inside its container" error={errors.container_port}>
+                    <Input value={port} onChange={(event) => setPort(event.target.value.replace(/\D/g, ''))} placeholder="3000" inputMode="numeric" />
                 </Field>
             </div>
             <ServersField servers={options.options.servers} value={serverIds} onChange={setServerIds} error={errors.server_ids} requireDocker />
@@ -726,7 +726,7 @@ function DockerStep({ options, submitting, errors, onSubmit }: StepProps) {
                 onChange={setDomain}
                 error={errors.domain}
             />
-            <Errors errors={otherErrors(errors, ['docker_image', 'name', 'app_port', 'server_ids', 'domain'])} />
+            <Errors errors={otherErrors(errors, ['docker_image', 'name', 'container_port', 'server_ids', 'domain'])} />
             <Button variant="primary" type="submit" icon={<Rocket />} loading={submitting} disabled={!image || serverIds.length === 0}>
                 Deploy
             </Button>

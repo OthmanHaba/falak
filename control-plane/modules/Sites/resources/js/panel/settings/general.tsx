@@ -191,6 +191,7 @@ type BuildDraft = Pick<
     | 'node_version'
     | 'web_directory'
     | 'app_port'
+    | 'container_port'
     | 'docker_image'
     | 'dockerfile'
     | 'compose_file'
@@ -210,6 +211,7 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                   node_version,
                   web_directory,
                   app_port,
+                  container_port,
                   docker_image,
                   dockerfile,
                   compose_file,
@@ -222,6 +224,7 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                   node_version,
                   web_directory,
                   app_port,
+                  container_port,
                   docker_image,
                   dockerfile,
                   compose_file,
@@ -250,7 +253,9 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                 php_version: runtime.is_php ? draft.php_version : null,
                 node_version: draft.node_version || null,
                 web_directory: draft.web_directory || null,
-                app_port: runtime.proxies && draft.app_port ? Number(draft.app_port) : null,
+                ...(draft.runtime === 'docker'
+                    ? { container_port: draft.container_port ? Number(draft.container_port) : null }
+                    : { app_port: runtime.proxies && draft.app_port ? Number(draft.app_port) : null }),
                 docker_image: draft.docker_image || null,
                 dockerfile: draft.dockerfile || null,
                 compose_file: draft.compose_file || null,
@@ -335,16 +340,36 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                         />
                     </Field>
                 )}
-                {runtime.proxies && (
-                    <Field label="App port" error={errors.app_port} hint="The web process listens here; Caddy proxies to it.">
+                {draft.runtime === 'docker' ? (
+                    <Field
+                        label="Container port"
+                        error={errors.container_port}
+                        hint={`The port the app listens on inside its container (also passed as PORT). Kiln publishes it on 127.0.0.1:${settings.app_port ?? 'auto'}. Changing it redeploys the service.`}
+                    >
                         <Input
                             mono
                             inputMode="numeric"
-                            value={text('app_port')}
+                            value={text('container_port')}
                             disabled={!data.can.update}
-                            onChange={(event) => set({ app_port: event.target.value === '' ? null : Number(event.target.value.replace(/\D/g, '')) })}
+                            onChange={(event) =>
+                                set({ container_port: event.target.value === '' ? null : Number(event.target.value.replace(/\D/g, '')) })
+                            }
                         />
                     </Field>
+                ) : (
+                    runtime.proxies && (
+                        <Field label="App port" error={errors.app_port} hint="The web process listens here; Caddy proxies to it.">
+                            <Input
+                                mono
+                                inputMode="numeric"
+                                value={text('app_port')}
+                                disabled={!data.can.update}
+                                onChange={(event) =>
+                                    set({ app_port: event.target.value === '' ? null : Number(event.target.value.replace(/\D/g, '')) })
+                                }
+                            />
+                        </Field>
+                    )
                 )}
                 {draft.runtime === 'docker' && (
                     <>

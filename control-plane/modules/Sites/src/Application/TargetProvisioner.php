@@ -69,6 +69,32 @@ final class TargetProvisioner
         }
     }
 
+    /**
+     * Stop what a container site runs on a server: its blue and green containers (docker) or its compose project.
+     * Named volumes are kept unless $volumes (compose only; docker sites mount host paths under the site root).
+     */
+    public function removeContainers(Site $site, string $serverId, bool $volumes = false): void
+    {
+        $commands = match ($site->runtime) {
+            SiteRuntime::Docker => [
+                ['docker.stop', ['name' => "kiln-{$site->slug}-blue", 'remove' => true]],
+                ['docker.stop', ['name' => "kiln-{$site->slug}-green", 'remove' => true]],
+            ],
+            SiteRuntime::Compose => [
+                ['docker.compose.down', ['project' => $site->slug, 'directory' => $site->rootPath(), 'volumes' => $volumes]],
+            ],
+            default => [],
+        };
+
+        foreach ($commands as $i => [$type, $payload]) {
+            try {
+                $this->agents->dispatch($serverId, $type, $payload, 300, "sites.containers.remove:{$site->id}:{$serverId}:{$i}:".Str::ulid());
+            } catch (AgentUnavailable) {
+                return; // The server is gone or disconnected; nothing to clean up remotely.
+            }
+        }
+    }
+
     private function afterUser(SiteTarget $target): void
     {
         $site = $target->site;

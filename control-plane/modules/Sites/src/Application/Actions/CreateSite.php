@@ -118,6 +118,7 @@ final class CreateSite
         $this->rules->connection($organizationId, $data['source_connection_id'] ?? null);
 
         $appPort = null;
+        $containerPort = null;
         $compose = null;
         $slug = $this->slug((string) ($data['slug'] ?? '') ?: (string) $data['name']);
         $domain = null;
@@ -137,6 +138,11 @@ final class CreateSite
         if ($runtime === SiteRuntime::Compose) {
             $compose = $this->composeFields($organizationId, $data, $serverIds);
             $appPort = $compose['public_services'][0]['host_port'] ?? null;
+        } elseif ($runtime === SiteRuntime::Docker) {
+            // The container listens on its own port (any value, repeated freely across sites); Caddy reaches it on a
+            // loopback host port Kiln allocates. app_port from older clients meant the container port.
+            $containerPort = (int) ($data['container_port'] ?? $data['app_port'] ?? config('sites.default_container_port', 3000));
+            $appPort = $this->rules->freePort($serverIds);
         } elseif ($runtime->proxiesToPort()) {
             $appPort = isset($data['app_port']) ? (int) $data['app_port'] : $this->rules->freePort($serverIds);
             $this->rules->portAvailable($appPort, $serverIds);
@@ -146,7 +152,7 @@ final class CreateSite
 
         $variables = $this->variables($data['variables'] ?? null);
 
-        $site = DB::transaction(function () use ($organizationId, $userId, $data, $framework, $preset, $runtime, $buildMode, $phpVersion, $serverIds, $leaderId, $appPort, $slug, $isolated, $configure, $compose, $variables, $domain) {
+        $site = DB::transaction(function () use ($organizationId, $userId, $data, $framework, $preset, $runtime, $buildMode, $phpVersion, $serverIds, $leaderId, $appPort, $containerPort, $slug, $isolated, $configure, $compose, $variables, $domain) {
             $site = Site::query()->create([
                 'organization_id' => $organizationId,
                 'name' => $data['name'],
@@ -164,6 +170,7 @@ final class CreateSite
                 'unix_user' => $isolated ? $this->unixUser($slug) : (string) config('sites.unix_user', 'kiln'),
                 'isolated' => $isolated,
                 'app_port' => $appPort,
+                'container_port' => $containerPort,
                 'docker_image' => $data['docker_image'] ?? null,
                 'dockerfile' => $runtime === SiteRuntime::Docker ? ($data['dockerfile'] ?? (isset($data['docker_image']) ? null : 'Dockerfile')) : null,
                 'compose_file' => $compose !== null && $compose['source'] === ComposeSource::Repo ? ($data['compose_file'] ?? null) : null,
@@ -298,7 +305,7 @@ final class CreateSite
         }
 
         if ($site->app_port !== null && $site->runtime !== SiteRuntime::Compose) {
-            $variables['PORT'] = (string) $site->app_port;
+            $variables['PORT'] = (string) ($site->container_port ?? $site->app_port);
         }
 
         return $variables;

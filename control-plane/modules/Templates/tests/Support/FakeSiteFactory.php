@@ -41,9 +41,9 @@ final class FakeSiteFactory implements SiteFactory
         return app(ActionSiteFactory::class)->duplicate($siteId, $overrides, $placement, $userId);
     }
 
-    public function delete(string $siteId): void
+    public function delete(string $siteId, bool $deleteVolumes = false): void
     {
-        app(ActionSiteFactory::class)->delete($siteId);
+        app(ActionSiteFactory::class)->delete($siteId, $deleteVolumes);
     }
 
     /**

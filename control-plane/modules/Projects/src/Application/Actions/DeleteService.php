@@ -18,10 +18,10 @@ final class DeleteService
         private readonly DatabaseProvisioner $databases,
     ) {}
 
-    public function __invoke(Service $service): void
+    public function __invoke(Service $service, bool $deleteVolumes = false): void
     {
         match ($service->kind) {
-            ServiceKind::Site => $this->sites->delete($service->ref_id),
+            ServiceKind::Site => $this->sites->delete($service->ref_id, $deleteVolumes),
             ServiceKind::Database => $this->databases->delete($service->ref_id),
         };
     }
