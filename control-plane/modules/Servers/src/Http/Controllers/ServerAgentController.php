@@ -44,7 +44,7 @@ final class ServerAgentController extends Controller
     {
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, 'fleet.agents.manage');
-        $data = $request->validate(['server_ids' => ['sometimes', 'array', 'min:1', 'max:500'], 'server_ids.*' => ['string', 'size:26']]);
+        $data = $request->validate(['server_ids' => ['sometimes', 'array', 'min:1', 'max:2000'], 'server_ids.*' => ['string', 'size:26']]);
 
         // Servers of other organizations never match: the rollout is scoped to the current one.
         $queued = $this->upgrades->upgradeOrganization($organizationId, $request->user()?->getAuthIdentifier(), $data['server_ids'] ?? null);

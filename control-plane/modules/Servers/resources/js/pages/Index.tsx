@@ -344,7 +344,12 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
             actions={
                 <>
                     {selection.length > 0 ? (
-                        <Button variant="primary" icon={<ArrowUpCircle />} loading={updating} onClick={() => updateAgents(selection)}>
+                        <Button
+                            variant="primary"
+                            icon={<ArrowUpCircle />}
+                            loading={updating}
+                            onClick={() => updateAgents(selection.length === updatableIds.length ? undefined : selection)}
+                        >
                             Update selected ({selection.length})
                         </Button>
                     ) : (
