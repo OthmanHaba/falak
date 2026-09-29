@@ -484,6 +484,20 @@ it('redeploys the live commit of a docker site when its container port changes',
     expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2);
 });
 
+it('follows a docker deployment in progress after a port change and leaves a queued one alone', function () {
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 3000, 'deploy_script' => '$KILN_FETCH']);
+    $building = deploy($world, commit: str_repeat('b', 40));
+
+    SiteUpdated::dispatch($world->site->id, $world->organization->id, ['container_port'], $world->site->serverIds());
+    $follow = Deployment::query()->where('site_id', $world->site->id)->whereKeyNot($building->id)->sole();
+    expect($follow->commit)->toBe($building->commit)->and($follow->status)->toBeIn([DeploymentStatus::Queued, DeploymentStatus::Waiting]);
+
+    // The queued deployment picks the new ports up when it runs: nothing more is triggered or coalesced over it.
+    SiteUpdated::dispatch($world->site->id, $world->organization->id, ['container_port'], $world->site->serverIds());
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2)
+        ->and($follow->refresh()->commit)->toBe($building->commit);
+});
+
 it('resumes a deployment whose command events were lost', function () {
     $world = deploy_world();
     $deployment = deploy($world);

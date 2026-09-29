@@ -4,8 +4,11 @@ namespace Kiln\Deployments\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
+use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\Trigger;
+use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteRuntime;
@@ -15,7 +18,8 @@ use Throwable;
 /**
  * A docker site's ports only take effect when a new container starts: when its container port changes, or its host port
  * moves (a new server already used it), redeploy the live release's commit so no new code ships with the change and the
- * edge never proxies to a port nothing listens on. Sites that were never deployed wait for their first deploy.
+ * edge never proxies to a port nothing listens on. Sites that were never deployed wait for their first deploy, and a
+ * queued or waiting deployment already picks the new ports up.
  */
 final class RedeployOnPortChange implements ShouldQueue
 {
@@ -31,9 +35,23 @@ final class RedeployOnPortChange implements ShouldQueue
         }
 
         $site = $this->sites->find($event->siteId);
-        $release = $site?->runtime === SiteRuntime::Docker ? Release::current($site->id) : null;
 
-        if ($site === null || $release === null) {
+        if ($site === null || $site->runtime !== SiteRuntime::Docker) {
+            return;
+        }
+
+        $pending = Deployment::query()->where('site_id', $site->id)->whereNotIn('status', [DeploymentStatus::Succeeded, DeploymentStatus::Failed, DeploymentStatus::Cancelled])
+            ->latest('created_at')->orderByDesc('id')->first();
+
+        // A queued or waiting deployment has not started a container yet: it runs with the new ports (and its own commit).
+        if ($pending !== null && in_array($pending->status, [DeploymentStatus::Queued, DeploymentStatus::Waiting], true)) {
+            return;
+        }
+
+        // A deployment in progress may already run the old ports: follow it with the same commit (it becomes live).
+        $source = $pending ?? Release::current($site->id);
+
+        if ($source === null) {
             return;
         }
 
@@ -41,13 +59,17 @@ final class RedeployOnPortChange implements ShouldQueue
             ($this->trigger)(
                 $site,
                 Trigger::Manual,
-                branch: $release->branch,
-                commit: $release->commit,
+                branch: $source->branch,
+                commit: $source->commit,
                 message: 'Ports changed: container '.$site->listenPort().', host '.$site->appPort,
-                author: $release->commit_author,
+                author: $source->commit_author,
             );
+        } catch (ValidationException $e) {
+            Log::warning('deployments: redeploy after a port change refused', ['site_id' => $site->id, 'errors' => $e->errors()]);
         } catch (Throwable $e) {
             Log::warning('deployments: redeploy after a port change failed', ['site_id' => $site->id, 'error' => $e->getMessage()]);
+
+            throw $e; // let the queue retry
         }
     }
 }
