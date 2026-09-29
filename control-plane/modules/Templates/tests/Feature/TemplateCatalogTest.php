@@ -12,14 +12,18 @@ use Kiln\Templates\Infrastructure\FilesystemCatalog;
  */
 
 const CATALOG_V1 = [
-    'appsmith', 'directus', 'ghost', 'gitea', 'grafana', 'listmonk', 'mailpit', 'meilisearch', 'metabase',
-    'minio', 'n8n', 'nocodb', 'plausible', 'redis-stack', 'umami', 'uptime-kuma', 'vaultwarden', 'wordpress',
+    'adminer', 'appsmith', 'bookstack', 'changedetection', 'code-server', 'directus', 'excalidraw', 'forgejo', 'ghost',
+    'gitea', 'grafana', 'langflow', 'listmonk', 'mailpit', 'matomo', 'meilisearch', 'metabase', 'minio', 'n8n',
+    'nextcloud', 'nocodb', 'ntfy', 'ollama', 'paperless-ngx', 'plausible', 'qdrant', 'redis-stack', 'umami',
+    'uptime-kuma', 'vaultwarden', 'wikijs', 'wordpress',
 ];
 
 /** Brand icons the UI ships (modules/Templates/resources/js/components/template-icon.tsx). */
 const CATALOG_BRAND_ICONS = [
-    'appsmith', 'clickhouse', 'directus', 'docker', 'ghost', 'gitea', 'grafana', 'listmonk', 'mariadb', 'meilisearch', 'metabase',
-    'minio', 'mysql', 'n8n', 'plausibleanalytics', 'postgresql', 'redis', 'umami', 'uptimekuma', 'vaultwarden', 'wordpress',
+    'adminer', 'appsmith', 'bookstack', 'changedetection', 'clickhouse', 'coder', 'directus', 'docker', 'excalidraw',
+    'forgejo', 'ghost', 'gitea', 'grafana', 'langflow', 'listmonk', 'mariadb', 'matomo', 'meilisearch', 'metabase',
+    'minio', 'mysql', 'n8n', 'nextcloud', 'ntfy', 'ollama', 'paperlessngx', 'plausibleanalytics', 'postgresql',
+    'qdrant', 'redis', 'umami', 'uptimekuma', 'vaultwarden', 'wikidotjs', 'wordpress',
 ];
 
 function catalog_files(): array

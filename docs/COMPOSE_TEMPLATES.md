@@ -108,6 +108,10 @@ n8n · Uptime Kuma · Plausible (+ClickHouse, Postgres) · Umami (+Postgres) · 
 Metabase · Gitea · MinIO · Meilisearch · Mailpit · Vaultwarden · Directus (+Postgres) · Listmonk (+Postgres) ·
 NocoDB · Redis Stack · Grafana OSS · Appsmith.
 
+Catalog v2 adds: Ollama + Open WebUI · Langflow (+Postgres) · Qdrant · changedetection.io · ntfy · Nextcloud
+(+MariaDB, Redis) · Paperless-ngx (+Redis) · BookStack (+MariaDB) · Wiki.js (+Postgres) · Forgejo · code-server ·
+Excalidraw · Adminer · Matomo (+MariaDB). Every image supports amd64 and arm64.
+
 ---
 
 ## 3. Template UX (lane B)

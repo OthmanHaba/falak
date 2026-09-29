@@ -63,12 +63,14 @@ final class EloquentAgentUpgrades implements AgentUpgrades
         return $upgrade->refresh()->toData();
     }
 
-    public function upgradeOrganization(string $organizationId, ?string $userId = null): array
+    public function upgradeOrganization(string $organizationId, ?string $userId = null, ?array $serverIds = null): array
     {
         $rolloutId = strtolower((string) Str::ulid());
         $queued = [];
+        $scope = fn ($q) => $q->where('organization_id', $organizationId)->whereNotNull('server_id')
+            ->when($serverIds !== null, fn ($q) => $q->whereIn('server_id', array_map('strtolower', $serverIds)));
 
-        foreach ($this->currentAgents(fn ($q) => $q->where('organization_id', $organizationId)->whereNotNull('server_id')) as $agent) {
+        foreach ($this->currentAgents($scope) as $agent) {
             if ($agent->status !== AgentStatus::Online || $this->active($agent) !== null
                 || ! ShippedAgent::outdated($agent->agent_version, $this->sha($agent), $this->shipped->for($agent->arch))) {
                 continue;

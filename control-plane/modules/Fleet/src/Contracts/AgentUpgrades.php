@@ -31,11 +31,12 @@ interface AgentUpgrades
 
     /**
      * Rolling upgrade of every online, outdated agent of the organization, `fleet.agent.upgrade.batch_size` at a
-     * time; the rollout stops at the first failure.
+     * time; the rollout stops at the first failure. $serverIds limits it to those servers (the Servers list selection).
      *
+     * @param  ?list<string>  $serverIds
      * @return list<AgentUpgradeData> the queued upgrades (empty when every agent is current)
      */
-    public function upgradeOrganization(string $organizationId, ?string $userId = null): array;
+    public function upgradeOrganization(string $organizationId, ?string $userId = null, ?array $serverIds = null): array;
 
     /** Number of (non-revoked) agents running an older build than the one shipped; all organizations when null. */
     public function outdatedCount(?string $organizationId = null): int;

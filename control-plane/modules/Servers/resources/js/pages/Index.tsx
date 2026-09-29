@@ -1,4 +1,5 @@
 import { Button } from '@/components/kiln/button';
+import { Checkbox } from '@/components/kiln/checkbox';
 import { CopyButton, copyText } from '@/components/kiln/copy-button';
 import { DataTable, type DataTableColumn } from '@/components/kiln/data-table';
 import { EmptyState } from '@/components/kiln/empty-state';
@@ -146,7 +147,55 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
         setState(ALL);
     };
 
+    // Agent updates: per row, the selected rows, or every outdated online agent (rolled out a few at a time).
+    const updatable = (server: FleetServer) =>
+        can.upgrade_agents &&
+        server.agent?.status === 'online' &&
+        server.agent.update_available &&
+        !['queued', 'running'].includes(server.agent.upgrade?.status ?? '');
+    const updatableIds = servers.filter(updatable).map((server) => server.id);
+    const [selected, setSelected] = useState<string[]>([]);
+    const selection = selected.filter((id) => updatableIds.includes(id));
+    const toggle = (id: string, on: boolean) => setSelected((ids) => (on ? [...new Set([...ids, id])] : ids.filter((other) => other !== id)));
+    // One update request at a time: double clicks do not queue duplicates.
+    const [updating, setUpdating] = useState(false);
+    const pending = { onStart: () => setUpdating(true), onFinish: () => setUpdating(false) };
+    const updateAgents = (ids?: string[]) =>
+        router.post('/servers/agents/upgrade', ids ? { server_ids: ids } : {}, {
+            preserveScroll: true,
+            only: ['servers', 'flash'],
+            onSuccess: () => setSelected([]),
+            ...pending,
+        });
+    const updateAgent = (server: FleetServer) =>
+        router.post(`/servers/${server.id}/agent/upgrade`, {}, { preserveScroll: true, only: ['servers', 'flash'], ...pending });
+
     const columns: DataTableColumn<FleetServer>[] = [
+        ...(updatableIds.length > 0
+            ? [
+                  {
+                      id: 'select',
+                      width: '36px',
+                      header: (
+                          <Checkbox
+                              checked={selection.length === 0 ? false : selection.length === updatableIds.length ? true : 'indeterminate'}
+                              onCheckedChange={(checked) => setSelected(checked === true ? updatableIds : [])}
+                              aria-label="Select every server with an agent update"
+                          />
+                      ),
+                      cell: (server: FleetServer) =>
+                          updatable(server) ? (
+                              <span onClick={(event) => event.stopPropagation()} className="flex">
+                                  <Checkbox
+                                      checked={selection.includes(server.id)}
+                                      onCheckedChange={(checked) => toggle(server.id, checked === true)}
+                                      aria-label={`Select ${server.name} for an agent update`}
+                                  />
+                              </span>
+                          ) : null,
+                  },
+              ]
+            : []),
         {
             id: 'name',
             header: 'Name',
@@ -248,8 +297,24 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
             hideOnMobile: true,
             sortValue: (server) => server.agent?.version ?? '',
             cell: (server) => (
-                <span className="text-xs">
+                <span className="flex flex-wrap items-center gap-1.5 text-xs">
                     <AgentVersion agent={server.agent} compact />
+                    {updatable(server) && (
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            icon={<ArrowUpCircle />}
+                            disabled={updating}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                updateAgent(server);
+                            }}
+                            aria-label={`Update the agent of ${server.name} to ${server.agent?.available_version}`}
+                        >
+                            Update
+                        </Button>
+                    )}
                 </span>
             ),
         },
@@ -262,11 +327,6 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
             cell: (server) => <RelativeTime value={server.agent?.last_heartbeat_at} className="text-fg-muted text-xs" fallback="never" />,
         },
     ];
-
-    const outdatedAgents = servers.filter(
-        (server) =>
-            server.agent?.status === 'online' && server.agent.update_available && !['queued', 'running'].includes(server.agent.upgrade?.status ?? ''),
-    ).length;
 
     const summary = [
         { key: 'online', label: 'online' },
@@ -283,14 +343,21 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
             description="The machines your services run on, managed by the Kiln agent."
             actions={
                 <>
-                    {can.upgrade_agents && outdatedAgents > 0 && (
+                    {selection.length > 0 ? (
                         <Button
-                            variant="secondary"
+                            variant="primary"
                             icon={<ArrowUpCircle />}
-                            onClick={() => router.post('/servers/agents/upgrade', {}, { preserveScroll: true, only: ['servers', 'flash'] })}
+                            loading={updating}
+                            onClick={() => updateAgents(selection.length === updatableIds.length ? undefined : selection)}
                         >
-                            Upgrade {outdatedAgents === 1 ? 'agent' : `all agents (${outdatedAgents})`}
+                            Update selected ({selection.length})
                         </Button>
+                    ) : (
+                        updatableIds.length > 0 && (
+                            <Button variant="secondary" icon={<ArrowUpCircle />} loading={updating} onClick={() => updateAgents()}>
+                                {updatableIds.length === 1 ? 'Update agent' : `Update all agents (${updatableIds.length})`}
+                            </Button>
+                        )
                     )}
                     {can.create && (
                         <Button variant="primary" asChild>
