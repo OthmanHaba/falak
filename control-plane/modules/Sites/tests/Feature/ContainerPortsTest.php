@@ -88,7 +88,9 @@ it('moves a docker site\'s host port instead of refusing a server that already u
     $api = Site::query()->where('slug', 'api')->firstOrFail();
     expect($web->app_port)->toBe($api->app_port);
 
+    Event::fake([SiteUpdated::class]);
     $this->put("/sites/{$web->id}/targets", ['server_ids' => [$other->id, $this->server->id], 'leader_server_id' => $other->id])->assertSessionHasNoErrors();
 
     expect($web->refresh()->app_port)->not->toBe($api->app_port)->and($web->container_port)->toBe(3000);
+    Event::assertDispatched(SiteUpdated::class, fn (SiteUpdated $event) => $event->siteId === $web->id && $event->changed('app_port'));
 });
