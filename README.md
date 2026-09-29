@@ -157,3 +157,7 @@ Full guide (requirements, DNS, upgrade, backup/restore, uninstall, troubleshooti
 [`docs/INSTALL.md`](docs/INSTALL.md).
 
 Known limits and deferred items are listed in [`docs/INTEGRATION-NOTES.md`](docs/INTEGRATION-NOTES.md).
+
+## License
+
+Kiln is licensed under the [Apache License 2.0](LICENSE).

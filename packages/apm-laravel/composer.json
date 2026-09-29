@@ -2,7 +2,7 @@
     "name": "kiln/apm-laravel",
     "description": "Kiln APM for Laravel: Nightwatch-style request, query, job, cache, mail, notification, command, schedule, exception and log telemetry exported as OTLP/HTTP JSON to the local kiln-agent.",
     "type": "library",
-    "license": "MIT",
+    "license": "Apache-2.0",
     "keywords": ["laravel", "apm", "opentelemetry", "otlp", "observability", "kiln"],
     "require": {
         "php": "^8.2",

@@ -2,7 +2,7 @@
   "name": "@kiln/apm-node",
   "version": "0.1.0",
   "description": "Kiln APM for Node.js, Bun and Deno: an OpenTelemetry preset that exports Nightwatch-style request, outgoing request, query, cache and exception telemetry to the local kiln-agent.",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=20"
