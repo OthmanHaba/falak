@@ -31,7 +31,7 @@ final class AgentsCommand extends Command
             $this->line("kiln-agent linux-{$arch}: ".($build ? "{$build['version']} (sha256 {$build['sha256']})" : 'not published'));
         }
 
-        $this->line("{$outdated} agent(s) run an older build.".($outdated > 0 ? ' Upgrade them under Servers → Upgrade all agents (or POST /api/v1/servers/{server}/agent/upgrade).' : ''));
+        $this->line("{$outdated} agent(s) run an older build.".($outdated > 0 ? ' Update them under Servers → Update all agents (or POST /api/v1/servers/{server}/agent/upgrade).' : ''));
 
         return self::SUCCESS;
     }

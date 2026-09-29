@@ -527,7 +527,7 @@ agents_hint() {
   n="$(compose exec -T control-plane php artisan kiln:agents --outdated --count 2>/dev/null | tr -dc '0-9')"
   if [ -n "$n" ] && [ "$n" -gt 0 ]; then
     warn "$n server agent(s) run an older kiln-agent than this release ships."
-    say "  Upgrade them in the panel (Servers → Upgrade all agents) or: curl -X POST -H 'Authorization: Bearer …' https://$(env_get KILN_DOMAIN)/api/v1/servers/<id>/agent/upgrade"
+    say "  Update them in the panel (Servers → Update all agents, or Update per server) or: curl -X POST -H 'Authorization: Bearer …' https://$(env_get KILN_DOMAIN)/api/v1/servers/<id>/agent/upgrade"
   fi
 }
 
