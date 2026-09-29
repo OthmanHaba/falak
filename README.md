@@ -110,7 +110,21 @@ Laravel sites can switch on **Octane** under Settings → Laravel (FrankenPHP wo
 RoadRunner on PHP-FPM): Kiln picks a free port per server, and Caddy serves `public/` files itself and proxies the rest
 to Octane once it answers; deploys restart Octane while Caddy holds requests.
 
-### CLI (`agent/bin/kiln-<os>-<arch>`)
+### CLI (on your own machine)
+`kiln` controls a Kiln install from a developer laptop or CI: deploys, rollbacks, env files, logs, SSH. Install it
+on macOS or Linux (amd64/arm64) in one line. The script picks the right binary from the latest release, checks it
+against `SHA256SUMS` and puts it in `/usr/local/bin` (or `~/.local/bin`):
+```bash
+curl -fsSL https://raw.githubusercontent.com/OthmanHaba/kiln/main/deploy/install-cli.sh | sh
+
+# install and log in in one go
+curl -fsSL https://raw.githubusercontent.com/OthmanHaba/kiln/main/deploy/install-cli.sh | KILN_URL=https://kiln.example.com sh
+```
+`KILN_VERSION=v0.2.6` pins a version and `KILN_INSTALL_DIR` changes the target. Log in with an API token from
+**Settings → API tokens**. The token is checked, then stored in `~/Library/Application Support/kiln/credentials.json`
+(macOS) or `~/.config/kiln/credentials.json` (Linux), mode 0600. `kiln whoami` shows who you are, `kiln logout`
+forgets the token, and revoking it in the panel cuts the CLI off. `kiln-ctl` is different: it is the server admin
+tool that `install.sh` puts on the control-plane host.
 ```bash
 kiln login --url https://kiln.example.com          # or KILN_URL / KILN_TOKEN in CI
 kiln servers list

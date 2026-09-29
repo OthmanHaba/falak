@@ -4,7 +4,7 @@
 # Expects agent/bin/ from `make -C agent build VERSION=<tag>`. Produces:
 #   kiln-agent-linux-{amd64,arm64}, kiln-builder-linux-{amd64,arm64}, kiln-{linux,darwin}-{amd64,arm64},
 #   kiln-deploy.tar.gz (deploy/ + observability/, install.sh/kiln-ctl pinned to <owner/repo>),
-#   install.sh (defaults to <tag>), kiln-ctl, SHA256SUMS
+#   install.sh (defaults to <tag>), install-cli.sh (the `kiln` CLI installer, defaults to <tag>), kiln-ctl, SHA256SUMS
 set -euo pipefail
 tag="${1:?tag}"; repo="${2:?owner/repo}"; out="${3:?out dir}"
 root="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -36,8 +36,10 @@ pin() { # pin FILE : default repo -> $repo; install.sh defaults to this release
 }
 pin "$stage/deploy/kiln-ctl"
 pin "$stage/deploy/install.sh"
+pin "$stage/deploy/install-cli.sh"
 cp "$stage/deploy/install.sh" "$out/install.sh"
 cp "$stage/deploy/kiln-ctl" "$out/kiln-ctl"
+cp "$stage/deploy/install-cli.sh" "$out/install-cli.sh"
 
 if tar --version 2>/dev/null | grep -q GNU; then
   tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@${SOURCE_DATE_EPOCH:-0}" \

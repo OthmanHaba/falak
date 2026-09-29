@@ -39,7 +39,7 @@ func cmdLogin(ctx context.Context, a *App, args []string) error {
 	}
 	if *fromStdin || (a.token == "" && a.Getenv("KILN_TOKEN") == "") {
 		if !*fromStdin && a.Interactive {
-			fmt.Fprintf(a.Stderr, "Create a token at %s/settings/tokens\nAPI token: ", creds.URL)
+			fmt.Fprintf(a.Stderr, "Create a token at %s/settings/api-tokens\nAPI token: ", creds.URL)
 		}
 		var line string
 		if a.Interactive && !*fromStdin && a.ReadSecret != nil {
