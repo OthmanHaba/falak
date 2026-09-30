@@ -19,6 +19,7 @@ use Kiln\Edge\Domain\Enums\WwwRedirect;
  * @property TlsMode $tls_mode
  * @property ?string $certificate_id
  * @property ?string $dns_credential_id
+ * @property ?bool $cloudflare_proxied null = the Cloudflare zone's default
  * @property ?Certificate $certificate
  * @property ?DnsCredential $dnsCredential
  */
@@ -42,6 +43,7 @@ class Domain extends Model
             'is_primary' => 'boolean',
             'www_redirect' => WwwRedirect::class,
             'tls_mode' => TlsMode::class,
+            'cloudflare_proxied' => 'boolean',
         ];
     }
 

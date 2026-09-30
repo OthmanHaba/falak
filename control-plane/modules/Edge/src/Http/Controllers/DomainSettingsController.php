@@ -8,6 +8,7 @@ use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Kiln\Edge\Application\GeneratedDomains;
+use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\OrganizationSetting;
 use Kiln\Edge\Infrastructure\EloquentSiteDomains;
 use Kiln\Identity\Contracts\AuditLog;
@@ -37,6 +38,8 @@ final class DomainSettingsController extends Controller
                 'effective_suffix' => $this->generated->suffix($organizationId),
                 'default_suffix' => $this->generated->defaultSuffix(),
                 'providers' => GeneratedDomains::PROVIDERS,
+                // Cloudflare zones Kiln manages (Settings → Cloudflare): names like shop.example.com.
+                'zones' => CloudflareZone::query()->where('organization_id', $organizationId)->orderBy('name')->pluck('name')->all(),
                 'test_domain' => EloquentSiteDomains::testDomainBase(),
             ],
             'can' => ['manage' => $this->access->can($request->user(), $organizationId, 'edge.dns.manage')],
@@ -47,7 +50,8 @@ final class DomainSettingsController extends Controller
     {
         $organizationId = $this->organization->requireId();
         $this->access->authorize($request->user(), $organizationId, 'edge.dns.manage');
-        $choices = ['default', GeneratedDomains::OFF, ...GeneratedDomains::PROVIDERS];
+        $zones = CloudflareZone::query()->where('organization_id', $organizationId)->pluck('name')->map(fn ($zone) => GeneratedDomains::CLOUDFLARE.$zone)->all();
+        $choices = ['default', GeneratedDomains::OFF, ...GeneratedDomains::PROVIDERS, ...$zones];
         $default = $this->generated->defaultSuffix();
 
         if ($default !== null) {
@@ -61,7 +65,9 @@ final class DomainSettingsController extends Controller
         return back()->with('success', match ($provider) {
             GeneratedDomains::OFF => 'Generated domains are off. New services need a test domain or your own domain.',
             'default' => 'Generated domains use the server default.',
-            default => "Generated domains now use {$provider}.",
+            default => str_starts_with($provider, GeneratedDomains::CLOUDFLARE)
+                ? 'New services get names under '.substr($provider, strlen(GeneratedDomains::CLOUDFLARE)).'; Kiln creates their DNS records in Cloudflare.'
+                : "Generated domains now use {$provider}.",
         });
     }
 }

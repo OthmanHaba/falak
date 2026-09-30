@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Kiln\Edge\Http\Controllers\CertificateController;
+use Kiln\Edge\Http\Controllers\CloudflareController;
 use Kiln\Edge\Http\Controllers\DnsController;
 use Kiln\Edge\Http\Controllers\DnsCredentialController;
 use Kiln\Edge\Http\Controllers\DomainController;
@@ -14,6 +15,7 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::post('sites/{site}/domains', [DomainController::class, 'store'])->name('edge.domains.store');
     Route::patch('sites/{site}/domains/{domain}', [DomainController::class, 'update'])->name('edge.domains.update');
     Route::put('sites/{site}/domains/{domain}/primary', [DomainController::class, 'primary'])->name('edge.domains.primary');
+    Route::put('sites/{site}/domains/{domain}/cloudflare', [DomainController::class, 'cloudflare'])->name('edge.domains.cloudflare');
     Route::delete('sites/{site}/domains/{domain}', [DomainController::class, 'destroy'])->name('edge.domains.destroy');
     Route::post('sites/{site}/edge/apply', [DomainController::class, 'apply'])->name('edge.apply');
 
@@ -37,6 +39,15 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::get('dns/check', [DnsController::class, 'check'])->middleware('throttle:60,1')->name('edge.dns.check');
     Route::get('settings/domains', [DomainSettingsController::class, 'show'])->name('edge.domain-settings');
     Route::put('settings/domains', [DomainSettingsController::class, 'update'])->name('edge.domain-settings.update');
+
+    Route::get('settings/cloudflare', [CloudflareController::class, 'show'])->name('edge.cloudflare');
+    Route::post('settings/cloudflare', [CloudflareController::class, 'connect'])->middleware('throttle:20,1')->name('edge.cloudflare.connect');
+    Route::delete('settings/cloudflare/{credential}', [CloudflareController::class, 'disconnect'])->name('edge.cloudflare.disconnect');
+    Route::post('settings/cloudflare/{credential}/zones', [CloudflareController::class, 'enable'])->name('edge.cloudflare.zones.enable');
+    Route::patch('settings/cloudflare/zones/{zone}', [CloudflareController::class, 'update'])->name('edge.cloudflare.zones.update');
+    Route::delete('settings/cloudflare/zones/{zone}', [CloudflareController::class, 'disable'])->name('edge.cloudflare.zones.disable');
+    Route::put('settings/cloudflare/zones/{zone}/setting', [CloudflareController::class, 'setting'])->name('edge.cloudflare.zones.setting');
+    Route::post('settings/cloudflare/zones/{zone}/sync', [CloudflareController::class, 'sync'])->name('edge.cloudflare.zones.sync');
 
     Route::post('edge/dns-credentials', [DnsCredentialController::class, 'store'])->name('edge.dns-credentials.store');
     Route::delete('edge/dns-credentials/{credential}', [DnsCredentialController::class, 'destroy'])->name('edge.dns-credentials.destroy');

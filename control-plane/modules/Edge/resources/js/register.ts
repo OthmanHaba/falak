@@ -1,5 +1,5 @@
 import { registerDomainPicker, registerServiceSettingsSections, registerSettingsNav } from '@/lib/registry';
-import { Globe } from 'lucide-react';
+import { Cloud, Globe } from 'lucide-react';
 import { lazy } from 'react';
 
 // Settings tab → Networking (docs/UI_DESIGN.md §5.1): domains + TLS, certificates, edge servers, load balancer
@@ -41,4 +41,17 @@ registerSettingsNav({
     permission: 'edge.view',
     requiresOrganization: true,
     keywords: ['domain', 'dns', 'sslip', 'nip.io', 'generated', 'test domain'],
+});
+
+// Organization settings → Integrations → Cloudflare: DNS records, generated names under a zone, proxy / TLS checks.
+registerSettingsNav({
+    id: 'cloudflare',
+    title: 'Cloudflare',
+    url: '/settings/cloudflare',
+    group: 'integrations',
+    order: 215,
+    icon: Cloud,
+    permission: 'edge.view',
+    requiresOrganization: true,
+    keywords: ['cloudflare', 'dns', 'zone', 'proxy', 'orange cloud', 'ddos', 'cdn', 'records'],
 });

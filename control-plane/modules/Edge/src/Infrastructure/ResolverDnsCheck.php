@@ -10,6 +10,7 @@ use Kiln\Edge\Contracts\Data\DnsCheckResult;
 use Kiln\Edge\Contracts\Data\DnsTarget;
 use Kiln\Edge\Contracts\DnsCheck;
 use Kiln\Edge\Contracts\DnsStatus;
+use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Infrastructure\Dns\CloudflareRanges;
 use Kiln\Edge\Infrastructure\Dns\DnsLookupFailed;
@@ -32,7 +33,8 @@ final class ResolverDnsCheck implements DnsCheck
         $suffix = $this->generated->suffix($organizationId);
         $ipv4 = $targets[0]->ipv4 ?? null;
         $generatedName = $label !== null && $suffix !== null && $ipv4 !== null ? GeneratedDomains::name($label, $ipv4, $suffix) : null;
-        $instructions = DnsInstructions::for($name, $targets, $generatedName !== $name ? $generatedName : null);
+        $managedZone = CloudflareZone::forHost($organizationId, $name)?->name;
+        $instructions = DnsInstructions::for($name, $targets, $generatedName !== $name ? $generatedName : null, $managedZone);
         $result = fn (DnsStatus $status, string $message, array $addresses = [], array $cnames = [], array $matched = [], ?array $certificate = null) => new DnsCheckResult(
             $name, $status, $message, $addresses, $cnames, $targets, $matched, $instructions, $certificate, new DateTimeImmutable,
         );
@@ -56,6 +58,10 @@ final class ResolverDnsCheck implements DnsCheck
         }
 
         $proxied = array_values(array_filter($addresses, CloudflareRanges::contains(...)));
+
+        if ($proxied !== [] && $managedZone !== null) {
+            return $result(DnsStatus::Ok, "Proxied by Cloudflare (orange cloud), with DNS managed by Kiln in {$managedZone}.", $addresses, $answer->cnames);
+        }
 
         if ($proxied !== []) {
             return $result(DnsStatus::Proxied, 'Proxied by Cloudflare (orange cloud): Let\'s Encrypt cannot reach the server over HTTP-01. Set the record to “DNS only”, or use DNS-01 TLS.', $addresses, $answer->cnames);

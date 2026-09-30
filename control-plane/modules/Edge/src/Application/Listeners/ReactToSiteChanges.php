@@ -5,6 +5,7 @@ namespace Kiln\Edge\Application\Listeners;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Kiln\Edge\Application\CertificateInstaller;
 use Kiln\Edge\Application\EdgeChanges;
+use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
 use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Domain\Models\Certificate;
 use Kiln\Edge\Domain\Models\Domain;
@@ -51,6 +52,7 @@ final class ReactToSiteChanges implements ShouldQueue
     public function targetsChanged(SiteTargetsChanged $event): void
     {
         Upstream::query()->where('site_id', $event->siteId)->whereIn('server_id', $event->removed)->delete();
+        SyncCloudflareDns::site($event->siteId); // one record per server the site runs on
 
         foreach (Certificate::query()->where('site_id', $event->siteId)->get() as $certificate) {
             $this->certificates->sync($certificate);

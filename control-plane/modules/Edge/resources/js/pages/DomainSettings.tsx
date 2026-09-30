@@ -14,6 +14,8 @@ interface Props {
         effective_suffix: string | null;
         default_suffix: string | null;
         providers: string[];
+        /** Cloudflare zones Kiln manages: `cloudflare:<zone>` generates names under them. */
+        zones: string[];
         test_domain: string | null;
     };
     can: { manage: boolean };
@@ -23,7 +25,8 @@ interface Props {
 export default function DomainSettings({ settings, can }: Props) {
     const [saving, setSaving] = useState(false);
     const providers = [...new Set([...settings.providers, ...(settings.default_suffix ? [settings.default_suffix] : [])])];
-    const example = settings.effective_suffix ? `minio-files.63-182-218-247.${settings.effective_suffix}` : null;
+    const zone = settings.provider.startsWith('cloudflare:') ? settings.provider.slice('cloudflare:'.length) : null;
+    const example = zone ? `minio-files.${zone}` : settings.effective_suffix ? `minio-files.63-182-218-247.${settings.effective_suffix}` : null;
 
     const save = (provider: string) => {
         setSaving(true);
@@ -53,19 +56,30 @@ export default function DomainSettings({ settings, can }: Props) {
                                 label: settings.default_suffix ? `Server default (${settings.default_suffix})` : 'Server default (off)',
                             },
                             ...providers.map((provider) => ({ value: provider, label: provider })),
+                            ...settings.zones.map((name) => ({ value: `cloudflare:${name}`, label: `Cloudflare: ${name}` })),
                             { value: 'off', label: 'Off' },
                         ]}
                     />
                 </div>
                 {example ? (
                     <p className="text-fg-muted text-xs">
-                        Example: <span className="text-fg font-mono">{example}</span> → 63.182.218.247
+                        Example: <span className="text-fg font-mono">{example}</span>
+                        {zone ? ' — Kiln creates the DNS record in Cloudflare and gets the certificate over DNS.' : ' → 63.182.218.247'}
                     </p>
                 ) : (
                     <Callout tone="info">
                         Generated domains are off. New services use the test domain{settings.test_domain ? '' : ' (none is configured)'} or your own
                         domain.
                     </Callout>
+                )}
+                {settings.zones.length === 0 && (
+                    <p className="text-fg-muted text-xs">
+                        Use your own domain for generated names: connect it in{' '}
+                        <a href="/settings/cloudflare" className="text-fg underline">
+                            Settings → Cloudflare
+                        </a>
+                        .
+                    </p>
                 )}
                 <p className="text-fg-faint text-xs">
                     Names under sslip.io and nip.io are shared with everyone who uses these services (common certificate rate limits, no cookie

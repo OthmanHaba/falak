@@ -6,6 +6,7 @@ use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\InstallStatus;
 use Kiln\Edge\Domain\Models\Certificate;
 use Kiln\Edge\Domain\Models\CertificateInstall;
+use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Domain\Models\Header;
 use Kiln\Edge\Domain\Models\LoadBalancer;
@@ -13,6 +14,7 @@ use Kiln\Edge\Domain\Models\Redirect;
 use Kiln\Edge\Domain\Models\SecurityRule;
 use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Edge\Domain\Models\Upstream;
+use Kiln\Edge\Infrastructure\Dns\CloudflareRanges;
 use Kiln\Processes\Contracts\OctaneRouting;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\Data\SiteData;
@@ -64,9 +66,15 @@ final class RouteCompiler
 
         usort($entries, fn (array $a, array $b) => strcmp($a['id'], $b['id']));
 
+        // Behind Cloudflare the connection comes from Cloudflare: trust its ranges for the visitor's IP
+        // (CF-Connecting-IP), so logs, IP allow / deny lists and rate limits see the visitor.
+        $organizationId = $this->servers->find($serverId)?->organizationId;
+        $proxied = $organizationId !== null && CloudflareZone::query()->where('organization_id', $organizationId)->exists();
+
         return array_filter([
             'acme_email' => $this->acmeEmail ?: null,
             'acme_ca' => $this->acmeCa ?: null,
+            'trusted_proxies' => $proxied ? CloudflareRanges::RANGES : null,
         ]) + ['sites' => $entries];
     }
 

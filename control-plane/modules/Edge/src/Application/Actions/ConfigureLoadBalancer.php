@@ -5,6 +5,7 @@ namespace Kiln\Edge\Application\Actions;
 use Illuminate\Validation\ValidationException;
 use Kiln\Edge\Application\CertificateInstaller;
 use Kiln\Edge\Application\EdgeChanges;
+use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
 use Kiln\Edge\Domain\Enums\LbPolicy;
 use Kiln\Edge\Domain\Models\Certificate;
 use Kiln\Edge\Domain\Models\LoadBalancer;
@@ -59,6 +60,7 @@ final class ConfigureLoadBalancer
         }
 
         $this->changes->siteChanged($site->id, array_values(array_filter([$previousServer])));
+        SyncCloudflareDns::site($site->id); // records now point at the load balancer
 
         return $balancer;
     }

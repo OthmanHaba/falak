@@ -8,6 +8,7 @@ use Kiln\Alerting\Contracts\AlertTypes;
 use Kiln\Alerting\Contracts\Severity;
 use Kiln\Edge\Application\CertificateInstaller;
 use Kiln\Edge\Application\EdgeChanges;
+use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
 use Kiln\Edge\Application\Listeners\ForgetDeletedOrganization;
 use Kiln\Edge\Application\Listeners\ForgetDeletedServer;
 use Kiln\Edge\Application\Listeners\HandleEdgeCommandOutcome;
@@ -17,6 +18,8 @@ use Kiln\Edge\Contracts\DnsCheck;
 use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Events\CertificateInstallFailed;
 use Kiln\Edge\Events\CertificateIssued;
+use Kiln\Edge\Events\DomainAdded;
+use Kiln\Edge\Events\DomainRemoved;
 use Kiln\Edge\Infrastructure\Dns\DnsResolver;
 use Kiln\Edge\Infrastructure\Dns\DohResolver;
 use Kiln\Edge\Infrastructure\Dns\StreamTlsProbe;
@@ -109,6 +112,9 @@ class EdgeServiceProvider extends ModuleServiceProvider
         Event::listen(SiteDeleted::class, [ReactToSiteChanges::class, 'deleted']);
         Event::listen(OctaneRoutingChanged::class, [ReactToSiteChanges::class, 'octaneRoutingChanged']);
         Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
+        // Cloudflare DNS follows the domains (records Kiln created only).
+        Event::listen(DomainAdded::class, fn (DomainAdded $event) => SyncCloudflareDns::domain($event->domainId));
+        Event::listen(DomainRemoved::class, fn (DomainRemoved $event) => SyncCloudflareDns::forget($event->domainId));
         Event::listen(AgentVersionChanged::class, ReapplyAfterAgentUpgrade::class);
         Event::listen(OrganizationDeleted::class, ForgetDeletedOrganization::class);
         Event::listen(CommandFinished::class, [HandleEdgeCommandOutcome::class, 'handleFinished']);

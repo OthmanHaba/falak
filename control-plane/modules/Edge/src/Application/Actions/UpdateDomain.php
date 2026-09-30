@@ -3,6 +3,7 @@
 namespace Kiln\Edge\Application\Actions;
 
 use Kiln\Edge\Application\EdgeChanges;
+use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
 use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\WwwRedirect;
 use Kiln\Edge\Domain\Models\Domain;
@@ -31,5 +32,6 @@ final class UpdateDomain
 
         $this->audit->record('edge.domain_updated', 'site', $domain->site_id, ['domain' => $domain->name, 'tls' => $tls->value, 'www_redirect' => $www->value], $domain->organization_id);
         $this->changes->siteChanged($domain->site_id);
+        SyncCloudflareDns::domain($domain->id); // the www host may have appeared or gone
     }
 }

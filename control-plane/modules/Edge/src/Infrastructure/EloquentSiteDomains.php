@@ -83,6 +83,23 @@ final class EloquentSiteDomains implements SiteDomains
         $leader = $this->targets->for($organizationId, array_slice($serverIds, 0, 1), $siteId)[0]
             ?? throw ValidationException::withMessages([$field => 'Pick a server first: the generated domain points at its IP address.']);
 
+        if (($zone = $this->generated->zone($organizationId)) !== null) {
+            if ($leader->ipv4 === null && $leader->ipv6 === null) {
+                throw ValidationException::withMessages([$field => "{$leader->name} has no public IP address yet, so its DNS record cannot be created. Enter your own domain."]);
+            }
+
+            // The first free name: shop.example.com, else shop-2.example.com, …
+            $base = GeneratedDomains::label($label);
+            for ($n = 1; $n <= 20; $n++) {
+                $name = ($n === 1 ? $base : substr($base, 0, 60)."-{$n}").'.'.$zone->name;
+                if (! Domain::query()->where('name', $name)->exists()) {
+                    return $name;
+                }
+            }
+
+            throw ValidationException::withMessages([$field => "No free name for {$base} under {$zone->name}; enter a domain."]);
+        }
+
         if ($leader->ipv4 === null) {
             throw ValidationException::withMessages([$field => "{$leader->name} has no public IPv4 address yet, so no domain can be generated for it. Enter your own domain."]);
         }

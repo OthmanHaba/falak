@@ -250,6 +250,15 @@
     "raw": {
       "type": "object",
       "description": "Escape hatch: complete Caddy JSON config; when present it is loaded verbatim and `sites` is ignored"
+    },
+    "trusted_proxies": {
+      "type": "array",
+      "description": "CIDRs whose CF-Connecting-IP / X-Forwarded-For headers are trusted for the client IP (Cloudflare's ranges for proxied sites)",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 200
     }
   },
   "$defs": {

@@ -7,6 +7,7 @@ use Illuminate\Validation\ValidationException;
 use Kiln\Edge\Application\EdgeChanges;
 use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\WwwRedirect;
+use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Events\DomainAdded;
 use Kiln\Identity\Contracts\AuditLog;
@@ -31,6 +32,12 @@ final class AddDomain
 
         if ($site->testDomain !== null && strtolower($site->testDomain) === $name) {
             throw ValidationException::withMessages(['name' => 'This is the site\'s test domain; it is always routed.']);
+        }
+
+        // In a Cloudflare zone Kiln manages, certificates come over DNS-01 with that connection: HTTP-01 does not
+        // reach the server reliably behind Cloudflare's proxy (orange cloud).
+        if ($tls === TlsMode::Auto && ($zone = CloudflareZone::forHost($site->organizationId, $name)) !== null) {
+            [$tls, $dnsCredentialId] = [TlsMode::Dns, $zone->dns_credential_id];
         }
 
         $this->validateDomainTls($site->organizationId, $site->id, $name, $tls, $www, $certificateId, $dnsCredentialId);

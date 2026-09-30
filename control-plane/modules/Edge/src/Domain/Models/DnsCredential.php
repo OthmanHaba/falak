@@ -4,6 +4,7 @@ namespace Kiln\Edge\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 /**
  * DNS provider API credential for ACME DNS-01 challenges (wildcard certificates).
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $provider
  * @property string $name
  * @property string $api_token
+ * @property ?string $account_id Cloudflare account of the token's zones (tunnels are account-level)
+ * @property ?Carbon $verified_at
  * @property ?string $created_by
  */
 class DnsCredential extends Model
@@ -34,6 +37,6 @@ class DnsCredential extends Model
      */
     protected function casts(): array
     {
-        return ['api_token' => 'encrypted'];
+        return ['api_token' => 'encrypted', 'verified_at' => 'datetime'];
     }
 }
