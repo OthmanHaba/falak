@@ -51,6 +51,8 @@ it('compiles every runtime kind', function (SiteRuntime $runtime, array $expecte
     'deno' => [SiteRuntime::Deno, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
     'docker' => [SiteRuntime::Docker, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
     'compose' => [SiteRuntime::Compose, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
+    // Functions go to the server's function gateway, which starts instances on demand (no health check).
+    'function' => [SiteRuntime::Function, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:7070']], 'request_headers' => ['X-Kiln-Function' => 'app']]],
 ]);
 
 it('uses the recorded container upstream for docker sites', function () {

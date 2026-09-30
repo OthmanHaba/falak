@@ -13,7 +13,7 @@ final class FakeDeploymentTrigger implements DeploymentTrigger
 
     public bool $fail = false;
 
-    public function deploy(string $siteId, ?string $requestedBy = null): string
+    public function deploy(string $siteId, ?string $requestedBy = null, ?string $commit = null, ?string $message = null, ?string $author = null): string
     {
         if ($this->fail) {
             throw ValidationException::withMessages(['site' => 'Connect a repository before deploying.']);

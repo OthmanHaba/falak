@@ -39,6 +39,8 @@ registerServiceSettingsSections(
         sectionTitle: 'Source',
         order: 110,
         permission: 'deployments.view',
+        // Functions have no repository, build, deploy script or commands (docs/plans/FUNCTIONS.md).
+        when: (ctx) => ctx.service.icon !== 'function',
         component: lazy(() => settings().then((module) => ({ default: module.PushToDeploySettings }))),
     },
     {
@@ -48,6 +50,8 @@ registerServiceSettingsSections(
         sectionTitle: 'Deploy',
         order: 310,
         permission: 'deployments.view',
+        // Functions have no repository, build, deploy script or commands (docs/plans/FUNCTIONS.md).
+        when: (ctx) => ctx.service.icon !== 'function',
         component: lazy(() => settings().then((module) => ({ default: module.DeployStrategySettings }))),
     },
     {

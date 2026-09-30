@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { Box, Code2, Database, FileCode2, Globe, HardDrive, Server, type LucideIcon } from 'lucide-react';
+import { Box, Code2, Database, FileCode2, Globe, HardDrive, Server, SquareFunction, type LucideIcon } from 'lucide-react';
 import {
     siAppsmith,
     siBun,
@@ -100,6 +100,7 @@ const GENERIC: Record<string, LucideIcon> = {
     server: Server,
     service: Box,
     custom: Code2,
+    function: SquareFunction,
 };
 
 // Logos whose brand color is (near) black/white read poorly on one theme: draw them in the text color instead.

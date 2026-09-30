@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/fn.release.remove.schema.json",
+  "title": "fn.release.remove — deregister a function from kiln-fn-gateway, remove its containers and releases",
+  "x-kiln-redeliverable": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "site"
+  ],
+  "properties": {
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Site slug of the function"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "removed"
+      ],
+      "properties": {
+        "removed": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

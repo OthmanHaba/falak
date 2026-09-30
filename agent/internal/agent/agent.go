@@ -23,6 +23,8 @@ import (
 	"github.com/kiln/agent/internal/edge"
 	"github.com/kiln/agent/internal/enroll"
 	"github.com/kiln/agent/internal/facts"
+	"github.com/kiln/agent/internal/fngateway"
+	"github.com/kiln/agent/internal/functions"
 	"github.com/kiln/agent/internal/hostfs"
 	"github.com/kiln/agent/internal/netcfg"
 	"github.com/kiln/agent/internal/provision"
@@ -111,6 +113,8 @@ func Build(d Deps) *Components {
 	sched.Register(reg)
 	db.New(db.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, StateDir: cfg.StateDir}).Register(reg)
 	netcfg.New(netcfg.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
+	functions.New(functions.Deps{FS: d.FS, Runner: d.Runner, Docker: docker.NewClient(cfg.DockerSock), Gateway: fngateway.NewClient(""),
+		Logger: log.With("component", "functions"), Binary: BinaryPath, Version: version.Version}).Register(reg)
 	d.Telemetry.Register(reg)
 	terms.Register(reg)
 

@@ -21,6 +21,9 @@ var Features = []string{
 	"telemetry.log_kind",
 	// system.upgrade_agent verifies sha256, swaps atomically and reports the running version.
 	"system.upgrade_agent.v2",
+	// fn.release.apply / fn.release.remove / fn.status (Cloud Functions + kiln-fn-gateway), and
+	// edge.caddy.apply sites[].request_headers.
+	"fn.v1",
 }
 
 var (

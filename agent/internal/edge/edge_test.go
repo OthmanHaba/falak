@@ -526,3 +526,16 @@ func TestHTTPChallengeOnlyDisablesTLSALPN(t *testing.T) {
 		t.Fatalf("no HTTP-01 only policy: %s", b)
 	}
 }
+
+// Functions: Caddy proxies to the function gateway and names the function in a request header.
+func TestRenderReverseProxyRequestHeaders(t *testing.T) {
+	cfg, err := Render(Payload{Sites: []Site{{ID: "fn", Domains: []string{"fn.test"}, Kind: "reverse_proxy",
+		Upstreams: []Upstream{{Dial: "127.0.0.1:7070"}}, RequestHeaders: map[string]string{"X-Kiln-Function": "hello"}}}}, "/etc/kiln/certs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(cfg)
+	if !strings.Contains(string(b), `"headers":{"request":{"set":{"X-Kiln-Function":["hello"]}}}`) {
+		t.Fatalf("request header not set on reverse_proxy: %s", b)
+	}
+}

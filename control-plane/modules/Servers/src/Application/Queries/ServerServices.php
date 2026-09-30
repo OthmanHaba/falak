@@ -108,6 +108,10 @@ final class ServerServices
 
     private static function siteIcon(SiteData $site): string
     {
+        if ($site->runtime === SiteRuntime::Function) {
+            return 'function';
+        }
+
         return match ($site->framework) {
             Framework::Node => match ($site->runtime) {
                 SiteRuntime::Bun => 'bun',

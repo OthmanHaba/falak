@@ -226,9 +226,11 @@ func (c *Client) ImagePull(ctx context.Context, ref string, auth *Auth, w io.Wri
 		if m.Error != "" {
 			return fmt.Errorf("pull %s: %s", ref, m.Error)
 		}
-		if w != nil && m.Status != "" && m.Progress == "" { // skip noisy progress-bar frames
+		// Only the pull's own status ("Pulling from …", "Digest: …", "Status: …"); per-layer frames (download and
+		// extract progress, one line each per layer) would flood deployment logs.
+		if w != nil && m.Status != "" && m.Progress == "" && (m.ID == "" || m.ID == tag || strings.HasPrefix(m.Status, "Pulling from")) {
 			line := m.Status
-			if m.ID != "" {
+			if m.ID != "" && !strings.HasPrefix(m.Status, "Pulling from") {
 				line = m.ID + ": " + line
 			}
 			fmt.Fprintln(w, line)
@@ -270,7 +272,10 @@ type Container struct {
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
 	NetworkSettings struct {
-		Ports map[string][]PortBinding `json:"Ports"`
+		Ports    map[string][]PortBinding `json:"Ports"`
+		Networks map[string]struct {
+			IPAddress string `json:"IPAddress"`
+		} `json:"Networks"`
 	} `json:"NetworkSettings"`
 }
 
@@ -398,6 +403,7 @@ type CreateBody struct {
 	Cmd          []string            `json:"Cmd,omitempty"`
 	Entrypoint   []string            `json:"Entrypoint,omitempty"`
 	User         string              `json:"User,omitempty"`
+	WorkingDir   string              `json:"WorkingDir,omitempty"`
 	Labels       map[string]string   `json:"Labels,omitempty"`
 	ExposedPorts map[string]struct{} `json:"ExposedPorts,omitempty"`
 	HostConfig   HostConfig          `json:"HostConfig"`
@@ -411,6 +417,13 @@ type HostConfig struct {
 	RestartPolicy RestartPolicy            `json:"RestartPolicy"`
 	Memory        int64                    `json:"Memory,omitempty"`
 	NanoCPUs      int64                    `json:"NanoCpus,omitempty"`
+	// Hardening (function containers).
+	ReadonlyRootfs bool              `json:"ReadonlyRootfs,omitempty"`
+	Tmpfs          map[string]string `json:"Tmpfs,omitempty"`
+	CapDrop        []string          `json:"CapDrop,omitempty"`
+	SecurityOpt    []string          `json:"SecurityOpt,omitempty"`
+	PidsLimit      int64             `json:"PidsLimit,omitempty"`
+	AutoRemove     bool              `json:"AutoRemove,omitempty"`
 }
 
 // PortBinding is host ip/port.
@@ -470,4 +483,80 @@ func (c *Client) Prune(ctx context.Context, kind string, filters map[string][]st
 	}
 	_, err := c.do(ctx, http.MethodPost, path, q, nil, &out)
 	return out.SpaceReclaimed, err
+}
+
+// ContainerWait blocks until the container stops and returns its exit code.
+func (c *Client) ContainerWait(ctx context.Context, id string) (int, error) {
+	var out struct {
+		StatusCode int `json:"StatusCode"`
+		Error      *struct {
+			Message string `json:"Message"`
+		} `json:"Error"`
+	}
+	_, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/wait", url.Values{"condition": {"not-running"}}, nil, &out)
+	if err != nil {
+		return -1, err
+	}
+	if out.Error != nil && out.Error.Message != "" {
+		return out.StatusCode, errors.New(out.Error.Message)
+	}
+	return out.StatusCode, nil
+}
+
+// ContainerLogs copies the (non-TTY, multiplexed) stdout+stderr of a container to w; follow streams until the
+// container stops or ctx ends. tail > 0 limits the output to the last lines.
+func (c *Client) ContainerLogs(ctx context.Context, id string, follow bool, tail int, w io.Writer) error {
+	q := url.Values{"stdout": {"1"}, "stderr": {"1"}}
+	if follow {
+		q.Set("follow", "1")
+	}
+	if tail > 0 {
+		q.Set("tail", strconv.Itoa(tail))
+	}
+	resp, err := c.raw(ctx, http.MethodGet, "/v"+c.apiVersion(ctx)+"/containers/"+id+"/logs", q, nil, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return Demux(resp.Body, w)
+}
+
+// Demux copies a Docker multiplexed stream (8-byte frame headers) to w, stdout and stderr alike.
+func Demux(r io.Reader, w io.Writer) error {
+	hdr := make([]byte, 8)
+	for {
+		if _, err := io.ReadFull(r, hdr); err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil
+			}
+			return err
+		}
+		n := int64(hdr[4])<<24 | int64(hdr[5])<<16 | int64(hdr[6])<<8 | int64(hdr[7])
+		if _, err := io.CopyN(w, r, n); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+// NetworkExists reports whether a network of that name exists.
+func (c *Client) NetworkExists(ctx context.Context, name string) (bool, error) {
+	_, err := c.do(ctx, http.MethodGet, "/networks/"+name, nil, nil, nil)
+	if IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// NetworkCreate creates a bridge network with labels (a 409 "already exists" is not an error).
+func (c *Client) NetworkCreate(ctx context.Context, name string, labels map[string]string) error {
+	body := map[string]any{"Name": name, "Driver": "bridge", "Labels": labels}
+	_, err := c.do(ctx, http.MethodPost, "/networks/create", nil, body, nil)
+	var ae *APIError
+	if errors.As(err, &ae) && ae.Status == http.StatusConflict {
+		return nil
+	}
+	return err
 }

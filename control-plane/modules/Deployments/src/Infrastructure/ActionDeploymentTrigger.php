@@ -15,10 +15,10 @@ final class ActionDeploymentTrigger implements DeploymentTrigger
         private readonly TriggerDeployment $trigger,
     ) {}
 
-    public function deploy(string $siteId, ?string $requestedBy = null): string
+    public function deploy(string $siteId, ?string $requestedBy = null, ?string $commit = null, ?string $message = null, ?string $author = null): string
     {
         $site = $this->sites->find(strtolower($siteId)) ?? throw ValidationException::withMessages(['site' => 'Unknown site.']);
 
-        return ($this->trigger)($site, Trigger::Manual, requestedBy: $requestedBy)->id;
+        return ($this->trigger)($site, Trigger::Manual, commit: $commit, message: $message, author: $author, requestedBy: $requestedBy)->id;
     }
 }

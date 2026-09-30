@@ -1,9 +1,9 @@
 # Release: push a tag vX.Y.Z (vX.Y.Z-rc.N = pre-release, not tagged `latest`).
 #   1. multi-arch images (native amd64 + arm64 runners, merged manifests) -> GHCR:
-#        ghcr.io/<owner>/kiln-control-plane, kiln-builder, kiln-edge  :<tag> and :latest
+#        ghcr.io/<owner>/kiln-control-plane, kiln-builder, kiln-edge, kiln-fn-bun  :<tag> and :latest
 #   2. kiln-agent / kiln / kiln-builder binaries (make build), kiln-deploy.tar.gz, install.sh, kiln-ctl,
 #      SHA256SUMS -> GitHub release assets.
-# Only GITHUB_TOKEN is used. After the first release, make the three GHCR packages public
+# Only GITHUB_TOKEN is used. After the first release, make the GHCR packages public
 # (Package settings -> Change visibility) so servers can pull without logging in.
 name: release
 
@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        image: [control-plane, builder, edge]
+        image: [control-plane, builder, edge, fn-bun]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -44,6 +44,10 @@ jobs:
           - image: edge
             dockerfile: deploy/edge/Dockerfile
             context: deploy/edge
+          # Function runtime (runtimes/functions/bun/README.md); servers pull it for Bun + Hono functions.
+          - image: fn-bun
+            dockerfile: runtimes/functions/bun/Dockerfile
+            context: runtimes/functions/bun
     steps:
       - uses: actions/checkout@v4
 
@@ -96,7 +100,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        image: [control-plane, builder, edge]
+        image: [control-plane, builder, edge, fn-bun]
     steps:
       - uses: actions/download-artifact@v4
         with:

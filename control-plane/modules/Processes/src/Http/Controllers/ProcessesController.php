@@ -174,7 +174,7 @@ final class ProcessesController extends Controller
             ],
             'heartbeats_url' => '/observability/heartbeats',
             'logs_url' => $shared['logsUrl'],
-            'container_runtime' => $site->runtime->isContainer(),
+            'container_runtime' => $site->runtime->usesDocker(),
             'can' => $shared['can'],
         ]]);
     }

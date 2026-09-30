@@ -99,6 +99,7 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		e.images[ref] = "sha256:img" + strconv.Itoa(e.seq)
 		fmt.Fprintln(w, `{"status":"Pulling from library/x","id":"latest"}`)
 		fmt.Fprintln(w, `{"status":"Downloading","progressDetail":{},"progress":"[==>   ]","id":"abc"}`)
+		fmt.Fprintln(w, `{"status":"Download complete","progressDetail":{},"id":"abc"}`)
 		fmt.Fprintln(w, `{"status":"Status: Downloaded newer image"}`)
 	case r.Method == "GET" && strings.HasPrefix(p, "/images/") && strings.HasSuffix(p, "/json"):
 		ref := strings.TrimSuffix(strings.TrimPrefix(p, "/images/"), "/json")
@@ -328,7 +329,7 @@ func TestPull(t *testing.T) {
 	if fin.Error != "" || fin.Result.(PullResult).ImageID == "" {
 		t.Fatalf("%+v", fin)
 	}
-	if !strings.Contains(col.Output("stdout"), "Downloaded newer image") || strings.Contains(col.Output("stdout"), "[==>") {
+	if out := col.Output("stdout"); !strings.Contains(out, "Pulling from library/x") || !strings.Contains(out, "Downloaded newer image") || strings.Contains(out, "[==>") || strings.Contains(out, "abc:") {
 		t.Fatalf("output %q", col.Output("stdout"))
 	}
 	raw, _ := base64.URLEncoding.DecodeString(e.pullAuth[0])

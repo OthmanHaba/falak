@@ -24,6 +24,7 @@ final class Modules
         'Databases',
         'Projects',
         'Templates',
+        'Functions',
         'Network',
         'Recipes',
         'Telemetry',

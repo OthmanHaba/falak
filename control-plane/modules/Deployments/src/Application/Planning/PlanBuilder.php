@@ -52,6 +52,12 @@ final class PlanBuilder
             return $this->steps;
         }
 
+        if ($runtime === SiteRuntime::Function) {
+            $this->functionPlan($deployment, $batches, 'activate', StepKind::Activate);
+
+            return $this->steps;
+        }
+
         $build = $needsBuild ? [$this->add($deployment, null, 'build', StepKind::Build, 'build', [])->key] : [];
 
         if ($runtime === SiteRuntime::Compose) {
@@ -183,11 +189,39 @@ final class PlanBuilder
     }
 
     /**
+     * Functions: one `fn.release.apply` per server, batch after batch. The agent installs the release's dependencies,
+     * boots it and only then switches the gateway to it, so there is no separate health check (probing a function
+     * would also keep it from scaling to zero).
+     *
+     * @param  list<list<DeploymentTarget>>  $batches
+     */
+    private function functionPlan(Deployment $deployment, array $batches, string $key, StepKind $kind): void
+    {
+        $previousBatch = [];
+
+        foreach ($batches as $batch) {
+            $done = [];
+
+            foreach ($batch as $target) {
+                $done[] = $this->add($deployment, $target, "{$key}:{$target->id}", $kind, 'activate', $previousBatch, null, 'fn.release.apply')->key;
+            }
+
+            $previousBatch = $done;
+        }
+    }
+
+    /**
      * @param  list<list<DeploymentTarget>>  $batches
      */
     private function rollbackPlan(Deployment $deployment, SiteRuntime $runtime, array $batches): void
     {
         $previousBatch = [];
+
+        if ($runtime === SiteRuntime::Function) {
+            $this->functionPlan($deployment, $batches, 'switch', StepKind::Switch);
+
+            return;
+        }
 
         foreach ($batches as $batch) {
             $done = [];

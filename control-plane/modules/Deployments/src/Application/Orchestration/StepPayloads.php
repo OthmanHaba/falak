@@ -3,6 +3,7 @@
 namespace Kiln\Deployments\Application\Orchestration;
 
 use Kiln\Builds\Contracts\BuildService;
+use Kiln\Deployments\Contracts\FunctionSources;
 use Kiln\Deployments\Domain\Enums\StepKind;
 use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Deployments\Domain\Models\DeploymentStep;
@@ -28,6 +29,7 @@ final class StepPayloads
         private readonly EdgeRoutes $edge,
         private readonly VariableReferences $references,
         private readonly ComposeSites $compose,
+        private readonly FunctionSources $functions,
     ) {}
 
     // ---- Docker Compose (docs/COMPOSE_TEMPLATES.md §1.4) -------------------------------------------------------
@@ -246,6 +248,10 @@ final class StepPayloads
             return $this->compose($step, $deployment, $site, $serverId);
         }
 
+        if ($site->runtime === SiteRuntime::Function) {
+            return $this->functionRelease($step, $deployment, $site, $serverId);
+        }
+
         return match ($step->kind) {
             StepKind::Fetch => $this->fetch($deployment, $site),
             StepKind::Prepare => $this->prepare($deployment, $site, $serverId),
@@ -265,6 +271,10 @@ final class StepPayloads
 
     public function timeout(StepKind $kind, ?string $commandType = null): int
     {
+        if ($commandType === 'fn.release.apply') {
+            return max(60, min(3600, (int) config('deployments.timeouts.function', 600)));
+        }
+
         if ($commandType === 'docker.compose.up') {
             return max(60, min(3600, (int) config('deployments.timeouts.compose_up', 600) + (int) config('deployments.compose.wait_timeout', 300)));
         }
@@ -584,6 +594,64 @@ final class StepPayloads
                 'kiln.site.id' => self::upper($site->id),
                 'kiln.deployment.id' => self::upper($deployment->id),
                 'kiln.release.id' => self::upper($deployment->release_id),
+            ]),
+        ], fn ($v) => $v !== null);
+    }
+
+    // ---- Functions -----------------------------------------------------------------------------------------------
+
+    /**
+     * fn.release.apply for the release the step puts live: the deployment's own (its commit is the version hash), the
+     * one a rollback targets, or the previous one when a failure is rolled back.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws RuntimeException
+     */
+    private function functionRelease(DeploymentStep $step, Deployment $deployment, SiteData $site, string $serverId): array
+    {
+        $releaseId = (string) match ($step->kind) {
+            StepKind::Activate => $deployment->release_id,
+            StepKind::Switch => $deployment->target_release_id,
+            StepKind::Revert => $step->meta['release_id'] ?? '',
+            default => throw new RuntimeException("{$step->kind->value} is not a function step."),
+        };
+        $hash = $step->kind === StepKind::Activate ? $deployment->commit : Release::query()->whereKey($releaseId)->value('commit');
+        $source = $releaseId !== '' && is_string($hash) ? $this->functions->find($site->id, $hash) : null;
+
+        if ($source === null) {
+            throw new RuntimeException('The function version of this release no longer exists.');
+        }
+
+        // The gateway sets PORT (the runtime listens on a fixed port inside the container).
+        $env = array_diff_key([
+            ...$this->releaseVariables($site),
+            ...$this->injected($deployment, $site, $serverId),
+            'KILN_RELEASE_ID' => self::upper($releaseId),
+        ], ['PORT' => true]);
+        $env = array_filter($env, fn ($v, $k) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH);
+
+        $files = [];
+
+        foreach ($source->files as $path => $content) {
+            $files[] = ['path' => (string) $path, 'content' => (string) $content];
+        }
+
+        return array_filter([
+            'site' => $site->slug,
+            'release' => strtolower($releaseId),
+            'image' => $source->image,
+            'pull' => 'missing',
+            'registry_auth' => $this->registryAuthFor($source->image),
+            'entrypoint' => $source->entrypoint,
+            'files' => $files,
+            'env' => (object) array_map('strval', $env),
+            'scaling' => $source->scaling,
+            'limits' => $source->limits,
+            'labels' => (object) array_filter([
+                'kiln.site.id' => self::upper($site->id),
+                'kiln.deployment.id' => self::upper($deployment->id),
+                'kiln.release.id' => self::upper($releaseId),
             ]),
         ], fn ($v) => $v !== null);
     }

@@ -166,6 +166,16 @@
             },
             "description": "Response headers to set"
           },
+          "request_headers": {
+            "type": "object",
+            "propertyNames": {
+              "pattern": "^[A-Za-z0-9-]{1,64}$"
+            },
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "kind=reverse_proxy: headers set on the request sent upstream (functions: X-Kiln-Function)"
+          },
           "basic_auth": {
             "type": "array",
             "items": {

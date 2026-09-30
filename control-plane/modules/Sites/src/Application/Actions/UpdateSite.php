@@ -52,6 +52,10 @@ final class UpdateSite
             throw ValidationException::withMessages(['php_version' => 'Pick a PHP version.']);
         }
 
+        if ($runtime->isFunction() !== $site->runtime->isFunction()) {
+            throw ValidationException::withMessages(['runtime' => 'A function cannot change its runtime to a site runtime (or back); create a new service.']);
+        }
+
         if ($runtime->isContainer() !== $site->runtime->isContainer()) {
             throw ValidationException::withMessages(['runtime' => 'Switching between container and native runtimes requires a new site.']);
         }
