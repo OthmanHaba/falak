@@ -6,6 +6,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Kiln\Edge\Domain\Models\CloudflareTunnel;
 use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\DnsRecord;
 use Kiln\Edge\Domain\Models\Domain;
@@ -176,12 +177,24 @@ final class CloudflareDns
         usort($targets, fn ($a, $b) => ($b->role === TargetRole::Leader) <=> ($a->role === TargetRole::Leader));
         $pointsAt = $this->targets->for($organizationId, array_map(fn ($t) => $t->serverId, $targets), $site->id);
         $zones = self::zones($organizationId);
+        $tunnels = CloudflareTunnel::query()->where('organization_id', $organizationId)->whereIn('server_id', array_map(fn ($t) => $t->serverId, $pointsAt))->get()->keyBy('server_id');
         $out = [];
 
         foreach ($hosts as $host) {
             $zone = $zones->filter(fn (CloudflareZone $z) => $z->covers($host))->sortByDesc(fn (CloudflareZone $z) => strlen($z->name))->first();
 
             if ($zone === null || self::reserved($host)) {
+                continue;
+            }
+
+            // Through a tunnel (the first target that has one, leader first): one proxied CNAME, no address records
+            // (a name cannot have both). The tunnel must belong to the zone's Cloudflare account.
+            $tunnel = collect($pointsAt)->map(fn ($t) => $tunnels->get($t->serverId))->filter()
+                ->first(fn (CloudflareTunnel $t) => $t->account_id === $zone->credential->account_id);
+
+            if ($tunnel !== null) {
+                $out[self::key($zone->id, $host, 'CNAME', $tunnel->hostname())] = ['zone' => $zone, 'name' => $host, 'type' => 'CNAME', 'content' => $tunnel->hostname(), 'proxied' => true];
+
                 continue;
             }
 

@@ -20,6 +20,9 @@ final class FakeCloudflare
     /** @var array<string, array<string, mixed>> zone id => settings */
     public array $settings = [];
 
+    /** @var array<string, array{id: string, name: string, ingress: list<array<string, mixed>>}> */
+    public array $tunnels = [];
+
     /** @var list<string> "METHOD path" of every call */
     public array $calls = [];
 
@@ -87,6 +90,20 @@ final class FakeCloudflare
             })(),
             (bool) preg_match('#^/zones/([^/]+)/settings/([a-z_]+)$#', $path, $m) && $request->method() === 'GET' => $ok(['id' => $m[2], 'value' => $this->settings[$m[1]][$m[2]] ?? null]),
             (bool) preg_match('#^/zones/([^/]+)/settings/([a-z_]+)$#', $path, $m) && $request->method() === 'PATCH' => $ok(['id' => $m[2], 'value' => $this->settings[$m[1]][$m[2]] = $body['value']]),
+            (bool) preg_match('#^/accounts/[^/]+/cfd_tunnel$#', $path) && $request->method() === 'POST' => $ok($this->tunnels[$tid = 'tun-'.Str::lower(Str::random(8))] = ['id' => $tid, 'name' => $body['name'], 'ingress' => []]),
+            (bool) preg_match('#^/accounts/[^/]+/cfd_tunnel/([^/]+)/token$#', $path, $m) => $ok('token-for-'.$m[1]),
+            (bool) preg_match('#^/accounts/[^/]+/cfd_tunnel/([^/]+)/configurations$#', $path, $m) => (function () use ($m, $body, $ok) {
+                $this->tunnels[$m[1]]['ingress'] = $body['config']['ingress'];
+
+                return $ok(['tunnel_id' => $m[1]]);
+            })(),
+            (bool) preg_match('#^/accounts/[^/]+/cfd_tunnel/([^/]+)/connections$#', $path) => $ok([]),
+            (bool) preg_match('#^/accounts/[^/]+/cfd_tunnel/([^/]+)$#', $path, $m) && $request->method() === 'GET' => $ok(['id' => $m[1], 'status' => 'healthy', 'connections' => [['id' => 'c1'], ['id' => 'c2'], ['id' => 'c3'], ['id' => 'c4']]]),
+            (bool) preg_match('#^/accounts/[^/]+/cfd_tunnel/([^/]+)$#', $path, $m) && $request->method() === 'DELETE' => (function () use ($m, $ok) {
+                unset($this->tunnels[$m[1]]);
+
+                return $ok(['id' => $m[1]]);
+            })(),
             default => Http::response(['success' => false, 'errors' => [['code' => 7003, 'message' => "No route for {$request->method()} {$path}"]]], 400),
         };
     }

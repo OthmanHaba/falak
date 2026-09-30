@@ -8,8 +8,10 @@ use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Kiln\Edge\Application\CloudflareConnections;
+use Kiln\Edge\Application\CloudflareTunnels;
 use Kiln\Edge\Application\GeneratedDomains;
 use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
+use Kiln\Edge\Domain\Models\CloudflareTunnel;
 use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\DnsCredential;
 use Kiln\Edge\Domain\Models\DnsRecord;
@@ -19,6 +21,8 @@ use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
 use Kiln\Identity\Contracts\CurrentOrganization;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
+use Kiln\Servers\Contracts\Data\ServerData;
+use Kiln\Servers\Contracts\ServerDirectory;
 
 /**
  * Settings → Integrations → Cloudflare.
@@ -29,6 +33,8 @@ final class CloudflareController extends Controller
         private readonly CurrentOrganization $organization,
         private readonly OrganizationAccess $access,
         private readonly CloudflareConnections $connections,
+        private readonly CloudflareTunnels $tunnels,
+        private readonly ServerDirectory $servers,
     ) {}
 
     public function show(Request $request): Response
@@ -67,9 +73,26 @@ final class CloudflareController extends Controller
                     ->map(fn (DnsRecord $r) => ['name' => $r->name, 'type' => $r->type, 'content' => $r->content, 'proxied' => $r->proxied, 'status' => $r->status, 'error' => $r->error])->values(),
             ]);
 
+        $tunnels = CloudflareTunnel::query()->with('credential')->where('organization_id', $organizationId)->get()->keyBy('server_id');
+        $servers = collect($this->servers->forOrganization($organizationId))->map(fn (ServerData $server) => [
+            'id' => $server->id,
+            'name' => $server->name,
+            'ipv4' => $server->ipv4,
+            'tunnel' => ($t = $tunnels->get($server->id)) ? [
+                'id' => $t->id,
+                'name' => $t->name,
+                'connection' => $t->credential->name,
+                'status' => $t->status,
+                'error' => $t->error,
+                'cname' => $t->hostname(),
+                'health' => $this->tunnels->health($t),
+            ] : null,
+        ])->sortBy('name')->values();
+
         return Inertia::render('Edge/Cloudflare', [
             'connections' => $connections->values(),
             'zones' => $zones->values(),
+            'servers' => $servers,
             'can' => ['manage' => $this->access->can($request->user(), $organizationId, 'edge.dns.manage')],
         ]);
     }
@@ -163,6 +186,34 @@ final class CloudflareController extends Controller
             ->each(fn (Domain $d) => SyncCloudflareDns::domain($d->id));
 
         return back()->with('success', "Syncing DNS records for {$model->name}.");
+    }
+
+    /** Server ingress → Cloudflare Tunnel. */
+    public function enableTunnel(Request $request): RedirectResponse
+    {
+        $organizationId = $this->manage($request);
+        $data = $request->validate(['server_id' => ['required', 'string', 'size:26'], 'connection_id' => ['required', 'string', 'size:26']]);
+        $credential = DnsCredential::query()->where('organization_id', $organizationId)->where('provider', 'cloudflare')->findOrFail($data['connection_id']);
+
+        $tunnel = $this->tunnels->enable($data['server_id'], $credential, $request->user()?->getAuthIdentifier());
+
+        return back()->with('success', "Installing cloudflared on the server; its names move to {$tunnel->hostname()}.");
+    }
+
+    public function disableTunnel(Request $request, string $tunnel): RedirectResponse
+    {
+        $organizationId = $this->manage($request);
+        $this->tunnels->disable(CloudflareTunnel::query()->with('credential')->where('organization_id', $organizationId)->findOrFail($tunnel));
+
+        return back()->with('success', 'Tunnel removed: the server is reached on its public IP again.');
+    }
+
+    public function reinstallTunnel(Request $request, string $tunnel): RedirectResponse
+    {
+        $organizationId = $this->manage($request);
+        $this->tunnels->reinstall(CloudflareTunnel::query()->with('credential')->where('organization_id', $organizationId)->findOrFail($tunnel));
+
+        return back()->with('success', 'Reinstalling cloudflared.');
     }
 
     private function manage(Request $request): string

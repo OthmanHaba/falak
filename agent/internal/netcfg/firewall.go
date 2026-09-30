@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kiln/agent/internal/commands"
 	"github.com/kiln/agent/internal/hostfs"
@@ -20,6 +22,7 @@ type Deps struct {
 	Runner runner.Runner
 	FS     hostfs.FS
 	Logger *slog.Logger
+	HTTP   *http.Client // downloads (cloudflared); nil = a default client
 }
 
 // Net holds the executors.
@@ -30,6 +33,9 @@ func New(d Deps) *Net {
 	if d.Logger == nil {
 		d.Logger = slog.Default()
 	}
+	if d.HTTP == nil {
+		d.HTTP = &http.Client{Timeout: 10 * time.Minute}
+	}
 	return &Net{d: d}
 }
 
@@ -37,6 +43,7 @@ func New(d Deps) *Net {
 func (n *Net) Register(reg *commands.Registry) {
 	reg.Register("net.firewall.apply", commands.Typed(n.FirewallApply))
 	reg.Register("net.wireguard.apply", commands.Typed(n.WireGuardApply))
+	reg.Register("net.tunnel.apply", commands.Typed(n.TunnelApply))
 }
 
 // Rule is one firewall rule.

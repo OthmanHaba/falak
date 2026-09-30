@@ -27,6 +27,16 @@ return [
     // Octane sites: how long the edge retries connecting to Octane (it restarts on every deploy) before a 502.
     'octane_try_duration_seconds' => 30,
 
+    // Cloudflare Tunnel (Settings → Cloudflare → Servers): the cloudflared release servers run, pinned by checksum.
+    'cloudflared' => [
+        'version' => env('KILN_CLOUDFLARED_VERSION', '2026.9.3'),
+        'url' => env('KILN_CLOUDFLARED_URL', 'https://github.com/cloudflare/cloudflared/releases/download/{version}/cloudflared-linux-{arch}'),
+        'sha256' => [
+            'amd64' => env('KILN_CLOUDFLARED_SHA256_AMD64', '77e26d8d900e0b8469f416239d14b5f296525fdf79fee6f511ef55609e3fbac2'),
+            'arm64' => env('KILN_CLOUDFLARED_SHA256_ARM64', 'aaeb2d7d0da3614634c7e03ab13487a1522c2e79165ed2929cfe23d5e95b326d'),
+        ],
+    ],
+
     'apply_timeout_seconds' => 120,
     'cert_install_timeout_seconds' => 60,
 ];

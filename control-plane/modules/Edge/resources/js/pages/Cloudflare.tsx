@@ -46,9 +46,25 @@ interface ManagedZone {
     records: ManagedRecord[];
 }
 
+interface TunnelServer {
+    id: string;
+    name: string;
+    ipv4: string | null;
+    tunnel: {
+        id: string;
+        name: string;
+        connection: string;
+        status: 'installing' | 'active' | 'error';
+        error: string | null;
+        cname: string;
+        health: { status: string; connections: number } | null;
+    } | null;
+}
+
 interface Props {
     connections: Connection[];
     zones: ManagedZone[];
+    servers: TunnelServer[];
     can: { manage: boolean };
 }
 
@@ -69,10 +85,11 @@ const RECORD_TONE = { synced: 'success', pending: 'info', conflict: 'warning', e
 const options = { preserveScroll: true };
 
 /** Settings → Integrations → Cloudflare: connect a token, pick the zones Kiln manages, check their TLS settings. */
-export default function Cloudflare({ connections, zones, can }: Props) {
+export default function Cloudflare({ connections, zones, servers, can }: Props) {
     const form = useForm({ name: 'Cloudflare', api_token: '' });
     const [releasing, setReleasing] = useState<ManagedZone | null>(null);
     const [disconnecting, setDisconnecting] = useState<Connection | null>(null);
+    const [untunneling, setUntunneling] = useState<TunnelServer | null>(null);
 
     return (
         <SettingsLayout
@@ -295,6 +312,92 @@ export default function Cloudflare({ connections, zones, can }: Props) {
                 </Section>
             ))}
 
+            {connections.length > 0 && servers.length > 0 && (
+                <Section
+                    title="Servers"
+                    description="Ingress per server. Through a Cloudflare Tunnel, cloudflared on the server connects out to Cloudflare, so the server needs no open inbound ports and works behind NAT; its names in your zones point at the tunnel."
+                >
+                    <ul className="divide-border grid divide-y">
+                        {servers.map((server) => (
+                            <li key={server.id} className="grid gap-1 py-2.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="flex flex-wrap items-center gap-2">
+                                        <span className="text-fg text-sm font-medium">{server.name}</span>
+                                        <span className="text-fg-faint font-mono text-xs">{server.ipv4 ?? 'no public IP'}</span>
+                                        {server.tunnel ? <TunnelTag tunnel={server.tunnel} /> : <Tag>public</Tag>}
+                                    </span>
+                                    {can.manage &&
+                                        (server.tunnel ? (
+                                            <span className="flex gap-2">
+                                                {server.tunnel.status === 'error' && (
+                                                    <Button
+                                                        variant="secondary"
+                                                        size="sm"
+                                                        icon={<RefreshCw />}
+                                                        onClick={() =>
+                                                            router.post(`/settings/cloudflare/tunnels/${server.tunnel!.id}/reinstall`, {}, options)
+                                                        }
+                                                    >
+                                                        Reinstall
+                                                    </Button>
+                                                )}
+                                                <Button variant="ghost" size="sm" onClick={() => setUntunneling(server)}>
+                                                    Back to public
+                                                </Button>
+                                            </span>
+                                        ) : (
+                                            <Button
+                                                variant="secondary"
+                                                size="sm"
+                                                icon={<Cloud />}
+                                                onClick={() =>
+                                                    router.post(
+                                                        '/settings/cloudflare/tunnels',
+                                                        { server_id: server.id, connection_id: connections[0].id },
+                                                        options,
+                                                    )
+                                                }
+                                            >
+                                                Route through a tunnel
+                                            </Button>
+                                        ))}
+                                </div>
+                                {server.tunnel && (
+                                    <p className="text-fg-muted text-xs">
+                                        {server.tunnel.error ??
+                                            `Names in your zones are CNAMEs to ${server.tunnel.cname}. Close ports 80 and 443 on the server's firewall once it shows healthy.`}
+                                    </p>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                    <p className="text-fg-faint text-xs">
+                        The token needs Account → Cloudflare Tunnel → Edit. Names outside your managed zones (sslip.io, other DNS providers) still
+                        reach the server on its public IP.
+                    </p>
+                </Section>
+            )}
+
+            <ConfirmDestructive
+                open={untunneling !== null}
+                onOpenChange={(open) => !open && setUntunneling(null)}
+                title={`Take ${untunneling?.name} off the tunnel?`}
+                description="cloudflared is removed, the tunnel is deleted and the server's names point at its public IP again. Open ports 80 and 443 first if you closed them."
+                confirmText={untunneling?.name ?? ''}
+                confirmLabel="Back to public"
+                onConfirm={() =>
+                    new Promise<void>((resolve) => {
+                        if (!untunneling?.tunnel) return resolve();
+                        router.delete(`/settings/cloudflare/tunnels/${untunneling.tunnel.id}`, {
+                            ...options,
+                            onFinish: () => {
+                                setUntunneling(null);
+                                resolve();
+                            },
+                        });
+                    })
+                }
+            />
             <ConfirmDestructive
                 open={releasing !== null}
                 onOpenChange={(open) => !open && setReleasing(null)}
@@ -337,5 +440,19 @@ export default function Cloudflare({ connections, zones, can }: Props) {
                 }
             />
         </SettingsLayout>
+    );
+}
+
+/** Tunnel state: Kiln's install status, then Cloudflare's live view (healthy / down, open connections). */
+function TunnelTag({ tunnel }: { tunnel: NonNullable<TunnelServer['tunnel']> }) {
+    if (tunnel.status === 'error') return <Tag tone="danger">tunnel error</Tag>;
+    if (tunnel.status === 'installing') return <Tag tone="info">installing cloudflared</Tag>;
+
+    const health = tunnel.health;
+
+    return (
+        <Tag tone={health?.status === 'healthy' ? 'success' : health ? 'warning' : 'neutral'}>
+            tunnel · {health ? `${health.status}, ${health.connections} connection${health.connections === 1 ? '' : 's'}` : 'status unknown'}
+        </Tag>
     );
 }

@@ -8,6 +8,7 @@ use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Domain\Enums\ApplyStatus;
 use Kiln\Edge\Domain\Enums\InstallStatus;
 use Kiln\Edge\Domain\Models\CertificateInstall;
+use Kiln\Edge\Domain\Models\CloudflareTunnel;
 use Kiln\Edge\Domain\Models\ServerState;
 use Kiln\Edge\Events\CertificateInstallFailed;
 use Kiln\Edge\Events\CertificateIssued;
@@ -27,6 +28,8 @@ final class HandleEdgeCommandOutcome implements ShouldQueue
         match ($event->type) {
             'edge.caddy.apply' => $this->applied($event),
             'edge.cert.install' => $this->certificate($event->commandId, $event->serverId, $event->organizationId, $event->result, null),
+            'net.tunnel.apply' => CloudflareTunnel::query()->where('command_id', $event->commandId)
+                ->update(['status' => ($event->result['active'] ?? false) ? CloudflareTunnel::ACTIVE : CloudflareTunnel::ERROR, 'error' => ($event->result['active'] ?? false) ? null : 'cloudflared is installed but not running (journalctl -u kiln-cloudflared).']),
             default => null,
         };
     }
@@ -34,6 +37,12 @@ final class HandleEdgeCommandOutcome implements ShouldQueue
     public function handleFailed(CommandFailed $event): void
     {
         $reason = $event->error ?: "Command {$event->status}".($event->exitCode !== null ? " (exit code {$event->exitCode})" : '');
+
+        if ($event->type === 'net.tunnel.apply') {
+            CloudflareTunnel::query()->where('command_id', $event->commandId)->update(['status' => CloudflareTunnel::ERROR, 'error' => $reason]);
+
+            return;
+        }
 
         if ($event->type === 'edge.caddy.apply') {
             ServerState::query()->where('server_id', $event->serverId)->where('command_id', $event->commandId)

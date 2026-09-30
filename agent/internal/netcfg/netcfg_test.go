@@ -2,7 +2,11 @@ package netcfg
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -187,5 +191,52 @@ func TestPublicKeyMatchesWG(t *testing.T) {
 	k, _ := GenerateKey()
 	if k[0]&7 != 0 || k[31]&128 != 0 || k[31]&64 == 0 {
 		t.Fatal("not clamped")
+	}
+}
+
+func TestTunnelApplyInstallsRunsAndRemoves(t *testing.T) {
+	bin := []byte("#!/bin/sh\necho cloudflared\n")
+	sum := sha256.Sum256(bin)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(bin) }))
+	defer srv.Close()
+	root := t.TempDir()
+	f := &runnertest.Fake{}
+	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}, HTTP: srv.Client()})
+	p := TunnelPayload{State: "present", Version: "2026.9.3", URL: srv.URL + "/cloudflared-linux-amd64", SHA256: hex.EncodeToString(sum[:]), Token: "tok-123"}
+
+	r, err := n.TunnelApply(context.Background(), p, st)
+	if err != nil || !r.(TunnelResult).Changed || !r.(TunnelResult).Active {
+		t.Fatal(r, err)
+	}
+	token, _ := os.ReadFile(filepath.Join(root, TunnelTokenPath))
+	info, _ := os.Stat(filepath.Join(root, TunnelTokenPath))
+	unit, _ := os.ReadFile(filepath.Join(root, TunnelUnitPath))
+	if string(token) != "tok-123" || info.Mode().Perm() != 0o600 || !strings.Contains(string(unit), "LoadCredential=token:"+TunnelTokenPath) || !strings.Contains(string(unit), "DynamicUser=yes") {
+		t.Fatalf("token %q mode %v unit %s", token, info.Mode(), unit)
+	}
+	if want := "systemctl daemon-reload|systemctl enable kiln-cloudflared.service|systemctl restart kiln-cloudflared.service|systemctl is-active --quiet kiln-cloudflared.service"; strings.Join(f.Lines(), "|") != want {
+		t.Fatalf("%v", f.Lines())
+	}
+
+	// Same payload: nothing downloaded or restarted.
+	f.Reset()
+	r, _ = n.TunnelApply(context.Background(), p, st)
+	if r.(TunnelResult).Changed || strings.Contains(strings.Join(f.Lines(), "|"), "restart") {
+		t.Fatal("not idempotent", f.Lines())
+	}
+
+	// A wrong checksum is refused before anything is installed.
+	if _, err := New(Deps{Runner: f, FS: hostfs.FS{Root: t.TempDir()}, HTTP: srv.Client()}).TunnelApply(context.Background(), TunnelPayload{State: "present", Version: p.Version, URL: p.URL, SHA256: strings.Repeat("0", 64), Token: "t"}, st); err == nil {
+		t.Fatal("checksum mismatch accepted")
+	}
+
+	r, _ = n.TunnelApply(context.Background(), TunnelPayload{State: "absent"}, st)
+	if !r.(TunnelResult).Changed {
+		t.Fatal("absent did not remove")
+	}
+	for _, p := range []string{TunnelUnitPath, TunnelTokenPath, CloudflaredBinary} {
+		if _, err := os.Stat(filepath.Join(root, p)); err == nil {
+			t.Errorf("%s left behind", p)
+		}
 	}
 }

@@ -111,6 +111,61 @@ final class CloudflareApi
         return $this->call('PATCH', "/zones/{$zoneId}/settings/{$key}", ['value' => $value])['value'] ?? null;
     }
 
+    /** A remotely managed tunnel (routes configured through the API). Returns its id. */
+    public function createTunnel(string $accountId, string $name): string
+    {
+        return (string) $this->call('POST', "/accounts/{$accountId}/cfd_tunnel", ['name' => $name, 'config_src' => 'cloudflare'])['id'];
+    }
+
+    /** The token cloudflared runs the tunnel with. */
+    public function tunnelToken(string $accountId, string $tunnelId): string
+    {
+        $client = $this->client();
+        $body = $client->get("/accounts/{$accountId}/cfd_tunnel/{$tunnelId}/token")->json();
+
+        if (! is_array($body) || ($body['success'] ?? false) !== true || ! is_string($body['result'] ?? null)) {
+            throw new CloudflareError('Cloudflare: could not read the tunnel token.', 0);
+        }
+
+        return $body['result'];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $ingress  rules, ending with a catch-all
+     */
+    public function configureTunnel(string $accountId, string $tunnelId, array $ingress): void
+    {
+        $this->call('PUT', "/accounts/{$accountId}/cfd_tunnel/{$tunnelId}/configurations", ['config' => ['ingress' => $ingress]]);
+    }
+
+    /**
+     * @return array{status: string, connections: int}
+     */
+    public function tunnel(string $accountId, string $tunnelId): array
+    {
+        $tunnel = $this->call('GET', "/accounts/{$accountId}/cfd_tunnel/{$tunnelId}");
+
+        return ['status' => (string) ($tunnel['status'] ?? 'unknown'), 'connections' => count((array) ($tunnel['connections'] ?? []))];
+    }
+
+    /** Deletes a tunnel after dropping its connections; a tunnel that is already gone is not an error. */
+    public function deleteTunnel(string $accountId, string $tunnelId): void
+    {
+        try {
+            $this->call('DELETE', "/accounts/{$accountId}/cfd_tunnel/{$tunnelId}/connections");
+        } catch (CloudflareError) {
+            // no connections, or already gone
+        }
+
+        try {
+            $this->call('DELETE', "/accounts/{$accountId}/cfd_tunnel/{$tunnelId}");
+        } catch (CloudflareError $e) {
+            if ($e->status !== 404) {
+                throw $e;
+            }
+        }
+    }
+
     /**
      * @param  array<string, mixed>  $data  query (GET) or JSON body
      * @return array<int|string, mixed>
