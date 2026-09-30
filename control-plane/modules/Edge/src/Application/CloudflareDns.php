@@ -47,6 +47,7 @@ final class CloudflareDns
             : [];
 
         $this->reconcile(
+            $site?->organizationId,
             ['site_id' => $siteId, 'domain_id' => null],
             'kiln:site:'.$siteId,
             $site !== null ? $this->desired($site->organizationId, $site, $hosts, null) : [],
@@ -58,6 +59,7 @@ final class CloudflareDns
         $site = $this->sites->find($domain->site_id);
 
         $this->reconcile(
+            $domain->organization_id,
             ['domain_id' => $domain->id],
             'kiln:'.$domain->id,
             $site !== null ? $this->desired($domain->organization_id, $site, $domain->hosts(), $domain->cloudflare_proxied) : [],
@@ -67,26 +69,35 @@ final class CloudflareDns
     /** A domain was removed: delete the records Kiln created for it. */
     public function forget(string $domainId): void
     {
-        $this->reconcile(['domain_id' => $domainId], 'kiln:'.$domainId, []);
+        $this->reconcile(null, ['domain_id' => $domainId], 'kiln:'.$domainId, []);
     }
 
     /** A site was deleted: delete the records of its compose public services. */
     public function forgetSite(string $siteId): void
     {
-        $this->reconcile(['site_id' => $siteId, 'domain_id' => null], 'kiln:site:'.$siteId, []);
+        $this->reconcile(null, ['site_id' => $siteId, 'domain_id' => null], 'kiln:site:'.$siteId, []);
     }
 
     /**
      * Brings Cloudflare in line with $desired for one owner (a domain, or a site's compose hosts).
      *
+     * @param  ?string  $organizationId  null for cleanup (read from the tracked rows)
      * @param  array<string, ?string>  $owner  edge_dns_records columns identifying the owner
      * @param  array<string, array{zone: CloudflareZone, name: string, type: string, content: string, proxied: bool}>  $desired
      */
-    private function reconcile(array $owner, string $tag, array $desired): void
+    private function reconcile(?string $organizationId, array $owner, string $tag, array $desired): void
     {
-        // One sync at a time: the queue's uniqueness is released when a job starts, and a domain job and a site job
-        // can overlap; two concurrent runs would both create the same record.
-        Cache::lock('edge:cloudflare-dns', 120)->block(90, fn () => $this->reconcileLocked($owner, $tag, $desired));
+        // Cleanup of a removed owner: its organization is on the rows it left (nothing tracked, nothing to do).
+        $organizationId ??= DnsRecord::query()->where($owner)->value('organization_id');
+
+        if ($organizationId === null) {
+            return;
+        }
+
+        // One sync per organization at a time: the queue's uniqueness is released when a job starts, and a domain job
+        // and a site job can overlap; two concurrent runs would both create the same record. The wait stays under the
+        // worker timeout (60 s); a job that cannot get the lock is retried by the queue.
+        Cache::lock("edge:cloudflare-dns:{$organizationId}", 120)->block(45, fn () => $this->reconcileLocked($owner, $tag, $desired));
     }
 
     /**
