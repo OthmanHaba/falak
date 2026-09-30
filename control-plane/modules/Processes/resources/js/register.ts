@@ -9,7 +9,15 @@ const OctaneSection = lazy(() => import('./panel/octane-section').then((module) 
 
 // Canvas service panel (docs/UI_DESIGN.md §5.1): Processes 600.
 // Functions run in the function gateway, not as supervised processes.
-registerServiceTabs({ id: 'processes', kinds: ['site'], title: 'Processes', order: 600, permission: 'processes.view', when: (service) => service.icon !== 'function', component: ProcessesTab });
+registerServiceTabs({
+    id: 'processes',
+    kinds: ['site'],
+    title: 'Processes',
+    order: 600,
+    permission: 'processes.view',
+    when: (service) => service.icon !== 'function',
+    component: ProcessesTab,
+});
 
 // Settings → Laravel: Octane server, port and per-server routing state (after the Sites toggles, 600).
 registerServiceSettingsSections({
