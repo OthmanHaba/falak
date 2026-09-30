@@ -140,6 +140,11 @@ kiln ssh app-1
 ### API
 Sanctum bearer tokens scoped to one organization. Endpoints and payloads: [`docs/API.md`](docs/API.md).
 
+### Cloudflare
+Connect a Cloudflare token in **Settings → Integrations → Cloudflare** and Kiln manages the DNS of your zones:
+records follow your domains, new services get names under your zone, and services work behind the orange cloud
+(DDoS protection, edge cache, real visitor IPs). Free plan. Setup and details: [`docs/CLOUDFLARE.md`](docs/CLOUDFLARE.md).
+
 ### Instrument your apps (APM)
 - Laravel: require `kiln/apm-laravel` — auto-discovered; sends requests, queries, jobs, mail,
   notifications, cache, commands, scheduled tasks, outgoing HTTP, exceptions and logs to the local agent.

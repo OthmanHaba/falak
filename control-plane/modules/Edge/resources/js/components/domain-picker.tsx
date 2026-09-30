@@ -128,7 +128,9 @@ export function DnsInstructions({ name, serverIds, siteId, label }: { name: stri
             <div className="flex items-start justify-between gap-3">
                 <div className="grid gap-0.5">
                     <span className="text-fg text-xs font-medium">
-                        Add {instructions.records.length === 1 ? 'this record' : 'these records'} at your DNS provider
+                        {instructions.managed_by
+                            ? `Kiln creates ${instructions.records.length === 1 ? 'this record' : 'these records'} in Cloudflare`
+                            : `Add ${instructions.records.length === 1 ? 'this record' : 'these records'} at your DNS provider`}
                     </span>
                     <span className="text-fg-faint text-[11px]">
                         Zone <span className="font-mono">{instructions.zone}</span> · TTL {instructions.ttl}s (or “Auto”)

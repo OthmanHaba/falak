@@ -88,6 +88,10 @@
                   }
                 },
                 "description": "ACME DNS-01 challenge (required for wildcard domains when mode=acme); needs a Caddy/FrankenPHP build with the provider module"
+              },
+              "http_challenge_only": {
+                "type": "boolean",
+                "description": "ACME with HTTP-01 only (TLS-ALPN-01 disabled), for hosts behind a TLS-terminating proxy such as Cloudflare"
               }
             }
           },
@@ -250,6 +254,15 @@
     "raw": {
       "type": "object",
       "description": "Escape hatch: complete Caddy JSON config; when present it is loaded verbatim and `sites` is ignored"
+    },
+    "trusted_proxies": {
+      "type": "array",
+      "description": "CIDRs whose CF-Connecting-IP header is trusted for the client IP (Cloudflare's ranges for proxied sites)",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "maxItems": 200
     }
   },
   "$defs": {

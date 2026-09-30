@@ -30,20 +30,23 @@ final class DomainOptions
     {
         $targets = $this->targets->for($organizationId, $serverIds, $siteId);
         $suffix = $this->generated->suffix($organizationId);
+        $zone = $this->generated->zone($organizationId);
         $pointsAt = $targets[0] ?? null;
 
         return [
             'test_domain' => EloquentSiteDomains::testDomainBase(),
             'generated' => [
                 'suffix' => $suffix,
-                'provider' => $suffix,
+                'provider' => $zone !== null ? 'cloudflare' : $suffix,
+                // A Cloudflare zone: <name>.<zone>, with its DNS record created by Kiln (proxied per the zone).
+                'zone' => $zone !== null ? ['name' => $zone->name, 'proxied' => $zone->proxied] : null,
                 'ipv4' => $pointsAt?->ipv4,
                 'target' => $pointsAt?->toArray(),
-                'available' => $suffix !== null && $pointsAt?->ipv4 !== null,
+                'available' => $suffix !== null && ($pointsAt?->ipv4 !== null || ($zone !== null && $pointsAt?->ipv6 !== null)),
                 'reason' => match (true) {
                     $suffix === null => 'Generated domains are turned off for this organization (Settings → Domains).',
                     $pointsAt === null => 'Pick a server first.',
-                    $pointsAt->ipv4 === null => "{$pointsAt->name} has no public IPv4 address yet.",
+                    $pointsAt->ipv4 === null && ($zone === null || $pointsAt->ipv6 === null) => "{$pointsAt->name} has no public IPv4 address yet.",
                     default => null,
                 },
             ],

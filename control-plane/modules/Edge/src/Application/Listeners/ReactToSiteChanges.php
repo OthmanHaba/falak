@@ -5,6 +5,7 @@ namespace Kiln\Edge\Application\Listeners;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Kiln\Edge\Application\CertificateInstaller;
 use Kiln\Edge\Application\EdgeChanges;
+use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
 use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Domain\Models\Certificate;
 use Kiln\Edge\Domain\Models\Domain;
@@ -35,11 +36,13 @@ final class ReactToSiteChanges implements ShouldQueue
     public function created(SiteCreated $event): void
     {
         $this->changes->siteChanged($event->siteId, $event->serverIds);
+        SyncCloudflareDns::site($event->siteId); // compose public services may come with domains
     }
 
     public function updated(SiteUpdated $event): void
     {
         $this->changes->siteChanged($event->siteId, $event->serverIds);
+        SyncCloudflareDns::site($event->siteId); // a no-op for names already in place
     }
 
     /** Octane became reachable (proxy to it) or is being switched off (serve directly again) on one server. */
@@ -51,6 +54,7 @@ final class ReactToSiteChanges implements ShouldQueue
     public function targetsChanged(SiteTargetsChanged $event): void
     {
         Upstream::query()->where('site_id', $event->siteId)->whereIn('server_id', $event->removed)->delete();
+        SyncCloudflareDns::site($event->siteId); // one record per server the site runs on
 
         foreach (Certificate::query()->where('site_id', $event->siteId)->get() as $certificate) {
             $this->certificates->sync($certificate);
@@ -61,6 +65,8 @@ final class ReactToSiteChanges implements ShouldQueue
 
     public function deleted(SiteDeleted $event): void
     {
+        SyncCloudflareDns::forgetSite($event->siteId);
+
         $balancer = LoadBalancer::query()->where('site_id', $event->siteId)->value('server_id');
 
         foreach (Certificate::query()->where('site_id', $event->siteId)->where('organization_id', $event->organizationId)->get() as $certificate) {

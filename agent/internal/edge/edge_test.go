@@ -131,7 +131,7 @@ func TestApplyIdempotentAndPersisted(t *testing.T) {
 	s := string(b)
 	for _, want := range []string{`"handler": "php"`, `"resolve_root_symlink": true`, `"dial": "unix//run/php/kiln-legacy-8.3.sock"`,
 		`"skip_certificates"`, `/etc/kiln/certs/legacy.crt`, `"kiln_http"`, `"@id": "kiln-upstreams-api"`, `"email": "ops@example.com"`,
-		`https://shop.example.com{http.request.uri}`, `"remote_ip"`, `"X-Frame-Options"`, `"http_basic"`} {
+		`https://shop.example.com{http.request.uri}`, `"client_ip"`, `"X-Frame-Options"`, `"http_basic"`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("rendered config missing %s", want)
 		}
@@ -490,5 +490,39 @@ func TestApplyCreatesAccessLogDir(t *testing.T) {
 	fi, err := os.Stat(fs.P("/var/log/kiln/access"))
 	if err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o750 {
 		t.Fatalf("access log dir: %v %v", fi, err)
+	}
+}
+
+func TestTrustedProxiesSetClientIPHeaders(t *testing.T) {
+	p := Payload{Sites: []Site{{ID: "shop", Domains: []string{"shop.example.com"}, Kind: "static", Root: "/srv/shop", DenyIPs: []string{"203.0.113.9"}}},
+		TrustedProxies: []string{"173.245.48.0/20", "2400:cb00::/32"}}
+	cfg, err := Render(p, "/etc/kiln/certs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(cfg)
+	s := string(b)
+	for _, want := range []string{`"trusted_proxies":{"ranges":["173.245.48.0/20","2400:cb00::/32"],"source":"static"}`, `"client_ip_headers":["CF-Connecting-IP"]`, `"client_ip":{"ranges":["203.0.113.9"]}`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("config missing %s", want)
+		}
+	}
+	// Without trusted proxies nothing changes for the servers.
+	cfg, _ = Render(Payload{Sites: p.Sites}, "/etc/kiln/certs")
+	b, _ = json.Marshal(cfg)
+	if strings.Contains(string(b), "trusted_proxies") || strings.Contains(string(b), "client_ip_headers") {
+		t.Error("trusted_proxies set without ranges")
+	}
+}
+
+func TestHTTPChallengeOnlyDisablesTLSALPN(t *testing.T) {
+	p := Payload{Sites: []Site{{ID: "shop", Domains: []string{"shop.example.com"}, Kind: "static", Root: "/srv/shop", TLS: &TLS{Mode: "acme", HTTPChallengeOnly: true}}}}
+	cfg, err := Render(p, "/etc/kiln/certs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(cfg)
+	if !strings.Contains(string(b), `"challenges":{"tls-alpn":{"disabled":true}}`) || !strings.Contains(string(b), `"subjects":["shop.example.com"]`) {
+		t.Fatalf("no HTTP-01 only policy: %s", b)
 	}
 }

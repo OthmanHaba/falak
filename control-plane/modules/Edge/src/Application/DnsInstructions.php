@@ -25,9 +25,10 @@ final class DnsInstructions
     /**
      * @param  list<DnsTarget>  $targets  {@see DnsTargets}
      * @param  ?string  $generated  the site's generated name, offered as a CNAME target for subdomains
+     * @param  ?string  $managedZone  the Cloudflare zone Kiln manages the records in (nothing to add by hand)
      * @return array{name: string, zone: string, host: string, apex: bool, ttl: int, records: list<array{type: string, name: string, host: string, value: string, target: string}>, alternative: ?array{type: string, name: string, host: string, value: string}, notes: list<string>}
      */
-    public static function for(string $name, array $targets, ?string $generated = null): array
+    public static function for(string $name, array $targets, ?string $generated = null, ?string $managedZone = null): array
     {
         [$zone, $host] = self::split($name);
         $apex = $host === '@';
@@ -62,7 +63,12 @@ final class DnsInstructions
             $notes[] = 'This is the zone apex: use A/AAAA records (most DNS providers do not allow a CNAME here; ALIAS/ANAME work where offered).';
         }
 
-        $notes[] = 'Cloudflare: set the record to “DNS only” (grey cloud) until the certificate is issued, so Let\'s Encrypt reaches the server over HTTP on port 80.';
+        if ($managedZone !== null) {
+            // Kiln creates these records itself; Let's Encrypt reaches the server through Cloudflare (HTTP-01).
+            $notes = ["Kiln manages these records in Cloudflare ({$managedZone}): nothing to add by hand. The orange cloud is fine: Cloudflare passes Let's Encrypt's check through to the server."];
+        } else {
+            $notes[] = 'Cloudflare: set the record to “DNS only” (grey cloud) until the certificate is issued, so Let\'s Encrypt reaches the server over HTTP on port 80.';
+        }
 
         $alternative = ! $apex && $generated !== null && count($targets) === 1
             ? ['type' => 'CNAME', 'name' => $name, 'host' => $host, 'value' => $generated]
@@ -77,6 +83,7 @@ final class DnsInstructions
             'records' => $records,
             'alternative' => $alternative,
             'notes' => $notes,
+            'managed_by' => $managedZone !== null ? ['provider' => 'cloudflare', 'zone' => $managedZone] : null,
         ];
     }
 

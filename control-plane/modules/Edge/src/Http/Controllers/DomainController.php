@@ -6,22 +6,27 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Kiln\Edge\Application\Actions\AddDomain;
 use Kiln\Edge\Application\Actions\MakePrimaryDomain;
 use Kiln\Edge\Application\Actions\RemoveDomain;
 use Kiln\Edge\Application\Actions\UpdateDomain;
 use Kiln\Edge\Application\EdgeChanges;
+use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
 use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\LbPolicy;
 use Kiln\Edge\Domain\Enums\WwwRedirect;
 use Kiln\Edge\Domain\Models\Certificate;
 use Kiln\Edge\Domain\Models\CertificateInstall;
+use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\DnsCredential;
+use Kiln\Edge\Domain\Models\DnsRecord;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Domain\Models\LoadBalancer;
 use Kiln\Edge\Domain\Models\ServerState;
 use Kiln\Edge\Infrastructure\EloquentSiteDomains;
+use Kiln\Identity\Contracts\AuditLog;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Servers\Contracts\Data\ServerData;
@@ -70,6 +75,14 @@ final class DomainController extends Controller
                 'served_host' => $domain->servedHost(),
                 'supports_www' => $domain->supportsWwwRedirect(),
                 'wildcard' => $domain->isWildcard(),
+                // In a Cloudflare zone Kiln manages: records are created for it, no DNS instructions needed.
+                'cloudflare' => ($zone = CloudflareZone::forHost($siteData->organizationId, $domain->name)) !== null ? [
+                    'zone' => $zone->name,
+                    'proxied' => $domain->cloudflare_proxied ?? $zone->proxied,
+                    'override' => $domain->cloudflare_proxied,
+                    'records' => DnsRecord::query()->where('domain_id', $domain->id)->orderBy('name')->get()
+                        ->map(fn (DnsRecord $r) => ['name' => $r->name, 'type' => $r->type, 'content' => $r->content, 'status' => $r->status, 'error' => $r->error])->values(),
+                ] : null,
             ])->values(),
             'certificates' => Certificate::query()->with('installs')->where('site_id', $siteData->id)->latest()->get()->map(fn (Certificate $certificate) => [
                 'id' => $certificate->id,
@@ -158,6 +171,24 @@ final class DomainController extends Controller
         $data = $this->validated($request, withName: false);
 
         $update($model, TlsMode::from($data['tls_mode']), WwwRedirect::from($data['www_redirect'] ?? 'none'), $data['certificate_id'] ?? null, $data['dns_credential_id'] ?? null);
+
+        return back();
+    }
+
+    /** Orange / grey cloud for one domain (null: the zone's default). */
+    public function cloudflare(Request $request, string $site, string $domain, AuditLog $audit): RedirectResponse
+    {
+        $siteData = $this->site($request, $site, 'edge.manage');
+        $model = $this->domain($siteData->id, $domain);
+        $data = $request->validate(['proxied' => ['present', 'nullable', 'boolean']]);
+
+        if (CloudflareZone::forHost($siteData->organizationId, $model->name) === null) {
+            throw ValidationException::withMessages(['proxied' => 'This domain is not in a Cloudflare zone Kiln manages.']);
+        }
+
+        $model->forceFill(['cloudflare_proxied' => $data['proxied']])->save();
+        SyncCloudflareDns::domain($model->id);
+        $audit->record('edge.domain_cloudflare_proxy', 'site', $siteData->id, ['domain' => $model->name, 'proxied' => $data['proxied']], $siteData->organizationId);
 
         return back();
     }

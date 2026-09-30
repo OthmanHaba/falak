@@ -474,6 +474,7 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
                                                 </Tag>
                                             )}
                                             {domain.wildcard && <Tag>wildcard</Tag>}
+                                            {domain.cloudflare && <CloudflareTag cloudflare={domain.cloudflare} />}
                                         </span>
                                         <span className="text-fg-faint truncate text-[11px]">
                                             {domain.hosts.join(' · ')}
@@ -510,6 +511,25 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
                                                     ? [{ label: 'Check DNS & TLS', icon: <ShieldCheck />, onSelect: () => setChecking(domain) }]
                                                     : []),
                                                 { label: 'Edit TLS & redirect', onSelect: () => setDialog({ domain }) },
+                                                ...(domain.cloudflare
+                                                    ? [
+                                                          {
+                                                              label: domain.cloudflare.proxied
+                                                                  ? 'Cloudflare: DNS only (grey cloud)'
+                                                                  : 'Cloudflare: proxy (orange cloud)',
+                                                              onSelect: () =>
+                                                                  void mutate(
+                                                                      'PUT',
+                                                                      `${domainsUrl(siteId)}/${domain.id}/cloudflare`,
+                                                                      { proxied: !domain.cloudflare!.proxied },
+                                                                      domain.cloudflare!.proxied
+                                                                          ? `${domain.name} is DNS only`
+                                                                          : `${domain.name} is proxied by Cloudflare`,
+                                                                      refresh,
+                                                                  ),
+                                                          },
+                                                      ]
+                                                    : []),
                                                 ...(!domain.is_primary
                                                     ? [
                                                           {
@@ -1167,5 +1187,29 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
                 </div>
             </Section>
         </>
+    );
+}
+
+/** Cloudflare state of a managed domain: orange / grey cloud, and whether its records are in place. */
+function CloudflareTag({ cloudflare }: { cloudflare: NonNullable<EdgeDomain['cloudflare']> }) {
+    const problem = cloudflare.records.find((record) => record.status === 'conflict' || record.status === 'error');
+    const pending = cloudflare.records.length === 0 || cloudflare.records.some((record) => record.status === 'pending');
+
+    return (
+        <Tooltip
+            content={
+                problem?.error ??
+                (pending
+                    ? `Kiln is creating the DNS record in ${cloudflare.zone}.`
+                    : `DNS managed by Kiln in ${cloudflare.zone}: ${cloudflare.records.map((record) => `${record.type} ${record.content}`).join(', ')}`)
+            }
+        >
+            <span>
+                <Tag tone={problem ? 'warning' : cloudflare.proxied ? 'info' : 'neutral'}>
+                    {cloudflare.proxied ? 'Cloudflare · proxied' : 'Cloudflare · DNS only'}
+                    {problem ? ` · ${problem.status}` : pending ? ' · syncing' : ''}
+                </Tag>
+            </span>
+        </Tooltip>
     );
 }

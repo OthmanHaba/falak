@@ -17,6 +17,9 @@ type Payload struct {
 	ACMECA    string         `json:"acme_ca,omitempty"`
 	Sites     []Site         `json:"sites"`
 	Raw       map[string]any `json:"raw,omitempty"`
+	// TrustedProxies are CIDRs (Cloudflare's ranges when the site is proxied) whose client IP headers are believed:
+	// logs, IP allow / deny lists and rate limits then see the visitor, not the proxy.
+	TrustedProxies []string `json:"trusted_proxies,omitempty"`
 }
 
 // Site is one routed site.
@@ -58,6 +61,9 @@ type TLS struct {
 	Mode     string `json:"mode,omitempty"` // acme (default) | internal | custom | off
 	CertName string `json:"cert_name,omitempty"`
 	DNS      *DNS   `json:"dns,omitempty"` // ACME DNS-01 challenge (wildcards)
+	// HTTPChallengeOnly disables TLS-ALPN-01: behind a proxy that terminates TLS (Cloudflare's orange cloud) it can
+	// never pass, and every failed attempt counts against Let's Encrypt's failed-authorization limit.
+	HTTPChallengeOnly bool `json:"http_challenge_only,omitempty"`
 }
 
 // DNS configures the ACME DNS-01 challenge provider.
@@ -172,6 +178,10 @@ func Render(p Payload, certDir string) (obj, error) {
 				iss := acmeIssuer(p)
 				iss["challenges"] = obj{"dns": obj{"provider": obj{"name": s.TLS.DNS.Provider, "api_token": s.TLS.DNS.APIToken}}}
 				dnsPolicies = append(dnsPolicies, obj{"subjects": toAny(hosts), "issuers": []any{iss}})
+			} else if s.TLS != nil && s.TLS.HTTPChallengeOnly {
+				iss := acmeIssuer(p)
+				iss["challenges"] = obj{"tls-alpn": obj{"disabled": true}}
+				dnsPolicies = append(dnsPolicies, obj{"subjects": toAny(hosts), "issuers": []any{iss}})
 			} else {
 				acmeSubjects = append(acmeSubjects, hosts...)
 			}
@@ -183,6 +193,7 @@ func Render(p Payload, certDir string) (obj, error) {
 	servers := obj{}
 	if len(tlsRoutes) > 0 {
 		srv := obj{"listen": []any{":443"}, "routes": tlsRoutes}
+		trustProxies(srv, p.TrustedProxies)
 		if len(skipCerts) > 0 {
 			srv["automatic_https"] = obj{"skip_certificates": toAny(skipCerts)}
 		}
@@ -194,6 +205,7 @@ func Render(p Payload, certDir string) (obj, error) {
 	if len(plainRoutes) > 0 {
 		// Caddy adds its HTTP→HTTPS redirects for TLS sites to this existing :80 server.
 		srv := obj{"listen": []any{":80"}, "routes": plainRoutes}
+		trustProxies(srv, p.TrustedProxies)
 		if len(plainLoggers) > 0 {
 			srv["logs"] = serverLogs(plainLoggers)
 		}
@@ -243,10 +255,10 @@ func siteRoutes(s Site) ([]any, error) {
 	}
 	var sub []any
 	if len(s.DenyIPs) > 0 {
-		sub = append(sub, obj{"match": []any{obj{"remote_ip": obj{"ranges": toAny(s.DenyIPs)}}}, "handle": []any{forbidden()}})
+		sub = append(sub, obj{"match": []any{obj{"client_ip": obj{"ranges": toAny(s.DenyIPs)}}}, "handle": []any{forbidden()}})
 	}
 	if len(s.AllowIPs) > 0 {
-		sub = append(sub, obj{"match": []any{obj{"not": []any{obj{"remote_ip": obj{"ranges": toAny(s.AllowIPs)}}}}}, "handle": []any{forbidden()}})
+		sub = append(sub, obj{"match": []any{obj{"not": []any{obj{"client_ip": obj{"ranges": toAny(s.AllowIPs)}}}}}, "handle": []any{forbidden()}})
 	}
 	if len(s.BasicAuth) > 0 {
 		// Group accounts by path; site-wide accounts ("") come first, then paths in first-seen order.
@@ -463,4 +475,15 @@ func cloneMap(m map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+// trustProxies makes Caddy take the client IP from CF-Connecting-IP when the connection comes from one of ranges
+// (Cloudflare always sets it and visitors cannot; X-Forwarded-For is not trusted since visitors can pre-fill it).
+// The `client_ip` matcher and access logs then use it.
+func trustProxies(srv obj, ranges []string) {
+	if len(ranges) == 0 {
+		return
+	}
+	srv["trusted_proxies"] = obj{"source": "static", "ranges": toAny(ranges)}
+	srv["client_ip_headers"] = []any{"CF-Connecting-IP"}
 }
