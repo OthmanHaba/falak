@@ -14,7 +14,9 @@ use Kiln\Kernel\Support\ModuleServiceProvider;
 use Kiln\Network\Application\Listeners\ForgetDeletedServer;
 use Kiln\Network\Application\Listeners\HandleCommandOutcome;
 use Kiln\Network\Application\Listeners\SeedFirewallOnProvisioning;
+use Kiln\Network\Contracts\Firewalls;
 use Kiln\Network\Contracts\PrivateNetwork as PrivateNetworkContract;
+use Kiln\Network\Contracts\WebOriginPolicy;
 use Kiln\Network\Domain\Models\FirewallRule;
 use Kiln\Network\Domain\Models\PrivateNetwork;
 use Kiln\Network\Domain\Policies\FirewallRulePolicy;
@@ -22,6 +24,8 @@ use Kiln\Network\Domain\Policies\PrivateNetworkPolicy;
 use Kiln\Network\Events\FirewallApplied;
 use Kiln\Network\Events\FirewallApplyFailed;
 use Kiln\Network\Infrastructure\EloquentPrivateNetwork;
+use Kiln\Network\Infrastructure\NoWebOriginPolicy;
+use Kiln\Network\Infrastructure\QueuedFirewalls;
 use Kiln\Servers\Events\ServerDeleted;
 use Kiln\Servers\Events\ServerProvisioned;
 
@@ -34,11 +38,14 @@ class NetworkServiceProvider extends ModuleServiceProvider
      */
     public array $singletons = [
         PrivateNetworkContract::class => EloquentPrivateNetwork::class,
+        Firewalls::class => QueuedFirewalls::class,
     ];
 
     public function register(): void
     {
         $this->mergeConfigFrom($this->modulePath().'/config/network.php', 'network');
+        // Edge replaces this for servers behind Cloudflare (origin lock-down).
+        $this->app->singletonIf(WebOriginPolicy::class, NoWebOriginPolicy::class);
     }
 
     protected function bootModule(): void

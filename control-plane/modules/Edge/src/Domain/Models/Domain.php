@@ -20,6 +20,7 @@ use Kiln\Edge\Domain\Enums\WwwRedirect;
  * @property ?string $certificate_id
  * @property ?string $dns_credential_id
  * @property ?bool $cloudflare_proxied null = the Cloudflare zone's default
+ * @property ?string $cloudflare_cache null = standard | everything | bypass
  * @property ?Certificate $certificate
  * @property ?DnsCredential $dnsCredential
  */

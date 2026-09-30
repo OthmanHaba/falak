@@ -2,12 +2,17 @@
 
 namespace Kiln\Edge;
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\Facades\Event;
 use Kiln\Alerting\Contracts\AlertTypes;
 use Kiln\Alerting\Contracts\Severity;
+use Kiln\Deployments\Events\DeploymentRolledBack;
+use Kiln\Deployments\Events\DeploymentSucceeded;
 use Kiln\Edge\Application\CertificateInstaller;
 use Kiln\Edge\Application\EdgeChanges;
+use Kiln\Edge\Application\Jobs\PurgeCloudflareCache;
+use Kiln\Edge\Application\Jobs\ReconcileCloudflareTunnels;
 use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
 use Kiln\Edge\Application\Listeners\ForgetDeletedOrganization;
 use Kiln\Edge\Application\Listeners\ForgetDeletedServer;
@@ -20,6 +25,7 @@ use Kiln\Edge\Events\CertificateInstallFailed;
 use Kiln\Edge\Events\CertificateIssued;
 use Kiln\Edge\Events\DomainAdded;
 use Kiln\Edge\Events\DomainRemoved;
+use Kiln\Edge\Infrastructure\CloudflareOriginPolicy;
 use Kiln\Edge\Infrastructure\Dns\DnsResolver;
 use Kiln\Edge\Infrastructure\Dns\DohResolver;
 use Kiln\Edge\Infrastructure\Dns\StreamTlsProbe;
@@ -37,6 +43,7 @@ use Kiln\Identity\Contracts\PermissionRegistry;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Identity\Events\OrganizationDeleted;
 use Kiln\Kernel\Support\ModuleServiceProvider;
+use Kiln\Network\Contracts\WebOriginPolicy;
 use Kiln\Processes\Contracts\OctaneRouting;
 use Kiln\Processes\Events\OctaneRoutingChanged;
 use Kiln\Servers\Contracts\ServerDirectory;
@@ -57,6 +64,8 @@ class EdgeServiceProvider extends ModuleServiceProvider
      * @var array<class-string, class-string>
      */
     public array $singletons = [
+        // Origin lock-down of servers behind Cloudflare (Network compiles it into the firewall).
+        WebOriginPolicy::class => CloudflareOriginPolicy::class,
         SiteDomains::class => EloquentSiteDomains::class,
         DnsCheck::class => ResolverDnsCheck::class,
         TlsProbe::class => StreamTlsProbe::class,
@@ -115,6 +124,13 @@ class EdgeServiceProvider extends ModuleServiceProvider
         // Cloudflare DNS follows the domains (records Kiln created only).
         Event::listen(DomainAdded::class, fn (DomainAdded $event) => SyncCloudflareDns::domain($event->domainId));
         Event::listen(DomainRemoved::class, fn (DomainRemoved $event) => SyncCloudflareDns::forget($event->domainId));
+
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+            $schedule->job(new ReconcileCloudflareTunnels)->everyFiveMinutes()->name('edge:cloudflare-tunnels')->withoutOverlapping();
+        });
+        // Visitors get the new release: purge the site's names at Cloudflare after deploys and rollbacks.
+        Event::listen(DeploymentSucceeded::class, fn (DeploymentSucceeded $event) => PurgeCloudflareCache::dispatch($event->siteId));
+        Event::listen(DeploymentRolledBack::class, fn (DeploymentRolledBack $event) => PurgeCloudflareCache::dispatch($event->siteId));
         Event::listen(AgentVersionChanged::class, ReapplyAfterAgentUpgrade::class);
         Event::listen(OrganizationDeleted::class, ForgetDeletedOrganization::class);
         Event::listen(CommandFinished::class, [HandleEdgeCommandOutcome::class, 'handleFinished']);

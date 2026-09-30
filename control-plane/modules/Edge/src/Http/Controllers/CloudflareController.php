@@ -8,6 +8,7 @@ use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Kiln\Edge\Application\CloudflareConnections;
+use Kiln\Edge\Application\CloudflareEdgeControls;
 use Kiln\Edge\Application\CloudflareTunnels;
 use Kiln\Edge\Application\GeneratedDomains;
 use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
@@ -17,6 +18,7 @@ use Kiln\Edge\Domain\Models\DnsCredential;
 use Kiln\Edge\Domain\Models\DnsRecord;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Domain\Models\OrganizationSetting;
+use Kiln\Edge\Domain\Models\OriginLock;
 use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
 use Kiln\Identity\Contracts\CurrentOrganization;
 use Kiln\Identity\Contracts\OrganizationAccess;
@@ -68,16 +70,19 @@ final class CloudflareController extends Controller
                 'connection' => $zone->credential->name,
                 'proxied' => $zone->proxied,
                 'generates' => $generated === GeneratedDomains::CLOUDFLARE.$zone->name,
+                'under_attack' => $zone->security_level_before !== null,
                 'health' => $this->connections->health($zone),
                 'records' => DnsRecord::query()->where('zone_id', $zone->id)->orderBy('name')->get()
                     ->map(fn (DnsRecord $r) => ['name' => $r->name, 'type' => $r->type, 'content' => $r->content, 'proxied' => $r->proxied, 'status' => $r->status, 'error' => $r->error])->values(),
             ]);
 
         $tunnels = CloudflareTunnel::query()->with('credential')->where('organization_id', $organizationId)->get()->keyBy('server_id');
+        $locks = OriginLock::query()->where('organization_id', $organizationId)->get()->keyBy('server_id');
         $servers = collect($this->servers->forOrganization($organizationId))->map(fn (ServerData $server) => [
             'id' => $server->id,
             'name' => $server->name,
             'ipv4' => $server->ipv4,
+            'lock' => $locks->get($server->id)?->mode,
             'tunnel' => ($t = $tunnels->get($server->id)) ? [
                 'id' => $t->id,
                 'name' => $t->name,
@@ -214,6 +219,32 @@ final class CloudflareController extends Controller
         $this->tunnels->reinstall(CloudflareTunnel::query()->with('credential')->where('organization_id', $organizationId)->findOrFail($tunnel));
 
         return back()->with('success', 'Reinstalling cloudflared.');
+    }
+
+    /** Under Attack mode for a zone. */
+    public function underAttack(Request $request, string $zone, CloudflareEdgeControls $controls): RedirectResponse
+    {
+        $organizationId = $this->manage($request);
+        $data = $request->validate(['on' => ['required', 'boolean']]);
+        $model = $this->zone($organizationId, $zone);
+        $controls->underAttack($model, (bool) $data['on']);
+
+        return back()->with('success', $data['on'] ? "{$model->name} is in Under Attack mode: visitors get a browser check first." : "Under Attack mode is off for {$model->name}.");
+    }
+
+    /** Origin lock-down of a server's web ports: open, cloudflare (Cloudflare's ranges only) or closed (tunnel). */
+    public function lock(Request $request, string $server, CloudflareEdgeControls $controls): RedirectResponse
+    {
+        $organizationId = $this->manage($request);
+        $data = $request->validate(['mode' => ['present', 'nullable', Rule::in([OriginLock::CLOSED, OriginLock::CLOUDFLARE])]]);
+        $model = collect($this->servers->forOrganization($organizationId))->firstWhere('id', strtolower($server)) ?? abort(404);
+        $controls->lock($organizationId, $model->id, $data['mode']);
+
+        return back()->with('success', match ($data['mode']) {
+            OriginLock::CLOSED => "{$model->name}: ports 80 and 443 are closed; it is reached through its tunnel only.",
+            OriginLock::CLOUDFLARE => "{$model->name}: ports 80 and 443 accept Cloudflare only.",
+            default => "{$model->name}: ports 80 and 443 follow its firewall rules again.",
+        });
     }
 
     private function manage(Request $request): string

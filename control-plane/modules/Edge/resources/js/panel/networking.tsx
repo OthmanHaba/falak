@@ -530,6 +530,35 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
                                                           },
                                                       ]
                                                     : []),
+                                                ...(domain.cloudflare
+                                                    ? (['standard', 'everything', 'bypass'] as const).map((mode) => ({
+                                                          label: `Cache: ${CACHE_LABELS[mode]}${domain.cloudflare!.cache === mode ? ' ✓' : ''}`,
+                                                          disabled: domain.cloudflare!.cache === mode,
+                                                          onSelect: () =>
+                                                              void mutate(
+                                                                  'PUT',
+                                                                  `${domainsUrl(siteId)}/${domain.id}/cloudflare-cache`,
+                                                                  { mode },
+                                                                  `${domain.name}: cache ${CACHE_LABELS[mode].toLowerCase()}`,
+                                                                  refresh,
+                                                              ),
+                                                      }))
+                                                    : []),
+                                                ...(domain.cloudflare
+                                                    ? [
+                                                          {
+                                                              label: 'Purge Cloudflare cache',
+                                                              onSelect: () =>
+                                                                  void mutate(
+                                                                      'POST',
+                                                                      `/sites/${siteId}/cloudflare/purge`,
+                                                                      {},
+                                                                      'Cloudflare cache purged',
+                                                                      refresh,
+                                                                  ),
+                                                          },
+                                                      ]
+                                                    : []),
                                                 ...(!domain.is_primary
                                                     ? [
                                                           {
@@ -1190,6 +1219,8 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
     );
 }
 
+const CACHE_LABELS = { standard: 'Standard (static files)', everything: 'Everything (HTML too)', bypass: 'Bypass' } as const;
+
 /** Cloudflare state of a managed domain: orange / grey cloud, and whether its records are in place. */
 function CloudflareTag({ cloudflare }: { cloudflare: NonNullable<EdgeDomain['cloudflare']> }) {
     const problem = cloudflare.records.find((record) => record.status === 'conflict' || record.status === 'error');
@@ -1207,6 +1238,7 @@ function CloudflareTag({ cloudflare }: { cloudflare: NonNullable<EdgeDomain['clo
             <span>
                 <Tag tone={problem ? 'warning' : cloudflare.proxied ? 'info' : 'neutral'}>
                     {cloudflare.proxied ? 'Cloudflare · proxied' : 'Cloudflare · DNS only'}
+                    {cloudflare.cache !== 'standard' && ` · cache ${cloudflare.cache}`}
                     {problem ? ` · ${problem.status}` : pending ? ' · syncing' : ''}
                 </Tag>
             </span>

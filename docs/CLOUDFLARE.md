@@ -14,7 +14,8 @@ protection, edge cache, hidden server IP). Everything here works on Cloudflare's
    | Zone → DNS → Edit | create, update and delete records |
    | Zone → Zone → Read | find the zone and its account |
    | Zone → Zone Settings → Edit | check and fix SSL mode, minimum TLS, Always Use HTTPS |
-   | Zone → Cache Purge → Purge | purge the cache after deploys (phase 3) |
+   | Zone → Cache Purge → Purge | purge the cache after deploys |
+   | Zone → Cache Rules → Edit | cache modes per domain |
    | Account → Cloudflare Tunnel → Edit | route servers through a Cloudflare Tunnel |
 
    Under **Zone Resources** pick *Specific zone* and your domain.
@@ -62,6 +63,23 @@ token passed as a systemd credential) and keeps the tunnel's routes in line with
 - The token needs **Account → Cloudflare Tunnel → Edit** (add it to the same token).
 - One tunnel per server: a site on several servers is routed through the tunnel of the first one (the leader).
 
+## Cache, purge and protection
+
+- **Cache mode per domain** (Networking tab → the domain's ⋯ menu): *Standard* (Cloudflare's default: static files),
+  *Everything* (HTML too, one day at the edge — for static and SPA sites) or *Bypass*. Kiln writes them as Cache Rules
+  it tags `kiln:cache:<domain>`; your own Cache Rules in the zone stay untouched.
+- **Purge after every deploy.** A successful deploy or a rollback purges the site's names (domains, www hosts and a
+  template's public domains), so visitors get the new release right away. *Purge Cloudflare cache* in the domain
+  menu purges on demand.
+- **Under Attack mode** (Settings → Cloudflare, per zone): every visitor gets a short browser check first. Turning it
+  off restores the security level you had before.
+- **Origin lock-down** (Settings → Cloudflare → Servers → Web ports):
+  - *Cloudflare only*: ports 80 and 443 accept Cloudflare's IP ranges only, so nobody can bypass the proxy with the
+    server's IP. Names that are not proxied (sslip.io, DNS only) stop working on that server.
+  - *Closed (tunnel)*: no inbound web traffic at all; the server is reached through its Cloudflare Tunnel only. If the
+    tunnel stops, the ports fall back to Cloudflare only; taking the server off the tunnel opens them again.
+  - SSH stays open either way.
+
 ## Limits on the Free plan
 
 - Requests through the proxy are limited to **100 MB** (large uploads to Nextcloud or Paperless need DNS only).
@@ -75,5 +93,4 @@ token passed as a systemd credential) and keeps the tunnel's routes in line with
 
 ## Coming next
 
-Cache modes with purge after deploy, Under Attack mode,
-origin lock-down, and "Sign in with Cloudflare" instead of pasting a token.
+"Sign in with Cloudflare" instead of pasting a token.

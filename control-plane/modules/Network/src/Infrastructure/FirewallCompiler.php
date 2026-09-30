@@ -2,6 +2,7 @@
 
 namespace Kiln\Network\Infrastructure;
 
+use Kiln\Network\Contracts\WebOriginPolicy;
 use Kiln\Network\Domain\Enums\RuleAction;
 use Kiln\Network\Domain\Models\FirewallRule;
 use Kiln\Network\Domain\Models\PrivateNetworkMember;
@@ -17,7 +18,12 @@ use Kiln\Servers\Contracts\ServerDirectory;
  */
 final class FirewallCompiler
 {
-    public function __construct(private readonly ServerDirectory $servers) {}
+    private const WEB_PORTS = ['80', '443'];
+
+    public function __construct(
+        private readonly ServerDirectory $servers,
+        private readonly WebOriginPolicy $origins,
+    ) {}
 
     /**
      * @return array<string, mixed>
@@ -36,7 +42,7 @@ final class FirewallCompiler
             'input_policy' => 'drop',
             'ssh_port' => (int) config('network.ssh_port', 22),
             'allow_icmp' => true,
-            'rules' => [...$this->networkRules($serverId), ...$rules->map(fn (FirewallRule $rule) => $this->rule($rule))->all()],
+            'rules' => [...$this->networkRules($serverId), ...$this->webOrigins($serverId, $rules->map(fn (FirewallRule $rule) => $this->rule($rule))->all())],
         ];
     }
 
@@ -53,6 +59,39 @@ final class FirewallCompiler
             'sources' => $rule->source !== null ? [$rule->source] : null,
             'comment' => mb_substr($rule->name, 0, 120),
         ], fn ($value) => $value !== null);
+    }
+
+    /**
+     * The server's {@see WebOriginPolicy} on top of its rules. Explicit web rules come first, so they hold whatever the
+     * server's own rules say (all-port rules and port ranges included): accept TCP 80 / 443 from the allowed sources
+     * (only), then drop TCP 80 / 443 from anywhere. Accept rules for exactly the web ports are then redundant and left
+     * out; everything else is untouched.
+     *
+     * @param  list<array<string, mixed>>  $rules
+     * @return list<array<string, mixed>>
+     */
+    private function webOrigins(string $serverId, array $rules): array
+    {
+        $policy = $this->origins->for($serverId);
+
+        if ($policy === null) {
+            return $rules;
+        }
+
+        $explicit = [];
+
+        if ($policy['mode'] === 'only') {
+            $explicit[] = ['id' => 'web-origin-allow', 'action' => 'accept', 'protocol' => 'tcp', 'ports' => self::WEB_PORTS, 'sources' => $policy['sources'], 'comment' => 'Web ports: Cloudflare only'];
+        }
+
+        $explicit[] = ['id' => 'web-origin-drop', 'action' => 'drop', 'protocol' => 'tcp', 'ports' => self::WEB_PORTS, 'comment' => $policy['mode'] === 'only' ? 'Web ports: nobody else' : 'Web ports closed (Cloudflare Tunnel)'];
+
+        $rest = array_values(array_filter($rules, fn (array $rule) => ! ($rule['action'] === 'accept'
+            && in_array($rule['protocol'], ['tcp', 'any'], true)
+            && ($rule['ports'] ?? []) !== []
+            && array_diff((array) $rule['ports'], self::WEB_PORTS) === [])));
+
+        return [...$explicit, ...$rest];
     }
 
     /**

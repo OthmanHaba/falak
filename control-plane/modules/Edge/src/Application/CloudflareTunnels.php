@@ -11,11 +11,13 @@ use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Domain\Models\CloudflareTunnel;
 use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\DnsCredential;
+use Kiln\Edge\Domain\Models\OriginLock;
 use Kiln\Edge\Infrastructure\Cloudflare\CloudflareApi;
 use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
 use Kiln\Fleet\Contracts\AgentGateway;
 use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Kiln\Identity\Contracts\AuditLog;
+use Kiln\Network\Contracts\Firewalls;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\SiteDirectory;
@@ -106,6 +108,9 @@ final class CloudflareTunnels
         }
 
         $tunnel->delete();
+        // Closed web ports only make sense behind the tunnel: open them again.
+        OriginLock::query()->where('server_id', $tunnel->server_id)->where('mode', OriginLock::CLOSED)->delete();
+        app(Firewalls::class)->converge($tunnel->server_id);
         $this->changed($tunnel->server_id);
 
         try {

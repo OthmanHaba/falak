@@ -26,6 +26,7 @@ export interface EdgeDomain {
         proxied: boolean;
         /** null: the zone's default */
         override: boolean | null;
+        cache: 'standard' | 'everything' | 'bypass';
         records: { name: string; type: string; content: string; status: 'pending' | 'synced' | 'conflict' | 'error'; error: string | null }[];
     } | null;
 }

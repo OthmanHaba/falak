@@ -11,6 +11,7 @@ use Kiln\Edge\Application\Actions\AddDomain;
 use Kiln\Edge\Application\Actions\MakePrimaryDomain;
 use Kiln\Edge\Application\Actions\RemoveDomain;
 use Kiln\Edge\Application\Actions\UpdateDomain;
+use Kiln\Edge\Application\CloudflareEdgeControls;
 use Kiln\Edge\Application\EdgeChanges;
 use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
 use Kiln\Edge\Contracts\EdgeRoutes;
@@ -25,6 +26,7 @@ use Kiln\Edge\Domain\Models\DnsRecord;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Domain\Models\LoadBalancer;
 use Kiln\Edge\Domain\Models\ServerState;
+use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
 use Kiln\Edge\Infrastructure\EloquentSiteDomains;
 use Kiln\Identity\Contracts\AuditLog;
 use Kiln\Identity\Contracts\OrganizationAccess;
@@ -80,6 +82,7 @@ final class DomainController extends Controller
                     'zone' => $zone->name,
                     'proxied' => $domain->cloudflare_proxied ?? $zone->proxied,
                     'override' => $domain->cloudflare_proxied,
+                    'cache' => $domain->cloudflare_cache ?? 'standard',
                     'records' => DnsRecord::query()->where('domain_id', $domain->id)->orderBy('name')->get()
                         ->map(fn (DnsRecord $r) => ['name' => $r->name, 'type' => $r->type, 'content' => $r->content, 'status' => $r->status, 'error' => $r->error])->values(),
                 ] : null,
@@ -191,6 +194,38 @@ final class DomainController extends Controller
         $audit->record('edge.domain_cloudflare_proxy', 'site', $siteData->id, ['domain' => $model->name, 'proxied' => $data['proxied']], $siteData->organizationId);
 
         return back();
+    }
+
+    /** Cloudflare cache mode of one domain: standard | everything | bypass. */
+    public function cloudflareCache(Request $request, string $site, string $domain, CloudflareEdgeControls $controls): RedirectResponse
+    {
+        $siteData = $this->site($request, $site, 'edge.manage');
+        $data = $request->validate(['mode' => ['required', Rule::in(CloudflareEdgeControls::CACHE_MODES)]]);
+
+        try {
+            $controls->setCacheMode($this->domain($siteData->id, $domain), $data['mode']);
+        } catch (CloudflareError $e) {
+            throw ValidationException::withMessages(['mode' => $e->getMessage().' (the token needs Zone → Cache Rules → Edit)']);
+        }
+
+        return back();
+    }
+
+    /** Purge every name of the site at Cloudflare. */
+    public function cloudflarePurge(Request $request, string $site, CloudflareEdgeControls $controls): RedirectResponse
+    {
+        $siteData = $this->site($request, $site, 'edge.manage');
+        try {
+            $purged = $controls->purgeSite($siteData->id);
+        } catch (CloudflareError $e) {
+            throw ValidationException::withMessages(['purge' => $e->getMessage()]);
+        }
+
+        if ($purged === []) {
+            throw ValidationException::withMessages(['purge' => 'Nothing purged: the site has no names in a Cloudflare zone Kiln manages.']);
+        }
+
+        return back()->with('success', 'Purged '.implode(', ', $purged).'.');
     }
 
     public function primary(Request $request, string $site, string $domain, MakePrimaryDomain $makePrimary): RedirectResponse

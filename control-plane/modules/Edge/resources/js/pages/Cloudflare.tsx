@@ -42,6 +42,7 @@ interface ManagedZone {
     connection: string;
     proxied: boolean;
     generates: boolean;
+    under_attack: boolean;
     health: Record<string, { value: string | null; recommended: string; ok: boolean }> | null;
     records: ManagedRecord[];
 }
@@ -50,6 +51,7 @@ interface TunnelServer {
     id: string;
     name: string;
     ipv4: string | null;
+    lock: 'closed' | 'cloudflare' | null;
     tunnel: {
         id: string;
         name: string;
@@ -251,6 +253,21 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
                                 aria-label={`Generate names under ${zone.name}`}
                             />
                         </label>
+                        <label className="flex items-start justify-between gap-3 text-sm sm:col-span-2">
+                            <span>
+                                <span className="text-fg font-medium">Under Attack mode</span>
+                                <span className="text-fg-muted block text-xs">
+                                    Every visitor of the zone gets a short browser check before reaching your services. Use it during an attack, then
+                                    turn it off (the previous security level comes back).
+                                </span>
+                            </span>
+                            <Switch
+                                checked={zone.under_attack}
+                                disabled={!can.manage}
+                                onCheckedChange={(on) => router.put(`/settings/cloudflare/zones/${zone.id}/under-attack`, { on }, options)}
+                                aria-label={`Under Attack mode for ${zone.name}`}
+                            />
+                        </label>
                     </div>
 
                     {zone.health ? (
@@ -363,10 +380,39 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
                                             </Button>
                                         ))}
                                 </div>
+                                {can.manage && (
+                                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                                        <span className="text-fg-muted">Web ports (80/443):</span>
+                                        {(
+                                            [
+                                                [null, 'Open'],
+                                                ['cloudflare', 'Cloudflare only'],
+                                                ['closed', 'Closed (tunnel)'],
+                                            ] as const
+                                        ).map(([mode, label]) => (
+                                            <Button
+                                                key={label}
+                                                size="sm"
+                                                variant={server.lock === mode ? 'primary' : 'ghost'}
+                                                disabled={server.lock === mode || (mode === 'closed' && server.tunnel?.status !== 'active')}
+                                                onClick={() => router.put(`/settings/cloudflare/servers/${server.id}/lock`, { mode }, options)}
+                                            >
+                                                {label}
+                                            </Button>
+                                        ))}
+                                    </div>
+                                )}
+                                {server.lock && (
+                                    <p className="text-fg-muted text-xs">
+                                        {server.lock === 'closed'
+                                            ? 'No inbound web traffic: the server is reached through its tunnel only. Names outside your Cloudflare zones stop working.'
+                                            : 'Only Cloudflare reaches ports 80 and 443: names that are not proxied through Cloudflare (sslip.io, DNS only) stop working.'}
+                                    </p>
+                                )}
                                 {server.tunnel && (
                                     <p className="text-fg-muted text-xs">
                                         {server.tunnel.error ??
-                                            `Names in your zones are CNAMEs to ${server.tunnel.cname}. Close ports 80 and 443 on the server's firewall once it shows healthy.`}
+                                            `Names in your zones are CNAMEs to ${server.tunnel.cname}. Once it shows healthy you can close the web ports.`}
                                     </p>
                                 )}
                             </li>
