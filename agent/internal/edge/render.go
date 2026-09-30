@@ -61,6 +61,9 @@ type TLS struct {
 	Mode     string `json:"mode,omitempty"` // acme (default) | internal | custom | off
 	CertName string `json:"cert_name,omitempty"`
 	DNS      *DNS   `json:"dns,omitempty"` // ACME DNS-01 challenge (wildcards)
+	// HTTPChallengeOnly disables TLS-ALPN-01: behind a proxy that terminates TLS (Cloudflare's orange cloud) it can
+	// never pass, and every failed attempt counts against Let's Encrypt's failed-authorization limit.
+	HTTPChallengeOnly bool `json:"http_challenge_only,omitempty"`
 }
 
 // DNS configures the ACME DNS-01 challenge provider.
@@ -174,6 +177,10 @@ func Render(p Payload, certDir string) (obj, error) {
 				}
 				iss := acmeIssuer(p)
 				iss["challenges"] = obj{"dns": obj{"provider": obj{"name": s.TLS.DNS.Provider, "api_token": s.TLS.DNS.APIToken}}}
+				dnsPolicies = append(dnsPolicies, obj{"subjects": toAny(hosts), "issuers": []any{iss}})
+			} else if s.TLS != nil && s.TLS.HTTPChallengeOnly {
+				iss := acmeIssuer(p)
+				iss["challenges"] = obj{"tls-alpn": obj{"disabled": true}}
 				dnsPolicies = append(dnsPolicies, obj{"subjects": toAny(hosts), "issuers": []any{iss}})
 			} else {
 				acmeSubjects = append(acmeSubjects, hosts...)

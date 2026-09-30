@@ -2,6 +2,7 @@
 
 namespace Kiln\Edge\Infrastructure;
 
+use Illuminate\Support\Collection;
 use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\InstallStatus;
 use Kiln\Edge\Domain\Models\Certificate;
@@ -40,6 +41,9 @@ use Kiln\Sites\Contracts\SiteRuntime;
  */
 final class RouteCompiler
 {
+    /** @var Collection<int, CloudflareZone> managed Cloudflare zones of the server being compiled (see compile()) */
+    private Collection $zones;
+
     public function __construct(
         private readonly SiteDirectory $sites,
         private readonly ServerDirectory $servers,
@@ -50,10 +54,11 @@ final class RouteCompiler
     ) {}
 
     /**
-     * edge.caddy.apply gained trusted_proxies in 0.3.0; agents reject unknown fields, so older releases never get it
-     * (they apply the rest and pick it up after an agent update). Development builds and unknown versions do.
+     * edge.caddy.apply gained trusted_proxies and tls.http_challenge_only in 0.3.0; agents reject unknown fields, so
+     * older releases never get them (they apply the rest and pick them up after an agent update). Development builds
+     * and unknown versions do.
      */
-    private static function agentTrustsProxies(string $serverId): bool
+    private static function agentKnowsCloudflare(string $serverId): bool
     {
         $version = app(AgentUpgrades::class)->versionsFor([$serverId])[$serverId]->version ?? null;
 
@@ -63,6 +68,19 @@ final class RouteCompiler
         }
 
         return version_compare($m[1], '0.3.0', '>=');
+    }
+
+    /**
+     * ACME for a host: in a managed Cloudflare zone, HTTP-01 only (TLS-ALPN-01 cannot pass through the proxy, and
+     * each failed attempt counts against Let's Encrypt's limit of 5 per hour).
+     *
+     * @return array{mode: string, http_challenge_only?: bool}
+     */
+    private function acme(string $host): array
+    {
+        return $this->zones->contains(fn (CloudflareZone $zone) => $zone->covers($host))
+            ? ['mode' => 'acme', 'http_challenge_only' => true]
+            : ['mode' => 'acme'];
     }
 
     public static function routeId(string $siteId): string
@@ -76,6 +94,10 @@ final class RouteCompiler
     public function compile(string $serverId): array
     {
         $entries = [];
+        $organizationId = $this->servers->find($serverId)?->organizationId;
+        $this->zones = $organizationId !== null && self::agentKnowsCloudflare($serverId)
+            ? CloudflareZone::query()->where('organization_id', $organizationId)->get()
+            : collect();
 
         foreach ($this->routedSites($serverId) as [$site, $role, $balancer]) {
             array_push($entries, ...$this->siteEntries($site, $serverId, $role, $balancer));
@@ -85,9 +107,7 @@ final class RouteCompiler
 
         // Behind Cloudflare the connection comes from Cloudflare: trust its ranges for the visitor's IP
         // (CF-Connecting-IP), so logs, IP allow / deny lists and rate limits see the visitor.
-        $organizationId = $this->servers->find($serverId)?->organizationId;
-        $proxied = $organizationId !== null && CloudflareZone::query()->where('organization_id', $organizationId)->exists()
-            && self::agentTrustsProxies($serverId);
+        $proxied = $this->zones->isNotEmpty();
 
         return array_filter([
             'acme_email' => $this->acmeEmail ?: null,
@@ -208,7 +228,7 @@ final class RouteCompiler
             $handler = ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => "127.0.0.1:{$public->hostPort}"]]];
 
             if ($public->domain !== null) {
-                $entries[] = ['id' => "{$routeId}-svc-{$label}", 'domains' => [$public->domain], 'tls' => ['mode' => 'acme']] + $handler + $rules;
+                $entries[] = ['id' => "{$routeId}-svc-{$label}", 'domains' => [$public->domain], 'tls' => $this->acme($public->domain)] + $handler + $rules;
             }
 
             if ($i > 0 && $public->testDomain !== null) {
@@ -402,7 +422,7 @@ final class RouteCompiler
     private function tls(Domain $domain, array $installedCertificates): ?array
     {
         return match ($domain->tls_mode) {
-            TlsMode::Auto => $domain->isWildcard() ? null : ['mode' => 'acme'],
+            TlsMode::Auto => $domain->isWildcard() ? null : $this->acme($domain->name),
             TlsMode::Internal => ['mode' => 'internal'],
             TlsMode::Off => ['mode' => 'off'],
             TlsMode::Custom => $domain->certificate_id !== null && in_array($domain->certificate_id, $installedCertificates, true)

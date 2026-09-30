@@ -247,3 +247,13 @@ it('creates records for a compose site’s public service domains and removes th
 
     expect($this->cf->recordsOf($this->zoneId))->toBe([]);
 });
+
+it('asks for HTTP-01 only for hosts in a managed zone', function () {
+    app(AddDomain::class)($this->site, 'shop.example.com');
+    app(AddDomain::class)($this->site, 'shop.other.org');
+    cf_connect($this);
+
+    $tls = collect(edge_compile($this->web1->id)['sites'])->mapWithKeys(fn ($s) => [$s['domains'][0] => $s['tls'] ?? null]);
+    expect($tls['shop.example.com'])->toBe(['mode' => 'acme', 'http_challenge_only' => true])
+        ->and($tls['shop.other.org'])->toBe(['mode' => 'acme']);
+});

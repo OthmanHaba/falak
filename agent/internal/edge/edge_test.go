@@ -514,3 +514,15 @@ func TestTrustedProxiesSetClientIPHeaders(t *testing.T) {
 		t.Error("trusted_proxies set without ranges")
 	}
 }
+
+func TestHTTPChallengeOnlyDisablesTLSALPN(t *testing.T) {
+	p := Payload{Sites: []Site{{ID: "shop", Domains: []string{"shop.example.com"}, Kind: "static", Root: "/srv/shop", TLS: &TLS{Mode: "acme", HTTPChallengeOnly: true}}}}
+	cfg, err := Render(p, "/etc/kiln/certs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(cfg)
+	if !strings.Contains(string(b), `"challenges":{"tls-alpn":{"disabled":true}}`) || !strings.Contains(string(b), `"subjects":["shop.example.com"]`) {
+		t.Fatalf("no HTTP-01 only policy: %s", b)
+	}
+}

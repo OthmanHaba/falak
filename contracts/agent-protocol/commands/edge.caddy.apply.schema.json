@@ -88,6 +88,10 @@
                   }
                 },
                 "description": "ACME DNS-01 challenge (required for wildcard domains when mode=acme); needs a Caddy/FrankenPHP build with the provider module"
+              },
+              "http_challenge_only": {
+                "type": "boolean",
+                "description": "ACME with HTTP-01 only (TLS-ALPN-01 disabled), for hosts behind a TLS-terminating proxy such as Cloudflare"
               }
             }
           },
