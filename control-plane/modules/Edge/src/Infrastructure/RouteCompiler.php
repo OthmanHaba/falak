@@ -15,7 +15,6 @@ use Kiln\Edge\Domain\Models\SecurityRule;
 use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Edge\Domain\Models\Upstream;
 use Kiln\Edge\Infrastructure\Dns\CloudflareRanges;
-use Kiln\Fleet\Application\ShippedAgent;
 use Kiln\Fleet\Contracts\AgentUpgrades;
 use Kiln\Processes\Contracts\OctaneRouting;
 use Kiln\Servers\Contracts\ServerDirectory;
@@ -56,10 +55,14 @@ final class RouteCompiler
      */
     private static function agentTrustsProxies(string $serverId): bool
     {
-        $version = ShippedAgent::semver(app(AgentUpgrades::class)->versionsFor([$serverId])[$serverId]->version ?? null);
+        $version = app(AgentUpgrades::class)->versionsFor([$serverId])[$serverId]->version ?? null;
 
-        // Pre-releases of 0.3.0 (rc) count as 0.3.0.
-        return $version === null || version_compare(explode('-', $version)[0], '0.3.0', '>=');
+        // Release versions only ("v0.2.8", "0.3.0-rc.1" counts as 0.3.0); dev / CI builds are current.
+        if ($version === null || preg_match('/^v?(\d+\.\d+\.\d+)(?:-[0-9A-Za-z.]+)?$/', $version, $m) !== 1) {
+            return true;
+        }
+
+        return version_compare($m[1], '0.3.0', '>=');
     }
 
     public static function routeId(string $siteId): string
