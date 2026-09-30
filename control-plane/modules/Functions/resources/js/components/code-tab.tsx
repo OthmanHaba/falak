@@ -2,9 +2,9 @@ import { Button, Callout, Input, RelativeTime, Skeleton, Tag, toast } from '@/co
 import { useJson } from '@/hooks/use-json';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
-import { GitCompareArrows, Rocket, RotateCcw, SquareFunction } from 'lucide-react';
+import { GitCompareArrows, Moon, Rocket, RotateCcw, SquareFunction, Zap } from 'lucide-react';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { functionUrl, type FunctionFiles, type FunctionState, type FunctionVersionSummary } from '../types';
+import { functionUrl, type FunctionFiles, type FunctionState, type FunctionVersionSummary, type LiveStatus } from '../types';
 
 const CodeEditor = lazy(() => import('./code-editor'));
 const DiffView = lazy(() => import('./code-editor').then((module) => ({ default: module.DiffView })));
@@ -23,6 +23,37 @@ function bytes(files: FunctionFiles): number {
 
 function kb(value: number): string {
     return value < 1024 ? `${value} B` : `${(value / 1024).toFixed(1)} KB`;
+}
+
+/** Instances right now: "Sleeping" at zero (the next request cold-starts one). */
+function Instances({ siteId }: { siteId: string }) {
+    const live = useJson<LiveStatus>(functionUrl(siteId, '/status'), { interval: 5000 });
+    const status = live.data?.status;
+    if (!status) return null;
+    const active = status.running + status.starting;
+
+    return (
+        <span className="text-fg-muted inline-flex items-center gap-2">
+            {active === 0 ? (
+                <Tag tone="neutral" icon={<Moon />}>
+                    Sleeping
+                </Tag>
+            ) : (
+                <Tag tone="success" icon={<Zap />}>
+                    {status.running} running{status.starting ? ` · ${status.starting} starting` : ''}
+                    {status.in_flight ? ` · ${status.in_flight} in flight` : ''}
+                </Tag>
+            )}
+            <span title="Since the gateway started">
+                {status.requests} requests · {status.cold_starts} cold starts
+            </span>
+            {status.last_request_at && (
+                <span>
+                    last <RelativeTime value={status.last_request_at} />
+                </span>
+            )}
+        </span>
+    );
 }
 
 interface Conflict {
@@ -195,6 +226,7 @@ export function CodeTab({ ctx }: ServiceTabProps) {
                 </span>
                 <span className="text-fg-faint font-mono">{entry}</span>
                 {status}
+                {live && <Instances siteId={siteId} />}
                 {data.head && (
                     <span className="text-fg-muted">
                         newest v{data.head.number}

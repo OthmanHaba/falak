@@ -13,6 +13,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/kiln/agent/internal/otlp"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 )
 
 // Options configure a Gateway.
@@ -35,6 +38,8 @@ type Options struct {
 	Logger *slog.Logger
 	// Version is reported on GET /v1/version (the agent restarts an outdated gateway).
 	Version string
+	// AgentOTLPSocket is the agent's OTLP receiver; functions' telemetry is relayed there ("" = no telemetry).
+	AgentOTLPSocket string
 }
 
 type instState int
@@ -57,7 +62,8 @@ type instance struct {
 	st       instState
 	inflight int
 	lastUsed time.Time
-	gone     bool // removed (release switched or function deleted)
+	readyAt  time.Time // when it last became ready (a request that arrived before waited for a cold start)
+	gone     bool      // removed (release switched or function deleted)
 }
 
 type function struct {
@@ -88,6 +94,7 @@ type Gateway struct {
 	bg      sync.WaitGroup // boots, stops and drains in flight
 
 	proxy *httputil.ReverseProxy
+	tel   *telemetry // nil without an agent receiver
 }
 
 // Errors of acquire, mapped to HTTP statuses.
@@ -132,6 +139,9 @@ func New(o Options) *Gateway {
 		o.Logger = slog.Default()
 	}
 	g := &Gateway{o: o, fns: map[string]*function{}, changed: make(chan struct{})}
+	if o.AgentOTLPSocket != "" {
+		g.tel = newTelemetry(o.AgentOTLPSocket, g.identity, o.Logger)
+	}
 	tr := &http.Transport{
 		Proxy:               nil,
 		DialContext:         (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
@@ -155,6 +165,10 @@ func New(o Options) *Gateway {
 				}
 			}
 			pr.Out.Header.Del(Header)
+			pr.Out.Header.Del(ColdStartHeader)
+			if cold, _ := pr.In.Context().Value(coldKey{}).(bool); cold {
+				pr.Out.Header.Set(ColdStartHeader, "1")
+			}
 		},
 		ErrorHandler: g.proxyError,
 	}
@@ -162,6 +176,10 @@ func New(o Options) *Gateway {
 }
 
 type targetKey struct{}
+
+type coldKey struct{}
+
+type siteKey struct{}
 
 // failBackoff is how long after a failed start requests fail fast instead of booting again.
 const failBackoff = 2 * time.Second
@@ -176,14 +194,21 @@ func (g *Gateway) broadcast() {
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	site := r.Header.Get(Header)
 	r.Header.Del(Header)
+	arrived := time.Now()
 	inst, spec, err := g.acquire(r.Context(), site)
 	if err != nil {
 		g.writeError(w, r, err)
+		if g.tel != nil && !errors.Is(err, errUnknown) && r.Context().Err() == nil {
+			g.tel.requestSpan(site, r, errorStatus(err), arrived, err.Error())
+		}
 		return
 	}
 	defer g.done(inst)
 
-	ctx := context.WithValue(r.Context(), targetKey{}, inst)
+	g.mu.Lock()
+	cold := inst.readyAt.After(arrived)
+	g.mu.Unlock()
+	ctx := context.WithValue(context.WithValue(context.WithValue(r.Context(), targetKey{}, inst), coldKey{}, cold), siteKey{}, site)
 	if !isUpgrade(r) {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, spec.requestTimeout())
@@ -194,6 +219,38 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func isUpgrade(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket") || strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
+}
+
+// errorStatus is the status writeError answers err with.
+func errorStatus(err error) int {
+	var sf startFailed
+	switch {
+	case errors.Is(err, errQueueFull):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, errStartTimeout):
+		return http.StatusGatewayTimeout
+	case errors.As(err, &sf):
+		return http.StatusBadGateway
+	default:
+		return http.StatusBadGateway
+	}
+}
+
+// identity is the resource a function's telemetry is reported under.
+func (g *Gateway) identity(site string) ([]*commonpb.KeyValue, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	f := g.fns[site]
+	if f == nil {
+		return nil, false
+	}
+	id := []*commonpb.KeyValue{otlp.Str("service.name", site)}
+	for _, k := range []string{"kiln.site.id", "kiln.release.id", "kiln.deployment.id"} {
+		if v := f.spec.Labels[k]; v != "" {
+			id = append(id, otlp.Str(k, v))
+		}
+	}
+	return id, true
 }
 
 func (g *Gateway) writeError(w http.ResponseWriter, r *http.Request, err error) {
@@ -235,6 +292,9 @@ func (g *Gateway) proxyError(w http.ResponseWriter, r *http.Request, err error) 
 				g.broadcast()
 			}
 			g.mu.Unlock()
+			if site, ok := r.Context().Value(siteKey{}).(string); ok && g.tel != nil {
+				g.tel.requestSpan(site, r, http.StatusBadGateway, time.Now(), "function unavailable")
+			}
 		}
 	}
 	g.o.Logger.Warn("function request failed", "err", err)
@@ -390,6 +450,7 @@ func (g *Gateway) startSlot(f *function, cold bool) {
 		} else {
 			in.st = ready
 			in.lastUsed = g.o.Now()
+			in.readyAt = time.Now()
 			if cold {
 				f.coldStarts++
 			}
@@ -571,6 +632,9 @@ func (g *Gateway) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 	g.applyMu.Lock()
 	defer g.applyMu.Unlock()
 
+	if g.tel != nil {
+		g.tel.ensure(spec.Site, otlpDir(spec.ReleaseDir))
+	}
 	hash := spec.containerHash()
 	g.mu.Lock()
 	f := g.fns[spec.Site]
@@ -605,7 +669,7 @@ func (g *Gateway) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 	boot := time.Since(start)
 
 	g.mu.Lock()
-	in.st, in.lastUsed = ready, g.o.Now()
+	in.st, in.lastUsed, in.readyAt = ready, g.o.Now(), time.Now()
 	var old []*instance
 	if f == nil {
 		f = &function{nextSlot: slot + 1}
@@ -693,6 +757,9 @@ func (g *Gateway) Delete(ctx context.Context, site string) (bool, error) {
 		g.persistLocked()
 	}
 	g.mu.Unlock()
+	if g.tel != nil {
+		g.tel.remove(site)
+	}
 	// Wait for this function's drain only: other functions' boots and drains go on (and keep using g.bg).
 	select {
 	case <-g.drain(insts, timeout):
@@ -788,10 +855,17 @@ func (g *Gateway) Load(ctx context.Context) error {
 		g.mu.Unlock()
 	}
 	g.mu.Lock()
-	for _, f := range g.fns {
+	sockets := map[string]string{}
+	for site, f := range g.fns {
 		sort.Slice(f.insts, func(i, j int) bool { return f.insts[i].slot < f.insts[j].slot })
+		sockets[site] = otlpDir(f.spec.ReleaseDir)
 	}
 	g.persistLocked()
 	g.mu.Unlock()
+	if g.tel != nil {
+		for site, dir := range sockets {
+			g.tel.ensure(site, dir)
+		}
+	}
 	return nil
 }

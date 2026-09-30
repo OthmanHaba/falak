@@ -14,8 +14,10 @@ type RunOptions struct {
 	AdminSocket  string
 	StateDir     string
 	DockerSocket string
-	Version      string
-	Logger       *slog.Logger
+	// AgentOTLPSocket is the agent's OTLP receiver (functions' telemetry is relayed there).
+	AgentOTLPSocket string
+	Version         string
+	Logger          *slog.Logger
 }
 
 // Run restores the registered functions, adopts their containers and serves until ctx ends.
@@ -30,10 +32,11 @@ func Run(ctx context.Context, o RunOptions) error {
 		o.StateDir = DefaultStateDir
 	}
 	g := New(Options{
-		Engine:    DockerEngine{C: docker.NewClient(o.DockerSocket)},
-		StateFile: filepath.Join(o.StateDir, "gateway.json"),
-		Logger:    o.Logger,
-		Version:   o.Version,
+		Engine:          DockerEngine{C: docker.NewClient(o.DockerSocket)},
+		StateFile:       filepath.Join(o.StateDir, "gateway.json"),
+		Logger:          o.Logger,
+		Version:         o.Version,
+		AgentOTLPSocket: o.AgentOTLPSocket,
 	})
 	if err := g.Load(ctx); err != nil {
 		return err

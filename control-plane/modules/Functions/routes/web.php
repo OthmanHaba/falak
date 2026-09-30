@@ -15,6 +15,7 @@ Route::middleware(['auth', 'org'])->group(function () use ($ulid) {
 
     Route::prefix('sites/{site}/function')->where(['site' => $ulid])->group(function () {
         Route::get('/', [FunctionController::class, 'show'])->name('functions.show');
+        Route::get('status', [FunctionController::class, 'status'])->middleware('throttle:120,1')->name('functions.status');
         Route::put('draft', [FunctionController::class, 'saveDraft'])->middleware('throttle:120,1')->name('functions.draft.save');
         Route::delete('draft', [FunctionController::class, 'discardDraft'])->name('functions.draft.discard');
         Route::post('deploy', [FunctionController::class, 'deploy'])->middleware('throttle:30,1')->name('functions.deploy');

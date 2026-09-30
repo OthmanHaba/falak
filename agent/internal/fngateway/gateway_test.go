@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -15,6 +17,8 @@ import (
 	"time"
 
 	"github.com/kiln/agent/internal/docker"
+	"github.com/kiln/agent/internal/otlp"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
 // fakeEngine runs each "container" as an httptest server while it is started.
@@ -88,7 +92,7 @@ func (e *fakeEngine) Start(_ context.Context, id string) error {
 			if b != nil {
 				<-b
 			}
-			fmt.Fprintf(w, "release=%s slot=%s header=%q host=%s xff=%s", rel, slot, r.Header.Get(Header), r.Host, r.Header.Get("X-Forwarded-For"))
+			fmt.Fprintf(w, "release=%s slot=%s header=%q host=%s xff=%s cold=%q", rel, slot, r.Header.Get(Header), r.Host, r.Header.Get("X-Forwarded-For"), r.Header.Get(ColdStartHeader))
 		}))
 	}
 	return nil
@@ -361,6 +365,9 @@ func TestScalesUpToMaxUnderLoadAndBackToZero(t *testing.T) {
 	if p := atomic.LoadInt32(&e.peak); p != 3 {
 		t.Fatalf("peak concurrency %d, want 3 (concurrency 1 × max 3)", p)
 	}
+
+	// The client can see its response before the gateway releases the request slot.
+	waitFor(t, "requests done", func() bool { return g.Status()[0].InFlight == 0 })
 
 	// Not idle long enough: nothing stops.
 	idleDown(g, clk, 30*time.Second)
@@ -641,5 +648,142 @@ func TestDeleteDoesNotWaitForOtherFunctions(t *testing.T) {
 	}
 	if d := time.Since(start); d > 2*time.Second {
 		t.Fatalf("delete waited %s for another function's drain", d)
+	}
+}
+
+// fakeAgent is the agent's OTLP receiver on a unix socket; it records the resources of the traces it gets.
+type fakeAgent struct {
+	mu    sync.Mutex
+	spans []*tracepb.ResourceSpans
+}
+
+func newFakeAgent(t *testing.T) (*fakeAgent, string) {
+	t.Helper()
+	sock := filepath.Join(shortTemp(t), "agent.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &fakeAgent{}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		if r.URL.Path == "/v1/traces" && r.Header.Get("Content-Type") == "application/x-protobuf" {
+			rs, _ := otlp.DecodeTraces(b)
+			a.mu.Lock()
+			a.spans = append(a.spans, rs...)
+			a.mu.Unlock()
+		}
+		w.WriteHeader(200)
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	return a, sock
+}
+
+func (a *fakeAgent) got() []*tracepb.ResourceSpans {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return append([]*tracepb.ResourceSpans(nil), a.spans...)
+}
+
+// shortTemp keeps unix socket paths under the OS limit (macOS: 104 bytes).
+func shortTemp(t *testing.T) string {
+	dir, err := os.MkdirTemp("/tmp", "kfn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
+func telemetrySpec(root, site, release string) Spec {
+	s := spec(site, release)
+	s.ReleaseDir = filepath.Join(root, site, "releases", release)
+	s.Labels = map[string]string{"kiln.site.id": "01SITEULID", "kiln.release.id": "01RELEASEULID"}
+	return s
+}
+
+func TestFunctionTelemetryIsStampedAndRelayed(t *testing.T) {
+	agent, agentSock := newFakeAgent(t)
+	root := shortTemp(t)
+	e := newFake()
+	g, _, _ := newGateway(t, e, func(o *Options) { o.AgentOTLPSocket = agentSock })
+	s := telemetrySpec(root, "hello", "r1")
+	mustApply(t, g, s)
+	defer g.tel.closeAll()
+
+	// The container mounts its function's socket.
+	b := s.createBody(0)
+	if b.HostConfig.Binds[1] != filepath.Join(root, "hello", "otlp")+":"+OTLPMount+":ro" || !strings.Contains(strings.Join(b.Env, " "), OTLPSocketEnv+"="+OTLPMount+"/otlp.sock") {
+		t.Fatalf("binds %v env %v", b.HostConfig.Binds, b.Env)
+	}
+
+	// A function claiming to be another site is reported as itself.
+	body := `{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"other"}},{"key":"kiln.site.id","value":{"stringValue":"01OTHERSITE"}},{"key":"kiln.org.id","value":{"stringValue":"01OTHERORG"}},{"key":"telemetry.sdk.language","value":{"stringValue":"js"}}]},"scopeSpans":[{"spans":[{"traceId":"0af7651916cd43dd8448eb211c80319c","spanId":"b7ad6b7169203331","name":"GET /","kind":2,"startTimeUnixNano":"1","endTimeUnixNano":"2"}]}]}]}`
+	c := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, "unix", filepath.Join(root, "hello", "otlp", "otlp.sock"))
+	}}}
+	resp, err := c.Post("http://fn/v1/traces", "application/json", strings.NewReader(body))
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("post: %v %v", resp, err)
+	}
+	got := agent.got()
+	if len(got) != 1 {
+		t.Fatalf("agent got %d batches", len(got))
+	}
+	attrs := map[string]string{}
+	for _, kv := range got[0].Resource.Attributes {
+		attrs[kv.Key] = kv.Value.GetStringValue()
+	}
+	if attrs["service.name"] != "hello" || attrs["kiln.site.id"] != "01SITEULID" || attrs["kiln.release.id"] != "01RELEASEULID" ||
+		attrs["kiln.org.id"] != "" || attrs["telemetry.sdk.language"] != "js" || got[0].ScopeSpans[0].Spans[0].Name != "GET /" {
+		t.Fatalf("resource %v", attrs)
+	}
+
+	// Deleting the function closes its socket.
+	if _, err := g.Delete(context.Background(), "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "hello", "otlp", "otlp.sock")); !os.IsNotExist(err) {
+		t.Fatalf("socket left behind: %v", err)
+	}
+}
+
+func TestColdStartsAreMarkedAndGatewayErrorsReported(t *testing.T) {
+	agent, agentSock := newFakeAgent(t)
+	root := shortTemp(t)
+	e := newFake()
+	g, clk, srv := newGateway(t, e, func(o *Options) { o.AgentOTLPSocket = agentSock })
+	mustApply(t, g, telemetrySpec(root, "hello", "r1"))
+	defer g.tel.closeAll()
+
+	if _, body := get(t, srv, "hello"); !strings.Contains(body, "cold=\"\"") {
+		t.Fatalf("warm request marked cold: %s", body)
+	}
+	idleDown(g, clk, 2*time.Minute)
+	if _, body := get(t, srv, "hello"); !strings.Contains(body, "cold=\"1\"") {
+		t.Fatalf("cold start not marked: %s", body)
+	}
+	if _, body := get(t, srv, "hello"); !strings.Contains(body, "cold=\"\"") {
+		t.Fatalf("second request marked cold: %s", body)
+	}
+
+	// A release that cannot start: the gateway answers 502 and reports it.
+	idleDown(g, clk, 2*time.Minute)
+	e.mu.Lock()
+	e.exitOnBoot = true
+	e.mu.Unlock()
+	if code, _ := get(t, srv, "hello"); code != http.StatusBadGateway {
+		t.Fatalf("status %d", code)
+	}
+	waitFor(t, "gateway span", func() bool { return len(agent.got()) == 1 })
+	sp := agent.got()[0].ScopeSpans[0].Spans[0]
+	a := map[string]string{}
+	for _, kv := range sp.Attributes {
+		a[kv.Key] = otlp.AttrString(kv.Value)
+	}
+	if a["kiln.event.type"] != "request" || a["http.route"] != gatewayRoute || a["http.response.status_code"] != "502" || sp.Status.GetCode() != tracepb.Status_STATUS_CODE_ERROR {
+		t.Fatalf("span %v", a)
 	}
 }

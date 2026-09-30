@@ -35,6 +35,20 @@ export interface FunctionState {
     can: { edit: boolean; deploy: boolean };
 }
 
+/** GET /sites/{site}/function/status: the leader server's gateway (null until it answered). */
+export interface LiveStatus {
+    status: {
+        release: string | null;
+        running: number;
+        starting: number;
+        in_flight: number;
+        cold_starts: number;
+        requests: number;
+        last_request_at?: string | null;
+    } | null;
+    at: string | null;
+}
+
 export interface Starter {
     key: string;
     title: string;

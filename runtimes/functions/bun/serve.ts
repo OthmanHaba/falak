@@ -4,6 +4,8 @@
 // object, or a plain fetch handler function. The gateway treats the first accepted connection as "ready", so the
 // server only listens once the module has loaded.
 import { join } from "node:path";
+// First, so outgoing fetch calls of the function are traced.
+import { flush, instrument } from "./telemetry.ts";
 
 const entry = process.env.KILN_ENTRYPOINT ?? "index.ts";
 const port = Number(process.env.PORT ?? 8080);
@@ -31,6 +33,8 @@ if (def && typeof (def as { fetch?: Handler }).fetch === "function") {
   process.exit(1);
 }
 
+fetch = instrument(fetch, def) as Handler;
+
 const server = Bun.serve({
   hostname: "0.0.0.0",
   port,
@@ -47,6 +51,7 @@ console.log(`kiln: ${entry} listening on :${server.port}`);
 for (const sig of ["SIGTERM", "SIGINT"] as const) {
   process.on(sig, async () => {
     await server.stop();
+    await flush();
     process.exit(0);
   });
 }

@@ -27,6 +27,22 @@ written outside `/tmp` (and `/app`, `/cache` during install).
 
 Environment: `KILN_ENTRYPOINT`, `PORT`, plus the function's variables.
 
+## Telemetry
+
+`kiln-fn-serve` should report to `$KILN_OTLP_SOCKET` (OTLP/HTTP, JSON or protobuf, on a unix socket mounted
+read-only at `/run/kiln-otlp`). The gateway replaces the resource's `service.name` and `kiln.*` attributes with the
+function's own identity and relays everything to the agent (Insights, traces). Spans follow the Kiln telemetry
+contract (`contracts/telemetry/README.md`). The gateway adds `X-Kiln-Cold-Start: 1` to a request that waited for an
+instance to start; report it as `faas.coldstart`.
+
+The Bun runtime does this without any package (`telemetry.ts`):
+- a `request` span per request, named by the Hono route template (`GET /users/:id`); paths no route matches are
+  grouped as `(unmatched)`, and plain fetch handlers get `/users/:id`-style names from the path;
+- exceptions: errors Hono's error handler turns into a 500, and errors thrown by a plain handler, with the stack;
+- `outgoing_request` spans for `fetch` calls made while handling a request (no query strings).
+
+Set `KILN_TELEMETRY=off` in the function's variables to turn it off.
+
 ## Dependencies (Bun)
 
 Without a `package.json`, `kiln-fn-install` reads the imports of every source file (`Bun.Transpiler.scanImports`):

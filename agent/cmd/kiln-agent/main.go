@@ -63,7 +63,7 @@ func main() {
 		err = agent.Install(ctx, agent.InstallOptions{Config: cfg, Source: self, NoStart: *noStart, FS: hostfs.FS{Root: cfg.HostRoot}, Runner: runner.Exec{}, Out: os.Stdout})
 	case "fn-gateway":
 		err = fngateway.Run(ctx, fngateway.RunOptions{Listen: *fnListen, AdminSocket: *fnAdmin, StateDir: *fnState,
-			DockerSocket: cfg.DockerSock, Version: version.Version, Logger: log.With("component", "fn-gateway")})
+			DockerSocket: cfg.DockerSock, AgentOTLPSocket: cfg.OTLPSocket, Version: version.Version, Logger: log.With("component", "fn-gateway")})
 	case "version", "--version", "-v":
 		fmt.Println(version.Version)
 	default:

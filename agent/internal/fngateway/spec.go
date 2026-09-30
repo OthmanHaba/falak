@@ -165,7 +165,8 @@ func (s Spec) containerHash() string {
 		env = append(env, k+"="+v)
 	}
 	sort.Strings(env)
-	b, _ := json.Marshal([]any{s.Release, s.Image, s.Entrypoint, s.ReleaseDir, env, s.Limits, s.Labels})
+	// "otlp-1": containers mount the function's telemetry socket (containers made before are recreated).
+	b, _ := json.Marshal([]any{"otlp-1", s.Release, s.Image, s.Entrypoint, s.ReleaseDir, env, s.Limits, s.Labels})
 	h.Write(b)
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
@@ -207,14 +208,14 @@ func Hardened(memory int64, cpus float64, pids int64, tmpfsSize string) docker.H
 // (a published loopback port would be accepted by docker-proxy before the runtime listens) and no port range
 // has to be allocated.
 func (s Spec) createBody(slot int) docker.CreateBody {
-	env := []string{"PORT=" + strconv.Itoa(ContainerPort), "KILN_ENTRYPOINT=" + s.Entrypoint, "HOME=/tmp"}
+	env := []string{"PORT=" + strconv.Itoa(ContainerPort), "KILN_ENTRYPOINT=" + s.Entrypoint, "HOME=/tmp", OTLPSocketEnv + "=" + OTLPMount + "/" + otlpSocketName}
 	keys := make([]string, 0, len(s.Env))
 	for k := range s.Env {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		if k == "PORT" || k == "KILN_ENTRYPOINT" {
+		if k == "PORT" || k == "KILN_ENTRYPOINT" || k == OTLPSocketEnv {
 			continue
 		}
 		env = append(env, k+"="+s.Env[k])
@@ -231,7 +232,7 @@ func (s Spec) createBody(slot int) docker.CreateBody {
 	}
 	cp := strconv.Itoa(ContainerPort) + "/tcp"
 	hc := Hardened(s.Limits.MemoryBytes, s.Limits.CPUs, s.Limits.Pids, "64m")
-	hc.Binds = []string{s.ReleaseDir + ":/app:ro"}
+	hc.Binds = []string{s.ReleaseDir + ":/app:ro", otlpDir(s.ReleaseDir) + ":" + OTLPMount + ":ro"}
 	return docker.CreateBody{
 		Image: s.Image, Env: env, Cmd: []string{ServeCommand}, User: UID, WorkingDir: "/app", Labels: labels,
 		ExposedPorts: map[string]struct{}{cp: {}}, HostConfig: hc,

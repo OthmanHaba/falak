@@ -11,6 +11,7 @@ use Kiln\Functions\Application\Actions\DeployVersion;
 use Kiln\Functions\Application\Actions\UpdateSettings;
 use Kiln\Functions\Application\Code;
 use Kiln\Functions\Application\FunctionStore;
+use Kiln\Functions\Application\LiveStatus;
 use Kiln\Functions\Application\StaleVersion;
 use Kiln\Functions\Domain\Models\CloudFunction;
 use Kiln\Functions\Domain\Models\FunctionDraft;
@@ -59,6 +60,14 @@ final class FunctionController extends Controller
                     && $this->access->can($request->user(), $data->organizationId, 'deployments.create'),
             ],
         ]])->header('Cache-Control', 'no-store');
+    }
+
+    /** Instances, requests in flight and cold starts on the leader server (polled by the Code tab). */
+    public function status(Request $request, string $site, LiveStatus $live): JsonResponse
+    {
+        [$data] = $this->resolve($request->user(), $site, Permissions::VIEW);
+
+        return response()->json(['data' => $live->for($data->id, $data->slug)])->header('Cache-Control', 'no-store');
     }
 
     /** Autosave of the editor (per user). */

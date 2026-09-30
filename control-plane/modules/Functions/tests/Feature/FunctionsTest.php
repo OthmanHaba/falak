@@ -211,3 +211,24 @@ it('hashes code independent of file order', function () {
     expect(Code::hash(Code::files(['b.ts' => '2', 'index.ts' => '1'], 'index.ts'), 'index.ts'))
         ->toBe(Code::hash(Code::files(['index.ts' => '1', 'b.ts' => '2'], 'index.ts'), 'index.ts'));
 });
+
+it('reports live instances from the gateway without waiting for the agent', function () {
+    [$world] = fn_world();
+
+    // First poll: asks the leader's gateway, nothing known yet.
+    $this->getJson(fn_url($world->site, '/status'))->assertOk()->assertJsonPath('data.status', null);
+    $asked = $world->agents->last('fn.status');
+    expect($asked['payload'])->toBe(['site' => $world->site->slug])
+        ->and($asked['handle']->serverId)->toBe($world->servers[0]->id);
+
+    $world->agents->succeed($asked['handle'], ['functions' => [
+        ['site' => 'other', 'release' => 'x', 'running' => 9, 'starting' => 0, 'in_flight' => 0, 'cold_starts' => 0, 'requests' => 0],
+        ['site' => $world->site->slug, 'release' => 'r1', 'running' => 2, 'starting' => 0, 'in_flight' => 1, 'cold_starts' => 4, 'requests' => 120],
+    ]]);
+
+    $this->getJson(fn_url($world->site, '/status'))->assertOk()
+        ->assertJsonPath('data.status.running', 2)
+        ->assertJsonPath('data.status.cold_starts', 4);
+    // Fresh answer: no new command within a few seconds.
+    expect(count($world->agents->dispatched('fn.status')))->toBe(1);
+});

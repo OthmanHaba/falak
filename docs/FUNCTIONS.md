@@ -83,6 +83,29 @@ itself, so don't define it.
 
 The gateway runs as its own systemd service, so agent upgrades don't interrupt function traffic.
 
+## Observability
+
+Functions report to Kiln without any package.
+
+**Observability tab**
+- Requests, error rate and p95, with the slow routes listed by their Hono route (`GET /users/:id`). Paths no route
+  matches are grouped as `(unmatched)`.
+- Issues from uncaught errors, with the stack trace.
+- Outgoing `fetch` calls. Query strings are not recorded.
+- Cold starts are marked on the request that waited for one (`faas.coldstart`).
+- Requests the gateway answers itself are listed as `(function unavailable)`: a release that fails to start, a start
+  timeout, or a full queue.
+
+**Code tab:** the live state, *Sleeping* or *N running*, with requests in flight, request and cold-start counts, and
+the time of the last request.
+
+**Logs tab:** `console.log` output.
+
+**How it works:** each function reports on its own socket. The gateway stamps the function's identity on what
+arrives there, so a function can't report as another one, and hands it to the agent.
+
+Set `KILN_TELEMETRY=off` in Variables to turn the built-in tracing off.
+
 ## Isolation
 
 Every instance runs with:
