@@ -23,13 +23,16 @@ use SensitiveParameter;
  * Settings → Cloudflare: connect an API token, choose the zones Kiln manages, check and fix their TLS settings.
  *
  * A managed zone means: DNS records for its domains are created / updated / removed by Kiln (its own records only),
- * certificates come over DNS-01 with the connection, generated names may live under it, and every server of the
+ * generated names may live under it, and every server of the
  * organization trusts Cloudflare's IP ranges for the visitor's address.
  */
 final class CloudflareConnections
 {
-    /** Zone settings Kiln checks, with the value it recommends. */
-    public const RECOMMENDED = ['ssl' => 'strict', 'min_tls_version' => '1.2'];
+    /**
+     * Zone settings Kiln checks, with the value it recommends. Always Use HTTPS stays off: Caddy redirects to HTTPS
+     * itself, and Cloudflare's redirect would stop Let's Encrypt's HTTP-01 check from reaching the server.
+     */
+    public const RECOMMENDED = ['ssl' => 'strict', 'min_tls_version' => '1.2', 'always_use_https' => 'off'];
 
     public function __construct(
         private readonly CloudflareDns $dns,
@@ -110,13 +113,9 @@ final class CloudflareConnections
             'proxied' => $proxied,
         ]);
 
-        // Existing domains under the zone: certificates move to DNS-01 (works behind the orange cloud), records sync.
-        $this->domainsIn($managed)->each(function (Domain $domain) use ($credential) {
-            if ($domain->tls_mode === TlsMode::Auto) {
-                $domain->forceFill(['tls_mode' => TlsMode::Dns, 'dns_credential_id' => $credential->id])->save();
-            }
-            SyncCloudflareDns::domain($domain->id);
-        });
+        // Existing domains under the zone get their records. Certificates keep coming over HTTP-01: Cloudflare passes
+        // /.well-known/acme-challenge to the server even when proxied (Always Use HTTPS off).
+        $this->domainsIn($managed)->each(fn (Domain $domain) => SyncCloudflareDns::domain($domain->id));
         $this->reapply($credential->organization_id);
 
         $this->audit->record('edge.cloudflare_zone_enabled', 'dns_credential', $credential->id, ['zone' => $zone['name'], 'proxied' => $proxied], $credential->organization_id);

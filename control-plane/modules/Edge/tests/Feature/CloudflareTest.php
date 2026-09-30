@@ -16,6 +16,9 @@ use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Domain\Models\OrganizationSetting;
 use Kiln\Edge\Infrastructure\Dns\CloudflareRanges;
 use Kiln\Edge\Tests\Support\FakeCloudflare;
+use Kiln\Fleet\Contracts\AgentUpgrades;
+use Kiln\Fleet\Contracts\Data\AgentUpgradeData;
+use Kiln\Fleet\Contracts\Data\AgentVersionInfo;
 use Kiln\Sites\Contracts\Data\DomainChoice;
 use Kiln\Sites\Contracts\DomainType;
 use Kiln\Sites\Contracts\SiteDomains;
@@ -58,7 +61,7 @@ it('connects a token after verifying it, and rejects a token Cloudflare refuses'
         ->and(array_column($this->connections->zones($credential), 'name'))->toBe(['example.com']);
 });
 
-it('creates tagged A and AAAA records for a domain in a managed zone, with DNS-01 certificates', function () {
+it('creates tagged A and AAAA records for a domain in a managed zone', function () {
     cf_connect($this);
 
     $domain = app(AddDomain::class)($this->site, 'shop.example.com', www: WwwRedirect::ToApex);
@@ -72,8 +75,8 @@ it('creates tagged A and AAAA records for a domain in a managed zone, with DNS-0
     ])
         ->and($records->every(fn ($r) => $r['proxied'] === true && str_starts_with($r['comment'], "kiln:{$domain->id}")))->toBeTrue()
         ->and(DnsRecord::query()->where('status', DnsRecord::SYNCED)->count())->toBe(4)
-        ->and($domain->refresh()->tls_mode)->toBe(TlsMode::Dns)
-        ->and($domain->dns_credential_id)->toBe($this->zone->dns_credential_id);
+        // Let's Encrypt HTTP-01 goes through Cloudflare's proxy; no DNS plugin needed on the servers.
+        ->and($domain->refresh()->tls_mode)->toBe(TlsMode::Auto);
 });
 
 it('leaves domains outside managed zones alone', function () {
@@ -167,6 +170,7 @@ it('checks and fixes the zone TLS settings', function () {
     expect($this->connections->health($this->zone))->toBe([
         'ssl' => ['value' => 'full', 'recommended' => 'strict', 'ok' => false],
         'min_tls_version' => ['value' => '1.0', 'recommended' => '1.2', 'ok' => false],
+        'always_use_https' => ['value' => 'off', 'recommended' => 'off', 'ok' => true],
     ]);
 
     $this->connections->applyRecommended($this->zone, 'ssl');
@@ -183,4 +187,38 @@ it('releases a zone and keeps or deletes its records', function () {
 
     expect($this->cf->recordsOf($this->zoneId))->toBe([])
         ->and(CloudflareZone::query()->count())->toBe(0);
+});
+
+it('does not send trusted proxies to agents older than 0.3.0 (they reject unknown fields)', function () {
+    app(AddDomain::class)($this->site, 'shop.example.com');
+    cf_connect($this);
+    app()->instance(AgentUpgrades::class, new class implements AgentUpgrades
+    {
+        public string $version = 'v0.2.8';
+
+        public function versionsFor(array $serverIds): array
+        {
+            return array_combine($serverIds, array_map(fn ($id) => new AgentVersionInfo($id, $this->version, 'v0.3.0', true), $serverIds));
+        }
+
+        public function upgrade(string $serverId, ?string $userId = null): AgentUpgradeData
+        {
+            throw new RuntimeException('unused');
+        }
+
+        public function upgradeOrganization(string $organizationId, ?string $userId = null, ?array $serverIds = null): array
+        {
+            return [];
+        }
+
+        public function outdatedCount(?string $organizationId = null): int
+        {
+            return 0;
+        }
+    });
+
+    expect(edge_compile($this->web1->id))->not->toHaveKey('trusted_proxies');
+
+    app(AgentUpgrades::class)->version = 'v0.3.0';
+    expect(edge_compile($this->web1->id))->toHaveKey('trusted_proxies');
 });

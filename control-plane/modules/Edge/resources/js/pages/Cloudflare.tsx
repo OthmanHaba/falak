@@ -61,8 +61,8 @@ const TOKEN_PERMISSIONS = [
 ];
 const TOKEN_URL = `https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=${encodeURIComponent(JSON.stringify(TOKEN_PERMISSIONS))}&accountId=*&zoneId=all&name=${encodeURIComponent('Kiln')}`;
 
-const SETTING_LABELS: Record<string, string> = { ssl: 'SSL/TLS mode', min_tls_version: 'Minimum TLS version' };
-const SETTING_VALUES: Record<string, string> = { strict: 'Full (strict)', full: 'Full', flexible: 'Flexible', off: 'Off' };
+const SETTING_LABELS: Record<string, string> = { ssl: 'SSL/TLS mode', min_tls_version: 'Minimum TLS version', always_use_https: 'Always Use HTTPS' };
+const SETTING_VALUES: Record<string, string> = { strict: 'Full (strict)', full: 'Full', flexible: 'Flexible', off: 'Off', on: 'On' };
 
 const RECORD_TONE = { synced: 'success', pending: 'info', conflict: 'warning', error: 'danger' } as const;
 

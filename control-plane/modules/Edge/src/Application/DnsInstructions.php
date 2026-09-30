@@ -64,8 +64,8 @@ final class DnsInstructions
         }
 
         if ($managedZone !== null) {
-            // Kiln creates these records itself and gets the certificate over DNS-01, proxied or not.
-            $notes = ["Kiln manages these records in Cloudflare ({$managedZone}): nothing to add by hand. The certificate is issued over DNS, so the orange cloud is fine."];
+            // Kiln creates these records itself; Let's Encrypt reaches the server through Cloudflare (HTTP-01).
+            $notes = ["Kiln manages these records in Cloudflare ({$managedZone}): nothing to add by hand. The orange cloud is fine: Cloudflare passes Let's Encrypt's check through to the server."];
         } else {
             $notes[] = 'Cloudflare: set the record to “DNS only” (grey cloud) until the certificate is issued, so Let\'s Encrypt reaches the server over HTTP on port 80.';
         }

@@ -38,7 +38,7 @@ final class FakeCloudflare
         $id = 'zone-'.Str::lower(Str::random(8));
         $this->zones[$id] = ['id' => $id, 'name' => $name, 'account' => $account];
         $this->records[$id] = [];
-        $this->settings[$id] = ['ssl' => 'full', 'min_tls_version' => '1.0'];
+        $this->settings[$id] = ['ssl' => 'full', 'min_tls_version' => '1.0', 'always_use_https' => 'off'];
 
         return $id;
     }

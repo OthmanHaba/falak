@@ -64,7 +64,7 @@ export default function DomainSettings({ settings, can }: Props) {
                 {example ? (
                     <p className="text-fg-muted text-xs">
                         Example: <span className="text-fg font-mono">{example}</span>
-                        {zone ? ' — Kiln creates the DNS record in Cloudflare and gets the certificate over DNS.' : ' → 63.182.218.247'}
+                        {zone ? ' — Kiln creates its DNS record in Cloudflare.' : ' → 63.182.218.247'}
                     </p>
                 ) : (
                     <Callout tone="info">

@@ -15,6 +15,8 @@ use Kiln\Edge\Domain\Models\SecurityRule;
 use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Edge\Domain\Models\Upstream;
 use Kiln\Edge\Infrastructure\Dns\CloudflareRanges;
+use Kiln\Fleet\Application\ShippedAgent;
+use Kiln\Fleet\Contracts\AgentUpgrades;
 use Kiln\Processes\Contracts\OctaneRouting;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\Data\SiteData;
@@ -48,6 +50,18 @@ final class RouteCompiler
         private readonly string $testDomainTls = 'acme',
     ) {}
 
+    /**
+     * edge.caddy.apply gained trusted_proxies in 0.3.0; agents reject unknown fields, so older releases never get it
+     * (they apply the rest and pick it up after an agent update). Development builds and unknown versions do.
+     */
+    private static function agentTrustsProxies(string $serverId): bool
+    {
+        $version = ShippedAgent::semver(app(AgentUpgrades::class)->versionsFor([$serverId])[$serverId]->version ?? null);
+
+        // Pre-releases of 0.3.0 (rc) count as 0.3.0.
+        return $version === null || version_compare(explode('-', $version)[0], '0.3.0', '>=');
+    }
+
     public static function routeId(string $siteId): string
     {
         return strtolower($siteId);
@@ -69,7 +83,8 @@ final class RouteCompiler
         // Behind Cloudflare the connection comes from Cloudflare: trust its ranges for the visitor's IP
         // (CF-Connecting-IP), so logs, IP allow / deny lists and rate limits see the visitor.
         $organizationId = $this->servers->find($serverId)?->organizationId;
-        $proxied = $organizationId !== null && CloudflareZone::query()->where('organization_id', $organizationId)->exists();
+        $proxied = $organizationId !== null && CloudflareZone::query()->where('organization_id', $organizationId)->exists()
+            && self::agentTrustsProxies($serverId);
 
         return array_filter([
             'acme_email' => $this->acmeEmail ?: null,
