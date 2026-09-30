@@ -23,6 +23,9 @@ final class FakeCloudflare
     /** @var array<string, array{id: string, name: string, ingress: list<array<string, mixed>>}> */
     public array $tunnels = [];
 
+    /** Status Cloudflare reports for every tunnel (healthy, down, inactive, …). */
+    public string $tunnelStatus = 'healthy';
+
     /** @var array<string, list<array<string, mixed>>> zone id => cache rules */
     public array $cacheRules = [];
 
@@ -113,7 +116,7 @@ final class FakeCloudflare
                 return $ok(['tunnel_id' => $m[1]]);
             })(),
             (bool) preg_match('#^/accounts/[^/]+/cfd_tunnel/([^/]+)/connections$#', $path) => $ok([]),
-            (bool) preg_match('#^/accounts/[^/]+/cfd_tunnel/([^/]+)$#', $path, $m) && $request->method() === 'GET' => $ok(['id' => $m[1], 'status' => 'healthy', 'connections' => [['id' => 'c1'], ['id' => 'c2'], ['id' => 'c3'], ['id' => 'c4']]]),
+            (bool) preg_match('#^/accounts/[^/]+/cfd_tunnel/([^/]+)$#', $path, $m) && $request->method() === 'GET' => $ok(['id' => $m[1], 'status' => $this->tunnelStatus, 'connections' => $this->tunnelStatus === 'healthy' ? [['id' => 'c1'], ['id' => 'c2'], ['id' => 'c3'], ['id' => 'c4']] : []]),
             (bool) preg_match('#^/accounts/[^/]+/cfd_tunnel/([^/]+)$#', $path, $m) && $request->method() === 'DELETE' => (function () use ($m, $ok) {
                 unset($this->tunnels[$m[1]]);
 

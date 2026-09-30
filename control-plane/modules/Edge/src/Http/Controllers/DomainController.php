@@ -215,9 +215,17 @@ final class DomainController extends Controller
     public function cloudflarePurge(Request $request, string $site, CloudflareEdgeControls $controls): RedirectResponse
     {
         $siteData = $this->site($request, $site, 'edge.manage');
-        $purged = $controls->purgeSite($siteData->id);
+        try {
+            $purged = $controls->purgeSite($siteData->id);
+        } catch (CloudflareError $e) {
+            throw ValidationException::withMessages(['purge' => $e->getMessage()]);
+        }
 
-        return back()->with($purged === [] ? 'error' : 'success', $purged === [] ? 'Nothing purged: the site has no names in a Cloudflare zone Kiln manages.' : 'Purged '.implode(', ', $purged).'.');
+        if ($purged === []) {
+            throw ValidationException::withMessages(['purge' => 'Nothing purged: the site has no names in a Cloudflare zone Kiln manages.']);
+        }
+
+        return back()->with('success', 'Purged '.implode(', ', $purged).'.');
     }
 
     public function primary(Request $request, string $site, string $domain, MakePrimaryDomain $makePrimary): RedirectResponse

@@ -2,6 +2,7 @@
 
 namespace Kiln\Edge;
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\Facades\Event;
 use Kiln\Alerting\Contracts\AlertTypes;
@@ -11,6 +12,7 @@ use Kiln\Deployments\Events\DeploymentSucceeded;
 use Kiln\Edge\Application\CertificateInstaller;
 use Kiln\Edge\Application\EdgeChanges;
 use Kiln\Edge\Application\Jobs\PurgeCloudflareCache;
+use Kiln\Edge\Application\Jobs\ReconcileCloudflareTunnels;
 use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
 use Kiln\Edge\Application\Listeners\ForgetDeletedOrganization;
 use Kiln\Edge\Application\Listeners\ForgetDeletedServer;
@@ -122,6 +124,10 @@ class EdgeServiceProvider extends ModuleServiceProvider
         // Cloudflare DNS follows the domains (records Kiln created only).
         Event::listen(DomainAdded::class, fn (DomainAdded $event) => SyncCloudflareDns::domain($event->domainId));
         Event::listen(DomainRemoved::class, fn (DomainRemoved $event) => SyncCloudflareDns::forget($event->domainId));
+
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+            $schedule->job(new ReconcileCloudflareTunnels)->everyFiveMinutes()->name('edge:cloudflare-tunnels')->withoutOverlapping();
+        });
         // Visitors get the new release: purge the site's names at Cloudflare after deploys and rollbacks.
         Event::listen(DeploymentSucceeded::class, fn (DeploymentSucceeded $event) => PurgeCloudflareCache::dispatch($event->siteId));
         Event::listen(DeploymentRolledBack::class, fn (DeploymentRolledBack $event) => PurgeCloudflareCache::dispatch($event->siteId));

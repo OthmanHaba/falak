@@ -11,6 +11,7 @@ use Kiln\Edge\Application\CloudflareEdgeControls;
 use Kiln\Edge\Application\CloudflareTunnels;
 use Kiln\Edge\Application\DnsInstructions;
 use Kiln\Edge\Application\GeneratedDomains;
+use Kiln\Edge\Application\Jobs\ReconcileCloudflareTunnels;
 use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\WwwRedirect;
 use Kiln\Edge\Domain\Models\CloudflareTunnel;
@@ -25,6 +26,8 @@ use Kiln\Fleet\Contracts\AgentUpgrades;
 use Kiln\Fleet\Contracts\Data\AgentUpgradeData;
 use Kiln\Fleet\Contracts\Data\AgentVersionInfo;
 use Kiln\Fleet\Events\CommandFinished;
+use Kiln\Network\Contracts\Firewalls;
+use Kiln\Network\Contracts\WebOriginPolicy;
 use Kiln\Network\Domain\Models\FirewallRule;
 use Kiln\Network\Infrastructure\FirewallCompiler;
 use Kiln\Servers\Contracts\Data\ServerData;
@@ -355,25 +358,50 @@ it('turns Under Attack mode on and restores the previous level', function () {
 
 it('locks a server’s web ports to Cloudflare, or closes them behind a running tunnel', function () {
     cf_connect($this);
-    foreach ([['SSH', '22'], ['HTTP', '80'], ['HTTPS', '443']] as $i => [$name, $port]) {
-        FirewallRule::query()->create(['organization_id' => $this->org, 'server_id' => $this->web1->id, 'name' => $name, 'action' => 'allow', 'protocol' => 'tcp', 'port' => $port, 'position' => $i, 'is_default' => true]);
+    foreach ([['SSH', '22', 'tcp'], ['HTTP', '80', 'tcp'], ['HTTPS', '443', 'tcp'], ['Anything from the office', null, 'any']] as $i => [$name, $port, $protocol]) {
+        FirewallRule::query()->create(['organization_id' => $this->org, 'server_id' => $this->web1->id, 'name' => $name, 'action' => 'allow', 'protocol' => $protocol, 'port' => $port, 'source' => $port === null ? '198.51.100.0/24' : null, 'position' => $i, 'is_default' => $port !== null]);
     }
-    $firewall = fn () => collect(app(FirewallCompiler::class)->compile($this->web1->id)['rules'])->keyBy(fn ($r) => 'port-'.($r['ports'][0] ?? 'any'));
+    // [id-or-port => rule]; explicit web rules come first, before the server's own rules.
+    $firewall = fn () => collect(app(FirewallCompiler::class)->compile($this->web1->id)['rules'])
+        ->map(fn ($r) => ['key' => str_starts_with((string) $r['id'], 'web-origin') ? $r['id'] : ($r['ports'][0] ?? 'all'), ...$r])->values();
+    $keys = fn () => $firewall()->pluck('key')->all();
     $controls = app(CloudflareEdgeControls::class);
 
     $controls->lock($this->org, $this->web1->id, 'cloudflare');
-    expect($firewall()['port-443']['sources'])->toBe(CloudflareRanges::RANGES)
-        ->and($firewall()['port-22'])->not->toHaveKey('sources');
+    expect($keys())->toBe(['web-origin-allow', 'web-origin-drop', '22', 'all'])
+        ->and($firewall()[0]['sources'])->toBe(CloudflareRanges::RANGES)
+        ->and($firewall()[1])->toMatchArray(['action' => 'drop', 'ports' => ['80', '443']]);
 
-    // Closing needs a running tunnel.
+    // Closing needs a running tunnel; then even the all-ports rule cannot reach 80 / 443 (the drop comes first).
     expect(fn () => $controls->lock($this->org, $this->web1->id, 'closed'))->toThrow(ValidationException::class);
     $tunnel = app(CloudflareTunnels::class)->enable($this->web1->id, $this->zone->credential);
     $tunnel->forceFill(['status' => CloudflareTunnel::ACTIVE])->save();
     $controls->lock($this->org, $this->web1->id, 'closed');
-    expect($firewall()->keys()->all())->toBe(['port-22']);
+    expect($keys())->toBe(['web-origin-drop', '22', 'all']);
+
+    // The tunnel stops: closed falls back to Cloudflare-only.
+    $tunnel->forceFill(['status' => CloudflareTunnel::ERROR])->save();
+    expect($keys())->toBe(['web-origin-allow', 'web-origin-drop', '22', 'all']);
 
     // Leaving the tunnel opens the web ports again.
     app(CloudflareTunnels::class)->disable($tunnel->refresh());
-    expect($firewall()->keys()->sort()->values()->all())->toBe(['port-22', 'port-443', 'port-80'])
-        ->and($firewall()['port-443'])->not->toHaveKey('sources');
+    expect($keys())->toBe(['22', '80', '443', 'all']);
+});
+
+it('marks a tunnel Cloudflare reports down, and brings it back when healthy', function () {
+    cf_connect($this);
+    $tunnel = app(CloudflareTunnels::class)->enable($this->web1->id, $this->zone->credential);
+    $tunnel->forceFill(['status' => CloudflareTunnel::ACTIVE])->save();
+    app(CloudflareEdgeControls::class)->lock($this->org, $this->web1->id, 'closed');
+
+    $this->cf->tunnelStatus = 'down';
+    (new ReconcileCloudflareTunnels)->handle(app(CloudflareTunnels::class), app(Firewalls::class));
+    expect($tunnel->refresh()->status)->toBe(CloudflareTunnel::ERROR)
+        ->and($tunnel->error)->toContain('down')
+        ->and(app(WebOriginPolicy::class)->for($this->web1->id)['mode'])->toBe('only');
+
+    $this->cf->tunnelStatus = 'healthy';
+    (new ReconcileCloudflareTunnels)->handle(app(CloudflareTunnels::class), app(Firewalls::class));
+    expect($tunnel->refresh()->status)->toBe(CloudflareTunnel::ACTIVE)
+        ->and(app(WebOriginPolicy::class)->for($this->web1->id)['mode'])->toBe('closed');
 });

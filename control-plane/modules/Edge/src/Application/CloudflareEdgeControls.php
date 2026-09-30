@@ -40,8 +40,17 @@ final class CloudflareEdgeControls
         $zone = CloudflareZone::forHost($domain->organization_id, $domain->name)
             ?? throw ValidationException::withMessages(['mode' => 'This domain is not in a Cloudflare zone Kiln manages.']);
 
+        // Saved only once Cloudflare accepted the rules.
+        $previous = $domain->cloudflare_cache;
         $domain->forceFill(['cloudflare_cache' => $mode === 'standard' ? null : $mode])->save();
-        $this->syncCacheRules($zone);
+
+        try {
+            $this->syncCacheRules($zone);
+        } catch (CloudflareError $e) {
+            $domain->forceFill(['cloudflare_cache' => $previous])->save();
+
+            throw $e;
+        }
         $this->audit->record('edge.cloudflare_cache_mode', 'site', $domain->site_id, ['domain' => $domain->name, 'mode' => $mode], $domain->organization_id);
     }
 
@@ -102,10 +111,13 @@ final class CloudflareEdgeControls
     /**
      * @param  list<string>  $hosts
      * @return list<string>
+     *
+     * @throws CloudflareError after trying every zone, when a purge failed (the job retries)
      */
     public function purge(string $organizationId, array $hosts): array
     {
         $purged = [];
+        $failure = null;
         $zones = CloudflareZone::query()->with('credential')->where('organization_id', $organizationId)->get();
 
         foreach ($zones as $zone) {
@@ -116,9 +128,14 @@ final class CloudflareEdgeControls
                     CloudflareApi::with($zone->credential->api_token)->purgeHosts($zone->zone_id, $chunk);
                     array_push($purged, ...$chunk);
                 } catch (CloudflareError $e) {
+                    $failure = $e;
                     Log::warning('edge: cloudflare purge failed', ['zone' => $zone->name, 'error' => $e->getMessage()]);
                 }
             }
+        }
+
+        if ($failure !== null) {
+            throw $failure;
         }
 
         return $purged;

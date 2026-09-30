@@ -62,8 +62,10 @@ final class FirewallCompiler
     }
 
     /**
-     * The server's {@see WebOriginPolicy} on top of its rules: accept rules for TCP 80 / 443 are dropped (closed) or
-     * narrowed to the allowed sources (only). Deny rules and other ports are untouched.
+     * The server's {@see WebOriginPolicy} on top of its rules. Explicit web rules come first, so they hold whatever the
+     * server's own rules say (all-port rules and port ranges included): accept TCP 80 / 443 from the allowed sources
+     * (only), then drop TCP 80 / 443 from anywhere. Accept rules for exactly the web ports are then redundant and left
+     * out; everything else is untouched.
      *
      * @param  list<array<string, mixed>>  $rules
      * @return list<array<string, mixed>>
@@ -76,21 +78,20 @@ final class FirewallCompiler
             return $rules;
         }
 
-        $out = [];
+        $explicit = [];
 
-        foreach ($rules as $rule) {
-            $web = $rule['action'] === 'accept' && in_array($rule['protocol'], ['tcp', 'any'], true)
-                && array_intersect((array) ($rule['ports'] ?? []), self::WEB_PORTS) !== [];
-
-            if (! $web) {
-                $out[] = $rule;
-            } elseif ($policy['mode'] === 'only') {
-                $out[] = ['sources' => $policy['sources'], 'comment' => mb_substr(($rule['comment'] ?? '').' (Cloudflare only)', 0, 120)] + $rule;
-            }
-            // closed: the accept rule goes away; the input policy drops web traffic.
+        if ($policy['mode'] === 'only') {
+            $explicit[] = ['id' => 'web-origin-allow', 'action' => 'accept', 'protocol' => 'tcp', 'ports' => self::WEB_PORTS, 'sources' => $policy['sources'], 'comment' => 'Web ports: Cloudflare only'];
         }
 
-        return $out;
+        $explicit[] = ['id' => 'web-origin-drop', 'action' => 'drop', 'protocol' => 'tcp', 'ports' => self::WEB_PORTS, 'comment' => $policy['mode'] === 'only' ? 'Web ports: nobody else' : 'Web ports closed (Cloudflare Tunnel)'];
+
+        $rest = array_values(array_filter($rules, fn (array $rule) => ! ($rule['action'] === 'accept'
+            && in_array($rule['protocol'], ['tcp', 'any'], true)
+            && ($rule['ports'] ?? []) !== []
+            && array_diff((array) $rule['ports'], self::WEB_PORTS) === [])));
+
+        return [...$explicit, ...$rest];
     }
 
     /**
