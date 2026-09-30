@@ -4,16 +4,19 @@ namespace Kiln\Edge\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Str;
+use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
 use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Domain\Enums\ApplyStatus;
 use Kiln\Edge\Domain\Enums\InstallStatus;
 use Kiln\Edge\Domain\Models\CertificateInstall;
+use Kiln\Edge\Domain\Models\CloudflareTunnel;
 use Kiln\Edge\Domain\Models\ServerState;
 use Kiln\Edge\Events\CertificateInstallFailed;
 use Kiln\Edge\Events\CertificateIssued;
 use Kiln\Edge\Events\EdgeApplied;
 use Kiln\Fleet\Events\CommandFailed;
 use Kiln\Fleet\Events\CommandFinished;
+use Kiln\Sites\Contracts\SiteDirectory;
 
 /**
  * Settles edge.caddy.apply / edge.cert.install commands dispatched by Edge.
@@ -27,13 +30,36 @@ final class HandleEdgeCommandOutcome implements ShouldQueue
         match ($event->type) {
             'edge.caddy.apply' => $this->applied($event),
             'edge.cert.install' => $this->certificate($event->commandId, $event->serverId, $event->organizationId, $event->result, null),
+            'net.tunnel.apply' => $this->tunnelInstalled($event),
             default => null,
         };
+    }
+
+    /** cloudflared is up: the server's names move to the tunnel now (not before, so a failed install cuts nothing). */
+    private function tunnelInstalled(CommandFinished $event): void
+    {
+        $active = (bool) ($event->result['active'] ?? false);
+        $updated = CloudflareTunnel::query()->where('command_id', $event->commandId)->update([
+            'status' => $active ? CloudflareTunnel::ACTIVE : CloudflareTunnel::ERROR,
+            'error' => $active ? null : 'cloudflared is installed but not running (journalctl -u kiln-cloudflared).',
+        ]);
+
+        if ($updated > 0 && $active) {
+            foreach (app(SiteDirectory::class)->forServer($event->serverId) as $site) {
+                SyncCloudflareDns::site($site->id);
+            }
+        }
     }
 
     public function handleFailed(CommandFailed $event): void
     {
         $reason = $event->error ?: "Command {$event->status}".($event->exitCode !== null ? " (exit code {$event->exitCode})" : '');
+
+        if ($event->type === 'net.tunnel.apply') {
+            CloudflareTunnel::query()->where('command_id', $event->commandId)->update(['status' => CloudflareTunnel::ERROR, 'error' => $reason]);
+
+            return;
+        }
 
         if ($event->type === 'edge.caddy.apply') {
             ServerState::query()->where('server_id', $event->serverId)->where('command_id', $event->commandId)

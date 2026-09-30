@@ -1,0 +1,2 @@
+# Fake base64 {"a":"account","t":"tunnel","s":"secret"} in an early net.tunnel.apply example (replaced in the next commit).
+bd5da5219bcea6cc9e74d71e298cdd3f11223970:agent/testdata/command-examples/net.tunnel.apply.json:generic-api-key:1

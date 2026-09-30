@@ -27,7 +27,7 @@ var Catalogue = []string{
 	"proc.apply", "proc.restart", "proc.status",
 	"cron.apply",
 	"db.create", "db.drop", "db.user.apply", "db.backup", "db.restore",
-	"net.firewall.apply", "net.wireguard.apply",
+	"net.firewall.apply", "net.wireguard.apply", "net.tunnel.apply",
 	"docker.pull", "docker.run", "docker.stop", "docker.compose.up", "docker.compose.down", "docker.compose.pull", "docker.compose.ps", "docker.compose.restart", "docker.prune",
 	"telemetry.configure",
 	"terminal.open", "terminal.input", "terminal.resize", "terminal.close",

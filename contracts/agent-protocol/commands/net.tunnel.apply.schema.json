@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/net.tunnel.apply.schema.json",
+  "title": "net.tunnel.apply — Cloudflare Tunnel: install (pinned, sha256-verified) cloudflared and run the tunnel of the given token, or remove it",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "state"
+  ],
+  "properties": {
+    "state": {
+      "type": "string",
+      "enum": [
+        "present",
+        "absent"
+      ]
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d{4}\\.\\d{1,2}\\.\\d{1,3}$",
+      "description": "cloudflared release (required when present)"
+    },
+    "url": {
+      "type": "string",
+      "pattern": "^https://",
+      "description": "cloudflared-linux-<arch> of that release"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "description": "the tunnel's run token (stored 0600, passed as a systemd credential)"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "active"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        },
+        "active": {
+          "type": "boolean",
+          "description": "kiln-cloudflared.service is running"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "if": {
+    "properties": {
+      "state": {
+        "const": "present"
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "version",
+      "url",
+      "sha256",
+      "token"
+    ]
+  }
+}

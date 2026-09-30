@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Kiln\Edge\Application\CloudflareTunnels;
 use Kiln\Edge\Contracts\EdgeRoutes;
 
 /**
@@ -37,8 +38,9 @@ final class ApplyEdgeConfig implements ShouldBeUnique, ShouldBeUniqueUntilProces
         return $this->serverId;
     }
 
-    public function handle(EdgeRoutes $routes): void
+    public function handle(EdgeRoutes $routes, CloudflareTunnels $tunnels): void
     {
         $routes->apply($this->serverId);
+        $tunnels->syncIngress($this->serverId); // the tunnel routes the names the server now serves
     }
 }

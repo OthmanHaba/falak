@@ -48,6 +48,9 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::delete('settings/cloudflare/zones/{zone}', [CloudflareController::class, 'disable'])->name('edge.cloudflare.zones.disable');
     Route::put('settings/cloudflare/zones/{zone}/setting', [CloudflareController::class, 'setting'])->name('edge.cloudflare.zones.setting');
     Route::post('settings/cloudflare/zones/{zone}/sync', [CloudflareController::class, 'sync'])->name('edge.cloudflare.zones.sync');
+    Route::post('settings/cloudflare/tunnels', [CloudflareController::class, 'enableTunnel'])->middleware('throttle:20,1')->name('edge.cloudflare.tunnels.enable');
+    Route::delete('settings/cloudflare/tunnels/{tunnel}', [CloudflareController::class, 'disableTunnel'])->name('edge.cloudflare.tunnels.disable');
+    Route::post('settings/cloudflare/tunnels/{tunnel}/reinstall', [CloudflareController::class, 'reinstallTunnel'])->name('edge.cloudflare.tunnels.reinstall');
 
     Route::post('edge/dns-credentials', [DnsCredentialController::class, 'store'])->name('edge.dns-credentials.store');
     Route::delete('edge/dns-credentials/{credential}', [DnsCredentialController::class, 'destroy'])->name('edge.dns-credentials.destroy');

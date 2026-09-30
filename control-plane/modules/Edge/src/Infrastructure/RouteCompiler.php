@@ -7,6 +7,7 @@ use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\InstallStatus;
 use Kiln\Edge\Domain\Models\Certificate;
 use Kiln\Edge\Domain\Models\CertificateInstall;
+use Kiln\Edge\Domain\Models\CloudflareTunnel;
 use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Domain\Models\Header;
@@ -108,11 +109,13 @@ final class RouteCompiler
         // Behind Cloudflare the connection comes from Cloudflare: trust its ranges for the visitor's IP
         // (CF-Connecting-IP), so logs, IP allow / deny lists and rate limits see the visitor.
         $proxied = $this->zones->isNotEmpty();
+        // Through a tunnel, cloudflared connects to Caddy from the server itself.
+        $local = $proxied && CloudflareTunnel::query()->where('server_id', strtolower($serverId))->exists() ? ['127.0.0.1/32', '::1/128'] : [];
 
         return array_filter([
             'acme_email' => $this->acmeEmail ?: null,
             'acme_ca' => $this->acmeCa ?: null,
-            'trusted_proxies' => $proxied ? CloudflareRanges::RANGES : null,
+            'trusted_proxies' => $proxied ? [...CloudflareRanges::RANGES, ...$local] : null,
         ]) + ['sites' => $entries];
     }
 

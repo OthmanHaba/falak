@@ -6,19 +6,24 @@ use Kiln\Edge\Application\Actions\AddDomain;
 use Kiln\Edge\Application\Actions\RemoveDomain;
 use Kiln\Edge\Application\CloudflareConnections;
 use Kiln\Edge\Application\CloudflareDns;
+use Kiln\Edge\Application\CloudflareTunnels;
 use Kiln\Edge\Application\DnsInstructions;
 use Kiln\Edge\Application\GeneratedDomains;
 use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\WwwRedirect;
+use Kiln\Edge\Domain\Models\CloudflareTunnel;
 use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\DnsRecord;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Domain\Models\OrganizationSetting;
 use Kiln\Edge\Infrastructure\Dns\CloudflareRanges;
 use Kiln\Edge\Tests\Support\FakeCloudflare;
+use Kiln\Fleet\Contracts\AgentGateway;
 use Kiln\Fleet\Contracts\AgentUpgrades;
 use Kiln\Fleet\Contracts\Data\AgentUpgradeData;
 use Kiln\Fleet\Contracts\Data\AgentVersionInfo;
+use Kiln\Fleet\Events\CommandFinished;
+use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\ComposeConfig;
 use Kiln\Sites\Contracts\Data\DomainChoice;
@@ -256,4 +261,45 @@ it('asks for HTTP-01 only for hosts in a managed zone', function () {
     $tls = collect(edge_compile($this->web1->id)['sites'])->mapWithKeys(fn ($s) => [$s['domains'][0] => $s['tls'] ?? null]);
     expect($tls['shop.example.com'])->toBe(['mode' => 'acme', 'http_challenge_only' => true])
         ->and($tls['shop.other.org'])->toBe(['mode' => 'acme']);
+});
+
+it('routes a server through a Cloudflare Tunnel and back', function () {
+    ['agents' => $agents] = ['agents' => app(AgentGateway::class)];
+    cf_connect($this);
+    $this->web1 = $this->servers->put(new ServerData(...[...get_object_vars($this->web1), 'arch' => 'arm64']));
+    app(AddDomain::class)($this->site, 'shop.example.com');
+    $credential = $this->zone->credential;
+
+    $tunnel = app(CloudflareTunnels::class)->enable($this->web1->id, $credential);
+
+    // cloudflared: the arm64 build of the pinned release, checksum and token passed to the agent (schema-validated).
+    $install = $agents->ofType('net.tunnel.apply', $this->web1->id)[0]['payload'];
+    expect($install)->toMatchArray(['state' => 'present', 'version' => config('edge.cloudflared.version'), 'sha256' => config('edge.cloudflared.sha256.arm64'), 'token' => "token-for-{$tunnel->tunnel_id}"])
+        ->and($install['url'])->toEndWith('/cloudflared-linux-arm64');
+
+    // DNS stays on the server's addresses until cloudflared reports it is running (a failed install cuts nothing).
+    expect(collect($this->cf->recordsOf($this->zoneId))->pluck('type')->sort()->values()->all())->toBe(['A', 'AAAA']);
+
+    // Routes: Let's Encrypt's HTTP-01 path to :80, everything else to Caddy on :443 with the name as SNI.
+    expect($this->cf->tunnels[$tunnel->tunnel_id]['ingress'])->toBe([
+        ['hostname' => 'shop.example.com', 'path' => '^/\.well-known/acme-challenge/', 'service' => 'http://localhost:80'],
+        ['hostname' => 'shop.example.com', 'service' => 'https://localhost:443', 'originRequest' => ['originServerName' => 'shop.example.com', 'httpHostHeader' => 'shop.example.com']],
+        ['service' => 'http_status:404'],
+    ])
+        ->and(edge_compile($this->web1->id)['trusted_proxies'])->toContain('127.0.0.1/32');
+
+    CommandFinished::dispatch($tunnel->refresh()->command_id, $this->org, $this->web1->id, 'net.tunnel.apply', 'k', 0, ['changed' => true, 'active' => true, 'version' => '2026.9.3']);
+
+    // Running: one proxied CNAME to the tunnel instead of the A / AAAA records.
+    expect(collect($this->cf->recordsOf($this->zoneId))->map(fn ($r) => "{$r['type']} {$r['name']} {$r['content']} ".($r['proxied'] ? 'proxied' : 'dns-only'))->all())
+        ->toBe(["CNAME shop.example.com {$tunnel->tunnel_id}.cfargotunnel.com proxied"]);
+    expect($tunnel->refresh()->status)->toBe(CloudflareTunnel::ACTIVE)
+        ->and(app(CloudflareTunnels::class)->health($tunnel))->toBe(['status' => 'healthy', 'connections' => 4]);
+
+    app(CloudflareTunnels::class)->disable($tunnel);
+
+    expect(collect($agents->ofType('net.tunnel.apply', $this->web1->id))->last()['payload'])->toBe(['state' => 'absent'])
+        ->and($this->cf->tunnels)->toBe([])
+        ->and(collect($this->cf->recordsOf($this->zoneId))->pluck('type')->sort()->values()->all())->toBe(['A', 'AAAA'])
+        ->and(edge_compile($this->web1->id)['trusted_proxies'])->not->toContain('127.0.0.1/32');
 });

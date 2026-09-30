@@ -110,7 +110,7 @@ func Build(d Deps) *Components {
 	sup.Register(reg)
 	sched.Register(reg)
 	db.New(db.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, StateDir: cfg.StateDir}).Register(reg)
-	netcfg.New(netcfg.Deps{Runner: d.Runner, FS: d.FS, Logger: log}).Register(reg)
+	netcfg.New(netcfg.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
 	d.Telemetry.Register(reg)
 	terms.Register(reg)
 
