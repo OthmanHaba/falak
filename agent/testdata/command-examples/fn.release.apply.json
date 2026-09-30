@@ -1,0 +1,35 @@
+{
+  "site": "hello",
+  "release": "01j9z8y7x6w5v4t3s2r1q0p9na",
+  "image": "ghcr.io/kiln/kiln-fn-bun:0.4.0",
+  "pull": "missing",
+  "entrypoint": "index.ts",
+  "files": [
+    {
+      "path": "index.ts",
+      "content": "import { Hono } from 'hono'\n\nconst app = new Hono()\napp.get('/', (c) => c.json({ hello: 'world' }))\n\nexport default app\n"
+    }
+  ],
+  "env": {
+    "GREETING": "hello",
+    "KILN_SITE_ID": "01j9z8y7x6w5v4t3s2r1q0p9nb"
+  },
+  "scaling": {
+    "min_instances": 0,
+    "max_instances": 5,
+    "concurrency": 50,
+    "idle_timeout_s": 300
+  },
+  "limits": {
+    "memory_bytes": 268435456,
+    "cpus": 0.5,
+    "pids": 256,
+    "request_timeout_s": 30,
+    "start_timeout_s": 30
+  },
+  "install_timeout_s": 180,
+  "keep_releases": 5,
+  "labels": {
+    "kiln.deployment": "01j9z8y7x6w5v4t3s2r1q0p9nc"
+  }
+}

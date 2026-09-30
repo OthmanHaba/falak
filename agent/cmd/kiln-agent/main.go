@@ -3,6 +3,7 @@
 //	kiln-agent run        enroll if needed (KILN_PANEL_URL + KILN_TOKEN), then serve
 //	kiln-agent enroll     enroll only
 //	kiln-agent install    install binary + systemd unit and start the service
+//	kiln-agent fn-gateway serve functions (kiln-fn-gateway.service; installed by fn.release.apply)
 //	kiln-agent version
 package main
 
@@ -17,13 +18,14 @@ import (
 
 	"github.com/kiln/agent/internal/agent"
 	"github.com/kiln/agent/internal/config"
+	"github.com/kiln/agent/internal/fngateway"
 	"github.com/kiln/agent/internal/hostfs"
 	"github.com/kiln/agent/internal/runner"
 	"github.com/kiln/agent/internal/version"
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: kiln-agent <run|enroll|install|version> [flags]\n")
+	fmt.Fprintf(os.Stderr, "usage: kiln-agent <run|enroll|install|fn-gateway|version> [flags]\n")
 	os.Exit(2)
 }
 
@@ -36,6 +38,9 @@ func main() {
 	cfg := config.Default()
 	cfg.Bind(fs)
 	noStart := fs.Bool("no-start", false, "install: enable but do not start the service")
+	fnListen := fs.String("listen", fngateway.DefaultListen, "fn-gateway: proxy address (Caddy sends function traffic here)")
+	fnAdmin := fs.String("admin", fngateway.DefaultAdmin, "fn-gateway: admin API unix socket")
+	fnState := fs.String("state", fngateway.DefaultStateDir, "fn-gateway: functions directory (gateway.json, releases)")
 	logLevel := fs.String("log-level", envOr("KILN_LOG_LEVEL", "info"), "debug|info|warn|error (env KILN_LOG_LEVEL)")
 	_ = fs.Parse(os.Args[2:])
 
@@ -56,6 +61,9 @@ func main() {
 	case "install":
 		self, _ := os.Executable()
 		err = agent.Install(ctx, agent.InstallOptions{Config: cfg, Source: self, NoStart: *noStart, FS: hostfs.FS{Root: cfg.HostRoot}, Runner: runner.Exec{}, Out: os.Stdout})
+	case "fn-gateway":
+		err = fngateway.Run(ctx, fngateway.RunOptions{Listen: *fnListen, AdminSocket: *fnAdmin, StateDir: *fnState,
+			DockerSocket: cfg.DockerSock, Version: version.Version, Logger: log.With("component", "fn-gateway")})
 	case "version", "--version", "-v":
 		fmt.Println(version.Version)
 	default:

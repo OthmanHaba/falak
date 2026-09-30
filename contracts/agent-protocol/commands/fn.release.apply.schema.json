@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/fn.release.apply.schema.json",
+  "title": "fn.release.apply — write a function release, install its dependencies and make it live behind kiln-fn-gateway",
+  "x-kiln-redeliverable": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "site",
+    "release",
+    "image",
+    "entrypoint",
+    "files"
+  ],
+  "properties": {
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Site slug of the function"
+    },
+    "release": {
+      "type": "string",
+      "pattern": "^[a-z0-9]{1,64}$",
+      "description": "Release id (lowercase); the release dir is /var/lib/kiln/functions/<site>/releases/<release>"
+    },
+    "image": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Runtime image (kiln-fn-install / kiln-fn-serve convention, runtimes/functions/)"
+    },
+    "pull": {
+      "enum": [
+        "always",
+        "missing",
+        "never"
+      ],
+      "default": "missing"
+    },
+    "registry_auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "username",
+        "password"
+      ],
+      "properties": {
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "server": {
+          "type": "string"
+        }
+      }
+    },
+    "entrypoint": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+      "maxLength": 255,
+      "description": "One of files[].path"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200,
+      "description": "Source files (at most 2 MiB in total)",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "content"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+            "maxLength": 255,
+            "description": "Relative path; no dot-files, no .., no node_modules"
+          },
+          "content": {
+            "type": "string",
+            "description": "UTF-8 file content"
+          }
+        }
+      }
+    },
+    "env": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Environment of the function (PORT and KILN_ENTRYPOINT are set by the gateway)"
+    },
+    "scaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min_instances": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20,
+          "default": 0
+        },
+        "max_instances": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 5
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000,
+          "default": 50,
+          "description": "In-flight requests per instance before another one starts"
+        },
+        "idle_timeout_s": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 86400,
+          "default": 300,
+          "description": "An instance idle this long is stopped (down to min_instances)"
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 33554432
+        },
+        "cpus": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 64
+        },
+        "pids": {
+          "type": "integer",
+          "minimum": 16,
+          "maximum": 4096,
+          "default": 256
+        },
+        "request_timeout_s": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 900,
+          "default": 30
+        },
+        "start_timeout_s": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300,
+          "default": 30
+        }
+      }
+    },
+    "install_timeout_s": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 1800,
+      "default": 180
+    },
+    "keep_releases": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "default": 5
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "release",
+        "installed",
+        "boot_ms"
+      ],
+      "properties": {
+        "release": {
+          "type": "string"
+        },
+        "previous_release": {
+          "type": "string"
+        },
+        "installed": {
+          "type": "boolean",
+          "description": "false when the release dir was already installed"
+        },
+        "boot_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Time the first instance of the release took to accept connections (0 = unchanged)"
+        }
+      }
+    }
+  }
+}

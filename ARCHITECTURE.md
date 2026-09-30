@@ -117,7 +117,8 @@ Every command type is **idempotent** (safe to re-run) and declares a JSON Schema
 | `proc` | `apply` (desired set of supervised processes: workers, daemons), `restart`, `status` |
 | `cron` | `apply` (desired schedule set with heartbeat wrapper) |
 | `db` | `create`, `drop`, `user.apply`, `backup`, `restore` |
-| `net` | `firewall.apply` (nftables), `wireguard.apply` |
+| `net` | `firewall.apply` (nftables), `wireguard.apply`, `tunnel.apply` (Cloudflare Tunnel) |
+| `fn` | `release.apply` (write + install a function release, make it live behind `kiln-fn-gateway`), `release.remove`, `status` |
 | `docker` | `pull`, `run`, `stop`, `compose.up`, `compose.down`, `compose.pull`, `compose.ps`, `compose.restart`, `prune` |
 | `telemetry` | `configure` (OTLP endpoints, sampling, log sources) |
 | `terminal` | `open`, `input`, `resize`, `close` |
