@@ -15,6 +15,7 @@ protection, edge cache, hidden server IP). Everything here works on Cloudflare's
    | Zone → Zone → Read | find the zone and its account |
    | Zone → Zone Settings → Edit | check and fix SSL mode, minimum TLS, Always Use HTTPS |
    | Zone → Cache Purge → Purge | purge the cache after deploys (phase 3) |
+   | Account → Cloudflare Tunnel → Edit | route servers through a Cloudflare Tunnel |
 
    Under **Zone Resources** pick *Specific zone* and your domain.
 2. Paste the token in Kiln and click **Connect**. Kiln verifies it with Cloudflare and stores it encrypted.
@@ -43,6 +44,24 @@ protection, edge cache, hidden server IP). Everything here works on Cloudflare's
 - **Never managed:** the panel and the agent API hosts. Agents authenticate with mutual TLS, which Cloudflare's proxy
   would terminate, so `agents.<your domain>` must stay DNS only.
 
+## Cloudflare Tunnel (no open ports)
+
+**Settings → Cloudflare → Servers → Route through a tunnel.** Kiln creates a tunnel for the server in your Cloudflare
+account, installs a pinned, checksum-verified `cloudflared` on it (`kiln-cloudflared.service`, a dynamic user, the
+token passed as a systemd credential) and keeps the tunnel's routes in line with the names the server serves.
+
+- The server's names in your managed zones become a proxied `CNAME` to `<tunnel id>.cfargotunnel.com` — once
+  `cloudflared` reports it is running, so a failed install never cuts traffic.
+- Caddy stays in charge: the tunnel sends each name to Caddy on `https://localhost:443` (with the name as SNI), and
+  only Let's Encrypt's `/.well-known/acme-challenge/` path to port 80, so certificates are still issued and renewed.
+  Routing rules, headers and logs work as before, and logs keep the visitor's IP.
+- Once the tunnel shows **healthy**, you can close ports 80 and 443 on the server's firewall: Kiln's own traffic to
+  the agent is outbound. Names outside your managed zones (sslip.io, other DNS providers) still need the public IP.
+- **Back to public** removes `cloudflared`, deletes the tunnel and points the names at the server's IP again (open the
+  ports first if you closed them).
+- The token needs **Account → Cloudflare Tunnel → Edit** (add it to the same token).
+- One tunnel per server: a site on several servers is routed through the tunnel of the first one (the leader).
+
 ## Limits on the Free plan
 
 - Requests through the proxy are limited to **100 MB** (large uploads to Nextcloud or Paperless need DNS only).
@@ -56,5 +75,5 @@ protection, edge cache, hidden server IP). Everything here works on Cloudflare's
 
 ## Coming next
 
-Cloudflare Tunnel as a server ingress mode (no open ports), cache modes with purge after deploy, Under Attack mode,
+Cache modes with purge after deploy, Under Attack mode,
 origin lock-down, and "Sign in with Cloudflare" instead of pasting a token.
