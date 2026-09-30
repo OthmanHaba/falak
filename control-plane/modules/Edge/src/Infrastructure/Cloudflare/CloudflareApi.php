@@ -153,8 +153,10 @@ final class CloudflareApi
     {
         try {
             $this->call('DELETE', "/accounts/{$accountId}/cfd_tunnel/{$tunnelId}/connections");
-        } catch (CloudflareError) {
-            // no connections, or already gone
+        } catch (CloudflareError $e) {
+            if ($e->status !== 404) {
+                throw $e;
+            }
         }
 
         try {

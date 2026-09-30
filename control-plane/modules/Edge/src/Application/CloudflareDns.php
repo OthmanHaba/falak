@@ -177,7 +177,9 @@ final class CloudflareDns
         usort($targets, fn ($a, $b) => ($b->role === TargetRole::Leader) <=> ($a->role === TargetRole::Leader));
         $pointsAt = $this->targets->for($organizationId, array_map(fn ($t) => $t->serverId, $targets), $site->id);
         $zones = self::zones($organizationId);
-        $tunnels = CloudflareTunnel::query()->where('organization_id', $organizationId)->whereIn('server_id', array_map(fn ($t) => $t->serverId, $pointsAt))->get()->keyBy('server_id');
+        // Only running tunnels: names move to a tunnel once cloudflared is up, so a failed install never cuts traffic.
+        $tunnels = CloudflareTunnel::query()->where('organization_id', $organizationId)->where('status', CloudflareTunnel::ACTIVE)
+            ->whereIn('server_id', array_map(fn ($t) => $t->serverId, $pointsAt))->get()->keyBy('server_id');
         $out = [];
 
         foreach ($hosts as $host) {
@@ -189,7 +191,8 @@ final class CloudflareDns
 
             // Through a tunnel (the first target that has one, leader first): one proxied CNAME, no address records
             // (a name cannot have both). The tunnel must belong to the zone's Cloudflare account.
-            $tunnel = collect($pointsAt)->map(fn ($t) => $tunnels->get($t->serverId))->filter()
+            // Wildcard names keep address records: tunnel routes are per name.
+            $tunnel = str_starts_with($host, '*.') ? null : collect($pointsAt)->map(fn ($t) => $tunnels->get($t->serverId))->filter()
                 ->first(fn (CloudflareTunnel $t) => $t->account_id === $zone->credential->account_id);
 
             if ($tunnel !== null) {

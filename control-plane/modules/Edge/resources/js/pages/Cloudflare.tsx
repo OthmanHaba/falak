@@ -90,6 +90,7 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
     const [releasing, setReleasing] = useState<ManagedZone | null>(null);
     const [disconnecting, setDisconnecting] = useState<Connection | null>(null);
     const [untunneling, setUntunneling] = useState<TunnelServer | null>(null);
+    const [tunnelConnection, setTunnelConnection] = useState<string>(connections[0]?.id ?? '');
 
     return (
         <SettingsLayout
@@ -353,7 +354,7 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
                                                 onClick={() =>
                                                     router.post(
                                                         '/settings/cloudflare/tunnels',
-                                                        { server_id: server.id, connection_id: connections[0].id },
+                                                        { server_id: server.id, connection_id: tunnelConnection },
                                                         options,
                                                     )
                                                 }
@@ -371,6 +372,22 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
                             </li>
                         ))}
                     </ul>
+                    {connections.length > 1 && (
+                        <label className="text-fg-muted flex items-center gap-2 text-xs">
+                            New tunnels use
+                            <select
+                                className="border-border bg-surface-2 text-fg rounded border px-2 py-1 text-xs"
+                                value={tunnelConnection}
+                                onChange={(event) => setTunnelConnection(event.target.value)}
+                            >
+                                {connections.map((connection) => (
+                                    <option key={connection.id} value={connection.id}>
+                                        {connection.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                    )}
                     <p className="text-fg-faint text-xs">
                         The token needs Account → Cloudflare Tunnel → Edit. Names outside your managed zones (sslip.io, other DNS providers) still
                         reach the server on its public IP.

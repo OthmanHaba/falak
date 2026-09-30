@@ -2,6 +2,7 @@
 
 namespace Kiln\Edge\Application;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -18,6 +19,7 @@ use Kiln\Identity\Contracts\AuditLog;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Throwable;
 
 /**
  * Cloudflare Tunnel as a server's ingress: cloudflared on the server connects out to Cloudflare, which routes the
@@ -54,25 +56,40 @@ final class CloudflareTunnels
 
         try {
             $tunnelId = $api->createTunnel($credential->account_id, $name);
-            $token = $api->tunnelToken($credential->account_id, $tunnelId);
         } catch (CloudflareError $e) {
             throw ValidationException::withMessages(['server' => $e->getMessage().' (the token needs Account → Cloudflare Tunnel → Edit)']);
         }
 
-        $tunnel = CloudflareTunnel::query()->create([
-            'organization_id' => $credential->organization_id,
-            'server_id' => $server->id,
-            'dns_credential_id' => $credential->id,
-            'account_id' => $credential->account_id,
-            'tunnel_id' => $tunnelId,
-            'name' => $name,
-            'token' => $token,
-            'status' => CloudflareTunnel::INSTALLING,
-        ]);
+        try {
+            $token = $api->tunnelToken($credential->account_id, $tunnelId);
+            $tunnel = CloudflareTunnel::query()->create([
+                'organization_id' => $credential->organization_id,
+                'server_id' => $server->id,
+                'dns_credential_id' => $credential->id,
+                'account_id' => $credential->account_id,
+                'tunnel_id' => $tunnelId,
+                'name' => $name,
+                'token' => $token,
+                'status' => CloudflareTunnel::INSTALLING,
+            ]);
+        } catch (Throwable $e) {
+            // Leave no orphan tunnel in the account.
+            try {
+                $api->deleteTunnel($credential->account_id, $tunnelId);
+            } catch (CloudflareError) {
+            }
+
+            throw $e instanceof CloudflareError ? ValidationException::withMessages(['server' => $e->getMessage()]) : $e;
+        }
 
         $this->install($tunnel, $server);
-        $this->syncIngress($server->id);
-        $this->changed($server->id);
+        try {
+            $this->syncIngress($server->id);
+        } catch (CloudflareError) {
+            // recorded on the tunnel; the next edge apply retries
+        }
+        // DNS moves to the tunnel once cloudflared reports it is running (HandleEdgeCommandOutcome).
+        $this->routes->schedule($server->id);
 
         $this->audit->record('edge.cloudflare_tunnel_enabled', 'server', $server->id, ['tunnel' => $name], $credential->organization_id);
 
@@ -109,6 +126,8 @@ final class CloudflareTunnels
     /**
      * The tunnel's routes: every name the server serves that lives in a zone of the tunnel's Cloudflare account.
      * Called after each edge apply of the server (its names may have changed); a no-op without a tunnel.
+     *
+     * @throws CloudflareError so the apply job retries
      */
     public function syncIngress(string $serverId): void
     {
@@ -133,8 +152,13 @@ final class CloudflareTunnels
 
         try {
             CloudflareApi::with($tunnel->credential->api_token)->configureTunnel($tunnel->account_id, $tunnel->tunnel_id, self::ingress(array_keys($hosts)));
+            if ($tunnel->error !== null && str_starts_with($tunnel->error, 'Routes: ')) {
+                $tunnel->forceFill(['error' => null])->save();
+            }
         } catch (CloudflareError $e) {
-            $tunnel->forceFill(['status' => CloudflareTunnel::ERROR, 'error' => 'Routes: '.$e->getMessage()])->save();
+            $tunnel->forceFill(['error' => 'Routes: '.$e->getMessage()])->save();
+
+            throw $e;
         }
     }
 
@@ -167,11 +191,14 @@ final class CloudflareTunnels
      */
     public function health(CloudflareTunnel $tunnel): ?array
     {
-        try {
-            return CloudflareApi::with($tunnel->credential->api_token)->tunnel($tunnel->account_id, $tunnel->tunnel_id);
-        } catch (CloudflareError) {
-            return null;
-        }
+        // Cached briefly: the settings page shows every tunnel, and Cloudflare's view changes slowly.
+        return Cache::remember("edge:tunnel-health:{$tunnel->id}", 20, function () use ($tunnel) {
+            try {
+                return CloudflareApi::with($tunnel->credential->api_token)->tunnel($tunnel->account_id, $tunnel->tunnel_id);
+            } catch (CloudflareError) {
+                return null;
+            }
+        });
     }
 
     private function install(CloudflareTunnel $tunnel, ServerData $server): void

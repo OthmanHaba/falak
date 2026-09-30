@@ -277,9 +277,8 @@ it('routes a server through a Cloudflare Tunnel and back', function () {
     expect($install)->toMatchArray(['state' => 'present', 'version' => config('edge.cloudflared.version'), 'sha256' => config('edge.cloudflared.sha256.arm64'), 'token' => "token-for-{$tunnel->tunnel_id}"])
         ->and($install['url'])->toEndWith('/cloudflared-linux-arm64');
 
-    // DNS: one proxied CNAME to the tunnel instead of the A / AAAA records.
-    expect(collect($this->cf->recordsOf($this->zoneId))->map(fn ($r) => "{$r['type']} {$r['name']} {$r['content']} ".($r['proxied'] ? 'proxied' : 'dns-only'))->all())
-        ->toBe(["CNAME shop.example.com {$tunnel->tunnel_id}.cfargotunnel.com proxied"]);
+    // DNS stays on the server's addresses until cloudflared reports it is running (a failed install cuts nothing).
+    expect(collect($this->cf->recordsOf($this->zoneId))->pluck('type')->sort()->values()->all())->toBe(['A', 'AAAA']);
 
     // Routes: Let's Encrypt's HTTP-01 path to :80, everything else to Caddy on :443 with the name as SNI.
     expect($this->cf->tunnels[$tunnel->tunnel_id]['ingress'])->toBe([
@@ -290,6 +289,10 @@ it('routes a server through a Cloudflare Tunnel and back', function () {
         ->and(edge_compile($this->web1->id)['trusted_proxies'])->toContain('127.0.0.1/32');
 
     CommandFinished::dispatch($tunnel->refresh()->command_id, $this->org, $this->web1->id, 'net.tunnel.apply', 'k', 0, ['changed' => true, 'active' => true, 'version' => '2026.9.3']);
+
+    // Running: one proxied CNAME to the tunnel instead of the A / AAAA records.
+    expect(collect($this->cf->recordsOf($this->zoneId))->map(fn ($r) => "{$r['type']} {$r['name']} {$r['content']} ".($r['proxied'] ? 'proxied' : 'dns-only'))->all())
+        ->toBe(["CNAME shop.example.com {$tunnel->tunnel_id}.cfargotunnel.com proxied"]);
     expect($tunnel->refresh()->status)->toBe(CloudflareTunnel::ACTIVE)
         ->and(app(CloudflareTunnels::class)->health($tunnel))->toBe(['status' => 'healthy', 'connections' => 4]);
 

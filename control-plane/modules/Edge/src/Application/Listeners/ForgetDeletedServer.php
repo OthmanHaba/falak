@@ -3,6 +3,7 @@
 namespace Kiln\Edge\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Log;
 use Kiln\Edge\Application\EdgeChanges;
 use Kiln\Edge\Domain\Models\CertificateInstall;
 use Kiln\Edge\Domain\Models\CloudflareTunnel;
@@ -25,12 +26,12 @@ final class ForgetDeletedServer implements ShouldQueue
 
         // Its Cloudflare Tunnel is deleted at Cloudflare too (the server is gone, nothing to stop there).
         foreach (CloudflareTunnel::query()->with('credential')->where('server_id', $event->serverId)->get() as $tunnel) {
-            $tunnel->delete();
             try {
                 CloudflareApi::with($tunnel->credential->api_token)->deleteTunnel($tunnel->account_id, $tunnel->tunnel_id);
-            } catch (CloudflareError) {
-                // best effort: it can be deleted in Cloudflare's dashboard
+            } catch (CloudflareError $e) {
+                Log::warning('edge: could not delete the tunnel of a deleted server; delete it in Cloudflare', ['tunnel' => $tunnel->name, 'error' => $e->getMessage()]);
             }
+            $tunnel->delete();
         }
 
         // Sites that were balanced by this server are served directly by their targets again.
