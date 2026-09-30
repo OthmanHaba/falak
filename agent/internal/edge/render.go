@@ -37,12 +37,14 @@ type Site struct {
 	TryDurationS    int               `json:"try_duration_s,omitempty"`
 	RedirectTo      string            `json:"redirect_to,omitempty"`
 	Headers         map[string]string `json:"headers,omitempty"`
-	BasicAuth       []BasicAuth       `json:"basic_auth,omitempty"`
-	Redirects       []Redirect        `json:"redirects,omitempty"`
-	DenyIPs         []string          `json:"deny_ips,omitempty"`
-	AllowIPs        []string          `json:"allow_ips,omitempty"`
-	MaxBodyBytes    int64             `json:"max_body_bytes,omitempty"`
-	Encode          *bool             `json:"encode,omitempty"`
+	// RequestHeaders are set on the request sent upstream (kind=reverse_proxy), e.g. X-Kiln-Function.
+	RequestHeaders map[string]string `json:"request_headers,omitempty"`
+	BasicAuth      []BasicAuth       `json:"basic_auth,omitempty"`
+	Redirects      []Redirect        `json:"redirects,omitempty"`
+	DenyIPs        []string          `json:"deny_ips,omitempty"`
+	AllowIPs       []string          `json:"allow_ips,omitempty"`
+	MaxBodyBytes   int64             `json:"max_body_bytes,omitempty"`
+	Encode         *bool             `json:"encode,omitempty"`
 	// AccessLog names the site's HTTP access log (the site slug): JSON lines in logs.AccessLogDir/<name>.log,
 	// shipped by the agent as kind=access records of that site. Routes sharing a name share the file.
 	AccessLog string `json:"access_log,omitempty"`
@@ -416,6 +418,13 @@ func reverseProxy(s Site) obj {
 		tryFor = s.TryDurationS
 	}
 	h["load_balancing"] = obj{"selection_policy": obj{"policy": policy}, "try_duration": fmt.Sprintf("%ds", tryFor)}
+	if len(s.RequestHeaders) > 0 {
+		set := obj{}
+		for k, v := range s.RequestHeaders {
+			set[k] = []any{v}
+		}
+		h["headers"] = obj{"request": obj{"set": set}}
+	}
 	if s.HealthURI != "" {
 		h["health_checks"] = obj{"active": obj{"uri": s.HealthURI, "interval": "10s", "timeout": "5s"}}
 	}
