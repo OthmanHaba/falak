@@ -37,6 +37,8 @@ registerServiceSettingsSections(
         sectionTitle: 'Source',
         order: 100,
         permission: 'sites.view',
+        // Functions have no repository, build, deploy script or commands (docs/plans/FUNCTIONS.md).
+        when: (ctx) => ctx.service.icon !== 'function',
         component: general('SourceSettings'),
     },
     {
@@ -56,6 +58,8 @@ registerServiceSettingsSections(
         sectionTitle: 'Build',
         order: 200,
         permission: 'sites.view',
+        // Functions have no repository, build, deploy script or commands (docs/plans/FUNCTIONS.md).
+        when: (ctx) => ctx.service.icon !== 'function',
         component: general('BuildSettings'),
     },
     {
@@ -66,7 +70,7 @@ registerServiceSettingsSections(
         order: 320,
         permission: 'sites.view',
         // Compose sites deploy with `docker compose up`; there is no deploy script.
-        when: (ctx) => !isCompose(ctx.service),
+        when: (ctx) => !isCompose(ctx.service) && ctx.service.icon !== 'function',
         component: lazy(() => import('./panel/settings/deploy-script').then((module) => ({ default: module.DeployScriptSettings }))),
     },
     {
@@ -76,7 +80,7 @@ registerServiceSettingsSections(
         sectionTitle: 'Deploy',
         order: 330,
         permission: 'sites.view',
-        when: (ctx) => !isCompose(ctx.service),
+        when: (ctx) => !isCompose(ctx.service) && ctx.service.icon !== 'function',
         component: general('SharedPathsSettings'),
     },
     {
@@ -114,6 +118,8 @@ registerServiceSettingsSections(
         sectionTitle: 'Commands',
         order: 700,
         permission: 'sites.view',
+        // Functions have no repository, build, deploy script or commands (docs/plans/FUNCTIONS.md).
+        when: (ctx) => ctx.service.icon !== 'function',
         component: lazy(() => import('./panel/settings/commands').then((module) => ({ default: module.CommandsSettings }))),
     },
     {

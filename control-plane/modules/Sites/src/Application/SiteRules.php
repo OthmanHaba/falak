@@ -78,7 +78,8 @@ final class SiteRules
             $runtime->isPhp() && $server->phpRuntime === null => "{$server->name} does not run PHP.",
             $runtime === SiteRuntime::FrankenPhp && $server->phpRuntime !== 'frankenphp' => "{$server->name} does not run FrankenPHP; use the PHP-FPM runtime.",
             $runtime->isPhp() && $phpVersion !== null && ! in_array($phpVersion, $server->phpVersions, true) => "PHP {$phpVersion} is not installed on {$server->name}.",
-            $runtime->isContainer() && ! $server->docker => "Docker is not installed on {$server->name}.",
+            $runtime->usesDocker() && ! $server->docker => "Docker is not installed on {$server->name}.",
+            $runtime->isFunction() && ! ($this->agents->forServer($server->id)?->supports('fn.v1') ?? false) => "The Kiln agent on {$server->name} is too old for functions; update it first.",
             default => null,
         };
 

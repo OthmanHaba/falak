@@ -25,4 +25,7 @@ interface DeploymentDirectory
      * @return list<DeploymentSummary>
      */
     public function recentForSites(array $siteIds, int $limit = 20): array;
+
+    /** The commit of the release the site runs now (a function's live version hash), or null before its first deploy. */
+    public function liveCommit(string $siteId): ?string;
 }

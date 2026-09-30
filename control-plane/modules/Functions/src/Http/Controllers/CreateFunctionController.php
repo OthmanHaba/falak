@@ -1,0 +1,87 @@
+<?php
+
+namespace Kiln\Functions\Http\Controllers;
+
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Kiln\Functions\Application\Actions\CreateFunction;
+use Kiln\Functions\Application\Starters;
+use Kiln\Functions\FunctionsServiceProvider as Permissions;
+use Kiln\Identity\Contracts\CurrentOrganization;
+use Kiln\Identity\Contracts\OrganizationAccess;
+use Kiln\Kernel\Http\Controller;
+use Kiln\Projects\Contracts\ProjectDirectory;
+use Kiln\Projects\Contracts\ServiceKind;
+use Kiln\Sites\Contracts\Data\DomainChoice;
+
+/**
+ * POST /projects/{project}/{environment}/functions — the Create picker's Function form. GET lists the starters.
+ */
+final class CreateFunctionController extends Controller
+{
+    public function starters(): JsonResponse
+    {
+        return response()->json(['data' => Starters::list()]);
+    }
+
+    public function store(Request $request, string $project, string $environment, CurrentOrganization $organization, OrganizationAccess $access, ProjectDirectory $projects, CreateFunction $create): JsonResponse
+    {
+        $organizationId = $organization->requireId();
+        $user = $request->user();
+        $access->authorize($user, $organizationId, Permissions::CREATE);
+        $access->authorize($user, $organizationId, 'projects.manage');
+        $access->authorize($user, $organizationId, 'sites.create');
+
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/'],
+            'server_id' => ['required', 'string', 'size:26'],
+            'starter' => ['nullable', Rule::in(array_keys(Starters::ALL))],
+            'domain' => ['nullable', DomainChoice::rule()],
+            'position' => ['nullable', 'array'],
+            'position.x' => ['nullable', 'integer', 'between:-1000000,1000000'],
+            'position.y' => ['nullable', 'integer', 'between:-1000000,1000000'],
+        ], ['name.regex' => 'Use letters, numbers, spaces, dots, dashes and underscores.']);
+
+        $projectData = $projects->find(strtolower($project));
+        abort_if($projectData === null || $projectData->organizationId !== $organizationId, 404, 'Project not found.');
+        $env = null;
+
+        foreach ($projects->environments($projectData->id) as $candidate) {
+            if ($candidate->slug === strtolower($environment) || $candidate->id === strtolower($environment)) {
+                $env = $candidate;
+            }
+        }
+
+        abort_if($env === null, 404, 'Environment not found.');
+        $canDeploy = $access->can($user, $organizationId, Permissions::DEPLOY) && $access->can($user, $organizationId, 'deployments.create');
+
+        $result = $create(
+            $env,
+            $user?->getAuthIdentifier(),
+            $user?->name ?? null,
+            $data['name'],
+            strtolower($data['server_id']),
+            $data['starter'] ?? 'hello',
+            $data['domain'] ?? null,
+            isset($data['position']['x']) ? (int) $data['position']['x'] : null,
+            isset($data['position']['y']) ? (int) $data['position']['y'] : null,
+            $canDeploy,
+        );
+
+        $warnings = $result['warnings'];
+        if (! $canDeploy) {
+            $warnings[] = 'You cannot start deployments; ask a developer to deploy it.';
+        }
+
+        return response()->json([
+            'data' => [
+                'site_id' => $result['site']->id,
+                'name' => $result['site']->name,
+                'deployment_id' => $result['deployment_id'],
+                'panel_url' => $projects->serviceUrl(ServiceKind::Site, $result['site']->id, 'code'),
+            ],
+            'warnings' => $warnings,
+        ], 201);
+    }
+}

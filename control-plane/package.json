@@ -60,6 +60,7 @@
         "laravel-echo": "^2.5.0",
         "laravel-vite-plugin": "^1.0",
         "lucide-react": "^0.475.0",
+        "monaco-editor": "0.57.0",
         "pusher-js": "^8.6.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",

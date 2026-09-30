@@ -14,6 +14,7 @@ use Kiln\Builds\Contracts\Data\BuildRequest;
 use Kiln\Deployments\Application\Jobs\RunHealthCheck;
 use Kiln\Deployments\Application\Planning\PlanBuilder;
 use Kiln\Deployments\Application\Planning\ScriptSections;
+use Kiln\Deployments\Contracts\FunctionSources;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\ReleaseStatus;
 use Kiln\Deployments\Domain\Enums\StepKind;
@@ -84,6 +85,7 @@ final class Orchestrator
         private readonly DeploymentQueue $queue,
         private readonly ProcessControl $processes,
         private readonly ComposeSites $compose,
+        private readonly FunctionSources $functions,
     ) {}
 
     // ---- entry points -------------------------------------------------------------------------
@@ -348,6 +350,10 @@ final class Orchestrator
                 throw new InvalidArgumentException('The release has no compose files to roll back to.');
             }
 
+            if ($site->runtime === SiteRuntime::Function && ($release->commit === null || $this->functions->find($site->id, $release->commit) === null)) {
+                throw new InvalidArgumentException('The release has no function code to roll back to.');
+            }
+
             $releaseId = $release->id;
         } else {
             $hasRepository = $site->repository !== null && $site->sourceConnectionId !== null;
@@ -358,11 +364,25 @@ final class Orchestrator
                 throw new InvalidArgumentException('The site has no compose file; add one in Settings → Compose.');
             }
 
-            if (! $hasRepository && ! $inlineCompose && ! ($site->runtime === SiteRuntime::Docker && $site->dockerImage)) {
+            if ($site->runtime === SiteRuntime::Function) {
+                // A function deploys a version of its code: the requested one (its hash is the commit) or the newest.
+                $needsBuild = false;
+                $source = $deployment->commit !== null ? $this->functions->find($site->id, $deployment->commit) : $this->functions->head($site->id);
+
+                if ($source === null) {
+                    throw new InvalidArgumentException($deployment->commit !== null ? 'That version of the function no longer exists.' : 'The function has no code yet; write it in the Code tab and deploy.');
+                }
+
+                $deployment->forceFill([
+                    'commit' => $source->hash,
+                    'commit_message' => $deployment->commit_message ?? "v{$source->number}".($source->message ? ": {$source->message}" : ''),
+                    'commit_author' => $deployment->commit_author ?? $source->author,
+                ])->save();
+            } elseif (! $hasRepository && ! $inlineCompose && ! ($site->runtime === SiteRuntime::Docker && $site->dockerImage)) {
                 throw new InvalidArgumentException('The site has no repository to deploy.');
             }
 
-            if (! $site->runtime->isContainer()) {
+            if (! $site->runtime->usesDocker()) {
                 $sections = ScriptSections::parse($site->deployScript);
             }
 
@@ -578,6 +598,20 @@ final class Orchestrator
                 }
 
                 $this->addRollbackStep($deployment, $target, "revert:{$target->id}", StepKind::Revert, [], ['release_id' => $previous->id], $position++, 'docker.compose.up');
+
+                continue;
+            }
+
+            if ($site->runtime === SiteRuntime::Function) {
+                // The agent switches a function only once the new release boots, so this runs after a later failure
+                // (e.g. on another server) and re-applies the previous release.
+                if ($previous === null || $previous->commit === null) {
+                    $this->log->note($deployment->id, "{$target->server_name}: no previous function release to return to.", stream: 'stderr');
+
+                    continue;
+                }
+
+                $this->addRollbackStep($deployment, $target, "revert:{$target->id}", StepKind::Revert, [], ['release_id' => $previous->id], $position++, 'fn.release.apply');
 
                 continue;
             }
@@ -823,7 +857,7 @@ final class Orchestrator
         }
 
         match ($step->kind) {
-            StepKind::Activate => $target->forceFill(['activated' => true, 'previous_release_id' => self::ulid($result['previous_release_id'] ?? null) ?? $target->previous_release_id])->save(),
+            StepKind::Activate => $target->forceFill(['activated' => true, 'previous_release_id' => self::ulid($result['previous_release_id'] ?? $result['previous_release'] ?? null) ?? $target->previous_release_id])->save(),
             StepKind::Switch => $target->forceFill(['activated' => true, 'previous_release_id' => self::ulid($result['from_release_id'] ?? null) ?? $deployment->previous_release_id])->save(),
             StepKind::Swap, StepKind::RevertSwap => $this->swapped($deployment, $step, $target, $result ?? []),
             StepKind::Revert => $target->forceFill(['status' => TargetStatus::RolledBack])->save(),
@@ -978,7 +1012,8 @@ final class Orchestrator
         // Failed releases may have left directories behind; the agent's keep-N prune removes them too.
         Release::query()->where('site_id', $site->id)->where('status', ReleaseStatus::Failed)->where('created_at', '<', now()->subDay())->update(['status' => ReleaseStatus::Pruned]);
 
-        if ($site->runtime === SiteRuntime::Docker) {
+        // Container images and function releases are pruned by the agent itself.
+        if ($site->runtime === SiteRuntime::Docker || $site->runtime === SiteRuntime::Function) {
             return;
         }
 

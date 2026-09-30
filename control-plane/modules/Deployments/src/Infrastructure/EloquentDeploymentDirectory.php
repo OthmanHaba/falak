@@ -10,6 +10,7 @@ use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\StepStatus;
 use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Deployments\Domain\Models\DeploymentStep;
+use Kiln\Deployments\Domain\Models\Release;
 
 final class EloquentDeploymentDirectory implements DeploymentDirectory
 {
@@ -113,5 +114,10 @@ final class EloquentDeploymentDirectory implements DeploymentDirectory
     private static function date(?Carbon $date): ?DateTimeImmutable
     {
         return $date?->toDateTimeImmutable();
+    }
+
+    public function liveCommit(string $siteId): ?string
+    {
+        return Release::current($siteId)?->commit;
     }
 }

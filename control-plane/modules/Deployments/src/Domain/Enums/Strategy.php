@@ -55,7 +55,7 @@ enum Strategy: string
             return [self::Compose, self::Rolling, self::Canary];
         }
 
-        return $runtime->isContainer()
+        return $runtime->usesDocker()
             ? [self::BlueGreen, self::Rolling, self::Canary]
             : [self::ZeroDowntime, self::InPlace, self::Rolling, self::Canary];
     }

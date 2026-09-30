@@ -277,6 +277,13 @@ final class RouteCompiler
             SiteRuntime::Docker, SiteRuntime::Compose => $proxy(
                 Upstream::query()->where('site_id', $site->id)->where('server_id', $serverId)->value('upstream') ?? $local,
             ),
+            // The server's function gateway starts the function's instances on demand; no active health check, which
+            // would keep it from scaling to zero.
+            SiteRuntime::Function => [
+                'kind' => 'reverse_proxy',
+                'upstreams' => [['dial' => (string) config('edge.function_gateway', '127.0.0.1:7070')]],
+                'request_headers' => ['X-Kiln-Function' => $site->slug],
+            ],
         };
     }
 

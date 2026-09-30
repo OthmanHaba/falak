@@ -44,7 +44,7 @@ final class StateCompiler
         $live = $this->releases->onServer($serverId);
         $sites = array_values(array_filter(
             $this->sites->forServer($serverId),
-            fn (SiteData $site) => ! $site->runtime->isContainer() && $site->target($serverId)?->status === TargetStatus::Ready && isset($live[$site->id]),
+            fn (SiteData $site) => ! $site->runtime->usesDocker() && $site->target($serverId)?->status === TargetStatus::Ready && isset($live[$site->id]),
         ));
 
         $siteIds = array_map(fn (SiteData $site) => $site->id, $sites);

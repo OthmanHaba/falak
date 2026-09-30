@@ -365,6 +365,10 @@ final class CanvasReadModel
             return 'compose';
         }
 
+        if ($site->runtime === SiteRuntime::Function) {
+            return 'function';
+        }
+
         return match ($site->framework) {
             Framework::Node => match ($site->runtime) {
                 SiteRuntime::Bun => 'bun',

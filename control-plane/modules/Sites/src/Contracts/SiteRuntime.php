@@ -15,6 +15,8 @@ enum SiteRuntime: string
     case Static = 'static';
     case Docker = 'docker';
     case Compose = 'compose';
+    /** Code written in Kiln (no repository), run by the server's function gateway and scaled to zero when idle. */
+    case Function = 'function';
 
     public function label(): string
     {
@@ -27,6 +29,7 @@ enum SiteRuntime: string
             self::Static => 'Static',
             self::Docker => 'Docker',
             self::Compose => 'Docker Compose',
+            self::Function => 'Function',
         };
     }
 
@@ -46,6 +49,17 @@ enum SiteRuntime: string
         return $this === self::Docker || $this === self::Compose;
     }
 
+    public function isFunction(): bool
+    {
+        return $this === self::Function;
+    }
+
+    /** Runtimes that run in Docker on the server (containers and functions): no native processes, Docker required. */
+    public function usesDocker(): bool
+    {
+        return $this->isContainer() || $this === self::Function;
+    }
+
     /** Whether the edge serves files from a document root. */
     public function servesFiles(): bool
     {
@@ -57,6 +71,6 @@ enum SiteRuntime: string
      */
     public function buildModes(): array
     {
-        return $this->isContainer() ? [BuildMode::Docker] : [BuildMode::Native, BuildMode::OnServer];
+        return $this->usesDocker() ? [BuildMode::Docker] : [BuildMode::Native, BuildMode::OnServer];
     }
 }

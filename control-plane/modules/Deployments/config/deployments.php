@@ -13,6 +13,8 @@ return [
         'rollback' => 120,
         'swap' => 900,
         'prune' => 300,
+        // fn.release.apply: write the release, install its dependencies, boot it and switch the gateway.
+        'function' => 600,
     ],
 
     // Presigned artifact URL lifetime handed to deploy.fetch.

@@ -60,10 +60,11 @@ final readonly class SiteData
         return $this->containerPort ?? $this->appPort;
     }
 
-    /** Something to deploy: a repository, a docker image, or an inline compose file. */
+    /** Something to deploy: a repository, a docker image, an inline compose file, or a function's code. */
     public function hasDeploySource(): bool
     {
         return $this->repository !== null
+            || $this->runtime === SiteRuntime::Function
             || ($this->runtime === SiteRuntime::Docker && $this->dockerImage !== null)
             || ($this->compose?->source === ComposeSource::Inline && $this->compose->version !== null);
     }

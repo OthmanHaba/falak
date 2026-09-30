@@ -123,6 +123,7 @@ trait PresentsSites
                 'is_php' => $runtime->isPhp(),
                 'proxies' => $runtime->proxiesToPort(),
                 'container' => $runtime->isContainer(),
+                'function' => $runtime->isFunction(),
                 'build_modes' => array_map(fn (BuildMode $mode) => $mode->value, $runtime->buildModes()),
             ], SiteRuntime::cases()),
             'build_modes' => array_map(fn (BuildMode $mode) => ['value' => $mode->value, 'label' => $mode->label()], BuildMode::cases()),
@@ -137,6 +138,8 @@ trait PresentsSites
                 'php_versions' => $server->phpVersions,
                 'default_php' => $server->defaultPhpVersion,
                 'docker' => $server->docker,
+                // The agent runs the function gateway (Functions).
+                'functions' => $server->docker && isset($facts[$server->id]) && $facts[$server->id]->supports('fn.v1'),
                 'memory_bytes' => is_numeric($facts[$server->id]->facts['memory_bytes'] ?? null) ? (int) $facts[$server->id]->facts['memory_bytes'] : null,
             ], $candidates),
             'connections' => array_map(fn (ConnectionData $connection) => [

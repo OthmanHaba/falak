@@ -70,7 +70,8 @@ final class TargetProvisioner
     }
 
     /**
-     * Stop what a container site runs on a server: its blue and green containers (docker) or its compose project.
+     * Stop what a container site runs on a server: its blue and green containers (docker), its compose project, or a
+     * function's instances and releases.
      * Named volumes are kept unless $volumes (compose only; docker sites mount host paths under the site root).
      */
     public function removeContainers(Site $site, string $serverId, bool $volumes = false): void
@@ -82,6 +83,9 @@ final class TargetProvisioner
             ],
             SiteRuntime::Compose => [
                 ['docker.compose.down', ['project' => $site->slug, 'directory' => $site->rootPath(), 'volumes' => $volumes]],
+            ],
+            SiteRuntime::Function => [
+                ['fn.release.remove', ['site' => $site->slug]],
             ],
             default => [],
         };

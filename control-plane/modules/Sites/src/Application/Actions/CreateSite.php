@@ -161,7 +161,7 @@ final class CreateSite
                 'build_mode' => $buildMode,
                 'framework' => $framework,
                 'php_version' => $phpVersion,
-                'node_version' => $runtime->isPhp() || $runtime->isContainer() ? ($data['node_version'] ?? null) : ($data['node_version'] ?? (string) config('sites.default_node', '22')),
+                'node_version' => $runtime->isPhp() || $runtime->usesDocker() ? ($data['node_version'] ?? null) : ($data['node_version'] ?? (string) config('sites.default_node', '22')),
                 'source_connection_id' => $data['source_connection_id'] ?? null,
                 'repository' => $data['repository'] ?? null,
                 'branch' => $data['branch'] ?? null,
@@ -177,7 +177,8 @@ final class CreateSite
                 'compose_source' => $compose['source'] ?? null,
                 'public_services' => $compose['public_services'] ?? null,
                 'template' => $data['template'] ?? null,
-                'health_check_path' => $data['health_check_path'] ?? $preset->healthCheckPath,
+                // Functions get no health checks: probing one would keep it from scaling to zero.
+                'health_check_path' => $runtime->isFunction() ? null : ($data['health_check_path'] ?? $preset->healthCheckPath),
                 'deploy_script' => $preset->deployScript."\n",
                 'laravel' => $framework->isLaravel() ? $preset->laravel : [],
                 'shared_paths' => $preset->sharedPaths,

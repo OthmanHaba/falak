@@ -24,6 +24,10 @@ return [
     // Debounce window: bursts of changes within this many seconds collapse into one apply per server.
     'apply_delay_seconds' => (int) env('KILN_EDGE_APPLY_DELAY', 2),
 
+    // Function sites: Caddy proxies them to the server's function gateway (kiln-fn-gateway), which routes by the
+    // X-Kiln-Function header and starts instances on demand.
+    'function_gateway' => '127.0.0.1:7070',
+
     // Octane sites: how long the edge retries connecting to Octane (it restarts on every deploy) before a 502.
     'octane_try_duration_seconds' => 30,
 

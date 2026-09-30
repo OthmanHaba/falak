@@ -33,7 +33,7 @@ final class DeleteSite
             }
         }
 
-        if ($cleanupRemote && $site->runtime->isContainer()) {
+        if ($cleanupRemote && $site->runtime->usesDocker()) {
             foreach ($serverIds as $serverId) {
                 $this->provisioner->removeContainers($site, $serverId, $deleteVolumes);
             }
