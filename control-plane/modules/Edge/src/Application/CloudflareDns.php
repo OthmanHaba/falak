@@ -2,22 +2,26 @@
 
 namespace Kiln\Edge\Application;
 
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\DnsRecord;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Infrastructure\Cloudflare\CloudflareApi;
 use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
+use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Contracts\TargetRole;
 
 /**
- * Keeps Cloudflare DNS in line with a domain: one A / AAAA record per server the domain points at (the load balancer
- * of a load-balanced site), for the domain and its www redirect host, proxied per the domain or its zone.
+ * Keeps Cloudflare DNS in line with a site's names: one A / AAAA record per server the name points at (the load
+ * balancer of a load-balanced site), for each domain and its www redirect host, and for the domains of a compose
+ * site's public services; proxied per the domain or its zone.
  *
- * Kiln only changes records it created (edge_dns_records, tagged `kiln:<domain id>` in Cloudflare). A record of the
- * same name that Kiln did not create is a conflict: it is reported, never overwritten. The panel and agent API
- * hosts are never managed (agents authenticate with mTLS, which Cloudflare's proxy would terminate).
+ * Kiln only changes records it created (edge_dns_records, tagged `kiln:<domain id>` or `kiln:site:<site id>` in
+ * Cloudflare). A record of the same name that Kiln did not create is a conflict: it is reported, never overwritten.
+ * The panel and agent API hosts are never managed (agents authenticate with mTLS, which the proxy would terminate).
  */
 final class CloudflareDns
 {
@@ -28,18 +32,57 @@ final class CloudflareDns
         private readonly SiteDirectory $sites,
     ) {}
 
+    /** Every name of a site: its domains, and its compose public services' domains. */
     public function syncSite(string $siteId): void
     {
         foreach (Domain::query()->where('site_id', $siteId)->get() as $domain) {
             $this->sync($domain);
         }
+
+        $site = $this->sites->find($siteId);
+        $hosts = $site?->runtime === SiteRuntime::Compose && $site->compose !== null
+            ? array_values(array_filter(array_map(fn ($public) => $public->domain, $site->compose->publicServices)))
+            : [];
+
+        $this->reconcile(
+            ['site_id' => $siteId, 'domain_id' => null],
+            'kiln:site:'.$siteId,
+            $site !== null ? $this->desired($site->organizationId, $site, $hosts, null) : [],
+        );
     }
 
     public function sync(Domain $domain): void
     {
-        $zone = CloudflareZone::forHost($domain->organization_id, $domain->name);
-        $desired = $zone !== null ? $this->desired($domain, $zone) : [];
-        $tracked = DnsRecord::query()->with('zone.credential')->where('domain_id', $domain->id)->get();
+        $site = $this->sites->find($domain->site_id);
+
+        $this->reconcile(
+            ['domain_id' => $domain->id],
+            'kiln:'.$domain->id,
+            $site !== null ? $this->desired($domain->organization_id, $site, $domain->hosts(), $domain->cloudflare_proxied) : [],
+        );
+    }
+
+    /** A domain was removed: delete the records Kiln created for it. */
+    public function forget(string $domainId): void
+    {
+        $this->reconcile(['domain_id' => $domainId], 'kiln:'.$domainId, []);
+    }
+
+    /** A site was deleted: delete the records of its compose public services. */
+    public function forgetSite(string $siteId): void
+    {
+        $this->reconcile(['site_id' => $siteId, 'domain_id' => null], 'kiln:site:'.$siteId, []);
+    }
+
+    /**
+     * Brings Cloudflare in line with $desired for one owner (a domain, or a site's compose hosts).
+     *
+     * @param  array<string, ?string>  $owner  edge_dns_records columns identifying the owner
+     * @param  array<string, array{zone: CloudflareZone, name: string, type: string, content: string, proxied: bool}>  $desired
+     */
+    private function reconcile(array $owner, string $tag, array $desired): void
+    {
+        $tracked = DnsRecord::query()->with('zone.credential')->where($owner)->get();
 
         foreach ($tracked as $record) {
             if (! isset($desired[self::key($record->zone_id, $record->name, $record->type, $record->content)])) {
@@ -47,30 +90,30 @@ final class CloudflareDns
             }
         }
 
-        if ($zone === null) {
-            return;
-        }
-
-        $api = CloudflareApi::with($zone->credential->api_token);
         $remoteByName = [];
+        $comment = $tag.' (managed by Kiln; edits are overwritten)';
 
         foreach ($desired as $key => $want) {
-            $record = $tracked->first(fn (DnsRecord $r) => self::key($r->zone_id, $r->name, $r->type, $r->content) === $key && $r->exists)
-                ?? new DnsRecord(['organization_id' => $domain->organization_id, 'domain_id' => $domain->id, 'zone_id' => $zone->id, ...$want]);
+            $zone = $want['zone'];
+            $fields = ['name' => $want['name'], 'type' => $want['type'], 'content' => $want['content'], 'proxied' => $want['proxied']];
+            $record = $tracked->first(fn (DnsRecord $r) => $r->exists && self::key($r->zone_id, $r->name, $r->type, $r->content) === $key)
+                ?? new DnsRecord(['organization_id' => $zone->organization_id, 'zone_id' => $zone->id, ...$owner, ...$fields]);
+            $api = CloudflareApi::with($zone->credential->api_token);
 
             try {
                 if ($record->record_id !== null) {
                     if ($record->proxied !== $want['proxied'] || $record->status !== DnsRecord::SYNCED) {
-                        $api->updateRecord($zone->zone_id, $record->record_id, ['proxied' => $want['proxied'], 'comment' => DnsRecord::comment($domain->id)]);
+                        $api->updateRecord($zone->zone_id, $record->record_id, ['proxied' => $want['proxied'], 'comment' => $comment]);
                     }
                     $record->forceFill(['proxied' => $want['proxied'], 'status' => DnsRecord::SYNCED, 'error' => null, 'synced_at' => now()])->save();
 
                     continue;
                 }
 
-                $remote = $remoteByName[$want['name']] ??= $api->records($zone->zone_id, $want['name']);
-                $ours = collect($remote)->first(fn (array $r) => $r['type'] === $want['type'] && $r['content'] === $want['content'] && str_starts_with((string) ($r['comment'] ?? ''), 'kiln:'.$domain->id));
-                $foreign = collect($remote)->first(fn (array $r) => in_array($r['type'], self::TYPES, true) && ! str_starts_with((string) ($r['comment'] ?? ''), 'kiln:'.$domain->id));
+                $remote = $remoteByName[$zone->id.'|'.$want['name']] ??= $api->records($zone->zone_id, $want['name']);
+                $mine = fn (array $r) => str_starts_with((string) ($r['comment'] ?? ''), $tag.' ') || ($r['comment'] ?? '') === $tag;
+                $ours = collect($remote)->first(fn (array $r) => $r['type'] === $want['type'] && $r['content'] === $want['content'] && $mine($r));
+                $foreign = collect($remote)->first(fn (array $r) => in_array($r['type'], self::TYPES, true) && ! $mine($r));
 
                 if ($ours !== null) {
                     $record->forceFill(['record_id' => (string) $ours['id']]);
@@ -82,59 +125,54 @@ final class CloudflareDns
 
                     continue;
                 } else {
-                    $created = $api->createRecord($zone->zone_id, [...$want, 'comment' => DnsRecord::comment($domain->id)]);
+                    $created = $api->createRecord($zone->zone_id, [...$fields, 'comment' => $comment]);
                     $record->forceFill(['record_id' => (string) $created['id']]);
-                    $remoteByName[$want['name']][] = $created;
+                    $remoteByName[$zone->id.'|'.$want['name']][] = $created;
                 }
 
                 $record->forceFill(['status' => DnsRecord::SYNCED, 'error' => null, 'synced_at' => now()])->save();
             } catch (CloudflareError $e) {
                 $record->forceFill(['status' => DnsRecord::ERROR, 'error' => $e->getMessage(), 'synced_at' => now()])->save();
-                Log::warning('edge: cloudflare dns sync failed', ['domain' => $domain->name, 'error' => $e->getMessage()]);
+                Log::warning('edge: cloudflare dns sync failed', ['name' => $want['name'], 'error' => $e->getMessage()]);
             }
         }
     }
 
-    /** A domain was removed: delete the records Kiln created for it. */
-    public function forget(string $domainId): void
-    {
-        foreach (DnsRecord::query()->with('zone.credential')->where('domain_id', $domainId)->get() as $record) {
-            $this->remove($record);
-        }
-    }
-
     /**
-     * @return array<string, array{name: string, type: string, content: string, proxied: bool}>
+     * @param  list<string>  $hosts
+     * @return array<string, array{zone: CloudflareZone, name: string, type: string, content: string, proxied: bool}>
      */
-    private function desired(Domain $domain, CloudflareZone $zone): array
+    private function desired(string $organizationId, SiteData $site, array $hosts, ?bool $override): array
     {
-        $site = $this->sites->find($domain->site_id);
-
-        if ($site === null) {
-            return [];
-        }
-
         $targets = $site->targets;
         usort($targets, fn ($a, $b) => ($b->role === TargetRole::Leader) <=> ($a->role === TargetRole::Leader));
-        $pointsAt = $this->targets->for($domain->organization_id, array_map(fn ($t) => $t->serverId, $targets), $site->id);
-        $proxied = $domain->cloudflare_proxied ?? $zone->proxied;
+        $pointsAt = $this->targets->for($organizationId, array_map(fn ($t) => $t->serverId, $targets), $site->id);
+        $zones = self::zones($organizationId);
         $out = [];
 
-        foreach ($domain->hosts() as $host) {
-            if (! $zone->covers($host) || self::reserved($host)) {
+        foreach ($hosts as $host) {
+            $zone = $zones->filter(fn (CloudflareZone $z) => $z->covers($host))->sortByDesc(fn (CloudflareZone $z) => strlen($z->name))->first();
+
+            if ($zone === null || self::reserved($host)) {
                 continue;
             }
 
             foreach ($pointsAt as $target) {
                 foreach (['A' => $target->ipv4, 'AAAA' => $target->ipv6] as $type => $address) {
                     if ($address !== null && $address !== '') {
-                        $out[self::key($zone->id, $host, $type, $address)] = ['name' => $host, 'type' => $type, 'content' => $address, 'proxied' => $proxied];
+                        $out[self::key($zone->id, $host, $type, $address)] = ['zone' => $zone, 'name' => $host, 'type' => $type, 'content' => $address, 'proxied' => $override ?? $zone->proxied];
                     }
                 }
             }
         }
 
         return $out;
+    }
+
+    /** @return Collection<int, CloudflareZone> */
+    private static function zones(string $organizationId): Collection
+    {
+        return CloudflareZone::query()->with('credential')->where('organization_id', $organizationId)->get();
     }
 
     private function remove(DnsRecord $record): void

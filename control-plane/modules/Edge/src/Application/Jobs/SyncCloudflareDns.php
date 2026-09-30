@@ -12,7 +12,7 @@ use Kiln\Edge\Application\CloudflareDns;
 use Kiln\Edge\Domain\Models\Domain;
 
 /**
- * Brings the Cloudflare DNS records of a domain, a site (all its domains) or a removed domain in line. Unique per
+ * Brings the Cloudflare DNS records of a domain, a site (all its names) or a removed domain / site in line. Unique per
  * target until it runs, so bursts of changes cost one sync; it reads the state at run time.
  */
 final class SyncCloudflareDns implements ShouldBeUnique, ShouldBeUniqueUntilProcessing, ShouldQueue
@@ -28,7 +28,7 @@ final class SyncCloudflareDns implements ShouldBeUnique, ShouldBeUniqueUntilProc
 
     public int $uniqueFor = 300;
 
-    /** @param  'domain'|'site'|'forget'  $scope */
+    /** @param  'domain'|'site'|'forget'|'forget-site'  $scope */
     public function __construct(public readonly string $scope, public readonly string $id) {}
 
     public static function domain(string $domainId): void
@@ -46,6 +46,11 @@ final class SyncCloudflareDns implements ShouldBeUnique, ShouldBeUniqueUntilProc
         self::dispatch('forget', $domainId);
     }
 
+    public static function forgetSite(string $siteId): void
+    {
+        self::dispatch('forget-site', $siteId);
+    }
+
     public function uniqueId(): string
     {
         return "{$this->scope}:{$this->id}";
@@ -56,6 +61,7 @@ final class SyncCloudflareDns implements ShouldBeUnique, ShouldBeUniqueUntilProc
         match ($this->scope) {
             'site' => $dns->syncSite($this->id),
             'forget' => $dns->forget($this->id),
+            'forget-site' => $dns->forgetSite($this->id),
             default => ($domain = Domain::query()->find($this->id)) !== null ? $dns->sync($domain) : $dns->forget($this->id),
         };
     }

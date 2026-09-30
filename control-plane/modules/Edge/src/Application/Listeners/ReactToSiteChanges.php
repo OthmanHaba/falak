@@ -36,11 +36,13 @@ final class ReactToSiteChanges implements ShouldQueue
     public function created(SiteCreated $event): void
     {
         $this->changes->siteChanged($event->siteId, $event->serverIds);
+        SyncCloudflareDns::site($event->siteId); // compose public services may come with domains
     }
 
     public function updated(SiteUpdated $event): void
     {
         $this->changes->siteChanged($event->siteId, $event->serverIds);
+        SyncCloudflareDns::site($event->siteId); // a no-op for names already in place
     }
 
     /** Octane became reachable (proxy to it) or is being switched off (serve directly again) on one server. */
@@ -63,6 +65,8 @@ final class ReactToSiteChanges implements ShouldQueue
 
     public function deleted(SiteDeleted $event): void
     {
+        SyncCloudflareDns::forgetSite($event->siteId);
+
         $balancer = LoadBalancer::query()->where('site_id', $event->siteId)->value('server_id');
 
         foreach (Certificate::query()->where('site_id', $event->siteId)->where('organization_id', $event->organizationId)->get() as $certificate) {

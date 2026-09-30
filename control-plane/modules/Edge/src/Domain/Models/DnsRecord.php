@@ -14,6 +14,7 @@ use Illuminate\Support\Carbon;
  * @property string $id
  * @property string $organization_id
  * @property ?string $domain_id
+ * @property ?string $site_id set for a compose site's public service domains (no edge_domains row)
  * @property string $zone_id
  * @property string $name
  * @property string $type A | AAAA | CNAME
@@ -59,5 +60,11 @@ class DnsRecord extends Model
     public static function comment(string $domainId): string
     {
         return 'kiln:'.$domainId.' (managed by Kiln; edits are overwritten)';
+    }
+
+    /** Whether a Cloudflare record carries a Kiln tag (any owner). */
+    public static function isKilns(?string $comment): bool
+    {
+        return str_starts_with((string) $comment, 'kiln:');
     }
 }

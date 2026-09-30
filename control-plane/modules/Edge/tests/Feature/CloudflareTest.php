@@ -19,9 +19,15 @@ use Kiln\Edge\Tests\Support\FakeCloudflare;
 use Kiln\Fleet\Contracts\AgentUpgrades;
 use Kiln\Fleet\Contracts\Data\AgentUpgradeData;
 use Kiln\Fleet\Contracts\Data\AgentVersionInfo;
+use Kiln\Sites\Contracts\ComposeSource;
+use Kiln\Sites\Contracts\Data\ComposeConfig;
 use Kiln\Sites\Contracts\Data\DomainChoice;
+use Kiln\Sites\Contracts\Data\PublicService;
 use Kiln\Sites\Contracts\DomainType;
 use Kiln\Sites\Contracts\SiteDomains;
+use Kiln\Sites\Contracts\SiteRuntime;
+use Kiln\Sites\Events\SiteCreated;
+use Kiln\Sites\Events\SiteDeleted;
 use Kiln\Sites\Events\SiteTargetsChanged;
 
 /*
@@ -221,4 +227,23 @@ it('does not send trusted proxies to agents older than 0.3.0 (they reject unknow
 
     app(AgentUpgrades::class)->version = 'v0.3.0';
     expect(edge_compile($this->web1->id))->toHaveKey('trusted_proxies');
+});
+
+it('creates records for a compose site’s public service domains and removes them with the site', function () {
+    cf_connect($this);
+    $compose = new ComposeConfig(
+        ComposeSource::Inline, null,
+        [new PublicService('web', 80, 'draw.example.com', 3000)],
+    );
+    $site = edge_site($this->sites, $this->org, [$this->web1->id], ['id' => strtolower((string) Str::ulid()), 'slug' => 'draw', 'runtime' => SiteRuntime::Compose, 'compose' => $compose]);
+
+    SiteCreated::dispatch($site->id, $this->org, $site->slug, 'compose', [$this->web1->id]);
+
+    $records = collect($this->cf->recordsOf($this->zoneId));
+    expect($records->map(fn ($r) => "{$r['type']} {$r['name']}")->sort()->values()->all())->toBe(['A draw.example.com', 'AAAA draw.example.com'])
+        ->and($records->every(fn ($r) => str_starts_with($r['comment'], "kiln:site:{$site->id}")))->toBeTrue();
+
+    SiteDeleted::dispatch($site->id, $this->org, $site->slug, [$this->web1->id]);
+
+    expect($this->cf->recordsOf($this->zoneId))->toBe([]);
 });
