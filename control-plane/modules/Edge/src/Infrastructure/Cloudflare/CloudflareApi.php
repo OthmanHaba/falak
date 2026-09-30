@@ -111,6 +111,39 @@ final class CloudflareApi
         return $this->call('PATCH', "/zones/{$zoneId}/settings/{$key}", ['value' => $value])['value'] ?? null;
     }
 
+    /**
+     * A zone's entry point ruleset of a phase (e.g. http_request_cache_settings); empty when there is none yet.
+     *
+     * @return array<string, mixed>
+     */
+    public function ruleset(string $zoneId, string $phase): array
+    {
+        try {
+            return $this->call('GET', "/zones/{$zoneId}/rulesets/phases/{$phase}/entrypoint");
+        } catch (CloudflareError $e) {
+            if ($e->status === 404 || $e->cloudflareCode === 10003) {
+                return ['rules' => []];
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $rules
+     */
+    public function putRuleset(string $zoneId, string $phase, array $rules): void
+    {
+        $this->call('PUT', "/zones/{$zoneId}/rulesets/phases/{$phase}/entrypoint", ['rules' => $rules]);
+    }
+
+    /**
+     * @param  list<string>  $hosts  at most 30
+     */
+    public function purgeHosts(string $zoneId, array $hosts): void
+    {
+        $this->call('POST', "/zones/{$zoneId}/purge_cache", ['hosts' => array_values($hosts)]);
+    }
+
     /** A remotely managed tunnel (routes configured through the API). Returns its id. */
     public function createTunnel(string $accountId, string $name): string
     {

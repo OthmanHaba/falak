@@ -2,10 +2,12 @@
 
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Kiln\Deployments\Events\DeploymentSucceeded;
 use Kiln\Edge\Application\Actions\AddDomain;
 use Kiln\Edge\Application\Actions\RemoveDomain;
 use Kiln\Edge\Application\CloudflareConnections;
 use Kiln\Edge\Application\CloudflareDns;
+use Kiln\Edge\Application\CloudflareEdgeControls;
 use Kiln\Edge\Application\CloudflareTunnels;
 use Kiln\Edge\Application\DnsInstructions;
 use Kiln\Edge\Application\GeneratedDomains;
@@ -23,6 +25,8 @@ use Kiln\Fleet\Contracts\AgentUpgrades;
 use Kiln\Fleet\Contracts\Data\AgentUpgradeData;
 use Kiln\Fleet\Contracts\Data\AgentVersionInfo;
 use Kiln\Fleet\Events\CommandFinished;
+use Kiln\Network\Domain\Models\FirewallRule;
+use Kiln\Network\Infrastructure\FirewallCompiler;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\ComposeConfig;
@@ -302,4 +306,74 @@ it('routes a server through a Cloudflare Tunnel and back', function () {
         ->and($this->cf->tunnels)->toBe([])
         ->and(collect($this->cf->recordsOf($this->zoneId))->pluck('type')->sort()->values()->all())->toBe(['A', 'AAAA'])
         ->and(edge_compile($this->web1->id)['trusted_proxies'])->not->toContain('127.0.0.1/32');
+});
+
+it('sets a domain’s cache mode with Cache Rules, keeping the zone’s other rules', function () {
+    cf_connect($this);
+    $this->cf->cacheRules[$this->zoneId] = [['id' => 'theirs', 'description' => 'their rule', 'expression' => '(http.request.uri.path contains "/api")', 'action' => 'set_cache_settings', 'action_parameters' => ['cache' => false], 'enabled' => true]];
+    $domain = app(AddDomain::class)($this->site, 'shop.example.com', www: WwwRedirect::ToApex);
+    $controls = app(CloudflareEdgeControls::class);
+
+    $controls->setCacheMode($domain, 'everything');
+    $rules = $this->cf->cacheRules[$this->zoneId];
+    expect(array_column($rules, 'description'))->toBe(['their rule', "kiln:cache:{$domain->id} shop.example.com"])
+        ->and($rules[1]['expression'])->toBe('(http.host in {"shop.example.com" "www.shop.example.com"})')
+        ->and($rules[1]['action_parameters']['cache'])->toBeTrue()
+        ->and($rules[1]['action_parameters']['edge_ttl']['mode'])->toBe('override_origin');
+
+    $controls->setCacheMode($domain->refresh(), 'bypass');
+    expect($this->cf->cacheRules[$this->zoneId][1]['action_parameters'])->toBe(['cache' => false]);
+
+    $controls->setCacheMode($domain->refresh(), 'standard');
+    expect(array_column($this->cf->cacheRules[$this->zoneId], 'description'))->toBe(['their rule']);
+});
+
+it('purges a site’s names at Cloudflare after a deploy or a rollback', function () {
+    cf_connect($this);
+    app(AddDomain::class)($this->site, 'shop.example.com', www: WwwRedirect::ToWww);
+    app(AddDomain::class)($this->site, 'shop.other.org');
+
+    DeploymentSucceeded::dispatch('dep-1', $this->org, $this->site->id, 'manual', null, 'rel-1', [$this->web1->id], 1000);
+
+    expect($this->cf->purges)->toHaveCount(1)
+        ->and($this->cf->purges[0]['hosts'])->toEqualCanonicalizing(['shop.example.com', 'www.shop.example.com']);
+});
+
+it('turns Under Attack mode on and restores the previous level', function () {
+    cf_connect($this);
+    $this->cf->settings[$this->zoneId]['security_level'] = 'high';
+    $controls = app(CloudflareEdgeControls::class);
+
+    $controls->underAttack($this->zone, true);
+    expect($this->cf->settings[$this->zoneId]['security_level'])->toBe('under_attack')
+        ->and($this->zone->refresh()->security_level_before)->toBe('high');
+
+    $controls->underAttack($this->zone, false);
+    expect($this->cf->settings[$this->zoneId]['security_level'])->toBe('high')
+        ->and($this->zone->refresh()->security_level_before)->toBeNull();
+});
+
+it('locks a server’s web ports to Cloudflare, or closes them behind a running tunnel', function () {
+    cf_connect($this);
+    foreach ([['SSH', '22'], ['HTTP', '80'], ['HTTPS', '443']] as $i => [$name, $port]) {
+        FirewallRule::query()->create(['organization_id' => $this->org, 'server_id' => $this->web1->id, 'name' => $name, 'action' => 'allow', 'protocol' => 'tcp', 'port' => $port, 'position' => $i, 'is_default' => true]);
+    }
+    $firewall = fn () => collect(app(FirewallCompiler::class)->compile($this->web1->id)['rules'])->keyBy(fn ($r) => 'port-'.($r['ports'][0] ?? 'any'));
+    $controls = app(CloudflareEdgeControls::class);
+
+    $controls->lock($this->org, $this->web1->id, 'cloudflare');
+    expect($firewall()['port-443']['sources'])->toBe(CloudflareRanges::RANGES)
+        ->and($firewall()['port-22'])->not->toHaveKey('sources');
+
+    // Closing needs a running tunnel.
+    expect(fn () => $controls->lock($this->org, $this->web1->id, 'closed'))->toThrow(ValidationException::class);
+    $tunnel = app(CloudflareTunnels::class)->enable($this->web1->id, $this->zone->credential);
+    $tunnel->forceFill(['status' => CloudflareTunnel::ACTIVE])->save();
+    $controls->lock($this->org, $this->web1->id, 'closed');
+    expect($firewall()->keys()->all())->toBe(['port-22']);
+
+    // Leaving the tunnel opens the web ports again.
+    app(CloudflareTunnels::class)->disable($tunnel->refresh());
+    expect($firewall()->keys()->sort()->values()->all())->toBe(['port-22', 'port-443', 'port-80'])
+        ->and($firewall()['port-443'])->not->toHaveKey('sources');
 });

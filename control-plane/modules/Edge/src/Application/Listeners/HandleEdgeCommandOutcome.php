@@ -10,12 +10,14 @@ use Kiln\Edge\Domain\Enums\ApplyStatus;
 use Kiln\Edge\Domain\Enums\InstallStatus;
 use Kiln\Edge\Domain\Models\CertificateInstall;
 use Kiln\Edge\Domain\Models\CloudflareTunnel;
+use Kiln\Edge\Domain\Models\OriginLock;
 use Kiln\Edge\Domain\Models\ServerState;
 use Kiln\Edge\Events\CertificateInstallFailed;
 use Kiln\Edge\Events\CertificateIssued;
 use Kiln\Edge\Events\EdgeApplied;
 use Kiln\Fleet\Events\CommandFailed;
 use Kiln\Fleet\Events\CommandFinished;
+use Kiln\Network\Contracts\Firewalls;
 use Kiln\Sites\Contracts\SiteDirectory;
 
 /**
@@ -49,6 +51,11 @@ final class HandleEdgeCommandOutcome implements ShouldQueue
                 SyncCloudflareDns::site($site->id);
             }
         }
+
+        // A lock-down that depends on the tunnel follows its state.
+        if ($updated > 0 && OriginLock::query()->whereKey(strtolower($event->serverId))->exists()) {
+            app(Firewalls::class)->converge($event->serverId);
+        }
     }
 
     public function handleFailed(CommandFailed $event): void
@@ -57,6 +64,9 @@ final class HandleEdgeCommandOutcome implements ShouldQueue
 
         if ($event->type === 'net.tunnel.apply') {
             CloudflareTunnel::query()->where('command_id', $event->commandId)->update(['status' => CloudflareTunnel::ERROR, 'error' => $reason]);
+            if (OriginLock::query()->whereKey(strtolower($event->serverId))->exists()) {
+                app(Firewalls::class)->converge($event->serverId); // closed falls back to Cloudflare-only
+            }
 
             return;
         }

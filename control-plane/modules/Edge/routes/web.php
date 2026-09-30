@@ -16,6 +16,8 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::patch('sites/{site}/domains/{domain}', [DomainController::class, 'update'])->name('edge.domains.update');
     Route::put('sites/{site}/domains/{domain}/primary', [DomainController::class, 'primary'])->name('edge.domains.primary');
     Route::put('sites/{site}/domains/{domain}/cloudflare', [DomainController::class, 'cloudflare'])->name('edge.domains.cloudflare');
+    Route::put('sites/{site}/domains/{domain}/cloudflare-cache', [DomainController::class, 'cloudflareCache'])->name('edge.domains.cloudflare-cache');
+    Route::post('sites/{site}/cloudflare/purge', [DomainController::class, 'cloudflarePurge'])->middleware('throttle:20,1')->name('edge.cloudflare.purge');
     Route::delete('sites/{site}/domains/{domain}', [DomainController::class, 'destroy'])->name('edge.domains.destroy');
     Route::post('sites/{site}/edge/apply', [DomainController::class, 'apply'])->name('edge.apply');
 
@@ -48,6 +50,8 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::delete('settings/cloudflare/zones/{zone}', [CloudflareController::class, 'disable'])->name('edge.cloudflare.zones.disable');
     Route::put('settings/cloudflare/zones/{zone}/setting', [CloudflareController::class, 'setting'])->name('edge.cloudflare.zones.setting');
     Route::post('settings/cloudflare/zones/{zone}/sync', [CloudflareController::class, 'sync'])->name('edge.cloudflare.zones.sync');
+    Route::put('settings/cloudflare/zones/{zone}/under-attack', [CloudflareController::class, 'underAttack'])->name('edge.cloudflare.zones.under-attack');
+    Route::put('settings/cloudflare/servers/{server}/lock', [CloudflareController::class, 'lock'])->name('edge.cloudflare.servers.lock');
     Route::post('settings/cloudflare/tunnels', [CloudflareController::class, 'enableTunnel'])->middleware('throttle:20,1')->name('edge.cloudflare.tunnels.enable');
     Route::delete('settings/cloudflare/tunnels/{tunnel}', [CloudflareController::class, 'disableTunnel'])->name('edge.cloudflare.tunnels.disable');
     Route::post('settings/cloudflare/tunnels/{tunnel}/reinstall', [CloudflareController::class, 'reinstallTunnel'])->name('edge.cloudflare.tunnels.reinstall');

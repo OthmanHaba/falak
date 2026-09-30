@@ -2,6 +2,7 @@
 
 namespace Kiln\Network\Infrastructure;
 
+use Kiln\Network\Contracts\WebOriginPolicy;
 use Kiln\Network\Domain\Enums\RuleAction;
 use Kiln\Network\Domain\Models\FirewallRule;
 use Kiln\Network\Domain\Models\PrivateNetworkMember;
@@ -17,7 +18,12 @@ use Kiln\Servers\Contracts\ServerDirectory;
  */
 final class FirewallCompiler
 {
-    public function __construct(private readonly ServerDirectory $servers) {}
+    private const WEB_PORTS = ['80', '443'];
+
+    public function __construct(
+        private readonly ServerDirectory $servers,
+        private readonly WebOriginPolicy $origins,
+    ) {}
 
     /**
      * @return array<string, mixed>
@@ -36,7 +42,7 @@ final class FirewallCompiler
             'input_policy' => 'drop',
             'ssh_port' => (int) config('network.ssh_port', 22),
             'allow_icmp' => true,
-            'rules' => [...$this->networkRules($serverId), ...$rules->map(fn (FirewallRule $rule) => $this->rule($rule))->all()],
+            'rules' => [...$this->networkRules($serverId), ...$this->webOrigins($serverId, $rules->map(fn (FirewallRule $rule) => $this->rule($rule))->all())],
         ];
     }
 
@@ -53,6 +59,38 @@ final class FirewallCompiler
             'sources' => $rule->source !== null ? [$rule->source] : null,
             'comment' => mb_substr($rule->name, 0, 120),
         ], fn ($value) => $value !== null);
+    }
+
+    /**
+     * The server's {@see WebOriginPolicy} on top of its rules: accept rules for TCP 80 / 443 are dropped (closed) or
+     * narrowed to the allowed sources (only). Deny rules and other ports are untouched.
+     *
+     * @param  list<array<string, mixed>>  $rules
+     * @return list<array<string, mixed>>
+     */
+    private function webOrigins(string $serverId, array $rules): array
+    {
+        $policy = $this->origins->for($serverId);
+
+        if ($policy === null) {
+            return $rules;
+        }
+
+        $out = [];
+
+        foreach ($rules as $rule) {
+            $web = $rule['action'] === 'accept' && in_array($rule['protocol'], ['tcp', 'any'], true)
+                && array_intersect((array) ($rule['ports'] ?? []), self::WEB_PORTS) !== [];
+
+            if (! $web) {
+                $out[] = $rule;
+            } elseif ($policy['mode'] === 'only') {
+                $out[] = ['sources' => $policy['sources'], 'comment' => mb_substr(($rule['comment'] ?? '').' (Cloudflare only)', 0, 120)] + $rule;
+            }
+            // closed: the accept rule goes away; the input policy drops web traffic.
+        }
+
+        return $out;
     }
 
     /**

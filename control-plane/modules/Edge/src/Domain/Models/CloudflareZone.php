@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $zone_id Cloudflare's zone id
  * @property string $name e.g. example.com
  * @property bool $proxied default for new records (orange cloud)
+ * @property ?string $security_level_before the security level to return to while Under Attack mode is on
  * @property DnsCredential $credential
  */
 class CloudflareZone extends Model
