@@ -502,7 +502,7 @@ func TestTrustedProxiesSetClientIPHeaders(t *testing.T) {
 	}
 	b, _ := json.Marshal(cfg)
 	s := string(b)
-	for _, want := range []string{`"trusted_proxies":{"ranges":["173.245.48.0/20","2400:cb00::/32"],"source":"static"}`, `"client_ip_headers":["CF-Connecting-IP","X-Forwarded-For"]`, `"client_ip":{"ranges":["203.0.113.9"]}`} {
+	for _, want := range []string{`"trusted_proxies":{"ranges":["173.245.48.0/20","2400:cb00::/32"],"source":"static"}`, `"client_ip_headers":["CF-Connecting-IP"]`, `"client_ip":{"ranges":["203.0.113.9"]}`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("config missing %s", want)
 		}

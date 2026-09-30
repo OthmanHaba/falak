@@ -2,7 +2,9 @@
 
 namespace Kiln\Edge\Application;
 
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\DnsRecord;
@@ -82,6 +84,17 @@ final class CloudflareDns
      */
     private function reconcile(array $owner, string $tag, array $desired): void
     {
+        // One sync at a time: the queue's uniqueness is released when a job starts, and a domain job and a site job
+        // can overlap; two concurrent runs would both create the same record.
+        Cache::lock('edge:cloudflare-dns', 120)->block(90, fn () => $this->reconcileLocked($owner, $tag, $desired));
+    }
+
+    /**
+     * @param  array<string, ?string>  $owner
+     * @param  array<string, array{zone: CloudflareZone, name: string, type: string, content: string, proxied: bool}>  $desired
+     */
+    private function reconcileLocked(array $owner, string $tag, array $desired): void
+    {
         $tracked = DnsRecord::query()->with('zone.credential')->where($owner)->get();
 
         foreach ($tracked as $record) {
@@ -132,8 +145,12 @@ final class CloudflareDns
 
                 $record->forceFill(['status' => DnsRecord::SYNCED, 'error' => null, 'synced_at' => now()])->save();
             } catch (CloudflareError $e) {
-                $record->forceFill(['status' => DnsRecord::ERROR, 'error' => $e->getMessage(), 'synced_at' => now()])->save();
+                $record->forceFill(['status' => DnsRecord::ERROR, 'error' => $e->getMessage(), 'synced_at' => now()]);
+                $this->saveOrConflict($record, $want['name']);
                 Log::warning('edge: cloudflare dns sync failed', ['name' => $want['name'], 'error' => $e->getMessage()]);
+            } catch (UniqueConstraintViolationException) {
+                // Another domain of the organization wants the same record (the host check raced): keep the first.
+                Log::warning('edge: cloudflare dns record already tracked for another owner', ['name' => $want['name']]);
             }
         }
     }
@@ -173,6 +190,15 @@ final class CloudflareDns
     private static function zones(string $organizationId): Collection
     {
         return CloudflareZone::query()->with('credential')->where('organization_id', $organizationId)->get();
+    }
+
+    private function saveOrConflict(DnsRecord $record, string $name): void
+    {
+        try {
+            $record->save();
+        } catch (UniqueConstraintViolationException) {
+            Log::warning('edge: cloudflare dns record already tracked for another owner', ['name' => $name]);
+        }
     }
 
     private function remove(DnsRecord $record): void

@@ -302,10 +302,19 @@ export default function Cloudflare({ connections, zones, can }: Props) {
                 description="Kiln stops changing DNS records in this zone. The records it created stay in Cloudflare, so your services keep resolving."
                 confirmText={releasing?.name ?? ''}
                 confirmLabel="Stop managing"
-                onConfirm={async () => {
-                    if (!releasing) return;
-                    router.delete(`/settings/cloudflare/zones/${releasing.id}`, { ...options, onFinish: () => setReleasing(null) });
-                }}
+                onConfirm={() =>
+                    // Resolves when the request is done, so the dialog stays busy and cannot be submitted twice.
+                    new Promise<void>((resolve) => {
+                        if (!releasing) return resolve();
+                        router.delete(`/settings/cloudflare/zones/${releasing.id}`, {
+                            ...options,
+                            onFinish: () => {
+                                setReleasing(null);
+                                resolve();
+                            },
+                        });
+                    })
+                }
             />
             <ConfirmDestructive
                 open={disconnecting !== null}
@@ -314,10 +323,18 @@ export default function Cloudflare({ connections, zones, can }: Props) {
                 description="Its zones stop being managed (records stay in Cloudflare) and domains that got certificates through it switch back to HTTP validation."
                 confirmText={disconnecting?.name ?? ''}
                 confirmLabel="Disconnect"
-                onConfirm={async () => {
-                    if (!disconnecting) return;
-                    router.delete(`/settings/cloudflare/${disconnecting.id}`, { ...options, onFinish: () => setDisconnecting(null) });
-                }}
+                onConfirm={() =>
+                    new Promise<void>((resolve) => {
+                        if (!disconnecting) return resolve();
+                        router.delete(`/settings/cloudflare/${disconnecting.id}`, {
+                            ...options,
+                            onFinish: () => {
+                                setDisconnecting(null);
+                                resolve();
+                            },
+                        });
+                    })
+                }
             />
         </SettingsLayout>
     );

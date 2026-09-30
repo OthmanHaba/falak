@@ -3,6 +3,7 @@
 namespace Kiln\Edge\Application;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
@@ -105,13 +106,17 @@ final class CloudflareConnections
             throw ValidationException::withMessages(['zone' => "{$zone['name']} is already managed by another connection."]);
         }
 
-        $managed = CloudflareZone::query()->create([
-            'organization_id' => $credential->organization_id,
-            'dns_credential_id' => $credential->id,
-            'zone_id' => $zone['id'],
-            'name' => $zone['name'],
-            'proxied' => $proxied,
-        ]);
+        try {
+            $managed = CloudflareZone::query()->create([
+                'organization_id' => $credential->organization_id,
+                'dns_credential_id' => $credential->id,
+                'zone_id' => $zone['id'],
+                'name' => $zone['name'],
+                'proxied' => $proxied,
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            throw ValidationException::withMessages(['zone' => "{$zone['name']} is already managed."]);
+        }
 
         // Existing domains under the zone get their records. Certificates keep coming over HTTP-01: Cloudflare passes
         // /.well-known/acme-challenge to the server even when proxied (Always Use HTTPS off).

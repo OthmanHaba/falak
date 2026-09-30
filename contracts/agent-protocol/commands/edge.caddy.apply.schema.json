@@ -257,7 +257,7 @@
     },
     "trusted_proxies": {
       "type": "array",
-      "description": "CIDRs whose CF-Connecting-IP / X-Forwarded-For headers are trusted for the client IP (Cloudflare's ranges for proxied sites)",
+      "description": "CIDRs whose CF-Connecting-IP header is trusted for the client IP (Cloudflare's ranges for proxied sites)",
       "items": {
         "type": "string",
         "minLength": 1

@@ -477,12 +477,13 @@ func cloneMap(m map[string]any) map[string]any {
 	return out
 }
 
-// trustProxies makes Caddy take the client IP from CF-Connecting-IP (then X-Forwarded-For) when the connection
-// comes from one of ranges; the `client_ip` matcher and access logs then use it.
+// trustProxies makes Caddy take the client IP from CF-Connecting-IP when the connection comes from one of ranges
+// (Cloudflare always sets it and visitors cannot; X-Forwarded-For is not trusted since visitors can pre-fill it).
+// The `client_ip` matcher and access logs then use it.
 func trustProxies(srv obj, ranges []string) {
 	if len(ranges) == 0 {
 		return
 	}
 	srv["trusted_proxies"] = obj{"source": "static", "ranges": toAny(ranges)}
-	srv["client_ip_headers"] = []any{"CF-Connecting-IP", "X-Forwarded-For"}
+	srv["client_ip_headers"] = []any{"CF-Connecting-IP"}
 }
