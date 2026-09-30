@@ -95,6 +95,8 @@ x-control-plane: &control-plane
     KILN_GENERATED_DOMAIN_SUFFIX: ${KILN_GENERATED_DOMAIN_SUFFIX:-sslip.io}
     KILN_DNS_RESOLVER: ${KILN_DNS_RESOLVER:-doh}
     KILN_DNS_DOH_URL: ${KILN_DNS_DOH_URL:-https://cloudflare-dns.com/dns-query}
+    # Functions: runtime images are released with Kiln under the same prefix (kiln-fn-bun:<version>).
+    KILN_IMAGE_PREFIX: ${KILN_IMAGE_PREFIX}
     # Builds: the builder container below polls with this token.
     KILN_LOCAL_BUILDER_TOKEN: ${KILN_BUILDER_TOKEN:?set KILN_BUILDER_TOKEN}
     KILN_HORIZON_MAX_PROCESSES: ${KILN_HORIZON_MAX_PROCESSES:-4}
