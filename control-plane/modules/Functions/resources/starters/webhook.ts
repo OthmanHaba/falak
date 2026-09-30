@@ -14,13 +14,24 @@ async function verify(secret: string, body: string, signature: string | undefine
 }
 
 app.post('/webhook', async (c) => {
+    // Without a secret anyone could sign with an empty key: refuse instead.
+    const secret = process.env.WEBHOOK_SECRET
+    if (!secret) return c.json({ error: 'WEBHOOK_SECRET is not set' }, 500)
+
     const body = await c.req.text()
-    if (!(await verify(process.env.WEBHOOK_SECRET ?? '', body, c.req.header('X-Hub-Signature-256')))) {
+    if (!(await verify(secret, body, c.req.header('X-Hub-Signature-256')))) {
         return c.json({ error: 'invalid signature' }, 401)
     }
 
+    let payload: unknown
+    try {
+        payload = JSON.parse(body)
+    } catch {
+        return c.json({ error: 'invalid JSON' }, 400)
+    }
+
     const event = c.req.header('X-GitHub-Event') ?? 'unknown'
-    console.log(`received ${event}`, JSON.parse(body))
+    console.log(`received ${event}`, payload)
     return c.json({ ok: true })
 })
 

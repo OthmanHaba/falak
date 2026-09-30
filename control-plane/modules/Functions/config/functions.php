@@ -1,7 +1,8 @@
 <?php
 
-$prefix = rtrim((string) env('KILN_IMAGE_PREFIX', 'ghcr.io/othmanhaba'), '/');
-$version = (string) env('KILN_VERSION', 'latest');
+// Compose passes an empty KILN_IMAGE_PREFIX when the install's .env has none.
+$prefix = rtrim((string) (env('KILN_IMAGE_PREFIX') ?: 'ghcr.io/othmanhaba'), '/');
+$version = (string) (env('KILN_VERSION') ?: 'latest');
 $tag = preg_match('/^v\d+\.\d+\.\d+/', $version) === 1 ? $version : 'latest';
 
 return [

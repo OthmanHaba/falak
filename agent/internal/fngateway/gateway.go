@@ -408,26 +408,25 @@ func (g *Gateway) boot(ctx context.Context, spec Spec, in *instance) error {
 	g.mu.Lock()
 	id := in.id
 	g.mu.Unlock()
-	if id == "" {
-		if err := g.o.Engine.EnsureNetwork(ctx); err != nil {
-			return fmt.Errorf("network %s: %w", Network, err)
+	for attempt := 0; ; attempt++ {
+		if id == "" {
+			var err error
+			if id, err = g.create(ctx, spec, in); err != nil {
+				return err
+			}
 		}
-		name := ContainerName(spec.Site, spec.Release, in.slot)
-		var err error
-		id, err = g.o.Engine.Create(ctx, name, spec.createBody(in.slot))
-		if isNameConflict(err) { // left over from an earlier gateway run
-			_ = g.o.Engine.Remove(ctx, name)
-			id, err = g.o.Engine.Create(ctx, name, spec.createBody(in.slot))
+		err := g.o.Engine.Start(ctx, id)
+		if err == nil {
+			break
 		}
-		if err != nil {
+		// A kept (stopped) container was removed behind the gateway's back: create it again, once.
+		if !isGone(err) || attempt > 0 {
 			return err
 		}
 		g.mu.Lock()
-		in.id = id
+		in.id = ""
 		g.mu.Unlock()
-	}
-	if err := g.o.Engine.Start(ctx, id); err != nil {
-		return err
+		id = ""
 	}
 	addr, err := g.waitReady(ctx, id)
 	if err != nil {
@@ -441,6 +440,26 @@ func (g *Gateway) boot(ctx context.Context, spec Spec, in *instance) error {
 	in.addr = addr
 	g.mu.Unlock()
 	return nil
+}
+
+// create makes the instance's container and records its id.
+func (g *Gateway) create(ctx context.Context, spec Spec, in *instance) (string, error) {
+	if err := g.o.Engine.EnsureNetwork(ctx); err != nil {
+		return "", fmt.Errorf("network %s: %w", Network, err)
+	}
+	name := ContainerName(spec.Site, spec.Release, in.slot)
+	id, err := g.o.Engine.Create(ctx, name, spec.createBody(in.slot))
+	if isNameConflict(err) { // left over from an earlier gateway run
+		_ = g.o.Engine.Remove(ctx, name)
+		id, err = g.o.Engine.Create(ctx, name, spec.createBody(in.slot))
+	}
+	if err != nil {
+		return "", err
+	}
+	g.mu.Lock()
+	in.id = id
+	g.mu.Unlock()
+	return id, nil
 }
 
 // waitReady polls until the runtime accepts a TCP connection; it fails fast when the container exits.
@@ -609,14 +628,18 @@ func (g *Gateway) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 	return ApplyResult{Release: spec.Release, PreviousRelease: prev, BootMS: boot.Milliseconds(), Changed: true}, nil
 }
 
-// drain removes instances once their in-flight requests finish (at most timeout later).
-func (g *Gateway) drain(insts []*instance, timeout time.Duration) {
+// drain removes instances once their in-flight requests finish (at most timeout later); the returned channel is
+// closed when it is done.
+func (g *Gateway) drain(insts []*instance, timeout time.Duration) <-chan struct{} {
+	done := make(chan struct{})
 	if len(insts) == 0 {
-		return
+		close(done)
+		return done
 	}
 	g.bg.Add(1)
 	go func() {
 		defer g.bg.Done()
+		defer close(done)
 		deadline := time.NewTimer(timeout)
 		defer deadline.Stop()
 		for {
@@ -648,6 +671,7 @@ func (g *Gateway) drain(insts []*instance, timeout time.Duration) {
 			}
 		}
 	}()
+	return done
 }
 
 // Delete deregisters a function and removes all its containers.
@@ -669,8 +693,12 @@ func (g *Gateway) Delete(ctx context.Context, site string) (bool, error) {
 		g.persistLocked()
 	}
 	g.mu.Unlock()
-	g.drain(insts, timeout)
-	g.bg.Wait()
+	// Wait for this function's drain only: other functions' boots and drains go on (and keep using g.bg).
+	select {
+	case <-g.drain(insts, timeout):
+	case <-ctx.Done():
+		return f != nil, ctx.Err()
+	}
 	// Anything else of the site (e.g. from before a lost state file).
 	cs, err := g.o.Engine.List(ctx, []string{LabelService + "=" + ServiceName, LabelSite + "=" + site})
 	if err != nil {

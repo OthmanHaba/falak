@@ -89,6 +89,12 @@ func (e DockerEngine) EnsureNetwork(ctx context.Context) error {
 }
 
 // isNameConflict reports Docker's 409 "container name already in use".
+// isGone reports that the container no longer exists (removed outside the gateway, e.g. `docker container prune`).
+func isGone(err error) bool {
+	var ae *docker.APIError
+	return errors.As(err, &ae) && ae.Status == 404
+}
+
 func isNameConflict(err error) bool {
 	var ae *docker.APIError
 	return errors.As(err, &ae) && ae.Status == 409

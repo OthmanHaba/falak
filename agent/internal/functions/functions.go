@@ -220,6 +220,23 @@ func (p *ApplyPayload) hash() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// codeHash covers the function's own files only (not the runtime image): the key of its saved lock files.
+func (p *ApplyPayload) codeHash() string {
+	files := append([]File(nil), p.Files...)
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	h := sha256.New()
+	fmt.Fprintf(h, "%s\x00", p.Entrypoint)
+	for _, f := range files {
+		fmt.Fprintf(h, "%s\x00%d\x00%s", f.Path, len(f.Content), f.Content)
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// keepLocks is how many code versions' lock files a function keeps.
+const keepLocks = 20
+
+func locksDir(site, codeHash string) string { return path.Join(Root, site, "locks", codeHash) }
+
 func siteDir(site string) string             { return path.Join(Root, site) }
 func releasesDir(site string) string         { return path.Join(Root, site, "releases") }
 func releaseDir(site, release string) string { return path.Join(releasesDir(site), release) }
@@ -310,6 +327,9 @@ func (f *Functions) build(ctx context.Context, p ApplyPayload, hash, dir string,
 		}
 	}
 	fmt.Fprintf(st.Stdout(), "wrote %d file(s)\n", len(p.Files))
+	if n := f.restoreLocks(p, tmp); n > 0 {
+		fmt.Fprintln(st.Stdout(), "reusing the dependency versions this code was installed with")
+	}
 	if err := f.chownNobody(tmp, true); err != nil {
 		return err
 	}
@@ -326,6 +346,7 @@ func (f *Functions) build(ctx context.Context, p ApplyPayload, hash, dir string,
 	if err := f.install(ctx, p, fs.P(tmp), fs.P(cache), st); err != nil {
 		return err
 	}
+	f.saveLocks(p, tmp)
 	m, _ := json.Marshal(marker{Hash: hash, Image: p.Image, Entrypoint: p.Entrypoint})
 	if _, err := fs.WriteFile(path.Join(tmp, markerFile), m, 0o644); err != nil {
 		return err
@@ -336,6 +357,88 @@ func (f *Functions) build(ctx context.Context, p ApplyPayload, hash, dir string,
 		}
 	}
 	return os.Rename(fs.P(tmp), fs.P(dir))
+}
+
+// Lock files: what the runtime's install generated at the top of the release (bun.lock, a generated package.json,
+// uv.lock, go.sum …). They are saved per code hash, so a later release of the same code — a redeploy, a scaling
+// change, "deploy this version" — installs the same dependency versions instead of resolving them again.
+
+// restoreLocks copies the saved lock files of this code into dir; it returns how many.
+func (f *Functions) restoreLocks(p ApplyPayload, dir string) int {
+	src := f.d.FS.P(locksDir(p.Site, p.codeHash()))
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return 0
+	}
+	own := ownFiles(p)
+	n := 0
+	for _, e := range entries {
+		if !e.Type().IsRegular() || own[e.Name()] {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			continue
+		}
+		if _, err := f.d.FS.WriteFile(path.Join(dir, e.Name()), b, 0o644); err == nil {
+			n++
+		}
+	}
+	return n
+}
+
+// saveLocks keeps the top-level files the install generated, and prunes the lock files of old code versions.
+func (f *Functions) saveLocks(p ApplyPayload, dir string) {
+	entries, err := os.ReadDir(f.d.FS.P(dir))
+	if err != nil {
+		return
+	}
+	own := ownFiles(p)
+	dst := locksDir(p.Site, p.codeHash())
+	for _, e := range entries {
+		if !e.Type().IsRegular() || own[e.Name()] || e.Name() == markerFile {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.Size() > 8<<20 {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(f.d.FS.P(dir), e.Name()))
+		if err != nil {
+			continue
+		}
+		_, _ = f.d.FS.WriteFile(path.Join(dst, e.Name()), b, 0o644)
+	}
+
+	root := f.d.FS.P(path.Join(Root, p.Site, "locks"))
+	all, err := os.ReadDir(root)
+	if err != nil || len(all) <= keepLocks {
+		return
+	}
+	type lock struct {
+		name string
+		mod  time.Time
+	}
+	var locks []lock
+	for _, e := range all {
+		if info, err := e.Info(); err == nil && e.IsDir() {
+			locks = append(locks, lock{e.Name(), info.ModTime()})
+		}
+	}
+	sort.Slice(locks, func(i, j int) bool { return locks[i].mod.After(locks[j].mod) })
+	for _, l := range locks[min(len(locks), keepLocks):] {
+		_ = os.RemoveAll(filepath.Join(root, l.name))
+	}
+}
+
+// ownFiles are the top-level names of the function's own files (never overwritten by saved lock files).
+func ownFiles(p ApplyPayload) map[string]bool {
+	own := map[string]bool{}
+	for _, file := range p.Files {
+		top, _, _ := strings.Cut(file.Path, "/")
+		own[top] = true
+	}
+	return own
 }
 
 func (f *Functions) chownNobody(dir string, recursive bool) error {

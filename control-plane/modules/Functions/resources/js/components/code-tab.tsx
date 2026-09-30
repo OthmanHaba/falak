@@ -88,7 +88,7 @@ export function CodeTab({ ctx }: ServiceTabProps) {
 
     const deploy = useCallback(
         async (force = false) => {
-            if (!files || !data?.can.deploy || deploying) return;
+            if (!files || !data?.can.deploy || deploying || tooBig) return;
             setDeploying(true);
             try {
                 const response = await requestJson<{
@@ -119,7 +119,7 @@ export function CodeTab({ ctx }: ServiceTabProps) {
                 setDeploying(false);
             }
         },
-        [files, data, deploying, siteId, message, base, state, ctx],
+        [files, data, deploying, tooBig, siteId, message, base, state, ctx],
     );
 
     const entry = data?.entrypoint ?? 'index.ts';

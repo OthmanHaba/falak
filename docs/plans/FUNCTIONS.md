@@ -1,6 +1,6 @@
 # Cloud Functions: plan
 
-Status: agreed design, phase 1 not started (2026-09-30).
+Status: phase 1 built (v0.4.0, 2026-09-30); phases 2–4 are next.
 
 A **Function** is a canvas service whose code is written in Kiln's editor (no git), deployed in seconds, reached by a URL
 and/or a schedule, scaled with traffic, and **scaled to zero** when idle.
@@ -94,11 +94,11 @@ Env vars keep using `sites.env.*`.
 - Memory and CPU limits
 - Code mounted read-only; no Docker socket
 - Network: a `kiln-fn` bridge network (created once). Egress reaches databases on private and WireGuard IPs through
-  the host (to verify against the nftables rules).
+  the host (verified on AWS against Kiln's nftables rules).
 
 **Runtime image** `ghcr.io/…/kiln-fn-bun:<bun version>` (`runtimes/functions/bun/`):
 - Bun plus a bootstrap that imports the entrypoint.
-- It serves `export default` (a Hono app or `{ fetch }`) on `$PORT`, and `/_kiln/ready` for the gateway.
+- It serves `export default` (a Hono app or `{ fetch }`) on `$PORT`; an accepted TCP connection means ready.
 - Pinned by digest in `config('functions.runtimes')` and pulled on the first release.
 
 **`fn.release.apply`** (new package `internal/functions`, redeliverable):
@@ -107,9 +107,10 @@ Env vars keep using `sites.env.*`.
    timeout, output streamed to the deployment log.
 3. Boot check: create an instance, start it, wait for ready, then stop it if `min = 0`. A failure fails the step and
    the old release stays live.
-4. Register the release with the gateway over `/run/kiln/fn-gateway.sock`. New requests go to the new release, and
+4. Register the release with the gateway over `/run/kiln-fn/gateway.sock`. New requests go to the new release, and
    the old instances drain and stop.
-5. Keep the last 5 releases on disk, so rollback needs no install.
+5. Keep the last 5 releases on disk, so rollback needs no install; lock files are kept per code hash, so the same
+   code always installs the same dependency versions.
 6. Ensure `kiln-fn-gateway.service` is installed and running (pattern from `netcfg/tunnel.go`).
 
 **`fn.release.remove`**: deregister the function, remove its containers and delete its directory. It runs on site
@@ -230,11 +231,11 @@ entries.
 ## Phase 1 wire contract (fixed; both sides build against this)
 
 Ports:
-- Gateway listens on `127.0.0.1:7070`.
-- Instances bind `127.0.0.1:<21000–29999>` (the gateway allocates the port and persists it). Inside the container
-  the port is always `8080`, and `PORT=8080` is set.
-- These ranges don't collide with app ports (3000–4999), Octane (8000–8999 / 18000–18999) or anything else Kiln
-  allocates.
+- The gateway listens on `127.0.0.1:7070`.
+- Instances publish no host port. The gateway reaches each instance at `<container ip>:8080` on the `kiln-fn`
+  bridge, and `PORT=8080` is set inside the container.
+- Why no host port: with Docker's userland proxy, a published loopback port accepts TCP connections before the
+  runtime listens, which would break "accepted connection = ready".
 
 Caddy (edge.caddy.apply):
 - A site entry of kind `reverse_proxy` gains `request_headers: {name: value}`, which is rendered as
@@ -264,7 +265,7 @@ Container names and labels:
 - Labels:
   - `kiln.managed=true`, `kiln.site=<site>`
   - `kiln.service=function`, `kiln.release=<release>`
-  - `kiln.fn.slot=<n>`, `kiln.fn.port=<host port>`
+  - `kiln.fn.slot=<n>` (slots keep counting per function), `kiln.fn.spec=<spec hash>`
 
 Agent commands:
 - **`fn.release.apply`** (redeliverable):

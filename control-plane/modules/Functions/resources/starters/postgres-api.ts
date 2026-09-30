@@ -16,7 +16,9 @@ app.get('/notes', async (c) => {
 })
 
 app.post('/notes', async (c) => {
-    const { body } = await c.req.json<{ body: string }>()
+    const input = await c.req.json<{ body?: string }>().catch(() => null)
+    if (!input) return c.json({ error: 'send a JSON body' }, 400)
+    const { body } = input
     if (!body) return c.json({ error: 'body is required' }, 422)
     const [note] = await sql`insert into notes (body) values (${body}) returning *`
     return c.json(note, 201)

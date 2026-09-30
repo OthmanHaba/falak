@@ -55,7 +55,8 @@ final class FunctionController extends Controller
             'limits' => ['max_bytes' => (int) config('functions.max_bytes'), 'max_files' => (int) config('functions.max_files')],
             'can' => [
                 'edit' => $this->access->can($request->user(), $data->organizationId, Permissions::EDIT),
-                'deploy' => $this->access->can($request->user(), $data->organizationId, Permissions::DEPLOY),
+                'deploy' => $this->access->can($request->user(), $data->organizationId, Permissions::DEPLOY)
+                    && $this->access->can($request->user(), $data->organizationId, 'deployments.create'),
             ],
         ]])->header('Cache-Control', 'no-store');
     }
@@ -86,7 +87,7 @@ final class FunctionController extends Controller
     public function deploy(Request $request, string $site, DeployCode $deploy): JsonResponse
     {
         [$data, $function] = $this->resolve($request->user(), $site, Permissions::EDIT);
-        $this->access->authorize($request->user(), $data->organizationId, Permissions::DEPLOY);
+        $this->authorizeDeploy($request->user(), $data);
         $input = $request->validate([
             'files' => ['required', 'array'],
             'message' => ['nullable', 'string', 'max:500'],
@@ -135,6 +136,7 @@ final class FunctionController extends Controller
     public function deployVersion(Request $request, string $site, int $number, DeployVersion $deploy): JsonResponse
     {
         [$data, $function] = $this->resolve($request->user(), $site, Permissions::DEPLOY);
+        $this->authorizeDeploy($request->user(), $data);
         $version = FunctionVersion::query()->where('function_id', $function->id)->where('number', $number)->firstOrFail();
         $isHead = $function->head()?->id === $version->id;
 
@@ -146,6 +148,7 @@ final class FunctionController extends Controller
     public function updateSettings(Request $request, string $site, UpdateSettings $update): JsonResponse
     {
         [$data, $function] = $this->resolve($request->user(), $site, Permissions::DEPLOY);
+        $this->authorizeDeploy($request->user(), $data);
         $input = $request->validate(UpdateSettings::rules());
         $deploymentId = $update($data, $function, $input, $request->user()?->getAuthIdentifier());
 
@@ -164,6 +167,13 @@ final class FunctionController extends Controller
         $this->access->authorize($user, $organizationId, $permission);
 
         return [$site, $this->functions->ensure($site)];
+    }
+
+    /** Deploying a function starts a deployment: it needs Deployments' permission too. */
+    private function authorizeDeploy(?Authenticatable $user, SiteData $site): void
+    {
+        $this->access->authorize($user, $site->organizationId, Permissions::DEPLOY);
+        $this->access->authorize($user, $site->organizationId, 'deployments.create');
     }
 
     /**

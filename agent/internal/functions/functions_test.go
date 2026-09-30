@@ -86,6 +86,12 @@ func (d *fakeDocker) ContainerCreate(_ context.Context, name string, body docker
 		}
 		return nil
 	})
+	// Like bun install: resolve once, then keep an existing lockfile.
+	if lock := filepath.Join(app, "bun.lock"); body.Cmd[0] == "kiln-fn-install" {
+		if _, err := os.Stat(lock); err != nil {
+			_ = os.WriteFile(lock, []byte(fmt.Sprintf("resolved #%d", len(d.created))), 0o644)
+		}
+	}
 	return "install-1", nil
 }
 
@@ -386,5 +392,33 @@ func TestRemoveAndStatus(t *testing.T) {
 	}
 	if e.fs.Exists("/var/lib/kiln/functions/hello") {
 		t.Fatal("function dir not removed")
+	}
+}
+
+func TestSameCodeReinstallsWithItsSavedLockfile(t *testing.T) {
+	e := setup(t)
+	if _, err := e.f.Apply(context.Background(), payload("r1"), e.st); err != nil {
+		t.Fatal(err)
+	}
+	// A later release of the same code (redeploy, scaling change, rollback to a pruned release) with a new image.
+	p := payload("r2")
+	p.Image = "ghcr.io/kiln/kiln-fn-bun:0.4.1"
+	st := &bufStream{}
+	if _, err := e.f.Apply(context.Background(), p, st); err != nil {
+		t.Fatal(err)
+	}
+	lock, _ := os.ReadFile(e.fs.P("/var/lib/kiln/functions/hello/releases/r2/bun.lock"))
+	if string(lock) != "resolved #1" || !strings.Contains(st.String(), "reusing the dependency versions") {
+		t.Fatalf("lock %q\n%s", lock, st)
+	}
+
+	// Changed code resolves again.
+	p = payload("r3")
+	p.Files[0].Content += "// v2\n"
+	if _, err := e.f.Apply(context.Background(), p, &bufStream{}); err != nil {
+		t.Fatal(err)
+	}
+	if lock, _ := os.ReadFile(e.fs.P("/var/lib/kiln/functions/hello/releases/r3/bun.lock")); string(lock) != "resolved #3" {
+		t.Fatalf("changed code reused a lock: %q", lock)
 	}
 }

@@ -599,3 +599,47 @@ func TestCreateBodyIsHardened(t *testing.T) {
 		t.Fatalf("labels %v", b.Labels)
 	}
 }
+
+func TestRecreatesAContainerRemovedWhileStopped(t *testing.T) {
+	e := newFake()
+	g, clk, srv := newGateway(t, e)
+	mustApply(t, g, spec("hello", "r1"))
+	idleDown(g, clk, 2*time.Minute)
+	if n := e.running("r1"); n != 0 {
+		t.Fatalf("scale to zero: %d running", n)
+	}
+	// `docker container prune` removes the kept, stopped container.
+	e.mu.Lock()
+	for id := range e.cs {
+		delete(e.cs, id)
+	}
+	e.mu.Unlock()
+
+	if code, body := get(t, srv, "hello"); code != 200 || !strings.Contains(body, "release=r1") {
+		t.Fatalf("cold start after prune: %d %s", code, body)
+	}
+}
+
+func TestDeleteDoesNotWaitForOtherFunctions(t *testing.T) {
+	e := newFake()
+	g, _, srv := newGateway(t, e)
+	mustApply(t, g, spec("busy", "r1"))
+	mustApply(t, g, spec("gone", "r1"))
+	block := make(chan struct{})
+	e.setBlock(block)
+	defer close(block)
+
+	// A request holds busy's instance; its new release then drains for up to request_timeout_s (5s).
+	go get(t, srv, "busy")
+	waitFor(t, "busy request", func() bool { return atomic.LoadInt32(&e.live) == 1 })
+	go func() { _, _ = g.Apply(context.Background(), spec("busy", "r2")) }()
+	waitFor(t, "busy r2", func() bool { return e.running("r2") == 1 })
+
+	start := time.Now()
+	if removed, err := g.Delete(context.Background(), "gone"); err != nil || !removed {
+		t.Fatalf("delete: %v %v", removed, err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("delete waited %s for another function's drain", d)
+	}
+}
