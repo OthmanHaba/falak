@@ -409,6 +409,9 @@ func (f *Functions) saveLocks(p ApplyPayload, dir string) {
 		}
 		_, _ = f.d.FS.WriteFile(path.Join(dst, e.Name()), b, 0o644)
 	}
+	// Mark it used now (unchanged files are not rewritten), so pruning keeps recently deployed code.
+	now := time.Now()
+	_ = os.Chtimes(f.d.FS.P(dst), now, now)
 
 	root := f.d.FS.P(path.Join(Root, p.Site, "locks"))
 	all, err := os.ReadDir(root)
@@ -426,8 +429,11 @@ func (f *Functions) saveLocks(p ApplyPayload, dir string) {
 		}
 	}
 	sort.Slice(locks, func(i, j int) bool { return locks[i].mod.After(locks[j].mod) })
+	current := p.codeHash()
 	for _, l := range locks[min(len(locks), keepLocks):] {
-		_ = os.RemoveAll(filepath.Join(root, l.name))
+		if l.name != current {
+			_ = os.RemoveAll(filepath.Join(root, l.name))
+		}
 	}
 }
 

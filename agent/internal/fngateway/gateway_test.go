@@ -725,8 +725,12 @@ func TestFunctionTelemetryIsStampedAndRelayed(t *testing.T) {
 		return d.DialContext(ctx, "unix", filepath.Join(root, "hello", "otlp", "otlp.sock"))
 	}}}
 	resp, err := c.Post("http://fn/v1/traces", "application/json", strings.NewReader(body))
-	if err != nil || resp.StatusCode != 200 {
-		t.Fatalf("post: %v %v", resp, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("post: %d", resp.StatusCode)
 	}
 	got := agent.got()
 	if len(got) != 1 {

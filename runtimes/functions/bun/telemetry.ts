@@ -34,6 +34,7 @@ const originalFetch = globalThis.fetch.bind(globalThis);
 const current = new AsyncLocalStorage<Span>();
 let queue: Span[] = [];
 let timer: ReturnType<typeof setTimeout> | undefined;
+let flushing: Promise<void> | undefined;
 
 const hex = (bytes: number) => {
   const b = crypto.getRandomValues(new Uint8Array(bytes));
@@ -57,12 +58,20 @@ function finish(span: Span) {
   else schedule();
 }
 
-/** Sends everything queued (also called on shutdown). */
-export async function flush(): Promise<void> {
+/** Sends everything queued (also called on shutdown); one flush at a time. */
+export function flush(): Promise<void> {
   if (timer !== undefined) {
     clearTimeout(timer);
     timer = undefined;
   }
+  flushing ??= send().finally(() => {
+    flushing = undefined;
+    if (queue.length > 0) schedule();
+  });
+  return flushing;
+}
+
+async function send(): Promise<void> {
   while (queue.length > 0) {
     const batch = queue.splice(0, MAX_BATCH);
     const body = JSON.stringify({
@@ -82,7 +91,10 @@ export async function flush(): Promise<void> {
         signal: AbortSignal.timeout(2000),
       } as RequestInit);
     } catch {
-      // Telemetry is best effort.
+      // Telemetry is best effort: the socket is down, drop what is queued rather than retry (a shutdown must
+      // not outlast the stop grace period).
+      queue = [];
+      return;
     }
   }
 }

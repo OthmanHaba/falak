@@ -181,6 +181,8 @@ type coldKey struct{}
 
 type siteKey struct{}
 
+type arrivedKey struct{}
+
 // failBackoff is how long after a failed start requests fail fast instead of booting again.
 const failBackoff = 2 * time.Second
 
@@ -208,7 +210,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	g.mu.Lock()
 	cold := inst.readyAt.After(arrived)
 	g.mu.Unlock()
-	ctx := context.WithValue(context.WithValue(context.WithValue(r.Context(), targetKey{}, inst), coldKey{}, cold), siteKey{}, site)
+	ctx := context.WithValue(r.Context(), targetKey{}, inst)
+	ctx = context.WithValue(ctx, coldKey{}, cold)
+	ctx = context.WithValue(ctx, siteKey{}, site)
+	ctx = context.WithValue(ctx, arrivedKey{}, arrived)
 	if !isUpgrade(r) {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, spec.requestTimeout())
@@ -293,7 +298,8 @@ func (g *Gateway) proxyError(w http.ResponseWriter, r *http.Request, err error) 
 			}
 			g.mu.Unlock()
 			if site, ok := r.Context().Value(siteKey{}).(string); ok && g.tel != nil {
-				g.tel.requestSpan(site, r, http.StatusBadGateway, time.Now(), "function unavailable")
+				arrived, _ := r.Context().Value(arrivedKey{}).(time.Time)
+				g.tel.requestSpan(site, r, http.StatusBadGateway, arrived, "function unavailable")
 			}
 		}
 	}
