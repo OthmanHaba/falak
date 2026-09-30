@@ -12,6 +12,7 @@ use Kiln\Functions\Domain\Models\FunctionDraft;
 use Kiln\Functions\Domain\Models\FunctionVersion;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Contracts\SiteFactory;
 use Kiln\Sites\Domain\Models\Site;
 
@@ -65,6 +66,8 @@ it('creates a function from the canvas and deploys its starter through the gatew
     expect($site->runtime->value)->toBe('function')
         ->and($site->app_port)->toBeNull()
         ->and($site->health_check_path)->toBeNull()
+        // no domain chosen: the organization's default (a generated name here)
+        ->and(app(SiteDomains::class)->primaryDomains([$site->id])[$site->id] ?? null)->toBe("{$site->slug}.203-0-113-1.sslip.io")
         ->and($version->number)->toBe(1)
         ->and($version->files['index.ts'])->toContain('X-Hub-Signature-256')
         ->and($response->json('data.deployment_id'))->not->toBeNull()

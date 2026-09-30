@@ -9,6 +9,7 @@ use Kiln\Functions\Application\Starters;
 use Kiln\Projects\Contracts\Data\EnvironmentData;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\Data\SitePlacement;
+use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Contracts\SiteFactory;
 use Kiln\Sites\Contracts\SiteRuntime;
 
@@ -21,6 +22,7 @@ final class CreateFunction
         private readonly SiteFactory $sites,
         private readonly FunctionStore $functions,
         private readonly DeploymentTrigger $deployments,
+        private readonly SiteDomains $domains,
     ) {}
 
     /**
@@ -43,6 +45,20 @@ final class CreateFunction
         $site = $created->site;
         $function = $this->functions->ensure($site, $starter, $userId, $userName);
         $warnings = $created->warnings;
+
+        // No choice: the organization's default (test domain when there is one, else a generated name), so the
+        // function is reachable right away.
+        if ($domain === null) {
+            try {
+                $name = $this->domains->resolveChoice($site->organizationId, null, $site->slug, [$serverId], 'domain', $site->id);
+
+                if ($name !== null) {
+                    $this->domains->attach($site->id, $name);
+                }
+            } catch (ValidationException $e) {
+                $warnings[] = 'The function has no domain yet: '.collect($e->errors())->flatten()->first();
+            }
+        }
         $deploymentId = null;
 
         if ($deploy && ($head = $function->head()) !== null) {

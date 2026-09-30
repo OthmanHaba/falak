@@ -226,9 +226,11 @@ func (c *Client) ImagePull(ctx context.Context, ref string, auth *Auth, w io.Wri
 		if m.Error != "" {
 			return fmt.Errorf("pull %s: %s", ref, m.Error)
 		}
-		if w != nil && m.Status != "" && m.Progress == "" { // skip noisy progress-bar frames
+		// Only the pull's own status ("Pulling from …", "Digest: …", "Status: …"); per-layer frames (download and
+		// extract progress, one line each per layer) would flood deployment logs.
+		if w != nil && m.Status != "" && m.Progress == "" && (m.ID == "" || m.ID == tag || strings.HasPrefix(m.Status, "Pulling from")) {
 			line := m.Status
-			if m.ID != "" {
+			if m.ID != "" && !strings.HasPrefix(m.Status, "Pulling from") {
 				line = m.ID + ": " + line
 			}
 			fmt.Fprintln(w, line)
