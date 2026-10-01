@@ -361,3 +361,11 @@ func TestMutualTLSPinnedToCA(t *testing.T) {
 		t.Fatal("expected TLS verification failure with a foreign CA pin")
 	}
 }
+
+// A dead HTTP/2 connection (the control plane moved to a new IP) must be detected by pings, not reused forever.
+func TestNewPingsIdleHTTP2Connections(t *testing.T) {
+	tr := New("https://agents.kiln.test/agent/v1", &tls.Config{}).hc.Transport.(*http.Transport)
+	if tr.HTTP2 == nil || tr.HTTP2.SendPingTimeout <= 0 || tr.HTTP2.PingTimeout <= 0 {
+		t.Fatalf("HTTP/2 health checks are off: %+v", tr.HTTP2)
+	}
+}
