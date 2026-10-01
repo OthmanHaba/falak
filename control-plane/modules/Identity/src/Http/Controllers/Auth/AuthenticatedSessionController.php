@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Inertia\Response;
+use Kiln\Identity\Application\Registration;
 use Kiln\Identity\Contracts\AuditLog;
 use Kiln\Identity\Http\Requests\Auth\LoginRequest;
 use Kiln\Kernel\Http\Controller;
@@ -22,6 +23,8 @@ class AuthenticatedSessionController extends Controller
         return Inertia::render('Identity/auth/login', [
             'canResetPassword' => Route::has('password.request'),
             'status' => $request->session()->get('status'),
+            // A guest sent here from an invitation link signs up with that invitation.
+            'invitation' => Registration::tokenFromUrl($request->session()->get('url.intended')),
         ]);
     }
 

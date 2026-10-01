@@ -2,6 +2,7 @@
 
 namespace Kiln\Databases\Infrastructure;
 
+use Kiln\Databases\Contracts\Data\DatabaseConsumer;
 use Kiln\Databases\Contracts\DatabaseConnections;
 use Kiln\Databases\Domain\Enums\Engine;
 use Kiln\Databases\Domain\Enums\ResourceStatus;
@@ -26,7 +27,9 @@ final class EloquentDatabaseConnections implements DatabaseConnections
         }
 
         $engine = $database->databaseServer->engine;
-        $host = $this->host($database->server_id);
+        // Engines on app/worker servers listen on localhost only (see CommandPayloads::remote): sites on that
+        // server reach them on 127.0.0.1. Only dedicated database servers listen on the network.
+        $host = $database->databaseServer->dedicated ? $this->host($database->server_id) : '127.0.0.1';
         $port = (string) $database->databaseServer->port;
 
         $variables = [
@@ -47,6 +50,31 @@ final class EloquentDatabaseConnections implements DatabaseConnections
         $variables['DATABASE_URL'] = $this->scheme($engine).'://'.$credentials.$this->urlHost($host).':'.$port.'/'.rawurlencode($database->name);
 
         return $variables;
+    }
+
+    public function unreachable(string $databaseId, DatabaseConsumer $consumer): ?string
+    {
+        $engine = Database::query()->with('databaseServer')->find($databaseId)?->databaseServer;
+
+        if ($engine === null || $engine->dedicated) {
+            return null;
+        }
+
+        $local = "the database runs on {$engine->server_name}, which accepts local connections only (move it to a dedicated database server to reach it from elsewhere)";
+
+        if ($consumer->containerized) {
+            return "{$consumer->name} runs in a container, but {$local}.";
+        }
+
+        $elsewhere = array_values(array_diff($consumer->serverIds, [$engine->server_id]));
+
+        if ($elsewhere !== []) {
+            $names = array_map(fn (string $id) => $this->servers->find($id)?->name ?? $id, $elsewhere);
+
+            return "{$consumer->name} runs on ".implode(', ', $names).", but {$local}.";
+        }
+
+        return null;
     }
 
     /** Most private address first: WireGuard mesh → provider private IP → public IP. */

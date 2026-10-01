@@ -2,11 +2,14 @@
 
 namespace Kiln\Deployments\Application\Actions;
 
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Kiln\Deployments\Application\Orchestration\DeploymentLog;
 use Kiln\Deployments\Application\Orchestration\DeploymentQueue;
+use Kiln\Deployments\Contracts\Exceptions\DeploymentTriggerBusy;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\Trigger;
 use Kiln\Deployments\Domain\Models\Deployment;
@@ -33,6 +36,13 @@ final class TriggerDeployment
 
     /**
      * @param  array<string, string>  $variables  KILN_VAR_* for the deploy script
+     * @param  ?int  $unlessNewerThan  a follow-up deploy (e.g. after a port change), given the newest deployment number the
+     *                                 caller saw (0 for none): when the site has a queued or waiting deployment, or one
+     *                                 numbered higher (created since), return the newest one untouched instead of queueing
+     *                                 or coalescing. Checked under the site's trigger lock, so a push queued or started
+     *                                 meanwhile is never followed by an older commit.
+     *
+     * @throws DeploymentTriggerBusy when another trigger of the site holds the lock for too long
      */
     public function __invoke(
         SiteData $site,
@@ -44,6 +54,7 @@ final class TriggerDeployment
         array $variables = [],
         ?string $requestedBy = null,
         ?string $releaseId = null,
+        ?int $unlessNewerThan = null,
     ): Deployment {
         $branch = $branch !== null && $branch !== '' ? $branch : $site->branch;
 
@@ -76,32 +87,53 @@ final class TriggerDeployment
             throw ValidationException::withMessages(['commit' => 'The commit must be a hexadecimal SHA.']);
         }
 
-        if ($trigger !== Trigger::Rollback) {
-            $coalesced = $this->coalesce($site, $trigger, [
-                'branch' => $branch,
-                'commit' => $commit !== null ? strtolower($commit) : null,
-                'commit_message' => $message !== null ? mb_substr($message, 0, 1000) : null,
-                'commit_author' => $author !== null ? mb_substr($author, 0, 255) : null,
-                'variables' => $variables === [] ? null : $variables,
-                'requested_by' => $requestedBy,
-            ]);
-
-            if ($coalesced !== null) {
-                return $coalesced;
-            }
-        }
-
-        $deployment = $this->create($site, [
-            'trigger' => $trigger,
-            'status' => DeploymentStatus::Queued,
+        $attributes = [
             'branch' => $branch,
             'commit' => $commit !== null ? strtolower($commit) : null,
             'commit_message' => $message !== null ? mb_substr($message, 0, 1000) : null,
             'commit_author' => $author !== null ? mb_substr($author, 0, 255) : null,
-            'target_release_id' => $trigger === Trigger::Rollback ? $releaseId : null,
             'variables' => $variables === [] ? null : $variables,
             'requested_by' => $requestedBy,
-        ]);
+        ];
+
+        // Triggers of one site are serialized: a follow-up's "nothing newer" check and the coalescing into a waiting
+        // deployment must not interleave with another trigger queueing a newer commit. Only database work runs locked.
+        try {
+            [$deployment, $outcome] = Cache::lock("deployments:trigger:{$site->id}", 30)->block((int) config('deployments.trigger_lock_wait', 15), function () use ($site, $trigger, $attributes, $releaseId, $unlessNewerThan) {
+                if ($unlessNewerThan !== null) {
+                    $newest = Deployment::query()->where('site_id', $site->id)->orderByDesc('number')->first();
+
+                    if ($newest !== null && ($newest->number > $unlessNewerThan || in_array($newest->status, [DeploymentStatus::Queued, DeploymentStatus::Waiting], true))) {
+                        return [$newest, 'existing'];
+                    }
+                }
+
+                if ($trigger !== Trigger::Rollback && ($coalesced = $this->coalesce($site, $trigger, $attributes)) !== null) {
+                    return [$coalesced, 'coalesced'];
+                }
+
+                return [$this->create($site, [
+                    ...$attributes,
+                    'trigger' => $trigger,
+                    'status' => DeploymentStatus::Queued,
+                    'target_release_id' => $trigger === Trigger::Rollback ? $releaseId : null,
+                ]), 'created'];
+            });
+        } catch (LockTimeoutException) {
+            throw DeploymentTriggerBusy::forSite();
+        }
+
+        if ($outcome === 'existing') {
+            return $deployment;
+        }
+
+        if ($outcome === 'coalesced') {
+            DeploymentUpdated::dispatch($deployment->id, $deployment->site_id, $deployment->status->value, $deployment->phase);
+            // The servers may have become ready meanwhile.
+            $this->queue->resume($site->id);
+
+            return $deployment->refresh();
+        }
 
         $this->audit->record('deployments.triggered', 'deployment', $deployment->id, array_filter([
             'site_id' => $site->id, 'trigger' => $trigger->value, 'commit' => $deployment->commit, 'release_id' => $releaseId,
@@ -146,12 +178,7 @@ final class TriggerDeployment
         $this->log->note($deployment->id, sprintf('Updated by %s%s while waiting for the servers (the latest trigger wins).',
             $trigger->label(), $deployment->commit ? ' to '.substr($deployment->commit, 0, 7) : ''));
 
-        DeploymentUpdated::dispatch($deployment->id, $deployment->site_id, $deployment->status->value, $deployment->phase);
-
-        // The servers may have become ready meanwhile.
-        $this->queue->resume($site->id);
-
-        return $deployment->refresh();
+        return $deployment;
     }
 
     /**

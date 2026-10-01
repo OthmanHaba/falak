@@ -28,6 +28,8 @@ trait PresentsServers
             'provider_label' => ProviderType::tryFrom($server->provider)?->label() ?? $server->provider,
             'region' => $server->region,
             'ipv4' => $server->ipv4,
+            'private_ipv4' => $server->private_ipv4,
+            'ssh_port' => $server->ssh_port,
             'php' => $server->phpVersions->firstWhere('is_default', true)?->version,
             'agent' => $agent ? [
                 'status' => $agent->status->value,

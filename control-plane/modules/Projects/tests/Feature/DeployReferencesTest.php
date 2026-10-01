@@ -6,6 +6,7 @@ use Kiln\Deployments\Domain\Enums\Trigger;
 use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Projects\Application\Actions\LinkService;
 use Kiln\Projects\Contracts\ServiceKind;
+use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Domain\Models\EnvironmentVersion;
@@ -47,7 +48,7 @@ function projects_deploy(DeployWorld $world): Deployment
 
 it('renders resolved references into the release .env and the deploy script environment', function () {
     $world = projects_deploy_world(['APP_KEY' => 'base64:k', 'DATABASE_URL' => '${{ shop.DATABASE_URL }}', 'DB_HOST' => '${{ shop.DB_HOST }}']);
-    [, , $engine] = projects_database($world->organization, 'shop', projects_default_env($world->organization));
+    [, , $engine] = projects_database($world->organization, 'shop', projects_default_env($world->organization), engineServer: databases_engine($world->organization, 'postgresql', ServerType::Database));
     $host = Server::query()->find($engine->server_id)->private_ipv4;
 
     $deployment = projects_deploy($world);

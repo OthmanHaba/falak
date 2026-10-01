@@ -61,6 +61,8 @@ Token requests return the token's organization only; session requests every memb
 ## Servers
 
 ### `GET /api/v1/servers` · `GET /api/v1/servers/{server}` — `servers.view`
+Addresses: `ipv4`, `private_ipv4` (the server's address on its private network, `null` when it has none; `kiln ssh
+--private` uses it) and `ssh_port`.
 `agent` (null until an agent enrolled) carries `status`, `last_heartbeat_at`, `version`, `available_version` (the
 build this control plane ships), `update_available` and `upgrade` (the latest upgrade: `status`
 `queued|running|succeeded|failed|cancelled`, `from_version`, `to_version`, `error`, `requested_at`, `finished_at`).
@@ -240,9 +242,14 @@ Rename (the slug follows). Only empty, non-production environments can be delete
 Site variables may contain `${{ <service>.<KEY> }}`; they resolve at deploy time (release `.env`, deploy script
 environment, public build variables) against services of the **same environment**. Service names match
 case-insensitively with spaces/dots/underscores as dashes. Database services expose `DATABASE_URL`,
-`DB_CONNECTION`, `DB_HOST` (private network → provider private IP → public IP), `DB_PORT`, `DB_DATABASE`,
+`DB_CONNECTION`, `DB_HOST` (dedicated database server: private network → provider private IP → public IP), `DB_PORT`,
+`DB_DATABASE`,
 `DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the database); site services expose their own variables.
 Unknown services/keys and cycles fail the deployment: `Unresolved variable references: …`.
+An engine on an app or worker server listens on localhost only: its `DB_HOST` is `127.0.0.1`, and `DB_HOST` /
+`DATABASE_URL` resolve only for a native site running on that server alone. A site on other servers, or in a
+container (Docker, compose, functions), gets a resolution error naming the reason instead of a host it cannot reach;
+use a dedicated database server for those.
 
 ## Source control
 

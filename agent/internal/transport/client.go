@@ -55,6 +55,9 @@ func New(apiBase string, tlsConf *tls.Config) *Client {
 		MaxIdleConnsPerHost: 4,
 		IdleConnTimeout:     90 * time.Second,
 		ForceAttemptHTTP2:   true,
+		// Ping a quiet HTTP/2 connection and drop it when the ping goes unanswered: without this a connection to an
+		// address that vanished (the control plane moved to a new IP) is reused forever and every request times out.
+		HTTP2: &http.HTTP2Config{SendPingTimeout: 30 * time.Second, PingTimeout: 10 * time.Second},
 	}
 	return NewWithHTTPClient(apiBase, &http.Client{Transport: tr})
 }
