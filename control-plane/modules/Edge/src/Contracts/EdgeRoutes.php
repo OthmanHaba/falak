@@ -39,9 +39,12 @@ interface EdgeRoutes
     public function routeId(string $siteId): string;
 
     /**
+     * Domains of a site's own route (primary first), or of one public service of a compose site.
+     *
+     * @param  ?string  $service  compose service (null / the primary service: the site's own route)
      * @return list<DomainData>
      */
-    public function domainsFor(string $siteId): array;
+    public function domainsFor(string $siteId, ?string $service = null): array;
 
     /**
      * TLS used for hosted test domains (<slug>.<KILN_TEST_DOMAIN>): Auto (ACME) or Internal.

@@ -9,6 +9,7 @@ use Kiln\Edge\Application\CloudflareConnections;
 use Kiln\Edge\Application\CloudflareDns;
 use Kiln\Edge\Application\CloudflareEdgeControls;
 use Kiln\Edge\Application\CloudflareTunnels;
+use Kiln\Edge\Application\ComposeServiceDomains;
 use Kiln\Edge\Application\DnsInstructions;
 use Kiln\Edge\Application\GeneratedDomains;
 use Kiln\Edge\Application\Jobs\ReconcileCloudflareTunnels;
@@ -241,23 +242,52 @@ it('does not send trusted proxies to agents older than 0.3.0 (they reject unknow
     expect(edge_compile($this->web1->id))->toHaveKey('trusted_proxies');
 });
 
-it('creates records for a compose site’s public service domains and removes them with the site', function () {
+it('makes a compose site’s public service domains domain rows with records, and removes them with the site', function () {
     cf_connect($this);
     $compose = new ComposeConfig(
         ComposeSource::Inline, null,
-        [new PublicService('web', 80, 'draw.example.com', 3000)],
+        [new PublicService('web', 80, 'draw.example.com', 3000), new PublicService('api', 9000, 'api.example.com', 3001)],
     );
     $site = edge_site($this->sites, $this->org, [$this->web1->id], ['id' => strtolower((string) Str::ulid()), 'slug' => 'draw', 'runtime' => SiteRuntime::Compose, 'compose' => $compose]);
 
     SiteCreated::dispatch($site->id, $this->org, $site->slug, 'compose', [$this->web1->id]);
 
+    // The primary service's domain is the site's (service null), the other one the service's: both get cache modes,
+    // proxy overrides and records like any domain.
+    expect(Domain::query()->where('site_id', $site->id)->orderBy('name')->get(['name', 'compose_service', 'is_primary'])->toArray())->toBe([
+        ['name' => 'api.example.com', 'compose_service' => 'api', 'is_primary' => true],
+        ['name' => 'draw.example.com', 'compose_service' => null, 'is_primary' => true],
+    ]);
     $records = collect($this->cf->recordsOf($this->zoneId));
-    expect($records->map(fn ($r) => "{$r['type']} {$r['name']}")->sort()->values()->all())->toBe(['A draw.example.com', 'AAAA draw.example.com'])
-        ->and($records->every(fn ($r) => str_starts_with($r['comment'], "kiln:site:{$site->id}")))->toBeTrue();
+    expect($records->map(fn ($r) => "{$r['type']} {$r['name']}")->sort()->values()->all())->toBe(['A api.example.com', 'A draw.example.com', 'AAAA api.example.com', 'AAAA draw.example.com'])
+        ->and($records->every(fn ($r) => ! str_starts_with($r['comment'], 'kiln:site:')))->toBeTrue();
 
     SiteDeleted::dispatch($site->id, $this->org, $site->slug, [$this->web1->id]);
 
     expect($this->cf->recordsOf($this->zoneId))->toBe([]);
+});
+
+it('moves the records Kiln created for a compose site to the imported domain row in place', function () {
+    cf_connect($this);
+    $site = edge_site($this->sites, $this->org, [$this->web1->id], [
+        'id' => strtolower((string) Str::ulid()), 'slug' => 'draw', 'runtime' => SiteRuntime::Compose,
+        'compose' => new ComposeConfig(ComposeSource::Inline, null, [new PublicService('web', 80, null, 3000), new PublicService('api', 9000, 'api.example.com', 3001)]),
+    ]);
+    // Before per-service domains: the name was the site's (records tagged kiln:site:<id>).
+    app(CloudflareDns::class)->syncSite($site->id);
+    $before = collect($this->cf->recordsOf($this->zoneId));
+    expect($before)->toHaveCount(2)->and($before->every(fn ($r) => str_starts_with($r['comment'], "kiln:site:{$site->id}")))->toBeTrue();
+
+    app(ComposeServiceDomains::class)->import($site->id);
+    app(CloudflareDns::class)->syncSite($site->id);
+
+    $domain = Domain::query()->where('name', 'api.example.com')->firstOrFail();
+    $after = collect($this->cf->recordsOf($this->zoneId));
+    expect($domain->compose_service)->toBe('api')
+        // Same Cloudflare records (ids kept), now tagged with the domain row.
+        ->and($after->pluck('id')->sort()->values()->all())->toBe($before->pluck('id')->sort()->values()->all())
+        ->and($after->every(fn ($r) => str_starts_with($r['comment'], "kiln:{$domain->id}")))->toBeTrue()
+        ->and(DnsRecord::query()->where('site_id', $site->id)->count())->toBe(0);
 });
 
 it('asks for HTTP-01 only for hosts in a managed zone', function () {

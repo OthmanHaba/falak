@@ -14,11 +14,14 @@ final class SaveHeader
         private readonly AuditLog $audit,
     ) {}
 
-    public function __invoke(SiteData $site, string $name, string $value): Header
+    /**
+     * @param  ?string  $service  public service of a compose site (null: every route of the site)
+     */
+    public function __invoke(SiteData $site, string $name, string $value, ?string $service = null): Header
     {
-        $header = Header::query()->updateOrCreate(['site_id' => $site->id, 'name' => $name], ['value' => $value]);
+        $header = Header::query()->updateOrCreate(['site_id' => $site->id, 'compose_service' => $service, 'name' => $name], ['value' => $value]);
 
-        $this->audit->record('edge.header_saved', 'site', $site->id, ['name' => $name], $site->organizationId);
+        $this->audit->record('edge.header_saved', 'site', $site->id, array_filter(['name' => $name, 'service' => $service]), $site->organizationId);
         $this->changes->siteChanged($site->id);
 
         return $header;

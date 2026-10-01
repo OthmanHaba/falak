@@ -4,6 +4,7 @@ namespace Kiln\Edge\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Kiln\Edge\Application\CertificateInstaller;
+use Kiln\Edge\Application\ComposeServiceDomains;
 use Kiln\Edge\Application\EdgeChanges;
 use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
 use Kiln\Edge\Application\PathMounts;
@@ -14,6 +15,7 @@ use Kiln\Edge\Domain\Models\Header;
 use Kiln\Edge\Domain\Models\LoadBalancer;
 use Kiln\Edge\Domain\Models\Redirect;
 use Kiln\Edge\Domain\Models\SecurityRule;
+use Kiln\Edge\Domain\Models\ServiceSetting;
 use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Edge\Domain\Models\Upstream;
 use Kiln\Edge\Events\DomainRemoved;
@@ -33,16 +35,19 @@ final class ReactToSiteChanges implements ShouldQueue
         private readonly EdgeRoutes $routes,
         private readonly CertificateInstaller $certificates,
         private readonly PathMounts $mounts,
+        private readonly ComposeServiceDomains $composeDomains,
     ) {}
 
     public function created(SiteCreated $event): void
     {
+        $this->composeDomains->import($event->siteId); // compose public services may come with domains
         $this->changes->siteChanged($event->siteId, $event->serverIds);
-        SyncCloudflareDns::site($event->siteId); // compose public services may come with domains
+        SyncCloudflareDns::site($event->siteId);
     }
 
     public function updated(SiteUpdated $event): void
     {
+        $this->composeDomains->import($event->siteId); // a domain chosen in Settings → Compose
         $this->changes->siteChanged($event->siteId, $event->serverIds);
         SyncCloudflareDns::site($event->siteId); // a no-op for names already in place
         $this->mounts->functionChanged($event->siteId);
@@ -85,7 +90,7 @@ final class ReactToSiteChanges implements ShouldQueue
             DomainRemoved::dispatch($domain->id, $domain->site_id, $domain->organization_id, $domain->name);
         }
 
-        foreach ([Redirect::class, SecurityRule::class, Header::class, SiteSetting::class, LoadBalancer::class, Upstream::class] as $model) {
+        foreach ([Redirect::class, SecurityRule::class, Header::class, SiteSetting::class, ServiceSetting::class, LoadBalancer::class, Upstream::class] as $model) {
             $model::query()->where('site_id', $event->siteId)->delete();
         }
 

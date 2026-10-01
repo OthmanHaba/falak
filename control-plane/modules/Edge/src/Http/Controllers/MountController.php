@@ -4,6 +4,7 @@ namespace Kiln\Edge\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Kiln\Edge\Application\ComposeServiceDomains;
 use Kiln\Edge\Application\PathMounts;
 use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Domain\Models\Mount;
@@ -30,11 +31,18 @@ final class MountController extends Controller
                 'id' => $m->id,
                 'site_id' => $m->site_id,
                 'site_name' => $byId->get($m->site_id)?->name,
+                'service' => $m->compose_service,
                 'path_prefix' => $m->path_prefix,
                 'strip_prefix' => $m->strip_prefix,
-                'urls' => array_map(fn ($domain) => "https://{$domain->name}{$m->path_prefix}", $routes->domainsFor($m->site_id)),
+                'urls' => array_map(fn ($domain) => "https://{$domain->name}{$m->path_prefix}", $routes->domainsFor($m->site_id, $m->compose_service)),
             ])->values(),
-            'sites' => array_map(fn (SiteData $s) => ['id' => $s->id, 'name' => $s->name, 'domains' => array_map(fn ($d) => $d->name, $routes->domainsFor($s->id))], $hosts),
+            // Compose sites list their public services: a path may be served on one service's domains only.
+            'sites' => array_map(fn (SiteData $s) => [
+                'id' => $s->id,
+                'name' => $s->name,
+                'domains' => array_map(fn ($d) => $d->name, $routes->domainsFor($s->id)),
+                'services' => array_map(fn (array $o) => $o['service'], ComposeServiceDomains::options($s)),
+            ], $hosts),
             'can' => ['manage' => app(OrganizationAccess::class)->can($request->user(), $function->organizationId, 'edge.manage')],
         ]]);
     }
@@ -46,8 +54,9 @@ final class MountController extends Controller
             'site_id' => ['required', 'string', 'size:26'],
             'path_prefix' => ['required', 'string', 'max:200'],
             'strip_prefix' => ['sometimes', 'boolean'],
+            'service' => ['nullable', 'string', 'max:63'],
         ]);
-        $mount = $mounts->create($function, $data['site_id'], $data['path_prefix'], (bool) ($data['strip_prefix'] ?? false));
+        $mount = $mounts->create($function, $data['site_id'], $data['path_prefix'], (bool) ($data['strip_prefix'] ?? false), $data['service'] ?? null);
 
         return response()->json(['data' => ['id' => $mount->id, 'path_prefix' => $mount->path_prefix]], 201);
     }

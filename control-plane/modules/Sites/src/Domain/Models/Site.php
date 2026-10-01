@@ -43,7 +43,7 @@ use Kiln\Sites\Contracts\TargetRole;
  * @property ?string $dockerfile
  * @property ?string $compose_file
  * @property ?ComposeSource $compose_source
- * @property ?list<array{service: string, port: int, domain?: ?string, host_port?: ?int}> $public_services
+ * @property ?list<array{service: string, port: int, domain?: ?string, host_port?: ?int, health_check_path?: ?string}> $public_services
  * @property ?array{slug: string, version: string, source: string} $template
  * @property ?string $health_check_path
  * @property string $deploy_script
@@ -187,6 +187,7 @@ class Site extends Model
                 domain: isset($public['domain']) && $public['domain'] !== '' ? strtolower((string) $public['domain']) : null,
                 hostPort: isset($public['host_port']) ? (int) $public['host_port'] : null,
                 testDomain: $testDomain,
+                healthCheckPath: isset($public['health_check_path']) && is_string($public['health_check_path']) && str_starts_with($public['health_check_path'], '/') ? $public['health_check_path'] : null,
             );
         }
 

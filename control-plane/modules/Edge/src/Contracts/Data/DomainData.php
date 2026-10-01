@@ -8,6 +8,7 @@ final readonly class DomainData
 {
     /**
      * @param  'none'|'to_www'|'to_apex'  $wwwRedirect
+     * @param  ?string  $service  public service of a compose site the domain routes to (null: the site's own route)
      */
     public function __construct(
         public string $id,
@@ -17,6 +18,7 @@ final readonly class DomainData
         public string $wwwRedirect,
         public TlsMode $tls,
         public ?string $certificateId,
+        public ?string $service = null,
     ) {}
 
     public function isWildcard(): bool

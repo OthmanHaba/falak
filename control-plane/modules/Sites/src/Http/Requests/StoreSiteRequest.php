@@ -73,10 +73,11 @@ final class StoreSiteRequest extends FormRequest
             'compose_source' => ['nullable', Rule::enum(ComposeSource::class)],
             'compose_content' => ['nullable', 'string', 'max:'.(int) config('sites.compose.max_bytes', 262144)],
             'public_services' => ['nullable', 'array', 'max:20'],
-            'public_services.*' => ['array:service,port,domain'],
+            'public_services.*' => ['array:service,port,domain,health_check_path'],
             'public_services.*.service' => ['required', 'string', 'max:63'],
             'public_services.*.port' => ['required', 'integer', 'between:1,65535'],
             'public_services.*.domain' => ['nullable', DomainChoice::rule()],
+            'public_services.*.health_check_path' => ['nullable', 'string', 'max:255', 'regex:#^/\S*$#'],
         ];
     }
 

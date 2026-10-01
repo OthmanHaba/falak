@@ -4,6 +4,7 @@ namespace Kiln\Edge\Infrastructure;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Kiln\Edge\Application\ComposeServiceDomains;
 use Kiln\Edge\Application\Jobs\ApplyEdgeConfig;
 use Kiln\Edge\Contracts\Data\DomainData;
 use Kiln\Edge\Contracts\EdgeRoutes;
@@ -17,6 +18,7 @@ use Kiln\Fleet\Contracts\Data\CommandHandle;
 use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Kiln\Fleet\Contracts\Exceptions\InvalidCommandPayload;
 use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\Sites\Contracts\SiteDirectory;
 
 final class EloquentEdgeRoutes implements EdgeRoutes
 {
@@ -113,10 +115,12 @@ final class EloquentEdgeRoutes implements EdgeRoutes
         return RouteCompiler::routeId($siteId);
     }
 
-    public function domainsFor(string $siteId): array
+    public function domainsFor(string $siteId, ?string $service = null): array
     {
-        return Domain::query()
-            ->where('site_id', $siteId)
+        $query = Domain::query()->where('site_id', $siteId);
+        $site = app(SiteDirectory::class)->find($siteId);
+
+        return ($site !== null ? ComposeServiceDomains::scope($query, $site, $service) : $query->whereNull('compose_service'))
             ->orderByDesc('is_primary')
             ->orderBy('name')
             ->get()

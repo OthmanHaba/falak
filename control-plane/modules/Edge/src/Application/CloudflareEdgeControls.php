@@ -13,7 +13,6 @@ use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
 use Kiln\Identity\Contracts\AuditLog;
 use Kiln\Network\Contracts\Firewalls;
 use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteRuntime;
 
 /**
  * Cloudflare edge controls: cache mode per domain (Kiln-managed Cache Rules, merged with the zone's other rules),
@@ -99,11 +98,9 @@ final class CloudflareEdgeControls
             return [];
         }
 
+        // Domains of every public service of a compose site are rows too; names not imported yet are added.
         $hosts = Domain::query()->where('site_id', $site->id)->get()->flatMap(fn (Domain $d) => $d->hosts())->all();
-
-        if ($site->runtime === SiteRuntime::Compose && $site->compose !== null) {
-            array_push($hosts, ...array_filter(array_map(fn ($public) => $public->domain, $site->compose->publicServices)));
-        }
+        array_push($hosts, ...CloudflareDns::unimportedComposeHosts($site));
 
         return $this->purge($site->organizationId, $hosts);
     }

@@ -209,6 +209,25 @@ it('checks every public service through the edge', function () {
         ->and(collect($GLOBALS['deploy_http_requests'])->pluck('url')->all())->toContain('https://'.$world->site->slug.'.kiln.test/health');
 });
 
+it('checks a public service through its own domains and health check path', function () {
+    $world = compose_world(site: ['public_services' => [
+        ['service' => 'app', 'port' => 8080, 'domain' => null, 'host_port' => 3000],
+        ['service' => 'redis', 'port' => 6379, 'domain' => 'cache.example.com', 'host_port' => 3001, 'health_check_path' => '/ping'],
+    ]]);
+    // Domain rows of the service (Edge): checked before the name kept in public_services and the test domain.
+    $world->edge->domains["{$world->site->id}:redis"] = ['cache-2.example.com'];
+    deploy_http(['https://cache-2.example.com/ping' => 404]);
+
+    $deployment = compose_deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    // A configured path must answer 2xx/3xx.
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
+        ->and($deployment->error)->toContain('[redis] GET https://cache-2.example.com/ping')
+        ->and(collect($GLOBALS['deploy_http_requests'])->pluck('url')->filter(fn ($url) => str_contains($url, 'cache.example.com'))->all())->toBe([]);
+});
+
 it('accepts a redirect from the primary public service (apps that redirect to a login page)', function () {
     $world = compose_world();
     deploy_http(['https://'.$world->site->slug.'.kiln.test' => 302]);

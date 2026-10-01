@@ -12,6 +12,7 @@ use Kiln\Edge\Application\Actions\MakePrimaryDomain;
 use Kiln\Edge\Application\Actions\RemoveDomain;
 use Kiln\Edge\Application\Actions\UpdateDomain;
 use Kiln\Edge\Application\CloudflareEdgeControls;
+use Kiln\Edge\Application\ComposeServiceDomains;
 use Kiln\Edge\Application\EdgeChanges;
 use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
 use Kiln\Edge\Contracts\EdgeRoutes;
@@ -65,9 +66,12 @@ final class DomainController extends Controller
         return response()->json(['data' => [
             'testDomain' => $siteData->testDomain,
             'slug' => $siteData->slug,
+            // Compose sites: every public service has domains of its own (`service` null = the primary service).
+            'services' => ComposeServiceDomains::options($siteData),
             'domains' => Domain::query()->where('site_id', $siteData->id)->orderByDesc('is_primary')->orderBy('name')->get()->map(fn (Domain $domain) => [
                 'id' => $domain->id,
                 'name' => $domain->name,
+                'service' => $domain->compose_service === ComposeServiceDomains::primaryService($siteData) ? null : $domain->compose_service,
                 'is_primary' => $domain->is_primary,
                 'www_redirect' => $domain->www_redirect->value,
                 'tls_mode' => $domain->tls_mode->value,
@@ -145,15 +149,17 @@ final class DomainController extends Controller
     public function store(Request $request, string $site, AddDomain $add, EloquentSiteDomains $domains): RedirectResponse
     {
         $siteData = $this->site($request, $site, 'edge.manage');
+        $service = ComposeServiceDomains::normalize($siteData, $request->validate(['service' => ['nullable', 'string', 'max:63']])['service'] ?? null);
 
-        // {type: generated}: `<slug>.<ip-with-dashes>.<suffix>` for the leader (or the load balancer).
+        // {type: generated}: `<slug>.<ip-with-dashes>.<suffix>` (`<service>-<slug>` for a compose service) for the
+        // leader (or the load balancer).
         if ($request->input('type') === DomainType::Generated->value) {
             $targets = $siteData->targets;
             usort($targets, fn ($a, $b) => ($b->role === TargetRole::Leader) <=> ($a->role === TargetRole::Leader));
             $request->merge(['name' => $domains->resolveChoice(
                 $siteData->organizationId,
                 new DomainChoice(DomainType::Generated),
-                $siteData->slug,
+                $service !== null ? (trim($service, '-_.') ?: 'app').'-'.$siteData->slug : $siteData->slug,
                 array_map(fn ($target) => $target->serverId, $targets),
                 'name',
                 $siteData->id,
@@ -162,7 +168,7 @@ final class DomainController extends Controller
 
         $data = $this->validated($request, withName: true);
 
-        $add($siteData, $data['name'], TlsMode::from($data['tls_mode'] ?? 'auto'), WwwRedirect::from($data['www_redirect'] ?? 'none'), $data['certificate_id'] ?? null, $data['dns_credential_id'] ?? null);
+        $add($siteData, $data['name'], TlsMode::from($data['tls_mode'] ?? 'auto'), WwwRedirect::from($data['www_redirect'] ?? 'none'), $data['certificate_id'] ?? null, $data['dns_credential_id'] ?? null, $service);
 
         return back();
     }

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $id
  * @property string $organization_id
  * @property string $site_id
+ * @property ?string $compose_service public service of a compose site it applies to (null: every route of the site)
  * @property string $function_site_id
  * @property string $path_prefix
  * @property bool $strip_prefix
