@@ -288,6 +288,25 @@ it('hands compose sites a compose build job and stores the built images', functi
     post_events($bad->id, [['command_id' => $bad->id, 'seq' => 0, 'kind' => 'finished', 'exit_code' => 0, 'at' => now()->toIso8601ZuluString(),
         'result' => ['compose' => ['file' => 'compose.yaml', 'content' => '', 'images' => []]]]]);
     expect($bad->refresh()->status)->toBe(BuildStatus::Failed)->and($bad->error)->toBe('The builder reported no compose file.');
+
+    // Builders that merge projects report the files read and the repository files to ship.
+    $merged = request_build($world, str_repeat('e', 40));
+    next_job();
+    post_events($merged->id, [['command_id' => $merged->id, 'seq' => 0, 'kind' => 'finished', 'exit_code' => 0, 'at' => now()->toIso8601ZuluString(),
+        'result' => ['build_id' => $merged->id, 'mode' => 'docker', 'duration_ms' => 5, 'compose' => [
+            'file' => 'deploy/compose.yaml', 'files' => ['deploy/compose.yaml'], 'content' => "services:\n  web:\n    image: nginx\n", 'images' => [],
+            'assets' => [['path' => 'deploy/nginx.conf', 'content' => base64_encode('x'), 'mode' => 0o644]], 'missing' => ['deploy/data'],
+        ]]]])->assertNoContent();
+    $result = app(BuildService::class)->composeFor($merged->id);
+    expect($result->repoFiles())->toBe(['deploy/nginx.conf'])->and($result->missing)->toBe(['deploy/data'])
+        ->and($compose->repoFiles())->toBeNull();
+
+    $escape = request_build($world, str_repeat('f', 40));
+    next_job();
+    post_events($escape->id, [['command_id' => $escape->id, 'seq' => 0, 'kind' => 'finished', 'exit_code' => 0, 'at' => now()->toIso8601ZuluString(),
+        'result' => ['compose' => ['file' => 'compose.yaml', 'files' => ['compose.yaml'], 'content' => "services: {}\n", 'images' => [],
+            'assets' => [['path' => '../etc/passwd', 'content' => '']]]]]]);
+    expect($escape->refresh()->status)->toBe(BuildStatus::Failed)->and($escape->error)->toContain('invalid repository file');
 });
 
 it('only hands organization builders their own builds and respects modes', function () {

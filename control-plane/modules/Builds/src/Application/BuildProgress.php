@@ -264,11 +264,28 @@ final class BuildProgress
             $images[(string) $service] = $ref;
         }
 
-        $build->forceFill(['compose' => [
+        // Repository files the project mounts (newer builders): shipped with each release under repo/.
+        $assets = [];
+
+        foreach ((array) ($compose['assets'] ?? []) as $asset) {
+            $path = is_array($asset) ? (string) ($asset['path'] ?? '') : '';
+
+            if (preg_match('#^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$#', $path) !== 1 || preg_match('#(^|/)\.\.?(/|$)#', $path) === 1 || ! is_string($asset['content'] ?? null)) {
+                return "The builder reported an invalid repository file ({$path}).";
+            }
+
+            $assets[] = ['path' => $path, 'content' => $asset['content'], 'mode' => (int) ($asset['mode'] ?? 0o644) === 0o755 ? 0o755 : 0o644];
+        }
+
+        $build->forceFill(['compose' => array_filter([
             'file' => (string) ($compose['file'] ?? 'compose.yaml'),
             'content' => $content,
             'images' => $images,
-        ]]);
+            // Only builders that merge projects report `files`; older ones leave paths to the release directory.
+            'files' => is_array($compose['files'] ?? null) ? array_values(array_map('strval', $compose['files'])) : null,
+            'assets' => is_array($compose['files'] ?? null) ? $assets : null,
+            'missing' => is_array($compose['missing'] ?? null) ? array_values(array_map('strval', $compose['missing'])) : null,
+        ], fn ($value) => $value !== null)]);
 
         return null;
     }

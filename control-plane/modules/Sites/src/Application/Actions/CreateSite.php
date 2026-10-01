@@ -45,7 +45,7 @@ final class CreateSite
     /**
      * @param  array<string, mixed>  $data
      * @param  list<string>  $serverIds
-     * @return array{source: ComposeSource, content: ?string, public_services: list<array{service: string, port: int, domain: ?string, host_port: int}>}
+     * @return array{source: ComposeSource, content: ?string, public_services: list<array{service: string, port: int, domain: ?string, host_port: int}>, project: ?array{files: list<string>, profiles: list<string>, services: array<string, array<string, mixed>>, adjustments: array<string, mixed>, extract: list<array<string, mixed>>}}
      */
     private function composeFields(string $organizationId, array $data, array $serverIds): array
     {
@@ -59,10 +59,25 @@ final class CreateSite
             throw ValidationException::withMessages(['compose_content' => 'Repository sources read the compose file from the repository.']);
         }
 
+        $project = $source === ComposeSource::Repo ? $this->composeSettings->project($data) : null;
+
+        if (($project['extract'] ?? []) !== []) {
+            // A service that runs as a Kiln database or its own site is not public in the stack.
+            $leaving = array_column($project['extract'], 'service');
+            $data['public_services'] = array_values(array_filter((array) ($data['public_services'] ?? []), fn ($p) => ! in_array((string) ($p['service'] ?? ''), $leaving, true)));
+        }
+
+        // The new flow (several files / decisions) checks the repository before creating anything.
+        if ($project !== null && array_key_exists('compose_files', $data) && isset($data['source_connection_id'], $data['repository'])) {
+            $this->composeSettings->verifyRepository((string) $data['source_connection_id'], (string) $data['repository'], (string) ($data['branch'] ?? 'main'),
+                $project['files'], $project['profiles'], array_values((array) ($data['public_services'] ?? [])), (array) ($data['variables'] ?? []));
+        }
+
         return [
             'source' => $source,
             'content' => $content,
             'public_services' => $this->composeSettings->publicServices(array_values((array) ($data['public_services'] ?? [])), $serverIds, $summary),
+            'project' => $project,
         ];
     }
 
@@ -173,7 +188,10 @@ final class CreateSite
                 'container_port' => $containerPort,
                 'docker_image' => $data['docker_image'] ?? null,
                 'dockerfile' => $runtime === SiteRuntime::Docker ? ($data['dockerfile'] ?? (isset($data['docker_image']) ? null : 'Dockerfile')) : null,
-                'compose_file' => $compose !== null && $compose['source'] === ComposeSource::Repo ? ($data['compose_file'] ?? null) : null,
+                'compose_file' => $compose['project']['files'][0] ?? null,
+                'compose_files' => ($compose['project']['files'] ?? []) ?: null,
+                'compose_profiles' => ($compose['project']['profiles'] ?? []) ?: null,
+                'compose_adjustments' => ($compose['project']['adjustments'] ?? []) ?: null,
                 'compose_source' => $compose['source'] ?? null,
                 'public_services' => $compose['public_services'] ?? null,
                 'template' => $data['template'] ?? null,
@@ -241,6 +259,11 @@ final class CreateSite
         ], $organizationId);
 
         SiteCreated::dispatch($site->id, $organizationId, $site->slug, $runtime->value, $serverIds, $placement);
+
+        // Services the user moved out of the stack (Kiln databases, own sites) are created once the site is placed.
+        if (($compose['project']['extract'] ?? []) !== []) {
+            array_push($this->warnings, ...$this->composeSettings->extract($site, $compose['project']['extract']));
+        }
 
         return $site->refresh()->load('targets');
     }

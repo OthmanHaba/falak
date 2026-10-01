@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Kiln\Sites\Http\Controllers\ComposeController;
 use Kiln\Sites\Http\Controllers\ComposePolicyController;
+use Kiln\Sites\Http\Controllers\ComposeRepositoryController;
 use Kiln\Sites\Http\Controllers\DeployScriptController;
 use Kiln\Sites\Http\Controllers\EnvironmentController;
 use Kiln\Sites\Http\Controllers\SiteCommandController;
@@ -33,6 +34,9 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::get('sites/{site}/compose', [ComposeController::class, 'show'])->name('sites.compose');
     Route::put('sites/{site}/compose', [ComposeController::class, 'update'])->name('sites.compose.update');
     Route::post('sites/{site}/compose/validate', [ComposeController::class, 'validateContent'])->middleware('throttle:120,1')->name('sites.compose.validate');
+    Route::post('sites/{site}/compose/inspect', [ComposeRepositoryController::class, 'inspectSite'])->middleware('throttle:60,1')->name('sites.compose.inspect');
+    Route::post('sites/compose/candidates', [ComposeRepositoryController::class, 'candidates'])->middleware('throttle:60,1')->name('sites.compose-repo.candidates');
+    Route::post('sites/compose/inspect', [ComposeRepositoryController::class, 'inspect'])->middleware('throttle:60,1')->name('sites.compose-repo.inspect');
     Route::get('sites/{site}/compose/versions/{version}', [ComposeController::class, 'version'])->whereNumber('version')->name('sites.compose.version');
     Route::post('sites/{site}/compose/versions/{version}/restore', [ComposeController::class, 'restore'])->whereNumber('version')->name('sites.compose.restore');
     Route::get('sites/{site}/compose/services', [ComposeController::class, 'services'])->name('sites.compose.services');

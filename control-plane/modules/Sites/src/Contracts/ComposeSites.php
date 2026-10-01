@@ -24,12 +24,17 @@ interface ComposeSites
      * public services published on 127.0.0.1:<host port>, other host ports removed, kiln.site / kiln.release /
      * kiln.service labels, policy enforced.
      *
-     * @param  string  $yaml  source compose file (inline content or the repo file returned by the build)
+     * Kiln's adjustments (docs/plans/COMPOSE_APPS.md) apply first: services replaced by Kiln databases or sites are
+     * removed and, for repository projects, mounted repository files point at the release's `repo/` copies.
+     *
+     * @param  string  $yaml  source compose file (inline content or the project returned by the build)
      * @param  array<string, string>  $images  service => image ref of built services
+     * @param  ?list<string>  $repoFiles  repository files shipped with the release (null: inline, or a builder that
+     *                                    doesn't merge projects — paths stay relative to the release directory)
      *
      * @throws ComposeRenderException
      */
-    public function render(string $siteId, string $yaml, array $images, string $releaseId): RenderedCompose;
+    public function render(string $siteId, string $yaml, array $images, string $releaseId, ?array $repoFiles = null): RenderedCompose;
 
     /**
      * Pin `image:` of services to the digests the servers resolved (rollback is exact).

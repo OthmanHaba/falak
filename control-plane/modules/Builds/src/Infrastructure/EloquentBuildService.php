@@ -80,6 +80,8 @@ final class EloquentBuildService implements BuildService
             (string) ($build->compose['content'] ?? ''),
             array_map('strval', (array) ($build->compose['images'] ?? [])),
             $this->registry->auth(),
+            is_array($build->compose['assets'] ?? null) ? array_values($build->compose['assets']) : null,
+            array_values(array_map('strval', (array) ($build->compose['missing'] ?? []))),
         );
     }
 

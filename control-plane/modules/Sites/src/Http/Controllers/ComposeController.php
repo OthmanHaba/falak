@@ -52,7 +52,12 @@ final class ComposeController extends Controller
         return response()->json(['data' => [
             'source' => ($site->compose_source ?? ComposeSource::Repo)->value,
             'file' => $site->compose_file,
+            'files' => $site->composeFiles(),
+            'profiles' => array_values((array) $site->compose_profiles),
+            'services' => (object) ($site->compose_services ?? []),
+            'adjustments' => (object) ($site->compose_adjustments ?? []),
             'repository' => $site->repository,
+            'branch' => $site->branch,
             'slug' => $site->slug,
             'version' => $current?->version,
             'content' => $current?->content,

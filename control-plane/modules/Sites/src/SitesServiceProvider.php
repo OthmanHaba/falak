@@ -18,6 +18,7 @@ use Kiln\Sites\Application\Listeners\HandleCommandOutcome;
 use Kiln\Sites\Application\Listeners\RecordComposeStatus;
 use Kiln\Sites\Application\Listeners\RemoveServerTargets;
 use Kiln\Sites\Contracts\ComposeInspector;
+use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\SiteDeploySettings;
 use Kiln\Sites\Contracts\SiteDirectory;
@@ -28,6 +29,7 @@ use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Policies\SitePolicy;
 use Kiln\Sites\Infrastructure\ActionSiteFactory;
 use Kiln\Sites\Infrastructure\Compose\EloquentComposeSites;
+use Kiln\Sites\Infrastructure\Compose\UnavailableComposeServiceExtraction;
 use Kiln\Sites\Infrastructure\Compose\YamlComposeInspector;
 use Kiln\Sites\Infrastructure\EloquentServerSites;
 use Kiln\Sites\Infrastructure\EloquentSiteDeploySettings;
@@ -65,6 +67,10 @@ class SitesServiceProvider extends ModuleServiceProvider
         if (! $this->app->bound(SiteDomains::class)) {
             $this->app->singleton(SiteDomains::class, NullSiteDomains::class);
         }
+
+        // Extracting compose services (Kiln databases, own sites) is registered separately; until then every
+        // service stays in its stack.
+        $this->app->singletonIf(ComposeServiceExtraction::class, UnavailableComposeServiceExtraction::class);
     }
 
     protected function bootModule(): void

@@ -10,6 +10,7 @@ use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Domain\Models\ComposeVersion;
 use Kiln\Sites\Domain\Models\Site;
+use Kiln\Sites\Events\ComposeServicesUnpublished;
 use Kiln\Sites\Events\SiteUpdated;
 use Kiln\Sites\Infrastructure\Compose\YamlComposeInspector;
 
@@ -26,8 +27,8 @@ final class UpdateComposeSettings
     ) {}
 
     /**
-     * @param  array{compose_source?: ?string, compose_file?: ?string, compose_content?: ?string, public_services?: ?array<int, array<string, mixed>>}  $data
-     * @return array{changed: list<string>, version: ?int}
+     * @param  array<string, mixed>  $data  compose_source, compose_file(s), compose_profiles, compose_services, compose_adjustments, compose_content, public_services
+     * @return array{changed: list<string>, version: ?int, warnings: list<string>}
      */
     public function __invoke(Site $site, array $data, ?string $userId): array
     {
@@ -57,9 +58,24 @@ final class UpdateComposeSettings
             ? $this->settings->publicServices($this->settings->resolveDomainChoices($site->organization_id, array_values((array) $data['public_services']), $site->slug, $site->leaderFirstServerIds(), $site->id), $site->serverIds(), $summary, $site)
             : ($summary !== null ? $this->settings->publicServices(array_values(array_map(fn ($p) => (array) $p, (array) $site->public_services)), $site->serverIds(), $summary, $site) : (array) $site->public_services);
 
+        $project = $source === ComposeSource::Repo ? $this->settings->project($data, $site) : null;
+
+        if ($project !== null && array_key_exists('compose_files', $data) && $site->source_connection_id !== null && $site->repository !== null) {
+            $this->settings->verifyRepository((string) $site->source_connection_id, (string) $site->repository, (string) ($site->branch ?: 'main'),
+                $project['files'], $project['profiles'], array_values(array_map(fn ($p) => (array) $p, $public)), (array) $site->latestEnvironment?->variables);
+        }
+
+        // A service that leaves the stack can't stay public.
+        $leaving = [...array_keys($project['services'] ?? []), ...array_column($project['extract'] ?? [], 'service')];
+        $public = array_values(array_filter($public, fn ($p) => ! in_array((string) ((array) $p)['service'], $leaving, true)));
+        $unpublished = array_values(array_diff(
+            array_map(fn ($p) => (string) ($p['service'] ?? ''), array_filter((array) $site->public_services, 'is_array')),
+            array_map(fn ($p) => (string) ((array) $p)['service'], $public),
+        ));
+
         $version = null;
 
-        $changed = DB::transaction(function () use ($site, $source, $data, $content, $public, $userId, &$version) {
+        $changed = DB::transaction(function () use ($site, $source, $content, $public, $userId, $project, &$version) {
             $before = ComposeVersion::query()->where('site_id', $site->id)->max('version');
 
             if ($source === ComposeSource::Inline && $content !== null) {
@@ -68,7 +84,11 @@ final class UpdateComposeSettings
 
             $site->fill([
                 'compose_source' => $source,
-                'compose_file' => $source === ComposeSource::Repo ? ((isset($data['compose_file']) && $data['compose_file'] !== '') ? (string) $data['compose_file'] : (array_key_exists('compose_file', $data) ? null : $site->compose_file)) : null,
+                'compose_file' => $project['files'][0] ?? null,
+                'compose_files' => ($project['files'] ?? []) ?: null,
+                'compose_profiles' => ($project['profiles'] ?? []) ?: null,
+                'compose_services' => ($project['services'] ?? []) ?: null,
+                'compose_adjustments' => ($project['adjustments'] ?? []) ?: null,
                 'public_services' => $public === [] ? null : $public,
                 'app_port' => $public[0]['host_port'] ?? null,
             ]);
@@ -82,11 +102,21 @@ final class UpdateComposeSettings
             return $changed;
         });
 
+        $warnings = ($project['extract'] ?? []) !== [] ? $this->settings->extract($site, $project['extract']) : [];
+
+        if (($project['extract'] ?? []) !== []) {
+            $changed[] = 'compose_services';
+        }
+
         if ($changed !== []) {
             $this->audit->record('site.compose_updated', 'site', $site->id, ['changed' => $changed, 'version' => $version], $site->organization_id);
             SiteUpdated::dispatch($site->id, $site->organization_id, $changed, $site->serverIds());
         }
 
-        return ['changed' => $changed, 'version' => $version];
+        if ($unpublished !== []) {
+            ComposeServicesUnpublished::dispatch($site->id, $site->organization_id, $unpublished);
+        }
+
+        return ['changed' => $changed, 'version' => $version, 'warnings' => $warnings];
     }
 }

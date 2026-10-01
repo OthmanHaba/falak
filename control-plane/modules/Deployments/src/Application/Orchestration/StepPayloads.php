@@ -9,6 +9,7 @@ use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Deployments\Domain\Models\DeploymentStep;
 use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Edge\Contracts\EdgeRoutes;
+use Kiln\Fleet\Contracts\AgentDirectory;
 use Kiln\Projects\Contracts\VariableReferences;
 use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\Data\SharedPath;
@@ -30,6 +31,7 @@ final class StepPayloads
         private readonly VariableReferences $references,
         private readonly ComposeSites $compose,
         private readonly FunctionSources $functions,
+        private readonly AgentDirectory $agents,
     ) {}
 
     // ---- Docker Compose (docs/COMPOSE_TEMPLATES.md §1.4) -------------------------------------------------------
@@ -67,16 +69,18 @@ final class StepPayloads
         $images = [];
         $version = null;
         $registry = false;
+        $assets = [];
+        $repoFiles = null;
 
         if ($deployment->build_id !== null) {
             $build = $this->builds->composeFor($deployment->build_id) ?? throw new RuntimeException('The build produced no compose file.');
-            [$yaml, $images, $registry] = [$build->content, $build->images, $build->registryAuth !== null];
+            [$yaml, $images, $registry, $assets, $repoFiles] = [$build->content, $build->images, $build->registryAuth !== null, $build->assets ?? [], $build->repoFiles()];
         } else {
             $inline = $this->compose->content($site->id) ?? throw new RuntimeException('The site has no compose file; add one in Settings → Compose.');
             [$yaml, $version] = [$inline->content, $inline->version];
         }
 
-        $rendered = $this->compose->render($site->id, $yaml, $images, (string) $deployment->release_id);
+        $rendered = $this->compose->render($site->id, $yaml, $images, (string) $deployment->release_id, $repoFiles);
 
         $data = [
             'yaml' => $rendered->yaml,
@@ -89,6 +93,8 @@ final class StepPayloads
             'source' => $site->compose?->source->value ?? 'repo',
             'version' => $version,
             'registry' => $registry,
+            // Repository files the project mounts (written under repo/; kept with the release for rollbacks).
+            'assets' => $assets,
         ];
 
         $release->forceFill(['compose' => $data])->save();
@@ -124,6 +130,12 @@ final class StepPayloads
     private function composeFiles(SiteData $site, array $release, string $releaseId, string $serverId, Deployment $deployment): array
     {
         $env = $this->composeEnv($release, $serverId);
+        $assets = array_values((array) ($release['assets'] ?? []));
+
+        // Repository files under repo/ need an agent that writes them (feature compose.v2).
+        if ($assets !== [] && ! ($this->agents->forServers([$serverId])[$serverId] ?? null)?->supports('compose.v2')) {
+            throw new RuntimeException('The Kiln agent on this server is too old for compose projects that mount repository files; update it first.');
+        }
 
         return array_filter([
             'project' => $site->slug,
@@ -132,6 +144,7 @@ final class StepPayloads
                 ['name' => 'compose.yaml', 'content' => $release['yaml']],
                 ['name' => '.env', 'content' => self::composeDotenv($env)],
             ],
+            'assets' => $assets === [] ? null : $assets,
             'env' => (object) $env,
             'project_env_file' => '.env',
             'registry_auth' => $this->composeRegistryAuth($release),
