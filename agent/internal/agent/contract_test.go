@@ -30,7 +30,7 @@ var Catalogue = []string{
 	"cron.apply",
 	"db.create", "db.drop", "db.user.apply", "db.backup", "db.restore",
 	"net.firewall.apply", "net.wireguard.apply", "net.tunnel.apply",
-	"fn.release.apply", "fn.release.remove", "fn.status",
+	"fn.release.apply", "fn.release.remove", "fn.run", "fn.status",
 	"docker.pull", "docker.run", "docker.stop", "docker.compose.up", "docker.compose.down", "docker.compose.pull", "docker.compose.ps", "docker.compose.restart", "docker.prune",
 	"telemetry.configure",
 	"terminal.open", "terminal.input", "terminal.resize", "terminal.close",
@@ -164,6 +164,7 @@ func TestSchemasRejectInvalidPayloads(t *testing.T) {
 		"docker.compose.pull":    `{"project":"shop"}`,
 		"fn.release.apply":       `{"site":"hello","release":"r1","image":"i","entrypoint":"../index.ts","files":[{"path":"../index.ts","content":""}]}`,
 		"fn.status":              `{"site":"Hello World"}`,
+		"fn.run":                 `{"site":"hello","schedule":"../x"}`,
 	}
 	for typ, payload := range bad {
 		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json")
@@ -236,6 +237,7 @@ func TestFunctionResultsValidate(t *testing.T) {
 	for typ, res := range map[string]any{
 		"fn.release.apply":  functions.ApplyResult{Release: "r2", PreviousRelease: "r1", Installed: true, BootMS: 240},
 		"fn.release.remove": map[string]bool{"removed": true},
+		"fn.run":            functions.RunResult{ExitCode: 0, DurationMS: 812},
 		"fn.status": functions.StatusResult{Functions: []fngateway.Status{
 			{Site: "hello", Release: "r2", Running: 1, InFlight: 3, ColdStarts: 2, Requests: 40, LastRequestAt: &at},
 			{Site: "idle", Release: "r1"},

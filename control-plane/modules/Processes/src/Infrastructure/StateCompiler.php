@@ -6,6 +6,7 @@ use Illuminate\Support\Collection;
 use Kiln\Deployments\Contracts\Data\LiveRelease;
 use Kiln\Deployments\Contracts\LiveReleases;
 use Kiln\Processes\Application\OctaneRoutes;
+use Kiln\Processes\Contracts\ScheduleSources;
 use Kiln\Processes\Domain\Models\Daemon;
 use Kiln\Processes\Domain\Models\OctaneRoute;
 use Kiln\Processes\Domain\Models\Schedule;
@@ -37,15 +38,19 @@ final class StateCompiler
     public function __construct(
         private readonly SiteDirectory $sites,
         private readonly LiveReleases $releases,
+        private readonly ScheduleSources $sources,
     ) {}
 
     public function compile(string $serverId): CompiledState
     {
         $live = $this->releases->onServer($serverId);
-        $sites = array_values(array_filter(
+        $deployed = array_values(array_filter(
             $this->sites->forServer($serverId),
-            fn (SiteData $site) => ! $site->runtime->usesDocker() && $site->target($serverId)?->status === TargetStatus::Ready && isset($live[$site->id]),
+            fn (SiteData $site) => $site->target($serverId)?->status === TargetStatus::Ready && isset($live[$site->id]),
         ));
+        // Programs and Processes' own schedules run in a site's release directory; containers and functions have
+        // none (functions only get the jobs other modules add, e.g. their schedules).
+        $sites = array_values(array_filter($deployed, fn (SiteData $site) => ! $site->runtime->usesDocker()));
 
         $siteIds = array_map(fn (SiteData $site) => $site->id, $sites);
         $workers = Worker::query()->whereIn('site_id', $siteIds)->orderBy('created_at')->orderBy('id')->get()->groupBy('site_id');
@@ -79,6 +84,20 @@ final class StateCompiler
                     'schedule' => $job['schedule'],
                     'timezone' => $job['timezone'] ?? 'UTC',
                     'heartbeat' => $job['heartbeat'] ?? true,
+                ];
+            }
+        }
+
+        foreach ($deployed as $site) {
+            foreach ($this->sourcedJobs($site, $serverId) as [$job, $kind, $label]) {
+                $jobs[] = $job;
+                $jobMeta[$job['name']] = [
+                    'site_id' => $site->id,
+                    'kind' => $kind,
+                    'label' => $label,
+                    'schedule' => $job['schedule'],
+                    'timezone' => $job['timezone'],
+                    'heartbeat' => $job['heartbeat'],
                 ];
             }
         }
@@ -220,6 +239,33 @@ final class StateCompiler
                 'heartbeat' => $schedule->heartbeat,
                 'site' => $site->slug,
             ], 'custom', $schedule->name];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Jobs other modules add for the site ({@see ScheduleSources}).
+     *
+     * @return list<array{0: array<string, mixed>, 1: string, 2: string}>
+     */
+    private function sourcedJobs(SiteData $site, string $serverId): array
+    {
+        $out = [];
+
+        foreach ($this->sources->jobs($site, $serverId, $site->target($serverId)?->isLeader() ?? false) as $job) {
+            $out[] = [[
+                'name' => ProgramNames::name($site->slug, "{$job->kind}-{$job->key}"),
+                'schedule' => $job->schedule,
+                'command' => $job->command,
+                'user' => $job->user,
+                'cwd' => $job->cwd,
+                'timezone' => $job->timezone ?: 'UTC',
+                'overlap' => $job->overlap,
+                'timeout_s' => max(1, $job->timeoutSeconds),
+                'heartbeat' => $job->heartbeat,
+                'site' => $site->slug,
+            ], $job->kind, $job->label];
         }
 
         return $out;

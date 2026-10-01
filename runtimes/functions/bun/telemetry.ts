@@ -255,3 +255,30 @@ if (enabled) {
     { preconnect: (originalFetch as unknown as { preconnect?: unknown }).preconnect },
   ) as typeof fetch;
 }
+
+/** Runs a scheduled invocation as a `scheduled_task` span (status finished / failed, exceptions with stacks). */
+export async function traceScheduled<T>(name: string, expression: string, run: () => Promise<T>): Promise<T> {
+  const span: Span = {
+    traceId: hex(16),
+    spanId: hex(8),
+    name: `schedule ${name}`,
+    kind: 1, // INTERNAL
+    startTimeUnixNano: nanos(),
+    attributes: [str("kiln.event.type", "scheduled_task"), str("kiln.schedule.name", name), str("kiln.schedule.expression", expression)],
+    events: [],
+  };
+  return current.run(span, async () => {
+    try {
+      const result = await run();
+      span.attributes.push(str("kiln.schedule.status", "finished"));
+      return result;
+    } catch (err) {
+      span.attributes.push(str("kiln.schedule.status", "failed"));
+      span.events.push(exceptionEvent(err, false));
+      span.status = { code: ERROR, message: err instanceof Error ? err.message.slice(0, 512) : String(err) };
+      throw err;
+    } finally {
+      finish(span);
+    }
+  });
+}

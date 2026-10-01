@@ -20,6 +20,7 @@ only rely on these, never on the language.
 |---|---|---|---|
 | `kiln-fn-install` | once per release, in a one-shot container, with network | `/app` = release dir (read-write, owned by 65534), `/cache` = the server's package cache for this runtime | resolve dependencies into `/app`; exit 0 on success. Output is streamed to the deployment log |
 | `kiln-fn-serve` | per instance, started and stopped by the gateway | `/app` read-only | load `/app/$KILN_ENTRYPOINT` and listen on `0.0.0.0:$PORT` (8080) once loaded. An accepted TCP connection means ready |
+| `kiln-fn-run` | once per scheduled run (or Run now), in a one-shot container like an instance's | `/app` read-only | call the function's scheduled handler; exit 0 on success, non-zero on failure. Env adds `KILN_TRIGGER` (`cron`/`manual`), `KILN_SCHEDULE`, `KILN_SCHEDULE_NAME`, `KILN_SCHEDULE_CRON` |
 
 Both run as uid/gid `65534`, with a read-only root filesystem, a tmpfs `/tmp` (`HOME=/tmp`), no capabilities,
 `no-new-privileges`, a pids limit, memory and CPU limits, and only the `kiln-fn` bridge network. Nothing may be

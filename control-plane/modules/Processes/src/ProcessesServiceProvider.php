@@ -22,10 +22,12 @@ use Kiln\Processes\Application\Listeners\StopDrainedOctane;
 use Kiln\Processes\Contracts\OctaneRouting;
 use Kiln\Processes\Contracts\ProcessControl;
 use Kiln\Processes\Contracts\ScheduleDirectory;
+use Kiln\Processes\Contracts\ScheduleSources;
 use Kiln\Processes\Events\ProgramCrashLooping;
 use Kiln\Processes\Events\ProgramRecovered;
 use Kiln\Processes\Infrastructure\AgentProcessControl;
 use Kiln\Processes\Infrastructure\EloquentOctaneRouting;
+use Kiln\Processes\Infrastructure\NoScheduleSources;
 use Kiln\Processes\Infrastructure\StateScheduleDirectory;
 use Kiln\Servers\Events\ServerDeleted;
 use Kiln\Sites\Events\SiteCreated;
@@ -43,6 +45,7 @@ class ProcessesServiceProvider extends ModuleServiceProvider
      */
     public array $singletons = [
         ScheduleDirectory::class => StateScheduleDirectory::class,
+        ScheduleSources::class => NoScheduleSources::class,
         OctaneRouting::class => EloquentOctaneRouting::class,
     ];
 

@@ -23,6 +23,7 @@ final class CreateFunction
         private readonly FunctionStore $functions,
         private readonly DeploymentTrigger $deployments,
         private readonly SiteDomains $domains,
+        private readonly SaveSchedule $schedules,
     ) {}
 
     /**
@@ -44,6 +45,10 @@ final class CreateFunction
 
         $site = $created->site;
         $function = $this->functions->ensure($site, $starter, $userId, $userName);
+
+        if ($starter === 'scheduled') {
+            ($this->schedules)($site, $function, null, ['name' => 'Hourly', 'expression' => '@hourly']);
+        }
         $warnings = $created->warnings;
 
         // No choice: the organization's default (test domain when there is one, else a generated name), so the

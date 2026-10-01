@@ -1,0 +1,7 @@
+{
+  "site": "hello",
+  "schedule": "a1b2c3d4",
+  "name": "Nightly cleanup",
+  "cron": "0 3 * * *",
+  "timeout_s": 300
+}

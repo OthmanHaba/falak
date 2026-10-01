@@ -14,6 +14,7 @@ final class Starters
         'hello' => ['title' => 'Hello Hono', 'description' => 'A minimal HTTP API with two routes.'],
         'postgres-api' => ['title' => 'JSON API + Postgres', 'description' => 'Notes API on a database (DATABASE_URL, Bun’s built-in client).'],
         'webhook' => ['title' => 'Webhook receiver', 'description' => 'Verifies HMAC-signed webhooks (GitHub, Stripe style).'],
+        'scheduled' => ['title' => 'Scheduled job', 'description' => 'A scheduled() handler that runs every hour (cron), plus HTTP.'],
     ];
 
     /**
