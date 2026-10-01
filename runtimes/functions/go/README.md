@@ -60,10 +60,14 @@ and following `contracts/telemetry/README.md`:
   `/`). A `ServeMux` that matches nothing gives `(unmatched)`; other handlers get the path with ids replaced
   (`/users/:id`). Status code, `faas.coldstart` (from `X-Kiln-Cold-Start`) and a W3C `traceparent` parent.
 - **Panics:** an `exception` event with the stack, ERROR status, and a 500.
-- **Outgoing HTTP:** `http.DefaultTransport` is wrapped: calls made with the request's context
-  (`http.NewRequestWithContext(r.Context(), …)`) or the `ctx` of `Scheduled` become `outgoing_request` spans. Query
+- **Outgoing HTTP:** `http.DefaultClient` gets a tracing transport (`http.DefaultTransport` stays an
+  `*http.Transport`, so cloning it still works). Calls through it (`http.Get`, `http.DefaultClient.Do`) or through a
+  client built with `Transport: http.DefaultClient.Transport`, made with the request's context
+  (`http.NewRequestWithContext(r.Context(), …)`) or the `ctx` of `Scheduled`, become `outgoing_request` spans. Query
   strings or userinfo are not recorded, and secret-looking path segments are redacted (the same rules as the other
-  runtimes). Clients with their own `http.Transport` are not traced.
+  runtimes). Other clients are not traced.
+- **Response writer:** the traced writer passes `http.Flusher`, `http.Hijacker` (websockets) and `io.ReaderFrom`
+  through, and `http.ResponseController` works through `Unwrap`.
 - **Scheduled runs:** a `scheduled_task` span per run, `finished` or `failed` (with the error).
 
 Spans are batched (every second, or 256 at a time) and never block a request; they are dropped when the socket is

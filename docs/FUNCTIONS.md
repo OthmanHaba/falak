@@ -114,7 +114,8 @@ func Scheduled(ctx context.Context, event Event) error { return nil }
   then, and `go.mod` / `go.sum` are kept per code version. Without a `go.mod`, the module is called `function`, so a
   folder `lib/` is imported as `"function/lib"`. Add your own `go.mod` to choose versions.
 - Observability names requests by the `ServeMux` pattern (`GET /hello/{name}`). Outgoing calls are recorded when
-  they use the request's context: `http.NewRequestWithContext(r.Context(), …)`, or the `ctx` of `Scheduled`.
+  they go through `http.DefaultClient` (or a client with `Transport: http.DefaultClient.Transport`) with the
+  request's context: `http.NewRequestWithContext(r.Context(), …)`, or the `ctx` of `Scheduled`.
 
 ## Edit and deploy
 
@@ -246,10 +247,18 @@ kiln fn logs hooks --follow
 ```
 
 `kiln fn deploy` sends the **whole directory** as the function's files, so files you add are deployed and files you
-delete are removed from the new version. It leaves out dot-files and dot-folders (`.git`, `.env`,
-`.kiln-function.json`), `node_modules`, `__pycache__`, `.venv` and `venv`, symlinks, and whatever a `.kilnignore`
-lists (one name or glob per line, e.g. `dist` or `*.log`). `kiln fn pull` writes every file of the newest version,
-and removes the files an earlier pull wrote that the version no longer has.
+delete are removed from the new version.
+
+- It leaves out dot-files and dot-folders (`.git`, `.env`, `.kiln-function.json`), `node_modules`, `__pycache__`,
+  `.venv` and `venv`, and whatever a `.kilnignore` lists (one name or glob per line, e.g. `dist` or `*.log`).
+- It skips, with a note: files that look like secrets (`id_rsa`, `*.pem`, `*.key`, `*.p12`, `credentials*.json`,
+  `service-account*.json`, `*.tfvars`, `*.tfstate`, `secrets.yml`…; rename one that really is code), symlinks,
+  names Kiln doesn't accept, and binary files. An entrypoint it can't send is an error.
+- Files the function doesn't have yet are listed and need a yes: an interactive prompt, or `--yes` (required in
+  scripts and CI).
+
+`kiln fn pull` writes every file of the newest version. Files an earlier pull or deploy wrote that the version no
+longer has are removed, unless you changed them locally (they are kept, with a warning).
 
 If someone deployed after your `pull`, `kiln fn deploy` stops with exit code 4 (pull, or `--force`). The same
 operations are in the API (`/api/v1/functions…`, see `docs/API.md`).

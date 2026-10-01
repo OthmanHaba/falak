@@ -56,7 +56,7 @@ func checkAll(ctx context.Context) []result {
 			urls = append(urls, u)
 		}
 	}
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{Transport: http.DefaultClient.Transport, Timeout: timeout}
 	results := make([]result, len(urls))
 	var wg sync.WaitGroup
 	for i, u := range urls {
@@ -89,7 +89,7 @@ func alert(ctx context.Context, down []result) {
 	body, _ := json.Marshal(map[string]string{"text": text, "content": text})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, hook, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	if res, err := (&http.Client{Timeout: timeout}).Do(req); err != nil {
+	if res, err := (&http.Client{Transport: http.DefaultClient.Transport, Timeout: timeout}).Do(req); err != nil {
 		log.Println("alert:", err)
 	} else {
 		res.Body.Close()

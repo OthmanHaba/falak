@@ -41,7 +41,7 @@ func post(ctx context.Context, url string, payload any) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	res, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	res, err := (&http.Client{Transport: http.DefaultClient.Transport, Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\ValidationException;
 use Kiln\Deployments\Contracts\DeploymentTrigger;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Models\Deployment;
@@ -159,7 +160,25 @@ it('validates the code', function (array $files, string $error) {
     'file and folder' => [['index.ts' => 'x', 'lib' => 'x', 'lib/db.ts' => 'x'], 'lib is both a file and a folder'],
     'case only' => [['index.ts' => 'x', 'lib/DB.ts' => 'x', 'lib/db.ts' => 'x'], 'differ only in case'],
     'too deep' => [['index.ts' => 'x', 'a/b/c/d/e/f/g/h/i.ts' => 'x'], 'nested too deep'],
+    'digit file and folder' => [['index.ts' => 'x', '1' => 'x', '1/b.ts' => 'x'], '1 is both a file and a folder'],
 ]);
+
+it('refuses oversized code before looking at each file', function () {
+    [$world, $function] = fn_world();
+    $many = array_fill_keys(array_map(fn ($i) => "f{$i}.ts", range(1, 40000)), 'x');
+
+    $started = microtime(true);
+    $this->putJson(fn_url($world->site, '/draft'), ['files' => $many])->assertUnprocessable()->assertJsonValidationErrors(['files']);
+    expect(microtime(true) - $started)->toBeLessThan(1.0);
+
+    expect(fn () => Code::files(array_fill_keys(array_map(fn ($i) => "f{$i}.ts", range(1, 40000)), 'x'), 'index.ts'))
+        ->toThrow(ValidationException::class, 'at most 50 files');
+    expect(fn () => Code::files(['index.ts' => str_repeat('x', 1024 * 1024)], 'index.ts'))
+        ->toThrow(ValidationException::class, 'larger than');
+
+    $this->call('PUT', fn_url($world->site, '/draft'), [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json', 'CONTENT_LENGTH' => (string) (Code::maxRequestBytes() + 1)], '{"files":{}}')
+        ->assertStatus(413);
+});
 
 it('deploys several files in folders and shows what changed per file', function () {
     [$world, $function] = fn_world();

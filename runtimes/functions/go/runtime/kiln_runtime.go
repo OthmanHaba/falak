@@ -9,6 +9,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -16,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -59,7 +61,7 @@ func kilnAdapt(h any) http.Handler {
 
 // kilnMain is the generated main(): `run` runs Scheduled once, anything else serves Handler.
 func kilnMain(handler http.Handler, scheduled func(context.Context, Event) error) {
-	http.DefaultTransport = &kilnTransport{base: http.DefaultTransport}
+	kilnInstrumentHTTP()
 	if len(os.Args) > 1 && os.Args[1] == "run" {
 		os.Exit(kilnRun(scheduled))
 	}
@@ -271,13 +273,51 @@ func (r *kilnRecorder) Write(b []byte) (int, error) {
 
 func (r *kilnRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
+// Flush, Hijack and ReadFrom pass through to the server's writer, so libraries that type-assert it (websockets,
+// streaming, sendfile) work as without Kiln.
 func (r *kilnRecorder) Flush() {
 	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		if r.status == 0 {
+			r.status = http.StatusOK
+		}
 		f.Flush()
 	}
 }
 
+func (r *kilnRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	conn, rw, err := h.Hijack()
+	if err == nil && r.status == 0 {
+		r.status = http.StatusSwitchingProtocols
+	}
+	return conn, rw, err
+}
+
+func (r *kilnRecorder) ReadFrom(src io.Reader) (int64, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	if rf, ok := r.ResponseWriter.(io.ReaderFrom); ok {
+		return rf.ReadFrom(src)
+	}
+	return io.Copy(struct{ io.Writer }{r.ResponseWriter}, src)
+}
+
 // ---- outgoing HTTP ------------------------------------------------------------------------------------------------
+
+// kilnInstrumentHTTP traces http.DefaultClient (http.Get, http.Post, http.DefaultClient.Do). http.DefaultTransport
+// itself stays an *http.Transport, so code that clones it (`http.DefaultTransport.(*http.Transport).Clone()`)
+// keeps working; a client of your own is traced with `Transport: http.DefaultClient.Transport`.
+func kilnInstrumentHTTP() {
+	base := http.DefaultClient.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	http.DefaultClient.Transport = &kilnTransport{base: base}
+}
 
 // kilnTransport records `outgoing_request` spans for calls made with a request's (or a run's) context:
 // http.NewRequestWithContext(r.Context(), …) or the ctx Scheduled receives. No query strings or userinfo, and secret

@@ -116,7 +116,7 @@ func contact(w http.ResponseWriter, r *http.Request) {
 	req, _ := http.NewRequestWithContext(r.Context(), http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+os.Getenv("RESEND_API_KEY"))
 	req.Header.Set("Content-Type", "application/json")
-	res, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	res, err := (&http.Client{Transport: http.DefaultClient.Transport, Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
 		log.Println("resend:", err)
 		http.Error(w, "could not send the message", http.StatusBadGateway)

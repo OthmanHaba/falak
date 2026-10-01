@@ -30,8 +30,13 @@ type entry struct {
 var (
 	cacheMu sync.Mutex
 	cache   = map[string]entry{}
-	client  = &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 )
+
+// upstream calls never follow redirects (the proxy only ever talks to UPSTREAM_URL's host). Built per call with
+// Kiln's traced transport, so the calls show up in Observability.
+func client() *http.Client {
+	return &http.Client{Transport: http.DefaultClient.Transport, Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
 
 func Handler(w http.ResponseWriter, r *http.Request) {
 	origin := os.Getenv("ALLOWED_ORIGIN")
@@ -82,7 +87,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	if auth := os.Getenv("UPSTREAM_AUTHORIZATION"); auth != "" {
 		req.Header.Set("Authorization", auth)
 	}
-	res, err := client.Do(req)
+	res, err := client().Do(req)
 	if err != nil {
 		http.Error(w, "upstream: "+err.Error(), http.StatusBadGateway)
 		return

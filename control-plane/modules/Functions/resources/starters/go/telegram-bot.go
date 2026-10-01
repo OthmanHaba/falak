@@ -41,7 +41,7 @@ func telegram(ctx context.Context, method string, payload any) (map[string]any, 
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Transport: http.DefaultClient.Transport, Timeout: 10 * time.Second}
 	res, err := client.Do(req)
 	if err != nil {
 		return nil, err

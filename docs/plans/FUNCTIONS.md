@@ -427,8 +427,12 @@ its hash covers every file. What phase 5 adds:
   `file:///<slug>/edit/…` so TypeScript resolves relative imports, A/M/D marks against the newest version, and the
   conflict and version views diff file by file.
 - **CLI:** `kiln fn deploy` sends the whole directory (minus dot-files and dot-folders, `node_modules`,
-  `__pycache__`, `.venv`, `venv`, symlinks and `.kilnignore` patterns; non-UTF-8 files are an error), so deleted
-  files leave the new version. `kiln fn pull` removes files an earlier pull wrote that the new version no longer has.
+  `__pycache__`, `.venv`, `venv` and `.kilnignore` patterns), so deleted files leave the new version. Secret-looking
+  files, symlinks, refused names and binary files are skipped with a note (an unusable entrypoint is an error).
+  Files new to the function are listed and need confirmation (`--yes` outside a terminal). `.kiln-function.json`
+  records each file's sha256; `kiln fn pull` removes a file the new version dropped only when it is unchanged.
+- **Request limits:** draft and deploy requests are refused above `2 × max_bytes + 64 KB` (413) and above
+  `max_files` entries before any per-file work; path checks use hash sets (no quadratic work).
 
 ### Go runtime
 
@@ -447,8 +451,9 @@ it needs no new agent feature.
 - **`kiln-fn-serve`** runs `/app/.kiln/fn`; **`kiln-fn-run`** runs `/app/.kiln/fn run`. Hardening is unchanged
   (read-only root, uid 65534, `/app` read-only).
 - **Telemetry:** like the other runtimes. Request spans are named by `http.Request.Pattern` (Go 1.23+);
-  `http.DefaultTransport` is wrapped for `outgoing_request` spans of calls that carry the request's or run's context
-  (Go has no implicit async context); panics become exceptions.
+  `http.DefaultClient.Transport` is wrapped for `outgoing_request` spans of calls that carry the request's or run's
+  context (Go has no implicit async context; `http.DefaultTransport` stays an `*http.Transport`); panics become
+  exceptions. The traced response writer passes Flusher, Hijacker and ReaderFrom through.
 
 ### Secrets in telemetry URLs
 

@@ -1,7 +1,11 @@
 package cli
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,6 +36,22 @@ type functionMeta struct {
 	BaseVersionID string   `json:"base_version_id"`
 	Entrypoint    string   `json:"entrypoint"`
 	Files         []string `json:"files"`
+	// Hashes are the sha256 of each file as Kiln wrote or sent it: a later pull deletes a file the new version no
+	// longer has only when it is unchanged locally.
+	Hashes map[string]string `json:"hashes,omitempty"`
+}
+
+func contentHash(content []byte) string {
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
+}
+
+func hashesOf(files map[string]string) map[string]string {
+	out := make(map[string]string, len(files))
+	for p, c := range files {
+		out[p] = contentHash([]byte(c))
+	}
+	return out
 }
 
 func functionCommands() *command {
@@ -100,16 +121,27 @@ func cmdFnPull(ctx context.Context, a *App, args []string) error {
 		paths = append(paths, p)
 	}
 	sort.Strings(paths)
-	// Files an earlier pull or deploy wrote that this version no longer has (only those: never the user's others).
+	// Files an earlier pull or deploy wrote that this version no longer has (only those, never the user's others),
+	// and only when unchanged since: a file edited locally is kept.
 	if old, ok, _ := readFunctionMeta(dir); ok && old.SiteID == fn.Site.ID {
 		for _, p := range old.Files {
 			if _, keep := fn.Head.Files[p]; keep {
 				continue
 			}
-			if target, err := safeJoin(dir, p); err == nil {
-				if err := os.Remove(target); err == nil {
-					fmt.Fprintf(a.Stderr, "kiln: removed %s (not in v%d)\n", p, fn.Head.Number)
-				}
+			target, err := safeJoin(dir, p)
+			if err != nil {
+				continue
+			}
+			b, err := os.ReadFile(target)
+			if err != nil {
+				continue
+			}
+			if want, known := old.Hashes[p]; !known || want != contentHash(b) {
+				fmt.Fprintf(a.Stderr, "kiln: kept %s: v%d no longer has it, but it changed locally\n", p, fn.Head.Number)
+				continue
+			}
+			if err := os.Remove(target); err == nil {
+				fmt.Fprintf(a.Stderr, "kiln: removed %s (not in v%d)\n", p, fn.Head.Number)
 			}
 		}
 	}
@@ -125,7 +157,7 @@ func cmdFnPull(ctx context.Context, a *App, args []string) error {
 			return err
 		}
 	}
-	meta := functionMeta{SiteID: fn.Site.ID, Slug: fn.Site.Slug, BaseVersionID: fn.Head.ID, Entrypoint: fn.Entrypoint, Files: paths}
+	meta := functionMeta{SiteID: fn.Site.ID, Slug: fn.Site.Slug, BaseVersionID: fn.Head.ID, Entrypoint: fn.Entrypoint, Files: paths, Hashes: hashesOf(fn.Head.Files)}
 	if err := writeFunctionMeta(dir, meta); err != nil {
 		return err
 	}
@@ -141,7 +173,8 @@ func cmdFnDeploy(ctx context.Context, a *App, args []string) error {
 	message := fs.String("m", "", "what changed (the version's message)")
 	force := fs.Bool("force", false, "deploy even if someone deployed a newer version after your base")
 	wait := fs.Bool("wait", false, "stream output and wait for the deployment to finish")
-	pos, err := a.parse(fs, args, 1, 2, "<fn> [dir] [-m MESSAGE] [--force] [--wait]")
+	yes := fs.Bool("yes", false, "deploy files that are new to the function without asking")
+	pos, err := a.parse(fs, args, 1, 2, "<fn> [dir] [-m MESSAGE] [--force] [--wait] [--yes]")
 	if err != nil {
 		return err
 	}
@@ -170,11 +203,38 @@ func cmdFnDeploy(ctx context.Context, a *App, args []string) error {
 	if err != nil {
 		return err
 	}
-	for _, p := range skipped {
-		fmt.Fprintf(a.Stderr, "kiln: skipping %s\n", p)
+	for _, sk := range skipped {
+		if sk.path == fn.Entrypoint {
+			return fmt.Errorf("the entrypoint %s can't be deployed: %s", sk.path, sk.reason)
+		}
+		fmt.Fprintf(a.Stderr, "kiln: skipping %s (%s)\n", sk.path, sk.reason)
 	}
 	if _, ok := files[fn.Entrypoint]; !ok {
 		return fmt.Errorf("%s not found in %s (run `kiln fn pull %s %s` first)", fn.Entrypoint, dir, fn.Site.Slug, dir)
+	}
+
+	// Files the function doesn't have yet: shown, and deployed only once confirmed (a stray file in the folder
+	// would otherwise be published with the code).
+	var added []string
+	for p := range files {
+		if fn.Head == nil || !hasFile(fn.Head.Files, p) {
+			added = append(added, p)
+		}
+	}
+	sort.Strings(added)
+	if len(added) > 0 && fn.Head != nil && !*yes {
+		fmt.Fprintf(a.Stderr, "kiln: %d new file(s) for %s:\n", len(added), fn.Site.Slug)
+		for _, p := range added {
+			fmt.Fprintf(a.Stderr, "  + %s\n", p)
+		}
+		if !a.Interactive {
+			return usagef("new files need confirmation: rerun with --yes to deploy them (or list unwanted ones in .kilnignore)")
+		}
+		fmt.Fprint(a.Stderr, "Deploy them? [y/N] ")
+		line, _ := bufio.NewReader(a.Stdin).ReadString('\n')
+		if answer := strings.ToLower(strings.TrimSpace(line)); answer != "y" && answer != "yes" {
+			return errors.New("cancelled")
+		}
 	}
 
 	base := meta.BaseVersionID
@@ -196,7 +256,7 @@ func cmdFnDeploy(ctx context.Context, a *App, args []string) error {
 		paths = append(paths, p)
 	}
 	sort.Strings(paths)
-	if err := writeFunctionMeta(dir, functionMeta{SiteID: fn.Site.ID, Slug: fn.Site.Slug, BaseVersionID: res.Version.ID, Entrypoint: fn.Entrypoint, Files: paths}); err != nil {
+	if err := writeFunctionMeta(dir, functionMeta{SiteID: fn.Site.ID, Slug: fn.Site.Slug, BaseVersionID: res.Version.ID, Entrypoint: fn.Entrypoint, Files: paths, Hashes: hashesOf(files)}); err != nil {
 		return err
 	}
 	for _, w := range res.Warnings {
@@ -489,17 +549,30 @@ const (
 // ignoredDirs are never part of a function: dependencies and build output the server creates itself, and VCS.
 var ignoredDirs = map[string]bool{"node_modules": true, "__pycache__": true, ".git": true, ".venv": true, "venv": true}
 
+// secretFiles are skipped by default: keys, certificates and credential files that end up next to code.
+var secretFiles = []string{
+	"id_rsa*", "id_dsa*", "id_ecdsa*", "id_ed25519*", "*.pem", "*.key", "*.p12", "*.pfx", "*.jks", "*.keystore",
+	"*.kdbx", "credentials.json", "credentials*.json", "service-account*.json", "*-credentials.json",
+	"*.tfvars", "*.tfstate", "*.tfstate.*", "secrets.yml", "secrets.yaml", "secret.yml", "secret.yaml",
+}
+
+// functionPath is the control plane's rule for a file path (letters, digits, . _ -; no dot-files; ≤ 8 levels).
+var functionPath = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*){0,7}$`)
+
+type skippedFile struct{ path, reason string }
+
 // readFunctionDir reads a function directory as {path: content}: every regular file, except dot-files and
-// dot-folders (.kiln-function.json, .git, .env …), the folders in ignoredDirs, and the patterns of an optional
-// .kilnignore (one per line: a name like "dist" or a glob like "*.log" or "tests/*"). Symlinks are skipped (a
-// link could pull in files from outside the directory); non-UTF-8 (binary) files are an error.
-func readFunctionDir(dir string) (map[string]string, []string, error) {
+// dot-folders (.kiln-function.json, .git, .env …), the folders in ignoredDirs and the patterns of an optional
+// .kilnignore (one per line: a name like "dist" or a glob like "*.log" or "tests/*"). Files that look like secrets
+// (secretFiles), symlinks (a link could pull in files from outside the directory), names the control plane refuses
+// and non-text files (a built binary) are skipped and reported; too many files or bytes is an error.
+func readFunctionDir(dir string) (map[string]string, []skippedFile, error) {
 	ignore, err := readKilnIgnore(dir)
 	if err != nil {
 		return nil, nil, err
 	}
 	files, total := map[string]string{}, 0
-	var skipped []string
+	var skipped []skippedFile
 	err = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -517,18 +590,27 @@ func readFunctionDir(dir string) (map[string]string, []string, error) {
 			return nil
 		}
 		if d.Type()&os.ModeSymlink != 0 {
-			skipped = append(skipped, rel+" (symlink)")
+			skipped = append(skipped, skippedFile{rel, "symlink"})
 			return nil
 		}
 		if d.IsDir() || !d.Type().IsRegular() {
+			return nil
+		}
+		if ignored(secretFiles, name, name) {
+			skipped = append(skipped, skippedFile{rel, "looks like a secret; rename it if it must be deployed"})
+			return nil
+		}
+		if !functionPath.MatchString(rel) {
+			skipped = append(skipped, skippedFile{rel, "name not allowed: letters, digits, . _ - and at most 8 folder levels"})
 			return nil
 		}
 		b, err := os.ReadFile(p)
 		if err != nil {
 			return err
 		}
-		if !utf8.Valid(b) {
-			return fmt.Errorf("%s is not a text file (functions hold UTF-8 source only; add it to .kilnignore)", rel)
+		if !utf8.Valid(b) || bytes.IndexByte(b, 0) >= 0 {
+			skipped = append(skipped, skippedFile{rel, "not a UTF-8 text file"})
+			return nil
 		}
 		total += len(rel) + len(b)
 		if len(files) >= maxFunctionFiles || total > maxFunctionBytes {
@@ -538,6 +620,11 @@ func readFunctionDir(dir string) (map[string]string, []string, error) {
 		return nil
 	})
 	return files, skipped, err
+}
+
+func hasFile(files map[string]string, p string) bool {
+	_, ok := files[p]
+	return ok
 }
 
 func readKilnIgnore(dir string) ([]string, error) {

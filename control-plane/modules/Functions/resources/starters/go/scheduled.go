@@ -19,7 +19,7 @@ func Scheduled(ctx context.Context, event Event) error {
 	if err != nil {
 		return err
 	}
-	res, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	res, err := (&http.Client{Transport: http.DefaultClient.Transport, Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
 		return err
 	}
