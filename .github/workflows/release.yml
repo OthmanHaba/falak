@@ -1,6 +1,7 @@
 # Release: push a tag vX.Y.Z (vX.Y.Z-rc.N = pre-release, not tagged `latest`).
 #   1. multi-arch images (native amd64 + arm64 runners, merged manifests) -> GHCR:
-#        ghcr.io/<owner>/kiln-control-plane, kiln-builder, kiln-edge, kiln-fn-bun  :<tag> and :latest
+#        ghcr.io/<owner>/kiln-control-plane, kiln-builder, kiln-edge, kiln-fn-bun, kiln-fn-node,
+#        kiln-fn-deno  :<tag> and :latest
 #   2. kiln-agent / kiln / kiln-builder binaries (make build), kiln-deploy.tar.gz, install.sh, kiln-ctl,
 #      SHA256SUMS -> GitHub release assets.
 # Only GITHUB_TOKEN is used. After the first release, make the GHCR packages public
@@ -28,7 +29,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        image: [control-plane, builder, edge, fn-bun]
+        image: [control-plane, builder, edge, fn-bun, fn-node, fn-deno]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -44,10 +45,17 @@ jobs:
           - image: edge
             dockerfile: deploy/edge/Dockerfile
             context: deploy/edge
-          # Function runtime (runtimes/functions/bun/README.md); servers pull it for Bun + Hono functions.
+          # Function runtimes (runtimes/functions/<runtime>/README.md); servers pull them for functions. The context
+          # is runtimes/functions: the JS runtimes share shared/ (tracer, entry loader, scheduled runs).
           - image: fn-bun
             dockerfile: runtimes/functions/bun/Dockerfile
-            context: runtimes/functions/bun
+            context: runtimes/functions
+          - image: fn-node
+            dockerfile: runtimes/functions/node/Dockerfile
+            context: runtimes/functions
+          - image: fn-deno
+            dockerfile: runtimes/functions/deno/Dockerfile
+            context: runtimes/functions
     steps:
       - uses: actions/checkout@v4
 
@@ -100,7 +108,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        image: [control-plane, builder, edge, fn-bun]
+        image: [control-plane, builder, edge, fn-bun, fn-node, fn-deno]
     steps:
       - uses: actions/download-artifact@v4
         with:
