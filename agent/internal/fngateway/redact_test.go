@@ -81,3 +81,14 @@ func TestRelayedSpansAreScrubbed(t *testing.T) {
 		t.Fatalf("status %q", sp.Status.Message)
 	}
 }
+
+// The gateway re-applies redaction to what a runtime already redacted: the placeholder must survive unescaped.
+func TestSafeURLIsIdempotent(t *testing.T) {
+	once := SafeURL("https://user:pw@api.telegram.org/bot123456:FAKEtokenFAKEtokenFAKEtoken12/getMe?token=s3cret")
+	if want := "https://api.telegram.org/bot{redacted}/getMe"; once != want {
+		t.Fatalf("SafeURL = %q, want %q", once, want)
+	}
+	if twice := SafeURL(once); twice != once {
+		t.Fatalf("second pass changed %q to %q", once, twice)
+	}
+}

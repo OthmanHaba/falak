@@ -383,7 +383,8 @@ func kilnRedactPath(p string) string {
 
 // kilnSafeURL is scheme://host[:port]/path: no userinfo, no query, no fragment, secret segments redacted.
 func kilnSafeURL(u *url.URL) string {
-	p := u.EscapedPath()
+	// EscapedPath encodes the braces of a placeholder already in the URL (error texts): keep it readable.
+	p := strings.ReplaceAll(u.EscapedPath(), "%7Bredacted%7D", kilnRedacted)
 	if p == "" {
 		p = "/"
 	}

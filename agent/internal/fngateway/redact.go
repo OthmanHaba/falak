@@ -57,7 +57,8 @@ func SafeURL(raw string) string {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return RedactPath(raw)
 	}
-	p := u.EscapedPath()
+	// EscapedPath encodes the braces of a placeholder an earlier pass (the runtime) wrote: keep it readable.
+	p := strings.ReplaceAll(u.EscapedPath(), "%7Bredacted%7D", redacted)
 	if p == "" {
 		p = "/"
 	}
