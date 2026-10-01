@@ -75,6 +75,8 @@ export interface SharedData {
     quote: { message: string; author: string };
     auth: Auth;
     organization: OrganizationProps | null;
+    /** Guests only: who may sign up (KILN_REGISTRATION). */
+    registration?: 'open' | 'invite' | 'closed' | null;
     [key: string]: unknown;
 }
 

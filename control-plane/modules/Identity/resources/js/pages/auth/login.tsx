@@ -3,7 +3,8 @@ import { Checkbox } from '@/components/kiln/checkbox';
 import { Field } from '@/components/kiln/field';
 import { Input } from '@/components/kiln/input';
 import AuthLayout, { AuthLink, AuthStatus } from '@/layouts/auth-layout';
-import { Head, Link, useForm } from '@inertiajs/react';
+import { type SharedData } from '@/types';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { type FormEventHandler } from 'react';
 
 interface LoginProps {
@@ -12,6 +13,7 @@ interface LoginProps {
 }
 
 export default function Login({ status, canResetPassword }: LoginProps) {
+    const { registration } = usePage<SharedData>().props;
     const { data, setData, post, processing, errors, reset } = useForm({ email: '', password: '', remember: false });
 
     const submit: FormEventHandler = (event) => {
@@ -24,9 +26,11 @@ export default function Login({ status, canResetPassword }: LoginProps) {
             title="Log in to Kiln"
             description="Welcome back."
             footer={
-                <>
-                    Don't have an account? <AuthLink href={route('register')}>Sign up</AuthLink>
-                </>
+                registration !== 'closed' && (
+                    <>
+                        Don't have an account? <AuthLink href={route('register')}>Sign up</AuthLink>
+                    </>
+                )
             }
         >
             <Head title="Log in" />
