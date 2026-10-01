@@ -324,3 +324,81 @@ Every runtime image ships `kiln-fn-install`, `kiln-fn-serve` and `kiln-fn-run`, 
   three (e.g. `postgres`).
 - **Python starters** use FastAPI and `httpx`.
 - **Deno** runs with `--allow-net --allow-env --allow-read=/app,/tmp,/run/kiln-otlp --allow-write=/tmp,/run/kiln-otlp`.
+
+## Phase 4 contract: access control, path mounts, API and CLI (fixed)
+
+Agent feature flag: `fn.v2`. The control plane sends the new fields below only to agents that report it.
+
+### Access control (gateway)
+
+`fn.release.apply` gains an optional field:
+
+```json
+"access": {"api_key_hashes": ["<sha256 hex of a key>"], "allow_cidrs": ["203.0.113.0/24", "2001:db8::/32"]}
+```
+
+- **API key:** when `api_key_hashes` is non-empty, every proxied request must carry a key, as
+  `Authorization: Bearer <key>` or `X-Kiln-Key: <key>`.
+  - The gateway compares `sha256(key)` with constant time against the list.
+  - A missing or wrong key gets `401` with `{"error":"…"}` and `WWW-Authenticate: Bearer`.
+  - On a match, the gateway removes `X-Kiln-Key`, or the `Authorization` header if the key came in there, before
+    forwarding. A function can then still use `Authorization` for its own scheme when callers send the Kiln key in
+    `X-Kiln-Key`.
+- **IP allowlist:** when `allow_cidrs` is non-empty, the client IP must be inside one of them, else `403`.
+  - The client IP comes from `X-Kiln-Client-IP`, which Caddy sets to `{http.vars.client_ip}` and which honours
+    Cloudflare's trusted proxies. When that header is missing, the gateway uses the TCP peer.
+- Both checks can be on at once. Neither applies to scheduled runs.
+- Rejected requests are reported as `request` spans, like other requests the gateway answers itself, but without
+  the ERROR status (they are 4xx).
+- The gateway removes `X-Kiln-Client-IP` before forwarding.
+- Changing the access settings redeploys the live version, like scaling changes do.
+
+### Path mounts (Caddy)
+
+A site entry in `edge.caddy.apply` gains an optional field:
+
+```json
+"mounts": [{"path_prefix": "/api", "strip_prefix": true,
+            "dial": "127.0.0.1:7070" | "fn.example.com:443", "tls_server_name": "fn.example.com" (optional),
+            "request_headers": {"X-Kiln-Function": "<slug>", "X-Kiln-Client-IP": "{http.vars.client_ip}", "Host": "…"}}]
+```
+
+- A mount matches `<path_prefix>` and `<path_prefix>/*`, and runs after the site's own access rules (basic auth,
+  IP allow and deny) and before its main handler.
+- `strip_prefix` removes the prefix before proxying.
+- With `tls_server_name`, the upstream is HTTPS with that SNI.
+- Mounts are rendered in order, longest prefix first.
+- **Two upstreams:**
+  - The function runs on the same server: Caddy dials the local gateway with `X-Kiln-Function`.
+  - Otherwise: Caddy proxies to the function's primary domain over HTTPS, with `Host` set to it.
+- Function sites also get `X-Kiln-Client-IP: {http.vars.client_ip}` in their own route's request headers.
+
+### API (Sanctum, `/api/v1`) and CLI
+
+**Endpoints**, each checked against permission abilities:
+
+| Endpoint | Body / result | Permission |
+|---|---|---|
+| `GET /functions` | list: site id, name, slug, runtime, live version, url | `functions.view` |
+| `GET /functions/{site}` | head with files, live version, settings, schedules | `functions.view` |
+| `POST /functions/{site}/deploy` | `{files: {path: content}, message?, base_version_id?, force?}`; 409 + head on conflict | `functions.deploy` + `deployments.create` |
+| `GET /functions/{site}/versions` | version list | `functions.view` |
+| `GET /functions/{site}/versions/{n}` | one version | `functions.view` |
+| `POST /functions/{site}/versions/{n}/deploy` | rollback | `functions.deploy` + `deployments.create` |
+| `POST /functions/{site}/schedules/{id}/run` | `{run_id}` | `functions.deploy` |
+| `GET /functions/{site}/runs/{run}` | run status | `functions.view` |
+
+`{site}` is the site id or slug.
+
+**CLI** (`kiln fn …`):
+
+| Command | Does |
+|---|---|
+| `list` | lists the functions |
+| `pull <fn> [dir]` | writes the newest version's files and a `.kiln-function.json` holding the site id and base version id |
+| `deploy <fn> [dir] [-m msg] [--force]` | sends the directory's files (the function's known file set: the entrypoint plus other files already in the version), using `.kiln-function.json` as the base; a conflict prints the newer version and exits 4 unless `--force`; `--wait` streams the deployment |
+| `versions <fn>` | lists the versions |
+| `rollback <fn> <n> [--wait]` | deploys version `n` again |
+| `run <fn> <schedule>` | runs a schedule and streams its output |
+| `logs <fn> [--follow]` | the site's logs, reusing `kiln logs` |
+| `invoke <fn> [path] [-X method] [-d body] [-H 'K: V']…` | HTTP request to the function's URL; prints status, headers and body |

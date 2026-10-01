@@ -46,6 +46,7 @@ final class StoredFunctionSources implements FunctionSources
             files: $version->files,
             scaling: $function->scaling(),
             limits: $function->limits(),
+            access: $function->access(),
         );
     }
 }

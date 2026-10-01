@@ -32,6 +32,15 @@ type API interface {
 	EnvPull(ctx context.Context, site string) (string, error)
 	EnvPush(ctx context.Context, site, content string) error
 	Logs(ctx context.Context, site string, q LogQuery) ([]LogEntry, string, error)
+
+	Functions(ctx context.Context) ([]FunctionSummary, error)
+	Function(ctx context.Context, fn string) (Function, error)
+	FunctionVersions(ctx context.Context, fn string) ([]FunctionVersion, error)
+	FunctionVersion(ctx context.Context, fn string, number int) (FunctionVersion, error)
+	FunctionDeploy(ctx context.Context, fn string, r FunctionDeployRequest) (FunctionDeployResult, error)
+	FunctionRollback(ctx context.Context, fn string, number int) (string, error)
+	FunctionRun(ctx context.Context, fn, schedule string) (string, error)
+	FunctionRunStatus(ctx context.Context, fn, run string) (FunctionRun, error)
 }
 
 // Error is a non-2xx API response (Laravel `{message, errors}` bodies are decoded).
@@ -41,6 +50,8 @@ type Error struct {
 	Path    string
 	Message string
 	Errors  map[string][]string
+	// Body is the raw response body (for endpoints whose errors carry data, e.g. a 409 with the newer version).
+	Body []byte
 }
 
 func (e *Error) Error() string {
@@ -129,7 +140,7 @@ func (c *Client) Do(ctx context.Context, method, path string, q url.Values, body
 		return err
 	}
 	if resp.StatusCode/100 != 2 {
-		e := &Error{Status: resp.StatusCode, Method: method, Path: path}
+		e := &Error{Status: resp.StatusCode, Method: method, Path: path, Body: raw}
 		var lb struct {
 			Message string              `json:"message"`
 			Errors  map[string][]string `json:"errors"`

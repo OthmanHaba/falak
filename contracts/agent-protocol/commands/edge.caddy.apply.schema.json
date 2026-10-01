@@ -176,6 +176,49 @@
             },
             "description": "kind=reverse_proxy: headers set on the request sent upstream (functions: X-Kiln-Function)"
           },
+          "mounts": {
+            "type": "array",
+            "maxItems": 20,
+            "description": "Paths of this site sent to another upstream (agent feature fn.v2): a function through the local gateway (127.0.0.1:7070 + X-Kiln-Function) or its own domain over HTTPS (tls_server_name). Each matches <path_prefix> and <path_prefix>/*, longest first, after the site's access rules and before its redirects and handler.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path_prefix",
+                "dial"
+              ],
+              "properties": {
+                "path_prefix": {
+                  "type": "string",
+                  "minLength": 2,
+                  "maxLength": 200,
+                  "pattern": "^/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*[^/]$"
+                },
+                "strip_prefix": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "dial": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 300
+                },
+                "tls_server_name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9.-]{1,253}$"
+                },
+                "request_headers": {
+                  "type": "object",
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z0-9-]{1,64}$"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
           "basic_auth": {
             "type": "array",
             "items": {

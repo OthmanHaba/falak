@@ -143,6 +143,56 @@ A run succeeds when the handler resolves, and fails when it throws.
 
 The **Scheduled job** starter comes with an hourly schedule.
 
+## Access control
+
+**Settings → Access** restricts who can call a function. The gateway checks this before it wakes the function, so a
+rejected request costs nothing.
+
+- **API keys:** with at least one key, every request must send `Authorization: Bearer <key>` or
+  `X-Kiln-Key: <key>`.
+  - Without a valid key, the caller gets `401`.
+  - A key is shown once; Kiln stores only its hash.
+  - The key header never reaches your code. Use `X-Kiln-Key` when your code reads `Authorization` for its own
+    scheme.
+- **IP allowlist:** IPs or CIDR ranges (IPv4 or IPv6). Anyone else gets `403`. Behind Cloudflare, the visitor's
+  address is checked.
+
+Schedules are not affected. Changes redeploy the live version in a few seconds.
+
+## Paths on other sites
+
+**Settings → Paths** serves the function on a path of another site, e.g. `shop.example.com/api/*`, next to that
+site's own pages.
+
+- **Strip the path:** optional; the function then sees `/users` for `/api/users`.
+- **The site's rules apply:** its IP rules and basic auth still cover the path.
+- **How it's routed:** when the function runs on the same server, the site's Caddy hands the path to the local
+  gateway. Otherwise it proxies to the function's own domain over HTTPS.
+
+## Test requests
+
+The **Code** tab has a **Send a test request** panel: method, path, headers and body. The request goes through the
+function's real URL, so TLS, cold start and access rules apply, and the panel shows the status, timing, headers and
+body.
+
+## CLI and API
+
+`kiln fn` (see the CLI section in the README) works on functions from your terminal or CI:
+
+```bash
+kiln fn list
+kiln fn pull hooks ./hooks          # the code + .kiln-function.json (your base version)
+kiln fn deploy hooks ./hooks -m "Handle refunds" --wait
+kiln fn versions hooks
+kiln fn rollback hooks 3 --wait
+kiln fn run hooks "Nightly cleanup" # streams the run; exits with its code
+kiln fn invoke hooks /status -H 'X-Kiln-Key: kfn_…'
+kiln fn logs hooks --follow
+```
+
+If someone deployed after your `pull`, `kiln fn deploy` stops with exit code 4 (pull, or `--force`). The same
+operations are in the API (`/api/v1/functions…`, see `docs/API.md`).
+
 ## Variables and databases
 
 Functions use the **Variables** tab like every service, including references such as

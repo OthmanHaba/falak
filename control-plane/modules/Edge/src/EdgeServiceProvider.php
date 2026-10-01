@@ -19,6 +19,7 @@ use Kiln\Edge\Application\Listeners\ForgetDeletedServer;
 use Kiln\Edge\Application\Listeners\HandleEdgeCommandOutcome;
 use Kiln\Edge\Application\Listeners\ReactToSiteChanges;
 use Kiln\Edge\Application\Listeners\ReapplyAfterAgentUpgrade;
+use Kiln\Edge\Application\PathMounts;
 use Kiln\Edge\Contracts\DnsCheck;
 use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Events\CertificateInstallFailed;
@@ -124,6 +125,9 @@ class EdgeServiceProvider extends ModuleServiceProvider
         // Cloudflare DNS follows the domains (records Kiln created only).
         Event::listen(DomainAdded::class, fn (DomainAdded $event) => SyncCloudflareDns::domain($event->domainId));
         Event::listen(DomainRemoved::class, fn (DomainRemoved $event) => SyncCloudflareDns::forget($event->domainId));
+        // A function's domain is how other servers reach its paths (edge mounts).
+        Event::listen(DomainAdded::class, fn (DomainAdded $event) => app(PathMounts::class)->functionChanged($event->siteId));
+        Event::listen(DomainRemoved::class, fn (DomainRemoved $event) => app(PathMounts::class)->functionChanged($event->siteId));
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new ReconcileCloudflareTunnels)->everyFiveMinutes()->name('edge:cloudflare-tunnels')->withoutOverlapping();

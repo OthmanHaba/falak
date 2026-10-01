@@ -6,6 +6,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Kiln\Edge\Application\CertificateInstaller;
 use Kiln\Edge\Application\EdgeChanges;
 use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
+use Kiln\Edge\Application\PathMounts;
 use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Domain\Models\Certificate;
 use Kiln\Edge\Domain\Models\Domain;
@@ -31,6 +32,7 @@ final class ReactToSiteChanges implements ShouldQueue
         private readonly EdgeChanges $changes,
         private readonly EdgeRoutes $routes,
         private readonly CertificateInstaller $certificates,
+        private readonly PathMounts $mounts,
     ) {}
 
     public function created(SiteCreated $event): void
@@ -43,6 +45,7 @@ final class ReactToSiteChanges implements ShouldQueue
     {
         $this->changes->siteChanged($event->siteId, $event->serverIds);
         SyncCloudflareDns::site($event->siteId); // a no-op for names already in place
+        $this->mounts->functionChanged($event->siteId);
     }
 
     /** Octane became reachable (proxy to it) or is being switched off (serve directly again) on one server. */
@@ -61,11 +64,14 @@ final class ReactToSiteChanges implements ShouldQueue
         }
 
         $this->changes->siteChanged($event->siteId, [...$event->serverIds, ...$event->removed]);
+        // Sites with a path served by this function route to it locally or over HTTPS depending on its servers.
+        $this->mounts->functionChanged($event->siteId);
     }
 
     public function deleted(SiteDeleted $event): void
     {
         SyncCloudflareDns::forgetSite($event->siteId);
+        $this->mounts->siteDeleted($event->siteId);
 
         $balancer = LoadBalancer::query()->where('site_id', $event->siteId)->value('server_id');
 

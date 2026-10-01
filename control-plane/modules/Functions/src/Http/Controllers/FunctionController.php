@@ -3,17 +3,20 @@
 namespace Kiln\Functions\Http\Controllers;
 
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Http\Client\Factory as HttpClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Kiln\Deployments\Contracts\DeploymentDirectory;
 use Kiln\Functions\Application\Actions\DeployCode;
 use Kiln\Functions\Application\Actions\DeployVersion;
+use Kiln\Functions\Application\Actions\ManageAccess;
 use Kiln\Functions\Application\Actions\UpdateSettings;
 use Kiln\Functions\Application\Code;
 use Kiln\Functions\Application\FunctionStore;
 use Kiln\Functions\Application\LiveStatus;
 use Kiln\Functions\Application\StaleVersion;
 use Kiln\Functions\Domain\Models\CloudFunction;
+use Kiln\Functions\Domain\Models\FunctionApiKey;
 use Kiln\Functions\Domain\Models\FunctionDraft;
 use Kiln\Functions\Domain\Models\FunctionVersion;
 use Kiln\Functions\FunctionsServiceProvider as Permissions;
@@ -22,6 +25,7 @@ use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Contracts\SiteDomains;
 
 /**
  * The function panel's Code, Versions and Scaling tabs (JSON).
@@ -68,6 +72,94 @@ final class FunctionController extends Controller
         [$data] = $this->resolve($request->user(), $site, Permissions::VIEW);
 
         return response()->json(['data' => $live->for($data->id, $data->slug)])->header('Cache-Control', 'no-store');
+    }
+
+    /**
+     * The Code tab's test panel: an HTTP request to the function's own URL (its primary domain), so it goes through
+     * the same path as real traffic (TLS, gateway, cold start, access rules). Only that host is ever requested.
+     */
+    public function invoke(Request $request, string $site, SiteDomains $domains, HttpClient $http): JsonResponse
+    {
+        [$data] = $this->resolve($request->user(), $site, Permissions::EDIT);
+        $input = $request->validate([
+            'method' => ['required', 'in:GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS'],
+            'path' => ['required', 'string', 'max:2000', 'regex:/^\/[^\s]*$/'],
+            'headers' => ['nullable', 'array', 'max:30'],
+            'headers.*' => ['nullable', 'string', 'max:4096'],
+            'body' => ['nullable', 'string', 'max:262144'],
+        ]);
+        $domain = $domains->primaryDomains([$data->id])[$data->id] ?? null;
+        abort_if($domain === null, 422, 'The function has no domain yet: add one in Settings → Networking.');
+
+        $headers = [];
+
+        foreach ((array) ($input['headers'] ?? []) as $name => $value) {
+            if (preg_match('/^[A-Za-z0-9-]{1,64}$/', (string) $name) === 1 && ! in_array(strtolower((string) $name), ['host', 'content-length', 'connection', 'transfer-encoding'], true)) {
+                $headers[(string) $name] = (string) $value;
+            }
+        }
+
+        $started = microtime(true);
+
+        try {
+            $response = $http->withHeaders($headers)->withOptions(['allow_redirects' => false, 'http_errors' => false])->timeout(35)
+                ->send($input['method'], "https://{$domain}{$input['path']}", isset($input['body']) && $input['body'] !== '' ? ['body' => $input['body']] : []);
+        } catch (\Throwable $e) {
+            return response()->json(['data' => ['error' => $e->getMessage(), 'duration_ms' => (int) round((microtime(true) - $started) * 1000)]]);
+        }
+
+        $body = $response->body();
+
+        return response()->json(['data' => [
+            'url' => "https://{$domain}{$input['path']}",
+            'status' => $response->status(),
+            'headers' => array_map(fn ($values) => implode(', ', (array) $values), $response->headers()),
+            'body' => mb_strcut($body, 0, 262144),
+            'truncated' => strlen($body) > 262144,
+            'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+        ]]);
+    }
+
+    /** Settings → Access: keys (never their value) and the IP allowlist. */
+    public function access(Request $request, string $site): JsonResponse
+    {
+        [$data, $function] = $this->resolve($request->user(), $site, Permissions::VIEW);
+
+        return response()->json(['data' => [
+            'keys' => FunctionApiKey::query()->where('function_id', $function->id)->orderBy('created_at')->get()->map(fn (FunctionApiKey $k) => $k->present())->values(),
+            'allow_cidrs' => array_values((array) ($function->allow_cidrs ?? [])),
+            'can' => ['manage' => $this->access->can($request->user(), $data->organizationId, Permissions::DEPLOY)],
+        ]]);
+    }
+
+    /** The key is returned once; only its hash is kept. */
+    public function createKey(Request $request, string $site, ManageAccess $manage): JsonResponse
+    {
+        [$data, $function] = $this->resolve($request->user(), $site, Permissions::DEPLOY);
+        $this->authorizeDeploy($request->user(), $data);
+        $input = $request->validate(['name' => ['required', 'string', 'max:64']]);
+        $result = $manage->createKey($data, $function, $input['name'], $request->user()?->getAuthIdentifier());
+
+        return response()->json(['data' => [...$result['model']->present(), 'key' => $result['key'], 'deployment_id' => $result['deployment_id']]], 201);
+    }
+
+    public function revokeKey(Request $request, string $site, string $key, ManageAccess $manage): JsonResponse
+    {
+        [$data, $function] = $this->resolve($request->user(), $site, Permissions::DEPLOY);
+        $this->authorizeDeploy($request->user(), $data);
+        $model = FunctionApiKey::query()->where('function_id', $function->id)->findOrFail(strtolower($key));
+
+        return response()->json(['data' => ['deployment_id' => $manage->revokeKey($data, $model, $request->user()?->getAuthIdentifier())]]);
+    }
+
+    public function updateAllowlist(Request $request, string $site, ManageAccess $manage): JsonResponse
+    {
+        [$data, $function] = $this->resolve($request->user(), $site, Permissions::DEPLOY);
+        $this->authorizeDeploy($request->user(), $data);
+        $input = $request->validate(['allow_cidrs' => ['present', 'array', 'max:'.ManageAccess::MAX_CIDRS], 'allow_cidrs.*' => ['nullable', 'string', 'max:64']]);
+        $deploymentId = $manage->setAllowlist($data, $function, array_values((array) $input['allow_cidrs']), $request->user()?->getAuthIdentifier());
+
+        return response()->json(['data' => ['allow_cidrs' => array_values((array) ($function->refresh()->allow_cidrs ?? [])), 'deployment_id' => $deploymentId]]);
     }
 
     /** Autosave of the editor (per user). */

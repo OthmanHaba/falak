@@ -21,6 +21,10 @@ final class PayloadCompatibility
         'edge.access_log' => [
             'edge.caddy.apply' => ['sites.*.access_log'],
         ],
+        // Function paths on other sites; agents without it route nothing there (no error).
+        'fn.v2' => [
+            'edge.caddy.apply' => ['sites.*.mounts'],
+        ],
         'telemetry.log_kind' => [
             'telemetry.configure' => ['log_sources.*.kind', 'log_sources.*.multiline'],
         ],

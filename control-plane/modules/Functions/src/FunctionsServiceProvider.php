@@ -54,7 +54,7 @@ class FunctionsServiceProvider extends ModuleServiceProvider
         Event::listen(SiteDeleted::class, ForgetDeletedFunction::class);
 
         // Code is stored exactly as written: no trimmed lines or emptied files.
-        $code = fn (Request $request) => $request->is('sites/*/function/draft', 'sites/*/function/deploy');
+        $code = fn (Request $request) => $request->is('sites/*/function/draft', 'sites/*/function/deploy', 'api/v1/functions/*/deploy');
         TrimStrings::skipWhen($code);
         ConvertEmptyStringsToNull::skipWhen($code);
     }

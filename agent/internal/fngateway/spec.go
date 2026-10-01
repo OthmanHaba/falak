@@ -89,6 +89,8 @@ type Spec struct {
 	Scaling    Scaling           `json:"scaling"`
 	Limits     Limits            `json:"limits"`
 	Labels     map[string]string `json:"labels,omitempty"`
+	// Access is enforced by the gateway, not baked into containers (changing it keeps the instances).
+	Access Access `json:"access,omitempty"`
 }
 
 // ApplyResult is the PUT response.
@@ -126,6 +128,9 @@ func (s *Spec) Normalize() error {
 		if !envKeyRe.MatchString(k) {
 			return fmt.Errorf("invalid env name %q", k)
 		}
+	}
+	if err := s.Access.Normalize(); err != nil {
+		return err
 	}
 	sc := &s.Scaling
 	if sc.MaxInstances <= 0 {

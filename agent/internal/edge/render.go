@@ -45,6 +45,8 @@ type Site struct {
 	AllowIPs       []string          `json:"allow_ips,omitempty"`
 	MaxBodyBytes   int64             `json:"max_body_bytes,omitempty"`
 	Encode         *bool             `json:"encode,omitempty"`
+	// Mounts send a path of this site to another upstream (a function: the local gateway or its own domain).
+	Mounts []Mount `json:"mounts,omitempty"`
 	// AccessLog names the site's HTTP access log (the site slug): JSON lines in logs.AccessLogDir/<name>.log,
 	// shipped by the agent as kind=access records of that site. Routes sharing a name share the file.
 	AccessLog string `json:"access_log,omitempty"`
@@ -292,6 +294,13 @@ func siteRoutes(s Site) ([]any, error) {
 	if s.MaxBodyBytes > 0 {
 		sub = append(sub, obj{"handle": []any{obj{"handler": "request_body", "max_size": s.MaxBodyBytes}}})
 	}
+	// Mounts (a function on a path of this site) come after the access rules above and before the site's own
+	// redirects and handler.
+	mounts, err := mountRoutes(s.Mounts)
+	if err != nil {
+		return nil, err
+	}
+	sub = append(sub, mounts...)
 	for _, r := range s.Redirects {
 		st := r.Status
 		if st == 0 {

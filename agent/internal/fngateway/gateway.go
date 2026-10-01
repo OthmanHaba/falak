@@ -80,6 +80,9 @@ type function struct {
 	requests    uint64
 	coldStarts  uint64
 	lastRequest time.Time
+
+	// accessGen changes with spec.Access: a request is admitted only with the generation it was checked against.
+	accessGen uint64
 }
 
 // Gateway is the function proxy + scaler.
@@ -102,6 +105,8 @@ var (
 	errUnknown      = errors.New("unknown function")
 	errQueueFull    = errors.New("function is at capacity, try again")
 	errStartTimeout = errors.New("function did not start in time")
+	// errAccessChanged: the function's access rules changed after the request was checked.
+	errAccessChanged = errors.New("the function's access rules changed, try again")
 )
 
 type startFailed struct{ err error }
@@ -197,7 +202,39 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	site := r.Header.Get(Header)
 	r.Header.Del(Header)
 	arrived := time.Now()
-	inst, spec, err := g.acquire(r.Context(), site)
+	// Access control runs before acquire, so a rejected request never wakes the function; acquire admits the
+	// request only if the rules are still the ones it passed (else it is checked again against the new ones).
+	var (
+		inst *instance
+		spec Spec
+		err  error
+	)
+	for attempt := 0; ; attempt++ {
+		g.mu.Lock()
+		var access Access
+		var gen uint64
+		if f := g.fns[site]; f != nil {
+			access, gen = f.spec.Access, f.accessGen
+		}
+		g.mu.Unlock()
+		status, reason, strip := access.check(r)
+		if status != 0 {
+			writeAccessError(w, status, reason)
+			if g.tel != nil {
+				g.tel.requestSpan(site, r, status, arrived, reason)
+			}
+			return
+		}
+		inst, spec, err = g.acquire(r.Context(), site, gen)
+		if errors.Is(err, errAccessChanged) && attempt < 3 {
+			continue
+		}
+		if err == nil {
+			strip()
+			r.Header.Del(ClientIPHeader)
+		}
+		break
+	}
 	if err != nil {
 		g.writeError(w, r, err)
 		if g.tel != nil && !errors.Is(err, errUnknown) && r.Context().Err() == nil {
@@ -334,8 +371,9 @@ func (f *function) count(states ...instState) int {
 	return n
 }
 
-// acquire waits for an instance with room (starting instances as needed) and reserves a request slot on it.
-func (g *Gateway) acquire(ctx context.Context, site string) (*instance, Spec, error) {
+// acquire waits for an instance with room (starting instances as needed) and reserves a request slot on it,
+// provided the function's access rules are still generation accessGen (what the request was checked against).
+func (g *Gateway) acquire(ctx context.Context, site string, accessGen uint64) (*instance, Spec, error) {
 	g.mu.Lock()
 	f := g.fns[site]
 	if f == nil || site == "" {
@@ -357,6 +395,11 @@ func (g *Gateway) acquire(ctx context.Context, site string) (*instance, Spec, er
 			unqueue()
 			g.mu.Unlock()
 			return nil, Spec{}, errUnknown
+		}
+		if f.accessGen != accessGen {
+			unqueue()
+			g.mu.Unlock()
+			return nil, Spec{}, errAccessChanged
 		}
 		if in := f.pick(); in != nil {
 			unqueue()
@@ -649,7 +692,10 @@ func (g *Gateway) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 	if f != nil {
 		prev = f.spec.Release
 		if f.hash == hash {
-			changed := f.spec.Scaling != spec.Scaling
+			if !f.spec.Access.equal(spec.Access) {
+				f.accessGen++
+			}
+			changed := f.spec.Scaling != spec.Scaling || !f.spec.Access.equal(spec.Access)
 			f.spec = spec
 			g.broadcast()
 			g.persistLocked()
@@ -684,6 +730,9 @@ func (g *Gateway) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 		old = f.insts
 	}
 	oldTimeout := f.spec.requestTimeout()
+	if !f.spec.Access.equal(spec.Access) {
+		f.accessGen++
+	}
 	f.spec, f.hash, f.insts = spec, hash, []*instance{in}
 	f.startFailures, f.lastStartErr, f.lastFailAt = 0, nil, time.Time{}
 	for _, o := range old {

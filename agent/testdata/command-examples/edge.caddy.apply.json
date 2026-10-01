@@ -18,7 +18,21 @@
       "upstreams": [{ "dial": "127.0.0.1:3000" }],
       "lb_policy": "round_robin",
       "health_uri": "/health",
-      "deny_ips": ["203.0.113.0/24"]
+      "deny_ips": ["203.0.113.0/24"],
+      "mounts": [
+        {
+          "path_prefix": "/api",
+          "strip_prefix": true,
+          "dial": "127.0.0.1:7070",
+          "request_headers": { "X-Kiln-Function": "api", "X-Kiln-Client-IP": "{http.vars.client_ip}" }
+        },
+        {
+          "path_prefix": "/hooks",
+          "dial": "hooks.example.com:443",
+          "tls_server_name": "hooks.example.com",
+          "request_headers": { "Host": "hooks.example.com" }
+        }
+      ]
     },
     {
       "id": "legacy",

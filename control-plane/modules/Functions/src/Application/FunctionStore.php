@@ -4,6 +4,7 @@ namespace Kiln\Functions\Application;
 
 use Illuminate\Support\Facades\DB;
 use Kiln\Functions\Domain\Models\CloudFunction;
+use Kiln\Functions\Domain\Models\FunctionApiKey;
 use Kiln\Functions\Domain\Models\FunctionDraft;
 use Kiln\Functions\Domain\Models\FunctionSchedule;
 use Kiln\Functions\Domain\Models\FunctionVersion;
@@ -84,6 +85,7 @@ final class FunctionStore
         DB::transaction(function () use ($function) {
             FunctionDraft::query()->where('function_id', $function->id)->delete();
             FunctionSchedule::query()->where('function_id', $function->id)->delete();
+            FunctionApiKey::query()->where('function_id', $function->id)->delete();
             FunctionVersion::query()->where('function_id', $function->id)->delete();
             $function->delete();
         });
