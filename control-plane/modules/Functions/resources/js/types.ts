@@ -24,7 +24,7 @@ export interface FunctionSettings {
 /** GET /sites/{site}/function */
 export interface FunctionState {
     site: { id: string; name: string; slug: string };
-    runtime: { key: string; label: string; language: string };
+    runtime: { key: string; label: string; language: string; family: string };
     entrypoint: string;
     head: (FunctionVersionSummary & { files: FunctionFiles }) | null;
     live: FunctionVersionSummary | null;
@@ -53,6 +53,25 @@ export interface Starter {
     key: string;
     title: string;
     description: string;
+    category: string;
+    variables: string[];
+    schedule: { name: string; expression: string } | null;
+    families: string[];
+}
+
+export interface RuntimeOption {
+    key: string;
+    label: string;
+    family: string;
+    language: string;
+    entrypoint: string;
+}
+
+/** GET /functions/starters */
+export interface StarterCatalog {
+    runtimes: RuntimeOption[];
+    default_runtime: string;
+    starters: Starter[];
 }
 
 export const functionUrl = (siteId: string, path = '') => `/sites/${siteId}/function${path}`;

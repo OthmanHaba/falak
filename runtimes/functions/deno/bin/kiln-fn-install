@@ -1,0 +1,2 @@
+#!/bin/sh
+exec deno run --allow-all /opt/kiln-fn/deno/install.mjs "$@"

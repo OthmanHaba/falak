@@ -1,2 +1,2 @@
 #!/bin/sh
-exec bun /opt/kiln-fn/run.ts "$@"
+exec bun /opt/kiln-fn/shared/run.mjs "$@"

@@ -51,7 +51,16 @@ jobs:
             context: deploy/edge
           - image: fn-bun
             dockerfile: runtimes/functions/bun/Dockerfile
-            context: runtimes/functions/bun
+            context: runtimes/functions
+          - image: fn-node
+            dockerfile: runtimes/functions/node/Dockerfile
+            context: runtimes/functions
+          - image: fn-deno
+            dockerfile: runtimes/functions/deno/Dockerfile
+            context: runtimes/functions
+          - image: fn-python
+            dockerfile: runtimes/functions/python/Dockerfile
+            context: runtimes/functions
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

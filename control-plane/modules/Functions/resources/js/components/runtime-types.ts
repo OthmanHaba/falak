@@ -97,4 +97,16 @@ declare module 'bun' {
 
 declare const process: { env: Record<string, string | undefined>; exit(code?: number): never; uptime(): number; version: string };
 declare const Bun: { env: Record<string, string | undefined>; version: string; sleep(ms: number): Promise<void> };
+declare const Deno: { env: { get(key: string): string | undefined; toObject(): Record<string, string> }; version: { deno: string }; [key: string]: any };
+
+declare module 'postgres' {
+    interface Sql {
+        <T = any>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]>;
+        (value: unknown): unknown;
+        begin<T>(fn: (sql: Sql) => Promise<T>): Promise<T>;
+        unsafe<T = any>(query: string, params?: unknown[]): Promise<T[]>;
+        end(): Promise<void>;
+    }
+    export default function postgres(url?: string, options?: Record<string, unknown>): Sql;
+}
 `;

@@ -9,6 +9,7 @@ use Kiln\Functions\Application\Code;
 use Kiln\Functions\Application\FunctionStore;
 use Kiln\Functions\Domain\Models\CloudFunction;
 use Kiln\Functions\Domain\Models\FunctionDraft;
+use Kiln\Functions\Domain\Models\FunctionSchedule;
 use Kiln\Functions\Domain\Models\FunctionVersion;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Processes\Contracts\ScheduleDirectory;
@@ -16,6 +17,7 @@ use Kiln\Processes\Infrastructure\StateCompiler;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Contracts\SiteFactory;
+use Kiln\Sites\Domain\Models\EnvironmentVersion;
 use Kiln\Sites\Domain\Models\Site;
 
 require_once __DIR__.'/../../../Deployments/tests/Support/helpers.php';
@@ -88,7 +90,7 @@ it('creates a function from the canvas and deploys its starter through the gatew
 
     expect($deployment->status)->toBe(DeploymentStatus::Succeeded)
         ->and($deployment->commit)->toBe($version->hash)
-        ->and($deployment->commit_message)->toBe('v1: Created from the Webhook receiver starter')
+        ->and($deployment->commit_message)->toBe('v1: Created from the Signed webhook receiver starter')
         ->and(Release::query()->find($deployment->release_id)->commit)->toBe($version->hash)
         // functions have no health check step and no deploy.prune (the agent prunes releases itself)
         ->and(deploy_types($world->agents))->not->toContain('deploy.prune');
@@ -110,7 +112,7 @@ it('versions every deploy, detects stale editors and skips unchanged code', func
 
     $this->getJson(fn_url($world->site))->assertOk()
         ->assertJsonPath('data.head.number', 1)
-        ->assertJsonPath('data.runtime.label', 'Bun + Hono')
+        ->assertJsonPath('data.runtime.label', 'Bun')
         ->assertJsonPath('data.can.deploy', true);
 
     // Draft autosave, then deploy removes it.
@@ -305,4 +307,56 @@ it('lets viewers see schedules but not change or run them', function () {
     $this->getJson(fn_url($world->site, '/schedules'))->assertOk()->assertJsonPath('data.can.manage', false)->assertJsonCount(1, 'data.schedules');
     $this->postJson(fn_url($world->site, '/schedules'), ['name' => 'x', 'expression' => '@daily'])->assertForbidden();
     $this->postJson(fn_url($world->site, "/schedules/{$schedule['id']}/run"))->assertForbidden();
+});
+
+it('offers every runtime and starters for each language', function () {
+    actingAsMember(Role::Owner);
+    $data = $this->getJson('/functions/starters')->assertOk()->json('data');
+
+    expect(array_column($data['runtimes'], 'key'))->toBe(['bun', 'node', 'deno', 'python'])
+        ->and(count($data['starters']))->toBeGreaterThanOrEqual(10);
+
+    foreach ($data['starters'] as $starter) {
+        expect($starter['families'])->toBe(['ts', 'python']);
+    }
+});
+
+it('creates a Python function with the starter’s variables and schedule', function () {
+    $world = deploy_world(site: ['runtime' => 'static', 'framework' => 'static', 'php_version' => null]);
+    fn_agent($world->servers[0]->id, $world->organization->id);
+    $environment = projects_default_env($world->organization);
+
+    $response = $this->postJson("/projects/{$environment->project_id}/{$environment->slug}/functions", [
+        'name' => 'Pinger', 'server_id' => $world->servers[0]->id, 'starter' => 'uptime-monitor', 'runtime' => 'python',
+    ])->assertCreated();
+
+    $site = Site::query()->findOrFail($response->json('data.site_id'));
+    $function = CloudFunction::query()->where('site_id', $site->id)->firstOrFail();
+    $apply = $world->agents->last('fn.release.apply')['payload'];
+    $variables = EnvironmentVersion::query()->where('site_id', $site->id)->orderByDesc('version')->first()->variables;
+
+    expect($function->runtime)->toBe('python')
+        ->and($function->entrypoint)->toBe('main.py')
+        ->and(array_keys($function->head()->files))->toBe(['main.py'])
+        ->and($function->head()->files['main.py'])->toContain('async def scheduled(event: dict)')
+        ->and($apply['image'])->toContain('/kiln-fn-python:')
+        ->and($apply['entrypoint'])->toBe('main.py')
+        ->and($variables)->toMatchArray(['URLS' => '', 'ALERT_WEBHOOK_URL' => ''])
+        ->and(FunctionSchedule::query()->where('function_id', $function->id)->pluck('expression')->all())->toBe(['*/5 * * * *']);
+});
+
+it('generates the secrets a starter needs and rejects unknown runtimes', function () {
+    $world = deploy_world(site: ['runtime' => 'static', 'framework' => 'static', 'php_version' => null]);
+    fn_agent($world->servers[0]->id, $world->organization->id);
+    $environment = projects_default_env($world->organization);
+    $url = "/projects/{$environment->project_id}/{$environment->slug}/functions";
+
+    $this->postJson($url, ['name' => 'Nope', 'server_id' => $world->servers[0]->id, 'runtime' => 'cobol'])->assertUnprocessable()->assertJsonValidationErrors('runtime');
+
+    $site = $this->postJson($url, ['name' => 'Bot', 'server_id' => $world->servers[0]->id, 'starter' => 'telegram-bot', 'runtime' => 'deno'])->assertCreated()->json('data.site_id');
+    $variables = EnvironmentVersion::query()->where('site_id', $site)->orderByDesc('version')->first()->variables;
+
+    expect($variables['TELEGRAM_BOT_TOKEN'])->toBe('')
+        ->and($variables['TELEGRAM_WEBHOOK_SECRET'])->toMatch('/^[0-9a-f]{48}$/')
+        ->and(CloudFunction::query()->where('site_id', $site)->value('entrypoint'))->toBe('index.ts');
 });

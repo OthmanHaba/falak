@@ -1,0 +1,3 @@
+#!/bin/sh
+# Node strips the TypeScript types of /app/*.ts itself.
+exec node --disable-warning=ExperimentalWarning /opt/kiln-fn/node/serve.mjs "$@"

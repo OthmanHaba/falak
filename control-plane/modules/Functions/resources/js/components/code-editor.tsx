@@ -57,6 +57,7 @@ function languageOf(path: string, fallback: string): string {
     if (/\.(ts|mts|cts)$/.test(path)) return 'typescript';
     if (/\.(js|mjs|cjs)$/.test(path)) return 'javascript';
     if (path.endsWith('.json')) return 'json';
+    if (path.endsWith('.py')) return 'python';
 
     return fallback;
 }

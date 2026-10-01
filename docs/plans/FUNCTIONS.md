@@ -294,3 +294,33 @@ Gateway (`kiln-agent fn-gateway`, unit `kiln-fn-gateway.service`, root, `Runtime
 - Admin API over HTTP on `/run/kiln-fn/gateway.sock`: `PUT|DELETE /v1/functions/{site}`, `GET /v1/functions`.
 - State is kept in `/var/lib/kiln/functions/gateway.json`. On start it adopts running containers by label.
 - Agent feature flag: `fn.v1`.
+
+## Phase 3 contract: Node, Deno and Python runtimes (fixed)
+
+Every runtime image ships `kiln-fn-install`, `kiln-fn-serve` and `kiln-fn-run`, following the runtime convention in
+`runtimes/functions/bun/README.md`. The agent and gateway do not change.
+
+**Mounts and environment**
+- `/app` is the release, read-only at serve and run time. `/cache` exists during install only.
+- `PORT=8080`, `KILN_ENTRYPOINT`.
+- Telemetry: `KILN_OTLP_SOCKET`, the `X-Kiln-Cold-Start` header, `KILN_TELEMETRY=off`.
+- Schedules: `KILN_TRIGGER`, `KILN_SCHEDULE`, `KILN_SCHEDULE_NAME`, `KILN_SCHEDULE_CRON`.
+
+**Telemetry, the same in every runtime** (`contracts/telemetry/README.md`)
+- `request` spans named by the route template, `(unmatched)` when no route matched; `faas.coldstart`.
+- Exceptions with stack traces.
+- `outgoing_request` spans for HTTP clients (no query strings).
+- `scheduled_task` spans for runs.
+- Batched OTLP/HTTP JSON to the socket; it never blocks a request, and drops data when the socket is down.
+
+| Runtime | Image (`runtimes/functions/<r>`) | Entrypoint | You export | Dependencies |
+|---|---|---|---|---|
+| `bun` | `oven/bun` slim | `index.ts` | `default` Hono app / `{ fetch }` / fetch function; `scheduled(event)` | bare imports → `bun install` (lock kept) |
+| `node` | `node:24-slim` | `index.ts` (Node strips TypeScript types natively; use erasable syntax) | same as Bun | bare imports → generated `package.json` → `npm install` (`package-lock.json` kept) |
+| `deno` | `denoland/deno` (Debian) | `index.ts` | same as Bun | bare imports → `deno.json` imports `npm:<pkg>` (or the user's own `deno.json` / `package.json`) → `deno install` into `/app` |
+| `python` | `python:3.13-slim` + `uv` | `main.py` | `app` (an ASGI app: FastAPI, Starlette, …); `scheduled(event)` (sync or async) | a PEP 723 `# /// script` block or `requirements.txt` → `uv` into `/app/.venv` (`requirements.lock` kept); the image provides `uvicorn` |
+
+- **TypeScript starters** are shared by bun, node and deno: Hono, the Web APIs, and npm packages that run on all
+  three (e.g. `postgres`).
+- **Python starters** use FastAPI and `httpx`.
+- **Deno** runs with `--allow-net --allow-env --allow-read=/app,/tmp,/run/kiln-otlp --allow-write=/tmp,/run/kiln-otlp`.
