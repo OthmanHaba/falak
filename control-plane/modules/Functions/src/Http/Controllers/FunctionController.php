@@ -231,7 +231,7 @@ final class FunctionController extends Controller
         [, $function] = $this->resolve($request->user(), $site, Permissions::VIEW);
         $version = FunctionVersion::query()->where('function_id', $function->id)->where('number', $number)->firstOrFail();
 
-        return response()->json(['data' => [...$version->summary(), 'entrypoint' => $version->entrypoint, 'files' => $version->files]]);
+        return response()->json(['data' => $version->detail()]);
     }
 
     public function deployVersion(Request $request, string $site, int $number, DeployVersion $deploy): JsonResponse

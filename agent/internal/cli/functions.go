@@ -8,11 +8,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/kiln/agent/internal/cli/api"
 )
@@ -98,6 +100,19 @@ func cmdFnPull(ctx context.Context, a *App, args []string) error {
 		paths = append(paths, p)
 	}
 	sort.Strings(paths)
+	// Files an earlier pull or deploy wrote that this version no longer has (only those: never the user's others).
+	if old, ok, _ := readFunctionMeta(dir); ok && old.SiteID == fn.Site.ID {
+		for _, p := range old.Files {
+			if _, keep := fn.Head.Files[p]; keep {
+				continue
+			}
+			if target, err := safeJoin(dir, p); err == nil {
+				if err := os.Remove(target); err == nil {
+					fmt.Fprintf(a.Stderr, "kiln: removed %s (not in v%d)\n", p, fn.Head.Number)
+				}
+			}
+		}
+	}
 	for _, p := range paths {
 		target, err := safeJoin(dir, p)
 		if err != nil {
@@ -150,30 +165,13 @@ func cmdFnDeploy(ctx context.Context, a *App, args []string) error {
 		return usagef("%s belongs to %s, not %s", filepath.Join(dir, functionMetaFile), meta.Slug, fn.Site.Slug)
 	}
 
-	// The function's file set: the entrypoint plus what the pulled / newest version has.
-	known := map[string]bool{fn.Entrypoint: true}
-	for _, p := range meta.Files {
-		known[p] = true
+	// The whole directory is the function (minus dependencies, VCS and dot-files; see readFunctionDir).
+	files, skipped, err := readFunctionDir(dir)
+	if err != nil {
+		return err
 	}
-	if fn.Head != nil {
-		for p := range fn.Head.Files {
-			known[p] = true
-		}
-	}
-	files := map[string]string{}
-	for p := range known {
-		target, err := safeJoin(dir, p)
-		if err != nil {
-			return err
-		}
-		b, err := os.ReadFile(target)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		files[p] = string(b)
+	for _, p := range skipped {
+		fmt.Fprintf(a.Stderr, "kiln: skipping %s\n", p)
 	}
 	if _, ok := files[fn.Entrypoint]; !ok {
 		return fmt.Errorf("%s not found in %s (run `kiln fn pull %s %s` first)", fn.Entrypoint, dir, fn.Site.Slug, dir)
@@ -480,6 +478,96 @@ func safeJoin(dir, p string) (string, error) {
 		}
 	}
 	return filepath.Join(dir, clean), nil
+}
+
+// Limits of one function's code (the control plane checks them too; these give a clear local error first).
+const (
+	maxFunctionFiles = 50
+	maxFunctionBytes = 1 << 20
+)
+
+// ignoredDirs are never part of a function: dependencies and build output the server creates itself, and VCS.
+var ignoredDirs = map[string]bool{"node_modules": true, "__pycache__": true, ".git": true, ".venv": true, "venv": true}
+
+// readFunctionDir reads a function directory as {path: content}: every regular file, except dot-files and
+// dot-folders (.kiln-function.json, .git, .env …), the folders in ignoredDirs, and the patterns of an optional
+// .kilnignore (one per line: a name like "dist" or a glob like "*.log" or "tests/*"). Symlinks are skipped (a
+// link could pull in files from outside the directory); non-UTF-8 (binary) files are an error.
+func readFunctionDir(dir string) (map[string]string, []string, error) {
+	ignore, err := readKilnIgnore(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	files, total := map[string]string{}, 0
+	var skipped []string
+	err = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil || rel == "." {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		name := d.Name()
+		if strings.HasPrefix(name, ".") || ignored(ignore, rel, name) || (d.IsDir() && ignoredDirs[name]) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			skipped = append(skipped, rel+" (symlink)")
+			return nil
+		}
+		if d.IsDir() || !d.Type().IsRegular() {
+			return nil
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		if !utf8.Valid(b) {
+			return fmt.Errorf("%s is not a text file (functions hold UTF-8 source only; add it to .kilnignore)", rel)
+		}
+		total += len(rel) + len(b)
+		if len(files) >= maxFunctionFiles || total > maxFunctionBytes {
+			return fmt.Errorf("%s holds more than %d files or %d KB: a function is source code only (add the rest to .kilnignore)", dir, maxFunctionFiles, maxFunctionBytes>>10)
+		}
+		files[rel] = string(b)
+		return nil
+	})
+	return files, skipped, err
+}
+
+func readKilnIgnore(dir string) ([]string, error) {
+	b, err := os.ReadFile(filepath.Join(dir, ".kilnignore"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, line := range strings.Split(string(b), "\n") {
+		if line = strings.TrimSuffix(strings.TrimSpace(line), "/"); line != "" && !strings.HasPrefix(line, "#") {
+			out = append(out, strings.TrimPrefix(line, "/"))
+		}
+	}
+	return out, nil
+}
+
+// ignored: a pattern matches the whole relative path or the file/folder name.
+func ignored(patterns []string, rel, name string) bool {
+	for _, pat := range patterns {
+		if ok, _ := path.Match(pat, rel); ok {
+			return true
+		}
+		if ok, _ := path.Match(pat, name); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func readFunctionMeta(dir string) (functionMeta, bool, error) {

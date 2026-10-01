@@ -402,3 +402,30 @@ A site entry in `edge.caddy.apply` gains an optional field:
 | `run <fn> <schedule>` | runs a schedule and streams its output |
 | `logs <fn> [--follow]` | the site's logs, reusing `kiln logs` |
 | `invoke <fn> [path] [-X method] [-d body] [-H 'K: V']…` | HTTP request to the function's URL; prints status, headers and body |
+
+## Phase 5 contract: several files, Go runtime (fixed)
+
+Agent feature flag: `fn.v3`.
+
+### Several files
+
+Storage did not change: a version (and a draft) is `files {path: content}` plus the function's `entrypoint`, and
+its hash covers every file. What phase 5 adds:
+
+- **Paths** (`Code::files` on the control plane, `validate()` in the agent, the same rules on both sides):
+  - relative, `[A-Za-z0-9_][A-Za-z0-9_.-]*` per segment, at most 8 segments and 200 characters;
+  - no dot-files, no `..`, no `node_modules` or `__pycache__` segment (the installers create those);
+  - a file is never also a folder (`lib` and `lib/db.ts`), and no two paths differ only in case;
+  - at most 50 files and 1 MB per version (the agent accepts up to 200 files and 2 MiB).
+- **Old agents:** a version with more than one file is deployed only to servers whose agent reports `fn.v3`. The
+  editor's Deploy saves the version and reports "update the agent" instead of deploying; Versions → Deploy and the
+  API return 422. Single-file functions keep working on every agent. (Nothing is stripped: a release without some of
+  its files would not run.)
+- **Version detail** (`GET …/versions/{n}`, panel and API) gains `changes: [{path, status: added|removed|modified}]`
+  against the previous version.
+- **Editor:** a file tree beside Monaco (add, rename, delete; the entrypoint stays), one Monaco model per file under
+  `file:///<slug>/edit/…` so TypeScript resolves relative imports, A/M/D marks against the newest version, and the
+  conflict and version views diff file by file.
+- **CLI:** `kiln fn deploy` sends the whole directory (minus dot-files and dot-folders, `node_modules`,
+  `__pycache__`, `.venv`, `venv`, symlinks and `.kilnignore` patterns; non-UTF-8 files are an error), so deleted
+  files leave the new version. `kiln fn pull` removes files an earlier pull wrote that the new version no longer has.

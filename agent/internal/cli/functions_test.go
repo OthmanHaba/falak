@@ -172,15 +172,28 @@ func TestFnPullEditDeployAndConflict(t *testing.T) {
 		t.Fatalf("meta %+v", meta)
 	}
 
-	// Edit, add an unrelated file (not part of the function: not sent), deploy.
+	// Edit, add a module in a new folder; dependencies, VCS, dot-files and .kilnignore'd files are not sent.
 	os.WriteFile(filepath.Join(dir, "index.ts"), []byte("export default { fetch: () => new Response('v2') }\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("scratch"), 0o644)
+	os.MkdirAll(filepath.Join(dir, "routes", "admin"), 0o755)
+	os.WriteFile(filepath.Join(dir, "routes", "admin", "users.ts"), []byte("export const users = []\n"), 0o644)
+	for _, junk := range []string{"node_modules/hono/index.js", ".git/HEAD", ".env", "notes.log", "dist/out.js"} {
+		os.MkdirAll(filepath.Dir(filepath.Join(dir, junk)), 0o755)
+		os.WriteFile(filepath.Join(dir, junk), []byte("x"), 0o644)
+	}
+	os.WriteFile(filepath.Join(dir, ".kilnignore"), []byte("# local only\n*.log\ndist/\n"), 0o644)
+	outside := filepath.Join(t.TempDir(), "secret.ts")
+	os.WriteFile(outside, []byte("secret"), 0o644)
+	os.Symlink(outside, filepath.Join(dir, "linked.ts"))
 	if code := h.run("fn", "deploy", "hooks", dir, "-m", "Say v2", "--wait"); code != 0 {
 		t.Fatalf("deploy: %d %s %s", code, h.out.String(), h.err.String())
 	}
 	sent := f.deploys[0]
-	if sent.BaseVersionID != f.versions[0].ID || sent.Message != "Say v2" || len(sent.Files) != 2 || !strings.Contains(sent.Files["index.ts"], "v2") || sent.Files["notes.txt"] != "" {
+	if sent.BaseVersionID != f.versions[0].ID || sent.Message != "Say v2" || len(sent.Files) != 3 || !strings.Contains(sent.Files["index.ts"], "v2") ||
+		sent.Files["routes/admin/users.ts"] == "" || sent.Files["lib/util.ts"] == "" {
 		t.Fatalf("sent %+v", sent)
+	}
+	if !strings.Contains(h.err.String(), "skipping linked.ts (symlink)") {
+		t.Fatalf("symlink not reported: %s", h.err.String())
 	}
 	if !strings.Contains(h.out.String(), "v2 (bbbbbbb) of hooks") || !strings.Contains(h.out.String(), "release is live") {
 		t.Fatalf("out %s", h.out.String())

@@ -90,15 +90,34 @@ The **Code** tab is a full editor, with TypeScript autocomplete for Hono and Bun
 - **Deploy history:** the deploy appears in the Deployments tab like any other service's deploy.
 - **When the new version fails:** if it doesn't install or start, the deploy fails and the previous version keeps
   serving.
-- **If a teammate deployed while you were editing:** Kiln shows their version next to yours. You can take theirs,
-  keep editing, or deploy yours on top.
+- **If a teammate deployed while you were editing:** Kiln shows their version next to yours, file by file. You can
+  take theirs, keep editing, or deploy yours on top.
+
+### Several files
+
+A function can have several files in folders: the file list beside the editor adds (**+**), renames and deletes
+them; the entry file stays. Import them with relative paths:
+
+```ts
+import { users } from './routes/users.ts'   // Node and Deno need the extension; Bun accepts both
+```
+
+```python
+from lib.db import connect                  # main.py's folder is on the import path; folders need no __init__.py
+```
+
+- Changed files are marked **A** (added), **M** (modified) or **D** (deleted) against the newest version.
+- A version holds all its files; rollback brings all of them back.
+- Paths use letters, digits, `.`, `_`, `-` and `/`, up to 8 levels deep. No dot-files, and no `node_modules` or
+  `__pycache__` (the server creates those).
+- Functions with more than one file need Kiln agent 0.4.4 or newer on the function's server.
 
 ## Versions and rollback
 
 Each version is immutable and records its author, message and a short hash (the hash is the deployment's commit).
 In the **Versions** tab you can:
 
-- **Compare** any version against the live one.
+- **Compare** any version against the live one, file by file; each version also lists what it changed.
 - **Deploy this version** to roll back. The server keeps recent releases installed, so a rollback is instant.
 - **Restore to editor** to start a new change from an old version.
 
@@ -190,6 +209,12 @@ kiln fn invoke hooks /status -H 'X-Kiln-Key: kfn_…'
 kiln fn logs hooks --follow
 ```
 
+`kiln fn deploy` sends the **whole directory** as the function's files, so files you add are deployed and files you
+delete are removed from the new version. It leaves out dot-files and dot-folders (`.git`, `.env`,
+`.kiln-function.json`), `node_modules`, `__pycache__`, `.venv` and `venv`, symlinks, and whatever a `.kilnignore`
+lists (one name or glob per line, e.g. `dist` or `*.log`). `kiln fn pull` writes every file of the newest version,
+and removes the files an earlier pull wrote that the version no longer has.
+
 If someone deployed after your `pull`, `kiln fn deploy` stops with exit code 4 (pull, or `--force`). The same
 operations are in the API (`/api/v1/functions…`, see `docs/API.md`).
 
@@ -260,6 +285,6 @@ addresses.
 
 ## Limits
 
-- 1 MB of code per version, 50 files. The editor shows one file for now; versions already store several.
+- 1 MB of code per version, 50 files, 8 folder levels. Source files only (UTF-8 text).
 - A function runs on one server; multi-server functions come with load balancing.
 - Health checks don't apply: a health probe would keep the function awake.

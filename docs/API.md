@@ -347,13 +347,17 @@ run (without files). A version is `{id, number, hash, short_hash, message, autho
 the newest one) and deploys it: `201 {data: {version, created: true, deployment_id}, warnings[]}` (`200` with
 `created: false` for unchanged code). Without `base_version_id` the code is deployed on top of the newest version.
 When someone deployed after `base_version_id`: `409 {message, head}` (the newer version, with files), unless
-`force: true`. Follow the deployment with `GET /api/v1/deployments/{deployment_id}`.
+`force: true`. `files` is the function's complete file set (files left out are removed in the new version); code
+with more than one file is saved but not deployed while the server's agent is older than `fn.v3` (a warning says
+so). Follow the deployment with `GET /api/v1/deployments/{deployment_id}`.
 
 ### `GET /api/v1/functions/{site}/versions` · `GET /api/v1/functions/{site}/versions/{number}` — `functions.view`
-Newest first (up to 200); a single version includes `entrypoint` and `files`.
+Newest first (up to 200); a single version includes `entrypoint`, `files` and `changes`
+(`[{path, status: added|removed|modified}]` against the previous version).
 
 ### `POST /api/v1/functions/{site}/versions/{number}/deploy` — `functions.deploy` + `deployments.create`
-Deploys that version again (a rollback when it is not the newest). `201 {data: {deployment_id}}`.
+Deploys that version again (a rollback when it is not the newest). `201 {data: {deployment_id}}`; `422` when the
+version has several files and the server's agent is older than `fn.v3`.
 
 ### `POST /api/v1/functions/{site}/schedules/{schedule}/run` — `functions.deploy`
 Runs a schedule now (`{schedule}` = its id, key or name). `202 {data: {run_id, schedule}}`.

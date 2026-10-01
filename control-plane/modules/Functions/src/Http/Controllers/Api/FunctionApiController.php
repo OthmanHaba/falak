@@ -140,7 +140,7 @@ final class FunctionApiController extends Controller
         [, $function] = $this->resolve($request->user(), $site, Permissions::VIEW);
         $version = FunctionVersion::query()->where('function_id', $function->id)->where('number', $number)->firstOrFail();
 
-        return response()->json(['data' => [...$version->summary(), 'entrypoint' => $version->entrypoint, 'files' => $version->files]]);
+        return response()->json(['data' => $version->detail()]);
     }
 
     /** POST /api/v1/functions/{site}/versions/{number}/deploy (rollback) */

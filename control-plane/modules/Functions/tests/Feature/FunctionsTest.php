@@ -155,7 +155,38 @@ it('validates the code', function (array $files, string $error) {
     'no entrypoint' => [['main.ts' => 'x'], 'entrypoint index.ts is missing'],
     'escaping path' => [['index.ts' => 'x', '../etc/passwd' => 'x'], 'not a valid file path'],
     'dot file' => [['index.ts' => 'x', '.env' => 'x'], 'not a valid file path'],
+    'dependency folder' => [['index.ts' => 'x', 'node_modules/hono/index.js' => 'x'], 'created on the server'],
+    'file and folder' => [['index.ts' => 'x', 'lib' => 'x', 'lib/db.ts' => 'x'], 'lib is both a file and a folder'],
+    'case only' => [['index.ts' => 'x', 'lib/DB.ts' => 'x', 'lib/db.ts' => 'x'], 'differ only in case'],
+    'too deep' => [['index.ts' => 'x', 'a/b/c/d/e/f/g/h/i.ts' => 'x'], 'nested too deep'],
 ]);
+
+it('deploys several files in folders and shows what changed per file', function () {
+    [$world, $function] = fn_world();
+    Agent::query()->where('server_id', $world->servers[0]->id)->update(['facts' => ['features' => ['fn.v1', 'fn.v2', 'fn.v3']]]);
+    $files = ['index.ts' => "import { users } from './routes/users'\nexport default { fetch: () => Response.json(users) }\n", 'routes/users.ts' => "export const users = []\n"];
+
+    $this->postJson(fn_url($world->site, '/deploy'), ['files' => $files, 'base_version_id' => $function->head()->id])->assertCreated();
+    $apply = $world->agents->last('fn.release.apply')['payload'];
+
+    expect(array_column($apply['files'], 'path'))->toBe(['index.ts', 'routes/users.ts']);
+    $version = $this->getJson(fn_url($world->site, '/versions/2'))->assertOk();
+
+    expect($version->json('data.files')['routes/users.ts'])->toBe("export const users = []\n");
+    $version->assertJsonPath('data.changes', [['path' => 'index.ts', 'status' => 'modified'], ['path' => 'routes/users.ts', 'status' => 'added']]);
+});
+
+it('keeps several files off agents that cannot write file trees', function () {
+    [$world, $function] = fn_world(); // agent reports fn.v1 only
+    $files = ['index.ts' => FN_V2, 'lib/util.ts' => 'export const x = 1'];
+
+    $response = $this->postJson(fn_url($world->site, '/deploy'), ['files' => $files, 'base_version_id' => $function->head()->id])->assertCreated();
+
+    expect($response->json('data.deployment_id'))->toBeNull()
+        ->and($response->json('warnings.0'))->toContain('too old for functions with several files')
+        ->and($world->agents->dispatched('fn.release.apply'))->toBeEmpty();
+    $this->postJson(fn_url($world->site, '/versions/2/deploy'))->assertUnprocessable()->assertJsonValidationErrors(['version' => 'update it first']);
+});
 
 it('rolls back to an earlier version with its exact code', function () {
     [$world, $function] = fn_world();

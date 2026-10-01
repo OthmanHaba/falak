@@ -10,6 +10,11 @@ use Illuminate\Validation\ValidationException;
  */
 final class Code
 {
+    public const MAX_DEPTH = 8;
+
+    /** Folders the runtimes' installers create in the release (dependencies, bytecode caches). */
+    public const RESERVED = ['node_modules', '__pycache__'];
+
     public const PATH_PATTERN = '/^(?!.*(?:^|\/)\.\.?(?:\/|$))[A-Za-z0-9_][A-Za-z0-9_.\-]*(?:\/[A-Za-z0-9_][A-Za-z0-9_.\-]*)*$/';
 
     /**
@@ -36,6 +41,8 @@ final class Code
             $files[$path] = $content;
         }
 
+        self::tree(array_keys($files), $field);
+
         if ($files === []) {
             throw ValidationException::withMessages([$field => 'The function has no code.']);
         }
@@ -55,6 +62,76 @@ final class Code
         ksort($files, SORT_STRING);
 
         return $files;
+    }
+
+    /**
+     * Paths the server can write as a tree: not too deep, no folder the installer owns, no file that is also a
+     * folder ("lib" and "lib/db.ts"), and no two paths that differ only in case (they collide on macOS checkouts).
+     *
+     * @param  list<string>  $paths
+     *
+     * @throws ValidationException
+     */
+    private static function tree(array $paths, string $field): void
+    {
+        $folded = [];
+
+        foreach ($paths as $path) {
+            $segments = explode('/', $path);
+
+            if (count($segments) > self::MAX_DEPTH) {
+                throw ValidationException::withMessages([$field => "{$path} is nested too deep (at most ".self::MAX_DEPTH.' levels).']);
+            }
+
+            if (array_intersect($segments, self::RESERVED) !== []) {
+                throw ValidationException::withMessages([$field => "{$path}: ".implode(', ', self::RESERVED).' are created on the server when the dependencies are installed.']);
+            }
+
+            for ($i = 1; $i < count($segments); $i++) {
+                $folder = implode('/', array_slice($segments, 0, $i));
+
+                if (in_array($folder, $paths, true)) {
+                    throw ValidationException::withMessages([$field => "{$folder} is both a file and a folder."]);
+                }
+            }
+
+            $key = mb_strtolower($path);
+
+            if (isset($folded[$key])) {
+                throw ValidationException::withMessages([$field => "{$folded[$key]} and {$path} differ only in case."]);
+            }
+
+            $folded[$key] = $path;
+        }
+    }
+
+    /**
+     * Per-file changes from $from to $to (sorted by path).
+     *
+     * @param  array<string, string>  $from
+     * @param  array<string, string>  $to
+     * @return list<array{path: string, status: 'added'|'removed'|'modified'}>
+     */
+    public static function changes(array $from, array $to): array
+    {
+        $out = [];
+        $paths = array_unique([...array_keys($from), ...array_keys($to)]);
+        sort($paths, SORT_STRING);
+
+        foreach ($paths as $path) {
+            $status = match (true) {
+                ! array_key_exists($path, $from) => 'added',
+                ! array_key_exists($path, $to) => 'removed',
+                $from[$path] !== $to[$path] => 'modified',
+                default => null,
+            };
+
+            if ($status !== null) {
+                $out[] = ['path' => (string) $path, 'status' => $status];
+            }
+        }
+
+        return $out;
     }
 
     /**

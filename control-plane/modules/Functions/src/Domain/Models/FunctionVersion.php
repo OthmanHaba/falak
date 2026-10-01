@@ -5,6 +5,7 @@ namespace Kiln\Functions\Domain\Models;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Kiln\Functions\Application\Code;
 use LogicException;
 
 /**
@@ -57,6 +58,23 @@ class FunctionVersion extends Model
             'author' => $this->author_name,
             'size' => $this->size,
             'created_at' => $this->created_at->toIso8601String(),
+        ];
+    }
+
+    /**
+     * The summary with the files, and what changed per file since the previous version (all "added" for v1).
+     *
+     * @return array<string, mixed>
+     */
+    public function detail(): array
+    {
+        $previous = self::query()->where('function_id', $this->function_id)->where('number', '<', $this->number)->orderByDesc('number')->value('files');
+
+        return [
+            ...$this->summary(),
+            'entrypoint' => $this->entrypoint,
+            'files' => $this->files,
+            'changes' => Code::changes(is_string($previous) ? (array) json_decode($previous, true) : (array) $previous, $this->files),
         ];
     }
 }
