@@ -40,6 +40,8 @@ The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protoco
 | `servers.view` | admin, developer, viewer | list/show servers (incl. agent version) |
 | `fleet.agents.manage` | admin | upgrade server agents |
 | `projects.view` / `projects.manage` | view: all; manage: admin, developer | projects + environments / create, rename, delete, duplicate environments |
+| `functions.view` | admin, developer, viewer | functions, their code, versions, schedules and runs |
+| `functions.deploy` | admin, developer | deploy function code and versions (also needs `deployments.create`), run schedules |
 
 ## Identity
 
@@ -323,6 +325,42 @@ Retained releases, current first.
            "status": "active|inactive", "active": true, "can_rollback": false,
            "activated_at": "…", "created_at": "…"}]}
 ```
+
+## Functions
+
+Cloud Functions are sites with the `function` runtime (docs/FUNCTIONS.md); `{site}` is the function's id or slug.
+The `kiln fn` commands use these endpoints.
+
+### `GET /api/v1/functions` — `functions.view`
+```json
+{ "data": [{ "id": "01j…", "name": "Hooks", "slug": "hooks", "runtime": "bun", "entrypoint": "index.ts",
+             "live": { "number": 3, "hash": "…", "short_hash": "4f1c2a9" }, "url": "https://hooks.example.com" }] }
+```
+
+### `GET /api/v1/functions/{site}` — `functions.view`
+`{data: {site: {id, name, slug}, runtime: {key, label, language, family}, entrypoint, url, head, live, settings,
+schedules}}`. `head` is the newest version **with** `files` (`{path: content}`); `live` is the version the servers
+run (without files). A version is `{id, number, hash, short_hash, message, author, size, created_at}`.
+
+### `POST /api/v1/functions/{site}/deploy` — `functions.deploy` + `deployments.create`
+`{files: {path: content}, message?, base_version_id?, force?}`. Saves the files as a new version (unless they equal
+the newest one) and deploys it: `201 {data: {version, created: true, deployment_id}, warnings[]}` (`200` with
+`created: false` for unchanged code). Without `base_version_id` the code is deployed on top of the newest version.
+When someone deployed after `base_version_id`: `409 {message, head}` (the newer version, with files), unless
+`force: true`. Follow the deployment with `GET /api/v1/deployments/{deployment_id}`.
+
+### `GET /api/v1/functions/{site}/versions` · `GET /api/v1/functions/{site}/versions/{number}` — `functions.view`
+Newest first (up to 200); a single version includes `entrypoint` and `files`.
+
+### `POST /api/v1/functions/{site}/versions/{number}/deploy` — `functions.deploy` + `deployments.create`
+Deploys that version again (a rollback when it is not the newest). `201 {data: {deployment_id}}`.
+
+### `POST /api/v1/functions/{site}/schedules/{schedule}/run` — `functions.deploy`
+Runs a schedule now (`{schedule}` = its id, key or name). `202 {data: {run_id, schedule}}`.
+
+### `GET /api/v1/functions/{site}/runs/{run}` — `functions.view`
+`{data: {status, finished, exit_code, duration_ms, error, output}}`; poll until `finished`. Runs started from the
+panel can be read here too.
 
 ## Deploy hooks
 

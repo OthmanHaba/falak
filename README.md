@@ -141,6 +141,15 @@ kiln rollback shop --wait
 kiln env pull shop > .env.production && kiln env push shop < .env.production
 kiln logs shop --follow
 kiln ssh app-1
+
+# Functions
+kiln fn list
+kiln fn pull hooks ./hooks                         # code + .kiln-function.json
+kiln fn deploy hooks ./hooks -m "Add /health" --wait   # exit 4 if someone deployed after your pull (--force)
+kiln fn versions hooks && kiln fn rollback hooks v3 --wait
+kiln fn run hooks "Nightly cleanup"                # run a schedule now, streams its output
+kiln fn invoke hooks /hello/ada -H 'X-Kiln-Key: …'
+kiln fn logs hooks --follow
 ```
 
 ### API
