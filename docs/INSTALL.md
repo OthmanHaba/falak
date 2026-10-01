@@ -108,6 +108,19 @@ converged, and the admin is not created a second time. To enable observability l
 `--observability`. The installer then creates a Grafana service account token for Kiln
 (`KILN_GRAFANA_TOKEN`). Grafana's `admin` password is `GRAFANA_ADMIN_PASSWORD` in `/opt/kiln/.env`.
 
+**Who can sign up.** By default anyone who can reach the panel can create an account (and gets an empty
+organization of their own). On a panel reachable from the internet, set `KILN_REGISTRATION` in `/opt/kiln/.env`
+and run `kiln-ctl up`:
+
+| Value | Sign-up |
+|---|---|
+| `open` (default) | anyone |
+| `invite` | only addresses with a pending organization invitation (invite them from **Settings → Members** first) |
+| `closed` | nobody; the *Sign up* links are hidden. Create accounts with `kiln-ctl admin create <email>` |
+
+An unknown value counts as `closed`. A panel without any account always accepts the first sign-up, so the first
+administrator can register before the setting matters.
+
 Next steps: log in, open **Servers → Create**, and run the printed install command on each server.
 The agent binaries come from the control-plane image, so servers download them from your panel
 (`/install/agent/linux-{amd64,arm64}`), not from GitHub.
@@ -116,11 +129,17 @@ The agent binaries come from the control-plane image, so servers download them f
 
 ```
 /opt/kiln/.env            settings + secrets (install.sh; never commit or share)
-/opt/kiln/custom.env      optional extra Laravel env (MAIL_*, KILN_* tuning) — loaded by the app containers
+/opt/kiln/custom.env      optional extra app env (GITHUB_APP_*, mirrors, KILN_* tuning) — loaded by the app containers
 /opt/kiln/deploy/         compose.yml, kiln-ctl, image support files (replaced on update; previous kept as deploy.prev)
 /opt/kiln/observability/  Loki/Tempo/Grafana/gateway configs
 /opt/kiln/backups/        kiln-ctl backup output
 ```
+
+**Which file?** `.env` holds the settings `deploy/compose.yml` passes to the containers by name (domains, secrets,
+`MAIL_*`, sizing, telemetry, `KILN_REGISTRATION`, …) plus kiln-ctl's own (`KILN_BACKUP_*`, `KILN_PRUNE_IMAGES`).
+Every other app variable — e.g. `GITHUB_APP_*`, `KILN_WEBHOOK_URL`, `KILN_*_MIRROR` — goes in `custom.env`;
+compose does not forward it from `.env`. A variable compose passes by name always comes from `.env`: setting it in
+`custom.env` has no effect.
 
 For e-mail, set `MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` and
 `MAIL_FROM_ADDRESS` in `/opt/kiln/.env`, then run `kiln-ctl up`.
@@ -139,7 +158,7 @@ that selection any time with **Manage access on GitHub**; GitHub sends you back 
   cached for at most 50 minutes, never stored or logged).
 - **Kiln's URL must be reachable from GitHub** for push-to-deploy: the app's single webhook is
   `https://<panel>/api/webhooks/source-control/github-app/<id>` (shown on the card). `KILN_WEBHOOK_URL` overrides the
-  base URL if GitHub must reach Kiln through a different host. Creating the app and cloning work without it; only
+  base URL (set it in `/opt/kiln/custom.env`) if GitHub must reach Kiln through a different host. Creating the app and cloning work without it; only
   push-triggered deploys and installation status updates (suspended / uninstalled on GitHub) need the webhook.
 - **One app per Kiln organization.** GitHub only lets a private app be installed on the account that owns it, so
   repositories from a second GitHub account need their own app (another Kiln organization), or a token connection.
@@ -148,7 +167,7 @@ that selection any time with **Manage access on GitHub**; GitHub sends you back 
 - **Personal access tokens** still work (*Use a personal access token instead*), e.g. for GitHub Enterprise Server.
 
 **Operator-managed app (optional).** To use one app you created yourself for every Kiln organization, set these in
-`/opt/kiln/.env` and run `kiln-ctl up`. When set, they take precedence over registered apps for new installations
+`/opt/kiln/custom.env` (not `.env`: compose does not forward them from there) and run `kiln-ctl up`. When set, they take precedence over registered apps for new installations
 (existing installations keep the app they were made with), and the one-click registration is hidden.
 
 | Variable | Value |
@@ -209,6 +228,7 @@ kiln-ctl doctor                          # DNS, certificates, ports, disk, conta
 kiln-ctl admin reset-password you@example.com [--password=...]
 kiln-ctl admin create ops@example.com [--token=cli]
 kiln-ctl artisan <command>               # php artisan in the control-plane container
+kiln-ctl prune-images [--dry-run]        # remove Kiln images except the current and previous version
 kiln-ctl up | down | restart [service]
 ```
 
@@ -226,7 +246,16 @@ An update:
 3. recreates the stack. The `control-plane` service runs the migrations, and `horizon`, `reverb` and
    `scheduler` wait until it is healthy;
 4. recreates every service whose **mounted config files** changed (see below) and prints their names;
-5. health-checks every container and `https://<domain>/up`.
+5. health-checks every container and `https://<domain>/up`;
+6. after a successful update, removes older Kiln images (see below).
+
+**Old images.** Each release pulls new `kiln-control-plane`, `kiln-edge` and `kiln-builder` images (about 1 GB
+together), so a host that updates often fills its disk. After a successful update kiln-ctl records the version it
+came from as `KILN_PREVIOUS_VERSION` in `.env` and removes every other tag of those three images: the current and
+the previous version stay, so a manual rollback (`kiln-ctl update --version <previous>`) needs no download.
+Third-party images (Postgres, Valkey, Grafana, …), images still used by a container and volumes are never touched.
+Run it on its own with `kiln-ctl prune-images` (`--dry-run` lists what it would remove); set
+`KILN_PRUNE_IMAGES=0` in `.env` to keep every image.
 
 **Mounted config files.** Some services read config files bind-mounted from `/opt/kiln/observability/` and
 `/opt/kiln/deploy/` (`loki.yaml`, `tempo.yaml`, the gateway `Caddyfile`, Grafana provisioning and dashboards).
