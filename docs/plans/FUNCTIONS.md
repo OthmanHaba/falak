@@ -449,3 +449,14 @@ it needs no new agent feature.
 - **Telemetry:** like the other runtimes. Request spans are named by `http.Request.Pattern` (Go 1.23+);
   `http.DefaultTransport` is wrapped for `outgoing_request` spans of calls that carry the request's or run's context
   (Go has no implicit async context); panics become exceptions.
+
+### Secrets in telemetry URLs
+
+Every runtime records outgoing URLs as `scheme://host[:port]/path` (no query string, no userinfo) and inbound
+`url.path` and fallback route names with secret-looking path segments replaced by `{redacted}`: Telegram
+`bot<id>:<token>` → `bot{redacted}`, `<id>:<secret>` (16+ chars after the colon), 32+ chars of `[A-Za-z0-9_:-]`
+with a digit, and 20+ chars of `[A-Za-z0-9_-]` mixing upper case, lower case and digits. The rules live in
+`shared/redact.mjs`, `python/kiln_fn/redact.py`, the Go runtime and `agent/internal/fngateway/redact.go`, all tested
+against `runtimes/functions/tests/redact-cases.json`. The gateway re-applies them to every relayed span (URL
+attributes, URL-like span names, exception texts and status messages; `url.query` is dropped), so old runtime images
+and functions' own SDKs are covered too. Python dependencies: the `# /// script` blocks of all `.py` files are merged.

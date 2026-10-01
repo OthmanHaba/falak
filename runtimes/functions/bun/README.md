@@ -41,7 +41,9 @@ the entry loader and the scheduled runner are shared too):
 - a `request` span per request, named by the Hono route template (`GET /users/:id`); paths no route matches are
   grouped as `(unmatched)`, and plain fetch handlers get `/users/:id`-style names from the path;
 - exceptions: errors Hono's error handler turns into a 500, and errors thrown by a plain handler, with the stack;
-- `outgoing_request` spans for `fetch` calls made while handling a request (no query strings).
+- `outgoing_request` spans for `fetch` calls made while handling a request: no query strings or userinfo, and
+  secret-looking path segments redacted (`shared/redact.mjs`; the Python and Go runtimes and the gateway use the
+  same rules and the same test cases, `../tests/redact-cases.json`).
 
 Set `KILN_TELEMETRY=off` in the function's variables to turn it off.
 

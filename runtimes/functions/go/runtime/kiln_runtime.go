@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"regexp"
@@ -189,7 +190,7 @@ func kilnTrace(h http.Handler) http.Handler {
 			return
 		}
 		span := kilnNewSpan(r.Method, kilnServer, nil,
-			kilnStr("kiln.event.type", "request"), kilnStr("http.request.method", r.Method), kilnStr("url.path", r.URL.Path),
+			kilnStr("kiln.event.type", "request"), kilnStr("http.request.method", r.Method), kilnStr("url.path", kilnRedactPath(r.URL.Path)),
 			kilnBool("faas.coldstart", r.Header.Get("X-Kiln-Cold-Start") == "1"))
 		if m := kilnTraceparent.FindStringSubmatch(r.Header.Get("traceparent")); m != nil {
 			span.TraceID, span.ParentSpanID = m[1], m[2]
@@ -204,7 +205,7 @@ func kilnTrace(h http.Handler) http.Handler {
 		case isMux:
 			route = kilnUnmatched
 		default:
-			route = kilnNormalize(r.URL.Path)
+			route = kilnRedactPath(kilnNormalize(r.URL.Path))
 		}
 		status := rec.status
 		if status == 0 {
@@ -279,7 +280,8 @@ func (r *kilnRecorder) Flush() {
 // ---- outgoing HTTP ------------------------------------------------------------------------------------------------
 
 // kilnTransport records `outgoing_request` spans for calls made with a request's (or a run's) context:
-// http.NewRequestWithContext(r.Context(), …) or the ctx Scheduled receives. Query strings are not recorded.
+// http.NewRequestWithContext(r.Context(), …) or the ctx Scheduled receives. No query strings or userinfo, and secret
+// path segments are redacted (kilnRedactPath).
 type kilnTransport struct{ base http.RoundTripper }
 
 func (t *kilnTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -289,11 +291,11 @@ func (t *kilnTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	span := kilnNewSpan(req.Method+" "+req.URL.Host, kilnClient, parent,
 		kilnStr("kiln.event.type", "outgoing_request"), kilnStr("http.request.method", req.Method),
-		kilnStr("url.full", req.URL.Scheme+"://"+req.URL.Host+req.URL.EscapedPath()), kilnStr("server.address", req.URL.Hostname()))
+		kilnStr("url.full", kilnSafeURL(req.URL)), kilnStr("server.address", req.URL.Hostname()))
 	res, err := t.base.RoundTrip(req)
 	if err != nil {
 		span.exception(err, true)
-		span.Status = &kilnStatus{Code: kilnError, Message: kilnCut(err.Error(), 512)}
+		span.Status = &kilnStatus{Code: kilnError, Message: kilnCut(kilnRedactText(err.Error()), 512)}
 	} else {
 		span.attr(kilnInt("http.response.status_code", int64(res.StatusCode)))
 		if res.StatusCode >= 500 {
@@ -302,6 +304,67 @@ func (t *kilnTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	kilnTelemetry.finish(span)
 	return res, err
+}
+
+// ---- redaction ---------------------------------------------------------------------------------------------------
+
+// Secrets in URL paths never reach telemetry: the same rules as the other runtimes (shared/redact.mjs) and the
+// function gateway.
+const kilnRedacted = "{redacted}"
+
+var (
+	kilnTelegram   = regexp.MustCompile(`^bot\d+:[A-Za-z0-9_-]+$`)
+	kilnColonToken = regexp.MustCompile(`^[A-Za-z0-9_-]+:[A-Za-z0-9_-]{16,}$`)
+	kilnLong       = regexp.MustCompile(`^[A-Za-z0-9_:-]{32,}$`)
+	kilnMixed      = regexp.MustCompile(`^[A-Za-z0-9_-]{20,}$`)
+)
+
+func kilnRedactSegment(seg string) string {
+	digit := strings.ContainsAny(seg, "0123456789")
+	switch {
+	case kilnTelegram.MatchString(seg):
+		return "bot" + kilnRedacted
+	case kilnColonToken.MatchString(seg), kilnLong.MatchString(seg) && digit:
+		return kilnRedacted
+	case kilnMixed.MatchString(seg) && digit && strings.ToLower(seg) != seg && strings.ToUpper(seg) != seg:
+		return kilnRedacted
+	}
+	return seg
+}
+
+// kilnRedactPath: /bot123:AAE…/sendMessage → /bot{redacted}/sendMessage.
+func kilnRedactPath(p string) string {
+	segs := strings.Split(p, "/")
+	for i, s := range segs {
+		segs[i] = kilnRedactSegment(s)
+	}
+	return strings.Join(segs, "/")
+}
+
+// kilnSafeURL is scheme://host[:port]/path: no userinfo, no query, no fragment, secret segments redacted.
+func kilnSafeURL(u *url.URL) string {
+	p := u.EscapedPath()
+	if p == "" {
+		p = "/"
+	}
+	return u.Scheme + "://" + u.Host + kilnRedactPath(p)
+}
+
+var kilnURLInText = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"'<>` + "`" + `]+`)
+
+// kilnRedactText makes every URL a free text quotes safe (Go's errors quote the full request URL).
+func kilnRedactText(s string) string {
+	if !strings.Contains(s, "://") {
+		return s
+	}
+	return kilnURLInText.ReplaceAllStringFunc(s, func(raw string) string {
+		u, err := url.Parse(raw)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			p, _, _ := strings.Cut(raw, "?")
+			return kilnRedactPath(p)
+		}
+		return kilnSafeURL(u)
+	})
 }
 
 // ---- spans --------------------------------------------------------------------------------------------------------
@@ -387,11 +450,11 @@ func (s *kilnSpan) exception(err error, handled bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Events = append(s.Events, kilnEvent{Name: "exception", Time: kilnNanos(), Attributes: []kilnKV{
-		kilnStr("exception.type", typ), kilnStr("exception.message", kilnCut(err.Error(), 4096)),
-		kilnStr("exception.stacktrace", kilnCut(stack, 16384)), kilnBool("kiln.exception.handled", handled),
+		kilnStr("exception.type", typ), kilnStr("exception.message", kilnCut(kilnRedactText(err.Error()), 4096)),
+		kilnStr("exception.stacktrace", kilnCut(kilnRedactText(stack), 16384)), kilnBool("kiln.exception.handled", handled),
 	}})
 	if !handled {
-		s.Status = &kilnStatus{Code: kilnError, Message: kilnCut(err.Error(), 512)}
+		s.Status = &kilnStatus{Code: kilnError, Message: kilnCut(kilnRedactText(err.Error()), 512)}
 	}
 }
 

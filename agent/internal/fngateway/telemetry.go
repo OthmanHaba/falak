@@ -173,7 +173,8 @@ func (t *telemetry) handler(site string) http.Handler {
 	})
 }
 
-// restamp decodes a batch, replaces the identity on every resource and encodes it as protobuf.
+// restamp decodes a batch, replaces the identity on every resource, scrubs secrets from span URLs (redact.go) and
+// encodes it as protobuf.
 func restamp(sig otlp.Signal, data []byte, isJSON bool, id []*commonpb.KeyValue) ([]byte, error) {
 	switch sig {
 	case otlp.Traces:
@@ -184,6 +185,7 @@ func restamp(sig otlp.Signal, data []byte, isJSON bool, id []*commonpb.KeyValue)
 		for _, r := range rs {
 			r.Resource = stamp(r.Resource, id)
 		}
+		redactSpans(rs)
 		return otlp.EncodeTraces(rs)
 	case otlp.Logs:
 		rl, err := decode(data, isJSON, otlp.DecodeLogs, otlp.DecodeLogsJSON)
@@ -267,7 +269,7 @@ func (t *telemetry) requestSpan(site string, r *http.Request, status int, start 
 			otlp.Str("kiln.event.type", "request"),
 			otlp.Str("http.request.method", r.Method),
 			otlp.Str("http.route", gatewayRoute),
-			otlp.Str("url.path", r.URL.Path),
+			otlp.Str("url.path", RedactPath(r.URL.Path)),
 			otlp.Any("http.response.status_code", int64(status)),
 			otlp.Str("kiln.function.gateway_error", cause),
 		},

@@ -22,6 +22,8 @@ import time
 import traceback
 from typing import Any, Awaitable, Callable
 
+from kiln_fn.redact import redact_path, redact_text, safe_url
+
 SERVER, CLIENT, INTERNAL = 2, 3, 1
 ERROR = 2
 FLUSH_SECONDS = 1.0
@@ -84,8 +86,8 @@ def exception_event(err: BaseException, handled: bool) -> dict:
         "timeUnixNano": _nanos(),
         "attributes": [
             _str("exception.type", name),
-            _str("exception.message", str(err)[:4096]),
-            _str("exception.stacktrace", "".join(traceback.format_exception(err))[:16384]),
+            _str("exception.message", redact_text(str(err))[:4096]),
+            _str("exception.stacktrace", redact_text("".join(traceback.format_exception(err)))[:16384]),
             _bool("kiln.exception.handled", handled),
         ],
     }
@@ -98,7 +100,7 @@ def record_exception(err: BaseException, handled: bool = False) -> None:
         return
     span["events"].append(exception_event(err, handled))
     if not handled:
-        span["status"] = {"code": ERROR, "message": str(err)[:512]}
+        span["status"] = {"code": ERROR, "message": redact_text(str(err))[:512]}
 
 
 def finish(span: dict) -> None:
@@ -231,7 +233,7 @@ class Telemetry:
             [
                 _str("kiln.event.type", "request"),
                 _str("http.request.method", method),
-                _str("url.path", path),
+                _str("url.path", redact_path(path)),
                 _bool("faas.coldstart", headers.get("x-kiln-cold-start") == "1"),
             ],
         )
@@ -251,7 +253,7 @@ class Telemetry:
             await self.app(scope, receive, send_wrapper)
         except BaseException as err:  # Starlette's ServerErrorMiddleware answers 500 and re-raises
             span["events"].append(exception_event(err, False))
-            span["status"] = {"code": ERROR, "message": str(err)[:512]}
+            span["status"] = {"code": ERROR, "message": redact_text(str(err))[:512]}
             if status["code"] is None:
                 status["code"] = 500
             raise
@@ -259,7 +261,7 @@ class Telemetry:
             current.reset(token)
             route = getattr(scope.get("route"), "path", None)
             if not route:
-                route = UNMATCHED if self.router else normalize(path)
+                route = UNMATCHED if self.router else redact_path(normalize(path))
             span["name"] = f"{method} {route}"
             span["attributes"].append(_str("http.route", route))
             code = status["code"] if status["code"] is not None else 500
@@ -276,18 +278,17 @@ def _client_span(method: str, url: Any) -> dict | None:
     parent = current.get()
     if parent is None or not ENABLED:
         return None
-    host = getattr(url, "netloc", "")  # httpx: bytes, requests (_Url): str
-    if isinstance(host, bytes):
-        host = host.decode("latin-1")
-    scheme, path = str(url.scheme), str(url.path) or "/"
-    hostname = str(getattr(url, "host", "") or host.split(":")[0])
+    # Never netloc (it can hold user:password@): host and port only, and no query string.
+    hostname = str(getattr(url, "host", "") or "")
+    port = getattr(url, "port", None)
+    host = (f"[{hostname}]" if ":" in hostname else hostname) + (f":{port}" if port else "")
     return new_span(
         f"{method.upper()} {host}",
         CLIENT,
         [
             _str("kiln.event.type", "outgoing_request"),
             _str("http.request.method", method.upper()),
-            _str("url.full", f"{scheme}://{host}{path}"),
+            _str("url.full", safe_url(str(url.scheme), hostname, port, str(url.path))),
             _str("server.address", hostname),
         ],
         parent,
@@ -302,7 +303,7 @@ def _end_client(span: dict, response: Any = None, err: BaseException | None = No
             span["status"] = {"code": ERROR}
     if err is not None:
         span["events"].append(exception_event(err, True))
-        span["status"] = {"code": ERROR, "message": str(err)[:512]}
+        span["status"] = {"code": ERROR, "message": redact_text(str(err))[:512]}
     finish(span)
 
 
@@ -313,7 +314,11 @@ class _Url:
         from urllib.parse import urlsplit
 
         u = urlsplit(url)
-        self.scheme, self.netloc, self.path, self.host = u.scheme, u.netloc, u.path or "/", u.hostname or ""
+        try:
+            port = u.port
+        except ValueError:
+            port = None
+        self.scheme, self.path, self.host, self.port = u.scheme, u.path or "/", u.hostname or "", port
 
 
 def instrument_http_clients() -> None:
@@ -390,5 +395,5 @@ def end_scheduled(span: dict, err: BaseException | None) -> None:
     span["attributes"].append(_str("kiln.schedule.status", "failed" if err else "finished"))
     if err is not None:
         span["events"].append(exception_event(err, False))
-        span["status"] = {"code": ERROR, "message": str(err)[:512]}
+        span["status"] = {"code": ERROR, "message": redact_text(str(err))[:512]}
     finish(span)

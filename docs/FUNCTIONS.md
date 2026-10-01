@@ -78,8 +78,9 @@ async def scheduled(event):     # optional: runs on the function's schedules (de
 ```
 
 - The entry file is `main.py`, served by uvicorn.
-- Dependencies come from the `# /// script` block at the top (PEP 723) or a `requirements.txt`. They are installed
-  with `uv` when you deploy and locked per code version.
+- Dependencies come from `# /// script` blocks (PEP 723) or a `requirements.txt`. With several files, each `.py`
+  file can have its own block; they are merged. They are installed with `uv` when you deploy and locked per code
+  version.
 
 ### Go
 
@@ -291,7 +292,9 @@ Functions report to Kiln without any package.
   matches are grouped as `(unmatched)`.
 - Issues from uncaught errors (panics in Go), with the stack trace.
 - Outgoing calls: `fetch` in TypeScript, `httpx` and `requests` in Python, `net/http` with the request's context in
-  Go. Query strings are not recorded.
+  Go. URLs are recorded without query strings or user:password, and path segments that look like secrets are
+  replaced by `{redacted}` (Telegram's `/bot<token>/`, long or mixed-case tokens, `<id>:<secret>`). The gateway
+  applies the same rules to every span it relays, error messages included.
 - Cold starts are marked on the request that waited for one (`faas.coldstart`).
 - Requests the gateway answers itself are listed as `(function unavailable)`: a release that fails to start, a start
   timeout, or a full queue.

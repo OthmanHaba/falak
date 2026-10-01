@@ -62,7 +62,8 @@ and following `contracts/telemetry/README.md`:
 - **Panics:** an `exception` event with the stack, ERROR status, and a 500.
 - **Outgoing HTTP:** `http.DefaultTransport` is wrapped: calls made with the request's context
   (`http.NewRequestWithContext(r.Context(), …)`) or the `ctx` of `Scheduled` become `outgoing_request` spans. Query
-  strings are not recorded. Clients with their own `http.Transport` are not traced.
+  strings or userinfo are not recorded, and secret-looking path segments are redacted (the same rules as the other
+  runtimes). Clients with their own `http.Transport` are not traced.
 - **Scheduled runs:** a `scheduled_task` span per run, `finished` or `failed` (with the error).
 
 Spans are batched (every second, or 256 at a time) and never block a request; they are dropped when the socket is
