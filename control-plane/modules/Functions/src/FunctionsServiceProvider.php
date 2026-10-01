@@ -8,10 +8,12 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Kiln\Deployments\Contracts\FunctionSources;
 use Kiln\Functions\Application\Listeners\ForgetDeletedFunction;
+use Kiln\Functions\Infrastructure\FunctionScheduleSources;
 use Kiln\Functions\Infrastructure\StoredFunctionSources;
 use Kiln\Identity\Contracts\PermissionRegistry;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Kernel\Support\ModuleServiceProvider;
+use Kiln\Processes\Contracts\ScheduleSources;
 use Kiln\Sites\Events\SiteDeleted;
 
 /**
@@ -33,6 +35,7 @@ class FunctionsServiceProvider extends ModuleServiceProvider
      */
     public array $singletons = [
         FunctionSources::class => StoredFunctionSources::class,
+        ScheduleSources::class => FunctionScheduleSources::class,
     ];
 
     public function register(): void

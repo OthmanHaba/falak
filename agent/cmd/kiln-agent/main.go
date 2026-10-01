@@ -4,11 +4,13 @@
 //	kiln-agent enroll     enroll only
 //	kiln-agent install    install binary + systemd unit and start the service
 //	kiln-agent fn-gateway serve functions (kiln-fn-gateway.service; installed by fn.release.apply)
+//	kiln-agent fn-run     run a function's schedule once (its cron job)
 //	kiln-agent version
 package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -25,7 +27,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: kiln-agent <run|enroll|install|fn-gateway|version> [flags]\n")
+	fmt.Fprintf(os.Stderr, "usage: kiln-agent <run|enroll|install|fn-gateway|fn-run|version> [flags]\n")
 	os.Exit(2)
 }
 
@@ -41,6 +43,11 @@ func main() {
 	fnListen := fs.String("listen", fngateway.DefaultListen, "fn-gateway: proxy address (Caddy sends function traffic here)")
 	fnAdmin := fs.String("admin", fngateway.DefaultAdmin, "fn-gateway: admin API unix socket")
 	fnState := fs.String("state", fngateway.DefaultStateDir, "fn-gateway: functions directory (gateway.json, releases)")
+	runSite := fs.String("site", "", "fn-run: function (site slug)")
+	runSchedule := fs.String("schedule", "", "fn-run: schedule key")
+	runName := fs.String("name", "", "fn-run: schedule name shown to the function")
+	runCron := fs.String("cron", "", "fn-run: schedule expression shown to the function")
+	runTimeout := fs.Int("timeout", 300, "fn-run: seconds before the run is stopped")
 	logLevel := fs.String("log-level", envOr("KILN_LOG_LEVEL", "info"), "debug|info|warn|error (env KILN_LOG_LEVEL)")
 	_ = fs.Parse(os.Args[2:])
 
@@ -64,6 +71,17 @@ func main() {
 	case "fn-gateway":
 		err = fngateway.Run(ctx, fngateway.RunOptions{Listen: *fnListen, AdminSocket: *fnAdmin, StateDir: *fnState,
 			DockerSocket: cfg.DockerSock, AgentOTLPSocket: cfg.OTLPSocket, Version: version.Version, Logger: log.With("component", "fn-gateway")})
+	case "fn-run":
+		// A function schedule's cron job: runs it once through the gateway; output and exit code are the run's.
+		code, runErr := fngateway.NewClient(*fnAdmin).Run(ctx, *runSite, fngateway.RunRequest{Schedule: *runSchedule, Name: *runName, Cron: *runCron, Trigger: "cron", TimeoutS: *runTimeout}, os.Stdout)
+		if runErr != nil {
+			fmt.Fprintln(os.Stderr, "kiln: "+runErr.Error())
+			if errors.Is(runErr, fngateway.ErrRunTimeout) {
+				os.Exit(fngateway.ExitTimeout) // the scheduler records a timeout
+			}
+			os.Exit(1)
+		}
+		os.Exit(code)
 	case "version", "--version", "-v":
 		fmt.Println(version.Version)
 	default:

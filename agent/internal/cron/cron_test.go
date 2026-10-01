@@ -328,3 +328,19 @@ func TestApplyValidationAndExecutor(t *testing.T) {
 		t.Fatalf("%+v", fin)
 	}
 }
+
+func TestExitCode124IsATimeout(t *testing.T) {
+	fr := &runnertest.Fake{}
+	fr.OnFunc("/bin/sh -c fn-run", func(runnertest.Call) (runner.Result, error) { return runner.Result{ExitCode: ExitTimeout}, nil })
+	ins := &fakeInsights{}
+	s := New(Options{Runner: fr, Insights: ins, Clock: &fakeClock{now: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}})
+	if _, err := s.Apply([]Job{{Name: "fn", Schedule: "* * * * *", Command: "fn-run"}}); err != nil {
+		t.Fatal(err)
+	}
+	s.Tick(context.Background(), time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC))
+	waitFor(t, func() bool { return len(ins.get()) == 1 }, "heartbeat")
+	if hb := ins.get()[0]; hb.Status != StatusTimeout || *hb.ExitCode != ExitTimeout {
+		t.Fatalf("%+v", hb)
+	}
+	s.Wait()
+}

@@ -67,6 +67,7 @@ type Gateway interface {
 	Apply(ctx context.Context, spec fngateway.Spec) (fngateway.ApplyResult, error)
 	Delete(ctx context.Context, site string) (bool, error)
 	Status(ctx context.Context) ([]fngateway.Status, error)
+	Run(ctx context.Context, site string, r fngateway.RunRequest, w io.Writer) (int, error)
 }
 
 // Deps of the executors.
@@ -106,6 +107,39 @@ func (f *Functions) Register(reg *commands.Registry) {
 	reg.Register("fn.release.apply", commands.Typed(f.Apply))
 	reg.Register("fn.release.remove", commands.Typed(f.Remove))
 	reg.Register("fn.status", commands.Typed(f.Status))
+	reg.Register("fn.run", commands.Typed(f.Run))
+}
+
+// RunPayload is fn.run ("Run now" of a schedule).
+type RunPayload struct {
+	Site     string `json:"site"`
+	Schedule string `json:"schedule"`
+	Name     string `json:"name,omitempty"`
+	Cron     string `json:"cron,omitempty"`
+	TimeoutS int    `json:"timeout_s,omitempty"`
+}
+
+// RunResult is fn.run's result.
+type RunResult struct {
+	ExitCode   int   `json:"exit_code"`
+	DurationMS int64 `json:"duration_ms"`
+}
+
+// Run is fn.run: the schedule runs once now, its output streamed as the command's.
+func (f *Functions) Run(ctx context.Context, p RunPayload, st commands.Stream) (any, error) {
+	if !siteRe.MatchString(p.Site) {
+		return nil, &commands.PayloadError{Err: errors.New("invalid site")}
+	}
+	start := time.Now()
+	code, err := f.d.Gateway.Run(ctx, p.Site, fngateway.RunRequest{Schedule: p.Schedule, Name: p.Name, Cron: p.Cron, Trigger: "manual", TimeoutS: p.TimeoutS}, st.Stdout())
+	res := RunResult{ExitCode: code, DurationMS: time.Since(start).Milliseconds()}
+	if err != nil {
+		return res, err
+	}
+	if code != 0 {
+		return res, &commands.ExitError{Code: code, Err: fmt.Errorf("the run exited with code %d", code)}
+	}
+	return res, nil
 }
 
 // File is one source file of a release.

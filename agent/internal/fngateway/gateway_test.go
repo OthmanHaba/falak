@@ -2,6 +2,7 @@ package fngateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -33,6 +34,7 @@ type fakeEngine struct {
 	neverReady bool // the runtime never listens
 	// block, when set, holds every request until it is closed.
 	block chan struct{}
+	runs  []docker.CreateBody
 	peak  int32
 	live  int32
 }
@@ -170,6 +172,23 @@ func (e *fakeEngine) State(_ context.Context, id string) (ContainerState, error)
 
 func (e *fakeEngine) Logs(context.Context, string, int) string { return "SyntaxError: boom" }
 func (e *fakeEngine) EnsureNetwork(context.Context) error      { return nil }
+
+// RunOnce records the run and "executes" it: exit 0 unless the schedule is "fails"; "slow" runs until ctx ends.
+func (e *fakeEngine) RunOnce(ctx context.Context, name string, body docker.CreateBody, w io.Writer) (int, error) {
+	e.mu.Lock()
+	e.runs = append(e.runs, body)
+	e.mu.Unlock()
+	switch body.Labels[LabelRun] {
+	case "slow":
+		<-ctx.Done()
+		return -1, ctx.Err()
+	case "fails":
+		fmt.Fprintln(w, "Error: nope")
+		return 1, nil
+	}
+	fmt.Fprintf(w, "ran %s %s\n", name, strings.Join(body.Cmd, " "))
+	return 0, nil
+}
 
 func (e *fakeEngine) running(release string) int {
 	e.mu.Lock()
@@ -789,5 +808,52 @@ func TestColdStartsAreMarkedAndGatewayErrorsReported(t *testing.T) {
 	}
 	if a["kiln.event.type"] != "request" || a["http.route"] != gatewayRoute || a["http.response.status_code"] != "502" || sp.Status.GetCode() != tracepb.Status_STATUS_CODE_ERROR {
 		t.Fatalf("span %v", a)
+	}
+}
+
+func TestScheduledRunsStreamOutputAndExitCode(t *testing.T) {
+	e := newFake()
+	g, _, _ := newGateway(t, e)
+	s := spec("hello", "r1")
+	mustApply(t, g, s)
+	sock := filepath.Join(shortTemp(t), "gw.sock")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = g.Serve(ctx, "127.0.0.1:0", sock) }()
+	c := NewClient(sock)
+	waitFor(t, "admin socket", func() bool { _, err := c.Version(context.Background()); return err == nil })
+
+	var out strings.Builder
+	code, err := c.Run(context.Background(), "hello", RunRequest{Schedule: "nightly", Name: "Nightly cleanup", Cron: "0 3 * * *"}, &out)
+	if err != nil || code != 0 || !strings.Contains(out.String(), "kiln-fn-run") {
+		t.Fatalf("run: %d %v %q", code, err, out.String())
+	}
+	b := e.runs[0]
+	env := strings.Join(b.Env, "\n")
+	if b.Cmd[0] != RunCommand || b.Labels[LabelRun] != "nightly" || b.Labels[LabelSpec] != "run" || b.HostConfig.Binds[0] != s.ReleaseDir+":/app:ro" ||
+		!strings.Contains(env, "KILN_TRIGGER=cron") || !strings.Contains(env, "KILN_SCHEDULE_NAME=Nightly cleanup") || !strings.Contains(env, "KILN_SCHEDULE_CRON=0 3 * * *") ||
+		!strings.Contains(env, "GREETING=hi") || !b.HostConfig.ReadonlyRootfs {
+		t.Fatalf("run container %+v", b)
+	}
+
+	out.Reset()
+	if code, err := c.Run(context.Background(), "hello", RunRequest{Schedule: "fails"}, &out); err != nil || code != 1 || !strings.Contains(out.String(), "nope") {
+		t.Fatalf("failing run: %d %v %q", code, err, out.String())
+	}
+	if code, err := c.Run(context.Background(), "hello", RunRequest{Schedule: "slow", TimeoutS: 1}, io.Discard); !errors.Is(err, ErrRunTimeout) || code != ExitTimeout {
+		t.Fatalf("slow run: %d %v", code, err)
+	}
+	if got := truncate("ab€", 4); got != "ab" {
+		t.Fatalf("truncate split a character: %q", got)
+	}
+	if _, err := c.Run(context.Background(), "nope", RunRequest{Schedule: "x"}, io.Discard); err == nil || !strings.Contains(err.Error(), "404") {
+		t.Fatalf("unknown function: %v", err)
+	}
+	if _, err := c.Run(context.Background(), "hello", RunRequest{Schedule: "../x"}, io.Discard); err == nil {
+		t.Fatal("invalid schedule accepted")
+	}
+	// Run containers are never instances.
+	if e.running("r1") != 1 {
+		t.Fatalf("instances changed: %d", e.running("r1"))
 	}
 }

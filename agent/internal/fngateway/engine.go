@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -25,6 +26,9 @@ type Engine interface {
 	// Logs returns the last lines of the container's output.
 	Logs(ctx context.Context, id string, tail int) string
 	EnsureNetwork(ctx context.Context) error
+	// RunOnce creates, starts and waits for a one-shot container, streaming its output to w, and removes it. When
+	// ctx ends first the container is stopped.
+	RunOnce(ctx context.Context, name string, body docker.CreateBody, w io.Writer) (int, error)
 }
 
 // ContainerState of one instance.
@@ -86,6 +90,34 @@ func (e DockerEngine) EnsureNetwork(ctx context.Context) error {
 		return err
 	}
 	return e.C.NetworkCreate(ctx, Network, map[string]string{LabelManaged: "true"})
+}
+
+func (e DockerEngine) RunOnce(ctx context.Context, name string, body docker.CreateBody, w io.Writer) (int, error) {
+	id, err := e.C.ContainerCreate(ctx, name, body)
+	if err != nil {
+		return -1, err
+	}
+	defer func() { _ = e.C.ContainerRemove(context.Background(), id) }()
+	if err := e.C.ContainerStart(ctx, id); err != nil {
+		return -1, err
+	}
+	// The logs outlive ctx: what the runtime prints while it is being stopped (timeout) still reaches w.
+	lctx, lcancel := context.WithCancel(context.Background())
+	defer lcancel()
+	logs := make(chan struct{})
+	go func() {
+		defer close(logs)
+		_ = e.C.ContainerLogs(lctx, id, true, 0, w)
+	}()
+	code, err := e.C.ContainerWait(ctx, id)
+	if ctx.Err() != nil {
+		_, _ = e.C.ContainerStop(context.Background(), id, 5*time.Second)
+	}
+	select {
+	case <-logs:
+	case <-time.After(2 * time.Second):
+	}
+	return code, err
 }
 
 // isNameConflict reports Docker's 409 "container name already in use".

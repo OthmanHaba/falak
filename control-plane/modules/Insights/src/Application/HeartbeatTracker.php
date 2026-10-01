@@ -99,7 +99,7 @@ final class HeartbeatTracker
                 organizationId: $organizationId,
                 kind: IssueKind::Heartbeat,
                 fingerprint: $this->fingerprint($monitor, 'failed'),
-                attributes: $this->issueAttributes($monitor, "Scheduled task {$job} ".($status === 'timeout' ? 'timed out' : 'failed'), [
+                attributes: $this->issueAttributes($monitor, "Scheduled task {$this->display($monitor)} ".($status === 'timeout' ? 'timed out' : 'failed'), [
                     'reason' => 'failed',
                     'status' => $status,
                     'exit_code' => $heartbeat['exit_code'] ?? null,
@@ -233,7 +233,7 @@ final class HeartbeatTracker
             organizationId: $monitor->organization_id,
             kind: IssueKind::Heartbeat,
             fingerprint: $this->fingerprint($monitor, 'missed'),
-            attributes: $this->issueAttributes($monitor, "Scheduled task {$monitor->job} missed its run", [
+            attributes: $this->issueAttributes($monitor, "Scheduled task {$this->display($monitor)} missed its run", [
                 'reason' => 'missed',
                 'expected_at' => $expected->toIso8601String(),
                 'last_run_at' => $monitor->last_run_at?->toIso8601String(),
@@ -286,6 +286,14 @@ final class HeartbeatTracker
             'event_type' => 'scheduled_task',
             'meta' => [...$meta, 'monitor_id' => $monitor->id, 'job' => $monitor->job, 'schedule' => $monitor->schedule],
         ];
+    }
+
+    /** The schedule's name when the job has one (a function's schedule, a custom job), else the job name. */
+    private function display(HeartbeatMonitor $monitor): string
+    {
+        $label = $monitor->server_id !== null ? $this->schedules->find($monitor->server_id, $monitor->job)?->label : null;
+
+        return $label !== null && $label !== '' && $label !== $monitor->job ? "“{$label}” ({$monitor->job})" : $monitor->job;
     }
 
     public function fingerprint(HeartbeatMonitor $monitor, string $reason): string

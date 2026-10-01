@@ -1,6 +1,6 @@
 # Cloud Functions: plan
 
-Status: phase 1 built (v0.4.0, 2026-09-30); phases 2–4 are next.
+Status: phase 1 shipped in v0.4.0 (2026-10-01); phase 2 (schedules) built on feat/function-schedules; phases 3–4 next.
 
 A **Function** is a canvas service whose code is written in Kiln's editor (no git), deployed in seconds, reached by a URL
 and/or a schedule, scaled with traffic, and **scaled to zero** when idle.

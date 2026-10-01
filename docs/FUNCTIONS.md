@@ -4,7 +4,7 @@ A **Function** is a service whose code you write in Kiln itself: no repository, 
 seconds, the function gets a URL like any other service, and it **scales to zero** when nobody calls it. On
 traffic, it starts again and scales out.
 
-The first runtime is **Bun + Hono**. Node, Deno, Python and Go come next (see `docs/plans/FUNCTIONS.md`).
+The first runtime is **Bun + Hono**. A function can serve HTTP, run on schedules, or both. Node, Deno, Python and Go come next (see `docs/plans/FUNCTIONS.md`).
 
 ## Create one
 
@@ -54,6 +54,45 @@ In the **Versions** tab you can:
 - **Compare** any version against the live one.
 - **Deploy this version** to roll back. The server keeps recent releases installed, so a rollback is instant.
 - **Restore to editor** to start a new change from an old version.
+
+## Schedules (cron)
+
+A function can also run on a schedule. Export a `scheduled` handler:
+
+```ts
+export async function scheduled(event) {
+    // event = { name, schedule, cron, trigger: 'cron' | 'manual', scheduledTime }
+    await sql`delete from sessions where expires_at < now()`
+}
+
+export default app // the HTTP side is optional for scheduled-only functions
+```
+
+`export default { fetch: app.fetch, scheduled }` works too.
+
+In the **Schedules** tab, add one or more schedules:
+
+| Field | Options |
+|---|---|
+| When | a preset, a 5-field cron expression, `@hourly`…`@yearly`, or `@every 10m` |
+| Timezone | any timezone |
+| Timeout | the run is stopped after this many seconds |
+| If still running | skip the next run (default), or run anyway |
+
+Each run is a new container on the function's server, with the same release, variables, limits and isolation as
+its HTTP instances. It doesn't touch the instances that serve traffic, so a function that sleeps stays asleep
+between runs.
+
+A run succeeds when the handler resolves, and fails when it throws.
+
+**Run now** runs a schedule immediately and shows its output live.
+
+**History:**
+- Runs, failures, timeouts and missed runs appear under **Observability → Scheduled tasks**, like any scheduled
+  job.
+- Errors become **Issues**, with the stack trace.
+
+The **Scheduled job** starter comes with an hourly schedule.
 
 ## Variables and databases
 

@@ -165,6 +165,14 @@ func (g *fakeGateway) Delete(_ context.Context, site string) (bool, error) {
 	return true, nil
 }
 
+func (g *fakeGateway) Run(_ context.Context, site string, r fngateway.RunRequest, w io.Writer) (int, error) {
+	fmt.Fprintf(w, "ran %s/%s (%s)\n", site, r.Schedule, r.Trigger)
+	if r.Schedule == "broken" {
+		return 1, nil
+	}
+	return 0, nil
+}
+
 func (g *fakeGateway) Status(context.Context) ([]fngateway.Status, error) {
 	return []fngateway.Status{{Site: "a", Release: "r1"}, {Site: "hello", Release: "r2", Running: 1}}, nil
 }
@@ -420,5 +428,17 @@ func TestSameCodeReinstallsWithItsSavedLockfile(t *testing.T) {
 	}
 	if lock, _ := os.ReadFile(e.fs.P("/var/lib/kiln/functions/hello/releases/r3/bun.lock")); string(lock) != "resolved #3" {
 		t.Fatalf("changed code reused a lock: %q", lock)
+	}
+}
+
+func TestRunNowStreamsTheRun(t *testing.T) {
+	e := setup(t)
+	res, err := e.f.Run(context.Background(), RunPayload{Site: "hello", Schedule: "nightly"}, e.st)
+	if err != nil || res.(RunResult).ExitCode != 0 || !strings.Contains(e.st.String(), "ran hello/nightly (manual)") {
+		t.Fatalf("%+v %v %s", res, err, e.st)
+	}
+	var exit *commands.ExitError
+	if _, err := e.f.Run(context.Background(), RunPayload{Site: "hello", Schedule: "broken"}, &bufStream{}); !errors.As(err, &exit) || exit.Code != 1 {
+		t.Fatalf("failing run: %v", err)
 	}
 }

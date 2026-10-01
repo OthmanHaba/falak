@@ -11,6 +11,8 @@ use Kiln\Functions\Domain\Models\CloudFunction;
 use Kiln\Functions\Domain\Models\FunctionDraft;
 use Kiln\Functions\Domain\Models\FunctionVersion;
 use Kiln\Identity\Contracts\Role;
+use Kiln\Processes\Contracts\ScheduleDirectory;
+use Kiln\Processes\Infrastructure\StateCompiler;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Contracts\SiteFactory;
@@ -231,4 +233,76 @@ it('reports live instances from the gateway without waiting for the agent', func
         ->assertJsonPath('data.status.cold_starts', 4);
     // Fresh answer: no new command within a few seconds.
     expect(count($world->agents->dispatched('fn.status')))->toBe(1);
+});
+
+function fn_deployed(): array
+{
+    [$world, $function] = fn_world();
+    app(DeploymentTrigger::class)->deploy($world->site->id, null, $function->head()->hash);
+    deploy_run_all($world->agents);
+
+    return [$world, $function];
+}
+
+it('turns schedules into cron jobs of the leader that run the function through the gateway', function () {
+    [$world] = fn_deployed();
+
+    $this->postJson(fn_url($world->site, '/schedules'), ['name' => 'Bad', 'expression' => '61 * * * *'])
+        ->assertUnprocessable()->assertJsonValidationErrors('expression');
+
+    $created = $this->postJson(fn_url($world->site, '/schedules'), ['name' => "Nightly 'cleanup'", 'expression' => '0  3 * * *', 'timezone' => 'Europe/Berlin', 'timeout_s' => 120])
+        ->assertCreated()
+        ->assertJsonPath('data.expression', '0 3 * * *')
+        ->json('data');
+    $this->postJson(fn_url($world->site, '/schedules'), ['name' => 'Off', 'expression' => '@daily', 'enabled' => false])->assertCreated();
+
+    $jobs = app(StateCompiler::class)->compile($world->servers[0]->id)->jobs;
+    expect($jobs)->toHaveCount(1);
+    $job = $jobs[0];
+
+    expect($job['name'])->toBe($created['job'])
+        ->and($job['name'])->toBe("{$world->site->slug}.function-{$created['key']}")
+        ->and($job['schedule'])->toBe('0 3 * * *')
+        ->and($job['timezone'])->toBe('Europe/Berlin')
+        ->and($job['user'])->toBe('root')
+        ->and($job['overlap'])->toBe('skip')
+        ->and($job['timeout_s'])->toBe(150)
+        ->and($job['command'])->toBe("/usr/local/bin/kiln-agent fn-run --site '{$world->site->slug}' --schedule '{$created['key']}' --name 'Nightly '\''cleanup'\''' --cron '0 3 * * *' --timeout 120")
+        // Insights attributes the heartbeats to the function.
+        ->and(app(ScheduleDirectory::class)->forServer($world->servers[0]->id))->toBeArray();
+
+    // Disable → gone from the server.
+    $this->putJson(fn_url($world->site, "/schedules/{$created['id']}"), ['name' => 'Nightly', 'expression' => '0 3 * * *', 'enabled' => false])->assertOk();
+    expect(app(StateCompiler::class)->compile($world->servers[0]->id)->jobs)->toBe([]);
+});
+
+it('runs a schedule now and streams its output', function () {
+    [$world, $function] = fn_deployed();
+    $schedule = $this->postJson(fn_url($world->site, '/schedules'), ['name' => 'Report', 'expression' => '@hourly'])->json('data');
+
+    $run = $this->postJson(fn_url($world->site, "/schedules/{$schedule['id']}/run"))->assertStatus(202)->json('data.run_id');
+    $dispatched = $world->agents->last('fn.run');
+
+    expect($dispatched['payload'])->toBe(['site' => $world->site->slug, 'schedule' => $schedule['key'], 'name' => 'Report', 'cron' => '@hourly', 'timeout_s' => 300])
+        ->and($dispatched['handle']->id)->toBe($run);
+
+    $this->getJson(fn_url($world->site, "/runs/{$run}"))->assertOk()->assertJsonPath('data.finished', false);
+    $world->agents->succeed($dispatched['handle'], ['exit_code' => 0, 'duration_ms' => 812]);
+    $this->getJson(fn_url($world->site, "/runs/{$run}"))->assertOk()
+        ->assertJsonPath('data.finished', true)
+        ->assertJsonPath('data.exit_code', 0)
+        ->assertJsonPath('data.duration_ms', 812);
+
+    // Another function's (or a made-up) run id is not readable here.
+    $this->getJson(fn_url($world->site, '/runs/01M3XXXXXXXXXXXXXXXXXXXXXX'))->assertNotFound();
+});
+
+it('lets viewers see schedules but not change or run them', function () {
+    [$world] = fn_deployed();
+    $schedule = $this->postJson(fn_url($world->site, '/schedules'), ['name' => 'Report', 'expression' => '@hourly'])->json('data');
+    actingAsMember(Role::Viewer, $world->organization);
+
+    $this->getJson(fn_url($world->site, '/schedules'))->assertOk()->assertJsonPath('data.can.manage', false)->assertJsonCount(1, 'data.schedules');
+    $this->postJson(fn_url($world->site, '/schedules'), ['name' => 'x', 'expression' => '@daily'])->assertForbidden();
+    $this->postJson(fn_url($world->site, "/schedules/{$schedule['id']}/run"))->assertForbidden();
 });

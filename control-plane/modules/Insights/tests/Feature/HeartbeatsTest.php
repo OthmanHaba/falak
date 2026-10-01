@@ -12,6 +12,8 @@ use Kiln\Insights\Events\HeartbeatMissed;
 use Kiln\Insights\Events\IssueOpened;
 use Kiln\Insights\Events\IssueResolved;
 use Kiln\Insights\Http\Controllers\HeartbeatController;
+use Kiln\Processes\Contracts\Data\ScheduledJobData;
+use Kiln\Processes\Contracts\ScheduleDirectory;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -162,4 +164,31 @@ it('compares expected runs with recorded runs over the last day', function () {
         ->and($result['actual_24h'])->toBe(2)
         ->and($result['missed_24h'])->toBe(1)
         ->and(array_column($result['slots'], 'status'))->toBe(['finished', 'failed', 'missed']);
+});
+
+it('names the schedule in heartbeat issues when the job has a label', function () {
+    $organizationId = $this->organization->id;
+    app()->instance(ScheduleDirectory::class, new class($organizationId) implements ScheduleDirectory
+    {
+        public function __construct(private readonly string $organizationId) {}
+
+        public function forServer(string $serverId): array
+        {
+            return [];
+        }
+
+        public function find(string $serverId, string $job): ?ScheduledJobData
+        {
+            return new ScheduledJobData($job, $serverId, $this->organizationId, INSIGHTS_SITE, 'function', 'Nightly cleanup', '*/5 * * * *', 'UTC', true);
+        }
+
+        public function manages(string $serverId): bool
+        {
+            return false;
+        }
+    });
+
+    insights_ingest($organizationId, [insights_heartbeat(['job' => 'fn.function-a1b2c3d4', 'status' => 'failed', 'exit_code' => 1, 'scheduled_at' => '2026-09-27T10:00:00Z'])]);
+
+    expect(Issue::query()->sole()->title)->toBe('Scheduled task “Nightly cleanup” (fn.function-a1b2c3d4) failed');
 });

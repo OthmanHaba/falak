@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/fn.run.schema.json",
+  "title": "fn.run — run a function's schedule once now (\"Run now\"): its live release in a one-shot kiln-fn-run container, output streamed",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "site",
+    "schedule"
+  ],
+  "properties": {
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Site slug of the function"
+    },
+    "schedule": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,40}$",
+      "description": "Schedule key (KILN_SCHEDULE)"
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "Schedule name shown to the function (KILN_SCHEDULE_NAME)"
+    },
+    "cron": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "Schedule expression shown to the function (KILN_SCHEDULE_CRON)"
+    },
+    "timeout_s": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400,
+      "default": 300
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exit_code",
+        "duration_ms"
+      ],
+      "properties": {
+        "exit_code": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
