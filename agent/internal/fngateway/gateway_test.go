@@ -34,9 +34,11 @@ type fakeEngine struct {
 	neverReady bool // the runtime never listens
 	// block, when set, holds every request until it is closed.
 	block chan struct{}
-	runs  []docker.CreateBody
-	peak  int32
-	live  int32
+	// echoHeaders makes instances answer with every request header they got.
+	echoHeaders bool
+	runs        []docker.CreateBody
+	peak        int32
+	live        int32
 }
 
 type fakeContainer struct {
@@ -89,10 +91,15 @@ func (e *fakeEngine) Start(_ context.Context, id string) error {
 				}
 			}
 			e.mu.Lock()
-			b := e.block
+			b, echo := e.block, e.echoHeaders
 			e.mu.Unlock()
 			if b != nil {
 				<-b
+			}
+			if echo {
+				for k, v := range r.Header {
+					fmt.Fprintf(w, "%s: %s\n", k, strings.Join(v, ","))
+				}
 			}
 			fmt.Fprintf(w, "release=%s slot=%s header=%q host=%s xff=%s cold=%q", rel, slot, r.Header.Get(Header), r.Host, r.Header.Get("X-Forwarded-For"), r.Header.Get(ColdStartHeader))
 		}))

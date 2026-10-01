@@ -27,6 +27,15 @@
     "request_timeout_s": 30,
     "start_timeout_s": 30
   },
+  "access": {
+    "api_key_hashes": [
+      "abababababababababababababababababababababababababababababababab"
+    ],
+    "allow_cidrs": [
+      "203.0.113.0/24",
+      "2001:db8::/32"
+    ]
+  },
   "install_timeout_s": 180,
   "keep_releases": 5,
   "labels": {

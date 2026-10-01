@@ -160,6 +160,7 @@ type ApplyPayload struct {
 	Env             map[string]string  `json:"env,omitempty"`
 	Scaling         *fngateway.Scaling `json:"scaling,omitempty"`
 	Limits          *fngateway.Limits  `json:"limits,omitempty"`
+	Access          *fngateway.Access  `json:"access,omitempty"`
 	InstallTimeoutS int                `json:"install_timeout_s,omitempty"`
 	KeepReleases    int                `json:"keep_releases,omitempty"`
 	Labels          map[string]string  `json:"labels,omitempty"`
@@ -200,6 +201,11 @@ func (p *ApplyPayload) validate() error {
 	}
 	if p.Image == "" {
 		return errors.New("image is required")
+	}
+	if p.Access != nil {
+		if err := p.Access.Normalize(); err != nil {
+			return err
+		}
 	}
 	switch p.Pull {
 	case "", "always", "missing", "never":
@@ -315,6 +321,9 @@ func (f *Functions) Apply(ctx context.Context, p ApplyPayload, st commands.Strea
 	}
 	if p.Limits != nil {
 		spec.Limits = *p.Limits
+	}
+	if p.Access != nil {
+		spec.Access = *p.Access
 	}
 	if err := spec.Normalize(); err != nil {
 		return nil, &commands.PayloadError{Err: err}
