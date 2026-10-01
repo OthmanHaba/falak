@@ -6,8 +6,10 @@ use Kiln\Databases\Events\DatabaseCreated;
 use Kiln\Databases\Events\DatabaseDeleted;
 use Kiln\Projects\Application\Actions\PlaceService;
 use Kiln\Projects\Application\Actions\UnlinkService;
+use Kiln\Projects\Contracts\ProjectDirectory;
 use Kiln\Projects\Contracts\ServiceKind;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Events\ComposeServiceExtracted;
 use Kiln\Sites\Events\SiteCreated;
 use Kiln\Sites\Events\SiteDeleted;
 
@@ -21,6 +23,7 @@ final class PlaceCreatedServices
         private readonly PlaceService $place,
         private readonly UnlinkService $unlink,
         private readonly SiteDirectory $sites,
+        private readonly ProjectDirectory $projects,
     ) {}
 
     public function siteCreated(SiteCreated $event): void
@@ -52,6 +55,21 @@ final class PlaceCreatedServices
     public function databaseCreated(DatabaseCreated $event): void
     {
         ($this->place)($event->organizationId, ServiceKind::Database, $event->databaseId, $event->name);
+    }
+
+    /**
+     * A compose stack's database service now runs as a Kiln database: place it next to the stack, in its environment
+     * (its `${{ name.KEY }}` references resolve there). Split-out sites are placed by SiteCreated.
+     */
+    public function composeServiceExtracted(ComposeServiceExtracted $event): void
+    {
+        $stack = $this->projects->projectOf(ServiceKind::Site, $event->siteId);
+
+        if ($event->kind !== 'database' || $stack === null) {
+            return;
+        }
+
+        ($this->place)($event->organizationId, ServiceKind::Database, $event->refId, $event->name, $stack->projectId, $stack->environmentId, $stack->x + 360, $stack->y + 200);
     }
 
     public function databaseDeleted(DatabaseDeleted $event): void
