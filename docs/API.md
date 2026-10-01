@@ -107,6 +107,10 @@ Same body and validation as the web form (`name`, `framework`, `server_ids[]`, o
 repeat across sites; an `app_port` sent for a docker site is read as it); their `app_port` is the loopback host port Kiln
 allocates. Changing a docker site's `container_port` (`PATCH /sites/{id}`) redeploys it. `DELETE /sites/{id}` stops the
 site's containers (compose: `docker compose down`; `delete_volumes: true` also removes named volumes).
+Optional `root_directory` (git sites, also `PATCH`): the repository subfolder the app lives in (monorepos), e.g.
+`apps/api` — relative, surrounding slashes trimmed, no `.`/`..` segments. Builds run there and the release is that
+folder (deploy steps and hooks run in it); Docker uses it as the build context and resolves `dockerfile` / the
+compose file from it. Returned as `root_directory` (null = the repository root).
 Optional `project_id` / `environment_id` place the site (Projects); without them it lands in the organization's
 Default project, `production` environment. An environment of another organization/project is a `422`.
 
@@ -246,10 +250,18 @@ case-insensitively with spaces/dots/underscores as dashes. Database services exp
 `DB_DATABASE`,
 `DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the database); site services expose their own variables.
 Unknown services/keys and cycles fail the deployment: `Unresolved variable references: …`.
-An engine on an app or worker server listens on localhost only: its `DB_HOST` is `127.0.0.1`, and `DB_HOST` /
-`DATABASE_URL` resolve only for a native site running on that server alone. A site on other servers, or in a
-container (Docker, compose, functions), gets a resolution error naming the reason instead of a host it cannot reach;
-use a dedicated database server for those.
+An engine on an app or worker server serves that server only, and `DB_HOST` / `DATABASE_URL` resolve only for a
+consumer running on that server alone:
+- a native site gets `127.0.0.1`;
+- a container on it (Docker site, compose stack, function) gets the server's own address (private network → provider
+  private IP → public IP), which containers reach through the Docker bridge. The engine accepts the Docker address
+  ranges (`KILN_DOCKER_NETWORKS`, default `172.16.0.0/12,192.168.0.0/16`: PostgreSQL host rules, an extra MySQL account
+  per range) and the firewall opens its port on the Docker bridges only (`docker0`, `br-*`). This needs agent 0.4.5 or
+  newer (feature `db.containers`); it turns on per engine once the agent reports it. Before that, the reference fails
+  and says to update the agent.
+
+A site on other servers gets a resolution error naming the reason instead of a host it cannot reach; use a dedicated
+database server for those.
 
 ## Source control
 
@@ -411,6 +423,8 @@ build timeout. Long-poll (≤ 25 s). `204` when nothing is queued for the builde
  "native": {"upload": {"url": "https://kiln.example.com/api/internal/artifacts/…?expires=…&signature=…",
                        "headers": {"Content-Type": "application/octet-stream"}}}}
 ```
+Jobs of a site with a `root_directory` carry it as `"subdir"`: the app root inside the checkout (a subdir resolving
+outside the repository, e.g. through a symlink, fails the build).
 Docker jobs carry `"docker": {"image": "<registry>/<namespace>/<site-slug>:<build-id>", "dockerfile": "…",
 "build_args": {…}, "registry": {"server", "username", "password"}, "push": true}` instead of `native`.
 Clone credentials come from SourceControl at hand-out time and are never stored. HTTPS clones use

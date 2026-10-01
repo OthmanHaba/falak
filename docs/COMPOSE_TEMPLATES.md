@@ -62,6 +62,28 @@ template is marked `stateful` and more than one server is picked. `MIGRATE`/lead
   diff + history), public services (service picker from parsed compose + port + domain), policy status.
 - Canvas card subtitle: `Compose · 3 services`; status aggregates service health.
 
+### 1.7 Services that run as Kiln services (docs/plans/COMPOSE_APPS.md, phase 3)
+`Sites\Contracts\ComposeServiceExtraction` takes a service out of the stack; the decision is stored in
+`compose_services` (`{<service>: {mode: database|site, database_id|site_id, rewrites}}`) and the service leaves the
+stack's public services.
+- **`toDatabase`** — a `postgres`/`mysql`/`mariadb` image service becomes a Kiln database on the stack's leader (named
+  after `POSTGRES_DB` / `MYSQL_DATABASE` / `MARIADB_DATABASE`, else `<slug>_<service>`), or links an existing one of
+  the same engine and environment. Projects places it next to the stack as "<stack> <service>". Redis is not a Kiln
+  database: keep it in the stack.
+- **`toSite`** — an app service becomes its own site from the same repository and branch: `root_directory` = its
+  build context (relative to the compose file and the stack's own root directory; contexts outside the repository and
+  remote contexts are refused), `dockerfile` and container port from the service, its `environment:` as variables
+  (`${VAR}` / `${VAR:-default}` filled from the stack's variables), the stack's servers. The user picks framework,
+  runtime, name and domain.
+- **`rewrites`** — variables that pointed at the service, in the remaining services and in the stack's variables,
+  and what they become: a URL with the service as host (`postgres://u:p@db:5432/app`, `http://api:8000/v1`), the bare
+  name under a host-like key (`DB_HOST=db`, `PGHOST=db`) or with a port (`db:5432`), and for databases the companion
+  keys of a service that points at it (`DB_`/`DATABASE_`/`POSTGRES_`/`PG`/`MYSQL_`/`MARIADB_` + `…PORT`, `…USER`,
+  `…PASSWORD`, `…DB`/`…NAME`). Databases → `${{ <name>.KEY }}` references (resolved like any other; containers on
+  the engine's server get the server address, see docs/API.md → Variable references); sites → `https://<primary
+  domain>` plus the path. `DB_CONNECTION=mysql` (a driver name equal to the service name) is not a host.
+- The renderer drops the extracted services (and `depends_on` on them) and applies the rewrites.
+
 ---
 
 ## 2. Template format (lane B)
