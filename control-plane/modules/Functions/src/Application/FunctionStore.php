@@ -20,7 +20,7 @@ final class FunctionStore
         return CloudFunction::query()->where('site_id', strtolower($siteId))->first();
     }
 
-    public function ensure(SiteData $site, string $starter = 'hello', ?string $userId = null, ?string $userName = null): CloudFunction
+    public function ensure(SiteData $site, string $starter = 'hello', ?string $userId = null, ?string $userName = null, ?string $runtime = null): CloudFunction
     {
         $existing = $this->find($site->id);
 
@@ -28,10 +28,11 @@ final class FunctionStore
             return $existing;
         }
 
-        $runtime = (string) config('functions.default_runtime', 'bun');
+        $runtime ??= (string) config('functions.default_runtime', 'bun');
         $entrypoint = (string) config("functions.runtimes.{$runtime}.entrypoint", 'index.ts');
+        $family = (string) config("functions.runtimes.{$runtime}.family", 'ts');
 
-        return DB::transaction(function () use ($site, $runtime, $entrypoint, $starter, $userId, $userName) {
+        return DB::transaction(function () use ($site, $runtime, $entrypoint, $family, $starter, $userId, $userName) {
             $function = CloudFunction::query()->firstOrCreate(['site_id' => $site->id], [
                 'organization_id' => $site->organizationId,
                 'runtime' => $runtime,
@@ -40,7 +41,7 @@ final class FunctionStore
             ]);
 
             if ($function->wasRecentlyCreated) {
-                $this->addVersion($function, [$entrypoint => Starters::content($starter)], 'Created from the '.Starters::ALL[$starter]['title'].' starter', $userId, $userName, null);
+                $this->addVersion($function, [$entrypoint => Starters::content($starter, $family)], 'Created from the '.Starters::ALL[$starter]['title'].' starter', $userId, $userName, null);
             }
 
             return $function;

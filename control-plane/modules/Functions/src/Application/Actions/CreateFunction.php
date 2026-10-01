@@ -31,9 +31,13 @@ final class CreateFunction
      *
      * @throws ValidationException
      */
-    public function __invoke(EnvironmentData $environment, ?string $userId, ?string $userName, string $name, string $serverId, string $starter, mixed $domain, ?int $x, ?int $y, bool $deploy): array
+    public function __invoke(EnvironmentData $environment, ?string $userId, ?string $userName, string $name, string $serverId, string $starter, mixed $domain, ?int $x, ?int $y, bool $deploy, string $runtime = 'bun'): array
     {
-        Starters::content($starter);
+        if (! is_array(config("functions.runtimes.{$runtime}"))) {
+            throw ValidationException::withMessages(['runtime' => 'Unknown runtime.']);
+        }
+
+        Starters::content($starter, (string) config("functions.runtimes.{$runtime}.family"));
 
         $created = $this->sites->create($environment->organizationId, $userId, array_filter([
             'name' => $name,
@@ -41,13 +45,15 @@ final class CreateFunction
             'runtime' => SiteRuntime::Function->value,
             'server_ids' => [$serverId],
             'domain' => $domain,
+            // The variables the starter reads, ready to fill in (secrets it needs are generated).
+            'variables' => Starters::variables($starter) ?: null,
         ], fn ($v) => $v !== null), new SitePlacement($environment->projectId, $environment->id, $x, $y));
 
         $site = $created->site;
-        $function = $this->functions->ensure($site, $starter, $userId, $userName);
+        $function = $this->functions->ensure($site, $starter, $userId, $userName, $runtime);
 
-        if ($starter === 'scheduled') {
-            ($this->schedules)($site, $function, null, ['name' => 'Hourly', 'expression' => '@hourly']);
+        if (($schedule = Starters::ALL[$starter]['schedule'] ?? null) !== null) {
+            ($this->schedules)($site, $function, null, $schedule);
         }
         $warnings = $created->warnings;
 

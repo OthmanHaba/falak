@@ -4,35 +4,82 @@ A **Function** is a service whose code you write in Kiln itself: no repository, 
 seconds, the function gets a URL like any other service, and it **scales to zero** when nobody calls it. On
 traffic, it starts again and scales out.
 
-The first runtime is **Bun + Hono**. A function can serve HTTP, run on schedules, or both. Node, Deno, Python and Go come next (see `docs/plans/FUNCTIONS.md`).
+A function runs on **Bun, Node.js, Deno or Python**, and can serve HTTP, run on schedules, or both.
 
 ## Create one
 
 On the canvas: **Create → Function**.
 
-1. Pick a name, a server and a starter:
-   - **Hello Hono**
-   - **JSON API + Postgres**
-   - **Webhook receiver**
-2. Choose a domain: a generated name, your own domain, or a name in a Cloudflare zone Kiln manages.
-3. **Create and deploy**. The starter becomes version 1 and is live a few seconds later.
+1. Pick a **runtime**: Bun, Node.js, Deno or Python.
+2. Pick a **starter**. Each one is ready to use, and the TypeScript ones are shared by Bun, Node and Deno.
+
+   | Category | Starter |
+   |---|---|
+   | Basics | Hello API |
+   | Data | JSON API + Postgres (notes CRUD) |
+   | Webhooks | Signed webhook receiver (HMAC, GitHub style) · Stripe webhooks (signature check, checkout/invoice/subscription events) |
+   | Bots | Telegram bot (commands, `/setup` registers the webhook) |
+   | Notifications | Slack / Discord notifier (token-protected relay) |
+   | Scheduled | Scheduled job (hourly) · Uptime monitor (every 5 minutes, alerts Slack/Discord, `GET /status`) |
+   | APIs | Caching API proxy (hides the upstream key, CORS, GET cache) |
+   | Forms | Contact form → email (Resend, spam honeypot) |
+
+   A starter creates the **variables** it reads. Secrets it needs, such as webhook secrets and tokens, are
+   generated; fill in the rest in Variables. Scheduled starters also create their **schedule**.
+3. Pick a **server** and a **domain**, then **Create and deploy**. The starter becomes version 1 and is live a few
+   seconds later.
 
 The server needs Docker and a Kiln agent 0.4 or newer (it runs the *function gateway*).
 
+### TypeScript (Bun, Node.js, Deno)
+
 ```ts
 import { Hono } from 'hono'
-import { sql } from 'bun'
+import postgres from 'postgres'
 
+const sql = postgres(process.env.DATABASE_URL!)
 const app = new Hono()
 
 app.get('/', (c) => c.json({ hello: 'world' }))
-app.get('/users', async (c) => c.json(await sql`select id, name from users limit 20`))
+app.get('/users/:id', async (c) => c.json(await sql`select * from users where id = ${c.req.param('id')}`))
 
-export default app
+export default app                          // a Hono app, { fetch }, or a fetch(request) function
+export async function scheduled(event) { }  // optional: runs on the function's schedules
 ```
 
-Export a Hono app (or any `{ fetch }` handler) as the default export. Packages you import (`hono`, `zod`, …) are
-installed on the server when you deploy, and pinned in that release's lockfile.
+- The entry file is `index.ts`. Packages you import are installed when you deploy, and their versions are pinned
+  per code version:
+
+  | Runtime | Installed with |
+  |---|---|
+  | Bun | `bun install` |
+  | Node.js 24 | `npm`; Node runs TypeScript natively, so use erasable syntax only (no `enum`, no `namespace`) |
+  | Deno 2 | `npm:` packages; it runs with network, env and read access to `/app` only |
+
+- Write against Hono, the Web APIs (`fetch`, `crypto.subtle`, `Request`, `Response`) and npm packages that run
+  everywhere, and the same file works on all three runtimes.
+
+### Python
+
+```python
+# /// script
+# dependencies = ["fastapi", "httpx"]
+# ///
+from fastapi import FastAPI
+
+app = FastAPI()                 # any ASGI app: FastAPI, Starlette, …
+
+@app.get("/hello/{name}")
+def hello(name: str):
+    return {"message": f"Hello, {name}!"}
+
+async def scheduled(event):     # optional: runs on the function's schedules (def or async def)
+    ...
+```
+
+- The entry file is `main.py`, served by uvicorn.
+- Dependencies come from the `# /// script` block at the top (PEP 723) or a `requirements.txt`. They are installed
+  with `uv` when you deploy and locked per code version.
 
 ## Edit and deploy
 
@@ -68,7 +115,9 @@ export async function scheduled(event) {
 export default app // the HTTP side is optional for scheduled-only functions
 ```
 
-`export default { fetch: app.fetch, scheduled }` works too.
+`export default { fetch: app.fetch, scheduled }` works too. In Python, define `def scheduled(event)` or
+`async def scheduled(event)` in `main.py`; `event` is a dict with the same fields (`scheduled_time` instead of
+`scheduledTime`).
 
 In the **Schedules** tab, add one or more schedules:
 
@@ -126,11 +175,12 @@ The gateway runs as its own systemd service, so agent upgrades don't interrupt f
 
 Functions report to Kiln without any package.
 
-**Observability tab**
-- Requests, error rate and p95, with the slow routes listed by their Hono route (`GET /users/:id`). Paths no route
+**Observability tab** (every runtime)
+- Requests, error rate and p95, with the slow routes listed by their route (`GET /users/:id` in Hono,
+  `GET /hello/{name}` in FastAPI). Paths no route
   matches are grouped as `(unmatched)`.
 - Issues from uncaught errors, with the stack trace.
-- Outgoing `fetch` calls. Query strings are not recorded.
+- Outgoing calls: `fetch` in TypeScript, `httpx` and `requests` in Python. Query strings are not recorded.
 - Cold starts are marked on the request that waited for one (`faas.coldstart`).
 - Requests the gateway answers itself are listed as `(function unavailable)`: a release that fails to start, a start
   timeout, or a full queue.

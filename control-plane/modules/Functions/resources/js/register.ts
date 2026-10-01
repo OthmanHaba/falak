@@ -15,7 +15,7 @@ const isFunction = (service: { icon: string }) => service.icon === 'function';
 registerCreateOptions({
     id: 'function',
     title: 'Function',
-    description: 'Write a Bun + Hono function here; it scales to zero when idle.',
+    description: 'TypeScript (Bun, Node, Deno) or Python, written here; it scales to zero when idle.',
     icon: SquareFunction,
     order: 450,
     permission: 'functions.create',

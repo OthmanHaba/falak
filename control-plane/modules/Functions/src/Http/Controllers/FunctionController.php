@@ -46,7 +46,7 @@ final class FunctionController extends Controller
 
         return response()->json(['data' => [
             'site' => ['id' => $data->id, 'name' => $data->name, 'slug' => $data->slug],
-            'runtime' => ['key' => $function->runtime, 'label' => $runtime['label'] ?? $function->runtime, 'language' => $runtime['language'] ?? 'typescript'],
+            'runtime' => ['key' => $function->runtime, 'label' => $runtime['label'] ?? $function->runtime, 'language' => $runtime['language'] ?? 'typescript', 'family' => $runtime['family'] ?? 'ts'],
             'entrypoint' => $function->entrypoint,
             'head' => $head ? [...$head->summary(), 'files' => $head->files] : null,
             'live' => $live?->summary(),

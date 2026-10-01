@@ -22,7 +22,13 @@ final class CreateFunctionController extends Controller
 {
     public function starters(): JsonResponse
     {
-        return response()->json(['data' => Starters::list()]);
+        $runtimes = [];
+
+        foreach ((array) config('functions.runtimes') as $key => $runtime) {
+            $runtimes[] = ['key' => $key, 'label' => $runtime['label'], 'family' => $runtime['family'], 'language' => $runtime['language'], 'entrypoint' => $runtime['entrypoint']];
+        }
+
+        return response()->json(['data' => ['runtimes' => $runtimes, 'default_runtime' => config('functions.default_runtime'), 'starters' => Starters::list()]]);
     }
 
     public function store(Request $request, string $project, string $environment, CurrentOrganization $organization, OrganizationAccess $access, ProjectDirectory $projects, CreateFunction $create): JsonResponse
@@ -37,6 +43,7 @@ final class CreateFunctionController extends Controller
             'name' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9][A-Za-z0-9 ._-]*$/'],
             'server_id' => ['required', 'string', 'size:26'],
             'starter' => ['nullable', Rule::in(array_keys(Starters::ALL))],
+            'runtime' => ['nullable', Rule::in(array_keys((array) config('functions.runtimes')))],
             'domain' => ['nullable', DomainChoice::rule()],
             'position' => ['nullable', 'array'],
             'position.x' => ['nullable', 'integer', 'between:-1000000,1000000'],
@@ -67,6 +74,7 @@ final class CreateFunctionController extends Controller
             isset($data['position']['x']) ? (int) $data['position']['x'] : null,
             isset($data['position']['y']) ? (int) $data['position']['y'] : null,
             $canDeploy,
+            $data['runtime'] ?? (string) config('functions.default_runtime', 'bun'),
         );
 
         $warnings = $result['warnings'];

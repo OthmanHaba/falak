@@ -6,14 +6,37 @@ $version = (string) (env('KILN_VERSION') ?: 'latest');
 $tag = preg_match('/^v\d+\.\d+\.\d+/', $version) === 1 ? $version : 'latest';
 
 return [
-    // Runtimes a function can use. The image follows the runtime convention in runtimes/functions/bun/README.md
-    // (kiln-fn-install / kiln-fn-serve); it is released with Kiln, so its tag is Kiln's version.
+    // Runtimes a function can use. Their images follow the runtime convention in runtimes/functions/bun/README.md
+    // (kiln-fn-install / kiln-fn-serve / kiln-fn-run) and are released with Kiln, so their tag is Kiln's version.
+    // `family` picks the starters (ts: Bun, Node and Deno share them; python).
     'runtimes' => [
         'bun' => [
-            'label' => 'Bun + Hono',
+            'label' => 'Bun',
             'image' => env('KILN_FN_BUN_IMAGE', "{$prefix}/kiln-fn-bun:{$tag}"),
             'entrypoint' => 'index.ts',
             'language' => 'typescript',
+            'family' => 'ts',
+        ],
+        'node' => [
+            'label' => 'Node.js',
+            'image' => env('KILN_FN_NODE_IMAGE', "{$prefix}/kiln-fn-node:{$tag}"),
+            'entrypoint' => 'index.ts',
+            'language' => 'typescript',
+            'family' => 'ts',
+        ],
+        'deno' => [
+            'label' => 'Deno',
+            'image' => env('KILN_FN_DENO_IMAGE', "{$prefix}/kiln-fn-deno:{$tag}"),
+            'entrypoint' => 'index.ts',
+            'language' => 'typescript',
+            'family' => 'ts',
+        ],
+        'python' => [
+            'label' => 'Python',
+            'image' => env('KILN_FN_PYTHON_IMAGE', "{$prefix}/kiln-fn-python:{$tag}"),
+            'entrypoint' => 'main.py',
+            'language' => 'python',
+            'family' => 'python',
         ],
     ],
 
