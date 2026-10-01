@@ -255,7 +255,9 @@ came from as `KILN_PREVIOUS_VERSION` in `.env` and removes every other tag of th
 the previous version stay, so a manual rollback (`kiln-ctl update --version <previous>`) needs no download.
 Third-party images (Postgres, Valkey, Grafana, …), images still used by a container and volumes are never touched.
 Run it on its own with `kiln-ctl prune-images` (`--dry-run` lists what it would remove); set
-`KILN_PRUNE_IMAGES=0` in `.env` to keep every image.
+`KILN_PRUNE_IMAGES=0` in `.env` to keep every image. With `KILN_PULL=0` (images built locally, e.g.
+`--build-from-source`) an update never prunes: removed images could not be pulled again. `kiln-ctl prune-images`
+still works there and warns first.
 
 **Mounted config files.** Some services read config files bind-mounted from `/opt/kiln/observability/` and
 `/opt/kiln/deploy/` (`loki.yaml`, `tempo.yaml`, the gateway `Caddyfile`, Grafana provisioning and dashboards).

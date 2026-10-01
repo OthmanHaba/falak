@@ -290,10 +290,23 @@ prune_images() {
   else ok "$removed old Kiln image(s) removed, $kept kept (${current}${previous:+, $previous})"; fi
 }
 
+# after_update_images PREV TARGET: keep exactly one rollback target, then prune. KILN_PRUNE_IMAGES=0 keeps every image;
+# KILN_PULL=0 runs locally built images that cannot be pulled again, so they are never removed automatically.
+after_update_images() {
+  [ "$1" = "$2" ] || env_set KILN_PREVIOUS_VERSION "$1"
+  if [ "$(env_get KILN_PULL 1)" = "0" ]; then
+    say "  KILN_PULL=0: keeping old images (kiln-ctl prune-images removes them)"
+  elif [ "$(env_get KILN_PRUNE_IMAGES 1)" != "0" ]; then
+    prune_images || warn "could not prune old images"
+  fi
+}
+
 cmd_prune_images() {
   require_install
   case "${1:-}" in
-    ""|--dry-run) prune_images "$@" ;;
+    ""|--dry-run)
+      [ "$(env_get KILN_PULL 1)" != "0" ] || warn "KILN_PULL=0: removed images were built locally and cannot be pulled again"
+      prune_images "$@" ;;
     *) die "usage: kiln-ctl prune-images [--dry-run]" ;;
   esac
 }
@@ -550,9 +563,7 @@ cmd_update() {
   if [ "$failed" = 0 ] && ! health_check; then failed=1; fi
   if [ "$failed" = 0 ]; then
     ok "Kiln $target is up"
-    # Keep exactly one rollback target; KILN_PRUNE_IMAGES=0 keeps every image.
-    [ "$prev" = "$target" ] || env_set KILN_PREVIOUS_VERSION "$prev"
-    if [ "$(env_get KILN_PRUNE_IMAGES 1)" != "0" ]; then prune_images || warn "could not prune old images"; fi
+    after_update_images "$prev" "$target"
     agents_hint
     return 0
   fi

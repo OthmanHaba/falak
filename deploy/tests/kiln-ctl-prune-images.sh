@@ -52,3 +52,21 @@ printf 'KILN_VERSION=v0.5.0\n' > "$KILN_DIR/.env"
 prune_images >/dev/null 2>&1
 [ ! -s "$rm_log" ] || fail "pruned without KILN_IMAGE_PREFIX"
 pass "does nothing without KILN_IMAGE_PREFIX"
+
+: > "$rm_log"
+printf 'KILN_IMAGE_PREFIX=ghcr.io/acme\nKILN_VERSION=v0.5.0\nKILN_PULL=0\n' > "$KILN_DIR/.env"
+after_update_images v0.4.3 v0.5.0 >/dev/null 2>&1
+[ ! -s "$rm_log" ] || fail "auto-pruned locally built images (KILN_PULL=0): $(cat "$rm_log")"
+[ "$(env_get KILN_PREVIOUS_VERSION)" = "v0.4.3" ] || fail "KILN_PREVIOUS_VERSION not recorded"
+pass "an update with KILN_PULL=0 keeps every image but records the rollback target"
+
+printf 'KILN_IMAGE_PREFIX=ghcr.io/acme\nKILN_VERSION=v0.5.0\nKILN_PREVIOUS_VERSION=v0.4.3\nKILN_PRUNE_IMAGES=1\n' > "$KILN_DIR/.env"
+after_update_images v0.4.3 v0.5.0 >/dev/null 2>&1
+[ -s "$rm_log" ] || fail "an update with pulled images did not prune"
+pass "an update with pulled images prunes"
+
+: > "$rm_log"
+printf 'KILN_IMAGE_PREFIX=ghcr.io/acme\nKILN_VERSION=v0.5.0\nKILN_PRUNE_IMAGES=0\n' > "$KILN_DIR/.env"
+after_update_images v0.4.3 v0.5.0 >/dev/null 2>&1
+[ ! -s "$rm_log" ] || fail "pruned with KILN_PRUNE_IMAGES=0"
+pass "KILN_PRUNE_IMAGES=0 keeps every image"
