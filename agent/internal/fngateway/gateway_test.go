@@ -285,9 +285,26 @@ func mustApply(t *testing.T, g *Gateway, s Spec) ApplyResult {
 
 // idleDown advances the clock past the idle timeout and reaps.
 func idleDown(g *Gateway, clk *clock, d time.Duration) {
+	// A handler releases its instance after the client has read the response: until it has, Reap sees the
+	// instance busy (and done() would stamp lastUsed after the clock moved).
+	for deadline := time.Now().Add(5 * time.Second); inflight(g) > 0 && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
 	clk.Add(d)
 	g.Reap()
 	g.Wait()
+}
+
+func inflight(g *Gateway) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	n := 0
+	for _, f := range g.fns {
+		for _, in := range f.insts {
+			n += in.inflight
+		}
+	}
+	return n
 }
 
 func waitFor(t *testing.T, what string, cond func() bool) {
