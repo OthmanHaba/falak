@@ -5,7 +5,9 @@
 #   kiln-ctl logs [service] [-f]            recent logs (all services, or one)
 #   kiln-ctl up | down | restart [svc]      start / stop / restart the stack
 #   kiln-ctl update [--version vX.Y.Z]      backup -> pull -> migrate -> restart -> health check,
-#                                           automatic rollback (previous version + DB restore) on failure
+#                                           automatic rollback (previous version + DB restore) on failure,
+#                                           then removes Kiln images older than the previous version
+#   kiln-ctl prune-images [--dry-run]       remove Kiln images except the current and previous version
 #   kiln-ctl backup [--label NAME]          Postgres dump + app storage + Fleet CA + .env -> backups/
 #   kiln-ctl restore <file> [--yes]         restore a backup (stops the app while restoring)
 #   kiln-ctl doctor                         DNS, certificates, ports, disk, containers, agent API, PHP threads
@@ -249,6 +251,51 @@ pull_images() {
     return 0
   fi
   compose pull --quiet
+}
+
+# The images this install pulls or builds itself (never third-party images such as postgres or grafana).
+kiln_image_repos() {
+  local prefix
+  prefix="$(env_get KILN_IMAGE_PREFIX)"
+  [ -n "$prefix" ] || return 0
+  printf '%s\n' "$prefix/kiln-control-plane" "$prefix/kiln-edge" "$prefix/kiln-builder"
+}
+
+# prune_images [--dry-run]: remove Kiln images other than KILN_VERSION and KILN_PREVIOUS_VERSION (the rollback
+# target). Images still used by a container are left alone (no --force); volumes are never touched.
+prune_images() {
+  local dry=0 current previous repo tag id ref removed=0 kept=0
+  [ "${1:-}" = "--dry-run" ] && dry=1
+  current="$(env_get KILN_VERSION)"
+  previous="$(env_get KILN_PREVIOUS_VERSION)"
+  [ -n "$current" ] || { warn "KILN_VERSION is not set; not pruning images"; return 0; }
+  while IFS= read -r repo; do
+    [ -n "$repo" ] || continue
+    while read -r tag id; do
+      [ -n "$id" ] || continue
+      if [ "$tag" = "$current" ] || { [ -n "$previous" ] && [ "$tag" = "$previous" ]; }; then
+        kept=$((kept + 1)); continue
+      fi
+      if [ "$tag" = "<none>" ]; then ref="$id"; else ref="$repo:$tag"; fi
+      if [ "$dry" = 1 ]; then
+        say "  would remove $ref"; removed=$((removed + 1))
+      elif docker image rm "$ref" >/dev/null 2>&1; then
+        say "  removed $ref"; removed=$((removed + 1))
+      else
+        warn "kept $ref (in use or referenced elsewhere)"
+      fi
+    done < <(docker image ls --format '{{.Tag}} {{.ID}}' "$repo" 2>/dev/null || true)
+  done < <(kiln_image_repos)
+  if [ "$dry" = 1 ]; then ok "$removed old Kiln image(s) would be removed, $kept kept"
+  else ok "$removed old Kiln image(s) removed, $kept kept (${current}${previous:+, $previous})"; fi
+}
+
+cmd_prune_images() {
+  require_install
+  case "${1:-}" in
+    ""|--dry-run) prune_images "$@" ;;
+    *) die "usage: kiln-ctl prune-images [--dry-run]" ;;
+  esac
 }
 
 # --- commands -----------------------------------------------------------------------------------------
@@ -503,6 +550,9 @@ cmd_update() {
   if [ "$failed" = 0 ] && ! health_check; then failed=1; fi
   if [ "$failed" = 0 ]; then
     ok "Kiln $target is up"
+    # Keep exactly one rollback target; KILN_PRUNE_IMAGES=0 keeps every image.
+    [ "$prev" = "$target" ] || env_set KILN_PREVIOUS_VERSION "$prev"
+    if [ "$(env_get KILN_PRUNE_IMAGES 1)" != "0" ]; then prune_images || warn "could not prune old images"; fi
     agents_hint
     return 0
   fi
@@ -711,7 +761,7 @@ cmd_admin() {
   esac
 }
 
-usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local cmd="${1:-help}"; shift || true
@@ -731,6 +781,7 @@ main() {
     compose) require_install; compose "$@" ;;
     health) require_install; health_check ;;
     reload-configs) require_install; recreate_drifted 300 ;;
+    prune-images) cmd_prune_images "$@" ;;
     version) require_install; env_get KILN_VERSION; echo ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
