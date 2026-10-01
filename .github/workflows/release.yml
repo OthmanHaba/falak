@@ -1,7 +1,7 @@
 # Release: push a tag vX.Y.Z (vX.Y.Z-rc.N = pre-release, not tagged `latest`).
 #   1. multi-arch images (native amd64 + arm64 runners, merged manifests) -> GHCR:
 #        ghcr.io/<owner>/kiln-control-plane, kiln-builder, kiln-edge, kiln-fn-bun, kiln-fn-node,
-#        kiln-fn-deno, kiln-fn-python  :<tag> and :latest
+#        kiln-fn-deno, kiln-fn-python, kiln-fn-go  :<tag> and :latest
 #   2. kiln-agent / kiln / kiln-builder binaries (make build), kiln-deploy.tar.gz, install.sh, kiln-ctl,
 #      SHA256SUMS -> GitHub release assets.
 # Only GITHUB_TOKEN is used. After the first release, make the GHCR packages public
@@ -29,7 +29,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        image: [control-plane, builder, edge, fn-bun, fn-node, fn-deno, fn-python]
+        image: [control-plane, builder, edge, fn-bun, fn-node, fn-deno, fn-python, fn-go]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -58,6 +58,9 @@ jobs:
             context: runtimes/functions
           - image: fn-python
             dockerfile: runtimes/functions/python/Dockerfile
+            context: runtimes/functions
+          - image: fn-go
+            dockerfile: runtimes/functions/go/Dockerfile
             context: runtimes/functions
     steps:
       - uses: actions/checkout@v4
@@ -111,7 +114,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        image: [control-plane, builder, edge, fn-bun, fn-node, fn-deno, fn-python]
+        image: [control-plane, builder, edge, fn-bun, fn-node, fn-deno, fn-python, fn-go]
     steps:
       - uses: actions/download-artifact@v4
         with:

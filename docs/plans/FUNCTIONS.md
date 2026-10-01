@@ -1,6 +1,6 @@
 # Cloud Functions: plan
 
-Status: phase 1 shipped in v0.4.0 (2026-10-01); phase 2 (schedules) built on feat/function-schedules; phases 3–4 next.
+Status: phases 1–4 shipped in v0.4.0–v0.4.3 (2026-10-01); phase 5 (several files, Go) on feat/function-go.
 
 A **Function** is a canvas service whose code is written in Kiln's editor (no git), deployed in seconds, reached by a URL
 and/or a schedule, scaled with traffic, and **scaled to zero** when idle.
@@ -429,3 +429,23 @@ its hash covers every file. What phase 5 adds:
 - **CLI:** `kiln fn deploy` sends the whole directory (minus dot-files and dot-folders, `node_modules`,
   `__pycache__`, `.venv`, `venv`, symlinks and `.kilnignore` patterns; non-UTF-8 files are an error), so deleted
   files leave the new version. `kiln fn pull` removes files an earlier pull wrote that the new version no longer has.
+
+### Go runtime
+
+`runtimes/functions/go`, image `kiln-fn-go` (`golang:1.27-alpine`), config key `go`, entrypoint `main.go`, starter
+family `go` (the same 10 starters). It follows the runtime convention; the agent and gateway do not change, and
+it needs no new agent feature.
+
+- **What the user writes:** `package main` with `Handler` (an `http.Handler` value or a
+  `func(http.ResponseWriter, *http.Request)`) and/or `func Scheduled(ctx context.Context, event Event) error`, and no
+  `main()`. `Event` and identifiers starting with `kiln` are reserved for the runtime.
+- **`kiln-fn-install`** (a Go program in the image): checks the package with `go/parser`, copies `/app` to
+  `/tmp/kiln-build`, adds `kiln_runtime.go` (server, telemetry, `Event`) and a generated `main()`, runs
+  `go mod init function` when there is no `go.mod` and `go mod tidy`, copies `go.mod`/`go.sum` back to `/app` (the
+  agent keeps them per code hash, like other lock files), and builds `CGO_ENABLED=0 go build -trimpath` into
+  `/app/.kiln/fn`. `GOMODCACHE`/`GOCACHE` are in `/cache`.
+- **`kiln-fn-serve`** runs `/app/.kiln/fn`; **`kiln-fn-run`** runs `/app/.kiln/fn run`. Hardening is unchanged
+  (read-only root, uid 65534, `/app` read-only).
+- **Telemetry:** like the other runtimes. Request spans are named by `http.Request.Pattern` (Go 1.23+);
+  `http.DefaultTransport` is wrapped for `outgoing_request` spans of calls that carry the request's or run's context
+  (Go has no implicit async context); panics become exceptions.

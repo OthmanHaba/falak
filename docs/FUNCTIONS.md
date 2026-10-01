@@ -4,13 +4,13 @@ A **Function** is a service whose code you write in Kiln itself: no repository, 
 seconds, the function gets a URL like any other service, and it **scales to zero** when nobody calls it. On
 traffic, it starts again and scales out.
 
-A function runs on **Bun, Node.js, Deno or Python**, and can serve HTTP, run on schedules, or both.
+A function runs on **Bun, Node.js, Deno, Python or Go**, and can serve HTTP, run on schedules, or both.
 
 ## Create one
 
 On the canvas: **Create → Function**.
 
-1. Pick a **runtime**: Bun, Node.js, Deno or Python.
+1. Pick a **runtime**: Bun, Node.js, Deno, Python or Go.
 2. Pick a **starter**. Each one is ready to use, and the TypeScript ones are shared by Bun, Node and Deno.
 
    | Category | Starter |
@@ -81,6 +81,40 @@ async def scheduled(event):     # optional: runs on the function's schedules (de
 - Dependencies come from the `# /// script` block at the top (PEP 723) or a `requirements.txt`. They are installed
   with `uv` when you deploy and locked per code version.
 
+### Go
+
+```go
+package main
+
+import (
+	"context"
+	"net/http"
+)
+
+// Handler serves HTTP: an http.Handler (a ServeMux, a router) or a func(http.ResponseWriter, *http.Request).
+var Handler = routes()
+
+func routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /hello/{name}", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello, " + r.PathValue("name") + "!"))
+	})
+	return mux
+}
+
+// Optional: runs on the function's schedules. An error (or a panic) marks the run failed.
+func Scheduled(ctx context.Context, event Event) error { return nil }
+```
+
+- The entry file is `main.go`, in `package main`, **without** a `main()`: Kiln adds it, with the server, the
+  `Event` type (`Name`, `Schedule`, `Cron`, `Trigger`, `ScheduledTime`) and telemetry. Names starting with `kiln`
+  are reserved.
+- Go 1.27. When you deploy, Kiln runs `go mod tidy` and builds one static binary; modules you import are resolved
+  then, and `go.mod` / `go.sum` are kept per code version. Without a `go.mod`, the module is called `function`, so a
+  folder `lib/` is imported as `"function/lib"`. Add your own `go.mod` to choose versions.
+- Observability names requests by the `ServeMux` pattern (`GET /hello/{name}`). Outgoing calls are recorded when
+  they use the request's context: `http.NewRequestWithContext(r.Context(), …)`, or the `ctx` of `Scheduled`.
+
 ## Edit and deploy
 
 The **Code** tab is a full editor, with TypeScript autocomplete for Hono and Bun.
@@ -136,7 +170,8 @@ export default app // the HTTP side is optional for scheduled-only functions
 
 `export default { fetch: app.fetch, scheduled }` works too. In Python, define `def scheduled(event)` or
 `async def scheduled(event)` in `main.py`; `event` is a dict with the same fields (`scheduled_time` instead of
-`scheduledTime`).
+`scheduledTime`). In Go, define `func Scheduled(ctx context.Context, event Event) error` (`ctx` is cancelled when
+the run times out).
 
 In the **Schedules** tab, add one or more schedules:
 
@@ -252,10 +287,11 @@ Functions report to Kiln without any package.
 
 **Observability tab** (every runtime)
 - Requests, error rate and p95, with the slow routes listed by their route (`GET /users/:id` in Hono,
-  `GET /hello/{name}` in FastAPI). Paths no route
+  `GET /hello/{name}` in FastAPI and Go's `ServeMux`). Paths no route
   matches are grouped as `(unmatched)`.
-- Issues from uncaught errors, with the stack trace.
-- Outgoing calls: `fetch` in TypeScript, `httpx` and `requests` in Python. Query strings are not recorded.
+- Issues from uncaught errors (panics in Go), with the stack trace.
+- Outgoing calls: `fetch` in TypeScript, `httpx` and `requests` in Python, `net/http` with the request's context in
+  Go. Query strings are not recorded.
 - Cold starts are marked on the request that waited for one (`faas.coldstart`).
 - Requests the gateway answers itself are listed as `(function unavailable)`: a release that fails to start, a start
   timeout, or a full queue.
@@ -263,7 +299,7 @@ Functions report to Kiln without any package.
 **Code tab:** the live state, *Sleeping* or *N running*, with requests in flight, request and cold-start counts, and
 the time of the last request.
 
-**Logs tab:** `console.log` output.
+**Logs tab:** `console.log` / `print` / `log.Println` output.
 
 **How it works:** each function reports on its own socket. The gateway stamps the function's identity on what
 arrives there, so a function can't report as another one, and hands it to the agent.

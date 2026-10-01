@@ -13,7 +13,7 @@ export default app            // a Hono app, { fetch, websocket }, or a fetch(re
 
 ## Runtime convention
 
-Every function runtime image (Bun now; Node, Deno, Python, Go later) ships two commands. The agent and the gateway
+Every function runtime image (Bun, Node, Deno, Python, Go) ships these commands. The agent and the gateway
 only rely on these, never on the language.
 
 | Command | Runs | Mounts | Must |

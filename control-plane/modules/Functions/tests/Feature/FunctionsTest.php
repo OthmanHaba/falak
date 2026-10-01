@@ -346,11 +346,11 @@ it('offers every runtime and starters for each language', function () {
     actingAsMember(Role::Owner);
     $data = $this->getJson('/functions/starters')->assertOk()->json('data');
 
-    expect(array_column($data['runtimes'], 'key'))->toBe(['bun', 'node', 'deno', 'python'])
+    expect(array_column($data['runtimes'], 'key'))->toBe(['bun', 'node', 'deno', 'python', 'go'])
         ->and(count($data['starters']))->toBeGreaterThanOrEqual(10);
 
     foreach ($data['starters'] as $starter) {
-        expect($starter['families'])->toBe(['ts', 'python']);
+        expect($starter['families'])->toBe(['ts', 'python', 'go']);
     }
 });
 
@@ -376,6 +376,26 @@ it('creates a Python function with the starter’s variables and schedule', func
         ->and($apply['entrypoint'])->toBe('main.py')
         ->and($variables)->toMatchArray(['URLS' => '', 'ALERT_WEBHOOK_URL' => ''])
         ->and(FunctionSchedule::query()->where('function_id', $function->id)->pluck('expression')->all())->toBe(['*/5 * * * *']);
+});
+
+it('creates a Go function from a starter', function () {
+    $world = deploy_world(site: ['runtime' => 'static', 'framework' => 'static', 'php_version' => null]);
+    fn_agent($world->servers[0]->id, $world->organization->id);
+    $environment = projects_default_env($world->organization);
+
+    $response = $this->postJson("/projects/{$environment->project_id}/{$environment->slug}/functions", [
+        'name' => 'Notes', 'server_id' => $world->servers[0]->id, 'starter' => 'postgres-api', 'runtime' => 'go',
+    ])->assertCreated();
+
+    $function = CloudFunction::query()->where('site_id', $response->json('data.site_id'))->firstOrFail();
+    $apply = $world->agents->last('fn.release.apply')['payload'];
+
+    expect($function->runtime)->toBe('go')
+        ->and($function->entrypoint)->toBe('main.go')
+        ->and($function->head()->files['main.go'])->toContain('github.com/jackc/pgx/v5/pgxpool')
+        ->and($apply['image'])->toContain('/kiln-fn-go:')
+        ->and($apply['entrypoint'])->toBe('main.go');
+    $this->getJson(fn_url(Site::query()->findOrFail($response->json('data.site_id'))))->assertJsonPath('data.runtime.language', 'go');
 });
 
 it('generates the secrets a starter needs and rejects unknown runtimes', function () {

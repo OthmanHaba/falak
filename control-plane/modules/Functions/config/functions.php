@@ -8,7 +8,7 @@ $tag = preg_match('/^v\d+\.\d+\.\d+/', $version) === 1 ? $version : 'latest';
 return [
     // Runtimes a function can use. Their images follow the runtime convention in runtimes/functions/bun/README.md
     // (kiln-fn-install / kiln-fn-serve / kiln-fn-run) and are released with Kiln, so their tag is Kiln's version.
-    // `family` picks the starters (ts: Bun, Node and Deno share them; python).
+    // `family` picks the starters (ts: Bun, Node and Deno share them; python; go).
     'runtimes' => [
         'bun' => [
             'label' => 'Bun',
@@ -37,6 +37,13 @@ return [
             'entrypoint' => 'main.py',
             'language' => 'python',
             'family' => 'python',
+        ],
+        'go' => [
+            'label' => 'Go',
+            'image' => env('KILN_FN_GO_IMAGE', "{$prefix}/kiln-fn-go:{$tag}"),
+            'entrypoint' => 'main.go',
+            'language' => 'go',
+            'family' => 'go',
         ],
     ],
 
