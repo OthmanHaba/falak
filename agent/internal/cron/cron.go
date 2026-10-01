@@ -103,6 +103,8 @@ const (
 	StatusFailed   = "failed"
 	StatusSkipped  = "skipped"
 	StatusTimeout  = "timeout"
+	// ExitTimeout is timeout(1)'s exit code: a command that exits with it timed out.
+	ExitTimeout = 124
 )
 
 var jobNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,62}$`)
@@ -363,8 +365,12 @@ func (s *Scheduler) run(ctx context.Context, j Job, scheduled time.Time) {
 	switch {
 	case errors.Is(rctx.Err(), context.DeadlineExceeded):
 		hb.Status = StatusTimeout
-		code = 124
+		code = ExitTimeout
 		errMsg = "timeout after " + timeout.String()
+	case err == nil && code == ExitTimeout:
+		// The command reports its own timeout with timeout(1)'s exit code (kiln-agent fn-run does).
+		hb.Status = StatusTimeout
+		errMsg = "the command timed out (exit 124)"
 	case err != nil:
 		hb.Status = StatusFailed
 		errMsg = err.Error()

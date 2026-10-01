@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/kiln/agent/internal/docker"
 )
@@ -54,15 +55,24 @@ func (r *RunRequest) normalize() error {
 	if r.TimeoutS > 86400 {
 		r.TimeoutS = 86400
 	}
-	r.Name = strings.TrimSpace(strings.ReplaceAll(r.Name, "\n", " "))
-	if len(r.Name) > 128 {
-		r.Name = r.Name[:128]
-	}
-	if len(r.Cron) > 64 {
-		r.Cron = r.Cron[:64]
-	}
+	r.Name = truncate(strings.TrimSpace(strings.ReplaceAll(r.Name, "\n", " ")), 128)
+	r.Cron = truncate(r.Cron, 64)
 	return nil
 }
+
+// truncate cuts s to at most max bytes without splitting a UTF-8 character.
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	for max > 0 && !utf8.RuneStart(s[max]) {
+		max--
+	}
+	return s[:max]
+}
+
+// ExitTimeout is the exit code of a run stopped at its timeout (timeout(1)'s; the scheduler records "timeout").
+const ExitTimeout = 124
 
 // ErrRunTimeout is returned when a run exceeds its timeout (the container is stopped).
 var ErrRunTimeout = errors.New("the run timed out")
@@ -93,7 +103,7 @@ func (g *Gateway) Run(ctx context.Context, site string, r RunRequest, w io.Write
 	name := "kiln-fn-run-" + site + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	code, err := g.o.Engine.RunOnce(rctx, name, spec.runBody(r), w)
 	if rctx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
-		return -1, fmt.Errorf("%w after %ds", ErrRunTimeout, r.TimeoutS)
+		return ExitTimeout, fmt.Errorf("%w after %ds", ErrRunTimeout, r.TimeoutS)
 	}
 	return code, err
 }
@@ -172,11 +182,17 @@ func (c *Client) Run(ctx context.Context, site string, r RunRequest, w io.Writer
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		return -1, err
 	}
+	code, convErr := strconv.Atoi(resp.Trailer.Get("X-Kiln-Exit-Code"))
 	if msg := resp.Trailer.Get("X-Kiln-Error"); msg != "" {
-		return -1, errors.New(msg)
+		if convErr != nil {
+			code = -1
+		}
+		if code == ExitTimeout {
+			return code, fmt.Errorf("%w: %s", ErrRunTimeout, msg)
+		}
+		return code, errors.New(msg)
 	}
-	code, err := strconv.Atoi(resp.Trailer.Get("X-Kiln-Exit-Code"))
-	if err != nil {
+	if convErr != nil {
 		return -1, errors.New("the run ended without an exit code")
 	}
 	return code, nil

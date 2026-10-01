@@ -101,10 +101,13 @@ func (e DockerEngine) RunOnce(ctx context.Context, name string, body docker.Crea
 	if err := e.C.ContainerStart(ctx, id); err != nil {
 		return -1, err
 	}
+	// The logs outlive ctx: what the runtime prints while it is being stopped (timeout) still reaches w.
+	lctx, lcancel := context.WithCancel(context.Background())
+	defer lcancel()
 	logs := make(chan struct{})
 	go func() {
 		defer close(logs)
-		_ = e.C.ContainerLogs(ctx, id, true, 0, w)
+		_ = e.C.ContainerLogs(lctx, id, true, 0, w)
 	}()
 	code, err := e.C.ContainerWait(ctx, id)
 	if ctx.Err() != nil {

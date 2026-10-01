@@ -76,8 +76,8 @@ func main() {
 		code, runErr := fngateway.NewClient(*fnAdmin).Run(ctx, *runSite, fngateway.RunRequest{Schedule: *runSchedule, Name: *runName, Cron: *runCron, Trigger: "cron", TimeoutS: *runTimeout}, os.Stdout)
 		if runErr != nil {
 			fmt.Fprintln(os.Stderr, "kiln: "+runErr.Error())
-			if errors.Is(ctx.Err(), context.Canceled) {
-				os.Exit(124)
+			if errors.Is(runErr, fngateway.ErrRunTimeout) {
+				os.Exit(fngateway.ExitTimeout) // the scheduler records a timeout
 			}
 			os.Exit(1)
 		}

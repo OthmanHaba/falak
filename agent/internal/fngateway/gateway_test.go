@@ -2,6 +2,7 @@ package fngateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -839,8 +840,11 @@ func TestScheduledRunsStreamOutputAndExitCode(t *testing.T) {
 	if code, err := c.Run(context.Background(), "hello", RunRequest{Schedule: "fails"}, &out); err != nil || code != 1 || !strings.Contains(out.String(), "nope") {
 		t.Fatalf("failing run: %d %v %q", code, err, out.String())
 	}
-	if _, err := c.Run(context.Background(), "hello", RunRequest{Schedule: "slow", TimeoutS: 1}, io.Discard); err == nil || !strings.Contains(err.Error(), "timed out") {
-		t.Fatalf("slow run: %v", err)
+	if code, err := c.Run(context.Background(), "hello", RunRequest{Schedule: "slow", TimeoutS: 1}, io.Discard); !errors.Is(err, ErrRunTimeout) || code != ExitTimeout {
+		t.Fatalf("slow run: %d %v", code, err)
+	}
+	if got := truncate("ab€", 4); got != "ab" {
+		t.Fatalf("truncate split a character: %q", got)
 	}
 	if _, err := c.Run(context.Background(), "nope", RunRequest{Schedule: "x"}, io.Discard); err == nil || !strings.Contains(err.Error(), "404") {
 		t.Fatalf("unknown function: %v", err)

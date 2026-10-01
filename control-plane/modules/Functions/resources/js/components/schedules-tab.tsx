@@ -100,6 +100,7 @@ export function SchedulesTab({ ctx }: ServiceTabProps) {
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [saving, setSaving] = useState(false);
     const [run, setRun] = useState<{ id: string; name: string } | null>(null);
+    const [removing, setRemoving] = useState<Schedule | null>(null);
 
     const save = async (event: FormEvent) => {
         event.preventDefault();
@@ -224,7 +225,7 @@ export function SchedulesTab({ ctx }: ServiceTabProps) {
                                             })
                                         }
                                     />
-                                    <IconButton size="sm" label="Remove" icon={<Trash2 />} onClick={() => remove(schedule)} />
+                                    <IconButton size="sm" label="Remove" icon={<Trash2 />} onClick={() => setRemoving(schedule)} />
                                 </span>
                             )}
                         </li>
@@ -313,6 +314,31 @@ export function SchedulesTab({ ctx }: ServiceTabProps) {
                     </form>
                 )}
             </Dialog>
+
+            <Dialog
+                open={removing !== null}
+                onOpenChange={(open) => !open && setRemoving(null)}
+                title={`Remove “${removing?.name}”?`}
+                description="The server stops running it within a few seconds. Its run history stays in Observability."
+                size="sm"
+                footer={
+                    <>
+                        <Button variant="ghost" onClick={() => setRemoving(null)}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="danger"
+                            icon={<Trash2 />}
+                            onClick={async () => {
+                                if (removing) await remove(removing);
+                                setRemoving(null);
+                            }}
+                        >
+                            Remove
+                        </Button>
+                    </>
+                }
+            />
 
             {run && <RunDialog siteId={siteId} run={run} onClose={() => setRun(null)} />}
         </div>
