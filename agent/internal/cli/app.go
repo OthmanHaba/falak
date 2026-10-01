@@ -98,6 +98,7 @@ func (a *App) commands() []*command {
 		{name: "logs", args: "<site> [--follow] [--since 1h] [--limit N] [--level LEVEL]", summary: "show site logs", run: cmdLogs},
 		{name: "ssh", args: "<server> [--user USER] [-- ssh args]", summary: "open an SSH session to a server", run: cmdSSH},
 		{name: "open", args: "<site> [--panel]", summary: "open a site (or its panel page) in the browser", run: cmdOpen},
+		functionCommands(),
 		{name: "version", summary: "print the version", run: func(_ context.Context, a *App, _ []string) error {
 			fmt.Fprintln(a.Stdout, a.Version)
 			return nil
@@ -207,7 +208,7 @@ func (a *App) usage(w io.Writer, cmds []*command, _ string) {
 	}
 	tw.Flush()
 	fmt.Fprintln(w, "\nenvironment: KILN_URL, KILN_TOKEN (override stored credentials; for CI), KILN_CONFIG_DIR")
-	fmt.Fprintln(w, "exit codes: 0 ok, 1 error, 2 usage, 3 deployment failed")
+	fmt.Fprintln(w, "exit codes: 0 ok, 1 error, 2 usage, 3 deployment failed, 4 newer function version (fn deploy)")
 }
 
 // flagSet returns a FlagSet with the global flags registered.
