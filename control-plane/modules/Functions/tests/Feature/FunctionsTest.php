@@ -8,6 +8,7 @@ use Kiln\Fleet\Domain\Models\Agent;
 use Kiln\Functions\Application\Code;
 use Kiln\Functions\Application\FunctionStore;
 use Kiln\Functions\Domain\Models\CloudFunction;
+use Kiln\Functions\Domain\Models\FunctionApiKey;
 use Kiln\Functions\Domain\Models\FunctionDraft;
 use Kiln\Functions\Domain\Models\FunctionSchedule;
 use Kiln\Functions\Domain\Models\FunctionVersion;
@@ -359,4 +360,58 @@ it('generates the secrets a starter needs and rejects unknown runtimes', functio
     expect($variables['TELEGRAM_BOT_TOKEN'])->toBe('')
         ->and($variables['TELEGRAM_WEBHOOK_SECRET'])->toMatch('/^[0-9a-f]{48}$/')
         ->and(CloudFunction::query()->where('site_id', $site)->value('entrypoint'))->toBe('index.ts');
+});
+
+it('protects a function with API keys and an IP allowlist enforced by the gateway', function () {
+    [$world] = fn_deployed();
+    Agent::query()->where('server_id', $world->servers[0]->id)->update(['facts' => ['features' => ['fn.v1', 'fn.v2']]]);
+
+    $created = $this->postJson(fn_url($world->site, '/access/keys'), ['name' => 'CI'])->assertCreated()->json('data');
+    $apply = $world->agents->last('fn.release.apply')['payload'];
+
+    expect($created['key'])->toStartWith('kfn_')
+        ->and($created['deployment_id'])->not->toBeNull()
+        ->and($apply['access'])->toBe(['api_key_hashes' => [hash('sha256', $created['key'])]])
+        // shown once: the list has the prefix only
+        ->and($this->getJson(fn_url($world->site, '/access'))->json('data.keys.0'))->not->toHaveKey('key')
+        ->and($this->getJson(fn_url($world->site, '/access'))->json('data.keys.0.prefix'))->toBe(substr($created['key'], 0, 12));
+    deploy_run_all($world->agents);
+
+    $this->putJson(fn_url($world->site, '/access/allowlist'), ['allow_cidrs' => ['10.0.0.300']])->assertUnprocessable()->assertJsonValidationErrors('allow_cidrs');
+    $this->putJson(fn_url($world->site, '/access/allowlist'), ['allow_cidrs' => ['203.0.113.7', '2001:DB8::/32', '']])->assertOk()
+        ->assertJsonPath('data.allow_cidrs', ['203.0.113.7/32', '2001:db8::/32']);
+    expect($world->agents->last('fn.release.apply')['payload']['access']['allow_cidrs'])->toBe(['203.0.113.7/32', '2001:db8::/32']);
+    deploy_run_all($world->agents);
+
+    // Revoking the key and clearing the list makes it public again: no `access` (older agents accept the release).
+    $this->deleteJson(fn_url($world->site, "/access/keys/{$created['id']}"))->assertOk();
+    deploy_run_all($world->agents);
+    $this->putJson(fn_url($world->site, '/access/allowlist'), ['allow_cidrs' => []])->assertOk();
+    expect($world->agents->last('fn.release.apply')['payload'])->not->toHaveKey('access');
+});
+
+it('refuses access rules on servers whose gateway cannot enforce them', function () {
+    [$world] = fn_deployed(); // agent reports fn.v1 only
+
+    $this->postJson(fn_url($world->site, '/access/keys'), ['name' => 'CI'])->assertUnprocessable()->assertJsonValidationErrors(['access' => 'too old']);
+    $this->putJson(fn_url($world->site, '/access/allowlist'), ['allow_cidrs' => ['10.0.0.0/8']])->assertUnprocessable();
+    expect(FunctionApiKey::query()->count())->toBe(0);
+});
+
+it('sends test requests to the function’s own URL only', function () {
+    [$world] = fn_deployed();
+    app(Kiln\Sites\Contracts\SiteDomains::class)->attach($world->site->id, 'hooks.example.com');
+    Illuminate\Support\Facades\Http::fake(['hooks.example.com/*' => Illuminate\Support\Facades\Http::response('{"ok":true}', 201, ['X-Thing' => 'yes'])]);
+
+    $this->postJson(fn_url($world->site, '/invoke'), ['method' => 'POST', 'path' => '/notes?x=1', 'headers' => ['X-Kiln-Key' => 'k', 'Host' => 'evil.example'], 'body' => '{"a":1}'])
+        ->assertOk()
+        ->assertJsonPath('data.status', 201)
+        ->assertJsonPath('data.url', 'https://hooks.example.com/notes?x=1')
+        ->assertJsonPath('data.body', '{"ok":true}')
+        ->assertJsonPath('data.headers.X-Thing', 'yes');
+
+    Illuminate\Support\Facades\Http::assertSent(fn ($request) => $request->url() === 'https://hooks.example.com/notes?x=1' && $request->hasHeader('X-Kiln-Key', 'k') && $request->header('Host') !== ['evil.example'] && $request->body() === '{"a":1}');
+
+    // Absolute URLs or other hosts cannot be requested.
+    $this->postJson(fn_url($world->site, '/invoke'), ['method' => 'GET', 'path' => 'https://internal.example/'])->assertUnprocessable();
 });

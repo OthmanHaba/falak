@@ -1,5 +1,6 @@
 import { Button, IconButton } from '@/components/kiln/button';
 import { EmptyState } from '@/components/kiln/empty-state';
+import { MetricChart, type MetricPoint } from '@/components/kiln/metric-chart';
 import { Segmented } from '@/components/kiln/segmented';
 import { Skeleton } from '@/components/kiln/skeleton';
 import { Stat } from '@/components/kiln/stat';
@@ -11,6 +12,13 @@ import { monitorState } from '../components/heartbeat-table';
 import { formatCount, formatMs, formatPercent } from '../components/insights-ui';
 import { Block, IssueList, TopList } from '../components/overview-parts';
 import { type HeartbeatMonitor, type OverviewData } from '../types';
+
+/** Chart ticks: time of day for short ranges, the date for multi-day ones. */
+function chartTime(range: string): (value: number | string) => string {
+    const days = range.endsWith('d') && range !== '1d';
+
+    return (value) => new Date(value).toLocaleString(undefined, days ? { month: 'short', day: 'numeric' } : { hour: '2-digit', minute: '2-digit' });
+}
 
 /** GET /insights/sites/{siteId}/summary (Kiln\Insights\Http\Controllers\OverviewController::summary). */
 interface SiteSummary {
@@ -141,6 +149,31 @@ export default function SiteObservability({ siteId }: SiteObservabilityProps) {
                         />
                         <Stat label="Open issues" value={formatCount(data.open_issues)} href={data.links.issues} hint="view all" />
                     </div>
+
+                    {totals.requests > 0 && (
+                        <div className="grid gap-3 lg:grid-cols-2">
+                            <MetricChart
+                                title="Requests"
+                                type="area"
+                                height={160}
+                                data={data.overview.series as unknown as MetricPoint[]}
+                                series={[
+                                    { key: 'requests', label: 'Requests' },
+                                    { key: 'request_errors', label: 'Failed' },
+                                ]}
+                                format={(value) => formatCount(Math.round(value))}
+                                timeFormat={chartTime(range)}
+                            />
+                            <MetricChart
+                                title="p95 latency"
+                                height={160}
+                                data={data.overview.series as unknown as MetricPoint[]}
+                                series={[{ key: 'request_p95_ms', label: 'p95' }]}
+                                format={(value) => formatMs(value)}
+                                timeFormat={chartTime(range)}
+                            />
+                        </div>
+                    )}
 
                     <Block
                         title="Issues"

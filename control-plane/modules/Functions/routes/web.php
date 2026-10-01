@@ -25,6 +25,12 @@ Route::middleware(['auth', 'org'])->group(function () use ($ulid) {
         Route::post('versions/{number}/deploy', [FunctionController::class, 'deployVersion'])->whereNumber('number')->middleware('throttle:30,1')->name('functions.version.deploy');
         Route::put('settings', [FunctionController::class, 'updateSettings'])->name('functions.settings');
 
+        Route::post('invoke', [FunctionController::class, 'invoke'])->middleware('throttle:60,1')->name('functions.invoke');
+        Route::get('access', [FunctionController::class, 'access'])->name('functions.access');
+        Route::post('access/keys', [FunctionController::class, 'createKey'])->middleware('throttle:20,1')->name('functions.access.keys.store');
+        Route::delete('access/keys/{key}', [FunctionController::class, 'revokeKey'])->where('key', '[0-9A-Za-z]{26}')->name('functions.access.keys.destroy');
+        Route::put('access/allowlist', [FunctionController::class, 'updateAllowlist'])->name('functions.access.allowlist');
+
         Route::get('schedules', [ScheduleController::class, 'index'])->name('functions.schedules.index');
         Route::post('schedules', [ScheduleController::class, 'store'])->name('functions.schedules.store');
         Route::put('schedules/{schedule}', [ScheduleController::class, 'update'])->where('schedule', '[0-9A-Za-z]{26}')->name('functions.schedules.update');

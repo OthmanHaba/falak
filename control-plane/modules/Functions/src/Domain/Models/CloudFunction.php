@@ -40,6 +40,7 @@ class CloudFunction extends Model
             'memory_mb' => 'integer',
             'cpus' => 'float',
             'request_timeout_s' => 'integer',
+            'allow_cidrs' => 'array',
         ];
     }
 
@@ -52,6 +53,19 @@ class CloudFunction extends Model
     public function head(): ?FunctionVersion
     {
         return FunctionVersion::query()->where('function_id', $this->id)->orderByDesc('number')->first();
+    }
+
+    /**
+     * Who may call it, as fn.release.apply `access` (empty when the function is public).
+     *
+     * @return array{api_key_hashes?: list<string>, allow_cidrs?: list<string>}
+     */
+    public function access(): array
+    {
+        return array_filter([
+            'api_key_hashes' => FunctionApiKey::query()->where('function_id', $this->id)->orderBy('created_at')->pluck('hash')->all(),
+            'allow_cidrs' => array_values((array) ($this->allow_cidrs ?? [])),
+        ]);
     }
 
     /**

@@ -1,6 +1,8 @@
 <?php
 
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Kiln\Edge\Application\PathMounts;
 use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\InstallStatus;
@@ -12,6 +14,7 @@ use Kiln\Edge\Domain\Models\DnsCredential;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Domain\Models\Header;
 use Kiln\Edge\Domain\Models\LoadBalancer;
+use Kiln\Edge\Domain\Models\Mount;
 use Kiln\Edge\Domain\Models\Redirect;
 use Kiln\Edge\Domain\Models\SecurityRule;
 use Kiln\Edge\Domain\Models\SiteSetting;
@@ -52,7 +55,7 @@ it('compiles every runtime kind', function (SiteRuntime $runtime, array $expecte
     'docker' => [SiteRuntime::Docker, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
     'compose' => [SiteRuntime::Compose, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
     // Functions go to the server's function gateway, which starts instances on demand (no health check).
-    'function' => [SiteRuntime::Function, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:7070']], 'request_headers' => ['X-Kiln-Function' => 'app']]],
+    'function' => [SiteRuntime::Function, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:7070']], 'request_headers' => ['X-Kiln-Function' => 'app', 'X-Kiln-Client-IP' => '{http.vars.client_ip}']]],
 ]);
 
 it('uses the recorded container upstream for docker sites', function () {
@@ -240,4 +243,41 @@ it('exposes domains and route ids through the contract', function () {
         ->and($domains[0]->primary)->toBeTrue()
         ->and(app(EdgeRoutes::class)->routeId($site->id))->toBe(strtolower($site->id))
         ->and(app(SiteDomains::class)->primaryDomains([$site->id]))->toBe([$site->id => 'a.example.com']);
+});
+
+it('routes a site path to a function: its local gateway on the same server, else its own domain over HTTPS', function () {
+    $other = edge_server($this->servers, $this->org, ['privateIpv4' => '10.0.0.3']);
+    $site = edge_site($this->sites, $this->org, [$this->web->id], ['slug' => 'shop']);
+    edge_domain($this->org, $site->id, 'shop.example.com', ['is_primary' => true]);
+    $local = edge_site($this->sites, $this->org, [$this->web->id], ['slug' => 'api-fn', 'runtime' => SiteRuntime::Function]);
+    $remote = edge_site($this->sites, $this->org, [$other->id], ['slug' => 'hooks-fn', 'runtime' => SiteRuntime::Function]);
+    edge_domain($this->org, $remote->id, 'hooks-fn.example.com', ['is_primary' => true]);
+    Mount::query()->create(['organization_id' => $this->org, 'site_id' => $site->id, 'function_site_id' => $local->id, 'path_prefix' => '/api', 'strip_prefix' => true]);
+    Mount::query()->create(['organization_id' => $this->org, 'site_id' => $site->id, 'function_site_id' => $remote->id, 'path_prefix' => '/api/hooks', 'strip_prefix' => false]);
+
+    $entry = edge_entry(edge_compile($this->web->id), strtolower($site->id));
+
+    expect($entry['mounts'])->toBe([
+        // longest prefix first
+        ['path_prefix' => '/api/hooks', 'strip_prefix' => false, 'dial' => 'hooks-fn.example.com:443', 'tls_server_name' => 'hooks-fn.example.com', 'request_headers' => ['Host' => 'hooks-fn.example.com']],
+        ['path_prefix' => '/api', 'strip_prefix' => true, 'dial' => '127.0.0.1:7070', 'request_headers' => ['X-Kiln-Function' => 'api-fn', 'X-Kiln-Client-IP' => '{http.vars.client_ip}']],
+    ]);
+});
+
+it('validates function paths and forgets them with their sites', function () {
+    $site = edge_site($this->sites, $this->org, [$this->web->id], ['id' => strtolower((string) Str::ulid()), 'slug' => 'shop']);
+    $function = edge_site($this->sites, $this->org, [$this->web->id], ['id' => strtolower((string) Str::ulid()), 'slug' => 'api-fn', 'runtime' => SiteRuntime::Function]);
+    $mounts = app(PathMounts::class);
+
+    foreach (['/', '/../etc', 'no space/x y'] as $bad) {
+        expect(fn () => $mounts->create($function, $site->id, $bad, false))->toThrow(ValidationException::class);
+    }
+    expect(fn () => $mounts->create($function, $function->id, '/api', false))->toThrow(ValidationException::class);
+
+    $mount = $mounts->create($function, $site->id, 'api/', true);
+    expect($mount->path_prefix)->toBe('/api')
+        ->and(fn () => $mounts->create($function, $site->id, '/api', false))->toThrow(ValidationException::class);
+
+    $mounts->siteDeleted($function->id);
+    expect(Mount::query()->count())->toBe(0);
 });

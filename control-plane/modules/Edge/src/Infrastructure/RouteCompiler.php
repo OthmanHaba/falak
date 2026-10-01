@@ -12,6 +12,7 @@ use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Domain\Models\Header;
 use Kiln\Edge\Domain\Models\LoadBalancer;
+use Kiln\Edge\Domain\Models\Mount;
 use Kiln\Edge\Domain\Models\Redirect;
 use Kiln\Edge\Domain\Models\SecurityRule;
 use Kiln\Edge\Domain\Models\SiteSetting;
@@ -23,6 +24,7 @@ use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteRuntime;
+use Kiln\Sites\Contracts\TargetStatus;
 
 /**
  * Compiles the full edge.caddy.apply payload for one server from every site routed through it:
@@ -185,6 +187,10 @@ final class RouteCompiler
         // balancer only see the balancer's requests; the balancer logs them with the real client.
         if ($role !== 'backend') {
             $rules['access_log'] = $site->slug;
+
+            if (($mounts = $this->mounts($site, $serverId)) !== []) {
+                $rules['mounts'] = $mounts;
+            }
         }
         $routeId = self::routeId($site->id);
         $entries = $role === 'direct' ? $this->composeServiceEntries($site, $routeId, $rules) : [];
@@ -203,6 +209,50 @@ final class RouteCompiler
         }
 
         return $entries;
+    }
+
+    /**
+     * Paths of the site served by functions (edge.caddy.apply `mounts`, longest prefix first): the local function
+     * gateway when the function runs on this server, else the function's own domain over HTTPS.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function mounts(SiteData $site, string $serverId): array
+    {
+        $out = [];
+        $mounts = Mount::query()->where('site_id', $site->id)->get()->sortByDesc(fn (Mount $m) => strlen($m->path_prefix));
+
+        foreach ($mounts as $mount) {
+            $function = app(SiteDirectory::class)->find($mount->function_site_id);
+
+            if ($function === null || ! $function->runtime->isFunction()) {
+                continue;
+            }
+
+            $headers = ['X-Kiln-Function' => $function->slug, 'X-Kiln-Client-IP' => '{http.vars.client_ip}'];
+
+            if ($function->target($serverId)?->status === TargetStatus::Ready) {
+                $out[] = ['path_prefix' => $mount->path_prefix, 'strip_prefix' => $mount->strip_prefix, 'dial' => (string) config('edge.function_gateway', '127.0.0.1:7070'), 'request_headers' => $headers];
+
+                continue;
+            }
+
+            $domain = Domain::query()->where('site_id', $function->id)->orderByDesc('is_primary')->orderBy('name')->value('name');
+
+            if ($domain === null) {
+                continue; // no way to reach it from this server
+            }
+
+            $out[] = [
+                'path_prefix' => $mount->path_prefix,
+                'strip_prefix' => $mount->strip_prefix,
+                'dial' => "{$domain}:443",
+                'tls_server_name' => $domain,
+                'request_headers' => ['Host' => $domain],
+            ];
+        }
+
+        return $out;
     }
 
     /**
@@ -282,7 +332,8 @@ final class RouteCompiler
             SiteRuntime::Function => [
                 'kind' => 'reverse_proxy',
                 'upstreams' => [['dial' => (string) config('edge.function_gateway', '127.0.0.1:7070')]],
-                'request_headers' => ['X-Kiln-Function' => $site->slug],
+                // The client IP Caddy resolved (Cloudflare's trusted proxies included), for the gateway's IP allowlist.
+                'request_headers' => ['X-Kiln-Function' => $site->slug, 'X-Kiln-Client-IP' => '{http.vars.client_ip}'],
             ],
         };
     }

@@ -8,9 +8,15 @@ use Kiln\Edge\Http\Controllers\DnsCredentialController;
 use Kiln\Edge\Http\Controllers\DomainController;
 use Kiln\Edge\Http\Controllers\DomainSettingsController;
 use Kiln\Edge\Http\Controllers\LoadBalancerController;
+use Kiln\Edge\Http\Controllers\MountController;
 use Kiln\Edge\Http\Controllers\RoutingController;
 
 Route::middleware(['auth', 'org'])->group(function () {
+    // A function's Settings → Paths: paths of other sites it serves.
+    Route::get('sites/{site}/function-mounts', [MountController::class, 'index'])->name('edge.mounts.index');
+    Route::post('sites/{site}/function-mounts', [MountController::class, 'store'])->name('edge.mounts.store');
+    Route::delete('sites/{site}/function-mounts/{mount}', [MountController::class, 'destroy'])->where('mount', '[0-9A-Za-z]{26}')->name('edge.mounts.destroy');
+
     Route::get('sites/{site}/domains', [DomainController::class, 'index'])->name('edge.domains.index');
     Route::post('sites/{site}/domains', [DomainController::class, 'store'])->name('edge.domains.store');
     Route::patch('sites/{site}/domains/{domain}', [DomainController::class, 'update'])->name('edge.domains.update');

@@ -12,6 +12,7 @@ final readonly class FunctionSource
      * @param  array<string, string>  $files  path => content
      * @param  array{min_instances: int, max_instances: int, concurrency: int, idle_timeout_s: int}  $scaling
      * @param  array{memory_bytes: int, cpus: float, pids: int, request_timeout_s: int, start_timeout_s: int}  $limits
+     * @param  array{api_key_hashes?: list<string>, allow_cidrs?: list<string>}  $access  empty = public
      */
     public function __construct(
         public string $hash,
@@ -24,5 +25,6 @@ final readonly class FunctionSource
         public array $files,
         public array $scaling,
         public array $limits,
+        public array $access = [],
     ) {}
 }
