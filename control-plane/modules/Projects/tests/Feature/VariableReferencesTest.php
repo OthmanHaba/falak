@@ -3,6 +3,7 @@
 use Kiln\Databases\Contracts\DatabaseConnections;
 use Kiln\Network\Contracts\PrivateNetwork;
 use Kiln\Projects\Contracts\VariableReferences;
+use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Domain\Models\Server;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -14,7 +15,7 @@ beforeEach(function () {
 });
 
 it('resolves database and site references in the same environment', function () {
-    [$database, $user, $engine] = projects_database($this->organization, 'shop', $this->environment);
+    [$database, $user, $engine] = projects_database($this->organization, 'shop', $this->environment, engineServer: databases_engine($this->organization, 'postgresql', ServerType::Database));
     $engineServer = Server::query()->find($engine->server_id);
     projects_site($this->organization, 'Api', ['API_KEY' => 'secret-key', 'PUBLIC_URL' => 'https://api.test'], $this->environment);
     $web = projects_site($this->organization, 'Web', [], $this->environment);
@@ -51,7 +52,7 @@ it('prefers the private network address of the database server', function () {
     app()->instance(PrivateNetwork::class, $network);
     app()->forgetInstance(DatabaseConnections::class);
 
-    projects_database($this->organization, 'shop', $this->environment, 'mysql');
+    projects_database($this->organization, 'shop', $this->environment, 'mysql', databases_engine($this->organization, 'mysql', ServerType::Database));
     $web = projects_site($this->organization, 'Web', [], $this->environment);
 
     $result = app(VariableReferences::class)->resolve($this->environment->id, $web->id, ['URL' => '${{ shop.DATABASE_URL }}', 'CONN' => '${{ shop.DB_CONNECTION }}']);

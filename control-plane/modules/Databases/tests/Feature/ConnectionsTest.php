@@ -28,8 +28,18 @@ it('exposes host, port and database without credentials when no user has access'
     ])->and(app(DatabaseConnections::class)->variables(str_repeat('0', 26)))->toBe([]);
 });
 
+it('points at 127.0.0.1 for an engine on an app server, which listens on localhost only', function () {
+    $engine = databases_engine($this->organization, 'postgresql', ServerType::App);
+    $database = databases_active_db($engine, 'shop');
+
+    $variables = app(DatabaseConnections::class)->variables($database->id);
+
+    expect($variables['DB_HOST'])->toBe('127.0.0.1')
+        ->and($variables['DATABASE_URL'])->toBe('postgresql://127.0.0.1:5432/shop');
+});
+
 it('uses the oldest user with all privileges on the database', function () {
-    $engine = databases_engine($this->organization, 'postgresql');
+    $engine = databases_engine($this->organization, 'postgresql', ServerType::Database);
     $database = databases_active_db($engine, 'shop');
 
     foreach ([['reader', ['SELECT']], ['owner', ['ALL PRIVILEGES']], ['late', ['ALL PRIVILEGES']]] as [$username, $privileges]) {

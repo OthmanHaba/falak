@@ -26,7 +26,9 @@ final class EloquentDatabaseConnections implements DatabaseConnections
         }
 
         $engine = $database->databaseServer->engine;
-        $host = $this->host($database->server_id);
+        // Engines on app/worker servers listen on localhost only (see CommandPayloads::remote): sites on that
+        // server reach them on 127.0.0.1. Only dedicated database servers listen on the network.
+        $host = $database->databaseServer->dedicated ? $this->host($database->server_id) : '127.0.0.1';
         $port = (string) $database->databaseServer->port;
 
         $variables = [

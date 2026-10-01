@@ -12,8 +12,9 @@ interface DatabaseConnections
     public const KEYS = ['DATABASE_URL', 'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD'];
 
     /**
-     * Host = the engine server's private network (WireGuard) address, else its provider private IP, else
-     * its public IP. Credentials are those of the oldest user granted access to the database.
+     * Host = 127.0.0.1 for an engine on an app/worker server (it listens on localhost only, so only sites on that
+     * server can connect). For a dedicated database server: its private network (WireGuard) address, else its
+     * provider private IP, else its public IP. Credentials are those of the oldest user granted access.
      *
      * @return array<string, string> empty when the database does not exist
      */
