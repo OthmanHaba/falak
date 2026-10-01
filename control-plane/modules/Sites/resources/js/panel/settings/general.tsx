@@ -195,6 +195,7 @@ type BuildDraft = Pick<
     | 'docker_image'
     | 'dockerfile'
     | 'compose_file'
+    | 'root_directory'
     | 'health_check_path'
 >;
 
@@ -215,6 +216,7 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                   docker_image,
                   dockerfile,
                   compose_file,
+                  root_directory,
                   health_check_path,
               }) => ({
                   name,
@@ -228,6 +230,7 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                   docker_image,
                   dockerfile,
                   compose_file,
+                  root_directory,
                   health_check_path,
               }))(data.settings)
             : null,
@@ -259,6 +262,7 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                 docker_image: draft.docker_image || null,
                 dockerfile: draft.dockerfile || null,
                 compose_file: draft.compose_file || null,
+                ...(settings.repository ? { root_directory: draft.root_directory || null } : {}),
                 health_check_path: draft.health_check_path || null,
             },
             'Build settings saved',
@@ -393,6 +397,21 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                 )}
                 {draft.runtime === 'compose' && (
                     <p className="text-fg-muted text-xs">The compose file and public services are configured in the Compose section.</p>
+                )}
+                {settings.repository && (
+                    <Field
+                        label="Root directory"
+                        error={errors.root_directory}
+                        hint="Repository subfolder the app lives in (monorepos). Empty = the repository root."
+                    >
+                        <Input
+                            mono
+                            placeholder="apps/api"
+                            value={text('root_directory')}
+                            disabled={!data.can.update}
+                            onChange={(event) => set({ root_directory: event.target.value })}
+                        />
+                    </Field>
                 )}
                 <Field label="App health path" error={errors.health_check_path} hint="Default path of the deploy health check.">
                     <Input

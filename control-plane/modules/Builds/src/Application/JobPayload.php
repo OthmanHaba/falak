@@ -60,6 +60,12 @@ final class JobPayload
             'timeout_s' => $build->timeout_s,
         ];
 
+        if ($site->rootDirectory !== null && $site->rootDirectory !== '') {
+            // The app root inside the repository: native builds run and package there, Docker uses it as the context
+            // (and resolves the Dockerfile and compose file from it); the release is that folder.
+            $job['subdir'] = $site->rootDirectory;
+        }
+
         if (($hint = BuildConfiguration::runtimeHint($site)) !== null && $build->mode === 'native') {
             $job['runtime'] = $hint;
         }

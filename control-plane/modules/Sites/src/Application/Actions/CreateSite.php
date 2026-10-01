@@ -66,6 +66,14 @@ final class CreateSite
         ];
     }
 
+    /** Repository subfolder without surrounding slashes; empty = the repository root (null). */
+    public static function rootDirectory(mixed $value): ?string
+    {
+        $value = trim((string) $value, '/');
+
+        return $value === '' ? null : $value;
+    }
+
     /**
      * @return array<string, string>
      */
@@ -165,6 +173,7 @@ final class CreateSite
                 'source_connection_id' => $data['source_connection_id'] ?? null,
                 'repository' => $data['repository'] ?? null,
                 'branch' => $data['branch'] ?? null,
+                'root_directory' => self::rootDirectory($data['root_directory'] ?? null),
                 'push_to_deploy' => (bool) ($data['push_to_deploy'] ?? false),
                 'web_directory' => trim((string) ($data['web_directory'] ?? $preset->webDirectory), '/'),
                 'unix_user' => $isolated ? $this->unixUser($slug) : (string) config('sites.unix_user', 'kiln'),

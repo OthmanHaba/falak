@@ -141,6 +141,9 @@ func (b *Builder) Build(ctx context.Context, jb Job, sink commands.EventSink) (r
 	if _, err = os.Stat(j.app); err != nil {
 		return res, fmt.Errorf("subdir %q: %w", jb.Subdir, err)
 	}
+	if err = insideCheckout(j.src, j.app); err != nil {
+		return res, fmt.Errorf("subdir %q: %w", jb.Subdir, err)
+	}
 
 	switch jb.Mode {
 	case ModeDocker:
@@ -522,6 +525,22 @@ func redactURL(raw string) string {
 		}
 	}
 	return raw
+}
+
+// insideCheckout refuses an app root that resolves outside the checkout (a symlinked subdir in the repository).
+func insideCheckout(src, app string) error {
+	root, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(app)
+	if err != nil {
+		return err
+	}
+	if rel, err := filepath.Rel(root, real); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return errors.New("resolves outside the repository")
+	}
+	return nil
 }
 
 func firstNonEmpty(v ...string) string {

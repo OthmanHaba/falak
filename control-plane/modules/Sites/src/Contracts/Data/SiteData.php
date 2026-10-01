@@ -20,6 +20,7 @@ final readonly class SiteData
      * @param  list<SiteTargetData>  $targets
      * @param  ?ComposeConfig  $compose  compose runtime only
      * @param  ?int  $containerPort  docker runtime: the port the app listens on inside its container
+     * @param  ?string  $rootDirectory  repository subfolder the app lives in (monorepos; null = the repository root)
      */
     public function __construct(
         public string $id,
@@ -52,6 +53,7 @@ final readonly class SiteData
         public array $targets,
         public ?ComposeConfig $compose = null,
         public ?int $containerPort = null,
+        public ?string $rootDirectory = null,
     ) {}
 
     /** Docker runtime: the in-container port (sites from before container_port listen on their host port). */

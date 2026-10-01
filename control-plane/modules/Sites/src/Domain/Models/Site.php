@@ -41,6 +41,8 @@ use Kiln\Sites\Contracts\TargetRole;
  * @property ?int $container_port Docker sites: the port the app listens on inside its container
  * @property ?string $docker_image
  * @property ?string $dockerfile
+ * @property ?string $root_directory repository subfolder the app lives in (null = the repository root)
+ * @property ?array<string, array<string, mixed>> $compose_services per-service decisions (docs/plans/COMPOSE_APPS.md)
  * @property ?string $compose_file
  * @property ?ComposeSource $compose_source
  * @property ?list<array{service: string, port: int, domain?: ?string, host_port?: ?int}> $public_services
@@ -80,6 +82,7 @@ class Site extends Model
             'compose_source' => ComposeSource::class,
             'public_services' => 'array',
             'template' => 'array',
+            'compose_services' => 'array',
         ];
     }
 
@@ -287,6 +290,7 @@ class Site extends Model
             targets: $this->targets->map(fn (SiteTarget $target) => $target->toData())->values()->all(),
             compose: $this->composeConfig(),
             containerPort: $this->container_port,
+            rootDirectory: $this->root_directory,
         );
     }
 }

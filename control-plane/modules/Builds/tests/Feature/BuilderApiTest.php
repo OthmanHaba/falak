@@ -113,6 +113,16 @@ it('hands out a native job with short-lived clone credentials and a presigned up
     next_job()->assertNoContent();
 });
 
+it('builds from the site root directory (monorepos): the job carries it as subdir', function () {
+    $world = builds_world(site: ['root_directory' => 'apps/shop']);
+    request_build($world);
+    expect(next_job()->json('subdir'))->toBe('apps/shop');
+
+    $plain = builds_world();
+    request_build($plain);
+    expect(next_job()->json())->not->toHaveKey('subdir');
+});
+
 it('passes variables exposed to the deploy script to the build as well (non-prefixed build-time settings)', function () {
     $world = builds_world();
     $world->site->environmentVersions()->first()->forceFill([
