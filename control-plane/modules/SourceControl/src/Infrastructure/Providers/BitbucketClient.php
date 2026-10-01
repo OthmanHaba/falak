@@ -85,6 +85,41 @@ class BitbucketClient extends HttpProviderClient
         return $commit === null ? null : self::toCommit($commit);
     }
 
+    public function file(Connection $connection, string $repository, string $ref, string $path, int $maxBytes): ?string
+    {
+        $response = $this->send($connection, 'GET', '/repositories/'.$this->path($repository).'/src/'.rawurlencode($ref).'/'.self::encodedPath($path), nullOn404: true);
+
+        // A directory answers with a JSON listing (`values`), a file with its raw content.
+        if ($response === null || (str_contains((string) $response->header('Content-Type'), 'json') && is_array($response->json('values')))) {
+            return null;
+        }
+
+        $content = $response->body();
+
+        if (strlen($content) > $maxBytes) {
+            throw $this->tooLarge($path, $maxBytes);
+        }
+
+        return $content;
+    }
+
+    public function tree(Connection $connection, string $repository, string $ref, int $limit): array
+    {
+        $paths = [];
+
+        foreach ($this->pages($connection, '/repositories/'.$this->path($repository).'/src/'.rawurlencode($ref).'/', ['max_depth' => 20, 'pagelen' => 100]) as $entry) {
+            if (is_array($entry) && ($entry['type'] ?? null) === 'commit_file' && isset($entry['path'])) {
+                $paths[] = (string) $entry['path'];
+
+                if (count($paths) >= $limit) {
+                    break;
+                }
+            }
+        }
+
+        return $paths;
+    }
+
     public function addDeployKey(Connection $connection, string $repository, string $title, string $publicKey): string
     {
         $response = $this->send($connection, 'POST', '/repositories/'.$this->path($repository).'/deploy-keys', body: ['key' => $publicKey, 'label' => $title]);

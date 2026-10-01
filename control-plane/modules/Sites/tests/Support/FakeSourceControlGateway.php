@@ -11,6 +11,7 @@ use Kiln\SourceControl\Contracts\Data\DeployKeyData;
 use Kiln\SourceControl\Contracts\Data\RepositoryData;
 use Kiln\SourceControl\Contracts\Data\WebhookData;
 use Kiln\SourceControl\Contracts\Exceptions\ConnectionNotFound;
+use Kiln\SourceControl\Contracts\Exceptions\NoApi;
 use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
 use Kiln\SourceControl\Contracts\ProviderType;
 use Kiln\SourceControl\Contracts\SourceControlGateway;
@@ -112,6 +113,34 @@ final class FakeSourceControlGateway implements SourceControlGateway
     {
         $this->removedWebhooks[] = "{$connectionId}|{$repository}";
         unset($this->webhooks["{$connectionId}|{$repository}"]);
+    }
+
+    /** @var array<string, string> repository files by path (shared by every repository and ref) */
+    public array $files = [];
+
+    public function file(string $connectionId, string $repository, string $ref, string $path): ?string
+    {
+        $connection = $this->connections[$connectionId] ?? throw ConnectionNotFound::id($connectionId);
+
+        if (! $connection->provider->hasApi()) {
+            throw NoApi::forConnection($connection->name);
+        }
+
+        return $this->files[trim($path, '/')] ?? null;
+    }
+
+    public function tree(string $connectionId, string $repository, string $ref, string $glob = '*'): array
+    {
+        $connection = $this->connections[$connectionId] ?? throw ConnectionNotFound::id($connectionId);
+
+        if (! $connection->provider->hasApi()) {
+            throw NoApi::forConnection($connection->name);
+        }
+
+        $paths = array_values(array_filter(array_keys($this->files), fn (string $path) => fnmatch($glob, str_contains($glob, '/') ? $path : basename($path))));
+        sort($paths);
+
+        return $paths;
     }
 
     public function cloneUrl(string $connectionId, string $repository): string

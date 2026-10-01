@@ -161,6 +161,42 @@ class GitHubClient extends HttpProviderClient
         );
     }
 
+    public function file(Connection $connection, string $repository, string $ref, string $path, int $maxBytes): ?string
+    {
+        $body = $this->json($connection, '/repos/'.$this->path($repository).'/contents/'.self::encodedPath($path), ['ref' => $ref], nullOn404: true);
+
+        // A directory answers with a list; symlinks and submodules aren't files.
+        if ($body === null || array_is_list($body) || ($body['type'] ?? null) !== 'file') {
+            return null;
+        }
+
+        if ((int) ($body['size'] ?? 0) > $maxBytes) {
+            throw $this->tooLarge($path, $maxBytes);
+        }
+
+        $content = base64_decode(str_replace("\n", '', (string) ($body['content'] ?? '')), true);
+
+        return $content === false ? null : $content;
+    }
+
+    public function tree(Connection $connection, string $repository, string $ref, int $limit): array
+    {
+        $body = $this->json($connection, '/repos/'.$this->path($repository).'/git/trees/'.rawurlencode($ref), ['recursive' => 1], nullOn404: true);
+        $paths = [];
+
+        foreach ((array) ($body['tree'] ?? []) as $entry) {
+            if (is_array($entry) && ($entry['type'] ?? null) === 'blob' && isset($entry['path'])) {
+                $paths[] = (string) $entry['path'];
+
+                if (count($paths) >= $limit) {
+                    break;
+                }
+            }
+        }
+
+        return $paths;
+    }
+
     public function addDeployKey(Connection $connection, string $repository, string $title, string $publicKey): string
     {
         $response = $this->send($connection, 'POST', '/repos/'.$this->path($repository).'/keys', body: ['title' => $title, 'key' => $publicKey, 'read_only' => true]);
