@@ -18,7 +18,7 @@ final class EloquentDatabaseConnections implements DatabaseConnections
         private readonly PrivateNetwork $network,
     ) {}
 
-    public function variables(string $databaseId): array
+    public function variables(string $databaseId, ?DatabaseConsumer $consumer = null): array
     {
         $database = Database::query()->with('databaseServer')->find($databaseId);
 
@@ -27,9 +27,13 @@ final class EloquentDatabaseConnections implements DatabaseConnections
         }
 
         $engine = $database->databaseServer->engine;
-        // Engines on app/worker servers listen on localhost only (see CommandPayloads::remote): sites on that
-        // server reach them on 127.0.0.1. Only dedicated database servers listen on the network.
-        $host = $database->databaseServer->dedicated ? $this->host($database->server_id) : '127.0.0.1';
+        // Engines on app/worker servers are for that server only (see CommandPayloads::remote): native sites reach
+        // them on 127.0.0.1, its containers on the server's own address (127.0.0.1 is the container itself; the
+        // firewall lets the Docker bridges in). Only dedicated database servers listen on the network.
+        $host = match (true) {
+            $database->databaseServer->dedicated, $consumer?->containerized === true => $this->host($database->server_id),
+            default => '127.0.0.1',
+        };
         $port = (string) $database->databaseServer->port;
 
         $variables = [
@@ -60,11 +64,7 @@ final class EloquentDatabaseConnections implements DatabaseConnections
             return null;
         }
 
-        $local = "the database runs on {$engine->server_name}, which accepts local connections only (move it to a dedicated database server to reach it from elsewhere)";
-
-        if ($consumer->containerized) {
-            return "{$consumer->name} runs in a container, but {$local}.";
-        }
+        $local = "the database runs on {$engine->server_name}, which accepts connections from that server only (move it to a dedicated database server to reach it from elsewhere)";
 
         $elsewhere = array_values(array_diff($consumer->serverIds, [$engine->server_id]));
 
@@ -72,6 +72,10 @@ final class EloquentDatabaseConnections implements DatabaseConnections
             $names = array_map(fn (string $id) => $this->servers->find($id)?->name ?? $id, $elsewhere);
 
             return "{$consumer->name} runs on ".implode(', ', $names).", but {$local}.";
+        }
+
+        if ($consumer->containerized && ! $engine->container_access) {
+            return "{$consumer->name} runs in a container, but containers on {$engine->server_name} can't reach its databases yet: update the server's agent (container access needs agent 0.4.5 or newer).";
         }
 
         return null;

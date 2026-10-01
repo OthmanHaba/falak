@@ -19,6 +19,7 @@ use Kiln\Databases\Domain\Enums\Engine;
  * @property ?string $version
  * @property string $version_source default|facts|manual
  * @property bool $dedicated server type "db" (managed database server)
+ * @property bool $container_access containers on the server reach the engine (feature db.containers)
  * @property int $port
  * @property Carbon $created_at
  */
@@ -39,6 +40,7 @@ class DatabaseServer extends Model
         return [
             'engine' => Engine::class,
             'dedicated' => 'boolean',
+            'container_access' => 'boolean',
             'port' => 'integer',
         ];
     }

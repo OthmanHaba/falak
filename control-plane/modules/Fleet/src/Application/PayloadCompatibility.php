@@ -28,6 +28,11 @@ final class PayloadCompatibility
         'telemetry.log_kind' => [
             'telemetry.configure' => ['log_sources.*.kind', 'log_sources.*.multiline'],
         ],
+        // Containers reaching localhost database engines; older agents keep them on localhost.
+        'db.containers' => [
+            'db.user.apply' => ['containers'],
+            'net.firewall.apply' => ['container_ports'],
+        ],
     ];
 
     /**
