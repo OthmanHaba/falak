@@ -142,3 +142,39 @@ it('lists the services of an environment with the keys a reference can use, neve
     [$stranger] = memberOf();
     $this->actingAs($stranger)->getJson("/projects/{$project->id}/{$this->environment->slug}/variables")->assertNotFound();
 });
+
+it('gives 127.0.0.1 for an app-server engine only to native sites running on that server alone', function () {
+    [, , $engine] = projects_database($this->organization, 'shop', $this->environment);
+    $engineServer = Server::query()->find($engine->server_id);
+    $other = Server::factory()->create(['organization_id' => $this->organization->id, 'name' => 'web-2']);
+    $refs = ['URL' => '${{ shop.DATABASE_URL }}', 'HOST' => '${{ shop.DB_HOST }}', 'NAME' => '${{ shop.DB_DATABASE }}'];
+
+    $local = projects_site($this->organization, 'Local', [], $this->environment, [$engineServer]);
+    $result = $this->references->resolve($this->environment->id, $local->id, $refs);
+    expect($result->errors)->toBe([])
+        ->and($result->variables['HOST'])->toBe('127.0.0.1')
+        ->and($result->variables['URL'])->toStartWith('postgresql://shop_user:p%40ss%2Fword@127.0.0.1:5432/');
+
+    // Another server: a clear error instead of a host that cannot connect; keys without the host still resolve.
+    $spread = projects_site($this->organization, 'Spread', [], $this->environment, [$engineServer, $other]);
+    $result = $this->references->resolve($this->environment->id, $spread->id, $refs);
+    $reason = "Spread runs on web-2, but the database runs on {$engineServer->name}, which accepts local connections only (move it to a dedicated database server to reach it from elsewhere).";
+    expect($result->errors)->toBe(["URL: shop.DATABASE_URL cannot be used here: {$reason}", "HOST: shop.DB_HOST cannot be used here: {$reason}"])
+        ->and($result->variables['NAME'])->toBe('shop');
+
+    // A container on the same server: 127.0.0.1 would be the container itself.
+    $docker = projects_site($this->organization, 'Box', [], $this->environment, [$engineServer], ['runtime' => 'docker', 'framework' => 'docker', 'php_version' => null]);
+    expect($this->references->resolve($this->environment->id, $docker->id, ['HOST' => '${{ shop.DB_HOST }}'])->errors[0])
+        ->toStartWith('HOST: shop.DB_HOST cannot be used here: Box runs in a container, but the database runs on');
+});
+
+it('gives containers and other servers the network address of a dedicated database server', function () {
+    [, , $engine] = projects_database($this->organization, 'shop', $this->environment, engineServer: databases_engine($this->organization, 'postgresql', ServerType::Database));
+    $other = Server::factory()->create(['organization_id' => $this->organization->id]);
+    $fn = projects_site($this->organization, 'Fn', [], $this->environment, [$other], ['runtime' => 'function', 'framework' => 'docker', 'php_version' => null]);
+
+    $result = $this->references->resolve($this->environment->id, $fn->id, ['HOST' => '${{ shop.DB_HOST }}']);
+
+    expect($result->errors)->toBe([])
+        ->and($result->variables['HOST'])->toBe(Server::query()->find($engine->server_id)->private_ipv4);
+});

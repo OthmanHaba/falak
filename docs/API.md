@@ -242,10 +242,14 @@ Rename (the slug follows). Only empty, non-production environments can be delete
 Site variables may contain `${{ <service>.<KEY> }}`; they resolve at deploy time (release `.env`, deploy script
 environment, public build variables) against services of the **same environment**. Service names match
 case-insensitively with spaces/dots/underscores as dashes. Database services expose `DATABASE_URL`,
-`DB_CONNECTION`, `DB_HOST` (`127.0.0.1` for an engine on an app or worker server, which listens on localhost only;
-for a dedicated database server: private network → provider private IP → public IP), `DB_PORT`, `DB_DATABASE`,
+`DB_CONNECTION`, `DB_HOST` (dedicated database server: private network → provider private IP → public IP), `DB_PORT`,
+`DB_DATABASE`,
 `DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the database); site services expose their own variables.
 Unknown services/keys and cycles fail the deployment: `Unresolved variable references: …`.
+An engine on an app or worker server listens on localhost only: its `DB_HOST` is `127.0.0.1`, and `DB_HOST` /
+`DATABASE_URL` resolve only for a native site running on that server alone. A site on other servers, or in a
+container (Docker, compose, functions), gets a resolution error naming the reason instead of a host it cannot reach;
+use a dedicated database server for those.
 
 ## Source control
 
