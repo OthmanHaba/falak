@@ -5,6 +5,7 @@ namespace Kiln\Deployments\Application\Listeners;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
+use Kiln\Deployments\Contracts\Exceptions\DeploymentTriggerBusy;
 use Kiln\Deployments\Domain\Enums\Trigger;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\SourceControl\Events\PushReceived;
@@ -27,15 +28,21 @@ final class DeployOnPush implements ShouldQueue
                 continue;
             }
 
+            $trigger = fn () => ($this->trigger)(
+                $site,
+                Trigger::Push,
+                branch: $event->branch,
+                commit: $event->commit->sha,
+                message: $event->commit->message,
+                author: $event->commit->authorName ?? $event->pusher,
+            );
+
             try {
-                ($this->trigger)(
-                    $site,
-                    Trigger::Push,
-                    branch: $event->branch,
-                    commit: $event->commit->sha,
-                    message: $event->commit->message,
-                    author: $event->commit->authorName ?? $event->pusher,
-                );
+                try {
+                    $trigger();
+                } catch (DeploymentTriggerBusy) {
+                    $trigger(); // another trigger held the site's lock: one more wait before giving up on this push
+                }
             } catch (Throwable $e) {
                 Log::warning('deployments: push-to-deploy failed', ['site_id' => $site->id, 'error' => $e->getMessage()]);
             }

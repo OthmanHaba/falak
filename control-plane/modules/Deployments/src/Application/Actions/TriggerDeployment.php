@@ -2,12 +2,14 @@
 
 namespace Kiln\Deployments\Application\Actions;
 
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Kiln\Deployments\Application\Orchestration\DeploymentLog;
 use Kiln\Deployments\Application\Orchestration\DeploymentQueue;
+use Kiln\Deployments\Contracts\Exceptions\DeploymentTriggerBusy;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\Trigger;
 use Kiln\Deployments\Domain\Models\Deployment;
@@ -34,9 +36,13 @@ final class TriggerDeployment
 
     /**
      * @param  array<string, string>  $variables  KILN_VAR_* for the deploy script
-     * @param  bool  $unlessPending  a follow-up deploy (e.g. after a port change): when the site already has a queued or
-     *                               waiting deployment, return that one untouched instead of queueing or coalescing.
-     *                               Checked under the site's trigger lock, so a push queued meanwhile keeps its commit.
+     * @param  ?int  $unlessNewerThan  a follow-up deploy (e.g. after a port change), given the newest deployment number the
+     *                                 caller saw (0 for none): when the site has a queued or waiting deployment, or one
+     *                                 numbered higher (created since), return the newest one untouched instead of queueing
+     *                                 or coalescing. Checked under the site's trigger lock, so a push queued or started
+     *                                 meanwhile is never followed by an older commit.
+     *
+     * @throws DeploymentTriggerBusy when another trigger of the site holds the lock for too long
      */
     public function __invoke(
         SiteData $site,
@@ -48,7 +54,7 @@ final class TriggerDeployment
         array $variables = [],
         ?string $requestedBy = null,
         ?string $releaseId = null,
-        bool $unlessPending = false,
+        ?int $unlessNewerThan = null,
     ): Deployment {
         $branch = $branch !== null && $branch !== '' ? $branch : $site->branch;
 
@@ -90,32 +96,43 @@ final class TriggerDeployment
             'requested_by' => $requestedBy,
         ];
 
-        // Triggers of one site are serialized: a follow-up's "nothing pending" check and the coalescing into a waiting
-        // deployment must not interleave with another trigger queueing a newer commit.
-        [$deployment, $created] = Cache::lock("deployments:trigger:{$site->id}", 30)->block(15, function () use ($site, $trigger, $attributes, $releaseId, $unlessPending) {
-            if ($unlessPending) {
-                $pending = Deployment::query()->where('site_id', $site->id)->whereIn('status', [DeploymentStatus::Queued, DeploymentStatus::Waiting])
-                    ->orderByDesc('number')->first();
+        // Triggers of one site are serialized: a follow-up's "nothing newer" check and the coalescing into a waiting
+        // deployment must not interleave with another trigger queueing a newer commit. Only database work runs locked.
+        try {
+            [$deployment, $outcome] = Cache::lock("deployments:trigger:{$site->id}", 30)->block((int) config('deployments.trigger_lock_wait', 15), function () use ($site, $trigger, $attributes, $releaseId, $unlessNewerThan) {
+                if ($unlessNewerThan !== null) {
+                    $newest = Deployment::query()->where('site_id', $site->id)->orderByDesc('number')->first();
 
-                if ($pending !== null) {
-                    return [$pending, false];
+                    if ($newest !== null && ($newest->number > $unlessNewerThan || in_array($newest->status, [DeploymentStatus::Queued, DeploymentStatus::Waiting], true))) {
+                        return [$newest, 'existing'];
+                    }
                 }
-            }
 
-            if ($trigger !== Trigger::Rollback && ($coalesced = $this->coalesce($site, $trigger, $attributes)) !== null) {
-                return [$coalesced, false];
-            }
+                if ($trigger !== Trigger::Rollback && ($coalesced = $this->coalesce($site, $trigger, $attributes)) !== null) {
+                    return [$coalesced, 'coalesced'];
+                }
 
-            return [$this->create($site, [
-                ...$attributes,
-                'trigger' => $trigger,
-                'status' => DeploymentStatus::Queued,
-                'target_release_id' => $trigger === Trigger::Rollback ? $releaseId : null,
-            ]), true];
-        });
+                return [$this->create($site, [
+                    ...$attributes,
+                    'trigger' => $trigger,
+                    'status' => DeploymentStatus::Queued,
+                    'target_release_id' => $trigger === Trigger::Rollback ? $releaseId : null,
+                ]), 'created'];
+            });
+        } catch (LockTimeoutException) {
+            throw DeploymentTriggerBusy::forSite();
+        }
 
-        if (! $created) {
+        if ($outcome === 'existing') {
             return $deployment;
+        }
+
+        if ($outcome === 'coalesced') {
+            DeploymentUpdated::dispatch($deployment->id, $deployment->site_id, $deployment->status->value, $deployment->phase);
+            // The servers may have become ready meanwhile.
+            $this->queue->resume($site->id);
+
+            return $deployment->refresh();
         }
 
         $this->audit->record('deployments.triggered', 'deployment', $deployment->id, array_filter([
@@ -161,12 +178,7 @@ final class TriggerDeployment
         $this->log->note($deployment->id, sprintf('Updated by %s%s while waiting for the servers (the latest trigger wins).',
             $trigger->label(), $deployment->commit ? ' to '.substr($deployment->commit, 0, 7) : ''));
 
-        DeploymentUpdated::dispatch($deployment->id, $deployment->site_id, $deployment->status->value, $deployment->phase);
-
-        // The servers may have become ready meanwhile.
-        $this->queue->resume($site->id);
-
-        return $deployment->refresh();
+        return $deployment;
     }
 
     /**
