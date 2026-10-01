@@ -5,6 +5,7 @@ import { type ServiceTabProps } from '@/lib/registry';
 import { GitCompareArrows, Moon, Rocket, RotateCcw, SquareFunction, Zap } from 'lucide-react';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { functionUrl, type FunctionFiles, type FunctionState, type FunctionVersionSummary, type LiveStatus } from '../types';
+import { TestPanel } from './test-panel';
 
 const CodeEditor = lazy(() => import('./code-editor'));
 const DiffView = lazy(() => import('./code-editor').then((module) => ({ default: module.DiffView })));
@@ -298,6 +299,8 @@ export function CodeTab({ ctx }: ServiceTabProps) {
                     {dirty ? 'Deploy' : 'Redeploy'} <span className="text-on-accent/70 ml-1 text-[11px]">⌘S</span>
                 </Button>
             </div>
+
+            {data.live && <TestPanel siteId={siteId} />}
         </div>
     );
 }

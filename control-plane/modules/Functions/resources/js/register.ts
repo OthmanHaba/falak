@@ -6,6 +6,8 @@ import { lazy } from 'react';
 const CodeTab = lazy(() => import('./components/code-tab').then((module) => ({ default: module.CodeTab })));
 const VersionsTab = lazy(() => import('./components/versions-tab').then((module) => ({ default: module.VersionsTab })));
 const SchedulesTab = lazy(() => import('./components/schedules-tab').then((module) => ({ default: module.SchedulesTab })));
+const AccessSettings = lazy(() => import('./components/access-settings').then((module) => ({ default: module.AccessSettings })));
+const PathsSettings = lazy(() => import('./components/paths-settings').then((module) => ({ default: module.PathsSettings })));
 const ScalingSettings = lazy(() => import('./components/scaling-settings').then((module) => ({ default: module.ScalingSettings })));
 const FunctionStep = lazy(() => import('./components/function-step').then((module) => ({ default: module.FunctionStep })));
 
@@ -32,6 +34,29 @@ registerServiceTabs(
 );
 
 // Settings tab → Scaling (with Deploy's section order).
+registerServiceSettingsSections(
+    {
+        id: 'functions.access',
+        kinds: ['site'],
+        section: 'access',
+        sectionTitle: 'Access',
+        order: 260,
+        permission: 'functions.view',
+        when: (ctx) => isFunction(ctx.service),
+        component: AccessSettings,
+    },
+    {
+        id: 'functions.paths',
+        kinds: ['site'],
+        section: 'paths',
+        sectionTitle: 'Paths',
+        order: 270,
+        permission: 'edge.view',
+        when: (ctx) => isFunction(ctx.service),
+        component: PathsSettings,
+    },
+);
+
 registerServiceSettingsSections({
     id: 'functions.scaling',
     kinds: ['site'],
