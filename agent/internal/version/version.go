@@ -24,6 +24,8 @@ var Features = []string{
 	// fn.release.apply / fn.release.remove / fn.status (Cloud Functions + kiln-fn-gateway), and
 	// edge.caddy.apply sites[].request_headers.
 	"fn.v1",
+	// fn.release.apply access (gateway API keys / IP allowlist) and edge.caddy.apply sites[].mounts.
+	"fn.v2",
 }
 
 var (

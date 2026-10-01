@@ -197,6 +197,22 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	site := r.Header.Get(Header)
 	r.Header.Del(Header)
 	arrived := time.Now()
+	// Access control runs before acquire: a rejected request never wakes the function.
+	g.mu.Lock()
+	var access Access
+	if f := g.fns[site]; f != nil {
+		access = f.spec.Access
+	}
+	g.mu.Unlock()
+	status, reason := access.check(r)
+	r.Header.Del(ClientIPHeader)
+	if status != 0 {
+		writeAccessError(w, status, reason)
+		if g.tel != nil {
+			g.tel.requestSpan(site, r, status, arrived, reason)
+		}
+		return
+	}
 	inst, spec, err := g.acquire(r.Context(), site)
 	if err != nil {
 		g.writeError(w, r, err)
@@ -649,7 +665,7 @@ func (g *Gateway) Apply(ctx context.Context, spec Spec) (ApplyResult, error) {
 	if f != nil {
 		prev = f.spec.Release
 		if f.hash == hash {
-			changed := f.spec.Scaling != spec.Scaling
+			changed := f.spec.Scaling != spec.Scaling || !f.spec.Access.equal(spec.Access)
 			f.spec = spec
 			g.broadcast()
 			g.persistLocked()

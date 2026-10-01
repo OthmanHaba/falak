@@ -162,6 +162,30 @@
         }
       }
     },
+    "access": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Enforced by kiln-fn-gateway before a request wakes the function (agent feature fn.v2): API keys as sha256 hex digests (Authorization: Bearer <key> or X-Kiln-Key) and an IP allowlist (X-Kiln-Client-IP from Caddy, else the peer). Empty lists = no restriction. Not applied to scheduled runs.",
+      "properties": {
+        "api_key_hashes": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "allow_cidrs": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      }
+    },
     "install_timeout_s": {
       "type": "integer",
       "minimum": 10,
