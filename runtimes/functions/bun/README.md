@@ -36,7 +36,8 @@ function's own identity and relays everything to the agent (Insights, traces). S
 contract (`contracts/telemetry/README.md`). The gateway adds `X-Kiln-Cold-Start: 1` to a request that waited for an
 instance to start; report it as `faas.coldstart`.
 
-The Bun runtime does this without any package (`telemetry.ts`):
+The JS runtimes (Bun, Node, Deno) do this without any package, with the same tracer (`../shared/telemetry.mjs`;
+the entry loader and the scheduled runner are shared too):
 - a `request` span per request, named by the Hono route template (`GET /users/:id`); paths no route matches are
   grouped as `(unmatched)`, and plain fetch handlers get `/users/:id`-style names from the path;
 - exceptions: errors Hono's error handler turns into a 500, and errors thrown by a plain handler, with the stack;
@@ -55,7 +56,7 @@ as is.
 ## Build and try
 
 ```sh
-docker build -t kiln-fn-bun:dev runtimes/functions/bun
+docker build -t kiln-fn-bun:dev -f runtimes/functions/bun/Dockerfile runtimes/functions   # context: shared/ too
 mkdir -p /tmp/fn/app /tmp/fn/cache && cp index.ts /tmp/fn/app/
 docker run --rm --read-only --tmpfs /tmp --user 65534:65534 -e KILN_ENTRYPOINT=index.ts \
   -v /tmp/fn/app:/app -v /tmp/fn/cache:/cache kiln-fn-bun:dev kiln-fn-install
