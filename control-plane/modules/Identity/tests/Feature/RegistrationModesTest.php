@@ -4,7 +4,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
+use Kiln\Identity\Application\Notifications\OrganizationInvitation;
 use Kiln\Identity\Contracts\Role;
+use Kiln\Identity\Domain\Models\Invitation;
 use Kiln\Identity\Domain\Models\User;
 
 function signUp(string $email): TestResponse
@@ -46,16 +48,59 @@ it('treats an unknown setting as closed', function () {
     signUp('stranger@example.com')->assertForbidden();
 });
 
-it('only lets invited addresses register in invite mode', function () {
-    config(['identity.registration' => 'invite']);
+/** Invite $email as an admin of a new organization; returns the invitation token from the e-mail link. */
+function inviteForSignUp(string $email): string
+{
     actingAsMember(Role::Admin);
-    $this->post('/organization/invitations', ['email' => 'invited@example.com', 'role' => 'developer'])->assertSessionHasNoErrors();
+    test()->post('/organization/invitations', ['email' => $email, 'role' => 'developer'])->assertSessionHasNoErrors();
     Auth::logout();
 
-    $this->get('/register')->assertInertia(fn (Assert $page) => $page->component('Identity/auth/register', false)->where('inviteOnly', true));
-    signUp('stranger@example.com')->assertSessionHasErrors('email');
-    expect(User::query()->where('email', 'stranger@example.com')->exists())->toBeFalse();
+    $token = null;
+    Notification::assertSentOnDemand(OrganizationInvitation::class, function (OrganizationInvitation $notification) use (&$token) {
+        $token = basename((string) parse_url($notification->url, PHP_URL_PATH));
 
-    signUp('invited@example.com')->assertRedirect('/projects');
-    expect(User::query()->where('email', 'invited@example.com')->exists())->toBeTrue();
+        return true;
+    });
+
+    return (string) $token;
+}
+
+function signUpWith(string $email, ?string $invitation): TestResponse
+{
+    return test()->post('/register', ['name' => 'New User', 'email' => $email, 'password' => 'password', 'password_confirmation' => 'password', 'invitation' => $invitation]);
+}
+
+it('needs the invitation link in invite mode, not just an invited address', function () {
+    config(['identity.registration' => 'invite']);
+    $token = inviteForSignUp('invited@example.com');
+    $refusal = 'Sign-up on this Kiln needs an invitation: open the link in your invitation email and use the address it was sent to.';
+
+    // Knowing an invited address is not enough, and the message is the same for invited and other addresses.
+    signUpWith('invited@example.com', null)->assertSessionHasErrors(['email' => $refusal]);
+    signUpWith('stranger@example.com', null)->assertSessionHasErrors(['email' => $refusal]);
+    signUpWith('invited@example.com', 'not-a-token')->assertSessionHasErrors(['email' => $refusal]);
+    // A real token used for another address is refused too.
+    signUpWith('stranger@example.com', $token)->assertSessionHasErrors(['email' => $refusal]);
+    expect(User::query()->whereIn('email', ['invited@example.com', 'stranger@example.com'])->exists())->toBeFalse();
+
+    $this->get('/register?invitation='.$token)->assertInertia(fn (Assert $page) => $page->component('Identity/auth/register', false)
+        ->where('inviteOnly', true)
+        ->where('invitation.token', $token)
+        ->where('invitation.email', 'invited@example.com'));
+    $this->get('/register?invitation=nope')->assertInertia(fn (Assert $page) => $page->where('invitation', null));
+
+    signUpWith('invited@example.com', $token)->assertRedirect('/projects');
+
+    // Registered and joined the inviting organization in the same request.
+    $user = User::query()->where('email', 'invited@example.com')->sole();
+    expect($user->organizations()->where('personal', false)->exists())->toBeTrue()
+        ->and(Invitation::query()->sole()->accepted_at)->not->toBeNull();
+});
+
+it('carries the invitation from the login page an invitation link redirected to', function () {
+    config(['identity.registration' => 'invite']);
+    $token = inviteForSignUp('invited@example.com');
+
+    $this->get("/invitations/{$token}")->assertRedirect('/login');
+    $this->get('/login')->assertInertia(fn (Assert $page) => $page->where('invitation', $token));
 });

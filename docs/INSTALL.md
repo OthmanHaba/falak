@@ -115,7 +115,7 @@ and run `kiln-ctl up`:
 | Value | Sign-up |
 |---|---|
 | `open` (default) | anyone |
-| `invite` | only addresses with a pending organization invitation (invite them from **Settings → Members** first) |
+| `invite` | only through an invitation link (invite from **Settings → Members**): the person opens the e-mailed link, chooses *Sign up* and registers with the invited address, which also joins the organization |
 | `closed` | nobody; the *Sign up* links are hidden. Create accounts with `kiln-ctl admin create <email>` |
 
 An unknown value counts as `closed`. A panel without any account always accepts the first sign-up, so the first

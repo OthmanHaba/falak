@@ -10,9 +10,11 @@ import { type FormEventHandler } from 'react';
 interface LoginProps {
     status?: string;
     canResetPassword: boolean;
+    /** Token of the invitation link that sent the guest here: Sign up carries it. */
+    invitation?: string | null;
 }
 
-export default function Login({ status, canResetPassword }: LoginProps) {
+export default function Login({ status, canResetPassword, invitation }: LoginProps) {
     const { registration } = usePage<SharedData>().props;
     const { data, setData, post, processing, errors, reset } = useForm({ email: '', password: '', remember: false });
 
@@ -28,7 +30,7 @@ export default function Login({ status, canResetPassword }: LoginProps) {
             footer={
                 registration !== 'closed' && (
                     <>
-                        Don't have an account? <AuthLink href={route('register')}>Sign up</AuthLink>
+                        Don't have an account? <AuthLink href={route('register', invitation ? { invitation } : {})}>Sign up</AuthLink>
                     </>
                 )
             }
