@@ -3,6 +3,7 @@
 namespace Kiln\Deployments\Application\Actions;
 
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Kiln\Deployments\Application\Orchestration\DeploymentLog;
@@ -33,6 +34,9 @@ final class TriggerDeployment
 
     /**
      * @param  array<string, string>  $variables  KILN_VAR_* for the deploy script
+     * @param  bool  $unlessPending  a follow-up deploy (e.g. after a port change): when the site already has a queued or
+     *                               waiting deployment, return that one untouched instead of queueing or coalescing.
+     *                               Checked under the site's trigger lock, so a push queued meanwhile keeps its commit.
      */
     public function __invoke(
         SiteData $site,
@@ -44,6 +48,7 @@ final class TriggerDeployment
         array $variables = [],
         ?string $requestedBy = null,
         ?string $releaseId = null,
+        bool $unlessPending = false,
     ): Deployment {
         $branch = $branch !== null && $branch !== '' ? $branch : $site->branch;
 
@@ -76,32 +81,42 @@ final class TriggerDeployment
             throw ValidationException::withMessages(['commit' => 'The commit must be a hexadecimal SHA.']);
         }
 
-        if ($trigger !== Trigger::Rollback) {
-            $coalesced = $this->coalesce($site, $trigger, [
-                'branch' => $branch,
-                'commit' => $commit !== null ? strtolower($commit) : null,
-                'commit_message' => $message !== null ? mb_substr($message, 0, 1000) : null,
-                'commit_author' => $author !== null ? mb_substr($author, 0, 255) : null,
-                'variables' => $variables === [] ? null : $variables,
-                'requested_by' => $requestedBy,
-            ]);
-
-            if ($coalesced !== null) {
-                return $coalesced;
-            }
-        }
-
-        $deployment = $this->create($site, [
-            'trigger' => $trigger,
-            'status' => DeploymentStatus::Queued,
+        $attributes = [
             'branch' => $branch,
             'commit' => $commit !== null ? strtolower($commit) : null,
             'commit_message' => $message !== null ? mb_substr($message, 0, 1000) : null,
             'commit_author' => $author !== null ? mb_substr($author, 0, 255) : null,
-            'target_release_id' => $trigger === Trigger::Rollback ? $releaseId : null,
             'variables' => $variables === [] ? null : $variables,
             'requested_by' => $requestedBy,
-        ]);
+        ];
+
+        // Triggers of one site are serialized: a follow-up's "nothing pending" check and the coalescing into a waiting
+        // deployment must not interleave with another trigger queueing a newer commit.
+        [$deployment, $created] = Cache::lock("deployments:trigger:{$site->id}", 30)->block(15, function () use ($site, $trigger, $attributes, $releaseId, $unlessPending) {
+            if ($unlessPending) {
+                $pending = Deployment::query()->where('site_id', $site->id)->whereIn('status', [DeploymentStatus::Queued, DeploymentStatus::Waiting])
+                    ->orderByDesc('number')->first();
+
+                if ($pending !== null) {
+                    return [$pending, false];
+                }
+            }
+
+            if ($trigger !== Trigger::Rollback && ($coalesced = $this->coalesce($site, $trigger, $attributes)) !== null) {
+                return [$coalesced, false];
+            }
+
+            return [$this->create($site, [
+                ...$attributes,
+                'trigger' => $trigger,
+                'status' => DeploymentStatus::Queued,
+                'target_release_id' => $trigger === Trigger::Rollback ? $releaseId : null,
+            ]), true];
+        });
+
+        if (! $created) {
+            return $deployment;
+        }
 
         $this->audit->record('deployments.triggered', 'deployment', $deployment->id, array_filter([
             'site_id' => $site->id, 'trigger' => $trigger->value, 'commit' => $deployment->commit, 'release_id' => $releaseId,

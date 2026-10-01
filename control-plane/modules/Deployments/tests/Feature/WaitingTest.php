@@ -226,6 +226,43 @@ it('coalesces repeated triggers into the waiting deployment (latest commit wins)
         ->and(array_values($world->builds->builds)[0]['commit'])->toBe(str_repeat('3', 40));
 });
 
+it('keeps a push queued during a follow-up redeploy (port change): the follow-up re-checks under the trigger lock', function () {
+    $world = deploy_world(servers: 1);
+    waiting_targets($world, [TargetStatus::Provisioning]);
+    $site = app(SiteDirectory::class)->find($world->site->id);
+
+    // The port-change listener saw nothing pending; a push queues (waiting for the server) before it triggers.
+    $push = waiting_deploy($world, Trigger::Push, str_repeat('2', 40));
+    $follow = app(TriggerDeployment::class)($site, Trigger::Manual, commit: str_repeat('1', 40), message: 'Ports changed', unlessPending: true);
+
+    expect($follow->id)->toBe($push->id)
+        ->and($push->refresh()->commit)->toBe(str_repeat('2', 40))
+        ->and($push->trigger)->toBe(Trigger::Push)
+        ->and(Deployment::query()->count())->toBe(1);
+
+    // A plain trigger still coalesces (the latest trigger wins).
+    app(TriggerDeployment::class)($site, Trigger::Manual, commit: str_repeat('3', 40));
+    expect($push->refresh()->commit)->toBe(str_repeat('3', 40));
+});
+
+it('leaves a queued deployment alone on a follow-up and queues one when nothing is pending', function () {
+    $world = deploy_world();
+    $site = app(SiteDirectory::class)->find($world->site->id);
+    $running = waiting_deploy($world, commit: str_repeat('a', 40));
+    $queued = waiting_deploy($world, Trigger::Push, str_repeat('b', 40));
+    expect($queued->status)->toBe(DeploymentStatus::Queued);
+
+    $follow = app(TriggerDeployment::class)($site, Trigger::Manual, commit: str_repeat('a', 40), unlessPending: true);
+    expect($follow->id)->toBe($queued->id)
+        ->and(Deployment::query()->count())->toBe(2);
+
+    $queued->forceFill(['status' => DeploymentStatus::Cancelled])->save();
+    $follow = app(TriggerDeployment::class)($site, Trigger::Manual, commit: str_repeat('a', 40), unlessPending: true);
+    expect($follow->id)->not->toBe($running->id)
+        ->and($follow->commit)->toBe(str_repeat('a', 40))
+        ->and(Deployment::query()->count())->toBe(3);
+});
+
 it('cancels a waiting deployment from the panel and the API, then starts the next one', function () {
     $world = deploy_world();
     waiting_targets($world, [TargetStatus::Provisioning]);

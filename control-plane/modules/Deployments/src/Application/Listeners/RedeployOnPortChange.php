@@ -63,6 +63,8 @@ final class RedeployOnPortChange implements ShouldQueue
                 commit: $source->commit,
                 message: 'Ports changed: container '.$site->listenPort().', host '.$site->appPort,
                 author: $source->commit_author,
+                // Re-checked under the site's trigger lock: a push queued since the check above keeps its own commit.
+                unlessPending: true,
             );
         } catch (ValidationException $e) {
             Log::warning('deployments: redeploy after a port change refused', ['site_id' => $site->id, 'errors' => $e->errors()]);
