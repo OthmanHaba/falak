@@ -6,7 +6,7 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * The code a new function starts with: resources/starters/<family>/<key>.<ext>, one per runtime family (ts is
- * shared by Bun, Node and Deno; python). A starter can declare the variables it reads (created with the function,
+ * shared by Bun, Node and Deno; python; go). A starter can declare the variables it reads (created with the function,
  * `generate` ones filled with a random secret) and a schedule.
  */
 final class Starters
@@ -98,7 +98,7 @@ final class Starters
         ],
     ];
 
-    private const EXTENSIONS = ['ts' => 'ts', 'python' => 'py'];
+    private const EXTENSIONS = ['ts' => 'ts', 'python' => 'py', 'go' => 'go'];
 
     /**
      * @return list<array{key: string, title: string, description: string, category: string, variables: list<string>, schedule: ?array{name: string, expression: string}, families: list<string>}>

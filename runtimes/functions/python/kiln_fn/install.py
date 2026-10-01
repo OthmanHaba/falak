@@ -1,7 +1,7 @@
 """kiln-fn-install: installs a function's Python dependencies into /app/.venv.
 
-Dependencies come from a PEP 723 inline script metadata block in the entrypoint (``# /// script`` …
-``dependencies = [...]`` … ``# ///``) and/or a ``requirements.txt``. They are resolved once into
+Dependencies come from PEP 723 inline script metadata blocks (``# /// script`` … ``dependencies = [...]`` …
+``# ///``) in the entrypoint and in the function's other ``.py`` files (merged), and/or a ``requirements.txt``. They are resolved once into
 ``/app/requirements.lock``; when that file already exists (the agent restores it for the same code), exactly those
 versions are installed. The virtualenv is created with ``--system-site-packages`` so the image's uvicorn is
 visible. The package cache is /cache/uv (shared by every release on the server).
@@ -24,11 +24,11 @@ LOCK = APP / "requirements.lock"
 BLOCK = re.compile(r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$")
 
 
-def script_dependencies(source: str) -> list[str]:
+def script_dependencies(source: str, name: str = "the entrypoint") -> list[str]:
     """The ``dependencies`` of the PEP 723 ``script`` block, or [] when there is none."""
     blocks = [m for m in BLOCK.finditer(source) if m.group("type") == "script"]
     if len(blocks) > 1:
-        fail("more than one `# /// script` block")
+        fail(f"more than one `# /// script` block in {name}")
     if not blocks:
         return []
     content = "".join(
@@ -38,10 +38,25 @@ def script_dependencies(source: str) -> list[str]:
     try:
         meta = tomllib.loads(content)
     except tomllib.TOMLDecodeError as err:
-        fail(f"the `# /// script` block is not valid TOML: {err}")
+        fail(f"the `# /// script` block of {name} is not valid TOML: {err}")
     deps = meta.get("dependencies", [])
     if not isinstance(deps, list) or not all(isinstance(d, str) for d in deps):
-        fail("`dependencies` in the `# /// script` block must be a list of strings")
+        fail(f"`dependencies` in the `# /// script` block of {name} must be a list of strings")
+    return deps
+
+
+def all_dependencies(entry: Path) -> list[str]:
+    """The entrypoint's block first, then the blocks of the other .py files (sorted by path), without duplicates.
+    Dot folders (.venv) and __pycache__ are skipped."""
+    files = [entry] + sorted(
+        p for p in APP.rglob("*.py")
+        if p != entry and not any(part.startswith(".") or part == "__pycache__" for part in p.relative_to(APP).parts)
+    )
+    deps: list[str] = []
+    for p in files:
+        for dep in script_dependencies(p.read_text(encoding="utf-8"), str(p.relative_to(APP))):
+            if dep not in deps:
+                deps.append(dep)
     return deps
 
 
@@ -63,7 +78,7 @@ def main() -> None:
     if not path.is_file():
         fail(f"entrypoint {entry} not found")
 
-    deps = script_dependencies(path.read_text(encoding="utf-8"))
+    deps = all_dependencies(path)
     requirements = APP / "requirements.txt"
 
     uv("venv", str(VENV), "--system-site-packages", "--python", sys.executable, "--quiet", "--allow-existing")
@@ -72,7 +87,7 @@ def main() -> None:
     if LOCK.is_file():
         print("kiln: installing the locked dependency versions (requirements.lock)", flush=True)
     elif deps or requirements.is_file():
-        sources = ", ".join(filter(None, ["the # /// script block" if deps else "", "requirements.txt" if requirements.is_file() else ""]))
+        sources = ", ".join(filter(None, ["# /// script blocks" if deps else "", "requirements.txt" if requirements.is_file() else ""]))
         print(f"kiln: dependencies from {sources}", flush=True)
         spec = Path("/tmp/kiln-requirements.in")
         lines = list(deps)

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -172,15 +173,43 @@ func TestFnPullEditDeployAndConflict(t *testing.T) {
 		t.Fatalf("meta %+v", meta)
 	}
 
-	// Edit, add an unrelated file (not part of the function: not sent), deploy.
+	// Edit, add a module in a new folder; dependencies, VCS, dot-files and .kilnignore'd files are not sent.
 	os.WriteFile(filepath.Join(dir, "index.ts"), []byte("export default { fetch: () => new Response('v2') }\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("scratch"), 0o644)
-	if code := h.run("fn", "deploy", "hooks", dir, "-m", "Say v2", "--wait"); code != 0 {
+	os.MkdirAll(filepath.Join(dir, "routes", "admin"), 0o755)
+	os.WriteFile(filepath.Join(dir, "routes", "admin", "users.ts"), []byte("export const users = []\n"), 0o644)
+	for _, junk := range []string{"node_modules/hono/index.js", ".git/HEAD", ".env", "notes.log", "dist/out.js"} {
+		os.MkdirAll(filepath.Dir(filepath.Join(dir, junk)), 0o755)
+		os.WriteFile(filepath.Join(dir, junk), []byte("x"), 0o644)
+	}
+	os.WriteFile(filepath.Join(dir, ".kilnignore"), []byte("# local only\n*.log\ndist/\n"), 0o644)
+	outside := filepath.Join(t.TempDir(), "secret.ts")
+	os.WriteFile(outside, []byte("secret"), 0o644)
+	os.Symlink(outside, filepath.Join(dir, "linked.ts"))
+	// Secrets, a built binary and a name the control plane refuses are skipped, not fatal.
+	for name, content := range map[string]string{"id_rsa": "KEY", "certs/server.pem": "PEM", "prod.tfvars": "x", "credentials.json": "{}", "fn-binary": "\x7fELF\x00\x01", "my notes.ts": "x"} {
+		os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755)
+		os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644)
+	}
+	// A file new to the function needs confirmation: without a terminal, --yes.
+	if code := h.run("fn", "deploy", "hooks", dir, "-m", "Say v2"); code != ExitUsage || !strings.Contains(h.err.String(), "+ routes/admin/users.ts") || len(f.deploys) != 0 {
+		t.Fatalf("unconfirmed new file: %d %s", code, h.err.String())
+	}
+	if code := h.run("fn", "deploy", "hooks", dir, "-m", "Say v2", "--wait", "--yes"); code != 0 {
 		t.Fatalf("deploy: %d %s %s", code, h.out.String(), h.err.String())
 	}
 	sent := f.deploys[0]
-	if sent.BaseVersionID != f.versions[0].ID || sent.Message != "Say v2" || len(sent.Files) != 2 || !strings.Contains(sent.Files["index.ts"], "v2") || sent.Files["notes.txt"] != "" {
+	if sent.BaseVersionID != f.versions[0].ID || sent.Message != "Say v2" || len(sent.Files) != 3 || !strings.Contains(sent.Files["index.ts"], "v2") ||
+		sent.Files["routes/admin/users.ts"] == "" || sent.Files["lib/util.ts"] == "" {
 		t.Fatalf("sent %+v", sent)
+	}
+	for _, want := range []string{"skipping linked.ts (symlink)", "skipping id_rsa (looks like a secret", "skipping certs/server.pem", "skipping prod.tfvars",
+		"skipping credentials.json", "skipping fn-binary (not a UTF-8 text file)", "skipping my notes.ts (name not allowed"} {
+		if !strings.Contains(h.err.String(), want) {
+			t.Fatalf("%q not reported: %s", want, h.err.String())
+		}
+	}
+	if !strings.Contains(h.err.String(), "skipping linked.ts (symlink)") {
+		t.Fatalf("symlink not reported: %s", h.err.String())
 	}
 	if !strings.Contains(h.out.String(), "v2 (bbbbbbb) of hooks") || !strings.Contains(h.out.String(), "release is live") {
 		t.Fatalf("out %s", h.out.String())
@@ -278,5 +307,59 @@ func TestFnSafeJoinRefusesSymlinkedFolders(t *testing.T) {
 	}
 	if p, err := safeJoin(dir, "src/util.ts"); err != nil || p != filepath.Join(dir, "src", "util.ts") {
 		t.Fatalf("%q %v", p, err)
+	}
+}
+
+func TestFnDeployAsksBeforeAddingFilesAndRefusesABadEntrypoint(t *testing.T) {
+	h, f := fnHarness(t)
+	dir := filepath.Join(t.TempDir(), "hooks")
+	if code := h.run("fn", "pull", "hooks", dir); code != 0 {
+		t.Fatalf("pull: %d %s", code, h.err.String())
+	}
+	os.WriteFile(filepath.Join(dir, "extra.ts"), []byte("export {}\n"), 0o644)
+
+	// In a terminal: asked; "n" cancels, "y" deploys.
+	run := func(answer string) int {
+		h.out.Reset()
+		h.err.Reset()
+		h.app = h.newApp(answer)
+		h.app.Interactive = true
+		return h.app.Run(context.Background(), []string{"fn", "deploy", "hooks", dir})
+	}
+	if code := run("n\n"); code == 0 || len(f.deploys) != 0 || !strings.Contains(h.err.String(), "Deploy them? [y/N]") {
+		t.Fatalf("declined: %d %s", code, h.err.String())
+	}
+	if code := run("y\n"); code != 0 || len(f.deploys) != 1 || f.deploys[0].Files["extra.ts"] == "" {
+		t.Fatalf("confirmed: %d %s", code, h.err.String())
+	}
+
+	// A binary entrypoint is an error, not a skip.
+	os.WriteFile(filepath.Join(dir, "index.ts"), []byte{0xff, 0xfe, 0x00}, 0o644)
+	if code := h.run("fn", "deploy", "hooks", dir, "--yes"); code == 0 || !strings.Contains(h.err.String(), "the entrypoint index.ts can't be deployed") {
+		t.Fatalf("binary entrypoint: %d %s", code, h.err.String())
+	}
+}
+
+func TestFnPullKeepsFilesChangedLocally(t *testing.T) {
+	h, f := fnHarness(t)
+	dir := filepath.Join(t.TempDir(), "hooks")
+	f.versions[0].Files["lib/old.ts"] = "export const old = 1\n"
+	if code := h.run("fn", "pull", "hooks", dir); code != 0 {
+		t.Fatalf("pull: %d %s", code, h.err.String())
+	}
+	// v2 drops lib/util.ts and lib/old.ts; util.ts was edited locally, old.ts was not.
+	os.WriteFile(filepath.Join(dir, "lib", "util.ts"), []byte("export const x = 2 // mine\n"), 0o644)
+	f.mu.Lock()
+	f.versions = append(f.versions, api.FunctionVersion{ID: "01JV2000000000000000000002", Number: 2, Hash: strings.Repeat("b", 64), ShortHash: "bbbbbbb", Entrypoint: "index.ts",
+		Files: map[string]string{"index.ts": "export default {}\n"}})
+	f.mu.Unlock()
+	if code := h.run("fn", "pull", "hooks", dir); code != 0 {
+		t.Fatalf("pull v2: %d %s", code, h.err.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "lib", "old.ts")); !os.IsNotExist(err) {
+		t.Fatalf("unchanged lib/old.ts kept: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "lib", "util.ts")); !strings.Contains(string(b), "mine") || !strings.Contains(h.err.String(), "kept lib/util.ts") {
+		t.Fatalf("edited lib/util.ts: %q %s", b, h.err.String())
 	}
 }

@@ -60,6 +60,9 @@ You declare them in either of two places (both work together):
 
 - a **`requirements.txt`** among the function's files.
 
+With several files, every `.py` file may have its own `# /// script` block: the entrypoint's comes first and the
+others are merged into it (duplicates removed).
+
 The first install resolves them with `uv pip compile` into `/app/requirements.lock` and installs exactly that. The
 agent keeps that lock per code version and puts it back for later releases of the same code (a redeploy, a
 scaling change, a rollback), so the same code always gets the same versions. When the lock is present, nothing is
@@ -80,7 +83,8 @@ uses the same encoding as the Bun runtime and follows `contracts/telemetry/READM
 - **Exceptions** that escape the app: an `exception` event with the stack trace, and ERROR status. FastAPI still
   answers 500 as usual.
 - **Outgoing HTTP:** `outgoing_request` spans for `httpx` (sync and async) and `requests`, under the request or run
-  that made them. Query strings are not recorded.
+  that made them. No query strings or userinfo, and secret-looking path segments are redacted (`kiln_fn/redact.py`,
+  the same rules as the other runtimes).
 - **Scheduled runs:** a `scheduled_task` span per run, `finished` or `failed`.
 
 Spans go out in batches from a background thread: every second, or every 256 spans. They never block a request.

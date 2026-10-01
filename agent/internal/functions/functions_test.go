@@ -347,6 +347,11 @@ func TestValidation(t *testing.T) {
 		"too big":       func(p *ApplyPayload) { p.Files[1].Content = strings.Repeat("x", maxBytes) },
 		"bad release":   func(p *ApplyPayload) { p.Release = "R1" },
 		"bad pull":      func(p *ApplyPayload) { p.Pull = "sometimes" },
+		"pycache":       func(p *ApplyPayload) { p.Files[1].Path = "lib/__pycache__/x.pyc" },
+		"too deep":      func(p *ApplyPayload) { p.Files[1].Path = "a/b/c/d/e/f/g/h/i.ts" },
+		"file is a folder": func(p *ApplyPayload) {
+			p.Files = append(p.Files, File{Path: "lib", Content: "x"})
+		},
 	} {
 		p := payload("r1")
 		mut(&p)

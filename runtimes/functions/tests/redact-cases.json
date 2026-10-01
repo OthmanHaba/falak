@@ -1,0 +1,85 @@
+{
+  "_comment": "URL redaction cases shared by every runtime's tests (JS, Python, Go runtime, gateway): [input, expected] for paths, absolute URLs and free texts (error messages).",
+  "paths": [
+    [
+      "/",
+      "/"
+    ],
+    [
+      "/users/42",
+      "/users/42"
+    ],
+    [
+      "/v1/chat/completions",
+      "/v1/chat/completions"
+    ],
+    [
+      "/repos/kiln/agent/pulls",
+      "/repos/kiln/agent/pulls"
+    ],
+    [
+      "/bot123456:AAEhBP0av28X5mJBEdcJfZc3K8rT1pq0xYz/sendMessage",
+      "/bot{redacted}/sendMessage"
+    ],
+    [
+      "/bot123:abc/getMe",
+      "/bot{redacted}/getMe"
+    ],
+    [
+      "/api/webhooks/112233445566778899/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-AbCdEfGhIjKlMnOpQrStUvWxYz01234567",
+      "/api/webhooks/112233445566778899/{redacted}"
+    ],
+    [
+      "/services/T0123ABCD/B0456EFGH/aB3dE5fG7hI9jK1lM3nO5pQ7",
+      "/services/T0123ABCD/B0456EFGH/{redacted}"
+    ],
+    [
+      "/keys/tok_live_51HabcdefghijklmnopqrstuvwxYZ0123456789",
+      "/keys/{redacted}"
+    ],
+    [
+      "/v1/acct:0123456789abcdef0123",
+      "/v1/{redacted}"
+    ],
+    [
+      "/files/3f2b9c1e-8d4a-4b6f-9e2d-1a2b3c4d5e6f",
+      "/files/{redacted}"
+    ],
+    [
+      "/blog/2026-10-01-release-notes",
+      "/blog/2026-10-01-release-notes"
+    ],
+    [
+      "/projects/a-pretty-long-but-harmless-slug",
+      "/projects/a-pretty-long-but-harmless-slug"
+    ]
+  ],
+  "urls": [
+    [
+      "https://user:pass@api.example.com/v1/items?token=s3cret&key=abc#frag",
+      "https://api.example.com/v1/items"
+    ],
+    [
+      "https://api.telegram.org/bot123:AAEhBP0av28X5mJBEdcJfZc3K8rT1pq0xYz/sendMessage",
+      "https://api.telegram.org/bot{redacted}/sendMessage"
+    ],
+    [
+      "http://localhost:8080/health?api_key=x",
+      "http://localhost:8080/health"
+    ]
+  ],
+  "texts": [
+    [
+      "Post \"https://user:pw@api.telegram.org/bot123:AAEhBP0av28X5mJBEdcJfZc3K8rT1pq0xYz/sendMessage?x=s3cret\": dial tcp: i/o timeout",
+      "Post \"https://api.telegram.org/bot{redacted}/sendMessage\": dial tcp: i/o timeout"
+    ],
+    [
+      "fetch failed for https://api.example.com/v1/items?api_key=k3y (503)",
+      "fetch failed for https://api.example.com/v1/items (503)"
+    ],
+    [
+      "no url here: just text",
+      "no url here: just text"
+    ]
+  ]
+}

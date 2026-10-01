@@ -111,10 +111,10 @@ RoadRunner on PHP-FPM): Kiln picks a free port per server, and Caddy serves `pub
 to Octane once it answers; deploys restart Octane while Caddy holds requests.
 
 ### Functions
-**Canvas → Create → Function**: write a Bun + Hono function in Kiln's editor (TypeScript autocomplete, drafts, versions,
-one-click rollback) and deploy it in seconds, with no repository. It gets a URL like any service, reads variables and
-database references, and **scales to zero** when idle: the server's function gateway starts it on the first request
-and adds instances under load. Details: [`docs/FUNCTIONS.md`](docs/FUNCTIONS.md).
+**Canvas → Create → Function**: write a function in Kiln's editor (Bun, Node.js, Deno, Python or Go; one file or a
+folder tree; drafts, versions, one-click rollback) and deploy it in seconds, with no repository. It gets a URL like
+any service, reads variables and database references, and **scales to zero** when idle: the server's function
+gateway starts it on the first request and adds instances under load. Details: [`docs/FUNCTIONS.md`](docs/FUNCTIONS.md).
 
 ### CLI (on your own machine)
 `kiln` controls a Kiln install from a developer laptop or CI: deploys, rollbacks, env files, logs, SSH. Install it

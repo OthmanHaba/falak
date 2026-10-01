@@ -61,6 +61,9 @@ jobs:
           - image: fn-python
             dockerfile: runtimes/functions/python/Dockerfile
             context: runtimes/functions
+          - image: fn-go
+            dockerfile: runtimes/functions/go/Dockerfile
+            context: runtimes/functions
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

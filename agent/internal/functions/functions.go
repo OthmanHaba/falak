@@ -233,16 +233,32 @@ func (p *ApplyPayload) validate() error {
 	if !entry {
 		return fmt.Errorf("entrypoint %q is not one of the files", p.Entrypoint)
 	}
+	// A file can't also be a folder ("lib" and "lib/db.ts"): writing the tree would fail halfway.
+	for name := range seen {
+		for dir := path.Dir(name); dir != "."; dir = path.Dir(dir) {
+			if seen[dir] {
+				return fmt.Errorf("%q is both a file and a folder", dir)
+			}
+		}
+	}
 	return nil
 }
 
-// validPath: relative, clean, no "..", no dot-files (reserved for Kiln's markers), no node_modules.
+// maxDepth is how many path segments a function file may have.
+const maxDepth = 8
+
+// validPath: relative, clean, not too deep, no "..", no dot-files (reserved for Kiln's markers), no folder the
+// installers create (node_modules, __pycache__).
 func validPath(p string) bool {
 	if !fileRe.MatchString(p) || path.Clean(p) != p || len(p) > 255 {
 		return false
 	}
-	for _, seg := range strings.Split(p, "/") {
-		if seg == ".." || seg == "." || seg == "node_modules" {
+	segs := strings.Split(p, "/")
+	if len(segs) > maxDepth {
+		return false
+	}
+	for _, seg := range segs {
+		if seg == ".." || seg == "." || seg == "node_modules" || seg == "__pycache__" {
 			return false
 		}
 	}

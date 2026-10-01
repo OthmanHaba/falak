@@ -5,7 +5,9 @@ import { type ServiceTabProps } from '@/lib/registry';
 import { cn } from '@/lib/utils';
 import { History, PencilLine, Rocket } from 'lucide-react';
 import { Suspense, lazy, useState } from 'react';
+import { fileChanges, type FileChange } from '../files';
 import { functionUrl, type FunctionFiles, type FunctionState, type FunctionVersionSummary } from '../types';
+import { FileTree } from './file-tree';
 
 const CodeEditor = lazy(() => import('./code-editor'));
 const DiffView = lazy(() => import('./code-editor').then((module) => ({ default: module.DiffView })));
@@ -21,13 +23,14 @@ export function VersionsTab({ ctx }: ServiceTabProps) {
     const state = useJson<FunctionState>(functionUrl(siteId));
     const versions = useJson<FunctionVersionSummary[]>(functionUrl(siteId, '/versions'));
     const selectedNumber = ctx.item ? Number(ctx.item) : (versions.data?.[0]?.number ?? null);
-    const selected = useJson<FunctionVersionSummary & { entrypoint: string; files: FunctionFiles }>(
+    const selected = useJson<FunctionVersionSummary & { entrypoint: string; files: FunctionFiles; changes: FileChange[] }>(
         selectedNumber ? functionUrl(siteId, `/versions/${selectedNumber}`) : null,
     );
     const live = useJson<FunctionVersionSummary & { files: FunctionFiles }>(
         state.data?.live ? functionUrl(siteId, `/versions/${state.data.live.number}`) : null,
     );
     const [view, setView] = useState<View>('diff');
+    const [file, setFile] = useState<string | null>(null);
     const [confirm, setConfirm] = useState<FunctionVersionSummary | null>(null);
     const [busy, setBusy] = useState(false);
 
@@ -66,6 +69,11 @@ export function VersionsTab({ ctx }: ServiceTabProps) {
         return <EmptyState icon={<History />} title="No versions yet" description="Deploy from the Code tab to create the first one." />;
 
     const entry = selected.data?.entrypoint ?? state.data.entrypoint;
+    const liveFiles = live.data?.files ?? {};
+    const versusLive = selected.data ? fileChanges(liveFiles, selected.data.files) : [];
+    const shownFiles = selected.data ? (view === 'diff' ? { ...liveFiles, ...selected.data.files } : selected.data.files) : {};
+    // The file shown: the one picked if this version (or, in the diff, live) has it, else the first changed one.
+    const path = file !== null && file in shownFiles ? file : view === 'diff' && versusLive[0] ? versusLive[0].path : entry;
     const liveNumber = state.data.live?.number ?? null;
     const headNumber = state.data.head?.number ?? null;
 
@@ -128,25 +136,50 @@ export function VersionsTab({ ctx }: ServiceTabProps) {
                                 )}
                             </span>
                         </div>
-                        <Suspense fallback={<Skeleton className="h-[480px]" />}>
-                            {view === 'diff' ? (
-                                <DiffView
-                                    path={entry}
-                                    original={live.data?.files[entry] ?? ''}
-                                    modified={selected.data.files[entry] ?? ''}
-                                    language={state.data.runtime.language}
-                                    className="border-border h-[480px] overflow-hidden rounded-md border"
-                                />
-                            ) : (
-                                <CodeEditor
-                                    path={`${state.data.site.slug}/v${selected.data.number}/${entry}`}
-                                    value={selected.data.files[entry] ?? ''}
-                                    language={state.data.runtime.language}
-                                    readOnly
-                                    className="border-border h-[480px] overflow-hidden rounded-md border"
-                                />
-                            )}
-                        </Suspense>
+                        {selected.data.changes.length > 0 && (
+                            <p className="text-fg-muted text-xs">
+                                Changed in v{selected.data.number}:{' '}
+                                {selected.data.changes.map((change, i) => (
+                                    <span key={change.path}>
+                                        {i > 0 && ', '}
+                                        <button type="button" className="text-fg font-mono hover:underline" onClick={() => setFile(change.path)}>
+                                            {change.path}
+                                        </button>{' '}
+                                        {change.status}
+                                    </span>
+                                ))}
+                            </p>
+                        )}
+                        <div className="grid gap-3 xl:grid-cols-[200px_minmax(0,1fr)]">
+                            <FileTree
+                                files={selected.data.files}
+                                entry={entry}
+                                active={path}
+                                onSelect={setFile}
+                                status={view === 'diff' ? Object.fromEntries(versusLive.map((c) => [c.path, c.status])) : {}}
+                                className="h-[480px]"
+                            />
+                            <Suspense fallback={<Skeleton className="h-[480px]" />}>
+                                {view === 'diff' ? (
+                                    <DiffView
+                                        path={path}
+                                        original={liveFiles[path] ?? ''}
+                                        modified={selected.data.files[path] ?? ''}
+                                        language={state.data.runtime.language}
+                                        className="border-border h-[480px] overflow-hidden rounded-md border"
+                                    />
+                                ) : (
+                                    <CodeEditor
+                                        root={`${state.data.site.slug}/v${selected.data.number}`}
+                                        files={selected.data.files}
+                                        active={path}
+                                        language={state.data.runtime.language}
+                                        readOnly
+                                        className="border-border h-[480px] overflow-hidden rounded-md border"
+                                    />
+                                )}
+                            </Suspense>
+                        </div>
                     </>
                 ) : (
                     <Skeleton className="h-[520px]" />

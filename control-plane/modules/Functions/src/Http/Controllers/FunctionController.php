@@ -166,7 +166,8 @@ final class FunctionController extends Controller
     public function saveDraft(Request $request, string $site): JsonResponse
     {
         [, $function] = $this->resolve($request->user(), $site, Permissions::EDIT);
-        $input = $request->validate(['files' => ['required', 'array'], 'base_version_id' => ['nullable', 'string', 'size:26']]);
+        abort_if((int) $request->header('Content-Length') > Code::maxRequestBytes(), 413, 'The code is too large.');
+        $input = $request->validate(['files' => ['required', 'array', 'max:'.(int) config('functions.max_files')], 'base_version_id' => ['nullable', 'string', 'size:26']]);
         $files = Code::files($input['files'], $function->entrypoint);
 
         $draft = FunctionDraft::query()->updateOrCreate(
@@ -189,8 +190,9 @@ final class FunctionController extends Controller
     {
         [$data, $function] = $this->resolve($request->user(), $site, Permissions::EDIT);
         $this->authorizeDeploy($request->user(), $data);
+        abort_if((int) $request->header('Content-Length') > Code::maxRequestBytes(), 413, 'The code is too large.');
         $input = $request->validate([
-            'files' => ['required', 'array'],
+            'files' => ['required', 'array', 'max:'.(int) config('functions.max_files')],
             'message' => ['nullable', 'string', 'max:500'],
             'base_version_id' => ['nullable', 'string', 'size:26'],
             'force' => ['sometimes', 'boolean'],
@@ -231,7 +233,7 @@ final class FunctionController extends Controller
         [, $function] = $this->resolve($request->user(), $site, Permissions::VIEW);
         $version = FunctionVersion::query()->where('function_id', $function->id)->where('number', $number)->firstOrFail();
 
-        return response()->json(['data' => [...$version->summary(), 'entrypoint' => $version->entrypoint, 'files' => $version->files]]);
+        return response()->json(['data' => $version->detail()]);
     }
 
     public function deployVersion(Request $request, string $site, int $number, DeployVersion $deploy): JsonResponse

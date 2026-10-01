@@ -4,13 +4,13 @@ A **Function** is a service whose code you write in Kiln itself: no repository, 
 seconds, the function gets a URL like any other service, and it **scales to zero** when nobody calls it. On
 traffic, it starts again and scales out.
 
-A function runs on **Bun, Node.js, Deno or Python**, and can serve HTTP, run on schedules, or both.
+A function runs on **Bun, Node.js, Deno, Python or Go**, and can serve HTTP, run on schedules, or both.
 
 ## Create one
 
 On the canvas: **Create → Function**.
 
-1. Pick a **runtime**: Bun, Node.js, Deno or Python.
+1. Pick a **runtime**: Bun, Node.js, Deno, Python or Go.
 2. Pick a **starter**. Each one is ready to use, and the TypeScript ones are shared by Bun, Node and Deno.
 
    | Category | Starter |
@@ -78,8 +78,44 @@ async def scheduled(event):     # optional: runs on the function's schedules (de
 ```
 
 - The entry file is `main.py`, served by uvicorn.
-- Dependencies come from the `# /// script` block at the top (PEP 723) or a `requirements.txt`. They are installed
-  with `uv` when you deploy and locked per code version.
+- Dependencies come from `# /// script` blocks (PEP 723) or a `requirements.txt`. With several files, each `.py`
+  file can have its own block; they are merged. They are installed with `uv` when you deploy and locked per code
+  version.
+
+### Go
+
+```go
+package main
+
+import (
+	"context"
+	"net/http"
+)
+
+// Handler serves HTTP: an http.Handler (a ServeMux, a router) or a func(http.ResponseWriter, *http.Request).
+var Handler = routes()
+
+func routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /hello/{name}", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello, " + r.PathValue("name") + "!"))
+	})
+	return mux
+}
+
+// Optional: runs on the function's schedules. An error (or a panic) marks the run failed.
+func Scheduled(ctx context.Context, event Event) error { return nil }
+```
+
+- The entry file is `main.go`, in `package main`, **without** a `main()`: Kiln adds it, with the server, the
+  `Event` type (`Name`, `Schedule`, `Cron`, `Trigger`, `ScheduledTime`) and telemetry. Names starting with `kiln`
+  are reserved.
+- Go 1.27. When you deploy, Kiln runs `go mod tidy` and builds one static binary; modules you import are resolved
+  then, and `go.mod` / `go.sum` are kept per code version. Without a `go.mod`, the module is called `function`, so a
+  folder `lib/` is imported as `"function/lib"`. Add your own `go.mod` to choose versions.
+- Observability names requests by the `ServeMux` pattern (`GET /hello/{name}`). Outgoing calls are recorded when
+  they go through `http.DefaultClient` (or a client with `Transport: http.DefaultClient.Transport`) with the
+  request's context: `http.NewRequestWithContext(r.Context(), …)`, or the `ctx` of `Scheduled`.
 
 ## Edit and deploy
 
@@ -90,15 +126,34 @@ The **Code** tab is a full editor, with TypeScript autocomplete for Hono and Bun
 - **Deploy history:** the deploy appears in the Deployments tab like any other service's deploy.
 - **When the new version fails:** if it doesn't install or start, the deploy fails and the previous version keeps
   serving.
-- **If a teammate deployed while you were editing:** Kiln shows their version next to yours. You can take theirs,
-  keep editing, or deploy yours on top.
+- **If a teammate deployed while you were editing:** Kiln shows their version next to yours, file by file. You can
+  take theirs, keep editing, or deploy yours on top.
+
+### Several files
+
+A function can have several files in folders: the file list beside the editor adds (**+**), renames and deletes
+them; the entry file stays. Import them with relative paths:
+
+```ts
+import { users } from './routes/users.ts'   // Node and Deno need the extension; Bun accepts both
+```
+
+```python
+from lib.db import connect                  # main.py's folder is on the import path; folders need no __init__.py
+```
+
+- Changed files are marked **A** (added), **M** (modified) or **D** (deleted) against the newest version.
+- A version holds all its files; rollback brings all of them back.
+- Paths use letters, digits, `.`, `_`, `-` and `/`, up to 8 levels deep. No dot-files, and no `node_modules` or
+  `__pycache__` (the server creates those).
+- Functions with more than one file need Kiln agent 0.4.4 or newer on the function's server.
 
 ## Versions and rollback
 
 Each version is immutable and records its author, message and a short hash (the hash is the deployment's commit).
 In the **Versions** tab you can:
 
-- **Compare** any version against the live one.
+- **Compare** any version against the live one, file by file; each version also lists what it changed.
 - **Deploy this version** to roll back. The server keeps recent releases installed, so a rollback is instant.
 - **Restore to editor** to start a new change from an old version.
 
@@ -117,7 +172,8 @@ export default app // the HTTP side is optional for scheduled-only functions
 
 `export default { fetch: app.fetch, scheduled }` works too. In Python, define `def scheduled(event)` or
 `async def scheduled(event)` in `main.py`; `event` is a dict with the same fields (`scheduled_time` instead of
-`scheduledTime`).
+`scheduledTime`). In Go, define `func Scheduled(ctx context.Context, event Event) error` (`ctx` is cancelled when
+the run times out).
 
 In the **Schedules** tab, add one or more schedules:
 
@@ -190,6 +246,20 @@ kiln fn invoke hooks /status -H 'X-Kiln-Key: kfn_…'
 kiln fn logs hooks --follow
 ```
 
+`kiln fn deploy` sends the **whole directory** as the function's files, so files you add are deployed and files you
+delete are removed from the new version.
+
+- It leaves out dot-files and dot-folders (`.git`, `.env`, `.kiln-function.json`), `node_modules`, `__pycache__`,
+  `.venv` and `venv`, and whatever a `.kilnignore` lists (one name or glob per line, e.g. `dist` or `*.log`).
+- It skips, with a note: files that look like secrets (`id_rsa`, `*.pem`, `*.key`, `*.p12`, `credentials*.json`,
+  `service-account*.json`, `*.tfvars`, `*.tfstate`, `secrets.yml`…; rename one that really is code), symlinks,
+  names Kiln doesn't accept, and binary files. An entrypoint it can't send is an error.
+- Files the function doesn't have yet are listed and need a yes: an interactive prompt, or `--yes` (required in
+  scripts and CI).
+
+`kiln fn pull` writes every file of the newest version. Files an earlier pull or deploy wrote that the version no
+longer has are removed, unless you changed them locally (they are kept, with a warning).
+
 If someone deployed after your `pull`, `kiln fn deploy` stops with exit code 4 (pull, or `--force`). The same
 operations are in the API (`/api/v1/functions…`, see `docs/API.md`).
 
@@ -227,10 +297,13 @@ Functions report to Kiln without any package.
 
 **Observability tab** (every runtime)
 - Requests, error rate and p95, with the slow routes listed by their route (`GET /users/:id` in Hono,
-  `GET /hello/{name}` in FastAPI). Paths no route
+  `GET /hello/{name}` in FastAPI and Go's `ServeMux`). Paths no route
   matches are grouped as `(unmatched)`.
-- Issues from uncaught errors, with the stack trace.
-- Outgoing calls: `fetch` in TypeScript, `httpx` and `requests` in Python. Query strings are not recorded.
+- Issues from uncaught errors (panics in Go), with the stack trace.
+- Outgoing calls: `fetch` in TypeScript, `httpx` and `requests` in Python, `net/http` with the request's context in
+  Go. URLs are recorded without query strings or user:password, and path segments that look like secrets are
+  replaced by `{redacted}` (Telegram's `/bot<token>/`, long or mixed-case tokens, `<id>:<secret>`). The gateway
+  applies the same rules to every span it relays, error messages included.
 - Cold starts are marked on the request that waited for one (`faas.coldstart`).
 - Requests the gateway answers itself are listed as `(function unavailable)`: a release that fails to start, a start
   timeout, or a full queue.
@@ -238,7 +311,7 @@ Functions report to Kiln without any package.
 **Code tab:** the live state, *Sleeping* or *N running*, with requests in flight, request and cold-start counts, and
 the time of the last request.
 
-**Logs tab:** `console.log` output.
+**Logs tab:** `console.log` / `print` / `log.Println` output.
 
 **How it works:** each function reports on its own socket. The gateway stamps the function's identity on what
 arrives there, so a function can't report as another one, and hands it to the agent.
@@ -260,6 +333,6 @@ addresses.
 
 ## Limits
 
-- 1 MB of code per version, 50 files. The editor shows one file for now; versions already store several.
+- 1 MB of code per version, 50 files, 8 folder levels. Source files only (UTF-8 text).
 - A function runs on one server; multi-server functions come with load balancing.
 - Health checks don't apply: a health probe would keep the function awake.
