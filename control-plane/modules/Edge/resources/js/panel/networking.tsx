@@ -26,7 +26,7 @@ import { type ServiceTabProps } from '@/lib/registry';
 import { Globe, Lock, Plus, RotateCw, ShieldCheck, Star, Trash2, Upload } from 'lucide-react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { DnsInstructions, GeneratedDomainPreview } from '../components/domain-picker';
-import { type DomainsData, type EdgeDomain, type RoutingData, type TlsMode, type WwwRedirect } from '../types';
+import { type ComposeServiceOption, type DomainsData, type EdgeDomain, type RoutingData, type TlsMode, type WwwRedirect } from '../types';
 
 const domainsUrl = (siteId: string) => `/sites/${siteId}/domains`;
 const routingUrl = (siteId: string) => `/sites/${siteId}/routing`;
@@ -71,12 +71,44 @@ const WWW: { value: WwwRedirect; label: string }[] = [
     { value: 'to_apex', label: 'Serve apex, redirect www → apex' },
 ];
 
+/**
+ * Compose sites with several public services: which service the section shows and edits. `''` is the site itself
+ * (its primary service for domains; every service for rules when $allLabel is given).
+ */
+function ServicePicker({
+    services,
+    value,
+    onValueChange,
+    allLabel,
+}: {
+    services: ComposeServiceOption[];
+    value: string;
+    onValueChange: (value: string) => void;
+    allLabel?: string;
+}) {
+    if (services.length < 2) return null;
+    const options = [
+        ...(allLabel ? [{ value: '', label: allLabel }] : []),
+        ...services.map((item) => ({
+            value: item.primary && !allLabel ? '' : item.service,
+            label: item.primary ? `${item.service} (primary)` : item.service,
+        })),
+    ];
+
+    return (
+        <Field inline label="Service" hint="Each public service of the compose stack has its own domains and rules.">
+            <Select className="w-56" aria-label="Compose service" value={value} onValueChange={onValueChange} options={options} />
+        </Field>
+    );
+}
+
 // ─── Domains & TLS ───────────────────────────────────────────────────────────────────────────────────────────────
 
 function DomainDialog({
     siteId,
     data,
     domain,
+    service,
     open,
     onOpenChange,
     reload,
@@ -85,6 +117,8 @@ function DomainDialog({
     siteId: string;
     data: DomainsData;
     domain: EdgeDomain | null;
+    /** Compose site: the public service a new domain routes to (null: the site / its primary service). */
+    service: string | null;
     open: boolean;
     onOpenChange: (open: boolean) => void;
     reload: () => Promise<void>;
@@ -116,6 +150,8 @@ function DomainDialog({
 
     const wildcard = form.name.startsWith('*.');
     const wwwAllowed = !wildcard && !form.name.startsWith('www.') && (domain?.supports_www ?? true);
+    // Generated names of a compose service: <service>-<slug>.
+    const label = service ? `${service.replace(/^[-_.]+|[-_.]+$/g, '') || 'app'}-${data.slug}` : data.slug;
 
     const submit = async (event: FormEvent) => {
         event.preventDefault();
@@ -123,6 +159,7 @@ function DomainDialog({
         const generated = !domain && kind === 'generated';
         const body = {
             ...(domain ? {} : generated ? { type: 'generated' } : { name: form.name.trim() }),
+            ...(domain || !service ? {} : { service }),
             tls_mode: form.tls_mode,
             www_redirect: wwwAllowed ? form.www_redirect : 'none',
             certificate_id: form.tls_mode === 'custom' ? form.certificate_id || null : null,
@@ -144,7 +181,7 @@ function DomainDialog({
         <Dialog
             open={open}
             onOpenChange={onOpenChange}
-            title={domain ? `Edit ${domain.name}` : 'Add domain'}
+            title={domain ? `Edit ${domain.name}` : service ? `Add a domain for ${service}` : 'Add domain'}
             description="Bring your own domain (Kiln shows the DNS record and checks it), or generate one that works right away."
             footer={
                 <>
@@ -181,11 +218,11 @@ function DomainDialog({
                                         onChange={(event) => setForm({ ...form, name: event.target.value })}
                                     />
                                     {/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/.test(form.name.trim().toLowerCase()) && (
-                                        <DnsInstructions name={form.name.trim().toLowerCase()} serverIds={[]} siteId={siteId} label={data.slug} />
+                                        <DnsInstructions name={form.name.trim().toLowerCase()} serverIds={[]} siteId={siteId} label={label} />
                                     )}
                                 </>
                             ) : (
-                                <GeneratedDomainPreview label={data.slug} serverIds={[]} siteId={siteId} />
+                                <GeneratedDomainPreview label={label} serverIds={[]} siteId={siteId} />
                             )}
                         </div>
                     </Field>
@@ -399,6 +436,7 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
     const [addingDns, setAddingDns] = useState(false);
     const [applying, setApplying] = useState<string | null>(null);
     const [checking, setChecking] = useState<EdgeDomain | null>(null);
+    const [service, setService] = useState('');
 
     if (!data) return <Loading error={error} />;
     const manage = data.can.manage;
@@ -406,6 +444,10 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
         await reload();
         ctx.refresh();
     };
+    // Compose sites: the domains of one public service ('' = the primary one, i.e. the site's own).
+    const current = data.services.find((item) => (item.primary ? '' : item.service) === service) ?? data.services[0] ?? null;
+    const domains = data.domains.filter((domain) => (domain.service ?? '') === service);
+    const testDomain = current && !current.primary ? current.test_domain : data.testDomain;
 
     const reapply = async (serverId: string) => {
         setApplying(serverId);
@@ -415,12 +457,17 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
 
     return (
         <>
+            <ServicePicker services={data.services} value={service} onValueChange={setService} />
             <Section
-                title="Domains"
-                description="The primary domain is the canonical host (and the canvas card’s link). TLS certificates are issued and renewed automatically."
+                title={current && data.services.length > 1 ? `Domains of ${current.service}` : 'Domains'}
+                description={
+                    current && !current.primary
+                        ? `Routed to the ${current.service} service (port ${current.port}). The primary domain is the service’s canonical host; TLS certificates are issued and renewed automatically.${current.health_check_path ? ` Deploys check ${current.health_check_path} through it.` : ''}`
+                        : 'The primary domain is the canonical host (and the canvas card’s link). TLS certificates are issued and renewed automatically.'
+                }
                 aside={
                     manage &&
-                    data.domains.length > 0 && (
+                    domains.length > 0 && (
                         <Button size="sm" variant="primary" icon={<Plus />} onClick={() => setDialog({ domain: null })}>
                             Add domain
                         </Button>
@@ -428,16 +475,16 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
                 }
                 bare
             >
-                {data.domains.length === 0 ? (
+                {domains.length === 0 ? (
                     <EmptyState
                         size="sm"
                         icon={<Globe />}
                         title="No custom domain yet"
                         description={
-                            data.testDomain ? (
+                            testDomain ? (
                                 <>
-                                    The site is reachable at <code className="font-mono text-xs">{data.testDomain}</code>. Add your own domain to
-                                    serve it with TLS.
+                                    {current && !current.primary ? `${current.service} is` : 'The site is'} reachable at{' '}
+                                    <code className="font-mono text-xs">{testDomain}</code>. Add your own domain to serve it with TLS.
                                 </>
                             ) : (
                                 'Add a domain to serve the site with automatic TLS.'
@@ -453,7 +500,7 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
                     />
                 ) : (
                     <ul className="border-border bg-surface-1 divide-border divide-y rounded-lg border" aria-label="Domains">
-                        {data.domains.map((domain) => {
+                        {domains.map((domain) => {
                             const certificate = data.certificates.find((item) => item.id === domain.certificate_id);
 
                             return (
@@ -739,6 +786,7 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
                 siteId={siteId}
                 data={data}
                 domain={dialog?.domain ?? null}
+                service={service || null}
                 open={dialog !== null}
                 onOpenChange={(open) => !open && setDialog(null)}
                 reload={refresh}
@@ -925,13 +973,16 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
     const [limits, setLimits] = useState({ allow_ips: '', deny_ips: '', max_body_mb: '', encode: true });
     const [errors, setErrors] = useState<Record<string, Record<string, string>>>({});
     const [saving, setSaving] = useState<string | null>(null);
+    // Compose sites: rules for every service ('') or for one public service.
+    const [scope, setScope] = useState('');
 
-    const settingsKey = JSON.stringify(data?.settings ?? null);
+    const settingsKey = JSON.stringify([data?.settings ?? null, data?.serviceSettings ?? null, scope]);
     useEffect(() => {
         if (!data) return;
+        const own = scope ? (data.serviceSettings[scope] ?? { allow_ips: [], deny_ips: [] }) : data.settings;
         setLimits({
-            allow_ips: data.settings.allow_ips.join('\n'),
-            deny_ips: data.settings.deny_ips.join('\n'),
+            allow_ips: own.allow_ips.join('\n'),
+            deny_ips: own.deny_ips.join('\n'),
             max_body_mb: data.settings.max_body_bytes ? String(Math.round((data.settings.max_body_bytes / MB) * 100) / 100) : '',
             encode: data.settings.encode,
         });
@@ -940,6 +991,11 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
 
     if (!data) return <Loading error={error} />;
     const manage = data.can.manage;
+    const service = scope || null;
+    const mine = <T extends { service: string | null }>(items: T[]) => items.filter((item) => (item.service ?? '') === scope);
+    const redirects = mine(data.redirects);
+    const rules = mine(data.rules);
+    const headers = mine(data.headers);
 
     const submit = async (kind: string, method: HttpMethod, url: string, body: unknown, success: string, reset?: () => void) => {
         setSaving(kind);
@@ -957,12 +1013,18 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
             {data.behindLoadBalancer && (
                 <Callout tone="info">This site is behind a load balancer: redirects, authentication and IP rules are enforced there.</Callout>
             )}
+            <ServicePicker services={data.services} value={scope} onValueChange={setScope} allLabel="All services" />
+            {scope && (
+                <p className="text-fg-muted text-xs">
+                    Rules for all services apply to {scope} as well; its own rules are added (a header of the same name replaces the shared one).
+                </p>
+            )}
             <Section title="Redirects" description="Evaluated in order before the application. Paths may use wildcards, e.g. /blog/*.">
-                {data.redirects.length === 0 ? (
+                {redirects.length === 0 ? (
                     <p className="text-fg-muted text-sm">No redirects.</p>
                 ) : (
                     <ul className="divide-border -my-2 divide-y">
-                        {data.redirects.map((item) => (
+                        {redirects.map((item) => (
                             <Row
                                 key={item.id}
                                 manage={manage}
@@ -986,7 +1048,7 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
                                 'redirect',
                                 'POST',
                                 `/sites/${siteId}/redirects`,
-                                { ...redirect, status: Number(redirect.status) },
+                                { ...redirect, status: Number(redirect.status), service },
                                 'Redirect added',
                                 () => setRedirect({ from: '', to: '', status: '301' }),
                             )
@@ -1027,11 +1089,11 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
                 title="Basic authentication"
                 description="Protect the whole site (empty path) or paths such as /admin/*. Passwords are stored as bcrypt hashes."
             >
-                {data.rules.length === 0 ? (
+                {rules.length === 0 ? (
                     <p className="text-fg-muted text-sm">No protected paths.</p>
                 ) : (
                     <ul className="divide-border -my-2 divide-y">
-                        {data.rules.map((item) => (
+                        {rules.map((item) => (
                             <Row
                                 key={item.id}
                                 manage={manage}
@@ -1057,7 +1119,7 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
                                 'rule',
                                 'POST',
                                 `/sites/${siteId}/security-rules`,
-                                { ...rule, path: rule.path || null, name: rule.name || null },
+                                { ...rule, path: rule.path || null, name: rule.name || null, service },
                                 'Path protected',
                                 () => setRule({ path: '', username: '', password: '', name: '' }),
                             )
@@ -1101,11 +1163,11 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
                 title="Response headers"
                 description="Added to every response (e.g. Strict-Transport-Security). Saving an existing name replaces it."
             >
-                {data.headers.length === 0 ? (
+                {headers.length === 0 ? (
                     <p className="text-fg-muted text-sm">No custom headers.</p>
                 ) : (
                     <ul className="divide-border -my-2 divide-y">
-                        {data.headers.map((item) => (
+                        {headers.map((item) => (
                             <Row
                                 key={item.id}
                                 manage={manage}
@@ -1123,7 +1185,7 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
                         action="Save header"
                         saving={saving === 'header'}
                         onSubmit={() =>
-                            void submit('header', 'POST', `/sites/${siteId}/headers`, header, `${header.name} saved`, () =>
+                            void submit('header', 'POST', `/sites/${siteId}/headers`, { ...header, service }, `${header.name} saved`, () =>
                                 setHeader({ name: '', value: '' }),
                             )
                         }
@@ -1154,7 +1216,11 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
 
             <Section
                 title="Access & limits"
-                description="IP rules accept addresses or CIDR ranges, one per line. With an allow list, every other client gets 403."
+                description={
+                    scope
+                        ? `IP rules of ${scope}: its allow list replaces the one for all services, its deny list adds to it. Body size and compression apply to every service.`
+                        : 'IP rules accept addresses or CIDR ranges, one per line. With an allow list, every other client gets 403.'
+                }
                 footer={
                     manage && (
                         <Button
@@ -1165,12 +1231,14 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
                                     'limits',
                                     'PUT',
                                     `/sites/${siteId}/edge-settings`,
-                                    {
-                                        allow_ips: lines(limits.allow_ips),
-                                        deny_ips: lines(limits.deny_ips),
-                                        max_body_bytes: limits.max_body_mb === '' ? null : Math.round(Number(limits.max_body_mb) * MB),
-                                        encode: limits.encode,
-                                    },
+                                    scope
+                                        ? { allow_ips: lines(limits.allow_ips), deny_ips: lines(limits.deny_ips), service: scope }
+                                        : {
+                                              allow_ips: lines(limits.allow_ips),
+                                              deny_ips: lines(limits.deny_ips),
+                                              max_body_bytes: limits.max_body_mb === '' ? null : Math.round(Number(limits.max_body_mb) * MB),
+                                              encode: limits.encode,
+                                          },
                                     'Access & limits saved',
                                 )
                             }
@@ -1205,13 +1273,17 @@ export function RoutingSettings({ ctx }: ServiceTabProps) {
                         <Input
                             mono
                             inputMode="decimal"
-                            disabled={!manage}
+                            disabled={!manage || scope !== ''}
                             value={limits.max_body_mb}
                             onChange={(event) => setLimits({ ...limits, max_body_mb: event.target.value.replace(/[^\d.]/g, '') })}
                         />
                     </Field>
                     <Field inline label="Compress responses (gzip / zstd)">
-                        <Switch checked={limits.encode} disabled={!manage} onCheckedChange={(encode) => setLimits({ ...limits, encode })} />
+                        <Switch
+                            checked={limits.encode}
+                            disabled={!manage || scope !== ''}
+                            onCheckedChange={(encode) => setLimits({ ...limits, encode })}
+                        />
                     </Field>
                 </div>
             </Section>
