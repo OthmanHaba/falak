@@ -2,6 +2,10 @@
 
 namespace Kiln\Identity\Application;
 
+use Closure;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\ValidationException;
 use Kiln\Identity\Application\Actions\AcceptInvitation;
 use Kiln\Identity\Domain\Models\Invitation;
 use Kiln\Identity\Domain\Models\User;
@@ -28,6 +32,24 @@ final class Registration
         }
 
         return $mode;
+    }
+
+    /**
+     * Run $signUp (check who may sign up, then create the account) while no other sign-up runs: otherwise two guests
+     * could both pass the first-account exception of an empty panel before either account exists.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $signUp
+     * @return T
+     */
+    public function exclusively(Closure $signUp): mixed
+    {
+        try {
+            return Cache::lock('identity:registration', 30)->block((int) config('identity.registration_lock_wait', 10), $signUp);
+        } catch (LockTimeoutException) {
+            throw ValidationException::withMessages(['email' => 'Another sign-up is in progress. Try again in a moment.']);
+        }
     }
 
     /**

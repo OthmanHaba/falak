@@ -43,6 +43,7 @@ func TestRelayedSpansAreScrubbed(t *testing.T) {
 		`{"traceId":"0af7651916cd43dd8448eb211c80319c","spanId":"b7ad6b7169203331","name":"POST /` + tok + `/sendMessage","kind":3,` +
 		`"attributes":[{"key":"url.full","value":{"stringValue":"https://u:p4ss@api.telegram.org/` + tok + `/sendMessage?chat=1&token=s3cret"}},` +
 		`{"key":"http.target","value":{"stringValue":"/hook?api_key=k3y"}},` +
+		`{"key":"http.route","value":{"stringValue":"/` + tok + `/sendMessage"}},` +
 		`{"key":"url.query","value":{"stringValue":"api_key=k3y"}},` +
 		`{"key":"server.address","value":{"stringValue":"api.telegram.org"}}],` +
 		`"events":[{"name":"exception","attributes":[{"key":"exception.message","value":{"stringValue":"Post \"https://api.telegram.org/` + tok + `/sendMessage?x=s3cret\": dial tcp: timeout"}}]}],` +
@@ -68,7 +69,7 @@ func TestRelayedSpansAreScrubbed(t *testing.T) {
 		}
 	}
 	if sp.Name != "POST /bot{redacted}/sendMessage" || attrs["url.full"] != "https://api.telegram.org/bot{redacted}/sendMessage" ||
-		attrs["http.target"] != "/hook" || attrs["server.address"] != "api.telegram.org" {
+		attrs["http.target"] != "/hook" || attrs["http.route"] != "/bot{redacted}/sendMessage" || attrs["server.address"] != "api.telegram.org" {
 		t.Fatalf("name %q attrs %v", sp.Name, attrs)
 	}
 	if _, ok := attrs["url.query"]; ok {

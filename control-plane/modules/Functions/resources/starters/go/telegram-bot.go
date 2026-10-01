@@ -11,10 +11,12 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -32,19 +34,20 @@ func routes() *http.ServeMux {
 	return mux
 }
 
-// telegram calls the Bot API (with the request's context, so the call shows up in Observability).
+// telegram calls the Bot API (with the request's context, so the call shows up in Observability). Its errors never
+// quote the API URL: it holds the bot token.
 func telegram(ctx context.Context, method string, payload any) (map[string]any, error) {
 	body, _ := json.Marshal(payload)
-	url := "https://api.telegram.org/bot" + os.Getenv("TELEGRAM_BOT_TOKEN") + "/" + method
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	endpoint := "https://api.telegram.org/bot" + os.Getenv("TELEGRAM_BOT_TOKEN") + "/" + method
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", method, withoutURL(err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Transport: http.DefaultClient.Transport, Timeout: 10 * time.Second}
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", method, withoutURL(err))
 	}
 	defer res.Body.Close()
 	var out map[string]any
@@ -53,6 +56,15 @@ func telegram(ctx context.Context, method string, payload any) (map[string]any, 
 		log.Printf("telegram %s failed: %d %v", method, res.StatusCode, out)
 	}
 	return out, nil
+}
+
+// withoutURL drops the request URL Go's HTTP client errors quote (`Post "https://…": dial tcp …`).
+func withoutURL(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err
+	}
+	return err
 }
 
 func reply(text string) string {

@@ -11,10 +11,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strings"
 	"sync"
@@ -90,6 +92,11 @@ func alert(ctx context.Context, down []result) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, hook, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	if res, err := (&http.Client{Transport: http.DefaultClient.Transport, Timeout: timeout}).Do(req); err != nil {
+		// Without the URL the error quotes: ALERT_WEBHOOK_URL holds the webhook's secret.
+		var ue *neturl.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
 		log.Println("alert:", err)
 	} else {
 		res.Body.Close()

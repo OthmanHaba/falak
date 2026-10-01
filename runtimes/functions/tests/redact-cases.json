@@ -52,6 +52,38 @@
     [
       "/projects/a-pretty-long-but-harmless-slug",
       "/projects/a-pretty-long-but-harmless-slug"
+    ],
+    [
+      "/bot123%3Aabc/getMe",
+      "/bot{redacted}/getMe"
+    ],
+    [
+      "/bot123%253Aabc/getMe",
+      "/bot{redacted}/getMe"
+    ],
+    [
+      "/v1/acct%3a0123456789abcdef0123",
+      "/v1/{redacted}"
+    ],
+    [
+      "/services/T0123ABCD/B0456EFGH/aB3dE5fG%37hI9jK1lM3nO5pQ7",
+      "/services/T0123ABCD/B0456EFGH/{redacted}"
+    ],
+    [
+      "/hooks/bot123%3Aabc%2FgetMe",
+      "/hooks/{redacted}"
+    ],
+    [
+      "/files/my%20report%202026.pdf",
+      "/files/my%20report%202026.pdf"
+    ],
+    [
+      "/search/caf%C3%A9",
+      "/search/caf%C3%A9"
+    ],
+    [
+      "/odd/100%25-sure/%zz",
+      "/odd/100%25-sure/%zz"
     ]
   ],
   "urls": [
@@ -66,6 +98,10 @@
     [
       "http://localhost:8080/health?api_key=x",
       "http://localhost:8080/health"
+    ],
+    [
+      "https://api.telegram.org/bot123%3Aabc/getMe?x=1",
+      "https://api.telegram.org/bot{redacted}/getMe"
     ]
   ],
   "texts": [
@@ -80,6 +116,26 @@
     [
       "no url here: just text",
       "no url here: just text"
+    ],
+    [
+      "request to https://user:pa@ss@api.example.com:bad/bot123:abc/getMe?k=s3cret failed",
+      "request to https://api.example.com:bad/bot{redacted}/getMe failed"
+    ],
+    [
+      "request to https://user:p/ss@api.example.com:bad/v1/items#frag failed",
+      "request to https://api.example.com:bad/v1/items failed"
+    ],
+    [
+      "request to https://user:pw@/v1/items?k=s3cret failed",
+      "request to https:///v1/items failed"
+    ],
+    [
+      "dial https://user:pw@api.example.com:bad failed",
+      "dial https://api.example.com:bad/ failed"
+    ],
+    [
+      "GET https://api.telegram.org/bot123%3Aabc/getMe failed",
+      "GET https://api.telegram.org/bot{redacted}/getMe failed"
     ]
   ]
 }

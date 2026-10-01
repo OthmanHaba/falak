@@ -207,6 +207,18 @@ it('keeps several files off agents that cannot write file trees', function () {
     $this->postJson(fn_url($world->site, '/versions/2/deploy'))->assertUnprocessable()->assertJsonValidationErrors(['version' => 'update it first']);
 });
 
+it('keeps several files off a server whose agent is gone', function () {
+    [$world, $function] = fn_world();
+    Agent::query()->where('server_id', $world->servers[0]->id)->delete();
+    $files = ['index.ts' => FN_V2, 'lib/util.ts' => 'export const x = 1'];
+
+    $response = $this->postJson(fn_url($world->site, '/deploy'), ['files' => $files, 'base_version_id' => $function->head()->id])->assertCreated();
+
+    expect($response->json('data.deployment_id'))->toBeNull()
+        ->and($response->json('warnings.0'))->toContain('no connected Kiln agent')
+        ->and($world->agents->dispatched('fn.release.apply'))->toBeEmpty();
+});
+
 it('rolls back to an earlier version with its exact code', function () {
     [$world, $function] = fn_world();
     $v1 = $function->head();

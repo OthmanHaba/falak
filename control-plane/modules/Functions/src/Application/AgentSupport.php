@@ -24,7 +24,13 @@ final class AgentSupport
             return null;
         }
 
-        foreach ($this->agents->forServers($site->serverIds()) as $agent) {
+        // A server without an (enrolled, unrevoked) agent can't confirm the feature either, as for SiteRules' fn.v1.
+        $agents = $this->agents->forServers($site->serverIds());
+        foreach ($site->serverIds() as $serverId) {
+            $agent = $agents[$serverId] ?? null;
+            if ($agent === null) {
+                return 'the function’s server has no connected Kiln agent, which functions with several files need; enroll it first.';
+            }
             if (! $agent->supports('fn.v3')) {
                 return 'the Kiln agent on the function’s server is too old for functions with several files; update it first.';
             }

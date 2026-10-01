@@ -46,6 +46,8 @@ export interface FileTreeProps {
     onSelect: (path: string) => void;
     /** Per-file change marks (A/M/D). Removed files are listed so they can be opened in a diff. */
     status?: Record<string, FileStatus>;
+    /** Whether a removed file can be selected: false where nothing could show it (an editor, not a diff). */
+    removedSelectable?: boolean;
     /** Add, rename and delete (never the entrypoint). */
     editable?: boolean;
     maxFiles?: number;
@@ -65,6 +67,7 @@ export function FileTree({
     active,
     onSelect,
     status = {},
+    removedSelectable = true,
     editable = false,
     maxFiles = 50,
     onCreate,
@@ -123,9 +126,10 @@ export function FileTree({
                             <button
                                 type="button"
                                 onClick={() => onSelect(row.path)}
-                                title={row.path}
+                                disabled={!removedSelectable && !(row.path in files)}
+                                title={row.path in files ? row.path : `${row.path} (deleted)`}
                                 className={cn(
-                                    'hover:bg-surface-2 flex w-full items-center gap-1.5 py-0.5 pr-2 text-left',
+                                    'hover:bg-surface-2 flex w-full items-center gap-1.5 py-0.5 pr-2 text-left disabled:cursor-default disabled:hover:bg-transparent',
                                     row.path === active ? 'bg-surface-2 text-fg' : 'text-fg-muted',
                                     status[row.path] === 'removed' && 'line-through opacity-70',
                                 )}

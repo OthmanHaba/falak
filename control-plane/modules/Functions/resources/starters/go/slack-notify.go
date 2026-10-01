@@ -11,10 +11,12 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strings"
 	"time"
@@ -33,17 +35,18 @@ func routes() *http.ServeMux {
 	return mux
 }
 
-// post sends JSON with the request's context (the call shows up in Observability).
+// post sends JSON with the request's context (the call shows up in Observability). Its errors never quote the
+// webhook URL: it holds the webhook's secret.
 func post(ctx context.Context, url string, payload any) error {
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return withoutURL(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	res, err := (&http.Client{Transport: http.DefaultClient.Transport, Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
-		return err
+		return withoutURL(err)
 	}
 	defer res.Body.Close()
 	if res.StatusCode >= 400 {
@@ -51,6 +54,15 @@ func post(ctx context.Context, url string, payload any) error {
 		return fmt.Errorf("%d %s", res.StatusCode, b)
 	}
 	return nil
+}
+
+// withoutURL drops the request URL Go's HTTP client errors quote (`Post "https://…": dial tcp …`).
+func withoutURL(err error) error {
+	var ue *neturl.Error
+	if errors.As(err, &ue) {
+		return ue.Err
+	}
+	return err
 }
 
 func notify(w http.ResponseWriter, r *http.Request) {

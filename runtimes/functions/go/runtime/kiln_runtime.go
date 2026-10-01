@@ -357,9 +357,11 @@ var (
 	kilnColonToken = regexp.MustCompile(`^[A-Za-z0-9_-]+:[A-Za-z0-9_-]{16,}$`)
 	kilnLong       = regexp.MustCompile(`^[A-Za-z0-9_:-]{32,}$`)
 	kilnMixed      = regexp.MustCompile(`^[A-Za-z0-9_-]{20,}$`)
+	kilnEscape     = regexp.MustCompile(`%[0-9A-Fa-f]{2}`)
+	kilnAbsolute   = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9+.-]*)://([^?#]*)`)
 )
 
-func kilnRedactSegment(seg string) string {
+func kilnClassify(seg string) string {
 	digit := strings.ContainsAny(seg, "0123456789")
 	switch {
 	case kilnTelegram.MatchString(seg):
@@ -368,6 +370,39 @@ func kilnRedactSegment(seg string) string {
 		return kilnRedacted
 	case kilnMixed.MatchString(seg) && digit && strings.ToLower(seg) != seg && strings.ToUpper(seg) != seg:
 		return kilnRedacted
+	}
+	return seg
+}
+
+// kilnUnescape decodes percent-escapes (a few rounds, for double encoding); malformed escapes are left as they are.
+func kilnUnescape(seg string) string {
+	for i := 0; i < 3 && strings.Contains(seg, "%"); i++ {
+		next := kilnEscape.ReplaceAllStringFunc(seg, func(e string) string {
+			b, _ := strconv.ParseUint(e[1:], 16, 8)
+			return string(rune(b))
+		})
+		if next == seg {
+			break
+		}
+		seg = next
+	}
+	return seg
+}
+
+// kilnRedactSegment returns one path segment, or {redacted} when it looks like a secret. Escaped segments are
+// judged decoded (bot123%3Aabc is bot123:abc), and kept as written when they are harmless.
+func kilnRedactSegment(seg string) string {
+	plain := kilnUnescape(seg)
+	if plain == seg {
+		return kilnClassify(seg)
+	}
+	if verdict := kilnClassify(plain); verdict != plain {
+		return verdict
+	}
+	for _, part := range strings.Split(plain, "/") {
+		if kilnClassify(part) != part {
+			return kilnRedacted
+		}
 	}
 	return seg
 }
@@ -401,11 +436,31 @@ func kilnRedactText(s string) string {
 	return kilnURLInText.ReplaceAllStringFunc(s, func(raw string) string {
 		u, err := url.Parse(raw)
 		if err != nil || u.Scheme == "" || u.Host == "" {
-			p, _, _ := strings.Cut(raw, "?")
-			return kilnRedactPath(p)
+			return kilnSafeRawURL(raw)
 		}
 		return kilnSafeURL(u)
 	})
+}
+
+// kilnSafeRawURL makes a URL no parser accepts (a bad port, an empty host) safe all the same: everything up to the
+// last "@" before the query is userinfo and dropped (a password may hold "@" or "/"), query and fragment go, the
+// path is redacted.
+func kilnSafeRawURL(raw string) string {
+	m := kilnAbsolute.FindStringSubmatch(raw)
+	if m == nil {
+		p, _, _ := strings.Cut(raw, "?")
+		p, _, _ = strings.Cut(p, "#")
+		return kilnRedactPath(p)
+	}
+	rest := m[2]
+	if at := strings.LastIndex(rest, "@"); at >= 0 {
+		rest = rest[at+1:]
+	}
+	host, path, ok := strings.Cut(rest, "/")
+	if !ok {
+		return m[1] + "://" + host + "/"
+	}
+	return m[1] + "://" + host + kilnRedactPath("/"+path)
 }
 
 // ---- spans --------------------------------------------------------------------------------------------------------

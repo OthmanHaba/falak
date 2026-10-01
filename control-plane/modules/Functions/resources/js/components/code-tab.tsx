@@ -287,6 +287,7 @@ export function CodeTab({ ctx }: ServiceTabProps) {
                     active={current}
                     onSelect={setActive}
                     status={marks}
+                    removedSelectable={false}
                     editable={canEdit}
                     maxFiles={data.limits.max_files}
                     onCreate={(path) => {

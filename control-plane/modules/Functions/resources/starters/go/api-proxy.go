@@ -10,7 +10,9 @@
 package main
 
 import (
+	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -77,7 +79,7 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, key, r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, "bad request path", http.StatusBadRequest)
 		return
 	}
 	req.Header.Set("Accept", r.Header.Get("Accept"))
@@ -89,13 +91,16 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	}
 	res, err := client().Do(req)
 	if err != nil {
-		http.Error(w, "upstream: "+err.Error(), http.StatusBadGateway)
+		// The error quotes the upstream URL (UPSTREAM_URL may carry a key): logged without it, never sent to callers.
+		log.Println("upstream:", withoutURL(err))
+		http.Error(w, "upstream request failed", http.StatusBadGateway)
 		return
 	}
 	defer res.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(res.Body, 10<<20))
 	if err != nil {
-		http.Error(w, "upstream: "+err.Error(), http.StatusBadGateway)
+		log.Println("upstream:", withoutURL(err))
+		http.Error(w, "upstream request failed", http.StatusBadGateway)
 		return
 	}
 	contentType := res.Header.Get("Content-Type")
@@ -122,4 +127,13 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Cache", "MISS")
 	w.WriteHeader(res.StatusCode)
 	w.Write(body)
+}
+
+// withoutURL drops the request URL Go's HTTP client errors quote (`Get "https://…": dial tcp …`).
+func withoutURL(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return ue.Err
+	}
+	return err
 }

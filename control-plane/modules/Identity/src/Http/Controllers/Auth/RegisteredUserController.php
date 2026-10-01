@@ -56,12 +56,17 @@ class RegisteredUserController extends Controller
         $email = $request->string('email')->toString();
         $token = $request->string('invitation')->toString() ?: null;
 
-        // One message for every refusal: it must not tell whether an address has been invited.
-        if (! $registration->allows($email, $token)) {
-            throw ValidationException::withMessages(['email' => 'Sign-up on this Kiln needs an invitation: open the link in your invitation email and use the address it was sent to.']);
-        }
+        // Checked again, with the account created, under the sign-up lock: the panel may have got its first user meanwhile.
+        $user = $registration->exclusively(function () use ($request, $register, $registration, $email, $token) {
+            abort_if($registration->mode() === Registration::CLOSED, 403, 'Sign-up is disabled on this Kiln.');
 
-        $user = $register($request->string('name')->toString(), $email, $request->string('password')->toString());
+            // One message for every refusal: it must not tell whether an address has been invited.
+            if (! $registration->allows($email, $token)) {
+                throw ValidationException::withMessages(['email' => 'Sign-up on this Kiln needs an invitation: open the link in your invitation email and use the address it was sent to.']);
+            }
+
+            return $register($request->string('name')->toString(), $email, $request->string('password')->toString());
+        });
 
         Auth::login($user);
         $request->session()->regenerate();

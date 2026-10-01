@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -39,6 +40,18 @@ it('closes sign-up once the panel has users', function () {
     $this->get('/login')->assertInertia(fn (Assert $page) => $page->where('registration', 'closed'));
     signUp('stranger@example.com')->assertForbidden();
     expect(User::query()->where('email', 'stranger@example.com')->exists())->toBeFalse();
+});
+
+it('serializes sign-ups, so two guests cannot both take the first-account exception', function () {
+    config(['identity.registration' => 'closed', 'identity.registration_lock_wait' => 0]);
+
+    // Another sign-up holds the lock (it may be creating the first account): this one waits, then gives up.
+    $lock = Cache::lock('identity:registration', 30);
+    expect($lock->get())->toBeTrue();
+    signUp('second@example.com')->assertSessionHasErrors(['email' => 'Another sign-up is in progress. Try again in a moment.']);
+    expect(User::query()->count())->toBe(0);
+
+    $lock->release();
 });
 
 it('treats an unknown setting as closed', function () {
