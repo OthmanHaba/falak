@@ -389,16 +389,17 @@ func cmdFnInvoke(ctx context.Context, a *App, args []string) error {
 		path = "/" + strings.TrimPrefix(pos[1], "/")
 	}
 	var body io.Reader
+	var payload []byte
 	if *data != "" {
+		payload = []byte(*data)
 		if strings.HasPrefix(*data, "@") {
 			b, err := os.ReadFile(strings.TrimPrefix(*data, "@"))
 			if err != nil {
 				return err
 			}
-			body = strings.NewReader(string(b))
-		} else {
-			body = strings.NewReader(*data)
+			payload = b
 		}
+		body = strings.NewReader(string(payload))
 	}
 	m := strings.ToUpper(*method)
 	if m == "" {
@@ -419,7 +420,7 @@ func cmdFnInvoke(ctx context.Context, a *App, args []string) error {
 		req.Header.Set(strings.TrimSpace(k), strings.TrimSpace(v))
 	}
 	if body != nil && req.Header.Get("Content-Type") == "" {
-		if json.Valid([]byte(*data)) {
+		if json.Valid(payload) {
 			req.Header.Set("Content-Type", "application/json")
 		}
 	}
@@ -464,11 +465,19 @@ func cmdFnInvoke(ctx context.Context, a *App, args []string) error {
 	return nil
 }
 
-// safeJoin joins a function file path under dir, refusing absolute paths and "..".
+// safeJoin joins a function file path under dir, refusing absolute paths, ".." and symlinks on the way (a
+// symlinked folder in the target directory would let a file land outside it).
 func safeJoin(dir, p string) (string, error) {
 	clean := filepath.Clean(filepath.FromSlash(p))
 	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("refusing file path %q", p)
+	}
+	cur := dir
+	for _, part := range strings.Split(clean, string(filepath.Separator)) {
+		cur = filepath.Join(cur, part)
+		if info, err := os.Lstat(cur); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("refusing file path %q: %s is a symlink", p, cur)
+		}
 	}
 	return filepath.Join(dir, clean), nil
 }

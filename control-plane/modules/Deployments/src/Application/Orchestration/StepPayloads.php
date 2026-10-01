@@ -648,8 +648,9 @@ final class StepPayloads
             'env' => (object) array_map('strval', $env),
             'scaling' => $source->scaling,
             'limits' => $source->limits,
-            // Only when restricted: agents before fn.v2 do not know the field (they refuse the release rather
-            // than serve it unprotected).
+            // The function's current access rules, also for rollbacks (a revoked key never comes back with an old
+            // release). Only when restricted: agents before fn.v2 do not know the field (they refuse the release
+            // rather than serve it unprotected).
             'access' => $source->access !== [] ? $source->access : null,
             'labels' => (object) array_filter([
                 'kiln.site.id' => self::upper($site->id),

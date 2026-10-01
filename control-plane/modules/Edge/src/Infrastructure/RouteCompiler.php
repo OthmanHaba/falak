@@ -237,7 +237,11 @@ final class RouteCompiler
                 continue;
             }
 
-            $domain = Domain::query()->where('site_id', $function->id)->orderByDesc('is_primary')->orderBy('name')->value('name');
+            // A concrete name served over TLS (a wildcard cannot be dialled, a TLS-off one has no HTTPS).
+            $domain = Domain::query()->where('site_id', $function->id)
+                ->where('name', 'not like', '*.%')
+                ->where('tls_mode', '!=', TlsMode::Off->value)
+                ->orderByDesc('is_primary')->orderBy('name')->value('name');
 
             if ($domain === null) {
                 continue; // no way to reach it from this server

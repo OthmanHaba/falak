@@ -48,6 +48,7 @@ export function TestPanel({ siteId }: { siteId: string }) {
     const [result, setResult] = useState<Result | null>(null);
 
     const send = async () => {
+        if (sending) return; // Enter in the path field while a request is pending
         setSending(true);
         try {
             const response = await requestJson<{ data: Result }>(functionUrl(siteId, '/invoke'), 'POST', {

@@ -267,3 +267,16 @@ func TestFnSafeJoin(t *testing.T) {
 		t.Errorf("lib/a.ts: %q %v", got, err)
 	}
 }
+
+func TestFnSafeJoinRefusesSymlinkedFolders(t *testing.T) {
+	dir, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dir, "lib")); err != nil {
+		t.Skip(err)
+	}
+	if _, err := safeJoin(dir, "lib/util.ts"); err == nil {
+		t.Fatal("wrote through a symlinked folder")
+	}
+	if p, err := safeJoin(dir, "src/util.ts"); err != nil || p != filepath.Join(dir, "src", "util.ts") {
+		t.Fatalf("%q %v", p, err)
+	}
+}

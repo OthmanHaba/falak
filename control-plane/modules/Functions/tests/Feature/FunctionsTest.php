@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\Http;
 use Kiln\Deployments\Contracts\DeploymentTrigger;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Models\Deployment;
@@ -400,7 +401,7 @@ it('refuses access rules on servers whose gateway cannot enforce them', function
 
 it('sends test requests to the function’s own URL only', function () {
     [$world] = fn_deployed();
-    app(Kiln\Sites\Contracts\SiteDomains::class)->attach($world->site->id, 'hooks.example.com');
+    app(SiteDomains::class)->attach($world->site->id, 'hooks.example.com');
     deploy_http(['https://hooks.example.com' => 201]); // deploy_world's HTTP fake answers "status <code>"
 
     $this->postJson(fn_url($world->site, '/invoke'), ['method' => 'POST', 'path' => '/notes?x=1', 'headers' => ['X-Kiln-Key' => 'k', 'Host' => 'evil.example'], 'body' => '{"a":1}'])
@@ -409,7 +410,7 @@ it('sends test requests to the function’s own URL only', function () {
         ->assertJsonPath('data.url', 'https://hooks.example.com/notes?x=1')
         ->assertJsonPath('data.body', 'status 201');
 
-    Illuminate\Support\Facades\Http::assertSent(fn ($request) => $request->url() === 'https://hooks.example.com/notes?x=1' && $request->hasHeader('X-Kiln-Key', 'k') && $request->header('Host') !== ['evil.example'] && $request->body() === '{"a":1}');
+    Http::assertSent(fn ($request) => $request->url() === 'https://hooks.example.com/notes?x=1' && $request->hasHeader('X-Kiln-Key', 'k') && $request->header('Host') !== ['evil.example'] && $request->body() === '{"a":1}');
 
     // Absolute URLs or other hosts cannot be requested.
     $this->postJson(fn_url($world->site, '/invoke'), ['method' => 'GET', 'path' => 'https://internal.example/'])->assertUnprocessable();

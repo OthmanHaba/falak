@@ -65,15 +65,17 @@ func (a Access) equal(b Access) bool {
 	return slices.Equal(a.APIKeyHashes, b.APIKeyHashes) && slices.Equal(a.AllowCIDRs, b.AllowCIDRs)
 }
 
-// check returns 0 when the request passes, else the status and reason. It removes the key header it used.
-func (a Access) check(r *http.Request) (int, string) {
+// check returns 0 when the request passes, else the status and reason. On success it also returns strip, which
+// removes the key header it used; call it only once admission is final (the rules may change meanwhile).
+func (a Access) check(r *http.Request) (status int, reason string, strip func()) {
+	strip = func() {}
 	if len(a.AllowCIDRs) > 0 {
 		ip, ok := clientIP(r)
 		if !ok || !slices.ContainsFunc(a.AllowCIDRs, func(c string) bool {
 			p, err := netip.ParsePrefix(c)
 			return err == nil && p.Contains(ip)
 		}) {
-			return http.StatusForbidden, "your IP address is not allowed"
+			return http.StatusForbidden, "your IP address is not allowed", strip
 		}
 	}
 	if len(a.APIKeyHashes) > 0 {
@@ -84,7 +86,7 @@ func (a Access) check(r *http.Request) (int, string) {
 			}
 		}
 		if key == "" {
-			return http.StatusUnauthorized, "an API key is required"
+			return http.StatusUnauthorized, "an API key is required", strip
 		}
 		sum := sha256.Sum256([]byte(key))
 		got := hex.EncodeToString(sum[:])
@@ -93,14 +95,16 @@ func (a Access) check(r *http.Request) (int, string) {
 			match |= subtle.ConstantTimeCompare([]byte(got), []byte(h))
 		}
 		if match != 1 {
-			return http.StatusUnauthorized, "invalid API key"
+			return http.StatusUnauthorized, "invalid API key", strip
 		}
-		r.Header.Del(KeyHeader)
-		if fromAuth {
-			r.Header.Del("Authorization")
+		strip = func() {
+			r.Header.Del(KeyHeader)
+			if fromAuth {
+				r.Header.Del("Authorization")
+			}
 		}
 	}
-	return 0, ""
+	return 0, "", strip
 }
 
 // clientIP is X-Kiln-Client-IP (set by Caddy), else the TCP peer.

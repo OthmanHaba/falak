@@ -19,7 +19,8 @@ class Mount extends Model
 {
     use HasUlids;
 
-    public const PATH_PATTERN = '/^\/(?!.*\.\.)[A-Za-z0-9._~!$&\'()*+,;=:@%\/-]{0,198}[A-Za-z0-9._~!$&\'()*+,;=:@%-]$/';
+    // Same rules as the agent: starts with /, no trailing slash, no "..", no "//".
+    public const PATH_PATTERN = '/^\/(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9._~!$&\'()*+,;=:@%\/-]{0,198}[A-Za-z0-9._~!$&\'()*+,;=:@%-]$/';
 
     protected $table = 'edge_mounts';
 

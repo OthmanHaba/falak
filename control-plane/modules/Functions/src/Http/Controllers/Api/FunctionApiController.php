@@ -226,7 +226,8 @@ final class FunctionApiController extends Controller
     private function resolve(?Authenticatable $user, string $idOrSlug, string $permission): array
     {
         $organizationId = $this->organization->requireId();
-        $this->access->authorize($user, $organizationId, Permissions::VIEW);
+        // The endpoint's own permission (a deploy-only CI token needs no functions.view).
+        $this->access->authorize($user, $organizationId, $permission);
         $site = $this->sites->find(strtolower($idOrSlug));
 
         if ($site === null || $site->organizationId !== $organizationId) {

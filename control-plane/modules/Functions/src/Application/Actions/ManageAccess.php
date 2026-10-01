@@ -135,6 +135,12 @@ final class ManageAccess
         }
     }
 
+    /**
+     * Rules not applied yet when no deployment could start (e.g. the server is not ready) are reported, not hidden:
+     * the change is saved, and the next deployment applies it.
+     *
+     * @throws ValidationException
+     */
     private function redeploy(SiteData $site, ?string $userId): ?string
     {
         $live = $this->directory->liveCommit($site->id);
@@ -145,8 +151,8 @@ final class ManageAccess
 
         try {
             return $this->deployments->deploy($site->id, $userId, $live, 'Apply access settings');
-        } catch (ValidationException) {
-            return null;
+        } catch (ValidationException $e) {
+            throw ValidationException::withMessages(['access' => 'Saved, but not applied yet: '.collect($e->errors())->flatten()->first().' It applies with the next deployment.']);
         }
     }
 }

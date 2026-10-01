@@ -1,6 +1,7 @@
 package fngateway
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
@@ -18,7 +19,7 @@ func keyHash(k string) string {
 
 func do(t *testing.T, srv *httptest.Server, site string, h map[string]string) (int, string) {
 	t.Helper()
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/hello", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+"/hello", nil)
 	req.Header.Set(Header, site)
 	for k, v := range h {
 		req.Header.Set(k, v)
@@ -102,5 +103,29 @@ func TestAccessValidation(t *testing.T) {
 	s.Access = Access{AllowCIDRs: []string{"10.1.2.3/8", "192.0.2.4"}}
 	if err := s.Normalize(); err != nil || s.Access.AllowCIDRs[0] != "10.0.0.0/8" || s.Access.AllowCIDRs[1] != "192.0.2.4/32" {
 		t.Fatalf("%v %v", err, s.Access.AllowCIDRs)
+	}
+}
+
+func TestAccessChangeWhileWaitingIsRechecked(t *testing.T) {
+	e := newFake()
+	g, clk, srv := newGateway(t, e)
+	s := spec("hello", "r1")
+	mustApply(t, g, s)
+	idleDown(g, clk, 2*time.Minute) // asleep: the next request waits for a start
+
+	e.mu.Lock()
+	e.startDelay = 150 * time.Millisecond
+	e.mu.Unlock()
+	codes := make(chan int, 1)
+	go func() { c, _ := get(t, srv, "hello"); codes <- c }() // checked against the open rules
+	time.Sleep(30 * time.Millisecond)
+
+	// The function becomes key-protected while the request waits.
+	locked := s
+	locked.Access = Access{APIKeyHashes: []string{strings.Repeat("a", 64)}}
+	mustApply(t, g, locked)
+
+	if c := <-codes; c != http.StatusUnauthorized {
+		t.Fatalf("request admitted under the old (open) rules: %d", c)
 	}
 }

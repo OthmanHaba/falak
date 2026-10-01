@@ -269,7 +269,7 @@ it('validates function paths and forgets them with their sites', function () {
     $function = edge_site($this->sites, $this->org, [$this->web->id], ['id' => strtolower((string) Str::ulid()), 'slug' => 'api-fn', 'runtime' => SiteRuntime::Function]);
     $mounts = app(PathMounts::class);
 
-    foreach (['/', '/../etc', 'no space/x y'] as $bad) {
+    foreach (['/', '/../etc', 'no space/x y', '/a//b'] as $bad) {
         expect(fn () => $mounts->create($function, $site->id, $bad, false))->toThrow(ValidationException::class);
     }
     expect(fn () => $mounts->create($function, $function->id, '/api', false))->toThrow(ValidationException::class);
