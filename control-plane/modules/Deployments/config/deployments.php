@@ -51,4 +51,7 @@ return [
     'green_port_offset' => 1000,
 
     'output_page_size' => 1000,
+
+    // Seconds a trigger waits for another trigger of the same site to finish queueing (then 409, retry).
+    'trigger_lock_wait' => 15,
 ];

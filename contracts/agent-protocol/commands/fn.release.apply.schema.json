@@ -78,7 +78,7 @@
             "type": "string",
             "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
             "maxLength": 255,
-            "description": "Relative path; no dot-files, no .., no node_modules"
+            "description": "Relative path, at most 8 levels; no dot-files, no .., no node_modules or __pycache__; a file is never also a folder. Several files (folders included) need agent feature fn.v3"
           },
           "content": {
             "type": "string",

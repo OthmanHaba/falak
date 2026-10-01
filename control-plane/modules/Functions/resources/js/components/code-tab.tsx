@@ -4,7 +4,9 @@ import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
 import { GitCompareArrows, Moon, Rocket, RotateCcw, SquareFunction, Zap } from 'lucide-react';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { fileChanges, type FileStatus } from '../files';
 import { functionUrl, type FunctionFiles, type FunctionState, type FunctionVersionSummary, type LiveStatus } from '../types';
+import { FileTree } from './file-tree';
 import { TestPanel } from './test-panel';
 
 const CodeEditor = lazy(() => import('./code-editor'));
@@ -76,6 +78,8 @@ export function CodeTab({ ctx }: ServiceTabProps) {
     const [deploying, setDeploying] = useState(false);
     const [savedAt, setSavedAt] = useState<string | null>(null);
     const [conflict, setConflict] = useState<Conflict | null>(null);
+    const [active, setActive] = useState<string | null>(null);
+    const [conflictFile, setConflictFile] = useState<string | null>(null);
     const loadedFor = useRef<string | null>(null);
 
     // Start from the user's draft, else the newest version (once per function).
@@ -87,8 +91,10 @@ export function CodeTab({ ctx }: ServiceTabProps) {
         setSavedAt(data.draft?.updated_at ?? null);
     }, [data]);
 
-    const headFiles = data?.head?.files ?? {};
+    const headFiles = useMemo(() => data?.head?.files ?? {}, [data]);
     const dirty = files !== null && !sameFiles(files, headFiles);
+    const changed = useMemo(() => (files ? fileChanges(headFiles, files) : []), [headFiles, files]);
+    const marks = useMemo(() => Object.fromEntries(changed.map((c) => [c.path, c.status])) as Record<string, FileStatus>, [changed]);
     const stale = data?.head && base !== null && base !== data.head.id;
     const size = files ? bytes(files) : 0;
     const tooBig = data ? size > data.limits.max_bytes : false;
@@ -155,7 +161,10 @@ export function CodeTab({ ctx }: ServiceTabProps) {
     );
 
     const entry = data?.entrypoint ?? 'index.ts';
-    const code = files?.[entry] ?? '';
+    // The open file; back to the entrypoint when it was deleted (or the code was replaced).
+    const current = active !== null && files && active in files ? active : entry;
+    const conflictChanges = conflict && files ? fileChanges(conflict.head.files, files) : [];
+    const conflictPath = conflictFile && conflictChanges.some((c) => c.path === conflictFile) ? conflictFile : (conflictChanges[0]?.path ?? entry);
     const live = data?.live;
     const status = useMemo(() => {
         if (!data) return null;
@@ -183,15 +192,25 @@ export function CodeTab({ ctx }: ServiceTabProps) {
                     {conflict.message} Left: v{conflict.head.number}
                     {conflict.head.author ? ` by ${conflict.head.author}` : ''}; right: your code.
                 </Callout>
-                <Suspense fallback={<Skeleton className="h-[420px]" />}>
-                    <DiffView
-                        path={entry}
-                        original={conflict.head.files[entry] ?? ''}
-                        modified={code}
-                        language={data.runtime.language}
-                        className="border-border h-[420px] overflow-hidden rounded-md border"
+                <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+                    <FileTree
+                        files={files}
+                        entry={entry}
+                        active={conflictPath}
+                        onSelect={setConflictFile}
+                        status={Object.fromEntries(conflictChanges.map((c) => [c.path, c.status]))}
+                        className="h-[420px]"
                     />
-                </Suspense>
+                    <Suspense fallback={<Skeleton className="h-[420px]" />}>
+                        <DiffView
+                            path={conflictPath}
+                            original={conflict.head.files[conflictPath] ?? ''}
+                            modified={files[conflictPath] ?? ''}
+                            language={data.runtime.language}
+                            className="border-border h-[420px] overflow-hidden rounded-md border"
+                        />
+                    </Suspense>
+                </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
                     <Button
                         variant="ghost"
@@ -225,7 +244,10 @@ export function CodeTab({ ctx }: ServiceTabProps) {
                 <span className="text-fg inline-flex items-center gap-1.5 font-medium">
                     <SquareFunction className="size-4" aria-hidden /> {data.runtime.label}
                 </span>
-                <span className="text-fg-faint font-mono">{entry}</span>
+                <span className="text-fg-faint font-mono">
+                    {entry}
+                    {Object.keys(files).length > 1 ? ` + ${Object.keys(files).length - 1} file${Object.keys(files).length > 2 ? 's' : ''}` : ''}
+                </span>
                 {status}
                 {live && <Instances siteId={siteId} />}
                 {data.head && (
@@ -235,7 +257,12 @@ export function CodeTab({ ctx }: ServiceTabProps) {
                     </span>
                 )}
                 <span className="ml-auto flex items-center gap-2">
-                    {dirty && <Tag tone="warning">Unsaved changes{savedAt ? ' · draft saved' : ''}</Tag>}
+                    {dirty && (
+                        <Tag tone="warning">
+                            Unsaved changes in {changed.length} file{changed.length === 1 ? '' : 's'}
+                            {savedAt ? ' · draft saved' : ''}
+                        </Tag>
+                    )}
                     <span className={tooBig ? 'text-danger' : 'text-fg-faint'}>
                         {kb(size)} / {kb(data.limits.max_bytes)}
                     </span>
@@ -253,17 +280,42 @@ export function CodeTab({ ctx }: ServiceTabProps) {
                 </Callout>
             )}
 
-            <Suspense fallback={<Skeleton className="h-[480px]" />}>
-                <CodeEditor
-                    path={`${data.site.slug}/${entry}`}
-                    value={code}
-                    language={data.runtime.language}
-                    readOnly={!canEdit}
-                    onChange={(value) => setFiles((current) => ({ ...(current ?? {}), [entry]: value }))}
-                    onSave={() => deploy()}
-                    className="border-border h-[480px] overflow-hidden rounded-md border"
+            <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)]">
+                <FileTree
+                    files={files}
+                    entry={entry}
+                    active={current}
+                    onSelect={setActive}
+                    status={marks}
+                    removedSelectable={false}
+                    editable={canEdit}
+                    maxFiles={data.limits.max_files}
+                    onCreate={(path) => {
+                        setFiles((all) => ({ ...(all ?? {}), [path]: '' }));
+                        setActive(path);
+                    }}
+                    onRename={(from, to) => {
+                        setFiles((all) =>
+                            Object.fromEntries(Object.entries(all ?? {}).map(([path, content]) => [path === from ? to : path, content])),
+                        );
+                        if (current === from) setActive(to);
+                    }}
+                    onDelete={(path) => setFiles((all) => Object.fromEntries(Object.entries(all ?? {}).filter(([p]) => p !== path)))}
+                    className="h-[480px]"
                 />
-            </Suspense>
+                <Suspense fallback={<Skeleton className="h-[480px]" />}>
+                    <CodeEditor
+                        root={`${data.site.slug}/edit`}
+                        files={files}
+                        active={current}
+                        language={data.runtime.language}
+                        readOnly={!canEdit}
+                        onChange={(path, value) => setFiles((all) => ({ ...(all ?? {}), [path]: value }))}
+                        onSave={() => deploy()}
+                        className="border-border h-[480px] overflow-hidden rounded-md border"
+                    />
+                </Suspense>
+            </div>
 
             <div className="flex flex-wrap items-center gap-2">
                 <Input

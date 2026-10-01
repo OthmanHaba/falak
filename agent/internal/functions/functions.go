@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kiln/agent/internal/commands"
@@ -86,7 +87,11 @@ type Deps struct {
 }
 
 // Functions holds the executors.
-type Functions struct{ d Deps }
+type Functions struct {
+	d Deps
+	// gatewayMu serialises ensureGateway: a release and the start-up refresh must not restart the gateway twice.
+	gatewayMu sync.Mutex
+}
 
 // New builds the fn.* executors.
 func New(d Deps) *Functions {
@@ -233,16 +238,32 @@ func (p *ApplyPayload) validate() error {
 	if !entry {
 		return fmt.Errorf("entrypoint %q is not one of the files", p.Entrypoint)
 	}
+	// A file can't also be a folder ("lib" and "lib/db.ts"): writing the tree would fail halfway.
+	for name := range seen {
+		for dir := path.Dir(name); dir != "."; dir = path.Dir(dir) {
+			if seen[dir] {
+				return fmt.Errorf("%q is both a file and a folder", dir)
+			}
+		}
+	}
 	return nil
 }
 
-// validPath: relative, clean, no "..", no dot-files (reserved for Kiln's markers), no node_modules.
+// maxDepth is how many path segments a function file may have.
+const maxDepth = 8
+
+// validPath: relative, clean, not too deep, no "..", no dot-files (reserved for Kiln's markers), no folder the
+// installers create (node_modules, __pycache__).
 func validPath(p string) bool {
 	if !fileRe.MatchString(p) || path.Clean(p) != p || len(p) > 255 {
 		return false
 	}
-	for _, seg := range strings.Split(p, "/") {
-		if seg == ".." || seg == "." || seg == "node_modules" {
+	segs := strings.Split(p, "/")
+	if len(segs) > maxDepth {
+		return false
+	}
+	for _, seg := range segs {
+		if seg == ".." || seg == "." || seg == "node_modules" || seg == "__pycache__" {
 			return false
 		}
 	}
@@ -612,8 +633,28 @@ WantedBy=multi-user.target
 `
 }
 
+// RefreshGateway runs when the agent starts: a gateway an agent upgrade left on the old version is restarted (it
+// adopts the running function containers), so gateway fixes apply without waiting for the next release. Servers
+// without functions are left alone.
+func (f *Functions) RefreshGateway(ctx context.Context) error {
+	if _, err := os.Stat(f.d.FS.P(GatewayUnitPath)); err != nil {
+		return nil
+	}
+	return f.ensureGateway(ctx, quietStream{})
+}
+
+// quietStream drops the output of start-up work that no command is waiting for.
+type quietStream struct{}
+
+func (quietStream) Stdout() io.Writer   { return io.Discard }
+func (quietStream) Stderr() io.Writer   { return io.Discard }
+func (quietStream) Progress(float64)    {}
+func (quietStream) Emit(string, string) {}
+
 // ensureGateway installs/updates the unit and makes sure a gateway of this agent's version answers.
 func (f *Functions) ensureGateway(ctx context.Context, st commands.Stream) error {
+	f.gatewayMu.Lock()
+	defer f.gatewayMu.Unlock()
 	systemctl := func(args ...string) error {
 		_, err := runner.Check(ctx, f.d.Runner, runner.Cmd{Name: "systemctl", Args: args, Stdout: st.Stdout(), Stderr: st.Stderr()})
 		return err

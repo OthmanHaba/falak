@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Gate;
 use Kiln\Identity\Application\Console\CreateAdminCommand;
 use Kiln\Identity\Application\Console\SyncPermissionsCommand;
 use Kiln\Identity\Application\Listeners\SyncPermissionsAfterMigrations;
+use Kiln\Identity\Application\Registration;
 use Kiln\Identity\Contracts\AuditLog;
 use Kiln\Identity\Contracts\CurrentOrganization;
 use Kiln\Identity\Contracts\OrganizationAccess;
@@ -49,6 +50,8 @@ class IdentityServiceProvider extends ModuleServiceProvider
     {
         // Identity owns the auth routes; Fortify is used for its 2FA actions only.
         Fortify::ignoreRoutes();
+
+        $this->mergeConfigFrom($this->modulePath().'/config/identity.php', 'identity');
 
         // Request-scoped: reset between requests (Octane) and jobs.
         $this->app->scoped(ResolvedCurrentOrganization::class);
@@ -125,6 +128,11 @@ class IdentityServiceProvider extends ModuleServiceProvider
                         'personal' => $organization->personal,
                     ])->values(),
             ];
+        }, authenticated: false);
+
+        // Guests only: whether the login and welcome pages offer "Sign up" (open, invite or closed).
+        $this->app->make(SharedProps::class)->register('registration', function (Request $request) {
+            return $request->user() ? null : app(Registration::class)->mode();
         }, authenticated: false);
     }
 }

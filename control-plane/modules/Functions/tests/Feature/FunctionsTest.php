@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\ValidationException;
 use Kiln\Deployments\Contracts\DeploymentTrigger;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Models\Deployment;
@@ -155,7 +156,68 @@ it('validates the code', function (array $files, string $error) {
     'no entrypoint' => [['main.ts' => 'x'], 'entrypoint index.ts is missing'],
     'escaping path' => [['index.ts' => 'x', '../etc/passwd' => 'x'], 'not a valid file path'],
     'dot file' => [['index.ts' => 'x', '.env' => 'x'], 'not a valid file path'],
+    'dependency folder' => [['index.ts' => 'x', 'node_modules/hono/index.js' => 'x'], 'created on the server'],
+    'file and folder' => [['index.ts' => 'x', 'lib' => 'x', 'lib/db.ts' => 'x'], 'lib is both a file and a folder'],
+    'case only' => [['index.ts' => 'x', 'lib/DB.ts' => 'x', 'lib/db.ts' => 'x'], 'differ only in case'],
+    'too deep' => [['index.ts' => 'x', 'a/b/c/d/e/f/g/h/i.ts' => 'x'], 'nested too deep'],
+    'digit file and folder' => [['index.ts' => 'x', '1' => 'x', '1/b.ts' => 'x'], '1 is both a file and a folder'],
 ]);
+
+it('refuses oversized code before looking at each file', function () {
+    [$world, $function] = fn_world();
+    $many = array_fill_keys(array_map(fn ($i) => "f{$i}.ts", range(1, 40000)), 'x');
+
+    $started = microtime(true);
+    $this->putJson(fn_url($world->site, '/draft'), ['files' => $many])->assertUnprocessable()->assertJsonValidationErrors(['files']);
+    expect(microtime(true) - $started)->toBeLessThan(1.0);
+
+    expect(fn () => Code::files(array_fill_keys(array_map(fn ($i) => "f{$i}.ts", range(1, 40000)), 'x'), 'index.ts'))
+        ->toThrow(ValidationException::class, 'at most 50 files');
+    expect(fn () => Code::files(['index.ts' => str_repeat('x', 1024 * 1024)], 'index.ts'))
+        ->toThrow(ValidationException::class, 'larger than');
+
+    $this->call('PUT', fn_url($world->site, '/draft'), [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json', 'CONTENT_LENGTH' => (string) (Code::maxRequestBytes() + 1)], '{"files":{}}')
+        ->assertStatus(413);
+});
+
+it('deploys several files in folders and shows what changed per file', function () {
+    [$world, $function] = fn_world();
+    Agent::query()->where('server_id', $world->servers[0]->id)->update(['facts' => ['features' => ['fn.v1', 'fn.v2', 'fn.v3']]]);
+    $files = ['index.ts' => "import { users } from './routes/users'\nexport default { fetch: () => Response.json(users) }\n", 'routes/users.ts' => "export const users = []\n"];
+
+    $this->postJson(fn_url($world->site, '/deploy'), ['files' => $files, 'base_version_id' => $function->head()->id])->assertCreated();
+    $apply = $world->agents->last('fn.release.apply')['payload'];
+
+    expect(array_column($apply['files'], 'path'))->toBe(['index.ts', 'routes/users.ts']);
+    $version = $this->getJson(fn_url($world->site, '/versions/2'))->assertOk();
+
+    expect($version->json('data.files')['routes/users.ts'])->toBe("export const users = []\n");
+    $version->assertJsonPath('data.changes', [['path' => 'index.ts', 'status' => 'modified'], ['path' => 'routes/users.ts', 'status' => 'added']]);
+});
+
+it('keeps several files off agents that cannot write file trees', function () {
+    [$world, $function] = fn_world(); // agent reports fn.v1 only
+    $files = ['index.ts' => FN_V2, 'lib/util.ts' => 'export const x = 1'];
+
+    $response = $this->postJson(fn_url($world->site, '/deploy'), ['files' => $files, 'base_version_id' => $function->head()->id])->assertCreated();
+
+    expect($response->json('data.deployment_id'))->toBeNull()
+        ->and($response->json('warnings.0'))->toContain('too old for functions with several files')
+        ->and($world->agents->dispatched('fn.release.apply'))->toBeEmpty();
+    $this->postJson(fn_url($world->site, '/versions/2/deploy'))->assertUnprocessable()->assertJsonValidationErrors(['version' => 'update it first']);
+});
+
+it('keeps several files off a server whose agent is gone', function () {
+    [$world, $function] = fn_world();
+    Agent::query()->where('server_id', $world->servers[0]->id)->delete();
+    $files = ['index.ts' => FN_V2, 'lib/util.ts' => 'export const x = 1'];
+
+    $response = $this->postJson(fn_url($world->site, '/deploy'), ['files' => $files, 'base_version_id' => $function->head()->id])->assertCreated();
+
+    expect($response->json('data.deployment_id'))->toBeNull()
+        ->and($response->json('warnings.0'))->toContain('no connected Kiln agent')
+        ->and($world->agents->dispatched('fn.release.apply'))->toBeEmpty();
+});
 
 it('rolls back to an earlier version with its exact code', function () {
     [$world, $function] = fn_world();
@@ -315,11 +377,11 @@ it('offers every runtime and starters for each language', function () {
     actingAsMember(Role::Owner);
     $data = $this->getJson('/functions/starters')->assertOk()->json('data');
 
-    expect(array_column($data['runtimes'], 'key'))->toBe(['bun', 'node', 'deno', 'python'])
+    expect(array_column($data['runtimes'], 'key'))->toBe(['bun', 'node', 'deno', 'python', 'go'])
         ->and(count($data['starters']))->toBeGreaterThanOrEqual(10);
 
     foreach ($data['starters'] as $starter) {
-        expect($starter['families'])->toBe(['ts', 'python']);
+        expect($starter['families'])->toBe(['ts', 'python', 'go']);
     }
 });
 
@@ -345,6 +407,26 @@ it('creates a Python function with the starter’s variables and schedule', func
         ->and($apply['entrypoint'])->toBe('main.py')
         ->and($variables)->toMatchArray(['URLS' => '', 'ALERT_WEBHOOK_URL' => ''])
         ->and(FunctionSchedule::query()->where('function_id', $function->id)->pluck('expression')->all())->toBe(['*/5 * * * *']);
+});
+
+it('creates a Go function from a starter', function () {
+    $world = deploy_world(site: ['runtime' => 'static', 'framework' => 'static', 'php_version' => null]);
+    fn_agent($world->servers[0]->id, $world->organization->id);
+    $environment = projects_default_env($world->organization);
+
+    $response = $this->postJson("/projects/{$environment->project_id}/{$environment->slug}/functions", [
+        'name' => 'Notes', 'server_id' => $world->servers[0]->id, 'starter' => 'postgres-api', 'runtime' => 'go',
+    ])->assertCreated();
+
+    $function = CloudFunction::query()->where('site_id', $response->json('data.site_id'))->firstOrFail();
+    $apply = $world->agents->last('fn.release.apply')['payload'];
+
+    expect($function->runtime)->toBe('go')
+        ->and($function->entrypoint)->toBe('main.go')
+        ->and($function->head()->files['main.go'])->toContain('github.com/jackc/pgx/v5/pgxpool')
+        ->and($apply['image'])->toContain('/kiln-fn-go:')
+        ->and($apply['entrypoint'])->toBe('main.go');
+    $this->getJson(fn_url(Site::query()->findOrFail($response->json('data.site_id'))))->assertJsonPath('data.runtime.language', 'go');
 });
 
 it('generates the secrets a starter needs and rejects unknown runtimes', function () {

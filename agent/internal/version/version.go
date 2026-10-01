@@ -26,6 +26,8 @@ var Features = []string{
 	"fn.v1",
 	// fn.release.apply access (gateway API keys / IP allowlist) and edge.caddy.apply sites[].mounts.
 	"fn.v2",
+	// fn.release.apply with file trees (several files, folders): validated as a tree before anything is written.
+	"fn.v3",
 }
 
 var (

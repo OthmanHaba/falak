@@ -1,11 +1,14 @@
 <?php
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
 use Kiln\Deployments\Application\Jobs\ReconcileDeployments;
+use Kiln\Deployments\Application\Listeners\RedeployOnPortChange;
 use Kiln\Deployments\Application\Orchestration\DeploymentQueue;
 use Kiln\Deployments\Application\Orchestration\Orchestrator;
+use Kiln\Deployments\Contracts\Exceptions\DeploymentTriggerBusy;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\ReleaseStatus;
 use Kiln\Deployments\Domain\Enums\Trigger;
@@ -496,6 +499,27 @@ it('follows a docker deployment in progress after a port change and leaves a que
     SiteUpdated::dispatch($world->site->id, $world->organization->id, ['container_port'], $world->site->serverIds());
     expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2)
         ->and($follow->refresh()->commit)->toBe($building->commit);
+});
+
+it('lets the queue retry a port-change redeploy when another trigger holds the site\'s lock', function () {
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 3000, 'deploy_script' => '$KILN_FETCH']);
+    deploy($world, commit: str_repeat('a', 40));
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+    $world->site->forceFill(['container_port' => 8080])->save();
+    $event = new SiteUpdated($world->site->id, $world->organization->id, ['container_port'], $world->site->serverIds());
+
+    config(['deployments.trigger_lock_wait' => 0]);
+    $lock = Cache::lock("deployments:trigger:{$world->site->id}", 30);
+    expect($lock->get())->toBeTrue();
+
+    expect(fn () => app(RedeployOnPortChange::class)->handle($event))->toThrow(DeploymentTriggerBusy::class)
+        ->and(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(1);
+
+    // The retry, once the lock is free, redeploys.
+    $lock->release();
+    app(RedeployOnPortChange::class)->handle($event);
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2);
 });
 
 it('resumes a deployment whose command events were lost', function () {

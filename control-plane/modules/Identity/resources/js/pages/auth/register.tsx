@@ -5,8 +5,20 @@ import AuthLayout, { AuthLink } from '@/layouts/auth-layout';
 import { Head, useForm } from '@inertiajs/react';
 import { type FormEventHandler } from 'react';
 
-export default function Register() {
-    const { data, setData, post, processing, errors, reset } = useForm({ name: '', email: '', password: '', password_confirmation: '' });
+interface RegisterProps {
+    inviteOnly?: boolean;
+    /** The invitation from `?invitation=<token>` (the link in the invitation email), when valid. */
+    invitation?: { token: string; email: string; organization: string | null } | null;
+}
+
+export default function Register({ inviteOnly = false, invitation = null }: RegisterProps) {
+    const { data, setData, post, processing, errors, reset } = useForm({
+        name: '',
+        email: invitation?.email ?? '',
+        password: '',
+        password_confirmation: '',
+        invitation: invitation?.token ?? '',
+    });
 
     const submit: FormEventHandler = (event) => {
         event.preventDefault();
@@ -16,7 +28,13 @@ export default function Register() {
     return (
         <AuthLayout
             title="Create your account"
-            description="Deploy and observe your apps on your own servers."
+            description={
+                invitation
+                    ? `You're joining ${invitation.organization ?? 'an organization'} on Kiln.`
+                    : inviteOnly
+                      ? 'Sign-up on this Kiln needs an invitation: open the link in your invitation email.'
+                      : 'Deploy and observe your apps on your own servers.'
+            }
             footer={
                 <>
                     Already have an account? <AuthLink href={route('login')}>Log in</AuthLink>

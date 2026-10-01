@@ -3,10 +3,10 @@ name: agent
 on:
   push:
     branches: [main]
-    paths: ['agent/**', 'contracts/**', '.github/workflows/agent.yml']
+    paths: ['agent/**', 'contracts/**', 'runtimes/**', '.github/workflows/agent.yml']
   pull_request:
     branches: [main]
-    paths: ['agent/**', 'contracts/**', '.github/workflows/agent.yml']
+    paths: ['agent/**', 'contracts/**', 'runtimes/**', '.github/workflows/agent.yml']
 
 defaults:
   run:
@@ -34,3 +34,37 @@ jobs:
 
       - name: Build (static, all targets)
         run: make build
+
+  # Function runtimes: their own logic (telemetry URL redaction, the Python and Go installers). The gateway's
+  # redaction test above reads the same cases (runtimes/functions/tests/redact-cases.json).
+  runtimes:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: runtimes/functions
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+
+      - name: JS (shared tracer)
+        run: node --test tests/redact.test.mjs
+
+      - name: Python
+        run: PYTHONPATH=python python -m unittest discover -s tests
+
+      - name: Go runtime and installer
+        run: |
+          test -z "$(gofmt -l go)" || (gofmt -l go && exit 1)
+          (cd go/runtime && go vet . && go test ./...)
+          (cd go/install && go vet ./... && go test ./...)

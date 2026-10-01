@@ -347,6 +347,11 @@ func TestValidation(t *testing.T) {
 		"too big":       func(p *ApplyPayload) { p.Files[1].Content = strings.Repeat("x", maxBytes) },
 		"bad release":   func(p *ApplyPayload) { p.Release = "R1" },
 		"bad pull":      func(p *ApplyPayload) { p.Pull = "sometimes" },
+		"pycache":       func(p *ApplyPayload) { p.Files[1].Path = "lib/__pycache__/x.pyc" },
+		"too deep":      func(p *ApplyPayload) { p.Files[1].Path = "a/b/c/d/e/f/g/h/i.ts" },
+		"file is a folder": func(p *ApplyPayload) {
+			p.Files = append(p.Files, File{Path: "lib", Content: "x"})
+		},
 	} {
 		p := payload("r1")
 		mut(&p)
@@ -440,5 +445,26 @@ func TestRunNowStreamsTheRun(t *testing.T) {
 	var exit *commands.ExitError
 	if _, err := e.f.Run(context.Background(), RunPayload{Site: "hello", Schedule: "broken"}, &bufStream{}); !errors.As(err, &exit) || exit.Code != 1 {
 		t.Fatalf("failing run: %v", err)
+	}
+}
+
+// After an agent upgrade the gateway still runs the old binary: the start-up refresh restarts it. Servers that never
+// ran a function (no unit) are left alone.
+func TestRefreshGatewayAtStartup(t *testing.T) {
+	e := setup(t)
+	if err := e.f.RefreshGateway(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.calls(); got != "" {
+		t.Fatalf("no functions on this server, yet: %s", got)
+	}
+
+	_, _ = e.fs.WriteFile(GatewayUnitPath, []byte(RenderGatewayUnit("/usr/local/bin/kiln-agent")), 0o644)
+	e.gw.version = "0.3.9"
+	if err := e.f.RefreshGateway(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.calls(); got != "systemctl restart kiln-fn-gateway.service" {
+		t.Fatalf("outdated gateway: %s", got)
 	}
 }

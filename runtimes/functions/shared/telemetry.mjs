@@ -6,6 +6,7 @@
 // or fails a request.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync } from "node:fs";
+import { redactPath, redactText, safeUrl } from "./redact.mjs";
 
 /** @typedef {{ key: string, value: { stringValue?: string, intValue?: string, boolValue?: boolean } }} Attr */
 /** @typedef {{ name: string, timeUnixNano: string, attributes: Attr[] }} SpanEvent */
@@ -201,14 +202,14 @@ function exceptionEvent(err, handled) {
     timeUnixNano: nanos(),
     attributes: [
       str("exception.type", e.name || "Error"),
-      str("exception.message", e.message.slice(0, 4096)),
-      str("exception.stacktrace", (e.stack ?? "").slice(0, 16384)),
+      str("exception.message", redactText(e.message).slice(0, 4096)),
+      str("exception.stacktrace", redactText(e.stack ?? "").slice(0, 16384)),
       bool("kiln.exception.handled", handled),
     ],
   };
 }
 
-const message = (err) => (err instanceof Error ? err.message.slice(0, 512) : String(err));
+const message = (err) => redactText(err instanceof Error ? err.message : String(err)).slice(0, 512);
 
 /**
  * Records an exception on the current request (handled = your code caught it).
@@ -274,7 +275,7 @@ export function instrument(handler, app) {
     const url = new URL(req.url);
     const parent = /^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/.exec(req.headers.get("traceparent") ?? "");
     // Paths no Hono route matches (scanners, typos) share one name instead of flooding the route list.
-    const route = honoRoute(hono, req.method, url.pathname) ?? (typeof hono?.router?.match === "function" ? UNMATCHED : normalize(url.pathname));
+    const route = honoRoute(hono, req.method, url.pathname) ?? (typeof hono?.router?.match === "function" ? UNMATCHED : redactPath(normalize(url.pathname)));
     const cold = req.headers.get("x-kiln-cold-start") === "1";
     /** @type {Span} */
     const span = {
@@ -288,7 +289,7 @@ export function instrument(handler, app) {
         str("kiln.event.type", "request"),
         str("http.request.method", req.method),
         str("http.route", route),
-        str("url.path", url.pathname),
+        str("url.path", redactPath(url.pathname)),
         bool("faas.coldstart", cold),
       ],
       events: [],
@@ -313,7 +314,8 @@ export function instrument(handler, app) {
   };
 }
 
-// Outgoing fetch → `outgoing_request` spans under the current request or run (query strings are not recorded).
+// Outgoing fetch → `outgoing_request` spans under the current request or run (no query strings or userinfo; secret
+// path segments redacted, see redact.mjs).
 if (enabled) {
   const wrapped = async (input, init) => {
     const parent = current.getStore();
@@ -337,7 +339,7 @@ if (enabled) {
       attributes: [
         str("kiln.event.type", "outgoing_request"),
         str("http.request.method", method),
-        str("url.full", `${url.protocol}//${url.host}${url.pathname}`),
+        str("url.full", safeUrl(url)),
         str("server.address", url.hostname),
       ],
       events: [],

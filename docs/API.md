@@ -61,6 +61,8 @@ Token requests return the token's organization only; session requests every memb
 ## Servers
 
 ### `GET /api/v1/servers` · `GET /api/v1/servers/{server}` — `servers.view`
+Addresses: `ipv4`, `private_ipv4` (the server's address on its private network, `null` when it has none; `kiln ssh
+--private` uses it) and `ssh_port`.
 `agent` (null until an agent enrolled) carries `status`, `last_heartbeat_at`, `version`, `available_version` (the
 build this control plane ships), `update_available` and `upgrade` (the latest upgrade: `status`
 `queued|running|succeeded|failed|cancelled`, `from_version`, `to_version`, `error`, `requested_at`, `finished_at`).
@@ -240,9 +242,14 @@ Rename (the slug follows). Only empty, non-production environments can be delete
 Site variables may contain `${{ <service>.<KEY> }}`; they resolve at deploy time (release `.env`, deploy script
 environment, public build variables) against services of the **same environment**. Service names match
 case-insensitively with spaces/dots/underscores as dashes. Database services expose `DATABASE_URL`,
-`DB_CONNECTION`, `DB_HOST` (private network → provider private IP → public IP), `DB_PORT`, `DB_DATABASE`,
+`DB_CONNECTION`, `DB_HOST` (dedicated database server: private network → provider private IP → public IP), `DB_PORT`,
+`DB_DATABASE`,
 `DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the database); site services expose their own variables.
 Unknown services/keys and cycles fail the deployment: `Unresolved variable references: …`.
+An engine on an app or worker server listens on localhost only: its `DB_HOST` is `127.0.0.1`, and `DB_HOST` /
+`DATABASE_URL` resolve only for a native site running on that server alone. A site on other servers, or in a
+container (Docker, compose, functions), gets a resolution error naming the reason instead of a host it cannot reach;
+use a dedicated database server for those.
 
 ## Source control
 
@@ -347,13 +354,17 @@ run (without files). A version is `{id, number, hash, short_hash, message, autho
 the newest one) and deploys it: `201 {data: {version, created: true, deployment_id}, warnings[]}` (`200` with
 `created: false` for unchanged code). Without `base_version_id` the code is deployed on top of the newest version.
 When someone deployed after `base_version_id`: `409 {message, head}` (the newer version, with files), unless
-`force: true`. Follow the deployment with `GET /api/v1/deployments/{deployment_id}`.
+`force: true`. `files` is the function's complete file set (files left out are removed in the new version); code
+with more than one file is saved but not deployed while the server's agent is older than `fn.v3` (a warning says
+so). Follow the deployment with `GET /api/v1/deployments/{deployment_id}`.
 
 ### `GET /api/v1/functions/{site}/versions` · `GET /api/v1/functions/{site}/versions/{number}` — `functions.view`
-Newest first (up to 200); a single version includes `entrypoint` and `files`.
+Newest first (up to 200); a single version includes `entrypoint`, `files` and `changes`
+(`[{path, status: added|removed|modified}]` against the previous version).
 
 ### `POST /api/v1/functions/{site}/versions/{number}/deploy` — `functions.deploy` + `deployments.create`
-Deploys that version again (a rollback when it is not the newest). `201 {data: {deployment_id}}`.
+Deploys that version again (a rollback when it is not the newest). `201 {data: {deployment_id}}`; `422` when the
+version has several files and the server's agent is older than `fn.v3`.
 
 ### `POST /api/v1/functions/{site}/schedules/{schedule}/run` — `functions.deploy`
 Runs a schedule now (`{schedule}` = its id, key or name). `202 {data: {run_id, schedule}}`.

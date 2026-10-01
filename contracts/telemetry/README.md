@@ -32,7 +32,7 @@ Every APM span carries `kiln.event.type`:
 | `request` | SERVER | `http.request.method`, `http.route`, `http.response.status_code`, `url.path` |
 | `query` | CLIENT | `db.system.name`, `db.query.text` (redacted bindings), `db.namespace`, `kiln.query.connection` |
 | `job` | CONSUMER | `messaging.destination.name` (queue), `kiln.job.class`, `kiln.job.attempt`, `kiln.job.status` (`processed`\|`released`\|`failed`) |
-| `outgoing_request` | CLIENT | `http.request.method`, `url.full` (query redacted), `http.response.status_code` |
+| `outgoing_request` | CLIENT | `http.request.method`, `url.full` (query redacted; functions: no query or userinfo, secret path segments → `{redacted}`), `http.response.status_code` |
 | `mail` | INTERNAL | `kiln.mail.class`, `kiln.mail.recipients_count`, `kiln.mail.mailer` |
 | `notification` | INTERNAL | `kiln.notification.class`, `kiln.notification.channel`, `kiln.notification.status` |
 | `cache` | INTERNAL | `kiln.cache.op` (`hit`\|`miss`\|`write`\|`forget`), `kiln.cache.key`, `kiln.cache.store` |

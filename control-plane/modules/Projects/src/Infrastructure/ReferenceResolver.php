@@ -2,6 +2,7 @@
 
 namespace Kiln\Projects\Infrastructure;
 
+use Kiln\Databases\Contracts\Data\DatabaseConsumer;
 use Kiln\Databases\Contracts\DatabaseConnections;
 use Kiln\Projects\Contracts\Data\ResolvedVariables;
 use Kiln\Projects\Contracts\ServiceKind;
@@ -31,6 +32,8 @@ final class ReferenceResolver implements VariableReferences
 
     /** @var array<string, string> */
     private array $siteVariables = [];
+
+    private ?DatabaseConsumer $consumer = null;
 
     public function __construct(
         private readonly SiteDirectory $sites,
@@ -82,6 +85,7 @@ final class ReferenceResolver implements VariableReferences
         $this->errors = [];
         $this->siteId = strtolower($siteId);
         $this->siteVariables = $variables;
+        $this->consumer = null;
 
         if ($environmentId === null) {
             return new ResolvedVariables($variables, ['The site is not part of a project environment, so ${{ service.KEY }} references cannot be resolved.'], $references);
@@ -137,6 +141,14 @@ final class ReferenceResolver implements VariableReferences
                 return $match[0];
             }
 
+            // The host of a database depends on where the site being released runs (a localhost-only engine).
+            if ($service->kind === ServiceKind::Database && in_array($key, DatabaseConnections::HOST_KEYS, true)
+                && ($reason = $this->databases->unreachable($service->ref_id, $this->consumer())) !== null) {
+                $this->errors[] = "{$variable}: {$service->name}.{$key} cannot be used here: {$reason}";
+
+                return $match[0];
+            }
+
             $errorsBefore = count($this->errors);
             $resolved = $service->kind === ServiceKind::Site
                 ? $this->substitute($values[$key], $variable, [...$stack, $node])
@@ -163,6 +175,22 @@ final class ReferenceResolver implements VariableReferences
             ServiceKind::Site => array_map('strval', $this->sites->environment($service->ref_id)?->variables ?? []),
             ServiceKind::Database => $this->databases->variables($service->ref_id),
         };
+    }
+
+    /** The site being released, as the database consumer (references in other sites' variables resolve for it too). */
+    private function consumer(): DatabaseConsumer
+    {
+        if ($this->consumer !== null) {
+            return $this->consumer;
+        }
+
+        $site = $this->siteId !== null ? $this->sites->find($this->siteId) : null;
+
+        return $this->consumer = new DatabaseConsumer(
+            name: $site?->name ?? 'The site',
+            serverIds: $site?->serverIds() ?? [],
+            containerized: $site?->runtime->usesDocker() ?? false,
+        );
     }
 
     private function serviceOfSite(): ?Service

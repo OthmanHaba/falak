@@ -5,6 +5,7 @@ namespace Kiln\Functions\Application\Actions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Kiln\Deployments\Contracts\DeploymentTrigger;
+use Kiln\Functions\Application\AgentSupport;
 use Kiln\Functions\Application\Code;
 use Kiln\Functions\Application\FunctionStore;
 use Kiln\Functions\Application\StaleVersion;
@@ -24,6 +25,7 @@ final class DeployCode
         private readonly FunctionStore $functions,
         private readonly DeploymentTrigger $deployments,
         private readonly AuditLog $audit,
+        private readonly AgentSupport $agents,
     ) {}
 
     /**
@@ -62,7 +64,11 @@ final class DeployCode
         $warnings = [];
         $deploymentId = null;
 
-        if ($deploy) {
+        $blocker = $deploy ? $this->agents->blocker($site, $files) : null;
+
+        if ($blocker !== null) {
+            $warnings[] = "Version {$version->number} was saved, but could not be deployed: {$blocker}";
+        } elseif ($deploy) {
             try {
                 $deploymentId = $this->deployments->deploy($site->id, $userId, $version->hash, self::title($version), $version->author_name);
             } catch (ValidationException $e) {

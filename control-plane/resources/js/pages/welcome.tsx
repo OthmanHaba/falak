@@ -4,7 +4,7 @@ import { type SharedData } from '@/types';
 import { Head, Link, usePage } from '@inertiajs/react';
 
 export default function Welcome() {
-    const { auth } = usePage<SharedData>().props;
+    const { auth, registration } = usePage<SharedData>().props;
 
     return (
         <div className="bg-bg relative flex min-h-svh flex-col items-center justify-center px-4">
@@ -29,9 +29,11 @@ export default function Welcome() {
                             <Button variant="primary" asChild>
                                 <Link href={route('login')}>Log in</Link>
                             </Button>
-                            <Button asChild>
-                                <Link href={route('register')}>Create account</Link>
-                            </Button>
+                            {registration !== 'closed' && (
+                                <Button asChild>
+                                    <Link href={route('register')}>Create account</Link>
+                                </Button>
+                            )}
                         </>
                     )}
                 </div>

@@ -94,6 +94,16 @@ it('exposes servers over the token API with ability checks', function () {
     $this->deleteJson("/api/v1/servers/{$this->server->id}", [], $headers)->assertForbidden();
 });
 
+it('returns the private address and SSH port for kiln ssh --private', function () {
+    $this->server->forceFill(['private_ipv4' => '10.0.0.5', 'ssh_port' => 2222])->save();
+    $token = app(CreateApiToken::class)($this->owner, $this->organization->id, 'cli', ['servers.view'])->plainTextToken;
+
+    $this->getJson("/api/v1/servers/{$this->server->id}", ['Authorization' => "Bearer {$token}"])
+        ->assertOk()
+        ->assertJsonPath('data.private_ipv4', '10.0.0.5')
+        ->assertJsonPath('data.ssh_port', 2222);
+});
+
 it('creates custom servers over the API and returns the install command', function () {
     $token = app(CreateApiToken::class)($this->owner, $this->organization->id, 'cli', ['*'])->plainTextToken;
 

@@ -12,6 +12,7 @@ use Kiln\Fleet\Contracts\AgentGateway;
 use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Kiln\Functions\Application\Actions\DeployCode;
 use Kiln\Functions\Application\Actions\DeployVersion;
+use Kiln\Functions\Application\Code;
 use Kiln\Functions\Application\FunctionStore;
 use Kiln\Functions\Application\StaleVersion;
 use Kiln\Functions\Domain\Models\CloudFunction;
@@ -95,8 +96,9 @@ final class FunctionApiController extends Controller
     {
         [$data, $function] = $this->resolve($request->user(), $site, Permissions::DEPLOY);
         $this->access->authorize($request->user(), $data->organizationId, 'deployments.create');
+        abort_if((int) $request->header('Content-Length') > Code::maxRequestBytes(), 413, 'The code is too large.');
         $input = $request->validate([
-            'files' => ['required', 'array'],
+            'files' => ['required', 'array', 'max:'.(int) config('functions.max_files')],
             'message' => ['nullable', 'string', 'max:500'],
             'base_version_id' => ['nullable', 'string', 'size:26'],
             'force' => ['sometimes', 'boolean'],
@@ -140,7 +142,7 @@ final class FunctionApiController extends Controller
         [, $function] = $this->resolve($request->user(), $site, Permissions::VIEW);
         $version = FunctionVersion::query()->where('function_id', $function->id)->where('number', $number)->firstOrFail();
 
-        return response()->json(['data' => [...$version->summary(), 'entrypoint' => $version->entrypoint, 'files' => $version->files]]);
+        return response()->json(['data' => $version->detail()]);
     }
 
     /** POST /api/v1/functions/{site}/versions/{number}/deploy (rollback) */
