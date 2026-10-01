@@ -24,7 +24,7 @@ async function verify(secret: string, body: string, header: string): Promise<boo
     const parts = header.split(',').map((p) => p.split('=') as [string, string]);
     const timestamp = parts.find(([k]) => k === 't')?.[1];
     const signatures = parts.filter(([k]) => k === 'v1').map(([, v]) => v);
-    if (!timestamp || signatures.length === 0) return false;
+    if (!timestamp || !/^\d+$/.test(timestamp) || signatures.length === 0) return false;
     if (Math.abs(Date.now() / 1000 - Number(timestamp)) > TOLERANCE_SECONDS) return false;
     const expected = await hmacHex(secret, `${timestamp}.${body}`);
     return signatures.some((s) => safeEqual(s, expected));

@@ -20,7 +20,9 @@ def verify(secret: str, body: bytes, header: str) -> bool:
     parts = [p.split("=", 1) for p in header.split(",") if "=" in p]
     timestamp = next((v for k, v in parts if k == "t"), None)
     signatures = [v for k, v in parts if k == "v1"]
-    if not timestamp or not signatures or abs(time.time() - int(timestamp)) > TOLERANCE_SECONDS:
+    if not timestamp or not timestamp.isascii() or not timestamp.isdigit() or len(timestamp) > 12 or not signatures:
+        return False
+    if abs(time.time() - int(timestamp)) > TOLERANCE_SECONDS:
         return False
     expected = hmac.new(secret.encode(), f"{timestamp}.".encode() + body, hashlib.sha256).hexdigest()
     return any(hmac.compare_digest(expected, s) for s in signatures)

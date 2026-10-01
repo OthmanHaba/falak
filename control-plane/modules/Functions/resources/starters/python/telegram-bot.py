@@ -34,7 +34,9 @@ def reply(text: str) -> str:
 
 @app.post("/telegram")
 async def update(request: Request):
-    if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != os.environ.get("TELEGRAM_WEBHOOK_SECRET"):
+    # Without a secret every caller would match: refuse instead.
+    secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET")
+    if not secret or request.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
         raise HTTPException(403, "forbidden")
     message = (await request.json()).get("message") or {}
     if message.get("text"):

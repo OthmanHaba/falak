@@ -8,7 +8,12 @@ const sql = postgres(process.env.DATABASE_URL ?? '', { max: 5, idle_timeout: 20 
 // Created on first use (not at load time, so the function deploys before DATABASE_URL is set).
 let ready: Promise<unknown> | undefined;
 const table = () =>
-    (ready ??= sql`create table if not exists notes (id serial primary key, body text not null, created_at timestamptz default now())`);
+    (ready ??= sql`create table if not exists notes (id serial primary key, body text not null, created_at timestamptz default now())`.catch(
+        (err) => {
+            ready = undefined; // retry on the next request (e.g. once DATABASE_URL is set)
+            throw err;
+        },
+    ));
 
 const app = new Hono();
 

@@ -19,7 +19,9 @@ app.all('/*', async (c) => {
     if (!upstream) return c.json({ error: 'UPSTREAM_URL is not set' }, 500);
 
     const incoming = new URL(c.req.url);
-    const target = new URL(incoming.pathname + incoming.search, upstream);
+    // Appended to the configured base (keeps its path; `//other.host` in the request cannot change the host).
+    const target = new URL(upstream.replace(/\/+$/, '') + incoming.pathname + incoming.search);
+    if (target.origin !== new URL(upstream).origin) return c.json({ error: 'bad path' }, 400);
     const key = target.toString();
 
     if (c.req.method === 'GET') {

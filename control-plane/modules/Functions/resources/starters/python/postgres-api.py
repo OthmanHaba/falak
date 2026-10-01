@@ -19,7 +19,11 @@ async def db():
     conn = await psycopg.AsyncConnection.connect(os.environ.get("DATABASE_URL", ""), row_factory=dict_row, autocommit=True)
     # Created on first use (not at import time, so the function deploys before DATABASE_URL is set).
     if not _ready:
-        await conn.execute("create table if not exists notes (id serial primary key, body text not null, created_at timestamptz default now())")
+        try:
+            await conn.execute("create table if not exists notes (id serial primary key, body text not null, created_at timestamptz default now())")
+        except BaseException:
+            await conn.close()
+            raise
         _ready = True
     return conn
 

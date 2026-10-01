@@ -25,7 +25,9 @@ function reply(text: string): string {
 }
 
 app.post('/telegram', async (c) => {
-    if (c.req.header('X-Telegram-Bot-Api-Secret-Token') !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+    // Without a secret every caller would match: refuse instead.
+    const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+    if (!secret || c.req.header('X-Telegram-Bot-Api-Secret-Token') !== secret) {
         return c.json({ error: 'forbidden' }, 403);
     }
     const update = await c.req.json<{ message?: { chat: { id: number }; text?: string } }>();

@@ -26,7 +26,7 @@ function toRequest(req, signal) {
 }
 
 /** Writes a Fetch Response to node:http, streaming the body (back-pressure respected). */
-async function send(res, response, method) {
+async function send(res, response, method, signal) {
   const headers = {};
   response.headers.forEach((value, key) => {
     if (key !== "set-cookie") headers[key] = value;
@@ -38,10 +38,20 @@ async function send(res, response, method) {
     res.end();
     return;
   }
-  for await (const chunk of response.body) {
-    if (!res.write(chunk)) await once(res, "drain");
+  const reader = response.body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // A destroyed socket never emits "drain": stop on the client's disconnect too.
+      if (!res.write(value)) await once(res, "drain", { signal });
+    }
+    res.end();
+  } catch (err) {
+    // Release the body's source (a proxied fetch, a cursor…) when the client went away.
+    await reader.cancel(err).catch(() => {});
+    if (!signal.aborted) throw err;
   }
-  res.end();
 }
 
 const server = createServer(async (req, res) => {
@@ -53,7 +63,7 @@ const server = createServer(async (req, res) => {
     // Like @hono/node-server, the raw objects are the handler's env (c.env.incoming / c.env.outgoing).
     const response = await handle(toRequest(req, aborted.signal), { incoming: req, outgoing: res });
     if (!response) throw new Error("the handler returned no Response");
-    await send(res, response, req.method);
+    await send(res, response, req.method, aborted.signal);
   } catch (err) {
     if (aborted.signal.aborted) return;
     console.error(err);
