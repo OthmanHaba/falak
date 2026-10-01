@@ -447,3 +447,24 @@ func TestRunNowStreamsTheRun(t *testing.T) {
 		t.Fatalf("failing run: %v", err)
 	}
 }
+
+// After an agent upgrade the gateway still runs the old binary: the start-up refresh restarts it. Servers that never
+// ran a function (no unit) are left alone.
+func TestRefreshGatewayAtStartup(t *testing.T) {
+	e := setup(t)
+	if err := e.f.RefreshGateway(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.calls(); got != "" {
+		t.Fatalf("no functions on this server, yet: %s", got)
+	}
+
+	_, _ = e.fs.WriteFile(GatewayUnitPath, []byte(RenderGatewayUnit("/usr/local/bin/kiln-agent")), 0o644)
+	e.gw.version = "0.3.9"
+	if err := e.f.RefreshGateway(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.calls(); got != "systemctl restart kiln-fn-gateway.service" {
+		t.Fatalf("outdated gateway: %s", got)
+	}
+}

@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kiln/agent/internal/commands"
@@ -86,7 +87,11 @@ type Deps struct {
 }
 
 // Functions holds the executors.
-type Functions struct{ d Deps }
+type Functions struct {
+	d Deps
+	// gatewayMu serialises ensureGateway: a release and the start-up refresh must not restart the gateway twice.
+	gatewayMu sync.Mutex
+}
 
 // New builds the fn.* executors.
 func New(d Deps) *Functions {
@@ -628,8 +633,28 @@ WantedBy=multi-user.target
 `
 }
 
+// RefreshGateway runs when the agent starts: a gateway an agent upgrade left on the old version is restarted (it
+// adopts the running function containers), so gateway fixes apply without waiting for the next release. Servers
+// without functions are left alone.
+func (f *Functions) RefreshGateway(ctx context.Context) error {
+	if _, err := os.Stat(f.d.FS.P(GatewayUnitPath)); err != nil {
+		return nil
+	}
+	return f.ensureGateway(ctx, quietStream{})
+}
+
+// quietStream drops the output of start-up work that no command is waiting for.
+type quietStream struct{}
+
+func (quietStream) Stdout() io.Writer   { return io.Discard }
+func (quietStream) Stderr() io.Writer   { return io.Discard }
+func (quietStream) Progress(float64)    {}
+func (quietStream) Emit(string, string) {}
+
 // ensureGateway installs/updates the unit and makes sure a gateway of this agent's version answers.
 func (f *Functions) ensureGateway(ctx context.Context, st commands.Stream) error {
+	f.gatewayMu.Lock()
+	defer f.gatewayMu.Unlock()
 	systemctl := func(args ...string) error {
 		_, err := runner.Check(ctx, f.d.Runner, runner.Cmd{Name: "systemctl", Args: args, Stdout: st.Stdout(), Stderr: st.Stderr()})
 		return err

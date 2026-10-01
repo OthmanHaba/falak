@@ -65,6 +65,7 @@ type Components struct {
 	Docker     *docker.Service
 	Edge       *edge.Manager
 	Deployer   *deploy.Deployer
+	Functions  *functions.Functions
 }
 
 // Build constructs every executor and registers the full v1 catalogue.
@@ -113,12 +114,13 @@ func Build(d Deps) *Components {
 	sched.Register(reg)
 	db.New(db.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, StateDir: cfg.StateDir}).Register(reg)
 	netcfg.New(netcfg.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
-	functions.New(functions.Deps{FS: d.FS, Runner: d.Runner, Docker: docker.NewClient(cfg.DockerSock), Gateway: fngateway.NewClient(""),
-		Logger: log.With("component", "functions"), Binary: BinaryPath, Version: version.Version}).Register(reg)
+	fns := functions.New(functions.Deps{FS: d.FS, Runner: d.Runner, Docker: docker.NewClient(cfg.DockerSock), Gateway: fngateway.NewClient(""),
+		Logger: log.With("component", "functions"), Binary: BinaryPath, Version: version.Version})
+	fns.Register(reg)
 	d.Telemetry.Register(reg)
 	terms.Register(reg)
 
-	return &Components{Registry: reg, Supervisor: sup, Cron: sched, PTY: terms, Docker: dock, Edge: edgeMgr, Deployer: dep}
+	return &Components{Registry: reg, Supervisor: sup, Cron: sched, PTY: terms, Docker: dock, Edge: edgeMgr, Deployer: dep, Functions: fns}
 }
 
 // EnrollOnly enrolls (if needed) and returns.
@@ -247,6 +249,13 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		go func(f func(context.Context)) { defer loops.Done(); f(runCtx) }(fn)
 	}
 	log.Info("kiln-agent running", "version", version.Version, "session", client.Session, "commands", len(comps.Registry.Types()))
+	loops.Add(1)
+	go func() {
+		defer loops.Done()
+		if err := comps.Functions.RefreshGateway(runCtx); err != nil {
+			log.Warn("function gateway refresh failed", "err", err)
+		}
+	}()
 
 	<-ctx.Done()
 	log.Info("shutting down")
