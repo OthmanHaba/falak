@@ -1,0 +1,164 @@
+{
+  "$comment": "Compose project loading shared by kiln-builder (agent/internal/builder/composeproject.go) and the control plane's preview (Sites ComposeProject). Each case: repository files, the compose files (-f order) and profiles, and either the merged document or an error substring. Relative paths come out rebased to the repository root.",
+  "cases": [
+    {
+      "name": "single file at the root",
+      "repo": {
+        "compose.yaml": "services:\n  web:\n    build: .\n    volumes: [\"./nginx.conf:/etc/nginx/nginx.conf:ro\", \"data:/data\"]\n    env_file: .env.example\nvolumes:\n  data: {driver: local}\n"
+      },
+      "files": [],
+      "profiles": [],
+      "expected": {
+        "services": {"web": {"build": ".", "volumes": ["./nginx.conf:/etc/nginx/nginx.conf:ro", "data:/data"], "env_file": "./.env.example"}},
+        "volumes": {"data": {"driver": "local"}}
+      },
+      "references": [".env.example", "nginx.conf"]
+    },
+    {
+      "name": "file in a folder: paths resolve against its directory",
+      "repo": {
+        "docker/compose.prod.yml": "services:\n  api:\n    build:\n      context: ../api\n      dockerfile: Dockerfile.prod\n    volumes:\n      - type: bind\n        source: ./conf/api.ini\n        target: /etc/api.ini\n"
+      },
+      "files": ["docker/compose.prod.yml"],
+      "profiles": [],
+      "expected": {
+        "services": {"api": {"build": {"context": "./api", "dockerfile": "Dockerfile.prod"}, "volumes": [{"type": "bind", "source": "./docker/conf/api.ini", "target": "/etc/api.ini"}]}}
+      },
+      "references": ["docker/conf/api.ini"]
+    },
+    {
+      "name": "override files merge in order",
+      "repo": {
+        "compose.yaml": "services:\n  web:\n    image: nginx:1.27\n    environment: [\"A=1\", \"B=2\"]\n    ports: [\"8080:80\"]\n    volumes: [\"./site:/usr/share/nginx/html\"]\n    command: [\"nginx\", \"-g\", \"daemon off;\"]\n    labels: {team: web}\n    depends_on: [db]\n  db:\n    image: postgres:17\n",
+        "compose.prod.yaml": "services:\n  web:\n    image: nginx:1.28\n    environment: {B: \"3\", C: \"4\"}\n    ports: [\"8443:443\"]\n    volumes: [\"./dist:/usr/share/nginx/html\"]\n    command: [\"nginx\"]\n    labels: [\"tier=edge\"]\n"
+      },
+      "files": ["compose.yaml", "compose.prod.yaml"],
+      "profiles": [],
+      "expected": {
+        "services": {
+          "web": {
+            "image": "nginx:1.28",
+            "environment": {"A": "1", "B": "3", "C": "4"},
+            "ports": ["8080:80", "8443:443"],
+            "volumes": ["./dist:/usr/share/nginx/html"],
+            "command": ["nginx"],
+            "labels": {"team": "web", "tier": "edge"},
+            "depends_on": ["db"]
+          },
+          "db": {"image": "postgres:17"}
+        }
+      },
+      "references": ["dist"]
+    },
+    {
+      "name": "-f files resolve against the first file's directory",
+      "repo": {
+        "deploy/base.yml": "services:\n  web:\n    image: nginx\n",
+        "deploy/overrides/prod.yml": "services:\n  web:\n    volumes: [\"./nginx.conf:/etc/nginx/nginx.conf\"]\n"
+      },
+      "files": ["deploy/base.yml", "deploy/overrides/prod.yml"],
+      "profiles": [],
+      "expected": {
+        "services": {"web": {"image": "nginx", "volumes": ["./deploy/nginx.conf:/etc/nginx/nginx.conf"]}}
+      },
+      "references": ["deploy/nginx.conf"]
+    },
+    {
+      "name": "profiles: only the active ones run",
+      "repo": {
+        "compose.yaml": "services:\n  web:\n    image: nginx\n    depends_on:\n      db: {condition: service_healthy}\n      debug: {condition: service_started}\n  db:\n    image: postgres\n  debug:\n    image: busybox\n    profiles: [debug]\n  worker:\n    image: app\n    profiles: [jobs, all]\n"
+      },
+      "files": [],
+      "profiles": ["jobs"],
+      "expected": {
+        "services": {
+          "web": {"image": "nginx", "depends_on": {"db": {"condition": "service_healthy"}}},
+          "db": {"image": "postgres"},
+          "worker": {"image": "app"}
+        }
+      },
+      "references": []
+    },
+    {
+      "name": "include: an included project merges first, with its own directory",
+      "repo": {
+        "compose.yaml": "include:\n  - infra/db.yml\nservices:\n  web:\n    image: nginx\n    depends_on: [db]\n",
+        "infra/db.yml": "services:\n  db:\n    image: postgres\n    volumes: [\"./init.sql:/docker-entrypoint-initdb.d/init.sql\"]\n"
+      },
+      "files": [],
+      "profiles": [],
+      "expected": {
+        "services": {
+          "db": {"image": "postgres", "volumes": ["./infra/init.sql:/docker-entrypoint-initdb.d/init.sql"]},
+          "web": {"image": "nginx", "depends_on": ["db"]}
+        }
+      },
+      "references": ["infra/init.sql"]
+    },
+    {
+      "name": "extends: same file and another file",
+      "repo": {
+        "compose.yaml": "services:\n  base:\n    image: app\n    environment: {LOG: info}\n    depends_on: [db]\n  worker:\n    extends: base\n    command: work\n  web:\n    extends:\n      file: common/web.yml\n      service: http\n    environment: {PORT: \"8080\"}\n  db:\n    image: postgres\n",
+        "common/web.yml": "services:\n  http:\n    build: ./web\n    environment: {LOG: debug}\n"
+      },
+      "files": [],
+      "profiles": [],
+      "expected": {
+        "services": {
+          "base": {"image": "app", "environment": {"LOG": "info"}, "depends_on": ["db"]},
+          "worker": {"image": "app", "environment": {"LOG": "info"}, "command": "work"},
+          "web": {"build": "./common/web", "environment": {"LOG": "debug", "PORT": "8080"}},
+          "db": {"image": "postgres"}
+        }
+      },
+      "references": []
+    },
+    {
+      "name": "configs and secrets files are references",
+      "repo": {
+        "compose.yaml": "services:\n  web:\n    image: nginx\n    configs: [site]\n    secrets: [key]\nconfigs:\n  site: {file: ./conf/site.conf}\nsecrets:\n  key: {file: secrets/key.txt}\n"
+      },
+      "files": [],
+      "profiles": [],
+      "expected": {
+        "services": {"web": {"image": "nginx", "configs": ["site"], "secrets": ["key"]}},
+        "configs": {"site": {"file": "./conf/site.conf"}},
+        "secrets": {"key": {"file": "./secrets/key.txt"}}
+      },
+      "references": ["conf/site.conf", "secrets/key.txt"]
+    },
+    {
+      "name": "absolute, home and interpolated paths stay as written",
+      "repo": {
+        "compose.yaml": "services:\n  web:\n    image: nginx\n    volumes: [\"/srv/data:/data\", \"${DATA_DIR}:/x\", \"~/cache:/cache\"]\n"
+      },
+      "files": [],
+      "profiles": [],
+      "expected": {
+        "services": {"web": {"image": "nginx", "volumes": ["/srv/data:/data", "${DATA_DIR}:/x", "~/cache:/cache"]}}
+      },
+      "references": []
+    },
+    {
+      "name": "a compose file outside the repository is refused",
+      "repo": {"compose.yaml": "services: {web: {image: nginx}}\n"},
+      "files": ["../compose.yaml"],
+      "profiles": [],
+      "error": "leaves the repository"
+    },
+    {
+      "name": "a missing file is reported",
+      "repo": {"compose.yaml": "services: {web: {image: nginx}}\n"},
+      "files": ["compose.yaml", "compose.prod.yaml"],
+      "profiles": [],
+      "error": "compose.prod.yaml"
+    },
+    {
+      "name": "extends loops are refused",
+      "repo": {"compose.yaml": "services:\n  a: {extends: b, image: x}\n  b: {extends: a}\n"},
+      "files": [],
+      "profiles": [],
+      "error": "loops"
+    }
+  ]
+}

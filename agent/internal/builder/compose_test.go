@@ -3,7 +3,9 @@ package builder
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -93,6 +95,78 @@ func TestComposeBuildBuildsEveryBuildService(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "hunter2-pass") {
 		t.Fatal("registry password leaked into the log")
+	}
+}
+
+func TestComposeBuildMergesFilesAndShipsMountedFiles(t *testing.T) {
+	f := &runnertest.Fake{}
+	fakeGit(t, f, filepath.Join(fixtures, "compose-project"))
+	f.OnFunc("docker buildx build", writeMetadata)
+	b := newBuilder(t, f)
+	var out bytes.Buffer
+	job := Job{ID: "01JPROJECT", Mode: ModeDocker, Repo: Repo{URL: "https://x/shop.git"}, Compose: &ComposeSpec{
+		ImagePrefix: "registry.kiln.test/kiln/shop", Files: []string{"deploy/compose.yml", "deploy/compose.prod.yml"}, Profiles: []string{"ops"},
+	}}
+	res, err := b.Build(context.Background(), job, NewNDJSONSink(&out))
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	c := res.Compose
+	for _, want := range []string{"nginx:1.28-alpine", "./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro", "./.env.example", "backup:", "./app"} {
+		if !strings.Contains(c.Content, want) {
+			t.Errorf("merged project lacks %q:\n%s", want, c.Content)
+		}
+	}
+	if strings.Contains(c.Content, "mailpit") || strings.Contains(c.Content, "profiles") {
+		t.Errorf("inactive profile kept:\n%s", c.Content)
+	}
+	if !reflect.DeepEqual(c.Files, []string{"deploy/compose.yml", "deploy/compose.prod.yml"}) || c.File != "deploy/compose.yml" {
+		t.Errorf("files %v / %s", c.Files, c.File)
+	}
+	var paths []string
+	for _, a := range c.Assets {
+		paths = append(paths, a.Path)
+	}
+	if !reflect.DeepEqual(paths, []string{".env.example", "deploy/conf.d/gzip.conf", "deploy/nginx.conf"}) {
+		t.Errorf("assets %v", paths)
+	}
+	if !reflect.DeepEqual(c.Missing, []string{"deploy/data"}) {
+		t.Errorf("missing %v", c.Missing)
+	}
+	if c.Images["app"].Ref != "registry.kiln.test/kiln/shop/app:01jproject" {
+		t.Errorf("images %+v", c.Images)
+	}
+	for _, call := range f.Calls() {
+		if strings.HasPrefix(call.Line, "docker buildx build") && !strings.HasSuffix(call.Line, filepath.Join("src", "app")) {
+			t.Errorf("app context: %s", call.Line)
+		}
+	}
+}
+
+func TestComposeAssetsStayInsideTheRepository(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "conf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "secret"), filepath.Join(root, "conf", "leak")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := collectComposeAssets(root, []string{"conf"}); err == nil || !strings.Contains(err.Error(), "outside the repository") {
+		t.Fatalf("symlink out of the repository: %v", err)
+	}
+	if _, err := readRepoFile(root, "conf/leak"); err == nil {
+		t.Fatal("read a file outside the repository")
+	}
+	big := make([]byte, maxComposeAssetBytes+1)
+	if err := os.WriteFile(filepath.Join(root, "big.bin"), big, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := collectComposeAssets(root, []string{"big.bin"}); err == nil || !strings.Contains(err.Error(), "bake it into an image") {
+		t.Fatalf("large file: %v", err)
 	}
 }
 

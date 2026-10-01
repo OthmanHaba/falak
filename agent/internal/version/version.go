@@ -28,6 +28,8 @@ var Features = []string{
 	"fn.v2",
 	// fn.release.apply with file trees (several files, folders): validated as a tree before anything is written.
 	"fn.v3",
+	// docker.compose.pull / docker.compose.up assets (repository files a compose project mounts, under repo/).
+	"compose.v2",
 }
 
 var (
