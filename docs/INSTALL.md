@@ -249,7 +249,7 @@ kiln-ctl admin create ops@example.com [--token=cli]
 kiln-ctl artisan <command>               # php artisan in the control-plane container
 kiln-ctl prune-images [--dry-run]        # remove Kiln images except the current and previous version
 kiln-ctl registry status                 # built-in image registry: address, size, answers with its credentials
-kiln-ctl registry gc [--dry-run]         # delete registry layers no image references (stops the registry briefly)
+kiln-ctl registry gc [--dry-run] [--force] # delete registry layers no image references (stops the registry briefly)
 kiln-ctl up | down | restart [service]
 ```
 
@@ -290,8 +290,9 @@ steps keep it from growing forever:
   `kiln-ctl registry prune --dry-run`; run it now with `kiln-ctl registry prune`.
 - **Weekly, from cron** (`/etc/cron.d/kiln-registry-gc`, Sunday 04:17, written by `kiln-ctl up`/`update`):
   `kiln-ctl registry gc` deletes the layers nothing references any more, which is what frees disk space. The
-  registry is stopped while it runs (a push during garbage collection could lose layers), so it runs at night;
-  `KILN_REGISTRY_GC=0` removes the cron entry. Output goes to `/var/log/kiln-registry-gc.log`.
+  registry is stopped while it runs (a push during garbage collection could lose layers), so it runs at night and is
+  skipped (logged, tried again the next week) while an image build is queued or running, or when the control plane
+  can't tell; `--force` runs it anyway. `KILN_REGISTRY_GC=0` removes the cron entry. Output goes to `/var/log/kiln-registry-gc.log`.
 
 **Mounted config files.** Some services read config files bind-mounted from `/opt/kiln/observability/` and
 `/opt/kiln/deploy/` (`loki.yaml`, `tempo.yaml`, the gateway `Caddyfile`, Grafana provisioning and dashboards).

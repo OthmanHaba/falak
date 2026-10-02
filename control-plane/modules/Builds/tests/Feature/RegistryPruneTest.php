@@ -45,8 +45,13 @@ beforeEach(function () {
     $this->repos = [];
     $this->deleted = [];
     $this->deleteStatus = 202;
+    $this->headStatus = []; // tag => HTTP status of its HEAD
+    $this->onRequest = null;
     Http::fake(function (Request $request) {
         $path = parse_url($request->url(), PHP_URL_PATH);
+        if ($this->onRequest) {
+            ($this->onRequest)($request->method(), $path);
+        }
         if ($request->method() === 'GET' && $path === '/v2/_catalog') {
             return Http::response(['repositories' => array_keys($this->repos)]);
         }
@@ -55,6 +60,9 @@ beforeEach(function () {
         }
         if (preg_match('#^/v2/(.+)/manifests/(.+)$#', $path, $m)) {
             if ($request->method() === 'HEAD') {
+                if (isset($this->headStatus[$m[2]])) {
+                    return Http::response('', $this->headStatus[$m[2]]);
+                }
                 $digest = $this->repos[$m[1]][$m[2]] ?? null;
 
                 return $digest ? Http::response('', 200, ['Docker-Content-Digest' => $digest]) : Http::response('', 404);
@@ -151,4 +159,50 @@ it('stops when the registry does not allow deletes, and does nothing without cre
 
     config(['builds.registry.password' => '']);
     expect(app(RegistryPruner::class)->prune()['skipped'])->toContain('no credentials');
+});
+
+it('leaves a repository alone when a digest can’t be read', function () {
+    $kept = registry_build($this, $this->site->id);
+    $pruned = registry_build($this, $this->site->id, ['artifact_pruned_at' => now()]);
+    $other = registry_build($this, $this->site->id, ['artifact_pruned_at' => now()]);
+    // The kept tag's HEAD fails; it shares the pruned tag's digest, so deleting that would take the kept image too.
+    $this->repos = [
+        'kiln/shop' => [$kept->id => registry_digest('same'), $pruned->id => registry_digest('same')],
+        'kiln/shop/api' => [$other->id => registry_digest('x')],
+    ];
+    $this->headStatus = [$kept->id => 500];
+
+    $result = app(RegistryPruner::class)->prune();
+
+    expect($this->deleted)->toBe(['kiln/shop/api@'.registry_digest('x')])
+        ->and($result['kept'])->toBe(2);
+});
+
+it('re-reads digests right before deleting: tags pushed or moved since the scan keep theirs', function () {
+    $pruned = registry_build($this, $this->site->id, ['artifact_pruned_at' => now()]);
+    $moved = registry_build($this, $this->site->id, ['artifact_pruned_at' => now()]);
+    $kept = registry_build($this, $this->site->id);
+    $this->repos = ['kiln/shop' => [$pruned->id => registry_digest('reused'), $moved->id => registry_digest('moved')]];
+
+    // After the scan (first tag list) a kept build is pushed with the pruned tag's image, and the other tag moves.
+    $lists = 0;
+    $this->onRequest = function (string $method, string $path) use (&$lists, $kept, $moved) {
+        if ($path === '/v2/kiln/shop/tags/list' && ++$lists === 2) {
+            $this->repos['kiln/shop'][$kept->id] = registry_digest('reused');
+            $this->repos['kiln/shop'][$moved->id] = registry_digest('elsewhere');
+        }
+    };
+
+    app(RegistryPruner::class)->prune();
+
+    expect($this->deleted)->toBe([]);
+});
+
+it('tells kiln-ctl whether the registry can stop for garbage collection', function () {
+    registry_build($this, $this->site->id, ['mode' => 'native', 'status' => BuildStatus::Running]);
+    registry_build($this, $this->site->id, ['status' => BuildStatus::Failed]);
+    $this->artisan('kiln:registry-idle')->expectsOutputToContain('No image build')->assertExitCode(0);
+
+    registry_build($this, $this->site->id, ['status' => BuildStatus::Queued]);
+    $this->artisan('kiln:registry-idle')->expectsOutputToContain('1 image build(s) queued or running.')->assertExitCode(1);
 });

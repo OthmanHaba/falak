@@ -12,7 +12,7 @@
 #   kiln-ctl restore <file> [--yes]         restore a backup (stops the app while restoring)
 #   kiln-ctl doctor                         DNS, certificates, ports, disk, containers, agent API, PHP threads
 #   kiln-ctl domain set <domain> [--keep-old]   move the panel to a new domain
-#   kiln-ctl registry status | prune [--dry-run] | gc [--dry-run]
+#   kiln-ctl registry status | prune [--dry-run] | gc [--dry-run] [--force]
 #                                           built-in image registry: address and size / delete unneeded images /
 #                                           garbage-collect (weekly from /etc/cron.d/kiln-registry-gc)
 #   kiln-ctl admin reset-password <email> [--password=...]
@@ -177,10 +177,26 @@ cmd_registry() {
       ;;
     gc)
       # Removes layers and untagged manifests nothing references. The registry is stopped meanwhile: a push
-      # during garbage collection could lose layers, so run it when no docker build is running.
-      local dry="" status=0
-      [ "${1:-}" = --dry-run ] && dry="--dry-run"
+      # during garbage collection could lose layers, so it is skipped while an image build is queued or running
+      # (the control plane's kiln:registry-idle exits 1; the weekly cron run tries again next week). --force skips
+      # the check.
+      local dry="" force="" status=0 arg idle
+      for arg in "$@"; do
+        case "$arg" in
+          --dry-run) dry="--dry-run" ;;
+          --force) force=1 ;;
+          *) die "usage: kiln-ctl registry gc [--dry-run] [--force]" ;;
+        esac
+      done
       is_running registry || die "registry is not running"
+      if [ -z "$force" ]; then
+        if ! idle="$(compose exec -T control-plane php artisan kiln:registry-idle 2>&1)"; then
+          idle="${idle%$'\n'}"
+          warn "$(date '+%Y-%m-%d %H:%M') skipping registry garbage collection: ${idle##*$'\n'}" \
+            "(tried again next week; kiln-ctl registry gc --force runs it anyway)"
+          return 0
+        fi
+      fi
       info "garbage-collecting the built-in registry${dry:+ (dry run)}"
       # A subshell whose EXIT trap, installed before the stop, starts the registry again however it ends (failure,
       # Ctrl-C, kill). set -e does not apply inside `( ) || …`, hence the explicit exits.
@@ -203,7 +219,7 @@ cmd_registry() {
       [ "${1:-}" = --dry-run ] && args=(--dry-run)
       compose exec -T control-plane php artisan kiln:registry-prune "${args[@]}"
       ;;
-    *) die "usage: kiln-ctl registry status | prune [--dry-run] | gc [--dry-run]" ;;
+    *) die "usage: kiln-ctl registry status | prune [--dry-run] | gc [--dry-run] [--force]" ;;
   esac
 }
 

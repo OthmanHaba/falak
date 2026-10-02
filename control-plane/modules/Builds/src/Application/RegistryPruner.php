@@ -18,7 +18,8 @@ use RuntimeException;
  * Tags are build ids (`<ns>/<site>:<build>`, `<ns>/<site>/<service>:<build>`). A tag stays when its build still has
  * its artifact (the newest KILN_ARTIFACTS_KEEP per site, see PruneArtifacts), is not finished, is younger than a day,
  * or a release may still run it (Deployments' RetainedImages: pending, live and rollback releases); a deleted site's
- * builds go after the grace period. Manifests are deleted by digest, and never a digest a kept tag points at.
+ * builds go after the grace period. Manifests are deleted by digest, and never a digest a kept tag points at: a
+ * repository with a tag whose digest can't be read is left alone, and a digest is re-read right before its delete.
  * Space comes back with the registry's garbage collection (`kiln-ctl registry gc`, weekly).
  */
 final class RegistryPruner
@@ -51,33 +52,49 @@ final class RegistryPruner
                 continue;
             }
 
-            $keepDigests = [];
-            $dropDigests = [];
+            $tags = $this->tags($repository);
+            $scan = $this->scan($repository, $tags, $inUseTags, $inUseDigests);
 
-            foreach ($this->tags($repository) as $tag) {
-                $digest = $this->digest($repository, $tag);
+            if ($scan === null) {
+                // A tag whose digest can't be read might share it with a tag to drop: nothing of this repository goes.
+                Log::warning('registry prune: skipping a repository with unreadable manifests', ['repository' => $repository]);
+                $kept += count($tags);
 
-                if ($digest === null) {
+                continue;
+            }
+
+            [$keepDigests, $dropDigests] = $scan;
+            $kept += count($tags) - array_sum(array_map('count', $dropDigests));
+
+            if (! $dryRun) {
+                // Tags pushed since the scan may point at a digest to drop (a reused image): they are read too.
+                $new = array_values(array_diff($this->tags($repository), $tags));
+                $late = $this->scan($repository, $new, $inUseTags, $inUseDigests);
+
+                if ($late === null) {
+                    Log::warning('registry prune: skipping a repository with unreadable manifests', ['repository' => $repository]);
+
                     continue;
                 }
 
-                $keep = in_array($tag, $inUseTags[$repository] ?? [], true)
-                    || in_array($digest, $inUseDigests[$repository] ?? [], true)
-                    || $this->buildNeeded($tag);
-
-                if ($keep) {
-                    $keepDigests[$digest] = true;
-                    $kept++;
-                } else {
-                    $dropDigests[$digest][] = $tag;
-                }
+                $keepDigests += $late[0];
+                $kept += count($new);
             }
 
             // A digest a kept tag points at stays, whatever other tags point at it too.
-            foreach (array_diff_key($dropDigests, $keepDigests) as $digest => $tags) {
-                $name = "{$repository}@{$digest} (".implode(', ', $tags).')';
+            foreach (array_diff_key($dropDigests, $keepDigests) as $digest => $dropTags) {
+                $name = "{$repository}@{$digest} (".implode(', ', $dropTags).')';
 
                 if (! $dryRun) {
+                    // Re-read right before deleting: a tag moved since the scan keeps the digest.
+                    foreach ($dropTags as $tag) {
+                        if ($this->digest($repository, $tag) !== $digest) {
+                            Log::info('registry prune: tag changed since the scan, keeping the digest', ['repository' => $repository, 'tag' => $tag, 'digest' => $digest]);
+
+                            continue 2;
+                        }
+                    }
+
                     $response = $this->http()->delete($this->url("/v2/{$repository}/manifests/{$digest}"));
 
                     if ($response->status() === 405) {
@@ -96,6 +113,41 @@ final class RegistryPruner
         Log::info($dryRun ? 'registry prune (dry run)' : 'registry prune', ['deleted' => count($deleted), 'kept' => $kept, 'manifests' => $deleted]);
 
         return ['deleted' => $deleted, 'kept' => $kept, 'skipped' => null];
+    }
+
+    /**
+     * Digests of a repository's tags: the ones a kept tag points at, and the others with their tags. Null when a
+     * digest can't be read.
+     *
+     * @param  list<string>  $tags
+     * @param  array<string, list<string>>  $inUseTags
+     * @param  array<string, list<string>>  $inUseDigests
+     * @return ?array{0: array<string, true>, 1: array<string, list<string>>}
+     */
+    private function scan(string $repository, array $tags, array $inUseTags, array $inUseDigests): ?array
+    {
+        $keepDigests = [];
+        $dropDigests = [];
+
+        foreach ($tags as $tag) {
+            $digest = $this->digest($repository, $tag);
+
+            if ($digest === null) {
+                return null;
+            }
+
+            $keep = in_array($tag, $inUseTags[$repository] ?? [], true)
+                || in_array($digest, $inUseDigests[$repository] ?? [], true)
+                || $this->buildNeeded($tag);
+
+            if ($keep) {
+                $keepDigests[$digest] = true;
+            } else {
+                $dropDigests[$digest][] = $tag;
+            }
+        }
+
+        return [$keepDigests, $dropDigests];
     }
 
     /** Whether the build behind a tag still needs its image. Tags that aren't build ids are never touched. */

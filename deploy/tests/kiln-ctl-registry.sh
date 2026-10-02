@@ -70,8 +70,13 @@ pass "registry credentials are escaped in the curl config"
 is_running() { :; }
 calls="$work/calls"
 gc_mode=ok
+idle_mode=idle
 compose() {
   echo "$*" >> "$calls"
+  case "$1 $idle_mode" in
+    "exec busy") echo "1 image build(s) queued or running."; return 1 ;;
+    "exec down") echo "service \"control-plane\" is not running" >&2; return 1 ;;
+  esac
   case "$1 $gc_mode" in
     "run ok") echo "blob eligible for deletion" ;;
     "run fail") return 1 ;;
@@ -79,11 +84,11 @@ compose() {
   esac
   return 0
 }
-run_gc() { : > "$calls"; gc_mode="$1"; cmd_registry gc >/dev/null 2>&1 && rc=0 || rc=$?; }
+run_gc() { : > "$calls"; gc_mode="$1"; shift; cmd_registry gc "$@" > "$work/gc.out" 2>&1 && rc=0 || rc=$?; }
 
 run_gc ok
 [ "$rc" = 0 ] || fail "gc ok -> $rc"
-[ "$(cut -d' ' -f1 "$calls" | tr '\n' ' ')" = "stop run start " ] || fail "gc ok calls: $(cat "$calls")"
+[ "$(cut -d' ' -f1 "$calls" | tr '\n' ' ')" = "exec stop run start " ] || fail "gc ok calls: $(cat "$calls")"
 run_gc fail
 [ "$rc" != 0 ] || fail "failed gc exits 0"
 [ "$(tail -1 "$calls" | cut -d' ' -f1)" = start ] || fail "gc fail calls: $(cat "$calls")"
@@ -91,6 +96,22 @@ run_gc killed
 [ "$rc" = 143 ] || fail "killed gc -> $rc"
 [ "$(tail -1 "$calls" | cut -d' ' -f1)" = start ] || fail "gc killed calls: $(cat "$calls")"
 pass "registry gc restarts the registry after success, failure and interruption, and reports failure"
+
+idle_mode=busy
+run_gc ok
+[ "$rc" = 0 ] || fail "gc with builds running -> $rc"
+[ "$(cut -d' ' -f1-5 "$calls")" = "exec -T control-plane php artisan" ] || fail "gc busy calls: $(cat "$calls")"
+grep -q "skipping registry garbage collection: 1 image build(s) queued or running. (tried again next week" "$work/gc.out" || fail "gc busy output: $(cat "$work/gc.out")"
+idle_mode=down
+run_gc ok
+[ "$rc" = 0 ] && [ "$(wc -l < "$calls" | tr -d ' ')" = 1 ] || fail "gc with the control plane down -> $rc, calls: $(cat "$calls")"
+grep -q 'skipping registry garbage collection: service "control-plane" is not running' "$work/gc.out" || fail "gc down output: $(cat "$work/gc.out")"
+idle_mode=busy
+run_gc ok --force
+[ "$rc" = 0 ] || fail "gc --force -> $rc"
+[ "$(cut -d' ' -f1 "$calls" | tr '\n' ' ')" = "stop run start " ] || fail "gc --force calls: $(cat "$calls")"
+idle_mode=idle
+pass "registry gc is skipped (and says why) while image builds run or the control plane can't tell; --force runs it"
 
 # Weekly garbage collection from cron: installed with the registry settings, kept as is, removed with KILN_REGISTRY_GC=0.
 cron="$KILN_CRON_DIR/kiln-registry-gc"

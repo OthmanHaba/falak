@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Gate;
 use Kiln\Alerting\Contracts\AlertTypes;
 use Kiln\Alerting\Contracts\Severity;
 use Kiln\Builds\Application\Artifacts\ArtifactStorage;
+use Kiln\Builds\Application\Console\RegistryIdleCommand;
 use Kiln\Builds\Application\Console\RegistryPruneCommand;
 use Kiln\Builds\Application\Jobs\ExpireBuilds;
 use Kiln\Builds\Application\Jobs\PruneArtifacts;
@@ -91,7 +92,7 @@ class BuildsServiceProvider extends ModuleServiceProvider
         });
 
         if ($this->app->runningInConsole()) {
-            $this->commands([RegistryPruneCommand::class]);
+            $this->commands([RegistryPruneCommand::class, RegistryIdleCommand::class]);
         }
     }
 }
