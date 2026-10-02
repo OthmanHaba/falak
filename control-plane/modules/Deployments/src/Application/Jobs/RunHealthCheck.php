@@ -67,6 +67,17 @@ final class RunHealthCheck implements ShouldQueue
         $site = $sites->find($deployment->site_id);
         $checks = [];
 
+        // A compose stack's bootstrap pass started only the services its split-out sites use (compose up --wait
+        // checked them); its public services come with the full stack.
+        if (($bootstrap = (array) $deployment->setting('bootstrap', [])) !== []) {
+            $names = implode(', ', array_map(fn (string $id) => $sites->find($id)?->name ?? $id, (array) $deployment->setting('awaits_sites', [])));
+            $message = 'Bootstrap: started '.implode(', ', $bootstrap)." for {$names}; the full stack follows once {$names} is live.";
+            $log->note($deployment->id, "✓ {$message}", $step, 'stdout');
+            $orchestrator->healthChecked($step->id, true, $message);
+
+            return;
+        }
+
         // A Docker site without a domain has no edge route (a compose service split out into its own site that only its
         // stack reaches): the swap already checked the container on the server.
         if ($site?->runtime === SiteRuntime::Docker && $site->testDomain === null && $edge->domainsFor($site->id) === []) {

@@ -68,13 +68,7 @@ final class StepPayloads
             return $release->compose;
         }
 
-        // A service split out into its own Kiln site leaves the stack with this release; until that site is live the
-        // stack's services that use it (an nginx proxying to it, say) would fail to start.
-        foreach ($site->compose->services ?? [] as $service => $decision) {
-            if (($decision['mode'] ?? null) === 'site' && is_string($decision['site_id'] ?? null) && Release::current($decision['site_id']) === null) {
-                throw new RuntimeException("{$service} now runs as its own Kiln site, which hasn't been deployed yet. Deploy that site first, then this stack.");
-            }
-        }
+        $bootstrap = $this->splitSiteOrder($deployment, $site);
 
         $images = [];
         $version = null;
@@ -105,11 +99,61 @@ final class StepPayloads
             'registry' => $registry,
             // Repository files the project mounts (written under repo/; kept with the release for rollbacks).
             'assets' => $assets,
+            // A bootstrap release starts only these services (rolling back to it starts the same ones).
+            ...($bootstrap !== [] ? ['bootstrap' => $bootstrap] : []),
         ];
 
         $release->forceFill(['compose' => $data])->save();
 
         return $data;
+    }
+
+    /**
+     * Services split out into their own Kiln sites that aren't live yet: the stack runs without them, so the order is
+     *  1. a stack that never ran starts, in a bootstrap pass, only the services those sites use (their `uses` still in
+     *     the stack, plus what compose pulls in through depends_on) — the split-out sites need them to pass their own
+     *     health checks — and returns them (DeploySplitSitesFirst then deploys the sites, then the full stack);
+     *  2. otherwise (the stack already runs, the sites use nothing in it, or an agent can't start a subset) the
+     *     deployment stops here and the sites deploy first.
+     * The waiting sites are recorded on the deployment (`awaits_sites`). [] = nothing waits: a full deployment.
+     *
+     * @return list<string> the bootstrap services
+     *
+     * @throws RuntimeException
+     */
+    private function splitSiteOrder(Deployment $deployment, SiteData $site): array
+    {
+        $services = $site->compose->services ?? [];
+        $waiting = [];
+        $uses = [];
+
+        foreach ($services as $service => $decision) {
+            if (($decision['mode'] ?? null) === 'site' && is_string($decision['site_id'] ?? null) && Release::current($decision['site_id']) === null) {
+                $waiting[(string) $service] = strtolower($decision['site_id']);
+                array_push($uses, ...array_map('strval', (array) ($decision['uses'] ?? [])));
+            }
+        }
+
+        if ($waiting === []) {
+            return [];
+        }
+
+        $names = implode(', ', array_map(fn (string $id, string $service) => $this->sites->find($id)?->name ?? $service, $waiting, array_keys($waiting)));
+        $deployment->forceFill(['settings' => [...(array) $deployment->settings, 'awaits_sites' => array_values(array_unique($waiting))]])->save();
+
+        // Only services that still run in the stack (not ones moved to Kiln databases or other sites).
+        $bootstrap = array_values(array_unique(array_filter($uses, fn (string $service) => ($services[$service]['mode'] ?? 'keep') === 'keep')));
+        sort($bootstrap);
+        $agents = $this->agents->forServers($site->serverIds());
+        $capable = $agents !== [] && array_reduce($site->serverIds(), fn (bool $ok, string $id) => $ok && ($agents[$id] ?? null)?->supports('compose.up.services') === true, true);
+
+        if ($bootstrap === [] || Release::current($site->id) !== null || ! $capable) {
+            throw new RuntimeException("The stack runs without {$names}, its own Kiln site(s) that aren't live yet. Deploying {$names} first; the stack follows when it's live.");
+        }
+
+        $deployment->forceFill(['settings' => [...(array) $deployment->settings, 'bootstrap' => $bootstrap]])->save();
+
+        return $bootstrap;
     }
 
     /**
@@ -169,12 +213,16 @@ final class StepPayloads
      */
     private function composeUp(SiteData $site, array $release, string $releaseId, string $serverId, Deployment $deployment): array
     {
+        $bootstrap = array_values(array_map('strval', (array) ($release['bootstrap'] ?? [])));
+
         return [
             ...$this->composeFiles($site, $release, $releaseId, $serverId, $deployment),
             'pull' => 'missing',
-            'remove_orphans' => true,
+            // A bootstrap pass starts a subset (and waits for its health); it removes nothing.
+            'remove_orphans' => $bootstrap === [],
             'wait' => true,
             'wait_timeout_s' => max(1, min(3600, (int) config('deployments.compose.wait_timeout', 300))),
+            ...($bootstrap !== [] ? ['services' => $bootstrap] : []),
         ];
     }
 
@@ -189,7 +237,8 @@ final class StepPayloads
     {
         $leader = (array) ($release['leader'] ?? []);
 
-        if ($leader === []) {
+        // A bootstrap pass only starts what split-out sites use: the leader command runs with the full stack.
+        if ($leader === [] || ($release['bootstrap'] ?? []) !== []) {
             return null;
         }
 

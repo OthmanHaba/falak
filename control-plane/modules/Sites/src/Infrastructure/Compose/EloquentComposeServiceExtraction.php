@@ -15,6 +15,7 @@ use Kiln\Sites\Application\Compose\ComposeInterpolation;
 use Kiln\Sites\Application\Compose\ComposeNetworks;
 use Kiln\Sites\Application\Compose\ComposeProject;
 use Kiln\Sites\Application\Compose\ComposeProjectException;
+use Kiln\Sites\Application\Compose\RepoComposeInspection;
 use Kiln\Sites\Application\Compose\ServiceReferences;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
@@ -110,7 +111,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         $this->claim($stack, $service);
 
         try {
-            $database = $existing ?? $this->databases->create($stack->organization_id, (string) $leader, $engine, $this->databaseName($stack, $service, $engine, $definition), Auth::id());
+            $database = $existing ?? $this->databases->create($stack->organization_id, (string) $leader, $engine, $this->databaseName($stack, $service, $engine, $definition, (string) $leader), Auth::id());
         } catch (Throwable $e) {
             $this->release($stack, $service);
 
@@ -161,7 +162,8 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             'php_version' => $php ? (string) config('sites.default_php', '8.4') : null,
             'server_ids' => $data->serverIds(),
             'leader_server_id' => $data->leader()?->serverId,
-            'variables' => $this->interpolate(ServiceReferences::environment($definition['environment'] ?? []), $stackVariables) ?: null,
+            // Its env files' keys, then its `environment:` (which wins), as the stack gave them to the service.
+            'variables' => $this->interpolate([...$this->envFileVariables($stack, $definition), ...ServiceReferences::environment($definition['environment'] ?? [])], $stackVariables) ?: null,
         ], fn ($value) => $value !== null);
 
         $placement = $this->projects->projectOf('site', $stack->id);
@@ -189,6 +191,11 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             // (names, more than it takes) are left out here and reported once.
             'networks' => $networks['networks'],
             ...($aliases !== [] ? ['network_aliases' => $aliases] : []),
+            // Plain networks of the stack's compose project (real name => key): the agent creates a missing one with
+            // Compose's labels, so the site can deploy before the stack's first `up`. Configured ones (driver, ipam,
+            // internal, …) only Compose creates: the site waits for the stack's first deploy (`waited_networks`).
+            'compose_networks' => array_intersect_key(ComposeNetworks::owned($document, $stack->slug, $service, $stackVariables), array_flip($networks['networks'])),
+            ...(($waited = array_values(array_intersect(ComposeNetworks::waited($document, $stack->slug, $service, $stackVariables), $networks['networks']))) !== [] ? ['waited_networks' => $waited] : []),
             ...($networks['skipped'] !== [] ? ['skipped_networks' => $networks['skipped']] : []),
             // Hosts in its environment as the site gets it: after the stack's variables are filled in.
             'uses' => ServiceReferences::uses($document, $service, $stackVariables),
@@ -333,6 +340,68 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
     }
 
     /**
+     * The keys of a service's env files (`env_file:` entries of the merged project, relative to the stack's root
+     * directory), read from the repository like the inspection reads them; later files win. Kiln's own `.env` (the
+     * stack's variables) and files Kiln can't read (inline stacks, plain git servers, missing optional files) add
+     * nothing.
+     *
+     * @param  array<string, mixed>  $definition
+     * @return array<string, string>
+     */
+    private function envFileVariables(Site $stack, array $definition): array
+    {
+        $entries = $definition['env_file'] ?? [];
+        $entries = is_array($entries) && array_is_list($entries) ? $entries : [$entries];
+
+        if (($stack->compose_source ?? ComposeSource::Repo) === ComposeSource::Inline || $stack->source_connection_id === null || $stack->repository === null) {
+            return [];
+        }
+
+        $root = trim((string) $stack->root_directory, '/');
+        $variables = [];
+
+        foreach ($entries as $entry) {
+            $path = (string) preg_replace('#^(\./)+#', '', (string) (is_array($entry) ? ($entry['path'] ?? '') : $entry));
+
+            // Kiln's own .env (the stack's variables), absolute paths and paths leaving the repository add nothing.
+            if ($path === '' || $path === '.env' || str_starts_with($path, '/')) {
+                continue;
+            }
+
+            // Relative to the stack's root directory; `../shared.env` may sit above it, inside the repository.
+            $segments = [];
+            foreach (explode('/', ($root === '' || $root === '.' ? '' : $root.'/').$path) as $segment) {
+                if ($segment === '' || $segment === '.') {
+                    continue;
+                }
+                if ($segment === '..') {
+                    if ($segments === []) {
+                        continue 2;
+                    }
+                    array_pop($segments);
+
+                    continue;
+                }
+                $segments[] = $segment;
+            }
+
+            if ($segments === []) {
+                continue;
+            }
+
+            try {
+                $content = $this->sourceControl->file((string) $stack->source_connection_id, (string) $stack->repository, (string) $stack->branch, implode('/', $segments));
+            } catch (SourceControlException) {
+                $content = null;
+            }
+
+            $variables = [...$variables, ...RepoComposeInspection::envFile((string) $content)];
+        }
+
+        return array_filter($variables, fn (string $key) => ! str_starts_with($key, 'KILN_'), ARRAY_FILTER_USE_KEY);
+    }
+
+    /**
      * A build context of the merged project (relative to the stack's root directory, wherever the compose files sit)
      * as a repository path. Null = the repository root.
      */
@@ -397,17 +466,37 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
     }
 
     /** @param  array<string, mixed>  $definition */
-    private function databaseName(Site $stack, string $service, string $engine, array $definition): string
+    private function databaseName(Site $stack, string $service, string $engine, array $definition, string $serverId): string
     {
         $environment = ServiceReferences::environment($definition['environment'] ?? []);
+        $wanted = null;
 
         foreach (self::NAME_KEYS[$engine] as $key) {
             if (preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,62}$/', $environment[$key] ?? '') === 1) {
-                return strtolower($environment[$key]);
+                $wanted = strtolower($environment[$key]);
+                break;
             }
         }
 
-        return substr(trim((string) preg_replace('/[^a-z0-9_]+/', '_', Str::lower("{$stack->slug}_{$service}")), '_'), 0, 63);
+        $normalize = fn (string $name) => substr(trim((string) preg_replace('/[^a-z0-9_]+/', '_', Str::lower($name)), '_'), 0, 63);
+        // The name the stack used, then one prefixed with the stack (another stack's database may hold it: the
+        // rewrites point at the new database, so the app reads its name from DATABASE_URL / DB_DATABASE), then _2, _3…
+        $base = $normalize($wanted !== null ? "{$stack->slug}_{$wanted}" : "{$stack->slug}_{$service}");
+        $taken = array_map(fn (DatabaseData $d) => strtolower($d->name), $this->databaseDirectory->forServer($serverId));
+
+        foreach (array_values(array_unique(array_filter([$wanted, $base]))) as $candidate) {
+            if (! in_array($candidate, $taken, true)) {
+                return $candidate;
+            }
+        }
+
+        for ($i = 2; ; $i++) {
+            $candidate = substr($base, 0, 63 - strlen("_{$i}"))."_{$i}";
+
+            if (! in_array($candidate, $taken, true)) {
+                return $candidate;
+            }
+        }
     }
 
     /**

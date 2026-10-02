@@ -164,6 +164,22 @@ type RunPayload struct {
 type NetworkJoin struct {
 	Name    string   `json:"name"`
 	Aliases []string `json:"aliases,omitempty"`
+	// Compose marks a network a compose project owns (feature docker.networks.create): when it doesn't exist yet the
+	// agent creates it with Compose's own labels, so the project's first `docker compose up` adopts it instead of
+	// failing. A service split out of a stack at creation can then deploy before the stack.
+	Compose *ComposeNetwork `json:"compose,omitempty"`
+}
+
+// ComposeNetwork is the compose project and network key that own a network.
+type ComposeNetwork struct {
+	Project string `json:"project"`
+	Network string `json:"network"`
+}
+
+// labels are what Docker Compose checks on an existing network before it reuses it ("network … was found but has
+// incorrect label com.docker.compose.network …" otherwise; verified with Compose v2.34).
+func (n ComposeNetwork) labels() map[string]string {
+	return map[string]string{"com.docker.compose.project": n.Project, "com.docker.compose.network": n.Network}
 }
 
 // networkWait is how long a container waits for a network it joins to appear (a compose stack deploying in
@@ -306,8 +322,9 @@ func (s *Service) ensureContainer(ctx context.Context, p RunPayload, st commands
 	return id, true, s.c.ContainerStart(ctx, id)
 }
 
-// awaitNetworks waits (up to networkWait) for the networks a container joins. Kiln never creates them: they belong
-// to the compose stack that owns them.
+// awaitNetworks waits (up to networkWait) for the networks a container joins. A network a compose project owns is
+// created up front with Compose's labels (the project adopts it on its first `up`); any other network belongs to
+// someone else and is only waited for.
 func (s *Service) awaitNetworks(ctx context.Context, joins []NetworkJoin, st commands.Stream) error {
 	for _, n := range joins {
 		deadline := time.Now().Add(networkWait)
@@ -317,6 +334,15 @@ func (s *Service) awaitNetworks(ctx context.Context, joins []NetworkJoin, st com
 				return err
 			}
 			if ok {
+				break
+			}
+			if n.Compose != nil {
+				if err := s.c.NetworkCreate(ctx, n.Name, n.Compose.labels()); err != nil {
+					return fmt.Errorf("creating network %s for compose project %s: %w", n.Name, n.Compose.Project, err)
+				}
+				if st != nil {
+					fmt.Fprintf(st.Stdout(), "created network %s (compose project %s adopts it)\n", n.Name, n.Compose.Project)
+				}
 				break
 			}
 			if time.Now().After(deadline) {

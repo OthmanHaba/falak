@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/docker.run.schema.json",
-  "title": "docker.run — ensure a named container runs with exactly this spec (recreated when spec hash changes)",
+  "title": "docker.run \u2014 ensure a named container runs with exactly this spec (recreated when spec hash changes)",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -130,12 +130,14 @@
     },
     "networks": {
       "type": "array",
-      "description": "Existing networks the container joins besides its own (never created by the agent; waits briefly, then fails). A compose service run as its own site joins its stack's network under its service name.",
+      "description": "Existing networks the container joins besides its own (waited for briefly, then the command fails; a network with `compose` is created with Compose's labels when missing). A compose service run as its own site joins its stack's network under its service name.",
       "maxItems": 8,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -147,6 +149,25 @@
             "items": {
               "type": "string",
               "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$"
+            }
+          },
+          "compose": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "project",
+              "network"
+            ],
+            "description": "The compose project and network key that own this network (feature docker.networks.create): created with labels com.docker.compose.project / com.docker.compose.network when missing, so the project's `docker compose up` adopts it.",
+            "properties": {
+              "project": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+              },
+              "network": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$"
+              }
             }
           }
         }

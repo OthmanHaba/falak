@@ -92,6 +92,19 @@ it('replaces a database service with a Kiln database next to the stack and rewri
         ->and($resolved->variables['KILN_SVC_APP_DATABASE_URL'])->toStartWith('postgresql://shop:');
 });
 
+it('picks a free database name when another stack\'s database holds the one the service used', function () {
+    $taken = app(DatabaseProvisioner::class)->create($this->organization->id, $this->server->id, 'postgresql', 'shop');
+    app(DatabaseProvisioner::class)->create($this->organization->id, $this->server->id, 'postgresql', str_replace('-', '_', $this->stack->slug).'_shop');
+
+    $database = $this->extraction->toDatabase($this->stack->id, 'db', null, 'postgresql', SHOP_STACK);
+
+    // shop is taken, <stack>_shop too: <stack>_shop_2. The app reads the name from its rewritten DATABASE_URL.
+    expect($database->id)->not->toBe($taken->id)
+        ->and($database->name)->toBe(str_replace('-', '_', $this->stack->slug).'_shop_2')
+        ->and($this->stack->refresh()->compose_services['db'])->toMatchArray(['mode' => 'database', 'database_id' => $database->id])
+        ->and($this->extraction->rewrites($this->stack->id)->groups['app']['DATABASE_URL'])->toStartWith('${{ ');
+});
+
 it('links an existing database of the same engine and environment instead of creating one', function () {
     [$existing] = projects_database($this->organization, 'orders', $this->environment, engineServer: $this->engine);
 
@@ -162,8 +175,10 @@ it('lets a split-out Docker service join the stack networks on the stack servers
     $site = $this->extraction->toSite($this->stack->id, 'app', ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker'], SHOP_STACK);
 
     $network = $this->stack->slug.'_default';
-    expect($this->stack->refresh()->compose_services['app'])->toMatchArray(['networks' => [$network], 'uses' => ['cache', 'db']])
-        ->and(app(ComposeSites::class)->stackNetworks($site->id, $this->server->id))->toBe([['name' => $network, 'aliases' => ['app']]])
+    // The stack's project owns its default network: an agent creates it with Compose's labels when the site deploys first.
+    $owned = ['project' => $this->stack->slug, 'network' => 'default'];
+    expect($this->stack->refresh()->compose_services['app'])->toMatchArray(['networks' => [$network], 'compose_networks' => [$network => 'default'], 'uses' => ['cache', 'db']])
+        ->and(app(ComposeSites::class)->stackNetworks($site->id, $this->server->id))->toBe([['name' => $network, 'aliases' => ['app'], 'compose' => $owned]])
         // A server the stack doesn't run on: nothing to join there.
         ->and(app(ComposeSites::class)->stackNetworks($site->id, '01j9zq4n8v2m6r0t3w5y7b9d1f'))->toBe([])
         // Not split out of a stack.
@@ -171,9 +186,9 @@ it('lets a split-out Docker service join the stack networks on the stack servers
 
     // Decisions recorded before networks were: the stack's default network.
     $services = $this->stack->compose_services;
-    unset($services['app']['networks']);
+    unset($services['app']['networks'], $services['app']['compose_networks']);
     $this->stack->forceFill(['compose_services' => $services])->save();
-    expect(app(ComposeSites::class)->stackNetworks($site->id, $this->server->id))->toBe([['name' => $network, 'aliases' => ['app']]]);
+    expect(app(ComposeSites::class)->stackNetworks($site->id, $this->server->id))->toBe([['name' => $network, 'aliases' => ['app'], 'compose' => $owned]]);
 
     // The stack is gone: the site runs on its own network only.
     $this->stack->delete();
@@ -208,13 +223,90 @@ YAML;
         'network_aliases' => ['shop-back' => ['api', 'bad alias']],
         'uses' => ['cache'],
     ])
+        // A `name:` override is still the project's network (Compose creates and labels it as `back`).
         ->and(app(ComposeSites::class)->stackNetworks($app->id, $this->server->id))->toBe([
-            ['name' => 'shop-back', 'aliases' => ['app', 'api']],
-            ['name' => $default, 'aliases' => ['app']],
+            ['name' => 'shop-back', 'aliases' => ['app', 'api'], 'compose' => ['project' => $this->stack->slug, 'network' => 'back']],
+            ['name' => $default, 'aliases' => ['app'], 'compose' => ['project' => $this->stack->slug, 'network' => 'default']],
         ])
         // network_mode: none — on no stack network, so not on the default one either.
         ->and($this->stack->compose_services['sidecar']['networks'])->toBe([])
         ->and(app(ComposeSites::class)->stackNetworks($sidecar->id, $this->server->id))->toBe([]);
+});
+
+it('gives a split-out site the keys of its env files from the repository, under the stack root, environment winning', function () {
+    $git = sites_fake_source_control();
+    $connection = $git->addConnection($this->organization->id);
+    $git->files = [
+        'apps/shared.env' => "SHARED=yes\nPOOL_SIZE=1\n",
+        'apps/shop/api/defaults.env' => "APP_NAME=shop-api\nPOOL_SIZE=5\nMODE=from-file\nKILN_SITE_ID=nope\n",
+        'apps/shop/api/local.env' => "POOL_SIZE=10\n",
+        'apps/shop/.env' => "SECRET=never\n",
+        'outside.env' => "OUTSIDE=yes\n",
+    ];
+    $this->stack->forceFill(['source_connection_id' => $connection->id, 'root_directory' => 'apps/shop'])->save();
+    app()->forgetInstance(ComposeServiceExtraction::class);
+    $this->extraction = app(ComposeServiceExtraction::class); // with the fake repository
+    $yaml = <<<'YAML'
+services:
+  app:
+    image: api
+    env_file: [../shared.env, ./api/defaults.env, { path: ./api/local.env, required: false }, ./api/missing.env, .env, ../../../outside.env]
+    environment: { MODE: '${MODE:-production}' }
+YAML;
+
+    $site = $this->extraction->toSite($this->stack->id, 'app', ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker'], $yaml);
+
+    // Later env files win, `environment:` wins over them, KILN_* keys and Kiln's own .env are left out (PORT is the
+    // Docker site's own).
+    // ../shared.env above the root directory is still in the repository; ../../../outside.env leaves it.
+    expect(Site::query()->find($site->id)->environmentVersions()->first()->variables)->toMatchArray([
+        'SHARED' => 'yes',
+        'APP_NAME' => 'shop-api',
+        'POOL_SIZE' => '10',
+        'MODE' => 'production',
+    ])->not->toHaveKeys(['KILN_SITE_ID', 'SECRET', 'OUTSIDE']);
+});
+
+it('only lets agents create plain project networks: configured ones and reserved names wait for the stack', function () {
+    $yaml = <<<'YAML'
+services:
+  app:
+    image: api
+    networks: [default, private, named, kilnnet]
+networks:
+  private: { internal: true }
+  named: { name: shop-named }
+  kilnnet: { name: kiln-internal }
+YAML;
+    $warnings = app(ComposeSettings::class)->extract(Site::query()->findOrFail($this->stack->id), [
+        ['service' => 'app', 'mode' => 'site', 'site' => ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker']],
+    ], $yaml);
+    $decision = $this->stack->refresh()->compose_services['app'];
+    $slug = $this->stack->slug;
+
+    // Compose v2 reuses a labelled network without checking its configuration: `internal: true` must come from Compose.
+    expect($decision['compose_networks'])->toBe(["{$slug}_default" => 'default', 'shop-named' => 'named'])
+        ->and($decision['waited_networks'])->toBe(["{$slug}_private", 'kiln-internal'])
+        ->and(implode("\n", $warnings))->toContain("{$slug}_private, kiln-internal, which only the stack's own deploy can create")
+        ->and(collect(app(ComposeSites::class)->stackNetworks($decision['site_id'], $this->server->id))->mapWithKeys(fn ($n) => [$n['name'] => isset($n['compose'])])->all())
+        ->toBe(["{$slug}_default" => true, "{$slug}_private" => false, 'shop-named' => true, 'kiln-internal' => false]);
+});
+
+it('never asks agents to create an external network a split-out service joins', function () {
+    $yaml = <<<'YAML'
+services:
+  app:
+    image: api
+    networks: [shared, default]
+networks:
+  shared: { external: true }
+YAML;
+    $app = $this->extraction->toSite($this->stack->id, 'app', ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker'], $yaml);
+
+    expect(app(ComposeSites::class)->stackNetworks($app->id, $this->server->id))->toBe([
+        ['name' => 'shared', 'aliases' => ['app']],
+        ['name' => $this->stack->slug.'_default', 'aliases' => ['app'], 'compose' => ['project' => $this->stack->slug, 'network' => 'default']],
+    ]);
 });
 
 it('warns when a split-out service runs natively and can no longer reach the stack services it uses', function () {

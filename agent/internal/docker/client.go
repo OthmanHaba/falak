@@ -615,7 +615,7 @@ func (c *Client) NetworkDisconnect(ctx context.Context, network, container strin
 
 // NetworkCreate creates a bridge network with labels (a 409 "already exists" is not an error).
 func (c *Client) NetworkCreate(ctx context.Context, name string, labels map[string]string) error {
-	body := map[string]any{"Name": name, "Driver": "bridge", "Labels": labels}
+	body := map[string]any{"Name": name, "Driver": "bridge", "Labels": labels, "CheckDuplicate": true}
 	_, err := c.do(ctx, http.MethodPost, "/networks/create", nil, body, nil)
 	var ae *APIError
 	if errors.As(err, &ae) && ae.Status == http.StatusConflict {

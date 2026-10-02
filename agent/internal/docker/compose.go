@@ -56,6 +56,9 @@ type ComposeUpPayload struct {
 	WaitTimeoutS   int               `json:"wait_timeout_s,omitempty"`
 	ProjectEnvFile string            `json:"project_env_file,omitempty"`
 	RegistryAuth   *Auth             `json:"registry_auth,omitempty"`
+	// Services starts only these (and what they depend on; feature compose.up.services): a stack's bootstrap pass
+	// for the services its split-out sites use, before those sites and then the full stack deploy.
+	Services []string `json:"services,omitempty"`
 }
 
 type ComposePullPayload struct {
@@ -301,6 +304,11 @@ func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands
 	if p.WaitTimeoutS < 0 || p.WaitTimeoutS > 3600 {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("wait_timeout_s out of range")}
 	}
+	for _, sv := range p.Services {
+		if !serviceNameRe.MatchString(sv) {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid service %q", sv)}
+		}
+	}
 	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile, p.Assets)
 	if err != nil {
 		return nil, err
@@ -314,6 +322,9 @@ func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands
 		if p.WaitTimeoutS > 0 {
 			args = append(args, "--wait-timeout", strconv.Itoa(p.WaitTimeoutS))
 		}
+	}
+	if len(p.Services) > 0 {
+		args = append(append(args, "--"), p.Services...)
 	}
 	res, runErr := s.compose(ctx, p.Directory, p.Env, p.RegistryAuth, args, st)
 	out := ComposeUpResult{ExitCode: res.ExitCode}

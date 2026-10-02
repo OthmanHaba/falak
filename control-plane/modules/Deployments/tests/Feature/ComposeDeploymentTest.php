@@ -3,12 +3,14 @@
 use Illuminate\Support\Facades\Event;
 use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
+use Kiln\Deployments\Application\Listeners\DeploySplitSitesFirst;
 use Kiln\Deployments\Application\Orchestration\StepPayloads;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\ReleaseStatus;
 use Kiln\Deployments\Domain\Enums\Strategy;
 use Kiln\Deployments\Domain\Enums\Trigger;
 use Kiln\Deployments\Domain\Models\Deployment;
+use Kiln\Deployments\Domain\Models\OutputLine;
 use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Deployments\Domain\Models\SiteSettings;
 use Kiln\Deployments\Events\DeploymentFailed;
@@ -19,6 +21,7 @@ use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\Data\ComposeRewrites;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Contracts\SiteFactory;
 use Kiln\Sites\Domain\Models\ComposeVersion;
 use Kiln\Sites\Domain\Models\Site;
 use Symfony\Component\Yaml\Yaml;
@@ -270,8 +273,201 @@ it('waits for a split-out service\'s own site before deploying the stack without
     deploy_run_all($world->agents);
 
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
-        ->and($deployment->error)->toContain("api now runs as its own Kiln site, which hasn't been deployed yet")
+        ->and($deployment->error)->toContain("its own Kiln site(s) that aren't live yet")
+        ->and($deployment->setting('awaits_sites'))->toBe([$split])
         ->and($world->agents->dispatched('docker.compose.up'))->toBe([]);
+});
+
+it('deploys a service split out at the stack\'s creation first, then the stack, without manual steps', function () {
+    $world = compose_world(site: ['compose_source' => 'inline', 'repository' => null, 'source_connection_id' => null]);
+    ComposeVersion::query()->create(['site_id' => $world->site->id, 'version' => 1, 'content' => "services:\n  app:\n    image: nginx:1.27\n  api:\n    image: ghcr.io/acme/api:1\n", 'created_at' => now()]);
+    $split = app(SiteFactory::class)->create($world->site->organization_id, null, [
+        'name' => 'shop-api', 'framework' => 'docker', 'runtime' => 'docker', 'docker_image' => 'ghcr.io/acme/api:1', 'container_port' => 3000,
+        'server_ids' => [$world->servers[0]->id], 'test_domain_enabled' => false,
+    ])->site;
+    Site::query()->whereKey($world->site->id)->update(['compose_services' => json_encode(['api' => ['mode' => 'site', 'site_id' => $split->id]])]);
+
+    $first = compose_deploy($world);
+    deploy_run_all($world->agents);
+
+    $stack = Deployment::query()->where('site_id', $world->site->id)->orderBy('number')->get();
+    $api = Deployment::query()->where('site_id', $split->id)->get();
+
+    // The stack stops for the site, the site deploys, the stack follows once.
+    expect($first->refresh()->status)->toBe(DeploymentStatus::Failed)
+        ->and($first->error)->toContain('Deploying shop-api first; the stack follows when it\'s live.')
+        ->and($api)->toHaveCount(1)
+        ->and($api[0]->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($stack)->toHaveCount(2)
+        ->and($stack[1]->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($stack[1]->setting('awaits_site'))->toBeNull();
+
+    // Another deploy of the site doesn't redeploy the stack again.
+    app(TriggerDeployment::class)(app(SiteDirectory::class)->find($split->id), Trigger::Manual);
+    deploy_run_all($world->agents);
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2);
+
+    // The stop handled again (a retried job) finds the site live: no second deploy of it, and the stack already moved on.
+    $siteDeploys = Deployment::query()->where('site_id', $split->id)->count();
+    app(DeploySplitSitesFirst::class)->onStackFailed(new DeploymentFailed($first->id, $first->organization_id, $first->site_id, 'shop', $first->number, 'manual', 'fetch', (string) $first->error, $first->commit, false));
+    deploy_run_all($world->agents);
+    expect(Deployment::query()->where('site_id', $split->id)->count())->toBe($siteDeploys)
+        ->and(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2);
+});
+
+const SPLIT_STACK = "services:\n  app:\n    image: nginx:1.27\n    depends_on: [api]\n  api:\n    image: ghcr.io/acme/api:1\n    depends_on: [postgres, redis]\n  postgres:\n    image: postgres:17\n  redis:\n    image: redis:7\n";
+
+/**
+ * A stack with `api` split out into its own Docker site that uses the stack's postgres and redis.
+ *
+ * @return array{0: DeployWorld, 1: SiteData}
+ */
+function split_stack_world(bool $bootstrapCapable = true): array
+{
+    $world = compose_world(site: ['compose_source' => 'inline', 'repository' => null, 'source_connection_id' => null]);
+    ComposeVersion::query()->create(['site_id' => $world->site->id, 'version' => 1, 'content' => SPLIT_STACK, 'created_at' => now()]);
+    $split = app(SiteFactory::class)->create($world->site->organization_id, null, [
+        'name' => 'shop-api', 'framework' => 'docker', 'runtime' => 'docker', 'docker_image' => 'ghcr.io/acme/api:1', 'container_port' => 3000,
+        'server_ids' => [$world->servers[0]->id], 'test_domain_enabled' => false,
+    ])->site;
+    Site::query()->whereKey($world->site->id)->update(['compose_services' => json_encode(['api' => ['mode' => 'site', 'site_id' => $split->id, 'uses' => ['postgres', 'redis']]])]);
+
+    Agent::factory()->create(['server_id' => $world->servers[0]->id, 'organization_id' => $world->site->organization_id,
+        'facts' => ['features' => $bootstrapCapable ? ['compose.up.services', 'docker.networks', 'docker.networks.create'] : ['docker.networks']]]);
+
+    return [$world, $split];
+}
+
+it('bootstraps a new stack with the services its split-out site uses, deploys the site, then the full stack', function () {
+    [$world, $split] = split_stack_world();
+
+    $first = compose_deploy($world);
+    deploy_run_all($world->agents);
+
+    $stack = Deployment::query()->where('site_id', $world->site->id)->orderBy('number')->get();
+    $ups = array_map(fn (array $c) => $c['payload'], $world->agents->dispatched('docker.compose.up'));
+
+    // 1. Bootstrap: only postgres and redis (and what compose pulls in), nothing removed, no edge check.
+    expect($first->refresh()->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($first->setting('bootstrap'))->toBe(['postgres', 'redis'])
+        ->and($first->setting('awaits_sites'))->toBe([$split->id])
+        ->and($ups[0]['services'])->toBe(['postgres', 'redis'])
+        ->and($ups[0]['remove_orphans'])->toBeFalse()
+        ->and(OutputLine::query()->where('deployment_id', $first->id)->pluck('data')->implode(''))->toContain('Bootstrap: started postgres, redis for shop-api; the full stack follows once shop-api is live.')
+        // 2. The split-out site deployed.
+        ->and(Deployment::query()->where('site_id', $split->id)->value('status'))->toBe(DeploymentStatus::Succeeded)
+        // 3. The full stack: every service, orphans removed, a normal deployment.
+        ->and($stack)->toHaveCount(2)
+        ->and($stack[1]->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($stack[1]->setting('bootstrap'))->toBeNull()
+        ->and(end($ups))->not->toHaveKey('services')
+        ->and(end($ups)['remove_orphans'])->toBeTrue()
+        ->and(Release::current($world->site->id)->id)->toBe($stack[1]->release_id);
+
+    // The panel shows the bootstrap pass as partial.
+    $rows = collect($this->getJson("/api/v1/sites/{$world->site->id}/deployments")->assertOk()->json('data'))->keyBy('id');
+    expect($rows[$first->id]['partial'])->toBe(['services' => ['postgres', 'redis'], 'awaits_sites' => [$split->id]])
+        ->and($rows[$stack[1]->id]['partial'])->toBeNull();
+});
+
+it('deploys the split-out site first when the stack already runs, or its agents can\'t start a subset', function (bool $live) {
+    [$world, $split] = split_stack_world(bootstrapCapable: $live);
+
+    if ($live) {
+        // The stack ran before api was split out.
+        Site::query()->whereKey($world->site->id)->update(['compose_services' => null]);
+        $old = compose_deploy($world);
+        deploy_run_all($world->agents);
+        expect($old->refresh()->status)->toBe(DeploymentStatus::Succeeded);
+        Site::query()->whereKey($world->site->id)->update(['compose_services' => json_encode(['api' => ['mode' => 'site', 'site_id' => $split->id, 'uses' => ['postgres', 'redis']]])]);
+    }
+
+    $stop = compose_deploy($world);
+    deploy_run_all($world->agents);
+
+    $stack = Deployment::query()->where('site_id', $world->site->id)->orderByDesc('number')->get();
+    expect($stop->refresh()->status)->toBe(DeploymentStatus::Failed)
+        ->and($stop->error)->toContain('Deploying shop-api first; the stack follows when it\'s live.')
+        ->and($stop->setting('bootstrap'))->toBeNull()
+        ->and(Deployment::query()->where('site_id', $split->id)->value('status'))->toBe(DeploymentStatus::Succeeded)
+        ->and($stack[0]->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($stack[0]->id)->not->toBe($stop->id);
+})->with(['stack already live' => [true], 'agent without compose.up.services' => [false]]);
+
+it('deploys the full stack once, after all of its split-out sites are live', function () {
+    [$world, $api] = split_stack_world();
+    $worker = app(SiteFactory::class)->create($world->site->organization_id, null, [
+        'name' => 'shop-worker', 'framework' => 'docker', 'runtime' => 'docker', 'docker_image' => 'ghcr.io/acme/worker:1', 'container_port' => 3000,
+        'server_ids' => [$world->servers[0]->id], 'test_domain_enabled' => false,
+    ])->site;
+    Site::query()->whereKey($world->site->id)->update(['compose_services' => json_encode([
+        'api' => ['mode' => 'site', 'site_id' => $api->id, 'uses' => ['postgres', 'redis']],
+        'worker' => ['mode' => 'site', 'site_id' => $worker->id, 'uses' => ['redis']],
+    ])]);
+
+    $first = compose_deploy($world);
+    deploy_run_all($world->agents);
+
+    $stack = Deployment::query()->where('site_id', $world->site->id)->orderBy('number')->get();
+    expect($first->refresh()->setting('bootstrap'))->toBe(['postgres', 'redis'])
+        ->and($first->setting('awaits_sites'))->toBe([$api->id, $worker->id])
+        ->and(Deployment::query()->where('site_id', $api->id)->value('status'))->toBe(DeploymentStatus::Succeeded)
+        ->and(Deployment::query()->where('site_id', $worker->id)->value('status'))->toBe(DeploymentStatus::Succeeded)
+        ->and($stack)->toHaveCount(2)
+        ->and($stack[1]->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($stack[1]->setting('bootstrap'))->toBeNull();
+});
+
+it('leaves a bootstrapped stack as it is when its split-out site fails to deploy', function () {
+    [$world, $split] = split_stack_world();
+
+    $first = compose_deploy($world);
+    // Bootstrap, then the site's swap fails its health check (it can't run without something we didn't start).
+    for ($i = 0; $i < 50 && deploy_pending($world->agents, 'deploy.container.swap') === [] && deploy_complete($world->agents) > 0; $i++) {
+    }
+    foreach (deploy_pending($world->agents, 'deploy.container.swap') as $swap) {
+        $world->agents->fail($swap['handle'], 'health check /healthz on :3001 did not return 200 within 30s');
+    }
+    deploy_run_all($world->agents);
+
+    expect($first->refresh()->status)->toBe(DeploymentStatus::Succeeded)
+        ->and(Deployment::query()->where('site_id', $split->id)->value('status'))->toBe(DeploymentStatus::Failed)
+        ->and(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(1);
+});
+
+it('follows a stack up only after a recent stop for its site, and never over a newer deployment', function () {
+    $world = compose_world(site: ['compose_source' => 'inline', 'repository' => null, 'source_connection_id' => null]);
+    ComposeVersion::query()->create(['site_id' => $world->site->id, 'version' => 1, 'content' => "services:\n  app:\n    image: nginx:1.27\n  api:\n    image: ghcr.io/acme/api:1\n", 'created_at' => now()]);
+    $split = app(SiteFactory::class)->create($world->site->organization_id, null, [
+        'name' => 'shop-api', 'framework' => 'docker', 'runtime' => 'docker', 'docker_image' => 'ghcr.io/acme/api:1', 'container_port' => 3000,
+        'server_ids' => [$world->servers[0]->id], 'test_domain_enabled' => false,
+    ])->site;
+    Site::query()->whereKey($world->site->id)->update(['compose_services' => json_encode(['api' => ['mode' => 'site', 'site_id' => $split->id]])]);
+    $stop = fn (array $attributes) => Deployment::query()->create([
+        'organization_id' => $world->site->organization_id, 'site_id' => $world->site->id, 'site_slug' => $world->site->slug,
+        'number' => (int) Deployment::query()->where('site_id', $world->site->id)->max('number') + 1, 'trigger' => Trigger::Manual,
+        'status' => DeploymentStatus::Failed, 'settings' => ['awaits_site' => $split->id], 'error' => 'waits', ...$attributes,
+    ]);
+    $deploySite = function () use ($world, $split) {
+        app(TriggerDeployment::class)(app(SiteDirectory::class)->find($split->id), Trigger::Manual);
+        deploy_run_all($world->agents);
+    };
+
+    // A stop older than a day is not followed up.
+    $stop(['created_at' => now()->subDays(2), 'finished_at' => now()->subDays(2)]);
+    $deploySite();
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(1);
+
+    // A recent stop followed by another stack deployment (a push) is not followed up: only the latest one counts.
+    $stop(['finished_at' => now()]);
+    $stop(['status' => DeploymentStatus::Succeeded, 'settings' => [], 'finished_at' => now()]);
+    $deploySite();
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(3);
+
+    // A recent stop as the latest deployment is followed up once.
+    $stop(['finished_at' => now()]);
+    $deploySite();
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(5);
 });
 
 it('checks every public service through the edge', function () {

@@ -56,6 +56,77 @@ final class ComposeNetworks
     }
 
     /**
+     * The networks of a service that an agent may create for its compose project (labelled as the project's, so the
+     * stack's first `up` adopts them), by real name => network key: a service split out of the stack before its first
+     * deploy can then start first. Only plain project networks qualify — no definition, or only a `name:` (Compose
+     * still creates and labels those). Compose v2 reuses a labelled network without comparing its configuration, so
+     * one with a driver, driver options, IPAM, `internal`, IPv6, `attachable` or labels must come from Compose itself
+     * ({@see waited()}); `external` networks are never the project's. Reserved names ({@see reserved()}) never qualify.
+     *
+     * @param  array<string, mixed>  $document
+     * @param  array<string, string>  $variables
+     * @return array<string, string>
+     */
+    public static function owned(array $document, string $project, string $service, array $variables = []): array
+    {
+        $plain = array_filter(self::projectNetworks($document, $project, $service, $variables), fn (array $network) => $network['plain']);
+
+        return array_map(fn (array $network) => $network['key'], $plain);
+    }
+
+    /**
+     * The project networks of a service an agent can't create (configured, see {@see owned()}): a split-out site
+     * joining them waits for the stack's first deploy.
+     *
+     * @param  array<string, mixed>  $document
+     * @param  array<string, string>  $variables
+     * @return list<string>
+     */
+    public static function waited(array $document, string $project, string $service, array $variables = []): array
+    {
+        return array_keys(array_filter(self::projectNetworks($document, $project, $service, $variables), fn (array $network) => ! $network['plain']));
+    }
+
+    /** Names an agent never creates: Docker's own networks and names in Kiln's namespace. */
+    public static function reserved(string $name): bool
+    {
+        return in_array(strtolower($name), ['bridge', 'host', 'none', 'default'], true) || str_starts_with(strtolower($name), 'kiln');
+    }
+
+    /**
+     * @param  array<string, mixed>  $document
+     * @param  array<string, string>  $variables
+     * @return array<string, array{key: string, plain: bool}> real name => key, creatable
+     */
+    private static function projectNetworks(array $document, string $project, string $service, array $variables): array
+    {
+        $definition = $document['services'][$service] ?? null;
+
+        if (! is_array($definition) || isset($definition['network_mode'])) {
+            return [];
+        }
+
+        $declared = is_array($definition['networks'] ?? null) ? $definition['networks'] : [];
+        $keys = array_is_list($declared) ? array_map('strval', array_filter($declared, 'is_scalar')) : array_map('strval', array_keys($declared));
+        $keys = array_values(array_filter($keys, fn (string $key) => $key !== '')) ?: ['default'];
+        $top = is_array($document['networks'] ?? null) ? $document['networks'] : [];
+        $owned = [];
+
+        foreach ($keys as $key) {
+            $config = is_array($top[$key] ?? null) ? $top[$key] : [];
+
+            if (($config['external'] ?? false) !== false) {
+                continue;
+            }
+
+            $real = self::realName($key, $config, $project, $variables);
+            $owned[$real] = ['key' => $key, 'plain' => array_diff(array_keys($config), ['name']) === [] && ! self::reserved($real)];
+        }
+
+        return $owned;
+    }
+
+    /**
      * @param  array<string, mixed>  $document
      * @param  array<string, string>  $variables
      * @return array<string, list<string>> real name => declared aliases
