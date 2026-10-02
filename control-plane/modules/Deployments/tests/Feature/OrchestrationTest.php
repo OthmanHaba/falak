@@ -482,8 +482,10 @@ it('joins a Docker site split out of a compose stack to the stack networks, unde
     $world->builds->succeed();
     deploy_run_all($world->agents);
 
+    // A decision recorded before compose_networks: the stack's default network is its project's (created by an agent
+    // when missing), another one is only joined.
     expect($world->agents->last('deploy.container.swap')['payload']['networks'])->toBe([
-        ['name' => 'shop_default', 'aliases' => ['api']],
+        ['name' => 'shop_default', 'aliases' => ['api'], 'compose' => ['project' => 'shop', 'network' => 'default']],
         ['name' => 'shop-backend', 'aliases' => ['api']],
     ]);
 });

@@ -15,6 +15,7 @@ use Kiln\Sites\Application\Compose\ComposeInterpolation;
 use Kiln\Sites\Application\Compose\ComposeNetworks;
 use Kiln\Sites\Application\Compose\ComposeProject;
 use Kiln\Sites\Application\Compose\ComposeProjectException;
+use Kiln\Sites\Application\Compose\RepoComposeInspection;
 use Kiln\Sites\Application\Compose\ServiceReferences;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
@@ -161,7 +162,8 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             'php_version' => $php ? (string) config('sites.default_php', '8.4') : null,
             'server_ids' => $data->serverIds(),
             'leader_server_id' => $data->leader()?->serverId,
-            'variables' => $this->interpolate(ServiceReferences::environment($definition['environment'] ?? []), $stackVariables) ?: null,
+            // Its env files' keys, then its `environment:` (which wins), as the stack gave them to the service.
+            'variables' => $this->interpolate([...$this->envFileVariables($stack, $definition), ...ServiceReferences::environment($definition['environment'] ?? [])], $stackVariables) ?: null,
         ], fn ($value) => $value !== null);
 
         $placement = $this->projects->projectOf('site', $stack->id);
@@ -333,6 +335,47 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         }
 
         return EloquentComposeSites::dump($project['doc']);
+    }
+
+    /**
+     * The keys of a service's env files (`env_file:` entries of the merged project, relative to the stack's root
+     * directory), read from the repository like the inspection reads them; later files win. Kiln's own `.env` (the
+     * stack's variables) and files Kiln can't read (inline stacks, plain git servers, missing optional files) add
+     * nothing.
+     *
+     * @param  array<string, mixed>  $definition
+     * @return array<string, string>
+     */
+    private function envFileVariables(Site $stack, array $definition): array
+    {
+        $entries = $definition['env_file'] ?? [];
+        $entries = is_array($entries) && array_is_list($entries) ? $entries : [$entries];
+
+        if (($stack->compose_source ?? ComposeSource::Repo) === ComposeSource::Inline || $stack->source_connection_id === null || $stack->repository === null) {
+            return [];
+        }
+
+        $root = trim((string) $stack->root_directory, '/');
+        $prefix = $root === '' || $root === '.' ? '' : ComposeProject::clean($root).'/';
+        $variables = [];
+
+        foreach ($entries as $entry) {
+            $path = (string) preg_replace('#^(\./)+#', '', (string) (is_array($entry) ? ($entry['path'] ?? '') : $entry));
+
+            if ($path === '' || $path === '.env' || str_starts_with($path, '/') || in_array('..', explode('/', $path), true)) {
+                continue;
+            }
+
+            try {
+                $content = $this->sourceControl->file((string) $stack->source_connection_id, (string) $stack->repository, (string) $stack->branch, $prefix.$path);
+            } catch (SourceControlException) {
+                $content = null;
+            }
+
+            $variables = [...$variables, ...RepoComposeInspection::envFile((string) $content)];
+        }
+
+        return array_filter($variables, fn (string $key) => ! str_starts_with($key, 'KILN_'), ARRAY_FILTER_USE_KEY);
     }
 
     /**

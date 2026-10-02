@@ -220,6 +220,36 @@ YAML;
         ->and(app(ComposeSites::class)->stackNetworks($sidecar->id, $this->server->id))->toBe([]);
 });
 
+it('gives a split-out site the keys of its env files from the repository, under the stack root, environment winning', function () {
+    $git = sites_fake_source_control();
+    $connection = $git->addConnection($this->organization->id);
+    $git->files = [
+        'apps/shop/api/defaults.env' => "APP_NAME=shop-api\nPOOL_SIZE=5\nMODE=from-file\nKILN_SITE_ID=nope\n",
+        'apps/shop/api/local.env' => "POOL_SIZE=10\n",
+        'apps/shop/.env' => "SECRET=never\n",
+    ];
+    $this->stack->forceFill(['source_connection_id' => $connection->id, 'root_directory' => 'apps/shop'])->save();
+    app()->forgetInstance(ComposeServiceExtraction::class);
+    $this->extraction = app(ComposeServiceExtraction::class); // with the fake repository
+    $yaml = <<<'YAML'
+services:
+  app:
+    image: api
+    env_file: [./api/defaults.env, { path: ./api/local.env, required: false }, ./api/missing.env, .env]
+    environment: { MODE: '${MODE:-production}' }
+YAML;
+
+    $site = $this->extraction->toSite($this->stack->id, 'app', ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker'], $yaml);
+
+    // Later env files win, `environment:` wins over them, KILN_* keys and Kiln's own .env are left out (PORT is the
+    // Docker site's own).
+    expect(Site::query()->find($site->id)->environmentVersions()->first()->variables)->toMatchArray([
+        'APP_NAME' => 'shop-api',
+        'POOL_SIZE' => '10',
+        'MODE' => 'production',
+    ])->not->toHaveKeys(['KILN_SITE_ID', 'SECRET']);
+});
+
 it('never asks agents to create an external network a split-out service joins', function () {
     $yaml = <<<'YAML'
 services:
