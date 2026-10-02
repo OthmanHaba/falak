@@ -176,12 +176,15 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             throw $e;
         }
 
+        $networks = ComposeNetworks::check(ComposeNetworks::of($document, $stack->slug, $service));
         $this->record($stack, $service, [
             'mode' => 'site',
             'site_id' => $created->site->id,
             'rewrites' => ServiceReferences::find($document, $service, 'site', $stackVariables),
             // A Docker site joins these (under the service's name) on the stack's servers: see ComposeSites::stackNetworks().
-            'networks' => ComposeNetworks::of($document, $stack->slug, $service),
+            // Ones the agent can't join (names, more than it takes) are left out here and reported once.
+            'networks' => $networks['networks'],
+            ...($networks['skipped'] !== [] ? ['skipped_networks' => $networks['skipped']] : []),
             'uses' => ServiceReferences::uses($document, $service),
         ]);
 

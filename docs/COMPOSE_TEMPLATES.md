@@ -134,7 +134,9 @@ stack's public services.
   then fails the deploy with "deploy the compose stack first". A **native** site (Laravel, Node.js on the host), or a
   server without the stack, only reaches the stack's public services: the services table and extraction warn
   (`uses` in the inspect rows: `depends_on` plus hosts in its environment). Without the stack the site keeps its own
-  network only.
+  network only. A container joins at most 8 networks with Docker-safe names (`[a-zA-Z0-9][a-zA-Z0-9_.-]*`): others
+  are left out at extraction with a warning (`compose_services[service].skipped_networks`) instead of failing every
+  deploy. The legacy `external: {name: x}` form names the network x.
 
 ---
 

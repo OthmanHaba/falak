@@ -4,6 +4,7 @@ namespace Kiln\Sites\Infrastructure\Compose;
 
 use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
+use Kiln\Sites\Application\Compose\ComposeNetworks;
 use Kiln\Sites\Application\Compose\KilnAdjustments;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
@@ -68,8 +69,11 @@ final class EloquentComposeSites implements ComposeSites
 
                 // Decisions recorded before the networks were: the stack's default network.
                 $names = array_values(array_filter(array_map('strval', (array) ($decision['networks'] ?? [])))) ?: ["{$stack->slug}_default"];
+                // Decisions recorded before extraction checked them: only what the agent accepts, never a failed deploy.
+                $names = ComposeNetworks::check($names)['networks'];
+                $aliases = ComposeNetworks::validAlias((string) $service) ? [(string) $service] : [];
 
-                return array_map(fn (string $name) => ['name' => $name, 'aliases' => [(string) $service]], $names);
+                return array_map(fn (string $name) => array_filter(['name' => $name, 'aliases' => $aliases]), $names);
             }
         }
 

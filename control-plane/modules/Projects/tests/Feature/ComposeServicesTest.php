@@ -188,6 +188,28 @@ it('warns when a split-out service runs natively and can no longer reach the sta
     expect($warnings)->toBe(['app uses cache, db inside the stack; a native site can only reach public services — pick Docker, or make them public.']);
 });
 
+it('warns once at extraction about stack networks the agent can’t join, and leaves them out of every deploy', function () {
+    $networks = implode("\n", array_map(fn (int $i) => "  n{$i}: {}", range(1, 9)));
+    $list = implode(', ', array_map(fn (int $i) => "n{$i}", range(1, 9)));
+    $yaml = "services:\n  app:\n    image: api\n    networks: [{$list}, odd]\nnetworks:\n{$networks}\n  odd: { name: '-odd' }\n";
+
+    $warnings = app(ComposeSettings::class)->extract(Site::query()->findOrFail($this->stack->id), [
+        ['service' => 'app', 'mode' => 'site', 'site' => ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker']],
+    ], $yaml);
+
+    $slug = $this->stack->slug;
+    expect($warnings)->toBe(["app doesn't join the stack network(s) -odd, {$slug}_n9: a container joins at most 8 networks, named with letters, digits and _ . - (starting with a letter or digit)."]);
+    $decision = $this->stack->refresh()->compose_services['app'];
+    expect($decision['networks'])->toHaveCount(8)
+        ->and($decision['skipped_networks'])->toBe(['-odd', "{$slug}_n9"]);
+
+    // A decision recorded before the check: the deploy payload still only has what the agent accepts.
+    $decision['networks'] = [...$decision['networks'], 'bad name', "{$slug}_n9"];
+    $this->stack->forceFill(['compose_services' => ['app' => $decision]])->save();
+    $joins = app(ComposeSites::class)->stackNetworks((string) $decision['site_id'], $this->server->id);
+    expect(array_column($joins, 'name'))->toBe(array_map(fn (int $i) => "{$slug}_n{$i}", range(1, 8)));
+});
+
 it('refuses build contexts outside the repository', function () {
     $yaml = "services:\n  app:\n    build: ../outside\n";
 

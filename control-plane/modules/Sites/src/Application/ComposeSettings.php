@@ -5,6 +5,7 @@ namespace Kiln\Sites\Application;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Kiln\Identity\Contracts\OrganizationAccess;
+use Kiln\Sites\Application\Compose\ComposeNetworks;
 use Kiln\Sites\Application\Compose\RepoComposeInspection;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSource;
@@ -360,21 +361,31 @@ final class ComposeSettings
      */
     private function reachWarnings(Site $stack, string $service, SiteData $created): array
     {
-        $uses = (array) ($stack->fresh()?->compose_services[$service]['uses'] ?? []);
+        $decision = (array) ($stack->fresh()?->compose_services[$service] ?? []);
+        $uses = (array) ($decision['uses'] ?? []);
+        $warnings = [];
+
+        if (($skipped = array_map('strval', (array) ($decision['skipped_networks'] ?? []))) !== []) {
+            $warnings[] = "{$service} doesn't join the stack network(s) ".implode(', ', $skipped).': a container joins at most '.ComposeNetworks::MAX
+                .' networks, named with letters, digits and _ . - (starting with a letter or digit).';
+        }
+        if (! ComposeNetworks::validAlias($service)) {
+            $warnings[] = "The stack's services can't reach {$service} by its name: a network alias has letters, digits and _ . - only (at most 63).";
+        }
 
         if ($uses === []) {
-            return [];
+            return $warnings;
         }
 
         $list = implode(', ', array_map('strval', $uses));
 
         if ($created->runtime !== SiteRuntime::Docker) {
-            return ["{$service} uses {$list} inside the stack; a native site can only reach public services — pick Docker, or make them public."];
+            return [...$warnings, "{$service} uses {$list} inside the stack; a native site can only reach public services — pick Docker, or make them public."];
         }
 
         $elsewhere = array_diff($created->serverIds(), $stack->serverIds());
 
-        return $elsewhere === [] ? [] : ["{$service} also runs on servers without the stack; there it can only reach the stack's public services ({$list} are internal)."];
+        return $elsewhere === [] ? $warnings : [...$warnings, "{$service} also runs on servers without the stack; there it can only reach the stack's public services ({$list} are internal)."];
     }
 
     public static function source(mixed $value, bool $hasContent): ComposeSource

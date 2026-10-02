@@ -29,6 +29,30 @@ it('names the networks a service is on like Compose does', function () {
         ->and(ComposeNetworks::of($doc, 'shop', 'missing'))->toBe([]);
 });
 
+it('reads the legacy external: {name: x} form', function () {
+    $doc = Yaml::parse(<<<'YAML'
+        services:
+          web: { image: nginx, networks: [proxy, legacy] }
+        networks:
+          proxy: { external: { name: traefik_proxy } }
+          legacy: { external: {} }
+        YAML);
+
+    expect(ComposeNetworks::of($doc, 'shop', 'web'))->toBe(['traefik_proxy', 'legacy']);
+});
+
+it('sorts out networks the agent can’t join: names Docker refuses, and more than it takes', function () {
+    $names = ['shop_default', '-bad', 'has space', ...array_map(fn (int $i) => "net{$i}", range(1, 8))];
+
+    expect(ComposeNetworks::check($names))->toBe([
+        'networks' => ['shop_default', 'net1', 'net2', 'net3', 'net4', 'net5', 'net6', 'net7'],
+        'skipped' => ['-bad', 'has space', 'net8'],
+    ])
+        ->and(ComposeNetworks::check(['a', 'b']))->toBe(['networks' => ['a', 'b'], 'skipped' => []])
+        ->and(ComposeNetworks::validAlias('api'))->toBeTrue()
+        ->and(ComposeNetworks::validAlias(str_repeat('a', 64)))->toBeFalse();
+});
+
 it('finds the stack services a service uses: depends_on and hosts in its environment', function () {
     $doc = Yaml::parse(<<<'YAML'
         services:
