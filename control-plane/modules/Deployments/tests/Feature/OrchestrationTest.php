@@ -425,6 +425,16 @@ it('rolls back to a retained release on all servers', function () {
     Event::assertDispatched(DeploymentRolledBack::class, fn ($e) => ! $e->automatic && $e->toReleaseId === $first->release_id);
 });
 
+it('swaps a container without an edge route when the site has no domain', function () {
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'deploy_script' => '$KILN_FETCH', 'test_domain_enabled' => false]);
+    $deployment = deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($world->agents->last('deploy.container.swap')['payload'])->not->toHaveKey('edge_route_id');
+});
+
 it('keeps N releases and marks older ones pruned', function () {
     $world = deploy_world();
     settings($world, ['keep_releases' => 2]);
@@ -440,6 +450,7 @@ it('keeps N releases and marks older ones pruned', function () {
 
 it('swaps containers blue/green and records the new upstream with Edge', function () {
     $world = deploy_world(servers: 2, site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'deploy_script' => '$KILN_FETCH']);
+    $world->edge->domains[$world->site->id] = ['shop.example.com'];
     $deployment = deploy($world);
     $world->builds->succeed();
     deploy_run_all($world->agents);

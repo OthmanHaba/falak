@@ -1,15 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/deploy.container.swap.schema.json",
-  "title": "deploy.container.swap — blue/green container swap behind Caddy",
+  "title": "deploy.container.swap \u2014 blue/green container swap behind Caddy",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "site",
     "image",
     "container_port",
-    "ports",
-    "edge_route_id"
+    "ports"
   ],
   "properties": {
     "site": {
@@ -123,7 +122,9 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
           "name": {
             "type": "string",

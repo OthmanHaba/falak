@@ -628,7 +628,8 @@ final class StepPayloads
                 'expect_status' => (int) ($health['status'] ?? 200),
                 'timeout_s' => max(1, (int) ($health['timeout_s'] ?? 10) * max(1, (int) ($health['retries'] ?? 3))),
             ],
-            'edge_route_id' => $this->edge->routeId($site->id),
+            // Sites with no domain have no edge route (a split-out compose service only its stack reaches).
+            'edge_route_id' => $site->testDomain !== null || $this->edge->domainsFor($site->id) !== [] ? $this->edge->routeId($site->id) : null,
             // A compose service run as its own site keeps reaching the stack's services (and they it) by name.
             'networks' => $this->compose->stackNetworks($site->id, $serverId) ?: null,
             'labels' => (object) array_filter([

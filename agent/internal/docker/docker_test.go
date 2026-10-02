@@ -632,3 +632,20 @@ func TestContainerSwapJoinsStackNetworks(t *testing.T) {
 		t.Fatalf("%+v", fin)
 	}
 }
+
+// A site without a domain (a split-out compose service only its stack reaches) has no edge route: the swap runs the
+// new container and switches nothing.
+func TestContainerSwapWithoutEdgeRoute(t *testing.T) {
+	s, _, _, up, _ := newSvc(t)
+	ok := 200
+	p := swapPayload(healthServer(t, &ok), healthServer(t, &ok))
+	p.EdgeRouteID = ""
+
+	fin, col := exec1(t, s, "deploy.container.swap", p)
+	if fin.Error != "" {
+		t.Fatal(fin.Error, col.Output(""))
+	}
+	if len(up.calls) != 0 {
+		t.Fatalf("edge switched: %v", up.calls)
+	}
+}

@@ -92,13 +92,13 @@ func (p SwapPayload) specHash() string {
 }
 
 func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (any, error) {
-	if p.Site == "" || p.Image == "" || p.ContainerPort == 0 || p.Ports.Blue == 0 || p.Ports.Green == 0 || p.EdgeRouteID == "" {
-		return nil, &commands.PayloadError{Err: fmt.Errorf("site, image, container_port, ports and edge_route_id are required")}
+	if p.Site == "" || p.Image == "" || p.ContainerPort == 0 || p.Ports.Blue == 0 || p.Ports.Green == 0 {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("site, image, container_port and ports are required")}
 	}
 	if p.Ports.Blue == p.Ports.Green {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("blue and green ports must differ")}
 	}
-	if s.opts.Upstreams == nil {
+	if s.opts.Upstreams == nil && p.EdgeRouteID != "" {
 		return nil, fmt.Errorf("container.swap: no edge upstream setter configured")
 	}
 	h := HealthSpec{Path: "/", ExpectStatus: 200, TimeoutS: 60, IntervalMS: 1000}
@@ -145,7 +145,7 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 	if activeC != nil && activeC.Labels["kiln.swap-hash"] == hash && p.Pull != "always" {
 		up := "127.0.0.1:" + strconv.Itoa(p.port(active))
 		if s.healthy(ctx, p.port(active), h) {
-			if err := s.opts.Upstreams.SetUpstreams(ctx, p.EdgeRouteID, []string{up}); err != nil {
+			if err := s.setEdge(ctx, p.EdgeRouteID, up); err != nil {
 				return nil, err
 			}
 			return SwapResult{Changed: false, ActiveColor: active, ContainerID: activeC.ID, Upstream: up}, nil
@@ -196,10 +196,12 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 		return fail(err)
 	}
 	up := "127.0.0.1:" + strconv.Itoa(p.port(target))
-	if err := s.opts.Upstreams.SetUpstreams(ctx, p.EdgeRouteID, []string{up}); err != nil {
+	if err := s.setEdge(ctx, p.EdgeRouteID, up); err != nil {
 		return fail(fmt.Errorf("switch edge upstream: %w", err))
 	}
-	fmt.Fprintf(st.Stdout(), "edge route %s → %s\n", p.EdgeRouteID, up)
+	if p.EdgeRouteID != "" {
+		fmt.Fprintf(st.Stdout(), "edge route %s → %s\n", p.EdgeRouteID, up)
+	}
 
 	// Drain and retire every other container of this site.
 	if len(running) > 0 && drain > 0 {
@@ -256,4 +258,13 @@ func (s *Service) waitHealthy(ctx context.Context, port int, h HealthSpec, st co
 		case <-time.After(interval):
 		}
 	}
+}
+
+// setEdge points the site's edge route at the new container. Sites without a route (no domain: a compose service split
+// out into its own site that only its stack reaches, over the stack's network) have nothing to switch.
+func (s *Service) setEdge(ctx context.Context, routeID, upstream string) error {
+	if routeID == "" {
+		return nil
+	}
+	return s.opts.Upstreams.SetUpstreams(ctx, routeID, []string{upstream})
 }
