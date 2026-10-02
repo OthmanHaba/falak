@@ -66,6 +66,28 @@ interface SourceControlGateway
     /** Remove the push webhook when no longer needed (best-effort at the provider). */
     public function removeWebhook(string $connectionId, string $repository): void;
 
+    /** Largest file {@see file()} returns. */
+    public const MAX_FILE_BYTES = 1048576;
+
+    /** Most paths {@see tree()} returns. */
+    public const MAX_TREE_PATHS = 2000;
+
+    /**
+     * Content of a file at a ref (branch, tag or commit); null when the path doesn't exist or isn't a file.
+     * Throws {@see Exceptions\NoApi} for git servers without an API and {@see SourceControlException} for files
+     * larger than {@see MAX_FILE_BYTES}.
+     */
+    public function file(string $connectionId, string $repository, string $ref, string $path): ?string;
+
+    /**
+     * Paths of the files at a ref matching a glob (`*` within a segment, `**` across segments; matched against the
+     * whole path, or against the file name when the glob has no `/`), sorted, at most {@see MAX_TREE_PATHS}.
+     * Throws {@see Exceptions\NoApi} for git servers without an API.
+     *
+     * @return list<string>
+     */
+    public function tree(string $connectionId, string $repository, string $ref, string $glob = '*'): array;
+
     /** SSH clone URL for the repository. */
     public function cloneUrl(string $connectionId, string $repository): string;
 

@@ -31,6 +31,8 @@ var Features = []string{
 	// db.user.apply containers (Docker address ranges) and net.firewall.apply container_ports (Docker bridges):
 	// containers on a server reach its localhost database engines.
 	"db.containers",
+	// docker.compose.pull / docker.compose.up assets (repository files a compose project mounts, under repo/).
+	"compose.v2",
 }
 
 var (

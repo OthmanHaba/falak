@@ -1,5 +1,6 @@
+import { ComposeProject, composeProjectPayload, emptyComposeProject, type ComposeProjectValue } from '@/components/compose-project';
 import { domainPayload, DomainPicker, type DomainChoice } from '@/components/domain-picker';
-import { Button, Checkbox, Combobox, Field, IconButton, Input, Select, ServiceIcon, Skeleton, Tag, toast } from '@/components/kiln';
+import { Button, Checkbox, Combobox, Field, IconButton, Input, Segmented, Select, ServiceIcon, Skeleton, Tag, toast } from '@/components/kiln';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, HttpError, requestJson } from '@/lib/http';
 import { createOptionsFor, shellContext, type CreateOption } from '@/lib/registry';
@@ -8,7 +9,7 @@ import { type CanvasService, type SharedData } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
 import { Command } from 'cmdk';
 import { ArrowLeft, Box, ChevronRight, Database, GitBranch, LayoutTemplate, Lock, Rocket, Search, X } from 'lucide-react';
-import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { type ProjectAbilities } from '../types';
 
 /** Sites' GET /sites/create JSON (the create form options). */
@@ -466,6 +467,11 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
     );
     const [name, setName] = useState('');
     const [domain, setDomain] = useState<DomainChoice | null>(null);
+    // The user says the repository is a Docker Compose app (nothing is detected), then points at its compose files.
+    const [appType, setAppType] = useState<'preset' | 'compose'>('preset');
+    const [compose, setCompose] = useState<ComposeProjectValue>(emptyComposeProject);
+    const [composeReady, setComposeReady] = useState(false);
+    const onComposeReady = useCallback((ready: boolean) => setComposeReady(ready), []);
     const frameworkValues = useMemo(() => frameworks.map((item) => item.value), [frameworks]);
 
     useEffect(() => {
@@ -554,18 +560,21 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
             className="grid gap-4 p-4"
             onSubmit={(event) => {
                 event.preventDefault();
-                onSubmit({
+                const common = {
                     kind: 'site',
                     name,
-                    framework,
                     source_connection_id: connectionId,
                     repository,
                     branch,
                     push_to_deploy: true,
                     server_ids: serverIds,
                     leader_server_id: serverIds[0],
-                    domain: domainPayload(domain),
-                });
+                };
+                onSubmit(
+                    appType === 'compose'
+                        ? { ...common, ...composeProjectPayload(compose) }
+                        : { ...common, framework, domain: domainPayload(domain) },
+                );
             }}
         >
             <Field label="Connection">
@@ -617,6 +626,17 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
                             Change
                         </Button>
                     </div>
+                    <Field label="App type">
+                        <Segmented<'preset' | 'compose'>
+                            label="App type"
+                            value={appType}
+                            onValueChange={setAppType}
+                            options={[
+                                { value: 'preset', label: 'One app' },
+                                { value: 'compose', label: 'Docker Compose app' },
+                            ]}
+                        />
+                    </Field>
                     <div className="grid grid-cols-2 gap-3">
                         <Field label="Branch" error={errors.branch}>
                             {branches.length > 0 ? (
@@ -629,26 +649,59 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
                                 <Input value={branch} onChange={(event) => setBranch(event.target.value)} mono />
                             )}
                         </Field>
-                        <Field label="Preset" hint={detected ? 'Detected from the repository' : undefined} error={errors.framework}>
-                            <Select
-                                value={framework}
-                                onValueChange={setFramework}
-                                options={frameworks.map((item) => ({ value: item.value, label: item.label }))}
-                            />
-                        </Field>
+                        {appType === 'preset' && (
+                            <Field label="Preset" hint={detected ? 'Guessed from the repository name' : undefined} error={errors.framework}>
+                                <Select
+                                    value={framework}
+                                    onValueChange={setFramework}
+                                    options={frameworks.map((item) => ({ value: item.value, label: item.label }))}
+                                />
+                            </Field>
+                        )}
                     </div>
                     <Field label="Service name" error={errors.name}>
                         <Input value={name} onChange={(event) => setName(event.target.value)} />
                     </Field>
-                    <ServersField servers={servers} value={serverIds} onChange={setServerIds} error={errors.server_ids} />
-                    <DomainField name={name} serverIds={serverIds} value={domain} onChange={setDomain} error={errors.domain} />
-                    <Errors errors={otherErrors(errors, ['branch', 'framework', 'name', 'server_ids', 'domain'])} />
+                    <ServersField
+                        servers={servers}
+                        value={serverIds}
+                        onChange={setServerIds}
+                        error={errors.server_ids}
+                        requireDocker={appType === 'compose'}
+                    />
+                    {appType === 'compose' ? (
+                        <ComposeProject
+                            connectionId={connectionId}
+                            repository={repository}
+                            branch={branch}
+                            name={name}
+                            serverIds={serverIds}
+                            value={compose}
+                            onChange={setCompose}
+                            errors={errors}
+                            onReadyChange={onComposeReady}
+                        />
+                    ) : (
+                        <DomainField name={name} serverIds={serverIds} value={domain} onChange={setDomain} error={errors.domain} />
+                    )}
+                    <Errors
+                        errors={otherErrors(errors, [
+                            'branch',
+                            'framework',
+                            'name',
+                            'server_ids',
+                            'domain',
+                            ...(appType === 'compose'
+                                ? ['compose_files', 'compose_profiles', 'compose_services', 'public_services', 'variables']
+                                : []),
+                        ])}
+                    />
                     <Button
                         variant="primary"
                         type="submit"
                         icon={<Rocket />}
                         loading={submitting}
-                        disabled={!branch || serverIds.length === 0 || !name}
+                        disabled={!branch || serverIds.length === 0 || !name || (appType === 'compose' && !composeReady)}
                     >
                         Deploy
                     </Button>

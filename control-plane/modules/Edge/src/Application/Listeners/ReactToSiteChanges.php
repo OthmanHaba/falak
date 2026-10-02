@@ -21,7 +21,10 @@ use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Edge\Domain\Models\Upstream;
 use Kiln\Edge\Events\DomainRemoved;
 use Kiln\Processes\Events\OctaneRoutingChanged;
+use Kiln\Sites\Contracts\Data\ComposeConfig;
+use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Events\ComposeServiceExtracted;
+use Kiln\Sites\Events\ComposeServicesUnpublished;
 use Kiln\Sites\Events\SiteCreated;
 use Kiln\Sites\Events\SiteDeleted;
 use Kiln\Sites\Events\SiteTargetsChanged;
@@ -80,6 +83,30 @@ final class ReactToSiteChanges implements ShouldQueue
         $this->changes->siteChanged($event->refId);
         SyncCloudflareDns::site($event->siteId);
         SyncCloudflareDns::site($event->refId);
+    }
+
+    /**
+     * Compose services that are no longer public lose their domains and the rules scoped to them. A service split into
+     * its own site is skipped: {@see extracted()} moves its domains there (the two events may run in either order).
+     */
+    public function unpublished(ComposeServicesUnpublished $event): void
+    {
+        $compose = app(SiteDirectory::class)->find($event->siteId)?->compose;
+        $services = array_values(array_filter($event->services, fn (string $service) => $compose?->mode($service) !== ComposeConfig::MODE_SITE));
+        if ($services === []) {
+            return;
+        }
+
+        foreach (Domain::query()->where('site_id', $event->siteId)->whereIn('compose_service', $services)->get() as $domain) {
+            $domain->delete();
+            DomainRemoved::dispatch($domain->id, $domain->site_id, $domain->organization_id, $domain->name);
+        }
+        foreach ([Redirect::class, SecurityRule::class, Header::class, Mount::class] as $model) {
+            $model::query()->where('site_id', $event->siteId)->whereIn('compose_service', $services)->delete();
+        }
+        ServiceSetting::query()->where('site_id', $event->siteId)->whereIn('service', $services)->delete();
+
+        $this->changes->siteChanged($event->siteId);
     }
 
     /** Octane became reachable (proxy to it) or is being switched off (serve directly again) on one server. */

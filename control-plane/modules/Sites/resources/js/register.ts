@@ -1,5 +1,6 @@
 import {
     registerCommands,
+    registerComposeProject,
     registerServiceSettingsSections,
     registerServiceTabs,
     registerSettingsNav,
@@ -16,6 +17,9 @@ const VariablesTab = lazy(() => import('./panel/variables-tab').then((module) =>
 const ServicesTab = lazy(() => import('./panel/compose/services-tab').then((module) => ({ default: module.ServicesTab })));
 
 const SettingsTab = lazy(() => import('./panel/settings-tab').then((module) => ({ default: module.SettingsTab })));
+
+// The Git create flow's "Docker Compose app" (docs/plans/COMPOSE_APPS.md).
+registerComposeProject(lazy(() => import('./panel/compose/compose-project-form').then((module) => ({ default: module.ComposeProjectForm }))));
 
 registerServiceTabs(
     // Docker Compose sites (docs/COMPOSE_TEMPLATES.md §1.6): after Deployments.

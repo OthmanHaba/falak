@@ -12,6 +12,7 @@ use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteFactory;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Events\ComposeServiceExtracted;
+use Kiln\Sites\Events\ComposeServicesUnpublished;
 
 /*
  * Edge for every public service of a compose site (docs/plans/COMPOSE_APPS.md, phase 2), with the real Sites module:
@@ -185,4 +186,14 @@ it('moves a split-out service\'s domains and rules to its new site', function ()
         ->and(Redirect::query()->where('from', '/old')->value('site_id'))->toBe($split->id)
         ->and(ServiceSetting::query()->where('service', 'admin')->exists())->toBeFalse()
         ->and(Domain::query()->where('name', 'stack.example.com')->value('site_id'))->toBe($this->site->id);
+});
+
+it('removes the domains and rules of a service that is no longer public', function () {
+    Header::query()->create(['site_id' => $this->site->id, 'compose_service' => 'admin', 'name' => 'X-Admin', 'value' => '1']);
+
+    event(new ComposeServicesUnpublished($this->site->id, $this->organization->id, ['admin']));
+
+    expect(Domain::query()->where('name', 'admin.example.com')->exists())->toBeFalse()
+        ->and(Header::query()->where('name', 'X-Admin')->exists())->toBeFalse()
+        ->and(Domain::query()->where('name', 'stack.example.com')->exists())->toBeTrue();
 });

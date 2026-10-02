@@ -33,10 +33,22 @@ type ComposeFile struct {
 	Content string `json:"content"`
 }
 
+// ComposeAsset is a repository file the project mounts or reads (bind-mount source, env_file, configs/secrets
+// `file:`), written to <directory>/repo/<path>; the rendered compose file points there.
+type ComposeAsset struct {
+	Path    string `json:"path"`
+	Content string `json:"content"` // base64
+	Mode    int    `json:"mode,omitempty"`
+}
+
+// AssetsDir is the directory of a compose release holding its repository files.
+const AssetsDir = "repo"
+
 type ComposeUpPayload struct {
 	Project        string            `json:"project"`
 	Directory      string            `json:"directory"`
 	Files          []ComposeFile     `json:"files,omitempty"`
+	Assets         []ComposeAsset    `json:"assets,omitempty"`
 	Env            map[string]string `json:"env,omitempty"`
 	Pull           string            `json:"pull,omitempty"`
 	RemoveOrphans  *bool             `json:"remove_orphans,omitempty"`
@@ -50,6 +62,7 @@ type ComposePullPayload struct {
 	Project        string            `json:"project"`
 	Directory      string            `json:"directory"`
 	Files          []ComposeFile     `json:"files,omitempty"`
+	Assets         []ComposeAsset    `json:"assets,omitempty"`
 	Env            map[string]string `json:"env,omitempty"`
 	ProjectEnvFile string            `json:"project_env_file,omitempty"`
 	RegistryAuth   *Auth             `json:"registry_auth,omitempty"`
@@ -125,9 +138,22 @@ var serviceNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
 
 func validFileName(n string) bool { return fileNameRe.MatchString(n) && n != "." && n != ".." }
 
+// validAssetPath: a relative path of plain segments (no "..", ".", empty or hidden-traversal tricks).
+func validAssetPath(p string) bool {
+	if p == "" || len(p) > 512 || strings.HasPrefix(p, "/") {
+		return false
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if !validFileName(seg) {
+			return false
+		}
+	}
+	return true
+}
+
 // prepare validates the project, writes the files and returns the global compose args
 // (-p, --env-file, -f …).
-func (s *Service) prepare(project, dir string, files []ComposeFile, envFile string) ([]string, error) {
+func (s *Service) prepare(project, dir string, files []ComposeFile, envFile string, assets []ComposeAsset) ([]string, error) {
 	if !projectRe.MatchString(project) || !path.IsAbs(dir) {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid project or directory")}
 	}
@@ -139,8 +165,31 @@ func (s *Service) prepare(project, dir string, files []ComposeFile, envFile stri
 			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid file name %q", f.Name)}
 		}
 	}
+	decoded := make([][]byte, len(assets))
+	for i, a := range assets {
+		if !validAssetPath(a.Path) {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid asset path %q", a.Path)}
+		}
+		if a.Mode != 0 && a.Mode != 0o644 && a.Mode != 0o755 {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("asset %s: mode must be 0644 or 0755", a.Path)}
+		}
+		data, err := base64.StdEncoding.DecodeString(a.Content)
+		if err != nil {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("asset %s: content is not base64", a.Path)}
+		}
+		decoded[i] = data
+	}
 	if err := s.opts.FS.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
+	}
+	for i, a := range assets {
+		mode := os.FileMode(0o644)
+		if a.Mode == 0o755 {
+			mode = 0o755
+		}
+		if _, err := s.opts.FS.WriteFile(path.Join(dir, AssetsDir, a.Path), decoded[i], mode); err != nil {
+			return nil, fmt.Errorf("asset %s: %w", a.Path, err)
+		}
 	}
 	args := []string{"compose", "-p", project}
 	if envFile != "" {
@@ -173,7 +222,7 @@ func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands
 	if p.WaitTimeoutS < 0 || p.WaitTimeoutS > 3600 {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("wait_timeout_s out of range")}
 	}
-	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile)
+	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile, p.Assets)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +260,7 @@ func (s *Service) composePull(ctx context.Context, p ComposePullPayload, st comm
 			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid service %q", sv)}
 		}
 	}
-	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile)
+	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile, p.Assets)
 	if err != nil {
 		return nil, err
 	}

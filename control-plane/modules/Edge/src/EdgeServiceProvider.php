@@ -52,6 +52,7 @@ use Kiln\Servers\Events\ServerDeleted;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Events\ComposeServiceExtracted;
+use Kiln\Sites\Events\ComposeServicesUnpublished;
 use Kiln\Sites\Events\SiteCreated;
 use Kiln\Sites\Events\SiteDeleted;
 use Kiln\Sites\Events\SiteTargetsChanged;
@@ -122,6 +123,7 @@ class EdgeServiceProvider extends ModuleServiceProvider
         Event::listen(SiteTargetsChanged::class, [ReactToSiteChanges::class, 'targetsChanged']);
         Event::listen(SiteDeleted::class, [ReactToSiteChanges::class, 'deleted']);
         Event::listen(ComposeServiceExtracted::class, [ReactToSiteChanges::class, 'extracted']);
+        Event::listen(ComposeServicesUnpublished::class, [ReactToSiteChanges::class, 'unpublished']);
         Event::listen(OctaneRoutingChanged::class, [ReactToSiteChanges::class, 'octaneRoutingChanged']);
         Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
         // Cloudflare DNS follows the domains (records Kiln created only).

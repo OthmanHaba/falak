@@ -42,9 +42,12 @@ use Kiln\Sites\Contracts\TargetRole;
  * @property ?string $docker_image
  * @property ?string $dockerfile
  * @property ?string $root_directory repository subfolder the app lives in (null = the repository root)
- * @property ?array<string, array<string, mixed>> $compose_services per-service decisions (docs/plans/COMPOSE_APPS.md)
  * @property ?string $compose_file
  * @property ?ComposeSource $compose_source
+ * @property ?list<string> $compose_files
+ * @property ?list<string> $compose_profiles
+ * @property ?array<string, array{mode: string, database_id?: string, site_id?: string}> $compose_services
+ * @property ?array{keep_binds?: list<string>} $compose_adjustments
  * @property ?list<array{service: string, port: int, domain?: ?string, host_port?: ?int, health_check_path?: ?string}> $public_services
  * @property ?array{slug: string, version: string, source: string} $template
  * @property ?string $health_check_path
@@ -80,9 +83,12 @@ class Site extends Model
             'container_port' => 'integer',
             'test_domain_enabled' => 'boolean',
             'compose_source' => ComposeSource::class,
+            'compose_files' => 'array',
+            'compose_profiles' => 'array',
+            'compose_services' => 'array',
+            'compose_adjustments' => 'array',
             'public_services' => 'array',
             'template' => 'array',
-            'compose_services' => 'array',
         ];
     }
 
@@ -217,13 +223,31 @@ class Site extends Model
         $source = $this->compose_source ?? ComposeSource::Repo;
         $version = $source === ComposeSource::Inline ? ComposeVersion::query()->where('site_id', $this->id)->max('version') : null;
 
+        $files = $source === ComposeSource::Repo ? $this->composeFiles() : [];
+
         return new ComposeConfig(
             source: $source,
-            file: $source === ComposeSource::Repo ? $this->compose_file : null,
+            file: $files[0] ?? null,
             publicServices: $this->publicServices(),
             template: is_array($this->template) ? $this->template : null,
             version: $version !== null ? (int) $version : null,
+            files: $files,
+            profiles: array_values(array_map('strval', (array) $this->compose_profiles)),
+            services: array_filter((array) $this->compose_services, fn ($d) => is_array($d) && isset($d['mode'])),
+            adjustments: is_array($this->compose_adjustments) ? $this->compose_adjustments : [],
         );
+    }
+
+    /**
+     * Repo source compose files in -f order (compose_files, else the single compose_file; empty = default name).
+     *
+     * @return list<string>
+     */
+    public function composeFiles(): array
+    {
+        $files = array_values(array_filter(array_map('strval', (array) $this->compose_files), fn (string $f) => $f !== ''));
+
+        return $files !== [] ? $files : (is_string($this->compose_file) && $this->compose_file !== '' ? [$this->compose_file] : []);
     }
 
     public function leaderTarget(): ?SiteTarget

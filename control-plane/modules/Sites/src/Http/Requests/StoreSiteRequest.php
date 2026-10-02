@@ -10,6 +10,7 @@ use Kiln\Projects\Contracts\ProjectDirectory;
 use Kiln\Sites\Application\Actions\CreateSite;
 use Kiln\Sites\Contracts\BuildMode;
 use Kiln\Sites\Contracts\ComposeSource;
+use Kiln\Sites\Contracts\Data\ComposeConfig;
 use Kiln\Sites\Contracts\Data\DomainChoice;
 use Kiln\Sites\Contracts\Data\SitePlacement;
 use Kiln\Sites\Contracts\Framework;
@@ -74,10 +75,25 @@ final class StoreSiteRequest extends FormRequest
             'compose_content' => ['nullable', 'string', 'max:'.(int) config('sites.compose.max_bytes', 262144)],
             'public_services' => ['nullable', 'array', 'max:20'],
             'public_services.*' => ['array:service,port,domain,health_check_path'],
+            'public_services.*.health_check_path' => ['nullable', 'string', 'max:255', 'regex:#^/[^\s]*$#'],
             'public_services.*.service' => ['required', 'string', 'max:63'],
             'public_services.*.port' => ['required', 'integer', 'between:1,65535'],
             'public_services.*.domain' => ['nullable', DomainChoice::rule()],
-            'public_services.*.health_check_path' => ['nullable', 'string', 'max:255', 'regex:#^/\S*$#'],
+            // Repository sources (docs/plans/COMPOSE_APPS.md): compose files in -f order, active profiles, a
+            // decision per service and the user's choices about Kiln's adjustments.
+            'compose_files' => ['nullable', 'array', 'max:10'],
+            'compose_files.*' => ['string', 'max:255', 'distinct', 'regex:#^[A-Za-z0-9_.\-/]+$#', 'not_regex:#(^/|(^|/)\.\.(/|$))#'],
+            'compose_profiles' => ['nullable', 'array', 'max:20'],
+            'compose_profiles.*' => ['string', 'max:63', 'distinct', 'regex:/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/'],
+            'compose_services' => ['nullable', 'array', 'max:100'],
+            'compose_services.*' => ['array:mode,engine,database_id,site'],
+            'compose_services.*.mode' => ['required', Rule::in([ComposeConfig::MODE_KEEP, ComposeConfig::MODE_DATABASE, ComposeConfig::MODE_SITE])],
+            'compose_services.*.engine' => ['nullable', Rule::in(['postgresql', 'mysql', 'mariadb'])],
+            'compose_services.*.database_id' => ['nullable', 'string', 'size:26'],
+            'compose_services.*.site' => ['nullable', 'array'],
+            'compose_adjustments' => ['nullable', 'array:keep_binds'],
+            'compose_adjustments.keep_binds' => ['nullable', 'array', 'max:100'],
+            'compose_adjustments.keep_binds.*' => ['string', 'max:300'],
         ];
     }
 

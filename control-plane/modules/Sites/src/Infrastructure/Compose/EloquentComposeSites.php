@@ -3,6 +3,8 @@
 namespace Kiln\Sites\Infrastructure\Compose;
 
 use DateTimeImmutable;
+use Kiln\Sites\Application\Compose\KilnAdjustments;
+use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\Data\ComposeServiceState;
 use Kiln\Sites\Contracts\Data\ComposeVersionData;
@@ -62,12 +64,36 @@ final class EloquentComposeSites implements ComposeSites
         return OrganizationSettings::for($organizationId)->allow_privileged_compose;
     }
 
-    public function render(string $siteId, string $yaml, array $images, string $releaseId): RenderedCompose
+    public function render(string $siteId, string $yaml, array $images, string $releaseId, ?array $repoFiles = null): RenderedCompose
     {
         $site = Site::query()->find(strtolower($siteId)) ?? throw new ComposeRenderException('The site no longer exists.');
 
         if ($site->runtime !== SiteRuntime::Compose) {
             throw new ComposeRenderException('The site is not a Docker Compose site.');
+        }
+
+        // Kiln's adjustments (docs/plans/COMPOSE_APPS.md): extracted services out, their variables rewritten and,
+        // for repository projects, mounted repository files pointed at <release>/repo/.
+        $config = $site->composeConfig();
+        $adjustedWarnings = [];
+
+        if ($config !== null && ($repoFiles !== null || $config->extracted() !== [])) {
+            try {
+                $loaded = YamlComposeInspector::load($yaml);
+            } catch (ParseException $e) {
+                throw new ComposeRenderException('Invalid compose file: '.$e->getMessage());
+            }
+
+            if (is_array($loaded)) {
+                $adjusted = KilnAdjustments::apply($loaded, $config, $repoFiles, $this->extraction()->rewrites($site->id), array_map(fn ($p) => $p->service, $site->publicServices()));
+
+                if ($adjusted['errors'] !== []) {
+                    throw new ComposeRenderException(implode(' ', $adjusted['errors']));
+                }
+
+                $yaml = self::dump($adjusted['doc']);
+                $adjustedWarnings = $adjusted['warnings'];
+            }
         }
 
         $summary = $this->inspector->parse($yaml);
@@ -89,7 +115,7 @@ final class EloquentComposeSites implements ComposeSites
 
         $publicServices = $site->publicServices();
         $hostPorts = [];
-        $warnings = $summary->warnings;
+        $warnings = [...$summary->warnings, ...$adjustedWarnings];
 
         foreach ($publicServices as $public) {
             if ($summary->service($public->service) === null) {
@@ -147,6 +173,12 @@ final class EloquentComposeSites implements ComposeSites
         }
 
         return new RenderedCompose(self::dump($doc), array_map('strval', array_keys($doc['services'])), $leader, $hostPorts, $warnings);
+    }
+
+    /** Resolved per call: the extraction implementation may itself use compose sites. */
+    private function extraction(): ComposeServiceExtraction
+    {
+        return app(ComposeServiceExtraction::class);
     }
 
     public function pinDigests(string $yaml, array $digests): string

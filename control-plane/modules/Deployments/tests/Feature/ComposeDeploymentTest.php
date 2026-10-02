@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
+use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
 use Kiln\Deployments\Application\Orchestration\StepPayloads;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
@@ -12,7 +13,10 @@ use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Deployments\Domain\Models\SiteSettings;
 use Kiln\Deployments\Events\DeploymentFailed;
 use Kiln\Deployments\Events\DeploymentRolledBack;
+use Kiln\Fleet\Domain\Models\Agent;
+use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
+use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Domain\Models\ComposeVersion;
 use Symfony\Component\Yaml\Yaml;
@@ -178,6 +182,66 @@ it('rolls back manually to a retained compose release', function () {
     expect($rollback->refresh()->status)->toBe(DeploymentStatus::Succeeded)
         ->and($up['directory'])->toEndWith('/releases/'.strtoupper($first->release_id))
         ->and(Release::current($world->site->id)->id)->toBe($first->release_id);
+});
+
+it('ships the repository files a compose project mounts with each release (agent feature compose.v2)', function () {
+    $world = compose_world();
+    $world->builds->composeContent = "services:\n  app:\n    build: .\n    volumes: [\"./docker/nginx.conf:/etc/nginx/nginx.conf:ro\", \"./data:/data\"]\n";
+    $world->builds->composeAssets = [['path' => 'docker/nginx.conf', 'content' => base64_encode("events {}\n"), 'mode' => 0o644]];
+
+    // An agent that can't write repository files gets a clear error instead of a broken mount.
+    Agent::factory()->create(['server_id' => $world->servers[0]->id, 'organization_id' => $world->site->organization_id, 'facts' => ['features' => []]]);
+    $deployment = compose_deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
+        ->and($deployment->error)->toContain('too old for compose projects that mount repository files');
+
+    Agent::query()->where('server_id', $world->servers[0]->id)->update(['facts' => ['features' => ['compose.v2']]]);
+    $deployment = compose_deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    $pull = $world->agents->last('docker.compose.pull')['payload'];
+    $up = $world->agents->last('docker.compose.up')['payload'];
+    $app = Yaml::parse($up['files'][0]['content'])['services']['app'];
+
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($pull['assets'])->toBe([['path' => 'docker/nginx.conf', 'content' => base64_encode("events {}\n"), 'mode' => 0o644]])
+        ->and($up['assets'])->toBe($pull['assets'])
+        ->and($app['volumes'])->toBe(['./repo/docker/nginx.conf:/etc/nginx/nginx.conf:ro', 'app-data:/data'])
+        ->and(Release::query()->find($deployment->release_id)->compose['assets'])->toHaveCount(1);
+});
+
+it('points stack variables at services moved out of the stack, resolved like other references', function () {
+    $world = compose_world();
+    app()->instance(ComposeServiceExtraction::class, new class implements ComposeServiceExtraction
+    {
+        public function toDatabase(string $siteId, string $service, ?string $databaseId, string $engine, ?string $compose = null): DatabaseData
+        {
+            throw new LogicException('not used');
+        }
+
+        public function toSite(string $siteId, string $service, array $site, ?string $compose = null): SiteData
+        {
+            throw new LogicException('not used');
+        }
+
+        public function rewrites(string $siteId): array
+        {
+            return ['DATABASE_URL' => 'postgres://shop@10.0.0.5:5432/shop'];
+        }
+    });
+
+    $deployment = compose_deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    $env = $world->agents->last('docker.compose.up')['payload']['env'];
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($env['DATABASE_URL'])->toBe('postgres://shop@10.0.0.5:5432/shop')
+        ->and($env['APP_KEY'])->toBe('base64:secret');
 });
 
 it('fails with a clear error when the compose file cannot be rendered', function () {

@@ -39,7 +39,13 @@ export interface ComposeSummary {
 export interface ComposeSettingsData {
     source: 'repo' | 'inline';
     file: string | null;
+    /** Repository sources: compose files in -f order, active profiles, per-service decisions, adjustment choices. */
+    files: string[];
+    profiles: string[];
+    services: Record<string, { mode: 'keep' | 'database' | 'site'; database_id?: string; site_id?: string }>;
+    adjustments: { keep_binds?: string[] };
     repository: string | null;
+    branch: string | null;
     slug: string;
     version: number | null;
     content: string | null;

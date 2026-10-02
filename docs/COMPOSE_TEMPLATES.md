@@ -15,6 +15,21 @@ A site with `runtime = compose` is a Docker Compose project managed by Kiln: dep
 | `repo` | `compose_file` path in the site's git repository (default `compose.yaml`, then `docker-compose.yml`) | Git-backed apps |
 | `inline` | `compose_content` stored in Kiln, **versioned** like environment variables (history + restore) | Templates, pasted stacks |
 
+Repository sources ([plans/COMPOSE_APPS.md](plans/COMPOSE_APPS.md)): `compose_files` (several files merged in `-f`
+order; `compose_file` is the first), `compose_profiles` (services of other profiles don't run), `include` and
+`extends` (files from the repository only). kiln-builder merges the project like `docker compose config` with every
+relative path rebased to the repository root, and ships the repository files it mounts or reads (bind sources,
+`env_file`, `configs`/`secrets` `file:`; at most 200 files / 2 MB) with each release under `<release>/repo/` (agent
+feature `compose.v2`). The control plane previews the same project (`ComposeProject`); both follow
+`contracts/compose/merge-cases.json`.
+
+**Kiln adjustments** (render time; the repository is never edited, Settings → Compose shows the diff): services
+replaced by a Kiln database or split into their own Kiln site are removed with their `depends_on`, and the stack's
+variables that pointed at them are rewritten; `container_name` is removed; `restart: unless-stopped` is added where no
+policy is set; bind sources the repository lacks become named volumes `<service>-<path>` (kept across deploys) unless
+the user keeps them as folders; env files the repository lacks are dropped and Kiln's `.env` is appended to every
+`env_file` list; public services without a healthcheck get a warning.
+
 ### 1.2 Builds — managed servers never build **[decision]**
 Services with `image:` are pulled on the server. Services with `build:` are built by **kiln-builder in docker mode**
 (a `builder` server or a host builder with `KILN_LOCAL_BUILDER_MODES=native,docker`), pushed to the built-in

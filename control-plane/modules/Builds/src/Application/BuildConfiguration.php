@@ -98,6 +98,8 @@ final class BuildConfiguration
             'node' => $site->nodeVersion,
             'dockerfile' => $site->dockerfile,
             'compose_file' => $site->compose?->file,
+            // Only multi-file / profile projects add keys, so existing builds keep their fingerprint.
+            ...(count($site->compose->files ?? []) > 1 || ($site->compose->profiles ?? []) !== [] ? ['compose_files' => $site->compose->files ?? [], 'compose_profiles' => $site->compose->profiles ?? []] : []),
             'env' => hash('sha256', (string) json_encode($env)),
         ] + ($commands === [] ? [] : ['commands' => $commands])));
     }

@@ -3,7 +3,10 @@
 namespace Kiln\Sites\Application;
 
 use Illuminate\Validation\ValidationException;
+use Kiln\Sites\Application\Compose\RepoComposeInspection;
+use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSource;
+use Kiln\Sites\Contracts\Data\ComposeConfig;
 use Kiln\Sites\Contracts\Data\ComposeSummary;
 use Kiln\Sites\Contracts\Data\DomainChoice;
 use Kiln\Sites\Contracts\SiteDomains;
@@ -24,6 +27,7 @@ final class ComposeSettings
         private readonly YamlComposeInspector $inspector,
         private readonly SiteRules $rules,
         private readonly SiteDomains $domains,
+        private readonly RepoComposeInspection $inspection,
     ) {}
 
     /**
@@ -186,6 +190,139 @@ final class ComposeSettings
         ComposeVersion::query()->where('site_id', $site->id)->where('version', '<=', $version - $keep)->delete();
 
         return $version;
+    }
+
+    /**
+     * Repository project settings (docs/plans/COMPOSE_APPS.md): compose files, profiles, kept decisions and the
+     * services to extract. Database/site decisions are not stored here: {@see ComposeServiceExtraction} records them
+     * once the database or site exists.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{files: list<string>, profiles: list<string>, services: array<string, array<string, mixed>>, adjustments: array<string, mixed>, extract: list<array{service: string, mode: string, engine: ?string, database_id: ?string, site: array<string, mixed>}>}
+     *
+     * @throws ValidationException
+     */
+    public function project(array $data, ?Site $site = null): array
+    {
+        $files = array_key_exists('compose_files', $data) && is_array($data['compose_files'])
+            ? array_values(array_map('strval', $data['compose_files']))
+            : (isset($data['compose_file']) && $data['compose_file'] !== '' ? [(string) $data['compose_file']] : ($site?->composeFiles() ?? []));
+        $profiles = array_key_exists('compose_profiles', $data) ? array_values(array_map('strval', (array) $data['compose_profiles'])) : array_values(array_map('strval', (array) $site?->compose_profiles));
+        $services = array_filter((array) $site?->compose_services, fn ($d) => is_array($d) && in_array($d['mode'] ?? null, [ComposeConfig::MODE_DATABASE, ComposeConfig::MODE_SITE], true));
+        $extract = [];
+
+        foreach ((array) ($data['compose_services'] ?? []) as $service => $decision) {
+            $service = (string) $service;
+
+            if (preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/', $service) !== 1) {
+                throw ValidationException::withMessages(['compose_services' => "“{$service}” is not a compose service name."]);
+            }
+
+            $mode = (string) ($decision['mode'] ?? ComposeConfig::MODE_KEEP);
+
+            if ($mode === ComposeConfig::MODE_KEEP) {
+                // Back in the stack; an already created database or site is left as it is.
+                unset($services[$service]);
+
+                continue;
+            }
+
+            if (($services[$service]['mode'] ?? null) === $mode) {
+                continue; // already extracted
+            }
+
+            if ($mode === ComposeConfig::MODE_DATABASE && empty($decision['engine']) && empty($decision['database_id'])) {
+                throw ValidationException::withMessages(["compose_services.{$service}.engine" => 'Pick the database engine.']);
+            }
+
+            $extract[] = [
+                'service' => $service,
+                'mode' => $mode,
+                'engine' => isset($decision['engine']) ? (string) $decision['engine'] : null,
+                'database_id' => isset($decision['database_id']) ? strtolower((string) $decision['database_id']) : null,
+                'site' => is_array($decision['site'] ?? null) ? $decision['site'] : [],
+            ];
+        }
+
+        $adjustments = array_key_exists('compose_adjustments', $data)
+            ? ['keep_binds' => array_values(array_map('strval', (array) ($data['compose_adjustments']['keep_binds'] ?? [])))]
+            : (is_array($site?->compose_adjustments) ? $site->compose_adjustments : []);
+
+        return ['files' => $files, 'profiles' => $profiles, 'services' => $services, 'adjustments' => array_filter($adjustments), 'extract' => $extract];
+    }
+
+    /**
+     * Check a repository project before saving it: it loads, its public services exist and every required variable
+     * has a value. Repositories Kiln can't read (plain git, API errors) are checked at the first deploy instead.
+     *
+     * @param  list<string>  $files
+     * @param  list<string>  $profiles
+     * @param  list<array<string, mixed>>  $publicServices
+     * @param  array<string, mixed>  $variables
+     *
+     * Returns the merged project (YAML), or null when Kiln can't read the repository.
+     *
+     * @throws ValidationException
+     */
+    public function verifyRepository(string $connectionId, string $repository, string $branch, array $files, array $profiles, array $publicServices, array $variables): ?string
+    {
+        $result = $this->inspection->inspect($connectionId, $repository, $branch, $files, $profiles);
+
+        if (($result['no_api'] ?? false) === true) {
+            return null;
+        }
+
+        if (($result['errors'] ?? []) !== []) {
+            throw ValidationException::withMessages(['compose_files' => $result['errors']]);
+        }
+
+        $names = array_column((array) $result['services'], 'name');
+
+        foreach (array_values($publicServices) as $i => $public) {
+            $service = (string) ($public['service'] ?? '');
+
+            if ($service !== '' && ! in_array($service, $names, true)) {
+                throw ValidationException::withMessages(["public_services.{$i}.service" => "The compose project has no service {$service}."]);
+            }
+        }
+
+        $missing = array_values(array_map(
+            fn (array $v) => $v['name'],
+            array_filter((array) $result['variables'], fn (array $v) => $v['required'] && $v['default'] === null && trim((string) ($variables[$v['name']] ?? '')) === ''),
+        ));
+
+        if ($missing !== []) {
+            throw ValidationException::withMessages(['variables' => 'The compose project needs '.implode(', ', $missing).'.']);
+        }
+
+        return isset($result['original']) ? (string) $result['original'] : null;
+    }
+
+    /**
+     * Replace services with Kiln databases / own sites. Failures leave the service in the stack and come back as
+     * warnings (the site itself already exists).
+     *
+     * @param  list<array{service: string, mode: string, engine: ?string, database_id: ?string, site: array<string, mixed>}>  $extract
+     * @return list<string> warnings
+     */
+    public function extract(Site $site, array $extract, ?string $compose = null): array
+    {
+        $extraction = app(ComposeServiceExtraction::class);
+        $warnings = [];
+
+        foreach ($extract as $item) {
+            try {
+                if ($item['mode'] === ComposeConfig::MODE_DATABASE) {
+                    $extraction->toDatabase($site->id, $item['service'], $item['database_id'], (string) $item['engine'], $compose);
+                } else {
+                    $extraction->toSite($site->id, $item['service'], $item['site'], $compose);
+                }
+            } catch (ValidationException $e) {
+                $warnings[] = "{$item['service']} stays in the stack: ".collect($e->errors())->flatten()->first();
+            }
+        }
+
+        return $warnings;
     }
 
     public static function source(mixed $value, bool $hasContent): ComposeSource

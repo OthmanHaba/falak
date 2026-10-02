@@ -167,3 +167,11 @@ two actions in Sites.
   name}`: Projects places a database next to the stack; Edge (lane 2) moves a split-out service's domain rows.
 - `root_directory` exists for every git site; the builder already supported `subdir` (native packaging, Docker
   context/Dockerfile, compose file) and now refuses one that resolves outside the checkout.
+
+## Status
+
+- **Lane 1 (phases 1 and 4)** on `feat/compose-apps-flow`: SourceControl `file()`/`tree()`, the Git step's
+  "Docker Compose app", the services table, variables, Settings → Compose, Kiln adjustments at render time,
+  multi-file/profile/include/extends projects in kiln-builder (shared merge cases) and repository files shipped
+  with releases (agent feature `compose.v2`). `Sites\Events\ComposeServicesUnpublished` fires when a service stops
+  being public (Edge removes its domains).
