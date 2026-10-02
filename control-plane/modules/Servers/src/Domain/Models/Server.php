@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerStatus;
@@ -99,6 +100,14 @@ class Server extends Model
     public function phpVersions(): HasMany
     {
         return $this->hasMany(PhpVersion::class)->orderBy('version');
+    }
+
+    /**
+     * @return HasOne<MachineInspection, $this>
+     */
+    public function machineInspection(): HasOne
+    {
+        return $this->hasOne(MachineInspection::class);
     }
 
     /**

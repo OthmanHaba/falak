@@ -1,0 +1,665 @@
+<?php
+
+namespace Kiln\Servers\Domain\MachineCheck;
+
+/**
+ * Decides per component what provisioning does on a machine that already runs software: install, adopt (use what is
+ * there), complete (add the missing pieces from the same source) or block (a conflict with a reason and a fix).
+ *
+ * Pure: a provision.inspect report, the wanted stack and the `servers` config in, decisions out. The rules are
+ * documented in docs/plans/MACHINE_CHECK.md.
+ */
+final class DecisionEngine
+{
+    /** Components in display order (also the provision.apply `components` names). */
+    public const COMPONENTS = ['base', 'docker', 'database', 'cache', 'edge', 'php', 'node', 'ssh', 'firewall', 'swap', 'hostname', 'unattended_upgrades', 'fail2ban'];
+
+    /** Kiln's edge (FrankenPHP or Caddy) runs as this unit. */
+    private const EDGE_UNIT = 'kiln-edge.service';
+
+    /** Kiln's sshd drop-in; sshd keeps the first value of a keyword, so files sorting before it win. */
+    private const SSH_DROP_IN = '/etc/ssh/sshd_config.d/50-kiln.conf';
+
+    /** nftables tables iptables-nft creates (Docker, ufw): not separate firewalls. */
+    private const IPTABLES_TABLES = ['ip filter', 'ip nat', 'ip mangle', 'ip raw', 'ip security', 'ip6 filter', 'ip6 nat', 'ip6 mangle', 'ip6 raw', 'ip6 security'];
+
+    /** @var array<string, mixed> */
+    private array $rules;
+
+    /**
+     * @param  array<string, mixed>  $config  the `servers` config array
+     */
+    public function __construct(private readonly array $config)
+    {
+        $this->rules = (array) ($config['machine_check'] ?? []);
+    }
+
+    public function decide(MachineReport $report, Wanted $wanted): MachineCheck
+    {
+        return new MachineCheck(array_values(array_filter([
+            $this->base($report, $wanted),
+            $this->docker($report, $wanted),
+            $this->engine($report, 'database', 'Database', $wanted->stack->database, (array) ($this->config['databases'] ?? [])),
+            $this->engine($report, 'cache', 'Cache', $wanted->stack->cache, (array) ($this->config['caches'] ?? [])),
+            $this->edge($report, $wanted),
+            $this->php($report, $wanted),
+            $this->node($report, $wanted),
+            $this->ssh($report, $wanted),
+            $this->firewall($report),
+            $this->swap($report, $wanted),
+            $this->hostname($report, $wanted),
+            $this->unattended($report),
+            $this->fail2ban($report),
+        ])));
+    }
+
+    private function base(MachineReport $report, Wanted $wanted): ?ComponentDecision
+    {
+        if ($wanted->basePackages === []) {
+            return null;
+        }
+
+        $found = [];
+        $missing = [];
+
+        foreach ($wanted->basePackages as $name) {
+            $package = $report->package($name);
+
+            if ($package === null) {
+                $missing[] = $name;
+            } else {
+                $found[] = $this->found($name, $package);
+            }
+        }
+
+        if ($missing === []) {
+            return new ComponentDecision('base', 'Base packages', Decision::Adopt, 'All base packages are installed.', $found, keep: $wanted->basePackages);
+        }
+
+        if ($found === []) {
+            return new ComponentDecision('base', 'Base packages', Decision::Install, 'Installs '.implode(', ', $missing).'.', install: $missing);
+        }
+
+        return new ComponentDecision('base', 'Base packages', Decision::Complete, 'Installs the missing '.implode(', ', $missing).'.', $found, install: $missing);
+    }
+
+    private function docker(MachineReport $report, Wanted $wanted): ?ComponentDecision
+    {
+        $docker = $report->docker();
+        $packages = (array) ($this->config['docker']['packages'] ?? []);
+        $service = (string) ($this->config['docker']['service'] ?? 'docker');
+
+        if ($docker === null) {
+            return $wanted->stack->docker
+                ? new ComponentDecision('docker', 'Docker', Decision::Install, "Installs Docker from Ubuntu's archive (".implode(', ', $packages).').', install: $packages, service: $service)
+                : null;
+        }
+
+        $engine = (string) ($docker['engine_package'] ?? '');
+        $version = (string) ($docker['server_version'] ?? '') ?: MachineReport::upstream($report->package($engine)['version'] ?? null);
+        $source = $engine !== '' ? MachineReport::sourceOf($report->package($engine) ?? []) : ($docker['snap'] ?? false ? 'snap' : 'manual install');
+        $found = [['name' => $engine ?: 'docker', 'version' => $version, 'source' => $source]];
+
+        foreach (['compose', 'buildx'] as $plugin) {
+            if (is_array($docker[$plugin] ?? null)) {
+                $found[] = ['name' => $docker[$plugin]['package'] ?? "docker {$plugin}", 'version' => $docker[$plugin]['version'] ?? null, 'source' => isset($docker[$plugin]['package']) ? MachineReport::sourceOf($report->package($docker[$plugin]['package']) ?? []) : 'plugin file'];
+            }
+        }
+
+        if (! $wanted->stack->docker) {
+            return new ComponentDecision('docker', 'Docker', Decision::Skip, 'Docker is installed; this server does not use it.', $found);
+        }
+
+        $notes = $this->daemonNotes((array) ($docker['daemon'] ?? []));
+        $block = fn (string $message, string $hint) => new ComponentDecision('docker', 'Docker', Decision::Block, $message, $found, notes: [Note::block($message, $hint), ...$notes]);
+
+        if ($docker['snap'] ?? false) {
+            return $block('Docker is installed as a snap.', 'Kiln runs Docker from apt packages; the snap cannot reach site directories outside /home. Remove it (snap remove docker), then re-check: Kiln installs Docker, or install it from Docker\'s repository first.');
+        }
+
+        if ($engine === 'podman-docker') {
+            return $block('podman-docker provides the docker command, not the Docker engine.', 'Remove podman-docker (apt purge podman-docker), then re-check.');
+        }
+
+        if (! ($docker['system_daemon'] ?? false) && ($docker['rootless'] ?? false)) {
+            return $block('Only a rootless Docker is set up.', 'Kiln needs the system Docker daemon (docker.service). Install Docker for the whole machine, then re-check.');
+        }
+
+        if ($docker['rootless'] ?? false) {
+            $notes[] = Note::warning('A rootless Docker is also set up for a user; Kiln only uses the system daemon.');
+        }
+
+        $minimum = (string) ($this->rules['minimum_versions']['docker'] ?? '0');
+
+        if ($version !== null && $version !== '' && version_compare($version, $minimum, '<')) {
+            return $block("Docker {$version} is older than {$minimum}, the oldest Kiln supports.", "Upgrade Docker to {$minimum} or newer from the same source, then re-check.");
+        }
+
+        if (($docker['server_version'] ?? '') === '' && ($docker['server_error'] ?? '') !== '') {
+            $notes[] = Note::warning('The Docker daemon did not answer during the check; provisioning starts the docker service.');
+        }
+
+        $missing = array_values(array_filter(['compose', 'buildx'], fn (string $plugin) => ! is_array($docker[$plugin] ?? null)));
+        $keep = array_values(array_unique(array_filter([$engine, $docker['compose']['package'] ?? null, $docker['buildx']['package'] ?? null])));
+        $installed = trim("Docker {$version}")." from {$source}";
+
+        if ($missing === []) {
+            return new ComponentDecision('docker', 'Docker', Decision::Adopt, "Uses {$installed} with compose and buildx; installs no Docker packages.", $found, keep: $keep, service: $service, notes: $notes);
+        }
+
+        $family = (array) ($this->rules['docker_families'][$engine] ?? []);
+        $pieces = implode(' and ', $missing);
+
+        if ($family === []) {
+            return $block("{$installed} has no {$pieces}, and Kiln does not know where this Docker came from.", "Install the docker {$pieces} plugin from the same place as the engine, then re-check.");
+        }
+
+        $add = array_map(fn (string $plugin) => (string) $family[$plugin], $missing);
+
+        if (($family['repo'] ?? null) !== null && ! $report->hasAptSource((string) $family['repo'])) {
+            return $block("Docker from {$family['label']} has no {$pieces}, and that repository is not configured on the machine.", "Add Docker's apt repository (https://docs.docker.com/engine/install/ubuntu/) or install ".implode(' and ', $add).' yourself, then re-check.');
+        }
+
+        return new ComponentDecision('docker', 'Docker', Decision::Complete, "Uses {$installed}; installs ".implode(' and ', $add)." from {$family['label']}.", $found, install: $add, keep: $keep, service: $service, notes: $notes);
+    }
+
+    /**
+     * @param  array<string, mixed>  $daemon  daemon.json settings from the report
+     * @return list<Note>
+     */
+    private function daemonNotes(array $daemon): array
+    {
+        $notes = [];
+
+        if (($daemon['iptables'] ?? null) === false) {
+            $notes[] = Note::warning('daemon.json sets "iptables": false: published container ports and Kiln\'s container firewall rules do not work.', 'Remove "iptables": false from /etc/docker/daemon.json and restart Docker.');
+        }
+
+        if (($daemon['userns_remap'] ?? '') !== '') {
+            $notes[] = Note::warning("daemon.json sets \"userns-remap\": \"{$daemon['userns_remap']}\": files containers write in mounted directories get remapped owners.");
+        }
+
+        if (($daemon['bip'] ?? '') !== '' || ($daemon['default_address_pools'] ?? []) !== []) {
+            $notes[] = Note::info('daemon.json sets custom address ranges (bip / default-address-pools); Kiln keeps them.');
+        }
+
+        if (($daemon['error'] ?? '') !== '') {
+            $notes[] = Note::warning("/etc/docker/daemon.json is not valid JSON: {$daemon['error']}");
+        }
+
+        return $notes;
+    }
+
+    /**
+     * Database or cache engines: adopt the wanted one when present (any source), block another one of the same kind
+     * or a port held by something else.
+     *
+     * @param  array<string, array<string, mixed>>  $installable  the `databases` / `caches` config
+     */
+    private function engine(MachineReport $report, string $component, string $label, ?string $wanted, array $installable): ?ComponentDecision
+    {
+        $engines = array_filter((array) ($this->rules['engines'] ?? []), fn (array $e) => ($e['kind'] ?? null) === $component);
+        $present = [];
+
+        foreach ($engines as $key => $engine) {
+            $packages = $report->packagesMatching((array) $engine['packages']);
+
+            if ($packages !== []) {
+                $present[$key] = ['packages' => $packages, 'version' => $this->engineVersion($packages), 'source' => MachineReport::sourceOf($packages[0])];
+            }
+        }
+
+        $found = [];
+
+        foreach ($present as $key => $p) {
+            $found[] = ['name' => $engines[$key]['label'], 'version' => $p['version'], 'source' => $p['source']];
+        }
+
+        if ($wanted === null) {
+            return $present === [] ? null : new ComponentDecision($component, $label, Decision::Skip,
+                implode(', ', array_map(fn ($f) => trim("{$f['name']} {$f['version']}"), $found)).' installed; this server does not use '.($component === 'database' ? 'a database engine.' : 'a cache.'), $found);
+        }
+
+        $definition = (array) ($installable[$wanted] ?? []);
+        $wantedLabel = (string) ($engines[$wanted]['label'] ?? $definition['label'] ?? $wanted);
+        $service = (string) ($definition['service'] ?? $wanted);
+        $notes = [];
+
+        foreach ($present as $key => $p) {
+            if ($key === $wanted) {
+                continue;
+            }
+
+            $other = trim("{$engines[$key]['label']} {$p['version']}");
+            $notes[] = Note::block("{$other} is installed, but this server is set up for {$wantedLabel}.",
+                "Kiln won't run two {$component} engines on one machine. Remove {$engines[$key]['label']} (apt purge ".$p['packages'][0]['name'].") or use a server set up for {$engines[$key]['label']}, then re-check.");
+        }
+
+        $mine = $present[$wanted] ?? null;
+
+        if ($mine !== null) {
+            $minimum = (string) ($this->rules['minimum_versions'][$wanted] ?? '0');
+
+            if ($mine['version'] !== null && version_compare($mine['version'], $minimum, '<')) {
+                $notes[] = Note::block("{$wantedLabel} {$mine['version']} is older than {$minimum}, the oldest Kiln supports.", "Upgrade {$wantedLabel} to {$minimum} or newer, then re-check.");
+            }
+        }
+
+        foreach ((array) ($engines[$wanted]['ports'] ?? []) as $port) {
+            $notes = [...$notes, ...$this->portNotes($report, (int) $port, $wantedLabel, $mine !== null ? (array) $engines[$wanted]['processes'] : [])];
+        }
+
+        if ($this->hasBlock($notes)) {
+            return new ComponentDecision($component, $label, Decision::Block, $notes[0]->message, $found, notes: $notes);
+        }
+
+        if ($mine !== null) {
+            $names = array_map(fn (array $p) => (string) $p['name'], $mine['packages']);
+            $what = trim("{$wantedLabel} {$mine['version']}");
+            $reason = $wanted === 'postgresql'
+                ? "Uses {$what} from {$mine['source']}; the cluster and its major version stay, Ubuntu's postgresql package is not installed."
+                : "Uses {$what} from {$mine['source']}; no {$wantedLabel} packages are installed.";
+
+            return new ComponentDecision($component, $label, Decision::Adopt, $reason, $found, keep: $names, service: $service, notes: $notes);
+        }
+
+        $packages = array_values(array_map('strval', (array) ($definition['packages'] ?? [])));
+
+        return new ComponentDecision($component, $label, Decision::Install, "Installs {$wantedLabel} from Ubuntu's archive (".implode(', ', $packages).').', $found, install: $packages, service: $service, notes: $notes);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $packages
+     */
+    private function engineVersion(array $packages): ?string
+    {
+        $best = null;
+
+        foreach ($packages as $package) {
+            $version = preg_match('/^postgresql-(\d+)$/', (string) $package['name'], $m) === 1 ? $m[1] : MachineReport::upstream((string) ($package['version'] ?? ''));
+
+            if ($version !== null && ($best === null || version_compare($version, $best, '>'))) {
+                $best = $version;
+            }
+        }
+
+        return $best;
+    }
+
+    /**
+     * Blocks for a port the component needs that a container or another process holds.
+     *
+     * @param  list<string>  $allowed  process names that may hold the port (the adopted engine itself)
+     * @return list<Note>
+     */
+    private function portNotes(MachineReport $report, int $port, string $for, array $allowed, ?string $allowedUnit = null): array
+    {
+        $notes = [];
+        $containers = $report->containersPublishing($port);
+
+        foreach ($containers as $container) {
+            $notes[] = Note::block("A container ({$container['name']}, {$container['image']}) publishes port {$port}, which {$for} needs.",
+                "Stop the container (docker stop {$container['name']}) or publish it on another port, then re-check. To keep a database in Docker, add it to Kiln as a compose service instead.");
+        }
+
+        foreach ($report->listenersOn($port) as $listener) {
+            $process = (string) ($listener['process'] ?? '');
+            $unit = (string) ($listener['unit'] ?? '');
+
+            if (($allowedUnit !== null && $unit === $allowedUnit) || in_array($process, $allowed, true)) {
+                continue;
+            }
+
+            if ($listener['container'] ?? false) {
+                if ($containers === []) {
+                    $notes[] = Note::block("A container publishes port {$port} ({$process}), which {$for} needs.", 'Stop the container or publish it on another port, then re-check.');
+                }
+
+                continue;
+            }
+
+            $name = $process !== '' ? $process : 'another process';
+            $name .= $unit !== '' && $unit !== "{$process}.service" ? " ({$unit})" : '';
+            $service = $unit !== '' && str_ends_with($unit, '.service') ? $unit : ($process !== '' ? $process : null);
+            $notes[] = Note::block("Port {$port} is in use by {$name}, which {$for} needs.",
+                $service !== null ? "Stop and disable it (systemctl disable --now {$service}) or move it to another port, then re-check." : 'Stop it or move it to another port, then re-check.');
+        }
+
+        // ss reports a port once per address: one note per holder is enough.
+        return array_values(array_unique($notes, SORT_REGULAR));
+    }
+
+    private function edge(MachineReport $report, Wanted $wanted): ?ComponentDecision
+    {
+        $frankenphp = $wanted->stack->phpRuntime === 'frankenphp';
+        $webServers = (array) ($this->rules['web_servers'] ?? []);
+        $found = [];
+
+        foreach ([...array_keys($webServers), 'caddy'] as $name) {
+            if (($package = $report->package($name)) !== null) {
+                $found[] = $this->found($name, $package);
+            }
+        }
+
+        if (! $wanted->servesHttp) {
+            return $found === [] ? null : new ComponentDecision('edge', 'Web server', Decision::Skip, 'A web server is installed; this server type does not serve HTTP.', $found);
+        }
+
+        $notes = [];
+
+        foreach ((array) ($this->rules['edge_ports'] ?? [80, 443]) as $port) {
+            $notes = [...$notes, ...$this->portNotes($report, (int) $port, "Kiln's edge", [], self::EDGE_UNIT)];
+        }
+
+        if ($report->serviceActive('caddy.service') && ! $this->mentions($notes, 'caddy')) {
+            $notes[] = Note::block('caddy.service is running; Kiln would stop and disable it for its own edge (kiln-edge).',
+                'Move the sites it serves into Kiln, then stop it (systemctl disable --now caddy) and re-check.');
+        }
+
+        foreach ($webServers as $name => $label) {
+            $service = $report->service("{$name}.service");
+
+            if ($service !== null && ($service['active'] ?? '') !== 'active' && ($service['enabled'] ?? '') === 'enabled') {
+                $notes[] = Note::warning("{$label} is installed and enabled but not running; it would take port 80 at the next boot.", "Disable it: systemctl disable {$name}.");
+            }
+        }
+
+        if ($this->hasBlock($notes)) {
+            return new ComponentDecision('edge', 'Web server', Decision::Block, $notes[0]->message, $found, notes: $notes);
+        }
+
+        if ($report->service(self::EDGE_UNIT) !== null) {
+            return new ComponentDecision('edge', 'Web server', Decision::Adopt, "Kiln's edge (kiln-edge) is already set up.", $found, notes: $notes);
+        }
+
+        if (! $frankenphp && ($caddy = $report->package('caddy')) !== null) {
+            return new ComponentDecision('edge', 'Web server', Decision::Adopt, 'Uses the installed Caddy '.MachineReport::upstream($caddy['version'] ?? null).' as kiln-edge (its caddy.service is not running).', $found, notes: $notes);
+        }
+
+        return new ComponentDecision('edge', 'Web server', Decision::Install, $frankenphp
+            ? 'FrankenPHP serves ports 80 and 443 as kiln-edge.'
+            : "Installs Caddy from Caddy's repository and runs it as kiln-edge on ports 80 and 443.", $found, notes: $notes);
+    }
+
+    private function php(MachineReport $report, Wanted $wanted): ?ComponentDecision
+    {
+        $binaries = $report->list('php');
+        $found = array_map(fn (array $b) => ['name' => 'PHP', 'version' => $b['version'] ?? null, 'source' => $this->binarySource($b)], $binaries);
+        $runtime = $wanted->stack->phpRuntime;
+
+        if ($runtime === null) {
+            return $found === [] ? null : new ComponentDecision('php', 'PHP', Decision::Skip, 'PHP is installed; this server does not run PHP sites.', $found);
+        }
+
+        $notes = [];
+
+        foreach ($binaries as $binary) {
+            if (($binary['path'] ?? '') === '/usr/local/bin/php') {
+                $notes[] = Note::warning('A php binary in /usr/local/bin'.(isset($binary['version']) ? " (PHP {$binary['version']})" : '').' comes before Kiln\'s PHP on PATH.', 'Remove or rename /usr/local/bin/php if deploy hooks and the CLI should use Kiln\'s PHP.');
+            }
+        }
+
+        foreach ($report->list('frankenphp') as $binary) {
+            if ($runtime === 'frankenphp' && ($binary['source'] ?? '') !== 'kiln') {
+                $notes[] = Note::warning("A FrankenPHP binary at {$binary['path']} was not installed by Kiln; Kiln installs its pinned build at /usr/local/bin/frankenphp.");
+            }
+        }
+
+        $packaged = array_values(array_filter($binaries, fn (array $b) => isset($b['package'])));
+        $present = array_values(array_intersect($wanted->phpVersions, array_map(fn (array $b) => (string) ($b['version'] ?? ''), $packaged)));
+        $versions = implode(', ', $wanted->phpVersions);
+
+        if ($present === []) {
+            return new ComponentDecision('php', 'PHP', Decision::Install, "Installs PHP {$versions} with Kiln's extensions".($runtime === 'frankenphp' ? ' and FrankenPHP.' : ' and PHP-FPM.'), $found, notes: $notes);
+        }
+
+        $sources = array_values(array_unique(array_map(fn (array $b) => $this->binarySource($b), array_filter($packaged, fn (array $b) => in_array($b['version'] ?? '', $present, true)))));
+
+        return new ComponentDecision('php', 'PHP', Decision::Complete,
+            'PHP '.implode(', ', $present).' is installed ('.implode(', ', $sources).'); adds the missing versions and extensions from the same source.', $found, notes: $notes);
+    }
+
+    private function node(MachineReport $report, Wanted $wanted): ?ComponentDecision
+    {
+        $binaries = $report->list('node');
+        $found = array_map(fn (array $b) => ['name' => 'Node', 'version' => $b['version'] ?? null, 'source' => $this->binarySource($b)], $binaries);
+
+        if ($wanted->nodeVersion === null) {
+            return $found === [] ? null : new ComponentDecision('node', 'Node', Decision::Skip, 'Node is installed; this server does not use Node.', $found);
+        }
+
+        $notes = [];
+        $kiln = false;
+
+        foreach ($binaries as $binary) {
+            $source = (string) ($binary['source'] ?? '');
+
+            if ($source === 'kiln') {
+                $kiln = $kiln || ($binary['version'] ?? null) === $wanted->nodeVersion;
+
+                continue;
+            }
+
+            if (($binary['path'] ?? '') === '/usr/local/bin/node') {
+                $notes[] = Note::warning('/usr/local/bin/node was not installed by Kiln; Kiln\'s default Node replaces it with a link to /opt/kiln/node.');
+            } else {
+                $notes[] = Note::info("Node {$binary['version']} at {$binary['path']} ({$this->binarySource($binary)}) stays as it is; sites run Kiln's Node.");
+            }
+        }
+
+        return $kiln
+            ? new ComponentDecision('node', 'Node', Decision::Adopt, "Kiln's Node {$wanted->nodeVersion} is already installed.", $found, notes: $notes)
+            : new ComponentDecision('node', 'Node', Decision::Install, "Installs Node {$wanted->nodeVersion} in /opt/kiln/node.", $found, notes: $notes);
+    }
+
+    private function ssh(MachineReport $report, Wanted $wanted): ComponentDecision
+    {
+        $ssh = $report->section('ssh');
+        $effective = (array) ($ssh['effective'] ?? []);
+        $users = array_values(array_filter((array) ($ssh['users'] ?? []), 'is_array'));
+        $withKeys = array_values(array_filter($users, fn (array $u) => (int) ($u['authorized_keys'] ?? 0) > 0));
+        $password = strtolower((string) ($effective['passwordauthentication'] ?? 'yes')) === 'yes';
+        $found = [['name' => 'OpenSSH', 'version' => MachineReport::upstream($report->package('openssh-server')['version'] ?? null), 'source' => 'password login '.($password ? 'on' : 'off')]];
+        $notes = [];
+
+        if ($ssh !== [] && $password && $withKeys === []) {
+            $notes[] = Note::block('Password login would be turned off, but no login user has an SSH key in authorized_keys.',
+                'Add your public key to ~/.ssh/authorized_keys of root or your sudo user, then re-check. Kiln turns off password login.');
+        }
+
+        foreach ((array) ($ssh['drop_ins'] ?? []) as $dropIn) {
+            $file = (string) ($dropIn['file'] ?? '');
+
+            if ($file === '' || strcmp($file, self::SSH_DROP_IN) >= 0) {
+                continue;
+            }
+
+            foreach (['passwordauthentication' => 'PasswordAuthentication', 'permitrootlogin' => 'PermitRootLogin', 'port' => 'Port'] as $key => $keyword) {
+                if (isset($dropIn['settings'][$key])) {
+                    $notes[] = Note::warning("{$file} sets {$keyword} {$dropIn['settings'][$key]} and is read before Kiln's 50-kiln.conf, so it wins.",
+                        "Remove the {$keyword} line from {$file} if Kiln's SSH settings should apply.");
+                }
+            }
+        }
+
+        $ports = array_filter(explode(' ', (string) ($effective['port'] ?? '')));
+
+        if ($ports !== [] && ! in_array((string) $wanted->sshPort, $ports, true)) {
+            $notes[] = Note::warning('sshd listens on port '.implode(', ', $ports)." today; Kiln moves SSH to port {$wanted->sshPort}.",
+                "Make sure port {$wanted->sshPort} is open in your provider's firewall before provisioning.");
+        }
+
+        if (($ssh['effective_source'] ?? null) === 'files') {
+            $notes[] = Note::info('sshd -T could not run during the check; the SSH settings were read from the config files.');
+        }
+
+        if ($this->hasBlock($notes)) {
+            return new ComponentDecision('ssh', 'SSH', Decision::Block, $notes[0]->message, $found, notes: $notes);
+        }
+
+        $who = $withKeys === [] ? '' : ' Keys found for '.implode(', ', array_map(fn (array $u) => (string) $u['name'], $withKeys)).'.';
+
+        return new ComponentDecision('ssh', 'SSH', Decision::Install, "Key-only login, root without password, port {$wanted->sshPort}.{$who}", $found, notes: $notes);
+    }
+
+    private function firewall(MachineReport $report): ComponentDecision
+    {
+        $fw = $report->section('firewall');
+        $found = [];
+        $notes = [];
+
+        foreach (['ufw' => 'ufw', 'firewalld' => 'firewalld'] as $key => $label) {
+            $state = (string) ($fw[$key] ?? 'absent');
+
+            if ($state === 'absent') {
+                continue;
+            }
+
+            $found[] = ['name' => $label, 'version' => null, 'source' => $state];
+
+            if ($state === 'active') {
+                $notes[] = Note::warning("{$label} is active next to Kiln's firewall: a port must be allowed by both, or sites are not reachable.",
+                    $key === 'ufw' ? 'Allow the ports Kiln opens (ufw allow 80,443/tcp) or turn ufw off (ufw disable).' : 'Allow the ports Kiln opens (firewall-cmd --permanent --add-service={http,https}) or stop firewalld.');
+            }
+        }
+
+        $others = array_values(array_diff(array_map('strval', (array) ($fw['nft_tables'] ?? [])), ['inet kiln', ...self::IPTABLES_TABLES]));
+
+        if ($others !== []) {
+            $notes[] = Note::info('Other nftables tables stay as they are: '.implode(', ', $others).'.');
+        }
+
+        return new ComponentDecision('firewall', 'Firewall', Decision::Install, "Kiln's nftables firewall (table inet kiln) is applied once provisioning finishes.", $found, notes: $notes);
+    }
+
+    private function swap(MachineReport $report, Wanted $wanted): ComponentDecision
+    {
+        $swaps = $report->list('swap');
+        $found = array_map(fn (array $s) => ['name' => (string) $s['name'], 'version' => null, 'source' => $this->bytes((int) ($s['size_bytes'] ?? 0))], $swaps);
+        $foreign = array_values(array_filter($swaps, fn (array $s) => ($s['name'] ?? '') !== '/swapfile'));
+
+        if ($report->inContainer()) {
+            return new ComponentDecision('swap', 'Swap', Decision::Adopt, 'Runs in a container: swap belongs to the host.', $found);
+        }
+
+        if ($foreign !== []) {
+            return new ComponentDecision('swap', 'Swap', Decision::Adopt, 'Keeps the existing swap ('.implode(', ', array_map(fn (array $s) => (string) $s['name'], $foreign)).'); no /swapfile is created.', $found);
+        }
+
+        if ($wanted->swapMb <= 0) {
+            return new ComponentDecision('swap', 'Swap', $swaps === [] ? Decision::Skip : Decision::Adopt, $swaps === [] ? 'No swap needed with this much memory.' : 'Keeps the existing /swapfile.', $found);
+        }
+
+        return new ComponentDecision('swap', 'Swap', Decision::Install, 'Creates a '.$this->bytes($wanted->swapMb << 20).' /swapfile.', $found);
+    }
+
+    private function hostname(MachineReport $report, Wanted $wanted): ComponentDecision
+    {
+        $current = $report->hostname();
+        $found = $current !== '' ? [['name' => $current, 'version' => null, 'source' => null]] : [];
+
+        if ($wanted->customServer && $current !== '') {
+            return new ComponentDecision('hostname', 'Hostname', Decision::Adopt, "Keeps the machine's hostname {$current}.", $found);
+        }
+
+        if ($current === $wanted->hostname) {
+            return new ComponentDecision('hostname', 'Hostname', Decision::Adopt, "The hostname is already {$current}.", $found);
+        }
+
+        return new ComponentDecision('hostname', 'Hostname', Decision::Install, "Sets the hostname to {$wanted->hostname}.", $found);
+    }
+
+    private function unattended(MachineReport $report): ComponentDecision
+    {
+        $u = $report->section('unattended_upgrades');
+        $periodic = is_array($u['periodic'] ?? null) ? $u['periodic'] : null;
+        $installed = (bool) ($u['installed'] ?? false);
+        $found = $installed || $periodic !== null ? [['name' => 'unattended-upgrades', 'version' => null, 'source' => ($u['managed_by_kiln'] ?? false) ? "Kiln's config" : ($periodic !== null ? 'own config' : 'default config')]] : [];
+
+        if ($periodic === null || ($u['managed_by_kiln'] ?? false)) {
+            return new ComponentDecision('unattended_upgrades', 'Automatic updates', Decision::Install, 'Turns on automatic security updates (no automatic reboot).', $found);
+        }
+
+        $notes = [];
+
+        if (($periodic['Unattended-Upgrade'] ?? '1') === '0') {
+            $notes[] = Note::warning('Automatic upgrades are turned off in 20auto-upgrades; Kiln keeps it that way.', 'Set APT::Periodic::Unattended-Upgrade "1" in /etc/apt/apt.conf.d/20auto-upgrades to get security updates.');
+        }
+
+        return new ComponentDecision('unattended_upgrades', 'Automatic updates', Decision::Adopt, 'Keeps the existing automatic-update config; Kiln writes none.', $found, notes: $notes);
+    }
+
+    private function fail2ban(MachineReport $report): ComponentDecision
+    {
+        $f = $report->section('fail2ban');
+        $jails = count((array) ($f['jails'] ?? []));
+
+        if (! ($f['installed'] ?? false)) {
+            return new ComponentDecision('fail2ban', 'fail2ban', Decision::Install, 'Installs fail2ban with its default SSH jail.');
+        }
+
+        $package = $report->package('fail2ban');
+        $found = [$package !== null ? $this->found('fail2ban', $package) : ['name' => 'fail2ban', 'version' => null, 'source' => null]];
+        $notes = $jails > 0 ? [Note::info("{$jails} custom jail ".($jails === 1 ? 'file stays' : 'files stay').'; Kiln writes no jails.')] : [];
+
+        return new ComponentDecision('fail2ban', 'fail2ban', Decision::Adopt, 'Uses the installed fail2ban and makes sure it runs.', $found, keep: ['fail2ban'], service: 'fail2ban', notes: $notes);
+    }
+
+    /**
+     * @param  array<string, mixed>  $package
+     * @return array{name: string, version: ?string, source: string}
+     */
+    private function found(string $name, array $package): array
+    {
+        return ['name' => $name, 'version' => MachineReport::upstream((string) ($package['version'] ?? '')), 'source' => MachineReport::sourceOf($package)];
+    }
+
+    /**
+     * @param  array<string, mixed>  $binary
+     */
+    private function binarySource(array $binary): string
+    {
+        return match ($binary['source'] ?? '') {
+            'kiln' => 'Kiln',
+            'archive' => 'Ubuntu archive',
+            'nodesource' => 'NodeSource',
+            'nvm' => 'nvm',
+            'snap' => 'snap',
+            'vendor' => (string) (parse_url((string) ($binary['repo'] ?? ''), PHP_URL_HOST) ?: 'another repository'),
+            default => 'manual install',
+        };
+    }
+
+    /**
+     * @param  list<Note>  $notes
+     */
+    private function hasBlock(array $notes): bool
+    {
+        foreach ($notes as $note) {
+            if ($note->severity === Severity::Block) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  list<Note>  $notes
+     */
+    private function mentions(array $notes, string $needle): bool
+    {
+        foreach ($notes as $note) {
+            if (str_contains($note->message, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function bytes(int $bytes): string
+    {
+        return $bytes >= 1 << 30 ? round($bytes / (1 << 30), 1).' GB' : (int) round($bytes / (1 << 20)).' MB';
+    }
+}
