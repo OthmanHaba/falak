@@ -67,7 +67,10 @@ final class CommandPayloads
             $payload['remote'] = true;
         }
 
-        if (! $server->dedicated && ($ranges = (array) config('databases.container_networks', [])) !== []) {
+        // MySQL users pinned to a local host stay local (like remote()); PostgreSQL users have no host.
+        $local = $server->engine->isMysqlFamily() && in_array($user->host, ['localhost', '127.0.0.1', '::1'], true);
+
+        if (! $server->dedicated && ! $local && ($ranges = (array) config('databases.container_networks', [])) !== []) {
             // Containers on the server (compose, Docker sites, functions) connect from the Docker ranges; agents
             // without db.containers get the field stripped (PayloadCompatibility) and keep the engine on localhost.
             $payload['containers'] = array_values($ranges);

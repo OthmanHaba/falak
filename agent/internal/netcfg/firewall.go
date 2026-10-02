@@ -68,11 +68,14 @@ type FirewallPayload struct {
 	ContainerPorts []ContainerPorts `json:"container_ports,omitempty"`
 }
 
-// ContainerPorts opens ports to the Docker bridge interfaces only (feature db.containers).
+// ContainerPorts opens ports to the Docker bridge interfaces only (feature db.containers): accepted from Sources (the
+// Docker address ranges) on the bridges, then dropped from everywhere else — ahead of private-network and user rules,
+// so only loopback and containers reach the port.
 type ContainerPorts struct {
 	ID       string   `json:"id"`
 	Protocol string   `json:"protocol"`
 	Ports    []string `json:"ports"`
+	Sources  []string `json:"sources"`
 	Comment  string   `json:"comment"`
 }
 
@@ -138,7 +141,10 @@ func RenderRuleset(p FirewallPayload) (string, error) {
 		if len(c.Ports) == 0 {
 			return "", perr("container ports %s: no ports", c.ID)
 		}
-		lines, err := renderRule(Rule{ID: "containers-" + c.ID, Protocol: c.Protocol, Ports: c.Ports, Comment: c.Comment})
+		if len(c.Sources) == 0 {
+			return "", perr("container ports %s: no sources", c.ID)
+		}
+		lines, err := renderRule(Rule{ID: "containers-" + c.ID, Protocol: c.Protocol, Ports: c.Ports, Sources: c.Sources, Comment: c.Comment})
 		if err != nil {
 			return "", err
 		}
@@ -146,6 +152,13 @@ func RenderRuleset(p FirewallPayload) (string, error) {
 			for _, l := range lines {
 				b.WriteString("\t\tiifname \"" + iface + "\" " + l + "\n")
 			}
+		}
+		drop, err := renderRule(Rule{ID: "containers-" + c.ID + "-only", Action: "drop", Protocol: c.Protocol, Ports: c.Ports, Comment: "only containers"})
+		if err != nil {
+			return "", err
+		}
+		for _, l := range drop {
+			b.WriteString("\t\t" + l + "\n")
 		}
 	}
 	for _, r := range p.Rules {

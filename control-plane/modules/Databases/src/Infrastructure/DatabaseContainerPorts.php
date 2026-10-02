@@ -23,6 +23,9 @@ final class DatabaseContainerPorts implements ContainerHostPorts
                 'id' => $engine->engine->value,
                 'protocol' => 'tcp',
                 'ports' => [(string) $engine->port],
+                // Only the Docker ranges, on the bridges; the agent drops the port for everyone else (private-network
+                // peers and broad user rules included), so the app-server engine stays local to the server.
+                'sources' => array_values((array) config('databases.container_networks', [])),
                 'comment' => "{$engine->engine->label()} for containers",
             ])
             ->values()
