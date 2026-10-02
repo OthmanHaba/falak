@@ -24,6 +24,7 @@ use Kiln\Deployments\Contracts\DeploymentDirectory;
 use Kiln\Deployments\Contracts\DeploymentTrigger;
 use Kiln\Deployments\Contracts\FunctionSources;
 use Kiln\Deployments\Contracts\LiveReleases;
+use Kiln\Deployments\Contracts\RetainedImages;
 use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
 use Kiln\Deployments\Http\Channels\DeploymentChannel;
 use Kiln\Deployments\Http\Channels\SiteDeploymentsChannel;
@@ -31,6 +32,7 @@ use Kiln\Deployments\Infrastructure\ActionDeploymentTrigger;
 use Kiln\Deployments\Infrastructure\DeploymentSiteFields;
 use Kiln\Deployments\Infrastructure\EloquentDeploymentDirectory;
 use Kiln\Deployments\Infrastructure\EloquentLiveReleases;
+use Kiln\Deployments\Infrastructure\EloquentRetainedImages;
 use Kiln\Deployments\Infrastructure\NoFunctionSources;
 use Kiln\Fleet\Events\CommandFailed;
 use Kiln\Fleet\Events\CommandFinished;
@@ -57,6 +59,7 @@ class DeploymentsServiceProvider extends ModuleServiceProvider
     public array $singletons = [
         DeploymentDirectory::class => EloquentDeploymentDirectory::class,
         LiveReleases::class => EloquentLiveReleases::class,
+        RetainedImages::class => EloquentRetainedImages::class,
         FunctionSources::class => NoFunctionSources::class,
     ];
 
