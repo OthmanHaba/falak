@@ -18,6 +18,7 @@ use Kiln\Sites\Application\Listeners\HandleCommandOutcome;
 use Kiln\Sites\Application\Listeners\RecordComposeStatus;
 use Kiln\Sites\Application\Listeners\RemoveServerTargets;
 use Kiln\Sites\Contracts\ComposeInspector;
+use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\SiteDeploySettings;
 use Kiln\Sites\Contracts\SiteDirectory;
@@ -27,6 +28,7 @@ use Kiln\Sites\Contracts\SiteHeaders;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Domain\Policies\SitePolicy;
 use Kiln\Sites\Infrastructure\ActionSiteFactory;
+use Kiln\Sites\Infrastructure\Compose\EloquentComposeServiceExtraction;
 use Kiln\Sites\Infrastructure\Compose\EloquentComposeSites;
 use Kiln\Sites\Infrastructure\Compose\YamlComposeInspector;
 use Kiln\Sites\Infrastructure\EloquentServerSites;
@@ -52,6 +54,7 @@ class SitesServiceProvider extends ModuleServiceProvider
         SiteFactory::class => ActionSiteFactory::class,
         ComposeInspector::class => YamlComposeInspector::class,
         ComposeSites::class => EloquentComposeSites::class,
+        ComposeServiceExtraction::class => EloquentComposeServiceExtraction::class,
         // Insights and Telemetry register later and only fill these when unbound.
         SiteNameResolver::class => EloquentSiteNameResolver::class,
         ServerSites::class => EloquentServerSites::class,

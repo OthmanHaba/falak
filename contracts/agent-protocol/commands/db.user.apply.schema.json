@@ -68,6 +68,15 @@
       "type": "boolean",
       "default": false,
       "description": "the user connects from other servers (dedicated database server): the engine listens on every interface and, for postgres, a scram-sha-256 host rule is kept for the user; the firewall still decides who reaches the port"
+    },
+    "containers": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2}$"
+      },
+      "description": "feature db.containers: Docker address ranges (IPv4 CIDRs) the user also connects from — containers on this server reaching the engine on the host address. The engine listens on every interface; postgres gets a scram-sha-256 host rule per range, mysql an extra account per range (user@'ip/netmask', same password and grants). net.firewall.apply container_ports lets only the Docker bridges in"
     }
   },
   "$defs": {

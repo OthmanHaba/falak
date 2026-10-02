@@ -143,3 +143,27 @@ two actions in Sites.
   - `rewrites(string $siteId): array<string, string>` — env var → replacement (`${{ db.DATABASE_URL }}`, internal
     URL of a split-out site) used by lane 1's rendering.
 - Detection of which variables point at a service (hostname = service name in URLs/hosts) lives here.
+
+### Lane 3 as built (decisions and deviations)
+- **Container access** (agent feature `db.containers`): engines on app/worker servers listen on every interface,
+  accept the Docker ranges (`KILN_DOCKER_NETWORKS`, default `172.16.0.0/12,192.168.0.0/16`; PostgreSQL host rules,
+  MySQL an extra account per range) and the firewall opens their port on `docker0` / `br-*` only
+  (`net.firewall.apply` `container_ports`, from the new `Network\Contracts\ContainerHostPorts`). Containers dial the
+  server's own address (private network → private IP → public IP), not a bridge gateway, so one address works for
+  every Docker network (compose projects, kiln-fn, Docker sites). Per engine `container_access`, turned on when the
+  agent reports the feature (AgentVersionChanged / provisioning): users are re-applied, the firewall converged.
+- `DatabaseConnections::variables()` takes an optional `DatabaseConsumer`; Projects' resolver passes the site being
+  released.
+- **Redis/Valkey** stay in the stack: Kiln has no managed Redis (`toDatabase` refuses them).
+- `toDatabase` / `toSite` take an optional trailing `?string $compose` (the merged YAML the caller already has);
+  without it inline stacks use the stored file, repo stacks call `SourceControlGateway::file()` (lane 1) on
+  `compose_files[0] ?? compose_file`.
+- `compose_services[<service>].rewrites` stores templates (`{ref:KEY}`, `{url}`, `{host}`); `rewrites()` fills them
+  at call time (current canvas name of the database, current primary domain of the site), so renames and domain
+  changes follow. Extracted databases are named "<stack> <service>" on the canvas (the stack usually has the
+  database's name).
+- Extraction removes the service from the stack's `public_services` (app port follows the new primary) and
+  dispatches `SiteUpdated` + `Sites\Events\ComposeServiceExtracted {siteId, organizationId, service, kind, refId,
+  name}`: Projects places a database next to the stack; Edge (lane 2) moves a split-out service's domain rows.
+- `root_directory` exists for every git site; the builder already supported `subdir` (native packaging, Docker
+  context/Dockerfile, compose file) and now refuses one that resolves outside the checkout.

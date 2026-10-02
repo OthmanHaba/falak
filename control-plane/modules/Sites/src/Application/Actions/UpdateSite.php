@@ -21,7 +21,7 @@ final class UpdateSite
 {
     public const FIELDS = [
         'name', 'runtime', 'build_mode', 'php_version', 'node_version', 'source_connection_id', 'repository', 'branch',
-        'push_to_deploy', 'web_directory', 'app_port', 'container_port', 'docker_image', 'dockerfile', 'compose_file', 'health_check_path',
+        'root_directory', 'push_to_deploy', 'web_directory', 'app_port', 'container_port', 'docker_image', 'dockerfile', 'compose_file', 'health_check_path',
         'test_domain_enabled',
     ];
 
@@ -74,6 +74,10 @@ final class UpdateSite
 
         if (array_key_exists('web_directory', $attributes)) {
             $attributes['web_directory'] = trim((string) $attributes['web_directory'], '/');
+        }
+
+        if (array_key_exists('root_directory', $attributes)) {
+            $attributes['root_directory'] = CreateSite::rootDirectory($attributes['root_directory']);
         }
 
         if ($runtime === SiteRuntime::Compose) {

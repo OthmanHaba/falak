@@ -67,6 +67,12 @@ final class CommandPayloads
             $payload['remote'] = true;
         }
 
+        if (! $server->dedicated && ($ranges = (array) config('databases.container_networks', [])) !== []) {
+            // Containers on the server (compose, Docker sites, functions) connect from the Docker ranges; agents
+            // without db.containers get the field stripped (PayloadCompatibility) and keep the engine on localhost.
+            $payload['containers'] = array_values($ranges);
+        }
+
         return $payload;
     }
 

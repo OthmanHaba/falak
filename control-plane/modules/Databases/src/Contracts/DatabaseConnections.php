@@ -17,18 +17,21 @@ interface DatabaseConnections
     public const HOST_KEYS = ['DATABASE_URL', 'DB_HOST'];
 
     /**
-     * Host = 127.0.0.1 for an engine on an app/worker server (it listens on localhost only; check {@see unreachable()}
-     * for the consumer). For a dedicated database server: its private network (WireGuard) address, else its
-     * provider private IP, else its public IP. Credentials are those of the oldest user granted access.
+     * Host for an engine on an app/worker server (check {@see unreachable()} for the consumer): 127.0.0.1, or for a
+     * containerized consumer (Docker, compose, function) on that server the server's own address (private network,
+     * provider private IP, public IP), which its containers reach through the Docker bridge. For a dedicated
+     * database server: its private network (WireGuard) address, else its provider private IP, else its public IP.
+     * Credentials are those of the oldest user granted access.
      *
+     * @param  ?DatabaseConsumer  $consumer  who connects (null: a native consumer)
      * @return array<string, string> empty when the database does not exist
      */
-    public function variables(string $databaseId): array;
+    public function variables(string $databaseId, ?DatabaseConsumer $consumer = null): array;
 
     /**
      * Why the consumer cannot connect to the host in {@see HOST_KEYS}, or null when it can. An engine on an app/worker
-     * server accepts local connections only: reachable by native sites running on that server alone, not from other
-     * servers or from containers (Docker, compose, functions).
+     * server is reachable from that server only: by native sites, and by containers once the server's agent supports
+     * container access (feature db.containers) — not from other servers.
      */
     public function unreachable(string $databaseId, DatabaseConsumer $consumer): ?string;
 }

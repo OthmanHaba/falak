@@ -43,6 +43,7 @@ final class DuplicateSite
             'source_connection_id' => $source->source_connection_id,
             'repository' => $source->repository,
             'branch' => $overrides['branch'] ?? $source->branch,
+            'root_directory' => $source->root_directory,
             'push_to_deploy' => (bool) ($overrides['push_to_deploy'] ?? false),
             'web_directory' => $source->web_directory,
             // Without servers the port cannot collide; with servers a free one is picked.

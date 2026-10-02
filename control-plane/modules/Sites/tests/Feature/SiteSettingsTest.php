@@ -25,6 +25,21 @@ beforeEach(function () {
     sites_finish($this->agents->last('runtime.fpm.pool'));
 });
 
+it('keeps a repository root directory (monorepos), relative and without dot segments', function () {
+    $this->patch("/sites/{$this->site->id}", ['root_directory' => '/apps/shop/'])->assertSessionHasNoErrors();
+    expect($this->site->refresh()->root_directory)->toBe('apps/shop')
+        ->and($this->site->toData()->rootDirectory)->toBe('apps/shop')
+        ->and($this->getJson("/api/v1/sites/{$this->site->id}")->json('data.root_directory'))->toBe('apps/shop');
+
+    foreach (['../shop', 'apps/../../etc', './apps', 'apps//shop', 'a b'] as $bad) {
+        $this->patch("/sites/{$this->site->id}", ['root_directory' => $bad])->assertSessionHasErrors('root_directory');
+    }
+    expect($this->site->refresh()->root_directory)->toBe('apps/shop');
+
+    $this->patch("/sites/{$this->site->id}", ['root_directory' => ''])->assertSessionHasNoErrors();
+    expect($this->site->refresh()->root_directory)->toBeNull();
+});
+
 it('updates general settings and announces what changed', function () {
     Event::fake([SiteUpdated::class]);
 

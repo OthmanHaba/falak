@@ -24,6 +24,7 @@ use Kiln\Projects\Domain\Models\Project;
 use Kiln\Projects\Domain\Policies\ProjectPolicy;
 use Kiln\Projects\Infrastructure\EloquentProjectDirectory;
 use Kiln\Projects\Infrastructure\ReferenceResolver;
+use Kiln\Sites\Events\ComposeServiceExtracted;
 use Kiln\Sites\Events\SiteCreated;
 use Kiln\Sites\Events\SiteDeleted;
 
@@ -59,6 +60,7 @@ class ProjectsServiceProvider extends ModuleServiceProvider
         Event::listen(SiteCreated::class, [PlaceCreatedServices::class, 'siteCreated']);
         Event::listen(SiteDeleted::class, [PlaceCreatedServices::class, 'siteDeleted']);
         Event::listen(DatabaseCreated::class, [PlaceCreatedServices::class, 'databaseCreated']);
+        Event::listen(ComposeServiceExtracted::class, [PlaceCreatedServices::class, 'composeServiceExtracted']);
         Event::listen(DatabaseDeleted::class, [PlaceCreatedServices::class, 'databaseDeleted']);
 
         // app(), not $this->app: under the FrankenPHP worker the latter is the base app, not the request sandbox.

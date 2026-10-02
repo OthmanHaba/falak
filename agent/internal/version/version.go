@@ -28,6 +28,9 @@ var Features = []string{
 	"fn.v2",
 	// fn.release.apply with file trees (several files, folders): validated as a tree before anything is written.
 	"fn.v3",
+	// db.user.apply containers (Docker address ranges) and net.firewall.apply container_ports (Docker bridges):
+	// containers on a server reach its localhost database engines.
+	"db.containers",
 }
 
 var (

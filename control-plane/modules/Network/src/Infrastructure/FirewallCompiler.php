@@ -2,6 +2,7 @@
 
 namespace Kiln\Network\Infrastructure;
 
+use Kiln\Network\Contracts\ContainerHostPorts;
 use Kiln\Network\Contracts\WebOriginPolicy;
 use Kiln\Network\Domain\Enums\RuleAction;
 use Kiln\Network\Domain\Models\FirewallRule;
@@ -23,6 +24,7 @@ final class FirewallCompiler
     public function __construct(
         private readonly ServerDirectory $servers,
         private readonly WebOriginPolicy $origins,
+        private readonly ContainerHostPorts $containers,
     ) {}
 
     /**
@@ -38,12 +40,19 @@ final class FirewallCompiler
             ->orderBy('id')
             ->get();
 
-        return [
+        $payload = [
             'input_policy' => 'drop',
             'ssh_port' => (int) config('network.ssh_port', 22),
             'allow_icmp' => true,
             'rules' => [...$this->networkRules($serverId), ...$this->webOrigins($serverId, $rules->map(fn (FirewallRule $rule) => $this->rule($rule))->all())],
         ];
+
+        // Accepted on the Docker bridges only, ahead of the rules (the agent renders them; older agents drop the field).
+        if (($ports = $this->containers->for($serverId)) !== []) {
+            $payload['container_ports'] = $ports;
+        }
+
+        return $payload;
     }
 
     /**

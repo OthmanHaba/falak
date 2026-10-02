@@ -14,6 +14,7 @@ use Kiln\Kernel\Support\ModuleServiceProvider;
 use Kiln\Network\Application\Listeners\ForgetDeletedServer;
 use Kiln\Network\Application\Listeners\HandleCommandOutcome;
 use Kiln\Network\Application\Listeners\SeedFirewallOnProvisioning;
+use Kiln\Network\Contracts\ContainerHostPorts;
 use Kiln\Network\Contracts\Firewalls;
 use Kiln\Network\Contracts\PrivateNetwork as PrivateNetworkContract;
 use Kiln\Network\Contracts\WebOriginPolicy;
@@ -24,6 +25,7 @@ use Kiln\Network\Domain\Policies\PrivateNetworkPolicy;
 use Kiln\Network\Events\FirewallApplied;
 use Kiln\Network\Events\FirewallApplyFailed;
 use Kiln\Network\Infrastructure\EloquentPrivateNetwork;
+use Kiln\Network\Infrastructure\NoContainerHostPorts;
 use Kiln\Network\Infrastructure\NoWebOriginPolicy;
 use Kiln\Network\Infrastructure\QueuedFirewalls;
 use Kiln\Servers\Events\ServerDeleted;
@@ -46,6 +48,8 @@ class NetworkServiceProvider extends ModuleServiceProvider
         $this->mergeConfigFrom($this->modulePath().'/config/network.php', 'network');
         // Edge replaces this for servers behind Cloudflare (origin lock-down).
         $this->app->singletonIf(WebOriginPolicy::class, NoWebOriginPolicy::class);
+        // Databases replaces this (engines that containers on the server reach).
+        $this->app->singletonIf(ContainerHostPorts::class, NoContainerHostPorts::class);
     }
 
     protected function bootModule(): void

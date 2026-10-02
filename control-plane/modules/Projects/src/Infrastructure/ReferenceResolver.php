@@ -173,7 +173,7 @@ final class ReferenceResolver implements VariableReferences
 
         return $this->values[$service->id] ??= match ($service->kind) {
             ServiceKind::Site => array_map('strval', $this->sites->environment($service->ref_id)?->variables ?? []),
-            ServiceKind::Database => $this->databases->variables($service->ref_id),
+            ServiceKind::Database => $this->databases->variables($service->ref_id, $this->consumer()),
         };
     }
 

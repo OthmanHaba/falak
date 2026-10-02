@@ -196,6 +196,14 @@ an HTTPS mirror with the same path layout. Set these in `/opt/kiln/custom.env`, 
 Unset (the default) means the upstream URLs. The mirror applies to servers provisioned (or runtimes
 installed) after the change.
 
+### Docker address ranges (optional)
+
+Containers on an app or worker server (compose stacks, Docker sites, functions) reach that server's databases
+through the Docker bridge (agent 0.4.5+). The engines accept connections from Docker's default address pools,
+`172.16.0.0/12,192.168.0.0/16`; the firewall only lets them in on the Docker bridges. If the Docker daemon on your
+servers uses other `default-address-pools`, set `KILN_DOCKER_NETWORKS` (comma-separated IPv4 CIDRs) in
+`/opt/kiln/custom.env` and run `kiln-ctl up`; it applies to database users created or updated afterwards.
+
 ### Domains for new services
 
 When a service is created (template, Git repository, Docker image) each public endpoint gets a domain:

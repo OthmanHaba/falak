@@ -10,9 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -247,6 +249,11 @@ type UserPayload struct {
 	// Remote: the user connects from other servers (dedicated database server). The engine is made to
 	// listen on every interface and, for PostgreSQL, a scram-sha-256 host rule is kept for the user.
 	Remote bool `json:"remote"`
+	// Containers are the Docker address ranges (IPv4 CIDRs) the user also connects from: containers on this server
+	// (compose stacks, Docker sites, functions) reach the engine on the host address. The engine listens on every
+	// interface; the firewall only lets the Docker bridges in (net.firewall.apply container_ports). PostgreSQL gets a
+	// host rule per range, MySQL an extra account per range (user@'172.16.0.0/255.240.0.0').
+	Containers []string `json:"containers,omitempty"`
 }
 
 // userState is what we last applied (passwords only as a keyed fingerprint), stored 0600 so that
@@ -255,6 +262,9 @@ type userState struct {
 	PasswordFP string              `json:"password_fp"`
 	Grants     map[string][]string `json:"grants"`
 	Remote     bool                `json:"remote,omitempty"`
+	Containers []string            `json:"containers,omitempty"`
+	// ContainerOf: this MySQL account exists for the container ranges of the account named here.
+	ContainerOf string `json:"container_of,omitempty"`
 }
 
 func (db *DB) statePath() string { return strings.TrimRight(db.d.StateDir, "/") + "/db/users.json" }
@@ -303,8 +313,80 @@ func (db *DB) UserApply(ctx context.Context, p UserPayload, _ commands.Stream) (
 	if err != nil {
 		return nil, err
 	}
-	if err := checkIdent("username", p.Username); err != nil {
+	hosts, err := containerHosts(p.Containers)
+	if err != nil {
 		return nil, err
+	}
+	changed, err := db.userApply(ctx, e, p, "")
+	if err != nil {
+		return nil, err
+	}
+	if e.name == "mysql" {
+		if p.State == "absent" {
+			hosts = nil
+		}
+		c, err := db.syncContainerAccounts(ctx, e, p, hosts)
+		if err != nil {
+			return nil, err
+		}
+		changed = changed || c
+	}
+	return ChangedResult{Changed: changed}, nil
+}
+
+// containerHosts validates the container ranges and returns them as MySQL account hosts (ip/netmask).
+func containerHosts(cidrs []string) ([]string, error) {
+	var hosts []string
+	for _, c := range cidrs {
+		_, n, err := net.ParseCIDR(c)
+		if err != nil || n.IP.To4() == nil || n.String() != c {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("containers: %q is not an IPv4 network in CIDR form", c)}
+		}
+		hosts = append(hosts, n.IP.String()+"/"+net.IP(n.Mask).String())
+	}
+	return hosts, nil
+}
+
+// syncContainerAccounts keeps one MySQL account per container range (user@'172.16.0.0/255.240.0.0', same password
+// and grants as the main account) and drops the ones no longer wanted.
+func (db *DB) syncContainerAccounts(ctx context.Context, e engine, p UserPayload, hosts []string) (bool, error) {
+	main := p.Host
+	if main == "" {
+		main = "%"
+	}
+	owner := e.name + "/" + p.Username + "@" + main
+	changed := false
+	for _, h := range hosts {
+		c, err := db.userApply(ctx, e, UserPayload{Engine: p.Engine, Username: p.Username, Password: p.Password, Host: h, Grants: p.Grants, State: "present"}, owner)
+		if err != nil {
+			return false, err
+		}
+		changed = changed || c
+	}
+	for key, s := range db.loadState() {
+		if s.ContainerOf != owner {
+			continue
+		}
+		_, host, _ := strings.Cut(strings.TrimPrefix(key, e.name+"/"), "@")
+		if slices.Contains(hosts, host) {
+			continue
+		}
+		if _, err := db.userApply(ctx, e, UserPayload{Engine: p.Engine, Username: p.Username, Host: host, State: "absent"}, owner); err != nil {
+			return false, err
+		}
+		changed = true
+	}
+	return changed, nil
+}
+
+// userApply converges one account; containerOf marks a MySQL container account of that owner key.
+func (db *DB) userApply(ctx context.Context, e engine, p UserPayload, containerOf string) (bool, error) {
+	if err := checkIdent("username", p.Username); err != nil {
+		return false, err
+	}
+	if e.name == "mysql" {
+		// MySQL container ranges are separate accounts (syncContainerAccounts), not host rules.
+		p.Containers = nil
 	}
 	host := p.Host
 	if host == "" {
@@ -314,18 +396,19 @@ func (db *DB) UserApply(ctx context.Context, p UserPayload, _ commands.Stream) (
 	desired := map[string][]string{}
 	for _, g := range p.Grants {
 		if err := checkIdent("database", g.Database); err != nil {
-			return nil, err
+			return false, err
 		}
 		privs := normPrivs(g.Privileges)
 		for _, pr := range privs {
 			if !privRe.MatchString(pr) {
-				return nil, &commands.PayloadError{Err: fmt.Errorf("invalid privilege %q", pr)}
+				return false, &commands.PayloadError{Err: fmt.Errorf("invalid privilege %q", pr)}
 			}
 		}
 		desired[g.Database] = privs
 	}
 	states := db.loadState()
 	prev := states[key]
+	exposedBefore := prev.Remote || len(prev.Containers) > 0 || prev.ContainerOf != ""
 
 	var existsQ, userSQL string
 	if e.name == "mysql" {
@@ -335,32 +418,31 @@ func (db *DB) UserApply(ctx context.Context, p UserPayload, _ commands.Stream) (
 	}
 	out, err := e.exec(ctx, "", existsQ)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 	exists := out != "" && out != "0"
 
 	if p.State == "absent" {
-		wasRemote := prev.Remote
 		delete(states, key)
-		if wasRemote {
+		if exposedBefore {
 			if err := db.syncRemoteAccess(ctx, e, states); err != nil {
-				return nil, err
+				return false, err
 			}
 		}
 		if !exists {
-			return ChangedResult{Changed: wasRemote}, db.saveState(states)
+			return exposedBefore, db.saveState(states)
 		}
 		q := "DROP USER IF EXISTS " + myLit(p.Username) + "@" + myLit(host) + ";"
 		if e.name == "postgres" {
 			q = "DROP ROLE IF EXISTS " + pgIdent(p.Username) + ";"
 		}
 		if _, err := e.exec(ctx, "", q); err != nil {
-			return nil, err
+			return false, err
 		}
-		return ChangedResult{Changed: true}, db.saveState(states)
+		return true, db.saveState(states)
 	}
 	if p.Password == "" {
-		return nil, &commands.PayloadError{Err: errors.New("password is required when state=present")}
+		return false, &commands.PayloadError{Err: errors.New("password is required when state=present")}
 	}
 	fp := fingerprint(key, p.Password)
 	changed := false
@@ -376,7 +458,7 @@ func (db *DB) UserApply(ctx context.Context, p UserPayload, _ commands.Stream) (
 	}
 	if userSQL != "" {
 		if _, err := e.exec(ctx, "", userSQL); err != nil {
-			return nil, fmt.Errorf("apply user %s: %w", p.Username, err)
+			return false, fmt.Errorf("apply user %s: %w", p.Username, err)
 		}
 		changed = true
 	}
@@ -385,25 +467,26 @@ func (db *DB) UserApply(ctx context.Context, p UserPayload, _ commands.Stream) (
 		for dbname := range prev.Grants {
 			if _, keep := desired[dbname]; !keep {
 				if err := db.revoke(ctx, e, p.Username, host, dbname); err != nil {
-					return nil, err
+					return false, err
 				}
 			}
 		}
 		for _, dbname := range sortedKeys(desired) {
 			if err := db.grant(ctx, e, p.Username, host, dbname, desired[dbname]); err != nil {
-				return nil, err
+				return false, err
 			}
 		}
 		changed = true
 	}
-	states[key] = userState{PasswordFP: fp, Grants: desired, Remote: p.Remote}
-	if p.Remote || prev.Remote {
+	next := userState{PasswordFP: fp, Grants: desired, Remote: p.Remote, Containers: p.Containers, ContainerOf: containerOf}
+	states[key] = next
+	if exposedBefore || next.Remote || len(next.Containers) > 0 || next.ContainerOf != "" {
 		if err := db.syncRemoteAccess(ctx, e, states); err != nil {
-			return nil, err
+			return false, err
 		}
-		changed = changed || p.Remote != prev.Remote
+		changed = changed || p.Remote != prev.Remote || !slices.Equal(p.Containers, prev.Containers) || containerOf != prev.ContainerOf
 	}
-	return ChangedResult{Changed: changed}, db.saveState(states)
+	return changed, db.saveState(states)
 }
 
 func sameGrants(a, b map[string][]string) bool {
@@ -418,7 +501,7 @@ func sameGrants(a, b map[string][]string) bool {
 	return true
 }
 
-func sortedKeys(m map[string][]string) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)

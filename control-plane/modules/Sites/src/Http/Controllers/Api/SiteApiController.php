@@ -184,6 +184,7 @@ final class SiteApiController extends Controller
                 'node_version' => $site->node_version,
                 'repository' => $site->repository,
                 'branch' => $site->branch,
+                'root_directory' => $site->root_directory,
                 'push_to_deploy' => $site->push_to_deploy,
                 'domain' => $domain,
                 'url' => $domain ? "https://{$domain}" : null,
