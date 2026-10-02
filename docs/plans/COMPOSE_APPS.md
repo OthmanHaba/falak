@@ -143,3 +143,11 @@ two actions in Sites.
   - `rewrites(string $siteId): array<string, string>` — env var → replacement (`${{ db.DATABASE_URL }}`, internal
     URL of a split-out site) used by lane 1's rendering.
 - Detection of which variables point at a service (hostname = service name in URLs/hosts) lives here.
+
+## Status
+
+- **Lane 1 (phases 1 and 4)** on `feat/compose-apps-flow`: SourceControl `file()`/`tree()`, the Git step's
+  "Docker Compose app", the services table, variables, Settings → Compose, Kiln adjustments at render time,
+  multi-file/profile/include/extends projects in kiln-builder (shared merge cases) and repository files shipped
+  with releases (agent feature `compose.v2`). `Sites\Events\ComposeServicesUnpublished` fires when a service stops
+  being public (Edge removes its domains).

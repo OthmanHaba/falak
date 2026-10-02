@@ -122,7 +122,14 @@ Docker Compose sites (`runtime: compose`, `framework` optional — defaults to `
 loopback host port per service; `domain` is a name or a domain choice — generated names are
 `<service>-<slug>.<ip-with-dashes>.<suffix>`, `null` / `{"type": "test"}` means the test domain), `variables` `{KEY: value}` (initial environment; `${{ service.KEY }}` allowed) and
 `template` `{slug, version, source: catalog|custom}`. Inline files must pass the compose policy (`422` otherwise) unless
-the organization allows privileged compose. The site resource then carries `compose {source, file, version,
+the organization allows privileged compose. Repository sources also take `compose_files` (list, `-f` order),
+`compose_profiles`, `compose_services` `{<service>: {mode: keep|database|site, engine?, database_id?, site?}}` and
+`compose_adjustments {keep_binds: ["service:./path"]}`; with `compose_files`, creation reads the repository first
+(files load, public services exist, required `${VAR}`s have a value in `variables`; `422` otherwise).
+`public_services[].health_check_path` sets a per-service check path. Panel endpoints for the create flow:
+`POST /sites/compose/candidates` and `POST /sites/compose/inspect` (`{source_connection_id, repository, branch,
+compose_files, …}` → services, variables, adjustments, the merged and adjusted YAML; `no_api: true` for plain git
+servers), and `POST /sites/{site}/compose/inspect` for existing sites. The site resource then carries `compose {source, file, version,
 public_services[] (with host_port, test_domain, url), template}`.
 
 ### `GET /api/v1/sites/{site}/env` — `sites.env.view`
