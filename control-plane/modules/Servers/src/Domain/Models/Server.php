@@ -132,6 +132,14 @@ class Server extends Model
         return array_values(array_intersect($offered, array_map('strval', (array) $byOs[$os])));
     }
 
+    /** "Ubuntu 26.04" from the reported OS ("ubuntu 26.04"). */
+    public function osLabel(): string
+    {
+        [$id, $version] = array_pad(explode(' ', (string) $this->os, 2), 2, '');
+
+        return trim(ucfirst($id).' '.$version) ?: 'this server';
+    }
+
     public function defaultPhp(): ?PhpVersion
     {
         return $this->phpVersions->firstWhere('is_default', true);

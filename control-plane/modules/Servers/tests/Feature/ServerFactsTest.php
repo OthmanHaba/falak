@@ -32,4 +32,10 @@ it('keeps a provider private IPv4 when the agent reports none', function () {
     app(ServerFacts::class)->record($server->refresh(), ['hostname' => 'web-1']);
 
     expect($server->refresh()->private_ipv4)->toBe('10.0.0.7');
+
+    // Even when an agent once reported the same address as the provider.
+    app(ServerFacts::class)->record($server, ['private_ipv4' => '10.0.0.7']);
+    app(ServerFacts::class)->record($server->refresh(), ['private_ipv4' => null]);
+
+    expect($server->refresh()->private_ipv4)->toBe('10.0.0.7');
 });

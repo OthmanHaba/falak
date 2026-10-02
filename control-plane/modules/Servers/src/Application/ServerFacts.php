@@ -32,9 +32,9 @@ final class ServerFacts
     }
 
     /**
-     * The agent's private address wins. When it reports none, an address the agent reported before is cleared (agents
-     * before v0.5.2 reported Docker's bridge, 172.17.0.1, which is not reachable from other servers); one from the
-     * provider stays.
+     * The agent's private address wins. When it reports none on a custom server (where only the agent sets it), the
+     * address it reported before is cleared: agents before v0.5.2 reported Docker's bridge, 172.17.0.1, which is not
+     * reachable from other servers. A provider server keeps its provider's address.
      *
      * @param  array<string, mixed>  $facts
      */
@@ -46,7 +46,7 @@ final class ServerFacts
 
         $previous = is_array($server->facts) ? ($server->facts['private_ipv4'] ?? null) : null;
 
-        if (array_key_exists('private_ipv4', $facts) && $server->private_ipv4 !== null && $server->private_ipv4 === $previous) {
+        if ($server->isCustom() && array_key_exists('private_ipv4', $facts) && $server->private_ipv4 !== null && $server->private_ipv4 === $previous) {
             return null;
         }
 

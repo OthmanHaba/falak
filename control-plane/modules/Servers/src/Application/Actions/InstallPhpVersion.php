@@ -34,7 +34,7 @@ final class InstallPhpVersion
         if (! in_array($version, $installable = $server->installablePhpVersions(), true)) {
             $offers = $installable === [] ? 'none of the PHP versions Kiln installs' : 'PHP '.implode(', ', $installable);
 
-            throw ValidationException::withMessages(['version' => "PHP {$version} cannot be installed on {$this->osName($server)}: it offers {$offers}."]);
+            throw ValidationException::withMessages(['version' => "PHP {$version} cannot be installed on {$server->osLabel()}: it offers {$offers}."]);
         }
 
         if ($server->status !== ServerStatus::Active) {
@@ -68,13 +68,6 @@ final class InstallPhpVersion
         $this->audit->record('server.php_install_requested', 'server', $server->id, ['version' => $version], $server->organization_id);
 
         return $php;
-    }
-
-    private function osName(Server $server): string
-    {
-        [$id, $version] = array_pad(explode(' ', (string) $server->os, 2), 2, '');
-
-        return trim(ucfirst($id).' '.$version);
     }
 
     /**
