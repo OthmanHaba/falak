@@ -68,6 +68,14 @@ final class StepPayloads
             return $release->compose;
         }
 
+        // A service split out into its own Kiln site leaves the stack with this release; until that site is live the
+        // stack's services that use it (an nginx proxying to it, say) would fail to start.
+        foreach ($site->compose->services ?? [] as $service => $decision) {
+            if (($decision['mode'] ?? null) === 'site' && is_string($decision['site_id'] ?? null) && Release::current($decision['site_id']) === null) {
+                throw new RuntimeException("{$service} now runs as its own Kiln site, which hasn't been deployed yet. Deploy that site first, then this stack.");
+            }
+        }
+
         $images = [];
         $version = null;
         $registry = false;

@@ -20,6 +20,7 @@ use Kiln\Sites\Contracts\Data\ComposeRewrites;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Domain\Models\ComposeVersion;
+use Kiln\Sites\Domain\Models\Site;
 use Symfony\Component\Yaml\Yaml;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -256,6 +257,20 @@ it('fails with a clear error when the compose file cannot be rendered', function
 
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
         ->and($deployment->error)->toContain('The public service app is not in the compose file.')
+        ->and($world->agents->dispatched('docker.compose.up'))->toBe([]);
+});
+
+it('waits for a split-out service\'s own site before deploying the stack without it', function () {
+    $world = compose_world(site: ['compose_source' => 'inline', 'repository' => null, 'source_connection_id' => null]);
+    ComposeVersion::query()->create(['site_id' => $world->site->id, 'version' => 1, 'content' => "services:\n  app:\n    image: nginx:1.27\n  api:\n    image: ghcr.io/acme/api:1\n", 'created_at' => now()]);
+    $split = '01j9zq4n8v2m6r0t3w5y7b9d1f';
+    Site::query()->whereKey($world->site->id)->update(['compose_services' => json_encode(['api' => ['mode' => 'site', 'site_id' => $split]])]);
+
+    $deployment = compose_deploy($world);
+    deploy_run_all($world->agents);
+
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
+        ->and($deployment->error)->toContain("api now runs as its own Kiln site, which hasn't been deployed yet")
         ->and($world->agents->dispatched('docker.compose.up'))->toBe([]);
 });
 

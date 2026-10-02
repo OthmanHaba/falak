@@ -168,9 +168,20 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 	} else if ok {
 		_ = s.c.ContainerRemove(ctx, old.ID)
 	}
+	if err := s.awaitNetworks(ctx, spec.Networks, st); err != nil {
+		return nil, err
+	}
 	id, err := s.c.ContainerCreate(ctx, spec.Name, spec.createBody(spec.specHash()))
 	if err != nil {
 		return nil, err
+	}
+	// A split-out compose service joins its stack's networks before it starts, so it resolves the stack's services
+	// (and they it) from its first request.
+	for _, n := range spec.Networks {
+		if err := s.c.NetworkConnect(ctx, n.Name, id, n.Aliases); err != nil {
+			_ = s.c.ContainerRemove(context.WithoutCancel(ctx), id)
+			return nil, fmt.Errorf("joining network %s: %w", n.Name, err)
+		}
 	}
 	if err := s.c.ContainerStart(ctx, id); err != nil {
 		_ = s.c.ContainerRemove(context.WithoutCancel(ctx), id)

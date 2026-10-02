@@ -600,3 +600,35 @@ func TestRunJoinsExistingNetworksWithAliases(t *testing.T) {
 		t.Fatalf("%+v", fin)
 	}
 }
+
+// A split-out compose service deployed with a container swap joins its stack's network before it starts (seen on
+// AWS: the swap path created the container on the default bridge only, so it couldn't resolve redis).
+func TestContainerSwapJoinsStackNetworks(t *testing.T) {
+	s, e, _, _, _ := newSvc(t)
+	ok := 200
+	p := swapPayload(healthServer(t, &ok), healthServer(t, &ok))
+	p.Networks = []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}}
+	e.networks["shop_default"] = nil
+
+	fin, col := exec1(t, s, "deploy.container.swap", p)
+	if fin.Error != "" {
+		t.Fatal(fin.Error, col.Output(""))
+	}
+	c := e.byName("kiln-shop-blue")
+	if c == nil || !c.running {
+		t.Fatalf("blue container missing or stopped")
+	}
+	if got := e.networks["shop_default"]; len(got) != 1 || !strings.HasSuffix(got[0], ":api") {
+		t.Fatalf("joins %v", got)
+	}
+
+	old := networkWait
+	networkWait = 0
+	t.Cleanup(func() { networkWait = old })
+	p.Networks = []NetworkJoin{{Name: "missing_default"}}
+	p.Image = "registry.local/shop:def"
+	fin, _ = exec1(t, s, "deploy.container.swap", p)
+	if !strings.Contains(fin.Error, "network missing_default does not exist") {
+		t.Fatalf("%+v", fin)
+	}
+}
