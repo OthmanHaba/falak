@@ -153,7 +153,8 @@ class Server extends Model
             defaultPhpVersion: $installed->firstWhere('is_default', true)?->version,
             phpRuntime: $this->stack->phpRuntime,
             nodeVersion: $this->stack->node,
-            databaseEngine: $this->stack->database,
+            // An engine added after creation is only the server's once installed (engine_command_id cleared).
+            databaseEngine: $this->engine_command_id === null ? $this->stack->database : null,
             cacheEngine: $this->stack->cache,
             docker: $this->stack->docker,
             unixUser: (string) config('servers.unix_user', 'kiln'),

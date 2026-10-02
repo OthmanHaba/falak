@@ -1,9 +1,17 @@
 <?php
 
+use Illuminate\Validation\ValidationException;
+use Kiln\Databases\Application\EngineInventory;
+use Kiln\Databases\Domain\Models\Database;
 use Kiln\Databases\Domain\Models\DatabaseServer;
+use Kiln\Fleet\Contracts\AgentGateway;
+use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Kiln\Fleet\Infrastructure\ProtocolSchemas;
 use Kiln\Identity\Contracts\Role;
+use Kiln\Servers\Application\Actions\InstallDatabaseEngine;
+use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Servers\Domain\Models\Server;
+use Kiln\Servers\Events\DatabaseEngineInstallFailed;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -61,6 +69,52 @@ it('takes the engine back out of the stack when the plan fails', function () {
 
     // A later attempt is allowed again.
     $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'postgresql'])->assertSessionHasNoErrors();
+});
+
+it('keeps an engine that is still being installed from other modules, so Databases registers no phantom server', function () {
+    $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'mysql'])->assertSessionHasNoErrors();
+
+    // Databases syncs its inventory from the servers meanwhile (e.g. opening the Databases page).
+    expect(app(ServerDirectory::class)->find($this->server->id)->databaseEngine)->toBeNull();
+    app(EngineInventory::class)->syncOrganization($this->organization->id);
+    expect(DatabaseServer::query()->where('server_id', $this->server->id)->exists())->toBeFalse();
+
+    [$envelope] = servers_poll($this->agent['headers']);
+    servers_finish($this->agent['headers'], $envelope['id']);
+    expect(app(ServerDirectory::class)->find($this->server->id)->databaseEngine)->toBe('mysql');
+});
+
+it('drops an engine row Databases registered for an install that failed, unless it holds databases', function () {
+    $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'mysql'])->assertSessionHasNoErrors();
+    // A row registered before engines were hidden while installing.
+    $row = DatabaseServer::query()->create(['server_id' => $this->server->id, 'organization_id' => $this->organization->id, 'server_name' => 'app-2', 'engine' => 'mysql', 'version' => '8.0', 'version_source' => 'default', 'dedicated' => false, 'port' => 3306]);
+
+    [$envelope] = servers_poll($this->agent['headers']);
+    servers_finish($this->agent['headers'], $envelope['id'], 100, 'E: Unable to locate package mysql-server');
+    expect(DatabaseServer::query()->whereKey($row->id)->exists())->toBeFalse();
+
+    // With databases in it, the row stays.
+    $row = DatabaseServer::query()->create(['server_id' => $this->server->id, 'organization_id' => $this->organization->id, 'server_name' => 'app-2', 'engine' => 'mysql', 'version' => '8.0', 'version_source' => 'default', 'dedicated' => false, 'port' => 3306]);
+    Database::query()->create(['database_server_id' => $row->id, 'organization_id' => $this->organization->id, 'server_id' => $this->server->id, 'name' => 'shop', 'status' => 'active']);
+    event(new DatabaseEngineInstallFailed($this->server->id, $this->organization->id, 'mysql'));
+    expect(DatabaseServer::query()->whereKey($row->id)->exists())->toBeTrue();
+});
+
+it('checks for a running install on the current row, not on the caller’s copy', function () {
+    $stale = Server::query()->findOrFail($this->server->id);
+    $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'postgresql'])->assertSessionHasNoErrors();
+
+    expect(fn () => app(InstallDatabaseEngine::class)($stale, 'mariadb'))
+        ->toThrow(ValidationException::class, 'A database engine is already being installed on this server.');
+    expect($this->server->refresh()->stack->database)->toBe('postgresql');
+});
+
+it('releases the claim when the plan cannot be dispatched', function () {
+    $this->mock(AgentGateway::class)->shouldReceive('dispatch')->andThrow(AgentUnavailable::forServer($this->server->id));
+
+    $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'postgresql'])->assertSessionHasErrors(['server' => 'The server agent is not connected. Reinstall the agent first.']);
+    $server = $this->server->refresh();
+    expect($server->stack->database)->toBeNull()->and($server->engine_command_id)->toBeNull();
 });
 
 it('refuses a second engine, unsupported engines and server types without databases', function () {

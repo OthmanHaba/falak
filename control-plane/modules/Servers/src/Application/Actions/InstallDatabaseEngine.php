@@ -2,19 +2,25 @@
 
 namespace Kiln\Servers\Application\Actions;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Kiln\Identity\Contracts\AuditLog;
 use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Servers\Events\DatabaseEngineInstalled;
+use Throwable;
 
 /**
  * Adds a database engine to a provisioned server: the engine joins the server's stack and the provisioning plan
  * converges with it (provision.apply is full desired state: the same packages and service as at creation). The
- * command's outcome registers the engine ({@see DatabaseEngineInstalled}) or takes it back out.
+ * command's outcome registers the engine ({@see DatabaseEngineInstalled}) or takes it back out. Other modules only see
+ * the engine (ServerData::databaseEngine) once it is installed.
  */
 final class InstallDatabaseEngine
 {
+    /** engine_command_id while the install is claimed but its command not dispatched yet. */
+    private const CLAIMED = 'claimed';
+
     public function __construct(
         private readonly ApplyProvisioningPlan $apply,
         private readonly AuditLog $audit,
@@ -33,22 +39,30 @@ final class InstallDatabaseEngine
             throw ValidationException::withMessages(['engine' => "A {$server->type->label()} cannot run a database engine."]);
         }
 
-        if ($server->stack->database !== null) {
-            throw ValidationException::withMessages(['engine' => $server->engine_command_id !== null
-                ? 'A database engine is already being installed on this server.'
-                : "The server already runs {$server->stack->database}."]);
-        }
+        // Checked and claimed under a row lock: two installs at once (the same provisioning attempt, so the same
+        // idempotency key) would otherwise both pass. Until the command id is known the claim is a placeholder.
+        $server = DB::transaction(function () use ($server, $engine) {
+            $locked = Server::query()->whereKey($server->id)->lockForUpdate()->firstOrFail();
 
-        if ($server->status !== ServerStatus::Active) {
-            throw ValidationException::withMessages(['engine' => 'The server must be active (provisioned and connected).']);
-        }
+            if ($locked->stack->database !== null) {
+                throw ValidationException::withMessages(['engine' => $locked->engine_command_id !== null
+                    ? 'A database engine is already being installed on this server.'
+                    : "The server already runs {$locked->stack->database}."]);
+            }
 
-        $server->forceFill(['stack' => $server->stack->withDatabase($engine)])->save();
+            if ($locked->status !== ServerStatus::Active) {
+                throw ValidationException::withMessages(['engine' => 'The server must be active (provisioned and connected).']);
+            }
+
+            $locked->forceFill(['stack' => $locked->stack->withDatabase($engine), 'engine_command_id' => self::CLAIMED])->save();
+
+            return $locked;
+        });
 
         try {
             $commandId = ($this->apply)($server, markProvisioning: false);
-        } catch (ValidationException $e) {
-            $server->forceFill(['stack' => $server->stack->withDatabase(null)])->save();
+        } catch (Throwable $e) {
+            $server->forceFill(['stack' => $server->stack->withDatabase(null), 'engine_command_id' => null])->save();
 
             throw $e;
         }

@@ -12,6 +12,7 @@ use Kiln\Databases\Application\Jobs\RunDueBackups;
 use Kiln\Databases\Application\Listeners\DeleteOrganizationData;
 use Kiln\Databases\Application\Listeners\EnableContainerAccessOnUpgrade;
 use Kiln\Databases\Application\Listeners\ForgetDeletedServer;
+use Kiln\Databases\Application\Listeners\ForgetFailedEngine;
 use Kiln\Databases\Application\Listeners\HandleCommandOutcome;
 use Kiln\Databases\Application\Listeners\SyncDatabaseEngine;
 use Kiln\Databases\Contracts\DatabaseConnections;
@@ -42,6 +43,7 @@ use Kiln\Identity\Events\OrganizationDeleted;
 use Kiln\Kernel\Support\ModuleServiceProvider;
 use Kiln\Network\Contracts\ContainerHostPorts;
 use Kiln\Servers\Events\DatabaseEngineInstalled;
+use Kiln\Servers\Events\DatabaseEngineInstallFailed;
 use Kiln\Servers\Events\ServerDeleted;
 use Kiln\Servers\Events\ServerProvisioned;
 
@@ -89,6 +91,7 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         Event::listen(CommandFailed::class, [HandleCommandOutcome::class, 'handleFailed']);
         Event::listen(ServerProvisioned::class, SyncDatabaseEngine::class);
         Event::listen(DatabaseEngineInstalled::class, [SyncDatabaseEngine::class, 'installed']);
+        Event::listen(DatabaseEngineInstallFailed::class, ForgetFailedEngine::class);
         Event::listen(AgentVersionChanged::class, EnableContainerAccessOnUpgrade::class);
         Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationData::class);

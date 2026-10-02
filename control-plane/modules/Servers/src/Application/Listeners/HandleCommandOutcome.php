@@ -13,6 +13,7 @@ use Kiln\Servers\Domain\Enums\PhpVersionStatus;
 use Kiln\Servers\Domain\Models\PhpVersion;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Servers\Events\DatabaseEngineInstalled;
+use Kiln\Servers\Events\DatabaseEngineInstallFailed;
 use Kiln\Servers\Events\PhpVersionChanged;
 use Kiln\Servers\Events\ServerProvisioned;
 
@@ -77,6 +78,7 @@ final class HandleCommandOutcome implements ShouldQueue
         if ($error !== null) {
             $server->forceFill(['engine_command_id' => null, 'stack' => $server->stack->withDatabase(null)])->save();
             $this->audit->record('server.database_engine_install_failed', 'server', $server->id, ['engine' => $engine, 'error' => $error], $server->organization_id);
+            DatabaseEngineInstallFailed::dispatch($server->id, $server->organization_id, $engine);
 
             return;
         }
