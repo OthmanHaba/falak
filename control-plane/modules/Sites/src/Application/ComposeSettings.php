@@ -369,6 +369,10 @@ final class ComposeSettings
             $warnings[] = "{$service} doesn't join the stack network(s) ".implode(', ', $skipped).': a container joins at most '.ComposeNetworks::MAX
                 .' networks, named with letters, digits and _ . - (starting with a letter or digit).';
         }
+        if (($waited = array_map('strval', (array) ($decision['waited_networks'] ?? []))) !== []) {
+            $warnings[] = "{$service} joins the stack network(s) ".implode(', ', $waited).', which only the stack\'s own deploy can create (they have their own settings or a reserved name): '
+                ."{$service}'s site can't deploy before the stack has run once. Split it out of a stack that already runs.";
+        }
         if (! ComposeNetworks::validAlias($service)) {
             $warnings[] = "The stack's services can't reach {$service} by its name: a network alias has letters, digits and _ . - only (at most 63).";
         }

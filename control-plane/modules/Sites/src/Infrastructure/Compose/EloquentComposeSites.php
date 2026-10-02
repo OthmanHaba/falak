@@ -107,7 +107,7 @@ final class EloquentComposeSites implements ComposeSites
                         array_map('strval', [(string) $service, ...array_filter((array) ($declared[$name] ?? []), 'is_scalar')]),
                         fn (string $alias) => ComposeNetworks::validAlias($alias),
                     )));
-                    $key = $owned[$name] ?? null;
+                    $key = ComposeNetworks::reserved($name) ? null : ($owned[$name] ?? null);
 
                     return array_filter([
                         'name' => $name,
