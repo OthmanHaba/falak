@@ -317,6 +317,53 @@ export function registeredDomainPicker(): ComponentType<DomainPickerProps> | nul
     return domainPicker;
 }
 
+/** A compose service's place in a compose app (docs/plans/COMPOSE_APPS.md). */
+export interface ComposeServiceChoice {
+    mode: 'keep' | 'database' | 'site';
+    /** Kiln database engine (mode database). */
+    engine?: string;
+    /** The Kiln site to create (mode site): name, framework, runtime. */
+    site?: { name?: string; framework?: string; runtime?: string };
+}
+
+/** What the user decided about a repository's compose app before creating it. */
+export interface ComposeProjectValue {
+    files: string[];
+    profiles: string[];
+    services: Record<string, ComposeServiceChoice>;
+    public: { service: string; port: string; domain: DomainChoice | null; health_check_path: string }[];
+    variables: Record<string, string>;
+    keepBinds: string[];
+}
+
+export interface ComposeProjectProps {
+    connectionId: string;
+    repository: string;
+    branch: string;
+    /** Name of the stack (labels of generated domains). */
+    name: string;
+    serverIds: string[];
+    value: ComposeProjectValue;
+    onChange: (value: ComposeProjectValue) => void;
+    errors: Record<string, string>;
+    /** Whether the project can be created: it loads and every required variable has a value. */
+    onReadyChange: (ready: boolean) => void;
+}
+
+let composeProject: ComponentType<ComposeProjectProps> | null = null;
+
+/**
+ * The compose app form of the Git create flow (compose files, services table, variables, Kiln's adjustments).
+ * Sites registers it; the create picker renders it through `<ComposeProject>` (`@/components/compose-project`).
+ */
+export function registerComposeProject(component: ComponentType<ComposeProjectProps>): void {
+    composeProject = component;
+}
+
+export function registeredComposeProject(): ComponentType<ComposeProjectProps> | null {
+    return composeProject;
+}
+
 const navItems = new Map<string, ModuleNavItem>();
 const settingsItems = new Map<string, SettingsNavItem>();
 const headerItems = new Map<string, HeaderItem>();
