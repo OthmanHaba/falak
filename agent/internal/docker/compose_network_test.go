@@ -28,6 +28,26 @@ func TestContainerSwapCreatesAComposeProjectsNetwork(t *testing.T) {
 	}
 }
 
+// A stack's bootstrap pass starts only the services its split-out sites use (compose pulls in their depends_on),
+// without removing the others as orphans.
+func TestComposeUpStartsOnlyTheGivenServices(t *testing.T) {
+	s, _, fr, _, _ := newSvc(t)
+	no := false
+	fin, _ := exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "shop", Directory: "/srv/kiln/compose/shop",
+		Files: []ComposeFile{{Name: "compose.yaml", Content: "services: {}\n"}}, RemoveOrphans: &no, Wait: true, Services: []string{"postgres", "redis"}})
+	if fin.Error != "" {
+		t.Fatalf("%+v", fin)
+	}
+	if got := fr.Calls()[0].Line; got != "docker compose -p shop -f compose.yaml up -d --pull missing --wait -- postgres redis" {
+		t.Fatalf("command %q", got)
+	}
+
+	fin, _ = exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "shop", Directory: "/srv/kiln/compose/shop", Services: []string{"--rm"}})
+	if fin.ExitCode == nil || *fin.ExitCode != 2 {
+		t.Fatalf("an option as a service was accepted: %+v", fin)
+	}
+}
+
 // A network that already exists (the stack is running) is joined as it is; nothing is created.
 func TestContainerSwapJoinsAnExistingComposeNetworkWithoutCreatingIt(t *testing.T) {
 	s, e, _, _, _ := newSvc(t)

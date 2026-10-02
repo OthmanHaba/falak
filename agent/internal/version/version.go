@@ -39,6 +39,8 @@ var Features = []string{
 	// networks[].compose: a compose project's missing network is created with Compose's labels (a service split out at
 	// a stack's creation deploys before the stack).
 	"docker.networks.create",
+	// docker.compose.up services: a stack's bootstrap pass starts only the services its split-out sites use.
+	"compose.up.services",
 }
 
 var (
