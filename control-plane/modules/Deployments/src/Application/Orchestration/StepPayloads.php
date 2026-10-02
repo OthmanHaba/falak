@@ -460,7 +460,8 @@ final class StepPayloads
     {
         $variables = $this->sites->environment($site->id)?->variables ?? [];
 
-        return $this->resolved($site, [...$variables, ...$this->extraction->rewrites($site->id)]);
+        // The stack's rewritten variables replace their values; each remaining service's rewrites get their own names.
+        return $this->resolved($site, [...$variables, ...$this->extraction->rewrites($site->id)->dotenv()]);
     }
 
     /**

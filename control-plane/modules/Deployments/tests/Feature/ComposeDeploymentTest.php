@@ -16,6 +16,7 @@ use Kiln\Deployments\Events\DeploymentRolledBack;
 use Kiln\Fleet\Domain\Models\Agent;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
+use Kiln\Sites\Contracts\Data\ComposeRewrites;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Domain\Models\ComposeVersion;
@@ -228,9 +229,9 @@ it('points stack variables at services moved out of the stack, resolved like oth
             throw new LogicException('not used');
         }
 
-        public function rewrites(string $siteId): array
+        public function rewrites(string $siteId): ComposeRewrites
         {
-            return ['DATABASE_URL' => 'postgres://shop@10.0.0.5:5432/shop'];
+            return new ComposeRewrites([ComposeRewrites::STACK => ['DATABASE_URL' => 'postgres://shop@10.0.0.5:5432/shop'], 'worker' => ['DB_PASSWORD' => 'other-db-password']]);
         }
     });
 
@@ -241,6 +242,7 @@ it('points stack variables at services moved out of the stack, resolved like oth
     $env = $world->agents->last('docker.compose.up')['payload']['env'];
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
         ->and($env['DATABASE_URL'])->toBe('postgres://shop@10.0.0.5:5432/shop')
+        ->and($env['KILN_SVC_WORKER_DB_PASSWORD'])->toBe('other-db-password')
         ->and($env['APP_KEY'])->toBe('base64:secret');
 });
 

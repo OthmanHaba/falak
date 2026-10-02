@@ -2,8 +2,12 @@
 
 use Illuminate\Validation\ValidationException;
 use Kiln\Databases\Application\EngineInventory;
+use Kiln\Databases\Contracts\Data\DatabaseData;
+use Kiln\Databases\Contracts\DatabaseProvisioner;
+use Kiln\Identity\Contracts\Role;
 use Kiln\Projects\Contracts\VariableReferences;
 use Kiln\Servers\Domain\Models\Server;
+use Kiln\Sites\Application\ComposeSettings;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Events\ComposeServiceExtracted;
@@ -63,20 +67,26 @@ it('replaces a database service with a Kiln database next to the stack and rewri
     expect(projects_service('database', $database->id)?->environment_id)->toBe($this->environment->id);
 
     $rewrites = $this->extraction->rewrites($this->stack->id);
-    expect($rewrites)->toBe([
-        'DATABASE_URL' => '${{ Shop db.DATABASE_URL }}',
-        'DB_HOST' => '${{ Shop db.DB_HOST }}',
-        'DB_PASSWORD' => '${{ Shop db.DB_PASSWORD }}',
-        'PGHOST' => '${{ Shop db.DB_HOST }}',
-        'PGPORT' => '${{ Shop db.DB_PORT }}',
+    expect($rewrites->groups)->toBe([
+        'app' => [
+            'DATABASE_URL' => '${{ Shop db.DATABASE_URL }}',
+            'DB_HOST' => '${{ Shop db.DB_HOST }}',
+            'DB_PASSWORD' => '${{ Shop db.DB_PASSWORD }}',
+        ],
+        'worker' => [
+            'PGHOST' => '${{ Shop db.DB_HOST }}',
+            'PGPORT' => '${{ Shop db.DB_PORT }}',
+        ],
     ]);
+    $rewrites = $rewrites->dotenv();
 
     // Resolved for the stack (containers on the engine's server): the server's address, once container access is on.
     $this->engine->forceFill(['container_access' => true])->save();
     $resolved = app(VariableReferences::class)->resolve($this->environment->id, $this->stack->id, $rewrites);
     expect($resolved->errors)->toBe([])
-        ->and($resolved->variables['DB_HOST'])->toBe(Server::query()->find($this->server->id)->private_ipv4)
-        ->and($resolved->variables['DATABASE_URL'])->toStartWith('postgresql://shop:');
+        ->and(array_keys($rewrites))->toBe(['KILN_SVC_APP_DATABASE_URL', 'KILN_SVC_APP_DB_HOST', 'KILN_SVC_APP_DB_PASSWORD', 'KILN_SVC_WORKER_PGHOST', 'KILN_SVC_WORKER_PGPORT'])
+        ->and($resolved->variables['KILN_SVC_APP_DB_HOST'])->toBe(Server::query()->find($this->server->id)->private_ipv4)
+        ->and($resolved->variables['KILN_SVC_APP_DATABASE_URL'])->toStartWith('postgresql://shop:');
 });
 
 it('links an existing database of the same engine and environment instead of creating one', function () {
@@ -86,7 +96,7 @@ it('links an existing database of the same engine and environment instead of cre
 
     expect($database->id)->toBe($existing->id)
         ->and($this->agents->dispatched('db.create'))->toBe([])
-        ->and($this->extraction->rewrites($this->stack->id)['DATABASE_URL'])->toBe('${{ orders.DATABASE_URL }}');
+        ->and($this->extraction->rewrites($this->stack->id)->forService('app')['DATABASE_URL'])->toBe('${{ orders.DATABASE_URL }}');
 });
 
 it('refuses services that are not a database of that engine, and services already taken out', function () {
@@ -142,11 +152,78 @@ it('runs an app service as its own Kiln site from its build context, with its va
     // UPSTREAM pointed at the service: it becomes the site's address (here its test domain).
     $model->forceFill(['test_domain_enabled' => true])->save();
     config(['sites.test_domain' => 'kiln.test']);
-    expect($this->extraction->rewrites($this->stack->id))->toBe(['UPSTREAM' => 'https://'.$model->refresh()->testDomain().'/v1']);
+    expect($this->extraction->rewrites($this->stack->id)->groups)->toBe(['worker' => ['UPSTREAM' => 'https://'.$model->refresh()->testDomain().'/v1']]);
 });
 
 it('refuses build contexts outside the repository', function () {
     $yaml = "services:\n  app:\n    build: ../../outside\n";
 
     expect(fn () => $this->extraction->toSite($this->stack->id, 'app', ['framework' => 'docker'], $yaml))->toThrow(ValidationException::class);
+});
+
+it('keeps the same variable name pointing at different databases apart, per service', function () {
+    $yaml = <<<'YAML'
+services:
+  api:
+    image: acme/api
+    environment: {DB_HOST: orders-db, DB_PASSWORD: a}
+  reports:
+    image: acme/reports
+    environment: {DB_HOST: stats-db, DB_PASSWORD: b}
+  orders-db:
+    image: postgres:17
+  stats-db:
+    image: postgres:17
+YAML;
+    $this->extraction->toDatabase($this->stack->id, 'orders-db', null, 'postgresql', $yaml);
+    $this->extraction->toDatabase($this->stack->id, 'stats-db', null, 'postgresql', $yaml);
+
+    expect($this->extraction->rewrites($this->stack->id)->groups)->toBe([
+        'api' => ['DB_HOST' => '${{ Shop orders-db.DB_HOST }}', 'DB_PASSWORD' => '${{ Shop orders-db.DB_PASSWORD }}'],
+        'reports' => ['DB_HOST' => '${{ Shop stats-db.DB_HOST }}', 'DB_PASSWORD' => '${{ Shop stats-db.DB_PASSWORD }}'],
+    ]);
+});
+
+it('gives the service back when creating the Kiln service fails, and refuses a second claim', function () {
+    app()->instance(DatabaseProvisioner::class, new class implements DatabaseProvisioner
+    {
+        public function create(string $organizationId, string $serverId, string $engine, string $name, ?string $actorId = null): DatabaseData
+        {
+            throw ValidationException::withMessages(['name' => 'boom']);
+        }
+
+        public function delete(string $databaseId): void {}
+    });
+    app()->forgetInstance(ComposeServiceExtraction::class);
+    $extraction = app(ComposeServiceExtraction::class);
+
+    expect(fn () => $extraction->toDatabase($this->stack->id, 'db', null, 'postgresql', SHOP_STACK))->toThrow(ValidationException::class);
+    expect($this->stack->refresh()->compose_services)->toBeNull();
+
+    // A claim in progress (another request) blocks a second one, and does not drop the service from the stack yet.
+    $this->stack->forceFill(['compose_services' => ['db' => ['mode' => 'pending']]])->save();
+    expect(fn () => $this->extraction->toDatabase($this->stack->id, 'db', null, 'postgresql', SHOP_STACK))->toThrow(ValidationException::class)
+        ->and($this->stack->refresh()->toData()->compose->extracted())->toBe([]);
+});
+
+it('only extracts services for members allowed to create the Kiln service (create flow and Settings → Compose)', function () {
+    [$viewer] = memberOf($this->organization, Role::Viewer);
+    $this->actingAs($viewer);
+
+    $warnings = app(ComposeSettings::class)->extract($this->stack, [
+        ['service' => 'db', 'mode' => 'database', 'engine' => 'postgresql', 'database_id' => null, 'site' => []],
+        ['service' => 'app', 'mode' => 'site', 'engine' => null, 'database_id' => null, 'site' => ['framework' => 'docker']],
+    ], SHOP_STACK);
+
+    expect($warnings)->toBe([
+        "db stays in the stack: you don't have permission to create databases.",
+        "app stays in the stack: you don't have permission to create sites.",
+    ])->and($this->agents->dispatched('db.create'))->toBe([])
+        ->and($this->stack->refresh()->compose_services)->toBeNull();
+
+    // A developer may do both.
+    [$developer] = memberOf($this->organization, Role::Developer);
+    $this->actingAs($developer);
+    expect(app(ComposeSettings::class)->extract($this->stack, [['service' => 'db', 'mode' => 'database', 'engine' => 'postgresql', 'database_id' => null, 'site' => []]], SHOP_STACK))->toBe([])
+        ->and($this->stack->refresh()->compose_services['db']['mode'])->toBe('database');
 });

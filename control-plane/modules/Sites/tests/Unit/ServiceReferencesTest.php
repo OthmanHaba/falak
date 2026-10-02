@@ -1,6 +1,7 @@
 <?php
 
 use Kiln\Sites\Application\Compose\ServiceReferences;
+use Kiln\Sites\Contracts\Data\ComposeRewrites;
 
 it('finds the variables of a stack that point at a database service, with their companions', function () {
     $document = ['services' => [
@@ -19,12 +20,13 @@ it('finds the variables of a stack that point at a database service, with their 
 
     // DB_CONNECTION=mysql is a driver name, not the service; MYSQL_HOME is no companion key.
     expect(ServiceReferences::find($document, 'mysql', 'database', ['STACK_DB_HOST' => 'mysql', 'DRIVER' => 'mysql']))->toBe([
-        'DATABASE_URL' => '{ref:DATABASE_URL}',
-        'DB_HOST' => '{ref:DB_HOST}:{ref:DB_PORT}',
-        'DB_USER' => '{ref:DB_USERNAME}',
-        'MYSQL_HOST' => '{ref:DB_HOST}',
-        'MYSQL_PWD' => '{ref:DB_PASSWORD}',
-        'STACK_DB_HOST' => '{ref:DB_HOST}',
+        'web' => [
+            'DATABASE_URL' => '{ref:DATABASE_URL}',
+            'DB_HOST' => '{ref:DB_HOST}:{ref:DB_PORT}',
+            'DB_USER' => '{ref:DB_USERNAME}',
+        ],
+        'cron' => ['MYSQL_HOST' => '{ref:DB_HOST}', 'MYSQL_PWD' => '{ref:DB_PASSWORD}'],
+        ComposeRewrites::STACK => ['STACK_DB_HOST' => '{ref:DB_HOST}'],
     ]);
 });
 
@@ -34,7 +36,7 @@ it('finds URLs and hosts pointing at an app service, keeping the path', function
         'api' => ['build' => './api'],
     ]];
 
-    expect(ServiceReferences::find($document, 'api', 'site'))->toBe(['API_HOST' => '{host}', 'API_URL' => '{url}/v1']);
+    expect(ServiceReferences::find($document, 'api', 'site'))->toBe(['web' => ['API_HOST' => '{host}', 'API_URL' => '{url}/v1']]);
 });
 
 it('reads environment maps and KEY=value lists', function () {

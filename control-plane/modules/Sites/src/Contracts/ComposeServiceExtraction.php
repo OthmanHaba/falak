@@ -4,6 +4,7 @@ namespace Kiln\Sites\Contracts;
 
 use Illuminate\Validation\ValidationException;
 use Kiln\Databases\Contracts\Data\DatabaseData;
+use Kiln\Sites\Contracts\Data\ComposeRewrites;
 use Kiln\Sites\Contracts\Data\SiteData;
 
 /**
@@ -11,6 +12,10 @@ use Kiln\Sites\Contracts\Data\SiteData;
  * a database engine service becomes a Kiln-managed database, an app service its own Kiln site. The decision is recorded
  * in the stack's `compose_services`; rendering drops the service and applies {@see rewrites()} to the stack's
  * variables so the rest of the stack points at the Kiln service.
+ *
+ * Callers check the actor's permissions (database creation for a database, site creation for a site). The service is
+ * claimed under the stack's row lock before anything is created, so concurrent requests can't extract it twice, and a
+ * failed creation gives it back.
  *
  * Every method takes the compose file the decision is made on ($compose: the merged YAML of the stack's files, as the
  * create flow / Settings → Compose read it). When null, inline stacks use their stored file and repository stacks the
@@ -43,10 +48,9 @@ interface ComposeServiceExtraction
 
     /**
      * Stack variables pointing at extracted services, and what they become: a database's reference
-     * (`${{ shop-db.DATABASE_URL }}`, resolved like any other reference) or a split-out site's URL. Applied to the
-     * variables of the remaining services (`environment:`) and to the stack's own variables.
-     *
-     * @return array<string, string> variable name => replacement
+     * (`${{ shop-db.DATABASE_URL }}`, resolved like any other reference) or a split-out site's URL — per remaining
+     * service (`environment:`) and for the stack's own variables, so the same name in two services can point at
+     * different databases.
      */
-    public function rewrites(string $siteId): array;
+    public function rewrites(string $siteId): ComposeRewrites;
 }
