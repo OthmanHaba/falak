@@ -14,6 +14,7 @@ use Kiln\Sites\Application\Compose\ServiceReferences;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\ComposeSource;
+use Kiln\Sites\Contracts\Data\ComposeRewrites;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\Data\SitePlacement;
 use Kiln\Sites\Contracts\SiteDomains;
@@ -25,6 +26,7 @@ use Kiln\Sites\Events\SiteUpdated;
 use Kiln\SourceControl\Contracts\SourceControlGateway;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
+use Throwable;
 
 final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
 {
@@ -69,28 +71,42 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             throw ValidationException::withMessages(['engine' => "Service {$service} runs {$image}, not a ".self::label($engine).' image.']);
         }
 
-        if ($databaseId !== null) {
-            $database = $this->databaseDirectory->find(strtolower($databaseId));
+        $existing = null;
 
-            if ($database === null || $database->organizationId !== $stack->organization_id) {
+        if ($databaseId !== null) {
+            $existing = $this->databaseDirectory->find(strtolower($databaseId));
+
+            if ($existing === null || $existing->organizationId !== $stack->organization_id) {
                 throw ValidationException::withMessages(['database_id' => 'Database not found.']);
             }
 
-            if ($database->engine !== $engine) {
-                throw ValidationException::withMessages(['database_id' => "{$database->name} is a ".self::label($database->engine).' database, not '.self::label($engine).'.']);
+            if ($existing->engine !== $engine) {
+                throw ValidationException::withMessages(['database_id' => "{$existing->name} is a ".self::label($existing->engine).' database, not '.self::label($engine).'.']);
             }
 
             // References resolve within one environment: the database must be (or become) a service next to the stack.
-            $placed = $this->projects->projectOf('database', $database->id);
+            $placed = $this->projects->projectOf('database', $existing->id);
             $here = $this->projects->projectOf('site', $stack->id);
 
             if ($placed !== null && $here !== null && $placed->environmentId !== $here->environmentId) {
-                throw ValidationException::withMessages(['database_id' => "{$database->name} belongs to another environment; pick a database of this environment or create one."]);
+                throw ValidationException::withMessages(['database_id' => "{$existing->name} belongs to another environment; pick a database of this environment or create one."]);
             }
-        } else {
-            $leader = $stack->toData()->leader()?->serverId
-                ?? throw ValidationException::withMessages(['service' => 'The stack has no server to create the database on.']);
-            $database = $this->databases->create($stack->organization_id, $leader, $engine, $this->databaseName($stack, $service, $engine, $definition), Auth::id());
+        }
+
+        $leader = $stack->toData()->leader()?->serverId;
+
+        if ($existing === null && $leader === null) {
+            throw ValidationException::withMessages(['service' => 'The stack has no server to create the database on.']);
+        }
+
+        $this->claim($stack, $service);
+
+        try {
+            $database = $existing ?? $this->databases->create($stack->organization_id, (string) $leader, $engine, $this->databaseName($stack, $service, $engine, $definition), Auth::id());
+        } catch (Throwable $e) {
+            $this->release($stack, $service);
+
+            throw $e;
         }
 
         $this->record($stack, $service, [
@@ -135,9 +151,17 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         ], fn ($value) => $value !== null);
 
         $placement = $this->projects->projectOf('site', $stack->id);
-        $created = $this->sites->create($stack->organization_id, Auth::id(), [...$derived, ...$site], $placement !== null
+        $this->claim($stack, $service);
+
+        try {
+            $created = $this->sites->create($stack->organization_id, Auth::id(), [...$derived, ...$site], $placement !== null
             ? new SitePlacement($placement->projectId, $placement->environmentId, $placement->x + 360, $placement->y, (string) ($site['name'] ?? $service))
             : null);
+        } catch (Throwable $e) {
+            $this->release($stack, $service);
+
+            throw $e;
+        }
 
         $this->record($stack, $service, [
             'mode' => 'site',
@@ -150,10 +174,10 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         return $created->site;
     }
 
-    public function rewrites(string $siteId): array
+    public function rewrites(string $siteId): ComposeRewrites
     {
         $stack = Site::query()->find(strtolower($siteId));
-        $rewrites = [];
+        $groups = [];
 
         foreach ((array) ($stack?->compose_services ?? []) as $decision) {
             if (! is_array($decision)) {
@@ -170,14 +194,18 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
                 continue;
             }
 
-            foreach ((array) ($decision['rewrites'] ?? []) as $variable => $template) {
-                $rewrites[(string) $variable] ??= $fill((string) $template);
+            foreach ((array) ($decision['rewrites'] ?? []) as $group => $templates) {
+                foreach ((array) $templates as $variable => $template) {
+                    $groups[(string) $group][(string) $variable] ??= $fill((string) $template);
+                }
             }
         }
 
-        ksort($rewrites);
+        foreach ($groups as &$variables) {
+            ksort($variables);
+        }
 
-        return $rewrites;
+        return new ComposeRewrites($groups);
     }
 
     /**
@@ -239,10 +267,6 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
 
         if (! is_array($definition)) {
             throw ValidationException::withMessages(['service' => "The compose file has no service {$service}."]);
-        }
-
-        if (in_array(($stack->compose_services[$service]['mode'] ?? 'keep'), ['database', 'site'], true)) {
-            throw ValidationException::withMessages(['service' => "{$service} already runs as a Kiln service."]);
         }
 
         return [$document, $definition];
@@ -364,6 +388,37 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         }
 
         return substr(trim((string) preg_replace('/[^a-z0-9_]+/', '_', Str::lower("{$stack->slug}_{$service}")), '_'), 0, 63);
+    }
+
+    /**
+     * Takes the service for an extraction under the stack's row lock, before anything is created: of two concurrent
+     * requests the second one fails.
+     */
+    private function claim(Site $stack, string $service): void
+    {
+        DB::transaction(function () use ($stack, $service) {
+            $locked = Site::query()->whereKey($stack->id)->lockForUpdate()->firstOrFail();
+            $services = (array) ($locked->compose_services ?? []);
+
+            if (in_array($services[$service]['mode'] ?? 'keep', ['database', 'site', 'pending'], true)) {
+                throw ValidationException::withMessages(['service' => "{$service} already runs as a Kiln service."]);
+            }
+
+            $locked->forceFill(['compose_services' => [...$services, $service => ['mode' => 'pending']]])->save();
+            $stack->setRawAttributes($locked->getAttributes(), true);
+        });
+    }
+
+    /** Gives the service back to the stack after a failed creation. */
+    private function release(Site $stack, string $service): void
+    {
+        DB::transaction(function () use ($stack, $service) {
+            $locked = Site::query()->whereKey($stack->id)->lockForUpdate()->firstOrFail();
+            $services = (array) ($locked->compose_services ?? []);
+            unset($services[$service]);
+            $locked->forceFill(['compose_services' => $services === [] ? null : $services])->save();
+            $stack->setRawAttributes($locked->getAttributes(), true);
+        });
     }
 
     /** @param  array<string, mixed>  $decision */

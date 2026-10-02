@@ -3,6 +3,7 @@
 namespace Kiln\Sites\Application\Compose;
 
 use Kiln\Sites\Contracts\Data\ComposeConfig;
+use Kiln\Sites\Contracts\Data\ComposeRewrites;
 
 /**
  * What Kiln changes in a compose project before it runs (docs/plans/COMPOSE_APPS.md "Compatibility layer"). The
@@ -24,11 +25,11 @@ final class KilnAdjustments
     /**
      * @param  array<string, mixed>  $doc
      * @param  ?list<string>  $repoFiles  files of the repository the release ships (null: not a repository project)
-     * @param  array<string, string>  $rewrites  variable → replacement for variables that pointed at extracted services
+     * @param  ComposeRewrites  $rewrites  per service, the variables that pointed at extracted services
      * @param  list<string>  $publicServices
      * @return array{doc: array<string, mixed>, adjustments: list<array{kind: string, service: ?string, detail: string, key?: string}>, warnings: list<string>, errors: list<string>}
      */
-    public static function apply(array $doc, ComposeConfig $config, ?array $repoFiles, array $rewrites, array $publicServices = []): array
+    public static function apply(array $doc, ComposeConfig $config, ?array $repoFiles, ComposeRewrites $rewrites, array $publicServices = []): array
     {
         $adjustments = [];
         $warnings = [];
@@ -64,8 +65,8 @@ final class KilnAdjustments
                 }
             }
 
-            if ($rewrites !== [] && is_array($service['environment'] ?? null)) {
-                $service['environment'] = self::rewriteEnvironment($service['environment'], $rewrites, $name, $note);
+            if (($own = $rewrites->forService((string) $name)) !== [] && is_array($service['environment'] ?? null)) {
+                $service['environment'] = self::rewriteEnvironment($service['environment'], $own, (string) $name, $note);
             }
 
             if (! $repo) {
@@ -214,7 +215,9 @@ final class KilnAdjustments
 
     /**
      * @param  array<int|string, mixed>  $environment
-     * @param  array<string, string>  $rewrites
+     *                                                 The service's own rewritten keys read their own project variable (ComposeRewrites::variable()), so the same key
+     *                                                 in two services can point at different databases.
+     * @param  array<string, string>  $rewrites  this service's variable → replacement
      * @return array<int|string, mixed>
      */
     private static function rewriteEnvironment(array $environment, array $rewrites, string $service, callable $note): array
@@ -224,7 +227,7 @@ final class KilnAdjustments
                 $key = explode('=', (string) $entry, 2)[0];
 
                 if (isset($rewrites[$key])) {
-                    $environment[$i] = "{$key}=\${{$key}}";
+                    $environment[$i] = $key.'=${'.ComposeRewrites::variable($service, $key).'}';
                     $note('variable', $service, "{$key} points at {$rewrites[$key]}.");
                 }
             }
@@ -234,7 +237,7 @@ final class KilnAdjustments
 
         foreach ($environment as $key => $value) {
             if (isset($rewrites[(string) $key])) {
-                $environment[$key] = '${'.$key.'}';
+                $environment[$key] = '${'.ComposeRewrites::variable($service, (string) $key).'}';
                 $note('variable', $service, "{$key} points at {$rewrites[(string) $key]}.");
             }
         }

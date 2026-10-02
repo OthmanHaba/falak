@@ -158,7 +158,13 @@ two actions in Sites.
 - `toDatabase` / `toSite` take an optional trailing `?string $compose` (the merged YAML the caller already has);
   without it inline stacks use the stored file, repo stacks call `SourceControlGateway::file()` (lane 1) on
   `compose_files[0] ?? compose_file`.
-- `compose_services[<service>].rewrites` stores templates (`{ref:KEY}`, `{url}`, `{host}`); `rewrites()` fills them
+- `rewrites()` returns `Sites\Contracts\Data\ComposeRewrites` (per service + `.stack`, not one flat map: the same
+  name in two services may point at different databases); service rewrites get their own `.env` names
+  (`KILN_SVC_<SERVICE>_<KEY>`, `ComposeRewrites::variable()`), `dotenv()` is what the release `.env` gains.
+- Callers check permissions (`databases.manage` / `sites.create`, in `ComposeSettings::extract`); the service is
+  claimed (`mode: pending`, still kept in the stack) under the stack's row lock before creation and released on
+  failure.
+- `compose_services[<service>].rewrites` stores templates (`{ref:KEY}`, `{url}`, `{host}`) per group; `rewrites()` fills them
   at call time (current canvas name of the database, current primary domain of the site), so renames and domain
   changes follow. Extracted databases are named "<stack> <service>" on the canvas (the stack usually has the
   database's name).

@@ -67,22 +67,26 @@ func TestRenderRuleset(t *testing.T) {
 // Container access opens a port to the Docker bridges only, ahead of the user's rules (a deny rule can't cut it).
 func TestRenderRulesetContainerPorts(t *testing.T) {
 	p := payload()
-	p.ContainerPorts = []ContainerPorts{{ID: "postgresql", Protocol: "tcp", Ports: []string{"5432"}, Comment: "PostgreSQL for containers"}}
+	p.Rules = append([]Rule{{ID: "wg-net-interface", Protocol: "any", Interface: "wg-kiln"}}, p.Rules...)
+	p.ContainerPorts = []ContainerPorts{{ID: "postgresql", Protocol: "tcp", Ports: []string{"5432"}, Sources: []string{"172.16.0.0/12", "192.168.0.0/16"}, Comment: "PostgreSQL for containers"}}
 	rs, err := RenderRuleset(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	docker0 := `iifname "docker0" tcp dport 5432 accept comment "kiln:containers-postgresql PostgreSQL for containers"`
-	bridges := `iifname "br-*" tcp dport 5432 accept comment "kiln:containers-postgresql PostgreSQL for containers"`
-	for _, w := range []string{docker0, bridges} {
+	docker0 := `iifname "docker0" ip saddr { 172.16.0.0/12, 192.168.0.0/16 } tcp dport 5432 accept comment "kiln:containers-postgresql PostgreSQL for containers"`
+	bridges := `iifname "br-*" ip saddr { 172.16.0.0/12, 192.168.0.0/16 } tcp dport 5432 accept comment "kiln:containers-postgresql PostgreSQL for containers"`
+	drop := `tcp dport 5432 drop comment "kiln:containers-postgresql-only only containers"`
+	for _, w := range []string{docker0, bridges, drop} {
 		if !strings.Contains(rs, w) {
 			t.Fatalf("missing %q in\n%s", w, rs)
 		}
 	}
-	if strings.Index(rs, bridges) > strings.Index(rs, `"kiln:block"`) {
-		t.Fatal("container access must come before the user's rules")
+	// Only loopback (accepted first) and containers: the drop precedes the private network and the user's rules
+	// (rule "pg" would otherwise open 5432 to 10.0.0.0/8).
+	if !(strings.Index(rs, bridges) < strings.Index(rs, drop) && strings.Index(rs, drop) < strings.Index(rs, `"kiln:wg-net-interface"`) && strings.Index(rs, drop) < strings.Index(rs, `"kiln:pg"`)) {
+		t.Fatalf("order:\n%s", rs)
 	}
-	for _, bad := range []ContainerPorts{{ID: "x"}, {ID: "x;y", Ports: []string{"5432"}}, {ID: "x", Ports: []string{"0"}}} {
+	for _, bad := range []ContainerPorts{{ID: "x", Sources: []string{"172.16.0.0/12"}}, {ID: "x;y", Ports: []string{"5432"}, Sources: []string{"172.16.0.0/12"}}, {ID: "x", Ports: []string{"0"}, Sources: []string{"172.16.0.0/12"}}, {ID: "x", Ports: []string{"5432"}}, {ID: "x", Ports: []string{"5432"}, Sources: []string{"nope"}}} {
 		if _, err := RenderRuleset(FirewallPayload{ContainerPorts: []ContainerPorts{bad}}); !commands.IsPayloadError(err) {
 			t.Fatalf("accepted %+v", bad)
 		}

@@ -4,6 +4,7 @@ namespace Kiln\Sites\Application\Compose;
 
 use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\ComposeConfig;
+use Kiln\Sites\Contracts\Data\ComposeRewrites;
 use Kiln\Sites\Contracts\Data\ComposeSummary;
 use Kiln\Sites\Infrastructure\Compose\EloquentComposeSites;
 use Kiln\Sites\Infrastructure\Compose\YamlComposeInspector;
@@ -47,10 +48,9 @@ final class RepoComposeInspection
      * @param  list<string>  $files
      * @param  list<string>  $profiles
      * @param  list<string>  $public  public service names (healthcheck warnings)
-     * @param  array<string, string>  $rewrites
      * @return array<string, mixed>
      */
-    public function inspect(string $connectionId, string $repository, string $ref, array $files, array $profiles, ?ComposeConfig $config = null, array $public = [], array $rewrites = []): array
+    public function inspect(string $connectionId, string $repository, string $ref, array $files, array $profiles, ?ComposeConfig $config = null, array $public = [], ?ComposeRewrites $rewrites = null): array
     {
         $cache = [];
         $reader = function (string $path) use (&$cache, $connectionId, $repository, $ref): ?string {
@@ -77,7 +77,7 @@ final class RepoComposeInspection
         $yaml = EloquentComposeSites::dump($doc);
         $summary = $this->inspector->parse($yaml);
         $config ??= new ComposeConfig(ComposeSource::Repo, $files[0] ?? null, [], files: $files, profiles: $profiles);
-        $adjusted = KilnAdjustments::apply($doc, $config, $tree, $rewrites, $public);
+        $adjusted = KilnAdjustments::apply($doc, $config, $tree, $rewrites ?? new ComposeRewrites, $public);
         $references = ComposeProject::references($doc);
 
         return [
