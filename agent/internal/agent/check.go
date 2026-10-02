@@ -130,27 +130,44 @@ func checkReason(err error, agentID, host string) (string, bool) {
 			return fmt.Sprintf("the agents host %s answered HTTP %d: %s", host, se.Code, se.Body), false
 		}
 	}
-	var (
-		unknownCA *x509.UnknownAuthorityError
-		hostErr   x509.HostnameError
-		certErr   x509.CertificateInvalidError
-		recErr    tls.RecordHeaderError
-		certVErr  *tls.CertificateVerificationError
-		alert     tls.AlertError
-	)
-	switch {
-	case errors.As(err, &alert):
-		return fmt.Sprintf("TLS error: the agents host %s refused this agent's certificate (%v); if the control plane's Fleet CA was replaced, run a new install command from the panel", host, err), false
-	case errors.As(err, &certErr) && certErr.Reason == x509.Expired:
-		return fmt.Sprintf("TLS error from %s: %v; check this machine's clock (timedatectl) and the agents host certificate", host, err), false
-	case errors.As(err, &unknownCA), errors.As(err, &hostErr), errors.As(err, &certErr), errors.As(err, &recErr), errors.As(err, &certVErr):
-		return fmt.Sprintf("TLS error from %s: %v; the agents host must serve a certificate issued by the Kiln Fleet CA (kiln-ctl doctor on the control plane)", host, err), false
+	// TLS and identity problems first: they do not heal by waiting, and every http.Client failure is a *url.Error,
+	// which is itself a net.Error.
+	if reason, ok := tlsReason(err, host); ok {
+		return reason, true
 	}
-	var netErr net.Error
 	var dnsErr *net.DNSError
 	var opErr *net.OpError
+	var netErr net.Error
 	if errors.As(err, &dnsErr) || errors.As(err, &opErr) || errors.As(err, &netErr) {
 		return fmt.Sprintf("cannot reach the agents host %s: %v (firewall, DNS or the control plane is down)", host, err), false
 	}
 	return fmt.Sprintf("request to the agents host %s failed: %v", host, err), false
+}
+
+// tlsReason recognises a failed TLS handshake with the agents host.
+func tlsReason(err error, host string) (string, bool) {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		err = ue.Err
+	}
+	var (
+		opErr     *net.OpError
+		alert     tls.AlertError // QUIC only; over TCP a peer's alert is an *net.OpError{Op: "remote error"}
+		unknownCA x509.UnknownAuthorityError
+		hostErr   x509.HostnameError
+		certErr   x509.CertificateInvalidError
+		recErr    tls.RecordHeaderError
+		certVErr  *tls.CertificateVerificationError
+	)
+	switch {
+	case errors.As(err, &opErr) && opErr.Op == "remote error", errors.As(err, &alert):
+		return fmt.Sprintf("TLS error: the agents host %s refused this agent's client certificate (%v); if the control plane's Fleet CA was replaced, run a new install command from the panel", host, err), true
+	case errors.As(err, &certErr) && certErr.Reason == x509.Expired:
+		return fmt.Sprintf("TLS error from %s: %v; check this machine's clock (timedatectl) and the agents host certificate", host, err), true
+	case errors.As(err, &recErr):
+		return fmt.Sprintf("TLS error from %s: %v; the address does not speak TLS (wrong port, or a plain HTTP proxy)", host, err), true
+	case errors.As(err, &unknownCA), errors.As(err, &hostErr), errors.As(err, &certErr), errors.As(err, &certVErr):
+		return fmt.Sprintf("TLS error from %s: %v; the agents host must serve a certificate issued by the Kiln Fleet CA for this name (kiln-ctl doctor on the control plane)", host, err), true
+	}
+	return "", false
 }
