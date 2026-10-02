@@ -11,7 +11,9 @@ use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\ComposeConfig;
 use Kiln\Sites\Contracts\Data\ComposeSummary;
 use Kiln\Sites\Contracts\Data\DomainChoice;
+use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDomains;
+use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Domain\Models\ComposeVersion;
 use Kiln\Sites\Domain\Models\OrganizationSettings;
 use Kiln\Sites\Domain\Models\Site;
@@ -336,7 +338,8 @@ final class ComposeSettings
                 if ($item['mode'] === ComposeConfig::MODE_DATABASE) {
                     $extraction->toDatabase($site->id, $item['service'], $item['database_id'], (string) $item['engine'], $compose);
                 } else {
-                    $extraction->toSite($site->id, $item['service'], $item['site'], $compose);
+                    $created = $extraction->toSite($site->id, $item['service'], $item['site'], $compose);
+                    array_push($warnings, ...$this->reachWarnings($site, $item['service'], $created));
                 }
             } catch (ValidationException $e) {
                 $warnings[] = "{$item['service']} stays in the stack: ".collect($e->errors())->flatten()->first();
@@ -347,6 +350,31 @@ final class ComposeSettings
         }
 
         return $warnings;
+    }
+
+    /**
+     * A split-out service reaches the stack's internal services only as a Docker site on the stack's servers (it joins
+     * the stack's network there); a native runtime, or a server without the stack, only reaches public services.
+     *
+     * @return list<string>
+     */
+    private function reachWarnings(Site $stack, string $service, SiteData $created): array
+    {
+        $uses = (array) ($stack->fresh()?->compose_services[$service]['uses'] ?? []);
+
+        if ($uses === []) {
+            return [];
+        }
+
+        $list = implode(', ', array_map('strval', $uses));
+
+        if ($created->runtime !== SiteRuntime::Docker) {
+            return ["{$service} uses {$list} inside the stack; a native site can only reach public services — pick Docker, or make them public."];
+        }
+
+        $elsewhere = array_diff($created->serverIds(), $stack->serverIds());
+
+        return $elsewhere === [] ? [] : ["{$service} also runs on servers without the stack; there it can only reach the stack's public services ({$list} are internal)."];
     }
 
     public static function source(mixed $value, bool $hasContent): ComposeSource

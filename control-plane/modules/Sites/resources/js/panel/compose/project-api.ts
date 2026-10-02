@@ -18,6 +18,8 @@ export interface InspectedService {
     variables: string[];
     database_engine: 'postgresql' | 'mysql' | 'mariadb' | null;
     mode: ComposeServiceChoice['mode'];
+    /** Other services of the stack it uses (depends_on, hosts in its environment). */
+    uses?: string[];
 }
 
 export interface InspectedVariable {

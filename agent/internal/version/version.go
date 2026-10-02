@@ -33,6 +33,9 @@ var Features = []string{
 	"db.containers",
 	// docker.compose.pull / docker.compose.up assets (repository files a compose project mounts, under repo/).
 	"compose.v2",
+	// docker.run / deploy.container.swap networks: containers join existing networks (a compose service run as its
+	// own site joins its stack's network).
+	"docker.networks",
 }
 
 var (

@@ -36,6 +36,8 @@ type fakeEngine struct {
 	restarts   []string
 	// image id → RepoDigests
 	repoDigests map[string][]string
+	// network name → "container:alias,alias" joins
+	networks map[string][]string
 }
 
 type fcont struct {
@@ -49,7 +51,7 @@ type fcont struct {
 }
 
 func newEngine() *fakeEngine {
-	return &fakeEngine{images: map[string]string{}, containers: map[string]*fcont{}, repoDigests: map[string][]string{}}
+	return &fakeEngine{images: map[string]string{}, containers: map[string]*fcont{}, repoDigests: map[string][]string{}, networks: map[string][]string{}}
 }
 
 func (e *fakeEngine) byName(n string) *fcont {
@@ -222,6 +224,24 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			jsonOut(w, 404, map[string]string{"message": "unknown " + r.Method + " " + p})
 		}
+	case strings.HasPrefix(p, "/networks/") && p != "/networks/create" && p != "/networks/prune":
+		name, action, _ := strings.Cut(strings.TrimPrefix(p, "/networks/"), "/")
+		joins, ok := e.networks[name]
+		if !ok {
+			jsonOut(w, 404, map[string]string{"message": "network " + name + " not found"})
+			return
+		}
+		if r.Method == "POST" && action == "connect" {
+			var b struct {
+				Container      string
+				EndpointConfig struct{ Aliases []string }
+			}
+			json.NewDecoder(r.Body).Decode(&b)
+			e.networks[name] = append(joins, b.Container+":"+strings.Join(b.EndpointConfig.Aliases, ","))
+			w.WriteHeader(200)
+			return
+		}
+		jsonOut(w, 200, map[string]string{"Name": name})
 	case r.Method == "POST" && strings.HasSuffix(p, "/prune"):
 		e.prunes = append(e.prunes, strings.Trim(strings.TrimSuffix(p, "/prune"), "/")+" "+q.Get("filters"))
 		jsonOut(w, 200, map[string]any{"SpaceReclaimed": 1000})
@@ -548,6 +568,35 @@ func TestContainerSwapHealthFailureKeepsOld(t *testing.T) {
 	up.err = errors.New("caddy down")
 	fin, _ = exec1(t, s, "deploy.container.swap", p)
 	if !strings.Contains(fin.Error, "caddy down") || e.byName("kiln-shop-green") != nil || !e.byName("kiln-shop-blue").running {
+		t.Fatalf("%+v", fin)
+	}
+}
+
+// A compose service run as its own site joins its stack's network under the service's name, before it starts; a
+// network that never appears fails the run instead of starting a container that can't reach the stack.
+func TestRunJoinsExistingNetworksWithAliases(t *testing.T) {
+	s, e, _, _, _ := newSvc(t)
+	e.networks["shop_default"] = nil
+	p := RunPayload{Name: "kiln-shop-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}}}
+	fin, _ := exec1(t, s, "docker.run", p)
+	if fin.Error != "" {
+		t.Fatalf("%+v", fin)
+	}
+	id := fin.Result.(RunResult).ContainerID
+	if got := e.networks["shop_default"]; len(got) != 1 || got[0] != id+":api" || !e.containers[id].running {
+		t.Fatalf("joins %v", got)
+	}
+	// Same spec: nothing recreated or re-joined.
+	exec1(t, s, "docker.run", p)
+	if len(e.networks["shop_default"]) != 1 {
+		t.Fatalf("re-joined: %v", e.networks["shop_default"])
+	}
+
+	old := networkWait
+	networkWait = 0
+	t.Cleanup(func() { networkWait = old })
+	fin, _ = exec1(t, s, "docker.run", RunPayload{Name: "kiln-other-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "missing_default"}}})
+	if !strings.Contains(fin.Error, "network missing_default does not exist") || e.byName("kiln-other-api-blue") != nil {
 		t.Fatalf("%+v", fin)
 	}
 }

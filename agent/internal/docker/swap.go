@@ -27,6 +27,7 @@ type SwapPayload struct {
 	Command     []string          `json:"command,omitempty"`
 	Volumes     []VolumeSpec      `json:"volumes,omitempty"`
 	Network     string            `json:"network,omitempty"`
+	Networks    []NetworkJoin     `json:"networks,omitempty"`
 	MemoryBytes int64             `json:"memory_bytes,omitempty"`
 	CPUs        float64           `json:"cpus,omitempty"`
 	Health      *HealthSpec       `json:"health,omitempty"`
@@ -77,7 +78,7 @@ func (p SwapPayload) runSpec(color string) RunPayload {
 	return RunPayload{
 		Name: "kiln-" + p.Site + "-" + color, Image: p.Image, Env: p.Env, Command: p.Command,
 		Ports:   []PortSpec{{HostIP: "127.0.0.1", HostPort: p.port(color), ContainerPort: p.ContainerPort}},
-		Volumes: p.Volumes, Network: p.Network, Labels: labels, RestartPolicy: "unless-stopped",
+		Volumes: p.Volumes, Network: p.Network, Networks: p.Networks, Labels: labels, RestartPolicy: "unless-stopped",
 		MemoryBytes: p.MemoryBytes, CPUs: p.CPUs,
 	}
 }

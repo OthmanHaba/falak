@@ -621,6 +621,8 @@ final class StepPayloads
                 'timeout_s' => max(1, (int) ($health['timeout_s'] ?? 10) * max(1, (int) ($health['retries'] ?? 3))),
             ],
             'edge_route_id' => $this->edge->routeId($site->id),
+            // A compose service run as its own site keeps reaching the stack's services (and they it) by name.
+            'networks' => $this->compose->stackNetworks($site->id, $serverId) ?: null,
             'labels' => (object) array_filter([
                 'kiln.site.id' => self::upper($site->id),
                 'kiln.deployment.id' => self::upper($deployment->id),

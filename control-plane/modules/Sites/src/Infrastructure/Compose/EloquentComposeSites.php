@@ -45,6 +45,37 @@ final class EloquentComposeSites implements ComposeSites
         return $site->compose_source === ComposeSource::Inline ? $this->content($site->id)?->content : $site->compose_snapshot;
     }
 
+    public function stackNetworks(string $siteId, string $serverId): array
+    {
+        $site = Site::query()->find(strtolower($siteId), ['id', 'organization_id']);
+
+        if ($site === null) {
+            return [];
+        }
+
+        $stacks = Site::query()->where('organization_id', $site->organization_id)->where('runtime', SiteRuntime::Compose->value)
+            ->whereNotNull('compose_services')->get();
+
+        foreach ($stacks as $stack) {
+            foreach ((array) $stack->compose_services as $service => $decision) {
+                if (! is_array($decision) || ($decision['mode'] ?? null) !== 'site' || strtolower((string) ($decision['site_id'] ?? '')) !== $site->id) {
+                    continue;
+                }
+
+                if (! in_array(strtolower($serverId), $stack->serverIds(), true)) {
+                    return [];
+                }
+
+                // Decisions recorded before the networks were: the stack's default network.
+                $names = array_values(array_filter(array_map('strval', (array) ($decision['networks'] ?? [])))) ?: ["{$stack->slug}_default"];
+
+                return array_map(fn (string $name) => ['name' => $name, 'aliases' => [(string) $service]], $names);
+            }
+        }
+
+        return [];
+    }
+
     public function setPublicDomains(string $siteId, array $domains): void
     {
         // Read-modify-write of public_services under a row lock: Settings → Compose and the extraction write it too.

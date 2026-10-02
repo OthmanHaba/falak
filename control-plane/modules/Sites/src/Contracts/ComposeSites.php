@@ -31,6 +31,15 @@ interface ComposeSites
      */
     public function project(string $siteId): ?string;
 
+    /**
+     * For a site that runs a compose stack's service as its own Kiln site: the stack's Docker networks its container
+     * joins on $serverId, under the service's name, so the stack's services and it keep resolving each other. Empty
+     * when the site isn't split out of a stack, the stack doesn't run on that server, or the stack is gone.
+     *
+     * @return list<array{name: string, aliases: list<string>}>
+     */
+    public function stackNetworks(string $siteId, string $serverId): array;
+
     /** The organization's "Allow privileged compose" setting (off by default). */
     public function allowsPrivileged(string $organizationId): bool;
 
