@@ -72,6 +72,18 @@ func TestCheckReasonsForTLSAndNetworkFailures(t *testing.T) {
 		t.Fatalf("expected a remote error alert, got %T %v", err, err)
 	}
 
+	// A TLS alert that has nothing to do with certificates: the agents host only speaks TLS 1.3.
+	tls13 := httptest.NewUnstartedServer(http.NotFoundHandler())
+	tls13.TLS = &tls.Config{MinVersion: tls.VersionTLS13, Certificates: fleet.srv.TLS.Certificates}
+	tls13.StartTLS()
+	defer tls13.Close()
+	oldTLS := id.TLSConfig()
+	oldTLS.MaxVersion = tls.VersionTLS12
+	versionErr := ping(tls13.URL, oldTLS)
+	if !errors.As(versionErr, &opErr) || opErr.Op != "remote error" || strings.Contains(versionErr.Error(), "certificate") {
+		t.Fatalf("expected a non-certificate remote error alert, got %T %v", versionErr, versionErr)
+	}
+
 	unknownCA := id.TLSConfig()
 	unknownCA.RootCAs = pool(other.ca)
 	closed := httptest.NewServer(http.NotFoundHandler())
@@ -84,6 +96,7 @@ func TestCheckReasonsForTLSAndNetworkFailures(t *testing.T) {
 		final      bool
 	}{
 		{"client certificate refused", "refused this agent's client certificate", err, true},
+		{"other TLS alert", "ended the handshake", versionErr, true},
 		{"server certificate from another CA", "must serve a certificate issued by the Kiln Fleet CA", ping(fleet.srv.URL, unknownCA), true},
 		{"not TLS", "does not speak TLS", &url.Error{Op: "Get", URL: "https://x", Err: tls.RecordHeaderError{Msg: "first record does not look like a TLS handshake"}}, true},
 		{"expired server certificate", "check this machine's clock", &url.Error{Op: "Get", URL: "https://x", Err: x509.CertificateInvalidError{Reason: x509.Expired}}, true},

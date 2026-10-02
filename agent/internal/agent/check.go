@@ -160,8 +160,11 @@ func tlsReason(err error, host string) (string, bool) {
 		certVErr  *tls.CertificateVerificationError
 	)
 	switch {
-	case errors.As(err, &opErr) && opErr.Op == "remote error", errors.As(err, &alert):
+	case (errors.As(err, &opErr) && opErr.Op == "remote error" || errors.As(err, &alert)) && strings.Contains(err.Error(), "certificate"):
 		return fmt.Sprintf("TLS error: the agents host %s refused this agent's client certificate (%v); if the control plane's Fleet CA was replaced, run a new install command from the panel", host, err), true
+	case errors.As(err, &opErr) && opErr.Op == "remote error", errors.As(err, &alert):
+		// Any other alert (protocol version, handshake failure, …) comes from the TLS setup in front of the agent API.
+		return fmt.Sprintf("TLS error: the agents host %s ended the handshake (%v); check the edge or proxy in front of it (kiln-ctl doctor on the control plane)", host, err), true
 	case errors.As(err, &certErr) && certErr.Reason == x509.Expired:
 		return fmt.Sprintf("TLS error from %s: %v; check this machine's clock (timedatectl) and the agents host certificate", host, err), true
 	case errors.As(err, &recErr):
