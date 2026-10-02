@@ -12,7 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * mTLS authentication. The edge verifies the client certificate against the Kiln CA and forwards its
  * SHA-256 fingerprint; the header is only honoured when the TCP peer is a configured trusted proxy.
- * A 401 carries a reason code in `error`: an agent whose server was deleted gets `agent_revoked`.
+ * A 401 carries a reason code in `error`: a revoked agent (its server was deleted, or an admin revoked it) gets `agent_revoked`.
  */
 final class AuthenticateAgent
 {
@@ -43,9 +43,9 @@ final class AuthenticateAgent
             return $this->unauthorized('unknown_certificate', 'Unknown client certificate.');
         }
 
-        // The server was deleted (or the agent revoked): the machine needs a new install command.
+        // Revoked agent (its server was deleted, or an admin revoked it): the machine needs a new install command.
         if ($agent->isRevoked()) {
-            return $this->unauthorized('agent_revoked', 'This agent was revoked: its server was removed from Kiln. Run a new install command to connect the machine again.');
+            return $this->unauthorized('agent_revoked', 'This agent was revoked or its server was removed from Kiln. Run a new install command to connect the machine again.');
         }
 
         if (! $certificate->isUsable()) {

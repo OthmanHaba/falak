@@ -35,7 +35,7 @@ func TestRevokedAgentIsReportedOnceAndRecognised(t *testing.T) {
 		t.Fatalf("not recognised as revoked: %v", err)
 	}
 	out := logs.String()
-	if strings.Count(out, "this server was removed from Kiln (agent 01J9Z8Y7X6W5V4T3S2R1Q0P9N8)") != 1 || strings.Contains(out, "heartbeat failed") {
+	if strings.Count(out, "this agent was revoked or its server was removed from Kiln (agent 01J9Z8Y7X6W5V4T3S2R1Q0P9N8)") != 1 || strings.Contains(out, "heartbeat failed") {
 		t.Fatalf("want exactly one revoked message and no heartbeat noise:\n%s", out)
 	}
 	// Rate limit: reported again once RevokedReportEvery has passed.

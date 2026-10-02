@@ -105,7 +105,7 @@ func IsRevoked(err error) bool {
 
 // RevokedMessage tells the operator what a revoked identity means and what to do.
 func RevokedMessage(agentID string) string {
-	return fmt.Sprintf("this server was removed from Kiln (agent %s); run a new install command from the panel to connect this machine again", agentID)
+	return fmt.Sprintf("this agent was revoked or its server was removed from Kiln (agent %s); run a new install command from the panel to connect this machine again", agentID)
 }
 
 func (c *Client) reportRevoked() {

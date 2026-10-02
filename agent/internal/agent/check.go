@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/kiln/agent/internal/config"
@@ -93,6 +94,27 @@ func Check(ctx context.Context, o CheckOptions) error {
 	}
 }
 
+// unauthorizedReason explains a 401 by its reason code (contracts/agent-protocol/README.md). Only the reasons
+// about this agent's identity send the operator to a new install command; the others are control-plane setup.
+func unauthorizedReason(se *transport.StatusError, agentID, host string) string {
+	switch se.Reason {
+	case "unknown_certificate":
+		return fmt.Sprintf("the control plane does not know this agent's certificate (agent %s): this machine was enrolled with another Kiln install, or the control plane's database was restored from an older backup; run a new install command from the panel", agentID)
+	case "certificate_revoked":
+		return fmt.Sprintf("this agent's certificate was revoked (agent %s); run a new install command from the panel", agentID)
+	case "certificate_expired":
+		return fmt.Sprintf("the control plane considers this agent's certificate expired (agent %s); check this machine's clock (timedatectl), otherwise run a new install command from the panel", agentID)
+	case "untrusted_peer":
+		return fmt.Sprintf("the control plane does not trust the proxy in front of it (HTTP 401 untrusted_peer from %s): the edge's address must be in the control plane's trusted proxies (KILN_EDGE_SUBNET); run kiln-ctl doctor on the control plane", host)
+	case "missing_certificate":
+		return fmt.Sprintf("the control plane got no client certificate fingerprint from the edge (HTTP 401 missing_certificate from %s): a proxy in between terminates TLS, or the edge does not forward the fingerprint; run kiln-ctl doctor on the control plane", host)
+	}
+	if strings.Contains(se.Body, "client certificate required") {
+		return fmt.Sprintf("the agents host %s did not receive this agent's client certificate: a proxy between this machine and it terminates TLS, or it is not the Kiln edge", host)
+	}
+	return fmt.Sprintf("the agents host %s rejected this agent's certificate (agent %s, HTTP 401: %s)", host, agentID, se.Body)
+}
+
 // checkReason turns a ping error into an operator-facing reason; final reasons do not heal by waiting.
 func checkReason(err error, agentID, host string) (string, bool) {
 	var se *transport.StatusError
@@ -101,7 +123,7 @@ func checkReason(err error, agentID, host string) (string, bool) {
 		case transport.IsRevoked(err):
 			return "revoked: " + transport.RevokedMessage(agentID), true
 		case se.Code == 401:
-			return fmt.Sprintf("the agents host %s rejected this agent's certificate (agent %s, HTTP 401: %s); run a new install command from the panel", host, agentID, se.Body), true
+			return unauthorizedReason(se, agentID, host), true
 		case se.Code == 404:
 			return fmt.Sprintf("the control plane at %s has no /agent/v1/ping endpoint (older than this agent); check the agent with journalctl -u kiln-agent", host), true
 		default:

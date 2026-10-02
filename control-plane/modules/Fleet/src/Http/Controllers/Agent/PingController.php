@@ -7,8 +7,9 @@ use Illuminate\Http\Request;
 use Kiln\Kernel\Http\Controller;
 
 /**
- * GET /agent/v1/ping — an authenticated no-op for `kiln-agent check`: { agent_id, time }. Changes nothing (no
- * heartbeat, no session), so it can run next to the agent; `time` lets the agent check its clock.
+ * GET /agent/v1/ping — an authenticated request for `kiln-agent check`: { agent_id, time }. It records no heartbeat
+ * and no session, so it can run next to the agent (AuthenticateAgent still marks a certificate's first use and retires
+ * the ones it superseded); `time` lets the agent check its clock.
  */
 final class PingController extends Controller
 {

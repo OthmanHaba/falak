@@ -66,7 +66,7 @@ func main() {
 	case "run":
 		err = agent.Run(ctx, cfg, log)
 	case "enroll":
-		err = agent.EnrollOnly(ctx, cfg, log, os.Stdout)
+		err = agent.EnrollOnly(ctx, cfg, log, os.Stdout, runner.Exec{})
 	case "install":
 		self, _ := os.Executable()
 		err = agent.Install(ctx, agent.InstallOptions{Config: cfg, Source: self, NoStart: *noStart, FS: hostfs.FS{Root: cfg.HostRoot}, Runner: runner.Exec{}, Out: os.Stdout})

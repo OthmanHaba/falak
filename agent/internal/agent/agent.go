@@ -127,7 +127,7 @@ func Build(d Deps) *Components {
 // KILN_TOKEN is still in agent.env (see EnrollOnly).
 func ensureEnrolled(ctx context.Context, cfg config.Config, log *slog.Logger) (*enroll.Identity, error) {
 	paths := enroll.Paths{Dir: cfg.EtcDir}
-	if !paths.Enrolled() {
+	if !paths.Enrolled() && !restoreIncomplete(cfg, log) {
 		if cfg.PanelURL == "" || cfg.Token == "" {
 			return nil, errors.New("agent is not enrolled: set KILN_PANEL_URL and KILN_TOKEN (or --panel/--token)")
 		}

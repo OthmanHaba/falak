@@ -9,11 +9,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/kiln/agent/internal/config"
 	"github.com/kiln/agent/internal/enroll"
 	"github.com/kiln/agent/internal/hostfs"
+	"github.com/kiln/agent/internal/runner"
 )
 
 // PreviousDir (under the etc dir) keeps replaced identities, one directory per re-enrollment.
@@ -23,7 +25,13 @@ const PreviousDir = "previous"
 // (its server was deleted in Kiln and a new install command runs here) the new identity replaces the old one only
 // once it has been issued; the old files move to <etc>/previous/<UTC time>/. Without a token it enrolls only when
 // there is no identity yet.
-func EnrollOnly(ctx context.Context, cfg config.Config, log *slog.Logger, out io.Writer) error {
+//
+// A running kiln-agent.service is stopped first (it could write a renewed certificate or telemetry.json over the
+// new identity) and started again afterwards, whether enrollment succeeded or not.
+func EnrollOnly(ctx context.Context, cfg config.Config, log *slog.Logger, out io.Writer, r runner.Runner) (err error) {
+	if out == nil {
+		out = io.Discard
+	}
 	paths := enroll.Paths{Dir: cfg.EtcDir}
 	if cfg.Token == "" || !paths.Enrolled() {
 		_, err := ensureEnrolled(ctx, cfg, log)
@@ -31,6 +39,22 @@ func EnrollOnly(ctx context.Context, cfg config.Config, log *slog.Logger, out io
 	}
 	if cfg.PanelURL == "" {
 		return errors.New("enroll: set KILN_PANEL_URL (or --panel)")
+	}
+	if r == nil {
+		r = runner.Exec{}
+	}
+	if res, rerr := r.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"is-active", "--quiet", "kiln-agent.service"}}); rerr == nil && res.ExitCode == 0 {
+		fmt.Fprintln(out, "stopping kiln-agent while its identity is replaced")
+		if _, err := runner.Check(ctx, r, runner.Cmd{Name: "systemctl", Args: []string{"stop", "kiln-agent.service"}}); err != nil {
+			return fmt.Errorf("stop kiln-agent: %w", err)
+		}
+		defer func() {
+			if _, serr := runner.Check(context.WithoutCancel(ctx), r, runner.Cmd{Name: "systemctl", Args: []string{"start", "kiln-agent.service"}}); serr != nil {
+				err = errors.Join(err, fmt.Errorf("start kiln-agent again: %w", serr))
+				return
+			}
+			fmt.Fprintln(out, "started kiln-agent again")
+		}()
 	}
 	old, _ := enroll.LoadState(paths)
 	tmp, err := os.MkdirTemp(cfg.EtcDir, ".enroll-")
@@ -51,10 +75,56 @@ func EnrollOnly(ctx context.Context, cfg config.Config, log *slog.Logger, out io
 		oldID = old.AgentID
 	}
 	log.Info("replaced agent identity", "previous_agent_id", oldID, "agent_id", st.AgentID, "backup", backup)
-	if out != nil {
-		fmt.Fprintf(out, "replaced the previous agent identity (agent %s) with agent %s; backup in %s\n", oldID, st.AgentID, backup)
-	}
+	fmt.Fprintf(out, "replaced the previous agent identity (agent %s) with agent %s; backup in %s\n", oldID, st.AgentID, backup)
 	return nil
+}
+
+// incompleteMarker in a backup directory means the swap into place did not finish (crash, power loss).
+const incompleteMarker = ".incomplete"
+
+// restoreIncomplete puts back the identity of an unfinished replacement when the etc dir has none: the newest
+// previous/<time>/ with an incompleteMarker. Returns whether it restored one.
+func restoreIncomplete(cfg config.Config, log *slog.Logger) bool {
+	cur := enroll.Paths{Dir: cfg.EtcDir}
+	if cur.Enrolled() {
+		return false
+	}
+	markers, _ := filepath.Glob(filepath.Join(cfg.EtcDir, PreviousDir, "*", incompleteMarker))
+	if len(markers) == 0 {
+		return false
+	}
+	sort.Strings(markers) // UTC timestamps sort chronologically
+	backup := filepath.Dir(markers[len(markers)-1])
+	// With the whole old identity in the backup, identity files in the etc dir are half-installed new ones; without
+	// it, the crash came while moving the old files out, and the ones still here are old.
+	if (enroll.Paths{Dir: backup}).Enrolled() {
+		for _, f := range cur.Files() {
+			_ = os.Remove(f)
+		}
+	}
+	names := []string{}
+	for _, f := range cur.Files() {
+		names = append(names, filepath.Base(f))
+	}
+	names = append(names, agentEtcFiles...)
+	for _, n := range names {
+		if err := os.Rename(filepath.Join(backup, n), filepath.Join(cfg.EtcDir, n)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			log.Error("restoring the agent identity from an unfinished replacement failed", "backup", backup, "err", err)
+			return false
+		}
+	}
+	_ = os.Remove(filepath.Join(backup, incompleteMarker))
+	if !cur.Enrolled() {
+		log.Error("an unfinished replacement left no complete agent identity", "backup", backup)
+		return false
+	}
+	st, _ := enroll.LoadState(cur)
+	id := "unknown"
+	if st != nil {
+		id = st.AgentID
+	}
+	log.Warn("restored the previous agent identity: replacing it did not finish", "agent_id", id, "backup", backup)
+	return true
 }
 
 // agentEtcFiles belong to one agent besides its identity: telemetry.json carries the old server's site ids.
@@ -79,6 +149,11 @@ func replaceIdentity(cfg config.Config, newDir string, now time.Time) (string, e
 			return "", err
 		}
 		backup = filepath.Join(prev, fmt.Sprintf("%s-%d", now.UTC().Format("20060102T150405Z"), i))
+	}
+	// Until the new identity is in place: restoreIncomplete puts the old one back after a crash in between.
+	marker := filepath.Join(backup, incompleteMarker)
+	if err := os.WriteFile(marker, nil, 0o600); err != nil {
+		return "", err
 	}
 
 	var moved []string // current files now in backup, for the rollback
@@ -109,8 +184,12 @@ func replaceIdentity(cfg config.Config, newDir string, now time.Time) (string, e
 				_ = os.Remove(f)
 			}
 			rollback()
+			_ = os.Remove(marker)
 			return "", fmt.Errorf("install new identity: %w", err)
 		}
+	}
+	if err := os.Remove(marker); err != nil {
+		return "", err
 	}
 
 	// The old agent's command journal: its command ids mean nothing to the new server. The disk buffer holds

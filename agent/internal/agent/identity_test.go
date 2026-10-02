@@ -13,7 +13,124 @@ import (
 
 	"github.com/kiln/agent/internal/config"
 	"github.com/kiln/agent/internal/enroll"
+	"github.com/kiln/agent/internal/runner"
+	"github.com/kiln/agent/internal/runner/runnertest"
 )
+
+// serviceFake answers systemctl like a host where kiln-agent.service is running (or not); stops records how many
+// enrollments the fleet had seen when the service was stopped.
+func serviceFake(fleet *fakeFleet, running bool, stopsAt *[]int) *runnertest.Fake {
+	f := &runnertest.Fake{}
+	f.OnFunc("systemctl is-active", func(runnertest.Call) (runner.Result, error) {
+		if running {
+			return runner.Result{}, nil
+		}
+		return runner.Result{ExitCode: 3}, nil
+	})
+	f.OnFunc("systemctl stop", func(runnertest.Call) (runner.Result, error) {
+		*stopsAt = append(*stopsAt, fleet.enrolls)
+		running = false
+		return runner.Result{}, nil
+	})
+	f.OnFunc("systemctl start", func(runnertest.Call) (runner.Result, error) { running = true; return runner.Result{}, nil })
+	return f
+}
+
+func TestEnrollStopsAndRestartsARunningAgent(t *testing.T) {
+	fleet := newFakeFleet(t)
+	cfg := identityConfig(t, fleet)
+	ctx := context.Background()
+	var stops []int
+	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard, serviceFake(fleet, true, &stops)); err != nil {
+		t.Fatal(err)
+	}
+	if len(stops) != 0 {
+		t.Fatal("a first enrollment has no identity to protect")
+	}
+
+	f := serviceFake(fleet, true, &stops)
+	var out bytes.Buffer
+	if err := EnrollOnly(ctx, cfg, quiet(), &out, f); err != nil {
+		t.Fatal(err)
+	}
+	if len(stops) != 1 || stops[0] != 1 {
+		t.Fatalf("the service must stop before the new enrollment: %v", stops)
+	}
+	lines := strings.Join(f.Lines(), "|")
+	if lines != "systemctl is-active --quiet kiln-agent.service|systemctl stop kiln-agent.service|systemctl start kiln-agent.service" {
+		t.Fatal(lines)
+	}
+	if !strings.Contains(out.String(), "stopping kiln-agent while its identity is replaced") || !strings.HasSuffix(out.String(), "started kiln-agent again\n") {
+		t.Fatalf("%q", out.String())
+	}
+
+	// A failed enrollment starts it again too, with the old identity.
+	cfg.Token = "already-used"
+	f = serviceFake(fleet, true, &stops)
+	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard, f); err == nil || !f.Ran("systemctl start kiln-agent.service") {
+		t.Fatalf("%v %v", err, f.Lines())
+	}
+
+	// Not running: left alone.
+	cfg.Token = "one-time"
+	f = serviceFake(fleet, false, &stops)
+	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard, f); err != nil || f.Ran("systemctl stop") || f.Ran("systemctl start") {
+		t.Fatalf("%v %v", err, f.Lines())
+	}
+}
+
+func TestUnfinishedReplacementIsRestoredOnStart(t *testing.T) {
+	fleet := newFakeFleet(t)
+	cfg := identityConfig(t, fleet)
+	ctx := context.Background()
+	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard, &runnertest.Fake{}); err != nil {
+		t.Fatal(err)
+	}
+	paths := enroll.Paths{Dir: cfg.EtcDir}
+	cert := read(t, paths.Cert())
+	os.WriteFile(filepath.Join(cfg.EtcDir, "telemetry.json"), []byte(`{}`), 0o600)
+
+	// Crash while the new files were moving in: the old identity is in the backup, one new file is in place.
+	backup := filepath.Join(cfg.EtcDir, PreviousDir, "20261002T120000Z")
+	os.MkdirAll(backup, 0o700)
+	for _, f := range append(paths.Files(), filepath.Join(cfg.EtcDir, "telemetry.json")) {
+		os.Rename(f, filepath.Join(backup, filepath.Base(f)))
+	}
+	os.WriteFile(filepath.Join(backup, ".incomplete"), nil, 0o600)
+	os.WriteFile(paths.Key(), []byte("half-installed new key"), 0o600)
+	// An older finished backup must not be picked.
+	os.MkdirAll(filepath.Join(cfg.EtcDir, PreviousDir, "20250101T000000Z"), 0o700)
+
+	var logs bytes.Buffer
+	cfg.Token = "" // `kiln-agent run` without a token
+	id, err := ensureEnrolled(ctx, cfg, slog.New(slog.NewTextHandler(&logs, nil)))
+	if err != nil || id.State.AgentID != fleetAgentIDs[0] || read(t, paths.Cert()) != cert {
+		t.Fatalf("%v %+v", err, id)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.EtcDir, "telemetry.json")); err != nil {
+		t.Fatal("telemetry.json not restored")
+	}
+	if _, err := os.Stat(filepath.Join(backup, ".incomplete")); err == nil || !strings.Contains(logs.String(), "restored the previous agent identity") {
+		t.Fatalf("marker left or nothing logged: %s", logs.String())
+	}
+
+	// Crash while the old files were moving out: some are still here, the rest in the backup.
+	os.Rename(paths.Cert(), filepath.Join(backup, "agent.crt"))
+	os.Rename(paths.State(), filepath.Join(backup, "agent.json"))
+	os.WriteFile(filepath.Join(backup, ".incomplete"), nil, 0o600)
+	if !restoreIncomplete(cfg, quiet()) || !paths.Enrolled() || read(t, paths.Cert()) != cert {
+		t.Fatal("partial move-out not restored")
+	}
+
+	// A successful replacement leaves no marker.
+	cfg.Token = "one-time"
+	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard, &runnertest.Fake{}); err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := filepath.Glob(filepath.Join(cfg.EtcDir, PreviousDir, "*", ".incomplete")); len(m) != 0 {
+		t.Fatalf("markers left: %v", m)
+	}
+}
 
 func identityConfig(t *testing.T, fleet *fakeFleet) config.Config {
 	t.Helper()
@@ -40,7 +157,7 @@ func TestEnrollReplacesAnExistingIdentity(t *testing.T) {
 	fleet := newFakeFleet(t)
 	cfg := identityConfig(t, fleet)
 	ctx := context.Background()
-	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard); err != nil {
+	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard, &runnertest.Fake{}); err != nil {
 		t.Fatal(err)
 	}
 	paths := enroll.Paths{Dir: cfg.EtcDir}
@@ -60,7 +177,7 @@ func TestEnrollReplacesAnExistingIdentity(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := EnrollOnly(ctx, cfg, quiet(), &out); err != nil {
+	if err := EnrollOnly(ctx, cfg, quiet(), &out, &runnertest.Fake{}); err != nil {
 		t.Fatal(err)
 	}
 	if fleet.enrolls != 2 {
@@ -111,7 +228,7 @@ func TestEnrollReplacesAnExistingIdentity(t *testing.T) {
 func TestFailedReenrollKeepsTheOldIdentity(t *testing.T) {
 	fleet := newFakeFleet(t)
 	cfg := identityConfig(t, fleet)
-	if err := EnrollOnly(context.Background(), cfg, quiet(), io.Discard); err != nil {
+	if err := EnrollOnly(context.Background(), cfg, quiet(), io.Discard, &runnertest.Fake{}); err != nil {
 		t.Fatal(err)
 	}
 	paths := enroll.Paths{Dir: cfg.EtcDir}
@@ -120,7 +237,7 @@ func TestFailedReenrollKeepsTheOldIdentity(t *testing.T) {
 		before[f] = read(t, f)
 	}
 	cfg.Token = "already-used"
-	if err := EnrollOnly(context.Background(), cfg, quiet(), io.Discard); err == nil {
+	if err := EnrollOnly(context.Background(), cfg, quiet(), io.Discard, &runnertest.Fake{}); err == nil {
 		t.Fatal("expected the enrollment error")
 	}
 	for f, b := range before {
@@ -139,11 +256,11 @@ func TestFailedReenrollKeepsTheOldIdentity(t *testing.T) {
 func TestEnrollWithoutTokenKeepsTheIdentity(t *testing.T) {
 	fleet := newFakeFleet(t)
 	cfg := identityConfig(t, fleet)
-	if err := EnrollOnly(context.Background(), cfg, quiet(), io.Discard); err != nil {
+	if err := EnrollOnly(context.Background(), cfg, quiet(), io.Discard, &runnertest.Fake{}); err != nil {
 		t.Fatal(err)
 	}
 	cfg.Token = ""
-	if err := EnrollOnly(context.Background(), cfg, quiet(), io.Discard); err != nil || fleet.enrolls != 1 {
+	if err := EnrollOnly(context.Background(), cfg, quiet(), io.Discard, &runnertest.Fake{}); err != nil || fleet.enrolls != 1 {
 		t.Fatalf("%v, %d enrollments", err, fleet.enrolls)
 	}
 }
@@ -156,7 +273,7 @@ func TestCheck(t *testing.T) {
 	if err := Check(ctx, CheckOptions{Config: cfg}); err == nil || !strings.Contains(err.Error(), "no agent identity") {
 		t.Fatalf("missing identity: %v", err)
 	}
-	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard); err != nil {
+	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard, &runnertest.Fake{}); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
@@ -190,7 +307,7 @@ func TestCheck(t *testing.T) {
 	fleet.mu.Unlock()
 	start := time.Now()
 	err = Check(ctx, CheckOptions{Config: cfg, Wait: time.Minute})
-	if err == nil || !strings.HasPrefix(err.Error(), "revoked: this server was removed from Kiln (agent "+fleetAgentIDs[0]+")") || time.Since(start) > 10*time.Second {
+	if err == nil || !strings.HasPrefix(err.Error(), "revoked: this agent was revoked or its server was removed from Kiln (agent "+fleetAgentIDs[0]+")") || time.Since(start) > 10*time.Second {
 		t.Fatalf("revoked: %v", err)
 	}
 

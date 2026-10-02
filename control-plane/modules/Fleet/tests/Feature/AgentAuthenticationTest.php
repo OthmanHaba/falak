@@ -74,7 +74,7 @@ it('tells a revoked certificate of an active agent apart from a revoked agent', 
     $this->getJson('/agent/v1/ping', fleet_mtls($this->enrolled['fingerprint']))->assertUnauthorized()->assertJsonPath('error', 'certificate_revoked');
 });
 
-it('answers ping for an authenticated agent without recording anything', function () {
+it('answers ping for an authenticated agent without touching the agent record', function () {
     $agent = $this->enrolled['agent'];
     $before = $agent->fresh()->toArray();
 
