@@ -9,9 +9,11 @@
 #                           │                        ├► reverb :8080 (/app, /apps)
 #                           │                        └► gateway :4318 (/otlp/*, observability profile)
 #                           ├─ KILN_AGENT_API_HOST   ─► agent-api (Fleet-CA server cert, client certs verified)
-#                           └─ KILN_GRAFANA_HOST     ─► grafana :3000 (observability profile)
+#                           ├─ KILN_GRAFANA_HOST     ─► grafana :3000 (observability profile)
+#                           └─ KILN_REGISTRY_HOST    ─► registry :5000 (built-in image registry, basic auth)
 #   control-plane · agent-api · horizon · reverb · scheduler ── backend ──► postgres · valkey
 #   builder ── public ──► edge (as KILN_DOMAIN; artifact upload/download over the panel URL)
+#   registry ── registry (internal) ◄── edge only: builders push and servers pull through KILN_REGISTRY_HOST
 #
 # Panel vs agent-api: same image, separate FrankenPHP thread pools. Every agent (and builder) keeps a 30 s
 # long-poll open, i.e. one busy PHP thread each; on the panel's pool they would queue every user request
@@ -101,6 +103,11 @@ x-control-plane: &control-plane
     KILN_IMAGE_PREFIX: ${KILN_IMAGE_PREFIX}
     # Builds: the builder container below polls with this token.
     KILN_LOCAL_BUILDER_TOKEN: ${KILN_BUILDER_TOKEN:?set KILN_BUILDER_TOKEN}
+    # Built-in image registry (docker builds push, servers pull): registry.<domain>, credentials from .env
+    # (kiln-ctl generates them). Unset on installs that predate it until `kiln-ctl up` / `update` adds them.
+    KILN_REGISTRY_URL: ${KILN_REGISTRY_URL:-registry.kiln.local}
+    KILN_REGISTRY_USERNAME: ${KILN_REGISTRY_USERNAME:-}
+    KILN_REGISTRY_PASSWORD: ${KILN_REGISTRY_PASSWORD:-}
     KILN_HORIZON_MAX_PROCESSES: ${KILN_HORIZON_MAX_PROCESSES:-4}
     # PHP thread pools (deploy/control-plane/entrypoint.sh; empty = sized from the CPU count).
     KILN_WORKER_MODE: ${KILN_WORKER_MODE:-1}
@@ -290,6 +297,11 @@ services:
       KILN_DOMAIN_ALIASES: ${KILN_DOMAIN_ALIASES:-}
       KILN_URL: ${KILN_URL}
       KILN_GRAFANA_HOST: ${KILN_GRAFANA_HOST:-}
+      # The registry host is served only when its credentials exist (basic auth in front of the registry).
+      KILN_REGISTRY_HOST: ${KILN_REGISTRY_HOST:-}
+      KILN_REGISTRY_HOST_ALIASES: ${KILN_REGISTRY_HOST_ALIASES:-}
+      KILN_REGISTRY_USERNAME: ${KILN_REGISTRY_USERNAME:-}
+      KILN_REGISTRY_PASSWORD: ${KILN_REGISTRY_PASSWORD:-}
       KILN_TLS: ${KILN_TLS:-acme}
       KILN_ACME_EMAIL: ${KILN_ACME_EMAIL:-}
       KILN_ACME_CA: ${KILN_ACME_CA:-}
@@ -311,6 +323,7 @@ services:
     networks:
       edge: {}
       observability: {}
+      registry: {}
       public:
         # The builder (and anything else on `public`) reaches the panel/agents hosts without hairpin NAT.
         aliases: ["${KILN_DOMAIN}", "${KILN_AGENT_API_HOST}"]
@@ -349,6 +362,31 @@ services:
     deploy:
       resources:
         limits: { memory: 1536m }
+
+  # Built-in image registry (distribution): images of docker builds, pushed by builders and pulled by servers
+  # through the edge (https://KILN_REGISTRY_HOST, basic auth there). Only the edge can reach it. Deletes are
+  # enabled for `kiln-ctl registry gc`.
+  registry:
+    image: registry:2.8.3
+    logging: *logging
+    restart: unless-stopped
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+      # Behind the edge: Location headers relative, so redirects keep the public https host.
+      REGISTRY_HTTP_RELATIVEURLS: "true"
+      REGISTRY_LOG_LEVEL: warn
+    volumes:
+      - registry-data:/var/lib/registry
+    networks: [registry]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5000/v2/"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    deploy:
+      resources:
+        limits: { memory: 256m }
 
   # --- observability profile (configs from ../observability; VictoriaMetrics backend) ------------------
   gateway:
@@ -478,6 +516,7 @@ volumes:
   caddy-config:
   builder-data:
   builder-cache:
+  registry-data:
   loki-data:
   tempo-data:
   vm-data:
@@ -490,3 +529,6 @@ networks:
   backend: {}
   public: {}
   observability: {}
+  # The registry has no auth of its own: only the edge (basic auth) is on this network.
+  registry:
+    internal: true

@@ -8,6 +8,7 @@ Day-2 operations use `kiln-ctl`.
 internet ──:80/:443──► edge (Caddy)
                         ├─ kiln.example.com         Let's Encrypt ─► control-plane (FrankenPHP) · reverb (websockets)
                         ├─ agents.kiln.example.com  Fleet-CA cert + client-cert (mTLS) check ─► control-plane
+                        ├─ registry.kiln.example.com Let's Encrypt + basic auth ─► registry (built-in image registry)
                         └─ grafana.kiln.example.com Let's Encrypt ─► grafana            (optional)
 control-plane · horizon · reverb · scheduler ─► postgres 17 · valkey
 builder (kiln-builder serve: PHP/Composer, Node, Bun) ─► edge
@@ -23,7 +24,7 @@ Releases are published from [github.com/OthmanHaba/kiln](https://github.com/Othm
 | RAM | 2 GB (installer warns below 4 GB) | 4 GB; **8 GB with `--observability`** |
 | Disk | 10 GB free | 25 GB+ (images, build artifacts, backups) |
 | Network | public IPv4 (or IPv6); ports **80** and **443** free and reachable | |
-| DNS | records for the panel and `agents.` host (below) | |
+| DNS | records for the panel, `agents.` and `registry.` hosts (below) | |
 
 This host runs only Kiln. The servers Kiln manages are separate machines.
 
@@ -58,13 +59,22 @@ Create these records before you install (replace the IP with your server's publi
 |---|---|---|---|
 | `kiln.example.com` | A (and/or AAAA) | `203.0.113.10` | panel, installer script, agent enrollment |
 | `agents.kiln.example.com` | A (and/or AAAA) | `203.0.113.10` | agent API (mTLS) |
+| `registry.kiln.example.com` | A (and/or AAAA) | `203.0.113.10` | built-in image registry: docker builds push, servers pull |
 | `grafana.kiln.example.com` | A (and/or AAAA) | `203.0.113.10` | only with `--observability` |
 
-- The panel and Grafana get **Let's Encrypt** certificates automatically (HTTP-01/TLS-ALPN on ports 80/443).
+- The panel, the registry and Grafana get **Let's Encrypt** certificates automatically (HTTP-01/TLS-ALPN on ports 80/443).
+- The **registry** host serves Kiln's built-in image registry (Docker Distribution) behind basic auth: docker-mode
+  builds (Dockerfile sites, compose services with `build:`) push there and servers pull from it, pinned by digest.
+  The credentials are generated into `.env` (`KILN_REGISTRY_USERNAME`, `KILN_REGISTRY_PASSWORD`); Kiln hands them
+  to builders and servers itself. With `--tls internal` its certificate is not trusted by Docker on other hosts,
+  so docker builds need `--tls acme` (or the internal root trusted in each Docker daemon).
 - The **agents** host does *not* use Let's Encrypt. Agents pin Kiln's own Fleet CA, so the edge serves
   that host with a certificate issued by the Fleet CA, and verifies agent client certificates against it.
   Behind Cloudflare, set all records to **DNS only** (grey cloud): a proxy would terminate TLS and break mTLS.
 - The installer checks that every name resolves to this host's public IP, and it prints the missing records.
+- **Installs from before the registry** get `KILN_REGISTRY_*` added to `.env` by the next `kiln-ctl up` or
+  `kiln-ctl update` (an update run by an older kiln-ctl: run `kiln-ctl up` once afterwards). Add the
+  `registry.` DNS record; `kiln-ctl registry status` checks it.
 
 ## 3. Install
 
@@ -237,6 +247,8 @@ kiln-ctl admin reset-password you@example.com [--password=...]
 kiln-ctl admin create ops@example.com [--token=cli]
 kiln-ctl artisan <command>               # php artisan in the control-plane container
 kiln-ctl prune-images [--dry-run]        # remove Kiln images except the current and previous version
+kiln-ctl registry status                 # built-in image registry: address, size, answers with its credentials
+kiln-ctl registry gc [--dry-run]         # delete registry layers no image references (stops the registry briefly)
 kiln-ctl up | down | restart [service]
 ```
 
@@ -266,6 +278,12 @@ Run it on its own with `kiln-ctl prune-images` (`--dry-run` lists what it would 
 `KILN_PRUNE_IMAGES=0` in `.env` to keep every image. With `KILN_PULL=0` (images built locally, e.g.
 `--build-from-source`) an update never prunes: removed images could not be pulled again. `kiln-ctl prune-images`
 still works there and warns first.
+
+**Registry storage.** Every docker build pushes an image to the built-in registry (`registry-data` volume).
+`kiln-ctl registry gc` deletes layers and untagged manifests nothing references any more; the registry is stopped
+while it runs (a push during garbage collection could lose layers), so run it when no docker build is running, e.g.
+from a weekly cron: `17 4 * * 0 root kiln-ctl registry gc >/var/log/kiln-registry-gc.log 2>&1`. Tags of old builds
+are not deleted yet, so this mainly reclaims space after sites are deleted or images are re-pushed.
 
 **Mounted config files.** Some services read config files bind-mounted from `/opt/kiln/observability/` and
 `/opt/kiln/deploy/` (`loki.yaml`, `tempo.yaml`, the gateway `Caddyfile`, Grafana provisioning and dashboards).
@@ -410,6 +428,9 @@ This command:
 - re-issues the agent API certificate for `agents.<new>`, keeping the **old agents host** as an alias,
   because enrolled agents keep calling the API host they enrolled with. Keep that old DNS record pointing
   here;
+- moves the built-in registry to `registry.<new>`, keeping the **old registry host** as an alias: images of
+  earlier releases are pinned to the old name, so keep its DNS record too (a rollback to a release built before
+  the move may need a rebuild, because servers get credentials for the current registry name only);
 - with `--keep-old`, redirects the old panel domain to the new one.
 
 Create the new DNS records first. Users of the `kiln` CLI need to run `kiln login --url https://<new>` again.
@@ -438,6 +459,7 @@ data. Managed servers keep running. Remove the agent there with `systemctl disab
 | Live updates in the UI don't refresh | Check that the `reverb` service is healthy. Browsers connect to `wss://<domain>/app/…` through the edge. |
 | `KILN_EDGE_SUBNET ... overlaps` | Pick another private /24 in `.env` and re-run the installer. The app trusts proxy headers only from that subnet. |
 | Builds stay queued | `kiln-ctl logs builder`. The builder polls `https://<domain>` with `KILN_BUILDER_TOKEN`. Docker-mode builds need a `builder` server: the bundled builder does native builds only (`KILN_LOCAL_BUILDER_MODES=native`, the default). |
+| Docker build fails at push (`lookup registry.kiln.local … no such host`, `401`, `x509`) | The install has no built-in registry yet or its DNS is missing: run `kiln-ctl up` (adds `KILN_REGISTRY_*`), create the `registry.<domain>` record, then `kiln-ctl registry status`. `x509` with `--tls internal`: see section 2. |
 | Panel slow (seconds per page) | `kiln-ctl doctor`, section *PHP threads*. A saturated `agent-api` pool delays agents, not the panel. Raise `KILN_AGENT_API_THREADS` (or `KILN_PHP_MAX_THREADS` for the panel) in `.env`, then `kiln-ctl up`. See [Performance](#performance-php-threads-and-worker-mode). |
 | Something only breaks in worker mode | Set `KILN_WORKER_MODE=0` in `.env`, run `kiln-ctl up` and report it. The panel then boots Laravel for every request (classic mode). |
 | Low memory | Lower `KILN_HORIZON_MAX_PROCESSES` in `.env`, or move observability to its own host. |

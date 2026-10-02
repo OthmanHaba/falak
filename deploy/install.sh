@@ -142,6 +142,7 @@ fi
 [ -n "$ADMIN_EMAIL" ] || ADMIN_EMAIL="admin@$DOMAIN"
 printf '%s' "$ADMIN_EMAIL" | grep -Eq '^[^@ ]+@[^@ ]+\.[^@ ]+$' || die "invalid e-mail: $ADMIN_EMAIL"
 AGENTS_HOST="agents.$DOMAIN"
+REGISTRY_HOST="registry.$DOMAIN"
 GRAFANA_HOST=""; [ "$OBSERVABILITY" = 1 ] && GRAFANA_HOST="grafana.$DOMAIN"
 PORT_SUFFIX=""; [ "$HTTPS_PORT" != 443 ] && PORT_SUFFIX=":$HTTPS_PORT"
 
@@ -209,7 +210,7 @@ check_dns() {
   ip4="$(public_ip 4)"; ip6="$(public_ip 6)"
   [ -n "$ip4$ip6" ] || die "could not determine this host's public IP (no internet access?). Use --skip-dns-check if you are sure DNS is right."
   ok "public IP: ${ip4:-} ${ip6:-}"
-  for host in "$DOMAIN" "$AGENTS_HOST" $GRAFANA_HOST; do
+  for host in "$DOMAIN" "$AGENTS_HOST" "$REGISTRY_HOST" $GRAFANA_HOST; do
     addrs="$(resolve "$host")"
     if { [ -n "$ip4" ] && grep -qx "$ip4" <<<"$addrs"; } || { [ -n "$ip6" ] && grep -qx "$ip6" <<<"$addrs"; }; then
       ok "DNS $host -> $(tr '\n' ' ' <<<"$addrs")"
@@ -220,7 +221,7 @@ check_dns() {
   done
   if [ "$failed" = 1 ]; then
     printf '\n  Create these DNS records at your DNS provider, wait until they resolve, then re-run:\n\n' >&2
-    for host in "$DOMAIN" "$AGENTS_HOST" $GRAFANA_HOST; do
+    for host in "$DOMAIN" "$AGENTS_HOST" "$REGISTRY_HOST" $GRAFANA_HOST; do
       [ -n "$ip4" ] && printf '    %-40s A     %s\n' "$host" "$ip4" >&2
       [ -n "$ip6" ] && printf '    %-40s AAAA  %s\n' "$host" "$ip6" >&2
     done
@@ -344,6 +345,11 @@ write_env() {
   env_set KILN_URL "https://$DOMAIN$PORT_SUFFIX"
   env_set KILN_AGENT_API_HOST "$AGENTS_HOST"
   env_set KILN_AGENT_API_URL "https://$AGENTS_HOST$PORT_SUFFIX/agent/v1"
+  # Built-in image registry (docker builds push, servers pull; basic auth at the edge).
+  env_set KILN_REGISTRY_HOST "$REGISTRY_HOST"
+  env_set KILN_REGISTRY_URL "$REGISTRY_HOST$PORT_SUFFIX"
+  env_default KILN_REGISTRY_USERNAME kiln
+  env_default KILN_REGISTRY_PASSWORD "$(rand_hex 24)"
   env_set KILN_ACME_EMAIL "$EMAIL"
   env_set KILN_TLS "$TLS"
   env_set KILN_HTTP_PORT "$HTTP_PORT"
@@ -440,6 +446,7 @@ summary() {
   printf '\n%sKiln %s is running.%s\n\n' "$B" "$VERSION" "$N"
   printf '  Panel        https://%s%s\n' "$DOMAIN" "$PORT_SUFFIX"
   printf '  Agent API    https://%s%s/agent/v1  (mTLS, Fleet CA)\n' "$AGENTS_HOST" "$PORT_SUFFIX"
+  printf '  Registry     https://%s%s  (built-in image registry; user kiln, KILN_REGISTRY_PASSWORD in %s)\n' "$REGISTRY_HOST" "$PORT_SUFFIX" "$ENV_FILE"
   [ -n "$GRAFANA_HOST" ] && printf '  Grafana      https://%s%s  (admin / GRAFANA_ADMIN_PASSWORD in %s)\n' "$GRAFANA_HOST" "$PORT_SUFFIX" "$ENV_FILE"
   if [ -n "${ADMIN_PASSWORD:-}" ]; then
     printf '\n  %sAdmin login  %s\n  Password     %s%s\n' "$B" "$ADMIN_EMAIL" "$ADMIN_PASSWORD" "$N"

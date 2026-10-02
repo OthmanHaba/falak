@@ -12,6 +12,7 @@
 #   kiln-ctl restore <file> [--yes]         restore a backup (stops the app while restoring)
 #   kiln-ctl doctor                         DNS, certificates, ports, disk, containers, agent API, PHP threads
 #   kiln-ctl domain set <domain> [--keep-old]   move the panel to a new domain
+#   kiln-ctl registry status | gc [--dry-run]   built-in image registry: address and size / garbage-collect
 #   kiln-ctl admin reset-password <email> [--password=...]
 #   kiln-ctl admin create <email>
 #   kiln-ctl artisan <args...>              run php artisan in the control-plane container
@@ -86,6 +87,8 @@ volume() { echo "${KILN_PROJECT}_$1"; }
 
 https_port() { env_get KILN_HTTPS_PORT 443; }
 
+rand_hex() { od -An -tx1 -N"$1" /dev/urandom | tr -d ' \n'; }
+
 # curl through the local edge, resolving the public names to 127.0.0.1 (works before DNS, avoids hairpin).
 edge_curl() { # edge_curl HOST PATH [curl args...]
   local host="$1" path="$2"; shift 2
@@ -93,6 +96,73 @@ edge_curl() { # edge_curl HOST PATH [curl args...]
   local tls=()
   [ "$(env_get KILN_TLS acme)" = "internal" ] && tls=(-k)
   curl -sS --max-time 15 "${tls[@]}" --resolve "$host:$port:127.0.0.1" "$@" "https://$host:$port$path"
+}
+
+# --- built-in image registry ------------------------------------------------------------------------
+# Docker builds push to registry.<domain> and servers pull from it (basic auth at the edge). Installs that
+# predate it get its settings here, from every command that (re)starts the stack.
+ensure_registry_env() {
+  local domain host port suffix
+  domain="$(env_get KILN_DOMAIN)"
+  [ -n "$domain" ] || return 0
+  host="$(env_get KILN_REGISTRY_HOST)"
+  if [ -z "$host" ]; then
+    host="registry.$domain"
+    port="$(https_port)"; suffix=""; [ "$port" != 443 ] && suffix=":$port"
+    env_set KILN_REGISTRY_HOST "$host"
+    env_set KILN_REGISTRY_URL "$host$suffix"
+    info "built-in image registry: https://$host$suffix"
+    say "  Add a DNS record for $host pointing at this host (like $(env_get KILN_AGENT_API_HOST)); docker builds push there."
+  fi
+  [ -n "$(env_get KILN_REGISTRY_USERNAME)" ] || env_set KILN_REGISTRY_USERNAME kiln
+  [ -n "$(env_get KILN_REGISTRY_PASSWORD)" ] || env_set KILN_REGISTRY_PASSWORD "$(rand_hex 24)"
+  return 0
+}
+
+registry_code() { # registry_code [--auth] -> HTTP status of GET /v2/ through the edge
+  local host
+  host="$(env_get KILN_REGISTRY_HOST)"
+  [ -n "$host" ] || { echo none; return 0; }
+  if [ "${1:-}" = --auth ]; then
+    # Credentials via a curl config on stdin, never on the command line.
+    printf 'user = "%s:%s"\n' "$(env_get KILN_REGISTRY_USERNAME)" "$(env_get KILN_REGISTRY_PASSWORD)" \
+      | edge_curl "$host" /v2/ -o /dev/null -w '%{http_code}' -K - 2>/dev/null || true
+    return 0
+  fi
+  edge_curl "$host" /v2/ -o /dev/null -w '%{http_code}' 2>/dev/null || true
+}
+
+cmd_registry() {
+  require_install
+  local sub="${1:-status}"; shift || true
+  case "$sub" in
+    status)
+      ensure_registry_env
+      say "  address: https://$(env_get KILN_REGISTRY_URL)  (user $(env_get KILN_REGISTRY_USERNAME); password: KILN_REGISTRY_PASSWORD in $ENV_FILE)"
+      if is_running registry; then
+        ok "registry running, $(compose exec -T registry du -sh /var/lib/registry 2>/dev/null | cut -f1 || echo '?') stored"
+      else bad "registry is not running (kiln-ctl up)"; fi
+      local code; code="$(registry_code --auth)"
+      if [ "$code" = 200 ]; then ok "https://$(env_get KILN_REGISTRY_HOST)/v2/ answers with the credentials (200)"
+      else bad "https://$(env_get KILN_REGISTRY_HOST)/v2/ with the credentials -> ${code:-no response}"; fi
+      ;;
+    gc)
+      # Removes layers and untagged manifests nothing references. The registry is stopped meanwhile: a push
+      # during garbage collection could lose layers, so run it when no docker build is running.
+      local dry=""
+      [ "${1:-}" = --dry-run ] && dry="--dry-run"
+      is_running registry || die "registry is not running"
+      info "garbage-collecting the built-in registry${dry:+ (dry run)}"
+      compose stop registry >/dev/null
+      # shellcheck disable=SC2086  # optional flag
+      if compose run --rm --no-deps -T registry garbage-collect --delete-untagged $dry /etc/docker/registry/config.yml \
+        | grep -Ev ': marking (blob|manifest) ' | tail -3; then
+        ok "garbage collection done"
+      else warn "garbage collection failed (kiln-ctl logs registry)"; fi
+      compose start registry >/dev/null
+      ;;
+    *) die "usage: kiln-ctl registry status | gc [--dry-run]" ;;
+  esac
 }
 
 # --- health -----------------------------------------------------------------------------------------
@@ -550,6 +620,7 @@ cmd_update() {
   fetch_bundle "$target" "$staged"
   install_bundle "$staged"; rm -rf "$staged"
   env_set KILN_VERSION "$target"
+  ensure_registry_env
   if ! pull_images; then
     bad "pulling images for $target failed; nothing was changed"
     env_set KILN_VERSION "$prev"; restore_prev_bundle
@@ -594,8 +665,9 @@ agents_hint() {
 
 cmd_doctor() {
   require_install
-  local domain agents grafana port problems=0
+  local domain agents grafana registry port problems=0
   domain="$(env_get KILN_DOMAIN)"; agents="$(env_get KILN_AGENT_API_HOST)"; grafana="$(env_get KILN_GRAFANA_HOST)"
+  registry="$(env_get KILN_REGISTRY_HOST)"
   port="$(https_port)"
 
   info "DNS"
@@ -604,7 +676,7 @@ cmd_doctor() {
   pub6="$(curl -6 -fsS --max-time 5 https://api6.ipify.org 2>/dev/null || true)"
   say "  public IPv4: ${pub4:-unknown}   IPv6: ${pub6:-none}"
   local h addrs
-  for h in "$domain" "$agents" $grafana; do
+  for h in "$domain" "$agents" $grafana $registry; do
     addrs="$(resolve "$h")"
     if [ -z "$addrs" ]; then bad "$h does not resolve"; problems=$((problems + 1))
     elif { [ -n "$pub4" ] && grep -qx "$pub4" <<<"$addrs"; } || { [ -n "$pub6" ] && grep -qx "$pub6" <<<"$addrs"; }; then ok "$h -> $(tr '\n' ' ' <<<"$addrs")"
@@ -647,6 +719,16 @@ cmd_doctor() {
   code="$(edge_curl "$domain" /install/agent/linux-amd64 -o /dev/null -w '%{http_code}' -r 0-0 2>/dev/null || true)"
   case "$code" in 200|206) ok "agent binaries served (/install/agent/linux-amd64)";; *) bad "agent binary download -> ${code:-no response}"; problems=$((problems + 1));; esac
   rm -f "$ca"
+
+  info "Image registry"
+  if [ -z "$registry" ]; then
+    warn "no built-in registry configured (docker builds cannot push) — run kiln-ctl up"; problems=$((problems + 1))
+  else
+    code="$(registry_code)"
+    if [ "$code" = 401 ]; then ok "$registry requires credentials (401 without)"; else bad "$registry without credentials -> ${code:-no response} (expected 401)"; problems=$((problems + 1)); fi
+    code="$(registry_code --auth)"
+    if [ "$code" = 200 ]; then ok "$registry answers with the credentials (200)"; else bad "$registry with the credentials -> ${code:-no response} (kiln-ctl logs registry / edge)"; problems=$((problems + 1)); fi
+  fi
 
   info "PHP threads"
   local svc samples usage busy cap min_busy knob legacy
@@ -746,15 +828,27 @@ cmd_domain() {
   case ",$aliases," in *",$old_agents,"*) ;; *) aliases="${aliases:+$aliases,}$old_agents" ;; esac
   env_set KILN_AGENT_API_HOST_ALIASES "$aliases"
   if [ "$keep_old" = 1 ]; then env_set KILN_DOMAIN_ALIASES "$old"; fi
+  local old_registry
+  old_registry="$(env_get KILN_REGISTRY_HOST)"
+  if [ -n "$old_registry" ]; then
+    # Images of earlier releases keep pulling from the old name (served as an alias; keep its DNS record).
+    env_set KILN_REGISTRY_HOST "registry.$new"
+    env_set KILN_REGISTRY_URL "registry.$new$suffix"
+    aliases="$(env_get KILN_REGISTRY_HOST_ALIASES)"
+    case ",$aliases," in *",$old_registry,"*) ;; *) aliases="${aliases:+$aliases,}$old_registry" ;; esac
+    env_set KILN_REGISTRY_HOST_ALIASES "$aliases"
+  fi
   if [ -n "$(env_get KILN_GRAFANA_HOST)" ]; then
     env_set KILN_GRAFANA_HOST "grafana.$new"
     env_set KILN_GRAFANA_PUBLIC_URL "https://grafana.$new$suffix"
   fi
   [ -n "$(env_get KILN_OTLP_ENDPOINT)" ] && env_set KILN_OTLP_ENDPOINT "https://$new$suffix/otlp"
+  ensure_registry_env
   wait_healthy 420
   health_check || true
   ok "panel: https://$new$suffix"
   say "  Keep DNS for $old_agents pointing here: enrolled agents still use it (served as an alias)."
+  [ -n "$old_registry" ] && say "  Add DNS for registry.$new; keep $old_registry pointing here (images of earlier releases)."
   say "  New servers enroll against https://$new$suffix; update CLI logins (kiln login --url ...)."
 }
 
@@ -772,14 +866,14 @@ cmd_admin() {
   esac
 }
 
-usage() { sed -n '2,23p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local cmd="${1:-help}"; shift || true
   case "$cmd" in
     status) cmd_status "$@" ;;
     logs) cmd_logs "$@" ;;
-    up) require_install; wait_healthy "${1:-420}" && health_check ;;
+    up) require_install; ensure_registry_env; wait_healthy "${1:-420}" && health_check ;;
     down) require_install; compose down ;;
     restart) require_install; compose restart "$@" ;;
     update|upgrade) cmd_update "$@" ;;
@@ -792,6 +886,7 @@ main() {
     compose) require_install; compose "$@" ;;
     health) require_install; health_check ;;
     reload-configs) require_install; recreate_drifted 300 ;;
+    registry) cmd_registry "$@" ;;
     prune-images) cmd_prune_images "$@" ;;
     version) require_install; env_get KILN_VERSION; echo ;;
     help|-h|--help) usage ;;

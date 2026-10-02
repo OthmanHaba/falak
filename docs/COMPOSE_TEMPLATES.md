@@ -40,7 +40,8 @@ names but not the YAML or env-file values.
 ### 1.2 Builds — managed servers never build **[decision]**
 Services with `image:` are pulled on the server. Services with `build:` are built by **kiln-builder in docker mode**
 (a `builder` server or a host builder with `KILN_LOCAL_BUILDER_MODES=native,docker`), pushed to the built-in
-registry, and the rendered compose file references them **by digest**. `repo` sources only; `inline` compose may
+registry (production: `registry` service behind `https://registry.<domain>` with basic auth, `KILN_REGISTRY_*` in
+`.env`, docs/INSTALL.md §2), and the rendered compose file references them **by digest**. `repo` sources only; `inline` compose may
 not use `build:` (validation error).
 
 ### 1.3 Rendering (control plane, per release)
