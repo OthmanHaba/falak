@@ -260,3 +260,15 @@ it('only extracts services for members allowed to create the Kiln service (creat
     expect(app(ComposeSettings::class)->extract($this->stack, [['service' => 'db', 'mode' => 'database', 'engine' => 'postgresql', 'database_id' => null, 'site' => []]], SHOP_STACK))->toBe([])
         ->and($this->stack->refresh()->compose_services['db']['mode'])->toBe('database');
 });
+
+it('rewrites a split-out site\'s variables when a service it uses moves to a Kiln database', function () {
+    $site = $this->extraction->toSite($this->stack->id, 'app', ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker'], SHOP_STACK);
+    $model = Site::query()->find($site->id);
+    expect($model->environmentVersions()->orderByDesc('version')->first()->variables['DB_HOST'])->toBe('db');
+
+    $this->extraction->toDatabase($this->stack->id, 'db', null, 'postgresql', SHOP_STACK);
+
+    $host = $model->environmentVersions()->orderByDesc('version')->first()->variables['DB_HOST'];
+    expect($host)->toStartWith('${{ ')->toEndWith('.DB_HOST }}')
+        ->and($model->environmentVersions()->first()->variables)->toMatchArray(['API_KEY' => 'k-123', 'MODE' => 'production']);
+});

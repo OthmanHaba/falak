@@ -10,6 +10,7 @@ use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Databases\Contracts\DatabaseDirectory;
 use Kiln\Databases\Contracts\DatabaseProvisioner;
 use Kiln\Projects\Contracts\ProjectDirectory;
+use Kiln\Sites\Application\Actions\SaveEnvironment;
 use Kiln\Sites\Application\Compose\ComposeNetworks;
 use Kiln\Sites\Application\Compose\ComposeProject;
 use Kiln\Sites\Application\Compose\ComposeProjectException;
@@ -123,6 +124,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
 
         // On the canvas "<stack> <service>" (handle e.g. shop-db): the stack's own name is usually the database's too.
         ComposeServiceExtracted::dispatch($stack->id, $stack->organization_id, $service, 'database', $database->id, "{$stack->name} {$service}");
+        $this->syncSplitSites($stack);
 
         return $database;
     }
@@ -184,6 +186,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         ]);
 
         ComposeServiceExtracted::dispatch($stack->id, $stack->organization_id, $service, 'site', $created->site->id, $created->site->name, $wasPrimary);
+        $this->syncSplitSites($stack);
 
         return $created->site;
     }
@@ -440,6 +443,37 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
     }
 
     /** @param  array<string, mixed>  $decision */
+    /**
+     * Services split out into their own site carry the stack's variables they had: when a service they use moves to a
+     * Kiln database (or a site), their variables pointing at it get the same rewrite as services still in the stack.
+     */
+    private function syncSplitSites(Site $stack): void
+    {
+        $stack->refresh();
+        $rewrites = $this->rewrites($stack->id);
+
+        foreach ((array) $stack->compose_services as $service => $decision) {
+            if (! is_array($decision) || ($decision['mode'] ?? null) !== 'site' || ! is_string($decision['site_id'] ?? null)) {
+                continue;
+            }
+
+            $replacements = $rewrites->forService((string) $service);
+            $site = Site::query()->find(strtolower($decision['site_id']));
+            $current = $site?->environmentVersions()->orderByDesc('version')->first();
+
+            if ($site === null || $replacements === []) {
+                continue;
+            }
+
+            $variables = array_map('strval', (array) ($current->variables ?? []));
+            $next = array_replace($variables, array_intersect_key($replacements, $variables));
+
+            if ($next !== $variables) {
+                app(SaveEnvironment::class)($site, $next, (array) ($current->exposed ?? []), Auth::id(), 'site.environment_updated');
+            }
+        }
+    }
+
     private function record(Site $stack, string $service, array $decision): void
     {
         DB::transaction(function () use ($stack, $service, $decision) {
