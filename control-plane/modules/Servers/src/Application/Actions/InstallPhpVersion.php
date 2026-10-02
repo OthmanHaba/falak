@@ -31,6 +31,12 @@ final class InstallPhpVersion
             throw ValidationException::withMessages(['version' => 'Unsupported PHP version.']);
         }
 
+        if (! in_array($version, $installable = $server->installablePhpVersions(), true)) {
+            $offers = $installable === [] ? 'none of the PHP versions Kiln installs' : 'PHP '.implode(', ', $installable);
+
+            throw ValidationException::withMessages(['version' => "PHP {$version} cannot be installed on {$server->osLabel()}: it offers {$offers}."]);
+        }
+
         if ($server->status !== ServerStatus::Active) {
             throw ValidationException::withMessages(['version' => 'PHP versions can be managed once the server is active.']);
         }

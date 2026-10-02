@@ -101,8 +101,15 @@ func (o *Outbox) Run(ctx context.Context) {
 		case <-o.kick:
 		}
 		if err := o.Flush(ctx); err != nil {
+			if ctx.Err() != nil {
+				continue // stopping: the final flush follows
+			}
 			d := bo.Next()
-			o.log.Warn("posting events failed; retrying", "err", err, "in", d)
+			if IsRevoked(err) {
+				d = RevokedRetry // the client reports it, rate-limited
+			} else {
+				o.log.Warn("posting events failed; retrying", "err", err, "in", d)
+			}
 			if !sleep(ctx, d) {
 				continue
 			}

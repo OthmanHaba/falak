@@ -4,6 +4,7 @@ namespace Kiln\Servers\Infrastructure;
 
 use Illuminate\Support\Str;
 use Kiln\Servers\Contracts\ServerType;
+use Kiln\Servers\Domain\Enums\PhpVersionStatus;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Servers\Domain\Stack\Stack;
 
@@ -29,6 +30,10 @@ final class ProvisioningPlanBuilder
         $stack = $server->stack;
         $type = $server->type;
         $phpVersions = $server->desiredPhpVersions() ?: $stack->phpVersions;
+        // Never plan a version the OS cannot install (PhpVersionsForOs has already fitted the server's records);
+        // versions already on the host stay.
+        $installed = $server->phpVersions()->where('status', PhpVersionStatus::Installed)->pluck('version')->map(fn ($v) => (string) $v)->all();
+        $phpVersions = array_values(array_filter($phpVersions, fn (string $v) => in_array($v, $server->installablePhpVersions(), true) || in_array($v, $installed, true)));
         $defaultPhp = $server->phpVersions()->where('is_default', true)->value('version') ?? $stack->phpDefault;
 
         [$packages, $services] = $this->packagesAndServices($stack);

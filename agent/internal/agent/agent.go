@@ -123,42 +123,47 @@ func Build(d Deps) *Components {
 	return &Components{Registry: reg, Supervisor: sup, Cron: sched, PTY: terms, Docker: dock, Edge: edgeMgr, Deployer: dep, Functions: fns}
 }
 
-// EnrollOnly enrolls (if needed) and returns.
-func EnrollOnly(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	_, err := ensureEnrolled(ctx, cfg, log)
-	return err
-}
-
-func ensureEnrolled(ctx context.Context, cfg config.Config, log *slog.Logger) (*enroll.Identity, error) {
+// ensureEnrolled enrolls only when there is no identity yet: `kiln-agent run` never replaces one because
+// KILN_TOKEN is still in agent.env (see EnrollOnly). With restore (`run` only), an identity left in an unfinished
+// replacement's backup comes back before any enrollment.
+func ensureEnrolled(ctx context.Context, cfg config.Config, log *slog.Logger, restore bool) (*enroll.Identity, error) {
 	paths := enroll.Paths{Dir: cfg.EtcDir}
-	if !paths.Enrolled() {
+	if !paths.Enrolled() && !(restore && restoreIncomplete(cfg, log)) {
 		if cfg.PanelURL == "" || cfg.Token == "" {
 			return nil, errors.New("agent is not enrolled: set KILN_PANEL_URL and KILN_TOKEN (or --panel/--token)")
 		}
 		if err := os.MkdirAll(cfg.EtcDir, 0o711); err != nil {
 			return nil, err
 		}
-		f, err := facts.Collect(ctx, runner.Exec{}, hostfs.FS{Root: cfg.HostRoot}, version.Version)
-		if err != nil {
-			log.Warn("facts collection incomplete", "err", err)
-		}
-		host, _ := os.Hostname()
-		hc := &http.Client{Timeout: 60 * time.Second}
-		if cfg.Insecure {
-			hc.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // explicit dev-only flag
-		}
-		st, err := enroll.Enroll(ctx, enroll.Options{PanelURL: cfg.PanelURL, Token: cfg.Token, Facts: f, Hostname: host, Paths: paths, Client: hc})
-		if err != nil {
+		if _, err := enrollInto(ctx, cfg, log, paths); err != nil {
 			return nil, err
 		}
-		log.Info("enrolled", "agent_id", st.AgentID, "api", st.Endpoints.API)
 	}
 	return enroll.Load(paths)
 }
 
+// enrollInto enrolls with cfg's panel URL and token and writes the identity to paths.
+func enrollInto(ctx context.Context, cfg config.Config, log *slog.Logger, paths enroll.Paths) (*enroll.State, error) {
+	f, err := facts.Collect(ctx, runner.Exec{}, hostfs.FS{Root: cfg.HostRoot}, version.Version)
+	if err != nil {
+		log.Warn("facts collection incomplete", "err", err)
+	}
+	host, _ := os.Hostname()
+	hc := &http.Client{Timeout: 60 * time.Second}
+	if cfg.Insecure {
+		hc.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // explicit dev-only flag
+	}
+	st, err := enroll.Enroll(ctx, enroll.Options{PanelURL: cfg.PanelURL, Token: cfg.Token, Facts: f, Hostname: host, Paths: paths, Client: hc})
+	if err != nil {
+		return nil, err
+	}
+	log.Info("enrolled", "agent_id", st.AgentID, "api", st.Endpoints.API)
+	return st, nil
+}
+
 // Run is `kiln-agent run`: enroll if needed, start every subsystem, serve until ctx is cancelled.
 func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	id, err := ensureEnrolled(ctx, cfg, log)
+	id, err := ensureEnrolled(ctx, cfg, log, true)
 	if err != nil {
 		return err
 	}
@@ -175,6 +180,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	client := transport.New(id.State.Endpoints.API, id.TLSConfig())
 	client.UserAgent = "kiln-agent/" + version.Version
 	client.Session = transport.NewSessionID()
+	client.AgentID, client.Log = id.State.AgentID, log.With("component", "transport")
 	// Checksum the running build now, before a system.upgrade_agent could replace the file on disk.
 	_ = version.BinarySHA256()
 	host, _ := os.Hostname()

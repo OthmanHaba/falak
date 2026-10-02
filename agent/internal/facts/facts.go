@@ -43,8 +43,37 @@ type Facts struct {
 	AgentSHA256  string              `json:"agent_sha256,omitempty"`
 }
 
-// Interfaces is overridable in tests.
-var Interfaces = net.InterfaceAddrs
+// Interface is one network interface that is up, with its addresses.
+type Interface struct {
+	Name  string
+	Addrs []net.IP
+}
+
+// Interfaces lists the interfaces that are up; overridable in tests.
+var Interfaces = func() ([]Interface, error) {
+	ifs, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	var out []Interface
+	for _, i := range ifs {
+		if i.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := i.Addrs()
+		if err != nil {
+			continue
+		}
+		it := Interface{Name: i.Name}
+		for _, a := range addrs {
+			if ipn, ok := a.(*net.IPNet); ok {
+				it.Addrs = append(it.Addrs, ipn.IP)
+			}
+		}
+		out = append(out, it)
+	}
+	return out, nil
+}
 
 // Collect gathers facts. Missing sources degrade to zero values rather than failing.
 func Collect(ctx context.Context, r runner.Runner, fs hostfs.FS, agentVersion string) (Facts, error) {
@@ -71,7 +100,7 @@ func Collect(ctx context.Context, r runner.Runner, fs hostfs.FS, agentVersion st
 	if err := syscall.Statfs(fs.P("/"), &st); err == nil {
 		f.DiskBytes = int64(st.Blocks) * int64(st.Bsize)
 	}
-	f.PublicIPv4, f.PrivateIPv4 = ipv4s()
+	f.PublicIPv4, f.PrivateIPv4 = ipv4s(DefaultRouteInterface(fs))
 	if f.PublicIPv4 == nil && fs.IsReal() {
 		f.PublicIPv4 = CloudPublicIPv4(ctx) // 1:1 NAT (EC2, GCP, Azure): not on any interface
 	}
@@ -178,27 +207,70 @@ func IsPrivate(ip net.IP) bool {
 	return false
 }
 
-func ipv4s() (pub, priv *string) {
-	addrs, err := Interfaces()
+// virtualInterfaces are name prefixes of interfaces whose addresses are never the host's own: container bridges
+// and veths (Docker's docker0 172.17.0.1, br-*, CNI plugins), VPNs and overlays (WireGuard incl. Kiln's wg-kiln,
+// Tailscale, ZeroTier), VM bridges and tunnels.
+var virtualInterfaces = []string{
+	"lo", "docker", "br-", "veth", "cni", "flannel", "cali", "vxlan", "tailscale", "wg", "virbr", "lxcbr", "lxdbr",
+	"podman", "cilium", "kube-", "weave", "tun", "tap", "zt", "vnet", "nebula", "genev", "gre", "sit", "ip6tnl", "dummy",
+}
+
+// IsVirtualInterface reports whether name is a container bridge, VPN, tunnel or loopback interface.
+func IsVirtualInterface(name string) bool {
+	for _, p := range virtualInterfaces {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// DefaultRouteInterface returns the interface of the IPv4 default route with the lowest metric ("" if none).
+func DefaultRouteInterface(fs hostfs.FS) string {
+	b, err := fs.ReadFile("/proc/net/route")
+	if err != nil {
+		return ""
+	}
+	best, bestMetric := "", -1
+	for _, line := range strings.Split(string(b), "\n")[1:] {
+		f := strings.Fields(line)
+		// Iface Destination Gateway Flags RefCnt Use Metric Mask ...
+		if len(f) < 8 || f[1] != "00000000" || f[7] != "00000000" {
+			continue
+		}
+		m, _ := strconv.Atoi(f[6])
+		if bestMetric < 0 || m < bestMetric {
+			best, bestMetric = f[0], m
+		}
+	}
+	return best
+}
+
+// ipv4s picks the public and private IPv4 from the host's real interfaces, the default route's interface first.
+// A private address exists only on a real interface: a host whose only RFC1918 address is a bridge's reports none.
+func ipv4s(defaultIface string) (pub, priv *string) {
+	ifs, err := Interfaces()
 	if err != nil {
 		return nil, nil
 	}
-	for _, a := range addrs {
-		ipn, ok := a.(*net.IPNet)
-		if !ok {
+	sort.SliceStable(ifs, func(i, j int) bool { return ifs[i].Name == defaultIface && ifs[j].Name != defaultIface })
+	for _, it := range ifs {
+		if IsVirtualInterface(it.Name) {
 			continue
 		}
-		ip := ipn.IP.To4()
-		if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
-			continue
-		}
-		s := ip.String()
-		if IsPrivate(ip) {
-			if priv == nil {
-				priv = &s
+		for _, a := range it.Addrs {
+			ip := a.To4()
+			if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
 			}
-		} else if pub == nil {
-			pub = &s
+			s := ip.String()
+			if IsPrivate(ip) {
+				if priv == nil {
+					priv = &s
+				}
+			} else if pub == nil {
+				pub = &s
+			}
 		}
 	}
 	return pub, priv

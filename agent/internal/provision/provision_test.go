@@ -377,3 +377,53 @@ func TestRunningSSHWithUnchangedConfigIsLeftAlone(t *testing.T) {
 		t.Fatalf("changed=%v err=%v", changed, err)
 	}
 }
+
+// The incident on Ubuntu 26.04: an ondrej/php source without a resolute release broke apt-get update for the apt
+// and caddy steps. Every step that updates apt goes through system.Apt.Update, which disables that source once.
+func TestAptStepsRecoverFromAnOndrejSourceWithoutARelease(t *testing.T) {
+	root := t.TempDir()
+	f := &runnertest.Fake{}
+	h := newHost(f, root)
+	h.users["caddy"] = true
+	ondrej := filepath.Join(root, "etc/apt/sources.list.d/ondrej-ubuntu-php-resolute.sources")
+	os.MkdirAll(filepath.Dir(ondrej), 0o755)
+	os.WriteFile(ondrej, []byte("Types: deb\nURIs: https://ppa.launchpadcontent.net/ondrej/php/ubuntu/\nSuites: resolute\n"), 0o644)
+	f.OnFunc("apt-get update", func(runnertest.Call) (runner.Result, error) {
+		if _, err := os.Stat(ondrej); err == nil {
+			return runner.Result{ExitCode: 100, Stderr: []byte("E: The repository 'https://ppa.launchpadcontent.net/ondrej/php/ubuntu resolute Release' does not have a Release file.\n")}, nil
+		}
+		return runner.Result{}, nil
+	})
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("key")) }))
+	defer srv.Close()
+	p := New(Deps{Runner: f, FS: hostfs.FS{Root: root}, HTTP: srv.Client(), Arch: "amd64", CaddyKeyURL: srv.URL + "/gpg.key"})
+	plan, err := commands.Decode[Plan](json.RawMessage(`{"apt": {"packages": ["git"]}, "runtimes": {"caddy": {"enabled": true}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	col := &commands.Collector{}
+	st := commands.NewTestStream("c", col)
+	r, err := p.Apply(context.Background(), plan, st)
+	if err != nil {
+		t.Fatalf("%v %+v", err, r)
+	}
+	if _, err := os.Stat(ondrej + ".disabled-by-kiln"); err != nil || !h.pkgs["git"] || !h.pkgs["caddy"] {
+		t.Fatalf("source not disabled or packages missing: %v %v", err, h.pkgs)
+	}
+	st.Flush()
+	if !strings.Contains(col.Output(""), "has no release for this distribution; disabled /etc/apt/sources.list.d/ondrej-ubuntu-php-resolute.sources") {
+		t.Fatal(col.Output(""))
+	}
+
+	// Another broken repository fails the step with its source file named.
+	f2 := &runnertest.Fake{}
+	newHost(f2, root)
+	f2.On("apt-get update", runner.Result{ExitCode: 100, Stderr: []byte("E: The repository 'https://example.test/repo noble Release' is not signed.\n")})
+	os.WriteFile(filepath.Join(root, "etc/apt/sources.list.d/example.list"), []byte("deb https://example.test/repo noble main\n"), 0o644)
+	p2 := New(Deps{Runner: f2, FS: hostfs.FS{Root: root}, HTTP: srv.Client()})
+	plan2, _ := commands.Decode[Plan](json.RawMessage(`{"apt": {"packages": ["htop"]}}`))
+	r, err = p2.Apply(context.Background(), plan2, commands.NewTestStream("c", &commands.Collector{}))
+	if err == nil || !strings.Contains(r.(Result).Steps[0].Error, "repository https://example.test/repo (/etc/apt/sources.list.d/example.list) breaks apt-get update") {
+		t.Fatalf("%v %+v", err, r)
+	}
+}

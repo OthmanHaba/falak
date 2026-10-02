@@ -4,11 +4,16 @@ namespace Kiln\Fleet\Infrastructure;
 
 /**
  * Renders the POSIX sh installer served at GET /install/{token}:
- * detect arch → download kiln-agent (checksum-verified when known) → enroll → `kiln-agent install` (systemd unit).
+ * preflight (root, systemd, arch, OS, panel + agent API reachable, clock) → download kiln-agent (checksum-verified
+ * when known) → stop a running agent → enroll (replacing an earlier identity) → `kiln-agent install` (systemd
+ * unit) → `kiln-agent check` until the agent is connected.
  */
 final class InstallScript
 {
     public const ARCHES = ['amd64', 'arm64'];
+
+    /** Seconds of clock difference to the panel above which the install stops (certificates are time-sensitive). */
+    public const MAX_CLOCK_SKEW = 300;
 
     /**
      * @param  array<string, string>  $checksums  arch => sha256 (optional)
@@ -22,11 +27,13 @@ final class InstallScript
     public function render(string $token): string
     {
         $panel = self::quote($this->urls->panel());
+        $agentApi = self::quote($this->urls->agentApi());
         $tokenArg = self::quote($token);
         // The download URL is double-quoted so ${ARCH} expands; everything else is literal.
         $download = str_replace(['\\', '"', '`', '$('], ['\\\\', '\\"', '\\`', '\\$('], $this->urls->agentDownloadTemplate());
         $sumAmd64 = self::quote($this->checksum('amd64'));
         $sumArm64 = self::quote($this->checksum('arm64'));
+        $maxSkew = self::MAX_CLOCK_SKEW;
 
         return <<<SH
 #!/bin/sh
@@ -35,10 +42,12 @@ final class InstallScript
 set -eu
 
 KILN_PANEL_URL={$panel}
+KILN_AGENT_API={$agentApi}
 KILN_TOKEN={$tokenArg}
 BIN=/usr/local/bin/kiln-agent
 
 say() { printf 'kiln: %s\\n' "\$*"; }
+warn() { printf 'kiln: warning: %s\\n' "\$*" >&2; }
 fail() { printf 'kiln: error: %s\\n' "\$*" >&2; exit 1; }
 
 [ "\$(id -u)" -eq 0 ] || fail "run as root (curl ... | sudo sh)"
@@ -55,10 +64,22 @@ case "\$(uname -m)" in
     *) fail "unsupported architecture: \$(uname -m)" ;;
 esac
 
+# Distribution. Supported: Ubuntu 22.04, 24.04 and 26.04; other apt-based systems install with a warning.
+OS_ID=unknown OS_VERSION='' OS_CODENAME=''
+# shellcheck disable=SC1091
 if [ -r /etc/os-release ]; then
-    . /etc/os-release
-    [ "\${ID:-}" = "ubuntu" ] || say "warning: only Ubuntu LTS is supported (found \${ID:-unknown})"
+    OS_ID="\$(. /etc/os-release && printf '%s' "\${ID:-unknown}")"
+    OS_VERSION="\$(. /etc/os-release && printf '%s' "\${VERSION_ID:-}")"
+    OS_CODENAME="\$(. /etc/os-release && printf '%s' "\${VERSION_CODENAME:-}")"
 fi
+say "OS: \$OS_ID \$OS_VERSION (\${OS_CODENAME:-no codename}), \$ARCH"
+command -v apt-get >/dev/null 2>&1 || fail "Kiln manages servers with apt: use Ubuntu 22.04, 24.04 or 26.04"
+case "\$OS_ID:\$OS_VERSION" in
+    ubuntu:22.04 | ubuntu:24.04) ;;
+    ubuntu:26.04) say "note: on Ubuntu 26.04 PHP comes from Ubuntu's own archive, which has only PHP 8.5" ;;
+    ubuntu:* | debian:*) warn "\$OS_ID \$OS_VERSION is not supported (supported: Ubuntu 22.04, 24.04, 26.04); continuing" ;;
+    *) warn "\$OS_ID is not supported (supported: Ubuntu 22.04, 24.04, 26.04); continuing" ;;
+esac
 
 case "\$ARCH" in
     amd64) SHA256={$sumAmd64} ;;
@@ -67,7 +88,36 @@ esac
 
 URL="{$download}"
 TMP="\$(mktemp)"
-trap 'rm -f "\$TMP"' EXIT INT TERM
+PROBE="\$(mktemp)"
+trap 'rm -f "\$TMP" "\$PROBE"' EXIT INT TERM
+
+# Reachability and clock, before anything changes on this machine.
+if command -v curl >/dev/null 2>&1; then
+    HEADERS="\$(curl -sS -I --max-time 15 "\$KILN_PANEL_URL/" 2>"\$PROBE")" || fail "cannot reach the panel at \$KILN_PANEL_URL: \$(cat "\$PROBE")"
+    # The agent API uses the private Kiln Fleet CA (-k: only connectivity is tested here) and answers 401 without
+    # a client certificate.
+    API_CODE="\$(curl -sSk -o /dev/null -w '%{http_code}' --max-time 15 "\$KILN_AGENT_API/ping" 2>"\$PROBE")" ||
+        fail "cannot reach the agent API at \$KILN_AGENT_API: \$(cat "\$PROBE") (allow outbound HTTPS to it)"
+    [ "\$API_CODE" = 401 ] || warn "the agent API at \$KILN_AGENT_API answered HTTP \$API_CODE without a client certificate (expected 401)"
+
+    PANEL_DATE="\$(printf '%s\\n' "\$HEADERS" | tr -d '\\r' | sed -n 's/^[Dd][Aa][Tt][Ee]: *//p' | head -n 1)"
+    if [ -n "\$PANEL_DATE" ] && PANEL_TS="\$(date -u -d "\$PANEL_DATE" +%s 2>/dev/null)"; then
+        SKEW=\$((\$(date -u +%s) - PANEL_TS))
+        if [ "\$SKEW" -lt 0 ]; then SKEW=\$((0 - SKEW)); fi
+        if [ "\$SKEW" -gt {$maxSkew} ]; then
+            fail "this machine's clock is \${SKEW}s off the panel's (\$(date -u '+%Y-%m-%d %H:%M:%S') UTC here, \$PANEL_DATE there); agent certificates depend on the time: fix it (timedatectl set-ntp true) and run the install command again"
+        elif [ "\$SKEW" -gt 60 ]; then
+            warn "this machine's clock is \${SKEW}s off the panel's; enable time sync (timedatectl set-ntp true)"
+        fi
+    fi
+else
+    warn "curl not found: skipping the reachability and clock checks"
+fi
+
+if [ -f /etc/kiln/agent.json ]; then
+    OLD_AGENT="\$(sed -n 's/.*"agent_id": *"\\([^"]*\\)".*/\\1/p' /etc/kiln/agent.json | head -n 1)"
+    say "this machine is already enrolled (agent \${OLD_AGENT:-unknown}); the new identity replaces it, the old one is backed up in /etc/kiln/previous/"
+fi
 
 say "downloading kiln-agent (\$ARCH)"
 if command -v curl >/dev/null 2>&1; then
@@ -82,15 +132,44 @@ if [ -n "\$SHA256" ]; then
     echo "\$SHA256  \$TMP" | sha256sum -c - >/dev/null 2>&1 || fail "checksum mismatch for \$URL"
 fi
 
+# An agent from an earlier install (running, starting or waiting to restart) must not race the new identity;
+# `kiln-agent install` starts it again.
+HAD_UNIT=0
+if [ -f /etc/systemd/system/kiln-agent.service ] || systemctl cat kiln-agent.service >/dev/null 2>&1; then
+    say "stopping kiln-agent (earlier install)"
+    systemctl stop kiln-agent 2>/dev/null || true
+    HAD_UNIT=1
+fi
+
 install -m 0755 "\$TMP" "\$BIN"
 
 say "enrolling with \$KILN_PANEL_URL"
-"\$BIN" enroll --panel "\$KILN_PANEL_URL" --token "\$KILN_TOKEN" || fail "enrollment failed"
+if ! "\$BIN" enroll --panel "\$KILN_PANEL_URL" --token "\$KILN_TOKEN"; then
+    if [ "\$HAD_UNIT" = 1 ]; then systemctl start kiln-agent 2>/dev/null || true; fi
+    fail "enrollment failed"
+fi
 
 # The agent owns its systemd unit (kiln-agent install writes it, enables and starts the service).
 "\$BIN" install || fail "service installation failed"
 
-say "kiln-agent installed and running"
+# A binary from a custom download URL may predate `kiln-agent check` (an unknown subcommand prints the usage; every
+# build's --help lists its flags, and only builds with check have -wait).
+if "\$BIN" check --help 2>&1 | grep -q -- '-wait'; then
+    say "waiting for kiln-agent to connect"
+    CONNECTED="\$("\$BIN" check --wait 60s)" || fail "kiln-agent is installed but not connected (reason above); logs: journalctl -u kiln-agent"
+else
+    warn "this kiln-agent build has no check command; not verifying the connection (logs: journalctl -u kiln-agent)"
+    CONNECTED="kiln-agent installed"
+fi
+
+# The check runs its own request: make sure the service itself stays up too.
+TRIES=0
+until systemctl is-active --quiet kiln-agent; do
+    TRIES=\$((TRIES + 1))
+    [ "\$TRIES" -lt 10 ] || fail "kiln-agent.service is not running; logs: journalctl -u kiln-agent"
+    sleep 1
+done
+say "\$CONNECTED"
 
 SH;
     }

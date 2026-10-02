@@ -39,10 +39,18 @@ type fakeFleet struct {
 	events map[string][]commands.Event
 	beats  int
 	srv    *httptest.Server
+	// enrolls counts enrollments; each gets its own agent id (agentIDs[n-1]).
+	enrolls  int
+	agentIDs []string
+	revoked  map[string]bool // fingerprint → revoked agent (401 agent_revoked)
+	byFP     map[string]string
+	now      time.Time // ping "time"; zero = time.Now()
 }
 
+var fleetAgentIDs = []string{"01J9Z8Y7X6W5V4T3S2R1Q0P9AG", "01J9Z8Y7X6W5V4T3S2R1Q0P9B2", "01J9Z8Y7X6W5V4T3S2R1Q0P9C3"}
+
 func newFakeFleet(t *testing.T) *fakeFleet {
-	f := &fakeFleet{t: t, fps: map[string]bool{}, events: map[string][]commands.Event{}}
+	f := &fakeFleet{t: t, fps: map[string]bool{}, events: map[string][]commands.Event{}, revoked: map[string]bool{}, byFP: map[string]string{}}
 	f.caKey, _ = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	tpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Kiln CA"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
 	der, _ := x509.CreateCertificate(rand.Reader, tpl, tpl, &f.caKey.PublicKey, f.caKey)
@@ -76,13 +84,19 @@ func (f *fakeFleet) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad csr", 400)
 			return
 		}
-		der, _ := x509.CreateCertificate(rand.Reader, &x509.Certificate{SerialNumber: big.NewInt(3), Subject: pkix.Name{CommonName: "01J9Z8Y7X6W5V4T3S2R1Q0P9AG"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(90 * 24 * time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}, f.ca, csr.PublicKey, f.caKey)
+		f.mu.Lock()
+		f.enrolls++
+		agentID := fleetAgentIDs[(f.enrolls-1)%len(fleetAgentIDs)]
+		f.agentIDs = append(f.agentIDs, agentID)
+		f.mu.Unlock()
+		der, _ := x509.CreateCertificate(rand.Reader, &x509.Certificate{SerialNumber: big.NewInt(int64(2 + f.enrolls)), Subject: pkix.Name{CommonName: agentID}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(90 * 24 * time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}, f.ca, csr.PublicKey, f.caKey)
 		s := sha256.Sum256(der)
 		f.mu.Lock()
 		f.fps[hex.EncodeToString(s[:])] = true
+		f.byFP[hex.EncodeToString(s[:])] = agentID
 		f.mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"agent_id":  "01J9Z8Y7X6W5V4T3S2R1Q0P9AG",
+			"agent_id":  agentID,
 			"cert_pem":  string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})),
 			"ca_pem":    string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: f.ca.Raw})),
 			"endpoints": map[string]string{"api": f.srv.URL + "/agent/v1", "otlp": "https://127.0.0.1:1"},
@@ -95,14 +109,25 @@ func (f *fakeFleet) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s := sha256.Sum256(r.TLS.PeerCertificates[0].Raw)
+	fp := hex.EncodeToString(s[:])
 	f.mu.Lock()
-	ok := f.fps[hex.EncodeToString(s[:])]
+	ok, revoked, agentID, now := f.fps[fp], f.revoked[fp], f.byFP[fp], f.now
 	f.mu.Unlock()
+	if revoked {
+		w.WriteHeader(401)
+		_, _ = w.Write([]byte(`{"message":"This server was removed from Kiln.","error":"agent_revoked"}`))
+		return
+	}
 	if !ok {
 		http.Error(w, "unknown agent", 401)
 		return
 	}
 	switch {
+	case r.URL.Path == "/agent/v1/ping":
+		if now.IsZero() {
+			now = time.Now()
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"agent_id": agentID, "time": now})
 	case r.URL.Path == "/agent/v1/commands":
 		f.mu.Lock()
 		q := f.queue

@@ -35,7 +35,11 @@ func (p *Poller) Run(ctx context.Context) {
 				return
 			}
 			d := bo.Next()
-			log.Warn("command poll failed", "err", err, "retry_in", d)
+			if IsRevoked(err) { // the client reports that one itself, rate-limited
+				d = RevokedRetry
+			} else {
+				log.Warn("command poll failed", "err", err, "retry_in", d)
+			}
 			sleep(ctx, d)
 			continue
 		}
@@ -85,6 +89,8 @@ type Heartbeater struct {
 	lastFactsID [32]byte
 	facts       any
 	factsAt     time.Time
+	// pausedUntil: after an agent_revoked answer, Run skips beats for RevokedRetry.
+	pausedUntil time.Time
 }
 
 // Run beats until ctx is done.
@@ -103,6 +109,9 @@ func (h *Heartbeater) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			if time.Now().Before(h.pausedUntil) {
+				continue
+			}
 			h.Beat(ctx)
 		}
 	}
@@ -139,7 +148,11 @@ func (h *Heartbeater) Beat(ctx context.Context) {
 		}
 	}
 	if err := h.Client.Heartbeat(ctx, hb); err != nil {
-		log.Warn("heartbeat failed", "err", err)
+		if IsRevoked(err) {
+			h.pausedUntil = time.Now().Add(RevokedRetry)
+		} else {
+			log.Warn("heartbeat failed", "err", err)
+		}
 		return
 	}
 	if hb.Facts != nil {
@@ -165,7 +178,9 @@ func (r *Renewer) Run(ctx context.Context) {
 		next := every
 		if r.NeedsRenewal(time.Now()) {
 			if err := r.Renew(ctx); err != nil {
-				r.Log.Error("certificate renewal failed", "err", err)
+				if !IsRevoked(err) {
+					r.Log.Error("certificate renewal failed", "err", err)
+				}
 				next = time.Hour
 			} else {
 				r.Log.Info("certificate renewed")

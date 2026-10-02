@@ -5,6 +5,12 @@ return [
     'php_versions' => ['8.1', '8.2', '8.3', '8.4', '8.5'],
     'default_php' => '8.4',
 
+    // Releases where only some of those can be installed, keyed by the server's reported OS ("<id> <version>").
+    // ppa:ondrej/php has no packages for Ubuntu 26.04 yet, so PHP comes from Ubuntu's archive there: 8.5 only.
+    'php_versions_by_os' => [
+        'ubuntu 26.04' => ['8.5'],
+    ],
+
     // Installed for every PHP version (php<v>-<ext>).
     'php_extensions' => ['bcmath', 'cli', 'curl', 'gd', 'igbinary', 'intl', 'mbstring', 'mysql', 'pgsql', 'readline', 'redis', 'soap', 'sqlite3', 'xml', 'zip'],
 

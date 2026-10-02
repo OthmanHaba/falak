@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Kiln\Fleet\Contracts\Enrollment;
 use Symfony\Component\Process\Process;
@@ -35,6 +37,17 @@ it('serves a valid POSIX sh installer for a usable token', function () {
         ->toContain('"$BIN" enroll --panel "$KILN_PANEL_URL" --token "$KILN_TOKEN"')
         ->toContain('"$BIN" install')
         ->not->toContain('ExecStart');
+
+    // Preflight, a previous install, stopping the old agent before enrolling, and the connection check.
+    expect($script)->toContain("KILN_AGENT_API='https://panel.kiln.test/agent/v1'")
+        ->toContain('"$KILN_AGENT_API/ping"')
+        ->toContain('ubuntu:26.04) say "note: on Ubuntu 26.04 PHP comes from Ubuntu\'s own archive, which has only PHP 8.5"')
+        ->toContain('if [ -f /etc/kiln/agent.json ]; then')
+        ->toContain('"$BIN" check --wait 60s')
+        ->toContain('journalctl -u kiln-agent');
+    expect(strpos($script, 'systemctl stop kiln-agent'))->toBeLessThan(strpos($script, '"$BIN" enroll'));
+    expect(strpos($script, '"$BIN" install'))->toBeLessThan(strpos($script, '"$BIN" check'));
+    expect($script)->not->toContain("\r")->not->toContain(chr(1));
 
     $process = new Process(['sh', '-n']);
     $process->setInput($script);
@@ -79,6 +92,146 @@ it('quotes hostile values safely', function () {
     $process->run();
     expect($process->getExitCode())->toBe(0);
 });
+
+it('uses a separate agents host for the agent API check', function () {
+    config(['fleet.api_url' => 'https://agents.kiln.test/agent/v1']);
+    $install = app(Enrollment::class)->issueInstallToken($this->organization->id, null);
+
+    expect($this->get("/install/{$install->token}")->getContent())->toContain("KILN_AGENT_API='https://agents.kiln.test/agent/v1'");
+});
+
+/**
+ * Runs the installer with stubbed system tools in a sandbox. Without DOWNLOAD the stubbed download fails after
+ * preflight; with DOWNLOAD=1 it delivers a fake kiln-agent and the script runs to the end, with $BIN pointed into
+ * the sandbox. OLD_AGENT=1 makes the fake agent a build without `check`; INACTIVE=1 makes the service never run.
+ *
+ * @param  array<string, string>  $env
+ * @return array{0: int, 1: string, 2: string, 3: string} [exit code, stdout, stderr, stub calls]
+ */
+function run_installer(string $script, array $env): array
+{
+    $dir = sys_get_temp_dir().'/kiln-installer-'.bin2hex(random_bytes(4));
+    mkdir($dir.'/bin', 0o755, true);
+    $stubs = [
+        'id' => 'echo 0',
+        'uname' => 'case "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac',
+        'systemctl' => <<<'STUB'
+echo "systemctl $*" >> "$STUB_LOG"
+case "$1" in is-active) [ -z "${INACTIVE:-}" ] || exit 3 ;; esac
+exit 0
+STUB,
+        'apt-get' => 'exit 0',
+        'sleep' => 'exit 0',
+        // Panel HEAD → headers with its Date; agent API probe → 401 (or down); the download fails or delivers.
+        'curl' => <<<'STUB'
+echo "curl $*" >> "$STUB_LOG"
+case "$*" in
+    *" -I "*) printf 'HTTP/2 302\r\ndate: Fri, 02 Oct 2026 12:00:00 GMT\r\nlocation: /login\r\n\r\n' ;;
+    */ping*) if [ -n "${API_DOWN:-}" ]; then echo "curl: (7) Failed to connect to agents.kiln.test port 443" >&2; exit 7; fi; printf 401 ;;
+    *)
+        [ -n "${DOWNLOAD:-}" ] || exit 22
+        while [ "$#" -gt 0 ]; do [ "$1" = -o ] && cp "$SANDBOX/fake-agent" "$2"; shift; done ;;
+esac
+STUB,
+        // GNU date semantics for the two calls the clock check makes.
+        'date' => 'case "$2" in -d) echo "$PANEL_TS" ;; +%s) echo "$LOCAL_TS" ;; *) echo "2026-10-02 12:00:00" ;; esac',
+    ];
+    foreach ($stubs as $name => $body) {
+        file_put_contents("{$dir}/bin/{$name}", "#!/bin/sh\n{$body}\n");
+        chmod("{$dir}/bin/{$name}", 0o755);
+    }
+    file_put_contents("{$dir}/fake-agent", <<<'AGENT'
+#!/bin/sh
+echo "kiln-agent $*" >> "$STUB_LOG"
+case "$1 ${2:-}" in
+    "check --help")
+        echo "Usage of check:" >&2
+        [ -n "${OLD_AGENT:-}" ] || echo "  -wait duration" >&2 ;;
+    check*)
+        [ -z "${OLD_AGENT:-}" ] || { echo "usage: kiln-agent <run|enroll|install|version> [flags]" >&2; exit 2; }
+        echo "kiln-agent connected as 01JTESTAGENT0000000000000" ;;
+esac
+exit 0
+AGENT);
+
+    $script = str_replace('BIN=/usr/local/bin/kiln-agent', 'BIN="$SANDBOX/kiln-agent"', $script);
+    $process = new Process(['sh', '-s'], $dir, ['PATH' => "{$dir}/bin:/usr/bin:/bin", 'STUB_LOG' => "{$dir}/calls", 'SANDBOX' => $dir, ...$env]);
+    $process->setInput($script);
+    $process->run();
+    $calls = (string) @file_get_contents("{$dir}/calls");
+    (new Filesystem)->deleteDirectory($dir);
+
+    return [(int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), $calls];
+}
+
+it('stops an earlier agent, enrolls, installs and waits until the agent and the service are up', function () {
+    $install = app(Enrollment::class)->issueInstallToken($this->organization->id, null);
+    $script = $this->get("/install/{$install->token}")->getContent();
+
+    [$code, $stdout, $stderr, $calls] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000000', 'DOWNLOAD' => '1']);
+
+    expect($code)->toBe(0, $stderr)
+        ->and($stdout)->toEndWith("kiln: kiln-agent connected as 01JTESTAGENT0000000000000\n");
+    $order = array_map(fn (string $call) => strpos($calls, $call), ['systemctl stop kiln-agent', 'kiln-agent enroll', 'kiln-agent install', 'kiln-agent check --wait 60s', 'systemctl is-active --quiet kiln-agent']);
+    expect($order)->not->toContain(false)->and($order)->toBe(array_values(Arr::sort($order)));
+})->skip(PHP_OS_FAMILY === 'Windows');
+
+it('skips the connection check for an agent build without it', function () {
+    $install = app(Enrollment::class)->issueInstallToken($this->organization->id, null);
+    $script = $this->get("/install/{$install->token}")->getContent();
+
+    [$code, $stdout, $stderr, $calls] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000000', 'DOWNLOAD' => '1', 'OLD_AGENT' => '1']);
+
+    expect($code)->toBe(0, $stderr)
+        ->and($stderr)->toContain('this kiln-agent build has no check command; not verifying the connection')
+        ->and($stdout)->toEndWith("kiln: kiln-agent installed\n")
+        ->and($calls)->not->toContain('kiln-agent check --wait');
+})->skip(PHP_OS_FAMILY === 'Windows');
+
+it('fails when the service does not stay up after the check', function () {
+    $install = app(Enrollment::class)->issueInstallToken($this->organization->id, null);
+    $script = $this->get("/install/{$install->token}")->getContent();
+
+    [$code, $stdout, $stderr, $calls] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000000', 'DOWNLOAD' => '1', 'INACTIVE' => '1']);
+
+    expect($code)->toBe(1)
+        ->and($stderr)->toContain('kiln-agent.service is not running; logs: journalctl -u kiln-agent')
+        ->and($stdout)->not->toContain('connected as')
+        ->and(substr_count($calls, 'systemctl is-active --quiet kiln-agent'))->toBe(10);
+})->skip(PHP_OS_FAMILY === 'Windows');
+
+it('stops before changing anything when the clock is more than five minutes off', function () {
+    $install = app(Enrollment::class)->issueInstallToken($this->organization->id, null);
+    $script = $this->get("/install/{$install->token}")->getContent();
+
+    [$code, , $stderr, $calls] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000600']);
+
+    expect($code)->toBe(1)
+        ->and($stderr)->toContain("this machine's clock is 600s off the panel's")->toContain('timedatectl set-ntp true')
+        ->and($calls)->not->toContain('curl -fsSL')->not->toContain('systemctl stop');
+})->skip(PHP_OS_FAMILY === 'Windows');
+
+it('fails clearly when the agent API cannot be reached', function () {
+    config(['fleet.api_url' => 'https://agents.kiln.test/agent/v1']);
+    $install = app(Enrollment::class)->issueInstallToken($this->organization->id, null);
+    $script = $this->get("/install/{$install->token}")->getContent();
+
+    [$code, , $stderr] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000000', 'API_DOWN' => '1']);
+
+    expect($code)->toBe(1)->and($stderr)->toContain('cannot reach the agent API at https://agents.kiln.test/agent/v1: curl: (7) Failed to connect');
+})->skip(PHP_OS_FAMILY === 'Windows');
+
+it('passes preflight with a small clock difference and goes on to the download', function () {
+    $install = app(Enrollment::class)->issueInstallToken($this->organization->id, null);
+    $script = $this->get("/install/{$install->token}")->getContent();
+
+    [$code, $stdout, $stderr, $calls] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000090']);
+
+    expect($code)->toBe(1)
+        ->and($stdout)->toContain('kiln: OS: ')->toContain('downloading kiln-agent (amd64)')
+        ->and($stderr)->toContain("clock is 90s off the panel's; enable time sync")->toContain('download failed')
+        ->and($calls)->toContain('https://panel.kiln.test/agent/v1/ping')->not->toContain('systemctl stop');
+})->skip(PHP_OS_FAMILY === 'Windows');
 
 it('serves published agent binaries by architecture', function () {
     file_put_contents($this->binaries.'/kiln-agent-linux-arm64', 'arm-bits');

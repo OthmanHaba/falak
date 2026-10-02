@@ -26,6 +26,7 @@ type Deps struct {
 	HTTP           *http.Client
 	Arch           string
 	FrankenPHPBase string // passed to runtime
+	OndrejPPAURL   string // passed to runtime
 	CaddyKeyURL    string // default https://dl.cloudsmith.io/public/caddy/stable/gpg.key
 	CaddyRepoURL   string // default https://dl.cloudsmith.io/public/caddy/stable/deb/debian
 }
@@ -50,7 +51,7 @@ func New(d Deps) *Provisioner {
 	if d.CaddyRepoURL == "" {
 		d.CaddyRepoURL = "https://dl.cloudsmith.io/public/caddy/stable/deb/debian"
 	}
-	rt := runtime.New(runtime.Deps{Runner: d.Runner, FS: d.FS, Logger: d.Logger, HTTP: d.HTTP, Arch: d.Arch, FrankenPHPBase: d.FrankenPHPBase})
+	rt := runtime.New(runtime.Deps{Runner: d.Runner, FS: d.FS, Logger: d.Logger, HTTP: d.HTTP, Arch: d.Arch, FrankenPHPBase: d.FrankenPHPBase, OndrejPPAURL: d.OndrejPPAURL})
 	return &Provisioner{d: d, rt: rt}
 }
 
@@ -187,7 +188,7 @@ func (p *Provisioner) steps(plan Plan) []step {
 	}
 	if plan.Apt != nil {
 		add("apt", func(ctx context.Context, st commands.Stream) (bool, error) {
-			a := system.AptFor(p.d.Runner, st)
+			a := system.AptFor(p.d.Runner, p.d.FS, st)
 			inst, err := a.Ensure(ctx, plan.Apt.Packages, true)
 			if err != nil {
 				return len(inst) > 0, err
@@ -391,7 +392,7 @@ func (p *Provisioner) caddy(ctx context.Context, st commands.Stream, version str
 	if err != nil {
 		return changed, err
 	}
-	a := system.AptFor(p.d.Runner, st)
+	a := system.AptFor(p.d.Runner, p.d.FS, st)
 	if c {
 		changed = true
 		if err := a.Update(ctx); err != nil {
@@ -455,7 +456,7 @@ func (p *Provisioner) unattended(ctx context.Context, st commands.Stream, u Unat
 	on := yes(u.Enabled)
 	changed := false
 	if on {
-		inst, err := system.AptFor(p.d.Runner, st).Ensure(ctx, []string{"unattended-upgrades"}, true)
+		inst, err := system.AptFor(p.d.Runner, p.d.FS, st).Ensure(ctx, []string{"unattended-upgrades"}, true)
 		if err != nil {
 			return false, err
 		}

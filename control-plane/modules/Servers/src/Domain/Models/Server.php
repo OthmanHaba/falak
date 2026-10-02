@@ -114,6 +114,32 @@ class Server extends Model
         return $this->provider === 'custom';
     }
 
+    /**
+     * PHP versions that can be installed on this server's OS (servers.php_versions_by_os narrows the offer).
+     *
+     * @return list<string>
+     */
+    public function installablePhpVersions(): array
+    {
+        $offered = array_values(array_map('strval', (array) config('servers.php_versions')));
+        $byOs = (array) config('servers.php_versions_by_os', []);
+        $os = strtolower(trim((string) $this->os));
+
+        if ($os === '' || ! isset($byOs[$os])) {
+            return $offered;
+        }
+
+        return array_values(array_intersect($offered, array_map('strval', (array) $byOs[$os])));
+    }
+
+    /** "Ubuntu 26.04" from the reported OS ("ubuntu 26.04"). */
+    public function osLabel(): string
+    {
+        [$id, $version] = array_pad(explode(' ', (string) $this->os, 2), 2, '');
+
+        return trim(ucfirst($id).' '.$version) ?: 'this server';
+    }
+
     public function defaultPhp(): ?PhpVersion
     {
         return $this->phpVersions->firstWhere('is_default', true);

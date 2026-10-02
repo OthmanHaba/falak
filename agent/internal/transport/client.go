@@ -12,11 +12,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand/v2"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kiln/agent/internal/commands"
@@ -31,7 +33,21 @@ type Client struct {
 	// Session identifies this agent process (SessionHeader on every request). The control plane redelivers or
 	// fails commands delivered to an earlier session, and ignores long-polls left behind by one.
 	Session string
+	// AgentID and Log report a revoked agent (see IsRevoked); a nil Log disables the report.
+	AgentID string
+	Log     *slog.Logger
+
+	revokedMu   sync.Mutex
+	revokedLast time.Time
 }
+
+// RevokedReportEvery rate-limits the "server was removed" error: every loop hits it, every few seconds.
+const RevokedReportEvery = 10 * time.Minute
+
+// RevokedRetry is how long a loop waits after its request was answered agent_revoked (the identity stays revoked
+// until a new install command replaces it, which restarts the agent). Every component that posts to the agent API
+// waits this long and logs nothing itself: the client's rate-limited message says it once.
+var RevokedRetry = 10 * time.Minute
 
 // SessionHeader carries Client.Session.
 const SessionHeader = "X-Kiln-Agent-Session"
@@ -71,9 +87,42 @@ func NewWithHTTPClient(apiBase string, hc *http.Client) *Client {
 type StatusError struct {
 	Code int
 	Body string
+	// Reason is the body's "error" code when the control plane sent one (e.g. ReasonAgentRevoked).
+	Reason string
 }
 
 func (e *StatusError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.Code, e.Body) }
+
+// ReasonAgentRevoked is the 401 reason for the certificate of an agent whose server was deleted from Kiln.
+// Older control planes answer a plain 401.
+const ReasonAgentRevoked = "agent_revoked"
+
+// IsRevoked reports whether err is a 401 for a revoked agent.
+func IsRevoked(err error) bool {
+	var se *StatusError
+	return errors.As(err, &se) && se.Code == http.StatusUnauthorized && se.Reason == ReasonAgentRevoked
+}
+
+// RevokedMessage tells the operator what a revoked identity means and what to do.
+func RevokedMessage(agentID string) string {
+	return fmt.Sprintf("this agent was revoked or its server was removed from Kiln (agent %s); run a new install command from the panel to connect this machine again", agentID)
+}
+
+func (c *Client) reportRevoked() {
+	if c.Log == nil {
+		return
+	}
+	c.revokedMu.Lock()
+	now := time.Now()
+	due := c.revokedLast.IsZero() || now.Sub(c.revokedLast) >= RevokedReportEvery
+	if due {
+		c.revokedLast = now
+	}
+	c.revokedMu.Unlock()
+	if due {
+		c.Log.Error(RevokedMessage(c.AgentID))
+	}
+}
 
 // Retryable reports whether a failed request should be retried later.
 func Retryable(err error) bool {
@@ -120,9 +169,38 @@ func (c *Client) do(ctx context.Context, method, path, ctype string, body []byte
 		if len(b) > 512 {
 			b = b[:512]
 		}
-		return nil, &StatusError{Code: resp.StatusCode, Body: b}
+		se := &StatusError{Code: resp.StatusCode, Body: b}
+		var shape struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(out, &shape) == nil {
+			se.Reason = shape.Error
+		}
+		if IsRevoked(se) {
+			c.reportRevoked()
+		}
+		return nil, se
 	}
 	return out, nil
+}
+
+// Pong is the GET /ping response.
+type Pong struct {
+	AgentID string    `json:"agent_id"`
+	Time    time.Time `json:"time"`
+}
+
+// Ping calls GET /ping, an authenticated no-op (kiln-agent check).
+func (c *Client) Ping(ctx context.Context) (Pong, error) {
+	var p Pong
+	out, err := c.do(ctx, http.MethodGet, "/ping", "", nil, 15*time.Second)
+	if err != nil {
+		return p, err
+	}
+	if err := json.Unmarshal(out, &p); err != nil || p.AgentID == "" {
+		return p, fmt.Errorf("ping: unexpected response: %s", strings.TrimSpace(string(out)))
+	}
+	return p, nil
 }
 
 // Poll long-polls GET /commands?wait=N.

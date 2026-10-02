@@ -6,6 +6,7 @@ use Kiln\Fleet\Http\Controllers\Agent\CommandPollController;
 use Kiln\Fleet\Http\Controllers\Agent\EnrollController;
 use Kiln\Fleet\Http\Controllers\Agent\HeartbeatController;
 use Kiln\Fleet\Http\Controllers\Agent\InsightsController;
+use Kiln\Fleet\Http\Controllers\Agent\PingController;
 use Kiln\Fleet\Http\Controllers\Agent\RenewController;
 use Kiln\Fleet\Http\Middleware\AuthenticateAgent;
 use Kiln\Fleet\Http\Middleware\ForceJson;
@@ -16,6 +17,7 @@ Route::middleware(ForceJson::class)->name('fleet.agent.')->group(function () {
     Route::post('enroll', EnrollController::class)->middleware('throttle:fleet-enroll')->name('enroll');
 
     Route::middleware(AuthenticateAgent::class)->group(function () {
+        Route::get('ping', PingController::class)->name('ping');
         Route::post('renew', RenewController::class)->name('renew');
         Route::post('heartbeat', HeartbeatController::class)->name('heartbeat');
         Route::get('commands', CommandPollController::class)->name('commands');

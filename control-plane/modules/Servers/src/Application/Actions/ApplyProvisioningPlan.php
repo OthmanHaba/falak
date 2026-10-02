@@ -6,6 +6,7 @@ use Illuminate\Validation\ValidationException;
 use Kiln\Fleet\Contracts\AgentGateway;
 use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Kiln\Identity\Contracts\AuditLog;
+use Kiln\Servers\Application\PhpVersionsForOs;
 use Kiln\Servers\Application\ServerStatusUpdater;
 use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Domain\Models\Server;
@@ -22,11 +23,13 @@ final class ApplyProvisioningPlan
         private readonly ProvisioningPlanBuilder $plans,
         private readonly ServerStatusUpdater $status,
         private readonly AuditLog $audit,
+        private readonly PhpVersionsForOs $php,
     ) {}
 
     public function __invoke(Server $server, bool $markProvisioning = true): string
     {
         $attempt = $server->provision_attempts + 1;
+        $phpNote = $this->php->fit($server);
 
         try {
             $handle = $this->agents->dispatch(
@@ -49,7 +52,7 @@ final class ApplyProvisioningPlan
         $attributes = ['provision_command_id' => $handle->id, 'provision_attempts' => $attempt];
 
         if ($markProvisioning) {
-            $this->status->set($server, ServerStatus::Provisioning, 'Applying provisioning plan.', $attributes);
+            $this->status->set($server, ServerStatus::Provisioning, trim('Applying provisioning plan. '.$phpNote), $attributes);
         } else {
             $server->forceFill($attributes)->save();
         }

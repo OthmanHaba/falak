@@ -66,6 +66,22 @@ it('rejects duplicate and unsupported versions', function () {
     $this->post("/servers/{$this->server->id}/php", ['version' => '5.6'])->assertSessionHasErrors('version');
 });
 
+it('only offers and installs the PHP versions the server OS has', function () {
+    $this->server->forceFill(['os' => 'ubuntu 26.04'])->save();
+
+    $this->get("/servers/{$this->server->id}/php")->assertInertia(fn ($page) => $page->where('phpOptions', ['8.5']));
+
+    $this->post("/servers/{$this->server->id}/php", ['version' => '8.3'])
+        ->assertSessionHasErrors(['version' => 'PHP 8.3 cannot be installed on Ubuntu 26.04: it offers PHP 8.5.']);
+    expect($this->server->phpVersions()->where('version', '8.3')->exists())->toBeFalse();
+
+    $this->post("/servers/{$this->server->id}/php", ['version' => '8.5'])->assertSessionHasNoErrors();
+    expect(servers_poll($this->agent['headers'])[0]['payload']['version'])->toBe('8.5');
+
+    $this->server->forceFill(['os' => 'ubuntu 24.04'])->save();
+    $this->get("/servers/{$this->server->id}/php")->assertInertia(fn ($page) => $page->where('phpOptions', ['8.1', '8.2', '8.3']));
+});
+
 it('switches the CLI default', function () {
     $this->post("/servers/{$this->server->id}/php", ['version' => '8.3']);
     [$install] = servers_poll($this->agent['headers']);
