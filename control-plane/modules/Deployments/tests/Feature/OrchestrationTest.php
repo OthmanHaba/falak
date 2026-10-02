@@ -432,7 +432,8 @@ it('swaps a container without an edge route when the site has no domain', functi
     deploy_run_all($world->agents);
 
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
-        ->and($world->agents->last('deploy.container.swap')['payload'])->not->toHaveKey('edge_route_id');
+        ->and($world->agents->last('deploy.container.swap')['payload'])->not->toHaveKey('edge_route_id')
+        ->and($GLOBALS['deploy_http_requests'] ?? [])->toBe([]);
 });
 
 it('keeps N releases and marks older ones pruned', function () {

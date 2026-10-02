@@ -17,6 +17,7 @@ use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Contracts\SiteRuntime;
 use Throwable;
 
 /**
@@ -65,6 +66,14 @@ final class RunHealthCheck implements ShouldQueue
 
         $site = $sites->find($deployment->site_id);
         $checks = [];
+
+        // A Docker site without a domain has no edge route (a compose service split out into its own site that only its
+        // stack reaches): the swap already checked the container on the server.
+        if ($site?->runtime === SiteRuntime::Docker && $site->testDomain === null && $edge->domainsFor($site->id) === []) {
+            $orchestrator->healthChecked($step->id, true, 'No domain to check through the edge; the container passed its health check on the server.');
+
+            return;
+        }
 
         if ($site?->compose !== null) {
             // Compose: every public service through the edge; the primary answers the configured check.
