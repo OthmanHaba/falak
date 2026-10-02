@@ -93,14 +93,22 @@ final class DeploySplitSitesFirst implements ShouldQueue
             return;
         }
 
-        foreach (self::awaits($deployment) as $siteId) {
-            if ($this->active($siteId)) {
+        $awaits = self::awaits($deployment);
+
+        foreach ($awaits as $siteId) {
+            // Already live (it went live after the stack checked) or on its way: nothing to deploy.
+            if (Release::current($siteId) !== null || $this->active($siteId)) {
                 continue;
             }
 
             // Re-checked under the site's trigger lock: a deployment started meanwhile wins.
             $seen = (int) Deployment::query()->where('site_id', $siteId)->max('number');
             $this->deploy($siteId, 'Deployed before its compose stack: the stack runs one of its services as this site.', null, $seen);
+        }
+
+        // Every awaited site is live already: no site success will come to follow up on, so deploy the full stack now.
+        if ($awaits !== [] && array_filter($awaits, fn (string $siteId) => Release::current($siteId) === null) === []) {
+            $this->deploy($deployment->site_id, 'Its split-out sites are live: deploying the full stack.', $deployment, $deployment->number);
         }
     }
 

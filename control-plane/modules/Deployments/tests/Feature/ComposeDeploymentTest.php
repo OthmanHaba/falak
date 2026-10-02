@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Event;
 use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
+use Kiln\Deployments\Application\Listeners\DeploySplitSitesFirst;
 use Kiln\Deployments\Application\Orchestration\StepPayloads;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
 use Kiln\Deployments\Domain\Enums\ReleaseStatus;
@@ -305,6 +306,13 @@ it('deploys a service split out at the stack\'s creation first, then the stack, 
     app(TriggerDeployment::class)(app(SiteDirectory::class)->find($split->id), Trigger::Manual);
     deploy_run_all($world->agents);
     expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2);
+
+    // The stop handled again (a retried job) finds the site live: no second deploy of it, and the stack already moved on.
+    $siteDeploys = Deployment::query()->where('site_id', $split->id)->count();
+    app(DeploySplitSitesFirst::class)->onStackFailed(new DeploymentFailed($first->id, $first->organization_id, $first->site_id, 'shop', $first->number, 'manual', 'fetch', (string) $first->error, $first->commit, false));
+    deploy_run_all($world->agents);
+    expect(Deployment::query()->where('site_id', $split->id)->count())->toBe($siteDeploys)
+        ->and(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2);
 });
 
 const SPLIT_STACK = "services:\n  app:\n    image: nginx:1.27\n    depends_on: [api]\n  api:\n    image: ghcr.io/acme/api:1\n    depends_on: [postgres, redis]\n  postgres:\n    image: postgres:17\n  redis:\n    image: redis:7\n";
