@@ -45,6 +45,7 @@ use Kiln\Servers\Domain\Stack\Stack;
  * @property ?string $install_command
  * @property ?string $provision_command_id
  * @property int $provision_attempts
+ * @property ?string $engine_command_id provision.apply installing a database engine added after creation
  * @property ?string $ssh_sync_command_id
  * @property ?Carbon $provisioned_at
  * @property ?string $created_by

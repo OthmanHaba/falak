@@ -12,6 +12,7 @@ use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Domain\Enums\PhpVersionStatus;
 use Kiln\Servers\Domain\Models\PhpVersion;
 use Kiln\Servers\Domain\Models\Server;
+use Kiln\Servers\Events\DatabaseEngineInstalled;
 use Kiln\Servers\Events\PhpVersionChanged;
 use Kiln\Servers\Events\ServerProvisioned;
 
@@ -39,6 +40,7 @@ final class HandleCommandOutcome implements ShouldQueue
         }
 
         $this->settlePhpVersions($server, $event->commandId, succeeded: true, error: null);
+        $this->settleEngine($server, $event->commandId, error: null);
     }
 
     public function handleFailed(CommandFailed $event): void
@@ -57,6 +59,31 @@ final class HandleCommandOutcome implements ShouldQueue
         }
 
         $this->settlePhpVersions($server, $event->commandId, succeeded: false, error: $reason);
+        $this->settleEngine($server, $event->commandId, error: $reason);
+    }
+
+    /**
+     * A database engine added after creation: registered once installed, taken back out of the stack when the plan
+     * failed (the next plan would otherwise retry it on every converge).
+     */
+    private function settleEngine(Server $server, string $commandId, ?string $error): void
+    {
+        if ($server->engine_command_id === null || $server->engine_command_id !== $commandId) {
+            return;
+        }
+
+        $engine = (string) $server->stack->database;
+
+        if ($error !== null) {
+            $server->forceFill(['engine_command_id' => null, 'stack' => $server->stack->withDatabase(null)])->save();
+            $this->audit->record('server.database_engine_install_failed', 'server', $server->id, ['engine' => $engine, 'error' => $error], $server->organization_id);
+
+            return;
+        }
+
+        $server->forceFill(['engine_command_id' => null])->save();
+        $this->audit->record('server.database_engine_installed', 'server', $server->id, ['engine' => $engine], $server->organization_id);
+        DatabaseEngineInstalled::dispatch($server->id, $server->organization_id, $engine);
     }
 
     private function provisioned(Server $server): void
