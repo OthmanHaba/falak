@@ -550,6 +550,18 @@ func (c *Client) NetworkExists(ctx context.Context, name string) (bool, error) {
 	return err == nil, err
 }
 
+// NetworkConnect joins a (created, not yet started) container to a network under extra DNS aliases. Being
+// connected already is not an error.
+func (c *Client) NetworkConnect(ctx context.Context, network, container string, aliases []string) error {
+	body := map[string]any{"Container": container, "EndpointConfig": map[string]any{"Aliases": aliases}}
+	_, err := c.do(ctx, http.MethodPost, "/networks/"+url.PathEscape(network)+"/connect", nil, body, nil)
+	var ae *APIError
+	if errors.As(err, &ae) && ae.Status == http.StatusForbidden && strings.Contains(ae.Message, "already exists") {
+		return nil
+	}
+	return err
+}
+
 // NetworkCreate creates a bridge network with labels (a 409 "already exists" is not an error).
 func (c *Client) NetworkCreate(ctx context.Context, name string, labels map[string]string) error {
 	body := map[string]any{"Name": name, "Driver": "bridge", "Labels": labels}

@@ -10,6 +10,7 @@ use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Databases\Contracts\DatabaseDirectory;
 use Kiln\Databases\Contracts\DatabaseProvisioner;
 use Kiln\Projects\Contracts\ProjectDirectory;
+use Kiln\Sites\Application\Compose\ComposeNetworks;
 use Kiln\Sites\Application\Compose\ComposeProject;
 use Kiln\Sites\Application\Compose\ComposeProjectException;
 use Kiln\Sites\Application\Compose\ServiceReferences;
@@ -19,10 +20,12 @@ use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\ComposeRewrites;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\Data\SitePlacement;
+use Kiln\Sites\Contracts\Framework;
 use Kiln\Sites\Contracts\SiteDomains;
 use Kiln\Sites\Contracts\SiteFactory;
 use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Domain\Models\Site;
+use Kiln\Sites\Domain\Presets\Preset;
 use Kiln\Sites\Events\ComposeServiceExtracted;
 use Kiln\Sites\Events\SiteUpdated;
 use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
@@ -135,7 +138,11 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
 
         $build = $definition['build'] ?? null;
         $context = is_array($build) ? ($build['context'] ?? '.') : (is_string($build) ? $build : null);
-        $runtime = (string) ($site['runtime'] ?? 'docker');
+        // Docker when picked (or no framework given); otherwise the framework's own runtime (Laravel, Node.js on the
+        // host), which can't join the stack's network.
+        $framework = (string) ($site['framework'] ?? 'docker');
+        $runtime = (string) ($site['runtime'] ?? ($framework === 'docker' ? 'docker' : Preset::for(Framework::from($framework))->defaultRuntime()->value));
+        $php = SiteRuntime::tryFrom($runtime)?->isPhp() === true;
 
         $derived = array_filter([
             'name' => $service,
@@ -148,6 +155,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             'dockerfile' => $runtime === 'docker' && is_array($build) && isset($build['dockerfile']) ? (string) $build['dockerfile'] : null,
             'docker_image' => $runtime === 'docker' && $context === null && isset($definition['image']) ? (string) $definition['image'] : null,
             'container_port' => $runtime === 'docker' ? $this->firstPort($definition) : null,
+            'php_version' => $php ? (string) config('sites.default_php', '8.4') : null,
             'server_ids' => $data->serverIds(),
             'leader_server_id' => $data->leader()?->serverId,
             'variables' => $this->interpolate(ServiceReferences::environment($definition['environment'] ?? []), $stackVariables) ?: null,
@@ -170,6 +178,9 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             'mode' => 'site',
             'site_id' => $created->site->id,
             'rewrites' => ServiceReferences::find($document, $service, 'site', $stackVariables),
+            // A Docker site joins these (under the service's name) on the stack's servers: see ComposeSites::stackNetworks().
+            'networks' => ComposeNetworks::of($document, $stack->slug, $service),
+            'uses' => ServiceReferences::uses($document, $service),
         ]);
 
         ComposeServiceExtracted::dispatch($stack->id, $stack->organization_id, $service, 'site', $created->site->id, $created->site->name, $wasPrimary);

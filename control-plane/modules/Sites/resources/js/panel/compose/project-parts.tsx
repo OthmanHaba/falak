@@ -230,6 +230,21 @@ export function ServicesTable({
                                         options={SITE_FRAMEWORKS}
                                     />
                                 </Field>
+                                {(service.uses?.length ?? 0) > 0 && (
+                                    <p className="text-fg-muted text-xs sm:col-span-2">
+                                        {(choice.site?.framework ?? 'docker') === 'docker' ? (
+                                            <>
+                                                It joins the stack’s network on the stack’s servers, so it still reaches {service.uses?.join(', ')} by
+                                                name.
+                                            </>
+                                        ) : (
+                                            <span className="text-warning">
+                                                {service.name} uses {service.uses?.join(', ')} inside the stack; a native site can only reach public
+                                                services — pick Docker, or make them public.
+                                            </span>
+                                        )}
+                                    </p>
+                                )}
                             </div>
                         )}
                         {errors[`compose_services.${service.name}.mode`] && (

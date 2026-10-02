@@ -28,6 +28,11 @@ final class PayloadCompatibility
         'telemetry.log_kind' => [
             'telemetry.configure' => ['log_sources.*.kind', 'log_sources.*.multiline'],
         ],
+        // Split-out compose services joining their stack's network; older agents run them on their own network only.
+        'docker.networks' => [
+            'docker.run' => ['networks'],
+            'deploy.container.swap' => ['networks'],
+        ],
         // Containers reaching localhost database engines; older agents keep them on localhost.
         'db.containers' => [
             'db.user.apply' => ['containers'],

@@ -116,6 +116,30 @@
     "network": {
       "type": "string"
     },
+    "networks": {
+      "type": "array",
+      "description": "Existing networks the container joins besides its own (never created by the agent; waits briefly, then fails). A compose service run as its own site joins its stack's network under its service name.",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$"
+          },
+          "aliases": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$"
+            }
+          }
+        }
+      }
+    },
     "memory_bytes": {
       "type": "integer",
       "minimum": 0

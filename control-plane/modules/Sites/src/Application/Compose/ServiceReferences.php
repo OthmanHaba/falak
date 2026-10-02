@@ -54,6 +54,42 @@ final class ServiceReferences
     }
 
     /**
+     * The other services of the stack that $service uses: its `depends_on`, and the services its `environment:` points
+     * at (a URL host, or a bare name under a host-like key / with a port). Those are what it can no longer reach once
+     * it runs outside the stack's network.
+     *
+     * @param  array<string, mixed>  $document  the parsed compose file
+     * @return list<string>
+     */
+    public static function uses(array $document, string $service): array
+    {
+        $services = array_map('strval', array_keys((array) ($document['services'] ?? [])));
+        $definition = $document['services'][$service] ?? null;
+
+        if (! is_array($definition)) {
+            return [];
+        }
+
+        $dependsOn = $definition['depends_on'] ?? [];
+        $used = array_map('strval', is_array($dependsOn) ? (array_is_list($dependsOn) ? $dependsOn : array_keys($dependsOn)) : []);
+        $environment = self::environment($definition['environment'] ?? []);
+
+        foreach ($services as $other) {
+            foreach ($environment as $key => $value) {
+                if ($other !== $service && self::template($key, trim($value), $other, 'site') !== null) {
+                    $used[] = $other;
+                    break;
+                }
+            }
+        }
+
+        $used = array_values(array_unique(array_filter($used, fn (string $name) => $name !== $service && in_array($name, $services, true))));
+        sort($used);
+
+        return $used;
+    }
+
+    /**
      * A service's `environment:` (map or `KEY=value` list) as strings; keys without a value are left out.
      *
      * @return array<string, string>

@@ -126,6 +126,15 @@ stack's public services.
 - Extracting needs the actor's permission for what it creates: `databases.manage` for a database, `sites.create` for
   a site (otherwise the service stays in the stack, with a warning). The service is claimed under the stack's row
   lock before anything is created; a failed creation gives it back.
+- **Reaching the stack from a split-out site:** a service run as its own **Docker** site joins the stack's networks
+  (`<stack-slug>_default`, or the networks it was on, by their Compose names) on every server the stack runs on, under
+  its service name — so `postgres`, `redis` … still resolve from it, and the stack still reaches it as before
+  (`compose_services[service].networks`; agent feature `docker.networks`, `networks` on `docker.run` /
+  `deploy.container.swap`). The agent never creates those networks: it waits up to 60 s for the stack's first deploy,
+  then fails the deploy with "deploy the compose stack first". A **native** site (Laravel, Node.js on the host), or a
+  server without the stack, only reaches the stack's public services: the services table and extraction warn
+  (`uses` in the inspect rows: `depends_on` plus hosts in its environment). Without the stack the site keeps its own
+  network only.
 
 ---
 

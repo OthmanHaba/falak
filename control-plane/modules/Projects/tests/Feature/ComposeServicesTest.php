@@ -9,6 +9,7 @@ use Kiln\Projects\Contracts\VariableReferences;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Sites\Application\ComposeSettings;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
+use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Events\ComposeServiceExtracted;
 use Tests\Support\FakeAgentGateway;
@@ -155,6 +156,36 @@ it('runs an app service as its own Kiln site from its build context, with its va
     $model->forceFill(['test_domain_enabled' => true])->save();
     config(['sites.test_domain' => 'kiln.test']);
     expect($this->extraction->rewrites($this->stack->id)->groups)->toBe(['worker' => ['UPSTREAM' => 'https://'.$model->refresh()->testDomain().'/v1']]);
+});
+
+it('lets a split-out Docker service join the stack networks on the stack servers, and warns native ones', function () {
+    $site = $this->extraction->toSite($this->stack->id, 'app', ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker'], SHOP_STACK);
+
+    $network = $this->stack->slug.'_default';
+    expect($this->stack->refresh()->compose_services['app'])->toMatchArray(['networks' => [$network], 'uses' => ['cache', 'db']])
+        ->and(app(ComposeSites::class)->stackNetworks($site->id, $this->server->id))->toBe([['name' => $network, 'aliases' => ['app']]])
+        // A server the stack doesn't run on: nothing to join there.
+        ->and(app(ComposeSites::class)->stackNetworks($site->id, '01j9zq4n8v2m6r0t3w5y7b9d1f'))->toBe([])
+        // Not split out of a stack.
+        ->and(app(ComposeSites::class)->stackNetworks($this->stack->id, $this->server->id))->toBe([]);
+
+    // Decisions recorded before networks were: the stack's default network.
+    $services = $this->stack->compose_services;
+    unset($services['app']['networks']);
+    $this->stack->forceFill(['compose_services' => $services])->save();
+    expect(app(ComposeSites::class)->stackNetworks($site->id, $this->server->id))->toBe([['name' => $network, 'aliases' => ['app']]]);
+
+    // The stack is gone: the site runs on its own network only.
+    $this->stack->delete();
+    expect(app(ComposeSites::class)->stackNetworks($site->id, $this->server->id))->toBe([]);
+});
+
+it('warns when a split-out service runs natively and can no longer reach the stack services it uses', function () {
+    $warnings = app(ComposeSettings::class)->extract(Site::query()->findOrFail($this->stack->id), [
+        ['service' => 'app', 'mode' => 'site', 'site' => ['name' => 'API', 'framework' => 'node']],
+    ], SHOP_STACK);
+
+    expect($warnings)->toBe(['app uses cache, db inside the stack; a native site can only reach public services — pick Docker, or make them public.']);
 });
 
 it('refuses build contexts outside the repository', function () {

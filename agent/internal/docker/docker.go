@@ -152,11 +152,23 @@ type RunPayload struct {
 	Ports         []PortSpec        `json:"ports,omitempty"`
 	Volumes       []VolumeSpec      `json:"volumes,omitempty"`
 	Network       string            `json:"network,omitempty"`
+	Networks      []NetworkJoin     `json:"networks,omitempty"`
 	Labels        map[string]string `json:"labels,omitempty"`
 	RestartPolicy string            `json:"restart_policy,omitempty"`
 	MemoryBytes   int64             `json:"memory_bytes,omitempty"`
 	CPUs          float64           `json:"cpus,omitempty"`
 }
+
+// NetworkJoin is an existing network the container joins besides its own, under extra DNS names (a compose service
+// run as its own Kiln site joins its stack's network as the service it was, so both sides keep resolving each other).
+type NetworkJoin struct {
+	Name    string   `json:"name"`
+	Aliases []string `json:"aliases,omitempty"`
+}
+
+// networkWait is how long a container waits for a network it joins to appear (a compose stack deploying in
+// parallel creates it); the deploy then fails with a clear error instead of starting a container that can't resolve.
+var networkWait = 60 * time.Second
 
 type RunResult struct {
 	Changed     bool   `json:"changed"`
@@ -277,11 +289,49 @@ func (s *Service) ensureContainer(ctx context.Context, p RunPayload, st commands
 			return "", false, err
 		}
 	}
+	if err := s.awaitNetworks(ctx, p.Networks, st); err != nil {
+		return "", false, err
+	}
 	id, err := s.c.ContainerCreate(ctx, p.Name, p.createBody(hash))
 	if err != nil {
 		return "", false, err
 	}
+	for _, n := range p.Networks {
+		if err := s.c.NetworkConnect(ctx, n.Name, id, n.Aliases); err != nil {
+			_ = s.c.ContainerRemove(ctx, id)
+			return "", false, fmt.Errorf("joining network %s: %w", n.Name, err)
+		}
+	}
 	return id, true, s.c.ContainerStart(ctx, id)
+}
+
+// awaitNetworks waits (up to networkWait) for the networks a container joins. Kiln never creates them: they belong
+// to the compose stack that owns them.
+func (s *Service) awaitNetworks(ctx context.Context, joins []NetworkJoin, st commands.Stream) error {
+	for _, n := range joins {
+		deadline := time.Now().Add(networkWait)
+		for said := false; ; said = true {
+			ok, err := s.c.NetworkExists(ctx, n.Name)
+			if err != nil {
+				return err
+			}
+			if ok {
+				break
+			}
+			if time.Now().After(deadline) {
+				return fmt.Errorf("network %s does not exist: deploy the compose stack it belongs to first, then redeploy this site", n.Name)
+			}
+			if !said && st != nil {
+				fmt.Fprintf(st.Stdout(), "waiting for network %s (deploy the compose stack it belongs to)\n", n.Name)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Second):
+			}
+		}
+	}
+	return nil
 }
 
 // ---- docker.stop ----

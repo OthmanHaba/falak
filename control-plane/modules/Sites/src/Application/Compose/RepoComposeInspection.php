@@ -169,6 +169,8 @@ final class RepoComposeInspection
                 'variables' => array_keys(self::interpolations(self::text($definition))),
                 'database_engine' => $engine,
                 'mode' => $config->mode($service->name),
+                // What it can't reach as a native site of its own (only a Docker site joins the stack's network).
+                'uses' => ServiceReferences::uses($doc, $service->name),
             ];
         }
 
