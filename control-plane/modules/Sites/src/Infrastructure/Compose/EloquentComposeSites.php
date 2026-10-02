@@ -3,6 +3,7 @@
 namespace Kiln\Sites\Infrastructure\Compose;
 
 use DateTimeImmutable;
+use Illuminate\Support\Facades\DB;
 use Kiln\Sites\Application\Compose\KilnAdjustments;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
@@ -34,29 +35,32 @@ final class EloquentComposeSites implements ComposeSites
 
     public function setPublicDomains(string $siteId, array $domains): void
     {
-        $site = Site::query()->find(strtolower($siteId));
+        // Read-modify-write of public_services under a row lock: Settings → Compose and the extraction write it too.
+        DB::transaction(function () use ($siteId, $domains) {
+            $site = Site::query()->whereKey(strtolower($siteId))->lockForUpdate()->first();
 
-        if ($site === null || $site->runtime !== SiteRuntime::Compose) {
-            return;
-        }
-
-        $public = array_values(array_filter((array) $site->public_services, 'is_array'));
-        $changed = false;
-
-        foreach ($public as $i => $service) {
-            $name = (string) ($service['service'] ?? '');
-
-            if (! array_key_exists($name, $domains) || ($service['domain'] ?? null) === $domains[$name]) {
-                continue;
+            if ($site === null || $site->runtime !== SiteRuntime::Compose) {
+                return;
             }
 
-            $public[$i]['domain'] = $domains[$name];
-            $changed = true;
-        }
+            $public = array_values(array_filter((array) $site->public_services, 'is_array'));
+            $changed = false;
 
-        if ($changed) {
-            Site::withoutEvents(fn () => $site->forceFill(['public_services' => $public])->save());
-        }
+            foreach ($public as $i => $service) {
+                $name = (string) ($service['service'] ?? '');
+
+                if (! array_key_exists($name, $domains) || ($service['domain'] ?? null) === $domains[$name]) {
+                    continue;
+                }
+
+                $public[$i]['domain'] = $domains[$name];
+                $changed = true;
+            }
+
+            if ($changed) {
+                Site::withoutEvents(fn () => $site->forceFill(['public_services' => $public])->save());
+            }
+        });
     }
 
     public function allowsPrivileged(string $organizationId): bool
