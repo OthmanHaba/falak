@@ -115,7 +115,13 @@ stack's public services.
   `…PASSWORD`, `…DB`/`…NAME`). Databases → `${{ <name>.KEY }}` references (resolved like any other; containers on
   the engine's server get the server address, see docs/API.md → Variable references); sites → `https://<primary
   domain>` plus the path. `DB_CONNECTION=mysql` (a driver name equal to the service name) is not a host.
-- The renderer drops the extracted services (and `depends_on` on them) and applies the rewrites.
+- Rewrites are kept per group (`Sites\Contracts\Data\ComposeRewrites`): each remaining service, and the stack's own
+  variables (`.stack`), so `DB_PASSWORD` in two services can point at two databases. The renderer drops the extracted
+  services (and `depends_on` on them) and points a service's rewritten key at its own project variable
+  (`DB_PASSWORD: ${KILN_SVC_WORKER_DB_PASSWORD}`); the release `.env` gets those plus the stack's rewritten variables.
+- Extracting needs the actor's permission for what it creates: `databases.manage` for a database, `sites.create` for
+  a site (otherwise the service stays in the stack, with a warning). The service is claimed under the stack's row
+  lock before anything is created; a failed creation gives it back.
 
 ---
 

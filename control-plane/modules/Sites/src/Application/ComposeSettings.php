@@ -2,7 +2,9 @@
 
 namespace Kiln\Sites\Application;
 
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Sites\Application\Compose\RepoComposeInspection;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSource;
@@ -22,6 +24,12 @@ use Kiln\Sites\Infrastructure\Compose\YamlComposeInspector;
 final class ComposeSettings
 {
     public const DOMAIN_PATTERN = '/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$/';
+
+    /** Permission to replace a service with a Kiln database (Databases' manage permission). */
+    public const DATABASE_PERMISSION = 'databases.manage';
+
+    /** Permission to run a service as its own Kiln site. */
+    public const SITE_PERMISSION = 'sites.create';
 
     public function __construct(
         private readonly YamlComposeInspector $inspector,
@@ -308,9 +316,21 @@ final class ComposeSettings
     public function extract(Site $site, array $extract, ?string $compose = null): array
     {
         $extraction = app(ComposeServiceExtraction::class);
+        $access = app(OrganizationAccess::class);
+        $actor = Auth::user();
         $warnings = [];
 
         foreach ($extract as $item) {
+            // A Kiln database or site is created on the actor's behalf: they need that permission too (system actors —
+            // no user — run on behalf of someone already checked).
+            $permission = $item['mode'] === ComposeConfig::MODE_DATABASE ? self::DATABASE_PERMISSION : self::SITE_PERMISSION;
+
+            if ($actor !== null && ! $access->can($actor, $site->organization_id, $permission)) {
+                $warnings[] = "{$item['service']} stays in the stack: you don't have permission to create ".($item['mode'] === ComposeConfig::MODE_DATABASE ? 'databases.' : 'sites.');
+
+                continue;
+            }
+
             try {
                 if ($item['mode'] === ComposeConfig::MODE_DATABASE) {
                     $extraction->toDatabase($site->id, $item['service'], $item['database_id'], (string) $item['engine'], $compose);

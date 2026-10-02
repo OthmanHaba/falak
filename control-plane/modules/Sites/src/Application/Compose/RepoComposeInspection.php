@@ -4,6 +4,7 @@ namespace Kiln\Sites\Application\Compose;
 
 use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\ComposeConfig;
+use Kiln\Sites\Contracts\Data\ComposeRewrites;
 use Kiln\Sites\Contracts\Data\ComposeSummary;
 use Kiln\Sites\Infrastructure\Compose\EloquentComposeSites;
 use Kiln\Sites\Infrastructure\Compose\YamlComposeInspector;
@@ -58,11 +59,10 @@ final class RepoComposeInspection
      * @param  list<string>  $files  relative to $root
      * @param  list<string>  $profiles
      * @param  list<string>  $public  public service names (healthcheck warnings)
-     * @param  array<string, string>  $rewrites
      * @param  bool  $full  include the YAML (original/adjusted) and env-file values (people who may change the site)
      * @return array<string, mixed>
      */
-    public function inspect(string $connectionId, string $repository, string $ref, array $files, array $profiles, ?ComposeConfig $config = null, array $public = [], array $rewrites = [], ?string $root = null, bool $full = true): array
+    public function inspect(string $connectionId, string $repository, string $ref, array $files, array $profiles, ?ComposeConfig $config = null, array $public = [], ?ComposeRewrites $rewrites = null, ?string $root = null, bool $full = true): array
     {
         $prefix = self::prefix($root);
         $cache = [];
@@ -105,7 +105,7 @@ final class RepoComposeInspection
         $yaml = EloquentComposeSites::dump($doc);
         $summary = $this->inspector->parse($yaml);
         $config ??= new ComposeConfig(ComposeSource::Repo, $files[0] ?? null, [], files: $files, profiles: $profiles);
-        $adjusted = KilnAdjustments::apply($doc, $config, $present, $rewrites, $public);
+        $adjusted = KilnAdjustments::apply($doc, $config, $present, $rewrites ?? new ComposeRewrites, $public);
 
         return [
             'no_api' => false,

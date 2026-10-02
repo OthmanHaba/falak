@@ -29,6 +29,13 @@ it('sends the Docker ranges with users of app-server engines, not of dedicated d
     $this->post("/databases/servers/{$dedicated->id}/users", ['username' => 'web', 'grants' => []])->assertSessionHasNoErrors();
     expect($this->agents->last('db.user.apply')['payload'])->not->toHaveKey('containers');
 
+    // A MySQL user pinned to localhost stays local.
+    $mysql = databases_engine($this->organization, 'mysql');
+    $this->post("/databases/servers/{$mysql->id}/users", ['username' => 'cron', 'host' => 'localhost', 'grants' => []])->assertSessionHasNoErrors();
+    expect($this->agents->last('db.user.apply')['payload'])->not->toHaveKey('containers');
+    $this->post("/databases/servers/{$mysql->id}/users", ['username' => 'web', 'grants' => []])->assertSessionHasNoErrors();
+    expect($this->agents->last('db.user.apply')['payload'])->toHaveKey('containers');
+
     // Agents without db.containers never see the field.
     $old = PayloadCompatibility::adapt('db.user.apply', (object) $apply['payload'], ['fn.v3']);
     expect((array) $old)->not->toHaveKey('containers');
@@ -52,7 +59,7 @@ it('turns container access on when the agent learns db.containers: users re-appl
         ->and($this->agents->last('db.user.apply')['handle']->idempotencyKey)->toBe("db.user.apply:{$user->id}:".$user->refresh()->revision);
 
     $firewall = $this->agents->last('net.firewall.apply');
-    expect($firewall['payload']['container_ports'])->toBe([['id' => 'postgresql', 'protocol' => 'tcp', 'ports' => ['5432'], 'comment' => 'PostgreSQL for containers']])
+    expect($firewall['payload']['container_ports'])->toBe([['id' => 'postgresql', 'protocol' => 'tcp', 'ports' => ['5432'], 'sources' => ['172.16.0.0/12', '192.168.0.0/16'], 'comment' => 'PostgreSQL for containers']])
         ->and(databases_schema_errors($firewall))->toBe([]);
 
     // Idempotent: a second upgrade event does not re-apply anything.

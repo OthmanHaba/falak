@@ -2,6 +2,8 @@
 
 namespace Kiln\Sites\Application\Compose;
 
+use Kiln\Sites\Contracts\Data\ComposeRewrites;
+
 /**
  * Which variables of a compose stack point at one of its services (the service's name is its hostname on the
  * stack's network), and what they become once that service runs as a Kiln service. Templates use placeholders filled
@@ -24,7 +26,9 @@ final class ServiceReferences
      * @param  array<string, mixed>  $document  the parsed compose file
      * @param  'database'|'site'  $mode
      * @param  array<string, string>  $stackVariables  the stack's own variables (its `.env`)
-     * @return array<string, string> variable => template (sorted by name; the first service pointing at it wins)
+     * @return array<string, array<string, string>> group (a remaining service, or ComposeRewrites::STACK) => variable
+     *                                              => template; each group is detected on its own, so the same name in
+     *                                              two services can point at different things
      */
     public static function find(array $document, string $service, string $mode, array $stackVariables = []): array
     {
@@ -32,20 +36,19 @@ final class ServiceReferences
 
         foreach ((array) ($document['services'] ?? []) as $name => $definition) {
             if ((string) $name !== $service && is_array($definition)) {
-                $groups[] = self::environment($definition['environment'] ?? []);
+                $groups[(string) $name] = self::environment($definition['environment'] ?? []);
             }
         }
 
-        $groups[] = array_map('strval', $stackVariables);
+        $groups[ComposeRewrites::STACK] = array_map('strval', $stackVariables);
         $found = [];
 
-        foreach ($groups as $variables) {
-            foreach (self::inGroup($variables, $service, $mode) as $key => $template) {
-                $found[$key] ??= $template;
+        foreach ($groups as $group => $variables) {
+            if (($templates = self::inGroup($variables, $service, $mode)) !== []) {
+                ksort($templates);
+                $found[$group] = $templates;
             }
         }
-
-        ksort($found);
 
         return $found;
     }

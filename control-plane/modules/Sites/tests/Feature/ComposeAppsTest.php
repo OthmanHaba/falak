@@ -7,6 +7,7 @@ use Kiln\Identity\Contracts\Role;
 use Kiln\Sites\Application\Compose\RepoComposeInspection;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
+use Kiln\Sites\Contracts\Data\ComposeRewrites;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\Exceptions\ComposeRenderException;
 use Kiln\Sites\Contracts\SiteFactory;
@@ -163,9 +164,9 @@ it('leaves a service in the stack with a warning when its extraction fails', fun
             throw new LogicException('not used');
         }
 
-        public function rewrites(string $siteId): array
+        public function rewrites(string $siteId): ComposeRewrites
         {
-            return [];
+            return new ComposeRewrites;
         }
     });
 
@@ -196,9 +197,9 @@ it('extracts services through the extraction contract and drops them from the pu
             throw new LogicException('not used');
         }
 
-        public function rewrites(string $siteId): array
+        public function rewrites(string $siteId): ComposeRewrites
         {
-            return ['DATABASE_URL' => '${{ shop-db.DATABASE_URL }}'];
+            return new ComposeRewrites(['app' => ['DATABASE_URL' => '${{ shop-db.DATABASE_URL }}']]);
         }
     };
     app()->instance(ComposeServiceExtraction::class, $extraction);
@@ -217,7 +218,7 @@ it('extracts services through the extraction contract and drops them from the pu
 
     expect($rendered['services'])->not->toHaveKey('db')
         ->and($rendered['services']['app']['depends_on'] ?? [])->toBe([])
-        ->and($rendered['services']['app']['environment']['DATABASE_URL'])->toBe('${DATABASE_URL}');
+        ->and($rendered['services']['app']['environment']['DATABASE_URL'])->toBe('${KILN_SVC_APP_DATABASE_URL}');
 });
 
 it('renders repository projects against the files shipped with the release', function () {

@@ -56,10 +56,12 @@ final readonly class ComposeConfig
         return null;
     }
 
-    /** keep | database | site */
+    /** keep | database | site (a service being extracted right now still runs in the stack: keep) */
     public function mode(string $service): string
     {
-        return (string) ($this->services[$service]['mode'] ?? self::MODE_KEEP);
+        $mode = (string) ($this->services[$service]['mode'] ?? self::MODE_KEEP);
+
+        return in_array($mode, ['database', 'site'], true) ? $mode : self::MODE_KEEP;
     }
 
     /**
@@ -69,6 +71,6 @@ final readonly class ComposeConfig
      */
     public function extracted(): array
     {
-        return array_values(array_map('strval', array_keys(array_filter($this->services, fn (array $d) => ($d['mode'] ?? self::MODE_KEEP) !== self::MODE_KEEP))));
+        return array_values(array_map('strval', array_keys(array_filter($this->services, fn (array $d) => in_array($d['mode'] ?? self::MODE_KEEP, ['database', 'site'], true)))));
     }
 }
