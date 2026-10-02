@@ -191,7 +191,6 @@ cmd_registry() {
       is_running registry || die "registry is not running"
       if [ -z "$force" ]; then
         if ! idle="$(compose exec -T control-plane php artisan kiln:registry-idle 2>&1)"; then
-          idle="${idle%$'\n'}"
           warn "$(date '+%Y-%m-%d %H:%M') skipping registry garbage collection: ${idle##*$'\n'}" \
             "(tried again next week; kiln-ctl registry gc --force runs it anyway)"
           return 0
