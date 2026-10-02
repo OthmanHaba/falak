@@ -35,6 +35,7 @@ import {
     type RoutingData,
     type TlsMode,
     type WwwRedirect,
+    type ZoneRateLimit,
 } from '../types';
 
 const domainsUrl = (siteId: string) => `/sites/${siteId}/domains`;
@@ -442,6 +443,17 @@ function seconds(value: number): string {
     return value >= 3600 && value % 3600 === 0 ? `${value / 3600} h` : value >= 60 && value % 60 === 0 ? `${value / 60} min` : `${value} s`;
 }
 
+/** Another domain's Free-plan rule applies here too: Free rules match the path only, on every proxied name of the zone. */
+function ZoneRateLimitText({ rule }: { rule: ZoneRateLimit }) {
+    return (
+        <>
+            The rate limit of {rule.domain} applies to this domain too
+            {rule.path ? ` (requests whose path starts with ${rule.path})` : ' (every request)'}: on the Cloudflare Free plan a rule has no host, so
+            it covers every proxied name of the zone.
+        </>
+    );
+}
+
 /** A domain's Cloudflare rate limit: Kiln's edge (Caddy) has none, so the rule lives in the zone's rate limiting rules. */
 function RateLimitDialog({
     siteId,
@@ -541,6 +553,11 @@ function RateLimitDialog({
                         </Callout>
                     )}
                     {limits?.note && <Callout tone="info">{limits.note}</Callout>}
+                    {data.zone_rule && (
+                        <Callout tone="warning">
+                            <ZoneRateLimitText rule={data.zone_rule} />
+                        </Callout>
+                    )}
                     <Field label="Path" hint="Only requests whose path starts with this; empty: every request." error={errors.path}>
                         <Input
                             mono
@@ -688,6 +705,13 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
                                             )}
                                             {domain.wildcard && <Tag>wildcard</Tag>}
                                             {domain.cloudflare && <CloudflareTag cloudflare={domain.cloudflare} />}
+                                            {domain.cloudflare?.zone_rate_limit && (
+                                                <Tooltip content={<ZoneRateLimitText rule={domain.cloudflare.zone_rate_limit} />}>
+                                                    <span>
+                                                        <Tag tone="warning">zone-wide rate limit</Tag>
+                                                    </span>
+                                                </Tooltip>
+                                            )}
                                         </span>
                                         <span className="text-fg-faint truncate text-[11px]">
                                             {domain.hosts.join(' · ')}

@@ -89,6 +89,8 @@ final class DomainController extends Controller
                     'override' => $domain->cloudflare_proxied,
                     'cache' => $domain->cloudflare_cache ?? 'standard',
                     'rate_limit' => $domain->cloudflare_rate_limit,
+                    // Free-plan rules have no host: another domain's rule may apply to this one too.
+                    'zone_rate_limit' => app(CloudflareRateLimits::class)->zoneWideRule($domain, $zone),
                     'records' => DnsRecord::query()->where('domain_id', $domain->id)->orderBy('name')->get()
                         ->map(fn (DnsRecord $r) => ['name' => $r->name, 'type' => $r->type, 'content' => $r->content, 'status' => $r->status, 'error' => $r->error])->values(),
                 ] : null,
@@ -201,7 +203,7 @@ final class DomainController extends Controller
         SyncCloudflareDns::domain($model->id);
         // A rate limit only applies while Cloudflare proxies the name: its rule follows the switch.
         if ($model->cloudflare_rate_limit !== null) {
-            app(CloudflareRateLimits::class)->resyncFor($siteData->organizationId, $model->name);
+            app(CloudflareRateLimits::class)->resyncFor($siteData->organizationId, $model->name, force: true);
         }
         $audit->record('edge.domain_cloudflare_proxy', 'site', $siteData->id, ['domain' => $model->name, 'proxied' => $data['proxied']], $siteData->organizationId);
 

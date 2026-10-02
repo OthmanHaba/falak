@@ -2,6 +2,8 @@
 
 namespace Kiln\Edge\Application;
 
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Kiln\Edge\Domain\Models\CloudflareZone;
@@ -12,9 +14,10 @@ use Kiln\Identity\Contracts\AuditLog;
 
 /**
  * Rate limits per domain through Cloudflare (docs/CLOUDFLARE.md → Rate limits). Kiln's edge is stock Caddy, which has
- * no rate limiting, so a rule only applies to names Cloudflare proxies. Kiln's rules (description
- * "kiln:ratelimit:<domain id> <name>") are rebuilt from its domains in the zone's http_ratelimit entry point; every
- * other rule stays as it is, in its place.
+ * no rate limiting, so a rule only applies to names Cloudflare proxies. An organization's rules (description
+ * "kiln:ratelimit:<organization id>:<domain id> <name>") are rebuilt from its domains in the zone's http_ratelimit
+ * entry point; every other rule (the zone's own, another organization's or another Kiln install's) stays as it is, in
+ * its place. Rules of the first format ("kiln:ratelimit:<domain id> <name>") are recognised by their domain.
  *
  * What a plan allows (Cloudflare's rate limiting rules): Free one rule per zone, matching the path only (no host), a
  * 10-second window and a 10-second block; Pro 2 rules, host + path, windows up to a minute, blocks up to an hour;
@@ -38,6 +41,9 @@ final class CloudflareRateLimits
     ];
 
     private const PREFIX = 'kiln:ratelimit:';
+
+    /** Rule fields Cloudflare sets itself (not sent back when re-writing the entry point). */
+    private const READ_ONLY = ['version', 'last_updated'];
 
     public function __construct(private readonly AuditLog $audit) {}
 
@@ -103,7 +109,7 @@ final class CloudflareRateLimits
             if (! $this->proxied($domain, $zone)) {
                 throw ValidationException::withMessages(['rate_limit' => 'Rate limits need the Cloudflare proxy (orange cloud): Kiln’s edge (Caddy) has no rate limiting.']);
             }
-            $rule = $this->validate($rule, self::limits($this->plan($zone)));
+            $rule = $this->validate($rule, self::limits($this->plan($zone)), $zone);
         }
 
         $previous = $domain->cloudflare_rate_limit;
@@ -128,11 +134,25 @@ final class CloudflareRateLimits
      */
     public function sync(CloudflareZone $zone): void
     {
+        // The entry point is read, then replaced as a whole: one sync per Cloudflare zone at a time (organizations of
+        // this install sharing a zone included).
+        try {
+            Cache::lock('edge:cloudflare-ratelimit:'.$zone->zone_id, 120)->block((int) config('edge.cloudflare_lock_wait', 15), fn () => $this->syncLocked($zone));
+        } catch (LockTimeoutException) {
+            throw ValidationException::withMessages(['rate_limit' => "Another rate limit change for {$zone->name} is in progress. Try again in a moment."]);
+        }
+    }
+
+    /** @throws CloudflareError|ValidationException */
+    private function syncLocked(CloudflareZone $zone): void
+    {
         $api = CloudflareApi::with($zone->credential->api_token);
         $limits = self::limits($this->plan($zone));
         $entrypoint = $api->ruleset($zone->zone_id, self::PHASE);
-        $theirs = array_values(array_filter((array) ($entrypoint['rules'] ?? []), fn (array $rule) => ! str_starts_with((string) ($rule['description'] ?? ''), self::PREFIX)));
-        $hadOurs = count((array) ($entrypoint['rules'] ?? [])) !== count($theirs);
+        $all = array_values((array) ($entrypoint['rules'] ?? []));
+        $legacy = $this->legacyDomainIds($zone->organization_id, $all);
+        $theirs = array_values(array_filter($all, fn (array $rule) => ! $this->isOurs($zone->organization_id, (string) ($rule['description'] ?? ''), $legacy)));
+        $hadOurs = count($all) !== count($theirs);
 
         $domains = Domain::query()->where('organization_id', $zone->organization_id)->whereNotNull('cloudflare_rate_limit')->orderBy('name')->get()
             ->filter(fn (Domain $d) => $zone->covers($d->name) && ! $d->isWildcard() && $this->proxied($d, $zone))->values();
@@ -148,20 +168,22 @@ final class CloudflareRateLimits
         }
 
         $ours = $domains->map(fn (Domain $domain) => $this->rule($domain, (array) $domain->cloudflare_rate_limit, $limits))->all();
-        $rules = array_map(fn (array $rule) => array_intersect_key($rule, array_flip(['id', 'description', 'expression', 'action', 'action_parameters', 'ratelimit', 'enabled'])), [...$theirs, ...$ours]);
-        $api->putRuleset($zone->zone_id, self::PHASE, $rules);
+        // Other rules go back as Cloudflare returned them (ref, logging, …), without the fields it sets itself.
+        $theirs = array_map(fn (array $rule) => array_diff_key($rule, array_flip(self::READ_ONLY)), $theirs);
+        $api->putRuleset($zone->zone_id, self::PHASE, [...$theirs, ...$ours]);
         $zone->forceFill(['rate_limited' => $ours !== []])->save();
     }
 
     /**
-     * Re-syncs the zone covering $host after a domain was removed or its proxy switched, when Kiln has rules there;
-     * failures are logged, not thrown.
+     * Re-syncs the zone covering $host after a domain was removed or its proxy switched, when Kiln has rules there (or
+     * with $force); failures are logged, not thrown.
      */
-    public function resyncFor(string $organizationId, string $host): void
+    public function resyncFor(string $organizationId, string $host, bool $force = false): void
     {
         $zone = CloudflareZone::forHost($organizationId, $host);
 
-        if ($zone === null || ! $zone->rate_limited) {
+        // $force: the domain has a rule of its own, which may not be in the zone yet (proxy switched back on).
+        if ($zone === null || (! $zone->rate_limited && ! $force)) {
             return;
         }
 
@@ -190,7 +212,7 @@ final class CloudflareRateLimits
         $conditions[] = 'starts_with(http.request.uri.path, "'.($path ?? '/').'")';
 
         return [
-            'description' => self::PREFIX.$domain->id.' '.$domain->name,
+            'description' => self::PREFIX.$domain->organization_id.':'.$domain->id.' '.$domain->name,
             'expression' => '('.implode(' and ', $conditions).')',
             'action' => (string) $rule['action'],
             'ratelimit' => [
@@ -210,7 +232,7 @@ final class CloudflareRateLimits
      *
      * @throws ValidationException
      */
-    private function validate(array $rule, array $limits): array
+    private function validate(array $rule, array $limits, CloudflareZone $zone): array
     {
         $path = isset($rule['path']) ? trim((string) $rule['path']) : '';
         $errors = [];
@@ -234,11 +256,76 @@ final class CloudflareRateLimits
         if (! in_array($rule['action'] ?? null, self::ACTIONS, true)) {
             $errors['action'] = 'Block or managed challenge.';
         }
+        if ($path === '' && ! $limits['host'] && ($panel = $this->panelHost()) !== null && $zone->covers($panel)) {
+            // Free rules have no host: without a path this one would rate limit every request of the zone, the panel's too.
+            $errors['path'] = "Free plan: the rule applies to every proxied name of {$zone->name}, this panel ({$panel}) included. Give it a path.";
+        }
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
 
         return ['path' => $path === '' ? null : $path, 'requests' => (int) $rule['requests'], 'period' => (int) $rule['period'], 'action' => (string) $rule['action'], 'timeout' => (int) $rule['timeout']];
+    }
+
+    /**
+     * The Kiln rule of the zone that applies to $domain although it is another domain's: rules on plans without a host
+     * condition (Free) match every proxied name of the zone. Null when there is none or $domain isn't proxied.
+     *
+     * @return ?array{domain: string, path: ?string}
+     */
+    public function zoneWideRule(Domain $domain, ?CloudflareZone $zone = null): ?array
+    {
+        $zone ??= CloudflareZone::forHost($domain->organization_id, $domain->name);
+
+        if ($zone === null || self::limits($zone->plan)['host'] || ! $this->proxied($domain, $zone)) {
+            return null;
+        }
+
+        $owner = Domain::query()->where('organization_id', $zone->organization_id)->whereNotNull('cloudflare_rate_limit')->whereKeyNot($domain->id)->orderBy('name')->get()
+            ->first(fn (Domain $d) => $zone->covers($d->name) && ! $d->isWildcard() && $this->proxied($d, $zone));
+
+        return $owner === null ? null : ['domain' => $owner->name, 'path' => $owner->cloudflare_rate_limit['path'] ?? null];
+    }
+
+    /** The panel's own host (config app.url), lowercased. */
+    private function panelHost(): ?string
+    {
+        $host = parse_url((string) config('app.url'), PHP_URL_HOST);
+
+        return is_string($host) && $host !== '' ? strtolower($host) : null;
+    }
+
+    /**
+     * Whether a rule description is this organization's: "kiln:ratelimit:<organization id>:…", or the first format
+     * "kiln:ratelimit:<domain id> …" for one of its domains ($legacy).
+     *
+     * @param  array<string, true>  $legacy
+     */
+    private function isOurs(string $organizationId, string $description, array $legacy): bool
+    {
+        if (str_starts_with($description, self::PREFIX.$organizationId.':')) {
+            return true;
+        }
+
+        return preg_match('/^'.preg_quote(self::PREFIX, '/').'([0-9a-z]{26}) /', $description, $m) === 1 && isset($legacy[$m[1]]);
+    }
+
+    /**
+     * Domain ids in first-format rules that belong to this organization.
+     *
+     * @param  list<array<string, mixed>>  $rules
+     * @return array<string, true>
+     */
+    private function legacyDomainIds(string $organizationId, array $rules): array
+    {
+        $ids = [];
+        foreach ($rules as $rule) {
+            if (preg_match('/^'.preg_quote(self::PREFIX, '/').'([0-9a-z]{26}) /', (string) ($rule['description'] ?? ''), $m) === 1) {
+                $ids[] = $m[1];
+            }
+        }
+
+        return $ids === [] ? [] : Domain::query()->where('organization_id', $organizationId)->whereKey($ids)->pluck('id')->mapWithKeys(fn (string $id) => [$id => true])->all();
     }
 
     private function proxied(Domain $domain, CloudflareZone $zone): bool

@@ -81,6 +81,8 @@ final class RateLimitController extends Controller
             'zone' => $zone?->name,
             'proxied' => $zone !== null && ($domain->cloudflare_proxied ?? $zone->proxied),
             'limits' => $zone !== null ? CloudflareRateLimits::limits($limits->plan($zone)) : null,
+            // Another domain's Free-plan rule that applies zone-wide, so to this domain too.
+            'zone_rule' => $zone !== null ? $limits->zoneWideRule($domain, $zone) : null,
         ];
     }
 

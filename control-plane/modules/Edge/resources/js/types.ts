@@ -40,6 +40,8 @@ export interface EdgeDomain {
         cache: 'standard' | 'everything' | 'bypass';
         /** Cloudflare rate limit rule (null: none). */
         rate_limit: RateLimitRule | null;
+        /** Another domain's Free-plan rule: it has no host condition, so it applies to this domain too. */
+        zone_rate_limit: ZoneRateLimit | null;
         records: { name: string; type: string; content: string; status: 'pending' | 'synced' | 'conflict' | 'error'; error: string | null }[];
     } | null;
 }
@@ -187,8 +189,14 @@ export interface RateLimitRule {
 }
 
 /** GET /sites/{site}/domains/{domain}/rate-limit */
+export interface ZoneRateLimit {
+    domain: string;
+    path: string | null;
+}
+
 export interface RateLimitData {
     domain: string;
+    zone_rule: ZoneRateLimit | null;
     rule: RateLimitRule | null;
     zone: string | null;
     proxied: boolean;

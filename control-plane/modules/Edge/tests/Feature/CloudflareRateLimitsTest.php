@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Kiln\Edge\Application\Actions\AddDomain;
@@ -7,6 +8,7 @@ use Kiln\Edge\Application\Actions\RemoveDomain;
 use Kiln\Edge\Application\CloudflareConnections;
 use Kiln\Edge\Application\CloudflareRateLimits;
 use Kiln\Edge\Domain\Enums\WwwRedirect;
+use Kiln\Edge\Domain\Models\CloudflareZone;
 use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
 use Kiln\Edge\Tests\Support\FakeCloudflare;
 use Kiln\Identity\Contracts\Role;
@@ -41,7 +43,7 @@ it('adds a host + path rule on paid plans and keeps the zone’s own rules', fun
     $this->limits->set($domain, [...RL_RULE, 'period' => 60, 'timeout' => 600, 'action' => 'managed_challenge']);
 
     $rules = $this->cf->rateLimits[$this->zoneId];
-    expect(array_column($rules, 'description'))->toBe(['their rule', "kiln:ratelimit:{$domain->id} shop.example.com"])
+    expect(array_column($rules, 'description'))->toBe(['their rule', "kiln:ratelimit:{$this->org}:{$domain->id} shop.example.com"])
         ->and($rules[1]['expression'])->toBe('(http.host in {"shop.example.com" "www.shop.example.com"} and starts_with(http.request.uri.path, "/login"))')
         ->and($rules[1]['action'])->toBe('managed_challenge')
         ->and($rules[1]['ratelimit'])->toBe(['characteristics' => ['cf.colo.id', 'ip.src'], 'period' => 60, 'requests_per_period' => 20, 'mitigation_timeout' => 600])
@@ -93,10 +95,122 @@ it('needs the Cloudflare proxy, and the rule follows the proxy switch', function
     expect($this->cf->rateLimits[$this->zoneId])->toBe([])
         ->and($domain->refresh()->cloudflare_rate_limit)->not->toBeNull();
 
+    // Orange again: the zone has no Kiln rule any more (rate_limited false), the domain's stored rule forces a sync.
     $domain->forceFill(['cloudflare_proxied' => true])->save();
-    $this->zone->forceFill(['rate_limited' => true])->save();
+    expect($this->zone->refresh()->rate_limited)->toBeFalse();
     $this->limits->resyncFor($this->org, 'shop.example.com');
+    expect($this->cf->rateLimits[$this->zoneId])->toBe([]);
+    $this->limits->resyncFor($this->org, 'shop.example.com', force: true);
+    expect($this->cf->rateLimits[$this->zoneId])->toHaveCount(1)
+        ->and($this->zone->refresh()->rate_limited)->toBeTrue();
+});
+
+it('restores a domain’s rule when its proxy is switched back on over HTTP', function () {
+    [, $organization] = actingAsMember(Role::Admin);
+    $web = edge_server($this->servers, $organization->id, ['id' => strtolower((string) Str::ulid()), 'name' => 'web-9', 'ipv4' => '203.0.113.20']);
+    $site = edge_site($this->sites, $organization->id, [$web->id], ['id' => strtolower((string) Str::ulid()), 'slug' => 'store']);
+    $connections = app(CloudflareConnections::class);
+    $zone = $connections->enable($connections->connect($organization->id, 'Cloudflare', $this->cf->validToken, null), $this->zoneId, true);
+    $domain = app(AddDomain::class)($site, 'store.example.com');
+    $this->limits->set($domain, RL_RULE);
+    $url = "/sites/{$site->id}/domains/{$domain->id}/cloudflare";
+
+    $this->put($url, ['proxied' => false])->assertSessionHasNoErrors();
+    expect($this->cf->rateLimits[$this->zoneId])->toBe([])->and($zone->refresh()->rate_limited)->toBeFalse();
+
+    $this->put($url, ['proxied' => true])->assertSessionHasNoErrors();
+    expect(array_column($this->cf->rateLimits[$this->zoneId], 'description'))->toBe(["kiln:ratelimit:{$organization->id}:{$domain->id} store.example.com"]);
+});
+
+it('leaves the rules of other organizations and other Kiln installs in a shared zone alone', function () {
+    $this->cf->plans[$this->zoneId] = 'business';
+    $otherInstall = ['description' => 'kiln:ratelimit:'.strtolower((string) Str::ulid()).':'.strtolower((string) Str::ulid()).' api.example.com', 'expression' => '(starts_with(http.request.uri.path, "/"))', 'action' => 'block', 'enabled' => true];
+    $unknownLegacy = ['description' => 'kiln:ratelimit:'.strtolower((string) Str::ulid()).' old.example.com', 'expression' => '(starts_with(http.request.uri.path, "/old"))', 'action' => 'block', 'enabled' => true];
+    $this->cf->rateLimits[$this->zoneId] = [$otherInstall, $unknownLegacy];
+
+    // A second organization of this install, same Cloudflare zone.
+    $otherOrg = strtolower((string) Str::ulid());
+    $web = edge_server($this->servers, $otherOrg, ['id' => strtolower((string) Str::ulid()), 'name' => 'web-2', 'ipv4' => '203.0.113.11']);
+    $otherSite = edge_site($this->sites, $otherOrg, [$web->id], ['id' => strtolower((string) Str::ulid()), 'slug' => 'blog']);
+    $connections = app(CloudflareConnections::class);
+    $connections->enable($connections->connect($otherOrg, 'Cloudflare', $this->cf->validToken, null), $this->zoneId, true);
+    $blog = app(AddDomain::class)($otherSite, 'blog.example.com');
+    $this->limits->set($blog, RL_RULE);
+
+    $shop = app(AddDomain::class)($this->site, 'shop.example.com');
+    $this->limits->set($shop, RL_RULE);
+    expect(array_column($this->cf->rateLimits[$this->zoneId], 'description'))->toBe([
+        $otherInstall['description'], $unknownLegacy['description'], "kiln:ratelimit:{$otherOrg}:{$blog->id} blog.example.com", "kiln:ratelimit:{$this->org}:{$shop->id} shop.example.com",
+    ]);
+
+    // Removing this organization's rule keeps the other organization's.
+    $this->limits->set($shop->refresh(), null);
+    expect(array_column($this->cf->rateLimits[$this->zoneId], 'description'))->toBe([
+        $otherInstall['description'], $unknownLegacy['description'], "kiln:ratelimit:{$otherOrg}:{$blog->id} blog.example.com",
+    ]);
+});
+
+it('takes over this organization’s rules in the first tag format', function () {
+    $this->cf->plans[$this->zoneId] = 'pro';
+    $shop = app(AddDomain::class)($this->site, 'shop.example.com');
+    $this->cf->rateLimits[$this->zoneId] = [['description' => "kiln:ratelimit:{$shop->id} shop.example.com", 'expression' => '(starts_with(http.request.uri.path, "/"))', 'action' => 'block', 'enabled' => true]];
+
+    $this->limits->set($shop, [...RL_RULE, 'period' => 60, 'timeout' => 60]);
+
+    expect(array_column($this->cf->rateLimits[$this->zoneId], 'description'))->toBe(["kiln:ratelimit:{$this->org}:{$shop->id} shop.example.com"]);
+});
+
+it('sends the zone’s own rules back whole, without the fields Cloudflare sets', function () {
+    $this->cf->plans[$this->zoneId] = 'pro';
+    $theirs = ['id' => 'theirs', 'ref' => 'my-ref', 'version' => '3', 'last_updated' => '2026-09-01T00:00:00Z', 'description' => 'their rule', 'expression' => '(http.request.uri.path eq "/x")', 'action' => 'log', 'logging' => ['enabled' => true], 'enabled' => false];
+    $this->cf->rateLimits[$this->zoneId] = [$theirs];
+    $shop = app(AddDomain::class)($this->site, 'shop.example.com');
+
+    $this->limits->set($shop, RL_RULE);
+
+    unset($theirs['version'], $theirs['last_updated']);
+    expect($this->cf->rateLimits[$this->zoneId][0])->toBe($theirs);
+});
+
+it('syncs one zone at a time', function () {
+    config(['edge.cloudflare_lock_wait' => 0]);
+    $shop = app(AddDomain::class)($this->site, 'shop.example.com');
+    $lock = Cache::lock("edge:cloudflare-ratelimit:{$this->zoneId}", 30);
+    expect($lock->get())->toBeTrue();
+
+    expect(fn () => $this->limits->set($shop, RL_RULE))->toThrow(ValidationException::class, 'Another rate limit change for example.com is in progress');
+    expect($shop->refresh()->cloudflare_rate_limit)->toBeNull()
+        ->and($this->cf->rateLimits[$this->zoneId] ?? [])->toBe([]);
+
+    $lock->release();
+    $this->limits->set($shop, RL_RULE);
     expect($this->cf->rateLimits[$this->zoneId])->toHaveCount(1);
+});
+
+it('refuses a path-less Free rule when the panel is in the zone, and flags zone-wide rules on the other domains', function () {
+    [, $organization] = actingAsMember(Role::Admin);
+    $web = edge_server($this->servers, $organization->id, ['id' => strtolower((string) Str::ulid()), 'name' => 'web-9', 'ipv4' => '203.0.113.20']);
+    $site = edge_site($this->sites, $organization->id, [$web->id], ['id' => strtolower((string) Str::ulid()), 'slug' => 'store']);
+    $connections = app(CloudflareConnections::class);
+    $connections->enable($connections->connect($organization->id, 'Cloudflare', $this->cf->validToken, null), $this->zoneId, true);
+    $store = app(AddDomain::class)($site, 'store.example.com');
+    $api = app(AddDomain::class)($site, 'api.example.com');
+
+    config(['app.url' => 'https://kiln.example.com']);
+    expect(fn () => $this->limits->set($store, [...RL_RULE, 'path' => null]))->toThrow(ValidationException::class, 'this panel (kiln.example.com) included');
+    config(['app.url' => 'https://kiln.example.org']);
+    $this->limits->set($store, [...RL_RULE, 'path' => null]);
+    expect($this->cf->rateLimits[$this->zoneId][0]['expression'])->toBe('(starts_with(http.request.uri.path, "/"))');
+
+    $domains = collect($this->getJson("/sites/{$site->id}/domains")->assertOk()->json('data.domains'))->keyBy('name');
+    expect($domains['api.example.com']['cloudflare']['zone_rate_limit'])->toBe(['domain' => 'store.example.com', 'path' => null])
+        ->and($domains['store.example.com']['cloudflare']['zone_rate_limit'])->toBeNull();
+    $this->getJson("/sites/{$site->id}/domains/{$api->id}/rate-limit")->assertOk()->assertJsonPath('data.zone_rule.domain', 'store.example.com');
+
+    // Paid plans match the host: no zone-wide rule.
+    $zone = CloudflareZone::forHost($organization->id, 'api.example.com');
+    $zone->forceFill(['plan' => 'pro'])->save();
+    $this->getJson("/sites/{$site->id}/domains/{$api->id}/rate-limit")->assertOk()->assertJsonPath('data.zone_rule', null);
 });
 
 it('removes a domain’s rule with the domain, and leaves zones without Kiln rules alone', function () {

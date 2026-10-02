@@ -222,8 +222,8 @@ domain). It is accepted by `POST /api/v1/sites` (`domain`), compose `public_serv
 
 ### `GET|PUT|DELETE /api/v1/sites/{site}/domains/{domain}/rate-limit` — `edge.view` / `edge.manage`
 A domain's Cloudflare rate limit (`{domain}`: its id or name; docs/CLOUDFLARE.md → Rate limits). `GET` →
-`{domain, rule, zone, proxied, limits: {plan, rules, host, periods[], timeouts[], note}}` (`limits` null outside a
-managed zone). `PUT {path?, requests, period, action: block|managed_challenge, timeout}` writes the zone's rules and
+`{domain, rule, zone, proxied, limits: {plan, rules, host, periods[], timeouts[], note}, zone_rule}` (`limits` null
+outside a managed zone; `zone_rule` `{domain, path}`: another domain's Free-plan rule that applies to this one too). `PUT {path?, requests, period, action: block|managed_challenge, timeout}` writes the zone's rules and
 returns the same shape; `422` when the domain isn't proxied, the plan doesn't allow the window / duration or has no rule
 left, or Cloudflare refuses (the token needs Zone → Zone WAF → Edit). `DELETE` removes the rule. Rate limited to
 30/min.
