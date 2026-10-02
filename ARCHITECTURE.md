@@ -89,7 +89,7 @@ modules/Sites/
 Agent **dials out** (no inbound SSH required; SSH stays as bootstrap fallback).
 
 - **Transport:** HTTPS with mTLS. Control plane runs an internal CA (Fleet module).
-- **Enrollment:** `curl -fsSL https://<panel>/install/<one-time-token> | sh` → installs agent → `POST /agent/v1/enroll {token, csr, facts}` → receives signed cert + agent id.
+- **Enrollment:** `curl -fsSL https://<panel>/install/<one-time-token> | sh` → installs agent → `POST /agent/v1/enroll {token, csr, facts}` → receives signed cert + agent id. A new install command on an enrolled machine replaces its identity (backup in `/etc/kiln/previous/`); the script ends with `kiln-agent check` (`GET /agent/v1/ping`).
 - **Command channel:** agent long-polls `GET /agent/v1/commands?wait=30`. Returns 0..N commands.
 - **Results/streams:** `POST /agent/v1/commands/{id}/events` (batched NDJSON: `started`, `output`, `progress`, `finished`).
 - **Heartbeat:** `POST /agent/v1/heartbeat` every 15s with facts + lightweight metrics summary.
