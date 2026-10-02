@@ -10,8 +10,10 @@ use Illuminate\Support\Facades\Gate;
 use Kiln\Alerting\Contracts\AlertTypes;
 use Kiln\Alerting\Contracts\Severity;
 use Kiln\Builds\Application\Artifacts\ArtifactStorage;
+use Kiln\Builds\Application\Console\RegistryPruneCommand;
 use Kiln\Builds\Application\Jobs\ExpireBuilds;
 use Kiln\Builds\Application\Jobs\PruneArtifacts;
+use Kiln\Builds\Application\Jobs\PruneRegistry;
 use Kiln\Builds\Application\Listeners\ManageServerBuilders;
 use Kiln\Builds\Contracts\BuildService;
 use Kiln\Builds\Domain\Models\Build;
@@ -84,6 +86,12 @@ class BuildsServiceProvider extends ModuleServiceProvider
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new ExpireBuilds)->everyMinute()->name('builds:expire')->withoutOverlapping();
             $schedule->job(new PruneArtifacts)->dailyAt('03:30')->name('builds:prune-artifacts')->withoutOverlapping();
+            // After the artifacts prune: images of builds it pruned go too, unless a release may still run them.
+            $schedule->job(new PruneRegistry)->dailyAt('03:45')->name('builds:prune-registry')->withoutOverlapping();
         });
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([RegistryPruneCommand::class]);
+        }
     }
 }

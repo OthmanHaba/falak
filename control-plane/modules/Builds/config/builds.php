@@ -73,5 +73,7 @@ return [
         'namespace' => env('KILN_REGISTRY_NAMESPACE', 'kiln'),
         'username' => env('KILN_REGISTRY_USERNAME'),
         'password' => env('KILN_REGISTRY_PASSWORD'),
+        // Images of a deleted site's builds are deleted this many days after the build (kiln:registry-prune).
+        'deleted_site_grace_days' => (int) env('KILN_REGISTRY_DELETED_SITE_GRACE_DAYS', 7),
     ],
 ];

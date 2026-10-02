@@ -11,8 +11,8 @@ trap 'rm -rf "$work"' EXIT
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 pass() { printf 'ok - %s\n' "$*"; }
 
-export KILN_DIR="$work/kiln" KILN_CTL_SOURCED=1
-mkdir -p "$KILN_DIR"
+export KILN_DIR="$work/kiln" KILN_CTL_SOURCED=1 KILN_CRON_DIR="$work/cron.d"
+mkdir -p "$KILN_DIR" "$KILN_CRON_DIR"
 printf 'KILN_DOMAIN=kiln.example.com\nKILN_AGENT_API_HOST=agents.kiln.example.com\n' > "$KILN_DIR/.env"
 
 # shellcheck source=/dev/null
@@ -91,3 +91,18 @@ run_gc killed
 [ "$rc" = 143 ] || fail "killed gc -> $rc"
 [ "$(tail -1 "$calls" | cut -d' ' -f1)" = start ] || fail "gc killed calls: $(cat "$calls")"
 pass "registry gc restarts the registry after success, failure and interruption, and reports failure"
+
+# Weekly garbage collection from cron: installed with the registry settings, kept as is, removed with KILN_REGISTRY_GC=0.
+cron="$KILN_CRON_DIR/kiln-registry-gc"
+printf 'KILN_DOMAIN=kiln.example.com\n' > "$KILN_DIR/.env"
+rm -f "$cron"
+ensure_registry_env >/dev/null
+[ -f "$cron" ] || fail "no cron file"
+grep -q "^17 4 \* \* 0 root KILN_DIR=$KILN_DIR .*kiln-ctl registry gc" "$cron" || fail "cron line: $(cat "$cron")"
+before="$(cat "$cron")"
+ensure_registry_env >/dev/null
+[ "$(cat "$cron")" = "$before" ] || fail "cron file rewritten differently"
+env_set KILN_REGISTRY_GC 0
+ensure_registry_env >/dev/null
+[ ! -e "$cron" ] || fail "KILN_REGISTRY_GC=0 kept the cron file"
+pass "weekly registry garbage collection is scheduled from cron (KILN_REGISTRY_GC=0 removes it)"

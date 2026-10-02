@@ -42,7 +42,10 @@ Services with `image:` are pulled on the server. Services with `build:` are buil
 (a `builder` server or a host builder with `KILN_LOCAL_BUILDER_MODES=native,docker`), pushed to the built-in
 registry (production: `registry` service behind `https://registry.<domain>` with basic auth, `KILN_REGISTRY_*` in
 `.env`, docs/INSTALL.md §2), and the rendered compose file references them **by digest**. `repo` sources only; `inline` compose may
-not use `build:` (validation error).
+not use `build:` (validation error). Old images are deleted daily by `kiln:registry-prune` (builds past
+`KILN_ARTIFACTS_KEEP`, never an image a pending, live or rollback release references — Deployments'
+`RetainedImages` contract) and their layers freed by the weekly `kiln-ctl registry gc` (docs/INSTALL.md → Registry
+storage).
 
 ### 1.3 Rendering (control plane, per release)
 Kiln renders the compose file the agent receives:

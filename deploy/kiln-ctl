@@ -12,7 +12,9 @@
 #   kiln-ctl restore <file> [--yes]         restore a backup (stops the app while restoring)
 #   kiln-ctl doctor                         DNS, certificates, ports, disk, containers, agent API, PHP threads
 #   kiln-ctl domain set <domain> [--keep-old]   move the panel to a new domain
-#   kiln-ctl registry status | gc [--dry-run]   built-in image registry: address and size / garbage-collect
+#   kiln-ctl registry status | prune [--dry-run] | gc [--dry-run]
+#                                           built-in image registry: address and size / delete unneeded images /
+#                                           garbage-collect (weekly from /etc/cron.d/kiln-registry-gc)
 #   kiln-ctl admin reset-password <email> [--password=...]
 #   kiln-ctl admin create <email>
 #   kiln-ctl artisan <args...>              run php artisan in the control-plane container
@@ -116,7 +118,27 @@ ensure_registry_env() {
   fi
   [ -n "$(env_get KILN_REGISTRY_USERNAME)" ] || env_set KILN_REGISTRY_USERNAME kiln
   [ -n "$(env_get KILN_REGISTRY_PASSWORD)" ] || env_set KILN_REGISTRY_PASSWORD "$(rand_hex 24)"
+  ensure_registry_gc_schedule
   return 0
+}
+
+# The control plane deletes unneeded images daily (kiln:registry-prune); their layers only free disk space once the
+# registry garbage-collects, which needs it stopped for a moment: weekly, Sunday night, from cron.
+# KILN_REGISTRY_GC=0 turns it off (the file is removed).
+ensure_registry_gc_schedule() {
+  local dir="${KILN_CRON_DIR:-/etc/cron.d}" file ctl line
+  file="$dir/kiln-registry-gc"
+  if [ "$(env_get KILN_REGISTRY_GC)" = 0 ]; then
+    [ -f "$file" ] && rm -f "$file" && info "weekly registry garbage collection turned off"
+    return 0
+  fi
+  [ -d "$dir" ] && [ -w "$dir" ] || return 0
+  ctl="$(command -v kiln-ctl 2>/dev/null || echo /usr/local/bin/kiln-ctl)"
+  line="17 4 * * 0 root KILN_DIR=$KILN_DIR $ctl registry gc >> /var/log/kiln-registry-gc.log 2>&1"
+  if [ "$(grep -v '^#' "$file" 2>/dev/null)" != "$line" ]; then
+    printf '# Kiln: weekly garbage collection of the built-in image registry (kiln-ctl registry gc).\n%s\n' "$line" > "$file"
+    chmod 644 "$file"
+  fi
 }
 
 curl_config_quote() { # curl_config_quote VALUE -> "VALUE" for a curl config file (\ and " escaped)
@@ -175,7 +197,13 @@ cmd_registry() {
       ) || status=$?
       return "$status"
       ;;
-    *) die "usage: kiln-ctl registry status | gc [--dry-run]" ;;
+    prune)
+      # Deletes images no build or release needs (the control plane also runs this daily); gc frees the space.
+      local args=()
+      [ "${1:-}" = --dry-run ] && args=(--dry-run)
+      compose exec -T control-plane php artisan kiln:registry-prune "${args[@]}"
+      ;;
+    *) die "usage: kiln-ctl registry status | prune [--dry-run] | gc [--dry-run]" ;;
   esac
 }
 
@@ -880,7 +908,7 @@ cmd_admin() {
   esac
 }
 
-usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local cmd="${1:-help}"; shift || true

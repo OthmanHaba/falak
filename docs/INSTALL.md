@@ -280,11 +280,18 @@ Run it on its own with `kiln-ctl prune-images` (`--dry-run` lists what it would 
 `--build-from-source`) an update never prunes: removed images could not be pulled again. `kiln-ctl prune-images`
 still works there and warns first.
 
-**Registry storage.** Every docker build pushes an image to the built-in registry (`registry-data` volume).
-`kiln-ctl registry gc` deletes layers and untagged manifests nothing references any more; the registry is stopped
-while it runs (a push during garbage collection could lose layers), so run it when no docker build is running, e.g.
-from a weekly cron: `17 4 * * 0 root kiln-ctl registry gc >/var/log/kiln-registry-gc.log 2>&1`. Tags of old builds
-are not deleted yet, so this mainly reclaims space after sites are deleted or images are re-pushed.
+**Registry storage.** Every docker build pushes an image to the built-in registry (`registry-data` volume). Two
+steps keep it from growing forever:
+- **Daily, in the control plane** (`kiln:registry-prune`, 03:45, after the artifacts prune): deletes the images of
+  builds whose artifact was pruned (each site keeps its newest `KILN_ARTIFACTS_KEEP` builds, default 10). An image
+  stays while a release may still run it (pending, live or kept for rollback), while its build is running or less
+  than a day old, and tags that aren't build ids are never touched. Images of a deleted site's builds go
+  `KILN_REGISTRY_DELETED_SITE_GRACE_DAYS` (default 7) days after the build. Preview with
+  `kiln-ctl registry prune --dry-run`; run it now with `kiln-ctl registry prune`.
+- **Weekly, from cron** (`/etc/cron.d/kiln-registry-gc`, Sunday 04:17, written by `kiln-ctl up`/`update`):
+  `kiln-ctl registry gc` deletes the layers nothing references any more, which is what frees disk space. The
+  registry is stopped while it runs (a push during garbage collection could lose layers), so it runs at night;
+  `KILN_REGISTRY_GC=0` removes the cron entry. Output goes to `/var/log/kiln-registry-gc.log`.
 
 **Mounted config files.** Some services read config files bind-mounted from `/opt/kiln/observability/` and
 `/opt/kiln/deploy/` (`loki.yaml`, `tempo.yaml`, the gateway `Caddyfile`, Grafana provisioning and dashboards).
