@@ -191,6 +191,44 @@ func TestPHPInstallFromUbuntuArchiveWhenThePPAHasNoRelease(t *testing.T) {
 	}
 }
 
+// The incident machine: add-apt-repository had already written the deb822 source for resolute, which the PPA does
+// not publish, so every apt-get update failed.
+func TestPHPInstallOnTheIncidentMachine(t *testing.T) {
+	srv, hits := ppaServer(t, "noble")
+	f, installed := phpFake("8.5")
+	root := t.TempDir()
+	osRelease(t, root, "26.04", "resolute")
+	src := filepath.Join(root, "etc/apt/sources.list.d/ondrej-ubuntu-php-resolute.sources")
+	mk(t, root, "/etc/apt/sources.list.d")
+	os.WriteFile(src, []byte("Types: deb\nURIs: https://ppa.launchpadcontent.net/ondrej/php/ubuntu/\nSuites: resolute\nComponents: main\nSigned-By: -----BEGIN PGP PUBLIC KEY BLOCK-----\n .\n mQINBGYo0HwBEADH\n -----END PGP PUBLIC KEY BLOCK-----\n"), 0o644)
+	f.OnFunc("apt-get update", func(runnertest.Call) (runner.Result, error) {
+		if _, err := os.Stat(src); err == nil {
+			return runner.Result{ExitCode: 100, Stderr: []byte("E: The repository 'https://ppa.launchpadcontent.net/ondrej/php/ubuntu resolute Release' does not have a Release file.\n")}, nil
+		}
+		return runner.Result{}, nil
+	})
+	rt := New(Deps{Runner: f, FS: hostfs.FS{Root: root}, HTTP: srv.Client(), OndrejPPAURL: srv.URL + "/ondrej/php/ubuntu"})
+	st := commands.NewTestStream("c", &commands.Collector{})
+
+	if _, err := rt.PHPInstall(context.Background(), PHPInstallPayload{Version: "8.5"}, st); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(src + ".disabled-by-kiln"); err != nil || !installed["php8.5-fpm"] || f.Ran("add-apt-repository") {
+		t.Fatalf("%v %v", err, f.Lines())
+	}
+	// Next time the disabled file does not count as the PPA: the release is probed and the PPA not re-added.
+	if OndrejPPAPresent(hostfs.FS{Root: root}) {
+		t.Fatal("a .disabled-by-kiln file is not a source")
+	}
+	f.Reset()
+	if _, err := rt.PHPInstall(context.Background(), PHPInstallPayload{Version: "8.5", Extensions: []string{"intl"}}, st); err != nil {
+		t.Fatal(err)
+	}
+	if len(*hits) != 1 || f.Ran("add-apt-repository") || !installed["php8.5-intl"] {
+		t.Fatalf("%v %v", *hits, f.Lines())
+	}
+}
+
 func TestPHPInstallAddsThePPAWhenItHasTheRelease(t *testing.T) {
 	srv, hits := ppaServer(t, "noble")
 	f, installed := phpFake("8.3", "8.4")

@@ -32,9 +32,22 @@ func aptSources(t *testing.T, files map[string]string) hostfs.FS {
 	return hostfs.FS{Root: root}
 }
 
+// IncidentOndrejSource is the file add-apt-repository wrote on the Ubuntu 26.04 test server (deb822, inline key
+// shortened).
+const incidentOndrejSource = `Types: deb
+URIs: https://ppa.launchpadcontent.net/ondrej/php/ubuntu/
+Suites: resolute
+Components: main
+Signed-By: -----BEGIN PGP PUBLIC KEY BLOCK-----
+ .
+ mQINBGYo0HwBEADH5bRxXTAJnAZ0LyYHVyvW2pJ3gXzJ+WI7yVTPbpvZfbI8qdjW
+ =l3Ov
+ -----END PGP PUBLIC KEY BLOCK-----
+`
+
 func TestAptUpdateDisablesAnOndrejSourceWithoutARelease(t *testing.T) {
 	fs := aptSources(t, map[string]string{
-		"/etc/apt/sources.list.d/ondrej-ubuntu-php-resolute.sources": "Types: deb\nURIs: https://ppa.launchpadcontent.net/ondrej/php/ubuntu/\nSuites: resolute\nComponents: main\n",
+		"/etc/apt/sources.list.d/ondrej-ubuntu-php-resolute.sources": incidentOndrejSource,
 		"/etc/apt/sources.list.d/ubuntu.sources":                     "Types: deb\nURIs: http://archive.ubuntu.com/ubuntu/\nSuites: resolute\n",
 	})
 	runs := 0
@@ -58,6 +71,23 @@ func TestAptUpdateDisablesAnOndrejSourceWithoutARelease(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "warning: https://ppa.launchpadcontent.net/ondrej/php/ubuntu has no release for this distribution; disabled /etc/apt/sources.list.d/ondrej-ubuntu-php-resolute.sources") {
 		t.Fatalf("warning %q", stderr.String())
+	}
+	// apt reads only *.list and *.sources in sources.list.d: the renamed file is no source any more.
+	if got := a.sourceFiles("https://ppa.launchpadcontent.net/ondrej/php/ubuntu"); len(got) != 0 {
+		t.Fatalf("still a source: %v", got)
+	}
+	disabled := "ondrej-ubuntu-php-resolute.sources" + DisabledSuffix
+	if strings.HasSuffix(disabled, ".list") || strings.HasSuffix(disabled, ".sources") {
+		t.Fatal("apt would still read " + disabled)
+	}
+	if b, _ := fs.ReadFile(AptSourcesDir + "/" + disabled); string(b) != incidentOndrejSource {
+		t.Fatal("content must be kept for the operator")
+	}
+}
+
+func TestSourceURIsOfTheIncidentFile(t *testing.T) {
+	if got := sourceURIs(incidentOndrejSource); len(got) != 1 || got[0] != "https://ppa.launchpadcontent.net/ondrej/php/ubuntu/" {
+		t.Fatalf("%v", got)
 	}
 }
 
