@@ -65,9 +65,12 @@ func (p Paths) Cert() string  { return filepath.Join(p.Dir, "agent.crt") }
 func (p Paths) CA() string    { return filepath.Join(p.Dir, "ca.crt") }
 func (p Paths) State() string { return filepath.Join(p.Dir, "agent.json") }
 
+// Files are the identity files, agent.json last.
+func (p Paths) Files() []string { return []string{p.Key(), p.Cert(), p.CA(), p.State()} }
+
 // Enrolled reports whether credentials exist.
 func (p Paths) Enrolled() bool {
-	for _, f := range []string{p.Key(), p.Cert(), p.CA(), p.State()} {
+	for _, f := range p.Files() {
 		if _, err := os.Stat(f); err != nil {
 			return false
 		}
@@ -305,6 +308,9 @@ func (id *Identity) TLSConfig() *tls.Config {
 
 // NotAfter returns the current certificate expiry.
 func (id *Identity) NotAfter() time.Time { return id.leaf.Load().NotAfter }
+
+// NotBefore returns the start of the current certificate's validity.
+func (id *Identity) NotBefore() time.Time { return id.leaf.Load().NotBefore }
 
 // Fingerprint returns the SHA-256 of the DER cert (lowercase hex), as forwarded by the edge.
 func (id *Identity) Fingerprint() string {

@@ -12,6 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * mTLS authentication. The edge verifies the client certificate against the Kiln CA and forwards its
  * SHA-256 fingerprint; the header is only honoured when the TCP peer is a configured trusted proxy.
+ * A 401 carries a reason code in `error`: an agent whose server was deleted gets `agent_revoked`.
  */
 final class AuthenticateAgent
 {
@@ -25,21 +26,30 @@ final class AuthenticateAgent
         $proxies = (array) config('fleet.trusted_proxies', []);
 
         if ($peer === '' || $proxies === [] || ! IpUtils::checkIp($peer, $proxies)) {
-            return $this->unauthorized('Client certificate header not accepted from this peer.');
+            return $this->unauthorized('untrusted_peer', 'Client certificate header not accepted from this peer.');
         }
 
         $fingerprint = strtolower(trim((string) $request->headers->get((string) config('fleet.fingerprint_header'), '')));
 
         if (! preg_match('/^[a-f0-9]{64}$/', $fingerprint)) {
-            return $this->unauthorized('Missing or malformed client certificate fingerprint.');
+            return $this->unauthorized('missing_certificate', 'Missing or malformed client certificate fingerprint.');
         }
 
         /** @var ?Certificate $certificate */
         $certificate = Certificate::query()->with('agent')->where('fingerprint', $fingerprint)->first();
         $agent = $certificate?->agent;
 
-        if (! $certificate || ! $agent instanceof Agent || ! $certificate->isUsable() || $agent->isRevoked()) {
-            return $this->unauthorized('Unknown, expired or revoked client certificate.');
+        if (! $certificate || ! $agent instanceof Agent) {
+            return $this->unauthorized('unknown_certificate', 'Unknown client certificate.');
+        }
+
+        // The server was deleted (or the agent revoked): the machine needs a new install command.
+        if ($agent->isRevoked()) {
+            return $this->unauthorized('agent_revoked', 'This agent was revoked: its server was removed from Kiln. Run a new install command to connect the machine again.');
+        }
+
+        if (! $certificate->isUsable()) {
+            return $this->unauthorized($certificate->revoked_at !== null ? 'certificate_revoked' : 'certificate_expired', 'Expired or revoked client certificate.');
         }
 
         if ($certificate->first_used_at === null) {
@@ -59,8 +69,11 @@ final class AuthenticateAgent
         return $next($request);
     }
 
-    private function unauthorized(string $message): Response
+    /**
+     * `error` is a stable reason code for the agent (contracts/agent-protocol/README.md); `message` is for people.
+     */
+    private function unauthorized(string $error, string $message): Response
     {
-        return response()->json(['message' => $message], 401);
+        return response()->json(['message' => $message, 'error' => $error], 401);
     }
 }

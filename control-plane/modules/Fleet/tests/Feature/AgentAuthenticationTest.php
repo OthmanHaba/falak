@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Kiln\Fleet\Contracts\Enrollment;
 
@@ -16,6 +17,7 @@ it('rejects requests without a fingerprint', function (string $method, string $u
     $this->json($method, $uri, [], ['Accept' => 'application/json'])->assertUnauthorized();
 })->with([
     ['POST', '/agent/v1/heartbeat'],
+    ['GET', '/agent/v1/ping'],
     ['GET', '/agent/v1/commands'],
     ['POST', '/agent/v1/renew'],
     ['POST', '/agent/v1/insights'],
@@ -23,8 +25,8 @@ it('rejects requests without a fingerprint', function (string $method, string $u
 ]);
 
 it('rejects unknown and malformed fingerprints', function () {
-    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(), fleet_mtls(str_repeat('a', 64)))->assertUnauthorized();
-    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(), fleet_mtls('not-hex'))->assertUnauthorized();
+    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(), fleet_mtls(str_repeat('a', 64)))->assertUnauthorized()->assertJsonPath('error', 'unknown_certificate');
+    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(), fleet_mtls('not-hex'))->assertUnauthorized()->assertJsonPath('error', 'missing_certificate');
 });
 
 it('accepts the fingerprint case-insensitively', function () {
@@ -52,12 +54,35 @@ it('ignores X-Forwarded-For when deciding whether the peer is trusted', function
 it('rejects expired certificates', function () {
     $this->travel(91)->days();
 
-    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(), fleet_mtls($this->enrolled['fingerprint']))->assertUnauthorized();
+    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(), fleet_mtls($this->enrolled['fingerprint']))->assertUnauthorized()->assertJsonPath('error', 'certificate_expired');
 });
 
-it('rejects revoked agents', function () {
+it('rejects revoked agents with a reason the agent can tell apart', function () {
     app(Enrollment::class)->revokeServer($this->serverId, 'server deleted');
 
-    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(), fleet_mtls($this->enrolled['fingerprint']))->assertUnauthorized();
-    $this->getJson('/agent/v1/commands', fleet_mtls($this->enrolled['fingerprint']))->assertUnauthorized();
+    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(), fleet_mtls($this->enrolled['fingerprint']))
+        ->assertUnauthorized()
+        ->assertJsonPath('error', 'agent_revoked')
+        ->assertJsonStructure(['message', 'error']);
+    $this->getJson('/agent/v1/commands', fleet_mtls($this->enrolled['fingerprint']))->assertUnauthorized()->assertJsonPath('error', 'agent_revoked');
+    $this->getJson('/agent/v1/ping', fleet_mtls($this->enrolled['fingerprint']))->assertUnauthorized()->assertJsonPath('error', 'agent_revoked');
+});
+
+it('tells a revoked certificate of an active agent apart from a revoked agent', function () {
+    $this->enrolled['certificate']->forceFill(['revoked_at' => now()])->save();
+
+    $this->getJson('/agent/v1/ping', fleet_mtls($this->enrolled['fingerprint']))->assertUnauthorized()->assertJsonPath('error', 'certificate_revoked');
+});
+
+it('answers ping for an authenticated agent without recording anything', function () {
+    $agent = $this->enrolled['agent'];
+    $before = $agent->fresh()->toArray();
+
+    $this->getJson('/agent/v1/ping', fleet_mtls($this->enrolled['fingerprint']))
+        ->assertOk()
+        ->assertJsonPath('agent_id', $agent->id)
+        ->assertJsonStructure(['agent_id', 'time']);
+
+    expect(Arr::except($agent->fresh()->toArray(), ['updated_at']))->toEqual(Arr::except($before, ['updated_at']));
+    $this->getJson('/agent/v1/ping', ['Accept' => 'application/json'])->assertUnauthorized()->assertJsonPath('error', 'missing_certificate');
 });

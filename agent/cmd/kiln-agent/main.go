@@ -1,8 +1,9 @@
 // Command kiln-agent is the Kiln server daemon.
 //
 //	kiln-agent run        enroll if needed (KILN_PANEL_URL + KILN_TOKEN), then serve
-//	kiln-agent enroll     enroll only
+//	kiln-agent enroll     enroll only; with a token it replaces an existing identity (backup in /etc/kiln/previous/)
 //	kiln-agent install    install binary + systemd unit and start the service
+//	kiln-agent check      verify the identity and that the agent API accepts it (--wait 60s keeps retrying)
 //	kiln-agent fn-gateway serve functions (kiln-fn-gateway.service; installed by fn.release.apply)
 //	kiln-agent fn-run     run a function's schedule once (its cron job)
 //	kiln-agent version
@@ -27,7 +28,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: kiln-agent <run|enroll|install|fn-gateway|fn-run|version> [flags]\n")
+	fmt.Fprintf(os.Stderr, "usage: kiln-agent <run|enroll|install|check|fn-gateway|fn-run|version> [flags]\n")
 	os.Exit(2)
 }
 
@@ -40,6 +41,7 @@ func main() {
 	cfg := config.Default()
 	cfg.Bind(fs)
 	noStart := fs.Bool("no-start", false, "install: enable but do not start the service")
+	checkWait := fs.Duration("wait", 0, "check: keep retrying this long while the agent API cannot be reached")
 	fnListen := fs.String("listen", fngateway.DefaultListen, "fn-gateway: proxy address (Caddy sends function traffic here)")
 	fnAdmin := fs.String("admin", fngateway.DefaultAdmin, "fn-gateway: admin API unix socket")
 	fnState := fs.String("state", fngateway.DefaultStateDir, "fn-gateway: functions directory (gateway.json, releases)")
@@ -64,10 +66,15 @@ func main() {
 	case "run":
 		err = agent.Run(ctx, cfg, log)
 	case "enroll":
-		err = agent.EnrollOnly(ctx, cfg, log)
+		err = agent.EnrollOnly(ctx, cfg, log, os.Stdout)
 	case "install":
 		self, _ := os.Executable()
 		err = agent.Install(ctx, agent.InstallOptions{Config: cfg, Source: self, NoStart: *noStart, FS: hostfs.FS{Root: cfg.HostRoot}, Runner: runner.Exec{}, Out: os.Stdout})
+	case "check":
+		if checkErr := agent.Check(ctx, agent.CheckOptions{Config: cfg, Wait: *checkWait, Out: os.Stdout}); checkErr != nil {
+			fmt.Fprintln(os.Stderr, "kiln-agent check: "+checkErr.Error())
+			os.Exit(1)
+		}
 	case "fn-gateway":
 		err = fngateway.Run(ctx, fngateway.RunOptions{Listen: *fnListen, AdminSocket: *fnAdmin, StateDir: *fnState,
 			DockerSocket: cfg.DockerSock, AgentOTLPSocket: cfg.OTLPSocket, Version: version.Version, Logger: log.With("component", "fn-gateway")})

@@ -35,7 +35,9 @@ func (p *Poller) Run(ctx context.Context) {
 				return
 			}
 			d := bo.Next()
-			log.Warn("command poll failed", "err", err, "retry_in", d)
+			if !IsRevoked(err) { // the client reports that one itself, rate-limited
+				log.Warn("command poll failed", "err", err, "retry_in", d)
+			}
 			sleep(ctx, d)
 			continue
 		}
@@ -139,7 +141,9 @@ func (h *Heartbeater) Beat(ctx context.Context) {
 		}
 	}
 	if err := h.Client.Heartbeat(ctx, hb); err != nil {
-		log.Warn("heartbeat failed", "err", err)
+		if !IsRevoked(err) {
+			log.Warn("heartbeat failed", "err", err)
+		}
 		return
 	}
 	if hb.Facts != nil {
@@ -165,7 +169,9 @@ func (r *Renewer) Run(ctx context.Context) {
 		next := every
 		if r.NeedsRenewal(time.Now()) {
 			if err := r.Renew(ctx); err != nil {
-				r.Log.Error("certificate renewal failed", "err", err)
+				if !IsRevoked(err) {
+					r.Log.Error("certificate renewal failed", "err", err)
+				}
 				next = time.Hour
 			} else {
 				r.Log.Info("certificate renewed")
