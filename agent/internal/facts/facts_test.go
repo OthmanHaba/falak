@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/kiln/agent/internal/hostfs"
@@ -33,11 +34,12 @@ func TestCollect(t *testing.T) {
 	os.MkdirAll(filepath.Join(root, "/etc/php/mods-available"), 0o755)
 	os.MkdirAll(filepath.Join(root, "/opt/kiln/node/22.11.0"), 0o755)
 	old := Interfaces
-	Interfaces = func() ([]net.Addr, error) {
-		return []net.Addr{
-			&net.IPNet{IP: net.ParseIP("127.0.0.1"), Mask: net.CIDRMask(8, 32)},
-			&net.IPNet{IP: net.ParseIP("10.0.0.5"), Mask: net.CIDRMask(24, 32)},
-			&net.IPNet{IP: net.ParseIP("203.0.113.9"), Mask: net.CIDRMask(24, 32)},
+	Interfaces = func() ([]Interface, error) {
+		return []Interface{
+			{Name: "lo", Addrs: []net.IP{net.ParseIP("127.0.0.1")}},
+			{Name: "docker0", Addrs: []net.IP{net.ParseIP("172.17.0.1")}},
+			{Name: "eth1", Addrs: []net.IP{net.ParseIP("10.0.0.5")}},
+			{Name: "eth0", Addrs: []net.IP{net.ParseIP("203.0.113.9"), net.ParseIP("2001:db8::1")}},
 		}, nil
 	}
 	defer func() { Interfaces = old }()
@@ -65,6 +67,81 @@ func TestCollect(t *testing.T) {
 		if _, ok := m[k]; !ok {
 			t.Fatalf("missing %s", k)
 		}
+	}
+}
+
+// routeTable renders /proc/net/route with default routes via the given interfaces (metric in order).
+func routeTable(defaults ...string) string {
+	s := "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+	s += "docker0\t000011AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0\n"
+	for i, d := range defaults {
+		s += d + "\t00000000\t0100000A\t0003\t0\t0\t" + strconv.Itoa(100*(i+1)) + "\t00000000\t0\t0\t0\n"
+	}
+	return s
+}
+
+func TestIPv4sIgnoreBridgesAndPreferTheDefaultRoute(t *testing.T) {
+	ip := func(s ...string) []net.IP {
+		var out []net.IP
+		for _, a := range s {
+			out = append(out, net.ParseIP(a))
+		}
+		return out
+	}
+	str := func(p *string) string {
+		if p == nil {
+			return "<nil>"
+		}
+		return *p
+	}
+	cases := []struct {
+		name     string
+		ifs      []Interface
+		route    string
+		pub, prv string
+	}{
+		{"docker host without a private network (the incident)", []Interface{
+			{"lo", ip("127.0.0.1")}, {"eth0", ip("203.0.113.9")}, {"docker0", ip("172.17.0.1")}, {"br-1a2b3c", ip("172.18.0.1")}, {"veth12ab", ip("169.254.1.1")},
+		}, routeTable("eth0"), "203.0.113.9", "<nil>"},
+		{"overlays and VPNs are not the host's private address", []Interface{
+			{"tailscale0", ip("100.101.102.103")}, {"wg-kiln", ip("10.200.0.2")}, {"cni0", ip("10.42.0.1")}, {"flannel.1", ip("10.42.0.0")},
+			{"cali1234", ip("10.1.1.1")}, {"vxlan.calico", ip("10.1.1.2")}, {"ens3", ip("203.0.113.9")},
+		}, routeTable("ens3"), "203.0.113.9", "<nil>"},
+		{"public default route, private network on a second NIC", []Interface{
+			{"docker0", ip("172.17.0.1")}, {"ens10", ip("10.0.0.3")}, {"eth0", ip("203.0.113.9")},
+		}, routeTable("eth0"), "203.0.113.9", "10.0.0.3"},
+		{"the default route's private address wins over another NIC's", []Interface{
+			{"ens4", ip("192.168.50.2")}, {"ens5", ip("172.31.5.10")},
+		}, routeTable("ens5", "ens4"), "<nil>", "172.31.5.10"},
+		{"no route table: real interfaces in order", []Interface{
+			{"docker0", ip("172.17.0.1")}, {"enp1s0", ip("192.168.1.20")},
+		}, "", "<nil>", "192.168.1.20"},
+	}
+	old := Interfaces
+	defer func() { Interfaces = old }()
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			root := t.TempDir()
+			if c.route != "" {
+				write(t, root, "/proc/net/route", c.route)
+			}
+			Interfaces = func() ([]Interface, error) { return c.ifs, nil }
+			pub, prv := ipv4s(DefaultRouteInterface(hostfs.FS{Root: root}))
+			if str(pub) != c.pub || str(prv) != c.prv {
+				t.Fatalf("public %s private %s, want %s %s", str(pub), str(prv), c.pub, c.prv)
+			}
+		})
+	}
+}
+
+func TestDefaultRouteInterface(t *testing.T) {
+	root := t.TempDir()
+	if DefaultRouteInterface(hostfs.FS{Root: root}) != "" {
+		t.Fatal("no table, no interface")
+	}
+	write(t, root, "/proc/net/route", routeTable("wlan0", "eth0"))
+	if got := DefaultRouteInterface(hostfs.FS{Root: root}); got != "wlan0" {
+		t.Fatal(got)
 	}
 }
 
