@@ -101,8 +101,8 @@ class DeploymentsServiceProvider extends ModuleServiceProvider
         Event::listen(BuildOutputReceived::class, RecordBuildOutput::class);
         Event::listen(PushReceived::class, DeployOnPush::class);
         Event::listen(SiteUpdated::class, RedeployOnPortChange::class);
-        Event::listen(DeploymentFailed::class, [DeploySplitSitesFirst::class, 'failed']);
-        Event::listen(DeploymentSucceeded::class, [DeploySplitSitesFirst::class, 'succeeded']);
+        Event::listen(DeploymentFailed::class, [DeploySplitSitesFirst::class, 'onStackFailed']);
+        Event::listen(DeploymentSucceeded::class, [DeploySplitSitesFirst::class, 'onSiteSucceeded']);
         Event::listen(SiteDeleted::class, [ForgetDeletedResources::class, 'siteDeleted']);
         Event::listen([SiteTargetReady::class, SiteTargetFailed::class, SiteTargetsChanged::class], ResumeWaitingDeployments::class);
         Event::listen(OrganizationDeleted::class, [ForgetDeletedResources::class, 'organizationDeleted']);

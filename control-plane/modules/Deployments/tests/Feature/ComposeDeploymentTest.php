@@ -306,6 +306,41 @@ it('deploys a service split out at the stack\'s creation first, then the stack, 
     expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2);
 });
 
+it('follows a stack up only after a recent stop for its site, and never over a newer deployment', function () {
+    $world = compose_world(site: ['compose_source' => 'inline', 'repository' => null, 'source_connection_id' => null]);
+    ComposeVersion::query()->create(['site_id' => $world->site->id, 'version' => 1, 'content' => "services:\n  app:\n    image: nginx:1.27\n  api:\n    image: ghcr.io/acme/api:1\n", 'created_at' => now()]);
+    $split = app(SiteFactory::class)->create($world->site->organization_id, null, [
+        'name' => 'shop-api', 'framework' => 'docker', 'runtime' => 'docker', 'docker_image' => 'ghcr.io/acme/api:1', 'container_port' => 3000,
+        'server_ids' => [$world->servers[0]->id], 'test_domain_enabled' => false,
+    ])->site;
+    Site::query()->whereKey($world->site->id)->update(['compose_services' => json_encode(['api' => ['mode' => 'site', 'site_id' => $split->id]])]);
+    $stop = fn (array $attributes) => Deployment::query()->create([
+        'organization_id' => $world->site->organization_id, 'site_id' => $world->site->id, 'site_slug' => $world->site->slug,
+        'number' => (int) Deployment::query()->where('site_id', $world->site->id)->max('number') + 1, 'trigger' => Trigger::Manual,
+        'status' => DeploymentStatus::Failed, 'settings' => ['awaits_site' => $split->id], 'error' => 'waits', ...$attributes,
+    ]);
+    $deploySite = function () use ($world, $split) {
+        app(TriggerDeployment::class)(app(SiteDirectory::class)->find($split->id), Trigger::Manual);
+        deploy_run_all($world->agents);
+    };
+
+    // A stop older than a day is not followed up.
+    $stop(['created_at' => now()->subDays(2), 'finished_at' => now()->subDays(2)]);
+    $deploySite();
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(1);
+
+    // A recent stop followed by another stack deployment (a push) is not followed up: only the latest one counts.
+    $stop(['finished_at' => now()]);
+    $stop(['status' => DeploymentStatus::Succeeded, 'settings' => [], 'finished_at' => now()]);
+    $deploySite();
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(3);
+
+    // A recent stop as the latest deployment is followed up once.
+    $stop(['finished_at' => now()]);
+    $deploySite();
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(5);
+});
+
 it('checks every public service through the edge', function () {
     $world = compose_world(site: ['public_services' => [
         ['service' => 'app', 'port' => 8080, 'domain' => null, 'host_port' => 3000],
