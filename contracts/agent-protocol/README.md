@@ -35,7 +35,27 @@ Agents decode payloads strictly: an unknown field fails the command. A new **opt
 feature name: the agent lists it in `facts.features` (`agent/internal/version.Features`) and the control plane
 removes the field for agents that do not (`Fleet\Application\PayloadCompatibility::FIELDS`). When an agent reports
 a new version (`Fleet\Events\AgentVersionChanged`), modules re-send state they would otherwise deduplicate.
-Current features: `edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`.
+Current features: `edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`, `fn.v1`, `fn.v2`, `fn.v3`,
+`db.containers`, `compose.v2`, `docker.networks`, `docker.networks.create`, `compose.up.services`, `provision.v2`.
+
+A feature can also gate a whole **command**: the control plane only queues it for agents that list the feature
+(older agents would fail it as an unknown type). `provision.v2` adds `provision.inspect` and `provision.apply`
+`components`.
+
+## Machine check (`provision.v2`)
+`provision.inspect` is read-only: it reports the software already on the machine and where it came from
+(`$defs.result`: packages with their origin — `archive`, `vendor` with the repository URL, `manual` —, snaps, apt
+sources, systemd units, TCP listeners with process, unit and container proxies, containers' published ports,
+Docker, sshd, firewalls, swap, Node / PHP / FrankenPHP binaries, unattended-upgrades, fail2ban). A detector that
+fails leaves its part empty and adds an `errors` entry; the command only fails when cancelled. Extra package
+patterns (the plan's base packages) can be passed in `packages`.
+
+The control plane decides per component (`install`, `adopt`, `complete`, `block`; see `docs/plans/MACHINE_CHECK.md`)
+and sends no `provision.apply` while anything blocks. The plan already reflects the decisions; `components` tells the
+agent which components were adopted: their `packages` are never installed (removed from the apt step, verified in an
+`adopt:<name>` step that fails when one is gone), an adopted `swap` / `hostname` is kept, and an adopted
+`unattended_upgrades` gets no Kiln config. `components` is stripped for agents without `provision.v2`, which also
+never get `provision.inspect` and keep today's plan.
 
 ## Agent sessions and lost deliveries
 Every `kiln-agent` process sends a random session id (`X-Kiln-Agent-Session: s-<32 hex>`, 8-64 characters of
@@ -52,10 +72,10 @@ A lost command whose schema has `"x-kiln-redeliverable": true` at its root is qu
 the agent answers a command id it already finished from its journal, so nothing runs twice. Redeliverable:
 declarative state (`edge.caddy.apply`, `edge.cert.install`, `telemetry.configure`, `proc.apply`, `cron.apply`,
 `net.firewall.apply`, `net.wireguard.apply`, `db.user.apply`, `system.ssh_key.sync`), read-only commands
-(`proc.status`, `system.facts`, `docker.compose.ps`) and `system.upgrade_agent` (a no-op once installed). Any
-other type fails instead, so the deployment waiting on it fails fast: `failed` with "The agent restarted before
-running the command" when it was never started, `timed_out` otherwise (a late result still overrides a
-`timed_out`).
+(`proc.status`, `system.facts`, `docker.compose.ps`, `provision.inspect`) and `system.upgrade_agent` (a no-op once
+installed). Any other type fails instead, so the deployment waiting on it fails fast: `failed` with "The agent
+restarted before running the command" when it was never started, `timed_out` otherwise (a late result still
+overrides a `timed_out`).
 
 On shutdown the agent stops long-polling first and does not start commands from a response that arrives while it
 stops; running commands get 20 s to finish (heartbeats keep reporting them) before they are cancelled.

@@ -34,3 +34,11 @@ it('strips the compose marker for agents that only join existing networks (they 
 it('strips the networks for agents that join none', function () {
     expect(property_exists(PayloadCompatibility::adapt('docker.run', compat_swap(), []), 'networks'))->toBeFalse();
 });
+
+it('strips machine-check decisions from provision.apply for agents without provision.v2', function () {
+    $plan = fn () => json_decode(json_encode(['hostname' => 'app-1', 'components' => [['name' => 'docker', 'decision' => 'adopt', 'packages' => ['docker-ce']]]]));
+
+    expect(property_exists(PayloadCompatibility::adapt('provision.apply', $plan(), ['compose.up.services']), 'components'))->toBeFalse()
+        ->and(PayloadCompatibility::adapt('provision.apply', $plan(), ['provision.v2'])->components[0]->decision)->toBe('adopt')
+        ->and(PayloadCompatibility::adapt('provision.apply', $plan(), [])->hostname)->toBe('app-1');
+});
