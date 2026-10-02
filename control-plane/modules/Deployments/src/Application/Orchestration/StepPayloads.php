@@ -69,10 +69,14 @@ final class StepPayloads
         }
 
         // A service split out into its own Kiln site leaves the stack with this release; until that site is live the
-        // stack's services that use it (an nginx proxying to it, say) would fail to start.
+        // stack's services that use it (an nginx proxying to it, say) would fail to start. The deployment stops here and
+        // records the site: DeploySplitSitesFirst deploys it, then this stack again.
         foreach ($site->compose->services ?? [] as $service => $decision) {
             if (($decision['mode'] ?? null) === 'site' && is_string($decision['site_id'] ?? null) && Release::current($decision['site_id']) === null) {
-                throw new RuntimeException("{$service} now runs as its own Kiln site, which hasn't been deployed yet. Deploy that site first, then this stack.");
+                $name = $this->sites->find($decision['site_id'])?->name ?? $service;
+                $deployment->forceFill(['settings' => [...(array) $deployment->settings, 'awaits_site' => strtolower($decision['site_id'])]])->save();
+
+                throw new RuntimeException("{$service} runs as its own Kiln site ({$name}), which isn't live yet. Deploying {$name} first; the stack follows when it's live.");
             }
         }
 

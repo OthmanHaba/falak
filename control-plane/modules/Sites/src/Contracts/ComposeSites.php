@@ -32,6 +32,14 @@ interface ComposeSites
     public function project(string $siteId): ?string;
 
     /**
+     * The compose stacks that run one of their services as $siteId (split out into its own Kiln site), as
+     * service name per stack id. Deployments uses it to deploy a stack once the site it waits for is live.
+     *
+     * @return array<string, string> stack site id => service name
+     */
+    public function stacksUsing(string $siteId): array;
+
+    /**
      * For a site that runs a compose stack's service as its own Kiln site: the stack's Docker networks its container
      * joins on $serverId, under the service's name and the aliases it declared on each network, so the stack's
      * services and it keep resolving each other. Empty when the site isn't split out of a stack, the service was on no

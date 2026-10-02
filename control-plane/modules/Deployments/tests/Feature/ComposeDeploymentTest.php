@@ -19,6 +19,7 @@ use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\Data\ComposeRewrites;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Contracts\SiteFactory;
 use Kiln\Sites\Domain\Models\ComposeVersion;
 use Kiln\Sites\Domain\Models\Site;
 use Symfony\Component\Yaml\Yaml;
@@ -270,8 +271,39 @@ it('waits for a split-out service\'s own site before deploying the stack without
     deploy_run_all($world->agents);
 
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
-        ->and($deployment->error)->toContain("api now runs as its own Kiln site, which hasn't been deployed yet")
+        ->and($deployment->error)->toContain('api runs as its own Kiln site')
+        ->and($deployment->setting('awaits_site'))->toBe($split)
         ->and($world->agents->dispatched('docker.compose.up'))->toBe([]);
+});
+
+it('deploys a service split out at the stack\'s creation first, then the stack, without manual steps', function () {
+    $world = compose_world(site: ['compose_source' => 'inline', 'repository' => null, 'source_connection_id' => null]);
+    ComposeVersion::query()->create(['site_id' => $world->site->id, 'version' => 1, 'content' => "services:\n  app:\n    image: nginx:1.27\n  api:\n    image: ghcr.io/acme/api:1\n", 'created_at' => now()]);
+    $split = app(SiteFactory::class)->create($world->site->organization_id, null, [
+        'name' => 'shop-api', 'framework' => 'docker', 'runtime' => 'docker', 'docker_image' => 'ghcr.io/acme/api:1', 'container_port' => 3000,
+        'server_ids' => [$world->servers[0]->id], 'test_domain_enabled' => false,
+    ])->site;
+    Site::query()->whereKey($world->site->id)->update(['compose_services' => json_encode(['api' => ['mode' => 'site', 'site_id' => $split->id]])]);
+
+    $first = compose_deploy($world);
+    deploy_run_all($world->agents);
+
+    $stack = Deployment::query()->where('site_id', $world->site->id)->orderBy('number')->get();
+    $api = Deployment::query()->where('site_id', $split->id)->get();
+
+    // The stack stops for the site, the site deploys, the stack follows once.
+    expect($first->refresh()->status)->toBe(DeploymentStatus::Failed)
+        ->and($first->error)->toContain('Deploying shop-api first; the stack follows when it\'s live.')
+        ->and($api)->toHaveCount(1)
+        ->and($api[0]->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($stack)->toHaveCount(2)
+        ->and($stack[1]->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($stack[1]->setting('awaits_site'))->toBeNull();
+
+    // Another deploy of the site doesn't redeploy the stack again.
+    app(TriggerDeployment::class)(app(SiteDirectory::class)->find($split->id), Trigger::Manual);
+    deploy_run_all($world->agents);
+    expect(Deployment::query()->where('site_id', $world->site->id)->count())->toBe(2);
 });
 
 it('checks every public service through the edge', function () {

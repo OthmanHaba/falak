@@ -46,6 +46,27 @@ final class EloquentComposeSites implements ComposeSites
         return $site->compose_source === ComposeSource::Inline ? $this->content($site->id)?->content : $site->compose_snapshot;
     }
 
+    public function stacksUsing(string $siteId): array
+    {
+        $site = Site::query()->find(strtolower($siteId), ['id', 'organization_id']);
+
+        if ($site === null) {
+            return [];
+        }
+
+        $stacks = [];
+
+        foreach (Site::query()->where('organization_id', $site->organization_id)->where('runtime', SiteRuntime::Compose->value)->whereNotNull('compose_services')->get() as $stack) {
+            foreach ((array) $stack->compose_services as $service => $decision) {
+                if (is_array($decision) && ($decision['mode'] ?? null) === 'site' && strtolower((string) ($decision['site_id'] ?? '')) === $site->id) {
+                    $stacks[$stack->id] = (string) $service;
+                }
+            }
+        }
+
+        return $stacks;
+    }
+
     public function stackNetworks(string $siteId, string $serverId): array
     {
         $site = Site::query()->find(strtolower($siteId), ['id', 'organization_id']);
