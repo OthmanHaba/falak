@@ -44,6 +44,11 @@ type Client struct {
 // RevokedReportEvery rate-limits the "server was removed" error: every loop hits it, every few seconds.
 const RevokedReportEvery = 10 * time.Minute
 
+// RevokedRetry is how long a loop waits after its request was answered agent_revoked (the identity stays revoked
+// until a new install command replaces it, which restarts the agent). Every component that posts to the agent API
+// waits this long and logs nothing itself: the client's rate-limited message says it once.
+var RevokedRetry = 10 * time.Minute
+
 // SessionHeader carries Client.Session.
 const SessionHeader = "X-Kiln-Agent-Session"
 

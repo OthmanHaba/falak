@@ -21,6 +21,7 @@ import (
 	"github.com/kiln/agent/internal/commands"
 	"github.com/kiln/agent/internal/obs"
 	"github.com/kiln/agent/internal/runner"
+	"github.com/kiln/agent/internal/transport"
 )
 
 // InsightsPoster posts NDJSON to POST /agent/v1/insights (implemented by the transport client).
@@ -454,7 +455,7 @@ func (s *Scheduler) report(ctx context.Context, j Job, hb Heartbeat, started tim
 			pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 			err := s.opts.Insights.PostInsights(pctx, line)
 			cancel()
-			if err == nil {
+			if err == nil || transport.IsRevoked(err) { // revoked: reported once by the client; retrying cannot help
 				return
 			}
 			s.log.Warn("heartbeat post failed", "job", j.Name, "err", err)

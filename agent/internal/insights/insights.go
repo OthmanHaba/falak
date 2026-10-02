@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/kiln/agent/internal/otlp"
+	"github.com/kiln/agent/internal/transport"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
@@ -320,8 +321,12 @@ func (t *Tee) Run(ctx context.Context) {
 		case <-time.After(delay):
 		}
 		if err := t.Flush(ctx); err != nil {
-			t.log.Debug("insights post failed", "err", err)
-			delay = min(delay*2, time.Minute)
+			if transport.IsRevoked(err) {
+				delay = transport.RevokedRetry // reported once by the client
+			} else {
+				t.log.Debug("insights post failed", "err", err)
+				delay = min(delay*2, time.Minute)
+			}
 		} else {
 			delay = time.Second
 		}
