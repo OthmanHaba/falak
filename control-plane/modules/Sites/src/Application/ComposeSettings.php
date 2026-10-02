@@ -87,7 +87,7 @@ final class ComposeSettings
      * @param  list<array<string, mixed>>  $services
      * @param  list<string>  $serverIds
      * @param  ?ComposeSummary  $summary  when known (inline sources), services must exist in it
-     * @return list<array{service: string, port: int, domain: ?string, host_port: int}>
+     * @return list<array{service: string, port: int, domain: ?string, host_port: int, health_check_path?: string}>
      *
      * @throws ValidationException
      */
@@ -148,7 +148,13 @@ final class ComposeSettings
                 $domains[$domain] = true;
             }
 
-            $out[] = ['service' => $service, 'port' => $port, 'domain' => $domain, 'host_port' => $hostPort];
+            $health = isset($public['health_check_path']) && trim((string) $public['health_check_path']) !== '' ? trim((string) $public['health_check_path']) : null;
+
+            if ($health !== null && preg_match('#^/\S{0,254}$#', $health) !== 1) {
+                throw ValidationException::withMessages(["public_services.{$i}.health_check_path" => 'Start the path with / (e.g. /health).']);
+            }
+
+            $out[] = ['service' => $service, 'port' => $port, 'domain' => $domain, 'host_port' => $hostPort] + ($health !== null ? ['health_check_path' => $health] : []);
         }
 
         return $out;

@@ -19,6 +19,7 @@ use Kiln\Deployments\Domain\Models\DeploymentStep;
 use Kiln\Deployments\Domain\Models\DeploymentTarget;
 use Kiln\Deployments\Domain\Models\OutputLine;
 use Kiln\Deployments\Domain\Models\Release;
+use Kiln\Edge\Application\ComposeServiceDomains;
 use Kiln\Identity\Application\Actions\CreateOrganization;
 use Kiln\Identity\Application\Actions\RegisterUser;
 use Kiln\Identity\Domain\Models\User;
@@ -333,6 +334,9 @@ YAML;
             ['service' => 'redis', 'container_id' => 'c-redis', 'container_name' => 'automations-redis-1', 'state' => 'restarting', 'image' => 'redis:7.4.1-alpine', 'image_digest' => $digest('redis'), 'restarts' => 7,
                 'ports' => [['container_port' => 6379, 'protocol' => 'tcp']]],
         ]);
+
+        // Its public service domains as Edge rows (a real site gets them through SiteCreated).
+        app(ComposeServiceDomains::class)->import($site->id);
 
         return $site;
     }

@@ -6,8 +6,17 @@ import { Link2, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 interface PathsState {
-    mounts: { id: string; site_id: string; site_name: string | null; path_prefix: string; strip_prefix: boolean; urls: string[] }[];
-    sites: { id: string; name: string; domains: string[] }[];
+    mounts: {
+        id: string;
+        site_id: string;
+        site_name: string | null;
+        service: string | null;
+        path_prefix: string;
+        strip_prefix: boolean;
+        urls: string[];
+    }[];
+    /** `services`: public services of a compose site (a path may be served on one service's domains only). */
+    sites: { id: string; name: string; domains: string[]; services: string[] }[];
     can: { manage: boolean };
 }
 
@@ -19,6 +28,7 @@ export function PathsSettings({ ctx }: ServiceTabProps) {
     const url = `/sites/${ctx.service.ref_id}/function-mounts`;
     const state = useJson<PathsState>(url);
     const [siteId, setSiteId] = useState<string | undefined>();
+    const [service, setService] = useState('');
     const [path, setPath] = useState('/api');
     const [strip, setStrip] = useState(true);
     const [errors, setErrors] = useState<Record<string, string>>({});
@@ -26,13 +36,14 @@ export function PathsSettings({ ctx }: ServiceTabProps) {
 
     if (!state.data) return <SkeletonRows rows={2} />;
     const { mounts, sites, can } = state.data;
+    const services = sites.find((s) => s.id === siteId)?.services ?? [];
 
     const add = async () => {
         if (!siteId) return;
         setAdding(true);
         setErrors({});
         try {
-            await requestJson(url, 'POST', { site_id: siteId, path_prefix: path, strip_prefix: strip });
+            await requestJson(url, 'POST', { site_id: siteId, path_prefix: path, strip_prefix: strip, service: service || null });
             toast.success(`Serving ${path}`, 'The site’s servers are updated in a few seconds.');
             await state.reload();
         } catch (e) {
@@ -66,6 +77,7 @@ export function PathsSettings({ ctx }: ServiceTabProps) {
                         <li key={mount.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
                             <Link2 className="text-fg-muted size-4" aria-hidden />
                             <span className="text-fg font-medium">{mount.site_name ?? mount.site_id}</span>
+                            {mount.service && <Tag tone="neutral">{mount.service}</Tag>}
                             <span className="text-fg font-mono">{mount.path_prefix}/*</span>
                             {mount.strip_prefix && <Tag tone="neutral">prefix stripped</Tag>}
                             <span className="text-fg-faint min-w-0 truncate text-xs">{mount.urls[0] ?? 'the site has no domain yet'}</span>
@@ -89,7 +101,10 @@ export function PathsSettings({ ctx }: ServiceTabProps) {
                         <Select
                             value={siteId}
                             placeholder="Pick a site"
-                            onValueChange={setSiteId}
+                            onValueChange={(value) => {
+                                setSiteId(value);
+                                setService('');
+                            }}
                             options={sites.map((s) => ({ value: s.id, label: s.domains[0] ? `${s.name} (${s.domains[0]})` : s.name }))}
                             aria-label="Site"
                         />
@@ -100,6 +115,16 @@ export function PathsSettings({ ctx }: ServiceTabProps) {
                     <Button icon={<Plus />} loading={adding} disabled={!siteId} onClick={add}>
                         Add path
                     </Button>
+                    {services.length > 1 && (
+                        <Field label="Compose service" className="sm:col-span-3" error={errors.service}>
+                            <Select
+                                value={service}
+                                onValueChange={setService}
+                                options={[{ value: '', label: 'Every public service' }, ...services.map((name) => ({ value: name, label: name }))]}
+                                aria-label="Compose service"
+                            />
+                        </Field>
+                    )}
                     <label className="text-fg-muted flex items-center gap-2 text-xs sm:col-span-3">
                         <Checkbox checked={strip} onCheckedChange={(v) => setStrip(v === true)} />
                         Strip the path: the function sees <code className="text-fg">/users</code> for{' '}

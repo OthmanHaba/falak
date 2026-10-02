@@ -27,11 +27,20 @@ Kiln renders the compose file the agent receives:
   written as the project `.env` and passed as `env`. `KILN_SITE_ID/SERVER_ID/DEPLOYMENT_ID/RELEASE_ID` are added.
 - Images pinned to digests where known (built images always; pulled images resolved on first deploy and recorded
   in the release so rollback is exact) **[decision]**.
-- **Public services**: `public_services: [{service, port, domain?}]`. For each, Kiln publishes
+- **Public services**: `public_services: [{service, port, domain?, health_check_path?}]`. For each, Kiln publishes
   `127.0.0.1:<allocated host port>:<port>` on that service (removing any other host port mapping for it) and Edge
-  routes the domain (or test domain `<service>-<slug>.<KILN_TEST_DOMAIN>` / `<slug>` for the first) to it. On
-  creation `domain` may also be a choice `{type: generated|test|custom, name?}`; a generated one is
+  routes the service's domains (and test domain `<service>-<slug>.<KILN_TEST_DOMAIN>` / `<slug>` for the first) to
+  it. On creation `domain` may also be a choice `{type: generated|test|custom, name?}`; a generated one is
   `<service>-<slug>.<leader-ip-with-dashes>.sslip.io` (docs/API.md → Domains and DNS).
+- **Edge per public service** (docs/plans/COMPOSE_APPS.md, phase 2): every public service's domains are Edge domain
+  rows (`compose_service`; the first public service is the site itself), so each service can have several domains
+  (generated / test / custom / Cloudflare names, automatic TLS, `www` redirects), Cloudflare records, proxy and cache
+  mode per domain, purge after deploy and tunnel routing. Redirects, basic auth, headers and function paths apply to
+  the whole site or to one service; IP lists per service (its allow list replaces the site's, its deny list adds).
+  The `domain` chosen in `public_services` becomes the service's first domain; afterwards `public_services[].domain`
+  mirrors the service's primary domain. The deploy health check requests each public service through its own
+  domains (`health_check_path`, else the site's check path for the first service and "any answer below 500" for the
+  others).
 - Labels `kiln.site`, `kiln.release`, `kiln.service` on every service (logs/metrics attribution).
 - **Policy** (org setting "Allow privileged compose", off by default): reject `privileged: true`, `network_mode: host`,
   `pid: host`, `cap_add` beyond a safe list, host bind mounts outside the release dir, `devices`, and
@@ -60,6 +69,8 @@ template is marked `stateful` and more than one server is picked. `MIGRATE`/lead
   CPU/mem, actions (restart, logs filtered to that service).
 - **Settings → Compose** section: source (repo path / inline editor with YAML syntax highlighting + validation +
   diff + history), public services (service picker from parsed compose + port + domain), policy status.
+- **Settings → Networking**: a service picker; domains, certificates and DNS checks per public service, rules for all
+  services or one.
 - Canvas card subtitle: `Compose · 3 services`; status aggregates service health.
 
 ---

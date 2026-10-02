@@ -16,6 +16,15 @@ interface ComposeSites
     /** Inline compose file (latest or a given version); null for repo sources / unknown sites. */
     public function content(string $siteId, ?int $version = null): ?ComposeVersionData;
 
+    /**
+     * Edge owns the domains of public services (edge_domains rows per service); it mirrors each service's first
+     * domain here so PublicService::$domain (and `public_services[].domain`) stays the read model. Services missing
+     * from $domains are left alone; null clears the domain. Saves quietly (no SiteUpdated).
+     *
+     * @param  array<string, ?string>  $domains  service => first domain
+     */
+    public function setPublicDomains(string $siteId, array $domains): void;
+
     /** The organization's "Allow privileged compose" setting (off by default). */
     public function allowsPrivileged(string $organizationId): bool;
 

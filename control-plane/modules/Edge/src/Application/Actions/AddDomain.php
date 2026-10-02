@@ -4,6 +4,7 @@ namespace Kiln\Edge\Application\Actions;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Kiln\Edge\Application\ComposeServiceDomains;
 use Kiln\Edge\Application\EdgeChanges;
 use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\WwwRedirect;
@@ -19,10 +20,15 @@ final class AddDomain
     public function __construct(
         private readonly EdgeChanges $changes,
         private readonly AuditLog $audit,
+        private readonly ComposeServiceDomains $services,
     ) {}
 
-    public function __invoke(SiteData $site, string $name, TlsMode $tls = TlsMode::Auto, WwwRedirect $www = WwwRedirect::None, ?string $certificateId = null, ?string $dnsCredentialId = null): Domain
+    /**
+     * @param  ?string  $service  public service of a compose site the domain routes to (null: the site / its primary service)
+     */
+    public function __invoke(SiteData $site, string $name, TlsMode $tls = TlsMode::Auto, WwwRedirect $www = WwwRedirect::None, ?string $certificateId = null, ?string $dnsCredentialId = null, ?string $service = null): Domain
     {
+        $service = ComposeServiceDomains::normalize($site, $service);
         $name = strtolower(rtrim(trim($name), '.'));
 
         if (preg_match(Domain::HOSTNAME, $name) !== 1 || strlen($name) > 253) {
@@ -36,12 +42,14 @@ final class AddDomain
         $this->validateDomainTls($site->organizationId, $site->id, $name, $tls, $www, $certificateId, $dnsCredentialId);
         $this->ensureHostsAvailable($name, $www);
 
-        $domain = DB::transaction(function () use ($site, $name, $tls, $www, $certificateId, $dnsCredentialId) {
-            $primary = ! Domain::query()->where('site_id', $site->id)->lockForUpdate()->exists();
+        $domain = DB::transaction(function () use ($site, $name, $tls, $www, $certificateId, $dnsCredentialId, $service) {
+            // Primary within the route: the site's own domains, or the service's.
+            $primary = ! ComposeServiceDomains::scope(Domain::query()->where('site_id', $site->id), $site, $service)->lockForUpdate()->exists();
 
             return Domain::query()->create([
                 'organization_id' => $site->organizationId,
                 'site_id' => $site->id,
+                'compose_service' => $service,
                 'name' => $name,
                 'is_primary' => $primary,
                 'www_redirect' => $www,
@@ -51,10 +59,11 @@ final class AddDomain
             ]);
         });
 
-        $this->audit->record('edge.domain_added', 'site', $site->id, ['domain' => $name, 'tls' => $tls->value], $site->organizationId);
+        $this->audit->record('edge.domain_added', 'site', $site->id, array_filter(['domain' => $name, 'tls' => $tls->value, 'service' => $service]), $site->organizationId);
 
         DomainAdded::dispatch($domain->id, $site->id, $site->organizationId, $name, $domain->is_primary);
         $this->changes->siteChanged($site->id);
+        $this->services->mirror($site);
 
         return $domain;
     }

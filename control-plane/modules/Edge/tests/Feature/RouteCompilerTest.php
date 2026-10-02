@@ -17,6 +17,7 @@ use Kiln\Edge\Domain\Models\LoadBalancer;
 use Kiln\Edge\Domain\Models\Mount;
 use Kiln\Edge\Domain\Models\Redirect;
 use Kiln\Edge\Domain\Models\SecurityRule;
+use Kiln\Edge\Domain\Models\ServiceSetting;
 use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Servers\Contracts\ServerType;
 use Kiln\Sites\Contracts\ComposeSource;
@@ -88,11 +89,53 @@ it('routes every public compose service: primary on the site domains, others on 
         ->and($primary->every(fn ($entry) => ! array_key_exists('health_uri', $entry)))->toBeTrue()
         ->and($primary->pluck('domains')->flatten()->all())->toContain('www.example.com', 'stack.sites.kiln.test');
 
+    // Domains still only kept in public_services (not imported as rows yet) are routed as before.
     expect(edge_entry($payload, "{$routeId}-svc-app"))->toMatchArray(['domains' => ['app.example.com'], 'upstreams' => [['dial' => '127.0.0.1:3000']], 'tls' => ['mode' => 'acme']])
-        ->and(edge_entry($payload, "{$routeId}-svc-grafana-ui-test"))->toMatchArray(['domains' => ['grafana-ui-stack.sites.kiln.test'], 'upstreams' => [['dial' => '127.0.0.1:3001']]])
-        ->and(edge_entry($payload, "{$routeId}-svc-api")['upstreams'])->toBe([['dial' => '127.0.0.1:3002']])
-        ->and(edge_entry($payload, "{$routeId}-svc-api-test")['domains'])->toBe(['api-stack.sites.kiln.test'])
+        ->and(edge_entry($payload, "{$routeId}-svc-grafana-ui"))->toMatchArray(['domains' => ['grafana-ui-stack.sites.kiln.test'], 'upstreams' => [['dial' => '127.0.0.1:3001']]])
+        ->and(edge_entry($payload, "{$routeId}-svc-api"))->toMatchArray(['domains' => ['api.example.com', 'api-stack.sites.kiln.test'], 'upstreams' => [['dial' => '127.0.0.1:3002']]])
         ->and(collect($payload['sites'])->pluck('id')->filter(fn ($id) => str_contains($id, 'pending'))->all())->toBe([]);
+});
+
+it('routes each public compose service on its own domain rows with its own rules', function () {
+    $site = edge_site($this->sites, $this->org, [$this->web->id], [
+        'slug' => 'stack', 'runtime' => SiteRuntime::Compose, 'appPort' => 3000, 'testDomain' => 'stack.kiln.test',
+        'compose' => new ComposeConfig(ComposeSource::Inline, null, [
+            new PublicService('web', 8080, null, 3000, null),
+            new PublicService('admin', 9000, null, 3001, 'admin-stack.sites.kiln.test'),
+        ]),
+    ]);
+    edge_domain($this->org, $site->id, 'example.com', ['is_primary' => true]);
+    edge_domain($this->org, $site->id, 'admin.example.com', ['compose_service' => 'admin', 'is_primary' => true, 'www_redirect' => WwwRedirect::ToApex]);
+    edge_domain($this->org, $site->id, 'ops.example.com', ['compose_service' => 'admin', 'tls_mode' => TlsMode::Internal]);
+    // Rules: the whole site, the admin service only, the primary service by name.
+    Header::query()->create(['site_id' => $site->id, 'name' => 'X-Frame-Options', 'value' => 'DENY']);
+    Header::query()->create(['site_id' => $site->id, 'compose_service' => 'admin', 'name' => 'X-Frame-Options', 'value' => 'SAMEORIGIN']);
+    SecurityRule::query()->create(['site_id' => $site->id, 'compose_service' => 'admin', 'username' => 'ops', 'password_hash' => 'h']);
+    Redirect::query()->create(['site_id' => $site->id, 'compose_service' => 'web', 'from' => '/old', 'to' => '/new', 'status' => 301]);
+    SiteSetting::query()->create(['site_id' => $site->id, 'allow_ips' => ['10.0.0.0/8'], 'deny_ips' => ['10.9.9.9/32']]);
+    ServiceSetting::query()->create(['site_id' => $site->id, 'service' => 'admin', 'allow_ips' => ['192.0.2.0/24'], 'deny_ips' => ['192.0.2.7/32']]);
+
+    $routeId = app(EdgeRoutes::class)->routeId($site->id);
+    $payload = edge_compile($this->web->id);
+    $site_ = edge_entry($payload, $routeId);
+    $admin = edge_entry($payload, "{$routeId}-svc-admin");
+    $adminInternal = edge_entry($payload, "{$routeId}-svc-admin-1");
+
+    expect($site_)->toMatchArray(['domains' => ['example.com', 'stack.kiln.test'], 'upstreams' => [['dial' => '127.0.0.1:3000']]])
+        ->and($site_['headers'])->toBe(['X-Frame-Options' => 'DENY'])
+        ->and($site_)->not->toHaveKey('basic_auth')
+        ->and($site_['redirects'])->toBe([['from' => '/old', 'to' => '/new', 'status' => 301]])
+        ->and($site_['allow_ips'])->toBe(['10.0.0.0/8'])
+        // The admin service: its rows (www redirect included) and its test domain, its header wins, its auth, its
+        // allow list instead of the site's, both deny lists; not the primary service's redirect.
+        ->and($admin)->toMatchArray(['domains' => ['admin.example.com', 'admin-stack.sites.kiln.test'], 'redirect_domains' => ['www.admin.example.com'], 'upstreams' => [['dial' => '127.0.0.1:3001']], 'tls' => ['mode' => 'acme']])
+        ->and($admin['headers'])->toBe(['X-Frame-Options' => 'SAMEORIGIN'])
+        ->and($admin['basic_auth'])->toBe([['username' => 'ops', 'password_hash' => 'h']])
+        ->and($admin)->not->toHaveKey('redirects')
+        ->and($admin['allow_ips'])->toBe(['192.0.2.0/24'])
+        ->and($admin['deny_ips'])->toBe(['10.9.9.9/32', '192.0.2.7/32'])
+        ->and($admin['access_log'])->toBe('stack')
+        ->and($adminInternal)->toMatchArray(['domains' => ['ops.example.com'], 'tls' => ['mode' => 'internal'], 'upstreams' => [['dial' => '127.0.0.1:3001']]]);
 });
 
 it('skips sites that cannot be routed and sites without hosts', function () {
@@ -262,6 +305,30 @@ it('routes a site path to a function: its local gateway on the same server, else
         ['path_prefix' => '/api/hooks', 'strip_prefix' => false, 'dial' => 'hooks-fn.example.com:443', 'tls_server_name' => 'hooks-fn.example.com', 'request_headers' => ['Host' => 'hooks-fn.example.com']],
         ['path_prefix' => '/api', 'strip_prefix' => true, 'dial' => '127.0.0.1:7070', 'request_headers' => ['X-Kiln-Function' => 'api-fn', 'X-Kiln-Client-IP' => '{http.vars.client_ip}']],
     ]);
+});
+
+it('serves a function path on one public service of a compose site', function () {
+    $site = edge_site($this->sites, $this->org, [$this->web->id], [
+        'id' => strtolower((string) Str::ulid()), 'slug' => 'stack', 'runtime' => SiteRuntime::Compose, 'appPort' => 3000, 'testDomain' => 'stack.kiln.test',
+        'compose' => new ComposeConfig(ComposeSource::Inline, null, [new PublicService('web', 80, null, 3000, 'stack.kiln.test'), new PublicService('admin', 9000, null, 3001, 'admin-stack.kiln.test')]),
+    ]);
+    $function = edge_site($this->sites, $this->org, [$this->web->id], ['id' => strtolower((string) Str::ulid()), 'slug' => 'api-fn', 'runtime' => SiteRuntime::Function]);
+    $mounts = app(PathMounts::class);
+
+    $mounts->create($function, $site->id, '/hooks', true, 'admin');
+    // The same path for the whole site is another mount; a service that is not public is refused.
+    $mounts->create($function, $site->id, '/hooks', false);
+    expect(fn () => $mounts->create($function, $site->id, '/x', false, 'redis'))->toThrow(ValidationException::class);
+
+    $routeId = strtolower($site->id);
+    $payload = edge_compile($this->web->id);
+    $web = edge_entry($payload, $routeId);
+    $admin = edge_entry($payload, "{$routeId}-svc-admin");
+
+    // The service's own mount wins over the site-wide one on the same path.
+    expect($admin['mounts'])->toHaveCount(1)
+        ->and($admin['mounts'][0])->toMatchArray(['path_prefix' => '/hooks', 'strip_prefix' => true])
+        ->and($web['mounts'][0])->toMatchArray(['path_prefix' => '/hooks', 'strip_prefix' => false]);
 });
 
 it('validates function paths and forgets them with their sites', function () {

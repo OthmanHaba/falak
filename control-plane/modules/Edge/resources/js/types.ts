@@ -8,9 +8,20 @@ export interface Option {
     label: string;
 }
 
+/** A public service of a compose site (primary first): each has domains and rules of its own. */
+export interface ComposeServiceOption {
+    service: string;
+    primary: boolean;
+    port: number;
+    test_domain: string | null;
+    health_check_path: string | null;
+}
+
 export interface EdgeDomain {
     id: string;
     name: string;
+    /** Compose site: the public service it routes to (null: the primary service, i.e. the site). */
+    service: string | null;
     is_primary: boolean;
     www_redirect: WwwRedirect;
     tls_mode: TlsMode;
@@ -75,6 +86,8 @@ export interface LoadBalancerConfig {
 export interface DomainsData {
     testDomain: string | null;
     slug: string;
+    /** Compose sites: their public services (empty for other sites). */
+    services: ComposeServiceOption[];
     domains: EdgeDomain[];
     certificates: EdgeCertificate[];
     dnsCredentials: DnsCredentialOption[];
@@ -91,10 +104,14 @@ export interface DomainsData {
 
 /** GET /sites/{site}/routing (JSON). */
 export interface RoutingData {
-    redirects: { id: string; from: string; to: string; status: number }[];
-    rules: { id: string; name: string | null; path: string | null; username: string }[];
-    headers: { id: string; name: string; value: string }[];
+    /** Compose sites: their public services (empty for other sites). Rows with `service` apply to that service only. */
+    services: ComposeServiceOption[];
+    redirects: { id: string; service: string | null; from: string; to: string; status: number }[];
+    rules: { id: string; service: string | null; name: string | null; path: string | null; username: string }[];
+    headers: { id: string; service: string | null; name: string; value: string }[];
     settings: { allow_ips: string[]; deny_ips: string[]; max_body_bytes: number | null; encode: boolean };
+    /** IP lists per compose service: its allow list replaces the site's, its deny list adds to it. */
+    serviceSettings: Record<string, { allow_ips: string[]; deny_ips: string[] }>;
     behindLoadBalancer: boolean;
     can: { manage: boolean };
 }

@@ -30,6 +30,33 @@ final class EloquentComposeSites implements ComposeSites
         return $row?->toData();
     }
 
+    public function setPublicDomains(string $siteId, array $domains): void
+    {
+        $site = Site::query()->find(strtolower($siteId));
+
+        if ($site === null || $site->runtime !== SiteRuntime::Compose) {
+            return;
+        }
+
+        $public = array_values(array_filter((array) $site->public_services, 'is_array'));
+        $changed = false;
+
+        foreach ($public as $i => $service) {
+            $name = (string) ($service['service'] ?? '');
+
+            if (! array_key_exists($name, $domains) || ($service['domain'] ?? null) === $domains[$name]) {
+                continue;
+            }
+
+            $public[$i]['domain'] = $domains[$name];
+            $changed = true;
+        }
+
+        if ($changed) {
+            Site::withoutEvents(fn () => $site->forceFill(['public_services' => $public])->save());
+        }
+    }
+
     public function allowsPrivileged(string $organizationId): bool
     {
         return OrganizationSettings::for($organizationId)->allow_privileged_compose;

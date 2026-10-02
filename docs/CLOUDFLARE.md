@@ -29,8 +29,8 @@ protection, edge cache, hidden server IP). Everything here works on Cloudflare's
 
 - **Records follow your domains.** Adding `shop.example.com` to a service creates one `A`/`AAAA` record per server it
   runs on (the load balancer of a load-balanced site), and for the `www` host when a www redirect is on. They change
-  when the service moves servers and disappear when the domain or service is deleted. Template (compose) services'
-  public domains get records too.
+  when the service moves servers and disappear when the domain or service is deleted. Every public service of a
+  compose (template) site has domains of its own, with records, proxy and cache settings like any domain.
 - **Only its own records.** Kiln tags each record it creates (`kiln:<id>` in the record's comment) and never changes
   anything else. If a name already has a record Kiln did not create, the domain shows a **conflict**: delete that
   record in Cloudflare, then click **Sync**.

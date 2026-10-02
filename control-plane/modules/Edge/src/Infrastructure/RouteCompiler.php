@@ -3,6 +3,7 @@
 namespace Kiln\Edge\Infrastructure;
 
 use Illuminate\Support\Collection;
+use Kiln\Edge\Application\ComposeServiceDomains;
 use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\InstallStatus;
 use Kiln\Edge\Domain\Models\Certificate;
@@ -15,6 +16,7 @@ use Kiln\Edge\Domain\Models\LoadBalancer;
 use Kiln\Edge\Domain\Models\Mount;
 use Kiln\Edge\Domain\Models\Redirect;
 use Kiln\Edge\Domain\Models\SecurityRule;
+use Kiln\Edge\Domain\Models\ServiceSetting;
 use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Edge\Domain\Models\Upstream;
 use Kiln\Edge\Infrastructure\Dns\CloudflareRanges;
@@ -180,20 +182,12 @@ final class RouteCompiler
             return [];
         }
 
+        // A compose site's own route serves its primary public service: rules for that service apply to it as well.
+        $primary = ComposeServiceDomains::primaryService($site);
         $groups = $this->domainGroups($site, $serverId, $role);
-        $rules = $this->rules($site->id, $role);
-
-        // Per-site HTTP access log (shipped to Loki as the site's kind=access records). Backends behind a load
-        // balancer only see the balancer's requests; the balancer logs them with the real client.
-        if ($role !== 'backend') {
-            $rules['access_log'] = $site->slug;
-
-            if (($mounts = $this->mounts($site, $serverId)) !== []) {
-                $rules['mounts'] = $mounts;
-            }
-        }
+        $rules = $this->routeRules($site, $serverId, $role, $primary);
         $routeId = self::routeId($site->id);
-        $entries = $role === 'direct' ? $this->composeServiceEntries($site, $routeId, $rules) : [];
+        $entries = $role === 'direct' ? $this->composeServiceEntries($site, $serverId, $routeId) : [];
         $n = 0;
 
         foreach ($groups as $group) {
@@ -212,15 +206,44 @@ final class RouteCompiler
     }
 
     /**
+     * Rules of one route: redirects, auth, headers and IP lists ({@see rules()}), the per-site access log and the
+     * function mounts. Backends behind a load balancer only see the balancer's requests; the balancer logs them with
+     * the real client.
+     *
+     * @param  'direct'|'backend'|'lb'  $role
+     * @param  ?string  $service  compose service the route serves (null: a site without services)
+     * @return array<string, mixed>
+     */
+    private function routeRules(SiteData $site, string $serverId, string $role, ?string $service): array
+    {
+        $rules = $this->rules($site->id, $role, $service);
+
+        if ($role !== 'backend') {
+            // Per-site HTTP access log (shipped to Loki as the site's kind=access records).
+            $rules['access_log'] = $site->slug;
+
+            if (($mounts = $this->mounts($site, $serverId, $service)) !== []) {
+                $rules['mounts'] = $mounts;
+            }
+        }
+
+        return $rules;
+    }
+
+    /**
      * Paths of the site served by functions (edge.caddy.apply `mounts`, longest prefix first): the local function
-     * gateway when the function runs on this server, else the function's own domain over HTTPS.
+     * gateway when the function runs on this server, else the function's own domain over HTTPS. A compose site's
+     * mounts may be limited to one service's routes.
      *
      * @return list<array<string, mixed>>
      */
-    private function mounts(SiteData $site, string $serverId): array
+    private function mounts(SiteData $site, string $serverId, ?string $service = null): array
     {
         $out = [];
-        $mounts = Mount::query()->where('site_id', $site->id)->get()->sortByDesc(fn (Mount $m) => strlen($m->path_prefix));
+        $mounts = ComposeServiceDomains::ruleScope(Mount::query()->where('site_id', $site->id), $service)->get()
+            // A service-specific mount wins over a site-wide one on the same path.
+            ->sortBy(fn (Mount $m) => $m->compose_service === null ? 1 : 0)->unique('path_prefix')
+            ->sortByDesc(fn (Mount $m) => strlen($m->path_prefix));
 
         foreach ($mounts as $mount) {
             $function = app(SiteDirectory::class)->find($mount->function_site_id);
@@ -260,36 +283,56 @@ final class RouteCompiler
     }
 
     /**
-     * Docker Compose: every public service after the first gets its own route — its custom domain and/or
-     * <service>-<slug>.<test domain> — proxied to 127.0.0.1:<host port>. (The first service is the site's
-     * primary route: site domains + <slug> test domain → app port; its custom domain is added here.)
+     * Docker Compose: every public service after the first gets its own routes — its domains (edge_domains rows for
+     * the service, grouped by TLS like a site's, www redirects included) and <service>-<slug>.<test domain> — proxied
+     * to 127.0.0.1:<host port>, with the rules of that service. (The first service is the site's own route: site
+     * domains + <slug> test domain → app port.) A domain still only kept in `public_services` (not imported yet) is
+     * routed as before.
      *
-     * @param  array<string, mixed>  $rules
      * @return list<array<string, mixed>>
      */
-    private function composeServiceEntries(SiteData $site, string $routeId, array $rules): array
+    private function composeServiceEntries(SiteData $site, string $serverId, string $routeId): array
     {
-        if ($site->runtime !== SiteRuntime::Compose || $site->compose === null) {
-            return [];
-        }
-
         $entries = [];
-        $testTls = ['mode' => $this->testDomainTls === 'internal' ? 'internal' : 'acme'];
+        $legacyTls = fn (string $host) => $this->acme($host);
 
-        foreach ($site->compose->publicServices as $i => $public) {
+        foreach (ComposeServiceDomains::publicServices($site) as $i => $public) {
             if ($public->hostPort === null) {
                 continue;
             }
 
             $label = trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($public->service)), '-') ?: 'svc';
             $handler = ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => "127.0.0.1:{$public->hostPort}"]]];
+            $legacy = $public->domain !== null && ! Domain::query()->where('name', $public->domain)->exists() ? $public->domain : null;
 
-            if ($public->domain !== null) {
-                $entries[] = ['id' => "{$routeId}-svc-{$label}", 'domains' => [$public->domain], 'tls' => $this->acme($public->domain)] + $handler + $rules;
+            if ($i === 0) {
+                if ($legacy !== null) {
+                    $entries[] = ['id' => "{$routeId}-svc-{$label}", 'domains' => [$legacy], 'tls' => $legacyTls($legacy)] + $handler + $this->routeRules($site, $serverId, 'direct', $public->service);
+                }
+
+                continue;
             }
 
-            if ($i > 0 && $public->testDomain !== null) {
-                $entries[] = ['id' => "{$routeId}-svc-{$label}-test", 'domains' => [strtolower($public->testDomain)], 'tls' => $testTls] + $handler + $rules;
+            $rules = $this->routeRules($site, $serverId, 'direct', $public->service);
+            $groups = $this->domainGroups($site, $serverId, 'direct', $public->service, $public->testDomain);
+
+            if ($legacy !== null) {
+                $tls = $legacyTls($legacy);
+                $same = array_search($tls, array_column($groups, 'tls'), true);
+                $same !== false
+                    ? array_unshift($groups[$same]['domains'], $legacy)
+                    : array_unshift($groups, ['domains' => [$legacy], 'redirect_domains' => [], 'tls' => $tls]);
+            }
+
+            foreach (array_values($groups) as $n => $group) {
+                $entry = ['id' => $n === 0 ? "{$routeId}-svc-{$label}" : "{$routeId}-svc-{$label}-{$n}", 'domains' => $group['domains']];
+
+                if ($group['redirect_domains'] !== []) {
+                    $entry['redirect_domains'] = $group['redirect_domains'];
+                }
+
+                $entry['tls'] = $group['tls'];
+                $entries[] = $entry + $handler + $rules;
             }
         }
 
@@ -425,18 +468,20 @@ final class RouteCompiler
     }
 
     /**
+     * Domains of one route grouped by TLS configuration: the site's own (its primary compose service's), or those of
+     * another public service of a compose site ($service, with its own test domain).
+     *
      * @param  'direct'|'backend'|'lb'  $role
      * @return list<array{domains: list<string>, redirect_domains: list<string>, tls: array<string, mixed>}>
      */
-    private function domainGroups(SiteData $site, string $serverId, string $role): array
+    private function domainGroups(SiteData $site, string $serverId, string $role, ?string $service = null, ?string $serviceTestDomain = null): array
     {
-        $domains = Domain::query()
-            ->with('dnsCredential')
-            ->where('site_id', $site->id)
+        $domains = ComposeServiceDomains::scope(Domain::query()->with('dnsCredential')->where('site_id', $site->id), $site, $service)
             ->where('organization_id', $site->organizationId)
             ->orderByDesc('is_primary')
             ->orderBy('name')
             ->get();
+        $testDomain = $service === null ? $site->testDomain : $serviceTestDomain;
 
         $installed = CertificateInstall::query()
             ->where('server_id', $serverId)
@@ -472,9 +517,9 @@ final class RouteCompiler
             $add(json_encode($tls, JSON_THROW_ON_ERROR), $tls, $domain->servedHost(), $domain->redirectHost());
         }
 
-        if ($site->testDomain !== null) {
+        if ($testDomain !== null) {
             $tls = ['mode' => $role === 'backend' ? 'off' : ($this->testDomainTls === 'internal' ? 'internal' : 'acme')];
-            $add(json_encode($tls, JSON_THROW_ON_ERROR), $tls, strtolower($site->testDomain), null);
+            $add(json_encode($tls, JSON_THROW_ON_ERROR), $tls, strtolower($testDomain), null);
         }
 
         return array_values($groups);
@@ -505,26 +550,31 @@ final class RouteCompiler
     }
 
     /**
-     * Redirects, headers, auth and site settings.
+     * Redirects, headers, auth and site settings. For a compose service's route ($service): the site-wide rows plus
+     * that service's (a service's header wins over the site's of the same name), the service's allow list instead of
+     * the site's when it has one, and both deny lists.
      *
      * @param  'direct'|'backend'|'lb'  $role
      * @return array<string, mixed>
      */
-    private function rules(string $siteId, string $role): array
+    private function rules(string $siteId, string $role, ?string $service = null): array
     {
         $rules = [];
         $settings = SiteSetting::for($siteId);
+        $serviceSettings = $service !== null ? ServiceSetting::for($siteId, $service) : null;
         // Behind a load balancer the LB enforces redirects, auth and IP rules (backends only see the LB's IP).
         $edge = $role !== 'backend';
+        $scoped = fn ($query) => ComposeServiceDomains::ruleScope($query->where('site_id', $siteId), $service);
 
-        $headers = Header::query()->where('site_id', $siteId)->orderBy('name')->pluck('value', 'name')->all();
+        $headers = $scoped(Header::query())->orderByRaw('compose_service is not null')->orderBy('name')->pluck('value', 'name')->all();
+        ksort($headers);
 
         if ($headers !== []) {
             $rules['headers'] = $headers;
         }
 
         if ($edge) {
-            $auth = SecurityRule::query()->where('site_id', $siteId)->orderByRaw('path is not null')->orderBy('path')->orderBy('username')->get()
+            $auth = $scoped(SecurityRule::query())->orderByRaw('path is not null')->orderBy('path')->orderBy('username')->get()
                 ->map(fn (SecurityRule $rule) => array_filter([
                     'username' => $rule->username,
                     'password_hash' => $rule->password_hash,
@@ -537,7 +587,7 @@ final class RouteCompiler
                 $rules['basic_auth'] = $auth;
             }
 
-            $redirects = Redirect::query()->where('site_id', $siteId)->orderBy('position')->orderBy('id')->get()
+            $redirects = $scoped(Redirect::query())->orderBy('position')->orderBy('id')->get()
                 ->map(fn (Redirect $redirect) => ['from' => $redirect->from, 'to' => $redirect->to, 'status' => $redirect->status])
                 ->values()
                 ->all();
@@ -546,12 +596,15 @@ final class RouteCompiler
                 $rules['redirects'] = $redirects;
             }
 
-            if ($settings->deny_ips !== []) {
-                $rules['deny_ips'] = array_values($settings->deny_ips);
+            $deny = array_values(array_unique([...$settings->deny_ips, ...($serviceSettings->deny_ips ?? [])]));
+            $allow = array_values($serviceSettings !== null && $serviceSettings->allow_ips !== [] ? $serviceSettings->allow_ips : $settings->allow_ips);
+
+            if ($deny !== []) {
+                $rules['deny_ips'] = $deny;
             }
 
-            if ($settings->allow_ips !== []) {
-                $rules['allow_ips'] = array_values($settings->allow_ips);
+            if ($allow !== []) {
+                $rules['allow_ips'] = $allow;
             }
         }
 

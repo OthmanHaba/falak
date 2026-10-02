@@ -13,6 +13,7 @@ use Kiln\Edge\Domain\Enums\WwwRedirect;
  * @property string $id
  * @property string $organization_id
  * @property string $site_id
+ * @property ?string $compose_service public service of a compose site (null: the site, i.e. its primary service)
  * @property string $name
  * @property bool $is_primary
  * @property WwwRedirect $www_redirect
@@ -109,6 +110,7 @@ class Domain extends Model
             wwwRedirect: $this->www_redirect->value,
             tls: $this->tls_mode,
             certificateId: $this->certificate_id,
+            service: $this->compose_service,
         );
     }
 }

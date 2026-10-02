@@ -4,6 +4,7 @@ namespace Kiln\Edge\Infrastructure;
 
 use Illuminate\Validation\ValidationException;
 use Kiln\Edge\Application\Actions\AddDomain;
+use Kiln\Edge\Application\ComposeServiceDomains;
 use Kiln\Edge\Application\DnsTargets;
 use Kiln\Edge\Application\GeneratedDomains;
 use Kiln\Edge\Domain\Enums\WwwRedirect;
@@ -26,12 +27,27 @@ final class EloquentSiteDomains implements SiteDomains
             return [];
         }
 
-        return Domain::query()
+        // The site's own route: a compose site's other public services have primary domains of their own.
+        $primary = Domain::query()
             ->whereIn('site_id', $siteIds)
             ->where('is_primary', true)
-            ->get(['site_id', 'name', 'www_redirect'])
-            ->mapWithKeys(fn (Domain $domain) => [$domain->site_id => $domain->servedHost()])
-            ->all();
+            ->get(['site_id', 'compose_service', 'name', 'www_redirect'])
+            ->groupBy('site_id');
+        $out = [];
+
+        foreach ($primary as $siteId => $domains) {
+            $domain = $domains->firstWhere('compose_service', null);
+
+            if ($domain === null && ($site = app(SiteDirectory::class)->find((string) $siteId)) !== null) {
+                $domain = $domains->firstWhere('compose_service', ComposeServiceDomains::primaryService($site));
+            }
+
+            if ($domain !== null) {
+                $out[(string) $siteId] = $domain->servedHost();
+            }
+        }
+
+        return $out;
     }
 
     public function resolveChoice(string $organizationId, ?DomainChoice $choice, string $label, array $serverIds, string $field, ?string $siteId = null): ?string

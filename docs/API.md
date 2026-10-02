@@ -118,12 +118,23 @@ site only gets its test domain (as before). A name used by another site is a `42
 
 Docker Compose sites (`runtime: compose`, `framework` optional — defaults to `docker`; docs/COMPOSE_TEMPLATES.md §5):
 `compose_source` `repo` (`compose_file`, default `compose.yaml` then `docker-compose.yml`, built by kiln-builder) or
-`inline` (`compose_content`, versioned; no `build:`), `public_services` `[{service, port, domain?}]` (Kiln allocates a
-loopback host port per service; `domain` is a name or a domain choice — generated names are
-`<service>-<slug>.<ip-with-dashes>.<suffix>`, `null` / `{"type": "test"}` means the test domain), `variables` `{KEY: value}` (initial environment; `${{ service.KEY }}` allowed) and
+`inline` (`compose_content`, versioned; no `build:`), `public_services` `[{service, port, domain?, health_check_path?}]`
+(Kiln allocates a loopback host port per service; `domain` is a name or a domain choice — generated names are
+`<service>-<slug>.<ip-with-dashes>.<suffix>`, `null` / `{"type": "test"}` means the test domain; `health_check_path`
+is the path the deploy health check requests through the service's domain — without it the first service uses the
+site's check path and the others accept any answer below 500), `variables` `{KEY: value}` (initial environment; `${{ service.KEY }}` allowed) and
 `template` `{slug, version, source: catalog|custom}`. Inline files must pass the compose policy (`422` otherwise) unless
 the organization allows privileged compose. The site resource then carries `compose {source, file, version,
-public_services[] (with host_port, test_domain, url), template}`.
+public_services[] (with host_port, test_domain, url, health_check_path), template}`.
+
+Every public service has domains of its own (Edge `edge_domains` rows with `compose_service`; the first public service
+is the site itself). A `domain` chosen here becomes the service's first domain row; after that the service's domains
+are managed like a site's — panel Settings → Networking, service picker — and `public_services[].domain` reports the
+service's primary domain (read-only mirror). Panel endpoints take an optional `service` (a public service name; null
+or the first service's name = the site): `POST /sites/{site}/domains`, `POST /sites/{site}/redirects`,
+`POST /sites/{site}/security-rules`, `POST /sites/{site}/headers`, `PUT /sites/{site}/edge-settings` (its IP lists
+only: the service's allow list replaces the site's, its deny list adds to it) and a function's
+`POST /sites/{function}/function-mounts`. `GET /sites/{site}/domains|routing` list `services` and each row's `service`.
 
 ### `GET /api/v1/sites/{site}/env` — `sites.env.view`
 Returns the latest environment version as dotenv (audited as a reveal).

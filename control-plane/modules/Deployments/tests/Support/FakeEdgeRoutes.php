@@ -50,9 +50,12 @@ final class FakeEdgeRoutes implements EdgeRoutes
         return "site-{$siteId}";
     }
 
-    public function domainsFor(string $siteId): array
+    /** Domains of a compose service are keyed "<site id>:<service>" in $domains. */
+    public function domainsFor(string $siteId, ?string $service = null): array
     {
-        return array_map(fn (string $name) => new DomainData('d-'.$name, $siteId, $name, true, 'none', $this->domainTls[$name] ?? TlsMode::Auto, null), $this->domains[$siteId] ?? []);
+        $key = $service === null ? $siteId : "{$siteId}:{$service}";
+
+        return array_map(fn (string $name) => new DomainData('d-'.$name, $siteId, $name, true, 'none', $this->domainTls[$name] ?? TlsMode::Auto, null, $service), $this->domains[$key] ?? []);
     }
 
     public function testDomainTls(): TlsMode
