@@ -294,6 +294,59 @@
           "default": false
         }
       }
+    },
+    "components": {
+      "type": "array",
+      "description": "Machine-check decisions (feature provision.v2). The plan already reflects them (adopted engines have no apt packages, an adopted swap / hostname has no swap_mb / hostname); the agent additionally never installs an adopted component's packages, verifies them in an adopt:<name> step, keeps an adopted swap and hostname, and writes no unattended-upgrades config when that is adopted.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "decision"
+        ],
+        "properties": {
+          "name": {
+            "enum": [
+              "base",
+              "docker",
+              "database",
+              "cache",
+              "edge",
+              "php",
+              "node",
+              "ssh",
+              "firewall",
+              "swap",
+              "hostname",
+              "unattended_upgrades",
+              "fail2ban"
+            ]
+          },
+          "decision": {
+            "enum": [
+              "install",
+              "adopt",
+              "complete"
+            ],
+            "description": "install: nothing there; adopt: a compatible one is there (use it, never install); complete: only the missing pieces are in apt.packages"
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9+.-]*$"
+            },
+            "uniqueItems": true,
+            "description": "adopt: the installed packages that make up the component (verified, never installed); complete: the packages being added"
+          },
+          "service": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9@._-]+$",
+            "description": "The component's systemd service (enabled and started through services)"
+          }
+        }
+      }
     }
   },
   "$defs": {

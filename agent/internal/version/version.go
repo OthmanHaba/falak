@@ -41,6 +41,9 @@ var Features = []string{
 	"docker.networks.create",
 	// docker.compose.up services: a stack's bootstrap pass starts only the services its split-out sites use.
 	"compose.up.services",
+	// provision.inspect (read-only machine check) and provision.apply components (adopted components are verified,
+	// never installed).
+	"provision.v2",
 }
 
 var (
