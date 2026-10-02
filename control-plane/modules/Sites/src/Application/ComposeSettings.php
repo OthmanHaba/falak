@@ -254,14 +254,16 @@ final class ComposeSettings
      * @param  list<array<string, mixed>>  $publicServices
      * @param  array<string, mixed>  $variables
      *
+     * Returns the merged project (YAML), or null when Kiln can't read the repository.
+     *
      * @throws ValidationException
      */
-    public function verifyRepository(string $connectionId, string $repository, string $branch, array $files, array $profiles, array $publicServices, array $variables): void
+    public function verifyRepository(string $connectionId, string $repository, string $branch, array $files, array $profiles, array $publicServices, array $variables): ?string
     {
         $result = $this->inspection->inspect($connectionId, $repository, $branch, $files, $profiles);
 
         if (($result['no_api'] ?? false) === true) {
-            return;
+            return null;
         }
 
         if (($result['errors'] ?? []) !== []) {
@@ -286,6 +288,8 @@ final class ComposeSettings
         if ($missing !== []) {
             throw ValidationException::withMessages(['variables' => 'The compose project needs '.implode(', ', $missing).'.']);
         }
+
+        return isset($result['original']) ? (string) $result['original'] : null;
     }
 
     /**
@@ -295,7 +299,7 @@ final class ComposeSettings
      * @param  list<array{service: string, mode: string, engine: ?string, database_id: ?string, site: array<string, mixed>}>  $extract
      * @return list<string> warnings
      */
-    public function extract(Site $site, array $extract): array
+    public function extract(Site $site, array $extract, ?string $compose = null): array
     {
         $extraction = app(ComposeServiceExtraction::class);
         $warnings = [];
@@ -303,9 +307,9 @@ final class ComposeSettings
         foreach ($extract as $item) {
             try {
                 if ($item['mode'] === ComposeConfig::MODE_DATABASE) {
-                    $extraction->toDatabase($site->id, $item['service'], $item['database_id'], (string) $item['engine']);
+                    $extraction->toDatabase($site->id, $item['service'], $item['database_id'], (string) $item['engine'], $compose);
                 } else {
-                    $extraction->toSite($site->id, $item['service'], $item['site']);
+                    $extraction->toSite($site->id, $item['service'], $item['site'], $compose);
                 }
             } catch (ValidationException $e) {
                 $warnings[] = "{$item['service']} stays in the stack: ".collect($e->errors())->flatten()->first();

@@ -163,7 +163,7 @@ it('extracts services through the extraction contract and drops them from the pu
     {
         public array $calls = [];
 
-        public function toDatabase(string $siteId, string $service, ?string $databaseId, string $engine): DatabaseData
+        public function toDatabase(string $siteId, string $service, ?string $databaseId, string $engine, ?string $compose = null): DatabaseData
         {
             $this->calls[] = [$service, $engine];
             $site = Site::query()->findOrFail($siteId);
@@ -172,7 +172,7 @@ it('extracts services through the extraction contract and drops them from the pu
             return new DatabaseData('01j9zq4n8v2m6r0t3w5y7b9d1f', $site->organization_id, $site->targets()->first()->server_id, 'shop', 'shop', 'postgresql', '17', 5432, 'active', $siteId);
         }
 
-        public function toSite(string $siteId, string $service, array $site): SiteData
+        public function toSite(string $siteId, string $service, array $site, ?string $compose = null): SiteData
         {
             throw new LogicException('not used');
         }

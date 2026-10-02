@@ -12,12 +12,12 @@ use Kiln\Sites\Contracts\Data\SiteData;
  */
 final class UnavailableComposeServiceExtraction implements ComposeServiceExtraction
 {
-    public function toDatabase(string $siteId, string $service, ?string $databaseId, string $engine): DatabaseData
+    public function toDatabase(string $siteId, string $service, ?string $databaseId, string $engine, ?string $compose = null): DatabaseData
     {
         throw ValidationException::withMessages(["compose_services.{$service}.mode" => 'Replacing a compose service with a Kiln database is not available yet.']);
     }
 
-    public function toSite(string $siteId, string $service, array $site): SiteData
+    public function toSite(string $siteId, string $service, array $site, ?string $compose = null): SiteData
     {
         throw ValidationException::withMessages(["compose_services.{$service}.mode" => 'Running a compose service as its own Kiln site is not available yet.']);
     }

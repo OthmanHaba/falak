@@ -69,7 +69,7 @@ final class CreateSite
 
         // The new flow (several files / decisions) checks the repository before creating anything.
         if ($project !== null && array_key_exists('compose_files', $data) && isset($data['source_connection_id'], $data['repository'])) {
-            $this->composeSettings->verifyRepository((string) $data['source_connection_id'], (string) $data['repository'], (string) ($data['branch'] ?? 'main'),
+            $project['yaml'] = $this->composeSettings->verifyRepository((string) $data['source_connection_id'], (string) $data['repository'], (string) ($data['branch'] ?? 'main'),
                 $project['files'], $project['profiles'], array_values((array) ($data['public_services'] ?? [])), (array) ($data['variables'] ?? []));
         }
 
@@ -262,7 +262,7 @@ final class CreateSite
 
         // Services the user moved out of the stack (Kiln databases, own sites) are created once the site is placed.
         if (($compose['project']['extract'] ?? []) !== []) {
-            array_push($this->warnings, ...$this->composeSettings->extract($site, $compose['project']['extract']));
+            array_push($this->warnings, ...$this->composeSettings->extract($site, $compose['project']['extract'], $compose['project']['yaml'] ?? null));
         }
 
         return $site->refresh()->load('targets');

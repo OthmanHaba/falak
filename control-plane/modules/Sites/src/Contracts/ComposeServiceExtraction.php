@@ -15,11 +15,12 @@ interface ComposeServiceExtraction
 {
     /**
      * Create (or link $databaseId) a Kiln database on the site's leader for the service, record
-     * `compose_services[service] = {mode: database, database_id}` and the variable rewrites.
+     * `compose_services[service] = {mode: database, database_id}` and the variable rewrites. $compose is the merged
+     * compose project (YAML) when known.
      *
      * @throws ValidationException
      */
-    public function toDatabase(string $siteId, string $service, ?string $databaseId, string $engine): DatabaseData;
+    public function toDatabase(string $siteId, string $service, ?string $databaseId, string $engine, ?string $compose = null): DatabaseData;
 
     /**
      * Create a Kiln site for the service (framework/runtime the user picked, root directory = the service's build
@@ -27,10 +28,11 @@ interface ComposeServiceExtraction
      * `{mode: site, site_id}`.
      *
      * @param  array<string, mixed>  $site  framework, runtime, name, …
+     * @param  ?string  $compose  the merged compose project (YAML) when known, to read the service's environment
      *
      * @throws ValidationException
      */
-    public function toSite(string $siteId, string $service, array $site): SiteData;
+    public function toSite(string $siteId, string $service, array $site, ?string $compose = null): SiteData;
 
     /**
      * Variable name → replacement (`${{ db.DATABASE_URL }}`, the internal URL of a split-out site) for the stack's

@@ -61,7 +61,7 @@ final class UpdateComposeSettings
         $project = $source === ComposeSource::Repo ? $this->settings->project($data, $site) : null;
 
         if ($project !== null && array_key_exists('compose_files', $data) && $site->source_connection_id !== null && $site->repository !== null) {
-            $this->settings->verifyRepository((string) $site->source_connection_id, (string) $site->repository, (string) ($site->branch ?: 'main'),
+            $project['yaml'] = $this->settings->verifyRepository((string) $site->source_connection_id, (string) $site->repository, (string) ($site->branch ?: 'main'),
                 $project['files'], $project['profiles'], array_values(array_map(fn ($p) => (array) $p, $public)), (array) $site->latestEnvironment?->variables);
         }
 
@@ -102,7 +102,7 @@ final class UpdateComposeSettings
             return $changed;
         });
 
-        $warnings = ($project['extract'] ?? []) !== [] ? $this->settings->extract($site, $project['extract']) : [];
+        $warnings = ($project['extract'] ?? []) !== [] ? $this->settings->extract($site, $project['extract'], $project['yaml'] ?? null) : [];
 
         if (($project['extract'] ?? []) !== []) {
             $changed[] = 'compose_services';

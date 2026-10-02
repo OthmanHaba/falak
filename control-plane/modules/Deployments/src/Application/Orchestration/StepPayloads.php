@@ -11,6 +11,7 @@ use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Fleet\Contracts\AgentDirectory;
 use Kiln\Projects\Contracts\VariableReferences;
+use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\Data\SharedPath;
 use Kiln\Sites\Contracts\Data\SiteData;
@@ -32,6 +33,7 @@ final class StepPayloads
         private readonly ComposeSites $compose,
         private readonly FunctionSources $functions,
         private readonly AgentDirectory $agents,
+        private readonly ComposeServiceExtraction $extraction,
     ) {}
 
     // ---- Docker Compose (docs/COMPOSE_TEMPLATES.md §1.4) -------------------------------------------------------
@@ -84,7 +86,7 @@ final class StepPayloads
 
         $data = [
             'yaml' => $rendered->yaml,
-            'env' => [...$this->releaseVariables($site), ...array_filter([
+            'env' => [...$this->composeVariables($site), ...array_filter([
                 'KILN_SITE_ID' => self::upper($site->id),
                 'KILN_DEPLOYMENT_ID' => self::upper($deployment->id),
                 'KILN_RELEASE_ID' => self::upper($deployment->release_id),
@@ -444,6 +446,21 @@ final class StepPayloads
     public function releaseVariables(SiteData $site): array
     {
         return $this->resolved($site, $this->sites->environment($site->id)?->variables ?? []);
+    }
+
+    /**
+     * A compose release's variables: the site's, with the stack variables that pointed at services moved out of the
+     * stack (Kiln databases, own sites) replaced by their rewrites, then resolved like any `${{ }}` reference.
+     *
+     * @return array<string, string>
+     *
+     * @throws RuntimeException
+     */
+    private function composeVariables(SiteData $site): array
+    {
+        $variables = $this->sites->environment($site->id)?->variables ?? [];
+
+        return $this->resolved($site, [...$variables, ...$this->extraction->rewrites($site->id)]);
     }
 
     /**
