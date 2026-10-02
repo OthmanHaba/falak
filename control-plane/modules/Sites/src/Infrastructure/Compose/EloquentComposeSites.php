@@ -75,15 +75,25 @@ final class EloquentComposeSites implements ComposeSites
                 // Decisions recorded before extraction checked them: only what the agent accepts, never a failed deploy.
                 $names = ComposeNetworks::check($names)['networks'];
                 $declared = (array) ($decision['network_aliases'] ?? []);
+                // Networks the stack's project owns (key per real name); older decisions: its default network.
+                $owned = array_key_exists('compose_networks', $decision)
+                    ? array_filter((array) $decision['compose_networks'], 'is_string')
+                    : ["{$stack->slug}_default" => 'default'];
 
-                return array_map(function (string $name) use ($service, $declared) {
+                return array_map(function (string $name) use ($service, $declared, $owned, $stack) {
                     // The service's name, then the aliases it declared on that network (what the agent accepts).
                     $aliases = array_values(array_unique(array_filter(
                         array_map('strval', [(string) $service, ...array_filter((array) ($declared[$name] ?? []), 'is_scalar')]),
                         fn (string $alias) => ComposeNetworks::validAlias($alias),
                     )));
+                    $key = $owned[$name] ?? null;
 
-                    return array_filter(['name' => $name, 'aliases' => array_slice($aliases, 0, ComposeNetworks::MAX_ALIASES)]);
+                    return array_filter([
+                        'name' => $name,
+                        'aliases' => array_slice($aliases, 0, ComposeNetworks::MAX_ALIASES),
+                        // The agent creates it the way Compose would when the stack hasn't run yet (docker.networks.create).
+                        'compose' => $key !== null && ComposeNetworks::validAlias($key) ? ['project' => $stack->slug, 'network' => $key] : null,
+                    ]);
                 }, $names);
             }
         }

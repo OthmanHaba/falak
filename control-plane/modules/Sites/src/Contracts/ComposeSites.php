@@ -37,7 +37,10 @@ interface ComposeSites
      * services and it keep resolving each other. Empty when the site isn't split out of a stack, the service was on no
      * stack network (`network_mode`), the stack doesn't run on that server, or the stack is gone.
      *
-     * @return list<array{name: string, aliases: list<string>}>
+     * Networks the stack's compose project owns carry `compose` {project, network}: an agent creates a missing one with
+     * Compose's labels, so the site can deploy before the stack's first `up` (a service split out at creation).
+     *
+     * @return list<array{name: string, aliases: list<string>, compose?: array{project: string, network: string}}>
      */
     public function stackNetworks(string $siteId, string $serverId): array;
 

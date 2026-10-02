@@ -162,8 +162,10 @@ it('lets a split-out Docker service join the stack networks on the stack servers
     $site = $this->extraction->toSite($this->stack->id, 'app', ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker'], SHOP_STACK);
 
     $network = $this->stack->slug.'_default';
-    expect($this->stack->refresh()->compose_services['app'])->toMatchArray(['networks' => [$network], 'uses' => ['cache', 'db']])
-        ->and(app(ComposeSites::class)->stackNetworks($site->id, $this->server->id))->toBe([['name' => $network, 'aliases' => ['app']]])
+    // The stack's project owns its default network: an agent creates it with Compose's labels when the site deploys first.
+    $owned = ['project' => $this->stack->slug, 'network' => 'default'];
+    expect($this->stack->refresh()->compose_services['app'])->toMatchArray(['networks' => [$network], 'compose_networks' => [$network => 'default'], 'uses' => ['cache', 'db']])
+        ->and(app(ComposeSites::class)->stackNetworks($site->id, $this->server->id))->toBe([['name' => $network, 'aliases' => ['app'], 'compose' => $owned]])
         // A server the stack doesn't run on: nothing to join there.
         ->and(app(ComposeSites::class)->stackNetworks($site->id, '01j9zq4n8v2m6r0t3w5y7b9d1f'))->toBe([])
         // Not split out of a stack.
@@ -171,9 +173,9 @@ it('lets a split-out Docker service join the stack networks on the stack servers
 
     // Decisions recorded before networks were: the stack's default network.
     $services = $this->stack->compose_services;
-    unset($services['app']['networks']);
+    unset($services['app']['networks'], $services['app']['compose_networks']);
     $this->stack->forceFill(['compose_services' => $services])->save();
-    expect(app(ComposeSites::class)->stackNetworks($site->id, $this->server->id))->toBe([['name' => $network, 'aliases' => ['app']]]);
+    expect(app(ComposeSites::class)->stackNetworks($site->id, $this->server->id))->toBe([['name' => $network, 'aliases' => ['app'], 'compose' => $owned]]);
 
     // The stack is gone: the site runs on its own network only.
     $this->stack->delete();
@@ -208,13 +210,31 @@ YAML;
         'network_aliases' => ['shop-back' => ['api', 'bad alias']],
         'uses' => ['cache'],
     ])
+        // A `name:` override is still the project's network (Compose creates and labels it as `back`).
         ->and(app(ComposeSites::class)->stackNetworks($app->id, $this->server->id))->toBe([
-            ['name' => 'shop-back', 'aliases' => ['app', 'api']],
-            ['name' => $default, 'aliases' => ['app']],
+            ['name' => 'shop-back', 'aliases' => ['app', 'api'], 'compose' => ['project' => $this->stack->slug, 'network' => 'back']],
+            ['name' => $default, 'aliases' => ['app'], 'compose' => ['project' => $this->stack->slug, 'network' => 'default']],
         ])
         // network_mode: none — on no stack network, so not on the default one either.
         ->and($this->stack->compose_services['sidecar']['networks'])->toBe([])
         ->and(app(ComposeSites::class)->stackNetworks($sidecar->id, $this->server->id))->toBe([]);
+});
+
+it('never asks agents to create an external network a split-out service joins', function () {
+    $yaml = <<<'YAML'
+services:
+  app:
+    image: api
+    networks: [shared, default]
+networks:
+  shared: { external: true }
+YAML;
+    $app = $this->extraction->toSite($this->stack->id, 'app', ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker'], $yaml);
+
+    expect(app(ComposeSites::class)->stackNetworks($app->id, $this->server->id))->toBe([
+        ['name' => 'shared', 'aliases' => ['app']],
+        ['name' => $this->stack->slug.'_default', 'aliases' => ['app'], 'compose' => ['project' => $this->stack->slug, 'network' => 'default']],
+    ]);
 });
 
 it('warns when a split-out service runs natively and can no longer reach the stack services it uses', function () {

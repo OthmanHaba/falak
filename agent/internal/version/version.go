@@ -36,6 +36,9 @@ var Features = []string{
 	// docker.run / deploy.container.swap networks: containers join existing networks (a compose service run as its
 	// own site joins its stack's network).
 	"docker.networks",
+	// networks[].compose: a compose project's missing network is created with Compose's labels (a service split out at
+	// a stack's creation deploys before the stack).
+	"docker.networks.create",
 }
 
 var (

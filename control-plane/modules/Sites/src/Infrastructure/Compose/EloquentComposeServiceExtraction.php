@@ -189,6 +189,9 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             // (names, more than it takes) are left out here and reported once.
             'networks' => $networks['networks'],
             ...($aliases !== [] ? ['network_aliases' => $aliases] : []),
+            // The ones the stack's compose project creates (real name => key): the agent creates a missing one with
+            // Compose's labels, so the site can deploy before the stack's first `up`.
+            'compose_networks' => array_intersect_key(ComposeNetworks::owned($document, $stack->slug, $service, $stackVariables), array_flip($networks['networks'])),
             ...($networks['skipped'] !== [] ? ['skipped_networks' => $networks['skipped']] : []),
             // Hosts in its environment as the site gets it: after the stack's variables are filled in.
             'uses' => ServiceReferences::uses($document, $service, $stackVariables),

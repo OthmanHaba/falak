@@ -33,6 +33,11 @@ final class PayloadCompatibility
             'docker.run' => ['networks'],
             'deploy.container.swap' => ['networks'],
         ],
+        // A compose project's missing network created with Compose's labels; older agents only wait for it.
+        'docker.networks.create' => [
+            'docker.run' => ['networks.*.compose'],
+            'deploy.container.swap' => ['networks.*.compose'],
+        ],
         // Containers reaching localhost database engines; older agents keep them on localhost.
         'db.containers' => [
             'db.user.apply' => ['containers'],

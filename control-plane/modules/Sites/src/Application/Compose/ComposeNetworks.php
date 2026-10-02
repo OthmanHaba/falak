@@ -56,6 +56,43 @@ final class ComposeNetworks
     }
 
     /**
+     * The networks of a service that its compose project creates (and labels as its own), by real name => network key:
+     * every network except `external` ones. A `name:` override is still the project's network (Compose creates it
+     * under that name with the project's labels). A service split out of the stack before its first deploy has the
+     * agent create these the way Compose would, so the stack's first `up` adopts them.
+     *
+     * @param  array<string, mixed>  $document
+     * @param  array<string, string>  $variables
+     * @return array<string, string>
+     */
+    public static function owned(array $document, string $project, string $service, array $variables = []): array
+    {
+        $definition = $document['services'][$service] ?? null;
+
+        if (! is_array($definition) || isset($definition['network_mode'])) {
+            return [];
+        }
+
+        $declared = is_array($definition['networks'] ?? null) ? $definition['networks'] : [];
+        $keys = array_is_list($declared) ? array_map('strval', array_filter($declared, 'is_scalar')) : array_map('strval', array_keys($declared));
+        $keys = array_values(array_filter($keys, fn (string $key) => $key !== '')) ?: ['default'];
+        $top = is_array($document['networks'] ?? null) ? $document['networks'] : [];
+        $owned = [];
+
+        foreach ($keys as $key) {
+            $config = is_array($top[$key] ?? null) ? $top[$key] : [];
+
+            if (($config['external'] ?? false) !== false) {
+                continue;
+            }
+
+            $owned[self::realName($key, $config, $project, $variables)] = $key;
+        }
+
+        return $owned;
+    }
+
+    /**
      * @param  array<string, mixed>  $document
      * @param  array<string, string>  $variables
      * @return array<string, list<string>> real name => declared aliases

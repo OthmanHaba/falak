@@ -243,6 +243,22 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		jsonOut(w, 200, out)
+	case p == "/networks/create" && r.Method == "POST":
+		var b struct {
+			Name   string
+			Labels map[string]string
+		}
+		json.NewDecoder(r.Body).Decode(&b)
+		if _, ok := e.networks[b.Name]; ok {
+			jsonOut(w, 409, map[string]string{"message": "network with name " + b.Name + " already exists"})
+			return
+		}
+		e.networks[b.Name] = nil
+		if e.networkLabels == nil {
+			e.networkLabels = map[string]map[string]string{}
+		}
+		e.networkLabels[b.Name] = b.Labels
+		jsonOut(w, 201, map[string]string{"Id": "net-" + b.Name})
 	case strings.HasPrefix(p, "/networks/") && p != "/networks/create" && p != "/networks/prune":
 		name, action, _ := strings.Cut(strings.TrimPrefix(p, "/networks/"), "/")
 		joins, ok := e.networks[name]
