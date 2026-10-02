@@ -111,7 +111,7 @@ stack's public services.
   build context (relative to the compose file and the stack's own root directory; contexts outside the repository and
   remote contexts are refused), `dockerfile` and container port from the service, its `environment:` as variables
   (`${VAR}` / `${VAR:-default}` filled from the stack's variables) after the keys of its `env_file`s (read from the
-  repository under the stack's root directory, later files winning, `environment:` winning over them; Kiln's own
+  repository relative to the stack's root directory, also above it inside the repository, later files winning, `environment:` winning over them; Kiln's own
   `.env`, `KILN_*` keys and files Kiln can't read add nothing), the stack's servers. The user picks framework,
   runtime, name and domain.
 - **`rewrites`** — variables that pointed at the service, in the remaining services and in the stack's variables,
@@ -135,16 +135,23 @@ stack's public services.
   (`compose_services[service].networks` / `.network_aliases`; agent feature `docker.networks`, `networks` on
   `docker.run` / `deploy.container.swap`). Before a deploy replaces its container the network must exist, so a
   missing one fails the deploy and leaves the running container in place; `docker compose down` on the stack first
-  detaches Kiln's containers from the stack's networks so Compose can remove them. A network the stack's compose
-  project owns (every one but `external`; a `name:` override still is) carries `compose {project, network}`
+  detaches Kiln's containers from the stack's networks so Compose can remove them. A plain network of the stack's
+  compose project (no definition, or only a `name:`) carries `compose {project, network}`
   (`compose_services[service].compose_networks`): when it doesn't exist yet the agent creates it with Compose's labels
   (`com.docker.compose.project`, `com.docker.compose.network`; agent feature `docker.networks.create`) and the
   stack's first `docker compose up` adopts it, so a service split out at the stack's creation can deploy first.
-  External networks (and agents without the feature) are only waited for, up to 60 s, then the deploy fails with
-  "deploy the compose stack first".
+  Compose v2 reuses a labelled network without comparing its configuration, so a configured network (driver, driver
+  options, IPAM, `internal`, IPv6, `attachable`, labels) is only ever created by Compose; it, `external` networks,
+  reserved names (`bridge`, `host`, `none`, `default`, `kiln*`) and agents without the feature are only waited for, up
+  to 60 s, then the deploy fails with "deploy the compose stack first" (`waited_networks`, with a warning at
+  extraction: split such a service out of a stack that already runs).
+- **Kiln database names:** a service replaced by a Kiln database keeps its `POSTGRES_DB` / `MYSQL_DATABASE` name when
+  it's free on the leader, else `<stack>_<name>`, then `_2`, `_3`…; the rewritten `DATABASE_URL` / `DB_DATABASE`
+  carry the new name.
 - **Deploy order:** the stack runs without a split-out service, so its deployment stops until that site is live
   ("Deploying <site> first; the stack follows when it's live.", `settings.awaits_site`): Deployments deploys the site,
-  and the site's first successful deployment deploys the stack once more (`DeploySplitSitesFirst`,
+  and the site's next successful deployment deploys the stack once more, with the stopped deployment's commit unless a
+  newer stack deployment exists, and only within 24 h of the stop (`DeploySplitSitesFirst`,
   `ComposeSites::stacksUsing()`). A **native** site (Laravel, Node.js on the host), or a
   server without the stack, only reaches the stack's public services: the services table and extraction warn
   (`uses` in the inspect rows: `depends_on` plus hosts in its environment; at extraction, after the stack's variables
