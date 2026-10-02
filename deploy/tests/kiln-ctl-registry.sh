@@ -104,7 +104,7 @@ run_gc ok
 grep -q "skipping registry garbage collection: 1 image build(s) queued or running. (tried again next week" "$work/gc.out" || fail "gc busy output: $(cat "$work/gc.out")"
 idle_mode=down
 run_gc ok
-[ "$rc" = 0 ] && [ "$(wc -l < "$calls" | tr -d ' ')" = 1 ] || fail "gc with the control plane down -> $rc, calls: $(cat "$calls")"
+if [ "$rc" != 0 ] || [ "$(wc -l < "$calls" | tr -d ' ')" != 1 ]; then fail "gc with the control plane down -> $rc, calls: $(cat "$calls")"; fi
 grep -q 'skipping registry garbage collection: service "control-plane" is not running' "$work/gc.out" || fail "gc down output: $(cat "$work/gc.out")"
 idle_mode=busy
 run_gc ok --force
