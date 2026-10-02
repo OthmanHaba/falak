@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -18,6 +17,8 @@ import (
 // compose file is built and pushed as <image_prefix>/<service>:<tag>; the result pins each by digest.
 type ComposeSpec struct {
 	File        string            `json:"file,omitempty"`       // relative to the app root; "" = compose.yaml|compose.yml|docker-compose.yml|docker-compose.yaml
+	Files       []string          `json:"files,omitempty"`      // several files merged in -f order (wins over File)
+	Profiles    []string          `json:"profiles,omitempty"`   // active profiles; services of other profiles are dropped
 	ImagePrefix string            `json:"image_prefix"`         // e.g. registry.kiln.local/kiln/shop
 	Tag         string            `json:"tag,omitempty"`        // default: the build id (lowercase)
 	BuildArgs   map[string]string `json:"build_args,omitempty"` // merged under each service's build.args
@@ -29,10 +30,29 @@ type ComposeSpec struct {
 
 // ComposeResult is the result of a compose build.
 type ComposeResult struct {
-	File    string                 `json:"file"`    // the compose file used (relative to the app root)
-	Content string                 `json:"content"` // its content, unmodified (the control plane renders it)
+	File    string                 `json:"file"`    // the (first) compose file used (relative to the app root)
+	Files   []string               `json:"files"`   // every compose file read (-f files, includes, extends)
+	Content string                 `json:"content"` // the merged project, paths rebased to the app root (the control plane renders it)
 	Images  map[string]ImageResult `json:"images"`  // service → built image (pinned by digest)
+	// Assets are the repository files the project reads at runtime (bind-mount sources, env_file, configs and
+	// secrets `file:`), shipped with each release. Paths the repository doesn't have are listed in Missing.
+	Assets  []ComposeAsset `json:"assets,omitempty"`
+	Missing []string       `json:"missing,omitempty"`
 }
+
+// ComposeAsset is one repository file a compose project needs on the servers.
+type ComposeAsset struct {
+	Path    string `json:"path"`    // relative to the app root
+	Content string `json:"content"` // base64
+	Mode    int    `json:"mode"`    // 0644 or 0755
+}
+
+// Limits of the files shipped with a compose release.
+const (
+	maxComposeAssets      = 200
+	maxComposeAssetBytes  = 1 << 20
+	maxComposeAssetsBytes = 2 << 20
+)
 
 // DefaultComposeFiles are tried in order when ComposeSpec.File is empty (Compose's own lookup order).
 var DefaultComposeFiles = []string{"compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"}
@@ -159,11 +179,19 @@ func findComposeFile(app, file string) (string, error) {
 
 func (b *Builder) buildCompose(ctx context.Context, j *job) (*ComposeResult, error) {
 	spec := *j.Compose
-	file, err := findComposeFile(j.app, spec.File)
+	files := spec.Files
+	if len(files) == 0 {
+		file, err := findComposeFile(j.app, spec.File)
+		if err != nil {
+			return nil, err
+		}
+		files = []string{file}
+	}
+	doc, read, err := LoadComposeProject(func(rel string) ([]byte, error) { return readRepoFile(j.app, rel) }, files, spec.Profiles)
 	if err != nil {
 		return nil, err
 	}
-	content, err := os.ReadFile(filepath.Join(j.app, filepath.FromSlash(file)))
+	content, err := yaml.Marshal(doc)
 	if err != nil {
 		return nil, err
 	}
@@ -171,8 +199,17 @@ func (b *Builder) buildCompose(ctx context.Context, j *job) (*ComposeResult, err
 	if err != nil {
 		return nil, err
 	}
-	res := &ComposeResult{File: file, Content: string(content), Images: map[string]ImageResult{}}
-	j.logf("Compose file %s: %d service(s) to build", file, len(builds))
+	res := &ComposeResult{File: files[0], Files: read, Content: string(content), Images: map[string]ImageResult{}}
+	if res.Assets, res.Missing, err = collectComposeAssets(j.app, ComposeReferences(doc)); err != nil {
+		return nil, err
+	}
+	if len(files) > 1 || len(spec.Profiles) > 0 {
+		j.logf("Compose project %s (profiles: %s)", strings.Join(files, " + "), strings.Join(spec.Profiles, ", "))
+	}
+	if len(res.Assets) > 0 {
+		j.logf("Shipping %d repository file(s) the project mounts or reads", len(res.Assets))
+	}
+	j.logf("Compose file %s: %d service(s) to build", files[0], len(builds))
 	tag := spec.Tag
 	if tag == "" {
 		tag = strings.ToLower(j.ID)

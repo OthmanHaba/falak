@@ -158,14 +158,35 @@ it('gives 127.0.0.1 for an app-server engine only to native sites running on tha
     // Another server: a clear error instead of a host that cannot connect; keys without the host still resolve.
     $spread = projects_site($this->organization, 'Spread', [], $this->environment, [$engineServer, $other]);
     $result = $this->references->resolve($this->environment->id, $spread->id, $refs);
-    $reason = "Spread runs on web-2, but the database runs on {$engineServer->name}, which accepts local connections only (move it to a dedicated database server to reach it from elsewhere).";
+    $reason = "Spread runs on web-2, but the database runs on {$engineServer->name}, which accepts connections from that server only (move it to a dedicated database server to reach it from elsewhere).";
     expect($result->errors)->toBe(["URL: shop.DATABASE_URL cannot be used here: {$reason}", "HOST: shop.DB_HOST cannot be used here: {$reason}"])
         ->and($result->variables['NAME'])->toBe('shop');
 
-    // A container on the same server: 127.0.0.1 would be the container itself.
+    // A container on the same server: 127.0.0.1 would be the container itself. Until the agent supports container
+    // access, a clear error.
     $docker = projects_site($this->organization, 'Box', [], $this->environment, [$engineServer], ['runtime' => 'docker', 'framework' => 'docker', 'php_version' => null]);
     expect($this->references->resolve($this->environment->id, $docker->id, ['HOST' => '${{ shop.DB_HOST }}'])->errors[0])
-        ->toStartWith('HOST: shop.DB_HOST cannot be used here: Box runs in a container, but the database runs on');
+        ->toStartWith('HOST: shop.DB_HOST cannot be used here: Box runs in a container, but containers on');
+});
+
+it('gives containers on the engine server the server address once container access is on', function () {
+    [, , $engine] = projects_database($this->organization, 'shop', $this->environment);
+    $engine->forceFill(['container_access' => true])->save();
+    $engineServer = Server::query()->find($engine->server_id);
+    $refs = ['URL' => '${{ shop.DATABASE_URL }}', 'HOST' => '${{ shop.DB_HOST }}'];
+
+    foreach (['docker', 'compose', 'function'] as $runtime) {
+        $site = projects_site($this->organization, "Box {$runtime}", [], $this->environment, [$engineServer], ['runtime' => $runtime, 'framework' => 'docker', 'php_version' => null]);
+        $result = $this->references->resolve($this->environment->id, $site->id, $refs);
+
+        expect($result->errors)->toBe([])
+            ->and($result->variables['HOST'])->toBe($engineServer->private_ipv4)
+            ->and($result->variables['URL'])->toContain("@{$engineServer->private_ipv4}:5432/");
+    }
+
+    // Native sites on that server keep the loopback address.
+    $local = projects_site($this->organization, 'Local', [], $this->environment, [$engineServer]);
+    expect($this->references->resolve($this->environment->id, $local->id, $refs)->variables['HOST'])->toBe('127.0.0.1');
 });
 
 it('gives containers and other servers the network address of a dedicated database server', function () {

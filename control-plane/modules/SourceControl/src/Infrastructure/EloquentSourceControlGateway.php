@@ -67,6 +67,64 @@ final class EloquentSourceControlGateway implements SourceControlGateway
         return $this->client($connection)->branches($connection, $repository);
     }
 
+    public function file(string $connectionId, string $repository, string $ref, string $path): ?string
+    {
+        $path = trim($path, '/');
+
+        if ($path === '' || preg_match('#(^|/)\.\.?(/|$)#', $path) === 1 || str_contains($path, "\0")) {
+            return null;
+        }
+
+        $connection = $this->find($connectionId);
+
+        return $this->client($connection)->file($connection, $repository, $ref, $path, self::MAX_FILE_BYTES);
+    }
+
+    public function exists(string $connectionId, string $repository, string $ref, string $path): bool
+    {
+        $path = trim($path, '/');
+
+        if ($path === '' || preg_match('#(^|/)\.\.?(/|$)#', $path) === 1 || str_contains($path, "\0")) {
+            return false;
+        }
+
+        $connection = $this->find($connectionId);
+
+        return $this->client($connection)->exists($connection, $repository, $ref, $path);
+    }
+
+    public function tree(string $connectionId, string $repository, string $ref, string $glob = '*'): array
+    {
+        $connection = $this->find($connectionId);
+        $pattern = self::globPattern($glob);
+        $byName = ! str_contains($glob, '/');
+        $paths = array_values(array_filter(
+            $this->client($connection)->tree($connection, $repository, $ref, self::MAX_TREE_PATHS * 5),
+            fn (string $path) => preg_match($pattern, $byName ? basename($path) : $path) === 1,
+        ));
+        sort($paths);
+
+        return array_slice($paths, 0, self::MAX_TREE_PATHS);
+    }
+
+    /** `**` matches across directories, `*` within one, `?` one character; everything else is literal. */
+    public static function globPattern(string $glob): string
+    {
+        $regex = '';
+
+        foreach (preg_split('/(\*\*\/?|\*|\?)/', $glob, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY) ?: [] as $part) {
+            $regex .= match ($part) {
+                '**/' => '(?:.*/)?',
+                '**' => '.*',
+                '*' => '[^/]*',
+                '?' => '[^/]',
+                default => preg_quote($part, '#'),
+            };
+        }
+
+        return '#^'.$regex.'$#i';
+    }
+
     public function latestCommit(string $connectionId, string $repository, string $branch): ?CommitData
     {
         $connection = $this->find($connectionId);

@@ -78,6 +78,16 @@ for the server's architecture, or the agent already runs it.
           "rollout_id": null, "error": null, "requested_at": "2026-09-28T10:00:00+00:00", "finished_at": null}}
 ```
 
+### `POST /api/v1/servers/{server}/database-engine` — update permission on the server
+Adds a database engine to a provisioned server that has none: `{"engine": "postgresql|mysql|mariadb"}`. The engine
+joins the server's stack and the provisioning plan converges with it (`provision.apply`: the distribution's packages
+and service, as at creation). `202` `{"data": {"engine", "status": "installing", "command_id"}}`. Once the agent
+reports success the engine appears under Databases (and, on app servers, is reachable from the server's containers);
+when the plan fails it is taken back out of the stack (audit `server.database_engine_install_failed`). `422` for an
+unsupported engine, a server that already runs (or is installing) one, a server type without databases (only `app`
+servers may add one; `database` servers always have one), or a server that is not active. Rate limited to 10/min.
+Panel: server Settings → Database engine.
+
 ## Sites
 
 ### `GET /api/v1/sites` · `GET /api/v1/sites/{site}` — `sites.view`
@@ -107,6 +117,10 @@ Same body and validation as the web form (`name`, `framework`, `server_ids[]`, o
 repeat across sites; an `app_port` sent for a docker site is read as it); their `app_port` is the loopback host port Kiln
 allocates. Changing a docker site's `container_port` (`PATCH /sites/{id}`) redeploys it. `DELETE /sites/{id}` stops the
 site's containers (compose: `docker compose down`; `delete_volumes: true` also removes named volumes).
+Optional `root_directory` (git sites, also `PATCH`): the repository subfolder the app lives in (monorepos), e.g.
+`apps/api` — relative, surrounding slashes trimmed, no `.`/`..` segments. Builds run there and the release is that
+folder (deploy steps and hooks run in it); Docker uses it as the build context and resolves `dockerfile` / the
+compose file from it. Returned as `root_directory` (null = the repository root).
 Optional `project_id` / `environment_id` place the site (Projects); without them it lands in the organization's
 Default project, `production` environment. An environment of another organization/project is a `422`.
 
@@ -118,12 +132,31 @@ site only gets its test domain (as before). A name used by another site is a `42
 
 Docker Compose sites (`runtime: compose`, `framework` optional — defaults to `docker`; docs/COMPOSE_TEMPLATES.md §5):
 `compose_source` `repo` (`compose_file`, default `compose.yaml` then `docker-compose.yml`, built by kiln-builder) or
-`inline` (`compose_content`, versioned; no `build:`), `public_services` `[{service, port, domain?}]` (Kiln allocates a
-loopback host port per service; `domain` is a name or a domain choice — generated names are
-`<service>-<slug>.<ip-with-dashes>.<suffix>`, `null` / `{"type": "test"}` means the test domain), `variables` `{KEY: value}` (initial environment; `${{ service.KEY }}` allowed) and
+`inline` (`compose_content`, versioned; no `build:`), `public_services` `[{service, port, domain?, health_check_path?}]`
+(Kiln allocates a loopback host port per service; `domain` is a name or a domain choice — generated names are
+`<service>-<slug>.<ip-with-dashes>.<suffix>`, `null` / `{"type": "test"}` means the test domain; `health_check_path`
+is the path the deploy health check requests through the service's domain — without it the first service uses the
+site's check path and the others accept any answer below 500), `variables` `{KEY: value}` (initial environment; `${{ service.KEY }}` allowed) and
 `template` `{slug, version, source: catalog|custom}`. Inline files must pass the compose policy (`422` otherwise) unless
 the organization allows privileged compose. The site resource then carries `compose {source, file, version,
-public_services[] (with host_port, test_domain, url), template}`.
+public_services[] (with host_port, test_domain, url, health_check_path), template}`.
+
+Repository sources also take `compose_files` (list, `-f` order),
+`compose_profiles`, `compose_services` `{<service>: {mode: keep|database|site, engine?, database_id?, site?}}` and
+`compose_adjustments {keep_binds: ["service:./path"]}`; with `compose_files`, creation reads the repository first
+(files load, public services exist, required `${VAR}`s have a value in `variables`; `422` otherwise). Panel endpoints
+for the create flow: `POST /sites/compose/candidates` and `POST /sites/compose/inspect` (`{source_connection_id,
+repository, branch, compose_files, …}` → services, variables, adjustments, the merged and adjusted YAML; `no_api: true`
+for plain git servers), and `POST /sites/{site}/compose/inspect` for existing sites.
+
+Every public service has domains of its own (Edge `edge_domains` rows with `compose_service`; the first public service
+is the site itself). A `domain` chosen here becomes the service's first domain row; after that the service's domains
+are managed like a site's — panel Settings → Networking, service picker — and `public_services[].domain` reports the
+service's primary domain (read-only mirror). Panel endpoints take an optional `service` (a public service name; null
+or the first service's name = the site): `POST /sites/{site}/domains`, `POST /sites/{site}/redirects`,
+`POST /sites/{site}/security-rules`, `POST /sites/{site}/headers`, `PUT /sites/{site}/edge-settings` (its IP lists
+only: the service's allow list replaces the site's, its deny list adds to it) and a function's
+`POST /sites/{function}/function-mounts`. `GET /sites/{site}/domains|routing` list `services` and each row's `service`.
 
 ### `GET /api/v1/sites/{site}/env` — `sites.env.view`
 Returns the latest environment version as dotenv (audited as a reveal).
@@ -187,6 +220,15 @@ domain). It is accepted by `POST /api/v1/sites` (`domain`), compose `public_serv
 - **test** — `<slug>.<KILN_TEST_DOMAIN>` (compose: `<service>-<slug>.…` after the first service).
 - **custom** — your domain, routed with automatic TLS once DNS points at the server (see the check below).
 
+### `GET|PUT|DELETE /api/v1/sites/{site}/domains/{domain}/rate-limit` — `edge.view` / `edge.manage`
+A domain's Cloudflare rate limit (`{domain}`: its id or name; docs/CLOUDFLARE.md → Rate limits). `GET` →
+`{domain, rule, zone, proxied, limits: {plan, rules, host, periods[], timeouts[], challenge_timeout, note}, zone_rule}` (`limits` null
+outside a managed zone; `zone_rule` `{domain, path}`: another domain's Free-plan rule that applies to this one too). `PUT {path?, requests, period, action: block|managed_challenge, timeout}` writes the zone's rules and
+returns the same shape (`timeout` is ignored and stored as 0 for `managed_challenge` when `challenge_timeout` is false:
+below Enterprise Cloudflare challenges each request over the limit); `422` when the domain isn't proxied, the plan doesn't allow the window / duration or has no rule
+left, or Cloudflare refuses (the token needs Zone → Zone WAF → Edit). `DELETE` removes the rule. Rate limited to
+30/min.
+
 ### `GET /api/v1/domains/options?server=<id>[,<id>…]` · `?site=<site>` — `edge.view`
 What a create form offers: `{test_domain, generated: {suffix, ipv4, target, available, reason}, default, targets[]}`
 (`targets`: `{server_id, name, ipv4, ipv6, load_balancer}` — where DNS must point: the site's load balancer, else each
@@ -246,10 +288,18 @@ case-insensitively with spaces/dots/underscores as dashes. Database services exp
 `DB_DATABASE`,
 `DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the database); site services expose their own variables.
 Unknown services/keys and cycles fail the deployment: `Unresolved variable references: …`.
-An engine on an app or worker server listens on localhost only: its `DB_HOST` is `127.0.0.1`, and `DB_HOST` /
-`DATABASE_URL` resolve only for a native site running on that server alone. A site on other servers, or in a
-container (Docker, compose, functions), gets a resolution error naming the reason instead of a host it cannot reach;
-use a dedicated database server for those.
+An engine on an app or worker server serves that server only, and `DB_HOST` / `DATABASE_URL` resolve only for a
+consumer running on that server alone:
+- a native site gets `127.0.0.1`;
+- a container on it (Docker site, compose stack, function) gets the server's own address (private network → provider
+  private IP → public IP), which containers reach through the Docker bridge. The engine accepts the Docker address
+  ranges (`KILN_DOCKER_NETWORKS`, default `172.16.0.0/12,192.168.0.0/16`: PostgreSQL host rules, an extra MySQL account
+  per range) and the firewall opens its port on the Docker bridges only (`docker0`, `br-*`). This needs agent 0.4.5 or
+  newer (feature `db.containers`); it turns on per engine once the agent reports it. Before that, the reference fails
+  and says to update the agent.
+
+A site on other servers gets a resolution error naming the reason instead of a host it cannot reach; use a dedicated
+database server for those.
 
 ## Source control
 
@@ -411,6 +461,8 @@ build timeout. Long-poll (≤ 25 s). `204` when nothing is queued for the builde
  "native": {"upload": {"url": "https://kiln.example.com/api/internal/artifacts/…?expires=…&signature=…",
                        "headers": {"Content-Type": "application/octet-stream"}}}}
 ```
+Jobs of a site with a `root_directory` carry it as `"subdir"`: the app root inside the checkout (a subdir resolving
+outside the repository, e.g. through a symlink, fails the build).
 Docker jobs carry `"docker": {"image": "<registry>/<namespace>/<site-slug>:<build-id>", "dockerfile": "…",
 "build_args": {…}, "registry": {"server", "username", "password"}, "push": true}` instead of `native`.
 Clone credentials come from SourceControl at hand-out time and are never stored. HTTPS clones use

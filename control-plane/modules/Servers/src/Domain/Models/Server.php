@@ -45,6 +45,7 @@ use Kiln\Servers\Domain\Stack\Stack;
  * @property ?string $install_command
  * @property ?string $provision_command_id
  * @property int $provision_attempts
+ * @property ?string $engine_command_id provision.apply installing a database engine added after creation
  * @property ?string $ssh_sync_command_id
  * @property ?Carbon $provisioned_at
  * @property ?string $created_by
@@ -152,7 +153,8 @@ class Server extends Model
             defaultPhpVersion: $installed->firstWhere('is_default', true)?->version,
             phpRuntime: $this->stack->phpRuntime,
             nodeVersion: $this->stack->node,
-            databaseEngine: $this->stack->database,
+            // An engine added after creation is only the server's once installed (engine_command_id cleared).
+            databaseEngine: $this->engine_command_id === null ? $this->stack->database : null,
             cacheEngine: $this->stack->cache,
             docker: $this->stack->docker,
             unixUser: (string) config('servers.unix_user', 'kiln'),

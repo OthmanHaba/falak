@@ -1,0 +1,295 @@
+<?php
+
+use Kiln\Edge\Application\ComposeServiceDomains;
+use Kiln\Edge\Contracts\EdgeRoutes;
+use Kiln\Edge\Domain\Models\Domain;
+use Kiln\Edge\Domain\Models\Header;
+use Kiln\Edge\Domain\Models\Redirect;
+use Kiln\Edge\Domain\Models\SecurityRule;
+use Kiln\Edge\Domain\Models\ServiceSetting;
+use Kiln\Edge\Domain\Models\SiteSetting;
+use Kiln\Fleet\Infrastructure\ProtocolSchemas;
+use Kiln\Identity\Contracts\Role;
+use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Contracts\SiteFactory;
+use Kiln\Sites\Domain\Models\Site;
+use Kiln\Sites\Events\ComposeServiceExtracted;
+use Kiln\Sites\Events\ComposeServicesUnpublished;
+
+/*
+ * Edge for every public service of a compose site (docs/plans/COMPOSE_APPS.md, phase 2), with the real Sites module:
+ * domain rows per service, the read model mirrored back, rules and IP lists per service.
+ */
+
+require_once __DIR__.'/../../../Sites/tests/Support/helpers.php';
+
+const COMPOSE_STACK = "services:\n  web:\n    image: nginx:1.27\n  admin:\n    image: ghcr.io/acme/admin:2\n    expose: ['9000']\n  api:\n    image: ghcr.io/acme/api:2\n    expose: ['8000']\n";
+
+beforeEach(function () {
+    [$this->user, $this->organization] = actingAsMember(Role::Admin);
+    $this->agents = sites_fake_agents();
+    sites_fake_source_control();
+    config(['sites.test_domain' => 'kiln.test']);
+    $this->server = sites_server($this->organization->id, ['name' => 'app-1'], docker: true);
+    $this->site = app(SiteFactory::class)->create($this->organization->id, $this->user->id, [
+        'name' => 'stack', 'runtime' => 'compose', 'server_ids' => [$this->server->id], 'compose_source' => 'inline', 'compose_content' => COMPOSE_STACK,
+        'public_services' => [
+            ['service' => 'web', 'port' => 80, 'domain' => ['type' => 'custom', 'name' => 'stack.example.com']],
+            ['service' => 'admin', 'port' => 9000, 'domain' => ['type' => 'custom', 'name' => 'admin.example.com'], 'health_check_path' => '/healthz'],
+            ['service' => 'api', 'port' => 8000],
+        ],
+    ])->site;
+    $this->base = "/sites/{$this->site->id}";
+});
+
+function compose_public(string $siteId): array
+{
+    return collect(app(SiteDirectory::class)->find($siteId)->compose->publicServices)->mapWithKeys(fn ($p) => [$p->service => $p->domain])->all();
+}
+
+it('turns the domains chosen at creation into rows per service', function () {
+    expect(Domain::query()->where('site_id', $this->site->id)->orderBy('name')->get(['name', 'compose_service', 'is_primary'])->toArray())->toBe([
+        ['name' => 'admin.example.com', 'compose_service' => 'admin', 'is_primary' => true],
+        ['name' => 'stack.example.com', 'compose_service' => null, 'is_primary' => true],
+    ])
+        ->and(app(SiteDirectory::class)->find($this->site->id)->compose->publicServices[1]->healthCheckPath)->toBe('/healthz');
+
+    $this->getJson("{$this->base}/domains")->assertOk()
+        ->assertJsonPath('data.services.0', ['service' => 'web', 'primary' => true, 'port' => 80, 'test_domain' => 'stack.kiln.test', 'health_check_path' => null])
+        ->assertJsonPath('data.services.1.service', 'admin')
+        ->assertJsonPath('data.services.1.health_check_path', '/healthz')
+        ->assertJsonPath('data.domains.0.name', 'admin.example.com')
+        ->assertJsonPath('data.domains.0.service', 'admin')
+        ->assertJsonPath('data.domains.1.service', null);
+});
+
+it('adds domains to a service, keeps a primary per service and mirrors the first one back', function () {
+    $this->post("{$this->base}/domains", ['name' => 'api.example.com', 'service' => 'api'])->assertSessionHasNoErrors();
+    $this->post("{$this->base}/domains", ['name' => 'ops.example.com', 'service' => 'admin'])->assertSessionHasNoErrors();
+    // The primary service by name is the site itself.
+    $this->post("{$this->base}/domains", ['name' => 'www2.example.com', 'service' => 'web'])->assertSessionHasNoErrors();
+    $this->post("{$this->base}/domains", ['name' => 'x.example.com', 'service' => 'nope'])->assertSessionHasErrors('service');
+
+    $rows = Domain::query()->where('site_id', $this->site->id)->get()->keyBy('name');
+    expect($rows['api.example.com']->compose_service)->toBe('api')
+        ->and($rows['api.example.com']->is_primary)->toBeTrue()
+        ->and($rows['ops.example.com']->is_primary)->toBeFalse()
+        ->and($rows['www2.example.com']->compose_service)->toBeNull()
+        ->and($rows['www2.example.com']->is_primary)->toBeFalse()
+        ->and(compose_public($this->site->id))->toBe(['web' => 'stack.example.com', 'admin' => 'admin.example.com', 'api' => 'api.example.com']);
+
+    // Making another domain of the admin service primary leaves the site's primary alone.
+    $this->put("{$this->base}/domains/{$rows['ops.example.com']->id}/primary")->assertSessionHasNoErrors();
+    expect($rows['ops.example.com']->refresh()->is_primary)->toBeTrue()
+        ->and($rows['admin.example.com']->refresh()->is_primary)->toBeFalse()
+        ->and($rows['stack.example.com']->refresh()->is_primary)->toBeTrue()
+        ->and(compose_public($this->site->id)['admin'])->toBe('ops.example.com');
+
+    // Removing the api's only domain clears it in the read model; removing the admin's primary promotes the other.
+    $this->delete("{$this->base}/domains/{$rows['api.example.com']->id}")->assertSessionHasNoErrors();
+    $this->delete("{$this->base}/domains/{$rows['ops.example.com']->id}")->assertSessionHasNoErrors();
+    expect($rows['admin.example.com']->refresh()->is_primary)->toBeTrue()
+        ->and(compose_public($this->site->id))->toBe(['web' => 'stack.example.com', 'admin' => 'admin.example.com', 'api' => null]);
+
+    $routeId = app(EdgeRoutes::class)->routeId($this->site->id);
+    $payload = app(EdgeRoutes::class)->compile($this->server->id);
+    $admin = collect($payload['sites'])->firstWhere('id', "{$routeId}-svc-admin");
+    expect($admin['domains'])->toBe(['admin.example.com', 'admin-stack.kiln.test'])
+        ->and(collect($payload['sites'])->firstWhere('id', $routeId)['domains'])->toBe(['stack.example.com', 'www2.example.com', 'stack.kiln.test'])
+        ->and(collect(app(EdgeRoutes::class)->domainsFor($this->site->id, 'admin'))->pluck('name')->all())->toBe(['admin.example.com'])
+        ->and(collect(app(EdgeRoutes::class)->domainsFor($this->site->id))->pluck('name')->all())->toBe(['stack.example.com', 'www2.example.com']);
+});
+
+it('generates a name for a service from the service and the site', function () {
+    config(['edge.generated_domain_suffix' => 'sslip.io']);
+    $this->post("{$this->base}/domains", ['type' => 'generated', 'service' => 'api'])->assertSessionHasNoErrors();
+
+    $row = Domain::query()->where('site_id', $this->site->id)->where('compose_service', 'api')->first();
+    expect($row?->name)->toStartWith('api-stack.')->toEndWith('.sslip.io');
+});
+
+it('imports a domain chosen later in Settings → Compose', function () {
+    $this->putJson("{$this->base}/compose", [
+        'compose_source' => 'inline',
+        'compose_content' => COMPOSE_STACK,
+        'public_services' => [
+            ['service' => 'web', 'port' => 80, 'domain' => 'stack.example.com'],
+            ['service' => 'admin', 'port' => 9000, 'domain' => 'admin.example.com'],
+            ['service' => 'api', 'port' => 8000, 'domain' => ['type' => 'custom', 'name' => 'api.example.com']],
+        ],
+    ])->assertOk();
+
+    expect(Domain::query()->where('name', 'api.example.com')->value('compose_service'))->toBe('api');
+});
+
+it('scopes redirects, basic auth, headers and IP lists to a service', function () {
+    $this->post("{$this->base}/redirects", ['from' => '/old', 'to' => '/new', 'status' => 301, 'service' => 'admin'])->assertSessionHasNoErrors();
+    // The same path for the whole site is another rule.
+    $this->post("{$this->base}/redirects", ['from' => '/old', 'to' => '/', 'status' => 302])->assertSessionHasNoErrors();
+    $this->post("{$this->base}/redirects", ['from' => '/old', 'to' => '/x', 'status' => 301, 'service' => 'admin'])->assertSessionHasErrors('from');
+    $this->post("{$this->base}/security-rules", ['username' => 'ops', 'password' => 'correct horse', 'service' => 'admin'])->assertSessionHasNoErrors();
+    $this->post("{$this->base}/headers", ['name' => 'X-Robots-Tag', 'value' => 'noindex', 'service' => 'admin'])->assertSessionHasNoErrors();
+    $this->post("{$this->base}/headers", ['name' => 'X-Robots-Tag', 'value' => 'all'])->assertSessionHasNoErrors();
+    $this->post("{$this->base}/headers", ['name' => 'X-A', 'value' => 'b', 'service' => 'nope'])->assertSessionHasErrors('service');
+    $this->put("{$this->base}/edge-settings", ['allow_ips' => ['192.0.2.0/24'], 'deny_ips' => [], 'service' => 'admin'])->assertSessionHasNoErrors();
+
+    expect(Redirect::query()->where('compose_service', 'admin')->count())->toBe(1)
+        ->and(SecurityRule::query()->value('compose_service'))->toBe('admin')
+        ->and(Header::query()->where('site_id', $this->site->id)->count())->toBe(2)
+        ->and(ServiceSetting::for($this->site->id, 'admin')->allow_ips)->toBe(['192.0.2.0/24']);
+
+    $this->getJson("{$this->base}/routing")->assertOk()
+        ->assertJsonPath('data.services.1.service', 'admin')
+        ->assertJsonPath('data.serviceSettings.admin.allow_ips', ['192.0.2.0/24'])
+        ->assertJsonCount(2, 'data.headers');
+
+    $routeId = app(EdgeRoutes::class)->routeId($this->site->id);
+    $payload = app(EdgeRoutes::class)->compile($this->server->id);
+    expect(app(ProtocolSchemas::class)->validateCommand('edge.caddy.apply', ProtocolSchemas::toJson($payload)))->toBe([]);
+    $site = collect($payload['sites'])->firstWhere('id', $routeId);
+    $admin = collect($payload['sites'])->firstWhere('id', "{$routeId}-svc-admin");
+    $api = collect($payload['sites'])->firstWhere('id', "{$routeId}-svc-api");
+
+    expect($site['headers'])->toBe(['X-Robots-Tag' => 'all'])
+        ->and($site)->not->toHaveKeys(['basic_auth', 'allow_ips'])
+        ->and($admin['headers'])->toBe(['X-Robots-Tag' => 'noindex'])
+        ->and($admin['basic_auth'][0]['username'])->toBe('ops')
+        ->and($admin['allow_ips'])->toBe(['192.0.2.0/24'])
+        ->and(collect($admin['redirects'])->pluck('to')->all())->toBe(['/new', '/'])
+        ->and($api)->not->toHaveKeys(['basic_auth', 'allow_ips']);
+
+    // Empty lists remove the service's own settings.
+    $this->put("{$this->base}/edge-settings", ['allow_ips' => [], 'deny_ips' => [], 'service' => 'admin'])->assertSessionHasNoErrors();
+    expect(ServiceSetting::query()->count())->toBe(0);
+});
+
+it('forgets service rows with the site', function () {
+    $this->put("{$this->base}/edge-settings", ['allow_ips' => ['192.0.2.0/24'], 'deny_ips' => [], 'service' => 'admin'])->assertSessionHasNoErrors();
+
+    $this->delete("/sites/{$this->site->id}", ['name' => 'stack'])->assertSessionHasNoErrors();
+
+    expect(Site::query()->find($this->site->id))->toBeNull()
+        ->and(Domain::query()->where('site_id', $this->site->id)->count())->toBe(0)
+        ->and(ServiceSetting::query()->count())->toBe(0);
+});
+
+it('moves a split-out service\'s domains and rules to its new site', function () {
+    Redirect::query()->create(['site_id' => $this->site->id, 'compose_service' => 'admin', 'from' => '/old', 'to' => '/new', 'status' => 301, 'position' => 0]);
+    ServiceSetting::query()->create(['site_id' => $this->site->id, 'service' => 'admin', 'allow_ips' => ['203.0.113.0/24'], 'deny_ips' => []]);
+    $split = app(SiteFactory::class)->create($this->organization->id, $this->user->id, [
+        'name' => 'stack-admin', 'framework' => 'docker', 'runtime' => 'docker', 'docker_image' => 'ghcr.io/acme/admin:2', 'container_port' => 9000, 'server_ids' => [$this->server->id],
+    ])->site;
+
+    event(new ComposeServiceExtracted($this->site->id, $this->organization->id, 'admin', 'site', $split->id, 'stack-admin'));
+
+    $moved = Domain::query()->where('name', 'admin.example.com')->firstOrFail();
+    expect($moved->site_id)->toBe($split->id)
+        ->and($moved->compose_service)->toBeNull()
+        ->and(Redirect::query()->where('from', '/old')->value('site_id'))->toBe($split->id)
+        ->and(ServiceSetting::query()->where('service', 'admin')->exists())->toBeFalse()
+        ->and(Domain::query()->where('name', 'stack.example.com')->value('site_id'))->toBe($this->site->id);
+});
+
+function compose_split(object $test, string $name): Site
+{
+    return Site::query()->findOrFail(app(SiteFactory::class)->create($test->organization->id, $test->user->id, [
+        'name' => $name, 'framework' => 'docker', 'runtime' => 'docker', 'docker_image' => 'ghcr.io/acme/x:1', 'container_port' => 9000, 'server_ids' => [$test->server->id],
+    ])->site->id);
+}
+
+/** What Sites does before it dispatches ComposeServiceExtracted: the service leaves public_services. */
+function compose_drop_public(string $siteId, string $service): void
+{
+    $site = Site::query()->findOrFail($siteId);
+    Site::withoutEvents(fn () => $site->forceFill(['public_services' => array_values(array_filter($site->public_services, fn ($p) => $p['service'] !== $service))])->save());
+}
+
+it('keeps a split-out service protected: site-wide basic auth and headers copied, its IP lists become the site\'s', function () {
+    SecurityRule::query()->create(['site_id' => $this->site->id, 'username' => 'team', 'password_hash' => 'h']);
+    Header::query()->create(['site_id' => $this->site->id, 'name' => 'X-Frame-Options', 'value' => 'DENY']);
+    Header::query()->create(['site_id' => $this->site->id, 'name' => 'X-Robots-Tag', 'value' => 'all']);
+    Header::query()->create(['site_id' => $this->site->id, 'compose_service' => 'admin', 'name' => 'X-Robots-Tag', 'value' => 'noindex']);
+    Redirect::query()->create(['site_id' => $this->site->id, 'from' => '/shared', 'to' => '/', 'status' => 301, 'position' => 0]);
+    SiteSetting::for($this->site->id)->forceFill(['allow_ips' => ['10.0.0.0/8'], 'deny_ips' => ['10.9.9.9/32'], 'max_body_bytes' => 1024])->save();
+    ServiceSetting::query()->create(['site_id' => $this->site->id, 'service' => 'admin', 'allow_ips' => ['203.0.113.0/24'], 'deny_ips' => ['203.0.113.7/32']]);
+    $split = compose_split($this, 'stack-admin');
+    compose_drop_public($this->site->id, 'admin');
+
+    event(new ComposeServiceExtracted($this->site->id, $this->organization->id, 'admin', 'site', $split->id, 'stack-admin'));
+
+    $settings = SiteSetting::for($split->id);
+    expect(SecurityRule::query()->where('site_id', $split->id)->pluck('username')->all())->toBe(['team'])
+        ->and(SecurityRule::query()->where('site_id', $this->site->id)->count())->toBe(1)
+        ->and(Header::query()->where('site_id', $split->id)->orderBy('name')->pluck('value', 'name')->all())->toBe(['X-Frame-Options' => 'DENY', 'X-Robots-Tag' => 'noindex'])
+        ->and(Header::query()->where('site_id', $split->id)->whereNotNull('compose_service')->count())->toBe(0)
+        // Site-wide redirects and paths stay with the stack (copied only when the first service splits out).
+        ->and(Redirect::query()->where('site_id', $split->id)->count())->toBe(0)
+        ->and($settings->allow_ips)->toBe(['203.0.113.0/24'])
+        ->and($settings->deny_ips)->toBe(['10.9.9.9/32', '203.0.113.7/32'])
+        ->and($settings->max_body_bytes)->toBe(1024)
+        ->and(ServiceSetting::query()->count())->toBe(0);
+
+    // Its own basic auth replaces the site's.
+    SecurityRule::query()->create(['site_id' => $this->site->id, 'compose_service' => 'api', 'username' => 'api-ops', 'password_hash' => 'h']);
+    $api = compose_split($this, 'stack-api');
+    compose_drop_public($this->site->id, 'api');
+    event(new ComposeServiceExtracted($this->site->id, $this->organization->id, 'api', 'site', $api->id, 'stack-api'));
+    expect(SecurityRule::query()->where('site_id', $api->id)->pluck('username')->all())->toBe(['api-ops'])
+        ->and(SiteSetting::for($api->id)->allow_ips)->toBe(['10.0.0.0/8']);
+});
+
+it('moves the stack\'s own domains with a split-out first service, and the next service becomes the stack\'s own', function (bool $importFirst) {
+    Redirect::query()->create(['site_id' => $this->site->id, 'from' => '/shared', 'to' => '/', 'status' => 301, 'position' => 0]);
+    $this->post("{$this->base}/domains", ['name' => 'www2.example.com'])->assertSessionHasNoErrors();
+    $split = compose_split($this, 'stack-web');
+    compose_drop_public($this->site->id, 'web');
+
+    if ($importFirst) {
+        // SiteUpdated (public_services changed) may be handled before the extraction event.
+        app(ComposeServiceDomains::class)->import($this->site->id);
+    }
+    event(new ComposeServiceExtracted($this->site->id, $this->organization->id, 'web', 'site', $split->id, 'stack-web', wasPrimary: true));
+
+    $rows = Domain::query()->get()->keyBy('name');
+    expect($rows['stack.example.com']->site_id)->toBe($split->id)
+        ->and($rows['stack.example.com']->compose_service)->toBeNull()
+        ->and($rows['stack.example.com']->is_primary)->toBeTrue()
+        ->and($rows['www2.example.com']->site_id)->toBe($split->id)
+        // admin is the stack's first service now: its domain is the stack's own.
+        ->and($rows['admin.example.com']->site_id)->toBe($this->site->id)
+        ->and($rows['admin.example.com']->compose_service)->toBeNull()
+        // The stack's site-wide redirect applied to the first service: copied, and kept for the stack.
+        ->and(Redirect::query()->where('from', '/shared')->pluck('site_id')->sort()->values()->all())->toBe(collect([$this->site->id, $split->id])->sort()->values()->all())
+        ->and(compose_public($this->site->id))->toBe(['admin' => 'admin.example.com', 'api' => null]);
+
+    $routeId = app(EdgeRoutes::class)->routeId($this->site->id);
+    $payload = app(EdgeRoutes::class)->compile($this->server->id);
+    expect(collect($payload['sites'])->firstWhere('id', $routeId)['domains'])->toBe(['admin.example.com', 'stack.kiln.test']);
+})->with(['extraction first' => false, 'import first' => true]);
+
+it('hands domains over when the public services are reordered', function () {
+    $site = Site::query()->findOrFail($this->site->id);
+    [$web, $admin, $api] = $site->public_services;
+    $site->forceFill(['public_services' => [$admin, $web, $api]])->save();
+    app(ComposeServiceDomains::class)->import($this->site->id);
+
+    $rows = Domain::query()->get()->keyBy('name');
+    expect($rows['admin.example.com']->compose_service)->toBeNull()
+        ->and($rows['stack.example.com']->compose_service)->toBe('web')
+        ->and(compose_public($this->site->id))->toBe(['admin' => 'admin.example.com', 'web' => 'stack.example.com', 'api' => null]);
+
+    $routeId = app(EdgeRoutes::class)->routeId($this->site->id);
+    $payload = app(EdgeRoutes::class)->compile($this->server->id);
+    expect(collect($payload['sites'])->firstWhere('id', $routeId)['domains'])->toBe(['admin.example.com', 'stack.kiln.test'])
+        ->and(collect($payload['sites'])->firstWhere('id', "{$routeId}-svc-web")['domains'])->toBe(['stack.example.com', 'web-stack.kiln.test']);
+});
+
+it('removes the domains and rules of a service that is no longer public', function () {
+    Header::query()->create(['site_id' => $this->site->id, 'compose_service' => 'admin', 'name' => 'X-Admin', 'value' => '1']);
+
+    event(new ComposeServicesUnpublished($this->site->id, $this->organization->id, ['admin']));
+
+    expect(Domain::query()->where('name', 'admin.example.com')->exists())->toBeFalse()
+        ->and(Header::query()->where('name', 'X-Admin')->exists())->toBeFalse()
+        ->and(Domain::query()->where('name', 'stack.example.com')->exists())->toBeTrue();
+});

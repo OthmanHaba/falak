@@ -15,11 +15,37 @@ A site with `runtime = compose` is a Docker Compose project managed by Kiln: dep
 | `repo` | `compose_file` path in the site's git repository (default `compose.yaml`, then `docker-compose.yml`) | Git-backed apps |
 | `inline` | `compose_content` stored in Kiln, **versioned** like environment variables (history + restore) | Templates, pasted stacks |
 
+Repository sources ([plans/COMPOSE_APPS.md](plans/COMPOSE_APPS.md)): `compose_files` (several files merged in `-f`
+order; `compose_file` is the first), `compose_profiles` (services of other profiles don't run), `include` and
+`extends` (files from the repository only). kiln-builder merges the project like `docker compose config` with every
+relative path rebased to the repository root, and ships the repository files it mounts or reads (bind sources,
+`env_file`, `configs`/`secrets` `file:`; at most 200 files / 2 MB) with each release under `<release>/repo/` (agent
+feature `compose.v2`). The control plane previews the same project (`ComposeProject`); both follow
+`contracts/compose/merge-cases.json`.
+
+**Kiln adjustments** (render time; the repository is never edited, Settings → Compose shows the diff): services
+replaced by a Kiln database or split into their own Kiln site are removed with their `depends_on`, and the stack's
+variables that pointed at them are rewritten; `container_name` is removed; `restart: unless-stopped` is added where no
+policy is set; bind sources the repository lacks become named volumes `<service>-<path>` (kept across deploys) unless
+the user keeps them as folders; env files the repository lacks are dropped and only those services get Kiln's `.env`
+(every site variable) instead — other services read site variables through `${VAR}` interpolation, so third-party
+images don't receive unrelated secrets; bind mounts and env files naming Kiln's own release files (`./.env`,
+`./compose.yaml`) keep pointing at them; public services without a healthcheck get a warning. Repository paths may
+use any name except `.`/`..`/empty segments, backslashes and control characters (same rule in the builder, the
+agent and the control plane); the release's `repo/` is rebuilt from scratch on every write, without following links.
+Previews read the project under the site's root directory and check each referenced path (files or folders; at
+most 100 lookups in 20 s). Only `${VAR:?…}` / `${VAR?…}` are required variables; viewers see services and variable
+names but not the YAML or env-file values.
+
 ### 1.2 Builds — managed servers never build **[decision]**
 Services with `image:` are pulled on the server. Services with `build:` are built by **kiln-builder in docker mode**
 (a `builder` server or a host builder with `KILN_LOCAL_BUILDER_MODES=native,docker`), pushed to the built-in
-registry, and the rendered compose file references them **by digest**. `repo` sources only; `inline` compose may
-not use `build:` (validation error).
+registry (production: `registry` service behind `https://registry.<domain>` with basic auth, `KILN_REGISTRY_*` in
+`.env`, docs/INSTALL.md §2), and the rendered compose file references them **by digest**. `repo` sources only; `inline` compose may
+not use `build:` (validation error). Old images are deleted daily by `kiln:registry-prune` (builds past
+`KILN_ARTIFACTS_KEEP`, never an image a pending, live or rollback release references — Deployments'
+`RetainedImages` contract) and their layers freed by the weekly `kiln-ctl registry gc` (docs/INSTALL.md → Registry
+storage).
 
 ### 1.3 Rendering (control plane, per release)
 Kiln renders the compose file the agent receives:
@@ -27,11 +53,20 @@ Kiln renders the compose file the agent receives:
   written as the project `.env` and passed as `env`. `KILN_SITE_ID/SERVER_ID/DEPLOYMENT_ID/RELEASE_ID` are added.
 - Images pinned to digests where known (built images always; pulled images resolved on first deploy and recorded
   in the release so rollback is exact) **[decision]**.
-- **Public services**: `public_services: [{service, port, domain?}]`. For each, Kiln publishes
+- **Public services**: `public_services: [{service, port, domain?, health_check_path?}]`. For each, Kiln publishes
   `127.0.0.1:<allocated host port>:<port>` on that service (removing any other host port mapping for it) and Edge
-  routes the domain (or test domain `<service>-<slug>.<KILN_TEST_DOMAIN>` / `<slug>` for the first) to it. On
-  creation `domain` may also be a choice `{type: generated|test|custom, name?}`; a generated one is
+  routes the service's domains (and test domain `<service>-<slug>.<KILN_TEST_DOMAIN>` / `<slug>` for the first) to
+  it. On creation `domain` may also be a choice `{type: generated|test|custom, name?}`; a generated one is
   `<service>-<slug>.<leader-ip-with-dashes>.sslip.io` (docs/API.md → Domains and DNS).
+- **Edge per public service** (docs/plans/COMPOSE_APPS.md, phase 2): every public service's domains are Edge domain
+  rows (`compose_service`; the first public service is the site itself), so each service can have several domains
+  (generated / test / custom / Cloudflare names, automatic TLS, `www` redirects), Cloudflare records, proxy and cache
+  mode per domain, purge after deploy and tunnel routing. Redirects, basic auth, headers and function paths apply to
+  the whole site or to one service; IP lists per service (its allow list replaces the site's, its deny list adds).
+  The `domain` chosen in `public_services` becomes the service's first domain; afterwards `public_services[].domain`
+  mirrors the service's primary domain. The deploy health check requests each public service through its own
+  domains (`health_check_path`, else the site's check path for the first service and "any answer below 500" for the
+  others).
 - Labels `kiln.site`, `kiln.release`, `kiln.service` on every service (logs/metrics attribution).
 - **Policy** (org setting "Allow privileged compose", off by default): reject `privileged: true`, `network_mode: host`,
   `pid: host`, `cap_add` beyond a safe list, host bind mounts outside the release dir, `devices`, and
@@ -60,7 +95,52 @@ template is marked `stateful` and more than one server is picked. `MIGRATE`/lead
   CPU/mem, actions (restart, logs filtered to that service).
 - **Settings → Compose** section: source (repo path / inline editor with YAML syntax highlighting + validation +
   diff + history), public services (service picker from parsed compose + port + domain), policy status.
+- **Settings → Networking**: a service picker; domains, certificates and DNS checks per public service, rules for all
+  services or one.
 - Canvas card subtitle: `Compose · 3 services`; status aggregates service health.
+
+### 1.7 Services that run as Kiln services (docs/plans/COMPOSE_APPS.md, phase 3)
+`Sites\Contracts\ComposeServiceExtraction` takes a service out of the stack; the decision is stored in
+`compose_services` (`{<service>: {mode: database|site, database_id|site_id, rewrites}}`) and the service leaves the
+stack's public services.
+- **`toDatabase`** — a `postgres`/`mysql`/`mariadb` image service becomes a Kiln database on the stack's leader (named
+  after `POSTGRES_DB` / `MYSQL_DATABASE` / `MARIADB_DATABASE`, else `<slug>_<service>`), or links an existing one of
+  the same engine and environment. Projects places it next to the stack as "<stack> <service>". Redis is not a Kiln
+  database: keep it in the stack.
+- **`toSite`** — an app service becomes its own site from the same repository and branch: `root_directory` = its
+  build context (relative to the compose file and the stack's own root directory; contexts outside the repository and
+  remote contexts are refused), `dockerfile` and container port from the service, its `environment:` as variables
+  (`${VAR}` / `${VAR:-default}` filled from the stack's variables), the stack's servers. The user picks framework,
+  runtime, name and domain.
+- **`rewrites`** — variables that pointed at the service, in the remaining services and in the stack's variables,
+  and what they become: a URL with the service as host (`postgres://u:p@db:5432/app`, `http://api:8000/v1`), the bare
+  name under a host-like key (`DB_HOST=db`, `PGHOST=db`) or with a port (`db:5432`), and for databases the companion
+  keys of a service that points at it (`DB_`/`DATABASE_`/`POSTGRES_`/`PG`/`MYSQL_`/`MARIADB_` + `…PORT`, `…USER`,
+  `…PASSWORD`, `…DB`/`…NAME`). Databases → `${{ <name>.KEY }}` references (resolved like any other; containers on
+  the engine's server get the server address, see docs/API.md → Variable references); sites → `https://<primary
+  domain>` plus the path. `DB_CONNECTION=mysql` (a driver name equal to the service name) is not a host.
+- Rewrites are kept per group (`Sites\Contracts\Data\ComposeRewrites`): each remaining service, and the stack's own
+  variables (`.stack`), so `DB_PASSWORD` in two services can point at two databases. The renderer drops the extracted
+  services (and `depends_on` on them) and points a service's rewritten key at its own project variable
+  (`DB_PASSWORD: ${KILN_SVC_WORKER_DB_PASSWORD}`); the release `.env` gets those plus the stack's rewritten variables.
+- Extracting needs the actor's permission for what it creates: `databases.manage` for a database, `sites.create` for
+  a site (otherwise the service stays in the stack, with a warning). The service is claimed under the stack's row
+  lock before anything is created; a failed creation gives it back.
+- **Reaching the stack from a split-out site:** a service run as its own **Docker** site joins the stack's networks
+  (`<stack-slug>_default`, or the networks it was on, by their Compose names with the stack's variables filled in;
+  none for a `network_mode` service) on every server the stack runs on, under its service name plus the aliases it
+  declared per network — so `postgres`, `redis` … still resolve from it, and the stack still reaches it as before
+  (`compose_services[service].networks` / `.network_aliases`; agent feature `docker.networks`, `networks` on
+  `docker.run` / `deploy.container.swap`). Before a deploy replaces its container the network must exist, so a
+  missing one fails the deploy and leaves the running container in place; `docker compose down` on the stack first
+  detaches Kiln's containers from the stack's networks so Compose can remove them. The agent never creates those networks: it waits up to 60 s for the stack's first deploy,
+  then fails the deploy with "deploy the compose stack first". A **native** site (Laravel, Node.js on the host), or a
+  server without the stack, only reaches the stack's public services: the services table and extraction warn
+  (`uses` in the inspect rows: `depends_on` plus hosts in its environment; at extraction, after the stack's variables
+  are filled in). Without the stack the site keeps its own
+  network only. A container joins at most 8 networks with Docker-safe names (`[a-zA-Z0-9][a-zA-Z0-9_.-]*`): others
+  are left out at extraction with a warning (`compose_services[service].skipped_networks`) instead of failing every
+  deploy. The legacy `external: {name: x}` form names the network x.
 
 ---
 

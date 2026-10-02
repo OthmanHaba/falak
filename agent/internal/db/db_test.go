@@ -52,14 +52,24 @@ func newSim(f *runnertest.Fake, client string) *sqlSim {
 					delete(s.dbs, k)
 				}
 			}
-		case strings.Contains(q, "FROM mysql.user") || strings.Contains(q, "FROM pg_roles"):
+		case strings.Contains(q, "FROM mysql.user"): // MySQL accounts are user@host
+			if s.users[between(q, "User='", "'")+"@"+between(q, "Host='", "'")] {
+				out = "1"
+			} else {
+				out = "0"
+			}
+		case strings.Contains(q, "FROM pg_roles"):
 			if s.users[between(q, "='", "'")] {
 				out = "1"
 			} else {
 				out = "0"
 			}
-		case strings.HasPrefix(q, "CREATE USER") || strings.HasPrefix(q, "CREATE ROLE"):
-			s.users[strings.Trim(strings.SplitN(strings.Fields(q)[2], "@", 2)[0], "'\"")] = true
+		case strings.HasPrefix(q, "CREATE USER"):
+			s.users[strings.ReplaceAll(strings.Fields(q)[2], "'", "")] = true
+		case strings.HasPrefix(q, "DROP USER"):
+			delete(s.users, strings.TrimSuffix(strings.ReplaceAll(strings.Fields(q)[4], "'", ""), ";"))
+		case strings.HasPrefix(q, "CREATE ROLE"):
+			s.users[strings.Trim(strings.Fields(q)[2], "\"")] = true
 		case strings.HasPrefix(q, "REVOKE ALL PRIVILEGES ON `") && strings.Contains(q, "GRANT"):
 			return runner.Result{ExitCode: 1, Stderr: []byte("ERROR 1141 (42000): There is no such grant defined")}, nil
 		}
@@ -380,3 +390,81 @@ func TestUserApplyRemoteMySQLBindsAllInterfaces(t *testing.T) {
 }
 
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// Containers on the server reach a localhost engine through the host address: PostgreSQL gets host rules for the
+// Docker ranges only (the firewall lets just the Docker bridges in), not the whole internet.
+func TestUserApplyContainersPostgres(t *testing.T) {
+	f := &runnertest.Fake{}
+	newSim(f, "psql")
+	f.On("systemctl", runner.Result{})
+	db, root := newDB(t, f, nil)
+	dir := filepath.Join(root, "etc/postgresql/16/main")
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(filepath.Join(dir, "postgresql.conf"), nil, 0o644)
+	os.WriteFile(filepath.Join(dir, "pg_hba.conf"), []byte(debianHBA), 0o640)
+
+	p := UserPayload{Engine: "postgres", Username: "app", Password: "pw", Containers: []string{"172.16.0.0/12", "192.168.0.0/16"}}
+	if _, err := db.UserApply(context.Background(), p, st); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "pg_hba.conf"))
+	h := string(b)
+	for _, w := range []string{"host    all    app    172.16.0.0/12 scram-sha-256", "host    all    app    192.168.0.0/16 scram-sha-256"} {
+		if !strings.Contains(h, w) {
+			t.Fatalf("missing %q in\n%s", w, h)
+		}
+	}
+	if strings.Contains(h, "0.0.0.0/0") || !fileExists(filepath.Join(dir, "conf.d/90-kiln-network.conf")) {
+		t.Fatal("expected container ranges only, listening on every interface", h)
+	}
+	r, _ := db.UserApply(context.Background(), p, st)
+	if r.(ChangedResult).Changed {
+		t.Fatal("re-applying the same state changed something")
+	}
+
+	// Turning container access off removes the rules again.
+	p.Containers = nil
+	if r, _ := db.UserApply(context.Background(), p, st); !r.(ChangedResult).Changed {
+		t.Fatal("expected a change")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "pg_hba.conf")); string(b) != debianHBA {
+		t.Fatalf("rules left behind:\n%s", b)
+	}
+
+	if _, err := db.UserApply(context.Background(), UserPayload{Engine: "postgres", Username: "app", Password: "pw", Containers: []string{"172.16.0.1/12"}}, st); !commands.IsPayloadError(err) {
+		t.Fatal("accepted a host address as a range", err)
+	}
+}
+
+// MySQL matches accounts by host: each container range is an extra account with the same password and grants.
+func TestUserApplyContainersMySQL(t *testing.T) {
+	f := &runnertest.Fake{}
+	sim := newSim(f, "mysql")
+	f.On("systemctl", runner.Result{})
+	db, root := newDB(t, f, nil)
+	os.MkdirAll(filepath.Join(root, "etc/mysql/mysql.conf.d"), 0o755)
+
+	p := UserPayload{Engine: "mysql", Username: "app", Password: "pw", Host: "localhost", Grants: []Grant{{Database: "shop"}}, Containers: []string{"172.16.0.0/12"}}
+	if _, err := db.UserApply(context.Background(), p, st); err != nil {
+		t.Fatal(err)
+	}
+	if !sim.users["app@localhost"] || !sim.users["app@172.16.0.0/255.240.0.0"] {
+		t.Fatal("accounts", sim.users)
+	}
+	all := strings.Join(sim.sql, "\n")
+	if !strings.Contains(all, "TO 'app'@'172.16.0.0/255.240.0.0'") {
+		t.Fatal("container account has no grants:\n" + all)
+	}
+	if b, err := os.ReadFile(filepath.Join(root, "etc/mysql/mysql.conf.d/zz-kiln-network.cnf")); err != nil || !strings.Contains(string(b), "bind-address = 0.0.0.0") {
+		t.Fatal("MySQL still bound to localhost", err)
+	}
+
+	// Removing the user removes its container accounts too.
+	p.State = "absent"
+	if _, err := db.UserApply(context.Background(), p, st); err != nil {
+		t.Fatal(err)
+	}
+	if sim.users["app@localhost"] || sim.users["app@172.16.0.0/255.240.0.0"] {
+		t.Fatal("accounts left behind", sim.users)
+	}
+}

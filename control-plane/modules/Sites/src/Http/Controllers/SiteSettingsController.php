@@ -68,6 +68,7 @@ final class SiteSettingsController extends Controller
                 'source_connection_id' => $site->source_connection_id,
                 'repository' => $site->repository,
                 'branch' => $site->branch,
+                'root_directory' => $site->root_directory,
                 'push_to_deploy' => $site->push_to_deploy,
                 'web_directory' => $site->web_directory,
                 'app_port' => $site->app_port,

@@ -5,11 +5,14 @@ namespace Kiln\Databases;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Kiln\Alerting\Contracts\AlertTypes;
 use Kiln\Alerting\Contracts\Severity;
 use Kiln\Databases\Application\Jobs\RunDueBackups;
 use Kiln\Databases\Application\Listeners\DeleteOrganizationData;
+use Kiln\Databases\Application\Listeners\EnableContainerAccessOnUpgrade;
 use Kiln\Databases\Application\Listeners\ForgetDeletedServer;
+use Kiln\Databases\Application\Listeners\ForgetFailedEngine;
 use Kiln\Databases\Application\Listeners\HandleCommandOutcome;
 use Kiln\Databases\Application\Listeners\SyncDatabaseEngine;
 use Kiln\Databases\Contracts\DatabaseConnections;
@@ -27,15 +30,20 @@ use Kiln\Databases\Events\BackupFailed;
 use Kiln\Databases\Events\BackupSucceeded;
 use Kiln\Databases\Events\RestoreFinished;
 use Kiln\Databases\Infrastructure\ActionDatabaseProvisioner;
+use Kiln\Databases\Infrastructure\DatabaseContainerPorts;
 use Kiln\Databases\Infrastructure\EloquentDatabaseConnections;
 use Kiln\Databases\Infrastructure\EloquentDatabaseDirectory;
 use Kiln\Databases\Infrastructure\ObjectStorage\EndpointGuard;
+use Kiln\Fleet\Events\AgentVersionChanged;
 use Kiln\Fleet\Events\CommandFailed;
 use Kiln\Fleet\Events\CommandFinished;
 use Kiln\Identity\Contracts\PermissionRegistry;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Identity\Events\OrganizationDeleted;
 use Kiln\Kernel\Support\ModuleServiceProvider;
+use Kiln\Network\Contracts\ContainerHostPorts;
+use Kiln\Servers\Events\DatabaseEngineInstalled;
+use Kiln\Servers\Events\DatabaseEngineInstallFailed;
 use Kiln\Servers\Events\ServerDeleted;
 use Kiln\Servers\Events\ServerProvisioned;
 
@@ -50,6 +58,7 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         DatabaseDirectory::class => EloquentDatabaseDirectory::class,
         DatabaseConnections::class => EloquentDatabaseConnections::class,
         DatabaseProvisioner::class => ActionDatabaseProvisioner::class,
+        ContainerHostPorts::class => DatabaseContainerPorts::class,
     ];
 
     public function register(): void
@@ -81,8 +90,15 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         Event::listen(CommandFinished::class, [HandleCommandOutcome::class, 'handleFinished']);
         Event::listen(CommandFailed::class, [HandleCommandOutcome::class, 'handleFailed']);
         Event::listen(ServerProvisioned::class, SyncDatabaseEngine::class);
+        Event::listen(DatabaseEngineInstalled::class, [SyncDatabaseEngine::class, 'installed']);
+        Event::listen(DatabaseEngineInstallFailed::class, ForgetFailedEngine::class);
+        Event::listen(AgentVersionChanged::class, EnableContainerAccessOnUpgrade::class);
         Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationData::class);
+
+        if (($invalid = (array) config('databases.container_networks_invalid', [])) !== [] && $this->app->runningInConsole()) {
+            Log::warning('KILN_DOCKER_NETWORKS: ignoring '.implode(', ', $invalid).' (IPv4 networks in CIDR form, /8–/30); containers use '.(implode(', ', (array) config('databases.container_networks', [])) ?: 'none').'.');
+        }
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new RunDueBackups)->everyMinute()->name('databases:backups')->withoutOverlapping();

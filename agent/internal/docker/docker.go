@@ -152,11 +152,23 @@ type RunPayload struct {
 	Ports         []PortSpec        `json:"ports,omitempty"`
 	Volumes       []VolumeSpec      `json:"volumes,omitempty"`
 	Network       string            `json:"network,omitempty"`
+	Networks      []NetworkJoin     `json:"networks,omitempty"`
 	Labels        map[string]string `json:"labels,omitempty"`
 	RestartPolicy string            `json:"restart_policy,omitempty"`
 	MemoryBytes   int64             `json:"memory_bytes,omitempty"`
 	CPUs          float64           `json:"cpus,omitempty"`
 }
+
+// NetworkJoin is an existing network the container joins besides its own, under extra DNS names (a compose service
+// run as its own Kiln site joins its stack's network as the service it was, so both sides keep resolving each other).
+type NetworkJoin struct {
+	Name    string   `json:"name"`
+	Aliases []string `json:"aliases,omitempty"`
+}
+
+// networkWait is how long a container waits for a network it joins to appear (a compose stack deploying in
+// parallel creates it); the deploy then fails with a clear error instead of starting a container that can't resolve.
+var networkWait = 60 * time.Second
 
 type RunResult struct {
 	Changed     bool   `json:"changed"`
@@ -259,16 +271,20 @@ func (s *Service) ensureContainer(ctx context.Context, p RunPayload, st commands
 	if err := s.ensureImage(ctx, p.Image, p.Pull, p.Auth, st); err != nil {
 		return "", false, err
 	}
-	if exists {
-		if p.Pull == "always" && cur.Config.Labels[LabelSpecHash] == hash {
-			// Same spec: only recreate if the pulled image is newer than the container's.
-			if id, ok, _ := s.c.ImageInspect(ctx, p.Image); ok && id == cur.Image {
-				if cur.State.Running {
-					return cur.ID, false, nil
-				}
-				return cur.ID, true, s.c.ContainerStart(ctx, cur.ID)
+	if exists && p.Pull == "always" && cur.Config.Labels[LabelSpecHash] == hash {
+		// Same spec: only recreate if the pulled image is newer than the container's.
+		if id, ok, _ := s.c.ImageInspect(ctx, p.Image); ok && id == cur.Image {
+			if cur.State.Running {
+				return cur.ID, false, nil
 			}
+			return cur.ID, true, s.c.ContainerStart(ctx, cur.ID)
 		}
+	}
+	// Before the current container is touched: a network that never appears fails the run and leaves it in place.
+	if err := s.awaitNetworks(ctx, p.Networks, st); err != nil {
+		return "", false, err
+	}
+	if exists {
 		s.log.Info("recreating container", "name", p.Name)
 		if _, err := s.c.ContainerStop(ctx, cur.ID, 10*time.Second); err != nil && !IsNotFound(err) {
 			return "", false, err
@@ -281,7 +297,42 @@ func (s *Service) ensureContainer(ctx context.Context, p RunPayload, st commands
 	if err != nil {
 		return "", false, err
 	}
+	for _, n := range p.Networks {
+		if err := s.c.NetworkConnect(ctx, n.Name, id, n.Aliases); err != nil {
+			_ = s.c.ContainerRemove(ctx, id)
+			return "", false, fmt.Errorf("joining network %s: %w", n.Name, err)
+		}
+	}
 	return id, true, s.c.ContainerStart(ctx, id)
+}
+
+// awaitNetworks waits (up to networkWait) for the networks a container joins. Kiln never creates them: they belong
+// to the compose stack that owns them.
+func (s *Service) awaitNetworks(ctx context.Context, joins []NetworkJoin, st commands.Stream) error {
+	for _, n := range joins {
+		deadline := time.Now().Add(networkWait)
+		for said := false; ; said = true {
+			ok, err := s.c.NetworkExists(ctx, n.Name)
+			if err != nil {
+				return err
+			}
+			if ok {
+				break
+			}
+			if time.Now().After(deadline) {
+				return fmt.Errorf("network %s does not exist: deploy the compose stack it belongs to first, then redeploy this site", n.Name)
+			}
+			if !said && st != nil {
+				fmt.Fprintf(st.Stdout(), "waiting for network %s (deploy the compose stack it belongs to)\n", n.Name)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Second):
+			}
+		}
+	}
+	return nil
 }
 
 // ---- docker.stop ----

@@ -30,6 +30,9 @@ final class FakeBuildService implements BuildService
     /** Compose file a compose build "finds" in the repository, and the services it builds. */
     public string $composeContent = "services:\n  app:\n    build: .\n";
 
+    /** @var ?list<array{path: string, content: string, mode: int}> repository files a newer builder ships */
+    public ?array $composeAssets = null;
+
     /** @var array<string, string> */
     public array $composeImages = ['app' => 'registry.kiln.local/kiln/shop/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'];
 
@@ -85,7 +88,7 @@ final class FakeBuildService implements BuildService
     public function composeFor(string $buildId): ?ComposeBuildData
     {
         return ($this->builds[$buildId]['status'] ?? null) === BuildStatus::Succeeded
-            ? new ComposeBuildData('compose.yaml', $this->composeContent, $this->composeImages, ['server' => 'registry.kiln.local', 'username' => 'kiln', 'password' => 'secret'])
+            ? new ComposeBuildData('compose.yaml', $this->composeContent, $this->composeImages, ['server' => 'registry.kiln.local', 'username' => 'kiln', 'password' => 'secret'], $this->composeAssets)
             : null;
     }
 

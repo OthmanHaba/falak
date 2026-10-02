@@ -26,6 +26,7 @@ use Kiln\Fleet\Contracts\CommandStatus;
 use Kiln\Fleet\Events\CommandFinished;
 use Kiln\Fleet\Events\CommandOutputReceived;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Events\SiteUpdated;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -424,6 +425,17 @@ it('rolls back to a retained release on all servers', function () {
     Event::assertDispatched(DeploymentRolledBack::class, fn ($e) => ! $e->automatic && $e->toReleaseId === $first->release_id);
 });
 
+it('swaps a container without an edge route when the site has no domain', function () {
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'deploy_script' => '$KILN_FETCH', 'test_domain_enabled' => false]);
+    $deployment = deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($world->agents->last('deploy.container.swap')['payload'])->not->toHaveKey('edge_route_id')
+        ->and($GLOBALS['deploy_http_requests'] ?? [])->toBe([]);
+});
+
 it('keeps N releases and marks older ones pruned', function () {
     $world = deploy_world();
     settings($world, ['keep_releases' => 2]);
@@ -439,6 +451,7 @@ it('keeps N releases and marks older ones pruned', function () {
 
 it('swaps containers blue/green and records the new upstream with Edge', function () {
     $world = deploy_world(servers: 2, site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'deploy_script' => '$KILN_FETCH']);
+    $world->edge->domains[$world->site->id] = ['shop.example.com'];
     $deployment = deploy($world);
     $world->builds->succeed();
     deploy_run_all($world->agents);
@@ -454,6 +467,25 @@ it('swaps containers blue/green and records the new upstream with Edge', functio
         ->and($world->edge->upstreams)->toHaveCount(2)
         ->and($world->edge->upstreams[0])->toMatchArray(['site' => $world->site->id, 'upstream' => '127.0.0.1:4100'])
         ->and(Release::current($world->site->id)->image)->toStartWith('registry.kiln.local/');
+});
+
+it('joins a Docker site split out of a compose stack to the stack networks, under its service name', function () {
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'deploy_script' => '$KILN_FETCH']);
+    $stack = Site::query()->findOrFail($world->site->id)->replicate();
+    $stack->forceFill(['slug' => 'shop', 'name' => 'shop', 'runtime' => 'compose', 'compose_source' => 'inline',
+        'compose_services' => ['api' => ['mode' => 'site', 'site_id' => $world->site->id, 'networks' => ['shop_default', 'shop-backend']]]])->save();
+    foreach (Site::query()->findOrFail($world->site->id)->targets as $target) {
+        $stack->targets()->create(['server_id' => $target->server_id, 'role' => $target->role, 'status' => $target->status]);
+    }
+
+    deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    expect($world->agents->last('deploy.container.swap')['payload']['networks'])->toBe([
+        ['name' => 'shop_default', 'aliases' => ['api']],
+        ['name' => 'shop-backend', 'aliases' => ['api']],
+    ]);
 });
 
 it('runs a docker site on its container port, published on its host ports', function () {

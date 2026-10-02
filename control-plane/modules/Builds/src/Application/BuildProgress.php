@@ -264,13 +264,49 @@ final class BuildProgress
             $images[(string) $service] = $ref;
         }
 
-        $build->forceFill(['compose' => [
+        // Repository files the project mounts (newer builders): shipped with each release under repo/.
+        $assets = [];
+
+        foreach ((array) ($compose['assets'] ?? []) as $asset) {
+            $path = is_array($asset) ? (string) ($asset['path'] ?? '') : '';
+
+            if (! self::validAssetPath($path) || ! is_string($asset['content'] ?? null)) {
+                return "The builder reported an invalid repository file ({$path}).";
+            }
+
+            $assets[] = ['path' => $path, 'content' => $asset['content'], 'mode' => (int) ($asset['mode'] ?? 0o644) === 0o755 ? 0o755 : 0o644];
+        }
+
+        $build->forceFill(['compose' => array_filter([
             'file' => (string) ($compose['file'] ?? 'compose.yaml'),
             'content' => $content,
             'images' => $images,
-        ]]);
+            // Only builders that merge projects report `files`; older ones leave paths to the release directory.
+            'files' => is_array($compose['files'] ?? null) ? array_values(array_map('strval', $compose['files'])) : null,
+            'assets' => is_array($compose['files'] ?? null) ? $assets : null,
+            'missing' => is_array($compose['missing'] ?? null) ? array_values(array_map('strval', $compose['missing'])) : null,
+        ], fn ($value) => $value !== null)]);
 
         return null;
+    }
+
+    /**
+     * A relative repository path without ".", ".." or empty segments, backslashes or control characters (any other
+     * name is fine). Same rule as kiln-builder and the agent's docker.compose.* assets.
+     */
+    public static function validAssetPath(string $path): bool
+    {
+        if ($path === '' || strlen($path) > 512 || str_starts_with($path, '/') || str_contains($path, '\\') || preg_match('/[\x00-\x1f\x7f]/', $path) === 1) {
+            return false;
+        }
+
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

@@ -10,6 +10,7 @@ use Kiln\Alerting\Contracts\Severity;
 use Kiln\Deployments\Events\DeploymentRolledBack;
 use Kiln\Deployments\Events\DeploymentSucceeded;
 use Kiln\Edge\Application\CertificateInstaller;
+use Kiln\Edge\Application\CloudflareRateLimits;
 use Kiln\Edge\Application\EdgeChanges;
 use Kiln\Edge\Application\Jobs\PurgeCloudflareCache;
 use Kiln\Edge\Application\Jobs\ReconcileCloudflareTunnels;
@@ -51,6 +52,8 @@ use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Servers\Events\ServerDeleted;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteDomains;
+use Kiln\Sites\Events\ComposeServiceExtracted;
+use Kiln\Sites\Events\ComposeServicesUnpublished;
 use Kiln\Sites\Events\SiteCreated;
 use Kiln\Sites\Events\SiteDeleted;
 use Kiln\Sites\Events\SiteTargetsChanged;
@@ -120,11 +123,15 @@ class EdgeServiceProvider extends ModuleServiceProvider
         Event::listen(SiteUpdated::class, [ReactToSiteChanges::class, 'updated']);
         Event::listen(SiteTargetsChanged::class, [ReactToSiteChanges::class, 'targetsChanged']);
         Event::listen(SiteDeleted::class, [ReactToSiteChanges::class, 'deleted']);
+        Event::listen(ComposeServiceExtracted::class, [ReactToSiteChanges::class, 'extracted']);
+        Event::listen(ComposeServicesUnpublished::class, [ReactToSiteChanges::class, 'unpublished']);
         Event::listen(OctaneRoutingChanged::class, [ReactToSiteChanges::class, 'octaneRoutingChanged']);
         Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
         // Cloudflare DNS follows the domains (records Kiln created only).
         Event::listen(DomainAdded::class, fn (DomainAdded $event) => SyncCloudflareDns::domain($event->domainId));
         Event::listen(DomainRemoved::class, fn (DomainRemoved $event) => SyncCloudflareDns::forget($event->domainId));
+        // Its Cloudflare rate limit rule goes with it.
+        Event::listen(DomainRemoved::class, fn (DomainRemoved $event) => app(CloudflareRateLimits::class)->resyncFor($event->organizationId, $event->name));
         // A function's domain is how other servers reach its paths (edge mounts).
         Event::listen(DomainAdded::class, fn (DomainAdded $event) => app(PathMounts::class)->functionChanged($event->siteId));
         Event::listen(DomainRemoved::class, fn (DomainRemoved $event) => app(PathMounts::class)->functionChanged($event->siteId));

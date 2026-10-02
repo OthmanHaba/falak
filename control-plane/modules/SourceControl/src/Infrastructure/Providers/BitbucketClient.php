@@ -85,6 +85,57 @@ class BitbucketClient extends HttpProviderClient
         return $commit === null ? null : self::toCommit($commit);
     }
 
+    public function file(Connection $connection, string $repository, string $ref, string $path, int $maxBytes): ?string
+    {
+        $url = '/repositories/'.$this->path($repository).'/src/'.rawurlencode($ref).'/'.self::encodedPath($path);
+        // Metadata first: directories and large files are never downloaded.
+        $meta = $this->json($connection, $url, ['format' => 'meta'], nullOn404: true);
+
+        if ($meta === null || ($meta['type'] ?? null) !== 'commit_file') {
+            return null;
+        }
+
+        if ((int) ($meta['size'] ?? 0) > $maxBytes) {
+            throw $this->tooLarge($path, $maxBytes);
+        }
+
+        $response = $this->send($connection, 'GET', $url, nullOn404: true);
+
+        if ($response === null) {
+            return null;
+        }
+
+        $content = $response->body();
+
+        if (strlen($content) > $maxBytes) {
+            throw $this->tooLarge($path, $maxBytes);
+        }
+
+        return $content;
+    }
+
+    public function exists(Connection $connection, string $repository, string $ref, string $path): bool
+    {
+        return $this->json($connection, '/repositories/'.$this->path($repository).'/src/'.rawurlencode($ref).'/'.self::encodedPath($path), ['format' => 'meta'], nullOn404: true) !== null;
+    }
+
+    public function tree(Connection $connection, string $repository, string $ref, int $limit): array
+    {
+        $paths = [];
+
+        foreach ($this->pages($connection, '/repositories/'.$this->path($repository).'/src/'.rawurlencode($ref).'/', ['max_depth' => 20, 'pagelen' => 100]) as $entry) {
+            if (is_array($entry) && ($entry['type'] ?? null) === 'commit_file' && isset($entry['path'])) {
+                $paths[] = (string) $entry['path'];
+
+                if (count($paths) >= $limit) {
+                    break;
+                }
+            }
+        }
+
+        return $paths;
+    }
+
     public function addDeployKey(Connection $connection, string $repository, string $title, string $publicKey): string
     {
         $response = $this->send($connection, 'POST', '/repositories/'.$this->path($repository).'/deploy-keys', body: ['key' => $publicKey, 'label' => $title]);

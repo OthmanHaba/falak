@@ -60,6 +60,12 @@ final class JobPayload
             'timeout_s' => $build->timeout_s,
         ];
 
+        if ($site->rootDirectory !== null && $site->rootDirectory !== '') {
+            // The app root inside the repository: native builds run and package there, Docker uses it as the context
+            // (and resolves the Dockerfile and compose file from it); the release is that folder.
+            $job['subdir'] = $site->rootDirectory;
+        }
+
         if (($hint = BuildConfiguration::runtimeHint($site)) !== null && $build->mode === 'native') {
             $job['runtime'] = $hint;
         }
@@ -72,8 +78,13 @@ final class JobPayload
 
         if ($build->mode === 'docker' && $site->runtime === SiteRuntime::Compose) {
             // Every `build:` service of the repository's compose file, pushed as <repo>/<slug>/<service>:<build id>.
+            // Several files / profiles need a builder that merges projects (older builders reject the fields).
+            $files = $site->compose->files ?? [];
+            $profiles = $site->compose->profiles ?? [];
             $job['compose'] = array_filter([
-                'file' => $site->compose?->file,
+                'file' => count($files) > 1 || $profiles !== [] ? null : $site->compose?->file,
+                'files' => count($files) > 1 || ($profiles !== [] && $files !== []) ? $files : null,
+                'profiles' => $profiles === [] ? null : $profiles,
                 'image_prefix' => $this->registry->repository($site->slug),
                 'tag' => strtolower($build->id),
                 'build_args' => $env === [] ? null : (object) $env,

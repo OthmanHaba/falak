@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -548,6 +549,68 @@ func (c *Client) NetworkExists(ctx context.Context, name string) (bool, error) {
 		return false, nil
 	}
 	return err == nil, err
+}
+
+// NetworkConnect joins a (created, not yet started) container to a network under extra DNS aliases. Being
+// connected already is not an error.
+func (c *Client) NetworkConnect(ctx context.Context, network, container string, aliases []string) error {
+	body := map[string]any{"Container": container, "EndpointConfig": map[string]any{"Aliases": aliases}}
+	_, err := c.do(ctx, http.MethodPost, "/networks/"+url.PathEscape(network)+"/connect", nil, body, nil)
+	var ae *APIError
+	if errors.As(err, &ae) && ae.Status == http.StatusForbidden && strings.Contains(ae.Message, "already exists") {
+		return nil
+	}
+	return err
+}
+
+// NetworkList returns the names of the networks matching label filters ("k=v").
+func (c *Client) NetworkList(ctx context.Context, labels []string) ([]string, error) {
+	q := url.Values{}
+	if len(labels) > 0 {
+		f, _ := json.Marshal(map[string][]string{"label": labels})
+		q.Set("filters", string(f))
+	}
+	var out []struct {
+		Name string `json:"Name"`
+	}
+	if _, err := c.do(ctx, http.MethodGet, "/networks", q, nil, &out); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(out))
+	for _, n := range out {
+		names = append(names, n.Name)
+	}
+	return names, nil
+}
+
+// NetworkContainers returns the ids of the containers attached to a network (none when it doesn't exist).
+func (c *Client) NetworkContainers(ctx context.Context, name string) ([]string, error) {
+	var out struct {
+		Containers map[string]json.RawMessage `json:"Containers"`
+	}
+	if _, err := c.do(ctx, http.MethodGet, "/networks/"+url.PathEscape(name), nil, nil, &out); err != nil {
+		if IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	ids := make([]string, 0, len(out.Containers))
+	for id := range out.Containers {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
+// NetworkDisconnect detaches a container from a network (a container or network that is gone already is not an
+// error).
+func (c *Client) NetworkDisconnect(ctx context.Context, network, container string) error {
+	body := map[string]any{"Container": container, "Force": true}
+	_, err := c.do(ctx, http.MethodPost, "/networks/"+url.PathEscape(network)+"/disconnect", nil, body, nil)
+	if IsNotFound(err) {
+		return nil
+	}
+	return err
 }
 
 // NetworkCreate creates a bridge network with labels (a 409 "already exists" is not an error).

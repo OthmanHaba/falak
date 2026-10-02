@@ -1,0 +1,9 @@
+services:
+  web:
+    image: nginx:1.28-alpine
+  mailpit:
+    image: axllent/mailpit
+    profiles: [dev]
+  backup:
+    image: alpine
+    profiles: [ops]

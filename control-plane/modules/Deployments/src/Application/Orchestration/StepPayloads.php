@@ -9,7 +9,9 @@ use Kiln\Deployments\Domain\Models\Deployment;
 use Kiln\Deployments\Domain\Models\DeploymentStep;
 use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Edge\Contracts\EdgeRoutes;
+use Kiln\Fleet\Contracts\AgentDirectory;
 use Kiln\Projects\Contracts\VariableReferences;
+use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\Data\SharedPath;
 use Kiln\Sites\Contracts\Data\SiteData;
@@ -30,6 +32,8 @@ final class StepPayloads
         private readonly VariableReferences $references,
         private readonly ComposeSites $compose,
         private readonly FunctionSources $functions,
+        private readonly AgentDirectory $agents,
+        private readonly ComposeServiceExtraction $extraction,
     ) {}
 
     // ---- Docker Compose (docs/COMPOSE_TEMPLATES.md §1.4) -------------------------------------------------------
@@ -64,23 +68,33 @@ final class StepPayloads
             return $release->compose;
         }
 
+        // A service split out into its own Kiln site leaves the stack with this release; until that site is live the
+        // stack's services that use it (an nginx proxying to it, say) would fail to start.
+        foreach ($site->compose->services ?? [] as $service => $decision) {
+            if (($decision['mode'] ?? null) === 'site' && is_string($decision['site_id'] ?? null) && Release::current($decision['site_id']) === null) {
+                throw new RuntimeException("{$service} now runs as its own Kiln site, which hasn't been deployed yet. Deploy that site first, then this stack.");
+            }
+        }
+
         $images = [];
         $version = null;
         $registry = false;
+        $assets = [];
+        $repoFiles = null;
 
         if ($deployment->build_id !== null) {
             $build = $this->builds->composeFor($deployment->build_id) ?? throw new RuntimeException('The build produced no compose file.');
-            [$yaml, $images, $registry] = [$build->content, $build->images, $build->registryAuth !== null];
+            [$yaml, $images, $registry, $assets, $repoFiles] = [$build->content, $build->images, $build->registryAuth !== null, $build->assets ?? [], $build->repoFiles()];
         } else {
             $inline = $this->compose->content($site->id) ?? throw new RuntimeException('The site has no compose file; add one in Settings → Compose.');
             [$yaml, $version] = [$inline->content, $inline->version];
         }
 
-        $rendered = $this->compose->render($site->id, $yaml, $images, (string) $deployment->release_id);
+        $rendered = $this->compose->render($site->id, $yaml, $images, (string) $deployment->release_id, $repoFiles);
 
         $data = [
             'yaml' => $rendered->yaml,
-            'env' => [...$this->releaseVariables($site), ...array_filter([
+            'env' => [...$this->composeVariables($site), ...array_filter([
                 'KILN_SITE_ID' => self::upper($site->id),
                 'KILN_DEPLOYMENT_ID' => self::upper($deployment->id),
                 'KILN_RELEASE_ID' => self::upper($deployment->release_id),
@@ -89,6 +103,8 @@ final class StepPayloads
             'source' => $site->compose?->source->value ?? 'repo',
             'version' => $version,
             'registry' => $registry,
+            // Repository files the project mounts (written under repo/; kept with the release for rollbacks).
+            'assets' => $assets,
         ];
 
         $release->forceFill(['compose' => $data])->save();
@@ -124,6 +140,12 @@ final class StepPayloads
     private function composeFiles(SiteData $site, array $release, string $releaseId, string $serverId, Deployment $deployment): array
     {
         $env = $this->composeEnv($release, $serverId);
+        $assets = array_values((array) ($release['assets'] ?? []));
+
+        // Repository files under repo/ need an agent that writes them (feature compose.v2).
+        if ($assets !== [] && ! ($this->agents->forServers([$serverId])[$serverId] ?? null)?->supports('compose.v2')) {
+            throw new RuntimeException('The Kiln agent on this server is too old for compose projects that mount repository files; update it first.');
+        }
 
         return array_filter([
             'project' => $site->slug,
@@ -132,6 +154,7 @@ final class StepPayloads
                 ['name' => 'compose.yaml', 'content' => $release['yaml']],
                 ['name' => '.env', 'content' => self::composeDotenv($env)],
             ],
+            'assets' => $assets === [] ? null : $assets,
             'env' => (object) $env,
             'project_env_file' => '.env',
             'registry_auth' => $this->composeRegistryAuth($release),
@@ -434,6 +457,22 @@ final class StepPayloads
     }
 
     /**
+     * A compose release's variables: the site's, with the stack variables that pointed at services moved out of the
+     * stack (Kiln databases, own sites) replaced by their rewrites, then resolved like any `${{ }}` reference.
+     *
+     * @return array<string, string>
+     *
+     * @throws RuntimeException
+     */
+    private function composeVariables(SiteData $site): array
+    {
+        $variables = $this->sites->environment($site->id)?->variables ?? [];
+
+        // The stack's rewritten variables replace their values; each remaining service's rewrites get their own names.
+        return $this->resolved($site, [...$variables, ...$this->extraction->rewrites($site->id)->dotenv()]);
+    }
+
+    /**
      * @param  array<string, string>  $variables
      * @return array<string, string>
      *
@@ -589,7 +628,10 @@ final class StepPayloads
                 'expect_status' => (int) ($health['status'] ?? 200),
                 'timeout_s' => max(1, (int) ($health['timeout_s'] ?? 10) * max(1, (int) ($health['retries'] ?? 3))),
             ],
-            'edge_route_id' => $this->edge->routeId($site->id),
+            // Sites with no domain have no edge route (a split-out compose service only its stack reaches).
+            'edge_route_id' => $site->testDomain !== null || $this->edge->domainsFor($site->id) !== [] ? $this->edge->routeId($site->id) : null,
+            // A compose service run as its own site keeps reaching the stack's services (and they it) by name.
+            'networks' => $this->compose->stackNetworks($site->id, $serverId) ?: null,
             'labels' => (object) array_filter([
                 'kiln.site.id' => self::upper($site->id),
                 'kiln.deployment.id' => self::upper($deployment->id),

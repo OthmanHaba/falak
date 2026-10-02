@@ -2,17 +2,20 @@ import { DomainPicker, type DomainChoice } from '@/components/domain-picker';
 import { Button, Callout, Field, IconButton, Input, RelativeTime, Section, Segmented, Select, SkeletonRows, Tag, toast } from '@/components/kiln';
 import { useJson } from '@/hooks/use-json';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
-import { type ServiceTabProps } from '@/lib/registry';
+import { type ComposeServiceChoice, type ServiceTabProps } from '@/lib/registry';
 import { Link } from '@inertiajs/react';
 import { ExternalLink, GitBranch, History, Plus, RotateCcw, ShieldAlert, ShieldCheck, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { deployNow, lineDiff } from '../api';
 import { composeUrl, type ComposeSettingsData, type ComposeSummary } from './api';
+import { useInspection, useSiteCandidates } from './project-api';
+import { AdjustmentsList, InspectionProblems, ProjectFiles, ServicesTable, VariablesList } from './project-parts';
 import { DiffView, YamlEditor } from './yaml-editor';
 
 interface PublicDraft {
     service: string;
     port: string;
+    health_check_path: string;
     /** Saved domains load as custom (a generated name shows as generated); no domain = the test domain. */
     domain: DomainChoice;
 }
@@ -55,10 +58,19 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
     const [history, setHistory] = useState<{ version: number; content: string } | null>(null);
     const [saving, setSaving] = useState<'save' | 'deploy' | null>(null);
     const [errors, setErrors] = useState<Record<string, string>>({});
+    // Repository sources (docs/plans/COMPOSE_APPS.md): files, profiles, per-service decisions, kept bind folders.
+    const [files, setFiles] = useState<string[]>([]);
+    const [profiles, setProfiles] = useState<string[]>([]);
+    const [decisions, setDecisions] = useState<Record<string, ComposeServiceChoice>>({});
+    const [keepBinds, setKeepBinds] = useState<string[]>([]);
 
     const reset = (value: ComposeSettingsData) => {
         setSource(value.source);
         setFile(value.file ?? '');
+        setFiles(value.files ?? []);
+        setProfiles(value.profiles ?? []);
+        setDecisions(Object.fromEntries(Object.entries(value.services ?? {}).map(([service, d]) => [service, { mode: d.mode }])));
+        setKeepBinds(value.adjustments?.keep_binds ?? []);
         setContent(value.content ?? '');
         setSummary(value.summary);
         setPublicServices(
@@ -66,6 +78,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                 service: item.service,
                 port: String(item.port),
                 domain: choiceOf(item.domain, item.test_domain),
+                health_check_path: item.health_check_path ?? '',
             })),
         );
         setReviewing(false);
@@ -98,44 +111,98 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
         };
     }, [content, source, data, url]);
 
-    const services = useMemo(() => summary?.services ?? [], [summary]);
+    // Decisions sent on save: extracted services, plus "keep" for those brought back into the stack.
+    const decisionsBody = useMemo(
+        () =>
+            Object.fromEntries(
+                Object.entries(decisions).filter(([service, d]) => d.mode !== 'keep' || (data?.services?.[service]?.mode ?? 'keep') !== 'keep'),
+            ),
+        [decisions, data],
+    );
+    const inspectBody = useMemo(
+        () =>
+            data && source === 'repo' && data.repository
+                ? {
+                      compose_files: files.filter(Boolean),
+                      compose_profiles: profiles,
+                      compose_services: decisionsBody,
+                      compose_adjustments: { keep_binds: keepBinds },
+                      public_services: publicServices.filter((p) => p.service).map((p) => ({ service: p.service, port: Number(p.port) || 1 })),
+                  }
+                : null,
+        [data, source, files, profiles, decisionsBody, keepBinds, publicServices],
+    );
+    const { inspection, loading: inspecting } = useInspection(`${url}/inspect`, inspectBody);
+    const candidates = useSiteCandidates(`${url}/candidates`, !!data?.can.update && source === 'repo' && !!data?.repository);
+
+    const services = useMemo(
+        () =>
+            source === 'repo' && inspection && !inspection.no_api
+                ? (inspection.services as unknown as ComposeSummary['services'])
+                : (summary?.services ?? []),
+        [source, inspection, summary],
+    );
 
     if (!data) return error ? <Callout tone="danger">{error}</Callout> : <SkeletonRows rows={8} />;
 
     const canUpdate = data.can.update;
     const original = JSON.stringify({
         source: data.source,
-        file: data.file ?? '',
+        files: (data.files ?? []).join('\n'),
+        profiles: (data.profiles ?? []).join(','),
+        decisions: Object.entries(data.services ?? {}).map(([s, d]) => `${s}:${d.mode}`),
+        keepBinds: data.adjustments?.keep_binds ?? [],
         content: data.content ?? '',
-        public: data.public_services.map((item) => [item.service, String(item.port), item.domain ?? '']),
+        public: data.public_services.map((item) => [item.service, String(item.port), item.domain ?? '', item.health_check_path ?? '']),
     });
     const current = JSON.stringify({
         source,
-        file,
+        files: files.filter(Boolean).join('\n'),
+        profiles: profiles.join(','),
+        decisions: Object.entries(decisions)
+            .filter(([, d]) => d.mode !== 'keep')
+            .map(([s, d]) => `${s}:${d.mode}`),
+        keepBinds,
         content: source === 'inline' ? content : (data.content ?? ''),
-        public: publicServices.map((item) => [item.service, item.port, choiceKey(item.domain)]),
+        public: publicServices.map((item) => [item.service, item.port, choiceKey(item.domain), item.health_check_path.trim()]),
     });
     const dirty = original !== current;
     const contentChanged = source === 'inline' && content !== (data.content ?? '');
-    const blocking = source === 'inline' ? [...(summary?.errors ?? []), ...(data.policy.allow_privileged ? [] : (summary?.violations ?? []))] : [];
+    const blocking =
+        source === 'inline'
+            ? [...(summary?.errors ?? []), ...(data.policy.allow_privileged ? [] : (summary?.violations ?? []))]
+            : [...(inspection?.errors ?? []), ...(inspection && !data.policy.allow_privileged ? inspection.violations : [])];
 
     const save = async (then: 'save' | 'deploy') => {
         setSaving(then);
         setErrors({});
         try {
-            const body = await requestJson<{ data: { version: number | null } }>(url, 'PUT', {
+            const body = await requestJson<{ data: { version: number | null; warnings?: string[] } }>(url, 'PUT', {
                 compose_source: source,
-                compose_file: source === 'repo' ? file || null : null,
+                ...(source === 'repo'
+                    ? {
+                          compose_files: files.filter(Boolean),
+                          compose_profiles: profiles,
+                          compose_services: decisionsBody,
+                          compose_adjustments: { keep_binds: keepBinds },
+                      }
+                    : {}),
                 compose_content: source === 'inline' ? content : null,
                 public_services: publicServices
                     .filter((item) => item.service !== '')
-                    .map((item) => ({ service: item.service, port: Number(item.port), domain: choiceBody(item.domain) })),
+                    .map((item) => ({
+                        service: item.service,
+                        port: Number(item.port),
+                        domain: choiceBody(item.domain),
+                        ...(item.health_check_path.trim() ? { health_check_path: item.health_check_path.trim() } : {}),
+                    })),
                 base_version: data.version,
             });
             toast.success(
                 body.data.version && contentChanged ? `Saved as version ${body.data.version}` : 'Compose settings saved',
                 then === 'deploy' ? 'Deploying…' : 'Changes apply on the next deploy.',
             );
+            for (const warning of body.data.warnings ?? []) toast.error('Not applied', warning);
             await reload();
             ctx.refresh();
             if (then === 'deploy') await deployNow(ctx);
@@ -241,22 +308,30 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
             >
                 {source === 'repo' ? (
                     <div className="grid gap-3">
-                        <Field
-                            label="Compose file path"
-                            hint="Relative to the repository root. Empty = compose.yaml, then docker-compose.yml."
-                            error={errors.compose_file}
-                        >
-                            <Input
-                                value={file}
-                                placeholder="compose.yaml"
-                                disabled={!canUpdate}
-                                onChange={(event) => setFile(event.target.value)}
-                                className="font-mono"
-                            />
-                        </Field>
+                        <ProjectFiles
+                            files={files.length > 0 ? files : file ? [file] : []}
+                            profiles={profiles}
+                            candidates={candidates}
+                            disabled={!canUpdate}
+                            errors={{ ...errors, compose_files: errors.compose_files ?? errors.compose_file }}
+                            onChange={(nextFiles, nextProfiles) => {
+                                setFiles(nextFiles);
+                                setProfiles(nextProfiles);
+                            }}
+                        />
+                        {inspection && !inspection.no_api && (
+                            <InspectionProblems inspection={inspection} allowPrivileged={data.policy.allow_privileged} />
+                        )}
+                        {inspection?.no_api && (
+                            <p className="text-fg-muted text-xs">
+                                Kiln can’t read files from this git server; the builder reads them at deploy time.
+                            </p>
+                        )}
                         {data.repository ? (
                             <p className="text-fg-muted flex items-center gap-1.5 text-xs">
                                 <GitBranch className="size-3.5" aria-hidden /> <span className="font-mono">{data.repository}</span>
+                                {data.branch && <span className="font-mono">@ {data.branch}</span>}
+                                {inspecting && <span className="text-fg-faint">· reading…</span>}
                             </p>
                         ) : (
                             <Callout tone="warning">Connect a repository in the Source section, or switch to an inline compose file.</Callout>
@@ -278,6 +353,33 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                 )}
             </Section>
 
+            {source === 'repo' && inspection && !inspection.no_api && inspection.services.length > 0 && (
+                <>
+                    <Section title="Services" description="Where each service runs. Services moved out of the stack are no longer started with it.">
+                        <ServicesTable
+                            services={inspection.services}
+                            withPublic={false}
+                            disabled={!canUpdate}
+                            errors={errors}
+                            keepBinds={keepBinds}
+                            onKeepBinds={setKeepBinds}
+                            choiceOf={(service) => {
+                                const choice = decisions[service] ?? { mode: 'keep' as const };
+
+                                return { row: choice.mode, choice };
+                            }}
+                            onChoice={(service, _row, choice) => setDecisions((current) => ({ ...current, [service]: choice }))}
+                        />
+                    </Section>
+                    <Section title="Variables" description="What the stack reads; set the values in the Variables tab.">
+                        <VariablesList variables={inspection.variables} />
+                    </Section>
+                    <Section title="Kiln adjustments" description="Applied when the stack runs; the repository is never changed.">
+                        <AdjustmentsList inspection={inspection} />
+                    </Section>
+                </>
+            )}
+
             <Section
                 title="Public services"
                 description="Kiln publishes each on 127.0.0.1 and routes it through the edge. The first one gets the site's domains; other host ports are not published."
@@ -287,7 +389,12 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                             size="sm"
                             variant="ghost"
                             icon={<Plus />}
-                            onClick={() => setPublicServices((items) => [...items, { service: '', port: '', domain: { type: 'generated' } }])}
+                            onClick={() =>
+                                setPublicServices((items) => [
+                                    ...items,
+                                    { service: '', port: '', domain: { type: 'generated' }, health_check_path: '' },
+                                ])
+                            }
                         >
                             Add
                         </Button>
@@ -373,7 +480,15 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                                             hint={index === 0 ? 'The site’s own domains (Networking) route here too.' : undefined}
                                             error={errors[`public_services.${index}.domain`]}
                                         >
-                                            {canUpdate ? (
+                                            {known?.domain ? (
+                                                // Saved domains are edge domains: added and removed per service in Settings → Networking.
+                                                <span className="text-fg-muted flex flex-wrap items-center gap-1.5 text-xs">
+                                                    <span className="text-fg font-mono">{known.domain}</span>
+                                                    <Button size="sm" variant="ghost" onClick={() => ctx.open('settings', 'networking')}>
+                                                        Manage domains in Networking
+                                                    </Button>
+                                                </span>
+                                            ) : canUpdate ? (
                                                 <DomainPicker
                                                     label={!item.service || item.service === data.slug ? data.slug : `${item.service}-${data.slug}`}
                                                     serverIds={[]}
@@ -386,6 +501,22 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                                             ) : (
                                                 <span className="text-fg font-mono text-xs">{known?.url?.replace(/^https:\/\//, '') ?? '—'}</span>
                                             )}
+                                        </Field>
+                                    </div>
+                                    <div className="sm:col-span-3 sm:col-start-1">
+                                        <Field
+                                            label={<span className="text-fg-muted">Health check path</span>}
+                                            hint="Checked through the edge after each deploy; empty = the container healthcheck only."
+                                            error={errors[`public_services.${index}.health_check_path`]}
+                                        >
+                                            <Input
+                                                value={item.health_check_path}
+                                                placeholder="/"
+                                                disabled={!canUpdate}
+                                                aria-label={`${item.service || 'service'} health check path`}
+                                                onChange={(event) => updatePublic(index, { health_check_path: event.target.value })}
+                                                className="font-mono"
+                                            />
                                         </Field>
                                     </div>
                                 </li>

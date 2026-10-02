@@ -13,6 +13,7 @@ use Kiln\Edge\Domain\Enums\WwwRedirect;
  * @property string $id
  * @property string $organization_id
  * @property string $site_id
+ * @property ?string $compose_service public service of a compose site (null: the site, i.e. its primary service)
  * @property string $name
  * @property bool $is_primary
  * @property WwwRedirect $www_redirect
@@ -21,6 +22,7 @@ use Kiln\Edge\Domain\Enums\WwwRedirect;
  * @property ?string $dns_credential_id
  * @property ?bool $cloudflare_proxied null = the Cloudflare zone's default
  * @property ?string $cloudflare_cache null = standard | everything | bypass
+ * @property ?array{path: ?string, requests: int, period: int, action: string, timeout: int} $cloudflare_rate_limit Cloudflare rate limit rule (null: none)
  * @property ?Certificate $certificate
  * @property ?DnsCredential $dnsCredential
  */
@@ -45,6 +47,7 @@ class Domain extends Model
             'www_redirect' => WwwRedirect::class,
             'tls_mode' => TlsMode::class,
             'cloudflare_proxied' => 'boolean',
+            'cloudflare_rate_limit' => 'array',
         ];
     }
 
@@ -109,6 +112,7 @@ class Domain extends Model
             wwwRedirect: $this->www_redirect->value,
             tls: $this->tls_mode,
             certificateId: $this->certificate_id,
+            service: $this->compose_service,
         );
     }
 }

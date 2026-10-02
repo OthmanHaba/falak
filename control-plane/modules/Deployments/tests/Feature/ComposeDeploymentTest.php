@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
+use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Deployments\Application\Actions\TriggerDeployment;
 use Kiln\Deployments\Application\Orchestration\StepPayloads;
 use Kiln\Deployments\Domain\Enums\DeploymentStatus;
@@ -12,9 +13,14 @@ use Kiln\Deployments\Domain\Models\Release;
 use Kiln\Deployments\Domain\Models\SiteSettings;
 use Kiln\Deployments\Events\DeploymentFailed;
 use Kiln\Deployments\Events\DeploymentRolledBack;
+use Kiln\Fleet\Domain\Models\Agent;
+use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
+use Kiln\Sites\Contracts\Data\ComposeRewrites;
+use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Domain\Models\ComposeVersion;
+use Kiln\Sites\Domain\Models\Site;
 use Symfony\Component\Yaml\Yaml;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -180,6 +186,68 @@ it('rolls back manually to a retained compose release', function () {
         ->and(Release::current($world->site->id)->id)->toBe($first->release_id);
 });
 
+it('ships the repository files a compose project mounts with each release (agent feature compose.v2)', function () {
+    $world = compose_world();
+    $world->builds->composeContent = "services:\n  app:\n    build: .\n    volumes: [\"./docker/nginx.conf:/etc/nginx/nginx.conf:ro\", \"./data:/data\"]\n";
+    $world->builds->composeAssets = [['path' => 'docker/nginx.conf', 'content' => base64_encode("events {}\n"), 'mode' => 0o644]];
+
+    // An agent that can't write repository files gets a clear error instead of a broken mount.
+    Agent::factory()->create(['server_id' => $world->servers[0]->id, 'organization_id' => $world->site->organization_id, 'facts' => ['features' => []]]);
+    $deployment = compose_deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
+        ->and($deployment->error)->toContain('too old for compose projects that mount repository files');
+
+    Agent::query()->where('server_id', $world->servers[0]->id)->update(['facts' => ['features' => ['compose.v2']]]);
+    $deployment = compose_deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    expect($deployment->refresh()->error)->toBeNull();
+    $pull = $world->agents->last('docker.compose.pull')['payload'];
+    $up = $world->agents->last('docker.compose.up')['payload'];
+    $app = Yaml::parse($up['files'][0]['content'])['services']['app'];
+
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($pull['assets'])->toBe([['path' => 'docker/nginx.conf', 'content' => base64_encode("events {}\n"), 'mode' => 0o644]])
+        ->and($up['assets'])->toBe($pull['assets'])
+        ->and($app['volumes'])->toBe(['./repo/docker/nginx.conf:/etc/nginx/nginx.conf:ro', 'app-data:/data'])
+        ->and(Release::query()->find($deployment->release_id)->compose['assets'])->toHaveCount(1);
+});
+
+it('points stack variables at services moved out of the stack, resolved like other references', function () {
+    $world = compose_world();
+    app()->instance(ComposeServiceExtraction::class, new class implements ComposeServiceExtraction
+    {
+        public function toDatabase(string $siteId, string $service, ?string $databaseId, string $engine, ?string $compose = null): DatabaseData
+        {
+            throw new LogicException('not used');
+        }
+
+        public function toSite(string $siteId, string $service, array $site, ?string $compose = null): SiteData
+        {
+            throw new LogicException('not used');
+        }
+
+        public function rewrites(string $siteId): ComposeRewrites
+        {
+            return new ComposeRewrites([ComposeRewrites::STACK => ['DATABASE_URL' => 'postgres://shop@10.0.0.5:5432/shop'], 'worker' => ['DB_PASSWORD' => 'other-db-password']]);
+        }
+    });
+
+    $deployment = compose_deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    $env = $world->agents->last('docker.compose.up')['payload']['env'];
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
+        ->and($env['DATABASE_URL'])->toBe('postgres://shop@10.0.0.5:5432/shop')
+        ->and($env['KILN_SVC_WORKER_DB_PASSWORD'])->toBe('other-db-password')
+        ->and($env['APP_KEY'])->toBe('base64:secret');
+});
+
 it('fails with a clear error when the compose file cannot be rendered', function () {
     $world = compose_world();
     $world->builds->composeContent = "services:\n  web:\n    image: nginx:1\n";
@@ -189,6 +257,20 @@ it('fails with a clear error when the compose file cannot be rendered', function
 
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
         ->and($deployment->error)->toContain('The public service app is not in the compose file.')
+        ->and($world->agents->dispatched('docker.compose.up'))->toBe([]);
+});
+
+it('waits for a split-out service\'s own site before deploying the stack without it', function () {
+    $world = compose_world(site: ['compose_source' => 'inline', 'repository' => null, 'source_connection_id' => null]);
+    ComposeVersion::query()->create(['site_id' => $world->site->id, 'version' => 1, 'content' => "services:\n  app:\n    image: nginx:1.27\n  api:\n    image: ghcr.io/acme/api:1\n", 'created_at' => now()]);
+    $split = '01j9zq4n8v2m6r0t3w5y7b9d1f';
+    Site::query()->whereKey($world->site->id)->update(['compose_services' => json_encode(['api' => ['mode' => 'site', 'site_id' => $split]])]);
+
+    $deployment = compose_deploy($world);
+    deploy_run_all($world->agents);
+
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
+        ->and($deployment->error)->toContain("api now runs as its own Kiln site, which hasn't been deployed yet")
         ->and($world->agents->dispatched('docker.compose.up'))->toBe([]);
 });
 
@@ -207,6 +289,25 @@ it('checks every public service through the edge', function () {
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
         ->and($deployment->error)->toContain('[redis] GET https://cache.example.com/')
         ->and(collect($GLOBALS['deploy_http_requests'])->pluck('url')->all())->toContain('https://'.$world->site->slug.'.kiln.test/health');
+});
+
+it('checks a public service through its own domains and health check path', function () {
+    $world = compose_world(site: ['public_services' => [
+        ['service' => 'app', 'port' => 8080, 'domain' => null, 'host_port' => 3000],
+        ['service' => 'redis', 'port' => 6379, 'domain' => 'cache.example.com', 'host_port' => 3001, 'health_check_path' => '/ping'],
+    ]]);
+    // Domain rows of the service (Edge): checked before the name kept in public_services and the test domain.
+    $world->edge->domains["{$world->site->id}:redis"] = ['cache-2.example.com'];
+    deploy_http(['https://cache-2.example.com/ping' => 404]);
+
+    $deployment = compose_deploy($world);
+    $world->builds->succeed();
+    deploy_run_all($world->agents);
+
+    // A configured path must answer 2xx/3xx.
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
+        ->and($deployment->error)->toContain('[redis] GET https://cache-2.example.com/ping')
+        ->and(collect($GLOBALS['deploy_http_requests'])->pluck('url')->filter(fn ($url) => str_contains($url, 'cache.example.com'))->all())->toBe([]);
 });
 
 it('accepts a redirect from the primary public service (apps that redirect to a login page)', function () {

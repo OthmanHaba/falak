@@ -98,6 +98,10 @@ final class BuildConfiguration
             'node' => $site->nodeVersion,
             'dockerfile' => $site->dockerfile,
             'compose_file' => $site->compose?->file,
+            // Only multi-file / profile projects add keys, so existing builds keep their fingerprint.
+            ...(count($site->compose->files ?? []) > 1 || ($site->compose->profiles ?? []) !== [] ? ['compose_files' => $site->compose->files ?? [], 'compose_profiles' => $site->compose->profiles ?? []] : []),
+            // The job builds from the root directory (subdir): another folder is another artifact. Unset adds no key.
+            ...($site->rootDirectory !== null && $site->rootDirectory !== '' ? ['root_directory' => $site->rootDirectory] : []),
             'env' => hash('sha256', (string) json_encode($env)),
         ] + ($commands === [] ? [] : ['commands' => $commands])));
     }

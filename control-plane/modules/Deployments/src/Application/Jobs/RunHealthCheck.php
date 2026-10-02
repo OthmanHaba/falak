@@ -17,6 +17,7 @@ use Kiln\Edge\Contracts\EdgeRoutes;
 use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\SiteDirectory;
+use Kiln\Sites\Contracts\SiteRuntime;
 use Throwable;
 
 /**
@@ -66,6 +67,14 @@ final class RunHealthCheck implements ShouldQueue
         $site = $sites->find($deployment->site_id);
         $checks = [];
 
+        // A Docker site without a domain has no edge route (a compose service split out into its own site that only its
+        // stack reaches): the swap already checked the container on the server.
+        if ($site?->runtime === SiteRuntime::Docker && $site->testDomain === null && $edge->domainsFor($site->id) === []) {
+            $orchestrator->healthChecked($step->id, true, 'No domain to check through the edge; the container passed its health check on the server.');
+
+            return;
+        }
+
         if ($site?->compose !== null) {
             // Compose: every public service through the edge; the primary answers the configured check.
             $publicServices = $site->compose->publicServices;
@@ -82,19 +91,23 @@ final class RunHealthCheck implements ShouldQueue
                     // Container health is verified by `up --wait`; through the edge a redirect (e.g. to a login page)
                     // also proves the route works unless a specific status is configured.
                     $checks[] = $expect === 200
-                        ? [$host, null, $path, fn (int $status) => $status >= 200 && $status < 400, 'expected 2xx/3xx', $public->service]
-                        : [$host, null, $path, fn (int $status) => $status === $expect, "expected {$expect}", $public->service];
+                        ? [$host, null, $public->healthCheckPath ?? $path, fn (int $status) => $status >= 200 && $status < 400, 'expected 2xx/3xx', $public->service]
+                        : [$host, null, $public->healthCheckPath ?? $path, fn (int $status) => $status === $expect, "expected {$expect}", $public->service];
 
                     continue;
                 }
 
-                $host = $public->domain ?? $public->testDomain;
+                // The service's own domains (edge_domains rows for it, primary first), then its test domain.
+                $host = $this->serviceCandidates($deployment->site_id, $public->service, $public->testDomain, $public->domain, $edge);
 
-                if ($host === null) {
+                if ($host === []) {
                     continue; // not routed
                 }
 
-                $checks[] = [[[$host, $public->domain !== null ? TlsMode::Auto : $edge->testDomainTls()]], null, '/', fn (int $status) => $status < 500, 'expected < 500', $public->service];
+                // A configured path must answer 2xx/3xx; without one any answer below 500 proves the route works.
+                $checks[] = $public->healthCheckPath !== null
+                    ? [$host, null, $public->healthCheckPath, fn (int $status) => $status >= 200 && $status < 400, 'expected 2xx/3xx', $public->service]
+                    : [$host, null, '/', fn (int $status) => $status < 500, 'expected < 500', $public->service];
             }
         } else {
             $checks[] = [$this->candidates($deployment->site_id, $sites, $edge), null, $path, fn (int $status) => $status === $expect, "expected {$expect}", null];
@@ -174,6 +187,34 @@ final class RunHealthCheck implements ShouldQueue
         } catch (Throwable $e) {
             return [false, sprintf('GET %s via %s failed: %s', $url, $ip, $e->getMessage()), false];
         }
+    }
+
+    /**
+     * What to check a compose site's non-primary public service through: its domains (primary first), then its
+     * test domain. $legacyDomain (kept in `public_services` but not a domain row yet) when it has no rows.
+     *
+     * @return list<array{0: ?string, 1: TlsMode}>
+     */
+    private function serviceCandidates(string $siteId, string $service, ?string $testDomain, ?string $legacyDomain, EdgeRoutes $edge): array
+    {
+        try {
+            $domains = array_values(array_filter($edge->domainsFor($siteId, $service), fn (DomainData $d) => ! $d->isWildcard()));
+        } catch (Throwable) {
+            $domains = [];
+        }
+
+        usort($domains, fn (DomainData $a, DomainData $b) => (int) $b->primary <=> (int) $a->primary);
+        $candidates = array_map(fn (DomainData $d) => [$d->name, $d->tls], $domains);
+
+        if ($candidates === [] && $legacyDomain !== null) {
+            $candidates[] = [$legacyDomain, TlsMode::Auto];
+        }
+
+        if ($testDomain !== null) {
+            $candidates[] = [$testDomain, $edge->testDomainTls()];
+        }
+
+        return $candidates;
     }
 
     /**

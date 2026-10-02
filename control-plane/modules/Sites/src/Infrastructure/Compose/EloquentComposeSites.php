@@ -3,7 +3,12 @@
 namespace Kiln\Sites\Infrastructure\Compose;
 
 use DateTimeImmutable;
+use Illuminate\Support\Facades\DB;
+use Kiln\Sites\Application\Compose\ComposeNetworks;
+use Kiln\Sites\Application\Compose\KilnAdjustments;
+use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
+use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\ComposeServiceState;
 use Kiln\Sites\Contracts\Data\ComposeVersionData;
 use Kiln\Sites\Contracts\Data\RenderedCompose;
@@ -30,17 +35,132 @@ final class EloquentComposeSites implements ComposeSites
         return $row?->toData();
     }
 
+    public function project(string $siteId): ?string
+    {
+        $site = Site::query()->find(strtolower($siteId), ['id', 'compose_source', 'compose_snapshot']);
+
+        if ($site === null) {
+            return null;
+        }
+
+        return $site->compose_source === ComposeSource::Inline ? $this->content($site->id)?->content : $site->compose_snapshot;
+    }
+
+    public function stackNetworks(string $siteId, string $serverId): array
+    {
+        $site = Site::query()->find(strtolower($siteId), ['id', 'organization_id']);
+
+        if ($site === null) {
+            return [];
+        }
+
+        $stacks = Site::query()->where('organization_id', $site->organization_id)->where('runtime', SiteRuntime::Compose->value)
+            ->whereNotNull('compose_services')->get();
+
+        foreach ($stacks as $stack) {
+            foreach ((array) $stack->compose_services as $service => $decision) {
+                if (! is_array($decision) || ($decision['mode'] ?? null) !== 'site' || strtolower((string) ($decision['site_id'] ?? '')) !== $site->id) {
+                    continue;
+                }
+
+                if (! in_array(strtolower($serverId), $stack->serverIds(), true)) {
+                    return [];
+                }
+
+                // Decisions recorded before the networks were: the stack's default network. An empty list is a service
+                // on no stack network (network_mode): it joins none.
+                $names = array_key_exists('networks', $decision)
+                    ? array_values(array_filter(array_map('strval', (array) $decision['networks'])))
+                    : ["{$stack->slug}_default"];
+                // Decisions recorded before extraction checked them: only what the agent accepts, never a failed deploy.
+                $names = ComposeNetworks::check($names)['networks'];
+                $declared = (array) ($decision['network_aliases'] ?? []);
+
+                return array_map(function (string $name) use ($service, $declared) {
+                    // The service's name, then the aliases it declared on that network (what the agent accepts).
+                    $aliases = array_values(array_unique(array_filter(
+                        array_map('strval', [(string) $service, ...array_filter((array) ($declared[$name] ?? []), 'is_scalar')]),
+                        fn (string $alias) => ComposeNetworks::validAlias($alias),
+                    )));
+
+                    return array_filter(['name' => $name, 'aliases' => array_slice($aliases, 0, ComposeNetworks::MAX_ALIASES)]);
+                }, $names);
+            }
+        }
+
+        return [];
+    }
+
+    public function setPublicDomains(string $siteId, array $domains): void
+    {
+        // Read-modify-write of public_services under a row lock: Settings → Compose and the extraction write it too.
+        DB::transaction(function () use ($siteId, $domains) {
+            $site = Site::query()->whereKey(strtolower($siteId))->lockForUpdate()->first();
+
+            if ($site === null || $site->runtime !== SiteRuntime::Compose) {
+                return;
+            }
+
+            $public = array_values(array_filter((array) $site->public_services, 'is_array'));
+            $changed = false;
+
+            foreach ($public as $i => $service) {
+                $name = (string) ($service['service'] ?? '');
+
+                if (! array_key_exists($name, $domains) || ($service['domain'] ?? null) === $domains[$name]) {
+                    continue;
+                }
+
+                $public[$i]['domain'] = $domains[$name];
+                $changed = true;
+            }
+
+            if ($changed) {
+                Site::withoutEvents(fn () => $site->forceFill(['public_services' => $public])->save());
+            }
+        });
+    }
+
     public function allowsPrivileged(string $organizationId): bool
     {
         return OrganizationSettings::for($organizationId)->allow_privileged_compose;
     }
 
-    public function render(string $siteId, string $yaml, array $images, string $releaseId): RenderedCompose
+    public function render(string $siteId, string $yaml, array $images, string $releaseId, ?array $repoFiles = null): RenderedCompose
     {
         $site = Site::query()->find(strtolower($siteId)) ?? throw new ComposeRenderException('The site no longer exists.');
 
         if ($site->runtime !== SiteRuntime::Compose) {
             throw new ComposeRenderException('The site is not a Docker Compose site.');
+        }
+
+        // What this release deploys is what the canvas shows for a repository stack (no SiteUpdated: nothing to apply).
+        if ($site->compose_source !== ComposeSource::Inline && $site->compose_snapshot !== $yaml) {
+            Site::withoutEvents(fn () => $site->forceFill(['compose_snapshot' => $yaml])->save());
+        }
+
+        // Kiln's adjustments (docs/plans/COMPOSE_APPS.md): extracted services out, their variables rewritten and,
+        // for repository projects, mounted repository files pointed at <release>/repo/.
+        $config = $site->composeConfig();
+        $adjustedWarnings = [];
+
+        if ($config !== null && ($repoFiles !== null || $config->extracted() !== [])) {
+            try {
+                $loaded = YamlComposeInspector::load($yaml);
+            } catch (ParseException $e) {
+                throw new ComposeRenderException('Invalid compose file: '.$e->getMessage());
+            }
+
+            if (is_array($loaded)) {
+                $adjusted = KilnAdjustments::apply($loaded, $config, $repoFiles, $this->extraction()->rewrites($site->id), array_map(fn ($p) => $p->service, $site->publicServices()));
+
+                if ($adjusted['errors'] !== []) {
+                    throw new ComposeRenderException(implode(' ', $adjusted['errors']));
+                }
+
+                $yaml = self::dump($adjusted['doc']);
+                $adjustedWarnings = $adjusted['warnings'];
+            }
         }
 
         $summary = $this->inspector->parse($yaml);
@@ -62,7 +182,7 @@ final class EloquentComposeSites implements ComposeSites
 
         $publicServices = $site->publicServices();
         $hostPorts = [];
-        $warnings = $summary->warnings;
+        $warnings = [...$summary->warnings, ...$adjustedWarnings];
 
         foreach ($publicServices as $public) {
             if ($summary->service($public->service) === null) {
@@ -120,6 +240,12 @@ final class EloquentComposeSites implements ComposeSites
         }
 
         return new RenderedCompose(self::dump($doc), array_map('strval', array_keys($doc['services'])), $leader, $hostPorts, $warnings);
+    }
+
+    /** Resolved per call: the extraction implementation may itself use compose sites. */
+    private function extraction(): ComposeServiceExtraction
+    {
+        return app(ComposeServiceExtraction::class);
     }
 
     public function pinDigests(string $yaml, array $digests): string

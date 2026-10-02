@@ -63,7 +63,25 @@ type FirewallPayload struct {
 	SSHPort     int    `json:"ssh_port"`
 	AllowICMP   *bool  `json:"allow_icmp"`
 	Rules       []Rule `json:"rules"`
+	// ContainerPorts are host ports the server's containers may reach (Docker bridges: docker0 and br-*), e.g. a
+	// database engine used by compose stacks and functions on the same server. Accepted before the rules.
+	ContainerPorts []ContainerPorts `json:"container_ports,omitempty"`
 }
+
+// ContainerPorts opens ports to the Docker bridge interfaces only (feature db.containers): accepted from Sources (the
+// Docker address ranges) on the bridges, then dropped from everywhere else — ahead of private-network and user rules,
+// so only loopback and containers reach the port.
+type ContainerPorts struct {
+	ID       string   `json:"id"`
+	Protocol string   `json:"protocol"`
+	Ports    []string `json:"ports"`
+	Sources  []string `json:"sources"`
+	Comment  string   `json:"comment"`
+}
+
+// dockerBridges are the interfaces container traffic to the host arrives on: the default bridge and the bridges of
+// user-defined networks (compose projects, kiln-fn). nft matches the trailing * as a wildcard.
+var dockerBridges = []string{"docker0", "br-*"}
 
 // FirewallResult is its result.
 type FirewallResult struct {
@@ -116,6 +134,33 @@ func RenderRuleset(p FirewallPayload) (string, error) {
 	}
 	fmt.Fprintf(&b, "\t\ttcp dport %d accept comment \"kiln:ssh\"\n", ssh)
 	seen := map[string]bool{}
+	for _, c := range p.ContainerPorts {
+		if !idRe.MatchString(c.ID) {
+			return "", perr("invalid container ports id %q", c.ID)
+		}
+		if len(c.Ports) == 0 {
+			return "", perr("container ports %s: no ports", c.ID)
+		}
+		if len(c.Sources) == 0 {
+			return "", perr("container ports %s: no sources", c.ID)
+		}
+		lines, err := renderRule(Rule{ID: "containers-" + c.ID, Protocol: c.Protocol, Ports: c.Ports, Sources: c.Sources, Comment: c.Comment})
+		if err != nil {
+			return "", err
+		}
+		for _, iface := range dockerBridges {
+			for _, l := range lines {
+				b.WriteString("\t\tiifname \"" + iface + "\" " + l + "\n")
+			}
+		}
+		drop, err := renderRule(Rule{ID: "containers-" + c.ID + "-only", Action: "drop", Protocol: c.Protocol, Ports: c.Ports, Comment: "only containers"})
+		if err != nil {
+			return "", err
+		}
+		for _, l := range drop {
+			b.WriteString("\t\t" + l + "\n")
+		}
+	}
 	for _, r := range p.Rules {
 		if !idRe.MatchString(r.ID) {
 			return "", perr("invalid rule id %q", r.ID)

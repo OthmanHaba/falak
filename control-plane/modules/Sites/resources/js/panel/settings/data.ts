@@ -28,6 +28,7 @@ export interface SiteSettingsData {
         docker_image: string | null;
         dockerfile: string | null;
         compose_file: string | null;
+        root_directory: string | null;
         health_check_path: string | null;
         test_domain_enabled: boolean;
         test_domain: string | null;

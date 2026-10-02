@@ -8,9 +8,20 @@ export interface Option {
     label: string;
 }
 
+/** A public service of a compose site (primary first): each has domains and rules of its own. */
+export interface ComposeServiceOption {
+    service: string;
+    primary: boolean;
+    port: number;
+    test_domain: string | null;
+    health_check_path: string | null;
+}
+
 export interface EdgeDomain {
     id: string;
     name: string;
+    /** Compose site: the public service it routes to (null: the primary service, i.e. the site). */
+    service: string | null;
     is_primary: boolean;
     www_redirect: WwwRedirect;
     tls_mode: TlsMode;
@@ -27,6 +38,10 @@ export interface EdgeDomain {
         /** null: the zone's default */
         override: boolean | null;
         cache: 'standard' | 'everything' | 'bypass';
+        /** Cloudflare rate limit rule (null: none). */
+        rate_limit: RateLimitRule | null;
+        /** Another domain's Free-plan rule: it has no host condition, so it applies to this domain too. */
+        zone_rate_limit: ZoneRateLimit | null;
         records: { name: string; type: string; content: string; status: 'pending' | 'synced' | 'conflict' | 'error'; error: string | null }[];
     } | null;
 }
@@ -75,6 +90,8 @@ export interface LoadBalancerConfig {
 export interface DomainsData {
     testDomain: string | null;
     slug: string;
+    /** Compose sites: their public services (empty for other sites). */
+    services: ComposeServiceOption[];
     domains: EdgeDomain[];
     certificates: EdgeCertificate[];
     dnsCredentials: DnsCredentialOption[];
@@ -91,10 +108,14 @@ export interface DomainsData {
 
 /** GET /sites/{site}/routing (JSON). */
 export interface RoutingData {
-    redirects: { id: string; from: string; to: string; status: number }[];
-    rules: { id: string; name: string | null; path: string | null; username: string }[];
-    headers: { id: string; name: string; value: string }[];
+    /** Compose sites: their public services (empty for other sites). Rows with `service` apply to that service only. */
+    services: ComposeServiceOption[];
+    redirects: { id: string; service: string | null; from: string; to: string; status: number }[];
+    rules: { id: string; service: string | null; name: string | null; path: string | null; username: string }[];
+    headers: { id: string; service: string | null; name: string; value: string }[];
     settings: { allow_ips: string[]; deny_ips: string[]; max_body_bytes: number | null; encode: boolean };
+    /** IP lists per compose service: its allow list replaces the site's, its deny list adds to it. */
+    serviceSettings: Record<string, { allow_ips: string[]; deny_ips: string[] }>;
     behindLoadBalancer: boolean;
     can: { manage: boolean };
 }
@@ -155,4 +176,37 @@ export interface DnsCheckData {
     };
     certificate: { status: 'issued' | 'pending'; message: string; issuer: string | null; expires_at: string | null } | null;
     checked_at: string;
+}
+
+export type RateLimitAction = 'block' | 'managed_challenge';
+
+export interface RateLimitRule {
+    path: string | null;
+    requests: number;
+    period: number;
+    action: RateLimitAction;
+    timeout: number;
+}
+
+/** GET /sites/{site}/domains/{domain}/rate-limit */
+export interface ZoneRateLimit {
+    domain: string;
+    path: string | null;
+}
+
+export interface RateLimitData {
+    domain: string;
+    zone_rule: ZoneRateLimit | null;
+    rule: RateLimitRule | null;
+    zone: string | null;
+    proxied: boolean;
+    limits: {
+        plan: string;
+        rules: number;
+        host: boolean;
+        periods: number[];
+        timeouts: number[];
+        challenge_timeout: boolean;
+        note: string | null;
+    } | null;
 }

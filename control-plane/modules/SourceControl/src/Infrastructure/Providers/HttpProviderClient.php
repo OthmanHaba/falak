@@ -77,6 +77,17 @@ abstract class HttpProviderClient implements ProviderClient
         return SourceControlException::provider($this->label(), $message, $response->status());
     }
 
+    /** "dir/my file.yml" → "dir/my%20file.yml" (each segment encoded, slashes kept). */
+    protected static function encodedPath(string $path): string
+    {
+        return implode('/', array_map('rawurlencode', explode('/', trim($path, '/'))));
+    }
+
+    protected function tooLarge(string $path, int $maxBytes): SourceControlException
+    {
+        return SourceControlException::provider($this->label(), "{$path} is larger than ".intdiv($maxBytes, 1024).' KB.');
+    }
+
     protected function maxPages(): int
     {
         return max(1, (int) config('source_control.max_pages', 10));

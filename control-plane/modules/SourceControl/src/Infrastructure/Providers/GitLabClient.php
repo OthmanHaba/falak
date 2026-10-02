@@ -79,6 +79,66 @@ class GitLabClient extends HttpProviderClient
         return $commit === null ? null : $this->toCommit($commit);
     }
 
+    public function file(Connection $connection, string $repository, string $ref, string $path, int $maxBytes): ?string
+    {
+        $url = '/projects/'.$this->id($repository).'/repository/files/'.rawurlencode(trim($path, '/'));
+        // HEAD first: the size comes in a header, so large files are never downloaded.
+        $head = $this->send($connection, 'HEAD', $url, ['ref' => $ref], nullOn404: true);
+
+        if ($head === null) {
+            return null;
+        }
+
+        if ((int) $head->header('X-Gitlab-Size') > $maxBytes) {
+            throw $this->tooLarge($path, $maxBytes);
+        }
+
+        $body = $this->json($connection, $url, ['ref' => $ref], nullOn404: true);
+
+        if ($body === null || ! isset($body['content'])) {
+            return null;
+        }
+
+        if ((int) ($body['size'] ?? 0) > $maxBytes) {
+            throw $this->tooLarge($path, $maxBytes);
+        }
+
+        $content = base64_decode((string) $body['content'], true);
+
+        return $content === false ? null : $content;
+    }
+
+    public function exists(Connection $connection, string $repository, string $ref, string $path): bool
+    {
+        $project = '/projects/'.$this->id($repository).'/repository';
+
+        if ($this->send($connection, 'HEAD', $project.'/files/'.rawurlencode(trim($path, '/')), ['ref' => $ref], nullOn404: true) !== null) {
+            return true;
+        }
+
+        // A directory: its listing is not empty.
+        return ($this->json($connection, $project.'/tree', ['ref' => $ref, 'path' => trim($path, '/'), 'per_page' => 1], nullOn404: true) ?? []) !== [];
+    }
+
+    public function tree(Connection $connection, string $repository, string $ref, int $limit): array
+    {
+        $paths = [];
+
+        foreach ($this->pages($connection, '/projects/'.$this->id($repository).'/repository/tree', ['ref' => $ref, 'recursive' => 'true', 'per_page' => 100]) as $page) {
+            foreach ($page as $entry) {
+                if (is_array($entry) && ($entry['type'] ?? null) === 'blob' && isset($entry['path'])) {
+                    $paths[] = (string) $entry['path'];
+
+                    if (count($paths) >= $limit) {
+                        return $paths;
+                    }
+                }
+            }
+        }
+
+        return $paths;
+    }
+
     public function addDeployKey(Connection $connection, string $repository, string $title, string $publicKey): string
     {
         $response = $this->send($connection, 'POST', '/projects/'.$this->id($repository).'/deploy_keys', body: ['title' => $title, 'key' => $publicKey, 'can_push' => false]);

@@ -3,6 +3,7 @@
 namespace Kiln\SourceControl\Infrastructure\Providers;
 
 use Kiln\SourceControl\Contracts\Data\RepositoryData;
+use Kiln\SourceControl\Contracts\Exceptions\NoApi;
 use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
 use Kiln\SourceControl\Domain\Models\Connection;
 
@@ -46,6 +47,21 @@ class CustomGitClient implements ProviderClient
     public function commit(Connection $connection, string $repository, string $sha): null
     {
         return null;
+    }
+
+    public function file(Connection $connection, string $repository, string $ref, string $path, int $maxBytes): ?string
+    {
+        throw NoApi::forConnection((string) ($connection->name ?? 'This connection'));
+    }
+
+    public function exists(Connection $connection, string $repository, string $ref, string $path): bool
+    {
+        throw NoApi::forConnection((string) ($connection->name ?? 'This connection'));
+    }
+
+    public function tree(Connection $connection, string $repository, string $ref, int $limit): array
+    {
+        throw NoApi::forConnection((string) ($connection->name ?? 'This connection'));
     }
 
     public function addDeployKey(Connection $connection, string $repository, string $title, string $publicKey): string

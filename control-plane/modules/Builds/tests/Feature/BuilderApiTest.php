@@ -113,6 +113,16 @@ it('hands out a native job with short-lived clone credentials and a presigned up
     next_job()->assertNoContent();
 });
 
+it('builds from the site root directory (monorepos): the job carries it as subdir', function () {
+    $world = builds_world(site: ['root_directory' => 'apps/shop']);
+    request_build($world);
+    expect(next_job()->json('subdir'))->toBe('apps/shop');
+
+    $plain = builds_world();
+    request_build($plain);
+    expect(next_job()->json())->not->toHaveKey('subdir');
+});
+
 it('passes variables exposed to the deploy script to the build as well (non-prefixed build-time settings)', function () {
     $world = builds_world();
     $world->site->environmentVersions()->first()->forceFill([
@@ -138,6 +148,22 @@ it('hands native jobs the build and install command overrides from KILN_BUILD_CO
         ->and($native)->toHaveKey('upload')
         // A different build command is a different artifact.
         ->and(app(BuildConfiguration::class)->cacheKey(app(SiteDirectory::class)->find($world->site->id), 'native', str_repeat('a', 40)))->not->toBe($plain);
+});
+
+it('builds a site in another root directory as another artifact, keeping the key of sites without one', function () {
+    $world = builds_world();
+    $key = fn () => app(BuildConfiguration::class)->cacheKey(app(SiteDirectory::class)->find($world->site->id), 'native', str_repeat('a', 40));
+    $plain = $key();
+
+    $world->site->forceFill(['root_directory' => 'apps/api'])->save();
+    $api = $key();
+    $world->site->forceFill(['root_directory' => 'apps/web'])->save();
+    $web = $key();
+    $world->site->forceFill(['root_directory' => null])->save();
+
+    expect($api)->not->toBe($plain)
+        ->and($web)->not->toBe($api)
+        ->and($key())->toBe($plain);
 });
 
 it('runs the build lifecycle from builder events and verifies the uploaded artifact', function () {
@@ -288,6 +314,25 @@ it('hands compose sites a compose build job and stores the built images', functi
     post_events($bad->id, [['command_id' => $bad->id, 'seq' => 0, 'kind' => 'finished', 'exit_code' => 0, 'at' => now()->toIso8601ZuluString(),
         'result' => ['compose' => ['file' => 'compose.yaml', 'content' => '', 'images' => []]]]]);
     expect($bad->refresh()->status)->toBe(BuildStatus::Failed)->and($bad->error)->toBe('The builder reported no compose file.');
+
+    // Builders that merge projects report the files read and the repository files to ship.
+    $merged = request_build($world, str_repeat('e', 40));
+    next_job();
+    post_events($merged->id, [['command_id' => $merged->id, 'seq' => 0, 'kind' => 'finished', 'exit_code' => 0, 'at' => now()->toIso8601ZuluString(),
+        'result' => ['build_id' => $merged->id, 'mode' => 'docker', 'duration_ms' => 5, 'compose' => [
+            'file' => 'deploy/compose.yaml', 'files' => ['deploy/compose.yaml'], 'content' => "services:\n  web:\n    image: nginx\n", 'images' => [],
+            'assets' => [['path' => 'deploy/nginx.conf', 'content' => base64_encode('x'), 'mode' => 0o644]], 'missing' => ['deploy/data'],
+        ]]]])->assertNoContent();
+    $result = app(BuildService::class)->composeFor($merged->id);
+    expect($result->repoFiles())->toBe(['deploy/nginx.conf'])->and($result->missing)->toBe(['deploy/data'])
+        ->and($compose->repoFiles())->toBeNull();
+
+    $escape = request_build($world, str_repeat('f', 40));
+    next_job();
+    post_events($escape->id, [['command_id' => $escape->id, 'seq' => 0, 'kind' => 'finished', 'exit_code' => 0, 'at' => now()->toIso8601ZuluString(),
+        'result' => ['compose' => ['file' => 'compose.yaml', 'files' => ['compose.yaml'], 'content' => "services: {}\n", 'images' => [],
+            'assets' => [['path' => '../etc/passwd', 'content' => '']]]]]]);
+    expect($escape->refresh()->status)->toBe(BuildStatus::Failed)->and($escape->error)->toContain('invalid repository file');
 });
 
 it('only hands organization builders their own builds and respects modes', function () {

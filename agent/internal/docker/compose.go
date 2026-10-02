@@ -33,10 +33,22 @@ type ComposeFile struct {
 	Content string `json:"content"`
 }
 
+// ComposeAsset is a repository file the project mounts or reads (bind-mount source, env_file, configs/secrets
+// `file:`), written to <directory>/repo/<path>; the rendered compose file points there.
+type ComposeAsset struct {
+	Path    string `json:"path"`
+	Content string `json:"content"` // base64
+	Mode    int    `json:"mode,omitempty"`
+}
+
+// AssetsDir is the directory of a compose release holding its repository files.
+const AssetsDir = "repo"
+
 type ComposeUpPayload struct {
 	Project        string            `json:"project"`
 	Directory      string            `json:"directory"`
 	Files          []ComposeFile     `json:"files,omitempty"`
+	Assets         []ComposeAsset    `json:"assets,omitempty"`
 	Env            map[string]string `json:"env,omitempty"`
 	Pull           string            `json:"pull,omitempty"`
 	RemoveOrphans  *bool             `json:"remove_orphans,omitempty"`
@@ -50,6 +62,7 @@ type ComposePullPayload struct {
 	Project        string            `json:"project"`
 	Directory      string            `json:"directory"`
 	Files          []ComposeFile     `json:"files,omitempty"`
+	Assets         []ComposeAsset    `json:"assets,omitempty"`
 	Env            map[string]string `json:"env,omitempty"`
 	ProjectEnvFile string            `json:"project_env_file,omitempty"`
 	RegistryAuth   *Auth             `json:"registry_auth,omitempty"`
@@ -125,9 +138,29 @@ var serviceNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
 
 func validFileName(n string) bool { return fileNameRe.MatchString(n) && n != "." && n != ".." }
 
+// validAssetPath: a relative repository path (any name a repository may hold, e.g. "logo@2x.png" or "my file.txt")
+// without ".", ".." or empty segments, backslashes or control characters. Same rule as kiln-builder and the
+// control plane.
+func validAssetPath(p string) bool {
+	if p == "" || len(p) > 512 || strings.HasPrefix(p, "/") || strings.ContainsRune(p, '\\') {
+		return false
+	}
+	for _, r := range p {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
+		}
+	}
+	return true
+}
+
 // prepare validates the project, writes the files and returns the global compose args
 // (-p, --env-file, -f …).
-func (s *Service) prepare(project, dir string, files []ComposeFile, envFile string) ([]string, error) {
+func (s *Service) prepare(project, dir string, files []ComposeFile, envFile string, assets []ComposeAsset) ([]string, error) {
 	if !projectRe.MatchString(project) || !path.IsAbs(dir) {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid project or directory")}
 	}
@@ -139,8 +172,35 @@ func (s *Service) prepare(project, dir string, files []ComposeFile, envFile stri
 			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid file name %q", f.Name)}
 		}
 	}
+	decoded := make([][]byte, len(assets))
+	for i, a := range assets {
+		if !validAssetPath(a.Path) {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid asset path %q", a.Path)}
+		}
+		if a.Mode != 0 && a.Mode != 0o644 && a.Mode != 0o755 {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("asset %s: mode must be 0644 or 0755", a.Path)}
+		}
+		data, err := base64.StdEncoding.DecodeString(a.Content)
+		if err != nil {
+			return nil, &commands.PayloadError{Err: fmt.Errorf("asset %s: content is not base64", a.Path)}
+		}
+		decoded[i] = data
+	}
 	if err := s.opts.FS.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
+	}
+	// Containers can write into a release directory (bind mounts of ./ or ./repo/…) and plant symlinks there, and
+	// rollbacks write into an old release again: every write below stays inside the release directory (os.Root) and
+	// replaces entries instead of writing through them.
+	release, err := os.OpenRoot(s.opts.FS.P(dir))
+	if err != nil {
+		return nil, err
+	}
+	defer release.Close()
+	if assets != nil {
+		if err := writeAssets(release, assets, decoded); err != nil {
+			return nil, err
+		}
 	}
 	args := []string{"compose", "-p", project}
 	if envFile != "" {
@@ -152,7 +212,7 @@ func (s *Service) prepare(project, dir string, files []ComposeFile, envFile stri
 		if strings.HasPrefix(f.Name, ".env") || f.Name == envFile {
 			mode = 0o600
 		}
-		if _, err := s.opts.FS.WriteFile(path.Join(dir, f.Name), []byte(f.Content), mode); err != nil {
+		if err := replaceFile(release, f.Name, []byte(f.Content), mode); err != nil {
 			return nil, err
 		}
 		if f.Name != envFile && !strings.HasPrefix(f.Name, ".env") {
@@ -160,6 +220,74 @@ func (s *Service) prepare(project, dir string, files []ComposeFile, envFile stri
 		}
 	}
 	return args, nil
+}
+
+// writeAssets builds repo/ afresh: repo.tmp is removed (RemoveAll never follows symlinks), filled through a root
+// opened on it, and renamed over repo.
+func writeAssets(release *os.Root, assets []ComposeAsset, decoded [][]byte) error {
+	tmp := AssetsDir + ".tmp"
+	if err := release.RemoveAll(tmp); err != nil {
+		return err
+	}
+	if err := release.Mkdir(tmp, 0o755); err != nil {
+		return err
+	}
+	root, err := release.OpenRoot(tmp)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	for i, a := range assets {
+		mode := os.FileMode(0o644)
+		if a.Mode == 0o755 {
+			mode = 0o755
+		}
+		if d := path.Dir(a.Path); d != "." {
+			if err := root.MkdirAll(d, 0o755); err != nil {
+				return fmt.Errorf("asset %s: %w", a.Path, err)
+			}
+		}
+		if err := createFile(root, a.Path, decoded[i], mode); err != nil {
+			return fmt.Errorf("asset %s: %w", a.Path, err)
+		}
+	}
+	if err := release.RemoveAll(AssetsDir); err != nil {
+		return err
+	}
+	return release.Rename(tmp, AssetsDir)
+}
+
+// replaceFile writes name atomically: a new file (O_EXCL, so never through a link) renamed over the old entry.
+func replaceFile(root *os.Root, name string, data []byte, mode os.FileMode) error {
+	tmp := "." + name + ".kiln-tmp"
+	if err := root.RemoveAll(tmp); err != nil {
+		return err
+	}
+	if err := createFile(root, tmp, data, mode); err != nil {
+		return err
+	}
+	return root.Rename(tmp, name)
+}
+
+// createFile creates a new file (fails if anything exists there) and sets its mode on the open descriptor.
+func createFile(root *os.Root, name string, data []byte, mode os.FileMode) error {
+	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Chmod(mode); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands.Stream) (any, error) {
@@ -173,7 +301,7 @@ func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands
 	if p.WaitTimeoutS < 0 || p.WaitTimeoutS > 3600 {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("wait_timeout_s out of range")}
 	}
-	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile)
+	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile, p.Assets)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +339,7 @@ func (s *Service) composePull(ctx context.Context, p ComposePullPayload, st comm
 			return nil, &commands.PayloadError{Err: fmt.Errorf("invalid service %q", sv)}
 		}
 	}
-	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile)
+	args, err := s.prepare(p.Project, p.Directory, p.Files, p.ProjectEnvFile, p.Assets)
 	if err != nil {
 		return nil, err
 	}
@@ -232,8 +360,41 @@ func (s *Service) composeDown(ctx context.Context, p ComposeDownPayload, st comm
 	if !s.opts.FS.Exists(dir) {
 		dir = "" // compose down by project name works without the directory
 	}
+	s.releaseStackNetworks(ctx, p.Project, st)
 	res, err := s.compose(ctx, dir, nil, nil, args, st)
 	return ExitResult{ExitCode: res.ExitCode}, err
+}
+
+// releaseStackNetworks detaches Kiln's own containers (a split-out service run as its own site) from the project's
+// networks, so `compose down` can remove them: Docker refuses to remove a network with active endpoints. Best effort:
+// what fails here shows in compose's own output.
+func (s *Service) releaseStackNetworks(ctx context.Context, project string, st commands.Stream) {
+	nets, err := s.c.NetworkList(ctx, []string{LabelComposeProject + "=" + project})
+	if err != nil {
+		s.log.Warn("listing compose networks", "project", project, "err", err)
+		return
+	}
+	for _, n := range nets {
+		ids, err := s.c.NetworkContainers(ctx, n)
+		if err != nil {
+			s.log.Warn("reading compose network", "network", n, "err", err)
+			continue
+		}
+		for _, id := range ids {
+			c, ok, err := s.c.ContainerInspect(ctx, id)
+			// The project's own containers are compose's to remove; only Kiln's are detached.
+			if err != nil || !ok || c.Config.Labels[LabelManaged] != "true" || c.Config.Labels[LabelComposeProject] != "" {
+				continue
+			}
+			if err := s.c.NetworkDisconnect(ctx, n, id); err != nil {
+				s.log.Warn("detaching container from compose network", "network", n, "container", c.Name, "err", err)
+				continue
+			}
+			if st != nil {
+				fmt.Fprintf(st.Stdout(), "detached %s from network %s\n", strings.TrimPrefix(c.Name, "/"), n)
+			}
+		}
+	}
 }
 
 func (s *Service) composePs(ctx context.Context, p ComposePsPayload, _ commands.Stream) (any, error) {

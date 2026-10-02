@@ -1,7 +1,8 @@
 #!/bin/sh
 # Kiln edge entrypoint (production counterpart of sim/edge/entrypoint.sh).
 #
-#  - renders the global TLS options (KILN_TLS=acme|internal, KILN_ACME_CA) and the optional Grafana site;
+#  - renders the global TLS options (KILN_TLS=acme|internal, KILN_ACME_CA), the optional Grafana site and the
+#    built-in registry site (KILN_REGISTRY_HOST, basic auth from KILN_REGISTRY_USERNAME/PASSWORD);
 #  - keeps /etc/caddy/trust/ca.pem in sync with the Fleet CA written by the control plane
 #    ($KILN_EDGE_CA_FILE, default /kiln/ca/ca.pem). Until it exists a throwaway placeholder CA (key
 #    discarded) is trusted, so every non-enroll agent call fails closed;
@@ -37,7 +38,7 @@ mkdir -p "$AGENT_TLS" /etc/caddy/sites /etc/caddy/global /etc/caddy/trust
   esac
 } > /etc/caddy/global/tls.caddyfile
 
-rm -f /etc/caddy/sites/grafana.caddyfile /etc/caddy/sites/aliases.caddyfile
+rm -f /etc/caddy/sites/grafana.caddyfile /etc/caddy/sites/aliases.caddyfile /etc/caddy/sites/registry.caddyfile
 # Former panel domains (kiln-ctl domain set --keep-old) redirect to the current one.
 if [ -n "${KILN_DOMAIN_ALIASES:-}" ]; then
   cat > /etc/caddy/sites/aliases.caddyfile <<SITE
@@ -54,6 +55,52 @@ ${KILN_GRAFANA_HOST} {
 	reverse_proxy grafana:3000
 }
 SITE
+fi
+
+# valid_hosts LIST: every comma-separated entry is a DNS name (letters, digits, - and . between labels; no port,
+# wildcard or IP literal), so the value can't add Caddy tokens or site blocks to the rendered Caddyfile.
+valid_hosts() {
+  [ -n "$1" ] || return 1
+  # Checked whole first: no spaces or glob characters reach the word splitting below.
+  case "$1" in *[!A-Za-z0-9.,-]*|,*|*,|*,,*) return 1 ;; esac
+  for h in $(printf '%s' "$1" | tr ',' ' '); do
+    case "$h" in
+      .*|*.|*..*|-*|*-|*.-*|*-.*) return 1 ;;
+    esac
+    [ "${#h}" -le 253 ] || return 1
+  done
+  return 0
+}
+
+# Built-in image registry: never served without credentials (the registry itself has no auth). Former hosts
+# (kiln-ctl domain set --keep-old) keep working, so images referenced by old releases still pull.
+if [ -n "${KILN_REGISTRY_HOST:-}" ] && [ -n "${KILN_REGISTRY_USERNAME:-}" ] && [ -n "${KILN_REGISTRY_PASSWORD:-}" ]; then
+  case "$KILN_REGISTRY_USERNAME" in *[!A-Za-z0-9_.-]*) echo "kiln-edge: KILN_REGISTRY_USERNAME may only use letters, digits, _ . -" >&2; exit 2 ;; esac
+  if ! valid_hosts "$KILN_REGISTRY_HOST" || [ "${KILN_REGISTRY_HOST#*,}" != "$KILN_REGISTRY_HOST" ]; then
+    echo "kiln-edge: KILN_REGISTRY_HOST must be one host name (letters, digits, - and .)" >&2; exit 2
+  fi
+  if [ -n "${KILN_REGISTRY_HOST_ALIASES:-}" ] && ! valid_hosts "$KILN_REGISTRY_HOST_ALIASES"; then
+    echo "kiln-edge: KILN_REGISTRY_HOST_ALIASES must be comma-separated host names (letters, digits, - and .)" >&2; exit 2
+  fi
+  REGISTRY_HASH="$(caddy hash-password --plaintext "$KILN_REGISTRY_PASSWORD")"
+  cat > /etc/caddy/sites/registry.caddyfile <<SITE
+${KILN_REGISTRY_HOST}$(printf '%s' "${KILN_REGISTRY_HOST_ALIASES:-}" | sed 's/^/,/; s/,/, /g; s/^, $//') {
+	log
+	header Docker-Distribution-Api-Version registry/2.0
+	basic_auth {
+		${KILN_REGISTRY_USERNAME} ${REGISTRY_HASH}
+	}
+	# Image layers: no request body limit, stream both ways.
+	reverse_proxy registry:5000 {
+		flush_interval -1
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
+}
+SITE
+  unset REGISTRY_HASH
 fi
 
 # --- dynamic: Fleet CA + agent API certificate ---------------------------------------------------------

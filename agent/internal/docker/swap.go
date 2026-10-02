@@ -27,6 +27,7 @@ type SwapPayload struct {
 	Command     []string          `json:"command,omitempty"`
 	Volumes     []VolumeSpec      `json:"volumes,omitempty"`
 	Network     string            `json:"network,omitempty"`
+	Networks    []NetworkJoin     `json:"networks,omitempty"`
 	MemoryBytes int64             `json:"memory_bytes,omitempty"`
 	CPUs        float64           `json:"cpus,omitempty"`
 	Health      *HealthSpec       `json:"health,omitempty"`
@@ -77,7 +78,7 @@ func (p SwapPayload) runSpec(color string) RunPayload {
 	return RunPayload{
 		Name: "kiln-" + p.Site + "-" + color, Image: p.Image, Env: p.Env, Command: p.Command,
 		Ports:   []PortSpec{{HostIP: "127.0.0.1", HostPort: p.port(color), ContainerPort: p.ContainerPort}},
-		Volumes: p.Volumes, Network: p.Network, Labels: labels, RestartPolicy: "unless-stopped",
+		Volumes: p.Volumes, Network: p.Network, Networks: p.Networks, Labels: labels, RestartPolicy: "unless-stopped",
 		MemoryBytes: p.MemoryBytes, CPUs: p.CPUs,
 	}
 }
@@ -91,13 +92,13 @@ func (p SwapPayload) specHash() string {
 }
 
 func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (any, error) {
-	if p.Site == "" || p.Image == "" || p.ContainerPort == 0 || p.Ports.Blue == 0 || p.Ports.Green == 0 || p.EdgeRouteID == "" {
-		return nil, &commands.PayloadError{Err: fmt.Errorf("site, image, container_port, ports and edge_route_id are required")}
+	if p.Site == "" || p.Image == "" || p.ContainerPort == 0 || p.Ports.Blue == 0 || p.Ports.Green == 0 {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("site, image, container_port and ports are required")}
 	}
 	if p.Ports.Blue == p.Ports.Green {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("blue and green ports must differ")}
 	}
-	if s.opts.Upstreams == nil {
+	if s.opts.Upstreams == nil && p.EdgeRouteID != "" {
 		return nil, fmt.Errorf("container.swap: no edge upstream setter configured")
 	}
 	h := HealthSpec{Path: "/", ExpectStatus: 200, TimeoutS: 60, IntervalMS: 1000}
@@ -144,7 +145,7 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 	if activeC != nil && activeC.Labels["kiln.swap-hash"] == hash && p.Pull != "always" {
 		up := "127.0.0.1:" + strconv.Itoa(p.port(active))
 		if s.healthy(ctx, p.port(active), h) {
-			if err := s.opts.Upstreams.SetUpstreams(ctx, p.EdgeRouteID, []string{up}); err != nil {
+			if err := s.setEdge(ctx, p.EdgeRouteID, up); err != nil {
 				return nil, err
 			}
 			return SwapResult{Changed: false, ActiveColor: active, ContainerID: activeC.ID, Upstream: up}, nil
@@ -167,9 +168,20 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 	} else if ok {
 		_ = s.c.ContainerRemove(ctx, old.ID)
 	}
+	if err := s.awaitNetworks(ctx, spec.Networks, st); err != nil {
+		return nil, err
+	}
 	id, err := s.c.ContainerCreate(ctx, spec.Name, spec.createBody(spec.specHash()))
 	if err != nil {
 		return nil, err
+	}
+	// A split-out compose service joins its stack's networks before it starts, so it resolves the stack's services
+	// (and they it) from its first request.
+	for _, n := range spec.Networks {
+		if err := s.c.NetworkConnect(ctx, n.Name, id, n.Aliases); err != nil {
+			_ = s.c.ContainerRemove(context.WithoutCancel(ctx), id)
+			return nil, fmt.Errorf("joining network %s: %w", n.Name, err)
+		}
 	}
 	if err := s.c.ContainerStart(ctx, id); err != nil {
 		_ = s.c.ContainerRemove(context.WithoutCancel(ctx), id)
@@ -184,10 +196,12 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 		return fail(err)
 	}
 	up := "127.0.0.1:" + strconv.Itoa(p.port(target))
-	if err := s.opts.Upstreams.SetUpstreams(ctx, p.EdgeRouteID, []string{up}); err != nil {
+	if err := s.setEdge(ctx, p.EdgeRouteID, up); err != nil {
 		return fail(fmt.Errorf("switch edge upstream: %w", err))
 	}
-	fmt.Fprintf(st.Stdout(), "edge route %s → %s\n", p.EdgeRouteID, up)
+	if p.EdgeRouteID != "" {
+		fmt.Fprintf(st.Stdout(), "edge route %s → %s\n", p.EdgeRouteID, up)
+	}
 
 	// Drain and retire every other container of this site.
 	if len(running) > 0 && drain > 0 {
@@ -244,4 +258,13 @@ func (s *Service) waitHealthy(ctx context.Context, port int, h HealthSpec, st co
 		case <-time.After(interval):
 		}
 	}
+}
+
+// setEdge points the site's edge route at the new container. Sites without a route (no domain: a compose service split
+// out into its own site that only its stack reaches, over the stack's network) have nothing to switch.
+func (s *Service) setEdge(ctx context.Context, routeID, upstream string) error {
+	if routeID == "" {
+		return nil
+	}
+	return s.opts.Upstreams.SetUpstreams(ctx, routeID, []string{upstream})
 }

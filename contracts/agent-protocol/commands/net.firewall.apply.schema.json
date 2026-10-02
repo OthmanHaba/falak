@@ -82,6 +82,53 @@
           }
         }
       }
+    },
+    "container_ports": {
+      "type": "array",
+      "description": "feature db.containers: host ports the server's containers may reach. Accepted on the Docker bridges only (iifname docker0 and br-*) from sources, then dropped from everywhere else — before the private-network and user rules, so only loopback and containers reach them.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "ports",
+          "sources"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+$"
+          },
+          "protocol": {
+            "enum": [
+              "tcp",
+              "udp",
+              "any"
+            ],
+            "default": "tcp"
+          },
+          "sources": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "description": "Docker address range (CIDR)"
+            }
+          },
+          "ports": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,5}(-[0-9]{1,5})?$"
+            }
+          },
+          "comment": {
+            "type": "string",
+            "maxLength": 120
+          }
+        }
+      }
     }
   },
   "$defs": {

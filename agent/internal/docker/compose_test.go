@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,6 +98,85 @@ func TestComposePull(t *testing.T) {
 	fin, _ = exec1(t, s, "docker.compose.pull", ComposePullPayload{Project: "shop", Directory: "/srv/r", Services: []string{"a;b"}})
 	if fin.ExitCode == nil || *fin.ExitCode != 2 {
 		t.Fatalf("bad service accepted %+v", fin)
+	}
+}
+
+func TestComposeAssetsAreWrittenUnderRepo(t *testing.T) {
+	s, _, fr, _, root := newSvc(t)
+	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	fin, _ := exec1(t, s, "docker.compose.pull", ComposePullPayload{Project: "shop", Directory: "/srv/r",
+		Files:  []ComposeFile{{Name: "compose.yaml", Content: "services: {}\n"}},
+		Assets: []ComposeAsset{{Path: "deploy/nginx.conf", Content: b64("server {}\n")}, {Path: "bin/entry.sh", Content: b64("#!/bin/sh\n"), Mode: 0o755}}})
+	if fin.Error != "" || fr.Calls()[0].Line != "docker compose -p shop -f compose.yaml pull --quiet" {
+		t.Fatalf("%+v %v", fin, fr.Lines())
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "srv/r/repo/deploy/nginx.conf")); string(b) != "server {}\n" {
+		t.Fatalf("asset %q", b)
+	}
+	if st, _ := os.Stat(filepath.Join(root, "srv/r/repo/bin/entry.sh")); st == nil || st.Mode().Perm() != 0o755 {
+		t.Fatalf("executable asset mode %v", st)
+	}
+	for _, bad := range []ComposeAsset{
+		{Path: "../escape", Content: b64("x")},
+		{Path: "a/../../b", Content: b64("x")},
+		{Path: "/etc/passwd", Content: b64("x")},
+		{Path: "ok.txt", Content: "not base64!"},
+		{Path: "ok.txt", Content: b64("x"), Mode: 0o4755},
+	} {
+		fin, _ := exec1(t, s, "docker.compose.pull", ComposePullPayload{Project: "shop", Directory: "/srv/r", Assets: []ComposeAsset{bad}})
+		if fin.ExitCode == nil || *fin.ExitCode != 2 {
+			t.Fatalf("bad asset %+v accepted: %+v", bad, fin)
+		}
+	}
+}
+
+// A container can plant symlinks in a release (rw bind mounts) before a leader command or a rollback rewrites it:
+// writes must stay inside the release directory and never go through a link.
+func TestComposeReleaseWritesNeverFollowPlantedSymlinks(t *testing.T) {
+	s, _, _, _, root := newSvc(t)
+	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	outside := t.TempDir()
+	victim := filepath.Join(outside, "victim")
+	if err := os.WriteFile(victim, []byte("host file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "srv/r")
+	if err := os.MkdirAll(filepath.Join(dir, "repo", "conf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// repo/conf/nginx.conf, repo.tmp and compose.yaml all point at the host file; repo/escape at a host folder.
+	for _, link := range []string{"repo/conf/nginx.conf", "repo.tmp", "compose.yaml", ".compose.yaml.kiln-tmp"} {
+		if err := os.Symlink(victim, filepath.Join(dir, link)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "repo", "escape")); err != nil {
+		t.Fatal(err)
+	}
+
+	fin, _ := exec1(t, s, "docker.compose.pull", ComposePullPayload{Project: "shop", Directory: "/srv/r",
+		Files:  []ComposeFile{{Name: "compose.yaml", Content: "services: {}\n"}},
+		Assets: []ComposeAsset{{Path: "conf/nginx.conf", Content: b64("server {}\n")}, {Path: "escape/x", Content: b64("pwned")}, {Path: "logo@2x.png", Content: b64("png")}}})
+	if fin.Error != "" {
+		t.Fatalf("%+v", fin)
+	}
+	if b, _ := os.ReadFile(victim); string(b) != "host file" {
+		t.Fatalf("host file overwritten: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "x")); !os.IsNotExist(err) {
+		t.Fatal("wrote into a folder outside the release")
+	}
+	for name, want := range map[string]string{"repo/conf/nginx.conf": "server {}\n", "repo/escape/x": "pwned", "repo/logo@2x.png": "png", "compose.yaml": "services: {}\n"} {
+		info, err := os.Lstat(filepath.Join(dir, name))
+		if err != nil || !info.Mode().IsRegular() {
+			t.Fatalf("%s: %v %v", name, info, err)
+		}
+		if b, _ := os.ReadFile(filepath.Join(dir, name)); string(b) != want {
+			t.Fatalf("%s = %q", name, b)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "repo.tmp")); !os.IsNotExist(err) {
+		t.Fatal("repo.tmp left behind")
 	}
 }
 

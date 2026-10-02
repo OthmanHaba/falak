@@ -38,6 +38,37 @@
       },
       "description": "Written into directory before running; compose files are passed with -f in order. .env* files are written 0600 and not passed with -f."
     },
+    "assets": {
+      "type": "array",
+      "maxItems": 200,
+      "description": "Repository files the project mounts or reads, written to <directory>/repo/<path> (agent feature compose.v2).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "content"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 512,
+            "pattern": "^(?:[^./\\\\\\x00-\\x1f\\x7f][^/\\\\\\x00-\\x1f\\x7f]*|\\.[^./\\\\\\x00-\\x1f\\x7f][^/\\\\\\x00-\\x1f\\x7f]*|\\.\\.[^/\\\\\\x00-\\x1f\\x7f]+)(?:/(?:[^./\\\\\\x00-\\x1f\\x7f][^/\\\\\\x00-\\x1f\\x7f]*|\\.[^./\\\\\\x00-\\x1f\\x7f][^/\\\\\\x00-\\x1f\\x7f]*|\\.\\.[^/\\\\\\x00-\\x1f\\x7f]+))*$"
+          },
+          "content": {
+            "type": "string",
+            "contentEncoding": "base64"
+          },
+          "mode": {
+            "type": "integer",
+            "enum": [
+              420,
+              493
+            ]
+          }
+        }
+      }
+    },
     "env": {
       "type": "object",
       "propertyNames": {

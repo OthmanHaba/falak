@@ -14,7 +14,6 @@ use Kiln\Edge\Infrastructure\Cloudflare\CloudflareApi;
 use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
 use Kiln\Sites\Contracts\Data\SiteData;
 use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Contracts\TargetRole;
 
 /**
@@ -35,7 +34,10 @@ final class CloudflareDns
         private readonly SiteDirectory $sites,
     ) {}
 
-    /** Every name of a site: its domains, and its compose public services' domains. */
+    /**
+     * Every name of a site: its domains (a compose site's public services included: they are domain rows too), and
+     * the compose public service domains not imported as rows yet (owned by the site).
+     */
     public function syncSite(string $siteId): void
     {
         foreach (Domain::query()->where('site_id', $siteId)->get() as $domain) {
@@ -43,9 +45,7 @@ final class CloudflareDns
         }
 
         $site = $this->sites->find($siteId);
-        $hosts = $site?->runtime === SiteRuntime::Compose && $site->compose !== null
-            ? array_values(array_filter(array_map(fn ($public) => $public->domain, $site->compose->publicServices)))
-            : [];
+        $hosts = $site !== null ? self::unimportedComposeHosts($site) : [];
 
         $this->reconcile(
             $site?->organizationId,
@@ -53,6 +53,25 @@ final class CloudflareDns
             'kiln:site:'.$siteId,
             $site !== null ? $this->desired($site->organizationId, $site, $hosts, null) : [],
         );
+    }
+
+    /**
+     * Public service domains of a compose site that have no edge_domains row (anywhere): routed and given records as
+     * the site's until imported ({@see ComposeServiceDomains::import()}).
+     *
+     * @return list<string>
+     */
+    public static function unimportedComposeHosts(SiteData $site): array
+    {
+        $hosts = array_values(array_filter(array_map(fn ($public) => $public->domain, ComposeServiceDomains::publicServices($site))));
+
+        if ($hosts === []) {
+            return [];
+        }
+
+        $rows = Domain::query()->whereIn('name', $hosts)->pluck('name')->all();
+
+        return array_values(array_diff($hosts, $rows));
     }
 
     public function sync(Domain $domain): void

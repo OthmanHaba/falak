@@ -1,15 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/deploy.container.swap.schema.json",
-  "title": "deploy.container.swap — blue/green container swap behind Caddy",
+  "title": "deploy.container.swap \u2014 blue/green container swap behind Caddy",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "site",
     "image",
     "container_port",
-    "ports",
-    "edge_route_id"
+    "ports"
   ],
   "properties": {
     "site": {
@@ -115,6 +114,32 @@
     },
     "network": {
       "type": "string"
+    },
+    "networks": {
+      "type": "array",
+      "description": "Existing networks the container joins besides its own (never created by the agent; waits briefly, then fails). A compose service run as its own site joins its stack's network under its service name.",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$"
+          },
+          "aliases": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$"
+            }
+          }
+        }
+      }
     },
     "memory_bytes": {
       "type": "integer",

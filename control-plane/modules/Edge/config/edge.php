@@ -31,6 +31,10 @@ return [
     // Octane sites: how long the edge retries connecting to Octane (it restarts on every deploy) before a 502.
     'octane_try_duration_seconds' => 30,
 
+    // Cloudflare rate limits: seconds a change waits for another one in the same zone (the entry point is read, then
+    // replaced as a whole) before giving up.
+    'cloudflare_lock_wait' => 15,
+
     // Cloudflare Tunnel (Settings → Cloudflare → Servers): the cloudflared release servers run, pinned by checksum.
     'cloudflared' => [
         'version' => env('KILN_CLOUDFLARED_VERSION', '2026.9.3'),

@@ -36,6 +36,10 @@ type fakeEngine struct {
 	restarts   []string
 	// image id → RepoDigests
 	repoDigests map[string][]string
+	// network name → "container:alias,alias" joins
+	networks map[string][]string
+	// network name → labels
+	networkLabels map[string]map[string]string
 }
 
 type fcont struct {
@@ -49,7 +53,7 @@ type fcont struct {
 }
 
 func newEngine() *fakeEngine {
-	return &fakeEngine{images: map[string]string{}, containers: map[string]*fcont{}, repoDigests: map[string][]string{}}
+	return &fakeEngine{images: map[string]string{}, containers: map[string]*fcont{}, repoDigests: map[string][]string{}, networks: map[string][]string{}}
 }
 
 func (e *fakeEngine) byName(n string) *fcont {
@@ -222,6 +226,59 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			jsonOut(w, 404, map[string]string{"message": "unknown " + r.Method + " " + p})
 		}
+	case r.Method == "GET" && p == "/networks":
+		var f map[string][]string
+		json.Unmarshal([]byte(q.Get("filters")), &f)
+		out := []map[string]string{}
+		for name := range e.networks {
+			match := true
+			for _, l := range f["label"] {
+				k, v, _ := strings.Cut(l, "=")
+				if e.networkLabels[name][k] != v {
+					match = false
+				}
+			}
+			if match {
+				out = append(out, map[string]string{"Name": name})
+			}
+		}
+		jsonOut(w, 200, out)
+	case strings.HasPrefix(p, "/networks/") && p != "/networks/create" && p != "/networks/prune":
+		name, action, _ := strings.Cut(strings.TrimPrefix(p, "/networks/"), "/")
+		joins, ok := e.networks[name]
+		if !ok {
+			jsonOut(w, 404, map[string]string{"message": "network " + name + " not found"})
+			return
+		}
+		if r.Method == "POST" && action == "connect" {
+			var b struct {
+				Container      string
+				EndpointConfig struct{ Aliases []string }
+			}
+			json.NewDecoder(r.Body).Decode(&b)
+			e.networks[name] = append(joins, b.Container+":"+strings.Join(b.EndpointConfig.Aliases, ","))
+			w.WriteHeader(200)
+			return
+		}
+		if r.Method == "POST" && action == "disconnect" {
+			var b struct{ Container string }
+			json.NewDecoder(r.Body).Decode(&b)
+			kept := []string{}
+			for _, j := range joins {
+				if id, _, _ := strings.Cut(j, ":"); id != b.Container {
+					kept = append(kept, j)
+				}
+			}
+			e.networks[name] = kept
+			w.WriteHeader(200)
+			return
+		}
+		containers := map[string]any{}
+		for _, j := range joins {
+			id, _, _ := strings.Cut(j, ":")
+			containers[id] = map[string]string{}
+		}
+		jsonOut(w, 200, map[string]any{"Name": name, "Containers": containers})
 	case r.Method == "POST" && strings.HasSuffix(p, "/prune"):
 		e.prunes = append(e.prunes, strings.Trim(strings.TrimSuffix(p, "/prune"), "/")+" "+q.Get("filters"))
 		jsonOut(w, 200, map[string]any{"SpaceReclaimed": 1000})
@@ -549,5 +606,143 @@ func TestContainerSwapHealthFailureKeepsOld(t *testing.T) {
 	fin, _ = exec1(t, s, "deploy.container.swap", p)
 	if !strings.Contains(fin.Error, "caddy down") || e.byName("kiln-shop-green") != nil || !e.byName("kiln-shop-blue").running {
 		t.Fatalf("%+v", fin)
+	}
+}
+
+// A compose service run as its own site joins its stack's network under the service's name, before it starts; a
+// network that never appears fails the run instead of starting a container that can't reach the stack.
+func TestRunJoinsExistingNetworksWithAliases(t *testing.T) {
+	s, e, _, _, _ := newSvc(t)
+	e.networks["shop_default"] = nil
+	p := RunPayload{Name: "kiln-shop-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}}}
+	fin, _ := exec1(t, s, "docker.run", p)
+	if fin.Error != "" {
+		t.Fatalf("%+v", fin)
+	}
+	id := fin.Result.(RunResult).ContainerID
+	if got := e.networks["shop_default"]; len(got) != 1 || got[0] != id+":api" || !e.containers[id].running {
+		t.Fatalf("joins %v", got)
+	}
+	// Same spec: nothing recreated or re-joined.
+	exec1(t, s, "docker.run", p)
+	if len(e.networks["shop_default"]) != 1 {
+		t.Fatalf("re-joined: %v", e.networks["shop_default"])
+	}
+
+	old := networkWait
+	networkWait = 0
+	t.Cleanup(func() { networkWait = old })
+	fin, _ = exec1(t, s, "docker.run", RunPayload{Name: "kiln-other-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "missing_default"}}})
+	if !strings.Contains(fin.Error, "network missing_default does not exist") || e.byName("kiln-other-api-blue") != nil {
+		t.Fatalf("%+v", fin)
+	}
+}
+
+// A changed spec whose network is missing fails before the current container is touched: the service keeps running.
+func TestRunKeepsCurrentContainerWhenNetworkIsMissing(t *testing.T) {
+	s, e, _, _, _ := newSvc(t)
+	e.networks["shop_default"] = nil
+	p := RunPayload{Name: "kiln-shop-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}}}
+	fin, _ := exec1(t, s, "docker.run", p)
+	if fin.Error != "" {
+		t.Fatalf("%+v", fin)
+	}
+	id := fin.Result.(RunResult).ContainerID
+
+	old := networkWait
+	networkWait = 0
+	t.Cleanup(func() { networkWait = old })
+	delete(e.networks, "shop_default") // the stack is being redeployed or was deleted
+	p.Env = map[string]string{"A": "b"}
+	fin, _ = exec1(t, s, "docker.run", p)
+	if !strings.Contains(fin.Error, "network shop_default does not exist") {
+		t.Fatalf("%+v", fin)
+	}
+	if c := e.byName("kiln-shop-api-blue"); c == nil || c.id != id || !c.running {
+		t.Fatalf("current container stopped or replaced: %+v", c)
+	}
+}
+
+// compose down first detaches Kiln's containers (split-out services) from the project's networks, which Docker
+// refuses to remove while they have endpoints; the project's own containers and other networks are left alone.
+func TestComposeDownDetachesKilnContainersFromStackNetworks(t *testing.T) {
+	s, e, fr, _, _ := newSvc(t)
+	e.networks["shop_default"] = nil
+	e.networks["other_default"] = nil
+	e.networkLabels = map[string]map[string]string{
+		"shop_default":  {LabelComposeProject: "shop"},
+		"other_default": {LabelComposeProject: "other"},
+	}
+	fin, _ := exec1(t, s, "docker.run", RunPayload{Name: "kiln-shop-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}, {Name: "other_default"}}})
+	if fin.Error != "" {
+		t.Fatalf("%+v", fin)
+	}
+	kiln := fin.Result.(RunResult).ContainerID
+	e.mu.Lock()
+	e.containers["redis1"] = &fcont{id: "redis1", name: "shop-redis-1", running: true, body: CreateBody{Labels: map[string]string{LabelComposeProject: "shop"}}}
+	e.networks["shop_default"] = append(e.networks["shop_default"], "redis1:redis")
+	e.mu.Unlock()
+
+	fin, col := exec1(t, s, "docker.compose.down", ComposeDownPayload{Project: "shop", Directory: "/srv/kiln/compose/shop"})
+	if fin.Error != "" || fr.Calls()[0].Line != "docker compose -p shop down" {
+		t.Fatalf("%+v %v", fin, fr.Lines())
+	}
+	if got := e.networks["shop_default"]; len(got) != 1 || got[0] != "redis1:redis" {
+		t.Fatalf("shop_default joins %v", got)
+	}
+	if got := e.networks["other_default"]; len(got) != 1 || !strings.HasPrefix(got[0], kiln+":") {
+		t.Fatalf("other_default joins %v", got)
+	}
+	if !strings.Contains(col.Output(""), "detached kiln-shop-api-blue from network shop_default") {
+		t.Fatalf("output %q", col.Output(""))
+	}
+}
+
+// A split-out compose service deployed with a container swap joins its stack's network before it starts (seen on
+// AWS: the swap path created the container on the default bridge only, so it couldn't resolve redis).
+func TestContainerSwapJoinsStackNetworks(t *testing.T) {
+	s, e, _, _, _ := newSvc(t)
+	ok := 200
+	p := swapPayload(healthServer(t, &ok), healthServer(t, &ok))
+	p.Networks = []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}}
+	e.networks["shop_default"] = nil
+
+	fin, col := exec1(t, s, "deploy.container.swap", p)
+	if fin.Error != "" {
+		t.Fatal(fin.Error, col.Output(""))
+	}
+	c := e.byName("kiln-shop-blue")
+	if c == nil || !c.running {
+		t.Fatalf("blue container missing or stopped")
+	}
+	if got := e.networks["shop_default"]; len(got) != 1 || !strings.HasSuffix(got[0], ":api") {
+		t.Fatalf("joins %v", got)
+	}
+
+	old := networkWait
+	networkWait = 0
+	t.Cleanup(func() { networkWait = old })
+	p.Networks = []NetworkJoin{{Name: "missing_default"}}
+	p.Image = "registry.local/shop:def"
+	fin, _ = exec1(t, s, "deploy.container.swap", p)
+	if !strings.Contains(fin.Error, "network missing_default does not exist") {
+		t.Fatalf("%+v", fin)
+	}
+}
+
+// A site without a domain (a split-out compose service only its stack reaches) has no edge route: the swap runs the
+// new container and switches nothing.
+func TestContainerSwapWithoutEdgeRoute(t *testing.T) {
+	s, _, _, up, _ := newSvc(t)
+	ok := 200
+	p := swapPayload(healthServer(t, &ok), healthServer(t, &ok))
+	p.EdgeRouteID = ""
+
+	fin, col := exec1(t, s, "deploy.container.swap", p)
+	if fin.Error != "" {
+		t.Fatal(fin.Error, col.Output(""))
+	}
+	if len(up.calls) != 0 {
+		t.Fatalf("edge switched: %v", up.calls)
 	}
 }

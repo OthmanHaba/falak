@@ -29,8 +29,8 @@ protection, edge cache, hidden server IP). Everything here works on Cloudflare's
 
 - **Records follow your domains.** Adding `shop.example.com` to a service creates one `A`/`AAAA` record per server it
   runs on (the load balancer of a load-balanced site), and for the `www` host when a www redirect is on. They change
-  when the service moves servers and disappear when the domain or service is deleted. Template (compose) services'
-  public domains get records too.
+  when the service moves servers and disappear when the domain or service is deleted. Every public service of a
+  compose (template) site has domains of its own, with records, proxy and cache settings like any domain.
 - **Only its own records.** Kiln tags each record it creates (`kiln:<id>` in the record's comment) and never changes
   anything else. If a name already has a record Kiln did not create, the domain shows a **conflict**: delete that
   record in Cloudflare, then click **Sync**.
@@ -79,6 +79,30 @@ token passed as a systemd credential) and keeps the tunnel's routes in line with
   - *Closed (tunnel)*: no inbound web traffic at all; the server is reached through its Cloudflare Tunnel only. If the
     tunnel stops, the ports fall back to Cloudflare only; taking the server off the tunnel opens them again.
   - SSH stays open either way.
+
+## Rate limits
+
+Kiln's edge on your servers is stock Caddy, which has no rate limiting, so rate limits are Cloudflare rules: they
+only apply to names Cloudflare **proxies** (orange cloud).
+
+- **Per domain** (Networking tab → the domain's ⋯ menu → *Rate limit…*): optional path prefix, a number of requests per
+  window, then *Block* for a while, or *Managed challenge*. Below Enterprise a challenge has no duration: Cloudflare
+  challenges each request over the limit, and a visitor who passes starts counting from zero again (Enterprise sets a
+  duration for both). Counted per visitor IP (and Cloudflare data center).
+- Kiln writes them as rate limiting rules it tags `kiln:ratelimit:<organization>:<domain>`; your own rules in the zone
+  stay untouched (sent back as they are), and so do the rules of other organizations or other Kiln installs sharing the
+  zone. Switching a domain to DNS only takes its rule out of the zone (the setting is kept for when it is proxied
+  again, and the rule comes back with the orange cloud); removing the domain removes its rule. Changes to one zone
+  run one at a time.
+- **What the plan allows** (read from the zone; Cloudflare's [rate limiting
+  rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)): Free: **one rule per zone**, a 10-second
+  window, a 10-second block, and the path is the only request field it can match (no host), so it applies to every
+  proxied name of the zone: the other domains of the zone show a *zone-wide rate limit* warning, and a rule without a
+  path is refused when the panel itself is in the zone. Pro: 2 rules, host + path, windows up to 1 minute, blocks up
+  to 1 hour. Business: 5 rules, up to 10 minutes / 1 day. Enterprise: Kiln allows up to 100 rules, windows up to
+  65,535 s and blocks up to 1 day; the actual rule count depends on the Enterprise contract (Cloudflare refuses what
+  it doesn't allow).
+- The token needs **Zone → Zone WAF → Edit** (Kiln shows Cloudflare's error otherwise).
 
 ## Limits on the Free plan
 

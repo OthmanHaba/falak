@@ -59,27 +59,38 @@ func versionLess(a, b string) bool {
 	return len(pa) < len(pb)
 }
 
-// syncRemoteAccess converges engine-level network access with the remote users in states.
-// It is a no-op for an engine without remote users (a server whose engine was never exposed stays on localhost).
+// hbaEntry is one managed pg_hba.conf host rule: user from source (a CIDR).
+type hbaEntry struct{ user, source string }
+
+// syncRemoteAccess converges engine-level network access with the remote and container users in states.
+// It is a no-op for an engine without such users (a server whose engine was never exposed stays on localhost).
 func (db *DB) syncRemoteAccess(ctx context.Context, e engine, states map[string]userState) error {
-	var users []string
-	for key, s := range states {
-		if s.Remote && strings.HasPrefix(key, e.name+"/") {
-			name, _, _ := strings.Cut(strings.TrimPrefix(key, e.name+"/"), "@")
-			users = append(users, name)
+	var entries []hbaEntry
+	exposed := false
+	for _, key := range sortedKeys(states) {
+		s := states[key]
+		if !strings.HasPrefix(key, e.name+"/") || (!s.Remote && len(s.Containers) == 0 && s.ContainerOf == "") {
+			continue
+		}
+		exposed = true
+		name, _, _ := strings.Cut(strings.TrimPrefix(key, e.name+"/"), "@")
+		if s.Remote {
+			entries = append(entries, hbaEntry{name, "0.0.0.0/0"}, hbaEntry{name, "::/0"})
+		}
+		for _, c := range s.Containers {
+			entries = append(entries, hbaEntry{name, c})
 		}
 	}
-	sort.Strings(users)
 	if e.name == "mysql" {
-		if len(users) == 0 {
+		if !exposed {
 			return nil
 		}
 		return db.mysqlListen(ctx)
 	}
-	return db.pgRemote(ctx, users)
+	return db.pgRemote(ctx, entries)
 }
 
-func (db *DB) pgRemote(ctx context.Context, users []string) error {
+func (db *DB) pgRemote(ctx context.Context, users []hbaEntry) error {
 	dir, err := db.pgClusterDir()
 	if err != nil {
 		if len(users) == 0 {
@@ -129,8 +140,8 @@ func (db *DB) pgRemote(ctx context.Context, users []string) error {
 }
 
 // withHBABlock replaces (or appends, or removes when users is empty) the managed block of pg_hba.conf.
-// Each remote user may connect to any database it has grants on, over IPv4/IPv6, with scram-sha-256.
-func withHBABlock(content string, users []string) string {
+// Each entry lets its user connect from its source to any database it has grants on, with scram-sha-256.
+func withHBABlock(content string, users []hbaEntry) string {
 	var kept []string
 	in := false
 	for _, line := range strings.Split(strings.TrimRight(content, "\n"), "\n") {
@@ -149,8 +160,7 @@ func withHBABlock(content string, users []string) string {
 		b.WriteString(out)
 		b.WriteString("\n\n" + hbaBegin + "\n")
 		for _, u := range users {
-			fmt.Fprintf(&b, "host    all    %s    0.0.0.0/0    scram-sha-256\n", u)
-			fmt.Fprintf(&b, "host    all    %s    ::/0         scram-sha-256\n", u)
+			fmt.Fprintf(&b, "host    all    %s    %-12s scram-sha-256\n", u.user, u.source)
 		}
 		b.WriteString(hbaEnd)
 		out = b.String()

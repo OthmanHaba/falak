@@ -25,7 +25,11 @@ final class PathMounts
     /**
      * @throws ValidationException
      */
-    public function create(SiteData $function, string $hostSiteId, string $path, bool $strip): Mount
+    /**
+     * @param  ?string  $service  a public service of a compose host site: the path is served on that service's
+     *                            domains only (null: on every route of the site)
+     */
+    public function create(SiteData $function, string $hostSiteId, string $path, bool $strip, ?string $service = null): Mount
     {
         $host = $this->sites->find(strtolower($hostSiteId));
         $path = '/'.trim(trim($path), '/');
@@ -33,6 +37,9 @@ final class PathMounts
         if ($host === null || $host->organizationId !== $function->organizationId) {
             throw ValidationException::withMessages(['site_id' => 'Pick a service of this organization.']);
         }
+
+        // The primary service by name is its own route too (rules name it; domains use null).
+        $service = $service === ComposeServiceDomains::primaryService($host) ? $service : ComposeServiceDomains::normalize($host, $service);
 
         if ($host->runtime->isFunction() || $host->id === $function->id) {
             throw ValidationException::withMessages(['site_id' => 'Mount the function on a site, not on a function.']);
@@ -42,7 +49,7 @@ final class PathMounts
             throw ValidationException::withMessages(['path_prefix' => 'Use a path like /api (letters, digits, - _ . ~ and /; not the root).']);
         }
 
-        if (Mount::query()->where('site_id', $host->id)->where('path_prefix', $path)->exists()) {
+        if (Mount::query()->where('site_id', $host->id)->where('compose_service', $service)->where('path_prefix', $path)->exists()) {
             throw ValidationException::withMessages(['path_prefix' => "{$path} of {$host->name} already serves a function."]);
         }
 
@@ -54,10 +61,11 @@ final class PathMounts
             'organization_id' => $function->organizationId,
             'site_id' => $host->id,
             'function_site_id' => $function->id,
+            'compose_service' => $service,
             'path_prefix' => $path,
             'strip_prefix' => $strip,
         ]);
-        $this->audit->record('edge.mount.created', 'site', $host->id, ['path' => $path, 'function' => $function->slug], $function->organizationId);
+        $this->audit->record('edge.mount.created', 'site', $host->id, array_filter(['path' => $path, 'function' => $function->slug, 'service' => $service]), $function->organizationId);
         $this->changes->siteChanged($host->id);
 
         return $mount;
