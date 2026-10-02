@@ -13,6 +13,7 @@ use Kiln\Edge\Domain\Models\Certificate;
 use Kiln\Edge\Domain\Models\Domain;
 use Kiln\Edge\Domain\Models\Header;
 use Kiln\Edge\Domain\Models\LoadBalancer;
+use Kiln\Edge\Domain\Models\Mount;
 use Kiln\Edge\Domain\Models\Redirect;
 use Kiln\Edge\Domain\Models\SecurityRule;
 use Kiln\Edge\Domain\Models\ServiceSetting;
@@ -20,6 +21,7 @@ use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Edge\Domain\Models\Upstream;
 use Kiln\Edge\Events\DomainRemoved;
 use Kiln\Processes\Events\OctaneRoutingChanged;
+use Kiln\Sites\Events\ComposeServiceExtracted;
 use Kiln\Sites\Events\SiteCreated;
 use Kiln\Sites\Events\SiteDeleted;
 use Kiln\Sites\Events\SiteTargetsChanged;
@@ -51,6 +53,33 @@ final class ReactToSiteChanges implements ShouldQueue
         $this->changes->siteChanged($event->siteId, $event->serverIds);
         SyncCloudflareDns::site($event->siteId); // a no-op for names already in place
         $this->mounts->functionChanged($event->siteId);
+    }
+
+    /**
+     * A public compose service now runs as its own Kiln site: its domains and the rules scoped to it move to that site
+     * (as the site's own route), so its URLs keep working. A service moved to a Kiln database has no edge state.
+     */
+    public function extracted(ComposeServiceExtracted $event): void
+    {
+        if ($event->kind !== 'site') {
+            return;
+        }
+        $scoped = fn (string $model) => $model::query()->where('site_id', $event->siteId)->where('compose_service', $event->service);
+        $hasPrimary = Domain::query()->where('site_id', $event->refId)->where('is_primary', true)->exists();
+
+        foreach ($scoped(Domain::class)->orderByDesc('is_primary')->orderBy('created_at')->get() as $domain) {
+            $domain->forceFill(['site_id' => $event->refId, 'compose_service' => null, 'is_primary' => $domain->is_primary && ! $hasPrimary])->save();
+            $hasPrimary = $hasPrimary || $domain->is_primary;
+        }
+        foreach ([Redirect::class, SecurityRule::class, Header::class, Mount::class] as $model) {
+            $scoped($model)->update(['site_id' => $event->refId, 'compose_service' => null]);
+        }
+        ServiceSetting::query()->where('site_id', $event->siteId)->where('service', $event->service)->delete();
+
+        $this->changes->siteChanged($event->siteId);
+        $this->changes->siteChanged($event->refId);
+        SyncCloudflareDns::site($event->siteId);
+        SyncCloudflareDns::site($event->refId);
     }
 
     /** Octane became reachable (proxy to it) or is being switched off (serve directly again) on one server. */

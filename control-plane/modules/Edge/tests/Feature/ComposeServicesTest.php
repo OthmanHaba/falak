@@ -11,6 +11,7 @@ use Kiln\Identity\Contracts\Role;
 use Kiln\Sites\Contracts\SiteDirectory;
 use Kiln\Sites\Contracts\SiteFactory;
 use Kiln\Sites\Domain\Models\Site;
+use Kiln\Sites\Events\ComposeServiceExtracted;
 
 /*
  * Edge for every public service of a compose site (docs/plans/COMPOSE_APPS.md, phase 2), with the real Sites module:
@@ -167,4 +168,21 @@ it('forgets service rows with the site', function () {
     expect(Site::query()->find($this->site->id))->toBeNull()
         ->and(Domain::query()->where('site_id', $this->site->id)->count())->toBe(0)
         ->and(ServiceSetting::query()->count())->toBe(0);
+});
+
+it('moves a split-out service\'s domains and rules to its new site', function () {
+    Redirect::query()->create(['site_id' => $this->site->id, 'compose_service' => 'admin', 'from' => '/old', 'to' => '/new', 'status' => 301, 'position' => 0]);
+    ServiceSetting::query()->create(['site_id' => $this->site->id, 'service' => 'admin', 'allow_ips' => ['203.0.113.0/24'], 'deny_ips' => []]);
+    $split = app(SiteFactory::class)->create($this->organization->id, $this->user->id, [
+        'name' => 'stack-admin', 'framework' => 'docker', 'runtime' => 'docker', 'docker_image' => 'ghcr.io/acme/admin:2', 'container_port' => 9000, 'server_ids' => [$this->server->id],
+    ])->site;
+
+    event(new ComposeServiceExtracted($this->site->id, $this->organization->id, 'admin', 'site', $split->id, 'stack-admin'));
+
+    $moved = Domain::query()->where('name', 'admin.example.com')->firstOrFail();
+    expect($moved->site_id)->toBe($split->id)
+        ->and($moved->compose_service)->toBeNull()
+        ->and(Redirect::query()->where('from', '/old')->value('site_id'))->toBe($split->id)
+        ->and(ServiceSetting::query()->where('service', 'admin')->exists())->toBeFalse()
+        ->and(Domain::query()->where('name', 'stack.example.com')->value('site_id'))->toBe($this->site->id);
 });
