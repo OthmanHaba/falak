@@ -16,9 +16,17 @@ final class ServerFacts
     public function record(Server $server, array $facts): void
     {
         $os = is_array($facts['os'] ?? null) ? trim(($facts['os']['id'] ?? '').' '.($facts['os']['version'] ?? '')) : null;
+        $stored = $facts;
+        $previous = is_array($server->facts) ? $server->facts : [];
+
+        // The stored facts record where private_ipv4 came from (privateIpv4()): a report without the key keeps the
+        // last one the agent sent, so a later null report can still clear it.
+        if (! array_key_exists('private_ipv4', $facts) && array_key_exists('private_ipv4', $previous)) {
+            $stored['private_ipv4'] = $previous['private_ipv4'];
+        }
 
         $server->forceFill([
-            'facts' => $facts,
+            'facts' => $stored,
             'os' => $os ?: $server->os,
             'arch' => $facts['arch'] ?? $server->arch,
             'cpus' => isset($facts['cpus']) ? (int) $facts['cpus'] : $server->cpus,
