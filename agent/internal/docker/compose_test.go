@@ -130,6 +130,56 @@ func TestComposeAssetsAreWrittenUnderRepo(t *testing.T) {
 	}
 }
 
+// A container can plant symlinks in a release (rw bind mounts) before a leader command or a rollback rewrites it:
+// writes must stay inside the release directory and never go through a link.
+func TestComposeReleaseWritesNeverFollowPlantedSymlinks(t *testing.T) {
+	s, _, _, _, root := newSvc(t)
+	b64 := func(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+	outside := t.TempDir()
+	victim := filepath.Join(outside, "victim")
+	if err := os.WriteFile(victim, []byte("host file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "srv/r")
+	if err := os.MkdirAll(filepath.Join(dir, "repo", "conf"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// repo/conf/nginx.conf, repo.tmp and compose.yaml all point at the host file; repo/escape at a host folder.
+	for _, link := range []string{"repo/conf/nginx.conf", "repo.tmp", "compose.yaml", ".compose.yaml.kiln-tmp"} {
+		if err := os.Symlink(victim, filepath.Join(dir, link)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "repo", "escape")); err != nil {
+		t.Fatal(err)
+	}
+
+	fin, _ := exec1(t, s, "docker.compose.pull", ComposePullPayload{Project: "shop", Directory: "/srv/r",
+		Files:  []ComposeFile{{Name: "compose.yaml", Content: "services: {}\n"}},
+		Assets: []ComposeAsset{{Path: "conf/nginx.conf", Content: b64("server {}\n")}, {Path: "escape/x", Content: b64("pwned")}, {Path: "logo@2x.png", Content: b64("png")}}})
+	if fin.Error != "" {
+		t.Fatalf("%+v", fin)
+	}
+	if b, _ := os.ReadFile(victim); string(b) != "host file" {
+		t.Fatalf("host file overwritten: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "x")); !os.IsNotExist(err) {
+		t.Fatal("wrote into a folder outside the release")
+	}
+	for name, want := range map[string]string{"repo/conf/nginx.conf": "server {}\n", "repo/escape/x": "pwned", "repo/logo@2x.png": "png", "compose.yaml": "services: {}\n"} {
+		info, err := os.Lstat(filepath.Join(dir, name))
+		if err != nil || !info.Mode().IsRegular() {
+			t.Fatalf("%s: %v %v", name, info, err)
+		}
+		if b, _ := os.ReadFile(filepath.Join(dir, name)); string(b) != want {
+			t.Fatalf("%s = %q", name, b)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "repo.tmp")); !os.IsNotExist(err) {
+		t.Fatal("repo.tmp left behind")
+	}
+}
+
 func TestComposePsWithStats(t *testing.T) {
 	s, e, _, _, _ := newSvc(t)
 	addComposeContainer(e, "shop", "app", "app:1", "sha256:x")

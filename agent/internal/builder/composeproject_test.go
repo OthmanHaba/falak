@@ -64,6 +64,18 @@ func TestLoadComposeProjectSharedCases(t *testing.T) {
 	}
 }
 
+func TestValidAssetPath(t *testing.T) {
+	for p, want := range map[string]bool{
+		"logo@2x.png": true, "my file.txt": true, "a/b+c/d.conf": true, "ü/ñ.txt": true,
+		"": false, "/abs": false, "../x": false, "a/../b": false, "a//b": false, "a/./b": false, ".": false,
+		"a\\b": false, "a\x01b": false, "a\x7fb": false,
+	} {
+		if got := ValidAssetPath(p); got != want {
+			t.Errorf("ValidAssetPath(%q) = %v, want %v", p, got, want)
+		}
+	}
+}
+
 // normalizeJSON round-trips through JSON so YAML ints and JSON numbers compare equal.
 func normalizeJSON(t *testing.T, v any) any {
 	t.Helper()

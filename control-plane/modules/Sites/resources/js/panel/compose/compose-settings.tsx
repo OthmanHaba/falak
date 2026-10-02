@@ -8,13 +8,14 @@ import { ExternalLink, GitBranch, History, Plus, RotateCcw, ShieldAlert, ShieldC
 import { useEffect, useMemo, useState } from 'react';
 import { deployNow, lineDiff } from '../api';
 import { composeUrl, type ComposeSettingsData, type ComposeSummary } from './api';
-import { useInspection } from './project-api';
+import { useInspection, useSiteCandidates } from './project-api';
 import { AdjustmentsList, InspectionProblems, ProjectFiles, ServicesTable, VariablesList } from './project-parts';
 import { DiffView, YamlEditor } from './yaml-editor';
 
 interface PublicDraft {
     service: string;
     port: string;
+    health_check_path: string;
     /** Saved domains load as custom (a generated name shows as generated); no domain = the test domain. */
     domain: DomainChoice;
 }
@@ -77,6 +78,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                 service: item.service,
                 port: String(item.port),
                 domain: choiceOf(item.domain, item.test_domain),
+                health_check_path: item.health_check_path ?? '',
             })),
         );
         setReviewing(false);
@@ -131,6 +133,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
         [data, source, files, profiles, decisionsBody, keepBinds, publicServices],
     );
     const { inspection, loading: inspecting } = useInspection(`${url}/inspect`, inspectBody);
+    const candidates = useSiteCandidates(`${url}/candidates`, !!data?.can.update && source === 'repo' && !!data?.repository);
 
     const services = useMemo(
         () =>
@@ -150,7 +153,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
         decisions: Object.entries(data.services ?? {}).map(([s, d]) => `${s}:${d.mode}`),
         keepBinds: data.adjustments?.keep_binds ?? [],
         content: data.content ?? '',
-        public: data.public_services.map((item) => [item.service, String(item.port), item.domain ?? '']),
+        public: data.public_services.map((item) => [item.service, String(item.port), item.domain ?? '', item.health_check_path ?? '']),
     });
     const current = JSON.stringify({
         source,
@@ -161,7 +164,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
             .map(([s, d]) => `${s}:${d.mode}`),
         keepBinds,
         content: source === 'inline' ? content : (data.content ?? ''),
-        public: publicServices.map((item) => [item.service, item.port, choiceKey(item.domain)]),
+        public: publicServices.map((item) => [item.service, item.port, choiceKey(item.domain), item.health_check_path.trim()]),
     });
     const dirty = original !== current;
     const contentChanged = source === 'inline' && content !== (data.content ?? '');
@@ -187,7 +190,12 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                 compose_content: source === 'inline' ? content : null,
                 public_services: publicServices
                     .filter((item) => item.service !== '')
-                    .map((item) => ({ service: item.service, port: Number(item.port), domain: choiceBody(item.domain) })),
+                    .map((item) => ({
+                        service: item.service,
+                        port: Number(item.port),
+                        domain: choiceBody(item.domain),
+                        ...(item.health_check_path.trim() ? { health_check_path: item.health_check_path.trim() } : {}),
+                    })),
                 base_version: data.version,
             });
             toast.success(
@@ -303,7 +311,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                         <ProjectFiles
                             files={files.length > 0 ? files : file ? [file] : []}
                             profiles={profiles}
-                            candidates={[]}
+                            candidates={candidates}
                             disabled={!canUpdate}
                             errors={{ ...errors, compose_files: errors.compose_files ?? errors.compose_file }}
                             onChange={(nextFiles, nextProfiles) => {
@@ -381,7 +389,12 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                             size="sm"
                             variant="ghost"
                             icon={<Plus />}
-                            onClick={() => setPublicServices((items) => [...items, { service: '', port: '', domain: { type: 'generated' } }])}
+                            onClick={() =>
+                                setPublicServices((items) => [
+                                    ...items,
+                                    { service: '', port: '', domain: { type: 'generated' }, health_check_path: '' },
+                                ])
+                            }
                         >
                             Add
                         </Button>
@@ -469,9 +482,11 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                                         >
                                             {known?.domain ? (
                                                 // Saved domains are edge domains: added and removed per service in Settings → Networking.
-                                                <span className="text-fg-muted text-xs">
-                                                    <span className="text-fg font-mono">{known.domain}</span> · manage this service’s domains in
-                                                    Settings → Networking
+                                                <span className="text-fg-muted flex flex-wrap items-center gap-1.5 text-xs">
+                                                    <span className="text-fg font-mono">{known.domain}</span>
+                                                    <Button size="sm" variant="ghost" onClick={() => ctx.open('settings', 'networking')}>
+                                                        Manage domains in Networking
+                                                    </Button>
                                                 </span>
                                             ) : canUpdate ? (
                                                 <DomainPicker
@@ -486,6 +501,22 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                                             ) : (
                                                 <span className="text-fg font-mono text-xs">{known?.url?.replace(/^https:\/\//, '') ?? '—'}</span>
                                             )}
+                                        </Field>
+                                    </div>
+                                    <div className="sm:col-span-3 sm:col-start-1">
+                                        <Field
+                                            label={<span className="text-fg-muted">Health check path</span>}
+                                            hint="Checked through the edge after each deploy; empty = the container healthcheck only."
+                                            error={errors[`public_services.${index}.health_check_path`]}
+                                        >
+                                            <Input
+                                                value={item.health_check_path}
+                                                placeholder="/"
+                                                disabled={!canUpdate}
+                                                aria-label={`${item.service || 'service'} health check path`}
+                                                onChange={(event) => updatePublic(index, { health_check_path: event.target.value })}
+                                                className="font-mono"
+                                            />
                                         </Field>
                                     </div>
                                 </li>

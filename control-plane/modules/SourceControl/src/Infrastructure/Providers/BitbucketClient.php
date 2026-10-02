@@ -87,10 +87,21 @@ class BitbucketClient extends HttpProviderClient
 
     public function file(Connection $connection, string $repository, string $ref, string $path, int $maxBytes): ?string
     {
-        $response = $this->send($connection, 'GET', '/repositories/'.$this->path($repository).'/src/'.rawurlencode($ref).'/'.self::encodedPath($path), nullOn404: true);
+        $url = '/repositories/'.$this->path($repository).'/src/'.rawurlencode($ref).'/'.self::encodedPath($path);
+        // Metadata first: directories and large files are never downloaded.
+        $meta = $this->json($connection, $url, ['format' => 'meta'], nullOn404: true);
 
-        // A directory answers with a JSON listing (`values`), a file with its raw content.
-        if ($response === null || (str_contains((string) $response->header('Content-Type'), 'json') && is_array($response->json('values')))) {
+        if ($meta === null || ($meta['type'] ?? null) !== 'commit_file') {
+            return null;
+        }
+
+        if ((int) ($meta['size'] ?? 0) > $maxBytes) {
+            throw $this->tooLarge($path, $maxBytes);
+        }
+
+        $response = $this->send($connection, 'GET', $url, nullOn404: true);
+
+        if ($response === null) {
             return null;
         }
 
@@ -101,6 +112,11 @@ class BitbucketClient extends HttpProviderClient
         }
 
         return $content;
+    }
+
+    public function exists(Connection $connection, string $repository, string $ref, string $path): bool
+    {
+        return $this->json($connection, '/repositories/'.$this->path($repository).'/src/'.rawurlencode($ref).'/'.self::encodedPath($path), ['format' => 'meta'], nullOn404: true) !== null;
     }
 
     public function tree(Connection $connection, string $repository, string $ref, int $limit): array

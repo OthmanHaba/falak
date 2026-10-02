@@ -14,7 +14,8 @@ use Kiln\SourceControl\Contracts\SourceControlGateway;
 /**
  * What Kiln sees in a repository's compose app before deploying it (docs/plans/COMPOSE_APPS.md, flow step 3–5):
  * the merged project, its services with what Kiln can do with each, the variables it needs, and the adjustments
- * Kiln will make. Files are read through the provider API; plain git servers report `no_api`.
+ * Kiln will make. Files are read through the provider API (under the site's root directory, like the builder);
+ * plain git servers report `no_api`.
  */
 final class RepoComposeInspection
 {
@@ -25,46 +26,73 @@ final class RepoComposeInspection
         'mariadb' => '/(^|\/)mariadb(:|@|$)/',
     ];
 
+    /** Most repository paths checked for one inspection, and the time allowed for them. */
+    public const MAX_LOOKUPS = 100;
+
+    public const LOOKUP_SECONDS = 20;
+
     public function __construct(
         private readonly SourceControlGateway $git,
         private readonly YamlComposeInspector $inspector,
     ) {}
 
     /**
-     * Compose files in the repository (suggestions for the path field; the user still chooses).
+     * Compose files in the repository (suggestions for the path field; the user still chooses), relative to $root.
      *
      * @return list<string>
      */
-    public function candidates(string $connectionId, string $repository, string $ref): array
+    public function candidates(string $connectionId, string $repository, string $ref, ?string $root = null): array
     {
-        return array_values(array_filter(
-            $this->git->tree($connectionId, $repository, $ref, '*compose*.y*ml'),
-            fn (string $path) => preg_match('/\.ya?ml$/i', $path) === 1,
+        $prefix = self::prefix($root);
+
+        return array_values(array_map(
+            fn (string $path) => substr($path, strlen($prefix)),
+            array_filter(
+                $this->git->tree($connectionId, $repository, $ref, '*compose*.y*ml'),
+                fn (string $path) => preg_match('/\.ya?ml$/i', $path) === 1 && str_starts_with($path, $prefix),
+            ),
         ));
     }
 
     /**
-     * @param  list<string>  $files
+     * @param  list<string>  $files  relative to $root
      * @param  list<string>  $profiles
      * @param  list<string>  $public  public service names (healthcheck warnings)
      * @param  array<string, string>  $rewrites
+     * @param  bool  $full  include the YAML (original/adjusted) and env-file values (people who may change the site)
      * @return array<string, mixed>
      */
-    public function inspect(string $connectionId, string $repository, string $ref, array $files, array $profiles, ?ComposeConfig $config = null, array $public = [], array $rewrites = []): array
+    public function inspect(string $connectionId, string $repository, string $ref, array $files, array $profiles, ?ComposeConfig $config = null, array $public = [], array $rewrites = [], ?string $root = null, bool $full = true): array
     {
+        $prefix = self::prefix($root);
         $cache = [];
-        $reader = function (string $path) use (&$cache, $connectionId, $repository, $ref): ?string {
-            return array_key_exists($path, $cache) ? $cache[$path] : ($cache[$path] = $this->git->file($connectionId, $repository, $ref, $path));
+        $reader = function (string $path) use (&$cache, $connectionId, $repository, $ref, $prefix): ?string {
+            return array_key_exists($path, $cache) ? $cache[$path] : ($cache[$path] = $this->git->file($connectionId, $repository, $ref, $prefix.$path));
         };
+        $warnings = [];
 
         try {
             $project = ComposeProject::load($reader, $files, $profiles);
-            $tree = $this->git->tree($connectionId, $repository, $ref, '**');
+            // Paths the project mounts or reads that exist (files or folders): checked one by one, which works for
+            // repositories of any size; capped in number and time.
+            $present = [];
+            $deadline = microtime(true) + self::LOOKUP_SECONDS;
+            $references = array_values(array_diff(ComposeProject::references($project['doc']), KilnAdjustments::KILN_FILES));
 
-            // Large repositories list only part of their tree: look up referenced files that weren't listed.
-            foreach (ComposeProject::references($project['doc']) as $path) {
-                if (! KilnAdjustments::inRepo($path, $tree) && $reader($path) !== null) {
-                    $tree[] = $path;
+            foreach ($references as $i => $path) {
+                if ($i >= self::MAX_LOOKUPS || microtime(true) > $deadline) {
+                    $warnings[] = 'Only the first '.$i.' of '.count($references).' repository paths the stack mounts were checked; the rest are checked at deploy time.';
+                    break;
+                }
+
+                if (! KilnAdjustments::validAssetPath($path)) {
+                    $warnings[] = "{$path} can’t be shipped to the servers (its name has a backslash or control character); it is treated as missing.";
+
+                    continue;
+                }
+
+                if ($this->git->exists($connectionId, $repository, $ref, $prefix.$path)) {
+                    $present[] = $path;
                 }
             }
         } catch (NoApi $e) {
@@ -77,31 +105,38 @@ final class RepoComposeInspection
         $yaml = EloquentComposeSites::dump($doc);
         $summary = $this->inspector->parse($yaml);
         $config ??= new ComposeConfig(ComposeSource::Repo, $files[0] ?? null, [], files: $files, profiles: $profiles);
-        $adjusted = KilnAdjustments::apply($doc, $config, $tree, $rewrites, $public);
-        $references = ComposeProject::references($doc);
+        $adjusted = KilnAdjustments::apply($doc, $config, $present, $rewrites, $public);
 
         return [
             'no_api' => false,
             'files' => $project['files'],
-            'services' => $this->services($doc, $summary, $tree, $config),
-            'variables' => $this->variables($doc, $reader, $tree),
+            'services' => $this->services($doc, $summary, $present, $config),
+            // What the stack still needs once services moved to Kiln are gone.
+            'variables' => $this->variables($adjusted['doc'], $reader, $present, $full),
             'volumes' => $summary->volumes,
             'adjustments' => $adjusted['adjustments'],
-            'missing' => array_values(array_filter($references, fn (string $path) => ! KilnAdjustments::inRepo($path, $tree))),
+            'missing' => array_values(array_filter($references, fn (string $path) => ! KilnAdjustments::inRepo($path, $present))),
             'violations' => $summary->violations,
             'errors' => [...$summary->errors, ...$adjusted['errors']],
-            'warnings' => [...$summary->warnings, ...$adjusted['warnings']],
-            'original' => $yaml,
-            'adjusted' => EloquentComposeSites::dump($adjusted['doc']),
+            'warnings' => [...$summary->warnings, ...$adjusted['warnings'], ...$warnings],
+            ...($full ? ['original' => $yaml, 'adjusted' => EloquentComposeSites::dump($adjusted['doc'])] : []),
         ];
+    }
+
+    /** "apps/shop" → "apps/shop/" ("" for the repository root). */
+    private static function prefix(?string $root): string
+    {
+        $root = trim((string) $root, '/');
+
+        return $root === '' || $root === '.' ? '' : ComposeProject::clean($root).'/';
     }
 
     /**
      * @param  array<string, mixed>  $doc
-     * @param  list<string>  $tree
+     * @param  list<string>  $present
      * @return list<array<string, mixed>>
      */
-    private function services(array $doc, ComposeSummary $summary, array $tree, ComposeConfig $config): array
+    private function services(array $doc, ComposeSummary $summary, array $present, ComposeConfig $config): array
     {
         $out = [];
 
@@ -122,14 +157,15 @@ final class RepoComposeInspection
                 'build_context' => is_string($build) ? $build : (is_array($build) ? ($build['context'] ?? '.') : null),
                 'binds' => array_map(fn (string $source) => [
                     'source' => $source,
-                    'in_repo' => str_starts_with($source, './') && KilnAdjustments::inRepo(ComposeProject::clean($source), $tree),
+                    'in_repo' => str_starts_with($source, './') && (in_array(ComposeProject::clean($source), KilnAdjustments::KILN_FILES, true) || KilnAdjustments::inRepo(ComposeProject::clean($source), $present)),
                     'key' => "{$service->name}:{$source}",
                 ], $service->bindMounts),
-                'env_files' => array_values(array_map(function (mixed $entry) use ($tree) {
+                'env_files' => array_values(array_map(function (mixed $entry) use ($present) {
                     $path = (string) (is_array($entry) ? ($entry['path'] ?? '') : $entry);
+                    $clean = str_starts_with($path, './') ? ComposeProject::clean($path) : $path;
 
-                    return ['path' => str_starts_with($path, './') ? ComposeProject::clean($path) : $path, 'in_repo' => str_starts_with($path, './') && KilnAdjustments::inRepo(ComposeProject::clean($path), $tree)];
-                }, is_array($definition['env_file'] ?? null) && array_is_list($definition['env_file']) ? $definition['env_file'] : (isset($definition['env_file']) ? [$definition['env_file']] : []))),
+                    return ['path' => $clean, 'in_repo' => str_starts_with($path, './') && ($clean === KilnAdjustments::KILN_ENV || KilnAdjustments::inRepo($clean, $present))];
+                }, self::envFileEntries($definition))),
                 'variables' => array_keys(self::interpolations(self::text($definition))),
                 'database_engine' => $engine,
                 'mode' => $config->mode($service->name),
@@ -140,15 +176,25 @@ final class RepoComposeInspection
     }
 
     /**
-     * Variables the stack needs: `${VAR}` interpolations (required unless they have a default) and the keys of its
-     * env files (their values as defaults). Kiln's own KILN_* variables are left out.
+     * @param  array<string, mixed>  $definition
+     * @return list<mixed>
+     */
+    private static function envFileEntries(array $definition): array
+    {
+        return is_array($definition['env_file'] ?? null) && array_is_list($definition['env_file']) ? $definition['env_file'] : (isset($definition['env_file']) ? [$definition['env_file']] : []);
+    }
+
+    /**
+     * Variables the stack reads: `${VAR}` interpolations (required only for `${VAR:?…}` / `${VAR?…}`; a plain
+     * `${VAR}` without a value becomes empty) and the keys of its repository env files (their values as defaults,
+     * shown only with $full). Kiln's own KILN_* variables are left out.
      *
-     * @param  array<string, mixed>  $doc
+     * @param  array<string, mixed>  $doc  the adjusted project (services moved to Kiln are gone)
      * @param  callable(string): ?string  $reader
-     * @param  list<string>  $tree
+     * @param  list<string>  $present
      * @return list<array{name: string, default: ?string, required: bool, services: list<string>, source: string}>
      */
-    private function variables(array $doc, callable $reader, array $tree): array
+    private function variables(array $doc, callable $reader, array $present, bool $full): array
     {
         $variables = [];
 
@@ -161,10 +207,12 @@ final class RepoComposeInspection
                 $variables[$variable] = $entry;
             }
 
-            foreach (is_array($definition['env_file'] ?? null) && array_is_list($definition['env_file']) ? $definition['env_file'] : (isset($definition['env_file']) ? [$definition['env_file']] : []) as $env) {
+            foreach (self::envFileEntries((array) $definition) as $env) {
                 $path = (string) (is_array($env) ? ($env['path'] ?? '') : $env);
+                // The adjusted project points shipped env files at ./repo/<path>.
+                $clean = str_starts_with($path, './'.KilnAdjustments::REPO_DIR.'/') ? substr($path, strlen('./'.KilnAdjustments::REPO_DIR.'/')) : null;
 
-                if (! str_starts_with($path, './') || ! KilnAdjustments::inRepo($clean = ComposeProject::clean($path), $tree)) {
+                if ($clean === null || ! KilnAdjustments::inRepo($clean, $present)) {
                     continue;
                 }
 
@@ -175,7 +223,7 @@ final class RepoComposeInspection
                 }
 
                 foreach (self::envFile((string) $content) as $key => $value) {
-                    $entry = $variables[$key] ?? ['name' => $key, 'default' => $value, 'required' => false, 'services' => [], 'source' => "env_file {$clean}"];
+                    $entry = $variables[$key] ?? ['name' => $key, 'default' => $full ? $value : null, 'required' => false, 'services' => [], 'source' => "env_file {$clean}"];
                     $entry['services'][] = (string) $name;
                     $variables[$key] = $entry;
                 }
@@ -194,7 +242,8 @@ final class RepoComposeInspection
     }
 
     /**
-     * Compose interpolations in a text: name => [default, required]. `$$` escapes are skipped.
+     * Compose interpolations in a text: name => [default, required]. Only `${VAR:?err}` / `${VAR?err}` are required;
+     * `$$` escapes are skipped.
      *
      * @return array<string, array{0: ?string, 1: bool}>
      */
@@ -208,9 +257,8 @@ final class RepoComposeInspection
             $name = ($match[1] ?? '') !== '' ? $match[1] : ($match[4] ?? '');
             $operator = $match[2] ?? '';
             $default = in_array($operator, ['-', ':-'], true) ? stripslashes($match[3] ?? '') : null;
-            $required = $operator === '' || str_contains($operator, '?');
             $current = $out[$name] ?? [null, false];
-            $out[$name] = [$current[0] ?? $default, $current[1] || ($required && $default === null && ! in_array($operator, ['+', ':+'], true))];
+            $out[$name] = [$current[0] ?? $default, $current[1] || str_contains($operator, '?')];
         }
 
         return $out;

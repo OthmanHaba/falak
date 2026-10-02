@@ -81,7 +81,19 @@ class GitLabClient extends HttpProviderClient
 
     public function file(Connection $connection, string $repository, string $ref, string $path, int $maxBytes): ?string
     {
-        $body = $this->json($connection, '/projects/'.$this->id($repository).'/repository/files/'.rawurlencode(trim($path, '/')), ['ref' => $ref], nullOn404: true);
+        $url = '/projects/'.$this->id($repository).'/repository/files/'.rawurlencode(trim($path, '/'));
+        // HEAD first: the size comes in a header, so large files are never downloaded.
+        $head = $this->send($connection, 'HEAD', $url, ['ref' => $ref], nullOn404: true);
+
+        if ($head === null) {
+            return null;
+        }
+
+        if ((int) $head->header('X-Gitlab-Size') > $maxBytes) {
+            throw $this->tooLarge($path, $maxBytes);
+        }
+
+        $body = $this->json($connection, $url, ['ref' => $ref], nullOn404: true);
 
         if ($body === null || ! isset($body['content'])) {
             return null;
@@ -94,6 +106,18 @@ class GitLabClient extends HttpProviderClient
         $content = base64_decode((string) $body['content'], true);
 
         return $content === false ? null : $content;
+    }
+
+    public function exists(Connection $connection, string $repository, string $ref, string $path): bool
+    {
+        $project = '/projects/'.$this->id($repository).'/repository';
+
+        if ($this->send($connection, 'HEAD', $project.'/files/'.rawurlencode(trim($path, '/')), ['ref' => $ref], nullOn404: true) !== null) {
+            return true;
+        }
+
+        // A directory: its listing is not empty.
+        return ($this->json($connection, $project.'/tree', ['ref' => $ref, 'path' => trim($path, '/'), 'per_page' => 1], nullOn404: true) ?? []) !== [];
     }
 
     public function tree(Connection $connection, string $repository, string $ref, int $limit): array

@@ -179,6 +179,12 @@ class GitHubClient extends HttpProviderClient
         return $content === false ? null : $content;
     }
 
+    public function exists(Connection $connection, string $repository, string $ref, string $path): bool
+    {
+        // Files answer with their metadata, directories with a listing.
+        return $this->json($connection, '/repos/'.$this->path($repository).'/contents/'.self::encodedPath($path), ['ref' => $ref], nullOn404: true) !== null;
+    }
+
     public function tree(Connection $connection, string $repository, string $ref, int $limit): array
     {
         $body = $this->json($connection, '/repos/'.$this->path($repository).'/git/trees/'.rawurlencode($ref), ['recursive' => 1], nullOn404: true);

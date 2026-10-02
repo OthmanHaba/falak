@@ -91,6 +91,29 @@ export function useInspection(
     return { inspection, loading, error };
 }
 
+/** POST /sites/{site}/compose/candidates: compose files of a site's repository (Settings), as suggestions. */
+export function useSiteCandidates(url: string, enabled: boolean): string[] {
+    const [files, setFiles] = useState<string[]>([]);
+
+    useEffect(() => {
+        if (!enabled) {
+            setFiles([]);
+
+            return;
+        }
+        let cancelled = false;
+        requestJson<{ data: { files: string[] } }>(url, 'POST', {})
+            .then((response) => !cancelled && setFiles(response.data.files))
+            .catch(() => !cancelled && setFiles([]));
+
+        return () => {
+            cancelled = true;
+        };
+    }, [url, enabled]);
+
+    return files;
+}
+
 /** POST /sites/compose/candidates: compose files of the repository, as suggestions. */
 export function useCandidates(connectionId: string, repository: string, branch: string): string[] {
     const [files, setFiles] = useState<string[]>([]);

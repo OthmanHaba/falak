@@ -270,7 +270,7 @@ final class BuildProgress
         foreach ((array) ($compose['assets'] ?? []) as $asset) {
             $path = is_array($asset) ? (string) ($asset['path'] ?? '') : '';
 
-            if (preg_match('#^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$#', $path) !== 1 || preg_match('#(^|/)\.\.?(/|$)#', $path) === 1 || ! is_string($asset['content'] ?? null)) {
+            if (! self::validAssetPath($path) || ! is_string($asset['content'] ?? null)) {
                 return "The builder reported an invalid repository file ({$path}).";
             }
 
@@ -288,6 +288,25 @@ final class BuildProgress
         ], fn ($value) => $value !== null)]);
 
         return null;
+    }
+
+    /**
+     * A relative repository path without ".", ".." or empty segments, backslashes or control characters (any other
+     * name is fine). Same rule as kiln-builder and the agent's docker.compose.* assets.
+     */
+    public static function validAssetPath(string $path): bool
+    {
+        if ($path === '' || strlen($path) > 512 || str_starts_with($path, '/') || str_contains($path, '\\') || preg_match('/[\x00-\x1f\x7f]/', $path) === 1) {
+            return false;
+        }
+
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

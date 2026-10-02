@@ -264,9 +264,9 @@ final class ComposeSettings
      *
      * @throws ValidationException
      */
-    public function verifyRepository(string $connectionId, string $repository, string $branch, array $files, array $profiles, array $publicServices, array $variables): ?string
+    public function verifyRepository(string $connectionId, string $repository, string $branch, array $files, array $profiles, array $publicServices, array $variables, ?string $root = null): ?string
     {
-        $result = $this->inspection->inspect($connectionId, $repository, $branch, $files, $profiles);
+        $result = $this->inspection->inspect($connectionId, $repository, $branch, $files, $profiles, root: $root);
 
         if (($result['no_api'] ?? false) === true) {
             return null;

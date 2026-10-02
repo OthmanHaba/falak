@@ -54,6 +54,11 @@ class CustomGitClient implements ProviderClient
         throw NoApi::forConnection((string) ($connection->name ?? 'This connection'));
     }
 
+    public function exists(Connection $connection, string $repository, string $ref, string $path): bool
+    {
+        throw NoApi::forConnection((string) ($connection->name ?? 'This connection'));
+    }
+
     public function tree(Connection $connection, string $repository, string $ref, int $limit): array
     {
         throw NoApi::forConnection((string) ($connection->name ?? 'This connection'));

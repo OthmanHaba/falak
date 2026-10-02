@@ -203,6 +203,7 @@ it('ships the repository files a compose project mounts with each release (agent
     $world->builds->succeed();
     deploy_run_all($world->agents);
 
+    expect($deployment->refresh()->error)->toBeNull();
     $pull = $world->agents->last('docker.compose.pull')['payload'];
     $up = $world->agents->last('docker.compose.up')['payload'];
     $app = Yaml::parse($up['files'][0]['content'])['services']['app'];

@@ -12,6 +12,26 @@ import (
 	"strings"
 )
 
+// ValidAssetPath: a relative repository path without ".", ".." or empty segments, backslashes or control
+// characters (any other name, e.g. "logo@2x.png" or "my file.txt", is fine). Same rule as the agent's
+// docker.compose.* assets and the control plane.
+func ValidAssetPath(p string) bool {
+	if p == "" || len(p) > 512 || strings.HasPrefix(p, "/") || strings.ContainsRune(p, '\\') {
+		return false
+	}
+	for _, r := range p {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
+		}
+	}
+	return true
+}
+
 // readRepoFile reads a root-relative file of the checkout; symlinks must stay inside it.
 func readRepoFile(root, rel string) ([]byte, error) {
 	full, err := insideRoot(root, rel)
@@ -59,6 +79,11 @@ func collectComposeAssets(root string, refs []string) ([]ComposeAsset, []string,
 			return nil
 		}
 		seen[rel] = true
+		if !ValidAssetPath(rel) {
+			// Names the servers can't write (control characters, backslashes): reported, not shipped.
+			missing = append(missing, rel)
+			return nil
+		}
 		if len(assets) >= maxComposeAssets {
 			return fmt.Errorf("the compose project mounts more than %d repository files; mount fewer or bake them into an image", maxComposeAssets)
 		}

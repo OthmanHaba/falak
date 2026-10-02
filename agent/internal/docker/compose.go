@@ -138,13 +138,20 @@ var serviceNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
 
 func validFileName(n string) bool { return fileNameRe.MatchString(n) && n != "." && n != ".." }
 
-// validAssetPath: a relative path of plain segments (no "..", ".", empty or hidden-traversal tricks).
+// validAssetPath: a relative repository path (any name a repository may hold, e.g. "logo@2x.png" or "my file.txt")
+// without ".", ".." or empty segments, backslashes or control characters. Same rule as kiln-builder and the
+// control plane.
 func validAssetPath(p string) bool {
-	if p == "" || len(p) > 512 || strings.HasPrefix(p, "/") {
+	if p == "" || len(p) > 512 || strings.HasPrefix(p, "/") || strings.ContainsRune(p, '\\') {
 		return false
 	}
+	for _, r := range p {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
 	for _, seg := range strings.Split(p, "/") {
-		if !validFileName(seg) {
+		if seg == "" || seg == "." || seg == ".." {
 			return false
 		}
 	}
@@ -182,13 +189,17 @@ func (s *Service) prepare(project, dir string, files []ComposeFile, envFile stri
 	if err := s.opts.FS.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
 	}
-	for i, a := range assets {
-		mode := os.FileMode(0o644)
-		if a.Mode == 0o755 {
-			mode = 0o755
-		}
-		if _, err := s.opts.FS.WriteFile(path.Join(dir, AssetsDir, a.Path), decoded[i], mode); err != nil {
-			return nil, fmt.Errorf("asset %s: %w", a.Path, err)
+	// Containers can write into a release directory (bind mounts of ./ or ./repo/…) and plant symlinks there, and
+	// rollbacks write into an old release again: every write below stays inside the release directory (os.Root) and
+	// replaces entries instead of writing through them.
+	release, err := os.OpenRoot(s.opts.FS.P(dir))
+	if err != nil {
+		return nil, err
+	}
+	defer release.Close()
+	if assets != nil {
+		if err := writeAssets(release, assets, decoded); err != nil {
+			return nil, err
 		}
 	}
 	args := []string{"compose", "-p", project}
@@ -201,7 +212,7 @@ func (s *Service) prepare(project, dir string, files []ComposeFile, envFile stri
 		if strings.HasPrefix(f.Name, ".env") || f.Name == envFile {
 			mode = 0o600
 		}
-		if _, err := s.opts.FS.WriteFile(path.Join(dir, f.Name), []byte(f.Content), mode); err != nil {
+		if err := replaceFile(release, f.Name, []byte(f.Content), mode); err != nil {
 			return nil, err
 		}
 		if f.Name != envFile && !strings.HasPrefix(f.Name, ".env") {
@@ -209,6 +220,74 @@ func (s *Service) prepare(project, dir string, files []ComposeFile, envFile stri
 		}
 	}
 	return args, nil
+}
+
+// writeAssets builds repo/ afresh: repo.tmp is removed (RemoveAll never follows symlinks), filled through a root
+// opened on it, and renamed over repo.
+func writeAssets(release *os.Root, assets []ComposeAsset, decoded [][]byte) error {
+	tmp := AssetsDir + ".tmp"
+	if err := release.RemoveAll(tmp); err != nil {
+		return err
+	}
+	if err := release.Mkdir(tmp, 0o755); err != nil {
+		return err
+	}
+	root, err := release.OpenRoot(tmp)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	for i, a := range assets {
+		mode := os.FileMode(0o644)
+		if a.Mode == 0o755 {
+			mode = 0o755
+		}
+		if d := path.Dir(a.Path); d != "." {
+			if err := root.MkdirAll(d, 0o755); err != nil {
+				return fmt.Errorf("asset %s: %w", a.Path, err)
+			}
+		}
+		if err := createFile(root, a.Path, decoded[i], mode); err != nil {
+			return fmt.Errorf("asset %s: %w", a.Path, err)
+		}
+	}
+	if err := release.RemoveAll(AssetsDir); err != nil {
+		return err
+	}
+	return release.Rename(tmp, AssetsDir)
+}
+
+// replaceFile writes name atomically: a new file (O_EXCL, so never through a link) renamed over the old entry.
+func replaceFile(root *os.Root, name string, data []byte, mode os.FileMode) error {
+	tmp := "." + name + ".kiln-tmp"
+	if err := root.RemoveAll(tmp); err != nil {
+		return err
+	}
+	if err := createFile(root, tmp, data, mode); err != nil {
+		return err
+	}
+	return root.Rename(tmp, name)
+}
+
+// createFile creates a new file (fails if anything exists there) and sets its mode on the open descriptor.
+func createFile(root *os.Root, name string, data []byte, mode os.FileMode) error {
+	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Chmod(mode); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands.Stream) (any, error) {

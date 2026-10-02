@@ -129,6 +129,29 @@ final class FakeSourceControlGateway implements SourceControlGateway
         return $this->files[trim($path, '/')] ?? null;
     }
 
+    /** @var list<string> paths exists() answers false for (e.g. to simulate an unlisted folder) */
+    public array $existsCalls = [];
+
+    public function exists(string $connectionId, string $repository, string $ref, string $path): bool
+    {
+        $connection = $this->connections[$connectionId] ?? throw ConnectionNotFound::id($connectionId);
+
+        if (! $connection->provider->hasApi()) {
+            throw NoApi::forConnection($connection->name);
+        }
+
+        $path = trim($path, '/');
+        $this->existsCalls[] = $path;
+
+        foreach (array_keys($this->files) as $file) {
+            if ($file === $path || str_starts_with($file, $path.'/')) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function tree(string $connectionId, string $repository, string $ref, string $glob = '*'): array
     {
         $connection = $this->connections[$connectionId] ?? throw ConnectionNotFound::id($connectionId);

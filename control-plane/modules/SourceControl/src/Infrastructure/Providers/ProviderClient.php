@@ -45,6 +45,9 @@ interface ProviderClient
     /** Content of a file at a ref (null: missing or not a file); throws for files larger than $maxBytes. */
     public function file(Connection $connection, string $repository, string $ref, string $path, int $maxBytes): ?string;
 
+    /** Whether a file or directory exists at a ref. */
+    public function exists(Connection $connection, string $repository, string $ref, string $path): bool;
+
     /**
      * Every file path (blob) at a ref, at most $limit.
      *

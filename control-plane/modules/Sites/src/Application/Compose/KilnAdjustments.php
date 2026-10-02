@@ -21,6 +21,28 @@ final class KilnAdjustments
     /** Kiln's project env file: every site variable (the agent writes it next to compose.yaml). */
     public const KILN_ENV = '.env';
 
+    /** Files Kiln writes into every release: bind mounts and env files naming them stay on Kiln's copies. */
+    public const KILN_FILES = ['.env', 'compose.yaml'];
+
+    /**
+     * A relative repository path the servers can write (no ".", ".." or empty segments, backslashes or control
+     * characters). Same rule as kiln-builder, the agent and Builds.
+     */
+    public static function validAssetPath(string $path): bool
+    {
+        if ($path === '' || strlen($path) > 512 || str_starts_with($path, '/') || str_contains($path, '\\') || preg_match('/[\x00-\x1f\x7f]/', $path) === 1) {
+            return false;
+        }
+
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '' || $segment === '.' || $segment === '..') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /**
      * @param  array<string, mixed>  $doc
      * @param  ?list<string>  $repoFiles  files of the repository the release ships (null: not a repository project)
@@ -38,7 +60,7 @@ final class KilnAdjustments
         };
         $services = is_array($doc['services'] ?? null) ? $doc['services'] : [];
         $extracted = $config->extracted();
-        $references = $repoFiles !== null ? ComposeProject::references($doc) : [];
+        $references = $repoFiles !== null ? array_values(array_diff(ComposeProject::references($doc), self::KILN_FILES)) : [];
 
         foreach ($extracted as $name) {
             if (array_key_exists($name, $services)) {
@@ -95,6 +117,11 @@ final class KilnAdjustments
                     $path = ComposeProject::clean($source);
                     $key = "{$name}:{$source}";
 
+                    if (in_array($path, self::KILN_FILES, true)) {
+                        // Kiln writes these into the release itself (stacks bind them, e.g. ./.env:/app/.env).
+                        continue;
+                    }
+
                     if ($path !== '.' && self::inRepo($path, $repoFiles)) {
                         $target = './'.self::REPO_DIR.'/'.$path;
                     } elseif (in_array($key, $keepBinds, true)) {
@@ -126,11 +153,15 @@ final class KilnAdjustments
             if (array_key_exists('env_file', $service)) {
                 [$service['env_file'], $missing] = self::envFiles($service['env_file'], $repoFiles);
 
+                // Only a service whose env file is missing gets every site variable instead (others read theirs
+                // through ${VAR} interpolation, so third-party images don't receive unrelated secrets).
                 foreach ($missing as $path) {
                     $note('env_file_missing', $name, "env_file {$path} is not in the repository: the service gets the site's variables instead.");
                 }
 
-                $note('env_file_kiln', $name, "The site's variables are added after its env files (values set in Kiln win).");
+                if ($service['env_file'] === []) {
+                    unset($service['env_file']);
+                }
             }
 
             $services[$name] = $service;
@@ -266,7 +297,9 @@ final class KilnAdjustments
 
             $clean = ComposeProject::clean($path);
 
-            if (self::inRepo($clean, $repoFiles)) {
+            if ($clean === self::KILN_ENV) {
+                $out[] = $entry; // Kiln's own .env in the release
+            } elseif (self::inRepo($clean, $repoFiles)) {
                 $shipped = './'.self::REPO_DIR.'/'.$clean;
                 $out[] = is_array($entry) ? ['path' => $shipped] + $entry : $shipped;
             } elseif ($required) {
@@ -274,7 +307,9 @@ final class KilnAdjustments
             }
         }
 
-        $out[] = self::KILN_ENV;
+        if ($missing !== [] && ! in_array(self::KILN_ENV, array_map(fn ($e) => is_array($e) ? ($e['path'] ?? null) : $e, $out), true)) {
+            $out[] = self::KILN_ENV;
+        }
 
         return [$out, $missing];
     }

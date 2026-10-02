@@ -27,8 +27,15 @@ feature `compose.v2`). The control plane previews the same project (`ComposeProj
 replaced by a Kiln database or split into their own Kiln site are removed with their `depends_on`, and the stack's
 variables that pointed at them are rewritten; `container_name` is removed; `restart: unless-stopped` is added where no
 policy is set; bind sources the repository lacks become named volumes `<service>-<path>` (kept across deploys) unless
-the user keeps them as folders; env files the repository lacks are dropped and Kiln's `.env` is appended to every
-`env_file` list; public services without a healthcheck get a warning.
+the user keeps them as folders; env files the repository lacks are dropped and only those services get Kiln's `.env`
+(every site variable) instead — other services read site variables through `${VAR}` interpolation, so third-party
+images don't receive unrelated secrets; bind mounts and env files naming Kiln's own release files (`./.env`,
+`./compose.yaml`) keep pointing at them; public services without a healthcheck get a warning. Repository paths may
+use any name except `.`/`..`/empty segments, backslashes and control characters (same rule in the builder, the
+agent and the control plane); the release's `repo/` is rebuilt from scratch on every write, without following links.
+Previews read the project under the site's root directory and check each referenced path (files or folders; at
+most 100 lookups in 20 s). Only `${VAR:?…}` / `${VAR?…}` are required variables; viewers see services and variable
+names but not the YAML or env-file values.
 
 ### 1.2 Builds — managed servers never build **[decision]**
 Services with `image:` are pulled on the server. Services with `build:` are built by **kiln-builder in docker mode**

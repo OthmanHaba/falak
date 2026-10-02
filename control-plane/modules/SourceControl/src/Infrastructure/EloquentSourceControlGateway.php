@@ -80,6 +80,19 @@ final class EloquentSourceControlGateway implements SourceControlGateway
         return $this->client($connection)->file($connection, $repository, $ref, $path, self::MAX_FILE_BYTES);
     }
 
+    public function exists(string $connectionId, string $repository, string $ref, string $path): bool
+    {
+        $path = trim($path, '/');
+
+        if ($path === '' || preg_match('#(^|/)\.\.?(/|$)#', $path) === 1 || str_contains($path, "\0")) {
+            return false;
+        }
+
+        $connection = $this->find($connectionId);
+
+        return $this->client($connection)->exists($connection, $repository, $ref, $path);
+    }
+
     public function tree(string $connectionId, string $repository, string $ref, string $glob = '*'): array
     {
         $connection = $this->find($connectionId);

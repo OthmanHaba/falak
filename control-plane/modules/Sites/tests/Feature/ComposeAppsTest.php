@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
 use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Identity\Contracts\Role;
+use Kiln\Sites\Application\Compose\RepoComposeInspection;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\Data\SiteData;
@@ -33,7 +34,7 @@ services:
     build: ./app
     env_file: .env
     environment:
-      APP_KEY: ${APP_KEY}
+      APP_KEY: ${APP_KEY:?set APP_KEY}
       DATABASE_URL: postgres://shop:secret@db:5432/shop
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
@@ -271,4 +272,82 @@ it('saves compose project settings and reports services that are no longer publi
     $this->postJson("/sites/{$site->id}/compose/inspect", ['compose_profiles' => ['dev']])
         ->assertOk()
         ->assertJsonPath('data.services.3.name', 'mailpit');
+});
+
+it('lets viewers see the saved project only: no overrides, no YAML, no env-file values', function () {
+    $this->git->files['docker/app.env'] = "SECRET_TOKEN=hunter2\n";
+    $this->git->files['docker/compose.yml'] = SHOP_COMPOSE."\n";
+    $this->git->files['docker/compose.yml'] = str_replace('env_file: .env', 'env_file: app.env', SHOP_COMPOSE);
+    $site = app(SiteFactory::class)->create($this->organization->id, $this->user->id, compose_app_input($this))->site;
+
+    $full = $this->postJson("/sites/{$site->id}/compose/inspect")->assertOk()->json('data');
+    expect($full)->toHaveKeys(['original', 'adjusted'])
+        ->and(collect($full['variables'])->firstWhere('name', 'SECRET_TOKEN')['default'])->toBe('hunter2');
+
+    actingAsMember(Role::Viewer, $this->organization);
+    $viewer = $this->postJson("/sites/{$site->id}/compose/inspect")->assertOk()->json('data');
+    expect($viewer)->not->toHaveKeys(['original', 'adjusted'])
+        ->and(collect($viewer['variables'])->firstWhere('name', 'SECRET_TOKEN')['default'])->toBeNull()
+        ->and(json_encode($viewer))->not->toContain('hunter2');
+
+    $this->postJson("/sites/{$site->id}/compose/inspect", ['compose_files' => ['compose.yaml']])->assertForbidden();
+    $this->postJson("/sites/{$site->id}/compose/candidates")->assertForbidden();
+});
+
+it('reads the project under the site root directory, like the builder', function () {
+    $this->git->files = [
+        'apps/shop/compose.yaml' => "services:\n  web:\n    image: nginx\n    volumes: [./conf:/etc/nginx/conf.d]\n",
+        'apps/shop/conf/default.conf' => "server {}\n",
+        'compose.yaml' => "services: {other: {image: busybox}}\n",
+    ];
+    $base = ['source_connection_id' => $this->connection->id, 'repository' => 'acme/shop', 'branch' => 'main', 'root_directory' => 'apps/shop'];
+
+    $this->postJson('/sites/compose/candidates', $base)->assertOk()->assertJsonPath('data.files', ['compose.yaml']);
+    $data = $this->postJson('/sites/compose/inspect', [...$base, 'compose_files' => ['compose.yaml']])->assertOk()->json('data');
+
+    expect(array_column($data['services'], 'name'))->toBe(['web'])
+        ->and($data['services'][0]['binds'][0])->toMatchArray(['source' => './conf', 'in_repo' => true])
+        ->and($data['missing'])->toBe([])
+        ->and($this->git->existsCalls)->toContain('apps/shop/conf');
+});
+
+it('keeps Kiln release files bound by existing stacks and adds Kiln variables only where an env file is missing', function () {
+    $site = app(SiteFactory::class)->create($this->organization->id, $this->user->id, compose_app_input($this))->site;
+    $project = <<<'YAML'
+services:
+  web:
+    image: nginx
+  app:
+    image: shop
+    volumes: ["./.env:/app/.env:ro", "./compose.yaml:/srv/compose.yaml:ro"]
+    env_file: [./.env]
+  worker:
+    image: shop
+    env_file: [./docker/worker.env]
+  mailer:
+    image: third/party
+    env_file: [./docker/missing.env]
+YAML;
+
+    $rendered = Yaml::parse(app(ComposeSites::class)->render($site->id, $project, [], '01j9zq4n8v2m6r0t3w5y7b9d1f', ['docker/worker.env'])->yaml);
+
+    expect($rendered['services']['app']['volumes'])->toBe(['./.env:/app/.env:ro', './compose.yaml:/srv/compose.yaml:ro'])
+        ->and($rendered['services']['app']['env_file'])->toBe(['./.env'])
+        ->and($rendered['services']['worker']['env_file'])->toBe(['./repo/docker/worker.env'])
+        ->and($rendered['services']['mailer']['env_file'])->toBe(['.env'])
+        ->and($rendered)->not->toHaveKey('volumes');
+});
+
+it('marks only ${VAR:?} and ${VAR?} as required and ignores services moved out of the stack', function () {
+    expect(RepoComposeInspection::interpolations('${A} ${B:?need B} ${C?} ${D:-x} $E ${F:+y}'))->toBe([
+        'A' => [null, false], 'B' => [null, true], 'C' => [null, true], 'D' => ['x', false], 'E' => [null, false], 'F' => [null, false],
+    ]);
+
+    $this->git->files['docker/compose.yml'] = "services:\n  web:\n    image: nginx\n  db:\n    image: postgres:17\n    environment: {POSTGRES_PASSWORD: \"\${DB_PASSWORD:?set it}\"}\n";
+    $data = $this->postJson('/sites/compose/inspect', [
+        'source_connection_id' => $this->connection->id, 'repository' => 'acme/shop', 'branch' => 'main',
+        'compose_files' => ['docker/compose.yml'], 'compose_services' => ['db' => ['mode' => 'database', 'engine' => 'postgresql']],
+    ])->assertOk()->json('data');
+
+    expect(array_column($data['variables'], 'name'))->not->toContain('DB_PASSWORD');
 });

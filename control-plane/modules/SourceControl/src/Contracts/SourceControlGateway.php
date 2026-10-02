@@ -80,6 +80,12 @@ interface SourceControlGateway
     public function file(string $connectionId, string $repository, string $ref, string $path): ?string;
 
     /**
+     * Whether a file or a directory exists at a ref (cheaper than {@see tree()} for large repositories).
+     * Throws {@see Exceptions\NoApi} for git servers without an API.
+     */
+    public function exists(string $connectionId, string $repository, string $ref, string $path): bool;
+
+    /**
      * Paths of the files at a ref matching a glob (`*` within a segment, `**` across segments; matched against the
      * whole path, or against the file name when the glob has no `/`), sorted, at most {@see MAX_TREE_PATHS}.
      * Throws {@see Exceptions\NoApi} for git servers without an API.

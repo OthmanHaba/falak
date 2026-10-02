@@ -71,17 +71,56 @@ it('reads files and trees from GitLab', function () {
         ->and($this->gateway->tree($connection->id, 'acme/shop', 'main'))->toBe(['compose.yaml']);
 });
 
+it('checks that files and folders exist, and reads GitLab sizes before downloading', function () {
+    Http::fake(function (Request $request) {
+        $url = $request->url();
+
+        return match (true) {
+            str_contains($url, 'api.github.com/repos/acme/shop/contents/conf.d') => Http::response([['type' => 'file', 'path' => 'conf.d/a.conf']]),
+            str_contains($url, 'api.github.com') => Http::response(['message' => 'Not Found'], 404),
+            str_contains($url, '/repository/files/big.yaml') => Http::response('', 200, ['X-Gitlab-Size' => (string) (SourceControlGateway::MAX_FILE_BYTES + 1)]),
+            str_contains($url, '/repository/files/') => Http::response(['message' => '404 File Not Found'], 404),
+            str_contains($url, '/repository/tree') && str_contains($url, 'path=lib') => Http::response([['path' => 'lib/a.ts', 'type' => 'blob']]),
+            default => Http::response([]),
+        };
+    });
+    $github = sc_connection($this->organization->id);
+    $gitlab = sc_connection($this->organization->id, ProviderType::GitLab);
+
+    expect($this->gateway->exists($github->id, 'acme/shop', 'main', 'conf.d'))->toBeTrue()
+        ->and($this->gateway->exists($github->id, 'acme/shop', 'main', 'missing'))->toBeFalse()
+        ->and($this->gateway->exists($gitlab->id, 'acme/shop', 'main', 'lib'))->toBeTrue()
+        ->and($this->gateway->exists($gitlab->id, 'acme/shop', 'main', 'nothing'))->toBeFalse()
+        ->and($this->gateway->exists($gitlab->id, 'acme/shop', 'main', '../x'))->toBeFalse()
+        ->and(fn () => $this->gateway->file($gitlab->id, 'acme/shop', 'main', 'big.yaml'))->toThrow(SourceControlException::class, 'larger than');
+
+    Http::assertNotSent(fn (Request $r) => str_contains($r->url(), '/files/big.yaml') && $r->method() === 'GET');
+});
+
 it('reads files and trees from Bitbucket', function () {
-    Http::fake([
-        'api.bitbucket.org/2.0/repositories/acme/shop/src/main/compose.yaml' => Http::response('services:', 200, ['Content-Type' => 'text/plain']),
-        'api.bitbucket.org/2.0/repositories/acme/shop/src/main/*' => Http::response(['values' => [
-            ['path' => 'compose.yaml', 'type' => 'commit_file'], ['path' => 'lib', 'type' => 'commit_directory'],
-        ]]),
-    ]);
+    Http::fake(function (Request $request) {
+        $url = $request->url();
+
+        return match (true) {
+            str_contains($url, '/src/main/compose.yaml?format=meta') => Http::response(['type' => 'commit_file', 'size' => 9]),
+            str_contains($url, '/src/main/big.yaml?format=meta') => Http::response(['type' => 'commit_file', 'size' => SourceControlGateway::MAX_FILE_BYTES + 1]),
+            str_contains($url, '/src/main/lib?format=meta') => Http::response(['type' => 'commit_directory']),
+            str_contains($url, 'format=meta') => Http::response(['type' => 'error'], 404),
+            str_ends_with($url, '/src/main/compose.yaml') => Http::response('services:', 200, ['Content-Type' => 'text/plain']),
+            default => Http::response(['values' => [['path' => 'compose.yaml', 'type' => 'commit_file'], ['path' => 'lib', 'type' => 'commit_directory']]]),
+        };
+    });
     $connection = sc_connection($this->organization->id, ProviderType::Bitbucket);
 
     expect($this->gateway->file($connection->id, 'acme/shop', 'main', 'compose.yaml'))->toBe('services:')
-        ->and($this->gateway->tree($connection->id, 'acme/shop', 'main'))->toBe(['compose.yaml']);
+        ->and($this->gateway->file($connection->id, 'acme/shop', 'main', 'lib'))->toBeNull()
+        ->and($this->gateway->exists($connection->id, 'acme/shop', 'main', 'lib'))->toBeTrue()
+        ->and($this->gateway->exists($connection->id, 'acme/shop', 'main', 'nope'))->toBeFalse()
+        ->and($this->gateway->tree($connection->id, 'acme/shop', 'main'))->toBe(['compose.yaml'])
+        ->and(fn () => $this->gateway->file($connection->id, 'acme/shop', 'main', 'big.yaml'))->toThrow(SourceControlException::class, 'larger than');
+
+    // The large file was never downloaded.
+    Http::assertNotSent(fn (Request $r) => str_ends_with($r->url(), '/src/main/big.yaml'));
 });
 
 it('reports that plain git servers have no file API', function () {

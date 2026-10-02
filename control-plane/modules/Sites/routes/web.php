@@ -35,6 +35,7 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::put('sites/{site}/compose', [ComposeController::class, 'update'])->name('sites.compose.update');
     Route::post('sites/{site}/compose/validate', [ComposeController::class, 'validateContent'])->middleware('throttle:120,1')->name('sites.compose.validate');
     Route::post('sites/{site}/compose/inspect', [ComposeRepositoryController::class, 'inspectSite'])->middleware('throttle:60,1')->name('sites.compose.inspect');
+    Route::post('sites/{site}/compose/candidates', [ComposeRepositoryController::class, 'candidatesForSite'])->middleware('throttle:60,1')->name('sites.compose.candidates');
     Route::post('sites/compose/candidates', [ComposeRepositoryController::class, 'candidates'])->middleware('throttle:60,1')->name('sites.compose-repo.candidates');
     Route::post('sites/compose/inspect', [ComposeRepositoryController::class, 'inspect'])->middleware('throttle:60,1')->name('sites.compose-repo.inspect');
     Route::get('sites/{site}/compose/versions/{version}', [ComposeController::class, 'version'])->whereNumber('version')->name('sites.compose.version');

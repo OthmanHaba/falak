@@ -10,6 +10,7 @@ export interface PublicServiceData {
     domain: string | null;
     host_port: number | null;
     test_domain: string | null;
+    health_check_path?: string | null;
     url: string | null;
 }
 
