@@ -113,6 +113,13 @@ final class ServerTabController extends Controller
                 'provider_server_id' => $server->provider_server_id,
                 'install_command' => $canManageAgents ? $server->install_command : null,
             ],
+            // A database engine can be added later to server types that may hold one (app servers).
+            'database' => [
+                'engine' => $server->stack->database,
+                'installing' => $server->engine_command_id !== null,
+                'allowed' => in_array('database', $server->type->allowedComponents(), true),
+                'options' => collect((array) config('servers.databases'))->map(fn (array $db, string $key) => ['value' => $key, 'label' => $db['label']])->values()->all(),
+            ],
             'can' => [
                 'update' => $request->user()?->can('update', $server) ?? false,
                 'delete' => $request->user()?->can('delete', $server) ?? false,

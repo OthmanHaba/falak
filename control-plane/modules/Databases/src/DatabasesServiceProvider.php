@@ -41,6 +41,7 @@ use Kiln\Identity\Contracts\Role;
 use Kiln\Identity\Events\OrganizationDeleted;
 use Kiln\Kernel\Support\ModuleServiceProvider;
 use Kiln\Network\Contracts\ContainerHostPorts;
+use Kiln\Servers\Events\DatabaseEngineInstalled;
 use Kiln\Servers\Events\ServerDeleted;
 use Kiln\Servers\Events\ServerProvisioned;
 
@@ -87,6 +88,7 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         Event::listen(CommandFinished::class, [HandleCommandOutcome::class, 'handleFinished']);
         Event::listen(CommandFailed::class, [HandleCommandOutcome::class, 'handleFailed']);
         Event::listen(ServerProvisioned::class, SyncDatabaseEngine::class);
+        Event::listen(DatabaseEngineInstalled::class, [SyncDatabaseEngine::class, 'installed']);
         Event::listen(AgentVersionChanged::class, EnableContainerAccessOnUpgrade::class);
         Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationData::class);
