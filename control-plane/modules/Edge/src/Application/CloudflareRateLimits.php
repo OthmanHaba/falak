@@ -21,7 +21,9 @@ use Kiln\Identity\Contracts\AuditLog;
  *
  * What a plan allows (Cloudflare's rate limiting rules): Free one rule per zone, matching the path only (no host), a
  * 10-second window and a 10-second block; Pro 2 rules, host + path, windows up to a minute, blocks up to an hour;
- * Business 5, up to 10 minutes / a day; Enterprise 100.
+ * Business 5, up to 10 minutes / a day; Enterprise 100. A managed challenge has no duration below Enterprise: Cloudflare
+ * challenges each request over the limit (mitigation_timeout 0, "request throttling"), and a passed challenge resets
+ * the visitor's count.
  */
 final class CloudflareRateLimits
 {
@@ -50,7 +52,7 @@ final class CloudflareRateLimits
     /**
      * What the zone's plan allows, for the UI and validation.
      *
-     * @return array{plan: string, rules: int, host: bool, periods: list<int>, timeouts: list<int>, note: ?string}
+     * @return array{plan: string, rules: int, host: bool, periods: list<int>, timeouts: list<int>, challenge_timeout: bool, note: ?string}
      */
     public static function limits(?string $plan): array
     {
@@ -64,8 +66,10 @@ final class CloudflareRateLimits
             'periods' => array_values(array_filter(self::VALUES, fn (int $v) => $v <= $limits['period'])),
             // 65535 is a period value only.
             'timeouts' => array_values(array_filter(self::VALUES, fn (int $v) => $v <= $limits['timeout'] && $v !== 65535)),
+            // Whether a managed challenge takes a duration (Enterprise); otherwise it applies per request (timeout 0).
+            'challenge_timeout' => $plan === 'enterprise',
             'note' => $plan === 'free'
-                ? 'Free plan: one rule per zone, 10-second window, 10-second block; it matches the path only, so it applies to every proxied name in the zone.'
+                ? 'Free plan: one rule per zone, 10-second window, 10-second block (a managed challenge applies per request); it matches the path only, so it applies to every proxied name in the zone.'
                 : null,
         ];
     }
@@ -196,7 +200,7 @@ final class CloudflareRateLimits
 
     /**
      * @param  array<string, mixed>  $rule
-     * @param  array{plan: string, rules: int, host: bool, periods: list<int>, timeouts: list<int>, note: ?string}  $limits
+     * @param  array{plan: string, rules: int, host: bool, periods: list<int>, timeouts: list<int>, challenge_timeout: bool, note: ?string}  $limits
      * @return array<string, mixed>
      */
     private function rule(Domain $domain, array $rule, array $limits): array
@@ -219,7 +223,8 @@ final class CloudflareRateLimits
                 'characteristics' => ['cf.colo.id', 'ip.src'],
                 'period' => (int) $rule['period'],
                 'requests_per_period' => (int) $rule['requests'],
-                'mitigation_timeout' => (int) $rule['timeout'],
+                // Below Enterprise a challenge has no duration: Cloudflare requires 0 (request throttling).
+                'mitigation_timeout' => $this->challengeOnly($rule, $limits) ? 0 : (int) $rule['timeout'],
             ],
             'enabled' => true,
         ];
@@ -227,7 +232,7 @@ final class CloudflareRateLimits
 
     /**
      * @param  array<string, mixed>  $rule
-     * @param  array{plan: string, rules: int, host: bool, periods: list<int>, timeouts: list<int>, note: ?string}  $limits
+     * @param  array{plan: string, rules: int, host: bool, periods: list<int>, timeouts: list<int>, challenge_timeout: bool, note: ?string}  $limits
      * @return array{path: ?string, requests: int, period: int, action: string, timeout: int}
      *
      * @throws ValidationException
@@ -248,7 +253,8 @@ final class CloudflareRateLimits
                 ? 'Free plan: the window is 10 seconds.'
                 : 'Pick a window the '.$limits['plan'].' plan allows: '.implode(', ', $limits['periods']).' s.';
         }
-        if (! in_array($rule['timeout'] ?? null, $limits['timeouts'], true)) {
+        $challengeOnly = $this->challengeOnly($rule, $limits);
+        if (! $challengeOnly && ! in_array($rule['timeout'] ?? null, $limits['timeouts'], true)) {
             $errors['timeout'] = $limits['plan'] === 'free'
                 ? 'Free plan: offenders are blocked for 10 seconds.'
                 : 'Pick a duration the '.$limits['plan'].' plan allows: '.implode(', ', $limits['timeouts']).' s.';
@@ -264,7 +270,18 @@ final class CloudflareRateLimits
             throw ValidationException::withMessages($errors);
         }
 
-        return ['path' => $path === '' ? null : $path, 'requests' => (int) $rule['requests'], 'period' => (int) $rule['period'], 'action' => (string) $rule['action'], 'timeout' => (int) $rule['timeout']];
+        return ['path' => $path === '' ? null : $path, 'requests' => (int) $rule['requests'], 'period' => (int) $rule['period'], 'action' => (string) $rule['action'], 'timeout' => $challengeOnly ? 0 : (int) $rule['timeout']];
+    }
+
+    /**
+     * A managed challenge on a plan where it takes no duration (below Enterprise): it challenges each request over the limit.
+     *
+     * @param  array<string, mixed>  $rule
+     * @param  array{challenge_timeout: bool}  $limits
+     */
+    private function challengeOnly(array $rule, array $limits): bool
+    {
+        return ($rule['action'] ?? null) === 'managed_challenge' && ! $limits['challenge_timeout'];
     }
 
     /**

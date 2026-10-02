@@ -8,7 +8,8 @@ namespace Kiln\Sites\Application\Compose;
  *
  * Compose names a project network `<project>_<network>` (the project is the stack's slug), unless the top-level
  * definition gives a `name:` or marks it `external` (then the name is used as is; the legacy `external: {name: x}` names
- * it x). A service without `networks:` is on `<project>_default`; one with a `network_mode` is on none of them.
+ * it x; a name can read the stack's variables, `${NETWORK}`). A service without `networks:` is on `<project>_default`;
+ * one with a `network_mode` is on none of them (so it joins none: not the default network either).
  *
  * The agent joins at most {@see MAX} networks with Docker-safe names (deploy.container.swap / docker.run schemas):
  * {@see check()} sorts out the others when the service is split out, so they are reported once instead of failing
@@ -19,6 +20,9 @@ final class ComposeNetworks
     /** Networks a container joins at most (agent protocol: networks maxItems). */
     public const MAX = 8;
 
+    /** Aliases a container has on one network at most (agent protocol: networks[].aliases maxItems). */
+    public const MAX_ALIASES = 8;
+
     /** Network names the agent accepts (agent protocol: networks[].name). */
     private const NAME = '/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/';
 
@@ -26,10 +30,37 @@ final class ComposeNetworks
     private const ALIAS = '/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/';
 
     /**
+     * The real names of the networks a service is on (none for a `network_mode`). Names are read as the stack's
+     * Compose resolves them: `name: ${NETWORK}` with the stack's variables.
+     *
      * @param  array<string, mixed>  $document  the parsed (merged) compose project
+     * @param  array<string, string>  $variables  the stack's variables (its `.env`)
      * @return list<string>
      */
-    public static function of(array $document, string $project, string $service): array
+    public static function of(array $document, string $project, string $service, array $variables = []): array
+    {
+        return array_map('strval', array_keys(self::joins($document, $project, $service, $variables)));
+    }
+
+    /**
+     * The aliases a service declares per network (`networks: {back: {aliases: [app]}}`), by the network's real name;
+     * networks without any are left out. The stack's services may reach the service by these names.
+     *
+     * @param  array<string, mixed>  $document
+     * @param  array<string, string>  $variables
+     * @return array<string, list<string>>
+     */
+    public static function aliases(array $document, string $project, string $service, array $variables = []): array
+    {
+        return array_filter(self::joins($document, $project, $service, $variables), fn (array $aliases) => $aliases !== []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $document
+     * @param  array<string, string>  $variables
+     * @return array<string, list<string>> real name => declared aliases
+     */
+    private static function joins(array $document, string $project, string $service, array $variables): array
     {
         $definition = $document['services'][$service] ?? null;
 
@@ -37,29 +68,50 @@ final class ComposeNetworks
             return [];
         }
 
-        $declared = $definition['networks'] ?? [];
-        $names = is_array($declared) ? (array_is_list($declared) ? $declared : array_keys($declared)) : [];
-        $names = array_values(array_filter(array_map('strval', $names), fn (string $name) => $name !== ''));
+        // networks: [a, b] or networks: {a: {aliases: [x]}, b: null}
+        $declared = is_array($definition['networks'] ?? null) ? $definition['networks'] : [];
+        $entries = [];
+        foreach (array_is_list($declared) ? array_fill_keys(array_map('strval', array_filter($declared, 'is_scalar')), null) : $declared as $name => $config) {
+            if ((string) $name !== '') {
+                $entries[(string) $name] = is_array($config) ? $config : [];
+            }
+        }
 
-        if ($names === []) {
-            $names = ['default'];
+        if ($entries === []) {
+            $entries = ['default' => []];
         }
 
         $top = is_array($document['networks'] ?? null) ? $document['networks'] : [];
+        $joins = [];
 
-        return array_values(array_unique(array_map(function (string $name) use ($top, $project) {
-            $definition = is_array($top[$name] ?? null) ? $top[$name] : [];
+        foreach ($entries as $name => $config) {
+            $real = self::realName((string) $name, is_array($top[$name] ?? null) ? $top[$name] : [], $project, $variables);
+            $aliases = array_map(fn ($alias) => ComposeInterpolation::apply((string) $alias, $variables), array_filter((array) ($config['aliases'] ?? []), 'is_scalar'));
+            $joins[$real] = array_values(array_unique([...($joins[$real] ?? []), ...array_filter($aliases, fn (string $alias) => $alias !== '')]));
+        }
 
-            $external = $definition['external'] ?? false;
+        return $joins;
+    }
 
-            return match (true) {
-                isset($definition['name']) && is_string($definition['name']) && $definition['name'] !== '' => $definition['name'],
-                // Compose file format 2/3: external: { name: x }.
-                is_array($external) && isset($external['name']) && is_string($external['name']) && $external['name'] !== '' => $external['name'],
-                $external === true || is_array($external) => $name,
-                default => "{$project}_{$name}",
-            };
-        }, $names)));
+    /**
+     * @param  array<string, mixed>  $definition  the top-level network definition
+     * @param  array<string, string>  $variables
+     */
+    private static function realName(string $name, array $definition, string $project, array $variables): string
+    {
+        $external = $definition['external'] ?? false;
+        $given = match (true) {
+            is_string($definition['name'] ?? null) && $definition['name'] !== '' => $definition['name'],
+            // Compose file format 2/3: external: { name: x }.
+            is_array($external) && is_string($external['name'] ?? null) && $external['name'] !== '' => $external['name'],
+            default => null,
+        };
+
+        return match (true) {
+            $given !== null => ComposeInterpolation::apply($given, $variables),
+            $external === true || is_array($external) => $name,
+            default => "{$project}_{$name}",
+        };
     }
 
     /**

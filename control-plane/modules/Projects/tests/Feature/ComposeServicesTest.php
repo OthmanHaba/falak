@@ -180,6 +180,43 @@ it('lets a split-out Docker service join the stack networks on the stack servers
     expect(app(ComposeSites::class)->stackNetworks($site->id, $this->server->id))->toBe([]);
 });
 
+it('joins no stack network for a network_mode service, and keeps declared aliases and interpolated names', function () {
+    $yaml = <<<'YAML'
+services:
+  app:
+    image: api
+    networks:
+      back: { aliases: [api, 'bad alias'] }
+      default: {}
+    environment: { CACHE_HOST: '${CACHE}' }
+  sidecar:
+    image: tool
+    network_mode: none
+  cache:
+    image: redis:7
+networks:
+  back: { name: '${BACK_NETWORK}' }
+YAML;
+    $this->stack->environmentVersions()->first()->forceFill(['variables' => ['BACK_NETWORK' => 'shop-back', 'CACHE' => 'cache']])->save();
+
+    $app = $this->extraction->toSite($this->stack->id, 'app', ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker'], $yaml);
+    $sidecar = $this->extraction->toSite($this->stack->id, 'sidecar', ['name' => 'Tool', 'framework' => 'docker', 'runtime' => 'docker'], $yaml);
+
+    $default = $this->stack->slug.'_default';
+    expect($this->stack->refresh()->compose_services['app'])->toMatchArray([
+        'networks' => ['shop-back', $default],
+        'network_aliases' => ['shop-back' => ['api', 'bad alias']],
+        'uses' => ['cache'],
+    ])
+        ->and(app(ComposeSites::class)->stackNetworks($app->id, $this->server->id))->toBe([
+            ['name' => 'shop-back', 'aliases' => ['app', 'api']],
+            ['name' => $default, 'aliases' => ['app']],
+        ])
+        // network_mode: none — on no stack network, so not on the default one either.
+        ->and($this->stack->compose_services['sidecar']['networks'])->toBe([])
+        ->and(app(ComposeSites::class)->stackNetworks($sidecar->id, $this->server->id))->toBe([]);
+});
+
 it('warns when a split-out service runs natively and can no longer reach the stack services it uses', function () {
     $warnings = app(ComposeSettings::class)->extract(Site::query()->findOrFail($this->stack->id), [
         ['service' => 'app', 'mode' => 'site', 'site' => ['name' => 'API', 'framework' => 'node']],

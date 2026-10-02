@@ -28,7 +28,7 @@ final class RateLimitController extends Controller
         return response()->json(['data' => $this->present($model, $limits)]);
     }
 
-    /** PUT {path?, requests, period, action, timeout} */
+    /** PUT {path?, requests, period, action, timeout} — timeout is ignored (0) for a managed challenge below Enterprise. */
     public function update(Request $request, string $site, string $domain, CloudflareRateLimits $limits): JsonResponse
     {
         $siteData = $this->site($request, $site, 'edge.manage');
@@ -38,7 +38,7 @@ final class RateLimitController extends Controller
             'requests' => ['required', 'integer'],
             'period' => ['required', 'integer'],
             'action' => ['required', Rule::in(CloudflareRateLimits::ACTIONS)],
-            'timeout' => ['required', 'integer'],
+            'timeout' => ['nullable', 'integer'],
         ]);
 
         $this->apply(fn () => $limits->set($model, $data, $request->user()?->getAuthIdentifier()));

@@ -11,6 +11,7 @@ use Kiln\Databases\Contracts\DatabaseDirectory;
 use Kiln\Databases\Contracts\DatabaseProvisioner;
 use Kiln\Projects\Contracts\ProjectDirectory;
 use Kiln\Sites\Application\Actions\SaveEnvironment;
+use Kiln\Sites\Application\Compose\ComposeInterpolation;
 use Kiln\Sites\Application\Compose\ComposeNetworks;
 use Kiln\Sites\Application\Compose\ComposeProject;
 use Kiln\Sites\Application\Compose\ComposeProjectException;
@@ -176,16 +177,21 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             throw $e;
         }
 
-        $networks = ComposeNetworks::check(ComposeNetworks::of($document, $stack->slug, $service));
+        // Network names as the stack's Compose resolves them (`name: ${NETWORK}` reads the stack's variables).
+        $networks = ComposeNetworks::check(ComposeNetworks::of($document, $stack->slug, $service, $stackVariables));
+        $aliases = array_intersect_key(ComposeNetworks::aliases($document, $stack->slug, $service, $stackVariables), array_flip($networks['networks']));
         $this->record($stack, $service, [
             'mode' => 'site',
             'site_id' => $created->site->id,
             'rewrites' => ServiceReferences::find($document, $service, 'site', $stackVariables),
-            // A Docker site joins these (under the service's name) on the stack's servers: see ComposeSites::stackNetworks().
-            // Ones the agent can't join (names, more than it takes) are left out here and reported once.
+            // A Docker site joins these (under the service's name, plus the aliases it declares per network) on the
+            // stack's servers: see ComposeSites::stackNetworks(). [] (network_mode) joins none. Ones the agent can't join
+            // (names, more than it takes) are left out here and reported once.
             'networks' => $networks['networks'],
+            ...($aliases !== [] ? ['network_aliases' => $aliases] : []),
             ...($networks['skipped'] !== [] ? ['skipped_networks' => $networks['skipped']] : []),
-            'uses' => ServiceReferences::uses($document, $service),
+            // Hosts in its environment as the site gets it: after the stack's variables are filled in.
+            'uses' => ServiceReferences::uses($document, $service, $stackVariables),
         ]);
 
         ComposeServiceExtracted::dispatch($stack->id, $stack->organization_id, $service, 'site', $created->site->id, $created->site->name, $wasPrimary);
@@ -381,17 +387,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
      */
     private function interpolate(array $variables, array $stack): array
     {
-        return array_map(fn (string $value) => (string) preg_replace_callback(
-            '/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::?-([^}]*))?\}|\$([A-Za-z_][A-Za-z0-9_]*)/',
-            function (array $m) use ($stack) {
-                if (($m[3] ?? '') !== '') {
-                    return $stack[$m[3]] ?? $m[0];
-                }
-
-                return $stack[$m[1]] ?? (($m[2] ?? '') !== '' ? $m[2] : $m[0]);
-            },
-            $value,
-        ), $variables);
+        return array_map(fn (string $value) => ComposeInterpolation::apply($value, $stack), $variables);
     }
 
     /** @return array<string, string> */

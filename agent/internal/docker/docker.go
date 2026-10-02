@@ -271,16 +271,20 @@ func (s *Service) ensureContainer(ctx context.Context, p RunPayload, st commands
 	if err := s.ensureImage(ctx, p.Image, p.Pull, p.Auth, st); err != nil {
 		return "", false, err
 	}
-	if exists {
-		if p.Pull == "always" && cur.Config.Labels[LabelSpecHash] == hash {
-			// Same spec: only recreate if the pulled image is newer than the container's.
-			if id, ok, _ := s.c.ImageInspect(ctx, p.Image); ok && id == cur.Image {
-				if cur.State.Running {
-					return cur.ID, false, nil
-				}
-				return cur.ID, true, s.c.ContainerStart(ctx, cur.ID)
+	if exists && p.Pull == "always" && cur.Config.Labels[LabelSpecHash] == hash {
+		// Same spec: only recreate if the pulled image is newer than the container's.
+		if id, ok, _ := s.c.ImageInspect(ctx, p.Image); ok && id == cur.Image {
+			if cur.State.Running {
+				return cur.ID, false, nil
 			}
+			return cur.ID, true, s.c.ContainerStart(ctx, cur.ID)
 		}
+	}
+	// Before the current container is touched: a network that never appears fails the run and leaves it in place.
+	if err := s.awaitNetworks(ctx, p.Networks, st); err != nil {
+		return "", false, err
+	}
+	if exists {
 		s.log.Info("recreating container", "name", p.Name)
 		if _, err := s.c.ContainerStop(ctx, cur.ID, 10*time.Second); err != nil && !IsNotFound(err) {
 			return "", false, err
@@ -288,9 +292,6 @@ func (s *Service) ensureContainer(ctx context.Context, p RunPayload, st commands
 		if err := s.c.ContainerRemove(ctx, cur.ID); err != nil {
 			return "", false, err
 		}
-	}
-	if err := s.awaitNetworks(ctx, p.Networks, st); err != nil {
-		return "", false, err
 	}
 	id, err := s.c.ContainerCreate(ctx, p.Name, p.createBody(hash))
 	if err != nil {

@@ -33,8 +33,9 @@ interface ComposeSites
 
     /**
      * For a site that runs a compose stack's service as its own Kiln site: the stack's Docker networks its container
-     * joins on $serverId, under the service's name, so the stack's services and it keep resolving each other. Empty
-     * when the site isn't split out of a stack, the stack doesn't run on that server, or the stack is gone.
+     * joins on $serverId, under the service's name and the aliases it declared on each network, so the stack's
+     * services and it keep resolving each other. Empty when the site isn't split out of a stack, the service was on no
+     * stack network (`network_mode`), the stack doesn't run on that server, or the stack is gone.
      *
      * @return list<array{name: string, aliases: list<string>}>
      */

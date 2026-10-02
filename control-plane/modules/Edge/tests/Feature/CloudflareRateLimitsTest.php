@@ -40,19 +40,40 @@ it('adds a host + path rule on paid plans and keeps the zone’s own rules', fun
     $this->cf->rateLimits[$this->zoneId] = [['id' => 'theirs', 'description' => 'their rule', 'expression' => '(http.request.uri.path eq "/x")', 'action' => 'block', 'ratelimit' => ['characteristics' => ['cf.colo.id', 'ip.src'], 'period' => 10, 'requests_per_period' => 5, 'mitigation_timeout' => 10], 'enabled' => true]];
     $domain = app(AddDomain::class)($this->site, 'shop.example.com', www: WwwRedirect::ToApex);
 
-    $this->limits->set($domain, [...RL_RULE, 'period' => 60, 'timeout' => 600, 'action' => 'managed_challenge']);
+    $this->limits->set($domain, [...RL_RULE, 'period' => 60, 'timeout' => 600]);
 
     $rules = $this->cf->rateLimits[$this->zoneId];
     expect(array_column($rules, 'description'))->toBe(['their rule', "kiln:ratelimit:{$this->org}:{$domain->id} shop.example.com"])
         ->and($rules[1]['expression'])->toBe('(http.host in {"shop.example.com" "www.shop.example.com"} and starts_with(http.request.uri.path, "/login"))')
-        ->and($rules[1]['action'])->toBe('managed_challenge')
+        ->and($rules[1]['action'])->toBe('block')
         ->and($rules[1]['ratelimit'])->toBe(['characteristics' => ['cf.colo.id', 'ip.src'], 'period' => 60, 'requests_per_period' => 20, 'mitigation_timeout' => 600])
-        ->and($domain->refresh()->cloudflare_rate_limit)->toBe(['path' => '/login', 'requests' => 20, 'period' => 60, 'action' => 'managed_challenge', 'timeout' => 600])
+        ->and($domain->refresh()->cloudflare_rate_limit)->toBe(['path' => '/login', 'requests' => 20, 'period' => 60, 'action' => 'block', 'timeout' => 600])
         ->and($this->zone->refresh()->plan)->toBe('pro');
 
     $this->limits->set($domain->refresh(), null);
     expect(array_column($this->cf->rateLimits[$this->zoneId], 'description'))->toBe(['their rule'])
         ->and($domain->refresh()->cloudflare_rate_limit)->toBeNull();
+});
+
+it('sends a managed challenge without a duration below Enterprise (Cloudflare requires mitigation_timeout 0)', function () {
+    $domain = app(AddDomain::class)($this->site, 'shop.example.com');
+
+    // Free: the duration given (even one the plan has no value for) is ignored, the rule throttles per request.
+    $this->limits->set($domain, [...RL_RULE, 'action' => 'managed_challenge', 'timeout' => 600]);
+    expect($this->cf->rateLimits[$this->zoneId][0]['action'])->toBe('managed_challenge')
+        ->and($this->cf->rateLimits[$this->zoneId][0]['ratelimit']['mitigation_timeout'])->toBe(0)
+        ->and($domain->refresh()->cloudflare_rate_limit['timeout'])->toBe(0)
+        ->and(CloudflareRateLimits::limits('free')['challenge_timeout'])->toBeFalse()
+        ->and(CloudflareRateLimits::limits('business')['challenge_timeout'])->toBeFalse();
+
+    // A Block rule still needs a duration the plan allows.
+    expect(fn () => $this->limits->set($domain->refresh(), [...RL_RULE, 'timeout' => null]))->toThrow(ValidationException::class, 'Free plan: offenders are blocked for 10 seconds.');
+
+    // Enterprise: a challenge keeps its duration.
+    $this->zone->forceFill(['plan' => 'enterprise'])->save();
+    $this->limits->set($domain->refresh(), [...RL_RULE, 'period' => 60, 'action' => 'managed_challenge', 'timeout' => 600]);
+    expect($this->cf->rateLimits[$this->zoneId][0]['ratelimit']['mitigation_timeout'])->toBe(600)
+        ->and(CloudflareRateLimits::limits('enterprise')['challenge_timeout'])->toBeTrue();
 });
 
 it('keeps to the Free plan: one rule per zone, path only, 10-second window and block', function () {

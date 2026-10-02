@@ -360,8 +360,41 @@ func (s *Service) composeDown(ctx context.Context, p ComposeDownPayload, st comm
 	if !s.opts.FS.Exists(dir) {
 		dir = "" // compose down by project name works without the directory
 	}
+	s.releaseStackNetworks(ctx, p.Project, st)
 	res, err := s.compose(ctx, dir, nil, nil, args, st)
 	return ExitResult{ExitCode: res.ExitCode}, err
+}
+
+// releaseStackNetworks detaches Kiln's own containers (a split-out service run as its own site) from the project's
+// networks, so `compose down` can remove them: Docker refuses to remove a network with active endpoints. Best effort:
+// what fails here shows in compose's own output.
+func (s *Service) releaseStackNetworks(ctx context.Context, project string, st commands.Stream) {
+	nets, err := s.c.NetworkList(ctx, []string{LabelComposeProject + "=" + project})
+	if err != nil {
+		s.log.Warn("listing compose networks", "project", project, "err", err)
+		return
+	}
+	for _, n := range nets {
+		ids, err := s.c.NetworkContainers(ctx, n)
+		if err != nil {
+			s.log.Warn("reading compose network", "network", n, "err", err)
+			continue
+		}
+		for _, id := range ids {
+			c, ok, err := s.c.ContainerInspect(ctx, id)
+			// The project's own containers are compose's to remove; only Kiln's are detached.
+			if err != nil || !ok || c.Config.Labels[LabelManaged] != "true" || c.Config.Labels[LabelComposeProject] != "" {
+				continue
+			}
+			if err := s.c.NetworkDisconnect(ctx, n, id); err != nil {
+				s.log.Warn("detaching container from compose network", "network", n, "container", c.Name, "err", err)
+				continue
+			}
+			if st != nil {
+				fmt.Fprintf(st.Stdout(), "detached %s from network %s\n", strings.TrimPrefix(c.Name, "/"), n)
+			}
+		}
+	}
 }
 
 func (s *Service) composePs(ctx context.Context, p ComposePsPayload, _ commands.Stream) (any, error) {

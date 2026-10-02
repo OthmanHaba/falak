@@ -200,5 +200,13 @@ export interface RateLimitData {
     rule: RateLimitRule | null;
     zone: string | null;
     proxied: boolean;
-    limits: { plan: string; rules: number; host: boolean; periods: number[]; timeouts: number[]; note: string | null } | null;
+    limits: {
+        plan: string;
+        rules: number;
+        host: boolean;
+        periods: number[];
+        timeouts: number[];
+        challenge_timeout: boolean;
+        note: string | null;
+    } | null;
 }

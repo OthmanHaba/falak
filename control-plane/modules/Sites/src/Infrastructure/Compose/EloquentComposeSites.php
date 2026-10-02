@@ -67,13 +67,24 @@ final class EloquentComposeSites implements ComposeSites
                     return [];
                 }
 
-                // Decisions recorded before the networks were: the stack's default network.
-                $names = array_values(array_filter(array_map('strval', (array) ($decision['networks'] ?? [])))) ?: ["{$stack->slug}_default"];
+                // Decisions recorded before the networks were: the stack's default network. An empty list is a service
+                // on no stack network (network_mode): it joins none.
+                $names = array_key_exists('networks', $decision)
+                    ? array_values(array_filter(array_map('strval', (array) $decision['networks'])))
+                    : ["{$stack->slug}_default"];
                 // Decisions recorded before extraction checked them: only what the agent accepts, never a failed deploy.
                 $names = ComposeNetworks::check($names)['networks'];
-                $aliases = ComposeNetworks::validAlias((string) $service) ? [(string) $service] : [];
+                $declared = (array) ($decision['network_aliases'] ?? []);
 
-                return array_map(fn (string $name) => array_filter(['name' => $name, 'aliases' => $aliases]), $names);
+                return array_map(function (string $name) use ($service, $declared) {
+                    // The service's name, then the aliases it declared on that network (what the agent accepts).
+                    $aliases = array_values(array_unique(array_filter(
+                        array_map('strval', [(string) $service, ...array_filter((array) ($declared[$name] ?? []), 'is_scalar')]),
+                        fn (string $alias) => ComposeNetworks::validAlias($alias),
+                    )));
+
+                    return array_filter(['name' => $name, 'aliases' => array_slice($aliases, 0, ComposeNetworks::MAX_ALIASES)]);
+                }, $names);
             }
         }
 

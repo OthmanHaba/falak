@@ -480,7 +480,8 @@ function RateLimitDialog({
                 requests: String(rule.requests),
                 period: String(rule.period),
                 action: rule.action,
-                timeout: String(rule.timeout),
+                // A challenge stored without a duration (0) offers the plan's first one when switched back to Block.
+                timeout: String(rule.timeout || (data.limits?.timeouts[0] ?? 10)),
             });
         } else if (data?.limits) {
             const limits = data.limits;
@@ -499,7 +500,7 @@ function RateLimitDialog({
                 requests: Number(form.requests),
                 period: Number(form.period),
                 action: form.action,
-                timeout: Number(form.timeout),
+                timeout: challengeOnly ? 0 : Number(form.timeout),
             },
             `${domain.name}: rate limit saved`,
             reload,
@@ -519,6 +520,8 @@ function RateLimitDialog({
 
     const limits = data?.limits ?? null;
     const usable = data !== null && data.proxied && limits !== null;
+    // Below Enterprise a managed challenge has no duration: Cloudflare challenges each request over the limit.
+    const challengeOnly = form.action === 'managed_challenge' && limits !== null && !limits.challenge_timeout;
 
     return (
         <Dialog
@@ -593,12 +596,20 @@ function RateLimitDialog({
                                 options={(Object.keys(ACTION_LABELS) as RateLimitAction[]).map((value) => ({ value, label: ACTION_LABELS[value] }))}
                             />
                         </Field>
-                        <Field label="For" error={errors.timeout}>
+                        <Field
+                            label="For"
+                            hint={challengeOnly ? 'Each request over the limit is challenged; a passed challenge resets the count.' : undefined}
+                            error={errors.timeout}
+                        >
                             <Select
-                                value={form.timeout}
-                                disabled={!usable}
+                                value={challengeOnly ? '0' : form.timeout}
+                                disabled={!usable || challengeOnly}
                                 onValueChange={(timeout) => setForm({ ...form, timeout })}
-                                options={(limits?.timeouts ?? [10]).map((value) => ({ value: String(value), label: seconds(value) }))}
+                                options={
+                                    challengeOnly
+                                        ? [{ value: '0', label: 'Per request' }]
+                                        : (limits?.timeouts ?? [10]).map((value) => ({ value: String(value), label: seconds(value) }))
+                                }
                             />
                         </Field>
                     </div>

@@ -38,6 +38,8 @@ type fakeEngine struct {
 	repoDigests map[string][]string
 	// network name → "container:alias,alias" joins
 	networks map[string][]string
+	// network name → labels
+	networkLabels map[string]map[string]string
 }
 
 type fcont struct {
@@ -224,6 +226,23 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			jsonOut(w, 404, map[string]string{"message": "unknown " + r.Method + " " + p})
 		}
+	case r.Method == "GET" && p == "/networks":
+		var f map[string][]string
+		json.Unmarshal([]byte(q.Get("filters")), &f)
+		out := []map[string]string{}
+		for name := range e.networks {
+			match := true
+			for _, l := range f["label"] {
+				k, v, _ := strings.Cut(l, "=")
+				if e.networkLabels[name][k] != v {
+					match = false
+				}
+			}
+			if match {
+				out = append(out, map[string]string{"Name": name})
+			}
+		}
+		jsonOut(w, 200, out)
 	case strings.HasPrefix(p, "/networks/") && p != "/networks/create" && p != "/networks/prune":
 		name, action, _ := strings.Cut(strings.TrimPrefix(p, "/networks/"), "/")
 		joins, ok := e.networks[name]
@@ -241,7 +260,25 @@ func (e *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(200)
 			return
 		}
-		jsonOut(w, 200, map[string]string{"Name": name})
+		if r.Method == "POST" && action == "disconnect" {
+			var b struct{ Container string }
+			json.NewDecoder(r.Body).Decode(&b)
+			kept := []string{}
+			for _, j := range joins {
+				if id, _, _ := strings.Cut(j, ":"); id != b.Container {
+					kept = append(kept, j)
+				}
+			}
+			e.networks[name] = kept
+			w.WriteHeader(200)
+			return
+		}
+		containers := map[string]any{}
+		for _, j := range joins {
+			id, _, _ := strings.Cut(j, ":")
+			containers[id] = map[string]string{}
+		}
+		jsonOut(w, 200, map[string]any{"Name": name, "Containers": containers})
 	case r.Method == "POST" && strings.HasSuffix(p, "/prune"):
 		e.prunes = append(e.prunes, strings.Trim(strings.TrimSuffix(p, "/prune"), "/")+" "+q.Get("filters"))
 		jsonOut(w, 200, map[string]any{"SpaceReclaimed": 1000})
@@ -598,6 +635,66 @@ func TestRunJoinsExistingNetworksWithAliases(t *testing.T) {
 	fin, _ = exec1(t, s, "docker.run", RunPayload{Name: "kiln-other-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "missing_default"}}})
 	if !strings.Contains(fin.Error, "network missing_default does not exist") || e.byName("kiln-other-api-blue") != nil {
 		t.Fatalf("%+v", fin)
+	}
+}
+
+// A changed spec whose network is missing fails before the current container is touched: the service keeps running.
+func TestRunKeepsCurrentContainerWhenNetworkIsMissing(t *testing.T) {
+	s, e, _, _, _ := newSvc(t)
+	e.networks["shop_default"] = nil
+	p := RunPayload{Name: "kiln-shop-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}}}
+	fin, _ := exec1(t, s, "docker.run", p)
+	if fin.Error != "" {
+		t.Fatalf("%+v", fin)
+	}
+	id := fin.Result.(RunResult).ContainerID
+
+	old := networkWait
+	networkWait = 0
+	t.Cleanup(func() { networkWait = old })
+	delete(e.networks, "shop_default") // the stack is being redeployed or was deleted
+	p.Env = map[string]string{"A": "b"}
+	fin, _ = exec1(t, s, "docker.run", p)
+	if !strings.Contains(fin.Error, "network shop_default does not exist") {
+		t.Fatalf("%+v", fin)
+	}
+	if c := e.byName("kiln-shop-api-blue"); c == nil || c.id != id || !c.running {
+		t.Fatalf("current container stopped or replaced: %+v", c)
+	}
+}
+
+// compose down first detaches Kiln's containers (split-out services) from the project's networks, which Docker
+// refuses to remove while they have endpoints; the project's own containers and other networks are left alone.
+func TestComposeDownDetachesKilnContainersFromStackNetworks(t *testing.T) {
+	s, e, fr, _, _ := newSvc(t)
+	e.networks["shop_default"] = nil
+	e.networks["other_default"] = nil
+	e.networkLabels = map[string]map[string]string{
+		"shop_default":  {LabelComposeProject: "shop"},
+		"other_default": {LabelComposeProject: "other"},
+	}
+	fin, _ := exec1(t, s, "docker.run", RunPayload{Name: "kiln-shop-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}, {Name: "other_default"}}})
+	if fin.Error != "" {
+		t.Fatalf("%+v", fin)
+	}
+	kiln := fin.Result.(RunResult).ContainerID
+	e.mu.Lock()
+	e.containers["redis1"] = &fcont{id: "redis1", name: "shop-redis-1", running: true, body: CreateBody{Labels: map[string]string{LabelComposeProject: "shop"}}}
+	e.networks["shop_default"] = append(e.networks["shop_default"], "redis1:redis")
+	e.mu.Unlock()
+
+	fin, col := exec1(t, s, "docker.compose.down", ComposeDownPayload{Project: "shop", Directory: "/srv/kiln/compose/shop"})
+	if fin.Error != "" || fr.Calls()[0].Line != "docker compose -p shop down" {
+		t.Fatalf("%+v %v", fin, fr.Lines())
+	}
+	if got := e.networks["shop_default"]; len(got) != 1 || got[0] != "redis1:redis" {
+		t.Fatalf("shop_default joins %v", got)
+	}
+	if got := e.networks["other_default"]; len(got) != 1 || !strings.HasPrefix(got[0], kiln+":") {
+		t.Fatalf("other_default joins %v", got)
+	}
+	if !strings.Contains(col.Output(""), "detached kiln-shop-api-blue from network shop_default") {
+		t.Fatalf("output %q", col.Output(""))
 	}
 }
 

@@ -86,16 +86,22 @@ Kiln's edge on your servers is stock Caddy, which has no rate limiting, so rate 
 only apply to names Cloudflare **proxies** (orange cloud).
 
 - **Per domain** (Networking tab → the domain's ⋯ menu → *Rate limit…*): optional path prefix, a number of requests per
-  window, then *Block* or *Managed challenge* for a while. Counted per visitor IP (and Cloudflare data center).
+  window, then *Block* for a while, or *Managed challenge*. Below Enterprise a challenge has no duration: Cloudflare
+  challenges each request over the limit, and a visitor who passes starts counting from zero again (Enterprise sets a
+  duration for both). Counted per visitor IP (and Cloudflare data center).
 - Kiln writes them as rate limiting rules it tags `kiln:ratelimit:<organization>:<domain>`; your own rules in the zone
   stay untouched (sent back as they are), and so do the rules of other organizations or other Kiln installs sharing the
   zone. Switching a domain to DNS only takes its rule out of the zone (the setting is kept for when it is proxied
   again, and the rule comes back with the orange cloud); removing the domain removes its rule. Changes to one zone
   run one at a time.
-- **What the plan allows** (read from the zone): Free: **one rule per zone**, a 10-second window, a 10-second block,
-  and it can match the path only, so it applies to every proxied name of the zone: the other domains of the zone show
-  a *zone-wide rate limit* warning, and a rule without a path is refused when the panel itself is in the zone. Pro: 2 rules, host + path, windows
-  up to 1 minute, blocks up to 1 hour. Business: 5 rules, up to 10 minutes / 1 day. Enterprise: 100.
+- **What the plan allows** (read from the zone; Cloudflare's [rate limiting
+  rules](https://developers.cloudflare.com/waf/rate-limiting-rules/)): Free: **one rule per zone**, a 10-second
+  window, a 10-second block, and the path is the only request field it can match (no host), so it applies to every
+  proxied name of the zone: the other domains of the zone show a *zone-wide rate limit* warning, and a rule without a
+  path is refused when the panel itself is in the zone. Pro: 2 rules, host + path, windows up to 1 minute, blocks up
+  to 1 hour. Business: 5 rules, up to 10 minutes / 1 day. Enterprise: Kiln allows up to 100 rules, windows up to
+  65,535 s and blocks up to 1 day; the actual rule count depends on the Enterprise contract (Cloudflare refuses what
+  it doesn't allow).
 - The token needs **Zone → Zone WAF → Edit** (Kiln shows Cloudflare's error otherwise).
 
 ## Limits on the Free plan

@@ -56,12 +56,14 @@ final class ServiceReferences
     /**
      * The other services of the stack that $service uses: its `depends_on`, and the services its `environment:` points
      * at (a URL host, or a bare name under a host-like key / with a port). Those are what it can no longer reach once
-     * it runs outside the stack's network.
+     * it runs outside the stack's network. The environment is read as the service gets it: `${VAR}` filled in from the
+     * stack's variables.
      *
      * @param  array<string, mixed>  $document  the parsed compose file
+     * @param  array<string, string>  $stackVariables  the stack's own variables (its `.env`)
      * @return list<string>
      */
-    public static function uses(array $document, string $service): array
+    public static function uses(array $document, string $service, array $stackVariables = []): array
     {
         $services = array_map('strval', array_keys((array) ($document['services'] ?? [])));
         $definition = $document['services'][$service] ?? null;
@@ -72,7 +74,8 @@ final class ServiceReferences
 
         $dependsOn = $definition['depends_on'] ?? [];
         $used = array_map('strval', is_array($dependsOn) ? (array_is_list($dependsOn) ? $dependsOn : array_keys($dependsOn)) : []);
-        $environment = self::environment($definition['environment'] ?? []);
+        $stackVariables = array_map('strval', $stackVariables);
+        $environment = array_map(fn (string $value) => ComposeInterpolation::apply($value, $stackVariables), self::environment($definition['environment'] ?? []));
 
         foreach ($services as $other) {
             foreach ($environment as $key => $value) {

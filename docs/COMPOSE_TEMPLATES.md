@@ -127,13 +127,17 @@ stack's public services.
   a site (otherwise the service stays in the stack, with a warning). The service is claimed under the stack's row
   lock before anything is created; a failed creation gives it back.
 - **Reaching the stack from a split-out site:** a service run as its own **Docker** site joins the stack's networks
-  (`<stack-slug>_default`, or the networks it was on, by their Compose names) on every server the stack runs on, under
-  its service name — so `postgres`, `redis` … still resolve from it, and the stack still reaches it as before
-  (`compose_services[service].networks`; agent feature `docker.networks`, `networks` on `docker.run` /
-  `deploy.container.swap`). The agent never creates those networks: it waits up to 60 s for the stack's first deploy,
+  (`<stack-slug>_default`, or the networks it was on, by their Compose names with the stack's variables filled in;
+  none for a `network_mode` service) on every server the stack runs on, under its service name plus the aliases it
+  declared per network — so `postgres`, `redis` … still resolve from it, and the stack still reaches it as before
+  (`compose_services[service].networks` / `.network_aliases`; agent feature `docker.networks`, `networks` on
+  `docker.run` / `deploy.container.swap`). Before a deploy replaces its container the network must exist, so a
+  missing one fails the deploy and leaves the running container in place; `docker compose down` on the stack first
+  detaches Kiln's containers from the stack's networks so Compose can remove them. The agent never creates those networks: it waits up to 60 s for the stack's first deploy,
   then fails the deploy with "deploy the compose stack first". A **native** site (Laravel, Node.js on the host), or a
   server without the stack, only reaches the stack's public services: the services table and extraction warn
-  (`uses` in the inspect rows: `depends_on` plus hosts in its environment). Without the stack the site keeps its own
+  (`uses` in the inspect rows: `depends_on` plus hosts in its environment; at extraction, after the stack's variables
+  are filled in). Without the stack the site keeps its own
   network only. A container joins at most 8 networks with Docker-safe names (`[a-zA-Z0-9][a-zA-Z0-9_.-]*`): others
   are left out at extraction with a warning (`compose_services[service].skipped_networks`) instead of failing every
   deploy. The legacy `external: {name: x}` form names the network x.

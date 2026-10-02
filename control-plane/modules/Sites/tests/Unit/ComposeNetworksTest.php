@@ -41,6 +41,38 @@ it('reads the legacy external: {name: x} form', function () {
     expect(ComposeNetworks::of($doc, 'shop', 'web'))->toBe(['traefik_proxy', 'legacy']);
 });
 
+it('keeps the aliases a service declares per network, by the network’s real name', function () {
+    $doc = Yaml::parse(<<<'YAML'
+        services:
+          admin: { image: admin, networks: { back: { aliases: [adm, '${ALIAS}'] }, shared: null, front: {} } }
+          api: { image: api, networks: [back] }
+          none: { image: x, network_mode: none }
+        networks:
+          back: { name: shop-backend }
+          shared: { external: true }
+        YAML);
+
+    expect(ComposeNetworks::aliases($doc, 'shop', 'admin', ['ALIAS' => 'panel']))->toBe(['shop-backend' => ['adm', 'panel']])
+        ->and(ComposeNetworks::of($doc, 'shop', 'admin'))->toBe(['shop-backend', 'shared', 'shop_front'])
+        ->and(ComposeNetworks::aliases($doc, 'shop', 'api'))->toBe([])
+        ->and(ComposeNetworks::aliases($doc, 'shop', 'none'))->toBe([]);
+});
+
+it('resolves network names with the stack’s variables, like the stack’s Compose does', function () {
+    $doc = Yaml::parse(<<<'YAML'
+        services:
+          web: { image: nginx, networks: [proxy, back, legacy] }
+        networks:
+          proxy: { external: true, name: '${PROXY_NETWORK}' }
+          back: { name: '${BACK:-shop-back}' }
+          legacy: { external: { name: '$LEGACY' } }
+        YAML);
+
+    expect(ComposeNetworks::of($doc, 'shop', 'web', ['PROXY_NETWORK' => 'traefik', 'LEGACY' => 'old_net']))->toBe(['traefik', 'shop-back', 'old_net'])
+        // Unknown: stays as written, which check() then sorts out (reported once instead of failing every deploy).
+        ->and(ComposeNetworks::check(ComposeNetworks::of($doc, 'shop', 'web'))['skipped'])->toBe(['${PROXY_NETWORK}', '$LEGACY']);
+});
+
 it('sorts out networks the agent can’t join: names Docker refuses, and more than it takes', function () {
     $names = ['shop_default', '-bad', 'has space', ...array_map(fn (int $i) => "net{$i}", range(1, 8))];
 
@@ -75,4 +107,18 @@ it('finds the stack services a service uses: depends_on and hosts in its environ
     expect(ServiceReferences::uses($doc, 'api'))->toBe(['postgres', 'redis', 'search'])
         ->and(ServiceReferences::uses($doc, 'worker'))->toBe(['api', 'redis'])
         ->and(ServiceReferences::uses($doc, 'redis'))->toBe([]);
+});
+
+it('finds hosts in the environment after the stack’s variables are filled in', function () {
+    $doc = Yaml::parse(<<<'YAML'
+        services:
+          api:
+            image: api
+            environment: ['CACHE_HOST=${CACHE_HOST}', 'SEARCH_URL=http://${SEARCH:-search}:7700']
+          redis: { image: redis }
+          search: { image: meilisearch }
+        YAML);
+
+    expect(ServiceReferences::uses($doc, 'api'))->toBe(['search'])
+        ->and(ServiceReferences::uses($doc, 'api', ['CACHE_HOST' => 'redis']))->toBe(['redis', 'search']);
 });
