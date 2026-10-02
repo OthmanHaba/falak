@@ -34,8 +34,15 @@ func EnrollOnly(ctx context.Context, cfg config.Config, log *slog.Logger, out io
 	}
 	paths := enroll.Paths{Dir: cfg.EtcDir}
 	if cfg.Token == "" || !paths.Enrolled() {
-		_, err := ensureEnrolled(ctx, cfg, log)
-		return err
+		// Never restores an unfinished replacement (that is for `run`): an explicit token wins. Its backup stays in
+		// previous/, marked done, so a later start does not bring it back over the new identity.
+		if _, err := ensureEnrolled(ctx, cfg, log, false); err != nil {
+			return err
+		}
+		if cfg.Token != "" {
+			clearIncomplete(cfg)
+		}
+		return nil
 	}
 	if cfg.PanelURL == "" {
 		return errors.New("enroll: set KILN_PANEL_URL (or --panel)")
@@ -81,6 +88,14 @@ func EnrollOnly(ctx context.Context, cfg config.Config, log *slog.Logger, out io
 
 // incompleteMarker in a backup directory means the swap into place did not finish (crash, power loss).
 const incompleteMarker = ".incomplete"
+
+// clearIncomplete marks every unfinished replacement's backup as done (removes its incompleteMarker).
+func clearIncomplete(cfg config.Config) {
+	markers, _ := filepath.Glob(filepath.Join(cfg.EtcDir, PreviousDir, "*", incompleteMarker))
+	for _, m := range markers {
+		_ = os.Remove(m)
+	}
+}
 
 // restoreIncomplete puts back the identity of an unfinished replacement when the etc dir has none: the newest
 // previous/<time>/ with an incompleteMarker. Returns whether it restored one.

@@ -79,6 +79,49 @@ func TestEnrollStopsAndRestartsARunningAgent(t *testing.T) {
 	}
 }
 
+// An explicit `enroll --token` after a crashed replacement enrolls with the token; only `run` restores.
+func TestEnrollWithTokenDoesNotRestoreAnUnfinishedReplacement(t *testing.T) {
+	fleet := newFakeFleet(t)
+	cfg := identityConfig(t, fleet)
+	ctx := context.Background()
+	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard, &runnertest.Fake{}); err != nil {
+		t.Fatal(err)
+	}
+	paths := enroll.Paths{Dir: cfg.EtcDir}
+	backup := filepath.Join(cfg.EtcDir, PreviousDir, "20261002T120000Z")
+	os.MkdirAll(backup, 0o700)
+	for _, f := range paths.Files() {
+		os.Rename(f, filepath.Join(backup, filepath.Base(f)))
+	}
+	os.WriteFile(filepath.Join(backup, ".incomplete"), nil, 0o600)
+	os.WriteFile(paths.Key(), []byte("half-installed new key"), 0o600)
+
+	// `enroll` without a token restores nothing either.
+	cfg.Token = ""
+	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard, &runnertest.Fake{}); err == nil || paths.Enrolled() {
+		t.Fatalf("enroll without a token must not restore: %v", err)
+	}
+
+	cfg.Token = "one-time"
+	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard, &runnertest.Fake{}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := enroll.LoadState(paths)
+	if err != nil || st.AgentID != fleetAgentIDs[1] || fleet.enrolls != 2 {
+		t.Fatalf("want the token's new identity, got %+v %v (%d enrollments)", st, err, fleet.enrolls)
+	}
+	if _, err := os.Stat(filepath.Join(backup, "agent.json")); err != nil {
+		t.Fatal("the backup must stay in place")
+	}
+	if _, err := os.Stat(filepath.Join(backup, ".incomplete")); err == nil {
+		t.Fatal("the backup must be marked done")
+	}
+	// A later start keeps the new identity.
+	if id, err := ensureEnrolled(ctx, cfg, quiet(), true); err != nil || id.State.AgentID != fleetAgentIDs[1] {
+		t.Fatalf("%v %+v", err, id)
+	}
+}
+
 func TestUnfinishedReplacementIsRestoredOnStart(t *testing.T) {
 	fleet := newFakeFleet(t)
 	cfg := identityConfig(t, fleet)
@@ -103,7 +146,7 @@ func TestUnfinishedReplacementIsRestoredOnStart(t *testing.T) {
 
 	var logs bytes.Buffer
 	cfg.Token = "" // `kiln-agent run` without a token
-	id, err := ensureEnrolled(ctx, cfg, slog.New(slog.NewTextHandler(&logs, nil)))
+	id, err := ensureEnrolled(ctx, cfg, slog.New(slog.NewTextHandler(&logs, nil)), true)
 	if err != nil || id.State.AgentID != fleetAgentIDs[0] || read(t, paths.Cert()) != cert {
 		t.Fatalf("%v %+v", err, id)
 	}
@@ -172,7 +215,7 @@ func TestEnrollReplacesAnExistingIdentity(t *testing.T) {
 	os.WriteFile(filepath.Join(cfg.EtcDir, "agent.env"), []byte("KILN_TOKEN=used\n"), 0o600)
 
 	// `kiln-agent run` never re-enrolls on its own.
-	if _, err := ensureEnrolled(ctx, cfg, quiet()); err != nil || fleet.enrolls != 1 {
+	if _, err := ensureEnrolled(ctx, cfg, quiet(), true); err != nil || fleet.enrolls != 1 {
 		t.Fatalf("run re-enrolled: %v (%d enrollments)", err, fleet.enrolls)
 	}
 

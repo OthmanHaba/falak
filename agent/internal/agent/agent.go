@@ -124,10 +124,11 @@ func Build(d Deps) *Components {
 }
 
 // ensureEnrolled enrolls only when there is no identity yet: `kiln-agent run` never replaces one because
-// KILN_TOKEN is still in agent.env (see EnrollOnly).
-func ensureEnrolled(ctx context.Context, cfg config.Config, log *slog.Logger) (*enroll.Identity, error) {
+// KILN_TOKEN is still in agent.env (see EnrollOnly). With restore (`run` only), an identity left in an unfinished
+// replacement's backup comes back before any enrollment.
+func ensureEnrolled(ctx context.Context, cfg config.Config, log *slog.Logger, restore bool) (*enroll.Identity, error) {
 	paths := enroll.Paths{Dir: cfg.EtcDir}
-	if !paths.Enrolled() && !restoreIncomplete(cfg, log) {
+	if !paths.Enrolled() && !(restore && restoreIncomplete(cfg, log)) {
 		if cfg.PanelURL == "" || cfg.Token == "" {
 			return nil, errors.New("agent is not enrolled: set KILN_PANEL_URL and KILN_TOKEN (or --panel/--token)")
 		}
@@ -162,7 +163,7 @@ func enrollInto(ctx context.Context, cfg config.Config, log *slog.Logger, paths 
 
 // Run is `kiln-agent run`: enroll if needed, start every subsystem, serve until ctx is cancelled.
 func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	id, err := ensureEnrolled(ctx, cfg, log)
+	id, err := ensureEnrolled(ctx, cfg, log, true)
 	if err != nil {
 		return err
 	}
