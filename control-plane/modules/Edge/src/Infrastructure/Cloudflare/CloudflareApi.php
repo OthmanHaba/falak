@@ -112,6 +112,16 @@ final class CloudflareApi
     }
 
     /**
+     * The zone's plan: free | pro | business | enterprise (Cloudflare's legacy_id).
+     */
+    public function plan(string $zoneId): string
+    {
+        $zone = $this->call('GET', "/zones/{$zoneId}");
+
+        return strtolower((string) ($zone['plan']['legacy_id'] ?? 'free')) ?: 'free';
+    }
+
+    /**
      * A zone's entry point ruleset of a phase (e.g. http_request_cache_settings); empty when there is none yet.
      *
      * @return array<string, mixed>

@@ -10,6 +10,7 @@ use Kiln\Alerting\Contracts\Severity;
 use Kiln\Deployments\Events\DeploymentRolledBack;
 use Kiln\Deployments\Events\DeploymentSucceeded;
 use Kiln\Edge\Application\CertificateInstaller;
+use Kiln\Edge\Application\CloudflareRateLimits;
 use Kiln\Edge\Application\EdgeChanges;
 use Kiln\Edge\Application\Jobs\PurgeCloudflareCache;
 use Kiln\Edge\Application\Jobs\ReconcileCloudflareTunnels;
@@ -129,6 +130,8 @@ class EdgeServiceProvider extends ModuleServiceProvider
         // Cloudflare DNS follows the domains (records Kiln created only).
         Event::listen(DomainAdded::class, fn (DomainAdded $event) => SyncCloudflareDns::domain($event->domainId));
         Event::listen(DomainRemoved::class, fn (DomainRemoved $event) => SyncCloudflareDns::forget($event->domainId));
+        // Its Cloudflare rate limit rule goes with it.
+        Event::listen(DomainRemoved::class, fn (DomainRemoved $event) => app(CloudflareRateLimits::class)->resyncFor($event->organizationId, $event->name));
         // A function's domain is how other servers reach its paths (edge mounts).
         Event::listen(DomainAdded::class, fn (DomainAdded $event) => app(PathMounts::class)->functionChanged($event->siteId));
         Event::listen(DomainRemoved::class, fn (DomainRemoved $event) => app(PathMounts::class)->functionChanged($event->siteId));

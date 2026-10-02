@@ -29,6 +29,15 @@ final class FakeCloudflare
     /** @var array<string, list<array<string, mixed>>> zone id => cache rules */
     public array $cacheRules = [];
 
+    /** @var array<string, list<array<string, mixed>>> zone id => rate limiting rules */
+    public array $rateLimits = [];
+
+    /** @var array<string, string> zone id => plan legacy_id (default free) */
+    public array $plans = [];
+
+    /** The token lacks Zone → Zone WAF (rate limiting rules answer "request is not authorized"). */
+    public bool $wafDenied = false;
+
     /** @var list<array{zone: string, hosts: list<string>}> */
     public array $purges = [];
 
@@ -103,6 +112,12 @@ final class FakeCloudflare
                 ? $ok(['id' => 'rs-1', 'rules' => $this->cacheRules[$m[1]]])
                 : Http::response(['success' => false, 'errors' => [['code' => 10003, 'message' => 'could not find entrypoint ruleset']]], 404),
             (bool) preg_match('#^/zones/([^/]+)/rulesets/phases/http_request_cache_settings/entrypoint$#', $path, $m) && $request->method() === 'PUT' => $ok(['id' => 'rs-1', 'rules' => $this->cacheRules[$m[1]] = $body['rules']]),
+            (bool) preg_match('#^/zones/[^/]+/rulesets/phases/http_ratelimit/entrypoint$#', $path) && $this->wafDenied => Http::response(['success' => false, 'errors' => [['code' => 10000, 'message' => 'request is not authorized']]], 403),
+            (bool) preg_match('#^/zones/([^/]+)/rulesets/phases/http_ratelimit/entrypoint$#', $path, $m) && $request->method() === 'GET' => isset($this->rateLimits[$m[1]])
+                ? $ok(['id' => 'rs-rl', 'phase' => 'http_ratelimit', 'rules' => $this->rateLimits[$m[1]]])
+                : Http::response(['success' => false, 'errors' => [['code' => 10003, 'message' => 'could not find entrypoint ruleset']]], 404),
+            (bool) preg_match('#^/zones/([^/]+)/rulesets/phases/http_ratelimit/entrypoint$#', $path, $m) && $request->method() === 'PUT' => $ok(['id' => 'rs-rl', 'rules' => $this->rateLimits[$m[1]] = $body['rules']]),
+            (bool) preg_match('#^/zones/([^/]+)$#', $path, $m) && $request->method() === 'GET' && isset($this->zones[$m[1]]) => $ok(['id' => $m[1], 'name' => $this->zones[$m[1]]['name'], 'plan' => ['legacy_id' => $this->plans[$m[1]] ?? 'free']]),
             (bool) preg_match('#^/zones/([^/]+)/purge_cache$#', $path, $m) => (function () use ($m, $body, $ok) {
                 $this->purges[] = ['zone' => $m[1], 'hosts' => $body['hosts'] ?? []];
 

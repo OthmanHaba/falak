@@ -38,6 +38,8 @@ export interface EdgeDomain {
         /** null: the zone's default */
         override: boolean | null;
         cache: 'standard' | 'everything' | 'bypass';
+        /** Cloudflare rate limit rule (null: none). */
+        rate_limit: RateLimitRule | null;
         records: { name: string; type: string; content: string; status: 'pending' | 'synced' | 'conflict' | 'error'; error: string | null }[];
     } | null;
 }
@@ -172,4 +174,23 @@ export interface DnsCheckData {
     };
     certificate: { status: 'issued' | 'pending'; message: string; issuer: string | null; expires_at: string | null } | null;
     checked_at: string;
+}
+
+export type RateLimitAction = 'block' | 'managed_challenge';
+
+export interface RateLimitRule {
+    path: string | null;
+    requests: number;
+    period: number;
+    action: RateLimitAction;
+    timeout: number;
+}
+
+/** GET /sites/{site}/domains/{domain}/rate-limit */
+export interface RateLimitData {
+    domain: string;
+    rule: RateLimitRule | null;
+    zone: string | null;
+    proxied: boolean;
+    limits: { plan: string; rules: number; host: boolean; periods: number[]; timeouts: number[]; note: string | null } | null;
 }

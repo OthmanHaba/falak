@@ -9,6 +9,7 @@ use Kiln\Edge\Http\Controllers\DomainController;
 use Kiln\Edge\Http\Controllers\DomainSettingsController;
 use Kiln\Edge\Http\Controllers\LoadBalancerController;
 use Kiln\Edge\Http\Controllers\MountController;
+use Kiln\Edge\Http\Controllers\RateLimitController;
 use Kiln\Edge\Http\Controllers\RoutingController;
 
 Route::middleware(['auth', 'org'])->group(function () {
@@ -23,6 +24,9 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::put('sites/{site}/domains/{domain}/primary', [DomainController::class, 'primary'])->name('edge.domains.primary');
     Route::put('sites/{site}/domains/{domain}/cloudflare', [DomainController::class, 'cloudflare'])->name('edge.domains.cloudflare');
     Route::put('sites/{site}/domains/{domain}/cloudflare-cache', [DomainController::class, 'cloudflareCache'])->name('edge.domains.cloudflare-cache');
+    Route::get('sites/{site}/domains/{domain}/rate-limit', [RateLimitController::class, 'show'])->name('edge.domains.rate-limit.show');
+    Route::put('sites/{site}/domains/{domain}/rate-limit', [RateLimitController::class, 'update'])->middleware('throttle:30,1')->name('edge.domains.rate-limit.update');
+    Route::delete('sites/{site}/domains/{domain}/rate-limit', [RateLimitController::class, 'destroy'])->name('edge.domains.rate-limit.destroy');
     Route::post('sites/{site}/cloudflare/purge', [DomainController::class, 'cloudflarePurge'])->middleware('throttle:20,1')->name('edge.cloudflare.purge');
     Route::delete('sites/{site}/domains/{domain}', [DomainController::class, 'destroy'])->name('edge.domains.destroy');
     Route::post('sites/{site}/edge/apply', [DomainController::class, 'apply'])->name('edge.apply');
