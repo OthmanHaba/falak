@@ -95,7 +95,7 @@ final class ServerTabController extends Controller
             'server' => $this->headers->for($server->id),
             'runtime' => $server->stack->phpRuntime,
             'php' => $server->phpVersions->map(fn (PhpVersion $php) => $this->phpVersion($php))->values(),
-            'phpOptions' => array_values(array_diff((array) config('servers.php_versions'), $server->phpVersions->pluck('version')->all())),
+            'phpOptions' => array_values(array_diff($server->installablePhpVersions(), $server->phpVersions->pluck('version')->all())),
             'can' => ['update' => $request->user()?->can('update', $server) ?? false],
         ]);
     }

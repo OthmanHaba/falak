@@ -65,6 +65,7 @@ func TestPHPInstall(t *testing.T) {
 		return runner.Result{}, nil
 	})
 	f.OnFunc("add-apt-repository", func(c runnertest.Call) (runner.Result, error) { return runner.Result{}, nil })
+	f.On("apt-cache policy php8.4-cli", runner.Result{Stdout: []byte("php8.4-cli:\n  Installed: (none)\n  Candidate: 8.4.13-1+ubuntu24.04.1+deb.sury.org+1\n")})
 	rt, root, st := setup(t, f, nil)
 	p := PHPInstallPayload{Version: "8.4", Extensions: []string{"mbstring", "intl", "pdo_mysql", "ctype", "redis"}, CLIDefault: true}
 	r, err := rt.PHPInstall(context.Background(), p, st)
@@ -91,6 +92,116 @@ func TestPHPInstall(t *testing.T) {
 	r, err = rt.PHPInstall(context.Background(), p, st)
 	if err != nil || r.(PHPInstallResult).Changed || f.Ran("apt-get") || f.Ran("add-apt-repository") || f.Ran("update-alternatives --set") {
 		t.Fatal(r, err, f.Lines())
+	}
+}
+
+// phpFake installs whatever apt-get install is given and offers the PHP versions in archive.
+func phpFake(archive ...string) (*runnertest.Fake, map[string]bool) {
+	installed := map[string]bool{}
+	f := &runnertest.Fake{}
+	f.OnFunc("dpkg-query", func(c runnertest.Call) (runner.Result, error) {
+		var b strings.Builder
+		for _, a := range c.Args[2:] {
+			if installed[a] {
+				b.WriteString(a + "\tinstalled\t1\n")
+			}
+		}
+		return runner.Result{ExitCode: 1, Stdout: []byte(b.String())}, nil
+	})
+	f.OnFunc("apt-get install", func(c runnertest.Call) (runner.Result, error) {
+		for _, a := range c.Args {
+			installed[a] = true
+		}
+		return runner.Result{}, nil
+	})
+	f.OnFunc("apt-cache policy", func(c runnertest.Call) (runner.Result, error) {
+		pkg := c.Args[1]
+		cand := "(none)"
+		for _, v := range archive {
+			if pkg == "php"+v+"-cli" {
+				cand = v + ".0-1ubuntu1"
+			}
+		}
+		return runner.Result{Stdout: []byte(pkg + ":\n  Installed: (none)\n  Candidate: " + cand + "\n")}, nil
+	})
+	f.OnFunc("apt-cache search", func(runnertest.Call) (runner.Result, error) {
+		var b strings.Builder
+		for _, v := range archive {
+			b.WriteString("php" + v + "-cli - command-line interpreter for the PHP scripting language\n")
+		}
+		return runner.Result{Stdout: []byte(b.String())}, nil
+	})
+	return f, installed
+}
+
+// ppaServer serves dists/<codename>/Release for the given codenames only.
+func ppaServer(t *testing.T, codenames ...string) (*httptest.Server, *[]string) {
+	var hits []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, r.URL.Path)
+		for _, c := range codenames {
+			if r.URL.Path == "/ondrej/php/ubuntu/dists/"+c+"/Release" {
+				w.Write([]byte("Origin: LP-PPA-ondrej-php\n"))
+				return
+			}
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &hits
+}
+
+func osRelease(t *testing.T, root, version, codename string) {
+	mk(t, root, "/etc")
+	os.WriteFile(filepath.Join(root, "etc/os-release"), []byte("ID=ubuntu\nVERSION_ID=\""+version+"\"\nVERSION_CODENAME="+codename+"\n"), 0o644)
+}
+
+func TestPHPInstallFromUbuntuArchiveWhenThePPAHasNoRelease(t *testing.T) {
+	srv, hits := ppaServer(t, "noble", "jammy")
+	f, installed := phpFake("8.5")
+	root := t.TempDir()
+	osRelease(t, root, "26.04", "resolute")
+	rt := New(Deps{Runner: f, FS: hostfs.FS{Root: root}, HTTP: srv.Client(), OndrejPPAURL: srv.URL + "/ondrej/php/ubuntu"})
+	col := &commands.Collector{}
+	st := commands.NewTestStream("c", col)
+
+	r, err := rt.PHPInstall(context.Background(), PHPInstallPayload{Version: "8.5", Extensions: []string{"intl"}}, st)
+	if err != nil || !r.(PHPInstallResult).Changed {
+		t.Fatal(r, err)
+	}
+	if len(*hits) != 1 || (*hits)[0] != "/ondrej/php/ubuntu/dists/resolute/Release" {
+		t.Fatalf("probe %v", *hits)
+	}
+	if f.Ran("add-apt-repository") || !f.Ran("apt-get update") || !installed["php8.5-cli"] || !installed["php8.5-intl"] {
+		t.Fatalf("%v", f.Lines())
+	}
+	st.Flush()
+	if out := col.Output(""); !strings.Contains(out, "ppa:ondrej/php has no packages for ubuntu 26.04 (resolute); installing PHP from the distribution's archive") {
+		t.Fatalf("output %q", out)
+	}
+
+	f.Reset()
+	_, err = rt.PHPInstall(context.Background(), PHPInstallPayload{Version: "8.4"}, st)
+	want := "PHP 8.4 is not available on ubuntu 26.04 (ppa:ondrej/php has no packages for ubuntu 26.04 (resolute)); PHP versions available here: 8.5"
+	if err == nil || err.Error() != want {
+		t.Fatalf("got %v\nwant %s", err, want)
+	}
+	if f.Ran("apt-get install") {
+		t.Fatal("must not try to install an unavailable version")
+	}
+}
+
+func TestPHPInstallAddsThePPAWhenItHasTheRelease(t *testing.T) {
+	srv, hits := ppaServer(t, "noble")
+	f, installed := phpFake("8.3", "8.4")
+	root := t.TempDir()
+	osRelease(t, root, "24.04", "noble")
+	rt := New(Deps{Runner: f, FS: hostfs.FS{Root: root}, HTTP: srv.Client(), OndrejPPAURL: srv.URL + "/ondrej/php/ubuntu"})
+	if _, err := rt.PHPInstall(context.Background(), PHPInstallPayload{Version: "8.4"}, commands.NewTestStream("c", &commands.Collector{})); err != nil {
+		t.Fatal(err)
+	}
+	if len(*hits) != 1 || !f.Ran("add-apt-repository -y ppa:ondrej/php") || !installed["php8.4-fpm"] {
+		t.Fatalf("%v %v", *hits, f.Lines())
 	}
 }
 
