@@ -30,6 +30,9 @@ trait PresentsDeployments
             'release_id' => $deployment->release_id,
             'build_id' => $deployment->build_id,
             'rolled_back' => $deployment->rolled_back,
+            // A compose stack's bootstrap pass: only these services run until its split-out sites are live and the
+            // full stack deploys (docs/COMPOSE_TEMPLATES.md §1.7).
+            'partial' => ($bootstrap = (array) $deployment->setting('bootstrap', [])) !== [] ? ['services' => $bootstrap, 'awaits_sites' => (array) $deployment->setting('awaits_sites', [])] : null,
             'url' => $deployment->url(),
             'error' => $deployment->error,
             // Set while status is `waiting`: "Waiting for 2 servers to finish preparing: web-1, web-2".

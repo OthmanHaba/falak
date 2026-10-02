@@ -200,9 +200,11 @@ export function HistoryCard({
     const duration = durationMs(deployment.started_at, deployment.finished_at);
     const [status, label, tone]: [string, string, StatusTone | undefined] = deployment.rolled_back
         ? ['degraded', 'Rolled back', 'warning']
-        : deployment.status === 'succeeded'
-          ? ['removed', 'Removed', 'faint']
-          : [deployment.status, deployment.status === 'waiting' ? 'Waiting' : '', undefined];
+        : deployment.partial && deployment.status === 'succeeded'
+          ? ['degraded', `Partial: ${deployment.partial.services.join(', ')}`, 'warning']
+          : deployment.status === 'succeeded'
+            ? ['removed', 'Removed', 'faint']
+            : [deployment.status, deployment.status === 'waiting' ? 'Waiting' : '', undefined];
 
     return (
         <div

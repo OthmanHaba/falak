@@ -34,6 +34,11 @@ final class PayloadCompatibility
             'deploy.container.swap' => ['networks'],
         ],
         // A compose project's missing network created with Compose's labels; older agents only wait for it.
+        // A stack's bootstrap pass (only the services its split-out sites use). The control plane only plans one for
+        // agents that have the feature: stripping the field would start the whole stack.
+        'compose.up.services' => [
+            'docker.compose.up' => ['services'],
+        ],
         'docker.networks.create' => [
             'docker.run' => ['networks.*.compose'],
             'deploy.container.swap' => ['networks.*.compose'],

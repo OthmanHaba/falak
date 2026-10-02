@@ -20,6 +20,8 @@ export interface Deployment {
     release_id: string | null;
     build_id: string | null;
     rolled_back: boolean;
+    /** A compose stack's bootstrap pass: only these services run until its split-out sites are live. */
+    partial?: { services: string[]; awaits_sites: string[] } | null;
     url: string;
     error: string | null;
     /** "Waiting for 2 servers to finish preparing: web-1, web-2" while status is `waiting`. */

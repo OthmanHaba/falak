@@ -9,7 +9,7 @@ it('keeps clear of the queued-listener failure hook and retries a busy trigger',
 
     expect($listener->hasMethod('failed'))->toBeFalse()
         ->and($listener->hasMethod('onStackFailed'))->toBeTrue()
-        ->and($listener->hasMethod('onSiteSucceeded'))->toBeTrue()
+        ->and($listener->hasMethod('onSucceeded'))->toBeTrue()
         ->and($listener->getProperty('tries')->getDefaultValue())->toBe(3)
         ->and($listener->getProperty('backoff')->getDefaultValue())->toBe([10, 30]);
 });

@@ -148,11 +148,19 @@ stack's public services.
 - **Kiln database names:** a service replaced by a Kiln database keeps its `POSTGRES_DB` / `MYSQL_DATABASE` name when
   it's free on the leader, else `<stack>_<name>`, then `_2`, `_3`…; the rewritten `DATABASE_URL` / `DB_DATABASE`
   carry the new name.
-- **Deploy order:** the stack runs without a split-out service, so its deployment stops until that site is live
-  ("Deploying <site> first; the stack follows when it's live.", `settings.awaits_site`): Deployments deploys the site,
-  and the site's next successful deployment deploys the stack once more, with the stopped deployment's commit unless a
-  newer stack deployment exists, and only within 24 h of the stop (`DeploySplitSitesFirst`,
-  `ComposeSites::stacksUsing()`). A **native** site (Laravel, Node.js on the host), or a
+- **Deploy order:** the stack runs without its split-out services, which may in turn use some of its services
+  (`uses`). A stack deployment that finds split-out sites not yet live records them (`settings.awaits_sites`) and:
+  1. **bootstraps** a stack that never ran: `docker compose up --wait` of only the services those sites use that
+     still run in the stack (plus their `depends_on`), no `--remove-orphans`, no leader command, no public-service
+     check ("Bootstrap: started postgres, redis for <site>; the full stack follows once <site> is live.";
+     `settings.bootstrap`, shown as **Partial** in the panel and as `partial` in the API; a rollback to that release
+     starts the same subset; agent feature `compose.up.services`);
+  2. otherwise (the stack already runs, the sites use nothing in it, or an agent lacks the feature) stops: "Deploying
+     <site> first; the stack follows when it's live."
+  Then `DeploySplitSitesFirst` deploys the waiting sites, and once all of them are live deploys the full stack once,
+  with that deployment's commit unless a newer stack deployment exists, and only within 24 h
+  (`ComposeSites::stacksUsing()`). A site whose deploy fails leaves the stack bootstrapped (or stopped) until the next
+  deploy. A **native** site (Laravel, Node.js on the host), or a
   server without the stack, only reaches the stack's public services: the services table and extraction warn
   (`uses` in the inspect rows: `depends_on` plus hosts in its environment; at extraction, after the stack's variables
   are filled in). Without the stack the site keeps its own
