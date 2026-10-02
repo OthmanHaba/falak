@@ -22,6 +22,7 @@ use Kiln\Edge\Domain\Enums\WwwRedirect;
  * @property ?string $dns_credential_id
  * @property ?bool $cloudflare_proxied null = the Cloudflare zone's default
  * @property ?string $cloudflare_cache null = standard | everything | bypass
+ * @property ?array{path: ?string, requests: int, period: int, action: string, timeout: int} $cloudflare_rate_limit Cloudflare rate limit rule (null: none)
  * @property ?Certificate $certificate
  * @property ?DnsCredential $dnsCredential
  */
@@ -46,6 +47,7 @@ class Domain extends Model
             'www_redirect' => WwwRedirect::class,
             'tls_mode' => TlsMode::class,
             'cloudflare_proxied' => 'boolean',
+            'cloudflare_rate_limit' => 'array',
         ];
     }
 

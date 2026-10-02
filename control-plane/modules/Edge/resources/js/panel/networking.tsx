@@ -26,7 +26,16 @@ import { type ServiceTabProps } from '@/lib/registry';
 import { Globe, Lock, Plus, RotateCw, ShieldCheck, Star, Trash2, Upload } from 'lucide-react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { DnsInstructions, GeneratedDomainPreview } from '../components/domain-picker';
-import { type ComposeServiceOption, type DomainsData, type EdgeDomain, type RoutingData, type TlsMode, type WwwRedirect } from '../types';
+import {
+    type ComposeServiceOption,
+    type DomainsData,
+    type EdgeDomain,
+    type RateLimitAction,
+    type RateLimitData,
+    type RoutingData,
+    type TlsMode,
+    type WwwRedirect,
+} from '../types';
 
 const domainsUrl = (siteId: string) => `/sites/${siteId}/domains`;
 const routingUrl = (siteId: string) => `/sites/${siteId}/routing`;
@@ -427,6 +436,162 @@ function DnsCredentialDialog({
     );
 }
 
+const ACTION_LABELS: Record<RateLimitAction, string> = { block: 'Block', managed_challenge: 'Managed challenge' };
+
+function seconds(value: number): string {
+    return value >= 3600 && value % 3600 === 0 ? `${value / 3600} h` : value >= 60 && value % 60 === 0 ? `${value / 60} min` : `${value} s`;
+}
+
+/** A domain's Cloudflare rate limit: Kiln's edge (Caddy) has none, so the rule lives in the zone's rate limiting rules. */
+function RateLimitDialog({
+    siteId,
+    domain,
+    onOpenChange,
+    reload,
+}: {
+    siteId: string;
+    domain: EdgeDomain;
+    onOpenChange: (open: boolean) => void;
+    reload: () => Promise<void>;
+}) {
+    const url = `${domainsUrl(siteId)}/${domain.id}/rate-limit`;
+    const { data } = useJson<RateLimitData>(url);
+    const [form, setForm] = useState({ path: '', requests: '100', period: '10', action: 'block' as RateLimitAction, timeout: '10' });
+    const [errors, setErrors] = useState<Record<string, string>>({});
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        const rule = data?.rule;
+        if (rule) {
+            setForm({
+                path: rule.path ?? '',
+                requests: String(rule.requests),
+                period: String(rule.period),
+                action: rule.action,
+                timeout: String(rule.timeout),
+            });
+        } else if (data?.limits) {
+            const limits = data.limits;
+            setForm((current) => ({ ...current, period: String(limits.periods[0]), timeout: String(limits.timeouts[0]) }));
+        }
+    }, [data]);
+
+    const save = async (event: FormEvent) => {
+        event.preventDefault();
+        setSaving(true);
+        const problems = await mutate(
+            'PUT',
+            url,
+            {
+                path: form.path || null,
+                requests: Number(form.requests),
+                period: Number(form.period),
+                action: form.action,
+                timeout: Number(form.timeout),
+            },
+            `${domain.name}: rate limit saved`,
+            reload,
+        );
+        setSaving(false);
+        if (problems) setErrors(problems);
+        else onOpenChange(false);
+    };
+
+    const remove = async () => {
+        setSaving(true);
+        const problems = await mutate('DELETE', url, undefined, `${domain.name}: rate limit removed`, reload);
+        setSaving(false);
+        if (problems) setErrors(problems);
+        else onOpenChange(false);
+    };
+
+    const limits = data?.limits ?? null;
+    const usable = data !== null && data.proxied && limits !== null;
+
+    return (
+        <Dialog
+            open
+            onOpenChange={onOpenChange}
+            title={`Rate limit for ${domain.name}`}
+            description="Cloudflare blocks or challenges a visitor (per IP) that sends more requests than allowed in the window."
+            footer={
+                <>
+                    {data?.rule && (
+                        <Button variant="ghost" onClick={() => void remove()} loading={saving}>
+                            Remove
+                        </Button>
+                    )}
+                    <Button variant="ghost" onClick={() => onOpenChange(false)}>
+                        Cancel
+                    </Button>
+                    <Button variant="primary" type="submit" form="rate-limit-form" loading={saving} disabled={!usable}>
+                        Save
+                    </Button>
+                </>
+            }
+        >
+            {!data ? (
+                <SkeletonRows rows={3} />
+            ) : (
+                <form id="rate-limit-form" onSubmit={save} className="grid gap-4">
+                    {!data.proxied && (
+                        <Callout tone="warning">
+                            Needs the Cloudflare proxy (orange cloud): Kiln’s edge (Caddy) has no rate limiting, so a rule only applies to names
+                            Cloudflare proxies.
+                        </Callout>
+                    )}
+                    {limits?.note && <Callout tone="info">{limits.note}</Callout>}
+                    <Field label="Path" hint="Only requests whose path starts with this; empty: every request." error={errors.path}>
+                        <Input
+                            mono
+                            placeholder="/login"
+                            value={form.path}
+                            disabled={!usable}
+                            onChange={(event) => setForm({ ...form, path: event.target.value })}
+                        />
+                    </Field>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                        <Field label="Requests" error={errors.requests}>
+                            <Input
+                                type="number"
+                                min={1}
+                                value={form.requests}
+                                disabled={!usable}
+                                onChange={(event) => setForm({ ...form, requests: event.target.value })}
+                            />
+                        </Field>
+                        <Field label="Per" error={errors.period}>
+                            <Select
+                                value={form.period}
+                                disabled={!usable}
+                                onValueChange={(period) => setForm({ ...form, period })}
+                                options={(limits?.periods ?? [10]).map((value) => ({ value: String(value), label: seconds(value) }))}
+                            />
+                        </Field>
+                        <Field label="Then" error={errors.action}>
+                            <Select
+                                value={form.action}
+                                disabled={!usable}
+                                onValueChange={(action) => setForm({ ...form, action: action as RateLimitAction })}
+                                options={(Object.keys(ACTION_LABELS) as RateLimitAction[]).map((value) => ({ value, label: ACTION_LABELS[value] }))}
+                            />
+                        </Field>
+                        <Field label="For" error={errors.timeout}>
+                            <Select
+                                value={form.timeout}
+                                disabled={!usable}
+                                onValueChange={(timeout) => setForm({ ...form, timeout })}
+                                options={(limits?.timeouts ?? [10]).map((value) => ({ value: String(value), label: seconds(value) }))}
+                            />
+                        </Field>
+                    </div>
+                    {(errors.rate_limit || errors.form) && <p className="text-danger text-xs">{errors.rate_limit ?? errors.form}</p>}
+                </form>
+            )}
+        </Dialog>
+    );
+}
+
 /** Networking: domains with TLS modes (auto, DNS-01, custom upload, internal, off), certificates and edge servers. */
 export function DomainsSettings({ ctx }: ServiceTabProps) {
     const siteId = ctx.service.ref_id;
@@ -436,6 +601,7 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
     const [addingDns, setAddingDns] = useState(false);
     const [applying, setApplying] = useState<string | null>(null);
     const [checking, setChecking] = useState<EdgeDomain | null>(null);
+    const [rateLimiting, setRateLimiting] = useState<EdgeDomain | null>(null);
     const [service, setService] = useState('');
 
     if (!data) return <Loading error={error} />;
@@ -590,6 +756,14 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
                                                                   refresh,
                                                               ),
                                                       }))
+                                                    : []),
+                                                ...(domain.cloudflare && !domain.wildcard
+                                                    ? [
+                                                          {
+                                                              label: domain.cloudflare.rate_limit ? 'Rate limit ✓' : 'Rate limit…',
+                                                              onSelect: () => setRateLimiting(domain),
+                                                          },
+                                                      ]
                                                     : []),
                                                 ...(domain.cloudflare
                                                     ? [
@@ -800,6 +974,9 @@ export function DomainsSettings({ ctx }: ServiceTabProps) {
             >
                 {checking && <DnsInstructions name={checking.served_host} serverIds={[]} siteId={siteId} label={data.slug} />}
             </Dialog>
+            {rateLimiting && (
+                <RateLimitDialog siteId={siteId} domain={rateLimiting} onOpenChange={(open) => !open && setRateLimiting(null)} reload={refresh} />
+            )}
             <CertificateDialog siteId={siteId} open={uploading} onOpenChange={setUploading} reload={reload} />
             {data.can.manage_dns && <DnsCredentialDialog data={data} open={addingDns} onOpenChange={setAddingDns} reload={reload} />}
         </>

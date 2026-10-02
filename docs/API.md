@@ -210,6 +210,14 @@ domain). It is accepted by `POST /api/v1/sites` (`domain`), compose `public_serv
 - **test** — `<slug>.<KILN_TEST_DOMAIN>` (compose: `<service>-<slug>.…` after the first service).
 - **custom** — your domain, routed with automatic TLS once DNS points at the server (see the check below).
 
+### `GET|PUT|DELETE /api/v1/sites/{site}/domains/{domain}/rate-limit` — `edge.view` / `edge.manage`
+A domain's Cloudflare rate limit (`{domain}`: its id or name; docs/CLOUDFLARE.md → Rate limits). `GET` →
+`{domain, rule, zone, proxied, limits: {plan, rules, host, periods[], timeouts[], note}}` (`limits` null outside a
+managed zone). `PUT {path?, requests, period, action: block|managed_challenge, timeout}` writes the zone's rules and
+returns the same shape; `422` when the domain isn't proxied, the plan doesn't allow the window / duration or has no rule
+left, or Cloudflare refuses (the token needs Zone → Zone WAF → Edit). `DELETE` removes the rule. Rate limited to
+30/min.
+
 ### `GET /api/v1/domains/options?server=<id>[,<id>…]` · `?site=<site>` — `edge.view`
 What a create form offers: `{test_domain, generated: {suffix, ipv4, target, available, reason}, default, targets[]}`
 (`targets`: `{server_id, name, ipv4, ipv6, load_balancer}` — where DNS must point: the site's load balancer, else each

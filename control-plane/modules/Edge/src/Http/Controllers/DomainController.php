@@ -12,6 +12,7 @@ use Kiln\Edge\Application\Actions\MakePrimaryDomain;
 use Kiln\Edge\Application\Actions\RemoveDomain;
 use Kiln\Edge\Application\Actions\UpdateDomain;
 use Kiln\Edge\Application\CloudflareEdgeControls;
+use Kiln\Edge\Application\CloudflareRateLimits;
 use Kiln\Edge\Application\ComposeServiceDomains;
 use Kiln\Edge\Application\EdgeChanges;
 use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
@@ -87,6 +88,7 @@ final class DomainController extends Controller
                     'proxied' => $domain->cloudflare_proxied ?? $zone->proxied,
                     'override' => $domain->cloudflare_proxied,
                     'cache' => $domain->cloudflare_cache ?? 'standard',
+                    'rate_limit' => $domain->cloudflare_rate_limit,
                     'records' => DnsRecord::query()->where('domain_id', $domain->id)->orderBy('name')->get()
                         ->map(fn (DnsRecord $r) => ['name' => $r->name, 'type' => $r->type, 'content' => $r->content, 'status' => $r->status, 'error' => $r->error])->values(),
                 ] : null,
@@ -197,6 +199,10 @@ final class DomainController extends Controller
 
         $model->forceFill(['cloudflare_proxied' => $data['proxied']])->save();
         SyncCloudflareDns::domain($model->id);
+        // A rate limit only applies while Cloudflare proxies the name: its rule follows the switch.
+        if ($model->cloudflare_rate_limit !== null) {
+            app(CloudflareRateLimits::class)->resyncFor($siteData->organizationId, $model->name);
+        }
         $audit->record('edge.domain_cloudflare_proxy', 'site', $siteData->id, ['domain' => $model->name, 'proxied' => $data['proxied']], $siteData->organizationId);
 
         return back();
