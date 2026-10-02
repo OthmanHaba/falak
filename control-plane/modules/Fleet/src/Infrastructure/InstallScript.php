@@ -132,27 +132,43 @@ if [ -n "\$SHA256" ]; then
     echo "\$SHA256  \$TMP" | sha256sum -c - >/dev/null 2>&1 || fail "checksum mismatch for \$URL"
 fi
 
-# A running agent (an earlier install) must not race the new identity; `kiln-agent install` starts it again.
-WAS_RUNNING=0
-if systemctl is-active --quiet kiln-agent 2>/dev/null; then
-    say "stopping the running kiln-agent"
-    systemctl stop kiln-agent || fail "could not stop kiln-agent"
-    WAS_RUNNING=1
+# An agent from an earlier install (running, starting or waiting to restart) must not race the new identity;
+# `kiln-agent install` starts it again.
+HAD_UNIT=0
+if [ -f /etc/systemd/system/kiln-agent.service ] || systemctl cat kiln-agent.service >/dev/null 2>&1; then
+    say "stopping kiln-agent (earlier install)"
+    systemctl stop kiln-agent 2>/dev/null || true
+    HAD_UNIT=1
 fi
 
 install -m 0755 "\$TMP" "\$BIN"
 
 say "enrolling with \$KILN_PANEL_URL"
 if ! "\$BIN" enroll --panel "\$KILN_PANEL_URL" --token "\$KILN_TOKEN"; then
-    if [ "\$WAS_RUNNING" = 1 ]; then systemctl start kiln-agent || true; fi
+    if [ "\$HAD_UNIT" = 1 ]; then systemctl start kiln-agent 2>/dev/null || true; fi
     fail "enrollment failed"
 fi
 
 # The agent owns its systemd unit (kiln-agent install writes it, enables and starts the service).
 "\$BIN" install || fail "service installation failed"
 
-say "waiting for kiln-agent to connect"
-CONNECTED="\$("\$BIN" check --wait 60s)" || fail "kiln-agent is installed but not connected (reason above); logs: journalctl -u kiln-agent"
+# A binary from a custom download URL may predate `kiln-agent check` (an unknown subcommand prints the usage; every
+# build's --help lists its flags, and only builds with check have -wait).
+if "\$BIN" check --help 2>&1 | grep -q -- '-wait'; then
+    say "waiting for kiln-agent to connect"
+    CONNECTED="\$("\$BIN" check --wait 60s)" || fail "kiln-agent is installed but not connected (reason above); logs: journalctl -u kiln-agent"
+else
+    warn "this kiln-agent build has no check command; not verifying the connection (logs: journalctl -u kiln-agent)"
+    CONNECTED="kiln-agent installed"
+fi
+
+# The check runs its own request: make sure the service itself stays up too.
+TRIES=0
+until systemctl is-active --quiet kiln-agent; do
+    TRIES=\$((TRIES + 1))
+    [ "\$TRIES" -lt 10 ] || fail "kiln-agent.service is not running; logs: journalctl -u kiln-agent"
+    sleep 1
+done
 say "\$CONNECTED"
 
 SH;
