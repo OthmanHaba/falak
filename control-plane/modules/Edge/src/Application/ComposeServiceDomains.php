@@ -9,6 +9,7 @@ use Kiln\Edge\Contracts\TlsMode;
 use Kiln\Edge\Domain\Enums\WwwRedirect;
 use Kiln\Edge\Domain\Models\DnsRecord;
 use Kiln\Edge\Domain\Models\Domain;
+use Kiln\Edge\Domain\Models\SiteSetting;
 use Kiln\Edge\Events\DomainAdded;
 use Kiln\Sites\Contracts\ComposeSites;
 use Kiln\Sites\Contracts\Data\PublicService;
@@ -148,7 +149,7 @@ final class ComposeServiceDomains
             return false;
         }
 
-        $changed = false;
+        $changed = $this->retarget($site);
 
         foreach ($publics as $i => $public) {
             if ($public->domain === null) {
@@ -197,6 +198,43 @@ final class ComposeServiceDomains
         $this->mirror($site);
 
         return $changed;
+    }
+
+    /**
+     * The first public service changed (reordered, or the previous one split out or no longer public): the site's own
+     * domain rows (compose_service null) belonged to the previous one and are handed to it by name, the new first
+     * service's rows become the site's own. Edge remembers the first service per site (edge_site_settings
+     * compose_primary); a site seen for the first time just records it. Returns whether rows moved.
+     */
+    public function retarget(SiteData $site): bool
+    {
+        $current = self::primaryService($site);
+
+        return DB::transaction(function () use ($site, $current) {
+            $settings = SiteSetting::query()->whereKey($site->id)->lockForUpdate()->first() ?? new SiteSetting(['site_id' => $site->id]);
+            $previous = $settings->compose_primary;
+            $moved = false;
+
+            if ($previous !== null && $current !== null && $previous !== $current) {
+                $own = Domain::query()->where('site_id', $site->id)->whereNull('compose_service')->get();
+                $theirs = Domain::query()->where('site_id', $site->id)->where('compose_service', $current)->get();
+                $own->each(fn (Domain $d) => $d->forceFill(['compose_service' => $previous])->save());
+                $theirs->each(fn (Domain $d) => $d->forceFill(['compose_service' => null])->save());
+                $moved = $own->isNotEmpty() || $theirs->isNotEmpty();
+            }
+
+            if ($previous !== $current) {
+                $settings->forceFill(['compose_primary' => $current])->save();
+            }
+
+            return $moved;
+        });
+    }
+
+    /** The service whose domains are the site's own rows as Edge last saw it (null: not recorded yet). */
+    public static function recordedPrimary(string $siteId): ?string
+    {
+        return SiteSetting::query()->whereKey($siteId)->value('compose_primary');
     }
 
     /** Each public service's first domain (primary row first) written back to Sites. */

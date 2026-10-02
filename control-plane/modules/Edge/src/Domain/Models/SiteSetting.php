@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property list<string> $deny_ips
  * @property ?int $max_body_bytes
  * @property bool $encode
+ * @property ?string $compose_primary compose sites: the service whose domains are the site's own rows, as Edge last saw it
  */
 class SiteSetting extends Model
 {

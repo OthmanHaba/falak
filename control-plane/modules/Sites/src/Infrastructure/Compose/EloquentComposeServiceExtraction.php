@@ -111,6 +111,8 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         [$document, $definition] = $this->service($stack, $service, $compose);
         $data = $stack->toData();
         $stackVariables = $this->stackVariables($stack);
+        // Read before record() drops it from public_services: Edge moves the stack's own domains along.
+        $wasPrimary = (array_values(array_filter((array) $stack->public_services, 'is_array'))[0]['service'] ?? null) === $service;
 
         $build = $definition['build'] ?? null;
         $context = is_array($build) ? ($build['context'] ?? '.') : (is_string($build) ? $build : null);
@@ -143,7 +145,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             'rewrites' => ServiceReferences::find($document, $service, 'site', $stackVariables),
         ]);
 
-        ComposeServiceExtracted::dispatch($stack->id, $stack->organization_id, $service, 'site', $created->site->id, $created->site->name);
+        ComposeServiceExtracted::dispatch($stack->id, $stack->organization_id, $service, 'site', $created->site->id, $created->site->name, $wasPrimary);
 
         return $created->site;
     }

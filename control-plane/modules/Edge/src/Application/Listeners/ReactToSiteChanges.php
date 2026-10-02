@@ -3,6 +3,8 @@
 namespace Kiln\Edge\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Kiln\Edge\Application\CertificateInstaller;
 use Kiln\Edge\Application\ComposeServiceDomains;
 use Kiln\Edge\Application\EdgeChanges;
@@ -67,22 +69,79 @@ final class ReactToSiteChanges implements ShouldQueue
         if ($event->kind !== 'site') {
             return;
         }
-        $scoped = fn (string $model) => $model::query()->where('site_id', $event->siteId)->where('compose_service', $event->service);
-        $hasPrimary = Domain::query()->where('site_id', $event->refId)->where('is_primary', true)->exists();
 
-        foreach ($scoped(Domain::class)->orderByDesc('is_primary')->orderBy('created_at')->get() as $domain) {
-            $domain->forceFill(['site_id' => $event->refId, 'compose_service' => null, 'is_primary' => $domain->is_primary && ! $hasPrimary])->save();
-            $hasPrimary = $hasPrimary || $domain->is_primary;
-        }
-        foreach ([Redirect::class, SecurityRule::class, Header::class, Mount::class] as $model) {
-            $scoped($model)->update(['site_id' => $event->refId, 'compose_service' => null]);
-        }
-        ServiceSetting::query()->where('site_id', $event->siteId)->where('service', $event->service)->delete();
+        DB::transaction(fn () => $this->handOver($event->siteId, $event->service, $event->refId, $event->wasPrimary));
+
+        // The stack's next first service gets its own rows back (and the read model follows).
+        $this->composeDomains->import($event->siteId);
 
         $this->changes->siteChanged($event->siteId);
         $this->changes->siteChanged($event->refId);
         SyncCloudflareDns::site($event->siteId);
         SyncCloudflareDns::site($event->refId);
+    }
+
+    /**
+     * A compose service became its own site ($to): it keeps what applied to its route. Its domains and its own rules
+     * move; site-wide basic auth and headers are copied (they stay for the stack's other services; the service's own
+     * basic auth replaces the site's, its own header wins by name); IP lists become the new site's (the service's allow
+     * list, else the stack's; both deny lists); body limit and compression as the stack's. When it was the first
+     * service, the stack's own domains were its domains and the stack's site-wide redirects and paths applied to it:
+     * those domains move and those rules are copied.
+     */
+    private function handOver(string $stack, string $service, string $to, bool $wasPrimary): void
+    {
+        $own = fn (string $model) => $model::query()->where('site_id', $stack)->where('compose_service', $service);
+        $siteWide = fn (string $model) => $model::query()->where('site_id', $stack)->whereNull('compose_service');
+        // The stack's own rows are the service's unless Edge already handed them to the next first service.
+        $ownRows = $wasPrimary && in_array(ComposeServiceDomains::recordedPrimary($stack), [null, $service], true);
+
+        $hasPrimary = Domain::query()->where('site_id', $to)->where('is_primary', true)->exists();
+        $domains = Domain::query()->where('site_id', $stack)
+            ->where(fn ($q) => $ownRows ? $q->where('compose_service', $service)->orWhereNull('compose_service') : $q->where('compose_service', $service))
+            ->orderByDesc('is_primary')->orderBy('created_at')->get();
+
+        foreach ($domains as $domain) {
+            $domain->forceFill(['site_id' => $to, 'compose_service' => null, 'is_primary' => $domain->is_primary && ! $hasPrimary])->save();
+            $hasPrimary = $hasPrimary || $domain->is_primary;
+        }
+
+        $hadAuth = $own(SecurityRule::class)->exists();
+
+        foreach ([Redirect::class, SecurityRule::class, Header::class, Mount::class] as $model) {
+            $own($model)->update(['site_id' => $to, 'compose_service' => null]);
+        }
+
+        $copy = function (Model $row, array $taken, string $key) use ($to): void {
+            if (! in_array($row->getAttribute($key), $taken, true)) {
+                $row->replicate()->forceFill(['site_id' => $to, 'compose_service' => null])->save();
+            }
+        };
+
+        if (! $hadAuth) {
+            $siteWide(SecurityRule::class)->get()->each(fn (SecurityRule $rule) => $copy($rule, [], 'username'));
+        }
+
+        $headers = Header::query()->where('site_id', $to)->pluck('name')->all();
+        $siteWide(Header::class)->get()->each(fn (Header $header) => $copy($header, $headers, 'name'));
+
+        if ($wasPrimary) {
+            $from = Redirect::query()->where('site_id', $to)->pluck('from')->all();
+            $siteWide(Redirect::class)->orderBy('position')->get()->each(fn (Redirect $redirect) => $copy($redirect, $from, 'from'));
+            $paths = Mount::query()->where('site_id', $to)->pluck('path_prefix')->all();
+            $siteWide(Mount::class)->get()->each(fn (Mount $mount) => $copy($mount, $paths, 'path_prefix'));
+        }
+
+        $stackSettings = SiteSetting::for($stack);
+        $serviceSettings = ServiceSetting::query()->where('site_id', $stack)->where('service', $service)->first();
+        $settings = SiteSetting::for($to);
+        $settings->forceFill([
+            'allow_ips' => array_values($serviceSettings !== null && $serviceSettings->allow_ips !== [] ? $serviceSettings->allow_ips : $stackSettings->allow_ips),
+            'deny_ips' => array_values(array_unique([...$settings->deny_ips, ...$stackSettings->deny_ips, ...($serviceSettings->deny_ips ?? [])])),
+            'max_body_bytes' => $settings->max_body_bytes ?? $stackSettings->max_body_bytes,
+            'encode' => $stackSettings->encode,
+        ])->save();
+        $serviceSettings?->delete();
     }
 
     /**

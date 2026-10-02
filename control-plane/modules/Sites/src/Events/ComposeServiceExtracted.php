@@ -16,6 +16,7 @@ final class ComposeServiceExtracted
 
     /**
      * @param  'database'|'site'  $kind
+     * @param  bool  $wasPrimary  the service was the stack's first public service (its domains were the site's own)
      */
     public function __construct(
         public string $siteId,
@@ -24,5 +25,6 @@ final class ComposeServiceExtracted
         public string $kind,
         public string $refId,
         public string $name,
+        public bool $wasPrimary = false,
     ) {}
 }
