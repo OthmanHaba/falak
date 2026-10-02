@@ -1,5 +1,9 @@
 <?php
 
+use Kiln\Databases\Application\ContainerNetworks;
+
+$dockerNetworks = ContainerNetworks::parse(env('KILN_DOCKER_NETWORKS', implode(',', ContainerNetworks::DEFAULT)));
+
 return [
     // Supported engine versions (shown in the UI; detected versions outside this list are kept but flagged).
     'versions' => [
@@ -20,8 +24,10 @@ return [
 
     // Docker address ranges containers connect from (Docker's default address pools). Engines on app/worker servers
     // accept these ranges, on the Docker bridges only (firewall), so compose stacks, Docker sites and functions on
-    // the same server reach them on the host address. Change them if the Docker daemon uses other pools.
-    'container_networks' => array_values(array_filter(array_map('trim', explode(',', (string) env('KILN_DOCKER_NETWORKS', '172.16.0.0/12,192.168.0.0/16'))))),
+    // the same server reach them on the host address. Change them if the Docker daemon uses other pools. IPv4 CIDRs,
+    // /8–/30; invalid entries are dropped (and logged), Docker's defaults apply when none is valid.
+    'container_networks' => $dockerNetworks['networks'],
+    'container_networks_invalid' => $dockerNetworks['invalid'],
 
     // Agent command timeouts (seconds).
     'timeouts' => [

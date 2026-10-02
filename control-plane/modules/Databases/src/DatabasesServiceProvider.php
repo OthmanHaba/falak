@@ -5,6 +5,7 @@ namespace Kiln\Databases;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Kiln\Alerting\Contracts\AlertTypes;
 use Kiln\Alerting\Contracts\Severity;
 use Kiln\Databases\Application\Jobs\RunDueBackups;
@@ -89,6 +90,10 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         Event::listen(AgentVersionChanged::class, EnableContainerAccessOnUpgrade::class);
         Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationData::class);
+
+        if (($invalid = (array) config('databases.container_networks_invalid', [])) !== [] && $this->app->runningInConsole()) {
+            Log::warning('KILN_DOCKER_NETWORKS: ignoring '.implode(', ', $invalid).' (IPv4 networks in CIDR form, /8–/30); containers use '.(implode(', ', (array) config('databases.container_networks', [])) ?: 'none').'.');
+        }
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new RunDueBackups)->everyMinute()->name('databases:backups')->withoutOverlapping();

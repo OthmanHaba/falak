@@ -6,6 +6,12 @@ import { lineDiff } from '../api';
 import { ENGINE_LABELS, type Adjustment, type InspectedService, type InspectedVariable, type Inspection } from './project-api';
 import { DiffView } from './yaml-editor';
 
+const parseProfiles = (text: string) =>
+    text
+        .split(/[\s,]+/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+
 /** Compose files in -f order (the first is the project file) + active profiles. */
 export function ProjectFiles({
     files,
@@ -24,6 +30,8 @@ export function ProjectFiles({
 }) {
     const list = files.length > 0 ? files : [''];
     const [profileText, setProfileText] = useState(profiles.join(', '));
+    // Follow the prop when it changes from outside (Reset): the text is kept only while it still parses to it.
+    if (parseProfiles(profileText).join(',') !== profiles.join(',')) setProfileText(profiles.join(', '));
     const setFile = (index: number, value: string) =>
         onChange(
             list.map((file, i) => (i === index ? value.trim() : file)),
@@ -99,13 +107,7 @@ export function ProjectFiles({
                         aria-label="Profiles"
                         onChange={(event) => {
                             setProfileText(event.target.value);
-                            onChange(
-                                list,
-                                event.target.value
-                                    .split(/[\s,]+/)
-                                    .map((p) => p.trim())
-                                    .filter(Boolean),
-                            );
+                            onChange(list, parseProfiles(event.target.value));
                         }}
                     />
                 </Field>

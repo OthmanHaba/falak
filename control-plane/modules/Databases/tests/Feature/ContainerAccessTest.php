@@ -17,8 +17,14 @@ beforeEach(function () {
     $this->pg = databases_engine($this->organization, 'postgresql');
 });
 
-it('sends the Docker ranges with users of app-server engines, not of dedicated database servers', function () {
+it('sends the Docker ranges with users of app-server engines with container access, not of dedicated database servers', function () {
     databases_active_db($this->pg, 'shop');
+
+    // Container access still off (agent not upgraded yet): the engine stays on localhost.
+    $this->post("/databases/servers/{$this->pg->id}/users", ['username' => 'early', 'grants' => []])->assertSessionHasNoErrors();
+    expect($this->agents->last('db.user.apply')['payload'])->not->toHaveKey('containers');
+
+    $this->pg->forceFill(['container_access' => true])->save();
     $this->post("/databases/servers/{$this->pg->id}/users", ['username' => 'shop', 'grants' => []])->assertSessionHasNoErrors();
     $apply = $this->agents->last('db.user.apply');
 
@@ -31,6 +37,7 @@ it('sends the Docker ranges with users of app-server engines, not of dedicated d
 
     // A MySQL user pinned to localhost stays local.
     $mysql = databases_engine($this->organization, 'mysql');
+    $mysql->forceFill(['container_access' => true])->save();
     $this->post("/databases/servers/{$mysql->id}/users", ['username' => 'cron', 'host' => 'localhost', 'grants' => []])->assertSessionHasNoErrors();
     expect($this->agents->last('db.user.apply')['payload'])->not->toHaveKey('containers');
     $this->post("/databases/servers/{$mysql->id}/users", ['username' => 'web', 'grants' => []])->assertSessionHasNoErrors();
@@ -52,11 +59,17 @@ it('turns container access on when the agent learns db.containers: users re-appl
     expect($this->pg->refresh()->container_access)->toBeFalse()
         ->and(app(FirewallCompiler::class)->compile($this->pg->server_id))->not->toHaveKey('container_ports');
 
+    $all = count($this->agents->dispatched());
     event(new AgentVersionChanged('agent', $this->organization->id, $this->pg->server_id, '0.4.4', '0.4.5', ['fn.v3', 'db.containers']));
 
+    $applies = $this->agents->dispatched('db.user.apply');
     expect($this->pg->refresh()->container_access)->toBeTrue()
-        ->and(count($this->agents->dispatched('db.user.apply')))->toBe($before + 1)
-        ->and($this->agents->last('db.user.apply')['handle']->idempotencyKey)->toBe("db.user.apply:{$user->id}:".$user->refresh()->revision);
+        ->and(count($applies))->toBe($before + 1)
+        ->and($this->agents->last('db.user.apply')['handle']->idempotencyKey)->toBe("db.user.apply:{$user->id}:".$user->refresh()->revision)
+        // The re-applied user carries the ranges now that access is on, and the firewall went out first.
+        ->and(end($applies)['payload']['containers'])->toBe(['172.16.0.0/12', '192.168.0.0/16'])
+        ->and(array_values(array_intersect(array_map(fn (array $c) => $c['handle']->type, array_slice($this->agents->dispatched(), $all)), ['net.firewall.apply', 'db.user.apply'])))
+        ->toBe(['net.firewall.apply', 'db.user.apply']);
 
     $firewall = $this->agents->last('net.firewall.apply');
     expect($firewall['payload']['container_ports'])->toBe([['id' => 'postgresql', 'protocol' => 'tcp', 'ports' => ['5432'], 'sources' => ['172.16.0.0/12', '192.168.0.0/16'], 'comment' => 'PostgreSQL for containers']])

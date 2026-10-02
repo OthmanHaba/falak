@@ -6,6 +6,7 @@ use Illuminate\Validation\ValidationException;
 use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Sites\Contracts\Data\ComposeRewrites;
 use Kiln\Sites\Contracts\Data\SiteData;
+use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
 
 /**
  * Takes a service out of a compose stack and runs it as a Kiln service instead (docs/plans/COMPOSE_APPS.md, phase 3):
@@ -18,8 +19,9 @@ use Kiln\Sites\Contracts\Data\SiteData;
  * failed creation gives it back.
  *
  * Every method takes the compose file the decision is made on ($compose: the merged YAML of the stack's files, as the
- * create flow / Settings → Compose read it). When null, inline stacks use their stored file and repository stacks the
- * file read from the repository.
+ * create flow / Settings → Compose read it, with relative paths rebased to the stack's root directory). When null,
+ * inline stacks use their stored file and repository stacks the merged project read from the repository. Reading
+ * the repository can also throw SourceControlException (NoApi for plain git servers, provider errors).
  */
 interface ComposeServiceExtraction
 {
@@ -31,18 +33,20 @@ interface ComposeServiceExtraction
      * @param  string  $engine  postgresql | mysql | mariadb (the leader's engine)
      *
      * @throws ValidationException keys: service, engine, database_id, compose
+     * @throws SourceControlException
      */
     public function toDatabase(string $siteId, string $service, ?string $databaseId, string $engine, ?string $compose = null): DatabaseData;
 
     /**
      * Run $service as its own Kiln site, created in the stack's environment from the same repository and branch:
-     * `root_directory` = the service's build context (relative to the compose file), its `environment:` as the site's
+     * `root_directory` = the service's build context (relative to the stack's root directory in the merged project), its `environment:` as the site's
      * variables, the stack's servers. $site are SiteFactory fields chosen by the user (framework, runtime, name,
      * domain, server_ids, …; they win over the derived ones).
      *
      * @param  array<string, mixed>  $site
      *
      * @throws ValidationException keys: service, compose, or SiteFactory's
+     * @throws SourceControlException
      */
     public function toSite(string $siteId, string $service, array $site, ?string $compose = null): SiteData;
 

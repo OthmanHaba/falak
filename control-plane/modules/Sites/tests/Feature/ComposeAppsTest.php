@@ -352,3 +352,60 @@ it('marks only ${VAR:?} and ${VAR?} as required and ignores services moved out o
 
     expect(array_column($data['variables'], 'name'))->not->toContain('DB_PASSWORD');
 });
+
+it('runs a service as its own site from its build context, with the compose file in a subfolder or at the root', function (array $files, array $input, string $service, string $expected) {
+    $this->git->files = $files;
+    $created = app(SiteFactory::class)->create($this->organization->id, $this->user->id, compose_app_input($this, [
+        ...$input,
+        'compose_services' => [$service => ['mode' => 'site', 'site' => ['name' => "split-{$service}", 'runtime' => 'docker', 'framework' => 'docker']]],
+        'public_services' => [],
+    ]));
+
+    $split = Site::query()->where('name', "split-{$service}")->firstOrFail();
+
+    expect($created->warnings)->toBe([])
+        ->and($split->root_directory)->toBe($expected)
+        ->and($created->site->compose->mode($service))->toBe('site');
+
+    // Without the merged project (Settings → Compose without compose_files), the repository is read the same way.
+    Site::query()->whereKey($created->site->id)->update(['compose_services' => null]);
+    $again = app(ComposeServiceExtraction::class)->toSite($created->site->id, $service, ['name' => "again-{$service}", 'runtime' => 'docker', 'framework' => 'docker']);
+
+    expect($again->rootDirectory)->toBe($expected);
+})->with([
+    'compose file in a subfolder' => [
+        ['docker/compose.yml' => SHOP_COMPOSE, 'docker/compose.override.yml' => "services: {}\n", 'docker/app/Dockerfile' => "FROM php:8.4\n"],
+        [], 'app', 'docker/app',
+    ],
+    'context above the compose file' => [
+        ['deploy/compose.yml' => "services:\n  api:\n    build: {context: ../api}\n"],
+        ['compose_files' => ['deploy/compose.yml'], 'variables' => []], 'api', 'api',
+    ],
+    'compose file at the root' => [
+        ['compose.yaml' => "services:\n  api:\n    build: ./api\n    ports: ['8000:8000']\n"],
+        ['compose_files' => ['compose.yaml'], 'variables' => []], 'api', 'api',
+    ],
+    'stack in a root directory' => [
+        ['apps/shop/deploy/compose.yml' => "services:\n  api:\n    build: ../api\n", 'deploy/compose.yml' => "services: {other: {build: ./nope}}\n"],
+        ['root_directory' => 'apps/shop', 'compose_files' => ['deploy/compose.yml'], 'variables' => []], 'api', 'apps/shop/api',
+    ],
+]);
+
+it('leaves services in the stack with a warning when the repository cannot be read (plain git servers)', function () {
+    $custom = $this->git->addConnection($this->organization->id, ProviderType::Custom, 'ssh');
+
+    $created = app(SiteFactory::class)->create($this->organization->id, $this->user->id, compose_app_input($this, [
+        'source_connection_id' => $custom->id,
+        'repository' => 'git@example.com:acme/shop.git',
+        'compose_services' => [
+            'db' => ['mode' => 'database', 'engine' => 'postgresql'],
+            'app' => ['mode' => 'site', 'site' => ['name' => 'shop-app', 'runtime' => 'docker', 'framework' => 'docker']],
+        ],
+    ]));
+
+    expect($created->warnings)->toHaveCount(2)
+        ->and($created->warnings[0])->toStartWith('db stays in the stack: ')
+        ->and($created->warnings[1])->toStartWith('app stays in the stack: ')
+        ->and($created->site->compose->mode('db'))->toBe('keep')
+        ->and($created->site->compose->mode('app'))->toBe('keep');
+});

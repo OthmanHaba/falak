@@ -15,11 +15,13 @@ use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';
 
+// The merged project of deploy/compose.yaml (as verifyRepository() returns it): paths are repository-relative, so
+// `context: ../api` in deploy/compose.yaml is ./api here.
 const SHOP_STACK = <<<'YAML'
 services:
   app:
     build:
-      context: ../api
+      context: ./api
       dockerfile: Dockerfile.prod
     ports: ["8000:8000"]
     environment:
@@ -138,7 +140,7 @@ it('runs an app service as its own Kiln site from its build context, with its va
         ->and($extracted[0]->service)->toBe('app')
         ->and($extracted[0]->refId)->toBe($site->id);
 
-    // The build context is relative to deploy/compose.yaml: ../api is the repository folder api.
+    // The merged project's build context is repository-relative: ./api is the repository folder api.
     expect($site->rootDirectory)->toBe('api')
         ->and($site->dockerfile)->toBe('Dockerfile.prod')
         ->and($site->containerPort)->toBe(8000)
@@ -156,7 +158,7 @@ it('runs an app service as its own Kiln site from its build context, with its va
 });
 
 it('refuses build contexts outside the repository', function () {
-    $yaml = "services:\n  app:\n    build: ../../outside\n";
+    $yaml = "services:\n  app:\n    build: ../outside\n";
 
     expect(fn () => $this->extraction->toSite($this->stack->id, 'app', ['framework' => 'docker'], $yaml))->toThrow(ValidationException::class);
 });

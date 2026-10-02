@@ -119,13 +119,20 @@ ensure_registry_env() {
   return 0
 }
 
+curl_config_quote() { # curl_config_quote VALUE -> "VALUE" for a curl config file (\ and " escaped)
+  local v="$1"
+  v="${v//\\/\\\\}"
+  v="${v//\"/\\\"}"
+  printf '"%s"' "$v"
+}
+
 registry_code() { # registry_code [--auth] -> HTTP status of GET /v2/ through the edge
   local host
   host="$(env_get KILN_REGISTRY_HOST)"
   [ -n "$host" ] || { echo none; return 0; }
   if [ "${1:-}" = --auth ]; then
     # Credentials via a curl config on stdin, never on the command line.
-    printf 'user = "%s:%s"\n' "$(env_get KILN_REGISTRY_USERNAME)" "$(env_get KILN_REGISTRY_PASSWORD)" \
+    printf 'user = %s\n' "$(curl_config_quote "$(env_get KILN_REGISTRY_USERNAME):$(env_get KILN_REGISTRY_PASSWORD)")" \
       | edge_curl "$host" /v2/ -o /dev/null -w '%{http_code}' -K - 2>/dev/null || true
     return 0
   fi
@@ -149,17 +156,24 @@ cmd_registry() {
     gc)
       # Removes layers and untagged manifests nothing references. The registry is stopped meanwhile: a push
       # during garbage collection could lose layers, so run it when no docker build is running.
-      local dry=""
+      local dry="" status=0
       [ "${1:-}" = --dry-run ] && dry="--dry-run"
       is_running registry || die "registry is not running"
       info "garbage-collecting the built-in registry${dry:+ (dry run)}"
-      compose stop registry >/dev/null
-      # shellcheck disable=SC2086  # optional flag
-      if compose run --rm --no-deps -T registry garbage-collect --delete-untagged $dry /etc/docker/registry/config.yml \
-        | grep -Ev ': marking (blob|manifest) ' | tail -3; then
-        ok "garbage collection done"
-      else warn "garbage collection failed (kiln-ctl logs registry)"; fi
-      compose start registry >/dev/null
+      # A subshell whose EXIT trap, installed before the stop, starts the registry again however it ends (failure,
+      # Ctrl-C, kill). set -e does not apply inside `( ) || …`, hence the explicit exits.
+      (
+        trap 'trap - EXIT; compose start registry >/dev/null || { bad "the registry did not start again (kiln-ctl up)"; exit 1; }' EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        compose stop registry >/dev/null || exit 1
+        # shellcheck disable=SC2086  # optional flag
+        if compose run --rm --no-deps -T registry garbage-collect --delete-untagged $dry /etc/docker/registry/config.yml \
+          | grep -Ev ': marking (blob|manifest) ' | tail -3; then
+          ok "garbage collection done"
+        else warn "garbage collection failed (kiln-ctl logs registry)"; exit 1; fi
+      ) || status=$?
+      return "$status"
       ;;
     *) die "usage: kiln-ctl registry status | gc [--dry-run]" ;;
   esac

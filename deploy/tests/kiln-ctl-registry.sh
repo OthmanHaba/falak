@@ -55,3 +55,39 @@ cmd_domain set new.example.com >/dev/null
 [ "$(env_get KILN_REGISTRY_HOST_ALIASES)" = registry.old.example.com ] || fail "aliases: $(env_get KILN_REGISTRY_HOST_ALIASES)"
 [ "$(env_get KILN_REGISTRY_PASSWORD)" = secret ] || fail "domain set rotated the password"
 pass "domain set moves the registry host and keeps the old one as an alias"
+
+# registry status: custom credentials with " and \ still make a valid curl config (stdin, never argv).
+printf 'KILN_DOMAIN=kiln.example.com\nKILN_REGISTRY_HOST=registry.kiln.example.com\nKILN_REGISTRY_USERNAME=kiln\nKILN_REGISTRY_PASSWORD=pa"ss\\word\n' > "$KILN_DIR/.env"
+edge_curl() { cat > "$work/curl.cfg"; printf 200; }
+[ "$(registry_code --auth)" = 200 ] || fail "registry_code --auth"
+[ "$(cat "$work/curl.cfg")" = 'user = "kiln:pa\"ss\\word"' ] || fail "curl config: $(cat "$work/curl.cfg")"
+if parsed="$(curl -K "$work/curl.cfg" --libcurl - file:///dev/null 2>/dev/null | grep CURLOPT_USERPWD)" && [ -n "$parsed" ]; then
+  [ "$parsed" = '  curl_easy_setopt(hnd, CURLOPT_USERPWD, "kiln:pa\"ss\\word");' ] || fail "curl parsed: $parsed"
+fi
+pass "registry credentials are escaped in the curl config"
+
+# registry gc: the registry is started again whatever happens, and a failed collection fails the command.
+is_running() { :; }
+calls="$work/calls"
+gc_mode=ok
+compose() {
+  echo "$*" >> "$calls"
+  case "$1 $gc_mode" in
+    "run ok") echo "blob eligible for deletion" ;;
+    "run fail") return 1 ;;
+    "run killed") me=$(exec sh -c 'echo $PPID'); kill -TERM "$(ps -o ppid= -p "$me" | tr -d " ")"; sleep 1 ;;
+  esac
+  return 0
+}
+run_gc() { : > "$calls"; gc_mode="$1"; cmd_registry gc >/dev/null 2>&1 && rc=0 || rc=$?; }
+
+run_gc ok
+[ "$rc" = 0 ] || fail "gc ok -> $rc"
+[ "$(cut -d' ' -f1 "$calls" | tr '\n' ' ')" = "stop run start " ] || fail "gc ok calls: $(cat "$calls")"
+run_gc fail
+[ "$rc" != 0 ] || fail "failed gc exits 0"
+[ "$(tail -1 "$calls" | cut -d' ' -f1)" = start ] || fail "gc fail calls: $(cat "$calls")"
+run_gc killed
+[ "$rc" = 143 ] || fail "killed gc -> $rc"
+[ "$(tail -1 "$calls" | cut -d' ' -f1)" = start ] || fail "gc killed calls: $(cat "$calls")"
+pass "registry gc restarts the registry after success, failure and interruption, and reports failure"

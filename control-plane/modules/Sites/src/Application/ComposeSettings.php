@@ -16,6 +16,7 @@ use Kiln\Sites\Domain\Models\ComposeVersion;
 use Kiln\Sites\Domain\Models\OrganizationSettings;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Infrastructure\Compose\YamlComposeInspector;
+use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
 
 /**
  * Validation and persistence of a compose site's source, inline versions and public services
@@ -339,6 +340,9 @@ final class ComposeSettings
                 }
             } catch (ValidationException $e) {
                 $warnings[] = "{$item['service']} stays in the stack: ".collect($e->errors())->flatten()->first();
+            } catch (SourceControlException $e) {
+                // Reading the compose file from the repository failed (plain git server, provider error).
+                $warnings[] = "{$item['service']} stays in the stack: ".$e->getMessage();
             }
         }
 

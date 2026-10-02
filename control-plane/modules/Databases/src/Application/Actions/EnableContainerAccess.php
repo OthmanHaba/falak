@@ -47,17 +47,21 @@ final class EnableContainerAccess
             return false;
         }
 
+        // Flag and firewall first: users only carry the Docker ranges (which make the agent listen beyond localhost)
+        // once container access is on, and the bridge-only rule for the port is queued ahead of them.
+        foreach ($engines as $engine) {
+            $engine->forceFill(['container_access' => true])->save();
+        }
+
+        $this->firewalls->converge($serverId);
+
         foreach ($engines as $engine) {
             DatabaseUser::query()
                 ->where('database_server_id', $engine->id)
                 ->whereIn('status', [ResourceStatus::Active, ResourceStatus::Pending])
                 ->orderBy('created_at')
                 ->each(fn (DatabaseUser $user) => ($this->apply)($user, background: true));
-
-            $engine->forceFill(['container_access' => true])->save();
         }
-
-        $this->firewalls->converge($serverId);
 
         return true;
     }

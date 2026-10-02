@@ -57,10 +57,31 @@ ${KILN_GRAFANA_HOST} {
 SITE
 fi
 
+# valid_hosts LIST: every comma-separated entry is a DNS name (letters, digits, - and . between labels; no port,
+# wildcard or IP literal), so the value can't add Caddy tokens or site blocks to the rendered Caddyfile.
+valid_hosts() {
+  [ -n "$1" ] || return 1
+  # Checked whole first: no spaces or glob characters reach the word splitting below.
+  case "$1" in *[!A-Za-z0-9.,-]*|,*|*,|*,,*) return 1 ;; esac
+  for h in $(printf '%s' "$1" | tr ',' ' '); do
+    case "$h" in
+      .*|*.|*..*|-*|*-|*.-*|*-.*) return 1 ;;
+    esac
+    [ "${#h}" -le 253 ] || return 1
+  done
+  return 0
+}
+
 # Built-in image registry: never served without credentials (the registry itself has no auth). Former hosts
 # (kiln-ctl domain set --keep-old) keep working, so images referenced by old releases still pull.
 if [ -n "${KILN_REGISTRY_HOST:-}" ] && [ -n "${KILN_REGISTRY_USERNAME:-}" ] && [ -n "${KILN_REGISTRY_PASSWORD:-}" ]; then
   case "$KILN_REGISTRY_USERNAME" in *[!A-Za-z0-9_.-]*) echo "kiln-edge: KILN_REGISTRY_USERNAME may only use letters, digits, _ . -" >&2; exit 2 ;; esac
+  if ! valid_hosts "$KILN_REGISTRY_HOST" || [ "${KILN_REGISTRY_HOST#*,}" != "$KILN_REGISTRY_HOST" ]; then
+    echo "kiln-edge: KILN_REGISTRY_HOST must be one host name (letters, digits, - and .)" >&2; exit 2
+  fi
+  if [ -n "${KILN_REGISTRY_HOST_ALIASES:-}" ] && ! valid_hosts "$KILN_REGISTRY_HOST_ALIASES"; then
+    echo "kiln-edge: KILN_REGISTRY_HOST_ALIASES must be comma-separated host names (letters, digits, - and .)" >&2; exit 2
+  fi
   REGISTRY_HASH="$(caddy hash-password --plaintext "$KILN_REGISTRY_PASSWORD")"
   cat > /etc/caddy/sites/registry.caddyfile <<SITE
 ${KILN_REGISTRY_HOST}$(printf '%s' "${KILN_REGISTRY_HOST_ALIASES:-}" | sed 's/^/,/; s/,/, /g; s/^, $//') {

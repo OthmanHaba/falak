@@ -10,6 +10,8 @@ use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Databases\Contracts\DatabaseDirectory;
 use Kiln\Databases\Contracts\DatabaseProvisioner;
 use Kiln\Projects\Contracts\ProjectDirectory;
+use Kiln\Sites\Application\Compose\ComposeProject;
+use Kiln\Sites\Application\Compose\ComposeProjectException;
 use Kiln\Sites\Application\Compose\ServiceReferences;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
@@ -23,6 +25,7 @@ use Kiln\Sites\Contracts\SiteRuntime;
 use Kiln\Sites\Domain\Models\Site;
 use Kiln\Sites\Events\ComposeServiceExtracted;
 use Kiln\Sites\Events\SiteUpdated;
+use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
 use Kiln\SourceControl\Contracts\SourceControlGateway;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
@@ -272,7 +275,13 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         return [$document, $definition];
     }
 
-    /** The stack's compose file: stored (inline) or read from the repository on the branch. */
+    /**
+     * The stack's compose project: stored (inline), or the merged project of its files read from the repository on
+     * the branch under its root directory — what verifyRepository() returns and the builder deploys, so build
+     * contexts are relative to the root directory.
+     *
+     * @throws ValidationException|SourceControlException
+     */
     private function composeFile(Site $stack): string
     {
         if (($stack->compose_source ?? ComposeSource::Repo) === ComposeSource::Inline) {
@@ -280,30 +289,29 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
                 ?? throw ValidationException::withMessages(['compose' => 'The stack has no compose file.']);
         }
 
-        $path = $this->composePath($stack);
-
-        // SourceControlGateway::file() (docs/plans/COMPOSE_APPS.md, lane 1) reads one file of the repository.
-        if ($stack->source_connection_id !== null && $stack->repository !== null && method_exists($this->sourceControl, 'file')) {
-            $content = $this->sourceControl->file($stack->source_connection_id, $stack->repository, (string) $stack->branch, $path);
-
-            if (is_string($content)) {
-                return $content;
-            }
+        if ($stack->source_connection_id === null || $stack->repository === null) {
+            throw ValidationException::withMessages(['compose' => 'Could not read the compose project from the repository; pass the compose file.']);
         }
 
-        throw ValidationException::withMessages(['compose' => "Could not read {$path} from the repository; pass the compose file."]);
-    }
+        $root = trim((string) $stack->root_directory, '/');
+        $prefix = $root === '' || $root === '.' ? '' : ComposeProject::clean($root).'/';
 
-    private function composePath(Site $stack): string
-    {
-        $files = array_values(array_filter((array) ($stack->getAttribute('compose_files') ?? []), 'is_string'));
+        try {
+            $project = ComposeProject::load(
+                fn (string $path) => $this->sourceControl->file((string) $stack->source_connection_id, (string) $stack->repository, (string) $stack->branch, $prefix.$path),
+                $stack->composeFiles(),
+                array_values(array_map('strval', (array) $stack->compose_profiles)),
+            );
+        } catch (ComposeProjectException $e) {
+            throw ValidationException::withMessages(['compose' => $e->getMessage()]);
+        }
 
-        return $files[0] ?? $stack->compose_file ?? 'compose.yaml';
+        return EloquentComposeSites::dump($project['doc']);
     }
 
     /**
-     * A build context (relative to the compose file, which may sit in a subfolder) as a repository path, also inside
-     * the stack's own root directory. Null = the repository root.
+     * A build context of the merged project (relative to the stack's root directory, wherever the compose files sit)
+     * as a repository path. Null = the repository root.
      */
     private function repositoryPath(Site $stack, string $context): ?string
     {
@@ -311,10 +319,9 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             throw ValidationException::withMessages(['service' => 'The service builds from a remote context; only folders of the repository can become a Kiln site.']);
         }
 
-        $base = dirname($this->composePath($stack));
         $parts = [];
 
-        foreach (explode('/', trim(($stack->root_directory ? $stack->root_directory.'/' : '').($base === '.' ? '' : $base.'/').$context, '/')) as $segment) {
+        foreach (explode('/', trim(($stack->root_directory ? $stack->root_directory.'/' : '').$context, '/')) as $segment) {
             if ($segment === '' || $segment === '.') {
                 continue;
             }

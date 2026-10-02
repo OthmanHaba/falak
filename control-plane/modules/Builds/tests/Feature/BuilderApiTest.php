@@ -150,6 +150,22 @@ it('hands native jobs the build and install command overrides from KILN_BUILD_CO
         ->and(app(BuildConfiguration::class)->cacheKey(app(SiteDirectory::class)->find($world->site->id), 'native', str_repeat('a', 40)))->not->toBe($plain);
 });
 
+it('builds a site in another root directory as another artifact, keeping the key of sites without one', function () {
+    $world = builds_world();
+    $key = fn () => app(BuildConfiguration::class)->cacheKey(app(SiteDirectory::class)->find($world->site->id), 'native', str_repeat('a', 40));
+    $plain = $key();
+
+    $world->site->forceFill(['root_directory' => 'apps/api'])->save();
+    $api = $key();
+    $world->site->forceFill(['root_directory' => 'apps/web'])->save();
+    $web = $key();
+    $world->site->forceFill(['root_directory' => null])->save();
+
+    expect($api)->not->toBe($plain)
+        ->and($web)->not->toBe($api)
+        ->and($key())->toBe($plain);
+});
+
 it('runs the build lifecycle from builder events and verifies the uploaded artifact', function () {
     Event::fake([BuildSucceeded::class, BuildFailed::class]);
     $world = builds_world();
