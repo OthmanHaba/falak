@@ -25,6 +25,12 @@ interface ComposeSites
      */
     public function setPublicDomains(string $siteId, array $domains): void;
 
+    /**
+     * The compose project to show for the site: the latest inline file, or for repository stacks the merged project
+     * last read from git (at creation, a Settings → Compose save or a deploy). Null when none is known yet.
+     */
+    public function project(string $siteId): ?string;
+
     /** The organization's "Allow privileged compose" setting (off by default). */
     public function allowsPrivileged(string $organizationId): bool;
 

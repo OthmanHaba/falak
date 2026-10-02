@@ -48,6 +48,7 @@ use Kiln\Sites\Contracts\TargetRole;
  * @property ?list<string> $compose_profiles
  * @property ?array<string, array{mode: string, database_id?: string, site_id?: string}> $compose_services
  * @property ?array{keep_binds?: list<string>} $compose_adjustments
+ * @property ?string $compose_snapshot merged repository project last read from git (canvas / read models)
  * @property ?list<array{service: string, port: int, domain?: ?string, host_port?: ?int, health_check_path?: ?string}> $public_services
  * @property ?array{slug: string, version: string, source: string} $template
  * @property ?string $health_check_path

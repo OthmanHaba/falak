@@ -89,6 +89,8 @@ final class UpdateComposeSettings
                 'compose_profiles' => ($project['profiles'] ?? []) ?: null,
                 'compose_services' => ($project['services'] ?? []) ?: null,
                 'compose_adjustments' => ($project['adjustments'] ?? []) ?: null,
+                // The repository project as read now (unchanged when Kiln can't read the repository).
+                ...(isset($project['yaml']) ? ['compose_snapshot' => $project['yaml']] : []),
                 'public_services' => $public === [] ? null : $public,
                 'app_port' => $public[0]['host_port'] ?? null,
             ]);

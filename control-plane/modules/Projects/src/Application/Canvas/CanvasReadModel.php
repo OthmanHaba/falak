@@ -221,9 +221,7 @@ final class CanvasReadModel
      */
     private function composeState(SiteData $site): array
     {
-        $content = $this->compose->content($site->id);
-
-        return [$this->compose->status($site->id), $this->inspector->parse($content->content ?? '')];
+        return [$this->compose->status($site->id), $this->inspector->parse($this->compose->project($site->id) ?? '')];
     }
 
     /**

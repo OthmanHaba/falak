@@ -167,6 +167,30 @@ it('draws compose sites as a group of their compose services with volumes, statu
     $this->patchJson("{$this->base}/services/{$service->id}/layout", ['children' => ['cache' => ['x' => 'left']]])->assertUnprocessable();
 });
 
+it('draws a repository stack from the project last read from git', function () {
+    $web = sites_server($this->organization->id, ['name' => 'web-1'], docker: true);
+    $site = projects_site($this->organization, 'Shop', [], $this->environment, [$web], [
+        'framework' => 'docker', 'runtime' => 'compose', 'build_mode' => 'docker', 'php_version' => null, 'compose_source' => 'repo',
+        'compose_files' => ['compose.yaml'], 'public_services' => [['service' => 'web', 'port' => 80, 'host_port' => 3201]],
+    ]);
+    $service = projects_service('site', $site->id);
+
+    // Nothing read from the repository yet: no compose services to draw.
+    expect($this->getJson("{$this->base}/canvas")->json('services.0.compose.services'))->toBe([]);
+
+    // A deploy renders the files it read from git: the canvas shows them.
+    app(ComposeSites::class)->render($site->id, "services:\n  web:\n    image: nginx:1.29-alpine\n    depends_on: [api]\n  api:\n    image: ghcr.io/acme/api:1\n", [], '01j9zq4n8v2m6r0t3w5y7b9d1f');
+    app(ComposeSites::class)->recordStatus($site->id, $web->id, [
+        ['service' => 'web', 'state' => 'running', 'health' => 'healthy', 'image' => 'nginx:1.29-alpine', 'restarts' => 0],
+        ['service' => 'api', 'state' => 'running', 'health' => 'healthy', 'image' => 'ghcr.io/acme/api:1', 'restarts' => 0],
+    ]);
+
+    $canvas = $this->getJson("{$this->base}/canvas")->assertOk();
+    expect(array_column($canvas->json('services.0.compose.services'), 'name'))->toBe(['web', 'api'])
+        ->and(array_column($canvas->json('services.0.compose.services'), 'status'))->toBe(['active', 'active'])
+        ->and($canvas->json('edges'))->toBe([['from' => "{$service->id}:web", 'to' => "{$service->id}:api", 'kind' => 'depends_on']]);
+});
+
 it('maps compose images to service icons', function (string $image, string $icon) {
     expect(ComposeGroup::icon($image))->toBe($icon);
 })->with([

@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Kiln\Sites\Application\Compose\KilnAdjustments;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
 use Kiln\Sites\Contracts\ComposeSites;
+use Kiln\Sites\Contracts\ComposeSource;
 use Kiln\Sites\Contracts\Data\ComposeServiceState;
 use Kiln\Sites\Contracts\Data\ComposeVersionData;
 use Kiln\Sites\Contracts\Data\RenderedCompose;
@@ -31,6 +32,17 @@ final class EloquentComposeSites implements ComposeSites
         $row = $version !== null ? $query->where('version', $version)->first() : $query->orderByDesc('version')->first();
 
         return $row?->toData();
+    }
+
+    public function project(string $siteId): ?string
+    {
+        $site = Site::query()->find(strtolower($siteId), ['id', 'compose_source', 'compose_snapshot']);
+
+        if ($site === null) {
+            return null;
+        }
+
+        return $site->compose_source === ComposeSource::Inline ? $this->content($site->id)?->content : $site->compose_snapshot;
     }
 
     public function setPublicDomains(string $siteId, array $domains): void
@@ -74,6 +86,11 @@ final class EloquentComposeSites implements ComposeSites
 
         if ($site->runtime !== SiteRuntime::Compose) {
             throw new ComposeRenderException('The site is not a Docker Compose site.');
+        }
+
+        // What this release deploys is what the canvas shows for a repository stack (no SiteUpdated: nothing to apply).
+        if ($site->compose_source !== ComposeSource::Inline && $site->compose_snapshot !== $yaml) {
+            Site::withoutEvents(fn () => $site->forceFill(['compose_snapshot' => $yaml])->save());
         }
 
         // Kiln's adjustments (docs/plans/COMPOSE_APPS.md): extracted services out, their variables rewritten and,

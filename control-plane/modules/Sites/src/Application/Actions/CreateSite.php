@@ -201,6 +201,7 @@ final class CreateSite
                 'compose_files' => ($compose['project']['files'] ?? []) ?: null,
                 'compose_profiles' => ($compose['project']['profiles'] ?? []) ?: null,
                 'compose_adjustments' => ($compose['project']['adjustments'] ?? []) ?: null,
+                'compose_snapshot' => $compose['project']['yaml'] ?? null,
                 'compose_source' => $compose['source'] ?? null,
                 'public_services' => $compose['public_services'] ?? null,
                 'template' => $data['template'] ?? null,

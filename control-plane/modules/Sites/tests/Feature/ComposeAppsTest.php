@@ -409,3 +409,11 @@ it('leaves services in the stack with a warning when the repository cannot be re
         ->and($created->site->compose->mode('db'))->toBe('keep')
         ->and($created->site->compose->mode('app'))->toBe('keep');
 });
+
+it('keeps the project read at creation for the canvas, before the first deploy', function () {
+    $created = app(SiteFactory::class)->create($this->organization->id, $this->user->id, compose_app_input($this));
+
+    $project = app(ComposeSites::class)->project($created->site->id);
+    expect($project)->not->toBeNull()
+        ->and(array_keys(Yaml::parse((string) $project)['services']))->toContain('web');
+});
