@@ -127,6 +127,19 @@ continues from the panel (Provision) once nothing blocks, or with Re-provision. 
 `provision.v2` or is not connected, a check is already running, or the server is being created or deleted. Rate
 limited to 10/min.
 
+### `POST /api/v1/servers/{server}/provision` — update permission on the server (`servers.manage`)
+The panel's **Provision** button: applies the plan from the latest machine check. Only for a server whose status is
+`needs_attention` or `error` and whose latest check `finished` without blocks. `202`
+`{"data": {"status": "provisioning", "command_id": "01k…"}}`; `422` with `message` set to the summary of what blocks
+(or why it cannot run: no finished check, wrong status). Rate limited to 10/min.
+
+### `POST /api/v1/servers/{server}/reprovision` — update permission on the server (`servers.manage`)
+**Re-provision** / **Retry provisioning**: the machine check first (agents with `provision.v2`), then the plan; older
+agents get the plan directly. `202` `{"data": {"status", "status_message", "stage": "machine_check|provision",
+"command_id"}}`. A server that was provisioned before keeps its status while the check runs and when something blocks
+(`status_message` starts with "Re-provisioning stopped."); it never goes to `needs_attention`. `422` while the server is
+being deleted. Rate limited to 10/min.
+
 ## Sites
 
 ### `GET /api/v1/sites` · `GET /api/v1/sites/{site}` — `sites.view`

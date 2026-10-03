@@ -48,7 +48,12 @@ A feature can also gate a whole **command**: the control plane only queues it fo
 sources, systemd units, TCP listeners with process, unit and container proxies, containers' published ports,
 Docker, sshd, firewalls, swap, Node / PHP / FrankenPHP binaries, unattended-upgrades, fail2ban). A detector that
 fails leaves its part empty and adds an `errors` entry; the command only fails when cancelled. Extra package
-patterns (the plan's base packages) can be passed in `packages`.
+patterns (the plan's base packages) can be passed in `packages`. The inspector never executes a file root does not
+own (it and every directory on its path must be root-owned and not group/world-writable): versions of user installs
+come from directory names and package metadata. Repository URLs and errors carry no URL credentials. A package whose
+installed version no repository offers takes the origin of the repository offering the package; with no package
+lists at all the origin is `unknown`. Login users carry their groups, and the effective `AllowUsers` / `DenyUsers` /
+`AllowGroups` / `DenyGroups` are reported for the lockout rule.
 
 The control plane decides per component (`install`, `adopt`, `complete`, `block`; see `docs/plans/MACHINE_CHECK.md`)
 and sends no `provision.apply` while anything blocks. The plan already reflects the decisions; `components` tells the

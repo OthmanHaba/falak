@@ -47,17 +47,17 @@ Minimum versions, package families, ports and the container process names live i
 | Component | Install | Adopt | Complete | Block | Notes (info / warning) |
 |---|---|---|---|---|---|
 | Base packages | some missing (apt installs those) | all present | — | — | — |
-| Docker (engine, compose, buildx) | nothing found → `docker.io docker-compose-v2 docker-buildx` | engine + compose + buildx work | missing compose / buildx from the engine's family: Docker repo → `docker-compose-plugin` / `docker-buildx-plugin`; Ubuntu `docker.io` → `docker-compose-v2` / `docker-buildx` | engine below `minimum_versions.docker`; snap Docker; rootless-only Docker; `podman-docker`; Docker-repo engine with pieces missing but the Docker apt repo not configured; a manual (non-package) engine with pieces missing | warning: `daemon.json` `iptables: false` (published ports and Kiln's container firewall need iptables), `userns-remap` (release file ownership); info: `bip` / `default-address-pools`, Docker installed but not wanted (`skip`) |
+| Docker (engine, compose, buildx) | nothing found → `docker.io docker-compose-v2 docker-buildx` | engine + compose + buildx work | missing compose / buildx from the engine's family: Docker repo → `docker-compose-plugin` / `docker-buildx-plugin`; Ubuntu `docker.io` → `docker-compose-v2` / `docker-buildx` | engine below `minimum_versions.docker`; snap Docker; rootless-only Docker; `podman-docker`; a masked `docker.service`; only the CLI (no engine, no `docker.service`); Docker-repo engine with pieces missing but the Docker apt repo not configured; a manual (non-package) engine with pieces missing | warning: `daemon.json` `iptables: false` (published ports and Kiln's container firewall need iptables), `userns-remap` (release file ownership); info: `bip` / `default-address-pools`, Docker installed but not wanted (`skip`) |
 | Database (PostgreSQL, MySQL, MariaDB) | wanted engine absent | wanted engine present (any source: Ubuntu, PGDG `postgresql-NN`, Oracle `mysql-community-server`, MariaDB repo) at or above the minimum → keep its packages, cluster and major version, only enable/start the service | — | version below minimum; another engine of the same kind (MySQL ↔ MariaDB, Percona); the engine's port held by a container (`docker-proxy` / a published container port) or by another process | info: engines found that are not wanted (`skip`, e.g. MySQL on a PostgreSQL server) |
 | Cache (Redis, Valkey) | wanted engine absent | wanted engine present (Ubuntu or vendor repo) at or above the minimum | — | below minimum; the other engine (both own 6379); 6379 held by a container or another process | info: unwanted engines |
 | Edge (Caddy / kiln-edge, ports 80, 443, 2019) | servers that serve HTTP, ports free | `kiln-edge.service` already there (re-provision); a Caddy package (any source) without an active `caddy.service` is reused | — | 80 / 443 / 2019 held by a non-Kiln process (nginx, apache2, a container's `docker-proxy`, …); an active non-Kiln `caddy.service` (Kiln would disable it) | warning: nginx / apache2 installed and enabled but not listening (they would take port 80 on the next boot) |
 | PHP and FrankenPHP | wanted versions absent | — | some wanted versions / extensions present (installed from their current source; the runtime keeps the v0.5.2 rules: `ppa:ondrej/php` when it builds the release, otherwise the archive) | — | warning: a non-package `php` / `frankenphp` in `/usr/local/bin` that Kiln's would replace or shadow; info: other PHP versions |
 | Node | Kiln's `/opt/kiln/node/<version>` (always) | Kiln's wanted version already there | — | — | warning: a non-Kiln `/usr/local/bin/node` (Kiln's symlink replaces it); info: nvm, NodeSource, Ubuntu, snap installs (left alone) |
-| SSH | Kiln's drop-in `50-kiln.conf` (port, root login, no passwords) | — | — | password login would be disabled while no login user (root, UID ≥ 1000 with a shell) has an `authorized_keys` entry | warning: an earlier `sshd_config.d` file sets `PasswordAuthentication` / `PermitRootLogin` / `Port` and wins over Kiln's (sshd keeps the first value); sshd listens on a port other than the server's SSH port (Kiln moves it) |
+| SSH | Kiln's drop-in `50-kiln.conf` (port, root login, no passwords) | — | — | password login (`PasswordAuthentication` or `KbdInteractiveAuthentication` yes) would be disabled while no user sshd lets in has an `authorized_keys` entry: login users are root and UID ≥ 1000 with a shell; root's keys do not count when the current `PermitRootLogin` or a drop-in read before Kiln's is `no` / `forced-commands-only`; `AllowUsers` / `DenyUsers` / `AllowGroups` / `DenyGroups` (user part of `user@host`, wildcards) are applied | warning: an earlier `sshd_config.d` file sets `PasswordAuthentication` / `PermitRootLogin` / `Port` and wins over Kiln's (sshd keeps the first value); sshd listens on a port other than the server's SSH port (Kiln moves it) |
 | Firewall | Kiln's `table inet kiln` (applied by the Network module after provisioning) | — | — | — | **warning** when ufw or firewalld is active (see below); info: other nftables tables |
 | Swap | no active swap and the RAM rule wants one → `/swapfile` | any active swap device or file → keep it, no `/swapfile` | — | — | info: none needed (≥ 8 GB RAM) |
 | Hostname | provider servers (named by Kiln at creation) | custom servers keep the machine's hostname | — | — | — |
-| Unattended upgrades | absent, or Kiln's own config → Kiln's `20auto-upgrades` + `52kiln-unattended` | an existing config that is not Kiln's → not overwritten | — | — | warning: the existing config disables automatic upgrades |
+| Unattended upgrades | absent, Ubuntu's stock `20auto-upgrades` (both settings "1", nothing else) or Kiln's own config → Kiln's `20auto-upgrades` + `52kiln-unattended` | a customised config → not overwritten | — | — | warning: the existing config disables automatic upgrades |
 | fail2ban | absent → install + enable | installed → keep its jails (Kiln writes none) and enable the service | — | — | info: number of custom jail files |
 
 ### Why ufw / firewalld is a warning, not a block
@@ -93,12 +93,19 @@ enroll / Re-provision ──► agent has provision.v2? ──no──► provis
   more. Provision to continue." once clear).
 - **Provision** (`POST /servers/{server}/provision`) applies the plan when the latest inspection has no blocks
   (`needs_attention` → `provisioning`). It is disabled in the UI and refused (422) while something blocks.
-- **Re-provision** (menu) and **Retry provisioning** run the whole flow again (inspect, then apply).
+- **Re-provision** (menu, `POST /api/v1/servers/{server}/reprovision`) and **Retry provisioning** run the whole flow
+  again (inspect, then apply). Starting it clears `provision_command_id`, so the outcome of a converge still in flight
+  cannot change the status any more.
+- **A server that was provisioned before never goes to `needs_attention`.** Its Re-provision keeps the status while
+  the check runs; with blocks it stays `active` (or `error`) with "Re-provisioning stopped. …" as its status message,
+  the report and the alert, and nothing is applied.
+- **Provision** over the API: `POST /api/v1/servers/{server}/provision` (same rules as the button).
 - Later converges (PHP versions, a database engine added later, the timezone) rebuild the plan from the stored
   report, so an adopted Docker is never replaced by Ubuntu's packages. Adding a database engine is refused when
   the stored report blocks that engine.
 - `needs_attention` is not `active`: deploys, terminals, private networks and the firewall skip the server exactly
-  like a provisioning one. Alerting gets a `servers.needs_attention` warning.
+  like a provisioning one. Alerting gets a `servers.needs_attention` warning (dedupe key `servers.attention:{id}`),
+  resolved by `servers.attention_cleared` on a clean check or once the server is provisioned.
 - One row per server in `servers_machine_inspections`: `command_id`, `purpose` (`provision` / `check`), `status`
   (`running` / `finished` / `failed`), `report` (JSON), `decisions` (JSON), `blocking`, `agent_version`, `error`,
   `checked_at`, `created_at`. A running re-check keeps the previous report visible.
@@ -118,6 +125,23 @@ enroll / Re-provision ──► agent has provision.v2? ──no──► provis
   - for adopted unattended-upgrades only verifies the package and writes no config.
 - Agents without `provision.v2`: the control plane never sends them `provision.inspect` (they would not know it),
   `PayloadCompatibility` strips `components`, and their plan is today's plan (no report → no decisions).
+
+## Minimum versions
+
+What Kiln itself installs on the oldest supported release (Ubuntu 22.04), so that no server Kiln provisioned blocks on
+its own engines: Docker 20.10 (jammy's docker.io; 24.0 / 26.1 in jammy-updates), PostgreSQL 14, MySQL 8.0, MariaDB 10.6,
+Redis 6.0, Valkey 7.2 (first shipped by Ubuntu 26.04 as 8.1). Tests carry the jammy, noble and resolute versions of
+every engine and docker.io.
+
+## Inspector safety
+
+The inspector runs as root on machines other users share. It runs only absolute paths (system directories, or the
+Docker CLI and runtime binaries it found) and only when the file and every directory on its path, before and after
+symlinks, are root-owned and not group- or world-writable. Versions of nvm and Kiln Node installs come from their
+directory names, packaged ones from the package; a writable Docker CLI plugin is reported, not run. URL credentials
+(`https://user:token@host`) are removed from repository URLs, apt source URIs and detector errors. A package whose
+installed version no repository offers takes the origin of the repository offering the package (cloud images whose
+lists differ from the installed versions); without any package lists the origin is `unknown`.
 
 ## Open questions (decided safely for now)
 
