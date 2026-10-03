@@ -7,8 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/kiln/agent/internal/runner"
 )
 
 // Units whose state the report includes (when they exist).
@@ -145,8 +143,8 @@ func UnitFromCgroup(cg string) string {
 var publishedPort = regexp.MustCompile(`(?:([0-9a-fA-F.:\[\]]*):)?(\d+)->(\d+)/(tcp|udp|sctp)`)
 
 // containers lists running containers and their published ports (none when Docker is absent or stopped).
-func (in *Inspector) containers(ctx context.Context, r *Report) error {
-	res, err := in.d.Runner.Run(ctx, runner.Cmd{Name: "docker", Args: []string{"ps", "--format", "{{.Names}}\t{{.Image}}\t{{.Ports}}"}})
+func (in *Inspector) containers(ctx context.Context, r *Report, cli string) error {
+	res, err := in.run(ctx, cli, "ps", "--format", "{{.Names}}\t{{.Image}}\t{{.Ports}}")
 	if err != nil || res.ExitCode != 0 {
 		return nil
 	}

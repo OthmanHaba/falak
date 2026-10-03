@@ -3,11 +3,10 @@ package inspect
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/kiln/agent/internal/runner"
 )
 
 // Docker is what the report says about Docker; nil when no Docker CLI, engine package or snap is found.
@@ -60,48 +59,57 @@ func (in *Inspector) docker(ctx context.Context, r *Report) error {
 			break
 		}
 	}
-	cli := false
+	// The first Docker CLI in root's PATH order; it is only run when root owns it (see safe).
+	cli := ""
 	for _, b := range dockerBinaries {
-		cli = cli || in.exists(b)
+		if cli == "" && in.exists(b) {
+			cli = b
+		}
 	}
 	d.Rootless = in.rootless()
-	if !cli && d.EnginePackage == "" && !d.Snap && !d.Rootless {
+	if cli == "" && d.EnginePackage == "" && !d.Snap && !d.Rootless {
 		return nil
 	}
 	r.Docker = d
 	if b, err := in.d.FS.ReadFile("/etc/docker/daemon.json"); err == nil {
 		d.Daemon = ParseDaemonJSON(b)
 	}
-	if !cli {
+	if cli == "" {
 		return nil
 	}
-	if v, err := in.output(ctx, "docker", "version", "--format", "{{.Client.Version}}"); err == nil {
+	if err := in.safe(cli); err != nil {
+		d.ServerError = truncate(redact(err.Error()), 300)
+		return err
+	}
+	if v, err := in.output(ctx, cli, "version", "--format", "{{.Client.Version}}"); err == nil {
 		d.ClientVersion = strings.TrimSpace(v)
 	}
-	res, err := in.d.Runner.Run(ctx, runner.Cmd{Name: "docker", Args: []string{"version", "--format", "{{.Server.Version}}"}})
+	res, err := in.run(ctx, cli, "version", "--format", "{{.Server.Version}}")
 	switch {
 	case err != nil:
-		d.ServerError = truncate(err.Error(), 300)
+		d.ServerError = truncate(redact(err.Error()), 300)
 	case res.ExitCode != 0:
-		d.ServerError = truncate(string(res.Stderr), 300)
+		d.ServerError = truncate(redact(string(res.Stderr)), 300)
 	default:
 		d.ServerVersion = strings.TrimSpace(string(res.Stdout))
 	}
-	d.Compose = in.plugin(ctx, r, "compose", composePackages, []string{"compose", "version", "--short"})
-	d.Buildx = in.plugin(ctx, r, "buildx", buildxPackages, []string{"buildx", "version"})
+	var errs []error
+	var perr error
+	d.Compose, perr = in.plugin(ctx, r, cli, "compose", composePackages, []string{"compose", "version", "--short"})
+	errs = append(errs, perr)
+	d.Buildx, perr = in.plugin(ctx, r, cli, "buildx", buildxPackages, []string{"buildx", "version"})
+	errs = append(errs, perr)
 	if d.ServerVersion != "" {
-		return in.containers(ctx, r)
+		errs = append(errs, in.containers(ctx, r, cli))
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
-// plugin reports a CLI plugin that answers its version command, with the package that ships it.
-func (in *Inspector) plugin(ctx context.Context, r *Report, name string, pkgs []string, args []string) *Plugin {
-	res, err := in.d.Runner.Run(ctx, runner.Cmd{Name: "docker", Args: args})
-	if err != nil || res.ExitCode != 0 {
-		return nil
-	}
-	p := &Plugin{Version: PluginVersion(string(res.Stdout))}
+// plugin reports a CLI plugin that answers its version command, with the package that ships it. The CLI runs the first
+// plugin file it finds; when any candidate file is not root-owned the command is not run and the plugin is reported
+// without a version.
+func (in *Inspector) plugin(ctx context.Context, r *Report, cli, name string, pkgs []string, args []string) (*Plugin, error) {
+	p := &Plugin{}
 	for _, n := range pkgs {
 		if r.pkg(n) != nil {
 			p.Package = n
@@ -109,12 +117,24 @@ func (in *Inspector) plugin(ctx context.Context, r *Report, name string, pkgs []
 		}
 	}
 	for _, dir := range pluginDirs {
-		if f := dir + "/docker-" + name; in.exists(f) {
+		f := dir + "/docker-" + name
+		if !in.exists(f) {
+			continue
+		}
+		if p.Path == "" {
 			p.Path = f
-			break
+		}
+		if err := in.safe(f); err != nil {
+			p.Path = f
+			return p, err
 		}
 	}
-	return p
+	res, err := in.run(ctx, cli, args...)
+	if err != nil || res.ExitCode != 0 {
+		return nil, nil
+	}
+	p.Version = PluginVersion(string(res.Stdout))
+	return p, nil
 }
 
 // PluginVersion extracts the version from `docker compose version --short` ("2.29.7") or `docker buildx version`

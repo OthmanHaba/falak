@@ -27,6 +27,8 @@ type Deps struct {
 	Runner runner.Runner
 	FS     hostfs.FS
 	Logger *slog.Logger
+	// OwnerUID must own the binaries the inspector executes (0, root; tests use their own uid).
+	OwnerUID int
 }
 
 // Inspector runs provision.inspect.
@@ -94,6 +96,7 @@ const (
 	OriginArchive = "archive" // the distribution's archive (Ubuntu / Debian, any mirror)
 	OriginVendor  = "vendor"  // another apt repository (Docker, PGDG, a PPA, ...): Repo names it
 	OriginManual  = "manual"  // installed from a .deb or a repository that is no longer configured
+	OriginUnknown = "unknown" // apt has no package lists yet (or apt-cache failed): the source cannot be told
 )
 
 // Package is one installed dpkg package and where its installed version comes from.
@@ -167,8 +170,9 @@ func (in *Inspector) Inspect(ctx context.Context, p Payload, st commands.Stream)
 		}
 		fmt.Fprintf(st.Stdout(), "==> %s\n", name)
 		if err := fn(); err != nil {
-			r.Errors = append(r.Errors, DetectorError{Detector: name, Error: truncate(err.Error(), 500)})
-			fmt.Fprintf(st.Stderr(), "%s: %v\n", name, err)
+			msg := truncate(redact(err.Error()), 500)
+			r.Errors = append(r.Errors, DetectorError{Detector: name, Error: msg})
+			fmt.Fprintf(st.Stderr(), "%s: %s\n", name, msg)
 		}
 	}
 	steps := []struct {
@@ -203,26 +207,25 @@ func (in *Inspector) host(ctx context.Context, r *Report) error {
 		kv := facts.ParseOSRelease(b)
 		r.OS = OS{ID: kv["ID"], Version: kv["VERSION_ID"], Codename: kv["VERSION_CODENAME"]}
 	}
-	r.AptSources = system.AptSources(in.d.FS)
-	res, err := in.d.Runner.Run(ctx, runner.Cmd{Name: "systemd-detect-virt", Args: []string{"--container", "--quiet"}})
+	for _, src := range system.AptSources(in.d.FS) {
+		for i := range src.URIs {
+			src.URIs[i] = redact(src.URIs[i])
+		}
+		r.AptSources = append(r.AptSources, src)
+	}
+	res, err := in.run(ctx, "systemd-detect-virt", "--container", "--quiet")
 	r.InContainer = err == nil && res.ExitCode == 0
 	if b, err := in.d.FS.ReadFile("/etc/hostname"); err == nil {
 		r.Hostname = strings.TrimSpace(string(b))
 	}
 	if r.Hostname == "" {
-		res, err := runner.Check(ctx, in.d.Runner, runner.Cmd{Name: "hostname"})
+		out, err := in.output(ctx, "hostname")
 		if err != nil {
 			return err
 		}
-		r.Hostname = strings.TrimSpace(string(res.Stdout))
+		r.Hostname = strings.TrimSpace(out)
 	}
 	return nil
-}
-
-// output runs a read-only command and returns its stdout; a non-zero exit is an error.
-func (in *Inspector) output(ctx context.Context, name string, args ...string) (string, error) {
-	res, err := runner.Check(ctx, in.d.Runner, runner.Cmd{Name: name, Args: args, Env: system.AptEnv})
-	return string(res.Stdout), err
 }
 
 // exists reports whether a host path exists (following symlinks).

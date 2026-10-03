@@ -139,8 +139,13 @@ func (in *Inspector) nodes(ctx context.Context, r *Report) []Binary {
 			continue
 		}
 		b := Binary{Path: c, Source: in.nodeSource(r, c)}
-		if v, err := in.output(ctx, c, "--version"); err == nil {
-			b.Version = strings.TrimPrefix(strings.TrimSpace(v), "v")
+		// Versions come from the install layout (nvm and Kiln name their directories after it), the package or the
+		// snap: a binary in a user's tree is never executed. Only another node is asked, and only when root owns it.
+		b.Version = in.nodeVersion(r, c, b.Source)
+		if b.Version == "" {
+			if v, err := in.output(ctx, c, "--version"); err == nil {
+				b.Version = strings.TrimPrefix(strings.TrimSpace(v), "v")
+			}
 		}
 		if b.Source == "nodesource" || b.Source == "archive" || b.Source == "vendor" {
 			if p := r.pkg("nodejs"); p != nil {
@@ -150,6 +155,48 @@ func (in *Inspector) nodes(ctx context.Context, r *Report) []Binary {
 		out = append(out, b)
 	}
 	return out
+}
+
+var nodeDirVersion = regexp.MustCompile(`/(?:\.nvm/versions/node|opt/kiln/node)/v?(\d+\.\d+\.\d+)/`)
+
+// nodeVersion tells a node's version without running it ("" when only the binary could tell).
+func (in *Inspector) nodeVersion(r *Report, path, source string) string {
+	target := path
+	if t, err := os.Readlink(in.d.FS.P(path)); err == nil {
+		target = t
+	}
+	switch source {
+	case "kiln", "nvm":
+		if m := nodeDirVersion.FindStringSubmatch(target); m != nil {
+			return m[1]
+		}
+		if m := nodeDirVersion.FindStringSubmatch(path); m != nil {
+			return m[1]
+		}
+		return ""
+	case "snap":
+		if s := r.snap("node"); s != nil {
+			return s.Version
+		}
+		return ""
+	}
+	if path == "/usr/bin/node" {
+		if p := r.pkg("nodejs"); p != nil {
+			return upstreamVersion(p.Version)
+		}
+	}
+	return ""
+}
+
+// upstreamVersion strips the epoch and Debian revision: "1:20.19.2-1nodesource1" → "20.19.2".
+func upstreamVersion(v string) string {
+	if _, rest, ok := strings.Cut(v, ":"); ok {
+		v = rest
+	}
+	if i := strings.LastIndex(v, "-"); i > 0 {
+		v = v[:i]
+	}
+	return v
 }
 
 func (in *Inspector) nodeSource(r *Report, path string) string {

@@ -3,6 +3,7 @@ package inspect
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -141,7 +142,7 @@ func TestParseDpkgQueryKeepsInstalledOnly(t *testing.T) {
 
 func TestOriginsFromAptCachePolicy(t *testing.T) {
 	pkgs := ParseDpkgQuery(incidentDpkg)
-	ApplyOrigins(pkgs, ParseReleases(incidentReleases), ParsePolicy(incidentPolicy))
+	ApplyOrigins(pkgs, ParseReleases(incidentReleases), ParsePolicy(incidentPolicy), true)
 	got := map[string]Package{}
 	for _, p := range pkgs {
 		got[p.Name] = p
@@ -151,8 +152,9 @@ func TestOriginsFromAptCachePolicy(t *testing.T) {
 		"containerd.io":  {Origin: OriginVendor, Repo: "https://download.docker.com/linux/ubuntu", Label: "Docker"},
 		"postgresql-17":  {Origin: OriginVendor, Repo: "http://apt.postgresql.org/pub/repos/apt", Label: "apt.postgresql.org"},
 		"openssh-server": {Origin: OriginArchive, Repo: "http://de.archive.ubuntu.com/ubuntu", Label: "Ubuntu"},
-		// Installed 1.0 is only in dpkg's status (a .deb, or a version the archive no longer has).
-		"tool": {Origin: OriginManual},
+		// Installed 1.0 is only in dpkg's status, but the archive offers the package (lists newer than the install,
+		// as curl on a cloud image): it comes from the archive, not a manual install.
+		"tool": {Origin: OriginArchive, Repo: "http://de.archive.ubuntu.com/ubuntu", Label: "Ubuntu"},
 		// Not in the policy output at all.
 		"docker-compose-plugin": {Origin: OriginManual},
 	} {
@@ -172,7 +174,7 @@ func TestReleasesKeepCommasInLabels(t *testing.T) {
 
 func TestArchiveHostWithoutReleaseInfo(t *testing.T) {
 	pkgs := []Package{{Name: "curl"}, {Name: "x"}}
-	ApplyOrigins(pkgs, nil, map[string][]string{"curl": {"http://archive.ubuntu.com/ubuntu noble/main amd64 Packages"}, "x": {"https://repo.example.com/deb stable/main amd64 Packages"}})
+	ApplyOrigins(pkgs, nil, map[string]PolicyFiles{"curl": {Installed: []string{"http://archive.ubuntu.com/ubuntu noble/main amd64 Packages"}}, "x": {Installed: []string{"https://repo.example.com/deb stable/main amd64 Packages"}}}, true)
 	if pkgs[0].Origin != OriginArchive || pkgs[1].Origin != OriginVendor || pkgs[1].Repo != "https://repo.example.com/deb" {
 		t.Fatalf("%+v", pkgs)
 	}
@@ -290,6 +292,7 @@ func incidentHost(t *testing.T) (*runnertest.Fake, hostfs.FS) {
 		"/proc/999/cgroup":                               "0::/system.slice/docker.service\n",
 		"/proc/swaps":                                    "Filename Type Size Used Priority\n/swap.img file 4194300 0 -2\n",
 		"/etc/passwd":                                    "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nubuntu:x:1000:1000::/home/ubuntu:/bin/bash\nnobody:x:65534:65534::/nonexistent:/usr/sbin/nologin\n",
+		"/etc/group":                                     "root:x:0:\nsudo:x:27:ubuntu\nubuntu:x:1000:\n",
 		"/home/ubuntu/.ssh/authorized_keys":              "# added by cloud-init\nssh-ed25519 AAAAC3Nza laptop\n\n",
 		"/etc/ssh/sshd_config.d/50-cloud-init.conf":      "PasswordAuthentication yes\n",
 		"/etc/fail2ban/jail.d/sshd.local":                "[sshd]\nenabled = true\n",
@@ -299,40 +302,44 @@ func incidentHost(t *testing.T) (*runnertest.Fake, hostfs.FS) {
 		"/opt/kiln/node/22.20.0/bin/node":                "",
 		"/usr/sbin/ufw":                                  "",
 		"/usr/sbin/nft":                                  "",
+		"/usr/sbin/sshd":                                 "",
+		"/usr/bin/dpkg-query":                            "",
+		"/usr/bin/apt-cache":                             "",
+		"/usr/bin/systemctl":                             "",
+		"/usr/bin/systemd-detect-virt":                   "",
+		"/usr/bin/ss":                                    "",
+		"/var/lib/apt/lists/de.archive.ubuntu.com_ubuntu_dists_resolute_main_binary-amd64_Packages": "",
 	})
 	os.MkdirAll(fs.P("/usr/local/bin"), 0o755)
 	if err := os.Symlink("/opt/kiln/node/22.20.0/bin/node", fs.P("/usr/local/bin/node")); err != nil {
 		t.Fatal(err)
 	}
 	f := (&runnertest.Fake{}).
-		On("dpkg-query", runner.Result{ExitCode: 1, Stdout: []byte(incidentDpkg + "php8.3-cli\tinstalled\t8.3.6-0ubuntu0.24.04.1\n")}).
-		OnFunc("apt-cache policy", func(c runnertest.Call) (runner.Result, error) {
+		On("/usr/bin/dpkg-query", runner.Result{ExitCode: 1, Stdout: []byte(incidentDpkg + "php8.3-cli\tinstalled\t8.3.6-0ubuntu0.24.04.1\n")}).
+		OnFunc("/usr/bin/apt-cache policy", func(c runnertest.Call) (runner.Result, error) {
 			if len(c.Args) == 1 {
 				return runner.Result{Stdout: []byte(incidentReleases)}, nil
 			}
 			return runner.Result{Stdout: []byte(incidentPolicy)}, nil
 		}).
-		On("systemd-detect-virt", runner.Result{ExitCode: 1}).
-		On("systemctl show", runner.Result{Stdout: []byte(incidentSystemctl)}).
-		On("ss -H -ltnp", runner.Result{Stdout: []byte(incidentSS)}).
-		On("docker version --format {{.Client.Version}}", runner.Result{Stdout: []byte("28.1.1\n")}).
-		On("docker version --format {{.Server.Version}}", runner.Result{Stdout: []byte("28.1.1\n")}).
-		On("docker compose version --short", runner.Result{Stdout: []byte("2.35.1\n")}).
-		On("docker buildx version", runner.Result{Stdout: []byte("github.com/docker/buildx v0.23.0 28c90ea\n")}).
-		On("docker ps", runner.Result{Stdout: []byte("cache\tredis:7\t0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp\n")}).
-		On("sshd -T", runner.Result{Stdout: []byte(incidentSSHDT)}).
-		On("ufw status", runner.Result{Stdout: []byte("Status: active\n\nTo                         Action      From\n22/tcp                     ALLOW       Anywhere\n")}).
-		On("nft list tables", runner.Result{Stdout: []byte("table ip filter\ntable ip nat\n")}).
-		On("/usr/local/bin/php", runner.Result{Stdout: []byte("8.2")}).
-		On("/usr/local/bin/node --version", runner.Result{Stdout: []byte("v22.20.0\n")}).
-		On("/opt/kiln/node/22.20.0/bin/node --version", runner.Result{Stdout: []byte("v22.20.0\n")}).
-		On("/root/.nvm/versions/node/v20.11.0/bin/node --version", runner.Result{Stdout: []byte("v20.11.0\n")})
+		On("/usr/bin/systemd-detect-virt", runner.Result{ExitCode: 1}).
+		On("/usr/bin/systemctl show", runner.Result{Stdout: []byte(incidentSystemctl)}).
+		On("/usr/bin/ss -H -ltnp", runner.Result{Stdout: []byte(incidentSS)}).
+		On("/usr/bin/docker version --format {{.Client.Version}}", runner.Result{Stdout: []byte("28.1.1\n")}).
+		On("/usr/bin/docker version --format {{.Server.Version}}", runner.Result{Stdout: []byte("28.1.1\n")}).
+		On("/usr/bin/docker compose version --short", runner.Result{Stdout: []byte("2.35.1\n")}).
+		On("/usr/bin/docker buildx version", runner.Result{Stdout: []byte("github.com/docker/buildx v0.23.0 28c90ea\n")}).
+		On("/usr/bin/docker ps", runner.Result{Stdout: []byte("cache\tredis:7\t0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp\n")}).
+		On("/usr/sbin/sshd -T", runner.Result{Stdout: []byte(incidentSSHDT)}).
+		On("/usr/sbin/ufw status", runner.Result{Stdout: []byte("Status: active\n\nTo                         Action      From\n22/tcp                     ALLOW       Anywhere\n")}).
+		On("/usr/sbin/nft list tables", runner.Result{Stdout: []byte("table ip filter\ntable ip nat\n")}).
+		On("/usr/local/bin/php", runner.Result{Stdout: []byte("8.2")})
 	return f, fs
 }
 
 func TestInspectTheIncidentMachine(t *testing.T) {
 	f, fs := incidentHost(t)
-	out, err := New(Deps{Runner: f, FS: fs}).Inspect(context.Background(), Payload{Packages: []string{"acl", "bad pattern!"}}, commands.NewTestStream("c", &commands.Collector{}))
+	out, err := New(Deps{Runner: f, FS: fs, OwnerUID: os.Getuid()}).Inspect(context.Background(), Payload{Packages: []string{"acl", "bad pattern!"}}, commands.NewTestStream("c", &commands.Collector{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +350,7 @@ func TestInspectTheIncidentMachine(t *testing.T) {
 	if r.Hostname != "customer-vm" || r.OS != (OS{ID: "ubuntu", Version: "26.04", Codename: "resolute"}) || r.InContainer {
 		t.Fatalf("%+v %+v", r.Hostname, r.OS)
 	}
-	if dq := f.Calls()[1]; dq.Name != "dpkg-query" || !strings.Contains(dq.Line, " acl") || strings.Contains(dq.Line, "bad pattern") || !strings.Contains(dq.Line, " postgresql-[0-9]*") {
+	if dq := f.Calls()[1]; dq.Name != "/usr/bin/dpkg-query" || !strings.Contains(dq.Line, " acl") || strings.Contains(dq.Line, "bad pattern") || !strings.Contains(dq.Line, " postgresql-[0-9]*") {
 		t.Fatalf("dpkg-query patterns: %s", dq.Line)
 	}
 
@@ -382,7 +389,7 @@ func TestInspectTheIncidentMachine(t *testing.T) {
 	if len(s.DropIns) != 1 || s.DropIns[0].Settings["passwordauthentication"] != "yes" {
 		t.Fatalf("%+v", s.DropIns)
 	}
-	if len(s.Users) != 2 || s.Users[0] != (LoginUser{Name: "root", UID: 0}) || s.Users[1] != (LoginUser{Name: "ubuntu", UID: 1000, AuthorizedKeys: 1}) {
+	if len(s.Users) != 2 || fmt.Sprint(s.Users) != fmt.Sprint([]LoginUser{{Name: "root", UID: 0, Groups: []string{"root"}}, {Name: "ubuntu", UID: 1000, AuthorizedKeys: 1, Groups: []string{"ubuntu", "sudo"}}}) {
 		t.Fatalf("%+v", s.Users)
 	}
 
@@ -414,8 +421,8 @@ func TestInspectTheIncidentMachine(t *testing.T) {
 
 	// Read-only: no command that changes the machine.
 	for _, l := range f.Lines() {
-		for _, bad := range []string{"apt-get", "systemctl start", "systemctl enable", "systemctl stop", "mkdir", "hostnamectl", "swapon", "ufw enable", "ufw disable"} {
-			if strings.HasPrefix(l, bad) {
+		for _, bad := range []string{"/apt-get", "/systemctl start", "/systemctl enable", "/systemctl stop", "/mkdir", "/hostnamectl", "/swapon", "/ufw enable", "/ufw disable", "/node", ".nvm"} {
+			if strings.Contains(l, bad) {
 				t.Fatalf("inspect ran %q", l)
 			}
 		}
@@ -463,8 +470,8 @@ func TestInspectCancelled(t *testing.T) {
 // Snap and rootless Docker are reported without a CLI on the system PATH.
 func TestInspectSnapAndRootlessDocker(t *testing.T) {
 	fs := writeFiles(t, map[string]string{"/usr/bin/snap": "", "/home/dev/.config/systemd/user/docker.service": ""})
-	f := (&runnertest.Fake{}).On("snap list", runner.Result{Stdout: []byte("Name Version Rev Tracking Publisher Notes\ndocker 27.2.0 2963 latest/stable canonical -\n")})
-	out, _ := New(Deps{Runner: f, FS: fs}).Inspect(context.Background(), Payload{}, commands.NewTestStream("c", &commands.Collector{}))
+	f := (&runnertest.Fake{}).On("/usr/bin/snap list", runner.Result{Stdout: []byte("Name Version Rev Tracking Publisher Notes\ndocker 27.2.0 2963 latest/stable canonical -\n")})
+	out, _ := New(Deps{Runner: f, FS: fs, OwnerUID: os.Getuid()}).Inspect(context.Background(), Payload{}, commands.NewTestStream("c", &commands.Collector{}))
 	d := out.(*Report).Docker
 	if d == nil || !d.Snap || !d.Rootless || d.SystemDaemon || d.EnginePackage != "" {
 		t.Fatalf("%+v", d)

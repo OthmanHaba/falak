@@ -28,8 +28,8 @@
         "name": { "type": "string" },
         "version": { "type": "string" },
         "origin": {
-          "enum": ["archive", "vendor", "manual"],
-          "description": "archive: the distribution's archive (any mirror); vendor: another apt repository (repo); manual: a .deb or a repository that is no longer configured"
+          "enum": ["archive", "vendor", "manual", "unknown"],
+          "description": "archive: the distribution's archive (any mirror); vendor: another apt repository (repo, without credentials); manual: a .deb or a repository that is no longer configured; unknown: apt has no package lists yet. When no repository offers the installed version, the repository offering the package's other versions decides"
         },
         "repo": { "type": "string", "description": "Repository URL offering the installed version" },
         "label": { "type": "string", "description": "The repository's Origin field (Ubuntu, Docker, apt.postgresql.org, LP-PPA-ondrej-php, ...)" }
@@ -188,7 +188,7 @@
                 "properties": { "file": { "type": "string" }, "settings": { "$ref": "#/$defs/settings" } }
               }
             },
-            "effective": { "$ref": "#/$defs/settings", "description": "passwordauthentication, permitrootlogin, port (space separated), pubkeyauthentication, kbdinteractiveauthentication" },
+            "effective": { "$ref": "#/$defs/settings", "description": "passwordauthentication, permitrootlogin, port, pubkeyauthentication, kbdinteractiveauthentication, allowusers, denyusers, allowgroups, denygroups (lists space separated)" },
             "effective_source": { "enum": ["sshd -T", "files"] },
             "users": {
               "type": "array",
@@ -197,7 +197,12 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["name", "uid", "authorized_keys"],
-                "properties": { "name": { "type": "string" }, "uid": { "type": "integer" }, "authorized_keys": { "type": "integer", "minimum": 0 } }
+                "properties": {
+                  "name": { "type": "string" },
+                  "uid": { "type": "integer" },
+                  "authorized_keys": { "type": "integer", "minimum": 0 },
+                  "groups": { "type": "array", "items": { "type": "string" }, "description": "Primary and supplementary groups (AllowGroups / DenyGroups)" }
+                }
               }
             }
           }

@@ -31,10 +31,16 @@ type LoginUser struct {
 	Name           string `json:"name"`
 	UID            int    `json:"uid"`
 	AuthorizedKeys int    `json:"authorized_keys"` // public keys in the user's authorized_keys files
+	// Groups are the primary and supplementary groups (for AllowGroups / DenyGroups).
+	Groups []string `json:"groups,omitempty"`
 }
 
 // sshKeys are the sshd settings the report tracks.
-var sshKeys = map[string]bool{"passwordauthentication": true, "permitrootlogin": true, "port": true, "pubkeyauthentication": true, "kbdinteractiveauthentication": true, "authorizedkeysfile": true}
+var sshKeys = map[string]bool{"passwordauthentication": true, "permitrootlogin": true, "port": true, "pubkeyauthentication": true, "kbdinteractiveauthentication": true, "authorizedkeysfile": true,
+	"allowusers": true, "denyusers": true, "allowgroups": true, "denygroups": true}
+
+// sshLists are keywords sshd -T prints once per entry; their values are joined with spaces.
+var sshLists = map[string]bool{"port": true, "allowusers": true, "denyusers": true, "allowgroups": true, "denygroups": true}
 
 const sshdConfig = "/etc/ssh/sshd_config"
 
@@ -109,7 +115,7 @@ func splitKeyword(line string) (string, string) {
 	return strings.ToLower(line[:i]), strings.Trim(strings.TrimSpace(line[i+1:]), "=\" \t")
 }
 
-// ParseSSHDT parses `sshd -T` (lowercase "keyword value" lines) for the tracked keywords; several port lines are joined.
+// ParseSSHDT parses `sshd -T` (lowercase "keyword value" lines) for the tracked keywords; list keywords (port, allow/deny users and groups) are joined.
 func ParseSSHDT(out string) map[string]string {
 	eff := map[string]string{}
 	for _, line := range strings.Split(out, "\n") {
@@ -117,7 +123,7 @@ func ParseSSHDT(out string) map[string]string {
 		if !ok || !sshKeys[k] {
 			continue
 		}
-		if cur, seen := eff[k]; seen && k == "port" {
+		if cur, seen := eff[k]; seen && sshLists[k] {
 			eff[k] = cur + " " + v
 			continue
 		}
@@ -161,6 +167,7 @@ func (in *Inspector) loginUsers(keysFile string) ([]LoginUser, error) {
 	if keysFile == "" || keysFile == "none" {
 		keysFile = sshDefaults["authorizedkeysfile"]
 	}
+	groups := in.groups()
 	users := []LoginUser{}
 	for _, line := range strings.Split(string(b), "\n") {
 		f := strings.Split(line, ":")
@@ -171,7 +178,7 @@ func (in *Inspector) loginUsers(keysFile string) ([]LoginUser, error) {
 		if err != nil || !(uid == 0 || (uid >= 1000 && uid < 65534)) || !loginShell(f[6]) {
 			continue
 		}
-		u := LoginUser{Name: f[0], UID: uid}
+		u := LoginUser{Name: f[0], UID: uid, Groups: groups.of(f[0], f[3])}
 		for _, p := range strings.Fields(keysFile) {
 			u.AuthorizedKeys += in.countKeys(expandKeysPath(p, f[0], f[5]))
 		}

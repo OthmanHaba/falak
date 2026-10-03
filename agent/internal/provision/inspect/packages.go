@@ -5,12 +5,11 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/kiln/agent/internal/runner"
 )
 
 // DefaultPackages are the dpkg-query patterns every report covers: the components Kiln provisions and the software
@@ -44,7 +43,7 @@ func (in *Inspector) packages(ctx context.Context, r *Report, extra []string) er
 	}
 	args := append([]string{"-W", "-f=${Package}\t${db:Status-Status}\t${Version}\n"}, patterns...)
 	// dpkg-query exits 1 when a pattern matches nothing; the matches are still printed.
-	res, err := in.d.Runner.Run(ctx, runner.Cmd{Name: "dpkg-query", Args: args, Env: []string{"LC_ALL=C"}})
+	res, err := in.run(ctx, "dpkg-query", args...)
 	if err != nil {
 		return err
 	}
@@ -59,26 +58,40 @@ func (in *Inspector) packages(ctx context.Context, r *Report, extra []string) er
 	for _, p := range installed {
 		names = append(names, p.Name)
 	}
-	global, err := in.output(ctx, "apt-cache", "policy")
-	if err != nil {
+	unknown := func(err error) error {
 		// Without the policy the origins stay unknown; still report what is installed.
 		for i := range installed {
-			installed[i].Origin = OriginManual
+			installed[i].Origin = OriginUnknown
 		}
 		r.Packages = installed
 		return err
+	}
+	global, err := in.output(ctx, "apt-cache", "policy")
+	if err != nil {
+		return unknown(err)
 	}
 	policy, err := in.output(ctx, "apt-cache", append([]string{"policy"}, names...)...)
 	if err != nil {
-		for i := range installed {
-			installed[i].Origin = OriginManual
-		}
-		r.Packages = installed
-		return err
+		return unknown(err)
 	}
-	ApplyOrigins(installed, ParseReleases(global), ParsePolicy(policy))
+	ApplyOrigins(installed, ParseReleases(global), ParsePolicy(policy), in.hasPackageLists())
 	r.Packages = installed
 	return nil
+}
+
+// hasPackageLists reports whether apt has downloaded any package index (a fresh cloud image may have none until
+// the first apt-get update; then no installed version is offered by any repository).
+func (in *Inspector) hasPackageLists() bool {
+	ents, err := os.ReadDir(in.d.FS.P("/var/lib/apt/lists"))
+	if err != nil {
+		return false
+	}
+	for _, e := range ents {
+		if strings.Contains(e.Name(), "_Packages") {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseDpkgQuery parses `dpkg-query -W -f='${Package}\t${db:Status-Status}\t${Version}\n'`: installed packages only,
@@ -162,10 +175,17 @@ func splitRelease(s string) []string {
 	return out
 }
 
-// ParsePolicy parses `apt-cache policy <pkg>...`: package → the package files that offer its installed version
-// (without /var/lib/dpkg/status).
-func ParsePolicy(out string) map[string][]string {
-	files := map[string][]string{}
+// PolicyFiles are the package files `apt-cache policy` lists for one package.
+type PolicyFiles struct {
+	Installed []string // files offering the installed version
+	Other     []string // files offering other versions
+}
+
+// ParsePolicy parses `apt-cache policy <pkg>...`: package → the package files offering its installed version and
+// those offering other versions (without /var/lib/dpkg/status). A version line ("     1.2-3 500", " *** 1.2-3 500",
+// or with a phasing note "1.2-4 1 (phased 10%)") starts a version's files; a file line is "<prio> <url or path> ...".
+func ParsePolicy(out string) map[string]PolicyFiles {
+	files := map[string]PolicyFiles{}
 	cur, inInstalled := "", false
 	for _, line := range strings.Split(out, "\n") {
 		if line == "" {
@@ -175,20 +195,27 @@ func ParsePolicy(out string) map[string][]string {
 		switch {
 		case !strings.HasPrefix(line, " ") && strings.HasSuffix(t, ":"):
 			cur, inInstalled = strings.SplitN(strings.TrimSuffix(t, ":"), ":", 2)[0], false
-			files[cur] = files[cur][:0:0]
+			files[cur] = PolicyFiles{}
 		case cur == "":
 		case strings.HasPrefix(t, "***"):
 			inInstalled = true
 		case strings.HasPrefix(t, "Installed:"), strings.HasPrefix(t, "Candidate:"), strings.HasPrefix(t, "Version table:"):
 		default:
 			f := strings.Fields(t)
-			switch {
-			case len(f) == 2 && isInt(f[1]):
-				// Another version ("     1.2-3 500") ends the installed version's files.
-				inInstalled = false
-			case len(f) >= 2 && isInt(f[0]) && inInstalled && f[1] != "/var/lib/dpkg/status":
-				files[cur] = append(files[cur], strings.Join(f[1:], " "))
+			if len(f) < 2 || !isInt(f[0]) || !(strings.HasPrefix(f[1], "/") || strings.Contains(f[1], "://")) {
+				inInstalled = false // another version
+				continue
 			}
+			if f[1] == "/var/lib/dpkg/status" {
+				continue
+			}
+			pf := files[cur]
+			if inInstalled {
+				pf.Installed = append(pf.Installed, strings.Join(f[1:], " "))
+			} else {
+				pf.Other = append(pf.Other, strings.Join(f[1:], " "))
+			}
+			files[cur] = pf
 		}
 	}
 	return files
@@ -197,14 +224,24 @@ func ParsePolicy(out string) map[string][]string {
 // archiveOrigins are release Origin values of distribution archives.
 var archiveOrigins = map[string]bool{"Ubuntu": true, "Debian": true, "Ubuntu ESM": true, "UbuntuESM": true, "UbuntuESMApps": true}
 
-// ApplyOrigins sets Origin/Repo/Label of every package from the package files offering its installed version.
-func ApplyOrigins(pkgs []Package, releases map[string]Release, policy map[string][]string) {
+// ApplyOrigins sets Origin/Repo/Label of every package from the package files offering its installed version. When no
+// repository offers the installed version but one offers other versions of the package (the lists are older or newer
+// than the installed version, as on a cloud image before its first upgrade), that repository is the origin. Without
+// any package lists (no apt-get update yet) the origin is unknown. Repository URLs never keep credentials.
+func ApplyOrigins(pkgs []Package, releases map[string]Release, policy map[string]PolicyFiles, haveLists bool) {
 	for i := range pkgs {
 		p := &pkgs[i]
-		p.Origin = OriginManual
+		files := policy[p.Name].Installed
+		if len(files) == 0 {
+			files = policy[p.Name].Other
+		}
+		p.Origin, p.Repo, p.Label = OriginManual, "", ""
+		if len(files) == 0 && !haveLists {
+			p.Origin = OriginUnknown
+		}
 		var vendor *Package
-		for _, file := range policy[p.Name] {
-			repo := strings.Fields(file)[0]
+		for _, file := range files {
+			repo := redact(strings.Fields(file)[0])
 			rel, known := releases[file]
 			if (known && archiveOrigins[rel.Origin]) || (!known && archiveHost(repo)) {
 				p.Origin, p.Repo, p.Label = OriginArchive, repo, rel.Origin
