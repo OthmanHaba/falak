@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	goruntime "runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -123,11 +124,15 @@ func Collect(ctx context.Context, r runner.Runner, fs hostfs.FS, agentVersion st
 				}
 			}
 		}
-		// Key-value engines (db.redis.*): "Redis server v=7.0.15 sha=…" / "Valkey server v=8.1.1 …". Debian's
-		// valkey-redis-compat links redis-server to Valkey; the banner tells them apart, so such a link is not Redis.
-		for _, kv := range []struct{ key, bin, banner string }{
-			{"redis", "/usr/bin/redis-server", "redis"},
-			{"valkey", "/usr/bin/valkey-server", "valkey"},
+		// Key-value engines (db.redis.*): "Redis server v=7.0.15 sha=…", "Valkey server v=8.1.1 …" — Valkey 7.2 says
+		// just "Server v=7.2.13 …". Debian's valkey-redis-compat links redis-server to Valkey; the banner tells them
+		// apart, so such a link is not reported as Redis.
+		for _, kv := range []struct {
+			key, bin string
+			banners  []string
+		}{
+			{"redis", "/usr/bin/redis-server", []string{"redis"}},
+			{"valkey", "/usr/bin/valkey-server", []string{"valkey", "server"}},
 		} {
 			if !fs.Exists(kv.bin) {
 				continue
@@ -136,7 +141,7 @@ func Collect(ctx context.Context, r runner.Runner, fs hostfs.FS, agentVersion st
 			res, err := r.Run(cctx, runner.Cmd{Name: fs.P(kv.bin), Args: []string{"--version"}})
 			cancel()
 			if err == nil && res.ExitCode == 0 {
-				if banner, v := KeyValueVersion(string(res.Stdout)); banner == kv.banner && v != "" {
+				if banner, v := KeyValueVersion(string(res.Stdout)); slices.Contains(kv.banners, banner) && v != "" {
 					f.Runtimes[kv.key] = []string{v}
 				}
 			}
