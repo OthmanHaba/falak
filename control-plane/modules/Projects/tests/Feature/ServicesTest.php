@@ -131,6 +131,15 @@ it('creates a Redis instance through the API with a token', function () {
     $this->withToken($token->plainTextToken)->postJson("/api/v1/projects/{$this->staging->project_id}/environments/staging/services", ['kind' => 'database', 'engine' => 'valkey', 'server_id' => $server->id, 'name' => 'sessions', 'persistence' => 'aof'])
         ->assertCreated()->assertJsonPath('data.icon', 'valkey')->assertJsonPath('data.name', 'sessions');
     expect($agents->last('db.redis.apply')['payload'])->toMatchArray(['engine' => 'valkey', 'persistence' => 'aof']);
+
+    // Upper-case ids (as the CLI prints them) and environment ids work; another organization's project is not found.
+    $this->withToken($token->plainTextToken)->postJson('/api/v1/projects/'.strtoupper($this->staging->project_id)."/environments/{$this->staging->id}/services", ['kind' => 'database', 'engine' => 'valkey', 'server_id' => $server->id, 'name' => 'queue'])
+        ->assertCreated();
+    [, $stranger] = memberOf();
+    $other = projects_default_env($stranger);
+    $this->withToken($token->plainTextToken)->postJson("/api/v1/projects/{$other->project_id}/environments/production/services", ['kind' => 'database', 'engine' => 'valkey', 'server_id' => $server->id, 'name' => 'x'])
+        ->assertNotFound();
+    $this->withToken($token->plainTextToken)->postJson('/api/v1/projects/not-a-ulid/environments/staging/services', [])->assertNotFound();
 });
 
 it('persists card positions per environment', function () {

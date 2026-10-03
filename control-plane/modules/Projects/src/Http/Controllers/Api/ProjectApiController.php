@@ -9,13 +9,16 @@ use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Projects\Application\Actions\CreateEnvironment;
 use Kiln\Projects\Application\Actions\CreateProject;
+use Kiln\Projects\Application\Actions\CreateService;
 use Kiln\Projects\Application\Actions\DeleteEnvironment;
 use Kiln\Projects\Application\Actions\DeleteProject;
 use Kiln\Projects\Application\Actions\UpdateEnvironment;
 use Kiln\Projects\Application\Actions\UpdateProject;
+use Kiln\Projects\Application\Canvas\CanvasReadModel;
 use Kiln\Projects\Domain\Models\Project;
 use Kiln\Projects\Domain\Policies\ProjectPolicy;
 use Kiln\Projects\Http\Controllers\PresentsProjects;
+use Kiln\Projects\Http\Controllers\ServiceController;
 use Kiln\Projects\Http\Requests\ProjectRules;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -109,6 +112,15 @@ final class ProjectApiController extends Controller
         $delete($this->resolveEnvironment($model, $environment));
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * POST /api/v1/projects/{project}/environments/{environment}/services: the canvas' Create (ServiceController),
+     * with the project resolved like every API route (case-insensitive id, scoped to the token's organization).
+     */
+    public function storeService(Request $request, string $project, string $environment, ServiceController $services, CreateService $create, CanvasReadModel $canvas): JsonResponse
+    {
+        return $services->store($request, $this->resolve($request, $project, ProjectPolicy::MANAGE), $environment, $create, $canvas);
     }
 
     private function resolve(Request $request, string $project, string $permission): Project
