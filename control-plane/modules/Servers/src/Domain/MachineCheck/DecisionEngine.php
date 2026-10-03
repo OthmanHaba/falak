@@ -139,7 +139,7 @@ final class DecisionEngine
 
         foreach (['compose', 'buildx'] as $plugin) {
             if (is_array($docker[$plugin] ?? null) && ($docker[$plugin]['version'] ?? '') === '') {
-                $notes[] = Note::warning("The docker {$plugin} plugin at {$docker[$plugin]['path']} was not run: a user other than root can change it.", "Make it root-owned and not writable by others (chown root: {$docker[$plugin]['path']}; chmod 755), then re-check.");
+                $notes[] = Note::warning("The docker {$plugin} plugin at ".($docker[$plugin]['path'] ?? '?').' was not run: a user other than root can change it.', 'Make it root-owned and not writable by others (chown root: '.($docker[$plugin]['path'] ?? '<plugin>').'; chmod 755), then re-check.');
             }
         }
 
@@ -251,7 +251,7 @@ final class DecisionEngine
 
             $other = trim("{$engines[$key]['label']} {$p['version']}");
             $notes[] = Note::block("{$other} is installed, but this server is set up for {$wantedLabel}.",
-                "Kiln won't run two {$component} engines on one machine. Remove {$engines[$key]['label']} (apt purge ".$p['packages'][0]['name'].") or use a server set up for {$engines[$key]['label']}, then re-check.");
+                "Kiln won't run two {$component} engines on one machine. Remove {$engines[$key]['label']} (apt purge ".($p['packages'][0]['name'] ?? $key).") or use a server set up for {$engines[$key]['label']}, then re-check.");
         }
 
         $mine = $present[$wanted] ?? null;
@@ -273,7 +273,7 @@ final class DecisionEngine
         }
 
         if ($mine !== null) {
-            $names = array_map(fn (array $p) => (string) $p['name'], $mine['packages']);
+            $names = array_map(fn (array $p) => (string) ($p['name'] ?? ''), $mine['packages']);
             $what = trim("{$wantedLabel} {$mine['version']}");
             $reason = $wanted === 'postgresql'
                 ? "Uses {$what} from {$mine['source']}; the cluster and its major version stay, Ubuntu's postgresql package is not installed."
@@ -317,8 +317,8 @@ final class DecisionEngine
         $containers = $report->containersPublishing($port);
 
         foreach ($containers as $container) {
-            $notes[] = Note::block("A container ({$container['name']}, {$container['image']}) publishes port {$port}, which {$for} needs.",
-                "Stop the container (docker stop {$container['name']}) or publish it on another port, then re-check. To keep a database in Docker, add it to Kiln as a compose service instead.");
+            $notes[] = Note::block('A container ('.($container['name'] ?? '?').', '.($container['image'] ?? 'unknown image').") publishes port {$port}, which {$for} needs.",
+                'Stop the container (docker stop '.($container['name'] ?? '<name>').') or publish it on another port, then re-check. To keep a database in Docker, add it to Kiln as a compose service instead.');
         }
 
         foreach ($report->listenersOn($port) as $listener) {
@@ -420,7 +420,7 @@ final class DecisionEngine
 
         foreach ($report->list('frankenphp') as $binary) {
             if ($runtime === 'frankenphp' && ($binary['source'] ?? '') !== 'kiln') {
-                $notes[] = Note::warning("A FrankenPHP binary at {$binary['path']} was not installed by Kiln; Kiln installs its pinned build at /usr/local/bin/frankenphp.");
+                $notes[] = Note::warning('A FrankenPHP binary at '.($binary['path'] ?? '?').' was not installed by Kiln; Kiln installs its pinned build at /usr/local/bin/frankenphp.');
             }
         }
 
@@ -462,7 +462,7 @@ final class DecisionEngine
             if (($binary['path'] ?? '') === '/usr/local/bin/node') {
                 $notes[] = Note::warning('/usr/local/bin/node was not installed by Kiln; Kiln\'s default Node replaces it with a link to /opt/kiln/node.');
             } else {
-                $notes[] = Note::info("Node {$binary['version']} at {$binary['path']} ({$this->binarySource($binary)}) stays as it is; sites run Kiln's Node.");
+                $notes[] = Note::info(trim('Node '.($binary['version'] ?? '')).' at '.($binary['path'] ?? 'an unknown path')." ({$this->binarySource($binary)}) stays as it is; sites run Kiln's Node.");
             }
         }
 
@@ -487,7 +487,7 @@ final class DecisionEngine
         $notes = [];
 
         if ($ssh !== [] && $password && $canLogIn === []) {
-            $excluded = array_values(array_diff(array_map(fn (array $u) => (string) $u['name'], $withKeys), array_map(fn (array $u) => (string) $u['name'], $canLogIn)));
+            $excluded = array_values(array_diff(array_map(fn (array $u) => (string) ($u['name'] ?? '?'), $withKeys), array_map(fn (array $u) => (string) ($u['name'] ?? '?'), $canLogIn)));
             $notes[] = Note::block('Password login would be turned off, but no user who may log in over SSH has a key in authorized_keys'
                 .($excluded !== [] ? ' ('.implode(', ', $excluded).' has keys but is not allowed to log in: PermitRootLogin, AllowUsers/DenyUsers or AllowGroups/DenyGroups).' : '.'),
                 'Add your public key to ~/.ssh/authorized_keys of a sudo user sshd lets in (or root when root login is allowed), then re-check. Kiln turns off password login.');
@@ -523,7 +523,7 @@ final class DecisionEngine
             return new ComponentDecision('ssh', 'SSH', Decision::Block, $notes[0]->message, $found, notes: $notes);
         }
 
-        $who = $canLogIn === [] ? '' : ' Keys found for '.implode(', ', array_map(fn (array $u) => (string) $u['name'], $canLogIn)).'.';
+        $who = $canLogIn === [] ? '' : ' Keys found for '.implode(', ', array_map(fn (array $u) => (string) ($u['name'] ?? '?'), $canLogIn)).'.';
 
         return new ComponentDecision('ssh', 'SSH', Decision::Install, "Key-only login, root without password, port {$wanted->sshPort}.{$who}", $found, notes: $notes);
     }
@@ -611,7 +611,7 @@ final class DecisionEngine
     private function swap(MachineReport $report, Wanted $wanted): ComponentDecision
     {
         $swaps = $report->list('swap');
-        $found = array_map(fn (array $s) => ['name' => (string) $s['name'], 'version' => null, 'source' => $this->bytes((int) ($s['size_bytes'] ?? 0))], $swaps);
+        $found = array_map(fn (array $s) => ['name' => (string) ($s['name'] ?? '?'), 'version' => null, 'source' => $this->bytes((int) ($s['size_bytes'] ?? 0))], $swaps);
         $foreign = array_values(array_filter($swaps, fn (array $s) => ($s['name'] ?? '') !== '/swapfile'));
 
         if ($report->inContainer()) {
@@ -619,7 +619,7 @@ final class DecisionEngine
         }
 
         if ($foreign !== []) {
-            return new ComponentDecision('swap', 'Swap', Decision::Adopt, 'Keeps the existing swap ('.implode(', ', array_map(fn (array $s) => (string) $s['name'], $foreign)).'); no /swapfile is created.', $found);
+            return new ComponentDecision('swap', 'Swap', Decision::Adopt, 'Keeps the existing swap ('.implode(', ', array_map(fn (array $s) => (string) ($s['name'] ?? '?'), $foreign)).'); no /swapfile is created.', $found);
         }
 
         if ($wanted->swapMb <= 0) {
@@ -706,6 +706,7 @@ final class DecisionEngine
             'nodesource' => 'NodeSource',
             'nvm' => 'nvm',
             'snap' => 'snap',
+            'unknown' => 'unknown source',
             'vendor' => (string) (parse_url((string) ($binary['repo'] ?? ''), PHP_URL_HOST) ?: 'another repository'),
             default => 'manual install',
         };

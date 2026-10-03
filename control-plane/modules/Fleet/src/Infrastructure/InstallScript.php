@@ -170,8 +170,11 @@ until systemctl is-active --quiet kiln-agent; do
     sleep 1
 done
 say "\$CONNECTED"
-# The machine check (agents with provision.v2) runs from the panel now; this script never inspects the machine.
-say "Kiln now checks the software already on this machine, then provisions it. Results: the server's page at \$KILN_PANEL_URL/servers (Machine check)."
+# The machine check runs from the panel (this script never inspects the machine), only for builds with provision.v2;
+# `kiln-agent features` lists them (older builds print their usage instead, which never matches).
+if "\$BIN" features 2>/dev/null | grep -qx "provision.v2"; then
+    say "Kiln now checks the software already on this machine, then provisions it. Results: the server's page at \$KILN_PANEL_URL/servers (Machine check)."
+fi
 
 SH;
     }

@@ -150,6 +150,10 @@ case "$1 ${2:-}" in
     check*)
         [ -z "${OLD_AGENT:-}" ] || { echo "usage: kiln-agent <run|enroll|install|version> [flags]" >&2; exit 2; }
         echo "kiln-agent connected as 01JTESTAGENT0000000000000" ;;
+    "features "*)
+        [ -z "${OLD_AGENT:-}" ] || { echo "usage: kiln-agent <run|enroll|install|check|version> [flags]" >&2; exit 2; }
+        echo "edge.access_log"
+        [ -n "${NO_V2:-}" ] || echo "provision.v2" ;;
 esac
 exit 0
 AGENT);
@@ -186,7 +190,19 @@ it('skips the connection check for an agent build without it', function () {
     expect($code)->toBe(0, $stderr)
         ->and($stderr)->toContain('this kiln-agent build has no check command; not verifying the connection')
         ->and($stdout)->toContain("kiln: kiln-agent installed\n")
-        ->and($calls)->not->toContain('kiln-agent check --wait');
+        ->and($calls)->not->toContain('kiln-agent check --wait')
+        ->and($stdout)->not->toContain('Machine check');
+})->skip(PHP_OS_FAMILY === 'Windows');
+
+it('points at the machine check only when the agent build has it', function () {
+    $install = app(Enrollment::class)->issueInstallToken($this->organization->id, null);
+    $script = $this->get("/install/{$install->token}")->getContent();
+
+    [$code, $stdout, $stderr, $calls] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000000', 'DOWNLOAD' => '1', 'NO_V2' => '1']);
+
+    expect($code)->toBe(0, $stderr)
+        ->and($calls)->toContain('kiln-agent features')
+        ->and($stdout)->toEndWith("kiln: kiln-agent connected as 01JTESTAGENT0000000000000\n");
 })->skip(PHP_OS_FAMILY === 'Windows');
 
 it('fails when the service does not stay up after the check', function () {
