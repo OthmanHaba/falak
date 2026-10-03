@@ -7,8 +7,9 @@ use Kiln\Servers\Domain\MachineCheck\Wanted;
 use Kiln\Servers\Domain\Stack\Stack;
 
 /**
- * provision.inspect reports for tests: a fresh Ubuntu 24.04 machine (only openssh-server, root with a key), changed with
- * the mc_* helpers below.
+ * provision.inspect reports for tests: a fresh Ubuntu 24.04 cloud image as it really looks (openssh-server, curl, git,
+ * ca-certificates, ufw installed but inactive, unattended-upgrades with Ubuntu's stock 20auto-upgrades, root with
+ * cloud-init's key and an ubuntu sudo user with keys, no swap), changed with the mc_* helpers below.
  *
  * @param  array<string, mixed>  $overrides
  * @return array<string, mixed>
@@ -20,12 +21,21 @@ function mc_report(array $overrides = []): array
         'hostname' => 'ubuntu-s-1vcpu',
         'os' => ['id' => 'ubuntu', 'version' => '24.04', 'codename' => 'noble'],
         'in_container' => false,
-        'packages' => [
-            ['name' => 'openssh-server', 'version' => '1:9.6p1-3ubuntu13.5', 'origin' => 'archive', 'repo' => 'http://archive.ubuntu.com/ubuntu', 'label' => 'Ubuntu'],
-        ],
+        'packages' => array_map(fn (array $p) => [...$p, 'origin' => 'archive', 'repo' => 'http://archive.ubuntu.com/ubuntu', 'label' => 'Ubuntu'], [
+            ['name' => 'ca-certificates', 'version' => '20240203'],
+            ['name' => 'curl', 'version' => '8.5.0-2ubuntu10.6'],
+            ['name' => 'git', 'version' => '1:2.43.0-1ubuntu7.3'],
+            ['name' => 'openssh-server', 'version' => '1:9.6p1-3ubuntu13.12'],
+            ['name' => 'ufw', 'version' => '0.36.2-6'],
+            ['name' => 'unattended-upgrades', 'version' => '2.9.1+nmu4ubuntu1'],
+        ]),
         'snaps' => [],
         'apt_sources' => [['file' => '/etc/apt/sources.list.d/ubuntu.sources', 'uris' => ['http://archive.ubuntu.com/ubuntu/']]],
-        'services' => [['unit' => 'ssh.service', 'active' => 'active', 'enabled' => 'enabled']],
+        'services' => [
+            ['unit' => 'ssh.service', 'active' => 'active', 'enabled' => 'enabled'],
+            ['unit' => 'ufw.service', 'active' => 'active', 'enabled' => 'enabled'],
+            ['unit' => 'unattended-upgrades.service', 'active' => 'active', 'enabled' => 'enabled'],
+        ],
         'listeners' => [['port' => 22, 'address' => '0.0.0.0', 'process' => 'sshd', 'pid' => 800, 'unit' => 'ssh.service']],
         'containers' => [],
         'docker' => null,
@@ -33,14 +43,17 @@ function mc_report(array $overrides = []): array
             'drop_ins' => [],
             'effective' => ['passwordauthentication' => 'yes', 'permitrootlogin' => 'prohibit-password', 'port' => '22', 'pubkeyauthentication' => 'yes'],
             'effective_source' => 'sshd -T',
-            'users' => [['name' => 'root', 'uid' => 0, 'authorized_keys' => 1]],
+            'users' => [
+                ['name' => 'root', 'uid' => 0, 'authorized_keys' => 1, 'groups' => ['root']],
+                ['name' => 'ubuntu', 'uid' => 1000, 'authorized_keys' => 1, 'groups' => ['ubuntu', 'adm', 'sudo']],
+            ],
         ],
         'firewall' => ['ufw' => 'inactive', 'firewalld' => 'absent', 'nft_tables' => []],
         'swap' => [],
         'node' => [],
         'php' => [],
         'frankenphp' => [],
-        'unattended_upgrades' => ['installed' => false, 'periodic' => null, 'managed_by_kiln' => false],
+        'unattended_upgrades' => ['installed' => true, 'periodic' => ['Update-Package-Lists' => '1', 'Unattended-Upgrade' => '1'], 'managed_by_kiln' => false],
         'fail2ban' => ['installed' => false, 'active' => false, 'jails' => []],
         'errors' => [],
     ], $overrides);

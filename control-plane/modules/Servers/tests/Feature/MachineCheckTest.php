@@ -1,7 +1,9 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
+use Kiln\Alerting\Domain\Enums\AlertOutcome;
 use Kiln\Alerting\Domain\Models\Alert;
+use Kiln\Alerting\Domain\Models\DedupState;
 use Kiln\Fleet\Infrastructure\ProtocolSchemas;
 use Kiln\Identity\Application\Actions\CreateApiToken;
 use Kiln\Identity\Contracts\Role;
@@ -15,6 +17,7 @@ use Kiln\Servers\Events\ServerProvisioned;
 
 require_once __DIR__.'/../Support/helpers.php';
 require_once __DIR__.'/../Support/machine_reports.php';
+require_once __DIR__.'/../../../Alerting/tests/Support/helpers.php';
 
 beforeEach(function () {
     config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test', 'app.url' => 'https://panel.kiln.test']);
@@ -265,4 +268,119 @@ it('filters the fleet by needs_attention and keeps those servers out of active-o
         ->where('servers.0.status', 'needs_attention'));
 
     expect(collect(app(ServerDirectory::class)->forOrganization($this->organization->id, activeOnly: true))->pluck('name')->all())->toBe(['ok-1']);
+});
+
+it('keeps a provisioned server active when a re-provision finds blocks, and alerts once until it is clean', function () {
+    alerting_rule($this->organization->id, ['servers.*']);
+    [$server, $headers] = mc_enrolled_server();
+    servers_finish($headers, servers_poll($headers)[0]['id'], result: mc_report());
+    servers_finish($headers, servers_poll($headers)[0]['id']);
+    servers_poll($headers); // SSH key syncs
+    expect($server->refresh()->status)->toBe(ServerStatus::Active);
+
+    $nginx = mc_listen(mc_report(), 80, 'nginx', 'nginx.service');
+    foreach ([1, 2] as $attempt) {
+        $this->post("/servers/{$server->id}/reprovision")->assertRedirect();
+        $server->refresh();
+        expect($server->status)->toBe(ServerStatus::Active)
+            ->and($server->status_message)->toBe('Checking the machine before re-provisioning.')
+            ->and($server->provision_command_id)->toBeNull();
+
+        servers_finish($headers, servers_poll($headers)[0]['id'], result: $nginx);
+        $server->refresh();
+        expect($server->status)->toBe(ServerStatus::Active)
+            ->and($server->status_message)->toBe("Re-provisioning stopped. Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Kiln's edge needs.")
+            ->and($server->machineInspection->blocking)->toBeTrue()
+            ->and(servers_poll($headers))->toBe([]);
+    }
+
+    $state = DedupState::query()->where('dedup_key', "servers.attention:{$server->id}")->firstOrFail();
+    expect(Alert::query()->where('type', 'servers.needs_attention')->where('outcome', '!=', AlertOutcome::Deduplicated)->count())->toBe(1)
+        ->and($state->occurrences)->toBe(2)
+        ->and($state->isActive())->toBeTrue();
+
+    // nginx gone: the re-provision applies and the alert resolves.
+    $this->post("/servers/{$server->id}/reprovision")->assertRedirect();
+    servers_finish($headers, servers_poll($headers)[0]['id'], result: mc_report());
+    expect($state->refresh()->isActive())->toBeFalse();
+    $apply = servers_poll($headers)[0];
+    expect($apply['type'])->toBe('provision.apply')
+        ->and($server->refresh()->status)->toBe(ServerStatus::Provisioning);
+    servers_finish($headers, $apply['id']);
+    expect($server->refresh()->status)->toBe(ServerStatus::Active)
+        ->and($server->status_message)->toBeNull();
+});
+
+it('resolves the needs-attention alert once the server is provisioned', function () {
+    alerting_rule($this->organization->id, ['servers.*']);
+    [$server, $headers] = mc_enrolled_server();
+    servers_finish($headers, servers_poll($headers)[0]['id'], result: mc_listen(mc_report(), 80, 'nginx', 'nginx.service'));
+    $state = DedupState::query()->where('dedup_key', "servers.attention:{$server->id}")->firstOrFail();
+    expect($server->refresh()->status)->toBe(ServerStatus::NeedsAttention)->and($state->isActive())->toBeTrue();
+
+    $this->post("/servers/{$server->id}/inspection");
+    servers_finish($headers, servers_poll($headers)[0]['id'], result: mc_report());
+    expect($state->refresh()->isActive())->toBeFalse();
+    expect(Alert::query()->where('type', 'servers.attention_cleared')->exists())->toBeTrue();
+});
+
+it('ignores the outcome of a converge a re-provision replaced', function () {
+    [$server, $headers] = mc_enrolled_server();
+    servers_finish($headers, servers_poll($headers)[0]['id'], result: mc_report());
+    $first = servers_poll($headers)[0];
+    expect($first['type'])->toBe('provision.apply');
+
+    // Re-provision while the first plan still runs: a new check starts and replaces it.
+    $this->post("/servers/{$server->id}/reprovision")->assertRedirect();
+    expect($server->refresh()->provision_command_id)->toBeNull();
+    $check = servers_poll($headers)[0];
+
+    servers_finish($headers, $first['id'], 100, 'apt-get install failed');
+    expect($server->refresh()->status)->toBe(ServerStatus::Provisioning);
+
+    servers_finish($headers, $check['id'], result: mc_report());
+    $second = servers_poll($headers)[0];
+    expect($second['type'])->toBe('provision.apply')->and($server->refresh()->provision_command_id)->toBe($second['id']);
+    servers_finish($headers, $second['id']);
+    expect($server->refresh()->status)->toBe(ServerStatus::Active);
+});
+
+it('only provisions after a finished machine check', function () {
+    [$server, $headers] = mc_enrolled_server();
+    servers_finish($headers, servers_poll($headers)[0]['id'], result: mc_listen(mc_report(), 80, 'nginx', 'nginx.service'));
+    $this->post("/servers/{$server->id}/inspection");
+    servers_finish($headers, servers_poll($headers)[0]['id'], 1, 'agent restarted');
+
+    expect($server->machineInspection()->value('status'))->toBe('failed');
+    $this->post("/servers/{$server->id}/provision")->assertSessionHasErrors(['server' => 'Run the machine check first: the latest one did not finish.']);
+    expect(servers_poll($headers))->toBe([]);
+});
+
+it('provisions and re-provisions over the API', function () {
+    [$server, $headers] = mc_enrolled_server();
+    $token = app(CreateApiToken::class)($this->user, $this->organization->id, 'cli', ['servers.view', 'servers.manage'])->plainTextToken;
+    $viewer = app(CreateApiToken::class)($this->user, $this->organization->id, 'ro', ['servers.view'])->plainTextToken;
+    $this->app['auth']->forgetGuards();
+
+    servers_finish($headers, servers_poll($headers)[0]['id'], result: mc_listen(mc_report(), 80, 'nginx', 'nginx.service'));
+
+    $this->withToken($viewer)->postJson("/api/v1/servers/{$server->id}/provision")->assertForbidden();
+    $this->app['auth']->forgetGuards();
+    $this->withToken($token)->postJson("/api/v1/servers/{$server->id}/provision")->assertUnprocessable()
+        ->assertJsonPath('message', "Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Kiln's edge needs.");
+
+    // Re-provision runs the check again.
+    $this->withToken($token)->postJson("/api/v1/servers/{$server->id}/reprovision")->assertStatus(202)
+        ->assertJsonPath('data.status', 'provisioning')
+        ->assertJsonPath('data.stage', 'machine_check');
+    servers_finish($headers, servers_poll($headers)[0]['id'], result: mc_listen(mc_report(), 80, 'nginx', 'nginx.service'));
+    expect($server->refresh()->status)->toBe(ServerStatus::NeedsAttention);
+
+    $this->post("/servers/{$server->id}/inspection");
+    servers_finish($headers, servers_poll($headers)[0]['id'], result: mc_report());
+
+    $this->withToken($token)->postJson("/api/v1/servers/{$server->id}/provision")->assertStatus(202)
+        ->assertJsonPath('data.status', 'provisioning');
+    expect(servers_poll($headers)[0]['type'])->toBe('provision.apply');
+    $this->withToken($token)->postJson("/api/v1/servers/{$server->id}/provision")->assertUnprocessable();
 });

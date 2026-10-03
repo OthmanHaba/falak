@@ -176,6 +176,7 @@ final readonly class MachineReport
         return match ($package['origin'] ?? null) {
             'archive' => trim(((string) ($package['label'] ?? '')) ?: 'Ubuntu').' archive',
             'vendor' => (string) (parse_url((string) ($package['repo'] ?? ''), PHP_URL_HOST) ?: ($package['label'] ?? 'another repository')),
+            'unknown' => 'unknown source',
             default => 'manual install',
         };
     }

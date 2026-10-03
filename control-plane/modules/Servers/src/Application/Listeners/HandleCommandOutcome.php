@@ -17,6 +17,7 @@ use Kiln\Servers\Domain\Models\Server;
 use Kiln\Servers\Events\DatabaseEngineInstalled;
 use Kiln\Servers\Events\DatabaseEngineInstallFailed;
 use Kiln\Servers\Events\PhpVersionChanged;
+use Kiln\Servers\Events\ServerAttentionCleared;
 use Kiln\Servers\Events\ServerProvisioned;
 
 /**
@@ -124,6 +125,7 @@ final class HandleCommandOutcome implements ShouldQueue
         $this->audit->record('server.provisioned', 'server', $server->id, ['attempt' => $server->provision_attempts], $server->organization_id);
 
         ServerProvisioned::dispatch($server->id, $server->organization_id, $server->type->value, $server->name);
+        ServerAttentionCleared::dispatch($server->id, $server->organization_id, $server->name);
 
         ($this->syncKeys)($server->refresh());
     }

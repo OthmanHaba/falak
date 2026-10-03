@@ -14,4 +14,6 @@ Route::middleware(['auth:sanctum', 'org'])->prefix('v1')->name('api.v1.')->group
     Route::post('servers/{server}/database-engine', [DatabaseEngineController::class, 'storeApi'])->middleware('throttle:10,1')->name('servers.database-engine.store');
     Route::get('servers/{server}/inspection', [MachineCheckController::class, 'show'])->name('servers.inspection.show');
     Route::post('servers/{server}/inspection', [MachineCheckController::class, 'storeApi'])->middleware('throttle:10,1')->name('servers.inspection.store');
+    Route::post('servers/{server}/provision', [MachineCheckController::class, 'provisionApi'])->middleware('throttle:10,1')->name('servers.provision');
+    Route::post('servers/{server}/reprovision', [MachineCheckController::class, 'reprovisionApi'])->middleware('throttle:10,1')->name('servers.reprovision');
 });

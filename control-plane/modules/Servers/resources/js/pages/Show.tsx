@@ -127,8 +127,9 @@ export default function Show({ server, agent, metrics, services, machineCheck, c
         );
     const settling = ['creating', 'provisioning', 'deleting'].includes(server.status);
     const checking = machineCheck.status === 'running';
-    // Needs attention or provisioning failed: the machine check is the first thing to look at.
-    const checkProminent = server.status === 'needs_attention' || (server.status === 'error' && machineCheck.status !== null);
+    // Needs attention, a blocked re-provision or failed provisioning: the machine check is the first thing to look at.
+    const checkProminent =
+        server.status === 'needs_attention' || machineCheck.blocking || (server.status === 'error' && machineCheck.status !== null);
     const showCheck = machineCheck.status !== null || (machineCheck.supported && server.status !== 'creating');
     const [showLog, setShowLog] = useState(server.status !== 'active');
     const [regenerating, setRegenerating] = useState(false);

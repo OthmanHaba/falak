@@ -125,8 +125,22 @@ final class DecisionEngine
             return $block('Only a rootless Docker is set up.', 'Kiln needs the system Docker daemon (docker.service). Install Docker for the whole machine, then re-check.');
         }
 
+        if (($report->service('docker.service')['enabled'] ?? null) === 'masked') {
+            return $block('docker.service is masked, so the Docker engine cannot start.', 'Unmask it (systemctl unmask docker.service docker.socket) if Docker should run here, or remove Docker, then re-check.');
+        }
+
+        if (! ($docker['system_daemon'] ?? false) && ($docker['server_version'] ?? '') === '') {
+            return $block('Only the Docker CLI is installed: there is no Docker engine (no docker.service).', "Install the engine from the CLI's source (docker-ce from Docker's repository), or remove the CLI so Kiln installs Ubuntu's Docker, then re-check.");
+        }
+
         if ($docker['rootless'] ?? false) {
             $notes[] = Note::warning('A rootless Docker is also set up for a user; Kiln only uses the system daemon.');
+        }
+
+        foreach (['compose', 'buildx'] as $plugin) {
+            if (is_array($docker[$plugin] ?? null) && ($docker[$plugin]['version'] ?? '') === '') {
+                $notes[] = Note::warning("The docker {$plugin} plugin at {$docker[$plugin]['path']} was not run: a user other than root can change it.", "Make it root-owned and not writable by others (chown root: {$docker[$plugin]['path']}; chmod 755), then re-check.");
+            }
         }
 
         $minimum = (string) ($this->rules['minimum_versions']['docker'] ?? '0');
@@ -463,13 +477,20 @@ final class DecisionEngine
         $effective = (array) ($ssh['effective'] ?? []);
         $users = array_values(array_filter((array) ($ssh['users'] ?? []), 'is_array'));
         $withKeys = array_values(array_filter($users, fn (array $u) => (int) ($u['authorized_keys'] ?? 0) > 0));
-        $password = strtolower((string) ($effective['passwordauthentication'] ?? 'yes')) === 'yes';
+        // Users whose keys still let them in once Kiln turns off passwords: root only when no earlier drop-in or the
+        // current config keeps root out, and only users sshd's Allow/Deny lists let in.
+        $canLogIn = array_values(array_filter($withKeys, fn (array $u) => $this->sshAllowed($u, $ssh)));
+        // Keyboard-interactive is password login too (PAM asks for the password).
+        $password = $this->yes($effective['passwordauthentication'] ?? 'yes') || $this->yes($effective['kbdinteractiveauthentication'] ?? 'no')
+            || $this->yes($effective['challengeresponseauthentication'] ?? 'no');
         $found = [['name' => 'OpenSSH', 'version' => MachineReport::upstream($report->package('openssh-server')['version'] ?? null), 'source' => 'password login '.($password ? 'on' : 'off')]];
         $notes = [];
 
-        if ($ssh !== [] && $password && $withKeys === []) {
-            $notes[] = Note::block('Password login would be turned off, but no login user has an SSH key in authorized_keys.',
-                'Add your public key to ~/.ssh/authorized_keys of root or your sudo user, then re-check. Kiln turns off password login.');
+        if ($ssh !== [] && $password && $canLogIn === []) {
+            $excluded = array_values(array_diff(array_map(fn (array $u) => (string) $u['name'], $withKeys), array_map(fn (array $u) => (string) $u['name'], $canLogIn)));
+            $notes[] = Note::block('Password login would be turned off, but no user who may log in over SSH has a key in authorized_keys'
+                .($excluded !== [] ? ' ('.implode(', ', $excluded).' has keys but is not allowed to log in: PermitRootLogin, AllowUsers/DenyUsers or AllowGroups/DenyGroups).' : '.'),
+                'Add your public key to ~/.ssh/authorized_keys of a sudo user sshd lets in (or root when root login is allowed), then re-check. Kiln turns off password login.');
         }
 
         foreach ((array) ($ssh['drop_ins'] ?? []) as $dropIn) {
@@ -502,9 +523,59 @@ final class DecisionEngine
             return new ComponentDecision('ssh', 'SSH', Decision::Block, $notes[0]->message, $found, notes: $notes);
         }
 
-        $who = $withKeys === [] ? '' : ' Keys found for '.implode(', ', array_map(fn (array $u) => (string) $u['name'], $withKeys)).'.';
+        $who = $canLogIn === [] ? '' : ' Keys found for '.implode(', ', array_map(fn (array $u) => (string) $u['name'], $canLogIn)).'.';
 
         return new ComponentDecision('ssh', 'SSH', Decision::Install, "Key-only login, root without password, port {$wanted->sshPort}.{$who}", $found, notes: $notes);
+    }
+
+    private function yes(mixed $value): bool
+    {
+        return strtolower(trim((string) $value)) === 'yes';
+    }
+
+    /**
+     * Whether sshd lets a user with keys in: root needs PermitRootLogin other than no / forced-commands-only (the current
+     * value and any drop-in read before Kiln's), everyone must pass AllowUsers/DenyUsers/AllowGroups/DenyGroups.
+     *
+     * @param  array<string, mixed>  $user
+     * @param  array<string, mixed>  $ssh
+     */
+    private function sshAllowed(array $user, array $ssh): bool
+    {
+        $effective = (array) ($ssh['effective'] ?? []);
+        $name = (string) ($user['name'] ?? '');
+        $groups = array_map('strval', (array) ($user['groups'] ?? []));
+
+        if ((int) ($user['uid'] ?? -1) === 0) {
+            $values = [(string) ($effective['permitrootlogin'] ?? '')];
+
+            foreach ((array) ($ssh['drop_ins'] ?? []) as $dropIn) {
+                if (strcmp((string) ($dropIn['file'] ?? ''), self::SSH_DROP_IN) < 0 && isset($dropIn['settings']['permitrootlogin'])) {
+                    $values[] = (string) $dropIn['settings']['permitrootlogin'];
+                }
+            }
+
+            foreach ($values as $value) {
+                if (in_array(strtolower(trim($value)), ['no', 'forced-commands-only'], true)) {
+                    return false;
+                }
+            }
+        }
+
+        $list = fn (string $key) => array_values(array_filter(explode(' ', (string) ($effective[$key] ?? ''))));
+        // user@host patterns: only the user part decides here (the host is unknown).
+        $userMatches = fn (array $patterns) => array_filter($patterns, fn (string $p) => fnmatch(explode('@', $p, 2)[0], $name)) !== [];
+        $groupMatches = fn (array $patterns) => array_filter($patterns, fn (string $p) => array_filter($groups, fn (string $g) => fnmatch($p, $g)) !== []) !== [];
+
+        if ($userMatches($list('denyusers')) || $groupMatches($list('denygroups'))) {
+            return false;
+        }
+
+        if (($allow = $list('allowusers')) !== [] && ! $userMatches($allow)) {
+            return false;
+        }
+
+        return ($allow = $list('allowgroups')) === [] || $groupMatches($allow);
     }
 
     private function firewall(MachineReport $report): ComponentDecision
@@ -579,9 +650,14 @@ final class DecisionEngine
         $u = $report->section('unattended_upgrades');
         $periodic = is_array($u['periodic'] ?? null) ? $u['periodic'] : null;
         $installed = (bool) ($u['installed'] ?? false);
-        $found = $installed || $periodic !== null ? [['name' => 'unattended-upgrades', 'version' => null, 'source' => ($u['managed_by_kiln'] ?? false) ? "Kiln's config" : ($periodic !== null ? 'own config' : 'default config')]] : [];
+        // Ubuntu's own 20auto-upgrades (both settings "1", nothing else) is no customisation: Kiln writes its config as on
+        // any fresh machine.
+        $stock = $periodic !== null && array_diff_key($periodic, ['Update-Package-Lists' => 1, 'Unattended-Upgrade' => 1]) === []
+            && array_unique(array_values($periodic)) === ['1'];
+        $source = ($u['managed_by_kiln'] ?? false) ? "Kiln's config" : ($periodic === null || $stock ? 'default config' : 'own config');
+        $found = $installed || $periodic !== null ? [['name' => 'unattended-upgrades', 'version' => null, 'source' => $source]] : [];
 
-        if ($periodic === null || ($u['managed_by_kiln'] ?? false)) {
+        if ($periodic === null || $stock || ($u['managed_by_kiln'] ?? false)) {
             return new ComponentDecision('unattended_upgrades', 'Automatic updates', Decision::Install, 'Turns on automatic security updates (no automatic reboot).', $found);
         }
 

@@ -62,7 +62,16 @@ final class RunMachineCheck
         ]);
 
         if ($purpose === MachineInspection::PURPOSE_PROVISION) {
-            $this->status->set($server, ServerStatus::Provisioning, 'Checking the machine before provisioning.');
+            // A new provisioning run replaces any converge still in flight: its late outcome must not flip the status
+            // (HandleCommandOutcome only settles the server's current provision_command_id).
+            $attributes = ['provision_command_id' => null];
+
+            if ($server->provisioned_at !== null) {
+                // An already provisioned server keeps its status (deploys keep targeting it) until the plan is applied.
+                $this->status->set($server, $server->status, 'Checking the machine before re-provisioning.', $attributes);
+            } else {
+                $this->status->set($server, ServerStatus::Provisioning, 'Checking the machine before provisioning.', $attributes);
+            }
         }
 
         $this->audit->record('server.machine_check_started', 'server', $server->id, ['purpose' => $purpose, 'command_id' => $handle->id], $server->organization_id, $actorId);

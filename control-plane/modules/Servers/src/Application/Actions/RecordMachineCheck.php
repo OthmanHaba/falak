@@ -11,12 +11,13 @@ use Kiln\Servers\Domain\MachineCheck\ComponentDecision;
 use Kiln\Servers\Domain\MachineCheck\Note;
 use Kiln\Servers\Domain\Models\MachineInspection;
 use Kiln\Servers\Domain\Models\Server;
+use Kiln\Servers\Events\ServerAttentionCleared;
 use Kiln\Servers\Events\ServerNeedsAttention;
 use Kiln\Servers\Events\ServerUpdated;
 
 /**
  * Records the outcome of provision.inspect: the report and the decisions taken from it. A provisioning check then
- * applies the plan, or stops at needs_attention when something blocks.
+ * applies the plan, or stops at needs_attention when something blocks (a server provisioned before keeps its status).
  */
 final class RecordMachineCheck
 {
@@ -40,6 +41,7 @@ final class RecordMachineCheck
         }
 
         $check = $this->checks->decide($server, $report);
+        $wasBlocking = $inspection->blocking;
 
         $inspection->forceFill([
             'status' => MachineInspection::FINISHED,
@@ -57,6 +59,26 @@ final class RecordMachineCheck
             'decisions' => collect($check->components)->mapWithKeys(fn ($d) => [$d->component => $d->decision->value])->all(),
         ], $server->organization_id);
 
+        if ($check->blocking()) {
+            ServerNeedsAttention::dispatch($server->id, $server->organization_id, $server->name, $this->blockMessages($check->blocked()));
+        } elseif ($wasBlocking || $server->status === ServerStatus::NeedsAttention) {
+            ServerAttentionCleared::dispatch($server->id, $server->organization_id, $server->name);
+        }
+
+        if ($inspection->purpose === MachineInspection::PURPOSE_PROVISION && $this->reprovisioning($server)) {
+            // A provisioned server never goes to needs_attention: it keeps serving with its current state; the blocks
+            // are reported (panel, status message, alert) and nothing is applied.
+            if ($check->blocking()) {
+                $this->status->set($server, $server->status, 'Re-provisioning stopped. '.$check->summary());
+
+                return;
+            }
+
+            ($this->apply)($server);
+
+            return;
+        }
+
         if ($inspection->purpose === MachineInspection::PURPOSE_PROVISION && $server->status === ServerStatus::Provisioning) {
             if (! $check->blocking()) {
                 ($this->apply)($server);
@@ -65,7 +87,6 @@ final class RecordMachineCheck
             }
 
             $this->status->set($server, ServerStatus::NeedsAttention, $check->summary());
-            ServerNeedsAttention::dispatch($server->id, $server->organization_id, $server->name, $this->blockMessages($check->blocked()));
 
             return;
         }
@@ -84,6 +105,12 @@ final class RecordMachineCheck
     {
         $inspection->forceFill(['status' => MachineInspection::FAILED, 'error' => mb_substr($reason, 0, 1000)])->save();
 
+        if ($inspection->purpose === MachineInspection::PURPOSE_PROVISION && $this->reprovisioning($server)) {
+            $this->status->set($server, $server->status, "Re-provisioning stopped: the machine check failed: {$reason}");
+
+            return;
+        }
+
         if ($inspection->purpose === MachineInspection::PURPOSE_PROVISION && $server->status === ServerStatus::Provisioning) {
             $this->status->set($server, ServerStatus::Error, "Machine check failed: {$reason}");
             $this->audit->record('server.provisioning_failed', 'server', $server->id, ['command_id' => $inspection->command_id, 'stage' => 'machine_check'], $server->organization_id);
@@ -92,6 +119,14 @@ final class RecordMachineCheck
         }
 
         ServerUpdated::dispatch($server->id, $server->status->value, $server->status_message, $server->provision_command_id);
+    }
+
+    /**
+     * A Re-provision of a server that was provisioned before (RunMachineCheck kept its status).
+     */
+    private function reprovisioning(Server $server): bool
+    {
+        return $server->provisioned_at !== null && in_array($server->status, [ServerStatus::Active, ServerStatus::Error], true);
     }
 
     /**

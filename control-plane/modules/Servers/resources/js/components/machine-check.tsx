@@ -183,9 +183,9 @@ export function MachineCheckPanel({ server, check, canUpdate, prominent, reloadO
                     </Callout>
                 )}
                 {check.blocking && expanded && (
-                    <Callout tone="danger" title="Nothing was installed">
+                    <Callout tone="danger" title={server.status === 'active' ? 'Re-provisioning applied nothing' : 'Nothing was installed'}>
                         Fix the blocked {counts.block === 1 ? 'component' : 'components'} below on the machine, then re-check. Kiln won't change
-                        software it didn't install.
+                        software it didn't install.{server.status === 'active' && ' The server keeps running as it is.'}
                     </Callout>
                 )}
                 {!check.blocking && server.status === 'needs_attention' && check.status === 'finished' && (

@@ -68,13 +68,16 @@ return [
         'timeout' => 180,
 
         // Lowest versions Kiln adopts or completes; anything older blocks. Compared with version_compare on the
-        // upstream version (Debian epoch and revision stripped; PostgreSQL by major from postgresql-NN).
+        // upstream version (Debian epoch and revision stripped; PostgreSQL by major from postgresql-NN). Each is what
+        // Kiln itself installs on the oldest supported release, so a server Kiln provisioned never blocks: Ubuntu 22.04
+        // ships PostgreSQL 14, MySQL 8.0, MariaDB 10.6, Redis 6.0 and docker.io 20.10 (24.0 / 26.1 in jammy-updates);
+        // Valkey first ships with 26.04 (8.1), 7.2 is its first release.
         'minimum_versions' => [
-            'docker' => '24.0',
+            'docker' => '20.10',
             'postgresql' => '14',
             'mysql' => '8.0',
             'mariadb' => '10.6',
-            'redis' => '6.2',
+            'redis' => '6.0',
             'valkey' => '7.2',
         ],
 

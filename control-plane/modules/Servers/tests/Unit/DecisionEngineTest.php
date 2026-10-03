@@ -24,10 +24,10 @@ function mc_decisions(MachineCheck $check): array
 }
 
 it('installs everything on a fresh machine', function () {
-    $check = mc_decide(mc_report(), mc_wanted(mc_app_stack(), base: ['git', 'curl']));
+    $check = mc_decide(mc_report(), mc_wanted(mc_app_stack(), base: ['acl', 'curl', 'git']));
 
     expect(mc_decisions($check))->toBe([
-        'base' => 'install', 'docker' => 'install', 'database' => 'install', 'cache' => 'install', 'edge' => 'install', 'php' => 'install', 'node' => 'install',
+        'base' => 'complete', 'docker' => 'install', 'database' => 'install', 'cache' => 'install', 'edge' => 'install', 'php' => 'install', 'node' => 'install',
         'ssh' => 'install', 'firewall' => 'install', 'swap' => 'install', 'hostname' => 'adopt', 'unattended_upgrades' => 'install', 'fail2ban' => 'install',
     ])
         ->and($check->blocking())->toBeFalse()
@@ -35,6 +35,12 @@ it('installs everything on a fresh machine', function () {
         ->and($check->for('database')->install)->toBe(['postgresql', 'postgresql-contrib'])
         ->and($check->for('database')->service)->toBe('postgresql')
         ->and($check->for('swap')->reason)->toBe('Creates a 2 GB /swapfile.')
+        ->and($check->for('base')->install)->toBe(['acl'])
+        // Ubuntu's stock 20auto-upgrades is no customisation: Kiln writes its config as before.
+        ->and($check->for('unattended_upgrades')->found[0]['source'])->toBe('default config')
+        // ufw installed but inactive: nothing to warn about.
+        ->and($check->for('firewall')->notes)->toBe([])
+        ->and($check->for('ssh')->reason)->toBe('Key-only login, root without password, port 22. Keys found for root, ubuntu.')
         ->and(collect($check->components)->every(fn (ComponentDecision $d) => $d->severity() === Severity::Info))->toBeTrue();
 });
 
@@ -92,7 +98,9 @@ it('blocks snap, rootless-only, podman and too old Docker', function (callable $
     'snap' => [fn () => mc_report(['snaps' => [['name' => 'docker', 'version' => '27.2.0']], 'docker' => ['snap' => true, 'system_daemon' => false, 'rootless' => false, 'compose' => null, 'buildx' => null]]), 'Docker is installed as a snap'],
     'rootless only' => [fn () => mc_report(['docker' => ['snap' => false, 'system_daemon' => false, 'rootless' => true, 'compose' => null, 'buildx' => null]]), 'Only a rootless Docker'],
     'podman-docker' => [fn () => mc_package(mc_report(['docker' => ['engine_package' => 'podman-docker', 'system_daemon' => false]]), 'podman-docker', '4.9.3'), 'podman-docker provides'],
-    'too old' => [fn () => array_replace_recursive(mc_docker_io(mc_report(), ['compose', 'buildx']), ['docker' => ['server_version' => '20.10.21']]), 'Docker 20.10.21 is older than 24.0'],
+    'too old' => [fn () => array_replace_recursive(mc_docker_io(mc_report(), ['compose', 'buildx']), ['docker' => ['server_version' => '19.03.13']]), 'Docker 19.03.13 is older than 20.10'],
+    'masked docker.service' => [fn () => array_replace(mc_docker_io(mc_report(), ['compose', 'buildx']), ['services' => [['unit' => 'docker.service', 'active' => 'inactive', 'enabled' => 'masked']]]), 'docker.service is masked'],
+    'CLI only' => [fn () => mc_package(mc_report(['docker' => ['engine_package' => '', 'client_version' => '28.1.1', 'snap' => false, 'rootless' => false, 'system_daemon' => false, 'compose' => null, 'buildx' => null]]), 'docker-ce-cli', '5:28.1.1-1~ubuntu.24.04~noble', 'vendor', 'https://download.docker.com/linux/ubuntu'), 'Only the Docker CLI is installed'],
 ]);
 
 it('warns about daemon.json settings that break published ports', function () {
@@ -208,7 +216,7 @@ it('blocks SSH hardening that would lock everyone out', function () {
     $ssh = mc_decide($report, mc_wanted(mc_app_stack()))->for('ssh');
 
     expect($ssh->decision)->toBe(Decision::Block)
-        ->and($ssh->reason)->toBe('Password login would be turned off, but no login user has an SSH key in authorized_keys.');
+        ->and($ssh->reason)->toBe('Password login would be turned off, but no user who may log in over SSH has a key in authorized_keys.');
 
     // Password login already off: nothing changes for anyone, no lockout.
     $report['ssh']['effective']['passwordauthentication'] = 'no';
