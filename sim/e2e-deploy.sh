@@ -428,7 +428,7 @@ stage_redis() {
     while (( SECONDS < deadline )); do sx srv-app-2 systemctl is-active --quiet "$unit" && break; sleep 2; done
     if sx srv-app-2 systemctl is-active --quiet "$unit"; then ok "$unit running"; else bad "$unit not running: $(sx srv-app-2 journalctl -u "$unit" -n 20 --no-pager 2>&1 | tail -5)"; return 1; fi
     if [[ "$(sx srv-app-2 stat -c '%U %a' /var/lib/kiln-redis/cache | tr -d '\r')" == "kiln-redis-cache 700" ]]; then ok "data dir is the instance user's, 0700"; else bad "data dir: $(sx srv-app-2 stat -c '%U %a' /var/lib/kiln-redis/cache)"; fi
-    if [[ "$(sx srv-app-2 stat -c '%U:%G %a' /etc/redis/redis-kiln-cache.conf | tr -d '\r')" == "root:kiln-redis-cache 640" ]]; then ok "config 0640 root:kiln-redis-cache"; else bad "config: $(sx srv-app-2 stat -c '%U:%G %a' /etc/redis/redis-kiln-cache.conf)"; fi
+    if [[ "$(sx srv-app-2 stat -c '%U:%G %a' /etc/kiln-redis/cache.conf | tr -d '\r')" == "root:kiln-redis-cache 640" ]]; then ok "config 0640 root:kiln-redis-cache"; else bad "config: $(sx srv-app-2 stat -c '%U:%G %a' /etc/kiln-redis/cache.conf)"; fi
     if sx srv-app-2 bash -c "ps -eo user:32,args | grep -q '^kiln-redis-cache .*redis-server'"; then ok "redis-server runs as kiln-redis-cache"; else bad "instance user: $(sx srv-app-2 ps -eo user:32,args | grep redis-server)"; fi
     # The stock instance (no password) can't point itself at the instance's data.
     if sx srv-app-2 redis-cli -p 6379 CONFIG SET dir /var/lib/kiln-redis/cache 2>&1 | grep -q '^ERR'; then ok "stock 6379 cannot reach the instance's data"; else bad "stock 6379 could CONFIG SET dir into the instance"; fi
