@@ -171,7 +171,8 @@ it('stops an earlier agent, enrolls, installs and waits until the agent and the 
     [$code, $stdout, $stderr, $calls] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000000', 'DOWNLOAD' => '1']);
 
     expect($code)->toBe(0, $stderr)
-        ->and($stdout)->toEndWith("kiln: kiln-agent connected as 01JTESTAGENT0000000000000\n");
+        ->and($stdout)->toContain("kiln: kiln-agent connected as 01JTESTAGENT0000000000000\n")
+        ->and($stdout)->toEndWith("kiln: Kiln now checks the software already on this machine, then provisions it. Results: the server's page at https://panel.kiln.test/servers (Machine check).\n");
     $order = array_map(fn (string $call) => strpos($calls, $call), ['systemctl stop kiln-agent', 'kiln-agent enroll', 'kiln-agent install', 'kiln-agent check --wait 60s', 'systemctl is-active --quiet kiln-agent']);
     expect($order)->not->toContain(false)->and($order)->toBe(array_values(Arr::sort($order)));
 })->skip(PHP_OS_FAMILY === 'Windows');
@@ -184,7 +185,7 @@ it('skips the connection check for an agent build without it', function () {
 
     expect($code)->toBe(0, $stderr)
         ->and($stderr)->toContain('this kiln-agent build has no check command; not verifying the connection')
-        ->and($stdout)->toEndWith("kiln: kiln-agent installed\n")
+        ->and($stdout)->toContain("kiln: kiln-agent installed\n")
         ->and($calls)->not->toContain('kiln-agent check --wait');
 })->skip(PHP_OS_FAMILY === 'Windows');
 

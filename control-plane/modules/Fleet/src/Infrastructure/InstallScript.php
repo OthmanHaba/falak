@@ -170,6 +170,8 @@ until systemctl is-active --quiet kiln-agent; do
     sleep 1
 done
 say "\$CONNECTED"
+# The machine check (agents with provision.v2) runs from the panel now; this script never inspects the machine.
+say "Kiln now checks the software already on this machine, then provisions it. Results: the server's page at \$KILN_PANEL_URL/servers (Machine check)."
 
 SH;
     }
