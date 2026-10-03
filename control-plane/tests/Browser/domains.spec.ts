@@ -61,7 +61,7 @@ for (const theme of ['dark', 'light'] as const) {
         await expect(form).toBeVisible();
         const minio = form.getByRole('radiogroup', { name: 'minio domain' });
         await expect(minio.getByRole('radio', { name: /Generate \(sslip\.io\)/ })).toHaveAttribute('aria-checked', 'true');
-        await expect(form.getByText('minio-minio.49-12-40-11.sslip.io')).toBeVisible();
+        await expect(form.getByText('minio.49-12-40-11.sslip.io', { exact: true })).toBeVisible();
         await expect(form.getByText('console-minio.49-12-40-11.sslip.io')).toBeVisible();
         await expect(form.getByText(/No test domain is configured/)).toHaveCount(0);
         await form.getByRole('radiogroup', { name: 'console domain' }).scrollIntoViewIfNeeded();
