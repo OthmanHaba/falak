@@ -7,6 +7,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Kiln\Databases\Application\EngineInventory;
+use Kiln\Databases\Domain\Enums\Engine;
 use Kiln\Databases\Domain\Enums\ResourceStatus;
 use Kiln\Databases\Domain\Enums\StorageDriver;
 use Kiln\Databases\Domain\Models\Backup;
@@ -130,6 +131,7 @@ class UiDemoSeeder extends Seeder
         $created['stack'] = $this->composeSite($organization->id, $admin->id, $servers[0]);
 
         $this->database($organization->id, $servers[2]);
+        $this->cacheInstance($organization->id, $servers[0]);
         $this->variables($created['storefront'], ['APP_ENV' => 'production', 'APP_URL' => 'https://shop.acme.dev', 'DATABASE_URL' => '${{ storefront_db.DATABASE_URL }}', 'DB_HOST' => '${{ storefront_db.DB_HOST }}']);
         // Marketing calls the storefront API and posts leads into the automations stack (canvas reference edges).
         $this->variables($created['marketing'], ['NEXT_PUBLIC_SHOP_URL' => '${{ storefront.APP_URL }}', 'N8N_WEBHOOK' => '${{ automations.N8N_ENCRYPTION_KEY }}']);
@@ -170,6 +172,7 @@ class UiDemoSeeder extends Seeder
         $place('Automations', 0, 60);
         $place('Storefront', 720, 20);
         $place('storefront_db', 720, 240);
+        $place('sessions', 1140, 240);
         $place('Marketing', 1140, 20);
         app(GroupServices::class)($production, 'Commerce', [$services['Storefront']->id, $services['storefront_db']->id]);
 
@@ -372,6 +375,25 @@ YAML;
                 'finished_at' => now()->subDays($daysAgo)->addSeconds(9), 'created_at' => now()->subDays($daysAgo),
             ]);
         }
+
+        return $database;
+    }
+
+    /**
+     * A Redis instance on app-1 (its own process, port and `default` password; docs/plans/REDIS.md), next to Marketing
+     * on the canvas. app-1's agent advertises db.redis (InfrastructureDemoSeeder), so the canvas picker can create more.
+     */
+    private function cacheInstance(string $organizationId, Server $server): Database
+    {
+        $engine = app(EngineInventory::class)->sync($server->id, Engine::Redis) ?? throw new \RuntimeException('app-1 has no Redis');
+        $database = $engine->databases()->create([
+            'organization_id' => $organizationId, 'server_id' => $server->id, 'name' => 'sessions', 'port' => 6380,
+            'settings' => ['maxmemory_mb' => 256, 'eviction' => 'noeviction', 'persistence' => 'rdb'], 'status' => ResourceStatus::Active,
+        ]);
+        $user = $engine->users()->create([
+            'organization_id' => $organizationId, 'server_id' => $server->id, 'username' => 'sessions', 'password' => 'demoPasswordNotReal', 'host' => '%', 'status' => ResourceStatus::Active,
+        ]);
+        Grant::query()->create(['user_id' => $user->id, 'database_id' => $database->id, 'privileges' => ['ALL PRIVILEGES']]);
 
         return $database;
     }

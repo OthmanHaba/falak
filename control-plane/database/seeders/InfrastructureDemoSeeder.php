@@ -97,7 +97,11 @@ class InfrastructureDemoSeeder extends Seeder
                 'hostname' => $name,
                 'arch' => 'amd64',
                 'agent_version' => '1.4.2',
-                'facts' => ['kernel' => '6.8.0-45-generic', 'docker' => $name === 'worker-1' ? '27.3.1' : null, 'runtimes' => ['php' => ['8.3', '8.4']]],
+                'facts' => [
+                    'kernel' => '6.8.0-45-generic', 'docker' => $name === 'worker-1' ? '27.3.1' : null, 'runtimes' => ['php' => ['8.3', '8.4']],
+                    // app-1 runs Redis instances (UiDemoSeeder::cacheInstance); the canvas picker creates more there.
+                    ...($name === 'app-1' ? ['features' => ['db.redis']] : []),
+                ],
                 'metrics' => [
                     'at' => $lastHeartbeat->toIso8601String(),
                     'uptime_s' => 12 * 86400 + 3 * 3600,
