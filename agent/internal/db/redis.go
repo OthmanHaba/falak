@@ -26,13 +26,14 @@ import (
 // Every Kiln instance is its own process of the distribution's template unit: Debian and Ubuntu ship
 // redis-server@.service (Type=notify, ExecStart=/usr/bin/redis-server /etc/redis/redis-%i.conf --supervised systemd
 // --daemonize no, PIDFile=/run/redis-%i/redis-server.pid, RuntimeDirectory=redis-%i, ProtectSystem=strict) and, where
-// the archive has Valkey, valkey-server@.service (the same with /etc/valkey/valkey-%i.conf). An instance "cache" is the
-// unit redis-server@kiln-cache with /etc/redis/redis-kiln-cache.conf.
+// the archive has Valkey, valkey-server@.service (the same for Valkey). An instance "cache" is the unit
+// redis-server@kiln-cache; its drop-in points ExecStart at /etc/kiln-redis/cache.conf (Debian's /etc/redis is 0770
+// redis:redis: the instance user can't read it, and must not join the stock instance's group).
 //
 // Isolation from the stock instance (6379, no password, same packages) and from other instances:
 //   - each instance runs as its own system user (kiln-redis-<name>), set by a drop-in
 //     /etc/systemd/system/redis-server@kiln-<name>.service.d/50-kiln.conf that also resets ReadWritePaths= to the
-//     instance's data directory and its runtime directory only;
+//     instance's data directory and its runtime directory only, and points ExecStart at Kiln's config file;
 //   - its data lives in /var/lib/kiln-redis/<name> (0700, the instance user), outside the stock engine's directories,
 //     so neither the stock process (user redis, writable /var/lib/redis only) nor another instance can read or write it;
 //   - the config file holds the password and is 0640 root:<instance group>.
@@ -73,24 +74,22 @@ type kvEngine struct {
 	label   string
 	server  string // binary / unit prefix
 	cli     string
-	confDir string
+	confDir string // Kiln's own (0755 root): the distribution's /etc/redis is 0770 redis:redis
 }
 
 func kvEngineFor(name string) (kvEngine, error) {
 	switch name {
 	case "redis":
-		return kvEngine{"redis", "Redis", "redis-server", "redis-cli", "/etc/redis"}, nil
+		return kvEngine{"redis", "Redis", "redis-server", "redis-cli", "/etc/kiln-redis"}, nil
 	case "valkey":
-		return kvEngine{"valkey", "Valkey", "valkey-server", "valkey-cli", "/etc/valkey"}, nil
+		return kvEngine{"valkey", "Valkey", "valkey-server", "valkey-cli", "/etc/kiln-valkey"}, nil
 	}
 	return kvEngine{}, &commands.PayloadError{Err: fmt.Errorf("unknown key-value engine %q", name)}
 }
 
-func (k kvEngine) instance(name string) string { return "kiln-" + name }
-func (k kvEngine) unit(name string) string     { return k.server + "@" + k.instance(name) + ".service" }
-func (k kvEngine) confPath(name string) string {
-	return k.confDir + "/" + k.name + "-" + k.instance(name) + ".conf"
-}
+func (k kvEngine) instance(name string) string  { return "kiln-" + name }
+func (k kvEngine) unit(name string) string      { return k.server + "@" + k.instance(name) + ".service" }
+func (k kvEngine) confPath(name string) string  { return k.confDir + "/" + name + ".conf" }
 func (k kvEngine) dataRoot() string             { return "/var/lib/kiln-" + k.name }
 func (k kvEngine) dataPath(name string) string  { return k.dataRoot() + "/" + name }
 func (k kvEngine) dropInDir(name string) string { return "/etc/systemd/system/" + k.unit(name) + ".d" }
@@ -220,11 +219,15 @@ func renderRedisConf(k kvEngine, p RedisApplyPayload, bind []string, configName 
 	return b.String()
 }
 
-// renderRedisDropIn runs the instance as its own user, writing only its data and runtime directories.
+// renderRedisDropIn runs the instance as its own user, from Kiln's config path (the template's /etc/redis is 0770
+// redis:redis, which the instance user must not join), writing only its data and runtime directories. The template's
+// Type=notify, RuntimeDirectory, PIDFile and sandboxing (ProtectSystem=strict, …) stay.
 func renderRedisDropIn(k kvEngine, name string) string {
 	user := k.user(name)
 	return "# Managed by the Kiln agent (db.redis.apply): changes are overwritten.\n" +
 		"[Service]\n" +
+		"ExecStart=\n" +
+		"ExecStart=/usr/bin/" + k.server + " " + k.confPath(name) + " --supervised systemd --daemonize no\n" +
 		"User=" + user + "\n" +
 		"Group=" + user + "\n" +
 		"ReadWritePaths=\n" +
@@ -580,6 +583,13 @@ func exists(path string) bool {
 
 func (db *DB) writeRedisConf(k kvEngine, name, content string) error {
 	path := k.confPath(name)
+	if ok, err := db.realDir(k.confDir); err != nil {
+		return err
+	} else if !ok {
+		if err := db.d.FS.MkdirAll(k.confDir, 0o755); err != nil {
+			return fmt.Errorf("create %s: %w", k.confDir, err)
+		}
+	}
 	if err := db.notSymlink(path); err != nil {
 		return err
 	}

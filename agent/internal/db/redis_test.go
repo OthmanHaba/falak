@@ -87,10 +87,10 @@ func newRedisHost(t *testing.T, f *runnertest.Fake, root string) *fakeRedisHost 
 }
 
 func (h *fakeRedisHost) start(unit string) (runner.Result, error) {
-	// redis-server@kiln-cache.service → /etc/redis/redis-kiln-cache.conf
+	// redis-server@kiln-cache.service → /etc/kiln-redis/cache.conf
 	engine := strings.TrimSuffix(strings.SplitN(unit, "@", 2)[0], "-server")
 	inst := strings.TrimSuffix(strings.SplitN(unit, "@", 2)[1], ".service")
-	b, err := os.ReadFile(filepath.Join(h.root, "/etc", engine, engine+"-"+inst+".conf"))
+	b, err := os.ReadFile(filepath.Join(h.root, "/etc/kiln-"+engine, strings.TrimPrefix(inst, "kiln-")+".conf"))
 	if err != nil {
 		return runner.Result{ExitCode: 1, Stderr: []byte("no config")}, nil
 	}
@@ -273,7 +273,7 @@ func TestRedisApplyCreatesAnIsolatedInstance(t *testing.T) {
 		t.Fatal(f.Lines())
 	}
 	dropIn, _ := os.ReadFile(filepath.Join(root, "/etc/systemd/system/redis-server@kiln-cache.service.d/50-kiln.conf"))
-	for _, want := range []string{"User=kiln-redis-cache\n", "Group=kiln-redis-cache\n", "ReadWritePaths=\nReadWritePaths=/var/lib/kiln-redis/cache\nReadWritePaths=-/run/redis-kiln-cache\n"} {
+	for _, want := range []string{"ExecStart=\nExecStart=/usr/bin/redis-server /etc/kiln-redis/cache.conf --supervised systemd --daemonize no\n", "User=kiln-redis-cache\n", "Group=kiln-redis-cache\n", "ReadWritePaths=\nReadWritePaths=/var/lib/kiln-redis/cache\nReadWritePaths=-/run/redis-kiln-cache\n"} {
 		if !strings.Contains(string(dropIn), want) {
 			t.Fatalf("drop-in misses %q:\n%s", want, dropIn)
 		}
@@ -282,7 +282,7 @@ func TestRedisApplyCreatesAnIsolatedInstance(t *testing.T) {
 		t.Fatal(f.Lines())
 	}
 
-	conf := filepath.Join(root, "/etc/redis/redis-kiln-cache.conf")
+	conf := filepath.Join(root, "/etc/kiln-redis/cache.conf")
 	b, _ := os.ReadFile(conf)
 	state := readState(t, db, "redis", "cache")
 	for _, want := range []string{
@@ -337,7 +337,7 @@ func TestRedisApplyChangesMemoryEvictionAndPasswordLive(t *testing.T) {
 	if !slicesContain(h.redisCmds, cfg+" SET requirepass "+p.Password) || slicesContain(h.redisCmds, "CONFIG SET maxmemory 256mb") {
 		t.Fatal(h.redisCmds)
 	}
-	b, _ := os.ReadFile(filepath.Join(root, "/etc/redis/redis-kiln-cache.conf"))
+	b, _ := os.ReadFile(filepath.Join(root, "/etc/kiln-redis/cache.conf"))
 	if !strings.Contains(string(b), `requirepass "`+p.Password+`"`) || readState(t, db, "redis", "cache").Applied != hashOf(string(b)) {
 		t.Fatal("file / state do not match the live instance")
 	}
@@ -423,7 +423,7 @@ func TestRedisRestartsKeepTheDataAcrossPersistenceChanges(t *testing.T) {
 	if proc().loadedFrom != "dump.rdb" || !proc().appendonly || h.redisCmds[0] != "PING" || h.redisCmds[1] != "SAVE" {
 		t.Fatalf("%+v %v", proc(), h.redisCmds)
 	}
-	b, _ := os.ReadFile(filepath.Join(root, "/etc/redis/redis-kiln-cache.conf"))
+	b, _ := os.ReadFile(filepath.Join(root, "/etc/kiln-redis/cache.conf"))
 	if !strings.Contains(string(b), "appendonly yes\n") || !strings.Contains(string(b), "port 6381\n") {
 		t.Fatalf("final config:\n%s", b)
 	}
@@ -489,7 +489,7 @@ func TestRedisApplyValkeyPathsAndLongNames(t *testing.T) {
 	p := redisPayload()
 	p.Engine, p.Name, p.Bind = "valkey", "sessions", []string{"10.0.0.5", "127.0.0.1"}
 	applyOK(t, db, p)
-	b, err := os.ReadFile(filepath.Join(root, "/etc/valkey/valkey-kiln-sessions.conf"))
+	b, err := os.ReadFile(filepath.Join(root, "/etc/kiln-valkey/sessions.conf"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -615,7 +615,7 @@ func TestRedisRemove(t *testing.T) {
 	if !f.Ran("systemctl disable --now --quiet redis-server@kiln-cache.service") || !f.Ran("systemctl daemon-reload") || !f.Ran("userdel kiln-redis-cache") || h.users["kiln-redis-cache"] {
 		t.Fatal(f.Lines())
 	}
-	for _, p := range []string{"/etc/redis/redis-kiln-cache.conf", "/var/lib/kiln-redis/cache", "/etc/systemd/system/redis-server@kiln-cache.service.d", "/var/lib/kiln/db/redis/redis-cache.json"} {
+	for _, p := range []string{"/etc/kiln-redis/cache.conf", "/var/lib/kiln-redis/cache", "/etc/systemd/system/redis-server@kiln-cache.service.d", "/var/lib/kiln/db/redis/redis-cache.json"} {
 		if exists(filepath.Join(root, p)) {
 			t.Fatalf("%s still there", p)
 		}

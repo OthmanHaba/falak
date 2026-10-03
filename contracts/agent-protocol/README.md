@@ -68,11 +68,12 @@ never get `provision.inspect` and keep today's plan.
 
 ## Redis and Valkey instances (`db.redis`)
 `db.redis.apply` / `db.redis.remove` (`engine`: `redis` | `valkey`) manage one instance per Kiln service, run by the
-distribution's template unit: `redis-server@kiln-<name>` reads `/etc/redis/redis-kiln-<name>.conf`,
-`valkey-server@kiln-<name>` reads `/etc/valkey/valkey-kiln-<name>.conf` (Debian/Ubuntu ship both templates). Each
-instance runs as its own system user `kiln-<engine>-<name>` (a drop-in `/etc/systemd/system/<unit>.d/50-kiln.conf` sets
-`User=`/`Group=` and resets `ReadWritePaths=` to the instance's data directory `/var/lib/kiln-<engine>/<name>`, 0700,
-and its runtime directory), so the stock instance on 6379 and other instances can neither read nor write its data. The
+distribution's template unit `redis-server@kiln-<name>` / `valkey-server@kiln-<name>` (Debian/Ubuntu ship both
+templates: `Type=notify`, `RuntimeDirectory`, `ProtectSystem=strict`). Each instance runs as its own system user
+`kiln-<engine>-<name>`: a drop-in `/etc/systemd/system/<unit>.d/50-kiln.conf` sets `User=`/`Group=`, resets
+`ReadWritePaths=` to the instance's data directory `/var/lib/kiln-<engine>/<name>` (0700) and its runtime directory,
+and points `ExecStart` at `/etc/kiln-<engine>/<name>.conf` (the template's `/etc/redis` is 0770 `redis:redis`, which
+the instance user must not join), so the stock instance on 6379 and other instances can neither read nor write its data. The
 config holds `requirepass`, is 0640 `root:<instance group>`, renames `CONFIG` to a random name only the agent knows
 (root-only state in `/var/lib/kiln/db/redis/`), and disables `DEBUG`, `MODULE`, `SHUTDOWN`, `REPLICAOF`, `SLAVEOF`,
 `MIGRATE`, `ACL` and `MONITOR` (`SYNC`/`PSYNC`/`REPLCONF` stay for `redis-cli --rdb`, `EVAL`/`FUNCTION` for Laravel).
