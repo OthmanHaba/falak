@@ -68,7 +68,10 @@ function EngineSection({
     canInstall: boolean;
     busy: boolean;
 }) {
-    const [engine, setEngine] = useState(block.options[0]?.value ?? '');
+    const [picked, setEngine] = useState(block.options[0]?.value ?? '');
+    // The page stays mounted across Inertia reloads (preserveScroll): a choice the new options no longer offer falls
+    // back to the first one.
+    const engine = block.options.some((option) => option.value === picked) ? picked : (block.options[0]?.value ?? '');
     const [installing, setInstalling] = useState(false);
     const label = (value: string | null) => block.options.find((option) => option.value === value)?.label ?? value;
 

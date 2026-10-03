@@ -18,10 +18,9 @@ final class KeyValuePorts
     /**
      * Call inside a transaction that locked the server's engine rows, so two creations never pick the same port.
      *
-     * @throws ValidationException when every port is taken
-     */
-    /**
      * @param  list<int>  $avoid  ports the agent found taken
+     *
+     * @throws ValidationException when every port is taken
      */
     public function allocate(string $serverId, array $avoid = []): int
     {

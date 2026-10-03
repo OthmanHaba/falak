@@ -54,7 +54,7 @@ export function DatabaseSettingsTab({ ctx }: ServiceTabProps) {
                 eviction,
                 persistence,
             });
-            toast.success('Instance settings saved', 'The instance restarts with them.');
+            toast.success('Instance settings saved', 'Applied to the running instance, without a restart.');
             await reload();
         } catch (e) {
             setInstanceErrors(e instanceof HttpError ? e.errors : { form: errorMessage(e) });
