@@ -31,7 +31,8 @@ final class DeleteDatabase
             $database->server_id,
             $type,
             $payload,
-            (int) config('databases.timeouts.ddl', 300),
+            // db.redis.remove may wait for an apply of the instance (1 h timeout) before it runs.
+            (int) ($server->engine->isKeyValue() ? config('databases.timeouts.redis_apply', 3600) : config('databases.timeouts.ddl', 300)),
             "{$type}:{$database->id}:".Str::ulid(),
             'database',
         );

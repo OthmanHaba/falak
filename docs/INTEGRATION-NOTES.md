@@ -440,7 +440,8 @@ compose apps (phase 4) are still open.
   instance user could not open it).
   **Isolation:** every instance runs as its own system user `kiln-<engine>-<name>` (nologin, no home; past 32
   characters `kiln-rh-` / `kiln-vh-` + a hash no plain name can produce; the agent only adopts or deletes a user with
-  its GECOS, home `/nonexistent` and a nologin shell, and isolated sites never get `kiln*` unix users) set by a drop-in
+  its GECOS, home `/nonexistent` and a nologin shell; isolated sites created from v0.7.0 on get `s-kiln…` instead of a
+  `kiln…` unix user, existing sites keep theirs — the GECOS check is what protects them) set by a drop-in
   `/etc/systemd/system/<unit>.d/50-kiln.conf` that also resets `ReadWritePaths=` to the instance's data directory
   `/var/lib/kiln-<engine>/<name>` (0700, that user) and its runtime directory. The config (password) is 0640
   `root:<instance group>`. So the stock instance on 6379 (no password, `CONFIG`/`DEBUG` enabled, user `redis`, writable
@@ -456,7 +457,13 @@ compose apps (phase 4) are still open.
   (`INFO persistence`, `CONFIG GET save`; its config file when it is down), so an AOF in use is never moved. A new
   port, bind address, drop-in or set of disabled commands restarts the unit as stop → move aside → start, after
   setting save points live and `SAVE` (the stop then snapshots the rest), or for `none` switching snapshots and AOF off
-  first. Applies of one instance are serialized; `db.redis.apply` has its own 1 h timeout
+  first. An AOF whose first rewrite is still running, scheduled or failed (or, stopped, has no manifest) can't be
+  loaded: before such a restart AOF is switched off (ends the rewrite; Redis also refuses to stop while writing it),
+  the snapshot is saved, the partial `appendonlydir` moved aside and the start runs from `dump.rdb`. A wait that runs
+  out (rewrite, load) or a command with under 2 minutes left never restarts: the apply fails and the redelivery waits
+  again. With `none`, every live change moves snapshots aside (an app's `BGSAVE` too). Applies and removes of one
+  instance are serialized (the wait ends with the command; `db.redis.remove` has the same 1 h timeout), and every
+  local account change (site users and instance users) shares one lock; `db.redis.apply` has its own 1 h timeout
   (`databases.timeouts.redis_apply`) and the agent ends its waits before it; `TimeoutStartSec=20min` covers big loads. Persistence switches keep the data: AOF on = stale
   `appendonlydir`/`appendonly.aof` moved aside (`.kiln-<UTC time>`), `CONFIG SET appendonly yes`, wait for the
   rewrite (`INFO persistence`); AOF off = `SAVE` first; a restart into AOF starts without it from `dump.rdb` and
@@ -467,7 +474,8 @@ compose apps (phase 4) are still open.
   for `PING` to 15 minutes. Paths are `Lstat`-checked (no chmod / chown / write through symlinks).
   `KILN_REDIS_INTEGRATION=1 go test ./internal/db -run TestRedisIntegration` runs apply / remove against Redis 6.0,
   7.0, 8.0 and Valkey 7.2, 8.1, 9.0 in Docker (config accepted, renamed / disabled commands unknown to clients,
-  redacted errors, live and restart persistence switches keep every key, none through a restart starts empty).
+  redacted errors, live and restart persistence switches keep every key, none through a restart starts empty, and a
+  restart during a throttled first AOF rewrite keeps every key — without the fix Redis 6.0 / 7.0 came back empty).
 - **Gating.** `CreateKeyValueInstance` refuses servers whose agent lacks `db.redis` ("Update the agent on <server>
   first"). The command is new, so no `PayloadCompatibility` field: `bind` is in the schema from the start (phase 1 sends
   `["127.0.0.1"]`, the agent always includes it) so network access needs no new feature.

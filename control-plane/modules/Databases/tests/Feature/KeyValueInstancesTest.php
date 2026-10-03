@@ -190,6 +190,7 @@ it('deletes an instance with db.redis.remove, its default user with it', functio
     app(DatabaseProvisioner::class)->delete($data->id);
     $remove = $this->agents->last('db.redis.remove');
     expect($remove['payload'])->toBe(['engine' => 'valkey', 'name' => 'sessions'])->and(databases_schema_errors($remove))->toBe([]);
+    expect($remove['timeout'])->toBe(3600);
 
     $this->agents->succeed($remove['handle'], ['changed' => true]);
     expect(Database::query()->find($data->id))->toBeNull()
