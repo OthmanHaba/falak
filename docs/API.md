@@ -61,6 +61,9 @@ Token requests return the token's organization only; session requests every memb
 ## Servers
 
 ### `GET /api/v1/servers` · `GET /api/v1/servers/{server}` — `servers.view`
+`status`: `creating`, `provisioning` (machine check and plan), `needs_attention` (the machine check found a conflict;
+nothing was applied; `status_message` lists the conflicts), `active`, `error`, `deleting`. Only `active` servers are
+deploy targets.
 Addresses: `ipv4`, `private_ipv4` (the server's address on its private network, `null` when it has none; `kiln ssh
 --private` uses it) and `ssh_port`.
 `agent` (null until an agent enrolled) carries `status`, `last_heartbeat_at`, `version`, `available_version` (the
@@ -85,8 +88,44 @@ and service, as at creation). `202` `{"data": {"engine", "status": "installing",
 reports success the engine appears under Databases (and, on app servers, is reachable from the server's containers);
 when the plan fails it is taken back out of the stack (audit `server.database_engine_install_failed`). `422` for an
 unsupported engine, a server that already runs (or is installing) one, a server type without databases (only `app`
-servers may add one; `database` servers always have one), or a server that is not active. Rate limited to 10/min.
+servers may add one; `database` servers always have one), or a server that is not active, and when the server's
+machine check blocks that engine (another engine of the kind, or its port taken; the message names it). An engine
+the machine check found is adopted rather than installed again. Rate limited to 10/min.
 Panel: server Settings → Database engine.
+
+### Machine check
+Before provisioning (after enrollment, on Re-provision), servers whose agent has the `provision.v2` feature get a
+read-only machine check (`provision.inspect`): what is already installed and where it came from. Each component
+(`base`, `docker`, `database`, `cache`, `edge`, `php`, `node`, `ssh`, `firewall`, `swap`, `hostname`,
+`unattended_upgrades`, `fail2ban`) gets a decision: `install`, `adopt` (use what is there), `complete` (install only
+the missing pieces from the same source), `block` (a conflict Kiln won't resolve) or `skip` (found, not part of the
+stack). When something blocks, the server's `status` is `needs_attention` and nothing is applied. Rules:
+`docs/plans/MACHINE_CHECK.md`.
+
+### `GET /api/v1/servers/{server}/inspection` — `servers.view`
+The latest machine check and the decisions for the server's current stack. `404` when the server has none (agents
+without `provision.v2`, or not enrolled yet).
+```json
+{"data": {"supported": true, "status": "finished", "purpose": "provision", "checked_at": "2026-10-13T09:12:00+00:00",
+  "agent_version": "v0.6.0", "error": null, "command_id": "01k…", "blocking": true,
+  "summary": "Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Kiln's edge needs.",
+  "components": [{"component": "edge", "label": "Web server", "decision": "block", "decision_label": "Blocked",
+    "severity": "block", "reason": "Port 80 is in use by nginx, which Kiln's edge needs.",
+    "hint": "Stop and disable it (systemctl disable --now nginx.service) or move it to another port, then re-check.",
+    "found": [{"name": "nginx", "version": "1.24.0", "source": "Ubuntu archive"}], "install": [], "keep": [],
+    "service": null, "notes": [{"severity": "block", "message": "…", "hint": "…"}]}, …],
+  "report": { /* provision.inspect $defs.result */ }}}
+```
+`status` is `running` (a check is in progress; the previous result stays until it finishes), `finished` or `failed`
+(`error`). `components` sort blocks first, then warnings. `install` lists the packages provisioning installs for a
+component, `keep` the installed packages an adopted one is made of (verified, never installed).
+
+### `POST /api/v1/servers/{server}/inspection` — update permission on the server (`servers.manage`)
+Re-check: runs the machine check again; it never applies anything. `202` with the same shape (`status: running`,
+`purpose: check`, no `report`). On a `needs_attention` server the status message follows the result; provisioning
+continues from the panel (Provision) once nothing blocks, or with Re-provision. `422` when the agent lacks
+`provision.v2` or is not connected, a check is already running, or the server is being created or deleted. Rate
+limited to 10/min.
 
 ## Sites
 

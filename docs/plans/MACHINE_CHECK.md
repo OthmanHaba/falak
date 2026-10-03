@@ -89,8 +89,8 @@ enroll / Re-provision ──► agent has provision.v2? ──no──► provis
 ```
 
 - **Re-check** (`POST /servers/{server}/inspection`, API the same path) re-runs the inspection. It never applies.
-  On a `needs_attention` server the status message follows the new result ("Nothing blocks any more — provision
-  to continue" once clear).
+  On a `needs_attention` server the status message follows the new result ("Nothing blocks provisioning any
+  more. Provision to continue." once clear).
 - **Provision** (`POST /servers/{server}/provision`) applies the plan when the latest inspection has no blocks
   (`needs_attention` → `provisioning`). It is disabled in the UI and refused (422) while something blocks.
 - **Re-provision** (menu) and **Retry provisioning** run the whole flow again (inspect, then apply).
@@ -129,3 +129,8 @@ enroll / Re-provision ──► agent has provision.v2? ──no──► provis
 4. **Provision after Re-check** uses the stored report (the user just looked at it) rather than inspecting again.
 5. **Percona Server** and other MySQL forks are treated as "another engine" (block) rather than adopted.
 6. **Rootless Docker next to a system daemon** only warns; rootless-only blocks.
+7. **Later converges on an active server** (PHP versions, timezone) use the stored report, which predates Kiln's own
+   installs; that reproduces what the first plan did. A block found by a re-check on an active server is shown, but
+   does not change the server's status or stop converges (only a new database engine is refused).
+8. **The inspect result is not schema-validated before use**: Fleet only logs result/schema mismatches, and the
+   decision engine reads every section defensively (a missing section counts as "nothing found").
