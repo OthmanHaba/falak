@@ -24,7 +24,15 @@ export interface DatabasePanelData {
     restores: RestoreRow[];
     storage_providers: StorageOption[];
     restore_targets: { id: string; label: string }[];
-    options: { privileges: string[]; versions: string[]; compressions: string[] };
+    options: {
+        privileges: string[];
+        versions: string[];
+        compressions: string[];
+        /** Redis / Valkey */
+        evictions: string[];
+        persistences: string[];
+        max_memory_mb: number | null;
+    };
     can: { manage: boolean; reveal: boolean; restore: boolean; manage_storage: boolean };
 }
 

@@ -17,8 +17,19 @@ import { useMemo, useState, type FormEventHandler } from 'react';
 
 interface Props {
     server: ServerHeader & { timezone: string; ssh_port: number; provider_server_id: string | null; install_command: string | null };
-    database: { engine: string | null; installing: boolean; allowed: boolean; options: { value: string; label: string }[] };
+    database: EngineBlock;
+    /** Redis / Valkey (only what the server's OS can install). */
+    cache: EngineBlock;
+    /** Another engine install is running (one at a time per server). */
+    busy: boolean;
     can: { update: boolean; delete: boolean; regenerateInstallCommand: boolean };
+}
+
+interface EngineBlock {
+    engine: string | null;
+    installing: boolean;
+    allowed: boolean;
+    options: { value: string; label: string }[];
 }
 
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._-]*$/;
@@ -35,27 +46,80 @@ const SECTIONS = [
     { id: 'general', label: 'General' },
     { id: 'agent', label: 'Agent' },
     { id: 'database', label: 'Database engine' },
+    { id: 'cache', label: 'Redis / Valkey' },
     { id: 'danger', label: 'Danger zone' },
 ];
 
-export default function Settings({ server, database, can }: Props) {
-    const general = useForm({ name: server.name, timezone: server.timezone });
-    const [engine, setEngine] = useState(database.options[0]?.value ?? 'postgresql');
+/** Install an engine on a provisioned server (database or Redis / Valkey): the plan converges with it. */
+function EngineSection({
+    id,
+    title,
+    description,
+    block,
+    serverId,
+    canInstall,
+    busy,
+}: {
+    id: string;
+    title: string;
+    description: string;
+    block: EngineBlock;
+    serverId: string;
+    canInstall: boolean;
+    busy: boolean;
+}) {
+    const [engine, setEngine] = useState(block.options[0]?.value ?? '');
     const [installing, setInstalling] = useState(false);
+    const label = (value: string | null) => block.options.find((option) => option.value === value)?.label ?? value;
 
-    const installEngine = () =>
+    const install = () =>
         router.post(
-            route('servers.database-engine.store', server.id),
+            route('servers.database-engine.store', serverId),
             { engine },
             {
                 preserveScroll: true,
                 onStart: () => setInstalling(true),
                 onFinish: () => setInstalling(false),
                 onSuccess: () =>
-                    toast.success('Installing the database engine', 'The server applies its provisioning plan; this takes a minute or two.'),
+                    toast.success(`Installing ${label(engine)}`, 'The server applies its provisioning plan; this takes a minute or two.'),
                 onError: (errors) => toast.error('Could not install the engine', Object.values(errors)[0]),
             },
         );
+
+    return (
+        <Section
+            id={id}
+            title={title}
+            description={description}
+            footer={
+                canInstall &&
+                !block.engine &&
+                block.options.length > 0 && (
+                    <Button icon={<Database />} onClick={install} loading={installing} disabled={busy}>
+                        Install {label(engine) ?? 'engine'}
+                    </Button>
+                )
+            }
+        >
+            {block.engine ? (
+                <p className="text-fg-muted text-sm">
+                    {block.installing ? 'Installing ' : 'Runs '}
+                    <span className="text-fg font-medium">{label(block.engine)}</span>
+                    {block.installing ? '… it appears under Databases once the server reports it.' : '.'}
+                </p>
+            ) : block.options.length === 0 ? (
+                <p className="text-fg-muted text-sm">Nothing this server's OS can install.</p>
+            ) : (
+                <Field label="Engine">
+                    <Select value={engine} onValueChange={setEngine} options={block.options} aria-label={`${title} engine`} disabled={!canInstall} />
+                </Field>
+            )}
+        </Section>
+    );
+}
+
+export default function Settings({ server, database, cache, busy, can }: Props) {
+    const general = useForm({ name: server.name, timezone: server.timezone });
     const [confirmReinstall, setConfirmReinstall] = useState(false);
     const [regenerating, setRegenerating] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -113,18 +177,21 @@ export default function Settings({ server, database, can }: Props) {
             <div className="grid gap-8 md:grid-cols-[160px_minmax(0,1fr)] md:gap-10">
                 <nav aria-label="Settings sections" className="hidden md:block">
                     <ul className="sticky top-20 grid gap-0.5">
-                        {SECTIONS.filter((section) => (section.id !== 'danger' || can.delete) && (section.id !== 'database' || database.allowed)).map(
-                            (section) => (
-                                <li key={section.id}>
-                                    <a
-                                        href={`#${section.id}`}
-                                        className="text-fg-muted hover:bg-surface-2 hover:text-fg flex h-8 items-center rounded-md px-2 text-sm transition-colors duration-150"
-                                    >
-                                        {section.label}
-                                    </a>
-                                </li>
-                            ),
-                        )}
+                        {SECTIONS.filter(
+                            (section) =>
+                                (section.id !== 'danger' || can.delete) &&
+                                (section.id !== 'database' || database.allowed) &&
+                                (section.id !== 'cache' || cache.allowed),
+                        ).map((section) => (
+                            <li key={section.id}>
+                                <a
+                                    href={`#${section.id}`}
+                                    className="text-fg-muted hover:bg-surface-2 hover:text-fg flex h-8 items-center rounded-md px-2 text-sm transition-colors duration-150"
+                                >
+                                    {section.label}
+                                </a>
+                            </li>
+                        ))}
                     </ul>
                 </nav>
 
@@ -226,39 +293,27 @@ export default function Settings({ server, database, can }: Props) {
                     </Section>
 
                     {database.allowed && (
-                        <Section
+                        <EngineSection
                             id="database"
                             title="Database engine"
                             description="Databases for sites on this server run in its engine. It listens on localhost (and to this server's containers), never on the public network."
-                            footer={
-                                can.update &&
-                                !database.engine && (
-                                    <Button icon={<Database />} onClick={installEngine} loading={installing} disabled={server.status !== 'active'}>
-                                        Install {database.options.find((option) => option.value === engine)?.label ?? 'engine'}
-                                    </Button>
-                                )
-                            }
-                        >
-                            {database.engine ? (
-                                <p className="text-fg-muted text-sm">
-                                    {database.installing ? 'Installing ' : 'Runs '}
-                                    <span className="text-fg font-medium">
-                                        {database.options.find((option) => option.value === database.engine)?.label ?? database.engine}
-                                    </span>
-                                    {database.installing ? '… it appears under Databases once the server reports it.' : '.'}
-                                </p>
-                            ) : (
-                                <Field label="Engine">
-                                    <Select
-                                        value={engine}
-                                        onValueChange={setEngine}
-                                        options={database.options}
-                                        aria-label="Engine"
-                                        disabled={!can.update}
-                                    />
-                                </Field>
-                            )}
-                        </Section>
+                            block={database}
+                            serverId={server.id}
+                            canInstall={can.update}
+                            busy={busy || server.status !== 'active'}
+                        />
+                    )}
+
+                    {cache.allowed && (
+                        <EngineSection
+                            id="cache"
+                            title="Redis / Valkey"
+                            description="Each Redis or Valkey service you create runs as its own instance (own port and password) next to the stock one on 6379, which Kiln leaves alone."
+                            block={cache}
+                            serverId={server.id}
+                            canInstall={can.update}
+                            busy={busy || server.status !== 'active'}
+                        />
                     )}
 
                     {can.delete && (

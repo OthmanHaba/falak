@@ -1,6 +1,7 @@
 import { registerCommands, registerNavigation, registerServiceActions, registerServiceTabs, registerSettingsNav } from '@/lib/registry';
 import { Archive, Database, HardDrive, Plug } from 'lucide-react';
 import { lazy } from 'react';
+import { isKeyValue } from './types';
 
 // Panel code loads with the canvas, not with every page.
 const DatabaseOverviewTab = lazy(() => import('./panel/overview-tab').then((module) => ({ default: module.DatabaseOverviewTab })));
@@ -13,8 +14,25 @@ registerNavigation({ id: 'databases', title: 'Databases', url: '/databases', ico
 // Canvas service panel of a database (§5.4).
 registerServiceTabs(
     { id: 'overview', kinds: ['database'], title: 'Overview', order: 100, permission: 'databases.view', component: DatabaseOverviewTab },
-    { id: 'databases', kinds: ['database'], title: 'Databases & users', order: 200, permission: 'databases.view', component: DatabaseUsersTab },
-    { id: 'backups', kinds: ['database'], title: 'Backups', order: 300, permission: 'databases.view', component: DatabaseBackupsTab },
+    // Redis / Valkey instances have one `default` user (Overview) and no backups yet: those tabs are SQL only.
+    {
+        id: 'databases',
+        kinds: ['database'],
+        title: 'Databases & users',
+        order: 200,
+        permission: 'databases.view',
+        component: DatabaseUsersTab,
+        when: (service) => !isKeyValue(service.icon),
+    },
+    {
+        id: 'backups',
+        kinds: ['database'],
+        title: 'Backups',
+        order: 300,
+        permission: 'databases.view',
+        component: DatabaseBackupsTab,
+        when: (service) => !isKeyValue(service.icon),
+    },
     { id: 'settings', kinds: ['database'], title: 'Settings', order: 900, permission: 'databases.view', component: DatabaseSettingsTab },
 );
 
