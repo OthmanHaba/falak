@@ -501,8 +501,10 @@ compose apps (phase 4) are still open.
   got "unknown command" for `CONFIG` / `DEBUG` / `ACL`, live password / memory / rdb→aof changes did not restart
   (`NRestarts=0`), restarts into rdb and aof and a plain restart kept every key, and remove deleted unit, files and
   user while the stock instance kept answering.
-- **Not verified:** the sim E2E stage has not been run yet; Valkey under systemd (Docker-only); Playwright (needs the
-  sim). A real Ubuntu 24.04 (Redis, Valkey 7.2) and 26.04 (Valkey 9.0) VM is needed before
+  The same image with Ubuntu's valkey-server 7.2.13 (noble-updates) ran a Valkey instance with AOF as
+  `kiln-valkey-sessions` (and showed Valkey 7.2's `--version` banner is just "Server v=…", now parsed).
+- **Not verified:** the sim E2E stage has not been run yet; Playwright (needs the sim); Ubuntu 22.04's Redis 6.0 and
+  26.04 under systemd (Redis 6.0 and Valkey 9.0 only in the Docker integration test). A real Ubuntu 24.04 (Redis, Valkey 7.2) and 26.04 (Valkey 9.0) VM is needed before
   the rc.
 
 ## Not covered by the E2E yet (unit/feature tested only)

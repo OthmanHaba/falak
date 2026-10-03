@@ -84,7 +84,7 @@ for the server's architecture, or the agent already runs it.
 ### `POST /api/v1/servers/{server}/database-engine` — update permission on the server
 Adds a database engine to a provisioned server that has none: `{"engine": "postgresql|mysql|mariadb"}`, or Redis /
 Valkey to one without a cache engine: `{"engine": "redis|valkey"}` (server types with a cache component: `app`,
-`cache`; Valkey only where the OS packages it: Ubuntu 26.04, Debian 13). One engine install runs at a time. The engine
+`cache`; Valkey only where the OS packages it: Ubuntu 24.04 and 26.04, Debian 13). One engine install runs at a time. The engine
 joins the server's stack and the provisioning plan converges with it (`provision.apply`: the distribution's packages
 and service, as at creation). `202` `{"data": {"engine", "status": "installing", "command_id"}}`. Once the agent
 reports success the engine appears under Databases (and, on app servers, is reachable from the server's containers);
@@ -331,6 +331,15 @@ Only empty, non-default projects can be deleted (`422` otherwise).
 With `from_environment_id` (also needs `sites.create`), every site is copied through `Sites\Contracts\SiteFactory`
 (configuration, deploy script, toggles, shared paths, variables — no servers, push-to-deploy off) at the same canvas
 position and service name; databases are not copied. `201 {data, warnings[]}`.
+### `POST /api/v1/projects/{project}/environments/{environment}/services` — `projects.manage` + `databases.manage` / `sites.create`
+The canvas' Create. Databases: `{kind: "database", engine: postgresql|mysql|mariadb|redis|valkey, server_id, name,
+maxmemory_mb?, eviction?, persistence?}` (the last three for Redis / Valkey: memory limit in MB, default 128 capped at ¾
+of the server's RAM; `noeviction` (default), `allkeys-lru`, `allkeys-lfu`, `allkeys-random`, `volatile-lru`,
+`volatile-lfu`, `volatile-random`, `volatile-ttl`; `rdb` (default), `aof`, `none` — nothing on disk, every restart
+starts empty). The server must run the engine; a Redis / Valkey instance gets its own port (6380–6479) and password,
+and needs an agent with `db.redis` (`422` "Update the agent on <server> first" otherwise). Sites: the `POST /sites`
+body with `kind: "site"`. `201 {data: <canvas service>, warnings[]}`; the instance is `provisioning` until the agent
+confirms.
 ### `PATCH|DELETE /api/v1/projects/{project}/environments/{environment}` — `projects.manage`
 Rename (the slug follows). Only empty, non-production environments can be deleted.
 

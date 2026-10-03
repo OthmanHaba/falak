@@ -23,7 +23,7 @@ set +a
 EDGE="https://kiln.test:${SIM_EDGE_HTTPS_PORT}"
 CURL=(curl -sS --cacert .data/edge-root.crt --resolve "kiln.test:${SIM_EDGE_HTTPS_PORT}:127.0.0.1")
 STATE=.data/e2e.env
-ALL_STAGES="bootstrap servers sites deploy release rollback failure octane bun release_env waiting observability compose compose_redeploy compose_failure templates"
+ALL_STAGES="bootstrap servers sites deploy release rollback failure octane bun release_env redis waiting observability compose compose_redeploy compose_failure templates"
 STAGES="${ONLY:-${STAGES:-$ALL_STAGES}}"
 STAGES="${STAGES//,/ }"
 SKIP="${SKIP:-}"
@@ -399,6 +399,52 @@ stage_release_env() {
         if [[ $proc_rel == "$want" && $proc_dep == "$deployment" && $proc_greet == hello-from-env ]]; then ok "api.app process env: KILN_RELEASE_ID=$proc_rel KILN_DEPLOYMENT_ID=$proc_dep KILN_E2E_GREETING=$proc_greet"
         else bad "api.app process env: release='$proc_rel' deployment='$proc_dep' greeting='$proc_greet' (want $want / $deployment)"; fi
     done
+}
+
+# ---------------------------------------------------------------------------------------------- redis
+stage_redis() {
+    step "redis: install Redis on app-2, create an instance through the API, reference it from the Bun site, deploy, connect"
+    api POST "/servers/$SERVER_srv_app_2/database-engine" '{"engine":"redis"}'
+    if [[ $API_CODE == 202 ]]; then ok "Redis install requested on app-2"
+    elif [[ $API_CODE == 422 ]] && grep -q 'already runs' <<<"$API_BODY"; then ok "app-2 already runs Redis"
+    else bad "POST database-engine -> $API_CODE: $API_BODY"; return 1; fi
+
+    api GET /projects
+    local project; project=$(jq -r '[.data[] | select(.is_default)][0].id // empty' <<<"$API_BODY")
+    [[ -n $project ]] || { bad "no default project: $API_BODY"; return 1; }
+    # The engine registers once the plan converged; until then the server "does not run Redis".
+    local deadline=$((SECONDS + 600)) created=""
+    while (( SECONDS < deadline )); do
+        api POST "/projects/$project/environments/production/services" \
+            "{\"kind\":\"database\",\"engine\":\"redis\",\"server_id\":\"$SERVER_srv_app_2\",\"name\":\"cache\",\"maxmemory_mb\":64,\"eviction\":\"allkeys-lru\"}"
+        if [[ $API_CODE == 201 ]]; then created=new; break; fi
+        if [[ $API_CODE == 422 ]] && grep -qi 'already' <<<"$API_BODY"; then created=existing; break; fi
+        sleep 3
+    done
+    if [[ -n $created ]]; then ok "Redis service 'cache' ($created) on app-2"; else bad "create Redis service -> $API_CODE: $API_BODY"; return 1; fi
+
+    local unit=redis-server@kiln-cache.service
+    deadline=$((SECONDS + 180))
+    while (( SECONDS < deadline )); do sx srv-app-2 systemctl is-active --quiet "$unit" && break; sleep 2; done
+    if sx srv-app-2 systemctl is-active --quiet "$unit"; then ok "$unit running"; else bad "$unit not running: $(sx srv-app-2 journalctl -u "$unit" -n 20 --no-pager 2>&1 | tail -5)"; return 1; fi
+    if [[ "$(sx srv-app-2 stat -c '%U %a' /var/lib/kiln-redis/cache | tr -d '\r')" == "kiln-redis-cache 700" ]]; then ok "data dir is the instance user's, 0700"; else bad "data dir: $(sx srv-app-2 stat -c '%U %a' /var/lib/kiln-redis/cache)"; fi
+    if [[ "$(sx srv-app-2 stat -c '%U:%G %a' /etc/redis/redis-kiln-cache.conf | tr -d '\r')" == "root:kiln-redis-cache 640" ]]; then ok "config 0640 root:kiln-redis-cache"; else bad "config: $(sx srv-app-2 stat -c '%U:%G %a' /etc/redis/redis-kiln-cache.conf)"; fi
+    if sx srv-app-2 bash -c "ps -eo user:32,args | grep -q '^kiln-redis-cache .*redis-server'"; then ok "redis-server runs as kiln-redis-cache"; else bad "instance user: $(sx srv-app-2 ps -eo user:32,args | grep redis-server)"; fi
+    # The stock instance (no password) can't point itself at the instance's data.
+    if sx srv-app-2 redis-cli -p 6379 CONFIG SET dir /var/lib/kiln-redis/cache 2>&1 | grep -q '^ERR'; then ok "stock 6379 cannot reach the instance's data"; else bad "stock 6379 could CONFIG SET dir into the instance"; fi
+
+    api GET "/sites/$SITE_API/env"
+    local env; env=$(jq -r '.data.content' <<<"$API_BODY" | grep -vE '^REDIS_(URL|PORT|PASSWORD)=')
+    env+=$'\nREDIS_URL=${{ cache.REDIS_URL }}\nREDIS_PORT=${{ cache.REDIS_PORT }}\nREDIS_PASSWORD=${{ cache.REDIS_PASSWORD }}\n'
+    api PUT "/sites/$SITE_API/env" "$(jq -n --arg c "$env" '{content: $c}')"
+    if [[ $API_CODE == 200 ]]; then ok "Bun site references cache.REDIS_*"; else bad "PUT env -> $API_CODE: $API_BODY"; return 1; fi
+    deploy_and_wait "$SITE_API" "$(git_head bun-demo)" "bun deploy with Redis references" succeeded || return 1
+
+    local url port pw
+    url=$(proc_env srv-app-2 '[s]rc/index.ts' REDIS_URL); port=$(proc_env srv-app-2 '[s]rc/index.ts' REDIS_PORT); pw=$(proc_env srv-app-2 '[s]rc/index.ts' REDIS_PASSWORD)
+    if [[ $url =~ ^redis://default:[A-Za-z0-9]+@127\.0\.0\.1:${port}$ && $port -ge 6380 && $port -le 6479 ]]; then ok "process env: REDIS_URL redis://default:…@127.0.0.1:$port"; else bad "process env: REDIS_URL='${url//:*@/:…@}' REDIS_PORT='$port'"; return 1; fi
+    if [[ "$(sx srv-app-2 env REDISCLI_AUTH="$pw" redis-cli -p "$port" SET kiln-e2e ok | tr -d '\r')" == OK && "$(sx srv-app-2 env REDISCLI_AUTH="$pw" redis-cli -p "$port" GET kiln-e2e | tr -d '\r')" == ok ]]; then ok "the referenced password works on the instance"; else bad "SET/GET with the referenced password failed"; fi
+    if sx srv-app-2 env REDISCLI_AUTH="$pw" redis-cli -p "$port" CONFIG GET dir 2>&1 | grep -q '^ERR'; then ok "CONFIG is not available to clients"; else bad "CONFIG still works for clients"; fi
 }
 
 stage_waiting() {
