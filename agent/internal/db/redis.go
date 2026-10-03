@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kiln/agent/internal/commands"
@@ -56,7 +57,9 @@ var (
 	redisEviction = []string{"noeviction", "allkeys-lru", "allkeys-lfu", "allkeys-random", "volatile-lru", "volatile-lfu", "volatile-random", "volatile-ttl"}
 	redisPersist  = []string{"rdb", "aof", "none"}
 	// Disabled for clients. SYNC / PSYNC / REPLCONF stay (redis-cli --rdb backups), EVAL / FUNCTION stay (Laravel).
-	redisDisabled = []string{"DEBUG", "MODULE", "SHUTDOWN", "REPLICAOF", "SLAVEOF", "MIGRATE", "ACL", "MONITOR"}
+	// MONITOR, SLOWLOG (and Valkey's COMMANDLOG, see disabledCommands) would show the agent's commands: the secret
+	// CONFIG name and, on Redis 6.0, requirepass values.
+	redisDisabled = []string{"DEBUG", "MODULE", "SHUTDOWN", "REPLICAOF", "SLAVEOF", "MIGRATE", "ACL", "MONITOR", "SLOWLOG"}
 	redisSave     = "3600 1 300 100 60 10000"
 
 	// RedisReadyTimeout bounds the wait for PING after a (re)start; RedisLoadingTimeout while the instance answers
@@ -96,15 +99,19 @@ func (k kvEngine) dropInDir(name string) string { return "/etc/systemd/system/" 
 func (k kvEngine) dropIn(name string) string    { return k.dropInDir(name) + "/50-kiln.conf" }
 func (k kvEngine) runDir(name string) string    { return "/run/" + k.name + "-" + k.instance(name) }
 
-// user is the instance's system user: kiln-redis-<name>, shortened with a hash past the 32 characters useradd takes.
+// user is the instance's system user: kiln-redis-<name> / kiln-valkey-<name>, or past the 32 characters useradd takes
+// kiln-rh-<hash> / kiln-vh-<hash>, which no plain name can produce (plain ones always start kiln-redis- / kiln-valkey-).
 func (k kvEngine) user(name string) string {
 	u := "kiln-" + k.name + "-" + name
 	if len(u) <= 32 {
 		return u
 	}
-	sum := sha256.Sum256([]byte(name))
-	return "kiln-" + k.name + "-" + name[:32-len("kiln-"+k.name+"-")-9] + "-" + hex.EncodeToString(sum[:4])
+	sum := sha256.Sum256([]byte(k.name + "\x00" + name))
+	return "kiln-" + k.name[:1] + "h-" + hex.EncodeToString(sum[:12])
 }
+
+// gecos marks the users the agent creates; only such users are adopted or deleted.
+func (k kvEngine) gecos(name string) string { return "Kiln " + k.label + " instance " + name }
 
 // RedisApplyPayload is db.redis.apply.
 type RedisApplyPayload struct {
@@ -140,6 +147,7 @@ type redisState struct {
 	Bind        []string `json:"bind,omitempty"`
 	Persistence string   `json:"persistence,omitempty"`
 	Password    string   `json:"password,omitempty"`
+	Disabled    string   `json:"disabled,omitempty"` // commands renamed to "" in the running process
 }
 
 func (p *RedisApplyPayload) validate() ([]string, error) {
@@ -175,9 +183,19 @@ func (p *RedisApplyPayload) validate() ([]string, error) {
 	return bind, nil
 }
 
+// disabledCommands are the commands renamed to "" for this engine version (renaming one the server doesn't know is a
+// fatal config error): COMMANDLOG exists from Valkey 8.1.
+func disabledCommands(k kvEngine, version string) []string {
+	out := append([]string(nil), redisDisabled...)
+	if k.name == "valkey" && !versionLess(version, "8.1") {
+		out = append(out, "COMMANDLOG")
+	}
+	return out
+}
+
 // renderRedisConf renders the instance configuration (identical input → identical bytes). appendonly is the
-// persistence's unless overridden (the first start of a switch to AOF runs without it).
-func renderRedisConf(k kvEngine, p RedisApplyPayload, bind []string, configName string, appendonly bool) string {
+// persistence's unless overridden: the first start of a switch to AOF runs with snapshots and without AOF.
+func renderRedisConf(k kvEngine, p RedisApplyPayload, bind []string, configName string, appendonly bool, disabled []string) string {
 	var b strings.Builder
 	w := func(format string, a ...any) { fmt.Fprintf(&b, format+"\n", a...) }
 	w("# Managed by the Kiln agent (db.redis.apply): changes are overwritten.")
@@ -188,7 +206,7 @@ func renderRedisConf(k kvEngine, p RedisApplyPayload, bind []string, configName 
 	w("requirepass %q", p.Password)
 	w("maxmemory %dmb", p.MaxMemoryMB)
 	w("maxmemory-policy %s", p.Eviction)
-	if p.Persistence == "rdb" {
+	if p.Persistence == "rdb" || (p.Persistence == "aof" && !appendonly) {
 		// One pair per line: Redis 6.0 (Ubuntu 22.04) does not take several pairs on one save line.
 		for _, pair := range [][2]string{{"3600", "1"}, {"300", "100"}, {"60", "10000"}} {
 			w("save %s %s", pair[0], pair[1])
@@ -213,7 +231,7 @@ func renderRedisConf(k kvEngine, p RedisApplyPayload, bind []string, configName 
 	w("timeout 0")
 	w("databases 16")
 	w("rename-command CONFIG %s", configName)
-	for _, c := range redisDisabled {
+	for _, c := range disabled {
 		w(`rename-command %s ""`, c)
 	}
 	return b.String()
@@ -232,7 +250,9 @@ func renderRedisDropIn(k kvEngine, name string) string {
 		"Group=" + user + "\n" +
 		"ReadWritePaths=\n" +
 		"ReadWritePaths=" + k.dataPath(name) + "\n" +
-		"ReadWritePaths=-" + k.runDir(name) + "\n"
+		"ReadWritePaths=-" + k.runDir(name) + "\n" +
+		// Type=notify: start waits for READY, sent once the dataset is loaded (the default 90s is short for big ones).
+		"TimeoutStartSec=20min\n"
 }
 
 // parsedConf is what an instance config on disk says (an instance from before the state file, or lost state).
@@ -334,6 +354,7 @@ func hashOf(s string) string {
 
 // RedisApply converges one instance: user, drop-in, data directory, configuration, enabled and running unit with
 // the wanted settings (applied live when possible, else by a restart that keeps the data), PING with the password.
+// Applies and removes of one instance never run at the same time.
 func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.Stream) (any, error) {
 	k, err := kvEngineFor(p.Engine)
 	if err != nil {
@@ -346,7 +367,14 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 	if !db.kvInstalled(k) {
 		return nil, fmt.Errorf("%s is not installed on this server (no %s@.service unit); install it first", k.label, k.server)
 	}
+	unlock := lockInstance(k, p.Name)
+	defer unlock()
+
 	unit, confPath, user := k.unit(p.Name), k.confPath(p.Name), k.user(p.Name)
+	disabled, err := db.kvDisabled(ctx, k)
+	if err != nil {
+		return nil, err
+	}
 	state := db.loadRedisState(k, p.Name)
 	var onDisk []byte
 	if b, err := db.d.FS.ReadFile(confPath); err == nil {
@@ -361,13 +389,13 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 			return nil, err
 		}
 	}
-	desired := renderRedisConf(k, p, bind, state.ConfigName, p.Persistence == "aof")
+	desired := renderRedisConf(k, p, bind, state.ConfigName, p.Persistence == "aof", disabled)
 	dropIn := renderRedisDropIn(k, p.Name)
 	want := conn{db: db, k: k, port: p.Port, password: p.Password, config: state.ConfigName}
 	active := db.unitActive(ctx, unit)
 
 	// Already live: the marker is only written once the running process uses exactly this file.
-	if active && state.Applied == hashOf(desired) && string(onDisk) == desired && db.fileIs(k.dropIn(p.Name), dropIn) && want.ping(ctx) == nil {
+	if active && state.Applied == hashOf(desired) && string(onDisk) == desired && db.fileIs(k.dropIn(p.Name), dropIn) && want.pingWait(ctx) == nil {
 		return RedisApplyResult{Port: p.Port}, nil
 	}
 
@@ -387,26 +415,39 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 		}
 	}
 
-	// What the running process has: the state when known, else its config file (state lost or older agent).
-	prev := redisState{Port: state.Port, Bind: state.Bind, Persistence: state.Persistence, Password: state.Password, ConfigName: state.ConfigName}
+	// How to reach the running process: the state when known, else its config file (state lost or older agent).
+	prev := redisState{Port: state.Port, Bind: state.Bind, Password: state.Password, ConfigName: state.ConfigName, Disabled: state.Disabled}
 	if state.Applied == "" {
-		prev = redisState{Port: old.port, Bind: old.bind, Persistence: old.persistence, Password: old.password, ConfigName: old.configName}
+		prev = redisState{Port: old.port, Bind: old.bind, Password: old.password, ConfigName: old.configName}
 	}
 	var live *conn
 	if active && prev.Port > 0 {
 		for _, pw := range []string{p.Password, prev.Password} {
 			c := conn{db: db, k: k, port: prev.Port, password: pw, config: prev.ConfigName}
-			if pw != "" && c.ping(ctx) == nil {
+			if pw != "" && c.pingWait(ctx) == nil {
 				live = &c
 				break
 			}
 		}
 	}
-	final := redisState{ConfigName: state.ConfigName, Applied: hashOf(desired), Port: p.Port, Bind: bind, Persistence: p.Persistence, Password: p.Password}
+	// The persistence the data is in right now: asked from the running process (the state file lags behind a live
+	// switch that failed half way), else what its config file starts it with. Files are only moved aside from this.
+	from := old.persistence
+	if live != nil && prev.ConfigName != "" {
+		if mode, err := live.liveMode(ctx); err == nil {
+			from = mode
+		}
+	}
+	if from == "" {
+		from = state.Persistence
+	}
+	final := redisState{ConfigName: state.ConfigName, Applied: hashOf(desired), Port: p.Port, Bind: bind, Persistence: p.Persistence, Password: p.Password, Disabled: strings.Join(disabled, " ")}
 
 	// Live: memory, eviction, password and persistence change on the running process; the file then matches it.
-	if live != nil && !dropInChanged && prev.Port == p.Port && slices.Equal(prev.Bind, bind) && prev.ConfigName == state.ConfigName && prev.ConfigName != "" {
-		err := db.applyLive(ctx, *live, p, prev.Persistence)
+	// Renamed commands, port, bind and the drop-in only change with a restart.
+	if live != nil && !dropInChanged && prev.Port == p.Port && slices.Equal(prev.Bind, bind) && prev.ConfigName == state.ConfigName &&
+		prev.ConfigName != "" && prev.Disabled == final.Disabled {
+		err := db.applyLive(ctx, *live, p, from)
 		if err == nil {
 			if err := db.writeRedisConf(k, p.Name, desired); err != nil {
 				return nil, err
@@ -416,13 +457,22 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 			}
 			return RedisApplyResult{Changed: true, Port: p.Port}, nil
 		}
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("change %s: %w", unit, err)
+		}
 		db.d.Logger.Warn("live redis change failed, restarting the instance", "unit", unit, "err", err)
 		if st != nil {
 			fmt.Fprintf(st.Stdout(), "live change failed (%v); restarting %s\n", err, unit)
 		}
+		if live.password != p.Password && want.ping(ctx) == nil {
+			live.password = p.Password // the password change went through before the failure
+		}
+		if mode, err := live.liveMode(ctx); err == nil {
+			from = mode
+		}
 	}
 
-	// Restart: another port or bind, a new drop-in, the instance not running, or a live change that failed.
+	// Restart: another port, bind, drop-in or renamed commands, the instance not running, or a live change that failed.
 	if !active || prev.Port != p.Port {
 		if who, err := db.portUser(ctx, p.Port); err != nil {
 			return nil, err
@@ -430,18 +480,26 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 			return nil, fmt.Errorf("port %d is in use by %s", p.Port, who)
 		}
 	}
-	if live != nil && p.Persistence != "none" {
-		if _, err := live.do(ctx, "SAVE"); err != nil {
-			return nil, fmt.Errorf("save %s before restarting it: %w", unit, err)
+	if live != nil {
+		// The stop must not undo the change: with none it must not write a snapshot on its way down; otherwise it
+		// writes one (save points set live), so nothing written after the SAVE below is lost either.
+		if err := db.prepareStop(ctx, *live, from, p.Persistence); err != nil {
+			return nil, fmt.Errorf("prepare %s for its restart: %w", unit, err)
 		}
 	}
-	twoPhase := p.Persistence == "aof" && prev.Persistence != "aof"
-	if err := db.moveStale(k, p.Name, prev.Persistence, p.Persistence); err != nil {
+	if active {
+		if _, err := runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"stop", unit}}); err != nil {
+			return nil, fmt.Errorf("stop %s: %w%s", unit, err, db.journalTail(ctx, unit))
+		}
+	}
+	// Stopped: nothing writes the data directory now. Move aside what the next start must not load.
+	if err := db.moveStale(k, p.Name, from, p.Persistence); err != nil {
 		return nil, err
 	}
+	twoPhase := p.Persistence == "aof" && from != "aof"
 	first := desired
 	if twoPhase {
-		first = renderRedisConf(k, p, bind, state.ConfigName, false)
+		first = renderRedisConf(k, p, bind, state.ConfigName, false, disabled)
 	}
 	if err := db.writeRedisConf(k, p.Name, first); err != nil {
 		return nil, err
@@ -449,20 +507,16 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 	if _, err := runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"enable", "--quiet", unit}}); err != nil {
 		return nil, fmt.Errorf("enable %s: %w", unit, err)
 	}
-	if active {
-		_, err = runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"restart", unit}})
-	} else {
-		_, _ = db.d.Runner.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"reset-failed", unit}})
-		_, err = runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"start", unit}})
-	}
-	if err != nil {
+	_, _ = db.d.Runner.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"reset-failed", unit}})
+	if _, err := runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"start", unit}}); err != nil {
 		return nil, fmt.Errorf("start %s: %w%s", unit, err, db.journalTail(ctx, unit))
 	}
 	if err := want.ready(ctx); err != nil {
 		return nil, fmt.Errorf("%s did not answer PING on 127.0.0.1:%d: %w%s", unit, p.Port, err, db.journalTail(ctx, unit))
 	}
 	if twoPhase {
-		// Started from dump.rdb without AOF; AOF is switched on live (rewrite from memory), then the file says so.
+		// Started from dump.rdb with snapshots and without AOF; AOF is switched on live (rewrite from memory), then
+		// the file says so.
 		if err := db.setPersistence(ctx, want, p.Name, "rdb", "aof"); err != nil {
 			return nil, fmt.Errorf("enable AOF on %s: %w", unit, err)
 		}
@@ -477,6 +531,54 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 		fmt.Fprintf(st.Stdout(), "%s (user %s) listening on %d\n", unit, user, p.Port)
 	}
 	return RedisApplyResult{Changed: true, Restarted: true, Port: p.Port}, nil
+}
+
+// prepareStop makes the coming stop keep or drop the data as the new persistence wants.
+func (db *DB) prepareStop(ctx context.Context, c conn, from, to string) error {
+	set := func(key, value string) error {
+		_, err := c.do(ctx, c.config, "SET", key, value)
+		return err
+	}
+	if c.config == "" {
+		// An instance from before the renamed CONFIG: only a snapshot is possible.
+		if to != "none" {
+			_, err := c.do(ctx, "SAVE")
+			return err
+		}
+		return nil
+	}
+	if to == "none" {
+		if err := set("save", ""); err != nil {
+			return err
+		}
+		if from == "aof" {
+			return set("appendonly", "no")
+		}
+		return nil
+	}
+	if err := set("save", redisSave); err != nil {
+		return err
+	}
+	_, err := c.do(ctx, "SAVE")
+	return err
+}
+
+// kvDisabled lists the commands to disable for the installed server version (Valkey's COMMANDLOG from 8.1).
+func (db *DB) kvDisabled(ctx context.Context, k kvEngine) ([]string, error) {
+	if k.name != "valkey" {
+		return disabledCommands(k, ""), nil
+	}
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	res, err := db.d.Runner.Run(cctx, runner.Cmd{Name: db.d.FS.P("/usr/bin/" + k.server), Args: []string{"--version"}})
+	if err == nil && res.ExitCode == 0 {
+		for _, w := range strings.Fields(string(res.Stdout)) {
+			if v, ok := strings.CutPrefix(w, "v="); ok && v != "" {
+				return disabledCommands(k, v), nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("could not read the %s version (%s --version)", k.label, k.server)
 }
 
 // applyLive changes the running instance without a restart.
@@ -517,6 +619,7 @@ func (db *DB) setPersistence(ctx context.Context, c conn, name, from, to string)
 		}
 		return nil
 	case "aof":
+		// from is the live process' mode: a running AOF (aof_enabled:1, even mid-rewrite) is never moved.
 		if from != "aof" {
 			if err := db.moveAside(c.k, name, "appendonlydir", "appendonly.aof"); err != nil {
 				return err
@@ -524,9 +627,9 @@ func (db *DB) setPersistence(ctx context.Context, c conn, name, from, to string)
 			if err := set("appendonly", "yes"); err != nil {
 				return err
 			}
-			if err := c.waitAOFRewrite(ctx); err != nil {
-				return err
-			}
+		}
+		if err := c.waitAOFRewrite(ctx); err != nil {
+			return err
 		}
 		return set("save", "")
 	default: // none
@@ -669,19 +772,45 @@ func (db *DB) ensureDataDir(k kvEngine, name string) error {
 	return nil
 }
 
-func (db *DB) userExists(ctx context.Context, user string) bool {
-	res, err := db.d.Runner.Run(ctx, runner.Cmd{Name: "id", Args: []string{"-u", user}})
-	return err == nil && res.ExitCode == 0
+// usersMu serializes user creation and removal (useradd / userdel lock /etc/passwd; two at once fail).
+var usersMu sync.Mutex
+
+// instanceUser looks the user up: exists, and whether it is the one the agent created for this instance (Kiln's GECOS,
+// home /nonexistent, nologin shell). Any other user of that name (a site user, someone's account) is never adopted or
+// deleted.
+func (db *DB) instanceUser(ctx context.Context, k kvEngine, name string) (exists, ours bool, err error) {
+	res, err := db.d.Runner.Run(ctx, runner.Cmd{Name: "getent", Args: []string{"passwd", k.user(name)}})
+	if err != nil {
+		return false, false, err
+	}
+	if res.ExitCode == 2 {
+		return false, false, nil
+	}
+	if res.ExitCode != 0 {
+		return false, false, fmt.Errorf("getent passwd %s: exit status %d", k.user(name), res.ExitCode)
+	}
+	f := strings.Split(strings.TrimSpace(firstLine(string(res.Stdout))), ":")
+	ours = len(f) == 7 && f[0] == k.user(name) && f[4] == k.gecos(name) && f[5] == "/nonexistent" && (f[6] == "/usr/sbin/nologin" || f[6] == "/sbin/nologin")
+	return true, ours, nil
 }
 
 func (db *DB) ensureInstanceUser(ctx context.Context, k kvEngine, name string) error {
+	usersMu.Lock()
+	defer usersMu.Unlock()
 	user := k.user(name)
-	if db.userExists(ctx, user) {
+	exists, ours, err := db.instanceUser(ctx, k, name)
+	if err != nil {
+		return err
+	}
+	if exists {
+		if !ours {
+			return fmt.Errorf("a user named %s already exists and was not created by Kiln for this instance; rename the instance", user)
+		}
 		return nil
 	}
-	_, err := runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "useradd", Args: []string{
+	_, err = runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "useradd", Args: []string{
 		"--system", "--user-group", "--no-create-home", "--home-dir", "/nonexistent", "--shell", "/usr/sbin/nologin",
-		"--comment", "Kiln " + k.label + " instance " + name, user,
+		"--comment", k.gecos(name), user,
 	}})
 	if err != nil {
 		return fmt.Errorf("create user %s: %w", user, err)
@@ -698,6 +827,8 @@ func (db *DB) RedisRemove(ctx context.Context, p RedisRemovePayload, _ commands.
 	if !redisName.MatchString(p.Name) {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid name %q", p.Name)}
 	}
+	unlock := lockInstance(k, p.Name)
+	defer unlock()
 	unit := k.unit(p.Name)
 	changed := db.unitActive(ctx, unit)
 	// Not an error when the unit was never started or the template is gone with the package.
@@ -727,11 +858,17 @@ func (db *DB) RedisRemove(ctx context.Context, p RedisRemovePayload, _ commands.
 		}
 		changed = true
 	}
-	if user := k.user(p.Name); db.userExists(ctx, user) {
-		if _, err := runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "userdel", Args: []string{user}}); err != nil {
-			return nil, fmt.Errorf("remove user %s: %w", user, err)
+	usersMu.Lock()
+	defer usersMu.Unlock()
+	if exists, ours, err := db.instanceUser(ctx, k, p.Name); err != nil {
+		return nil, err
+	} else if exists && ours {
+		if _, err := runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "userdel", Args: []string{k.user(p.Name)}}); err != nil {
+			return nil, fmt.Errorf("remove user %s: %w", k.user(p.Name), err)
 		}
 		changed = true
+	} else if exists {
+		db.d.Logger.Warn("not removing a user Kiln did not create for this instance", "user", k.user(p.Name))
 	}
 	return ChangedResult{Changed: changed}, nil
 }
@@ -785,7 +922,8 @@ type conn struct {
 // replyError matches error replies redis-cli prints in raw mode (its output when stdout is not a terminal).
 var replyError = regexp.MustCompile(`^(ERR|WRONGPASS|NOAUTH|NOPERM|LOADING|MISCONF|BUSY|READONLY|OOM|EXECABORT|NOREPLICAS|MASTERDOWN|UNKILLABLE)\b`)
 
-// RedisError is an error reply of the instance.
+// RedisError is an error reply of the instance, redacted: the secret CONFIG name and every argument after the
+// command (and its subcommand) never reach errors, logs or the control plane.
 type RedisError struct{ Reply string }
 
 func (e *RedisError) Error() string { return e.Reply }
@@ -812,16 +950,89 @@ func (c conn) do(ctx context.Context, args ...string) (string, error) {
 	}
 	out := strings.TrimSpace(strings.ReplaceAll(string(res.Stdout), "\r", ""))
 	if first := firstLine(out); replyError.MatchString(first) {
-		return "", &RedisError{Reply: first}
+		return "", &RedisError{Reply: c.redact(first, args)}
 	}
 	if res.ExitCode != 0 {
 		msg := strings.TrimSpace(string(res.Stderr))
 		if msg == "" {
 			msg = fmt.Sprintf("%s exited with %d", c.k.cli, res.ExitCode)
 		}
-		return "", errors.New(firstLine(msg))
+		return "", errors.New(c.redact(firstLine(msg), args))
 	}
 	return out, nil
+}
+
+// redact removes the secret CONFIG name, the passwords and the command's arguments (values) from a message.
+func (c conn) redact(msg string, args []string) string {
+	var secrets []string
+	for i, a := range args {
+		if i >= 2 && a != "" {
+			secrets = append(secrets, a)
+		}
+	}
+	secrets = append(secrets, c.password)
+	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
+	for _, s := range secrets {
+		if len(s) >= 3 {
+			msg = strings.ReplaceAll(msg, s, "***")
+		}
+	}
+	if c.config != "" {
+		msg = strings.ReplaceAll(msg, c.config, "CONFIG")
+	}
+	return msg
+}
+
+// lockInstance serializes applies and removes of one instance (the dispatcher runs commands concurrently).
+func lockInstance(k kvEngine, name string) func() {
+	m, _ := instanceLocks.LoadOrStore(k.name+"/"+name, &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+var instanceLocks sync.Map
+
+// within bounds a wait by the command's deadline (a little before it, so the wait fails with its own reason).
+func within(ctx context.Context, d time.Duration) time.Time {
+	limit := redisNow().Add(d)
+	if dl, ok := ctx.Deadline(); ok {
+		if dl = dl.Add(-5 * time.Second); dl.Before(limit) {
+			return dl
+		}
+	}
+	return limit
+}
+
+// pingWait pings; an instance answering LOADING is waited for (ready) instead of being taken as unreachable.
+func (c conn) pingWait(ctx context.Context) error {
+	err := c.ping(ctx)
+	var re *RedisError
+	if errors.As(err, &re) && strings.HasPrefix(re.Reply, "LOADING") {
+		return c.ready(ctx)
+	}
+	return err
+}
+
+// liveMode is the persistence the running process actually has: aof when AOF is on (or its rewrite is running), else
+// rdb when it has save points, else none.
+func (c conn) liveMode(ctx context.Context) (string, error) {
+	m, err := c.info(ctx, "persistence")
+	if err != nil {
+		return "", err
+	}
+	if m["aof_enabled"] == "1" {
+		return "aof", nil
+	}
+	out, err := c.do(ctx, c.config, "GET", "save")
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Split(out, "\n")
+	if len(lines) < 2 || strings.TrimSpace(lines[1]) == "" {
+		return "none", nil
+	}
+	return "rdb", nil
 }
 
 func (c conn) ping(ctx context.Context) error {
@@ -841,8 +1052,7 @@ func (c conn) ping(ctx context.Context) error {
 // ready waits until the instance answers PING with the password. LOADING (a dataset being read back) counts as
 // progress and extends the wait up to RedisLoadingTimeout.
 func (c conn) ready(ctx context.Context) error {
-	start := redisNow()
-	deadline := start.Add(RedisReadyTimeout)
+	deadline := within(ctx, RedisReadyTimeout)
 	for {
 		err := c.ping(ctx)
 		if err == nil {
@@ -850,7 +1060,7 @@ func (c conn) ready(ctx context.Context) error {
 		}
 		var re *RedisError
 		if errors.As(err, &re) && strings.HasPrefix(re.Reply, "LOADING") {
-			deadline = start.Add(RedisLoadingTimeout)
+			deadline = within(ctx, RedisLoadingTimeout)
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -882,7 +1092,7 @@ func (c conn) info(ctx context.Context, section string) (map[string]string, erro
 
 // waitAOFRewrite waits for the rewrite CONFIG SET appendonly yes started (the AOF then holds the dataset).
 func (c conn) waitAOFRewrite(ctx context.Context) error {
-	deadline := redisNow().Add(RedisAOFTimeout)
+	deadline := within(ctx, RedisAOFTimeout)
 	for {
 		m, err := c.info(ctx, "persistence")
 		if err != nil {

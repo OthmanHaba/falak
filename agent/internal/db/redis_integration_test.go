@@ -26,6 +26,7 @@ var redisIntegrationImages = []struct{ engine, image string }{
 	{"redis", "redis:6.0"},
 	{"redis", "redis:7.0"},
 	{"redis", "redis:8.0"},
+	{"valkey", "valkey/valkey:7.2"},
 	{"valkey", "valkey/valkey:8.1"},
 	{"valkey", "valkey/valkey:9.0"},
 }
@@ -59,9 +60,11 @@ func (d *dockerRunner) Run(ctx context.Context, c runner.Cmd) (runner.Result, er
 			return runner.Result{ExitCode: 3}, nil
 		}
 		return runner.Result{}, nil
+	case c.Name == "systemctl" && c.Args[0] == "stop":
+		return d.docker(ctx, nil, "stop", "-t", "30", d.container)
 	case c.Name == "systemctl" && (c.Args[0] == "start" || c.Args[0] == "restart"):
 		if res, _ := d.docker(ctx, nil, "inspect", d.container); res.ExitCode == 0 {
-			return d.docker(ctx, nil, "restart", "-t", "10", d.container)
+			return d.docker(ctx, nil, c.Args[0], d.container)
 		}
 		conf := d.k.confPath(d.name)
 		return d.docker(ctx, nil, "run", "-d", "--name", d.container, "--user", "0:0", "--entrypoint", d.k.server,
@@ -78,8 +81,10 @@ func (d *dockerRunner) Run(ctx context.Context, c runner.Cmd) (runner.Result, er
 			args = append(args, "-e", e)
 		}
 		return d.docker(ctx, c.Stdin, append(append(args, d.container, d.k.cli), c.Args...)...)
-	case c.Name == "id":
-		return runner.Result{ExitCode: 1}, nil // the user is "created" every time: useradd is a no-op here
+	case strings.HasSuffix(c.Name, "/usr/bin/"+d.k.server):
+		return d.docker(ctx, nil, "run", "--rm", "--entrypoint", d.k.server, d.image, "--version")
+	case c.Name == "getent":
+		return runner.Result{ExitCode: 2}, nil // the user is "created" every time: useradd is a no-op here
 	}
 	return runner.Result{}, nil // systemctl daemon-reload / enable / reset-failed, useradd, userdel, ss
 }
@@ -138,10 +143,15 @@ func TestRedisIntegration(t *testing.T) {
 			if out, err := c().do(ctx, c().config, "GET", "maxmemory"); err != nil || !strings.Contains(out, "67108864") {
 				t.Fatalf("secret CONFIG GET: %q %v", out, err)
 			}
-			for _, cmd := range [][]string{{"CONFIG", "GET", "dir"}, {"DEBUG", "SLEEP", "0"}, {"ACL", "WHOAMI"}, {"REPLICAOF", "NO", "ONE"}, {"MODULE", "LIST"}} {
-				if _, err := c().do(ctx, cmd...); err == nil {
-					t.Fatalf("%s still works", cmd[0])
+			for _, cmd := range [][]string{{"CONFIG", "GET", "dir"}, {"DEBUG", "SLEEP", "0"}, {"ACL", "WHOAMI"}, {"REPLICAOF", "NO", "ONE"},
+				{"SLAVEOF", "NO", "ONE"}, {"MODULE", "LIST"}, {"SLOWLOG", "GET"}, {"MIGRATE"}, {"COMMANDLOG", "GET", "10", "slow"}} {
+				if _, err := c().do(ctx, cmd...); err == nil || !strings.Contains(err.Error(), "unknown command") {
+					t.Fatalf("%s still works: %v", cmd[0], err)
 				}
+			}
+			// The agent's commands never show up for clients (SLOWLOG / COMMANDLOG gone), and errors are redacted.
+			if _, err := c().do(ctx, c().config, "SET", "no-such-option", "secret-value"); err == nil || strings.Contains(err.Error(), c().config) || strings.Contains(err.Error(), "secret-value") {
+				t.Fatalf("error not redacted: %v", err)
 			}
 
 			// Live: memory, eviction, password; no restart, data still there.
@@ -192,6 +202,24 @@ func TestRedisIntegration(t *testing.T) {
 			}
 			if get("r2") != "aof" || get("a") != "1" {
 				t.Fatal("lost data across a restart with AOF")
+			}
+
+			// none through a restart: nothing comes back, even though the old process had save points or AOF.
+			p.Port++
+			p.Persistence = "none"
+			if r := apply(p); !r.Restarted {
+				t.Fatal(r)
+			}
+			if n, err := c().do(ctx, "DBSIZE"); err != nil || n != "0" {
+				t.Fatalf("none after a restart has %s keys (%v)", n, err)
+			}
+			// And back to snapshots through a restart: written keys survive the next one.
+			set("z", "1")
+			p.Port++
+			p.Persistence = "rdb"
+			apply(p)
+			if get("z") != "1" {
+				t.Fatal("none → rdb through a restart lost the keys written in none")
 			}
 
 			if _, err := db.RedisRemove(ctx, RedisRemovePayload{Engine: img.engine, Name: "cache"}, st); err != nil {

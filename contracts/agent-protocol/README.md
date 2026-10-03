@@ -70,19 +70,27 @@ never get `provision.inspect` and keep today's plan.
 `db.redis.apply` / `db.redis.remove` (`engine`: `redis` | `valkey`) manage one instance per Kiln service, run by the
 distribution's template unit `redis-server@kiln-<name>` / `valkey-server@kiln-<name>` (Debian/Ubuntu ship both
 templates: `Type=notify`, `RuntimeDirectory`, `ProtectSystem=strict`). Each instance runs as its own system user
-`kiln-<engine>-<name>`: a drop-in `/etc/systemd/system/<unit>.d/50-kiln.conf` sets `User=`/`Group=`, resets
+`kiln-<engine>-<name>` (past 32 characters `kiln-rh-` / `kiln-vh-` + a hash, which no plain name produces; the agent
+only adopts or deletes a user carrying its GECOS `Kiln <Engine> instance <name>`, home `/nonexistent` and a nologin
+shell, and refuses to use any other user of that name): a drop-in `/etc/systemd/system/<unit>.d/50-kiln.conf` sets `User=`/`Group=`, resets
 `ReadWritePaths=` to the instance's data directory `/var/lib/kiln-<engine>/<name>` (0700) and its runtime directory,
-and points `ExecStart` at `/etc/kiln-<engine>/<name>.conf` (the template's `/etc/redis` is 0770 `redis:redis`, which
+sets `TimeoutStartSec=20min` (`Type=notify` waits for the dataset to load) and points `ExecStart` at `/etc/kiln-<engine>/<name>.conf` (the template's `/etc/redis` is 0770 `redis:redis`, which
 the instance user must not join), so the stock instance on 6379 and other instances can neither read nor write its data. The
 config holds `requirepass`, is 0640 `root:<instance group>`, renames `CONFIG` to a random name only the agent knows
 (root-only state in `/var/lib/kiln/db/redis/`), and disables `DEBUG`, `MODULE`, `SHUTDOWN`, `REPLICAOF`, `SLAVEOF`,
-`MIGRATE`, `ACL` and `MONITOR` (`SYNC`/`PSYNC`/`REPLCONF` stay for `redis-cli --rdb`, `EVAL`/`FUNCTION` for Laravel).
+`MIGRATE`, `ACL`, `MONITOR`, `SLOWLOG` and, on Valkey 8.1+, `COMMANDLOG` (the last three would show the agent's commands;
+the version comes from `<engine>-server --version`) (`SYNC`/`PSYNC`/`REPLCONF` stay for `redis-cli --rdb`, `EVAL`/`FUNCTION` for Laravel).
 redis-cli gets every command on stdin and the password in `REDISCLI_AUTH`: neither reaches a command line.
 
 Memory limit, eviction, password and persistence change on the running instance (renamed `CONFIG SET`; AOF on: the
-rewrite is awaited through `INFO persistence`; AOF off or rdb from none: `SAVE` first). A new port, bind address or
-drop-in restarts the instance after `SAVE` (unless persistence is `none`); a restart that turns AOF on starts from
-`dump.rdb` and switches AOF on live, and a stale AOF is moved aside (`appendonlydir.kiln-<UTC time>`) first. With
+rewrite is awaited through `INFO persistence`; AOF off or rdb from none: `SAVE` first). The current mode always comes
+from the running process (`INFO persistence`, `CONFIG GET save`; the config file when it is down), never from the
+agent's state, so an AOF the process uses is never moved. A new port, bind address, drop-in or set of disabled
+commands restarts the instance: save points are set live and `SAVE`d (with `none`: snapshots and AOF off) so the stop
+keeps (or drops) the data as wanted, then stop, move aside what the next start must not load
+(`appendonlydir.kiln-<UTC time>`), start; a restart that turns AOF on starts from `dump.rdb` with snapshots and switches
+AOF on live. Applies and removes of one instance are serialized, user creation and removal globally. Errors never
+carry the secret `CONFIG` name, passwords or command arguments. With
 `none` the data is in memory only: files from earlier modes are moved aside and every restart starts empty. The agent
 records what the running process uses only after a successful (re)start and `PING`, so a redelivered apply after a
 failure converges. Apply refuses a new port another process listens on (`port 6381 is in use by <process>`) and

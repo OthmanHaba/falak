@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,6 +32,9 @@ type fakeProc struct {
 	dir        string // host path of the data dir
 	loadedFrom string // dump.rdb | aof | empty
 	loading    int    // PINGs answered LOADING first
+	rewriting  bool   // an AOF rewrite is running
+	startSave  string // save points it started with
+	disabled   []string
 }
 
 // fakeRedisHost fakes systemd, useradd/id and redis-cli on a temp root. Instances behave as their config says:
@@ -38,10 +43,13 @@ type fakeRedisHost struct {
 	t            *testing.T
 	root         string
 	procs        map[string]*fakeProc // by unit
-	users        map[string]bool
+	users        map[string]string    // name → passwd line
 	ssOut        string
-	failRestarts int
+	failStarts   int
 	loading      int
+	stuckRewrite bool   // CONFIG SET appendonly yes starts a rewrite that never finishes
+	onInfo       func() // called on INFO (e.g. cancel the command's context)
+	failSet      string // CONFIG SET <key> fails with an error reply echoing its arguments
 	redisCmds    []string
 }
 
@@ -52,7 +60,7 @@ func newRedisHost(t *testing.T, f *runnertest.Fake, root string) *fakeRedisHost 
 		os.MkdirAll(filepath.Dir(p), 0o755)
 		os.WriteFile(p, []byte("[Service]\n"), 0o644)
 	}
-	h := &fakeRedisHost{t: t, root: root, procs: map[string]*fakeProc{}, users: map[string]bool{}}
+	h := &fakeRedisHost{t: t, root: root, procs: map[string]*fakeProc{}, users: map[string]string{}}
 	last := func(c runnertest.Call) string { return c.Args[len(c.Args)-1] }
 	f.OnFunc("systemctl is-active", func(c runnertest.Call) (runner.Result, error) {
 		if h.procs[last(c)] != nil {
@@ -60,25 +68,42 @@ func newRedisHost(t *testing.T, f *runnertest.Fake, root string) *fakeRedisHost 
 		}
 		return runner.Result{ExitCode: 3}, nil
 	})
-	f.OnFunc("systemctl start", func(c runnertest.Call) (runner.Result, error) { return h.start(last(c)) })
-	f.OnFunc("systemctl restart", func(c runnertest.Call) (runner.Result, error) {
-		if h.failRestarts > 0 {
-			h.failRestarts--
+	f.OnFunc("systemctl start", func(c runnertest.Call) (runner.Result, error) {
+		if h.failStarts > 0 {
+			h.failStarts--
 			return runner.Result{ExitCode: 1, Stderr: []byte("Job for unit failed")}, nil
 		}
 		return h.start(last(c))
 	})
+	f.OnFunc("systemctl stop", func(c runnertest.Call) (runner.Result, error) {
+		// Like redis-server on SIGTERM: a final snapshot when it has save points.
+		if p := h.procs[last(c)]; p != nil && p.save != "" {
+			os.WriteFile(filepath.Join(p.dir, "dump.rdb"), []byte("REDIS0009 at stop"), 0o600)
+		}
+		delete(h.procs, last(c))
+		return runner.Result{}, nil
+	})
+	f.On(filepath.Join(root, "/usr/bin/valkey-server")+" --version", runner.Result{Stdout: []byte("Valkey server v=8.1.1 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=1\n")})
 	f.OnFunc("systemctl disable --now", func(c runnertest.Call) (runner.Result, error) {
 		delete(h.procs, last(c))
 		return runner.Result{}, nil
 	})
-	f.OnFunc("id -u", func(c runnertest.Call) (runner.Result, error) {
-		if h.users[last(c)] {
-			return runner.Result{Stdout: []byte("998\n")}, nil
+	f.OnFunc("getent passwd", func(c runnertest.Call) (runner.Result, error) {
+		if line, ok := h.users[last(c)]; ok {
+			return runner.Result{Stdout: []byte(line + "\n")}, nil
 		}
-		return runner.Result{ExitCode: 1}, nil
+		return runner.Result{ExitCode: 2}, nil
 	})
-	f.OnFunc("useradd", func(c runnertest.Call) (runner.Result, error) { h.users[last(c)] = true; return runner.Result{}, nil })
+	f.OnFunc("useradd", func(c runnertest.Call) (runner.Result, error) {
+		comment := ""
+		for i, a := range c.Args {
+			if a == "--comment" {
+				comment = c.Args[i+1]
+			}
+		}
+		h.users[last(c)] = last(c) + ":x:998:998:" + comment + ":/nonexistent:/usr/sbin/nologin"
+		return runner.Result{}, nil
+	})
 	f.OnFunc("userdel", func(c runnertest.Call) (runner.Result, error) { delete(h.users, last(c)); return runner.Result{}, nil })
 	f.OnFunc("ss ", func(runnertest.Call) (runner.Result, error) { return runner.Result{Stdout: []byte(h.ssOut)}, nil })
 	f.OnFunc("redis-cli", h.cli)
@@ -95,6 +120,11 @@ func (h *fakeRedisHost) start(unit string) (runner.Result, error) {
 		return runner.Result{ExitCode: 1, Stderr: []byte("no config")}, nil
 	}
 	p := &fakeProc{unit: unit, loading: h.loading}
+	for _, line := range strings.Split(string(b), "\n") {
+		if f := strings.Fields(line); len(f) == 3 && f[0] == "rename-command" && f[2] == `""` {
+			p.disabled = append(p.disabled, f[1])
+		}
+	}
 	var saves []string
 	for _, line := range strings.Split(string(b), "\n") {
 		f := strings.Fields(line)
@@ -125,6 +155,7 @@ func (h *fakeRedisHost) start(unit string) (runner.Result, error) {
 		}
 	}
 	p.save = strings.Join(saves, " ")
+	p.startSave = p.save
 	switch {
 	case p.appendonly && exists(filepath.Join(p.dir, "appendonlydir")):
 		p.loadedFrom = "aof"
@@ -167,8 +198,15 @@ func (h *fakeRedisHost) cli(c runnertest.Call) (runner.Result, error) {
 		os.WriteFile(filepath.Join(p.dir, "dump.rdb"), []byte("REDIS0009"), 0o600)
 		return out("OK")
 	case args[0] == "INFO":
-		enabled := map[bool]string{true: "1", false: "0"}[p.appendonly]
-		return out("# Persistence\r\naof_enabled:" + enabled + "\r\naof_rewrite_in_progress:0\r\naof_rewrite_scheduled:0\r\naof_last_bgrewrite_status:ok\r")
+		if h.onInfo != nil {
+			h.onInfo()
+		}
+		b := map[bool]string{true: "1", false: "0"}
+		return out("# Persistence\r\naof_enabled:" + b[p.appendonly] + "\r\naof_rewrite_in_progress:" + b[p.rewriting] + "\r\naof_rewrite_scheduled:0\r\naof_last_bgrewrite_status:ok\r")
+	case args[0] == p.config && len(args) == 3 && args[1] == "GET" && args[2] == "save":
+		return out("save\n" + p.save)
+	case args[0] == p.config && len(args) == 4 && args[1] == "SET" && args[2] == h.failSet:
+		return out(fmt.Sprintf("ERR unknown command '%s', with args beginning with: 'SET' '%s' '%s'", args[0], args[2], args[3]))
 	case args[0] == p.config && len(args) == 4 && args[1] == "SET":
 		switch args[2] {
 		case "requirepass":
@@ -181,6 +219,7 @@ func (h *fakeRedisHost) cli(c runnertest.Call) (runner.Result, error) {
 			p.save = args[3]
 		case "appendonly":
 			p.appendonly = args[3] == "yes"
+			p.rewriting = p.appendonly && h.stuckRewrite
 			if p.appendonly {
 				os.MkdirAll(filepath.Join(p.dir, "appendonlydir"), 0o700)
 				os.WriteFile(filepath.Join(p.dir, "appendonlydir", "appendonly.aof.manifest"), []byte("fresh"), 0o600)
@@ -269,7 +308,7 @@ func TestRedisApplyCreatesAnIsolatedInstance(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 	// Own system user, set by a drop-in that only lets it write its data and runtime directories.
-	if !h.users["kiln-redis-cache"] || !f.Ran("useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin") {
+	if h.users["kiln-redis-cache"] == "" || !f.Ran("useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin") {
 		t.Fatal(f.Lines())
 	}
 	dropIn, _ := os.ReadFile(filepath.Join(root, "/etc/systemd/system/redis-server@kiln-cache.service.d/50-kiln.conf"))
@@ -383,13 +422,12 @@ func TestRedisPersistenceTransitionsLiveKeepTheData(t *testing.T) {
 	if m, _ := os.ReadFile(filepath.Join(data, "appendonlydir", "appendonly.aof.manifest")); string(m) != "fresh" {
 		t.Fatal("stale AOF kept")
 	}
-	if strings.Join(h.redisCmds, "|") != "PING|"+cfg+" SET maxmemory 128mb|"+cfg+" SET maxmemory-policy noeviction|"+cfg+" SET appendonly yes|INFO persistence|"+cfg+" SET save " {
-		t.Fatal(h.redisCmds)
-	}
+	inOrder(t, h.redisCmds, "INFO persistence", cfg+" GET save", cfg+" SET maxmemory 128mb", cfg+" SET maxmemory-policy noeviction", cfg+" SET appendonly yes", "INFO persistence", cfg+" SET save ")
 
 	// aof → rdb: SAVE before AOF goes off, so dump.rdb holds the data.
 	step("rdb")
-	if strings.Join(h.redisCmds[3:], "|") != cfg+" SET save "+redisSave+"|SAVE|"+cfg+" SET appendonly no" || !exists(filepath.Join(data, "dump.rdb")) {
+	inOrder(t, h.redisCmds, cfg+" SET save "+redisSave, "SAVE", cfg+" SET appendonly no")
+	if !exists(filepath.Join(data, "dump.rdb")) {
 		t.Fatal(h.redisCmds)
 	}
 
@@ -420,20 +458,31 @@ func TestRedisRestartsKeepTheDataAcrossPersistenceChanges(t *testing.T) {
 	if r := applyOK(t, db, p); !r.Restarted {
 		t.Fatal(r)
 	}
-	if proc().loadedFrom != "dump.rdb" || !proc().appendonly || h.redisCmds[0] != "PING" || h.redisCmds[1] != "SAVE" {
+	if proc().loadedFrom != "dump.rdb" || !proc().appendonly {
 		t.Fatalf("%+v %v", proc(), h.redisCmds)
+	}
+	inOrder(t, h.redisCmds, "SAVE", "PING")
+	// The first phase ran with snapshots (not unprotected between the start and AOF being on).
+	if proc().startSave != redisSave {
+		t.Fatalf("first phase started with save %q", proc().startSave)
 	}
 	b, _ := os.ReadFile(filepath.Join(root, "/etc/kiln-redis/cache.conf"))
 	if !strings.Contains(string(b), "appendonly yes\n") || !strings.Contains(string(b), "port 6381\n") {
 		t.Fatalf("final config:\n%s", b)
 	}
 
-	// aof → rdb with a restart: SAVE before it, then the restarted instance loads dump.rdb.
+	// aof → rdb with a restart: save points set live first, so the stop itself writes a final snapshot (nothing
+	// written after the SAVE is lost), then the restarted instance loads dump.rdb.
 	h.redisCmds = nil
+	cfg := readState(t, db, "redis", "cache").ConfigName
 	p.Port, p.Persistence = 6382, "rdb"
 	applyOK(t, db, p)
-	if proc().loadedFrom != "dump.rdb" || !slicesContain(h.redisCmds, "SAVE") {
+	if proc().loadedFrom != "dump.rdb" {
 		t.Fatalf("%+v %v", proc(), h.redisCmds)
+	}
+	inOrder(t, h.redisCmds, cfg+" SET save "+redisSave, "SAVE")
+	if d, _ := os.ReadFile(filepath.Join(root, "/var/lib/kiln-redis/cache/dump.rdb")); string(d) != "REDIS0009 at stop" {
+		t.Fatalf("the stop did not snapshot: %q", d)
 	}
 
 	// aof again via a restart: the AOF left from the earlier aof period is stale and moved aside before the start.
@@ -453,7 +502,7 @@ func TestRedisApplyRedeliveredAfterAFailedRestart(t *testing.T) {
 	before := readState(t, db, "redis", "cache")
 
 	// The config file is written, the restart fails: the marker stays on what runs.
-	h.failRestarts = 1
+	h.failStarts = 1
 	p.Port = 6390
 	if _, err := db.RedisApply(context.Background(), p, st); err == nil {
 		t.Fatal("restart failure not reported")
@@ -461,8 +510,8 @@ func TestRedisApplyRedeliveredAfterAFailedRestart(t *testing.T) {
 	if s := readState(t, db, "redis", "cache"); s.Applied != before.Applied || s.Port != 6380 {
 		t.Fatalf("marker moved: %+v", s)
 	}
-	if h.procs["redis-server@kiln-cache.service"].port != 6380 {
-		t.Fatal("fake restarted")
+	if h.procs["redis-server@kiln-cache.service"] != nil {
+		t.Fatal("start did not fail")
 	}
 
 	// The redelivery sees the file already written but not live, and restarts.
@@ -498,7 +547,7 @@ func TestRedisApplyValkeyPathsAndLongNames(t *testing.T) {
 			t.Fatalf("config misses %q:\n%s", want, b)
 		}
 	}
-	if !h.users["kiln-valkey-sessions"] || !exists(filepath.Join(root, "/etc/systemd/system/valkey-server@kiln-sessions.service.d/50-kiln.conf")) {
+	if h.users["kiln-valkey-sessions"] == "" || !exists(filepath.Join(root, "/etc/systemd/system/valkey-server@kiln-sessions.service.d/50-kiln.conf")) {
 		t.Fatal("valkey user / drop-in")
 	}
 	if !f.Ran("systemctl start valkey-server@kiln-sessions.service") || !f.Ran("valkey-cli -h 127.0.0.1 -p 6380 --no-auth-warning") {
@@ -506,8 +555,7 @@ func TestRedisApplyValkeyPathsAndLongNames(t *testing.T) {
 	}
 
 	k, _ := kvEngineFor("valkey")
-	long := strings.Repeat("a", 41)
-	if u := k.user(long); len(u) > 32 || !strings.HasPrefix(u, "kiln-valkey-aaaa") || u == k.user(strings.Repeat("a", 40)+"b") {
+	if u := k.user(strings.Repeat("a", 41)); len(u) > 32 || !strings.HasPrefix(u, "kiln-vh-") {
 		t.Fatal(u)
 	}
 }
@@ -612,7 +660,7 @@ func TestRedisRemove(t *testing.T) {
 	if err != nil || !r.(ChangedResult).Changed {
 		t.Fatal(r, err)
 	}
-	if !f.Ran("systemctl disable --now --quiet redis-server@kiln-cache.service") || !f.Ran("systemctl daemon-reload") || !f.Ran("userdel kiln-redis-cache") || h.users["kiln-redis-cache"] {
+	if !f.Ran("systemctl disable --now --quiet redis-server@kiln-cache.service") || !f.Ran("systemctl daemon-reload") || !f.Ran("userdel kiln-redis-cache") || h.users["kiln-redis-cache"] != "" {
 		t.Fatal(f.Lines())
 	}
 	for _, p := range []string{"/etc/kiln-redis/cache.conf", "/var/lib/kiln-redis/cache", "/etc/systemd/system/redis-server@kiln-cache.service.d", "/var/lib/kiln/db/redis/redis-cache.json"} {
@@ -633,7 +681,7 @@ func TestParseRedisConfRoundTrips(t *testing.T) {
 	p := redisPayload()
 	for _, persistence := range redisPersist {
 		p.Persistence = persistence
-		c := parseRedisConf([]byte(renderRedisConf(k, p, []string{"127.0.0.1", "10.0.0.5"}, "kiln-config-0123456789abcdef0123456789abcdef", persistence == "aof")))
+		c := parseRedisConf([]byte(renderRedisConf(k, p, []string{"127.0.0.1", "10.0.0.5"}, "kiln-config-0123456789abcdef0123456789abcdef", persistence == "aof", redisDisabled)))
 		if c.port != 6380 || c.password != p.Password || c.persistence != persistence || c.configName != "kiln-config-0123456789abcdef0123456789abcdef" || len(c.bind) != 2 {
 			t.Fatalf("%s: %+v", persistence, c)
 		}
@@ -641,5 +689,254 @@ func TestParseRedisConfRoundTrips(t *testing.T) {
 	var re *RedisError
 	if !errors.As(error(&RedisError{Reply: "LOADING"}), &re) {
 		t.Fatal()
+	}
+}
+
+// inOrder checks that want appear in cmds in this order (other commands may come between).
+func inOrder(t *testing.T, cmds []string, want ...string) {
+	t.Helper()
+	i := 0
+	for _, c := range cmds {
+		if i < len(want) && c == want[i] {
+			i++
+		}
+	}
+	if i < len(want) {
+		t.Fatalf("missing %q (in order) in %q", want[i], cmds)
+	}
+}
+
+func TestRedisLiveAOFIsNeverMovedAfterAFailedSwitch(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	p := redisPayload()
+	applyOK(t, db, p)
+	data := filepath.Join(root, "/var/lib/kiln-redis/cache")
+	proc := func() *fakeProc { return h.procs["redis-server@kiln-cache.service"] }
+
+	// AOF is switched on live, then the command dies while the rewrite runs (control-plane timeout, agent restart).
+	ctx, cancel := context.WithCancel(context.Background())
+	h.stuckRewrite, h.onInfo = true, func() {
+		if proc().appendonly {
+			cancel()
+		}
+	}
+	p.Persistence = "aof"
+	if _, err := db.RedisApply(ctx, p, st); err == nil {
+		t.Fatal("cancelled apply reported success")
+	}
+	if !proc().appendonly || readState(t, db, "redis", "cache").Persistence != "rdb" {
+		t.Fatalf("setup: %+v", proc())
+	}
+	h.onInfo, h.stuckRewrite = nil, false
+	proc().rewriting = false
+
+	// The redelivery asks the process: AOF is on, so the live appendonlydir stays and is waited for, never moved.
+	h.redisCmds = nil
+	if r := applyOK(t, db, p); r.Restarted {
+		t.Fatalf("restarted: %+v", r)
+	}
+	matches, _ := filepath.Glob(filepath.Join(data, "appendonlydir.kiln-*"))
+	if len(matches) != 0 || !exists(filepath.Join(data, "appendonlydir")) || readState(t, db, "redis", "cache").Persistence != "aof" {
+		t.Fatalf("live AOF moved: %v %v", matches, h.redisCmds)
+	}
+
+	// The same through a restart (a port change) while AOF is on: the stopped instance's AOF is what it loads back.
+	p.Port = 6381
+	applyOK(t, db, p)
+	matches, _ = filepath.Glob(filepath.Join(data, "appendonlydir.kiln-*"))
+	if proc().loadedFrom != "aof" || len(matches) != 0 {
+		t.Fatalf("%+v %v", proc(), matches)
+	}
+
+	// And when the instance is down: the config on disk says AOF, so its AOF stays too.
+	delete(h.procs, "redis-server@kiln-cache.service")
+	h.failStarts = 0
+	p.MaxMemoryMB = 200
+	applyOK(t, db, p)
+	if proc().loadedFrom != "aof" {
+		t.Fatalf("loaded %s", proc().loadedFrom)
+	}
+}
+
+func TestRedisToNoneThroughARestartStartsEmpty(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	p := redisPayload()
+	applyOK(t, db, p)
+	proc := func() *fakeProc { return h.procs["redis-server@kiln-cache.service"] }
+	cfg := readState(t, db, "redis", "cache").ConfigName
+	os.WriteFile(filepath.Join(root, "/var/lib/kiln-redis/cache/dump.rdb"), []byte("REDIS0009 old"), 0o600)
+
+	h.redisCmds = nil
+	p.Port, p.Persistence = 6381, "none"
+	applyOK(t, db, p)
+	// Snapshots off before the stop (no dump on the way down), files moved aside, then an empty start.
+	inOrder(t, h.redisCmds, cfg+" SET save ")
+	if slicesContain(h.redisCmds, "SAVE") || proc().loadedFrom != "empty" || exists(filepath.Join(root, "/var/lib/kiln-redis/cache/dump.rdb")) {
+		t.Fatalf("%+v %v", proc(), h.redisCmds)
+	}
+}
+
+func TestRedisApplyWaitsForALoadingInstanceInsteadOfRestartingIt(t *testing.T) {
+	oldPoll := redisPoll
+	redisPoll = time.Millisecond
+	defer func() { redisPoll = oldPoll }()
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	p := redisPayload()
+	applyOK(t, db, p)
+
+	// Already applied, still loading: a no-op once it answers.
+	h.procs["redis-server@kiln-cache.service"].loading = 5
+	f.Reset()
+	if r := applyOK(t, db, p); r.Changed || f.Ran("systemctl stop") {
+		t.Fatalf("%+v %v", r, f.Lines())
+	}
+	// A live change while it loads: waited for, then applied live.
+	h.procs["redis-server@kiln-cache.service"].loading = 5
+	p.MaxMemoryMB = 200
+	f.Reset()
+	if r := applyOK(t, db, p); r.Restarted || f.Ran("systemctl stop") {
+		t.Fatalf("%+v %v", r, f.Lines())
+	}
+	dropIn, _ := os.ReadFile(filepath.Join(root, "/etc/systemd/system/redis-server@kiln-cache.service.d/50-kiln.conf"))
+	if !strings.Contains(string(dropIn), "TimeoutStartSec=20min\n") {
+		t.Fatal(string(dropIn))
+	}
+}
+
+func TestRedisAppliesOfOneInstanceAreSerialized(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	newRedisHost(t, f, root)
+	p := redisPayload()
+	applyOK(t, db, p)
+
+	var mu sync.Mutex
+	inflight, peak := 0, 0
+	// Rules match in order: this wrapper sits in front of the fake host's redis-cli.
+	slow := &runnertest.Fake{}
+	slow.OnFunc("redis-cli", func(c runnertest.Call) (runner.Result, error) {
+		mu.Lock()
+		inflight++
+		peak = max(peak, inflight)
+		mu.Unlock()
+		time.Sleep(2 * time.Millisecond)
+		c.Cmd.Stdin = strings.NewReader(c.Stdin)
+		res, err := f.Run(context.Background(), c.Cmd)
+		mu.Lock()
+		inflight--
+		mu.Unlock()
+		return res, err
+	})
+	slow.OnFunc("", func(c runnertest.Call) (runner.Result, error) {
+		c.Cmd.Stdin = strings.NewReader(c.Stdin)
+		return f.Run(context.Background(), c.Cmd)
+	})
+	db.d.Runner = slow
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			q := p
+			q.MaxMemoryMB = 100 + i
+			_, err := db.RedisApply(context.Background(), q, st)
+			errs <- err
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if peak != 1 {
+		t.Fatalf("%d redis-cli calls of one instance ran at once", peak)
+	}
+}
+
+func TestRedisInstanceUsersAreOnlyAdoptedOrDeletedWhenKilnCreatedThem(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	// A site's Unix user happens to have the instance user's name.
+	h.users["kiln-redis-cache"] = "kiln-redis-cache:x:1001:1001::/home/kiln-redis-cache:/bin/bash"
+	if _, err := db.RedisApply(context.Background(), redisPayload(), st); err == nil || !strings.Contains(err.Error(), "was not created by Kiln") {
+		t.Fatal(err)
+	}
+	if _, err := db.RedisRemove(context.Background(), RedisRemovePayload{Engine: "redis", Name: "cache"}, st); err != nil {
+		t.Fatal(err)
+	}
+	if f.Ran("userdel") || h.users["kiln-redis-cache"] == "" {
+		t.Fatal("deleted a user Kiln did not create")
+	}
+
+	// Long names get a hashed user no plain name can produce.
+	k, _ := kvEngineFor("redis")
+	long := strings.Repeat("a", 41)
+	u := k.user(long)
+	if len(u) > 32 || !strings.HasPrefix(u, "kiln-rh-") || u == k.user(strings.Repeat("a", 40)+"b") {
+		t.Fatal(u)
+	}
+	for _, n := range []string{u[len("kiln-redis-"):], strings.TrimPrefix(u, "kiln-")} {
+		if redisName.MatchString(n) && k.user(n) == u {
+			t.Fatalf("plain name %q maps to the hashed user", n)
+		}
+	}
+}
+
+func TestRedisRenamesSlowlogAndValkeyCommandlog(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	applyOK(t, db, redisPayload())
+	p := redisPayload()
+	p.Engine = "valkey"
+	applyOK(t, db, p)
+	if !slicesContain(h.procs["redis-server@kiln-cache.service"].disabled, "SLOWLOG") || slicesContain(h.procs["redis-server@kiln-cache.service"].disabled, "COMMANDLOG") {
+		t.Fatal(h.procs["redis-server@kiln-cache.service"].disabled)
+	}
+	if !slicesContain(h.procs["valkey-server@kiln-cache.service"].disabled, "COMMANDLOG") {
+		t.Fatal(h.procs["valkey-server@kiln-cache.service"].disabled)
+	}
+	k, _ := kvEngineFor("valkey")
+	if slices.Contains(disabledCommands(k, "7.2.13"), "COMMANDLOG") || !slices.Contains(disabledCommands(k, "9.0.6"), "COMMANDLOG") {
+		t.Fatal("COMMANDLOG version gate")
+	}
+}
+
+func TestRedisErrorsNeverCarryTheConfigNameOrValues(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	p := redisPayload()
+	applyOK(t, db, p)
+	cfg := readState(t, db, "redis", "cache").ConfigName
+	h.failSet = "requirepass"
+	c := conn{db: db, k: kvEngine{cli: "redis-cli"}, port: 6380, password: p.Password, config: cfg}
+	_, err := c.do(context.Background(), cfg, "SET", "requirepass", "Nn4vX8sD2kQ6pR9tY3wZ7aB5")
+	if err == nil || strings.Contains(err.Error(), cfg) || strings.Contains(err.Error(), "Nn4vX8sD2kQ6pR9tY3wZ7aB5") || !strings.Contains(err.Error(), "'CONFIG'") {
+		t.Fatalf("%v", err)
+	}
+
+	// Through an apply (the live change fails, the restart path takes over): nothing secret in the streamed output.
+	sink := &commands.Collector{}
+	stream := commands.NewTestStream("c", sink)
+	p.Password = "Nn4vX8sD2kQ6pR9tY3wZ7aB5"
+	if _, err := db.RedisApply(context.Background(), p, stream); err != nil {
+		t.Fatal(err)
+	}
+	stream.Flush()
+	all := fmt.Sprintf("%+v", sink.Events)
+	if !strings.Contains(all, "live change failed") || strings.Contains(all, cfg) || strings.Contains(all, p.Password) {
+		t.Fatalf("output: %s", all)
 	}
 }
