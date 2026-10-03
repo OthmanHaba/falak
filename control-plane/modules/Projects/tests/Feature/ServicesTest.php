@@ -120,6 +120,19 @@ it('creates a Redis instance from the canvas: card, REDIS_* keys and references 
     expect($result->errors[0] ?? '')->toContain('cache.REDIS_HOST cannot be used here');
 });
 
+it('creates a Redis instance through the API with a token', function () {
+    $agents = FakeAgentGateway::install();
+    $server = databases_server($this->organization, 'postgresql', ServerType::App, ['stack' => ['cache' => 'valkey']]);
+    Agent::factory()->create(['server_id' => $server->id, 'organization_id' => $this->organization->id, 'facts' => ['features' => ['db.redis']]]);
+    $token = $this->user->createToken('cli', ['*']);
+    $token->accessToken->forceFill(['organization_id' => $this->organization->id])->save();
+    auth()->forgetGuards();
+
+    $this->withToken($token->plainTextToken)->postJson("/api/v1/projects/{$this->staging->project_id}/environments/staging/services", ['kind' => 'database', 'engine' => 'valkey', 'server_id' => $server->id, 'name' => 'sessions', 'persistence' => 'aof'])
+        ->assertCreated()->assertJsonPath('data.icon', 'valkey')->assertJsonPath('data.name', 'sessions');
+    expect($agents->last('db.redis.apply')['payload'])->toMatchArray(['engine' => 'valkey', 'persistence' => 'aof']);
+});
+
 it('persists card positions per environment', function () {
     $site = projects_site($this->organization, 'Shop', [], $this->staging);
     $service = projects_service('site', $site->id);
