@@ -107,7 +107,24 @@ func newRedisHost(t *testing.T, f *runnertest.Fake, root string) *fakeRedisHost 
 		return runner.Result{}, nil
 	})
 	f.OnFunc("userdel", func(c runnertest.Call) (runner.Result, error) { delete(h.users, last(c)); return runner.Result{}, nil })
-	f.OnFunc("ss ", func(runnertest.Call) (runner.Result, error) { return runner.Result{Stdout: []byte(h.ssOut)}, nil })
+	f.OnFunc("ss ", func(c runnertest.Call) (runner.Result, error) {
+		if h.ssOut != "" {
+			return runner.Result{Stdout: []byte(h.ssOut)}, nil
+		}
+		// The fake's own instances listen on their ports.
+		for _, p := range h.procs {
+			if strings.HasSuffix(c.Line, ":"+strconv.Itoa(p.port)) {
+				return runner.Result{Stdout: []byte(fmt.Sprintf("LISTEN 0 511 127.0.0.1:%d 0.0.0.0:* users:((\"redis-server\",pid=%d,fd=6))\n", p.port, 40000+p.port))}, nil
+			}
+		}
+		return runner.Result{}, nil
+	})
+	f.OnFunc("systemctl show --property=MainPID --value", func(c runnertest.Call) (runner.Result, error) {
+		if p := h.procs[last(c)]; p != nil {
+			return runner.Result{Stdout: []byte(strconv.Itoa(40000+p.port) + "\n")}, nil
+		}
+		return runner.Result{Stdout: []byte("0\n")}, nil
+	})
 	f.OnFunc("redis-cli", h.cli)
 	f.OnFunc("valkey-cli", h.cli)
 	return h
@@ -908,7 +925,7 @@ func TestRedisRenamesSlowlogAndValkeyCommandlog(t *testing.T) {
 	h := newRedisHost(t, f, root)
 	applyOK(t, db, redisPayload())
 	p := redisPayload()
-	p.Engine = "valkey"
+	p.Engine, p.Port = "valkey", 6390
 	applyOK(t, db, p)
 	if !slicesContain(h.procs["redis-server@kiln-cache.service"].disabled, "SLOWLOG") || slicesContain(h.procs["redis-server@kiln-cache.service"].disabled, "COMMANDLOG") {
 		t.Fatal(h.procs["redis-server@kiln-cache.service"].disabled)
@@ -1106,5 +1123,99 @@ func TestRedisInstanceUsersShareTheAccountsLock(t *testing.T) {
 	system.AccountsMu.Unlock()
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRedisRedeliveryAfterTheRestartedInstanceKeptLoading(t *testing.T) {
+	oldLoading, oldPoll := RedisLoadingTimeout, redisPoll
+	RedisLoadingTimeout, redisPoll = 30*time.Millisecond, time.Millisecond
+	defer func() { RedisLoadingTimeout, redisPoll = oldLoading, oldPoll }()
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	p := redisPayload()
+	applyOK(t, db, p)
+	proc := func() *fakeProc { return h.procs["redis-server@kiln-cache.service"] }
+
+	// Restarted on a new port, then still loading when the wait runs out.
+	h.loading = 1 << 30
+	p.Port = 6381
+	if _, err := db.RedisApply(context.Background(), p, st); !errors.Is(err, errWaitTimeout) {
+		t.Fatal(err)
+	}
+	if proc().port != 6381 || readState(t, db, "redis", "cache").Port != 6381 {
+		t.Fatalf("state not on the running process: %+v", readState(t, db, "redis", "cache"))
+	}
+
+	// Loaded meanwhile: the redelivery finds it applied on its new port (no "port in use by itself", no restart).
+	h.loading, proc().loading = 0, 0
+	f.Reset()
+	r, err := db.RedisApply(context.Background(), p, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.(RedisApplyResult).Restarted || f.Ran("systemctl stop") {
+		t.Fatalf("%+v %v", r, f.Lines())
+	}
+}
+
+func TestRedisRedeliveryAfterTheAOFSwitchOfARestartRanOut(t *testing.T) {
+	oldAOF, oldPoll := RedisAOFTimeout, redisPoll
+	RedisAOFTimeout, redisPoll = 30*time.Millisecond, time.Millisecond
+	defer func() { RedisAOFTimeout, redisPoll = oldAOF, oldPoll }()
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	p := redisPayload()
+	applyOK(t, db, p)
+	data := filepath.Join(root, "/var/lib/kiln-redis/cache")
+	proc := func() *fakeProc { return h.procs["redis-server@kiln-cache.service"] }
+
+	// New port and AOF: restarted from the snapshot (first phase), AOF switched on live, the rewrite outlasts the wait.
+	h.stuckRewrite = true
+	p.Port, p.Persistence = 6381, "aof"
+	if _, err := db.RedisApply(context.Background(), p, st); !errors.Is(err, errWaitTimeout) {
+		t.Fatal(err)
+	}
+	if s := readState(t, db, "redis", "cache"); s.Port != 6381 || s.Persistence != "rdb" || !proc().appendonly {
+		t.Fatalf("state %+v / %+v", s, proc())
+	}
+
+	// The rewrite finishes; the redelivery reaches the instance on 6381, sees AOF on and completes live.
+	h.stuckRewrite = false
+	proc().rewriting = false
+	os.WriteFile(filepath.Join(data, "appendonlydir", "appendonly.aof.manifest"), []byte("fresh"), 0o600)
+	f.Reset()
+	r, err := db.RedisApply(context.Background(), p, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.(RedisApplyResult).Restarted || f.Ran("systemctl stop") {
+		t.Fatalf("%+v %v", r, f.Lines())
+	}
+	b, _ := os.ReadFile(filepath.Join(root, "/etc/kiln-redis/cache.conf"))
+	if s := readState(t, db, "redis", "cache"); s.Persistence != "aof" || !strings.Contains(string(b), "appendonly yes\n") {
+		t.Fatalf("not converged: %+v", s)
+	}
+	if m, _ := filepath.Glob(filepath.Join(data, "appendonlydir.kiln-*")); len(m) != 0 {
+		t.Fatalf("live AOF moved: %v", m)
+	}
+}
+
+func TestRedisPortCheckRecognisesTheInstanceItself(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, _ := newDB(t, f, nil)
+	f.On("ss ", runner.Result{Stdout: []byte(`LISTEN 0 511 127.0.0.1:6381 0.0.0.0:* users:(("redis-server",pid=4242,fd=6))` + "\n")})
+	f.OnFunc("systemctl show --property=MainPID --value", func(c runnertest.Call) (runner.Result, error) {
+		if c.Args[len(c.Args)-1] == "redis-server@kiln-cache.service" {
+			return runner.Result{Stdout: []byte("4242\n")}, nil
+		}
+		return runner.Result{Stdout: []byte("0\n")}, nil
+	})
+	if who, err := db.portUser(context.Background(), 6381, "redis-server@kiln-cache.service"); err != nil || who != "" {
+		t.Fatalf("own instance reported: %q %v", who, err)
+	}
+	if who, _ := db.portUser(context.Background(), 6381, "redis-server@kiln-other.service"); who != "redis-server (pid 4242)" {
+		t.Fatalf("another instance not reported: %q", who)
 	}
 }

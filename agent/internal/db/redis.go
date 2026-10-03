@@ -497,7 +497,7 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 		from = "rdb" // the stopped instance's AOF has no manifest: its first rewrite never finished
 	}
 	if !active || prev.Port != p.Port {
-		if who, err := db.portUser(ctx, p.Port); err != nil {
+		if who, err := db.portUser(ctx, p.Port, unit); err != nil {
 			return nil, err
 		} else if who != "" {
 			return nil, fmt.Errorf("port %d is in use by %s", p.Port, who)
@@ -533,6 +533,15 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 	_, _ = db.d.Runner.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"reset-failed", unit}})
 	if _, err := runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"start", unit}}); err != nil {
 		return nil, fmt.Errorf("start %s: %w%s", unit, err, db.journalTail(ctx, unit))
+	}
+	// The process now runs with the first config: recorded at once, so a redelivery after a failure below (still
+	// loading, AOF rewrite not done) reaches it on its new port with its password, and knows its mode.
+	started := final
+	if twoPhase {
+		started.Applied, started.Persistence = hashOf(first), "rdb"
+	}
+	if err := db.saveRedisState(k, p.Name, started); err != nil {
+		return nil, err
 	}
 	if err := want.ready(ctx); err != nil {
 		return nil, fmt.Errorf("%s did not answer PING on 127.0.0.1:%d: %w%s", unit, p.Port, err, db.journalTail(ctx, unit))
@@ -898,10 +907,11 @@ func (db *DB) unitActive(ctx context.Context, unit string) bool {
 	return err == nil && res.ExitCode == 0
 }
 
-var ssUserRe = regexp.MustCompile(`users:\(\("([^"]+)",pid=(\d+)`)
+var ssUserRe = regexp.MustCompile(`\("([^"]+)",pid=(\d+)`)
 
-// portUser names the process listening on TCP port (any address), "" when it is free.
-func (db *DB) portUser(ctx context.Context, port int) (string, error) {
+// portUser names the process listening on TCP port (any address), "" when it is free or held by the instance's own
+// unit (its MainPID: an earlier apply that started it there and failed later, e.g. while it loaded).
+func (db *DB) portUser(ctx context.Context, port int, unit string) (string, error) {
 	res, err := db.d.Runner.Run(ctx, runner.Cmd{Name: "ss", Args: []string{"-H", "-ltnp", "sport = :" + strconv.Itoa(port)}})
 	if err != nil {
 		return "", fmt.Errorf("check port %d: %w", port, err)
@@ -913,10 +923,29 @@ func (db *DB) portUser(ctx context.Context, port int) (string, error) {
 	if out == "" {
 		return "", nil
 	}
-	if m := ssUserRe.FindStringSubmatch(out); m != nil {
-		return fmt.Sprintf("%s (pid %s)", m[1], m[2]), nil
+	users := ssUserRe.FindAllStringSubmatch(out, -1)
+	if len(users) == 0 {
+		return "another process", nil
 	}
-	return "another process", nil
+	own := db.mainPID(ctx, unit)
+	for _, m := range users {
+		if m[2] != own {
+			return fmt.Sprintf("%s (pid %s)", m[1], m[2]), nil
+		}
+	}
+	return "", nil
+}
+
+// mainPID is the unit's main process id ("" when it has none).
+func (db *DB) mainPID(ctx context.Context, unit string) string {
+	res, err := db.d.Runner.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"show", "--property=MainPID", "--value", unit}})
+	if err != nil || res.ExitCode != 0 {
+		return ""
+	}
+	if pid := strings.TrimSpace(string(res.Stdout)); pid != "" && pid != "0" {
+		return pid
+	}
+	return ""
 }
 
 func (db *DB) journalTail(ctx context.Context, unit string) string {
