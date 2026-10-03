@@ -43,6 +43,9 @@ final class UpdateKeyValueSettings
 
         // Saved only together with the dispatch: when the agent can't be reached, nothing changes and a retry applies.
         DB::transaction(function () use ($database, $after) {
+            // The `default` user's row first, then the instance's: the order a password rotation locks them in
+            // (ApplyDatabaseUser → ApplyKeyValueInstance), so a save next to a rotation waits instead of deadlocking.
+            ApplyKeyValueInstance::userOf($database, lock: true);
             $database->forceFill(['settings' => [...(array) $database->settings, ...$after]])->save();
             ($this->apply)($database);
         });
