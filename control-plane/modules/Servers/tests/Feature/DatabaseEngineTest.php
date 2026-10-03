@@ -118,9 +118,10 @@ it('releases the claim when the plan cannot be dispatched', function () {
 });
 
 it('installs Redis next to the database engine and registers it in Databases; Valkey only where the OS has it', function () {
-    expect($this->server->refresh()->os)->toBe('ubuntu 24.04');
+    // Ubuntu 22.04 has no valkey-server (24.04 has it in noble-updates, 26.04 and Debian 13 too).
+    $this->server->forceFill(['os' => 'ubuntu 22.04'])->save();
     $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'valkey'])
-        ->assertSessionHasErrors(['engine' => 'Valkey is not available on Ubuntu 24.04.']);
+        ->assertSessionHasErrors(['engine' => 'Valkey is not available on Ubuntu 22.04.']);
 
     $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'postgresql'])->assertSessionHasNoErrors();
     // One install at a time.
@@ -129,6 +130,7 @@ it('installs Redis next to the database engine and registers it in Databases; Va
     [$envelope] = servers_poll($this->agent['headers']);
     servers_finish($this->agent['headers'], $envelope['id']);
 
+    $this->server->refresh();
     $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'redis'])->assertSessionHasNoErrors();
     $server = $this->server->refresh();
     expect($server->stack->cache)->toBe('redis')->and($server->engine_install_kind)->toBe('cache')

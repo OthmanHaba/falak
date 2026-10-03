@@ -3,13 +3,18 @@
 namespace Kiln\Databases\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Kiln\Databases\Application\Actions\ApplyDatabaseUser;
 use Kiln\Databases\Application\Jobs\PruneScheduleBackups;
+use Kiln\Databases\Application\KeyValue\ApplyKeyValueInstance;
+use Kiln\Databases\Application\KeyValue\KeyValuePorts;
 use Kiln\Databases\Domain\Enums\BackupStatus;
 use Kiln\Databases\Domain\Enums\ResourceStatus;
 use Kiln\Databases\Domain\Enums\RestoreStatus;
 use Kiln\Databases\Domain\Models\Backup;
 use Kiln\Databases\Domain\Models\Database;
+use Kiln\Databases\Domain\Models\DatabaseServer;
 use Kiln\Databases\Domain\Models\DatabaseUser;
 use Kiln\Databases\Domain\Models\Grant;
 use Kiln\Databases\Domain\Models\Restore;
@@ -29,9 +34,14 @@ final class HandleCommandOutcome implements ShouldQueue
 {
     private const TYPES = ['db.create', 'db.drop', 'db.user.apply', 'db.backup', 'db.restore', 'db.redis.apply', 'db.redis.remove'];
 
+    /** A new instance whose port turned out taken gets another one this many times before it fails. */
+    private const PORT_RETRIES = 3;
+
     public function __construct(
         private readonly ApplyDatabaseUser $applyUser,
         private readonly AuditLog $audit,
+        private readonly KeyValuePorts $ports,
+        private readonly ApplyKeyValueInstance $applyInstance,
     ) {}
 
     public function handleFinished(CommandFinished $event): void
@@ -131,6 +141,10 @@ final class HandleCommandOutcome implements ShouldQueue
             return;
         }
 
+        if (! $succeeded && $this->movePort($database, (string) $error)) {
+            return;
+        }
+
         $database->forceFill([
             'status' => $succeeded ? ResourceStatus::Active : ResourceStatus::Failed,
             'status_message' => $succeeded ? null : $error,
@@ -139,6 +153,40 @@ final class HandleCommandOutcome implements ShouldQueue
         if ($succeeded) {
             DatabaseCreated::dispatch($database->id, $database->organization_id, $database->server_id, $database->name, $database->databaseServer->engine->value, $database->site_id);
         }
+    }
+
+    /**
+     * The agent found the new instance's port taken (something the machine check did not see): pick another port and
+     * apply again, a few times.
+     */
+    private function movePort(Database $database, string $error): bool
+    {
+        if ($database->status !== ResourceStatus::Pending || preg_match('/port (\d+) is in use/', $error, $m) !== 1) {
+            return false;
+        }
+
+        $avoid = array_values(array_unique([...array_map('intval', (array) ($database->settings['avoid_ports'] ?? [])), (int) $m[1]]));
+
+        if (count($avoid) > self::PORT_RETRIES) {
+            return false;
+        }
+
+        try {
+            DB::transaction(function () use ($database, $avoid, $error) {
+                DatabaseServer::query()->where('server_id', $database->server_id)->lockForUpdate()->get();
+                $database->forceFill([
+                    'port' => $this->ports->allocate($database->server_id, $avoid),
+                    'settings' => [...(array) $database->settings, 'avoid_ports' => $avoid],
+                    'status_message' => $error,
+                ])->save();
+            });
+        } catch (ValidationException) {
+            return false;
+        }
+
+        ($this->applyInstance)($database, background: true);
+
+        return true;
     }
 
     private function user(string $commandId, bool $succeeded, ?string $error): void

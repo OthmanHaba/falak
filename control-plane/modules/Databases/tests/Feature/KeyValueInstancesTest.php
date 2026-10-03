@@ -1,5 +1,6 @@
 <?php
 
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
 use Kiln\Databases\Application\EngineInventory;
@@ -70,7 +71,7 @@ it('registers both engines of an app server, one row per engine, with the versio
     $cache = databases_server($this->organization, 'postgresql', ServerType::Cache, ['stack' => ['cache' => 'valkey']]);
     Agent::factory()->create(['server_id' => $cache->id, 'organization_id' => $this->organization->id, 'facts' => ['os' => ['id' => 'ubuntu', 'version' => '26.04']]]);
     $valkey = app(EngineInventory::class)->sync($cache->id, Engine::Valkey);
-    expect($valkey->dedicated)->toBeTrue()->and($valkey->version)->toBe('8.1')->and($valkey->version_source)->toBe('default')
+    expect($valkey->dedicated)->toBeTrue()->and($valkey->version)->toBe('9.0')->and($valkey->version_source)->toBe('default')
         ->and(app(EngineInventory::class)->sync($cache->id))->toBeNull();
 });
 
@@ -231,4 +232,47 @@ it('shows the instance panel with key-value options and its own port', function 
         ->assertJsonPath('data.options.max_memory_mb', 1536)
         ->assertJsonPath('data.options.persistences', ['rdb', 'aof', 'none'])
         ->assertJsonPath('data.restore_targets', []);
+});
+
+it('gives two instances created on one server different ports, and moves a new instance off a port the agent found taken', function () {
+    $engine = kv_server($this);
+    $a = app(DatabaseProvisioner::class)->create($this->organization->id, $engine->server_id, 'redis', 'one');
+    $b = app(DatabaseProvisioner::class)->create($this->organization->id, $engine->server_id, 'redis', 'two');
+    expect([$a->port, $b->port])->toBe([6380, 6381]);
+
+    // The agent refuses 6381 (something the machine check did not see): the instance moves and is applied again.
+    $this->agents->fail($this->agents->last('db.redis.apply')['handle'], 'port 6381 is in use by memcached (pid 812)');
+    $retry = $this->agents->last('db.redis.apply');
+    expect($retry['payload']['name'])->toBe('two')->and($retry['payload']['port'])->toBe(6382)
+        ->and(Database::query()->findOrFail($b->id))->status->value->toBe('pending')->port->toBe(6382);
+    $this->agents->succeed($retry['handle'], ['changed' => true, 'restarted' => true, 'port' => 6382]);
+    expect(Database::query()->findOrFail($b->id)->status->value)->toBe('active');
+
+    // Not forever: after three taken ports the creation fails with the agent's reason.
+    $c = app(DatabaseProvisioner::class)->create($this->organization->id, $engine->server_id, 'redis', 'three');
+    foreach (range(1, 4) as $attempt) {
+        $apply = $this->agents->last('db.redis.apply');
+        $this->agents->fail($apply['handle'], "port {$apply['payload']['port']} is in use by nginx (pid 1)");
+    }
+    expect(Database::query()->findOrFail($c->id))->status->value->toBe('failed')
+        ->status_message->toContain('is in use by nginx');
+
+    // The database refuses a duplicate port on a server outright.
+    expect(fn () => Database::query()->whereKey($a->id)->update(['port' => 6382]))->toThrow(QueryException::class);
+});
+
+it('keeps settings unchanged when the agent is offline, so saving again applies them', function () {
+    $engine = kv_server($this);
+    $data = app(DatabaseProvisioner::class)->create($this->organization->id, $engine->server_id, 'redis', 'cache');
+    $this->agents->succeed($this->agents->last('db.redis.apply')['handle'], ['changed' => true, 'restarted' => true, 'port' => 6380]);
+    $count = count($this->agents->dispatched('db.redis.apply'));
+
+    $this->agents->unavailable($engine->server_id);
+    $this->putJson("/databases/databases/{$data->id}/settings", ['maxmemory_mb' => 256])->assertUnprocessable();
+    expect(Database::query()->findOrFail($data->id)->settings['maxmemory_mb'])->toBe(128);
+
+    $this->agents->available($engine->server_id);
+    $this->putJson("/databases/databases/{$data->id}/settings", ['maxmemory_mb' => 256])->assertOk();
+    expect($this->agents->dispatched('db.redis.apply'))->toHaveCount($count + 1)
+        ->and($this->agents->last('db.redis.apply')['payload']['maxmemory_mb'])->toBe(256);
 });

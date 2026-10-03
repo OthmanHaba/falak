@@ -47,10 +47,11 @@ return [
         'valkey' => ['label' => 'Valkey', 'packages' => ['valkey-server'], 'service' => 'valkey-server'],
     ],
     // Cache engines each release's archive has, keyed by the server's reported OS ("<id> <version>"); releases not
-    // listed get Redis only. valkey-server is in Ubuntu's archive from 26.04 (8.1) and in Debian from 13.
+    // listed get Redis only. valkey-server: Ubuntu 24.04 (noble-updates, 7.2), 26.04 (9.0), Debian 13 (8.1); not in
+    // jammy or bookworm (only bookworm-backports, which is not enabled by default).
     'caches_by_os' => [
         'ubuntu 22.04' => ['redis'],
-        'ubuntu 24.04' => ['redis'],
+        'ubuntu 24.04' => ['redis', 'valkey'],
         'ubuntu 26.04' => ['redis', 'valkey'],
         'debian 12' => ['redis'],
         'debian 13' => ['redis', 'valkey'],
@@ -80,7 +81,7 @@ return [
         // upstream version (Debian epoch and revision stripped; PostgreSQL by major from postgresql-NN). Each is what
         // Kiln itself installs on the oldest supported release, so a server Kiln provisioned never blocks: Ubuntu 22.04
         // ships PostgreSQL 14, MySQL 8.0, MariaDB 10.6, Redis 6.0 and docker.io 20.10 (24.0 / 26.1 in jammy-updates);
-        // Valkey first ships with 26.04 (8.1), 7.2 is its first release.
+        // Valkey first ships with 24.04 (noble-updates, 7.2), its first release.
         'minimum_versions' => [
             'docker' => '20.10',
             'postgresql' => '14',

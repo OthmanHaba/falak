@@ -20,13 +20,17 @@ final class KeyValuePorts
      *
      * @throws ValidationException when every port is taken
      */
-    public function allocate(string $serverId): int
+    /**
+     * @param  list<int>  $avoid  ports the agent found taken
+     */
+    public function allocate(string $serverId, array $avoid = []): int
     {
         [$from, $to] = array_map('intval', (array) config('databases.key_value.ports', [6380, 6479]));
 
         $taken = array_flip([
             ...Database::query()->where('server_id', $serverId)->whereNotNull('port')->pluck('port')->map(fn ($port) => (int) $port)->all(),
             ...$this->servers->takenPorts($serverId),
+            ...$avoid,
         ]);
 
         for ($port = $from; $port <= $to; $port++) {

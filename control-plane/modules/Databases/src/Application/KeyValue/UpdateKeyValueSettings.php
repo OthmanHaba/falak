@@ -2,14 +2,16 @@
 
 namespace Kiln\Databases\Application\KeyValue;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Kiln\Databases\Domain\Enums\ResourceStatus;
 use Kiln\Databases\Domain\Models\Database;
 use Kiln\Identity\Contracts\AuditLog;
 
 /**
- * Changes an instance's memory limit, eviction policy or persistence and re-applies it (the agent restarts the
- * instance; with rdb or aof its data is saved on the way down and loaded back).
+ * Changes an instance's memory limit, eviction policy or persistence and re-applies it. The agent changes them on the
+ * running instance (no restart); switching persistence keeps the data, except that with `none` nothing is written
+ * and the next restart starts empty.
  */
 final class UpdateKeyValueSettings
 {
@@ -39,8 +41,11 @@ final class UpdateKeyValueSettings
             return $database;
         }
 
-        $database->forceFill(['settings' => $after])->save();
-        ($this->apply)($database);
+        // Saved only together with the dispatch: when the agent can't be reached, nothing changes and a retry applies.
+        DB::transaction(function () use ($database, $after) {
+            $database->forceFill(['settings' => [...(array) $database->settings, ...$after]])->save();
+            ($this->apply)($database);
+        });
 
         $this->audit->record('databases.instance_settings_updated', 'database', $database->id, ['before' => $before, 'after' => $after], $database->organization_id);
 

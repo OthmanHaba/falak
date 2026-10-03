@@ -16,13 +16,14 @@ return [
 
     // Version installed by the distro packages provisioning uses, when the agent does not report one
     // (facts.runtimes.<engine>). Keyed by "<os id> <os version>"; an engine missing for a release falls back to
-    // Ubuntu 24.04's. Valkey is only packaged from Ubuntu 26.04 / Debian 13 (servers.caches_by_os).
+    // Ubuntu 24.04's. Valkey (servers.caches_by_os): noble-updates 7.2, resolute 9.0, trixie 8.1 (packages.ubuntu.com,
+    // packages.debian.org, 2026-10).
     'distro_versions' => [
-        'ubuntu 24.04' => ['mysql' => '8.0', 'mariadb' => '10.11', 'postgresql' => '16', 'redis' => '7.0'],
+        'ubuntu 24.04' => ['mysql' => '8.0', 'mariadb' => '10.11', 'postgresql' => '16', 'redis' => '7.0', 'valkey' => '7.2'],
         'ubuntu 22.04' => ['mysql' => '8.0', 'mariadb' => '10.6', 'postgresql' => '14', 'redis' => '6.0'],
-        'ubuntu 26.04' => ['valkey' => '8.1'],
+        'ubuntu 26.04' => ['redis' => '8.0', 'valkey' => '9.0'],
         'debian 12' => ['mysql' => '8.0', 'mariadb' => '10.11', 'postgresql' => '15', 'redis' => '7.0'],
-        'debian 13' => ['valkey' => '8.1'],
+        'debian 13' => ['redis' => '8.0', 'valkey' => '8.1'],
     ],
 
     // Redis / Valkey instances (one process each, redis-server@kiln-<name>): ports Kiln allocates (the stock
