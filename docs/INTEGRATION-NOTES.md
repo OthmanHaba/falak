@@ -105,7 +105,7 @@ means the build was cancelled and `kiln-builder` aborts it.
 - Shared Inertia props: `Kernel\Support\SharedProps` registry merged by `HandleInertiaRequests`; Projects registers
   `kiln` (UI_DESIGN §9). Pages `Projects/Index`, `Projects/Canvas`, `Projects/Settings` are rendered with their props;
   the TSX pages come with the UI wave.
-- Limits: Redis is not a Databases engine yet (`422` "Redis services are not supported yet"); duplicated environments
+- Limits: Redis / Valkey became Databases engines in v0.7.0 (see *Redis and Valkey* below); duplicated environments
   get sites without servers (pick servers per service); canvas status has no "crashed" state yet (no process
   health contract).
 
@@ -410,6 +410,65 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
   state: `FirewallApplyFailed` fires when applies start failing (not on every failing retry) and `FirewallApplied`
   (the recovery) only on the first success after that.
 - The agent refreshes OTLP `host.name` with every facts collection (see *Site web logs*).
+
+## Redis and Valkey (v0.7.0, phase 1)
+Plan: `docs/plans/REDIS.md`. Phase 1 = engine + instances; network access (phase 2), backups / restore (phase 3) and
+compose apps (phase 4) are still open.
+- **Engines.** `Databases\Domain\Enums\Engine` gained `Redis` / `Valkey` and `kind()` (`EngineKind::Sql | KeyValue`).
+  SQL-only methods (charset, collation, privileges) answer null / `[]` for key-value engines; `isMysqlFamily()` is
+  MySQL / MariaDB only (it used to be "not PostgreSQL"). `databases_servers` is unique per `(server_id, engine)`: an app
+  server has its SQL row and its Redis row. `EngineInventory` reads `ServerData::cacheEngine` too (the cache server
+  type's row is `dedicated`); `sync($serverId, ?Engine)` returns the row of that engine (SQL by default). Versions come
+  from `facts.runtimes.redis|valkey` (agent: `<engine>-server --version`; a `redis-server` that is really Valkey,
+  Debian's valkey-redis-compat, is not reported as Redis) or `databases.distro_versions` (per engine, falling back to
+  Ubuntu 24.04's). Lookups by server take the engine; container access, container firewall ports and restore targets
+  stay SQL-only.
+- **Instances.** A Redis / Valkey "database" is an instance: `databases_databases.port` (lowest free of
+  `databases.key_value.ports` 6380–6479; taken = the server's other instances of both engines and
+  `ServerDirectory::takenPorts()`, the latest machine check's listeners and published container ports) and `settings`
+  (`maxmemory_mb` 128, capped at ¾ of the agent-reported RAM when not given; `eviction` noeviction; `persistence` rdb |
+  aof | none). Creation locks the server's engine rows, so two creations never share a port. Name pattern
+  `^[a-z][a-z0-9_-]{0,40}$`, reserved `default`, `kiln`. Each instance has exactly one `DatabaseUser` (granted on it)
+  holding the requirepass password; its row is named after the instance because usernames are unique per engine row,
+  and it is presented and used as `default`. Extra users, grant edits, user deletion, backups, schedules and restores
+  are refused for key-value engines with a message (backups: phase 3).
+- **Agent** (`db.redis`, docs in `contracts/agent-protocol/README.md`): `db.redis.apply` / `db.redis.remove`, both
+  redeliverable. One process per instance through the distribution's template unit: `redis-server@kiln-<name>` reads
+  `/etc/redis/redis-kiln-<name>.conf`, `valkey-server@kiln-<name>` reads `/etc/valkey/valkey-kiln-<name>.conf`
+  (Debian's packaging generates both templates: `Type=notify`, `--supervised systemd --daemonize no`, the engine user,
+  `ReadWritePaths=/var/lib/<engine>`), data in `/var/lib/<engine>/kiln-<name>`. Kiln ships no unit of its own. The
+  config is 0640 owned by the engine user and disables `CONFIG`, `DEBUG`, `MODULE`, `SHUTDOWN` (`rename-command … ""`);
+  the agent only uses `systemctl` and `PING` (password in `REDISCLI_AUTH`, never argv). Apply restarts only when the
+  file changed, refuses a port another process listens on (`ss`), and fails with the unit's journal tail when `PING`
+  does not answer within 30 s. `save` pairs are one per line (Redis 6.0 on Ubuntu 22.04). The stock instance on 6379
+  is never touched.
+- **Gating.** `CreateKeyValueInstance` refuses servers whose agent lacks `db.redis` ("Update the agent on <server>
+  first"). The command is new, so no `PayloadCompatibility` field: `bind` is in the schema from the start (phase 1 sends
+  `["127.0.0.1"]`, the agent always includes it) so network access needs no new feature.
+- **Lifecycle.** `db.redis.apply` settles the instance (pending → active + `DatabaseCreated`, or failed) and its user;
+  a failed re-apply of an active instance keeps it active with "Apply failed: …". Password rotation
+  (`ApplyDatabaseUser` on a key-value user) and `PUT /databases/databases/{database}/settings` re-apply the instance
+  (idempotency key `db.redis.apply:<id>:<user revision>`). `DeleteDatabase` sends `db.redis.remove`; on success the
+  row and its user go and `DatabaseDeleted` fires.
+- **Contracts.** `DatabaseProvisioner::create(..., array $options = [])` (maxmemory_mb, eviction, persistence) accepts
+  `redis` / `valkey`; `DatabaseData` gained `maxMemoryMb` and `isKeyValue()`, and `port` is the instance's port.
+  `DatabaseConnections::keysFor($engine)` / `hostKeysFor()`: `REDIS_URL` (`redis://default:<password>@127.0.0.1:<port>`),
+  `REDIS_CLIENT` (`phpredis`), `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`. Phase 1 instances listen on 127.0.0.1:
+  native sites on the instance's server resolve them; containers and other servers get the reason from
+  `unreachable()`. Projects' variables list, references and canvas card ("Redis 7.0 · 128 MB · app-1", volume
+  `redis-data`) use them.
+- **Servers.** `InstallDatabaseEngine` also installs `redis` / `valkey` on server types with a `cache` component
+  (one engine install at a time; `servers_servers.engine_install_kind` says which kind `engine_command_id` installs,
+  so only that engine is hidden from `ServerData` meanwhile and only it is taken out when the plan fails; the
+  machine check's `cache` decision applies). `servers.caches_by_os`: Valkey only on Ubuntu 26.04 / Debian 13, Redis
+  elsewhere (releases not listed: Redis only; before the OS is known: everything).
+- **UI.** Picker: Redis / Valkey with their servers, memory and eviction under Advanced. Panel: Overview (REDIS_URL with
+  audited reveal, REDIS_* `.env`, a `redis-cli` line with `REDISCLI_AUTH`, reference keys), Settings (memory, eviction,
+  persistence, version; no port). "Databases & users" and Backups tabs are hidden for key-value services until
+  backups land. Databases server page lists instances with port and memory. Server Settings has a Redis / Valkey block.
+- **Not verified:** a real Redis / Valkey on Ubuntu (Go tests fake systemd and redis-cli; no live install), the sim E2E
+  for create → reference → deploy (the sim's server images don't install `redis-server` yet), Playwright (needs the
+  sim). A real Ubuntu 24.04 (Redis) and 26.04 (Valkey) VM is needed before the rc.
 
 ## Not covered by the E2E yet (unit/feature tested only)
 Docker/Compose runtimes and docker builds on a real BuildKit, database backups/restore to real S3, WireGuard private

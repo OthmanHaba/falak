@@ -82,7 +82,9 @@ for the server's architecture, or the agent already runs it.
 ```
 
 ### `POST /api/v1/servers/{server}/database-engine` — update permission on the server
-Adds a database engine to a provisioned server that has none: `{"engine": "postgresql|mysql|mariadb"}`. The engine
+Adds a database engine to a provisioned server that has none: `{"engine": "postgresql|mysql|mariadb"}`, or Redis /
+Valkey to one without a cache engine: `{"engine": "redis|valkey"}` (server types with a cache component: `app`,
+`cache`; Valkey only where the OS packages it: Ubuntu 26.04, Debian 13). One engine install runs at a time. The engine
 joins the server's stack and the provisioning plan converges with it (`provision.apply`: the distribution's packages
 and service, as at creation). `202` `{"data": {"engine", "status": "installing", "command_id"}}`. Once the agent
 reports success the engine appears under Databases (and, on app servers, is reachable from the server's containers);
@@ -339,6 +341,10 @@ case-insensitively with spaces/dots/underscores as dashes. Database services exp
 `DB_CONNECTION`, `DB_HOST` (dedicated database server: private network → provider private IP → public IP), `DB_PORT`,
 `DB_DATABASE`,
 `DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the database); site services expose their own variables.
+Redis and Valkey services (instances) expose `REDIS_URL` (`redis://default:<password>@<host>:<port>`), `REDIS_HOST`,
+`REDIS_PORT` (the instance's own port, 6380–6479), `REDIS_PASSWORD` and `REDIS_CLIENT` (`phpredis`). In v0.7.0 an
+instance listens on 127.0.0.1 only: `REDIS_HOST` / `REDIS_URL` resolve for native sites on the instance's server;
+containers and sites on other servers get a resolution error naming the reason.
 Unknown services/keys and cycles fail the deployment: `Unresolved variable references: …`.
 An engine on an app or worker server serves that server only, and `DB_HOST` / `DATABASE_URL` resolve only for a
 consumer running on that server alone:
