@@ -105,7 +105,7 @@ means the build was cancelled and `kiln-builder` aborts it.
 - Shared Inertia props: `Kernel\Support\SharedProps` registry merged by `HandleInertiaRequests`; Projects registers
   `kiln` (UI_DESIGN §9). Pages `Projects/Index`, `Projects/Canvas`, `Projects/Settings` are rendered with their props;
   the TSX pages come with the UI wave.
-- Limits: Redis is not a Databases engine yet (`422` "Redis services are not supported yet"); duplicated environments
+- Limits: Redis / Valkey became Databases engines in v0.7.0 (see *Redis and Valkey* below); duplicated environments
   get sites without servers (pick servers per service); canvas status has no "crashed" state yet (no process
   health contract).
 
@@ -410,6 +410,117 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
   state: `FirewallApplyFailed` fires when applies start failing (not on every failing retry) and `FirewallApplied`
   (the recovery) only on the first success after that.
 - The agent refreshes OTLP `host.name` with every facts collection (see *Site web logs*).
+
+## Redis and Valkey (v0.7.0, phase 1)
+Plan: `docs/plans/REDIS.md`. Phase 1 = engine + instances; network access (phase 2), backups / restore (phase 3) and
+compose apps (phase 4) are still open.
+- **Engines.** `Databases\Domain\Enums\Engine` gained `Redis` / `Valkey` and `kind()` (`EngineKind::Sql | KeyValue`).
+  SQL-only methods (charset, collation, privileges) answer null / `[]` for key-value engines; `isMysqlFamily()` is
+  MySQL / MariaDB only (it used to be "not PostgreSQL"). `databases_servers` is unique per `(server_id, engine)`: an app
+  server has its SQL row and its Redis row. `EngineInventory` reads `ServerData::cacheEngine` too (the cache server
+  type's row is `dedicated`); `sync($serverId, ?Engine)` returns the row of that engine (SQL by default). Versions come
+  from `facts.runtimes.redis|valkey` (agent: `<engine>-server --version`; a `redis-server` that is really Valkey,
+  Debian's valkey-redis-compat, is not reported as Redis) or `databases.distro_versions` (per engine, falling back to
+  Ubuntu 24.04's). Lookups by server take the engine; container access, container firewall ports and restore targets
+  stay SQL-only.
+- **Instances.** A Redis / Valkey "database" is an instance: `databases_databases.port` (lowest free of
+  `databases.key_value.ports` 6380–6479; taken = the server's other instances of both engines and
+  `ServerDirectory::takenPorts()`, the latest machine check's listeners and published container ports) and `settings`
+  (`maxmemory_mb` 128, capped at ¾ of the agent-reported RAM when not given; `eviction` noeviction; `persistence` rdb |
+  aof | none). Creation locks the server's engine rows, so two creations never share a port. Name pattern
+  `^[a-z][a-z0-9_-]{0,40}$`, reserved `default`, `kiln`. Each instance has exactly one `DatabaseUser` (granted on it)
+  holding the requirepass password; its row is named after the instance because usernames are unique per engine row,
+  and it is presented and used as `default`. Extra users, grant edits, user deletion, backups, schedules and restores
+  are refused for key-value engines with a message (backups: phase 3).
+- **Agent** (`db.redis`, details in `contracts/agent-protocol/README.md`): `db.redis.apply` / `db.redis.remove`, both
+  redeliverable. One process per instance through the distribution's template unit `redis-server@kiln-<name>` /
+  `valkey-server@kiln-<name>` (Debian's packaging generates both: `Type=notify`, `--supervised systemd --daemonize no`,
+  `ProtectSystem=strict`). The drop-in points `ExecStart` at Kiln's config `/etc/kiln-<engine>/<name>.conf`: the
+  template's own path is under `/etc/redis`, which Debian makes 0770 `redis:redis` (found on a real systemd: the
+  instance user could not open it).
+  **Isolation:** every instance runs as its own system user `kiln-<engine>-<name>` (nologin, no home; past 32
+  characters `kiln-rh-` / `kiln-vh-` + a hash no plain name can produce; the agent only adopts or deletes a user with
+  its GECOS, home `/nonexistent` and a nologin shell; isolated sites created from v0.7.0 on get `s-kiln…` instead of a
+  `kiln…` unix user, existing sites keep theirs — the GECOS check is what protects them) set by a drop-in
+  `/etc/systemd/system/<unit>.d/50-kiln.conf` that also resets `ReadWritePaths=` to the instance's data directory
+  `/var/lib/kiln-<engine>/<name>` (0700, that user) and its runtime directory. The config (password) is 0640
+  `root:<instance group>`. So the stock instance on 6379 (no password, `CONFIG`/`DEBUG` enabled, user `redis`, writable
+  `/var/lib/redis` only) can neither read, reload nor overwrite an instance's data, and instances can't reach each
+  other's. Kiln never changes the stock instance. **Commands:** `CONFIG` is renamed to a random per-instance name only
+  the agent knows (root-only state `/var/lib/kiln/db/redis/<engine>-<name>.json`, plus the config file);
+  `DEBUG`, `MODULE`, `SHUTDOWN`, `REPLICAOF`, `SLAVEOF`, `MIGRATE`, `ACL`, `MONITOR`, `SLOWLOG` and (Valkey 8.1+)
+  `COMMANDLOG` are disabled (the last three would show the agent's commands: the secret name, on 6.0 passwords);
+  errors carry neither the name nor any value; `SYNC`/`PSYNC`/`REPLCONF` stay for phase 3's `redis-cli --rdb`,
+  `EVAL`/`FUNCTION` for Laravel. redis-cli gets commands on stdin and the password in `REDISCLI_AUTH`.
+  **Changes:** memory limit, eviction, password and persistence are changed live through the renamed `CONFIG SET`;
+  then the file is rewritten to match, without a restart. The current mode is always asked from the running process
+  (`INFO persistence`, `CONFIG GET save`; its config file when it is down), so an AOF in use is never moved. A new
+  port, bind address, drop-in or set of disabled commands restarts the unit as stop → move aside → start, after
+  setting save points live and `SAVE` (the stop then snapshots the rest), or for `none` switching snapshots and AOF off
+  first. An AOF whose first rewrite is still running, scheduled or failed (or, stopped, has no manifest) can't be
+  loaded: before such a restart AOF is switched off (ends the rewrite; Redis also refuses to stop while writing it),
+  the snapshot is saved, the partial `appendonlydir` moved aside and the start runs from `dump.rdb`. A wait that runs
+  out (rewrite, load) or a command with under 2 minutes left never restarts: the apply fails and the redelivery waits
+  again. With `none`, every live change moves snapshots aside (an app's `BGSAVE` too). Applies and removes of one
+  instance are serialized (the wait ends with the command; `db.redis.remove` has the same 1 h timeout), and every
+  local account change (site users and instance users) shares one lock; `db.redis.apply` has its own 1 h timeout
+  (`databases.timeouts.redis_apply`) and the agent ends its waits before it; `TimeoutStartSec=20min` covers big loads. Persistence switches keep the data: AOF on = stale
+  `appendonlydir`/`appendonly.aof` moved aside (`.kiln-<UTC time>`), `CONFIG SET appendonly yes`, wait for the
+  rewrite (`INFO persistence`); AOF off = `SAVE` first; a restart into AOF starts without it from `dump.rdb` and
+  switches it on live; that first start keeps the rdb save points (Redis 6–8 / Valkey start empty otherwise). `none` keeps nothing on disk: files of the earlier
+  mode are moved aside and every restart (reboot, port change, upgrade) starts empty; the UI says so. The agent
+  records what runs (config hash, port, bind, persistence, password) only after a successful start / live change and
+  `PING`, so a redelivered apply after a failure converges instead of seeing "unchanged". `LOADING` extends the wait
+  for `PING` to 15 minutes. Paths are `Lstat`-checked (no chmod / chown / write through symlinks).
+  `KILN_REDIS_INTEGRATION=1 go test ./internal/db -run TestRedisIntegration` runs apply / remove against Redis 6.0,
+  7.0, 8.0 and Valkey 7.2, 8.1, 9.0 in Docker (config accepted, renamed / disabled commands unknown to clients,
+  redacted errors, live and restart persistence switches keep every key, none through a restart starts empty, and a
+  restart during a throttled first AOF rewrite keeps every key — without the fix Redis 6.0 / 7.0 came back empty).
+- **Gating.** `CreateKeyValueInstance` refuses servers whose agent lacks `db.redis` ("Update the agent on <server>
+  first"). The command is new, so no `PayloadCompatibility` field: `bind` is in the schema from the start (phase 1 sends
+  `["127.0.0.1"]`, the agent always includes it) so network access needs no new feature.
+- **Lifecycle.** `db.redis.apply` settles the instance (pending → active + `DatabaseCreated`, or failed) and its user;
+  a failed re-apply of an active instance keeps it active with "Apply failed: …". Password rotation
+  (`ApplyDatabaseUser` on a key-value user) and `PUT /databases/databases/{database}/settings` re-apply the instance
+  (idempotency key `db.redis.apply:<id>:<user revision>`). `DeleteDatabase` sends `db.redis.remove`; on success the
+  row and its user go and `DatabaseDeleted` fires.
+- **Contracts.** `DatabaseProvisioner::create(..., array $options = [])` (maxmemory_mb, eviction, persistence) accepts
+  `redis` / `valkey`; `DatabaseData` gained `maxMemoryMb` and `isKeyValue()`, and `port` is the instance's port.
+  `DatabaseConnections::keysFor($engine)` / `hostKeysFor()`: `REDIS_URL` (`redis://default:<password>@127.0.0.1:<port>`),
+  `REDIS_CLIENT` (`phpredis`), `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`. Phase 1 instances listen on 127.0.0.1:
+  native sites on the instance's server resolve them; containers and other servers get the reason from
+  `unreachable()`. Projects' variables list, references and canvas card ("Redis 7.0 · 128 MB · app-1", volume
+  `redis-data`) use them.
+- **Ports.** A new instance whose port the agent reports taken moves to the next free one (up to three times);
+  `(server_id, port)` is unique on `databases_databases`. Settings changes are saved in the same transaction as their
+  dispatch (agent offline → nothing changes). The migration's `down()` refuses while Redis / Valkey engines exist.
+- **Servers.** `InstallDatabaseEngine` also installs `redis` / `valkey` on server types with a `cache` component
+  (one engine install at a time; `servers_servers.engine_install_kind` says which kind `engine_command_id` installs,
+  so only that engine is hidden from `ServerData` meanwhile and only it is taken out when the plan fails; the
+  machine check's `cache` decision applies). `servers.caches_by_os` (packages.ubuntu.com / packages.debian.org,
+  2026-10): Valkey on Ubuntu 24.04 (noble-updates 7.2), 26.04 (9.0) and Debian 13 (8.1), not on 22.04 or Debian 12;
+  Redis everywhere (26.04 and Debian 13 ship 8.0). Releases not listed: Redis only; before the OS is known: everything.
+- **UI.** Picker: Redis / Valkey with their servers, memory and eviction under Advanced. Panel: Overview (REDIS_URL with
+  audited reveal, REDIS_* `.env`, a `redis-cli` line with `REDISCLI_AUTH`, Rotate password — live, sites pick it up on
+  their next deploy —, reference keys), Settings (memory, eviction, persistence with a warning for `none`, version;
+  no port). Databases index: instance ports and count for key-value rows.
+- **API.** `POST /api/v1/projects/{project}/environments/{environment}/services` (the canvas' Create, with a token). "Databases & users" and Backups tabs are hidden for key-value services until
+  backups land. Databases server page lists instances with port and memory. Server Settings has a Redis / Valkey block.
+- **Sim.** Server images ship `redis-server` (stock service disabled; not `valkey-server` too: the machine check refuses
+  two cache engines on one machine). E2E stage `redis` (`ONLY=redis` after a full run): Redis installed on app-2
+  through the API, an instance created through the services API, `${{ cache.REDIS_* }}` deployed with the Bun site,
+  instance user, file modes, the stock 6379's lack of access and the disabled `CONFIG` checked on the server.
+- **Verified by hand under systemd:** in the sim's server image (Ubuntu 24.04, Redis 7.0.15, systemd as PID 1) the real
+  agent code created an instance (runs as `kiln-redis-cache`, `ProtectSystem=strict`, `ReadWritePaths` = its data and
+  runtime dirs), the stock 6379 and its `redis` user could neither change `dir` nor read the config or data, clients
+  got "unknown command" for `CONFIG` / `DEBUG` / `ACL`, live password / memory / rdb→aof changes did not restart
+  (`NRestarts=0`), restarts into rdb and aof and a plain restart kept every key, and remove deleted unit, files and
+  user while the stock instance kept answering.
+  The same image with Ubuntu's valkey-server 7.2.13 (noble-updates) ran a Valkey instance with AOF as
+  `kiln-valkey-sessions` (and showed Valkey 7.2's `--version` banner is just "Server v=…", now parsed).
+- **Not verified:** the sim E2E stage has not been run yet; Playwright (needs the sim); Ubuntu 22.04's Redis 6.0 and
+  26.04 under systemd (Redis 6.0 and Valkey 9.0 only in the Docker integration test). A real Ubuntu 24.04 (Redis, Valkey 7.2) and 26.04 (Valkey 9.0) VM is needed before
+  the rc.
 
 ## Not covered by the E2E yet (unit/feature tested only)
 Docker/Compose runtimes and docker builds on a real BuildKit, database backups/restore to real S3, WireGuard private

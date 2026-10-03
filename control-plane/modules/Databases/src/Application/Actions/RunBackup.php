@@ -42,6 +42,10 @@ final class RunBackup
         $server = $database->databaseServer;
         $background = $trigger === 'scheduled';
 
+        if ($server->engine->isKeyValue()) {
+            throw ValidationException::withMessages(['database' => "Backups of {$server->engine->label()} instances are not supported yet (coming in a later release)."]);
+        }
+
         if ($provider->organization_id !== $database->organization_id) {
             throw ValidationException::withMessages(['storage_provider_id' => 'Choose a storage provider of this organization.']);
         }

@@ -2,8 +2,11 @@
 
 use Kiln\Databases\Contracts\DatabaseConnections;
 use Kiln\Databases\Domain\Models\Database;
+use Kiln\Fleet\Domain\Models\Agent;
 use Kiln\Identity\Contracts\Role;
+use Kiln\Projects\Contracts\VariableReferences;
 use Kiln\Projects\Domain\Models\Service;
+use Kiln\Servers\Contracts\ServerType;
 use Kiln\Sites\Domain\Models\Site;
 use Tests\Support\FakeAgentGateway;
 
@@ -77,12 +80,66 @@ it('rejects unsupported or mismatched database engines', function () {
     $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'postgresql', 'server_id' => $engine->server_id, 'name' => 'orders'])
         ->assertUnprocessable()->assertJsonValidationErrors(['engine']);
     $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'redis', 'server_id' => $engine->server_id, 'name' => 'cache'])
-        ->assertUnprocessable()->assertJsonValidationErrors(['engine' => 'Redis services are not supported yet.']);
+        ->assertUnprocessable()->assertJsonValidationErrors(['server_id' => 'The server does not run Redis.']);
+    $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'memcached', 'server_id' => $engine->server_id, 'name' => 'cache'])
+        ->assertUnprocessable()->assertJsonValidationErrors(['engine']);
     $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'mysql', 'server_id' => str_repeat('0', 26), 'name' => 'orders'])
         ->assertUnprocessable()->assertJsonValidationErrors(['server_id']);
     $this->postJson("{$this->base}/services", ['kind' => 'queue'])->assertUnprocessable()->assertJsonValidationErrors(['kind']);
 
     expect(Database::query()->count())->toBe(0);
+});
+
+it('creates a Redis instance from the canvas: card, REDIS_* keys and references for a site on the server', function () {
+    $agents = FakeAgentGateway::install();
+    $server = databases_server($this->organization, 'postgresql', ServerType::App, ['stack' => ['database' => 'postgresql', 'cache' => 'redis']]);
+    Agent::factory()->create(['server_id' => $server->id, 'organization_id' => $this->organization->id, 'facts' => ['features' => ['db.redis'], 'runtimes' => ['redis' => ['7.0.15']], 'memory_bytes' => 4 * 1024 ** 3]]);
+
+    $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'redis', 'server_id' => $server->id, 'name' => 'cache', 'maxmemory_mb' => 256, 'eviction' => 'allkeys-lru'])
+        ->assertCreated()
+        ->assertJsonPath('data.icon', 'redis')
+        ->assertJsonPath('data.status', 'provisioning')
+        ->assertJsonPath('data.subtitle', "Redis 7.0 · 256 MB · {$server->name}")
+        ->assertJsonPath('data.volumes.0.name', 'redis-data');
+
+    $apply = $agents->last('db.redis.apply');
+    expect($apply['payload'])->toMatchArray(['name' => 'cache', 'port' => 6380, 'maxmemory_mb' => 256, 'eviction' => 'allkeys-lru']);
+    $agents->succeed($apply['handle'], ['changed' => true, 'restarted' => true, 'port' => 6380]);
+
+    $this->getJson("{$this->base}/variables")->assertOk()
+        ->assertJsonPath('data.services.0.keys', DatabaseConnections::REDIS_KEYS);
+
+    $web = projects_site($this->organization, 'Web', [], $this->staging, [$server]);
+    $result = app(VariableReferences::class)->resolve($this->staging->id, $web->id, ['REDIS_URL' => '${{ cache.REDIS_URL }}', 'REDIS_PORT' => '${{ cache.REDIS_PORT }}']);
+    expect($result->errors)->toBe([])
+        ->and($result->variables)->toBe(['REDIS_URL' => "redis://default:{$apply['payload']['password']}@127.0.0.1:6380", 'REDIS_PORT' => '6380']);
+
+    // A site on another server gets the reason instead of a host it cannot reach.
+    $other = projects_site($this->organization, 'Elsewhere', [], $this->staging, [sites_server($this->organization->id, ['name' => 'web-9'])]);
+    $result = app(VariableReferences::class)->resolve($this->staging->id, $other->id, ['REDIS_HOST' => '${{ cache.REDIS_HOST }}']);
+    expect($result->errors[0] ?? '')->toContain('cache.REDIS_HOST cannot be used here');
+});
+
+it('creates a Redis instance through the API with a token', function () {
+    $agents = FakeAgentGateway::install();
+    $server = databases_server($this->organization, 'postgresql', ServerType::App, ['stack' => ['cache' => 'valkey']]);
+    Agent::factory()->create(['server_id' => $server->id, 'organization_id' => $this->organization->id, 'facts' => ['features' => ['db.redis']]]);
+    $token = $this->user->createToken('cli', ['*']);
+    $token->accessToken->forceFill(['organization_id' => $this->organization->id])->save();
+    auth()->forgetGuards();
+
+    $this->withToken($token->plainTextToken)->postJson("/api/v1/projects/{$this->staging->project_id}/environments/staging/services", ['kind' => 'database', 'engine' => 'valkey', 'server_id' => $server->id, 'name' => 'sessions', 'persistence' => 'aof'])
+        ->assertCreated()->assertJsonPath('data.icon', 'valkey')->assertJsonPath('data.name', 'sessions');
+    expect($agents->last('db.redis.apply')['payload'])->toMatchArray(['engine' => 'valkey', 'persistence' => 'aof']);
+
+    // Upper-case ids (as the CLI prints them) and environment ids work; another organization's project is not found.
+    $this->withToken($token->plainTextToken)->postJson('/api/v1/projects/'.strtoupper($this->staging->project_id)."/environments/{$this->staging->id}/services", ['kind' => 'database', 'engine' => 'valkey', 'server_id' => $server->id, 'name' => 'queue'])
+        ->assertCreated();
+    [, $stranger] = memberOf();
+    $other = projects_default_env($stranger);
+    $this->withToken($token->plainTextToken)->postJson("/api/v1/projects/{$other->project_id}/environments/production/services", ['kind' => 'database', 'engine' => 'valkey', 'server_id' => $server->id, 'name' => 'x'])
+        ->assertNotFound();
+    $this->withToken($token->plainTextToken)->postJson('/api/v1/projects/not-a-ulid/environments/staging/services', [])->assertNotFound();
 });
 
 it('persists card positions per environment', function () {

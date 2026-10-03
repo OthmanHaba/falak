@@ -28,7 +28,7 @@ var Catalogue = []string{
 	"deploy.fetch", "deploy.prepare", "deploy.hook", "deploy.activate", "deploy.rollback", "deploy.prune", "deploy.container.swap",
 	"proc.apply", "proc.restart", "proc.status",
 	"cron.apply",
-	"db.create", "db.drop", "db.user.apply", "db.backup", "db.restore",
+	"db.create", "db.drop", "db.user.apply", "db.backup", "db.restore", "db.redis.apply", "db.redis.remove",
 	"net.firewall.apply", "net.wireguard.apply", "net.tunnel.apply",
 	"fn.release.apply", "fn.release.remove", "fn.run", "fn.status",
 	"docker.pull", "docker.run", "docker.stop", "docker.compose.up", "docker.compose.down", "docker.compose.pull", "docker.compose.ps", "docker.compose.restart", "docker.prune",

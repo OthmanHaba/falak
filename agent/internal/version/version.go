@@ -44,6 +44,9 @@ var Features = []string{
 	// provision.inspect (read-only machine check) and provision.apply components (adopted components are verified,
 	// never installed).
 	"provision.v2",
+	// db.redis.apply / db.redis.remove: Redis and Valkey instances (redis-server@kiln-<name>), facts.runtimes redis /
+	// valkey versions.
+	"db.redis",
 }
 
 var (

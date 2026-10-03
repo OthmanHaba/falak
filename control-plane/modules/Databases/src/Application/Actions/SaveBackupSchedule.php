@@ -21,6 +21,10 @@ final class SaveBackupSchedule
      */
     public function __invoke(DatabaseServer $server, array $data, ?BackupSchedule $schedule = null, ?string $actorId = null): BackupSchedule
     {
+        if ($server->engine->isKeyValue()) {
+            throw ValidationException::withMessages(['database_ids' => "Backups of {$server->engine->label()} instances are not supported yet (coming in a later release)."]);
+        }
+
         $cron = trim(preg_replace('/\s+/', ' ', $data['cron']) ?? '');
 
         if (! CronExpression::isValidExpression($cron) || count(explode(' ', $cron)) !== 5) {

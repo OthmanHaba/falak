@@ -83,9 +83,22 @@ export default function Index({ servers, recentBackups, storageProviders }: Prop
                                                 </span>
                                             )}
                                         </TableCell>
-                                        <TableCell className="tabular-nums">{server.port}</TableCell>
-                                        <TableCell className="tabular-nums">{server.databases_count ?? 0}</TableCell>
-                                        <TableCell className="tabular-nums">{server.users_count ?? 0}</TableCell>
+                                        {server.kind === 'key_value' ? (
+                                            <>
+                                                {/* Instances have their own ports; the stock one on 6379 is not Kiln's. */}
+                                                <TableCell className="tabular-nums">{server.instance_ports?.join(', ') || '—'}</TableCell>
+                                                <TableCell className="tabular-nums">
+                                                    {server.databases_count ?? 0} instance{server.databases_count === 1 ? '' : 's'}
+                                                </TableCell>
+                                                <TableCell className="text-muted-foreground">—</TableCell>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <TableCell className="tabular-nums">{server.port}</TableCell>
+                                                <TableCell className="tabular-nums">{server.databases_count ?? 0}</TableCell>
+                                                <TableCell className="tabular-nums">{server.users_count ?? 0}</TableCell>
+                                            </>
+                                        )}
                                     </TableRow>
                                 ))}
                             </TableBody>

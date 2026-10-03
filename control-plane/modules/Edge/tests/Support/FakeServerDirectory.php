@@ -33,4 +33,9 @@ final class FakeServerDirectory implements ServerDirectory
     {
         return null;
     }
+
+    public function takenPorts(string $serverId): array
+    {
+        return [];
+    }
 }

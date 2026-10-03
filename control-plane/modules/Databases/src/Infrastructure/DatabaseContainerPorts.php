@@ -2,6 +2,7 @@
 
 namespace Kiln\Databases\Infrastructure;
 
+use Kiln\Databases\Domain\Enums\EngineKind;
 use Kiln\Databases\Domain\Models\DatabaseServer;
 use Kiln\Network\Contracts\ContainerHostPorts;
 
@@ -15,6 +16,7 @@ final class DatabaseContainerPorts implements ContainerHostPorts
     {
         return DatabaseServer::query()
             ->where('server_id', strtolower($serverId))
+            ->whereIn('engine', EngineKind::Sql->values())
             ->where('dedicated', false)
             ->where('container_access', true)
             ->orderBy('engine')

@@ -102,7 +102,11 @@ is ~2.5x slower than pulling directly.
 `./e2e-deploy.sh` prints each stage's duration and a summary table at the end, and appends the timings to
 `.data/e2e-timings.tsv`. Pick stages for quick iteration: `ONLY=deploy,release` (comma or space separated;
 state from the previous run is in `.data/e2e.env`), `SKIP=templates`, or `FAST=1` (skips the third-party
-template stage). Status polls run every `POLL=1` second. `make up` prints how long the stack took to become
+template stage). Status polls run every `POLL=1` second. The `redis` stage (Redis on app-2, an instance created
+through `POST /projects/{project}/environments/{env}/services`, `${{ cache.REDIS_* }}` references deployed with the Bun
+site, instance user / file modes / isolation from the stock 6379 checked on the server) needs the `servers`, `sites`
+and `bun` stages' state: after a full run, `ONLY=redis ./e2e-deploy.sh`. Server images built before it lack
+`redis-server`: `make build` (or `docker compose build srv-app-2`) rebuilds them. `make up` prints how long the stack took to become
 healthy; healthchecks poll every 1–2 s while containers start.
 
 ## Integration points

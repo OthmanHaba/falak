@@ -36,7 +36,8 @@ feature name: the agent lists it in `facts.features` (`agent/internal/version.Fe
 removes the field for agents that do not (`Fleet\Application\PayloadCompatibility::FIELDS`). When an agent reports
 a new version (`Fleet\Events\AgentVersionChanged`), modules re-send state they would otherwise deduplicate.
 Current features: `edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`, `fn.v1`, `fn.v2`, `fn.v3`,
-`db.containers`, `compose.v2`, `docker.networks`, `docker.networks.create`, `compose.up.services`, `provision.v2`.
+`db.containers`, `compose.v2`, `docker.networks`, `docker.networks.create`, `compose.up.services`, `provision.v2`,
+`db.redis`.
 
 A feature can also gate a whole **command**: the control plane only queues it for agents that list the feature
 (older agents would fail it as an unknown type). `provision.v2` adds `provision.inspect` and `provision.apply`
@@ -65,6 +66,42 @@ agent which components were adopted: their `packages` are never installed (remov
 `unattended_upgrades` gets no Kiln config. `components` is stripped for agents without `provision.v2`, which also
 never get `provision.inspect` and keep today's plan.
 
+## Redis and Valkey instances (`db.redis`)
+`db.redis.apply` / `db.redis.remove` (`engine`: `redis` | `valkey`) manage one instance per Kiln service, run by the
+distribution's template unit `redis-server@kiln-<name>` / `valkey-server@kiln-<name>` (Debian/Ubuntu ship both
+templates: `Type=notify`, `RuntimeDirectory`, `ProtectSystem=strict`). Each instance runs as its own system user
+`kiln-<engine>-<name>` (past 32 characters `kiln-rh-` / `kiln-vh-` + a hash, which no plain name produces; the agent
+only adopts or deletes a user carrying its GECOS `Kiln <Engine> instance <name>`, home `/nonexistent` and a nologin
+shell, and refuses to use any other user of that name): a drop-in `/etc/systemd/system/<unit>.d/50-kiln.conf` sets `User=`/`Group=`, resets
+`ReadWritePaths=` to the instance's data directory `/var/lib/kiln-<engine>/<name>` (0700) and its runtime directory,
+sets `TimeoutStartSec=20min` (`Type=notify` waits for the dataset to load) and points `ExecStart` at `/etc/kiln-<engine>/<name>.conf` (the template's `/etc/redis` is 0770 `redis:redis`, which
+the instance user must not join), so the stock instance on 6379 and other instances can neither read nor write its data. The
+config holds `requirepass`, is 0640 `root:<instance group>`, renames `CONFIG` to a random name only the agent knows
+(root-only state in `/var/lib/kiln/db/redis/`), and disables `DEBUG`, `MODULE`, `SHUTDOWN`, `REPLICAOF`, `SLAVEOF`,
+`MIGRATE`, `ACL`, `MONITOR`, `SLOWLOG` and, on Valkey 8.1+, `COMMANDLOG` (the last three would show the agent's commands;
+the version comes from `<engine>-server --version`) (`SYNC`/`PSYNC`/`REPLCONF` stay for `redis-cli --rdb`, `EVAL`/`FUNCTION` for Laravel).
+redis-cli gets every command on stdin and the password in `REDISCLI_AUTH`: neither reaches a command line.
+
+Memory limit, eviction, password and persistence change on the running instance (renamed `CONFIG SET`; AOF on: the
+rewrite is awaited through `INFO persistence`; AOF off or rdb from none: `SAVE` first). The current mode always comes
+from the running process (`INFO persistence`, `CONFIG GET save`; the config file when it is down), never from the
+agent's state, so an AOF the process uses is never moved. A new port, bind address, drop-in or set of disabled
+commands restarts the instance: save points are set live and `SAVE`d (with `none`: snapshots and AOF off) so the stop
+keeps (or drops) the data as wanted, then stop, move aside what the next start must not load
+(`appendonlydir.kiln-<UTC time>`), start; a restart that turns AOF on starts from `dump.rdb` with snapshots and switches
+AOF on live. An AOF whose first rewrite is running, scheduled or failed (stopped: no manifest) is never loaded: AOF is
+switched off before the restart and the start runs from the snapshot. A wait that runs out, or a command with under 2
+minutes left, never restarts the instance (the apply fails; the redelivery waits again). Applies and removes of one
+instance are serialized (waiting ends with the command's context), every local account change globally (site users
+included). Errors never
+carry the secret `CONFIG` name, passwords or command arguments. With
+`none` the data is in memory only: files from earlier modes are moved aside and every restart starts empty. The agent
+records what the running process uses only after a successful (re)start and `PING`, so a redelivered apply after a
+failure converges. Apply refuses a new port another process listens on (`port 6381 is in use by <process>`) and
+waits for `PING` (`LOADING` extends the wait to 15 minutes). The stock instance is never touched. The control plane
+only queues these commands for agents that list `db.redis`; such agents also report `facts.runtimes.redis` /
+`.valkey` (`<engine>-server --version`).
+
 ## Agent sessions and lost deliveries
 Every `kiln-agent` process sends a random session id (`X-Kiln-Agent-Session: s-<32 hex>`, 8-64 characters of
 `[A-Za-z0-9._:-]`) on every mTLS request. Agents from before sessions send none; that is accepted.
@@ -79,7 +116,8 @@ Every `kiln-agent` process sends a random session id (`X-Kiln-Agent-Session: s-<
 A lost command whose schema has `"x-kiln-redeliverable": true` at its root is queued again (up to 5 deliveries);
 the agent answers a command id it already finished from its journal, so nothing runs twice. Redeliverable:
 declarative state (`edge.caddy.apply`, `edge.cert.install`, `telemetry.configure`, `proc.apply`, `cron.apply`,
-`net.firewall.apply`, `net.wireguard.apply`, `db.user.apply`, `system.ssh_key.sync`), read-only commands
+`net.firewall.apply`, `net.wireguard.apply`, `db.user.apply`, `db.redis.apply`, `db.redis.remove`,
+`system.ssh_key.sync`), read-only commands
 (`proc.status`, `system.facts`, `docker.compose.ps`, `provision.inspect`) and `system.upgrade_agent` (a no-op once
 installed). Any other type fails instead, so the deployment waiting on it fails fast: `failed` with "The agent
 restarted before running the command" when it was never started, `timed_out` otherwise (a late result still

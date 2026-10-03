@@ -117,8 +117,54 @@ it('releases the claim when the plan cannot be dispatched', function () {
     expect($server->stack->database)->toBeNull()->and($server->engine_command_id)->toBeNull();
 });
 
+it('installs Redis next to the database engine and registers it in Databases; Valkey only where the OS has it', function () {
+    // Ubuntu 22.04 has no valkey-server (24.04 has it in noble-updates, 26.04 and Debian 13 too).
+    $this->server->forceFill(['os' => 'ubuntu 22.04'])->save();
+    $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'valkey'])
+        ->assertSessionHasErrors(['engine' => 'Valkey is not available on Ubuntu 22.04.']);
+
+    $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'postgresql'])->assertSessionHasNoErrors();
+    // One install at a time.
+    $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'redis'])
+        ->assertSessionHasErrors(['engine' => 'A database engine is already being installed on this server.']);
+    [$envelope] = servers_poll($this->agent['headers']);
+    servers_finish($this->agent['headers'], $envelope['id']);
+
+    $this->server->refresh();
+    $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'redis'])->assertSessionHasNoErrors();
+    $server = $this->server->refresh();
+    expect($server->stack->cache)->toBe('redis')->and($server->engine_install_kind)->toBe('cache')
+        ->and(app(ServerDirectory::class)->find($server->id))->cacheEngine->toBeNull()->databaseEngine->toBe('postgresql');
+
+    [$envelope] = servers_poll($this->agent['headers']);
+    expect($envelope['payload']['apt']['packages'])->toContain('redis-server', 'postgresql');
+    servers_finish($this->agent['headers'], $envelope['id']);
+
+    expect($server->refresh()->engine_command_id)->toBeNull()
+        ->and($server->engine_install_kind)->toBeNull()
+        ->and(app(ServerDirectory::class)->find($server->id)->cacheEngine)->toBe('redis')
+        ->and(DatabaseServer::query()->where('server_id', $server->id)->pluck('engine')->map->value->sort()->values()->all())->toBe(['postgresql', 'redis']);
+
+    $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'valkey'])
+        ->assertSessionHasErrors('engine');
+
+    $this->get("/servers/{$server->id}/settings")->assertInertia(fn ($page) => $page
+        ->where('cache.engine', 'redis')->where('cache.installing', false)->where('cache.allowed', true)
+        ->where('cache.options', [['value' => 'redis', 'label' => 'Redis']]));
+});
+
+it('takes a cache engine back out of the stack when its plan fails, leaving the database engine', function () {
+    $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'redis'])->assertSessionHasNoErrors();
+    [$envelope] = servers_poll($this->agent['headers']);
+    servers_finish($this->agent['headers'], $envelope['id'], 100, 'E: Unable to locate package redis-server');
+
+    $server = $this->server->refresh();
+    expect($server->stack->cache)->toBeNull()->and($server->engine_command_id)->toBeNull()->and($server->engine_install_kind)->toBeNull()
+        ->and(DatabaseServer::query()->where('server_id', $server->id)->exists())->toBeFalse();
+});
+
 it('refuses a second engine, unsupported engines and server types without databases', function () {
-    $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'redis'])->assertSessionHasErrors('engine');
+    $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'memcached'])->assertSessionHasErrors('engine');
 
     $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'postgresql'])->assertSessionHasNoErrors();
     $this->post("/servers/{$this->server->id}/database-engine", ['engine' => 'mariadb'])

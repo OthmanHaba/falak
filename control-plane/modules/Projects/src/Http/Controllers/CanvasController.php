@@ -6,7 +6,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Databases\Contracts\DatabaseConnections;
+use Kiln\Databases\Contracts\DatabaseDirectory;
 use Kiln\Identity\Contracts\OrganizationAccess;
 use Kiln\Kernel\Http\Controller;
 use Kiln\Projects\Application\Canvas\CanvasActivity;
@@ -68,12 +70,17 @@ final class CanvasController extends Controller
      * GET /projects/{project}/{environment}/variables — what `${{ service.KEY }}` can point at in this environment
      * (UI_DESIGN §5.3): every service with the keys it exposes. Key names only, never values.
      */
-    public function variables(Project $project, string $environment, SiteDirectory $sites): JsonResponse
+    public function variables(Project $project, string $environment, SiteDirectory $sites, DatabaseDirectory $databases, DatabaseConnections $connections): JsonResponse
     {
         $this->authorize('view', $project);
         $model = $this->resolveEnvironment($project, $environment);
+        $all = $model->services()->orderBy('name')->get();
+        $engines = array_map(
+            fn (DatabaseData $database) => $database->engine,
+            $databases->findMany($all->where('kind', ServiceKind::Database)->pluck('ref_id')->values()->all()),
+        );
 
-        $services = $model->services()->orderBy('name')->get()->map(fn (Service $service) => [
+        $services = $all->map(fn (Service $service) => [
             'id' => $service->id,
             'kind' => $service->kind->value,
             'ref_id' => $service->ref_id,
@@ -81,7 +88,7 @@ final class CanvasController extends Controller
             'handle' => Service::handle($service->name),
             'keys' => match ($service->kind) {
                 ServiceKind::Site => array_keys($sites->environment($service->ref_id)->variables ?? []),
-                ServiceKind::Database => DatabaseConnections::KEYS,
+                ServiceKind::Database => $connections->keysFor($engines[$service->ref_id] ?? 'postgresql'),
             },
         ])->values();
 

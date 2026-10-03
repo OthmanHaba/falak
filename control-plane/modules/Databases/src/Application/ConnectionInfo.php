@@ -2,6 +2,7 @@
 
 namespace Kiln\Databases\Application;
 
+use Kiln\Databases\Domain\Models\Database;
 use Kiln\Databases\Domain\Models\DatabaseServer;
 use Kiln\Network\Contracts\PrivateNetwork;
 use Kiln\Servers\Contracts\ServerDirectory;
@@ -17,10 +18,21 @@ final class ConnectionInfo
     ) {}
 
     /**
-     * @return array{engine: string, driver: string, port: int, hosts: list<array{label: string, value: string, hint: string}>}
+     * @param  ?Database  $database  a Redis / Valkey instance: its own port, reachable on the server only for now
+     * @return array{engine: string, kind: string, driver: string, port: int, hosts: list<array{label: string, value: string, hint: string}>}
      */
-    public function for(DatabaseServer $server): array
+    public function for(DatabaseServer $server, ?Database $database = null): array
     {
+        if ($server->engine->isKeyValue()) {
+            return [
+                'engine' => $server->engine->value,
+                'kind' => $server->engine->kind()->value,
+                'driver' => $server->engine->driver(),
+                'port' => (int) ($database?->port ?? $server->port),
+                'hosts' => [['label' => 'Same server', 'value' => '127.0.0.1', 'hint' => "Sites hosted natively on {$server->server_name}. Containers and other servers can't reach instances yet."]],
+            ];
+        }
+
         $data = $this->servers->find($server->server_id);
         $hosts = [];
 
@@ -42,6 +54,7 @@ final class ConnectionInfo
 
         return [
             'engine' => $server->engine->value,
+            'kind' => $server->engine->kind()->value,
             'driver' => $server->engine->driver(),
             'port' => $server->port,
             'hosts' => $hosts,

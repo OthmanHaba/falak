@@ -24,6 +24,10 @@ final class CreateDatabaseUser
      */
     public function __invoke(DatabaseServer $server, array $data, ?string $actorId = null): DatabaseUser
     {
+        if ($server->engine->isKeyValue()) {
+            throw ValidationException::withMessages(['username' => "{$server->engine->label()} instances have a single user (default); rotate its password instead."]);
+        }
+
         $username = $data['username'];
         Identifiers::assertValid($server->engine, $username, 'username', 'username');
 

@@ -2,6 +2,7 @@
 
 namespace Kiln\Databases\Application\Actions;
 
+use Illuminate\Validation\ValidationException;
 use Kiln\Databases\Application\AgentCommands;
 use Kiln\Databases\Domain\Enums\ResourceStatus;
 use Kiln\Databases\Domain\Models\DatabaseUser;
@@ -20,6 +21,10 @@ final class DeleteDatabaseUser
 
     public function __invoke(DatabaseUser $user): void
     {
+        if ($user->databaseServer->engine->isKeyValue()) {
+            throw ValidationException::withMessages(['user' => 'The default user of an instance goes with the instance: delete the instance instead.']);
+        }
+
         $revision = $user->revision + 1;
 
         $handle = $this->commands->dispatch(

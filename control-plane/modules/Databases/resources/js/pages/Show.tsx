@@ -59,6 +59,8 @@ export default function Show({
 }: Props) {
     const [editingEngine, setEditingEngine] = useState(false);
     const engine = useForm({ version: server.version_source === 'manual' ? (server.version ?? '') : '', port: String(server.port) });
+    // Redis / Valkey: instances with their own port and `default` user; no extra users, schedules or backups yet.
+    const keyValue = server.kind === 'key_value';
 
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Databases', href: '/databases' },
@@ -81,7 +83,10 @@ export default function Show({
 
     const submitEngine: FormEventHandler = (event) => {
         event.preventDefault();
-        engine.transform((data) => ({ version: data.version === '' || data.version === 'auto' ? null : data.version, port: Number(data.port) }));
+        engine.transform((data) => ({
+            version: data.version === '' || data.version === 'auto' ? null : data.version,
+            port: keyValue ? null : Number(data.port),
+        }));
         engine.put(`/databases/servers/${server.id}`, { preserveScroll: true, onSuccess: () => setEditingEngine(false) });
     };
 
@@ -93,8 +98,9 @@ export default function Show({
                     <div>
                         <h2 className="text-xl font-semibold tracking-tight">{server.server_name}</h2>
                         <p className="text-muted-foreground text-sm">
-                            {server.engine_label} {server.version ?? ''} · port {server.port}
-                            {server.dedicated ? ' · dedicated database server' : ''}
+                            {server.engine_label} {server.version ?? ''}
+                            {keyValue ? ' · one process per instance (ports 6380–6479)' : ` · port ${server.port}`}
+                            {server.dedicated ? (keyValue ? ' · dedicated cache server' : ' · dedicated database server') : ''}
                             {server.version_source === 'default' && ' · version assumed from the distro'}
                         </p>
                     </div>
@@ -119,29 +125,51 @@ export default function Show({
                             canManage={can.manage}
                             defaults={{ charset: options.default_charset, collation: options.default_collation }}
                         />
-                        <UsersCard server={server} users={users} databases={databases} privileges={options.privileges} canManage={can.manage} />
+                        {!keyValue && (
+                            <UsersCard server={server} users={users} databases={databases} privileges={options.privileges} canManage={can.manage} />
+                        )}
                     </div>
                     <div className="space-y-6">
-                        <ConnectionCard connection={connection} databases={databases} users={users} canReveal={can.reveal} />
+                        {keyValue ? (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="text-base">Connect</CardTitle>
+                                </CardHeader>
+                                <CardContent className="text-muted-foreground space-y-2 text-sm">
+                                    <p>
+                                        Each instance listens on 127.0.0.1 and its own port, with the password of its <code>default</code> user. Sites
+                                        on {server.server_name} reference it as <code>{'${{ <service>.REDIS_URL }}'}</code>; the instance&apos;s panel
+                                        on the canvas shows the connection details.
+                                    </p>
+                                    <p>Backups, containers and other servers come in a later release.</p>
+                                </CardContent>
+                            </Card>
+                        ) : (
+                            <ConnectionCard connection={connection} databases={databases} users={users} canReveal={can.reveal} />
+                        )}
                     </div>
                 </div>
 
-                <SchedulesCard
-                    server={server}
-                    schedules={schedules}
-                    databases={databases}
-                    storageProviders={storageProviders}
-                    canManage={can.manage}
-                />
+                {!keyValue && (
+                    <SchedulesCard
+                        server={server}
+                        schedules={schedules}
+                        databases={databases}
+                        storageProviders={storageProviders}
+                        canManage={can.manage}
+                    />
+                )}
 
-                <Card className="gap-0 py-0">
-                    <CardHeader className="border-b py-4">
-                        <CardTitle className="text-base">Backups</CardTitle>
-                    </CardHeader>
-                    <CardContent className="px-0">
-                        <BackupsTable backups={backups} canManage={can.manage} canRestore={can.restore} restoreTargets={restoreTargets} />
-                    </CardContent>
-                </Card>
+                {!keyValue && (
+                    <Card className="gap-0 py-0">
+                        <CardHeader className="border-b py-4">
+                            <CardTitle className="text-base">Backups</CardTitle>
+                        </CardHeader>
+                        <CardContent className="px-0">
+                            <BackupsTable backups={backups} canManage={can.manage} canRestore={can.restore} restoreTargets={restoreTargets} />
+                        </CardContent>
+                    </Card>
+                )}
 
                 {restores.length > 0 && (
                     <Card>
@@ -202,11 +230,18 @@ export default function Show({
                             </Select>
                             <InputError message={engine.errors.version} />
                         </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="engine-port">Port</Label>
-                            <Input id="engine-port" type="number" value={engine.data.port} onChange={(e) => engine.setData('port', e.target.value)} />
-                            <InputError message={engine.errors.port} />
-                        </div>
+                        {!keyValue && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="engine-port">Port</Label>
+                                <Input
+                                    id="engine-port"
+                                    type="number"
+                                    value={engine.data.port}
+                                    onChange={(e) => engine.setData('port', e.target.value)}
+                                />
+                                <InputError message={engine.errors.port} />
+                            </div>
+                        )}
                         <DialogFooter>
                             <Button type="button" variant="ghost" onClick={() => setEditingEngine(false)}>
                                 Cancel

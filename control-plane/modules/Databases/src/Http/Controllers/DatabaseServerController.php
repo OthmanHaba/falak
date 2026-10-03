@@ -97,7 +97,7 @@ final class DatabaseServerController extends Controller
             'storageProviders' => StorageProvider::query()->where('organization_id', $organizationId)->orderBy('name')->get(['id', 'name', 'driver', 'bucket'])
                 ->map(fn (StorageProvider $provider) => ['id' => $provider->id, 'name' => $provider->name, 'driver' => $provider->driver->value, 'bucket' => $provider->bucket])->values(),
             'restoreTargets' => DatabaseServer::query()->where('organization_id', $organizationId)->orderBy('server_name')->get()
-                ->filter(fn (DatabaseServer $target) => $target->engine->protocol() === $databaseServer->engine->protocol())
+                ->filter(fn (DatabaseServer $target) => ! $target->engine->isKeyValue() && $target->engine->protocol() === $databaseServer->engine->protocol())
                 ->map(fn (DatabaseServer $target) => ['id' => $target->id, 'label' => "{$target->server_name} ({$target->label()})"])->values(),
             'options' => [
                 'privileges' => $databaseServer->engine->privileges(),
@@ -121,10 +121,11 @@ final class DatabaseServerController extends Controller
 
         $data = $request->validate([
             'version' => ['nullable', 'string', Rule::in((array) config("databases.versions.{$databaseServer->engine->value}", []))],
-            'port' => ['required', 'integer', 'between:1,65535'],
+            // Redis / Valkey instances have their own ports; the engine row's port is the stock instance's.
+            'port' => [$databaseServer->engine->isKeyValue() ? 'nullable' : 'required', 'integer', 'between:1,65535'],
         ]);
 
-        $set($databaseServer, $data['version'] ?? null, (int) $data['port']);
+        $set($databaseServer, $data['version'] ?? null, (int) ($data['port'] ?? $databaseServer->port));
 
         return back();
     }

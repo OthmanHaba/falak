@@ -13,6 +13,11 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       systemd systemd-sysv dbus openssh-server sudo ca-certificates curl iproute2 \
       iputils-ping nftables less procps tzdata \
+ # Redis comes preinstalled so the Redis E2E stage doesn't wait for apt; its stock 6379 service stays off until a
+ # server's stack asks for it (provisioning starts it then). Not valkey-server as well: noble has it (noble-updates),
+ # but the machine check refuses two cache engines on one machine, by design.
+      redis-server redis-tools \
+ && systemctl disable redis-server.service \
  && apt-get clean && rm -rf /var/lib/apt/lists/* \
  # Units that make no sense (or fail) inside a container.
  && systemctl mask \

@@ -371,7 +371,7 @@ YAML;
 it('gives the service back when creating the Kiln service fails, and refuses a second claim', function () {
     app()->instance(DatabaseProvisioner::class, new class implements DatabaseProvisioner
     {
-        public function create(string $organizationId, string $serverId, string $engine, string $name, ?string $actorId = null): DatabaseData
+        public function create(string $organizationId, string $serverId, string $engine, string $name, ?string $actorId = null, array $options = []): DatabaseData
         {
             throw ValidationException::withMessages(['name' => 'boom']);
         }

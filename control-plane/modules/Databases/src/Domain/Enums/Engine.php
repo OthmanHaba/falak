@@ -4,13 +4,16 @@ namespace Kiln\Databases\Domain\Enums;
 
 /**
  * Database engine flavours. The agent protocol only distinguishes the wire engine (`mysql` | `postgres`):
- * MariaDB is driven through the MySQL client tools.
+ * MariaDB is driven through the MySQL client tools. Redis and Valkey are key-value engines (db.redis.*): a "database"
+ * of theirs is an instance (its own process, port and password), see {@see EngineKind}.
  */
 enum Engine: string
 {
     case MySql = 'mysql';
     case MariaDb = 'mariadb';
     case PostgreSql = 'postgresql';
+    case Redis = 'redis';
+    case Valkey = 'valkey';
 
     /** Map a Servers stack / facts runtime key to an engine. */
     public static function fromStack(?string $value): ?self
@@ -19,6 +22,8 @@ enum Engine: string
             'mysql' => self::MySql,
             'mariadb' => self::MariaDb,
             'postgresql', 'postgres', 'pgsql' => self::PostgreSql,
+            'redis' => self::Redis,
+            'valkey' => self::Valkey,
             default => null,
         };
     }
@@ -29,23 +34,48 @@ enum Engine: string
             self::MySql => 'MySQL',
             self::MariaDb => 'MariaDB',
             self::PostgreSql => 'PostgreSQL',
+            self::Redis => 'Redis',
+            self::Valkey => 'Valkey',
         };
     }
 
-    /** The `engine` value of db.* agent commands. */
+    public function kind(): EngineKind
+    {
+        return match ($this) {
+            self::Redis, self::Valkey => EngineKind::KeyValue,
+            default => EngineKind::Sql,
+        };
+    }
+
+    public function isKeyValue(): bool
+    {
+        return $this->kind() === EngineKind::KeyValue;
+    }
+
+    /** The `engine` value of db.* agent commands (db.redis.*: redis | valkey). */
     public function protocol(): string
     {
-        return $this === self::PostgreSql ? 'postgres' : 'mysql';
+        return match ($this) {
+            self::PostgreSql => 'postgres',
+            self::MySql, self::MariaDb => 'mysql',
+            self::Redis => 'redis',
+            self::Valkey => 'valkey',
+        };
     }
 
     public function isMysqlFamily(): bool
     {
-        return $this !== self::PostgreSql;
+        return $this === self::MySql || $this === self::MariaDb;
     }
 
+    /** The engine's stock port (key-value engines: the stock instance; Kiln's instances get their own ports). */
     public function defaultPort(): int
     {
-        return $this === self::PostgreSql ? 5432 : 3306;
+        return match ($this) {
+            self::PostgreSql => 5432,
+            self::MySql, self::MariaDb => 3306,
+            self::Redis, self::Valkey => 6379,
+        };
     }
 
     /** Keys the agent may use for the engine in facts.runtimes. */
@@ -55,6 +85,8 @@ enum Engine: string
             self::MySql => ['mysql'],
             self::MariaDb => ['mariadb'],
             self::PostgreSql => ['postgresql', 'postgres'],
+            self::Redis => ['redis'],
+            self::Valkey => ['valkey'],
         };
     }
 
@@ -65,6 +97,7 @@ enum Engine: string
             self::MySql => 'mysql',
             self::MariaDb => 'mariadb',
             self::PostgreSql => 'pgsql',
+            self::Redis, self::Valkey => 'redis',
         };
     }
 
@@ -78,7 +111,7 @@ enum Engine: string
         return match ($this) {
             self::MySql => 'utf8mb4_0900_ai_ci',
             self::MariaDb => 'utf8mb4_unicode_ci',
-            self::PostgreSql => null,
+            default => null,
         };
     }
 
@@ -89,9 +122,11 @@ enum Engine: string
      */
     public function reservedNames(): array
     {
-        return $this->isMysqlFamily()
-            ? ['mysql', 'information_schema', 'performance_schema', 'sys', 'root', 'debian-sys-maint', 'mariadb.sys', 'mysql.sys', 'mysql.session', 'mysql.infoschema']
-            : ['postgres', 'template0', 'template1', 'pg_signal_backend', 'pg_monitor'];
+        return match ($this) {
+            self::MySql, self::MariaDb => ['mysql', 'information_schema', 'performance_schema', 'sys', 'root', 'debian-sys-maint', 'mariadb.sys', 'mysql.sys', 'mysql.session', 'mysql.infoschema'],
+            self::PostgreSql => ['postgres', 'template0', 'template1', 'pg_signal_backend', 'pg_monitor'],
+            self::Redis, self::Valkey => ['default', 'kiln'],
+        };
     }
 
     /**
@@ -101,6 +136,10 @@ enum Engine: string
      */
     public function privileges(): array
     {
+        if ($this->isKeyValue()) {
+            return [];
+        }
+
         return $this->isMysqlFamily()
             ? ['ALL PRIVILEGES', 'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'INDEX', 'REFERENCES', 'CREATE TEMPORARY TABLES', 'LOCK TABLES', 'EXECUTE', 'CREATE VIEW', 'SHOW VIEW', 'CREATE ROUTINE', 'ALTER ROUTINE', 'EVENT', 'TRIGGER']
             : ['ALL PRIVILEGES', 'CONNECT', 'CREATE', 'TEMPORARY'];

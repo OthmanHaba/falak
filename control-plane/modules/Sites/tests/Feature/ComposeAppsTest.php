@@ -189,7 +189,7 @@ it('extracts services through the extraction contract and drops them from the pu
             $site = Site::query()->findOrFail($siteId);
             $site->forceFill(['compose_services' => [...(array) $site->compose_services, $service => ['mode' => 'database', 'database_id' => '01j9zq4n8v2m6r0t3w5y7b9d1f']]])->save();
 
-            return new DatabaseData('01j9zq4n8v2m6r0t3w5y7b9d1f', $site->organization_id, $site->targets()->first()->server_id, 'shop', 'shop', 'postgresql', '17', 5432, 'active', $siteId);
+            return new DatabaseData('01j9zq4n8v2m6r0t3w5y7b9d1f', $site->organization_id, $site->targets()->first()->server_id, 'shop', 'postgresql', '17', 5432, 'active', $siteId);
         }
 
         public function toSite(string $siteId, string $service, array $site, ?string $compose = null): SiteData

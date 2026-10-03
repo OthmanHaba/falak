@@ -16,9 +16,13 @@ final class ForgetFailedEngine implements ShouldQueue
     public function handle(DatabaseEngineInstallFailed $event): void
     {
         $engine = Engine::fromStack($event->engine);
-        $row = DatabaseServer::query()->where('server_id', $event->serverId)->where('organization_id', $event->organizationId)->first();
+        if ($engine === null) {
+            return;
+        }
 
-        if ($row === null || $engine === null || $row->engine !== $engine || $row->databases()->exists() || $row->users()->exists()) {
+        $row = DatabaseServer::query()->where('server_id', $event->serverId)->where('organization_id', $event->organizationId)->where('engine', $engine)->first();
+
+        if ($row === null || $row->databases()->exists() || $row->users()->exists()) {
             return;
         }
 

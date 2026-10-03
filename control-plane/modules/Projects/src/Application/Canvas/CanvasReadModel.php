@@ -186,8 +186,10 @@ final class CanvasReadModel
             'status' => $status,
             'status_label' => $label,
             'url' => null,
+            // Redis / Valkey: "Redis 7.0 · 128 MB · app-1".
             'subtitle' => implode(' · ', array_filter([
                 trim(self::engineLabel($database->engine).' '.($database->engineVersion ?? '')),
+                $database->maxMemoryMb !== null ? "{$database->maxMemoryMb} MB" : null,
                 $servers[$database->serverId]->name ?? null,
             ])),
             'servers' => [$this->server($database->serverId, false, $servers, $agents)],
@@ -385,6 +387,7 @@ final class CanvasReadModel
             'mysql' => 'MySQL',
             'mariadb' => 'MariaDB',
             'redis' => 'Redis',
+            'valkey' => 'Valkey',
             default => ucfirst($engine),
         };
     }

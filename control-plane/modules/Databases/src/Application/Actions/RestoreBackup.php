@@ -37,6 +37,10 @@ final class RestoreBackup
             throw ValidationException::withMessages(['database_server_id' => 'Choose a database server of this organization.']);
         }
 
+        if ($target->engine->isKeyValue() || $backup->engine->isKeyValue()) {
+            throw ValidationException::withMessages(['database_server_id' => 'Restoring Redis and Valkey instances is not supported yet (coming in a later release).']);
+        }
+
         if ($target->engine->protocol() !== $backup->engine->protocol()) {
             throw ValidationException::withMessages(['database_server_id' => "A {$backup->engine->label()} dump cannot be restored into {$target->engine->label()}."]);
         }

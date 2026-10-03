@@ -22,13 +22,18 @@ final class DeleteDatabase
     public function __invoke(Database $database): void
     {
         $server = $database->databaseServer;
+        // Redis / Valkey: the instance goes (unit, config, data); its `default` user with it.
+        [$type, $payload] = $server->engine->isKeyValue()
+            ? ['db.redis.remove', CommandPayloads::redisRemove($server, $database)]
+            : ['db.drop', CommandPayloads::drop($server, $database)];
 
         $handle = $this->commands->dispatch(
             $database->server_id,
-            'db.drop',
-            CommandPayloads::drop($server, $database),
-            (int) config('databases.timeouts.ddl', 300),
-            "db.drop:{$database->id}:".Str::ulid(),
+            $type,
+            $payload,
+            // db.redis.remove may wait for an apply of the instance (1 h timeout) before it runs.
+            (int) ($server->engine->isKeyValue() ? config('databases.timeouts.redis_apply', 3600) : config('databases.timeouts.ddl', 300)),
+            "{$type}:{$database->id}:".Str::ulid(),
             'database',
         );
 

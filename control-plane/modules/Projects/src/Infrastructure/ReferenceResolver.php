@@ -141,8 +141,9 @@ final class ReferenceResolver implements VariableReferences
                 return $match[0];
             }
 
-            // The host of a database depends on where the site being released runs (a localhost-only engine).
-            if ($service->kind === ServiceKind::Database && in_array($key, DatabaseConnections::HOST_KEYS, true)
+            // The host of a database depends on where the site being released runs (a localhost-only engine). The SQL
+            // and Redis key sets are disjoint, so the key alone tells.
+            if ($service->kind === ServiceKind::Database && in_array($key, [...DatabaseConnections::HOST_KEYS, ...DatabaseConnections::REDIS_HOST_KEYS], true)
                 && ($reason = $this->databases->unreachable($service->ref_id, $this->consumer())) !== null) {
                 $this->errors[] = "{$variable}: {$service->name}.{$key} cannot be used here: {$reason}";
 

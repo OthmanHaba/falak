@@ -3,6 +3,7 @@
 namespace Kiln\Databases\Application\Actions;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Kiln\Databases\Application\AgentCommands;
 use Kiln\Databases\Domain\Models\DatabaseUser;
 use Kiln\Databases\Infrastructure\CommandPayloads;
@@ -26,6 +27,11 @@ final class UpdateDatabaseUser
     public function __invoke(DatabaseUser $user, array $data): void
     {
         $server = $user->databaseServer;
+
+        if ($server->engine->isKeyValue()) {
+            throw ValidationException::withMessages(['grants' => "{$server->engine->label()} instances have a single user (default); rotate its password instead."]);
+        }
+
         $newHost = $server->engine->isMysqlFamily() && ! empty($data['host']) ? $data['host'] : $user->host;
 
         DB::transaction(function () use ($user, $data, $server, $newHost) {

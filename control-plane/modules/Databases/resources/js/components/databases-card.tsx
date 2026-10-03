@@ -25,7 +25,9 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
     const [creating, setCreating] = useState(false);
     const [deleting, setDeleting] = useState<DatabaseRow | null>(null);
     const [backingUp, setBackingUp] = useState<DatabaseRow | null>(null);
-    const mysql = server.engine !== 'postgresql';
+    const keyValue = server.kind === 'key_value';
+    const mysql = server.engine === 'mysql' || server.engine === 'mariadb';
+    const noun = keyValue ? 'instance' : 'database';
 
     const create = useForm({ name: '', charset: '', collation: '', with_user: true, user: { username: '', password: '' } });
     const destroy = useForm({ confirm: '' });
@@ -37,7 +39,7 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
             name: data.name,
             charset: mysql ? data.charset || null : null,
             collation: mysql ? data.collation || null : null,
-            user: data.with_user && data.user.username ? { username: data.user.username, password: data.user.password || null } : null,
+            user: !keyValue && data.with_user && data.user.username ? { username: data.user.username, password: data.user.password || null } : null,
         }));
         create.post(`/databases/servers/${server.id}/databases`, {
             preserveScroll: true,
@@ -69,22 +71,24 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
     return (
         <Card className="gap-0 py-0">
             <CardHeader className="flex flex-row items-center justify-between gap-2 border-b py-4">
-                <CardTitle className="text-base">Databases</CardTitle>
+                <CardTitle className="text-base">{keyValue ? 'Instances' : 'Databases'}</CardTitle>
                 {canManage && (
                     <Button size="sm" onClick={() => setCreating(true)}>
-                        <Plus /> New database
+                        <Plus /> New {noun}
                     </Button>
                 )}
             </CardHeader>
             <CardContent className="px-0">
                 {databases.length === 0 ? (
-                    <p className="text-muted-foreground p-6 text-sm">No databases yet.</p>
+                    <p className="text-muted-foreground p-6 text-sm">No {noun}s yet.</p>
                 ) : (
                     <Table>
                         <TableHeader>
                             <TableRow>
                                 <TableHead className="pl-6">Name</TableHead>
                                 {mysql && <TableHead>Collation</TableHead>}
+                                {keyValue && <TableHead>Port</TableHead>}
+                                {keyValue && <TableHead>Memory</TableHead>}
                                 <TableHead>Status</TableHead>
                                 {canManage && <TableHead className="w-24" />}
                             </TableRow>
@@ -94,22 +98,30 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
                                 <TableRow key={database.id}>
                                     <TableCell className="pl-6 font-mono">{database.name}</TableCell>
                                     {mysql && <TableCell className="text-muted-foreground text-xs">{database.collation ?? '—'}</TableCell>}
+                                    {keyValue && <TableCell className="font-mono text-xs">{database.port ?? '—'}</TableCell>}
+                                    {keyValue && (
+                                        <TableCell className="text-muted-foreground text-xs">
+                                            {database.settings ? `${database.settings.maxmemory_mb} MB · ${database.settings.eviction}` : '—'}
+                                        </TableCell>
+                                    )}
                                     <TableCell>
                                         <StatusBadge status={database.status} title={database.status_message} />
                                         {database.status_message && <p className="mt-1 max-w-xs text-xs text-red-600">{database.status_message}</p>}
                                     </TableCell>
                                     {canManage && (
                                         <TableCell className="text-right">
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                disabled={database.status !== 'active' || storageProviders.length === 0}
-                                                title={storageProviders.length === 0 ? 'Add a storage provider first' : 'Back up now'}
-                                                aria-label={`Back up ${database.name}`}
-                                                onClick={() => setBackingUp(database)}
-                                            >
-                                                <Archive />
-                                            </Button>
+                                            {!keyValue && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    disabled={database.status !== 'active' || storageProviders.length === 0}
+                                                    title={storageProviders.length === 0 ? 'Add a storage provider first' : 'Back up now'}
+                                                    aria-label={`Back up ${database.name}`}
+                                                    onClick={() => setBackingUp(database)}
+                                                >
+                                                    <Archive />
+                                                </Button>
+                                            )}
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
@@ -132,9 +144,11 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
                 <DialogContent>
                     <form onSubmit={submitCreate} className="space-y-4">
                         <DialogHeader>
-                            <DialogTitle>New database</DialogTitle>
+                            <DialogTitle>New {noun}</DialogTitle>
                             <DialogDescription>
-                                Created on {server.server_name} ({server.engine_label}).
+                                {keyValue
+                                    ? `Its own ${server.engine_label} process on ${server.server_name}, with its own port and password (user default). Lower-case letters, digits, - and _.`
+                                    : `Created on ${server.server_name} (${server.engine_label}).`}
                             </DialogDescription>
                         </DialogHeader>
                         <div className="grid gap-2">
@@ -166,11 +180,13 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
                                 </div>
                             </div>
                         )}
-                        <label className="flex items-center gap-2 text-sm">
-                            <Checkbox checked={create.data.with_user} onCheckedChange={(value) => create.setData('with_user', value === true)} />
-                            Also create a user with full access
-                        </label>
-                        {create.data.with_user && (
+                        {!keyValue && (
+                            <label className="flex items-center gap-2 text-sm">
+                                <Checkbox checked={create.data.with_user} onCheckedChange={(value) => create.setData('with_user', value === true)} />
+                                Also create a user with full access
+                            </label>
+                        )}
+                        {!keyValue && create.data.with_user && (
                             <div className="grid gap-4 sm:grid-cols-2">
                                 <div className="grid gap-2">
                                     <Label htmlFor="db-user">Username</Label>
@@ -200,7 +216,7 @@ export function DatabasesCard({ server, databases, storageProviders, canManage, 
                             <Button type="button" variant="ghost" onClick={() => setCreating(false)}>
                                 Cancel
                             </Button>
-                            <Button disabled={create.processing}>Create database</Button>
+                            <Button disabled={create.processing}>Create {noun}</Button>
                         </DialogFooter>
                     </form>
                 </DialogContent>

@@ -4,7 +4,9 @@ namespace Kiln\Databases\Application\Actions;
 
 use Illuminate\Support\Facades\DB;
 use Kiln\Databases\Application\AgentCommands;
+use Kiln\Databases\Application\KeyValue\ApplyKeyValueInstance;
 use Kiln\Databases\Domain\Enums\ResourceStatus;
+use Kiln\Databases\Domain\Models\Database;
 use Kiln\Databases\Domain\Models\DatabaseUser;
 use Kiln\Databases\Infrastructure\CommandPayloads;
 
@@ -16,13 +18,25 @@ use Kiln\Databases\Infrastructure\CommandPayloads;
  */
 final class ApplyDatabaseUser
 {
-    public function __construct(private readonly AgentCommands $commands) {}
+    public function __construct(
+        private readonly AgentCommands $commands,
+        private readonly ApplyKeyValueInstance $applyInstance,
+    ) {}
 
     /**
      * @param  bool  $background  record "agent not connected" on the user instead of throwing
      */
     public function __invoke(DatabaseUser $user, bool $background = false): void
     {
+        // A Redis / Valkey `default` user is the instance's requirepass: re-applying the instance applies it.
+        if ($user->databaseServer->engine->isKeyValue()) {
+            $user->grants()->with('database')->get()->pluck('database')->filter()
+                ->reject(fn (Database $database) => $database->status === ResourceStatus::Deleting)
+                ->each(fn (Database $database) => ($this->applyInstance)($database, $background));
+
+            return;
+        }
+
         DB::transaction(function () use ($user, $background) {
             $locked = DatabaseUser::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
             $user->setRawAttributes($locked->getAttributes(), true);

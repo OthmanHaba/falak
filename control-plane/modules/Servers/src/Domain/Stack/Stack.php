@@ -78,6 +78,11 @@ final readonly class Stack
         return new self($this->phpRuntime, $this->phpVersions, $this->phpDefault, $this->node, $engine, $this->cache, $this->docker);
     }
 
+    public function withCache(?string $engine): self
+    {
+        return new self($this->phpRuntime, $this->phpVersions, $this->phpDefault, $this->node, $this->database, $engine, $this->docker);
+    }
+
     public function withPhp(string $runtime, array $versions, ?string $default): self
     {
         return new self($runtime, array_values($versions), $default, $this->node, $this->database, $this->cache, $this->docker);

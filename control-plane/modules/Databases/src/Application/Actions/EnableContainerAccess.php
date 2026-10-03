@@ -2,6 +2,7 @@
 
 namespace Kiln\Databases\Application\Actions;
 
+use Kiln\Databases\Domain\Enums\EngineKind;
 use Kiln\Databases\Domain\Enums\ResourceStatus;
 use Kiln\Databases\Domain\Models\DatabaseServer;
 use Kiln\Databases\Domain\Models\DatabaseUser;
@@ -37,8 +38,10 @@ final class EnableContainerAccess
             return false;
         }
 
+        // Redis / Valkey instances listen on 127.0.0.1 only for now (container access comes with network support).
         $engines = DatabaseServer::query()
             ->where('server_id', $serverId)
+            ->whereIn('engine', EngineKind::Sql->values())
             ->where('dedicated', false)
             ->where('container_access', false)
             ->get();
