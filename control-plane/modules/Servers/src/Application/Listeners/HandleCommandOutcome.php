@@ -6,19 +6,22 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Kiln\Fleet\Events\CommandFailed;
 use Kiln\Fleet\Events\CommandFinished;
 use Kiln\Identity\Contracts\AuditLog;
+use Kiln\Servers\Application\Actions\RecordMachineCheck;
 use Kiln\Servers\Application\Actions\SyncServerSshKeys;
 use Kiln\Servers\Application\ServerStatusUpdater;
 use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Domain\Enums\PhpVersionStatus;
+use Kiln\Servers\Domain\Models\MachineInspection;
 use Kiln\Servers\Domain\Models\PhpVersion;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Servers\Events\DatabaseEngineInstalled;
 use Kiln\Servers\Events\DatabaseEngineInstallFailed;
 use Kiln\Servers\Events\PhpVersionChanged;
+use Kiln\Servers\Events\ServerAttentionCleared;
 use Kiln\Servers\Events\ServerProvisioned;
 
 /**
- * Reacts to the outcome of commands Servers dispatched: provisioning plans and PHP version changes.
+ * Reacts to the outcome of commands Servers dispatched: machine checks, provisioning plans and PHP version changes.
  */
 final class HandleCommandOutcome implements ShouldQueue
 {
@@ -26,6 +29,7 @@ final class HandleCommandOutcome implements ShouldQueue
         private readonly ServerStatusUpdater $status,
         private readonly SyncServerSshKeys $syncKeys,
         private readonly AuditLog $audit,
+        private readonly RecordMachineCheck $machineCheck,
     ) {}
 
     public function handleFinished(CommandFinished $event): void
@@ -38,6 +42,10 @@ final class HandleCommandOutcome implements ShouldQueue
 
         if ($event->commandId === $server->provision_command_id) {
             $this->provisioned($server);
+        }
+
+        if ($inspection = $this->inspection($server, $event->commandId)) {
+            $this->machineCheck->finished($server, $inspection, $event->result);
         }
 
         $this->settlePhpVersions($server, $event->commandId, succeeded: true, error: null);
@@ -54,6 +62,10 @@ final class HandleCommandOutcome implements ShouldQueue
 
         $reason = $event->error ?: "Command {$event->status}".($event->exitCode !== null ? " (exit code {$event->exitCode})" : '');
 
+        if ($inspection = $this->inspection($server, $event->commandId)) {
+            $this->machineCheck->failed($server, $inspection, $reason);
+        }
+
         if ($event->commandId === $server->provision_command_id && $server->status === ServerStatus::Provisioning) {
             $this->status->set($server, ServerStatus::Error, "Provisioning failed: {$reason}");
             $this->audit->record('server.provisioning_failed', 'server', $server->id, ['command_id' => $event->commandId, 'status' => $event->status], $server->organization_id);
@@ -61,6 +73,14 @@ final class HandleCommandOutcome implements ShouldQueue
 
         $this->settlePhpVersions($server, $event->commandId, succeeded: false, error: $reason);
         $this->settleEngine($server, $event->commandId, error: $reason);
+    }
+
+    /**
+     * The server's running machine check, when the command is its provision.inspect.
+     */
+    private function inspection(Server $server, string $commandId): ?MachineInspection
+    {
+        return MachineInspection::query()->where('server_id', $server->id)->where('command_id', $commandId)->where('status', MachineInspection::RUNNING)->first();
     }
 
     /**
@@ -105,6 +125,7 @@ final class HandleCommandOutcome implements ShouldQueue
         $this->audit->record('server.provisioned', 'server', $server->id, ['attempt' => $server->provision_attempts], $server->organization_id);
 
         ServerProvisioned::dispatch($server->id, $server->organization_id, $server->type->value, $server->name);
+        ServerAttentionCleared::dispatch($server->id, $server->organization_id, $server->name);
 
         ($this->syncKeys)($server->refresh());
     }

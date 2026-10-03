@@ -43,6 +43,11 @@ final class PayloadCompatibility
             'docker.run' => ['networks.*.compose'],
             'deploy.container.swap' => ['networks.*.compose'],
         ],
+        // Machine-check decisions. Older agents never get provision.inspect, so their plans carry no decisions; the
+        // field is stripped all the same (a plan built from a report an upgraded agent sent, then downgraded).
+        'provision.v2' => [
+            'provision.apply' => ['components'],
+        ],
         // Containers reaching localhost database engines; older agents keep them on localhost.
         'db.containers' => [
             'db.user.apply' => ['containers'],

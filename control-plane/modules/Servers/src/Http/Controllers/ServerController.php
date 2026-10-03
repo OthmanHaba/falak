@@ -17,12 +17,13 @@ use Kiln\Kernel\Http\Controller;
 use Kiln\Providers\Contracts\Data\CredentialSummary;
 use Kiln\Providers\Contracts\ProviderGateway;
 use Kiln\Providers\Contracts\ProviderType;
-use Kiln\Servers\Application\Actions\ApplyProvisioningPlan;
 use Kiln\Servers\Application\Actions\ChangeServerTimezone;
 use Kiln\Servers\Application\Actions\CreateServer;
 use Kiln\Servers\Application\Actions\DeleteServer;
+use Kiln\Servers\Application\Actions\ProvisionServer;
 use Kiln\Servers\Application\Actions\RegenerateInstallCommand;
 use Kiln\Servers\Application\Actions\RenameServer;
+use Kiln\Servers\Application\MachineChecks;
 use Kiln\Servers\Application\Queries\ServerServices;
 use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Contracts\ServerType;
@@ -43,6 +44,7 @@ final class ServerController extends Controller
         private readonly AgentDirectory $agents,
         private readonly ServerServices $services,
         private readonly AgentUpgrades $upgrades,
+        private readonly MachineChecks $checks,
     ) {}
 
     public function index(Request $request): Response
@@ -176,6 +178,7 @@ final class ServerController extends Controller
                 'kernel' => $agent->facts['kernel'] ?? null,
             ] : null,
             'metrics' => $this->samples($server, '1h'),
+            'machineCheck' => $this->machineCheck($server, $this->checks),
             'services' => $this->services->forServer($server->id),
             'can' => [
                 'update' => $canUpdate,
@@ -205,12 +208,15 @@ final class ServerController extends Controller
         return back()->with('success', 'Server settings saved.');
     }
 
-    public function reprovision(Server $server, ApplyProvisioningPlan $apply): RedirectResponse
+    /**
+     * Re-provision / Retry provisioning: the machine check first (agents with provision.v2), then the plan.
+     */
+    public function reprovision(Request $request, Server $server, ProvisionServer $provision): RedirectResponse
     {
         $this->authorize('update', $server);
 
         abort_if($server->status === ServerStatus::Deleting, 422, 'The server is being deleted.');
-        $apply($server);
+        $provision($server, $request->user()?->getAuthIdentifier());
 
         return back();
     }

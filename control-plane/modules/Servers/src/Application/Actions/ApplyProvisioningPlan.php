@@ -6,6 +6,7 @@ use Illuminate\Validation\ValidationException;
 use Kiln\Fleet\Contracts\AgentGateway;
 use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Kiln\Identity\Contracts\AuditLog;
+use Kiln\Servers\Application\MachineChecks;
 use Kiln\Servers\Application\PhpVersionsForOs;
 use Kiln\Servers\Application\ServerStatusUpdater;
 use Kiln\Servers\Contracts\ServerStatus;
@@ -13,8 +14,9 @@ use Kiln\Servers\Domain\Models\Server;
 use Kiln\Servers\Infrastructure\ProvisioningPlanBuilder;
 
 /**
- * Sends the full provisioning plan (provision.apply) to the server's agent. Used after enrollment,
- * to retry a failed provisioning and to converge after changes (e.g. PHP version removal).
+ * Sends the full provisioning plan (provision.apply) to the server's agent. Used after the machine check (or right
+ * after enrollment for agents without it), to retry a failed provisioning and to converge after changes (e.g. PHP
+ * version removal). The plan follows the latest machine check's decisions, recomputed for the current stack.
  */
 final class ApplyProvisioningPlan
 {
@@ -24,6 +26,7 @@ final class ApplyProvisioningPlan
         private readonly ServerStatusUpdater $status,
         private readonly AuditLog $audit,
         private readonly PhpVersionsForOs $php,
+        private readonly MachineChecks $checks,
     ) {}
 
     public function __invoke(Server $server, bool $markProvisioning = true): string
@@ -35,7 +38,7 @@ final class ApplyProvisioningPlan
             $handle = $this->agents->dispatch(
                 $server->id,
                 'provision.apply',
-                $this->plans->build($server),
+                $this->plans->build($server, $this->checks->current($server)),
                 (int) config('servers.provision_timeout', 1800),
                 "provision:{$server->id}:{$attempt}",
             );

@@ -38,6 +38,7 @@ const STATE_FILTERS = [
     { value: 'online', label: 'Online' },
     { value: 'offline', label: 'Offline' },
     { value: 'provisioning', label: 'Provisioning' },
+    { value: 'needs-attention', label: 'Needs attention' },
     { value: 'waiting', label: 'Waiting for agent' },
     { value: 'failed', label: 'Failed' },
 ];
@@ -331,6 +332,7 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
     const summary = [
         { key: 'online', label: 'online' },
         { key: 'provisioning', label: 'provisioning' },
+        { key: 'needs-attention', label: 'needing attention' },
         { key: 'waiting', label: 'waiting for agent' },
         { key: 'offline', label: 'offline' },
         { key: 'failed', label: 'failed' },

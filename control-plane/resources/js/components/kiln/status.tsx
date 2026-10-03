@@ -10,7 +10,8 @@ interface StatusSpec {
 
 /**
  * The one status language (docs/UI_DESIGN.md §2):
- * success = active/online/healthy/succeeded · warning+pulse = building/deploying/provisioning/running ·
+ * success = active/online/healthy/succeeded · warning+pulse = building/deploying/provisioning/running · warning =
+ * degraded/needs attention ·
  * info = queued/waiting · danger = failed/crashed/offline/error · faint = removed/inactive/skipped/cancelled.
  */
 const STATUSES: Record<string, StatusSpec> = {
@@ -26,6 +27,7 @@ const STATUSES: Record<string, StatusSpec> = {
     running: { tone: 'warning', pulse: true, label: 'Running' },
     'queued-running': { tone: 'warning', pulse: true, label: 'Running' },
     degraded: { tone: 'warning', pulse: false, label: 'Degraded' },
+    'needs-attention': { tone: 'warning', pulse: false, label: 'Needs attention' },
 
     queued: { tone: 'info', pulse: false, label: 'Queued' },
     waiting: { tone: 'info', pulse: false, label: 'Queued' },

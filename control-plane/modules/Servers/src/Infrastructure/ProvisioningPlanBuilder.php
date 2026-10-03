@@ -5,6 +5,9 @@ namespace Kiln\Servers\Infrastructure;
 use Illuminate\Support\Str;
 use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Domain\Enums\PhpVersionStatus;
+use Kiln\Servers\Domain\MachineCheck\ComponentDecision;
+use Kiln\Servers\Domain\MachineCheck\Decision;
+use Kiln\Servers\Domain\MachineCheck\MachineCheck;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Servers\Domain\Stack\Stack;
 
@@ -14,6 +17,10 @@ use Kiln\Servers\Domain\Stack\Stack;
  *
  * The schema has no first-class database / cache / Docker sections, so those are expressed as apt
  * packages plus systemd service state; engine-level configuration belongs to the Databases module.
+ *
+ * With a machine check (agents with provision.v2) the plan follows its decisions: adopted and blocked components
+ * install nothing (an adopted engine keeps its service entry), completed ones install only their missing packages, an
+ * adopted swap / hostname is left out, and `components` tells the agent what was adopted.
  */
 final class ProvisioningPlanBuilder
 {
@@ -25,7 +32,7 @@ final class ProvisioningPlanBuilder
     /**
      * @return array<string, mixed>
      */
-    public function build(Server $server): array
+    public function build(Server $server, ?MachineCheck $check = null): array
     {
         $stack = $server->stack;
         $type = $server->type;
@@ -36,7 +43,7 @@ final class ProvisioningPlanBuilder
         $phpVersions = array_values(array_filter($phpVersions, fn (string $v) => in_array($v, $server->installablePhpVersions(), true) || in_array($v, $installed, true)));
         $defaultPhp = $server->phpVersions()->where('is_default', true)->value('version') ?? $stack->phpDefault;
 
-        [$packages, $services] = $this->packagesAndServices($stack);
+        [$packages, $services] = $this->packagesAndServices($stack, $check);
 
         $plan = [
             'hostname' => $this->hostname($server->name),
@@ -49,6 +56,18 @@ final class ProvisioningPlanBuilder
             'unattended_upgrades' => ['enabled' => true, 'auto_reboot' => false, 'reboot_time' => '04:00'],
             'ssh' => ['port' => $server->ssh_port, 'permit_root_login' => 'prohibit-password', 'password_authentication' => false],
         ];
+
+        if ($check !== null) {
+            if ($this->decided($check, 'swap', Decision::Adopt, Decision::Skip)) {
+                unset($plan['swap_mb']);
+            }
+
+            if ($this->decided($check, 'hostname', Decision::Adopt)) {
+                unset($plan['hostname']);
+            }
+
+            $plan['components'] = $this->components($check);
+        }
 
         if ($plan['runtimes'] === []) {
             unset($plan['runtimes']);
@@ -90,30 +109,91 @@ final class ProvisioningPlanBuilder
     /**
      * @return array{0: list<string>, 1: list<array{name: string, enabled: bool, state: string}>}
      */
-    private function packagesAndServices(Stack $stack): array
+    private function packagesAndServices(Stack $stack, ?MachineCheck $check): array
     {
         $packages = (array) ($this->config['base_packages'] ?? []);
         $services = [['name' => 'fail2ban', 'enabled' => true, 'state' => 'started']];
 
-        foreach ([['databases', $stack->database], ['caches', $stack->cache]] as [$group, $engine]) {
+        foreach ([['databases', $stack->database, 'database'], ['caches', $stack->cache, 'cache']] as [$group, $engine, $component]) {
             if ($engine === null) {
                 continue;
             }
 
             $definition = $this->config[$group][$engine];
-            $packages = [...$packages, ...$definition['packages']];
-            $services[] = ['name' => $definition['service'], 'enabled' => true, 'state' => 'started'];
+            [$install, $service] = $this->decidedPackages($check?->for($component), $definition['packages'], $definition['service']);
+            $packages = [...$packages, ...$install];
+
+            if ($service !== null) {
+                $services[] = ['name' => $service, 'enabled' => true, 'state' => 'started'];
+            }
         }
 
         if ($stack->docker) {
-            $packages = [...$packages, ...$this->config['docker']['packages']];
-            $services[] = ['name' => $this->config['docker']['service'], 'enabled' => true, 'state' => 'started'];
+            [$install, $service] = $this->decidedPackages($check?->for('docker'), $this->config['docker']['packages'], $this->config['docker']['service']);
+            $packages = [...$packages, ...$install];
+
+            if ($service !== null) {
+                $services[] = ['name' => $service, 'enabled' => true, 'state' => 'started'];
+            }
         }
 
         $packages = array_values(array_unique($packages));
         sort($packages);
 
         return [$packages, $services];
+    }
+
+    /**
+     * Packages to install and the service to run for a component after its machine-check decision (none: as before).
+     *
+     * @param  list<string>  $packages
+     * @return array{0: list<string>, 1: ?string}
+     */
+    private function decidedPackages(?ComponentDecision $decision, array $packages, string $service): array
+    {
+        return match ($decision?->decision) {
+            null, Decision::Install => [$packages, $service],
+            Decision::Adopt => [[], $decision->service ?? $service],
+            Decision::Complete => [$decision->install, $decision->service ?? $service],
+            Decision::Block, Decision::Skip => [[], null],
+        };
+    }
+
+    private function decided(MachineCheck $check, string $component, Decision ...$decisions): bool
+    {
+        return in_array($check->for($component)?->decision, $decisions, true);
+    }
+
+    /**
+     * provision.apply `components`: the decision per component, with the packages an adopted one is made of (verified,
+     * never installed) or a completed one adds.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function components(MachineCheck $check): array
+    {
+        $components = [];
+
+        foreach ($check->components as $decision) {
+            if (! in_array($decision->decision, [Decision::Install, Decision::Adopt, Decision::Complete], true)) {
+                continue;
+            }
+
+            $packages = match ($decision->decision) {
+                Decision::Adopt => $decision->keep,
+                Decision::Complete => $decision->install,
+                default => [],
+            };
+
+            $components[] = array_filter([
+                'name' => $decision->component,
+                'decision' => $decision->decision->value,
+                'packages' => array_values(array_unique($packages)) ?: null,
+                'service' => $decision->service,
+            ], fn ($value) => $value !== null);
+        }
+
+        return $components;
     }
 
     /**

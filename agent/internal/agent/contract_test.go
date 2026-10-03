@@ -22,7 +22,7 @@ import (
 // Catalogue is the v1 command catalogue from ARCHITECTURE.md §3.
 var Catalogue = []string{
 	"system.facts", "system.exec", "system.write_file", "system.package.install", "system.user.create", "system.ssh_key.sync", "system.upgrade_agent",
-	"provision.apply",
+	"provision.apply", "provision.inspect",
 	"runtime.php.install", "runtime.php.configure", "runtime.node.install", "runtime.bun.install", "runtime.deno.install", "runtime.frankenphp.configure", "runtime.fpm.pool",
 	"edge.caddy.apply", "edge.cert.install",
 	"deploy.fetch", "deploy.prepare", "deploy.hook", "deploy.activate", "deploy.rollback", "deploy.prune", "deploy.container.swap",

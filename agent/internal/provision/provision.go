@@ -13,6 +13,7 @@ import (
 
 	"github.com/kiln/agent/internal/commands"
 	"github.com/kiln/agent/internal/hostfs"
+	"github.com/kiln/agent/internal/provision/inspect"
 	"github.com/kiln/agent/internal/runner"
 	"github.com/kiln/agent/internal/runtime"
 	"github.com/kiln/agent/internal/system"
@@ -55,9 +56,10 @@ func New(d Deps) *Provisioner {
 	return &Provisioner{d: d, rt: rt}
 }
 
-// Register adds provision.apply.
+// Register adds provision.apply and provision.inspect.
 func (p *Provisioner) Register(reg *commands.Registry) {
 	reg.Register("provision.apply", commands.Typed(p.Apply))
+	inspect.New(inspect.Deps{Runner: p.d.Runner, FS: p.d.FS, Logger: p.d.Logger}).Register(reg)
 }
 
 // Plan is the provision.apply payload.
@@ -71,6 +73,35 @@ type Plan struct {
 	Services           []Service          `json:"services"`
 	UnattendedUpgrades *UnattendedUpgrade `json:"unattended_upgrades"`
 	SSH                *SSH               `json:"ssh"`
+	// Components carries the control plane's machine-check decision per component (feature provision.v2).
+	Components []Component `json:"components"`
+}
+
+// Component decisions (the control plane never sends "block": a blocked machine gets no plan).
+const (
+	DecisionInstall  = "install"
+	DecisionAdopt    = "adopt"
+	DecisionComplete = "complete"
+)
+
+// Component is one machine-check decision. An adopted component is already on the machine: its packages are never
+// installed (they are verified instead) and its steps only check or enable what is there.
+type Component struct {
+	Name     string   `json:"name"`
+	Decision string   `json:"decision"`
+	Packages []string `json:"packages"`
+	Service  string   `json:"service"`
+}
+
+// adopted returns the adopted components by name.
+func (plan Plan) adopted() map[string]Component {
+	out := map[string]Component{}
+	for _, c := range plan.Components {
+		if c.Decision == DecisionAdopt {
+			out[c.Name] = c
+		}
+	}
+	return out
 }
 
 // AptPlan lists packages.
@@ -177,25 +208,38 @@ func (p *Provisioner) steps(plan Plan) []step {
 	add := func(name string, fn func(context.Context, commands.Stream) (bool, error)) {
 		s = append(s, step{name, fn})
 	}
-	if plan.Hostname != "" {
+	adopted := plan.adopted()
+	if _, keep := adopted["hostname"]; plan.Hostname != "" && !keep {
 		add("hostname", func(ctx context.Context, st commands.Stream) (bool, error) { return p.hostname(ctx, st, plan.Hostname) })
 	}
 	if plan.Timezone != "" {
 		add("timezone", func(ctx context.Context, st commands.Stream) (bool, error) { return p.timezone(ctx, st, plan.Timezone) })
 	}
-	if plan.SwapMB != nil && *plan.SwapMB > 0 {
+	if _, keep := adopted["swap"]; keep {
+		add("swap", func(_ context.Context, st commands.Stream) (bool, error) {
+			fmt.Fprintln(st.Stdout(), "keeping the machine's existing swap")
+			return false, nil
+		})
+	} else if plan.SwapMB != nil && *plan.SwapMB > 0 {
 		add("swap", func(ctx context.Context, st commands.Stream) (bool, error) { return p.swap(ctx, st, *plan.SwapMB) })
 	}
 	if plan.Apt != nil {
 		add("apt", func(ctx context.Context, st commands.Stream) (bool, error) {
 			a := system.AptFor(p.d.Runner, p.d.FS, st)
-			inst, err := a.Ensure(ctx, plan.Apt.Packages, true)
+			inst, err := a.Ensure(ctx, withoutAdopted(plan.Apt.Packages, adopted), true)
 			if err != nil {
 				return len(inst) > 0, err
 			}
-			rm, err := a.Remove(ctx, plan.Apt.Remove)
+			rm, err := a.Remove(ctx, withoutAdopted(plan.Apt.Remove, adopted))
 			return len(inst)+len(rm) > 0, err
 		})
+	}
+	for _, c := range plan.Components {
+		if c.Decision != DecisionAdopt || len(c.Packages) == 0 {
+			continue
+		}
+		c := c
+		add("adopt:"+c.Name, func(ctx context.Context, st commands.Stream) (bool, error) { return false, p.verifyAdopted(ctx, st, c) })
 	}
 	for _, u := range plan.Users {
 		u := u
@@ -242,12 +286,50 @@ func (p *Provisioner) steps(plan Plan) []step {
 		add("service:"+svc.Name, func(ctx context.Context, st commands.Stream) (bool, error) { return p.service(ctx, st, svc) })
 	}
 	if u := plan.UnattendedUpgrades; u != nil {
-		add("unattended_upgrades", func(ctx context.Context, st commands.Stream) (bool, error) { return p.unattended(ctx, st, *u) })
+		if _, keep := adopted["unattended_upgrades"]; keep {
+			add("unattended_upgrades", func(ctx context.Context, st commands.Stream) (bool, error) {
+				return false, p.verifyAdopted(ctx, st, Component{Name: "unattended_upgrades", Packages: []string{"unattended-upgrades"}})
+			})
+		} else {
+			add("unattended_upgrades", func(ctx context.Context, st commands.Stream) (bool, error) { return p.unattended(ctx, st, *u) })
+		}
 	}
 	if plan.SSH != nil {
 		add("ssh", func(ctx context.Context, st commands.Stream) (bool, error) { return p.ssh(ctx, st, *plan.SSH) })
 	}
 	return s
+}
+
+// withoutAdopted drops the packages of adopted components: the machine already has them from another source, and
+// asking apt for them could pull a conflicting package family in.
+func withoutAdopted(pkgs []string, adopted map[string]Component) []string {
+	skip := map[string]bool{}
+	for _, c := range adopted {
+		for _, n := range c.Packages {
+			name, _ := system.SplitPin(n)
+			skip[name] = true
+		}
+	}
+	var out []string
+	for _, n := range pkgs {
+		if name, _ := system.SplitPin(n); !skip[name] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// verifyAdopted checks that an adopted component's packages are still installed; it never installs them.
+func (p *Provisioner) verifyAdopted(ctx context.Context, st commands.Stream, c Component) error {
+	miss, err := system.AptFor(p.d.Runner, p.d.FS, st).Missing(ctx, c.Packages)
+	if err != nil {
+		return err
+	}
+	if len(miss) > 0 {
+		return fmt.Errorf("%s was adopted from the machine, but %s is no longer installed; run the machine check again", c.Name, strings.Join(miss, ", "))
+	}
+	fmt.Fprintf(st.Stdout(), "using the machine's %s (%s)\n", c.Name, strings.Join(c.Packages, ", "))
+	return nil
 }
 
 func changedOf(r any) bool {

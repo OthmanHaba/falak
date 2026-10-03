@@ -216,25 +216,42 @@ func (a Apt) repoError(broken []brokenRepo, err error) error {
 
 // sourceFiles returns the apt source files (one-line .list or deb822 .sources) with a URI that u starts with.
 func (a Apt) sourceFiles(u string) []string {
+	want := strings.TrimRight(u, "/") + "/"
+	var out []string
+	for _, src := range AptSources(a.FS) {
+		for _, uri := range src.URIs {
+			if strings.HasPrefix(want, strings.TrimRight(uri, "/")+"/") {
+				out = append(out, src.File)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// AptSource is one apt source file and the repository URIs it configures.
+type AptSource struct {
+	File string   `json:"file"`
+	URIs []string `json:"uris"`
+}
+
+// AptSources lists the enabled apt source files (sources.list, sources.list.d/*.list and *.sources) with their URIs.
+func AptSources(fs hostfs.FS) []AptSource {
 	files := []string{AptSourcesList}
-	ents, _ := os.ReadDir(a.FS.P(AptSourcesDir))
+	ents, _ := os.ReadDir(fs.P(AptSourcesDir))
 	for _, e := range ents {
 		if n := e.Name(); strings.HasSuffix(n, ".list") || strings.HasSuffix(n, ".sources") {
 			files = append(files, AptSourcesDir+"/"+n)
 		}
 	}
-	want := strings.TrimRight(u, "/") + "/"
-	var out []string
+	out := []AptSource{}
 	for _, f := range files {
-		b, err := a.FS.ReadFile(f)
+		b, err := fs.ReadFile(f)
 		if err != nil {
 			continue
 		}
-		for _, uri := range sourceURIs(string(b)) {
-			if strings.HasPrefix(want, strings.TrimRight(uri, "/")+"/") {
-				out = append(out, f)
-				break
-			}
+		if uris := sourceURIs(string(b)); len(uris) > 0 {
+			out = append(out, AptSource{File: f, URIs: uris})
 		}
 	}
 	return out

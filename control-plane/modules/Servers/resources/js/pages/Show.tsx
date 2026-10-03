@@ -17,18 +17,20 @@ import ServerLayout from '@/layouts/server-layout';
 import { Link, router, usePoll } from '@inertiajs/react';
 import { ArrowUpCircle, ChevronRight, Copy, Globe, RefreshCw, RotateCw, Settings, SquareTerminal, Trash2 } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
+import { MachineCheckPanel } from '../components/machine-check';
 import { AgentVersion, formatBytes, formatUptime, Sparkline } from '../components/server-ui';
-import { type AgentDetails, type MetricSample, type ServerDetails, type ServerService } from '../types';
+import { type AgentDetails, type MachineCheck, type MetricSample, type ServerDetails, type ServerService } from '../types';
 
 interface Props {
     server: ServerDetails;
     agent: AgentDetails | null;
     metrics: MetricSample[];
     services: ServerService[];
+    machineCheck: MachineCheck;
     can: { update: boolean; delete: boolean; upgrade_agent: boolean };
 }
 
-const RELOAD = ['server', 'agent', 'metrics', 'services'];
+const RELOAD = ['server', 'agent', 'metrics', 'services', 'machineCheck'];
 
 function StatTile({ label, value, detail, spark }: { label: string; value: ReactNode; detail?: ReactNode; spark?: (number | null)[] }) {
     return (
@@ -47,11 +49,35 @@ function percent(used: number | undefined, total: number | null): number | null 
     return used !== undefined && total ? (used / total) * 100 : null;
 }
 
-/** Create → Install agent → Provision → Ready, derived from the lifecycle status. */
-function lifecycleSteps(server: ServerDetails, agent: AgentDetails | null): Step[] {
+/** Create → Install agent → (Check the machine) → Provision → Ready, derived from the lifecycle status. */
+function lifecycleSteps(server: ServerDetails, agent: AgentDetails | null, check: MachineCheck): Step[] {
     const custom = server.provider === 'custom';
-    const enrolled = agent !== null || ['provisioning', 'active'].includes(server.status);
+    const enrolled = agent !== null || ['provisioning', 'needs_attention', 'active'].includes(server.status);
     const failed = server.status === 'error';
+    const checking = check.status === 'running' && check.purpose === 'provision';
+    const checkStep: Step[] =
+        check.supported || check.status !== null
+            ? [
+                  {
+                      id: 'check',
+                      label: 'Check the machine',
+                      status: checking
+                          ? 'running'
+                          : server.status === 'needs_attention' || check.status === 'failed'
+                            ? 'failed'
+                            : check.status === 'finished'
+                              ? 'succeeded'
+                              : enrolled
+                                ? 'skipped'
+                                : 'waiting',
+                      detail: checking
+                          ? 'Looking at the software already on the machine…'
+                          : server.status === 'needs_attention'
+                            ? 'Something on the machine blocks provisioning'
+                            : undefined,
+                  },
+              ]
+            : [];
 
     return [
         {
@@ -65,12 +91,19 @@ function lifecycleSteps(server: ServerDetails, agent: AgentDetails | null): Step
             status: enrolled ? 'succeeded' : failed ? 'failed' : 'waiting',
             detail: enrolled || failed ? undefined : custom ? 'Waiting for the agent to connect…' : 'Waiting for cloud-init to start the agent…',
         },
+        ...checkStep,
         {
             id: 'provision',
             label: 'Provision the stack',
             status:
-                server.status === 'active' ? 'succeeded' : server.status === 'provisioning' ? 'running' : failed && enrolled ? 'failed' : 'skipped',
-            detail: server.status === 'provisioning' ? 'Installing packages, runtimes and the firewall…' : undefined,
+                server.status === 'active'
+                    ? 'succeeded'
+                    : server.status === 'provisioning' && !checking
+                      ? 'running'
+                      : failed && enrolled && check.status !== 'failed'
+                        ? 'failed'
+                        : 'skipped',
+            detail: server.status === 'provisioning' && !checking ? 'Installing packages, runtimes and the firewall…' : undefined,
         },
         { id: 'ready', label: 'Ready for services', status: server.status === 'active' ? 'succeeded' : 'skipped' },
     ];
@@ -80,7 +113,7 @@ function serviceStatus(service: ServerService): string {
     return service.status === 'ready' ? 'active' : service.status === 'pending' ? 'queued' : service.status;
 }
 
-export default function Show({ server, agent, metrics, services, can }: Props) {
+export default function Show({ server, agent, metrics, services, machineCheck, can }: Props) {
     const awaitingAgent = server.install_command !== null && ['creating', 'error'].includes(server.status) && !agent;
     const upgrading = ['queued', 'running'].includes(server.agent?.upgrade?.status ?? '');
     // Offered wherever "update available" shows: the header, a banner and the Agent section.
@@ -93,12 +126,17 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
             { preserveScroll: true, only: [...RELOAD, 'flash'], onStart: () => setUpdating(true), onFinish: () => setUpdating(false) },
         );
     const settling = ['creating', 'provisioning', 'deleting'].includes(server.status);
+    const checking = machineCheck.status === 'running';
+    // Needs attention, a blocked re-provision or failed provisioning: the machine check is the first thing to look at.
+    const checkProminent =
+        server.status === 'needs_attention' || machineCheck.blocking || (server.status === 'error' && machineCheck.status !== null);
+    const showCheck = machineCheck.status !== null || (machineCheck.supported && server.status !== 'creating');
     const [showLog, setShowLog] = useState(server.status !== 'active');
     const [regenerating, setRegenerating] = useState(false);
     const [reprovisioning, setReprovisioning] = useState(false);
 
     // Live: the layout listens for `server.updated`; poll while the server is settling in case Reverb is down.
-    usePoll(settling || upgrading ? 4_000 : 60_000, { only: RELOAD });
+    usePoll(settling || upgrading || checking ? 4_000 : 60_000, { only: RELOAD });
 
     const previousLogStatus = useRef<CommandStatus | null>(null);
     const onProvisionStatus = (status: CommandStatus) => {
@@ -144,7 +182,7 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
     const memoryPercent = percent(latest.memory_used_bytes, server.memory_bytes);
     const diskPercent = percent(latest.disk_used_bytes, server.disk_bytes);
 
-    const canReprovision = can.update && (server.status === 'error' || server.status === 'active');
+    const canReprovision = can.update && ['error', 'active', 'needs_attention'].includes(server.status);
     const menu: MenuAction[] = [
         { label: 'Refresh', icon: <RefreshCw />, onSelect: () => router.reload({ only: RELOAD }) },
         ...(canReprovision ? [{ label: 'Re-provision', icon: <RotateCw />, onSelect: reprovision }] : []),
@@ -225,7 +263,7 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                         : 'The agent is offline; update it once it reconnects.'}
                 </Callout>
             )}
-            {server.status_message && !['active', 'error'].includes(server.status) && (
+            {server.status_message && !['active', 'error', 'needs_attention'].includes(server.status) && (
                 <div
                     role={server.status === 'error' ? 'alert' : 'status'}
                     className={
@@ -250,7 +288,7 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                     }
                 >
                     <div className="grid items-start gap-5 md:grid-cols-[220px_minmax(0,1fr)]">
-                        <Stepper steps={lifecycleSteps(server, agent)} />
+                        <Stepper steps={lifecycleSteps(server, agent, machineCheck)} />
                         <div className="grid min-w-0 content-start gap-3">
                             {awaitingAgent && server.install_command && (
                                 <>
@@ -288,6 +326,10 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                         </div>
                     </div>
                 </Section>
+            )}
+
+            {showCheck && checkProminent && (
+                <MachineCheckPanel server={server} check={machineCheck} canUpdate={can.update} prominent reloadOnly={RELOAD} />
             )}
 
             {agent && (
@@ -444,6 +486,10 @@ export default function Show({ server, agent, metrics, services, can }: Props) {
                         )}
                     </Section>
                 </div>
+            )}
+
+            {showCheck && !checkProminent && (
+                <MachineCheckPanel server={server} check={machineCheck} canUpdate={can.update} prominent={false} reloadOnly={RELOAD} />
             )}
 
             {server.provision_command_id && !settling && server.status !== 'error' && (

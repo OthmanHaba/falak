@@ -5,6 +5,7 @@ namespace Kiln\Servers\Http\Controllers;
 use Kiln\Fleet\Contracts\Data\AgentInfo;
 use Kiln\Fleet\Contracts\Data\AgentVersionInfo;
 use Kiln\Providers\Contracts\ProviderType;
+use Kiln\Servers\Application\MachineChecks;
 use Kiln\Servers\Domain\Models\PhpVersion;
 use Kiln\Servers\Domain\Models\Server;
 
@@ -62,6 +63,32 @@ trait PresentsServers
             'ini' => (object) $php->ini,
             'fpm' => $php->fpm,
             'command_id' => $php->command_id,
+        ];
+    }
+
+    /**
+     * The latest machine check: its state and the decisions for the server's current stack (what Provision would do).
+     *
+     * @return array<string, mixed>
+     */
+    protected function machineCheck(Server $server, MachineChecks $checks, bool $withReport = false): array
+    {
+        $inspection = $server->machineInspection()->first();
+        $supported = $checks->supported($server);
+        $check = $inspection?->report !== null ? $checks->decide($server, $inspection->report) : $inspection?->check();
+
+        return [
+            'supported' => $supported,
+            'status' => $inspection?->status,
+            'purpose' => $inspection?->purpose,
+            'checked_at' => $inspection?->checked_at?->toIso8601String(),
+            'agent_version' => $inspection?->agent_version,
+            'error' => $inspection?->error,
+            'command_id' => $inspection?->command_id,
+            'blocking' => $check?->blocking() ?? false,
+            'summary' => $check?->blocking() ? $check->summary() : null,
+            'components' => $check?->toArray() ?? [],
+            ...($withReport ? ['report' => $inspection?->report] : []),
         ];
     }
 

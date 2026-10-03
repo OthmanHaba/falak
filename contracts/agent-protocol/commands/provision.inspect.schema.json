@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/provision.inspect.schema.json",
+  "title": "provision.inspect — read-only machine check: the software already on the host and where it came from (feature provision.v2)",
+  "x-kiln-redeliverable": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "packages": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9+.*\\[\\]-]*$",
+        "description": "dpkg-query pattern (name or glob)"
+      },
+      "uniqueItems": true,
+      "description": "Extra packages to report besides the agent's built-in list (Docker, databases, caches, web servers, runtimes, host tools), e.g. the plan's base packages"
+    }
+  },
+  "$defs": {
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "origin"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "origin": {
+          "enum": ["archive", "vendor", "manual", "unknown"],
+          "description": "archive: the distribution's archive (any mirror); vendor: another apt repository (repo, without credentials); manual: a .deb or a repository that is no longer configured; unknown: apt has no package lists yet. When no repository offers the installed version, the repository offering the package's other versions decides"
+        },
+        "repo": { "type": "string", "description": "Repository URL offering the installed version" },
+        "label": { "type": "string", "description": "The repository's Origin field (Ubuntu, Docker, apt.postgresql.org, LP-PPA-ondrej-php, ...)" }
+      }
+    },
+    "binary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "source"],
+      "properties": {
+        "path": { "type": "string" },
+        "version": { "type": "string" },
+        "source": { "enum": ["kiln", "archive", "vendor", "nodesource", "nvm", "snap", "manual", "unknown"], "description": "unknown: from a package whose source apt cannot tell (no package lists yet)" },
+        "package": { "type": "string" },
+        "repo": { "type": "string" }
+      }
+    },
+    "plugin": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": { "type": "string" },
+        "package": { "type": "string", "description": "Package shipping the plugin; absent for a plugin file no package owns" },
+        "path": { "type": "string" }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "hostname", "os", "packages", "services", "listeners", "ssh", "firewall", "swap", "errors"],
+      "properties": {
+        "version": { "const": 1 },
+        "hostname": { "type": "string" },
+        "os": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "id": { "type": "string" }, "version": { "type": "string" }, "codename": { "type": "string" } }
+        },
+        "in_container": { "type": "boolean" },
+        "packages": { "type": "array", "items": { "$ref": "#/$defs/package" } },
+        "snaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "version"],
+            "properties": { "name": { "type": "string" }, "version": { "type": "string" }, "channel": { "type": "string" } }
+          }
+        },
+        "apt_sources": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "uris"],
+            "properties": { "file": { "type": "string" }, "uris": { "type": "array", "items": { "type": "string" } } }
+          }
+        },
+        "services": {
+          "type": "array",
+          "description": "systemd units that exist (Docker, databases, caches, web servers, kiln-edge, ssh, fail2ban, firewalls)",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["unit", "active", "enabled"],
+            "properties": { "unit": { "type": "string" }, "active": { "type": "string" }, "enabled": { "type": "string" } }
+          }
+        },
+        "listeners": {
+          "type": "array",
+          "description": "Listening TCP sockets (ss -ltnp)",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["port", "address"],
+            "properties": {
+              "port": { "type": "integer", "minimum": 0, "maximum": 65535 },
+              "address": { "type": "string" },
+              "process": { "type": "string" },
+              "pid": { "type": "integer" },
+              "unit": { "type": "string", "description": "systemd unit of the process (from its cgroup)" },
+              "container": { "type": "boolean", "description": "A container runtime's port proxy (docker-proxy, rootlessport, ...)" }
+            }
+          }
+        },
+        "containers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "image", "ports"],
+            "properties": {
+              "name": { "type": "string" },
+              "image": { "type": "string" },
+              "ports": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["host_port", "container_port", "protocol"],
+                  "properties": {
+                    "host_ip": { "type": "string" },
+                    "host_port": { "type": "integer" },
+                    "container_port": { "type": "integer" },
+                    "protocol": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "docker": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "engine_package": { "type": "string", "description": "docker-ce, docker.io, moby-engine or podman-docker; absent for a snap or static engine" },
+            "client_version": { "type": "string" },
+            "server_version": { "type": "string", "description": "Absent when the daemon does not answer" },
+            "server_error": { "type": "string" },
+            "compose": { "$ref": "#/$defs/plugin" },
+            "buildx": { "$ref": "#/$defs/plugin" },
+            "snap": { "type": "boolean" },
+            "rootless": { "type": "boolean", "description": "A rootless (per-user) daemon is set up for some user" },
+            "system_daemon": { "type": "boolean", "description": "docker.service exists" },
+            "daemon": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "description": "/etc/docker/daemon.json settings that matter to Kiln",
+              "properties": {
+                "bip": { "type": "string" },
+                "default_address_pools": { "type": "array" },
+                "iptables": { "type": "boolean" },
+                "userns_remap": { "type": "string" },
+                "error": { "type": "string" }
+              }
+            }
+          }
+        },
+        "ssh": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["drop_ins", "effective", "effective_source", "users"],
+          "properties": {
+            "drop_ins": {
+              "type": "array",
+              "description": "sshd_config.d/*.conf in the order sshd reads them (the first value of a keyword wins)",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["file", "settings"],
+                "properties": { "file": { "type": "string" }, "settings": { "$ref": "#/$defs/settings" } }
+              }
+            },
+            "effective": { "$ref": "#/$defs/settings", "description": "passwordauthentication, permitrootlogin, port, pubkeyauthentication, kbdinteractiveauthentication, allowusers, denyusers, allowgroups, denygroups (lists space separated)" },
+            "effective_source": { "enum": ["sshd -T", "files"] },
+            "users": {
+              "type": "array",
+              "description": "root and regular users (UID >= 1000) with a login shell",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "uid", "authorized_keys"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "uid": { "type": "integer" },
+                  "authorized_keys": { "type": "integer", "minimum": 0 },
+                  "groups": { "type": "array", "items": { "type": "string" }, "description": "Primary and supplementary groups (AllowGroups / DenyGroups)" }
+                }
+              }
+            }
+          }
+        },
+        "firewall": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ufw", "firewalld", "nft_tables"],
+          "properties": {
+            "ufw": { "enum": ["active", "inactive", "absent"] },
+            "firewalld": { "enum": ["active", "inactive", "absent"] },
+            "nft_tables": { "type": "array", "items": { "type": "string" }, "description": "\"<family> <name>\", including Kiln's \"inet kiln\"" }
+          }
+        },
+        "swap": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "type", "size_bytes"],
+            "properties": { "name": { "type": "string" }, "type": { "type": "string" }, "size_bytes": { "type": "integer" } }
+          }
+        },
+        "node": { "type": "array", "items": { "$ref": "#/$defs/binary" } },
+        "php": { "type": "array", "items": { "$ref": "#/$defs/binary" } },
+        "frankenphp": { "type": "array", "items": { "$ref": "#/$defs/binary" } },
+        "unattended_upgrades": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "installed": { "type": "boolean" },
+            "periodic": { "type": ["object", "null"], "additionalProperties": { "type": "string" }, "description": "APT::Periodic::* of 20auto-upgrades; null without the file" },
+            "managed_by_kiln": { "type": "boolean" }
+          }
+        },
+        "fail2ban": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "installed": { "type": "boolean" },
+            "active": { "type": "boolean" },
+            "jails": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "errors": {
+          "type": "array",
+          "description": "Detectors that could not complete; their part of the report is empty",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["detector", "error"],
+            "properties": { "detector": { "type": "string" }, "error": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

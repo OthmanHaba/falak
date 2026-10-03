@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Kiln\Servers\Http\Controllers\DatabaseEngineController;
+use Kiln\Servers\Http\Controllers\MachineCheckController;
 use Kiln\Servers\Http\Controllers\PhpController;
 use Kiln\Servers\Http\Controllers\ServerAgentController;
 use Kiln\Servers\Http\Controllers\ServerController;
@@ -18,6 +19,8 @@ Route::middleware(['auth', 'org'])->group(function () {
     Route::patch('servers/{server}', [ServerController::class, 'update'])->name('servers.update');
     Route::delete('servers/{server}', [ServerController::class, 'destroy'])->name('servers.destroy');
     Route::post('servers/{server}/reprovision', [ServerController::class, 'reprovision'])->name('servers.reprovision');
+    Route::post('servers/{server}/inspection', [MachineCheckController::class, 'store'])->middleware('throttle:10,1')->name('servers.inspection.store');
+    Route::post('servers/{server}/provision', [MachineCheckController::class, 'provision'])->name('servers.provision');
     Route::post('servers/{server}/agent/upgrade', [ServerAgentController::class, 'upgrade'])->name('servers.agent.upgrade');
     Route::post('servers/{server}/install-command', [ServerController::class, 'installCommand'])->name('servers.install-command');
     Route::get('servers/{server}/metrics', [ServerController::class, 'metrics'])->name('servers.metrics');

@@ -26,9 +26,11 @@ use Kiln\Recipes\Domain\Models\Run;
 use Kiln\Recipes\Domain\Models\RunTarget;
 use Kiln\Servers\Application\Actions\AttachSshKey;
 use Kiln\Servers\Application\Actions\CreateSshKey;
+use Kiln\Servers\Application\MachineChecks;
 use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Domain\Enums\PhpVersionStatus;
+use Kiln\Servers\Domain\Models\MachineInspection;
 use Kiln\Servers\Domain\Models\PhpVersion;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Servers\Domain\Stack\Stack;
@@ -38,8 +40,8 @@ use Kiln\Terminal\Domain\Models\TerminalSession;
 
 /**
  * Realistic infrastructure for the UI demo (called by UiDemoSeeder): agents with heartbeat metrics, PHP versions,
- * SSH keys, firewalls, a private network, recipe runs, a terminal recording, a provisioning log and a custom server
- * waiting for its agent. Written directly against module models — local demo data only.
+ * SSH keys, firewalls, a private network, recipe runs, a terminal recording, a provisioning log, a custom server
+ * waiting for its agent and one the machine check stopped (needs attention). Written directly against module models — local demo data only.
  */
 class InfrastructureDemoSeeder extends Seeder
 {
@@ -114,6 +116,7 @@ class InfrastructureDemoSeeder extends Seeder
         $this->php($servers);
         $this->provisioningLog($organizationId, $servers['worker-1'] ?? null);
         $this->customServer($organizationId);
+        $this->attentionServer($organizationId);
         $this->sshKeys($organizationId, $userId, $servers);
         $this->firewalls($organizationId, $servers);
         $this->privateNetwork($organizationId, $servers);
@@ -227,6 +230,105 @@ class InfrastructureDemoSeeder extends Seeder
         }
 
         $server->forceFill(['provision_command_id' => $command->id])->save();
+    }
+
+    /**
+     * A customer's own VM the machine check stopped: nginx holds port 80 and MariaDB is installed where MySQL was
+     * chosen. Docker from Docker's repository (with compose and buildx) is adopted.
+     */
+    private function attentionServer(string $organizationId): void
+    {
+        $server = Server::query()->create([
+            'organization_id' => $organizationId,
+            'name' => 'customer-vm',
+            'type' => ServerType::App,
+            'status' => ServerStatus::NeedsAttention,
+            'provider' => 'custom',
+            'ipv4' => '203.0.113.77',
+            'os' => 'ubuntu 26.04',
+            'arch' => 'amd64',
+            'cpus' => 4,
+            'memory_bytes' => 8 * self::GB,
+            'disk_bytes' => 120 * self::GB,
+            'timezone' => 'UTC',
+            'stack' => new Stack('frankenphp', ['8.5'], '8.5', '22', 'mysql', 'redis', true),
+        ]);
+
+        Agent::query()->create([
+            'organization_id' => $organizationId,
+            'server_id' => $server->id,
+            'status' => AgentStatus::Online,
+            'hostname' => 'customer-vm',
+            'arch' => 'amd64',
+            'agent_version' => '0.6.0',
+            'facts' => ['kernel' => '7.0.0-12-generic', 'docker' => '28.1.1', 'runtimes' => [], 'features' => ['provision.v2']],
+            'metrics' => ['at' => now()->toIso8601String(), 'uptime_s' => 86400, 'load' => [0.1, 0.1, 0.1], 'cpu_percent' => 3.2, 'memory_used_bytes' => (int) (1.4 * self::GB), 'disk_used_bytes' => 18 * self::GB],
+            'enrolled_at' => now()->subMinutes(14),
+            'last_heartbeat_at' => now()->subSeconds(6),
+        ]);
+
+        $docker = 'https://download.docker.com/linux/ubuntu';
+        $package = fn (string $name, string $version, string $origin = 'archive', ?string $repo = 'http://archive.ubuntu.com/ubuntu', ?string $label = 'Ubuntu') => array_filter(['name' => $name, 'version' => $version, 'origin' => $origin, 'repo' => $repo, 'label' => $label]);
+        $report = [
+            'version' => 1, 'hostname' => 'customer-vm', 'os' => ['id' => 'ubuntu', 'version' => '26.04', 'codename' => 'resolute'], 'in_container' => false,
+            'packages' => [
+                $package('docker-ce', '5:28.1.1-1~ubuntu.26.04~resolute', 'vendor', $docker, 'Docker'),
+                $package('docker-compose-plugin', '2.35.1-1~ubuntu.26.04~resolute', 'vendor', $docker, 'Docker'),
+                $package('docker-buildx-plugin', '0.23.0-1~ubuntu.26.04~resolute', 'vendor', $docker, 'Docker'),
+                $package('mariadb-server', '1:11.8.2-1'),
+                $package('nginx', '1.28.0-2ubuntu1'),
+                $package('openssh-server', '1:10.0p1-2ubuntu1'),
+                $package('curl', '8.14.1-2ubuntu1'),
+                $package('git', '1:2.48.1-0ubuntu1'),
+            ],
+            'snaps' => [],
+            'apt_sources' => [['file' => '/etc/apt/sources.list.d/docker.list', 'uris' => [$docker]]],
+            'services' => [
+                ['unit' => 'docker.service', 'active' => 'active', 'enabled' => 'enabled'],
+                ['unit' => 'nginx.service', 'active' => 'active', 'enabled' => 'enabled'],
+                ['unit' => 'mariadb.service', 'active' => 'active', 'enabled' => 'enabled'],
+            ],
+            'listeners' => [
+                ['port' => 22, 'address' => '0.0.0.0', 'process' => 'sshd', 'unit' => 'ssh.service'],
+                ['port' => 80, 'address' => '0.0.0.0', 'process' => 'nginx', 'pid' => 1201, 'unit' => 'nginx.service'],
+                ['port' => 3306, 'address' => '127.0.0.1', 'process' => 'mariadbd', 'pid' => 1302, 'unit' => 'mariadb.service'],
+            ],
+            'containers' => [],
+            'docker' => [
+                'engine_package' => 'docker-ce', 'client_version' => '28.1.1', 'server_version' => '28.1.1',
+                'compose' => ['version' => '2.35.1', 'package' => 'docker-compose-plugin', 'path' => '/usr/libexec/docker/cli-plugins/docker-compose'],
+                'buildx' => ['version' => '0.23.0', 'package' => 'docker-buildx-plugin', 'path' => '/usr/libexec/docker/cli-plugins/docker-buildx'],
+                'snap' => false, 'rootless' => false, 'system_daemon' => true, 'daemon' => null,
+            ],
+            'ssh' => [
+                'drop_ins' => [['file' => '/etc/ssh/sshd_config.d/50-cloud-init.conf', 'settings' => ['passwordauthentication' => 'yes']]],
+                'effective' => ['passwordauthentication' => 'yes', 'permitrootlogin' => 'prohibit-password', 'port' => '22'],
+                'effective_source' => 'sshd -T',
+                'users' => [['name' => 'root', 'uid' => 0, 'authorized_keys' => 1], ['name' => 'ubuntu', 'uid' => 1000, 'authorized_keys' => 1]],
+            ],
+            'firewall' => ['ufw' => 'active', 'firewalld' => 'absent', 'nft_tables' => ['ip filter', 'ip nat']],
+            'swap' => [['name' => '/swap.img', 'type' => 'file', 'size_bytes' => 4 * self::GB]],
+            'node' => [['path' => '/usr/bin/node', 'version' => '20.19.2', 'source' => 'nodesource', 'package' => 'nodejs', 'repo' => 'https://deb.nodesource.com/node_20.x']],
+            'php' => [], 'frankenphp' => [],
+            'unattended_upgrades' => ['installed' => true, 'periodic' => ['Update-Package-Lists' => '1', 'Unattended-Upgrade' => '1'], 'managed_by_kiln' => false],
+            'fail2ban' => ['installed' => false, 'active' => false, 'jails' => []],
+            'errors' => [],
+        ];
+
+        $check = app(MachineChecks::class)->decide($server, $report);
+        $server->forceFill(['status_message' => $check->summary()])->save();
+
+        MachineInspection::query()->create([
+            'server_id' => $server->id,
+            'command_id' => (string) Str::ulid(),
+            'purpose' => MachineInspection::PURPOSE_PROVISION,
+            'status' => MachineInspection::FINISHED,
+            'report' => $report,
+            'decisions' => $check->toArray(),
+            'blocking' => $check->blocking(),
+            'agent_version' => '0.6.0',
+            'checked_at' => now()->subMinutes(12),
+        ]);
     }
 
     private function customServer(string $organizationId): void

@@ -25,6 +25,11 @@ arch('Kernel depends on no module')
     ->expect('Kiln\Kernel')
     ->not->toUse(array_map(fn ($m) => "Kiln\\{$m}", Modules::ALL));
 
+// Report + wanted stack + config in, decisions out: unit-testable without the framework, the database or an agent.
+arch('the machine-check decision engine is pure')
+    ->expect('Kiln\Servers\Domain\MachineCheck')
+    ->not->toUse(['Illuminate', 'Kiln\Fleet', 'Kiln\Servers\Application', 'Kiln\Servers\Infrastructure', 'Kiln\Servers\Domain\Models', 'config', 'app', 'now']);
+
 arch('no debugging leftovers')
     ->expect(['dd', 'dump', 'ray', 'var_dump'])
     ->not->toBeUsed();

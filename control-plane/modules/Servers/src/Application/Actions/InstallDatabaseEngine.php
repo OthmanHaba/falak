@@ -5,7 +5,9 @@ namespace Kiln\Servers\Application\Actions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Kiln\Identity\Contracts\AuditLog;
+use Kiln\Servers\Application\MachineChecks;
 use Kiln\Servers\Contracts\ServerStatus;
+use Kiln\Servers\Domain\MachineCheck\Decision;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Servers\Events\DatabaseEngineInstalled;
 use Throwable;
@@ -24,6 +26,7 @@ final class InstallDatabaseEngine
     public function __construct(
         private readonly ApplyProvisioningPlan $apply,
         private readonly AuditLog $audit,
+        private readonly MachineChecks $checks,
     ) {}
 
     /**
@@ -60,6 +63,13 @@ final class InstallDatabaseEngine
         });
 
         try {
+            // The machine check's report decides for the new engine too (another engine, its port taken).
+            $decision = $this->checks->current($server)?->for('database');
+
+            if ($decision?->decision === Decision::Block) {
+                throw ValidationException::withMessages(['engine' => trim($decision->reason.' '.$decision->hint())]);
+            }
+
             $commandId = ($this->apply)($server, markProvisioning: false);
         } catch (Throwable $e) {
             $server->forceFill(['stack' => $server->stack->withDatabase(null), 'engine_command_id' => null])->save();
