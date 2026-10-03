@@ -30,6 +30,8 @@ export interface DatabaseServer {
     port: number;
     databases_count: number | null;
     users_count: number | null;
+    /** Redis / Valkey: the instances' ports (Databases index) */
+    instance_ports?: number[];
 }
 
 export interface DatabaseRow {

@@ -232,6 +232,11 @@ it('shows the instance panel with key-value options and its own port', function 
         ->assertJsonPath('data.options.max_memory_mb', 1536)
         ->assertJsonPath('data.options.persistences', ['rdb', 'aof', 'none'])
         ->assertJsonPath('data.restore_targets', []);
+
+    // The index lists the instances' ports for the key-value row, not the stock instance's 6379.
+    $rows = collect($this->getJson('/databases')->assertOk()->json('data'));
+    expect($rows->firstWhere('engine', 'redis'))->toMatchArray(['instance_ports' => [6380], 'kind' => 'key_value'])
+        ->and($rows->firstWhere('engine', 'postgresql')['instance_ports'])->toBeNull();
 });
 
 it('gives two instances created on one server different ports, and moves a new instance off a port the agent found taken', function () {

@@ -86,7 +86,7 @@ export function DatabaseSettingsTab({ ctx }: ServiceTabProps) {
             {keyValue && (
                 <Section
                     title="Instance"
-                    description={`${data.database.name} runs as its own ${data.server.engine_label} process on port ${data.database.port ?? '—'}. Saving restarts it; with snapshots or AOF its data is kept.`}
+                    description={`${data.database.name} runs as its own ${data.server.engine_label} process on port ${data.database.port ?? '—'}. Changes apply to the running instance without a restart; switching between snapshots and AOF keeps the data.`}
                     footer={
                         data.can.manage && (
                             <Button variant="primary" type="submit" form="instance-settings" loading={savingInstance}>
@@ -129,6 +129,12 @@ export function DatabaseSettingsTab({ ctx }: ServiceTabProps) {
                                 options={data.options.persistences.map((item) => ({ value: item, label: PERSISTENCE[item] ?? item }))}
                             />
                         </Field>
+                        {persistence === 'none' && (
+                            <p role="alert" className="bg-warning-soft text-warning rounded-md px-3 py-2 text-xs sm:col-span-2">
+                                Nothing is written to disk: every restart of the instance (server reboot, a port change, an upgrade) starts it empty.
+                                {data.database.settings?.persistence !== 'none' && ' Files of the current mode are moved aside.'}
+                            </p>
+                        )}
                         {instanceErrors.form && <p className="text-danger text-xs sm:col-span-2">{instanceErrors.form}</p>}
                     </form>
                 </Section>

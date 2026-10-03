@@ -35,6 +35,10 @@ trait PresentsDatabases
             'port' => $server->port,
             'databases_count' => $server->databases_count ?? null,
             'users_count' => $server->users_count ?? null,
+            // Redis / Valkey: Kiln's instances run on their own ports (the engine row's port is the stock instance's).
+            'instance_ports' => $server->engine->isKeyValue()
+                ? $server->databases()->whereNotNull('port')->orderBy('port')->pluck('port')->map(fn ($port) => (int) $port)->values()->all()
+                : null,
         ];
     }
 

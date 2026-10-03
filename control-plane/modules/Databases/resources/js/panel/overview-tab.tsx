@@ -22,7 +22,8 @@ function handle(name: string): string {
 
 /** §5.4 Overview: engine, server, connection strings (copy + audited reveal), private address, reference keys. */
 export function DatabaseOverviewTab({ ctx }: ServiceTabProps) {
-    const { data, error } = useDatabasePanel(ctx);
+    const { data, error, reload } = useDatabasePanel(ctx);
+    const [rotating, setRotating] = useState(false);
     const [hostIndex, setHostIndex] = useState(0);
     const [userId, setUserId] = useState<string | null>(null);
     const [passwords, setPasswords] = useState<Record<string, string>>({});
@@ -180,6 +181,35 @@ export function DatabaseOverviewTab({ ctx }: ServiceTabProps) {
                         <CodeBlock title=".env" code={env(visible)} copyable={shown && Boolean(password)} />
                         {keyValue && <CodeBlock title={`On ${server.server_name}`} code={cli(visible)} copyable={shown && Boolean(password)} />}
                         <p className="text-fg-faint text-xs">Revealing a password is recorded in the audit log.</p>
+                        {keyValue && data.can.manage && (
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <span className="text-fg-muted text-xs">
+                                    A new password applies to the running instance right away (no restart). Sites get it through their references on
+                                    their next deploy; until then they can&apos;t connect.
+                                </span>
+                                <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    loading={rotating}
+                                    onClick={async () => {
+                                        setRotating(true);
+                                        try {
+                                            await requestJson(`/databases/users/${user.id}/password`, 'POST', {});
+                                            setPasswords({});
+                                            setShown(false);
+                                            toast.success('Password rotated', 'Redeploy the sites that reference this instance.');
+                                            await reload();
+                                        } catch (e) {
+                                            toast.error('Could not rotate the password', errorMessage(e));
+                                        } finally {
+                                            setRotating(false);
+                                        }
+                                    }}
+                                >
+                                    Rotate password
+                                </Button>
+                            </div>
+                        )}
                     </>
                 ) : (
                     <p className="text-fg-muted text-sm">
