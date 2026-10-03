@@ -46,6 +46,15 @@ return [
         'redis' => ['label' => 'Redis', 'packages' => ['redis-server'], 'service' => 'redis-server'],
         'valkey' => ['label' => 'Valkey', 'packages' => ['valkey-server'], 'service' => 'valkey-server'],
     ],
+    // Cache engines each release's archive has, keyed by the server's reported OS ("<id> <version>"); releases not
+    // listed get Redis only. valkey-server is in Ubuntu's archive from 26.04 (8.1) and in Debian from 13.
+    'caches_by_os' => [
+        'ubuntu 22.04' => ['redis'],
+        'ubuntu 24.04' => ['redis'],
+        'ubuntu 26.04' => ['redis', 'valkey'],
+        'debian 12' => ['redis'],
+        'debian 13' => ['redis', 'valkey'],
+    ],
     'docker' => ['packages' => ['docker.io', 'docker-compose-v2', 'docker-buildx'], 'service' => 'docker'],
 
     'base_packages' => ['acl', 'ca-certificates', 'curl', 'fail2ban', 'git', 'htop', 'jq', 'rsync', 'sqlite3', 'unattended-upgrades', 'unzip', 'zip'],

@@ -93,17 +93,22 @@ final class HandleCommandOutcome implements ShouldQueue
             return;
         }
 
-        $engine = (string) $server->stack->database;
+        $cache = $server->installing('cache');
+        $engine = (string) ($cache ? $server->stack->cache : $server->stack->database);
 
         if ($error !== null) {
-            $server->forceFill(['engine_command_id' => null, 'stack' => $server->stack->withDatabase(null)])->save();
+            $server->forceFill([
+                'engine_command_id' => null,
+                'engine_install_kind' => null,
+                'stack' => $cache ? $server->stack->withCache(null) : $server->stack->withDatabase(null),
+            ])->save();
             $this->audit->record('server.database_engine_install_failed', 'server', $server->id, ['engine' => $engine, 'error' => $error], $server->organization_id);
             DatabaseEngineInstallFailed::dispatch($server->id, $server->organization_id, $engine);
 
             return;
         }
 
-        $server->forceFill(['engine_command_id' => null])->save();
+        $server->forceFill(['engine_command_id' => null, 'engine_install_kind' => null])->save();
         $this->audit->record('server.database_engine_installed', 'server', $server->id, ['engine' => $engine], $server->organization_id);
         DatabaseEngineInstalled::dispatch($server->id, $server->organization_id, $engine);
     }

@@ -11,7 +11,7 @@ use Kiln\Servers\Application\Actions\InstallDatabaseEngine;
 use Kiln\Servers\Domain\Models\Server;
 
 /**
- * Adding a database engine to a provisioned server (panel Settings → Database engine and
+ * Adding a database or cache engine (Redis, Valkey) to a provisioned server (panel Settings → Database engine and
  * `POST /api/v1/servers/{server}/database-engine`).
  */
 final class DatabaseEngineController extends Controller
@@ -36,7 +36,7 @@ final class DatabaseEngineController extends Controller
     private function engine(Request $request): string
     {
         return (string) $request->validate([
-            'engine' => ['required', 'string', Rule::in(array_keys((array) config('servers.databases', [])))],
+            'engine' => ['required', 'string', Rule::in([...array_keys((array) config('servers.databases', [])), ...array_keys((array) config('servers.caches', []))])],
         ])['engine'];
     }
 }

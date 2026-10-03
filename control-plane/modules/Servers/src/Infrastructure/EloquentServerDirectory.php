@@ -8,6 +8,7 @@ use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Servers\Contracts\ServerStatus;
 use Kiln\Servers\Contracts\ServerType;
 use Kiln\Servers\Domain\Enums\PhpVersionStatus;
+use Kiln\Servers\Domain\Models\MachineInspection;
 use Kiln\Servers\Domain\Models\Server;
 
 final class EloquentServerDirectory implements ServerDirectory
@@ -36,5 +37,35 @@ final class EloquentServerDirectory implements ServerDirectory
         $server = Server::query()->find($serverId);
 
         return $server?->phpVersions()->where('version', $version)->where('status', PhpVersionStatus::Installed)->first()?->toSettings();
+    }
+
+    public function takenPorts(string $serverId): array
+    {
+        $report = MachineInspection::query()->where('server_id', strtolower($serverId))->first()?->report;
+
+        if (! is_array($report)) {
+            return [];
+        }
+
+        $ports = [];
+
+        foreach ((array) ($report['listeners'] ?? []) as $listener) {
+            if (is_array($listener) && is_numeric($listener['port'] ?? null)) {
+                $ports[] = (int) $listener['port'];
+            }
+        }
+
+        foreach ((array) ($report['containers'] ?? []) as $container) {
+            foreach (is_array($container) ? (array) ($container['ports'] ?? []) : [] as $published) {
+                if (is_array($published) && is_numeric($published['host_port'] ?? null)) {
+                    $ports[] = (int) $published['host_port'];
+                }
+            }
+        }
+
+        $ports = array_values(array_unique($ports));
+        sort($ports);
+
+        return $ports;
     }
 }
