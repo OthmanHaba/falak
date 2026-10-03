@@ -17,6 +17,7 @@ import (
 	"github.com/kiln/agent/internal/commands"
 	"github.com/kiln/agent/internal/runner"
 	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/kiln/agent/internal/system"
 )
 
 // fakeProc is one running redis-server as the fake sees it (started from the config file on disk).
@@ -33,6 +34,7 @@ type fakeProc struct {
 	loadedFrom string // dump.rdb | aof | empty
 	loading    int    // PINGs answered LOADING first
 	rewriting  bool   // an AOF rewrite is running
+	rewriteErr bool   // the last AOF rewrite failed
 	startSave  string // save points it started with
 	disabled   []string
 }
@@ -202,7 +204,8 @@ func (h *fakeRedisHost) cli(c runnertest.Call) (runner.Result, error) {
 			h.onInfo()
 		}
 		b := map[bool]string{true: "1", false: "0"}
-		return out("# Persistence\r\naof_enabled:" + b[p.appendonly] + "\r\naof_rewrite_in_progress:" + b[p.rewriting] + "\r\naof_rewrite_scheduled:0\r\naof_last_bgrewrite_status:ok\r")
+		status := map[bool]string{true: "err", false: "ok"}[p.rewriteErr]
+		return out("# Persistence\r\naof_enabled:" + b[p.appendonly] + "\r\naof_rewrite_in_progress:" + b[p.rewriting] + "\r\naof_rewrite_scheduled:0\r\naof_last_bgrewrite_status:" + status + "\r")
 	case args[0] == p.config && len(args) == 3 && args[1] == "GET" && args[2] == "save":
 		return out("save\n" + p.save)
 	case args[0] == p.config && len(args) == 4 && args[1] == "SET" && args[2] == h.failSet:
@@ -220,7 +223,11 @@ func (h *fakeRedisHost) cli(c runnertest.Call) (runner.Result, error) {
 		case "appendonly":
 			p.appendonly = args[3] == "yes"
 			p.rewriting = p.appendonly && h.stuckRewrite
-			if p.appendonly {
+			if p.rewriting {
+				// Redis 7: only the incremental file exists until the first rewrite writes the base and the manifest.
+				os.MkdirAll(filepath.Join(p.dir, "appendonlydir"), 0o700)
+				os.WriteFile(filepath.Join(p.dir, "appendonlydir", "appendonly.aof.1.incr.aof"), []byte("partial"), 0o600)
+			} else if p.appendonly {
 				os.MkdirAll(filepath.Join(p.dir, "appendonlydir"), 0o700)
 				os.WriteFile(filepath.Join(p.dir, "appendonlydir", "appendonly.aof.manifest"), []byte("fresh"), 0o600)
 			}
@@ -730,7 +737,9 @@ func TestRedisLiveAOFIsNeverMovedAfterAFailedSwitch(t *testing.T) {
 		t.Fatalf("setup: %+v", proc())
 	}
 	h.onInfo, h.stuckRewrite = nil, false
+	// The rewrite finishes meanwhile: base file and manifest are written.
 	proc().rewriting = false
+	os.WriteFile(filepath.Join(data, "appendonlydir", "appendonly.aof.manifest"), []byte("fresh"), 0o600)
 
 	// The redelivery asks the process: AOF is on, so the live appendonlydir stays and is waited for, never moved.
 	h.redisCmds = nil
@@ -938,5 +947,164 @@ func TestRedisErrorsNeverCarryTheConfigNameOrValues(t *testing.T) {
 	all := fmt.Sprintf("%+v", sink.Events)
 	if !strings.Contains(all, "live change failed") || strings.Contains(all, cfg) || strings.Contains(all, p.Password) {
 		t.Fatalf("output: %s", all)
+	}
+}
+
+func TestRedisRestartDuringTheFirstAOFRewriteStartsFromTheSnapshot(t *testing.T) {
+	oldAOF, oldPoll := RedisAOFTimeout, redisPoll
+	RedisAOFTimeout, redisPoll = 30*time.Millisecond, time.Millisecond
+	defer func() { RedisAOFTimeout, redisPoll = oldAOF, oldPoll }()
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	p := redisPayload()
+	applyOK(t, db, p)
+	cfg := readState(t, db, "redis", "cache").ConfigName
+	data := filepath.Join(root, "/var/lib/kiln-redis/cache")
+	proc := func() *fakeProc { return h.procs["redis-server@kiln-cache.service"] }
+
+	// The first rewrite outlasts the wait: the apply fails and leaves the instance alone (no restart mid-rewrite).
+	h.stuckRewrite = true
+	p.Persistence = "aof"
+	f.Reset()
+	if _, err := db.RedisApply(context.Background(), p, st); err == nil || !errors.Is(err, errWaitTimeout) {
+		t.Fatalf("%v", err)
+	}
+	if f.Ran("systemctl stop") || !proc().rewriting {
+		t.Fatal("restarted during the rewrite", f.Lines())
+	}
+
+	// The redelivery also needs a restart (new port) while the rewrite still runs: AOF goes off (ends the rewrite),
+	// SAVE, the partial appendonlydir is moved aside, the start loads dump.rdb and AOF is switched on live again.
+	h.stuckRewrite = false
+	h.redisCmds = nil
+	p.Port = 6381
+	if r := applyOK(t, db, p); !r.Restarted {
+		t.Fatal(r)
+	}
+	inOrder(t, h.redisCmds, "INFO persistence", cfg+" SET appendonly no", cfg+" SET save "+redisSave, "SAVE", "PING", cfg+" SET appendonly yes")
+	if proc().loadedFrom != "dump.rdb" || !proc().appendonly {
+		t.Fatalf("%+v", proc())
+	}
+	if m, _ := filepath.Glob(filepath.Join(data, "appendonlydir.kiln-*")); len(m) != 1 {
+		t.Fatalf("partial AOF not moved aside: %v", m)
+	}
+
+	// A first rewrite that failed (aof_last_bgrewrite_status:err) takes the same way out on any change.
+	proc().rewriteErr = true
+	p.MaxMemoryMB = 200
+	if r := applyOK(t, db, p); !r.Restarted || proc().loadedFrom != "dump.rdb" {
+		t.Fatalf("%+v %+v", r, proc())
+	}
+
+	// Stopped with an AOF that has no manifest (its first rewrite never finished): started from the snapshot too.
+	os.RemoveAll(filepath.Join(data, "appendonlydir", "appendonly.aof.manifest"))
+	delete(h.procs, "redis-server@kiln-cache.service")
+	p.MaxMemoryMB = 300
+	applyOK(t, db, p)
+	if proc().loadedFrom != "dump.rdb" || !proc().appendonly {
+		t.Fatalf("%+v", proc())
+	}
+}
+
+func TestRedisNoRestartWithoutEnoughTimeLeft(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	newRedisHost(t, f, root)
+	p := redisPayload()
+	applyOK(t, db, p)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	p.Port = 6381
+	f.Reset()
+	if _, err := db.RedisApply(ctx, p, st); err == nil || !strings.Contains(err.Error(), "not enough time left") {
+		t.Fatal(err)
+	}
+	if f.Ran("systemctl stop") {
+		t.Fatal("stopped with no time to start again")
+	}
+}
+
+func TestRedisNoneMovesSnapshotsAsideOnEveryLiveChange(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	newRedisHost(t, f, root)
+	p := redisPayload()
+	p.Persistence = "none"
+	applyOK(t, db, p)
+	dump := filepath.Join(root, "/var/lib/kiln-redis/cache/dump.rdb")
+	os.WriteFile(dump, []byte("REDIS0009 app BGSAVE"), 0o600) // an app ran BGSAVE
+	p.MaxMemoryMB = 200
+	if r := applyOK(t, db, p); r.Restarted {
+		t.Fatal(r)
+	}
+	if exists(dump) {
+		t.Fatal("a snapshot of a none instance survived a change")
+	}
+}
+
+func TestRedisReadyBoundsTheLoadingWaitOnce(t *testing.T) {
+	oldLoading, oldPoll := RedisLoadingTimeout, redisPoll
+	RedisLoadingTimeout, redisPoll = 50*time.Millisecond, time.Millisecond
+	defer func() { RedisLoadingTimeout, redisPoll = oldLoading, oldPoll }()
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	applyOK(t, db, redisPayload())
+	h.procs["redis-server@kiln-cache.service"].loading = 1 << 30
+	c := conn{db: db, k: kvEngine{cli: "redis-cli"}, port: 6380, password: redisPayload().Password}
+	start := time.Now()
+	if err := c.ready(context.Background()); !errors.Is(err, errWaitTimeout) {
+		t.Fatal(err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("waited %s: the LOADING deadline kept moving", d)
+	}
+}
+
+func TestRedisRedactsTruncatedArguments(t *testing.T) {
+	c := conn{password: "Xk3pQ9vR2mT7wL4nB8cF6hJ1", config: "kiln-config-0123456789abcdef0123456789abcdef"}
+	msg := c.redact("ERR unknown command 'kiln-config-0123456789abcdef0123456789abcdef', with args beginning with: 'SET' 'requirepass' 'Nn4vX8sD2k", []string{c.config, "SET", "requirepass", "Nn4vX8sD2kQ6pR9tY3wZ7aB5"})
+	if msg != "ERR unknown command 'CONFIG'" {
+		t.Fatal(msg)
+	}
+}
+
+func TestRedisInstanceLockWaitEndsWithTheContext(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	newRedisHost(t, f, root)
+	k, _ := kvEngineFor("redis")
+	unlock, err := lockInstance(context.Background(), k, "cache") // an apply holds the instance
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if _, err := db.RedisRemove(ctx, RedisRemovePayload{Engine: "redis", Name: "cache"}, st); err == nil || !strings.Contains(err.Error(), "waiting for another command") {
+		t.Fatal(err)
+	}
+	if len(f.Calls()) != 0 {
+		t.Fatal("ran while the instance was locked", f.Lines())
+	}
+}
+
+func TestRedisInstanceUsersShareTheAccountsLock(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	newRedisHost(t, f, root)
+	system.AccountsMu.Lock() // a site user being created
+	done := make(chan error, 1)
+	go func() { _, err := db.RedisApply(context.Background(), redisPayload(), st); done <- err }()
+	select {
+	case <-done:
+		system.AccountsMu.Unlock()
+		t.Fatal("instance user created while another account change ran")
+	case <-time.After(50 * time.Millisecond):
+	}
+	system.AccountsMu.Unlock()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

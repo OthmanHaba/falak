@@ -61,7 +61,9 @@ func (d *dockerRunner) Run(ctx context.Context, c runner.Cmd) (runner.Result, er
 		}
 		return runner.Result{}, nil
 	case c.Name == "systemctl" && c.Args[0] == "stop":
-		return d.docker(ctx, nil, "stop", "-t", "30", d.container)
+		// A short grace period: an instance that won't stop (Redis refuses while writing its first AOF) gets killed, as
+		// on a host whose stop times out.
+		return d.docker(ctx, nil, "stop", "-t", "3", d.container)
 	case c.Name == "systemctl" && (c.Args[0] == "start" || c.Args[0] == "restart"):
 		if res, _ := d.docker(ctx, nil, "inspect", d.container); res.ExitCode == 0 {
 			return d.docker(ctx, nil, c.Args[0], d.container)
@@ -202,6 +204,55 @@ func TestRedisIntegration(t *testing.T) {
 			}
 			if get("r2") != "aof" || get("a") != "1" {
 				t.Fatal("lost data across a restart with AOF")
+			}
+
+			// A restart during the first AOF rewrite (H-A): the rewrite is throttled (rdb-key-save-delay) so the agent's wait
+			// runs out — the apply fails without restarting — and the redelivery needs a restart (new port) while the
+			// rewrite still runs. The data must come back from the snapshot, not an empty incomplete AOF.
+			p.Persistence = "rdb"
+			apply(p)
+			if _, err := c().do(ctx, "EVAL", "for i=1,3000 do redis.call('SET','pop:'..i,i) end return 1", "0"); err != nil {
+				t.Fatal(err)
+			}
+			if out, err := c().do(ctx, c().config, "GET", "rdb-key-save-delay"); err != nil || !strings.Contains(out, "rdb-key-save-delay") {
+				t.Logf("%s has no rdb-key-save-delay (%q, %v): restart-mid-rewrite case skipped", img.image, out, err)
+			} else {
+				// 10 ms per key: the rewrite child (forked with this value) takes ~30 s, longer than the stop's grace period.
+				if _, err := c().do(ctx, c().config, "SET", "rdb-key-save-delay", "10000"); err != nil {
+					t.Fatal(err)
+				}
+				oldAOF := RedisAOFTimeout
+				RedisAOFTimeout = 300 * time.Millisecond
+				p.Persistence = "aof"
+				_, err := db.RedisApply(ctx, p, st)
+				RedisAOFTimeout = oldAOF
+				if err == nil || !strings.Contains(err.Error(), "still running") {
+					t.Fatalf("expected the wait to run out: %v", err)
+				}
+				if m, _ := c().info(ctx, "persistence"); m["aof_rewrite_in_progress"] != "1" {
+					t.Fatalf("rewrite not running any more: %v", m)
+				}
+				// The parent is fast again (its SAVE before the restart too); the running rewrite child stays slow.
+				if _, err := c().do(ctx, c().config, "SET", "rdb-key-save-delay", "0"); err != nil {
+					t.Fatal(err)
+				}
+				p.Port++
+				if r := apply(p); !r.Restarted {
+					t.Fatal(r)
+				}
+				if n, _ := c().do(ctx, "DBSIZE"); get("pop:3000") != "3000" || get("a") != "1" {
+					t.Fatalf("restart during the first AOF rewrite lost data (DBSIZE %s)", n)
+				}
+				if m, _ := c().info(ctx, "persistence"); m["aof_enabled"] != "1" {
+					t.Fatalf("AOF not on after the restart: %v", m)
+				}
+				// And a plain restart now loads the finished AOF with everything.
+				if _, err := d.docker(ctx, nil, "restart", d.container); err != nil {
+					t.Fatal(err)
+				}
+				if err := c().ready(ctx); err != nil || get("pop:3000") != "3000" {
+					t.Fatalf("lost data after the AOF restart: %v", err)
+				}
 			}
 
 			// none through a restart: nothing comes back, even though the old process had save points or AOF.

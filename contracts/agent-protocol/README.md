@@ -89,7 +89,11 @@ agent's state, so an AOF the process uses is never moved. A new port, bind addre
 commands restarts the instance: save points are set live and `SAVE`d (with `none`: snapshots and AOF off) so the stop
 keeps (or drops) the data as wanted, then stop, move aside what the next start must not load
 (`appendonlydir.kiln-<UTC time>`), start; a restart that turns AOF on starts from `dump.rdb` with snapshots and switches
-AOF on live. Applies and removes of one instance are serialized, user creation and removal globally. Errors never
+AOF on live. An AOF whose first rewrite is running, scheduled or failed (stopped: no manifest) is never loaded: AOF is
+switched off before the restart and the start runs from the snapshot. A wait that runs out, or a command with under 2
+minutes left, never restarts the instance (the apply fails; the redelivery waits again). Applies and removes of one
+instance are serialized (waiting ends with the command's context), every local account change globally (site users
+included). Errors never
 carry the secret `CONFIG` name, passwords or command arguments. With
 `none` the data is in memory only: files from earlier modes are moved aside and every restart starts empty. The agent
 records what the running process uses only after a successful (re)start and `PING`, so a redelivered apply after a

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/kiln/agent/internal/commands"
 	"github.com/kiln/agent/internal/hostfs"
@@ -70,10 +71,16 @@ func groupExists(ctx context.Context, r runner.Runner, g string) (bool, error) {
 }
 
 // EnsureUser converges a unix user. Users are never deleted.
+// AccountsMu serializes every change to local accounts the agent makes (site users here, Redis / Valkey instance
+// users in package db): useradd, usermod and userdel lock /etc/passwd and fail when two run at once.
+var AccountsMu sync.Mutex
+
 func EnsureUser(ctx context.Context, r runner.Runner, fs hostfs.FS, p UserSpec, st commands.Stream) (UserResult, error) {
 	if p.Name == "" {
 		return UserResult{}, &commands.PayloadError{Err: errFmt("name is required")}
 	}
+	AccountsMu.Lock()
+	defer AccountsMu.Unlock()
 	shell := p.Shell
 	if shell == "" {
 		shell = "/bin/bash"

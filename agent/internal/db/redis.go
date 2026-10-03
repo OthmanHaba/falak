@@ -20,6 +20,7 @@ import (
 
 	"github.com/kiln/agent/internal/commands"
 	"github.com/kiln/agent/internal/runner"
+	"github.com/kiln/agent/internal/system"
 )
 
 // Redis and Valkey instances (db.redis.apply / db.redis.remove, feature db.redis).
@@ -367,7 +368,10 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 	if !db.kvInstalled(k) {
 		return nil, fmt.Errorf("%s is not installed on this server (no %s@.service unit); install it first", k.label, k.server)
 	}
-	unlock := lockInstance(k, p.Name)
+	unlock, err := lockInstance(ctx, k, p.Name)
+	if err != nil {
+		return nil, err
+	}
 	defer unlock()
 
 	unit, confPath, user := k.unit(p.Name), k.confPath(p.Name), k.user(p.Name)
@@ -457,7 +461,9 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 			}
 			return RedisApplyResult{Changed: true, Port: p.Port}, nil
 		}
-		if ctx.Err() != nil {
+		// A wait that ran out of time (the rewrite or the load continues) or a cancelled command is not a reason to
+		// restart: a restart would interrupt the rewrite with little time left. The redelivery waits again.
+		if ctx.Err() != nil || errors.Is(err, errWaitTimeout) {
 			return nil, fmt.Errorf("change %s: %w", unit, err)
 		}
 		db.d.Logger.Warn("live redis change failed, restarting the instance", "unit", unit, "err", err)
@@ -473,6 +479,23 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 	}
 
 	// Restart: another port, bind, drop-in or renamed commands, the instance not running, or a live change that failed.
+	if dl, ok := ctx.Deadline(); ok && time.Until(dl) < RedisMinRestartBudget {
+		return nil, fmt.Errorf("not enough time left to restart %s safely (%s); the command is retried", unit, time.Until(dl).Round(time.Second))
+	}
+	if live != nil && from == "aof" {
+		// AOF on but not complete (its first rewrite still running or failed): the AOF can't be loaded. Switch it off
+		// (ends the rewrite; Redis also refuses to stop while writing it) and restart from a snapshot instead.
+		if incomplete, err := live.aofIncomplete(ctx); err != nil {
+			return nil, fmt.Errorf("check %s's AOF: %w", unit, err)
+		} else if incomplete {
+			if _, err := live.do(ctx, live.config, "SET", "appendonly", "no"); err != nil {
+				return nil, fmt.Errorf("switch the unfinished AOF off on %s: %w", unit, err)
+			}
+			from = "rdb"
+		}
+	} else if live == nil && from == "aof" && !db.aofFilesComplete(k, p.Name) {
+		from = "rdb" // the stopped instance's AOF has no manifest: its first rewrite never finished
+	}
 	if !active || prev.Port != p.Port {
 		if who, err := db.portUser(ctx, p.Port); err != nil {
 			return nil, err
@@ -641,11 +664,8 @@ func (db *DB) setPersistence(ctx context.Context, c conn, name, from, to string)
 				return err
 			}
 		}
-		if from != "none" {
-			// Files from the earlier mode would come back on the next restart (stale data): moved aside.
-			return db.moveAside(c.k, name, "dump.rdb", "appendonlydir", "appendonly.aof")
-		}
-		return nil
+		// Files from the earlier mode (or an app's BGSAVE) would come back on the next restart: moved aside, every time.
+		return db.moveAside(c.k, name, "dump.rdb", "appendonlydir", "appendonly.aof")
 	}
 }
 
@@ -772,9 +792,6 @@ func (db *DB) ensureDataDir(k kvEngine, name string) error {
 	return nil
 }
 
-// usersMu serializes user creation and removal (useradd / userdel lock /etc/passwd; two at once fail).
-var usersMu sync.Mutex
-
 // instanceUser looks the user up: exists, and whether it is the one the agent created for this instance (Kiln's GECOS,
 // home /nonexistent, nologin shell). Any other user of that name (a site user, someone's account) is never adopted or
 // deleted.
@@ -795,8 +812,8 @@ func (db *DB) instanceUser(ctx context.Context, k kvEngine, name string) (exists
 }
 
 func (db *DB) ensureInstanceUser(ctx context.Context, k kvEngine, name string) error {
-	usersMu.Lock()
-	defer usersMu.Unlock()
+	system.AccountsMu.Lock()
+	defer system.AccountsMu.Unlock()
 	user := k.user(name)
 	exists, ours, err := db.instanceUser(ctx, k, name)
 	if err != nil {
@@ -827,7 +844,10 @@ func (db *DB) RedisRemove(ctx context.Context, p RedisRemovePayload, _ commands.
 	if !redisName.MatchString(p.Name) {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid name %q", p.Name)}
 	}
-	unlock := lockInstance(k, p.Name)
+	unlock, err := lockInstance(ctx, k, p.Name)
+	if err != nil {
+		return nil, err
+	}
 	defer unlock()
 	unit := k.unit(p.Name)
 	changed := db.unitActive(ctx, unit)
@@ -858,8 +878,8 @@ func (db *DB) RedisRemove(ctx context.Context, p RedisRemovePayload, _ commands.
 		}
 		changed = true
 	}
-	usersMu.Lock()
-	defer usersMu.Unlock()
+	system.AccountsMu.Lock()
+	defer system.AccountsMu.Unlock()
 	if exists, ours, err := db.instanceUser(ctx, k, p.Name); err != nil {
 		return nil, err
 	} else if exists && ours {
@@ -962,8 +982,12 @@ func (c conn) do(ctx context.Context, args ...string) (string, error) {
 	return out, nil
 }
 
-// redact removes the secret CONFIG name, the passwords and the command's arguments (values) from a message.
+// redact removes the secret CONFIG name, the passwords and the command's arguments (values) from a message. The
+// arguments Redis echoes ("…, with args beginning with: …", truncated so they may not match) are cut off.
 func (c conn) redact(msg string, args []string) string {
+	if i := strings.Index(msg, ", with args beginning with"); i >= 0 {
+		msg = msg[:i]
+	}
 	var secrets []string
 	for i, a := range args {
 		if i >= 2 && a != "" {
@@ -983,12 +1007,17 @@ func (c conn) redact(msg string, args []string) string {
 	return msg
 }
 
-// lockInstance serializes applies and removes of one instance (the dispatcher runs commands concurrently).
-func lockInstance(k kvEngine, name string) func() {
-	m, _ := instanceLocks.LoadOrStore(k.name+"/"+name, &sync.Mutex{})
-	mu := m.(*sync.Mutex)
-	mu.Lock()
-	return mu.Unlock
+// lockInstance serializes applies and removes of one instance (the dispatcher runs commands concurrently). Waiting
+// for it ends with the command's context.
+func lockInstance(ctx context.Context, k kvEngine, name string) (func(), error) {
+	m, _ := instanceLocks.LoadOrStore(k.name+"/"+name, make(chan struct{}, 1))
+	sem := m.(chan struct{})
+	select {
+	case sem <- struct{}{}:
+		return func() { <-sem }, nil
+	case <-ctx.Done():
+		return nil, fmt.Errorf("waiting for another command on %s instance %q: %w", k.label, name, ctx.Err())
+	}
 }
 
 var instanceLocks sync.Map
@@ -1002,6 +1031,37 @@ func within(ctx context.Context, d time.Duration) time.Time {
 		}
 	}
 	return limit
+}
+
+// errWaitTimeout marks a wait that ran out of time while the instance kept working (rewrite, load).
+var errWaitTimeout = errors.New("timed out waiting")
+
+// RedisMinRestartBudget is the time a command must have left to start a restart (stop with its final snapshot, start,
+// load); with less it fails and is retried rather than leaving an instance stopped.
+var RedisMinRestartBudget = 2 * time.Minute
+
+// aofIncomplete tells whether the running process' AOF can't be loaded yet: its first rewrite is running, scheduled or
+// failed.
+func (c conn) aofIncomplete(ctx context.Context) (bool, error) {
+	m, err := c.info(ctx, "persistence")
+	if err != nil {
+		return false, err
+	}
+	if m["aof_enabled"] != "1" {
+		return false, nil
+	}
+	return m["aof_rewrite_in_progress"] == "1" || m["aof_rewrite_scheduled"] == "1" ||
+		(m["aof_last_bgrewrite_status"] != "" && m["aof_last_bgrewrite_status"] != "ok"), nil
+}
+
+// aofFilesComplete tells whether a stopped instance's data has a loadable AOF: Redis 7+ / Valkey write a manifest
+// once the first rewrite finished (Redis 6.0's single appendonly.aof can't be told apart and counts as complete).
+func (db *DB) aofFilesComplete(k kvEngine, name string) bool {
+	dir := db.d.FS.P(k.dataPath(name))
+	if exists(dir + "/appendonlydir") {
+		return exists(dir + "/appendonlydir/appendonly.aof.manifest")
+	}
+	return exists(dir + "/appendonly.aof")
 }
 
 // pingWait pings; an instance answering LOADING is waited for (ready) instead of being taken as unreachable.
@@ -1053,19 +1113,24 @@ func (c conn) ping(ctx context.Context) error {
 // progress and extends the wait up to RedisLoadingTimeout.
 func (c conn) ready(ctx context.Context) error {
 	deadline := within(ctx, RedisReadyTimeout)
+	loading := false
 	for {
 		err := c.ping(ctx)
 		if err == nil {
 			return nil
 		}
 		var re *RedisError
-		if errors.As(err, &re) && strings.HasPrefix(re.Reply, "LOADING") {
+		if !loading && errors.As(err, &re) && strings.HasPrefix(re.Reply, "LOADING") {
+			loading = true // once: the loading budget counts from the first LOADING
 			deadline = within(ctx, RedisLoadingTimeout)
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		if redisNow().After(deadline) {
+			if loading {
+				return fmt.Errorf("%w: still loading its dataset", errWaitTimeout)
+			}
 			return err
 		}
 		select {
@@ -1105,7 +1170,7 @@ func (c conn) waitAOFRewrite(ctx context.Context) error {
 			return nil
 		}
 		if redisNow().After(deadline) {
-			return errors.New("AOF rewrite did not finish in time")
+			return fmt.Errorf("%w: the AOF rewrite is still running", errWaitTimeout)
 		}
 		select {
 		case <-ctx.Done():
