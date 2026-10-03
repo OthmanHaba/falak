@@ -69,13 +69,25 @@ never get `provision.inspect` and keep today's plan.
 ## Redis and Valkey instances (`db.redis`)
 `db.redis.apply` / `db.redis.remove` (`engine`: `redis` | `valkey`) manage one instance per Kiln service, run by the
 distribution's template unit: `redis-server@kiln-<name>` reads `/etc/redis/redis-kiln-<name>.conf`,
-`valkey-server@kiln-<name>` reads `/etc/valkey/valkey-kiln-<name>.conf` (Debian/Ubuntu ship both templates; Valkey is
-in the archive from Ubuntu 26.04 / Debian 13). The file is 0640, owned by the engine user, holds `requirepass`, and
-disables `CONFIG`, `DEBUG`, `MODULE` and `SHUTDOWN`; data lives in `/var/lib/<engine>/kiln-<name>`. Apply restarts
-only when the file changed, refuses a port another process listens on (`port 6381 is in use by <process>`), and waits
-for `PING` (password through `REDISCLI_AUTH`). `bind` lists extra listen addresses (127.0.0.1 is always included).
-The stock instance on 6379 is never touched. The control plane only queues these commands for agents that list
-`db.redis`; such agents also report `facts.runtimes.redis` / `.valkey` (`<engine>-server --version`).
+`valkey-server@kiln-<name>` reads `/etc/valkey/valkey-kiln-<name>.conf` (Debian/Ubuntu ship both templates). Each
+instance runs as its own system user `kiln-<engine>-<name>` (a drop-in `/etc/systemd/system/<unit>.d/50-kiln.conf` sets
+`User=`/`Group=` and resets `ReadWritePaths=` to the instance's data directory `/var/lib/kiln-<engine>/<name>`, 0700,
+and its runtime directory), so the stock instance on 6379 and other instances can neither read nor write its data. The
+config holds `requirepass`, is 0640 `root:<instance group>`, renames `CONFIG` to a random name only the agent knows
+(root-only state in `/var/lib/kiln/db/redis/`), and disables `DEBUG`, `MODULE`, `SHUTDOWN`, `REPLICAOF`, `SLAVEOF`,
+`MIGRATE`, `ACL` and `MONITOR` (`SYNC`/`PSYNC`/`REPLCONF` stay for `redis-cli --rdb`, `EVAL`/`FUNCTION` for Laravel).
+redis-cli gets every command on stdin and the password in `REDISCLI_AUTH`: neither reaches a command line.
+
+Memory limit, eviction, password and persistence change on the running instance (renamed `CONFIG SET`; AOF on: the
+rewrite is awaited through `INFO persistence`; AOF off or rdb from none: `SAVE` first). A new port, bind address or
+drop-in restarts the instance after `SAVE` (unless persistence is `none`); a restart that turns AOF on starts from
+`dump.rdb` and switches AOF on live, and a stale AOF is moved aside (`appendonlydir.kiln-<UTC time>`) first. With
+`none` the data is in memory only: files from earlier modes are moved aside and every restart starts empty. The agent
+records what the running process uses only after a successful (re)start and `PING`, so a redelivered apply after a
+failure converges. Apply refuses a new port another process listens on (`port 6381 is in use by <process>`) and
+waits for `PING` (`LOADING` extends the wait to 15 minutes). The stock instance is never touched. The control plane
+only queues these commands for agents that list `db.redis`; such agents also report `facts.runtimes.redis` /
+`.valkey` (`<engine>-server --version`).
 
 ## Agent sessions and lost deliveries
 Every `kiln-agent` process sends a random session id (`X-Kiln-Agent-Session: s-<32 hex>`, 8-64 characters of

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/db.redis.apply.schema.json",
-  "title": "db.redis.apply — converge one Redis / Valkey instance (feature db.redis)",
-  "description": "Writes /etc/redis/redis-kiln-<name>.conf (Valkey: /etc/valkey/valkey-kiln-<name>.conf), 0640 owned by the engine user, with the data in /var/lib/<engine>/kiln-<name>; enables and starts the distribution's template unit <engine>-server@kiln-<name>, restarting it only when the file changed, and waits for PING with the password. CONFIG, DEBUG, MODULE and SHUTDOWN are disabled in the instance. Fails with 'port N is in use by <process>' when another process holds the port. The stock instance on 6379 is never touched.",
+  "title": "db.redis.apply \u2014 converge one Redis / Valkey instance (feature db.redis)",
+  "description": "Converges one instance of the distribution's template unit <engine>-server@kiln-<name> (config /etc/redis/redis-kiln-<name>.conf, Valkey: /etc/valkey/valkey-kiln-<name>.conf, 0640 root:<instance group>). Each instance runs as its own system user (kiln-<engine>-<name>, created on first apply) through a drop-in /etc/systemd/system/<unit>.d/50-kiln.conf that limits writes to its data directory /var/lib/kiln-<engine>/<name> (0700) and its runtime directory. CONFIG is renamed to a random name only the agent knows; DEBUG, MODULE, SHUTDOWN, REPLICAOF, SLAVEOF, MIGRATE, ACL and MONITOR are disabled. Memory limit, eviction, password and persistence change on the running instance; a new port, bind or drop-in restarts it, after SAVE (unless persistence is none). Switching to AOF never loads a stale AOF (moved aside) and never starts empty (AOF is switched on live after a start from dump.rdb). Fails with 'port N is in use by <process>' when another process holds a new port. Waits for PING (LOADING extends the wait). Idempotent: unchanged state is a no-op only once the running process is known to use it. The stock instance on 6379 is never touched.",
   "x-kiln-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
@@ -77,7 +77,7 @@
         "aof",
         "none"
       ],
-      "description": "rdb: snapshots (save 3600 1, 300 100, 60 10000); aof: append-only file, fsync every second; none: in memory only"
+      "description": "rdb: snapshots (save 3600 1, 300 100, 60 10000); aof: append-only file, fsync every second, no snapshots; none: in memory only, every restart starts empty"
     }
   },
   "$defs": {
