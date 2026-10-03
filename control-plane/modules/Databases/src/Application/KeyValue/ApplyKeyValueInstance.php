@@ -29,7 +29,7 @@ final class ApplyKeyValueInstance
             $revision = ($user?->revision ?? 0) + 1;
             $payload = CommandPayloads::redisApply($server, $database, (string) $user?->password);
             $key = "db.redis.apply:{$database->id}:{$revision}";
-            $timeout = (int) config('databases.timeouts.ddl', 300);
+            $timeout = (int) config('databases.timeouts.redis_apply', 3600);
 
             $handle = $background
                 ? $this->commands->tryDispatch($database->server_id, 'db.redis.apply', $payload, $timeout, $key)

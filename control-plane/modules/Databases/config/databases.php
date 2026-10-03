@@ -49,6 +49,9 @@ return [
     // Agent command timeouts (seconds).
     'timeouts' => [
         'ddl' => 300,
+        // db.redis.apply: longer than the agent's own waits (a start loading a big dataset up to 20 min, an AOF
+        // rewrite up to 15 min); the agent ends its waits before this deadline.
+        'redis_apply' => (int) env('KILN_REDIS_APPLY_TIMEOUT', 3600),
         'backup' => 3600,
         'restore' => 3600,
     ],
