@@ -42,7 +42,7 @@
       "properties": {
         "path": { "type": "string" },
         "version": { "type": "string" },
-        "source": { "enum": ["kiln", "archive", "vendor", "nodesource", "nvm", "snap", "manual"] },
+        "source": { "enum": ["kiln", "archive", "vendor", "nodesource", "nvm", "snap", "manual", "unknown"], "description": "unknown: from a package whose source apt cannot tell (no package lists yet)" },
         "package": { "type": "string" },
         "repo": { "type": "string" }
       }

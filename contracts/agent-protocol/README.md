@@ -52,7 +52,10 @@ patterns (the plan's base packages) can be passed in `packages`. The inspector n
 own (it and every directory on its path must be root-owned and not group/world-writable): versions of user installs
 come from directory names and package metadata. Repository URLs and errors carry no URL credentials. A package whose
 installed version no repository offers takes the origin of the repository offering the package; with no package
-lists at all the origin is `unknown`. Login users carry their groups, and the effective `AllowUsers` / `DenyUsers` /
+lists at all the origin is `unknown`. It runs a file by its symlink-resolved path, checked component by component; authorized_keys
+files are opened without following symlinks (O_NOFOLLOW|O_NONBLOCK, regular files only, first MiB, key lines only).
+`kiln-agent features` prints the build's features (the installer only points at the machine check for
+`provision.v2`). Login users carry their groups, and the effective `AllowUsers` / `DenyUsers` /
 `AllowGroups` / `DenyGroups` are reported for the lockout rule.
 
 The control plane decides per component (`install`, `adopt`, `complete`, `block`; see `docs/plans/MACHINE_CHECK.md`)

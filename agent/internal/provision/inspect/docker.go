@@ -77,7 +77,7 @@ func (in *Inspector) docker(ctx context.Context, r *Report) error {
 	if cli == "" {
 		return nil
 	}
-	if err := in.safe(cli); err != nil {
+	if _, err := in.safe(cli); err != nil {
 		d.ServerError = truncate(redact(err.Error()), 300)
 		return err
 	}
@@ -124,7 +124,7 @@ func (in *Inspector) plugin(ctx context.Context, r *Report, cli, name string, pk
 		if p.Path == "" {
 			p.Path = f
 		}
-		if err := in.safe(f); err != nil {
+		if _, err := in.safe(f); err != nil {
 			p.Path = f
 			return p, err
 		}

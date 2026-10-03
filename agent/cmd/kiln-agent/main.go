@@ -6,6 +6,7 @@
 //	kiln-agent check      verify the identity and that the agent API accepts it (--wait 60s keeps retrying)
 //	kiln-agent fn-gateway serve functions (kiln-fn-gateway.service; installed by fn.release.apply)
 //	kiln-agent fn-run     run a function's schedule once (its cron job)
+//	kiln-agent features   the protocol features this build understands, one per line
 //	kiln-agent version
 package main
 
@@ -28,7 +29,7 @@ import (
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage: kiln-agent <run|enroll|install|check|fn-gateway|fn-run|version> [flags]\n")
+	fmt.Fprintf(os.Stderr, "usage: kiln-agent <run|enroll|install|check|fn-gateway|fn-run|features|version> [flags]\n")
 	os.Exit(2)
 }
 
@@ -89,6 +90,11 @@ func main() {
 			os.Exit(1)
 		}
 		os.Exit(code)
+	case "features":
+		// The installer asks before pointing at panel features the build supports (e.g. provision.v2: the machine check).
+		for _, f := range version.Features {
+			fmt.Println(f)
+		}
 	case "version", "--version", "-v":
 		fmt.Println(version.Version)
 	default:

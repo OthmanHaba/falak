@@ -2,10 +2,13 @@ package inspect
 
 import (
 	"context"
+	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // SSH is the sshd configuration that matters for hardening without a lockout.
@@ -200,17 +203,66 @@ func expandKeysPath(p, user, home string) string {
 	return p
 }
 
-// countKeys counts the key lines of an authorized_keys file.
+// countKeys counts the public keys in an authorized_keys file without trusting it: the file is usually in a user's
+// home, so a symlink (to /etc/shadow, a FIFO, a huge file) must not make root read something else or hang. Directories
+// on the way may only be symlinks root owns, the file is opened with O_NOFOLLOW|O_NONBLOCK and must be a regular
+// file, at most maxKeysFile bytes are read, and only lines holding a key type count (comments and other text never do).
 func (in *Inspector) countKeys(path string) int {
-	b, err := in.d.FS.ReadFile(path)
+	for _, dir := range ancestors(parentDir(path)) {
+		fi, err := os.Lstat(in.d.FS.P(dir))
+		if err != nil {
+			return 0
+		}
+		if fi.Mode()&os.ModeSymlink != 0 && dir != "/" {
+			if st, ok := fi.Sys().(*syscall.Stat_t); !ok || int(st.Uid) != in.d.OwnerUID {
+				return 0
+			}
+		}
+	}
+	f, err := os.OpenFile(in.d.FS.P(path), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return 0
+	}
+	b, err := io.ReadAll(io.LimitReader(f, maxKeysFile))
 	if err != nil {
 		return 0
 	}
 	n := 0
 	for _, line := range strings.Split(string(b), "\n") {
-		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
+		if IsKeyLine(line) {
 			n++
 		}
 	}
 	return n
+}
+
+// maxKeysFile bounds how much of an authorized_keys file is read.
+const maxKeysFile = 1 << 20
+
+var keyType = regexp.MustCompile(`^(ssh-(rsa|dss|ed25519)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh[.]com)$`)
+
+// IsKeyLine reports whether an authorized_keys line holds a public key: after optional options, a known key type
+// followed by its base64 blob.
+func IsKeyLine(line string) bool {
+	f := strings.Fields(strings.TrimSpace(line))
+	if len(f) < 2 || strings.HasPrefix(f[0], "#") {
+		return false
+	}
+	for i := 0; i < len(f)-1; i++ {
+		if keyType.MatchString(f[i]) {
+			return strings.HasPrefix(f[i+1], "AAAA")
+		}
+	}
+	return false
+}
+
+func parentDir(p string) string {
+	if i := strings.LastIndex(p, "/"); i > 0 {
+		return p[:i]
+	}
+	return "/"
 }

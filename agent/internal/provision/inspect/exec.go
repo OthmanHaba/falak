@@ -46,10 +46,12 @@ func (in *Inspector) run(ctx context.Context, name string, args ...string) (runn
 	if err != nil {
 		return runner.Result{ExitCode: -1}, err
 	}
-	if err := in.safe(p); err != nil {
+	resolved, err := in.safe(p)
+	if err != nil {
 		return runner.Result{ExitCode: -1}, err
 	}
-	return in.d.Runner.Run(ctx, runner.Cmd{Name: p, Args: args, Env: system.AptEnv})
+	// The resolved path, never the symlink that was checked: a symlink swapped after the check cannot redirect it.
+	return in.d.Runner.Run(ctx, runner.Cmd{Name: resolved, Args: args, Env: system.AptEnv})
 }
 
 // output runs a read-only command and returns its stdout; a non-zero exit is an error.
@@ -64,39 +66,47 @@ func (in *Inspector) output(ctx context.Context, name string, args ...string) (s
 	return string(res.Stdout), nil
 }
 
-// safe checks that a host path may be executed as root: the file (after symlinks) and every directory leading to
-// it, before and after resolving symlinks, are owned by root and writable by nobody else.
-func (in *Inspector) safe(hostPath string) error {
+// safe resolves a host path's symlinks once and checks the resolved path: the file and every directory leading to it
+// must be owned by root and writable by nobody else, with no symlink left on the way. It returns the resolved host
+// path, which is what gets executed.
+//
+// Residual risk: between this check and exec only an owner of the checked file or one of its directories could swap
+// it, and all of those are root; the components are checked with Lstat, so a directory replaced by a symlink after
+// the resolution is refused, not followed. A multi-call binary reached through a symlink (snap's /snap/bin/*) would
+// lose its name when run by its resolved path, so such a binary is refused too.
+func (in *Inspector) safe(hostPath string) (string, error) {
 	root, err := filepath.EvalSymlinks(in.d.FS.P("/"))
 	if err != nil {
-		return err
+		return "", err
 	}
 	real, err := filepath.EvalSymlinks(in.d.FS.P(hostPath))
 	if err != nil {
-		return err
+		return "", err
 	}
 	rel, err := filepath.Rel(root, real)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
-		return fmt.Errorf("%w: %s resolves outside the filesystem", errUnsafe, hostPath)
+		return "", fmt.Errorf("%w: %s resolves outside the filesystem", errUnsafe, hostPath)
 	}
 	resolved := "/" + filepath.ToSlash(rel)
-	for _, p := range append(ancestors(path.Dir(hostPath)), ancestors(resolved)...) {
-		fi, err := os.Stat(in.d.FS.P(p))
+	if path.Base(resolved) != path.Base(hostPath) {
+		return "", fmt.Errorf("%w: %s is a link to %s (another program)", errUnsafe, hostPath, resolved)
+	}
+	for _, p := range ancestors(resolved) {
+		fi, err := os.Lstat(in.d.FS.P(p))
 		if err != nil {
-			return err
+			return "", err
+		}
+		if fi.Mode()&os.ModeSymlink != 0 && p != "/" {
+			return "", fmt.Errorf("%w: %s changed into a symlink", errUnsafe, p)
 		}
 		if err := in.trusted(fi, p); err != nil {
-			return err
+			return "", err
 		}
 	}
-	fi, err := os.Stat(real)
-	if err != nil {
-		return err
+	if fi, err := os.Lstat(in.d.FS.P(resolved)); err != nil || !fi.Mode().IsRegular() {
+		return "", fmt.Errorf("%w: %s is not a regular file", errUnsafe, hostPath)
 	}
-	if !fi.Mode().IsRegular() {
-		return fmt.Errorf("%w: %s is not a regular file", errUnsafe, hostPath)
-	}
-	return nil
+	return resolved, nil
 }
 
 // ancestors returns p and every directory above it ("/usr/bin/x" → "/", "/usr", "/usr/bin", "/usr/bin/x").

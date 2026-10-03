@@ -82,18 +82,18 @@ func TestInspectRefusesGroupOrWorldWritableBinaries(t *testing.T) {
 func TestSafeChecksTheWholePath(t *testing.T) {
 	fs := writeFiles(t, map[string]string{"/usr/bin/docker": "", "/opt/tools/bin/docker": ""})
 	in := New(Deps{FS: fs, OwnerUID: os.Getuid()})
-	if err := in.safe("/usr/bin/docker"); err != nil {
+	if _, err := in.safe("/usr/bin/docker"); err != nil {
 		t.Fatal(err)
 	}
 	os.Chmod(fs.P("/opt/tools"), 0o757)
-	if err := in.safe("/opt/tools/bin/docker"); err == nil || !strings.Contains(err.Error(), "/opt/tools is writable by group or others") {
+	if _, err := in.safe("/opt/tools/bin/docker"); err == nil || !strings.Contains(err.Error(), "/opt/tools is writable by group or others") {
 		t.Fatalf("%v", err)
 	}
 	os.Symlink("/opt/tools/bin/docker", fs.P("/usr/bin/docker2"))
-	if err := in.safe("/usr/bin/docker2"); err == nil {
+	if _, err := in.safe("/usr/bin/docker2"); err == nil {
 		t.Fatal("a symlink into a writable tree is unsafe")
 	}
-	if err := New(Deps{FS: fs, OwnerUID: os.Getuid() + 1}).safe("/usr/bin/docker"); err == nil || !strings.Contains(err.Error(), "not owned by root") {
+	if _, err := New(Deps{FS: fs, OwnerUID: os.Getuid() + 1}).safe("/usr/bin/docker"); err == nil || !strings.Contains(err.Error(), "not owned by root") {
 		t.Fatalf("%v", err)
 	}
 }
