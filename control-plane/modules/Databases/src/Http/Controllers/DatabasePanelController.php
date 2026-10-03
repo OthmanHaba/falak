@@ -6,6 +6,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Kiln\Databases\Application\ConnectionInfo;
+use Kiln\Databases\Application\KeyValue\KeyValueSettings;
+use Kiln\Databases\Application\KeyValue\UpdateKeyValueSettings;
 use Kiln\Databases\Domain\Enums\Compression;
 use Kiln\Databases\Domain\Models\Backup;
 use Kiln\Databases\Domain\Models\BackupSchedule;
@@ -30,7 +32,7 @@ final class DatabasePanelController extends Controller
 
     public function __construct(private readonly OrganizationAccess $access) {}
 
-    public function show(Request $request, Database $database, ConnectionInfo $connection, ProjectDirectory $projects): JsonResponse|RedirectResponse
+    public function show(Request $request, Database $database, ConnectionInfo $connection, ProjectDirectory $projects, KeyValueSettings $settings): JsonResponse|RedirectResponse
     {
         $this->authorize('view', $database);
 
@@ -65,7 +67,7 @@ final class DatabasePanelController extends Controller
         return response()->json(['data' => [
             'database' => $this->presentDatabase($database),
             'server' => $this->presentServer($server),
-            'connection' => $connection->for($server),
+            'connection' => $connection->for($server, $database),
             'users' => $users->map(fn (DatabaseUser $dbUser) => $this->presentUser($dbUser))->values(),
             'schedules' => $schedules->map(fn (BackupSchedule $schedule) => $this->presentSchedule($schedule))->values(),
             'backups' => $backups->map(fn (Backup $backup) => $this->presentBackup($backup))->values(),
@@ -73,12 +75,15 @@ final class DatabasePanelController extends Controller
             'storage_providers' => StorageProvider::query()->where('organization_id', $organizationId)->orderBy('name')->get(['id', 'name', 'driver', 'bucket'])
                 ->map(fn (StorageProvider $provider) => ['id' => $provider->id, 'name' => $provider->name, 'driver' => $provider->driver->value, 'bucket' => $provider->bucket])->values(),
             'restore_targets' => DatabaseServer::query()->where('organization_id', $organizationId)->orderBy('server_name')->get()
-                ->filter(fn (DatabaseServer $target) => $target->engine->protocol() === $server->engine->protocol())
+                ->filter(fn (DatabaseServer $target) => ! $target->engine->isKeyValue() && $target->engine->protocol() === $server->engine->protocol())
                 ->map(fn (DatabaseServer $target) => ['id' => $target->id, 'label' => "{$target->server_name} ({$target->label()})"])->values(),
             'options' => [
                 'privileges' => $server->engine->privileges(),
                 'versions' => array_values((array) config("databases.versions.{$server->engine->value}", [])),
                 'compressions' => array_map(fn (Compression $c) => $c->value, Compression::cases()),
+                'evictions' => $server->engine->isKeyValue() ? array_values((array) config('databases.key_value.evictions', [])) : [],
+                'persistences' => $server->engine->isKeyValue() ? array_values((array) config('databases.key_value.persistences', [])) : [],
+                'max_memory_mb' => $server->engine->isKeyValue() ? $settings->maxMemoryMb($server->server_id) : null,
             ],
             'can' => [
                 'manage' => $this->access->can($user, $organizationId, DatabasesPolicy::MANAGE),
@@ -87,5 +92,25 @@ final class DatabasePanelController extends Controller
                 'manage_storage' => $this->access->can($user, $organizationId, DatabasesPolicy::STORAGE),
             ],
         ]]);
+    }
+
+    /**
+     * PUT /databases/databases/{database}/settings {maxmemory_mb?, eviction?, persistence?} — Redis / Valkey instances.
+     */
+    public function settings(Request $request, Database $database, UpdateKeyValueSettings $update): RedirectResponse|JsonResponse
+    {
+        $this->authorize('manage', $database);
+
+        $data = $request->validate([
+            'maxmemory_mb' => ['nullable', 'integer', 'min:16', 'max:1048576'],
+            'eviction' => ['nullable', 'string', 'max:32'],
+            'persistence' => ['nullable', 'string', 'max:8'],
+        ]);
+
+        $database = $update($database, $data);
+
+        return $request->wantsJson() && $request->header('X-Inertia') === null
+            ? response()->json(['data' => $this->presentDatabase($database)])
+            : back();
     }
 }

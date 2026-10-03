@@ -28,6 +28,10 @@ final class DatabaseController extends Controller
             'user.username' => ['nullable', 'string', 'max:63'],
             'user.password' => ['nullable', 'string', 'min:12', 'max:128'],
             'user.host' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z0-9.%_:-]+$/'],
+            // Redis / Valkey instances
+            'maxmemory_mb' => ['nullable', 'integer', 'min:16', 'max:1048576'],
+            'eviction' => ['nullable', 'string', 'max:32'],
+            'persistence' => ['nullable', 'string', 'max:8'],
         ]);
 
         $create($databaseServer, $data, $request->user()?->getAuthIdentifier());

@@ -27,6 +27,7 @@ Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->gro
 
     Route::get('databases/{database}', [DatabasePanelController::class, 'show'])->name('databases.show');
     Route::delete('databases/{database}', [DatabaseController::class, 'destroy'])->name('databases.destroy');
+    Route::put('databases/{database}/settings', [DatabasePanelController::class, 'settings'])->name('databases.settings');
     Route::post('databases/{database}/backups', [DatabaseController::class, 'backup'])->name('databases.backup');
 
     Route::put('users/{databaseUser}', [DatabaseUserController::class, 'update'])->name('users.update');

@@ -2,6 +2,7 @@
 
 namespace Kiln\Databases\Infrastructure;
 
+use Kiln\Databases\Application\KeyValue\KeyValueSettings;
 use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Databases\Contracts\DatabaseDirectory;
 use Kiln\Databases\Domain\Models\Database;
@@ -52,9 +53,10 @@ final class EloquentDatabaseDirectory implements DatabaseDirectory
             name: $database->name,
             engine: $database->databaseServer->engine->value,
             engineVersion: $database->databaseServer->version,
-            port: $database->databaseServer->port,
+            port: $database->port ?? $database->databaseServer->port,
             status: $database->status->value,
             siteId: $database->site_id,
+            maxMemoryMb: $database->databaseServer->engine->isKeyValue() ? KeyValueSettings::of($database)['maxmemory_mb'] : null,
         );
     }
 }

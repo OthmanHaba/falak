@@ -10,14 +10,30 @@ return [
         'mysql' => ['8.0', '8.4'],
         'mariadb' => ['10.11', '11.4'],
         'postgresql' => ['16', '17'],
+        'redis' => ['6.0', '7.0', '7.2', '7.4', '8.0'],
+        'valkey' => ['7.2', '8.0', '8.1', '9.0'],
     ],
 
     // Version installed by the distro packages provisioning uses, when the agent does not report one
-    // (facts.runtimes.<engine>). Keyed by "<os id> <os version>".
+    // (facts.runtimes.<engine>). Keyed by "<os id> <os version>"; an engine missing for a release falls back to
+    // Ubuntu 24.04's. Valkey is only packaged from Ubuntu 26.04 / Debian 13 (servers.caches_by_os).
     'distro_versions' => [
-        'ubuntu 24.04' => ['mysql' => '8.0', 'mariadb' => '10.11', 'postgresql' => '16'],
-        'ubuntu 22.04' => ['mysql' => '8.0', 'mariadb' => '10.6', 'postgresql' => '14'],
-        'debian 12' => ['mysql' => '8.0', 'mariadb' => '10.11', 'postgresql' => '15'],
+        'ubuntu 24.04' => ['mysql' => '8.0', 'mariadb' => '10.11', 'postgresql' => '16', 'redis' => '7.0'],
+        'ubuntu 22.04' => ['mysql' => '8.0', 'mariadb' => '10.6', 'postgresql' => '14', 'redis' => '6.0'],
+        'ubuntu 26.04' => ['valkey' => '8.1'],
+        'debian 12' => ['mysql' => '8.0', 'mariadb' => '10.11', 'postgresql' => '15', 'redis' => '7.0'],
+        'debian 13' => ['valkey' => '8.1'],
+    ],
+
+    // Redis / Valkey instances (one process each, redis-server@kiln-<name>): ports Kiln allocates (the stock
+    // instance keeps 6379), and the defaults of a new instance.
+    'key_value' => [
+        'ports' => [6380, 6479],
+        'maxmemory_mb' => 128,
+        'eviction' => 'noeviction',
+        'persistence' => 'rdb',
+        'evictions' => ['noeviction', 'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru', 'volatile-lfu', 'volatile-random', 'volatile-ttl'],
+        'persistences' => ['rdb', 'aof', 'none'],
     ],
 
     'password_length' => 32,

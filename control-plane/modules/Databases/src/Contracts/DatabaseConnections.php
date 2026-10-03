@@ -16,12 +16,33 @@ interface DatabaseConnections
     /** Keys carrying the host: only usable when {@see unreachable()} is null for the consumer. */
     public const HOST_KEYS = ['DATABASE_URL', 'DB_HOST'];
 
+    /** Keys a Redis / Valkey instance exposes (Laravel's names; the password is the instance's `default` user). */
+    public const REDIS_KEYS = ['REDIS_URL', 'REDIS_CLIENT', 'REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD'];
+
+    public const REDIS_HOST_KEYS = ['REDIS_URL', 'REDIS_HOST'];
+
+    /**
+     * Keys a database service of this engine exposes.
+     *
+     * @param  string  $engine  postgresql | mysql | mariadb | redis | valkey
+     * @return list<string>
+     */
+    public function keysFor(string $engine): array;
+
+    /**
+     * Keys of {@see keysFor()} that carry the host.
+     *
+     * @return list<string>
+     */
+    public function hostKeysFor(string $engine): array;
+
     /**
      * Host for an engine on an app/worker server (check {@see unreachable()} for the consumer): 127.0.0.1, or for a
      * containerized consumer (Docker, compose, function) on that server the server's own address (private network,
      * provider private IP, public IP), which its containers reach through the Docker bridge. For a dedicated
      * database server: its private network (WireGuard) address, else its provider private IP, else its public IP.
-     * Credentials are those of the oldest user granted access.
+     * Credentials are those of the oldest user granted access. Redis / Valkey instances: {@see REDIS_KEYS}, host
+     * 127.0.0.1 (instances listen on localhost only for now; {@see unreachable()} names other consumers).
      *
      * @param  ?DatabaseConsumer  $consumer  who connects (null: a native consumer)
      * @return array<string, string> empty when the database does not exist

@@ -2,6 +2,7 @@
 
 namespace Kiln\Databases\Http\Controllers;
 
+use Kiln\Databases\Application\KeyValue\KeyValueSettings;
 use Kiln\Databases\Domain\Models\Backup;
 use Kiln\Databases\Domain\Models\BackupSchedule;
 use Kiln\Databases\Domain\Models\Database;
@@ -27,6 +28,7 @@ trait PresentsDatabases
             'server_name' => $server->server_name,
             'engine' => $server->engine->value,
             'engine_label' => $server->engine->label(),
+            'kind' => $server->engine->kind()->value,
             'version' => $server->version,
             'version_source' => $server->version_source,
             'dedicated' => $server->dedicated,
@@ -46,6 +48,8 @@ trait PresentsDatabases
             'name' => $database->name,
             'charset' => $database->charset,
             'collation' => $database->collation,
+            'port' => $database->port,
+            'settings' => $database->port !== null ? KeyValueSettings::of($database) : null,
             'site_id' => $database->site_id,
             'status' => $database->status->value,
             'status_message' => $database->status_message,
@@ -61,7 +65,8 @@ trait PresentsDatabases
     {
         return [
             'id' => $user->id,
-            'username' => $user->username,
+            // A Redis / Valkey instance's user row is named after the instance; clients authenticate as `default`.
+            'username' => $user->databaseServer->engine->isKeyValue() ? 'default' : $user->username,
             'host' => $user->host,
             'site_id' => $user->site_id,
             'status' => $user->status->value,

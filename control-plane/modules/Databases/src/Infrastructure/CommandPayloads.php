@@ -2,6 +2,7 @@
 
 namespace Kiln\Databases\Infrastructure;
 
+use Kiln\Databases\Application\KeyValue\KeyValueSettings;
 use Kiln\Databases\Domain\Enums\Compression;
 use Kiln\Databases\Domain\Enums\Engine;
 use Kiln\Databases\Domain\Models\Database;
@@ -134,5 +135,35 @@ final class CommandPayloads
             'source' => ['kind' => 'url', 'url' => $downloadUrl],
             'sha256' => $sha256,
         ], fn ($value) => $value !== null);
+    }
+
+    /**
+     * db.redis.apply: the full desired state of a Redis / Valkey instance. Phase 1 binds 127.0.0.1 only (the agent
+     * always includes it); private-network and container addresses join `bind` with network access.
+     *
+     * @return array<string, mixed>
+     */
+    public static function redisApply(DatabaseServer $server, Database $database, #[\SensitiveParameter] string $password): array
+    {
+        $settings = KeyValueSettings::of($database);
+
+        return [
+            'engine' => $server->engine->protocol(),
+            'name' => $database->name,
+            'port' => (int) $database->port,
+            'password' => $password,
+            'bind' => ['127.0.0.1'],
+            'maxmemory_mb' => $settings['maxmemory_mb'],
+            'eviction' => $settings['eviction'],
+            'persistence' => $settings['persistence'],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function redisRemove(DatabaseServer $server, Database $database): array
+    {
+        return ['engine' => $server->engine->protocol(), 'name' => $database->name];
     }
 }

@@ -57,9 +57,13 @@ final class ServiceController extends Controller
         } else {
             $this->access->authorize($request->user(), $project->organization_id, 'databases.manage');
             $data = $request->validate([
-                'engine' => ['required', 'string', Rule::in(['postgresql', 'mysql', 'mariadb', 'redis'])],
+                'engine' => ['required', 'string', Rule::in(['postgresql', 'mysql', 'mariadb', 'redis', 'valkey'])],
                 'server_id' => ['required', 'string', 'size:26'],
                 'name' => ['required', 'string', 'max:63'],
+                // Redis / Valkey (the picker's Advanced section)
+                'maxmemory_mb' => ['nullable', 'integer', 'min:16', 'max:1048576'],
+                'eviction' => ['nullable', 'string', 'max:32'],
+                'persistence' => ['nullable', 'string', 'max:8'],
             ]);
         }
 

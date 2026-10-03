@@ -2,11 +2,13 @@
 
 namespace Kiln\Databases\Infrastructure;
 
+use Kiln\Databases\Application\KeyValue\ApplyKeyValueInstance;
 use Kiln\Databases\Contracts\Data\DatabaseConsumer;
 use Kiln\Databases\Contracts\DatabaseConnections;
 use Kiln\Databases\Domain\Enums\Engine;
 use Kiln\Databases\Domain\Enums\ResourceStatus;
 use Kiln\Databases\Domain\Models\Database;
+use Kiln\Databases\Domain\Models\DatabaseServer;
 use Kiln\Databases\Domain\Models\DatabaseUser;
 use Kiln\Network\Contracts\PrivateNetwork;
 use Kiln\Servers\Contracts\ServerDirectory;
@@ -18,6 +20,16 @@ final class EloquentDatabaseConnections implements DatabaseConnections
         private readonly PrivateNetwork $network,
     ) {}
 
+    public function keysFor(string $engine): array
+    {
+        return Engine::tryFrom($engine)?->isKeyValue() ? self::REDIS_KEYS : self::KEYS;
+    }
+
+    public function hostKeysFor(string $engine): array
+    {
+        return Engine::tryFrom($engine)?->isKeyValue() ? self::REDIS_HOST_KEYS : self::HOST_KEYS;
+    }
+
     public function variables(string $databaseId, ?DatabaseConsumer $consumer = null): array
     {
         $database = Database::query()->with('databaseServer')->find($databaseId);
@@ -27,6 +39,11 @@ final class EloquentDatabaseConnections implements DatabaseConnections
         }
 
         $engine = $database->databaseServer->engine;
+
+        if ($engine->isKeyValue()) {
+            return $this->keyValue($database);
+        }
+
         // Engines on app/worker servers are for that server only (see CommandPayloads::remote): native sites reach
         // them on 127.0.0.1, its containers on the server's own address (127.0.0.1 is the container itself; the
         // firewall lets the Docker bridges in). Only dedicated database servers listen on the network.
@@ -60,6 +77,10 @@ final class EloquentDatabaseConnections implements DatabaseConnections
     {
         $engine = Database::query()->with('databaseServer')->find($databaseId)?->databaseServer;
 
+        if ($engine !== null && $engine->engine->isKeyValue()) {
+            return $this->keyValueUnreachable($engine, $consumer);
+        }
+
         if ($engine === null || $engine->dedicated) {
             return null;
         }
@@ -76,6 +97,51 @@ final class EloquentDatabaseConnections implements DatabaseConnections
 
         if ($consumer->containerized && ! $engine->container_access) {
             return "{$consumer->name} runs in a container, but containers on {$engine->server_name} can't reach its databases yet: update the server's agent (container access needs agent 0.4.5 or newer).";
+        }
+
+        return null;
+    }
+
+    /**
+     * Redis / Valkey: REDIS_URL redis://default:<password>@127.0.0.1:<port> plus Laravel's REDIS_* keys.
+     *
+     * @return array<string, string>
+     */
+    private function keyValue(Database $database): array
+    {
+        $host = '127.0.0.1';
+        $port = (string) ($database->port ?? $database->databaseServer->port);
+        $password = ApplyKeyValueInstance::userOf($database)?->password;
+
+        $variables = [
+            'REDIS_CLIENT' => 'phpredis',
+            'REDIS_HOST' => $host,
+            'REDIS_PORT' => $port,
+        ];
+
+        if ($password !== null) {
+            $variables['REDIS_PASSWORD'] = $password;
+        }
+
+        $variables['REDIS_URL'] = 'redis://'.($password !== null ? 'default:'.rawurlencode($password).'@' : '').$host.':'.$port;
+
+        return $variables;
+    }
+
+    /** Instances listen on 127.0.0.1 only for now: native consumers on the same server reach them. */
+    private function keyValueUnreachable(DatabaseServer $engine, DatabaseConsumer $consumer): ?string
+    {
+        $label = $engine->engine->label();
+        $elsewhere = array_values(array_diff($consumer->serverIds, [$engine->server_id]));
+
+        if ($elsewhere !== []) {
+            $names = array_map(fn (string $id) => $this->servers->find($id)?->name ?? $id, $elsewhere);
+
+            return "{$consumer->name} runs on ".implode(', ', $names).", but the {$label} instance on {$engine->server_name} accepts connections from that server only for now.";
+        }
+
+        if ($consumer->containerized) {
+            return "{$consumer->name} runs in a container, but {$label} instances accept connections from {$engine->server_name} itself only for now (container access comes in a later release).";
         }
 
         return null;

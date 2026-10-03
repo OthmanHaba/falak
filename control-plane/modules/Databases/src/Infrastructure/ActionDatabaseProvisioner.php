@@ -23,25 +23,26 @@ final class ActionDatabaseProvisioner implements DatabaseProvisioner
         private readonly DeleteDatabase $deleteDatabase,
     ) {}
 
-    public function create(string $organizationId, string $serverId, string $engine, string $name, ?string $actorId = null): DatabaseData
+    public function create(string $organizationId, string $serverId, string $engine, string $name, ?string $actorId = null, array $options = []): DatabaseData
     {
         $requested = Engine::tryFrom(strtolower($engine))
-            ?? throw ValidationException::withMessages(['engine' => $engine === 'redis' ? 'Redis services are not supported yet.' : 'Unknown database engine.']);
+            ?? throw ValidationException::withMessages(['engine' => 'Unknown database engine.']);
 
-        $server = DatabaseServer::query()->where('server_id', $serverId)->first() ?? $this->inventory->sync($serverId);
+        $server = DatabaseServer::query()->where('server_id', $serverId)->where('engine', $requested)->first()
+            ?? $this->inventory->sync($serverId, $requested);
 
         if ($server === null || $server->organization_id !== $organizationId) {
-            throw ValidationException::withMessages(['server_id' => 'The server has no database engine.']);
+            $other = DatabaseServer::query()->where('server_id', $serverId)->where('organization_id', $organizationId)
+                ->whereIn('engine', $requested->kind()->values())->first();
+
+            throw ValidationException::withMessages($other !== null
+                ? ['engine' => "{$other->server_name} runs {$other->engine->label()}, not {$requested->label()}."]
+                : ['server_id' => $requested->isKeyValue() ? "The server does not run {$requested->label()}." : 'The server has no database engine.']);
         }
 
-        if ($server->engine !== $requested) {
-            throw ValidationException::withMessages(['engine' => "{$server->server_name} runs {$server->engine->label()}, not {$requested->label()}."]);
-        }
-
-        $database = ($this->createDatabase)($server, [
-            'name' => $name,
-            'user' => ['username' => $this->username($server, $name)],
-        ], $actorId);
+        $database = ($this->createDatabase)($server, $requested->isKeyValue()
+            ? ['name' => $name, ...array_intersect_key($options, array_flip(['maxmemory_mb', 'eviction', 'persistence']))]
+            : ['name' => $name, 'user' => ['username' => $this->username($server, $name)]], $actorId);
 
         return $this->directory->find($database->id) ?? throw new LogicException('Created database not found.');
     }

@@ -27,7 +27,7 @@ use Kiln\Identity\Contracts\AuditLog;
  */
 final class HandleCommandOutcome implements ShouldQueue
 {
-    private const TYPES = ['db.create', 'db.drop', 'db.user.apply', 'db.backup', 'db.restore'];
+    private const TYPES = ['db.create', 'db.drop', 'db.user.apply', 'db.backup', 'db.restore', 'db.redis.apply', 'db.redis.remove'];
 
     public function __construct(
         private readonly ApplyDatabaseUser $applyUser,
@@ -55,7 +55,8 @@ final class HandleCommandOutcome implements ShouldQueue
     private function settle(string $type, string $commandId, bool $succeeded, ?string $error, ?array $result): void
     {
         match ($type) {
-            'db.create', 'db.drop' => $this->database($commandId, $succeeded, $error),
+            'db.create', 'db.drop', 'db.redis.remove' => $this->database($commandId, $succeeded, $error),
+            'db.redis.apply' => $this->instance($commandId, $succeeded, $error),
             'db.user.apply' => $this->user($commandId, $succeeded, $error),
             'db.backup' => $this->backup($commandId, $succeeded, $error, $result ?? []),
             'db.restore' => $this->restore($commandId, $succeeded, $error, $result ?? []),
@@ -78,12 +79,16 @@ final class HandleCommandOutcome implements ShouldQueue
             }
 
             $userIds = $database->grants()->pluck('user_id')->all();
+            $keyValue = $database->databaseServer->engine->isKeyValue();
             $database->delete();
             $this->audit->record('databases.database_deleted', 'database', $database->id, ['name' => $database->name, 'server_id' => $database->server_id], $database->organization_id);
             DatabaseDeleted::dispatch($database->id, $database->organization_id, $database->server_id, $database->name, $database->site_id);
 
-            DatabaseUser::query()->whereIn('id', $userIds)->where('status', '!=', ResourceStatus::Deleting)->get()
-                ->each(fn (DatabaseUser $user) => ($this->applyUser)($user, background: true));
+            // An instance's `default` user existed for it only; SQL users lose the grant.
+            $keyValue
+                ? DatabaseUser::query()->whereIn('id', $userIds)->get()->each->delete()
+                : DatabaseUser::query()->whereIn('id', $userIds)->where('status', '!=', ResourceStatus::Deleting)->get()
+                    ->each(fn (DatabaseUser $user) => ($this->applyUser)($user, background: true));
 
             return;
         }
@@ -104,6 +109,36 @@ final class HandleCommandOutcome implements ShouldQueue
             ->map(fn (Grant $grant) => $grant->user)
             ->filter(fn (?DatabaseUser $user) => $user !== null && $user->status !== ResourceStatus::Deleting)
             ->each(fn (DatabaseUser $user) => ($this->applyUser)($user, background: true));
+    }
+
+    /**
+     * db.redis.apply settles the instance (pending → active + DatabaseCreated, or failed) and its `default` user
+     * (a password rotation). A failed re-apply of an active instance keeps it active with the reason.
+     */
+    private function instance(string $commandId, bool $succeeded, ?string $error): void
+    {
+        $this->user($commandId, $succeeded, $error);
+
+        $database = Database::query()->with('databaseServer')->where('command_id', $commandId)->first();
+
+        if (! $database || $database->status === ResourceStatus::Deleting) {
+            return;
+        }
+
+        if ($database->status === ResourceStatus::Active) {
+            $database->forceFill(['status' => ResourceStatus::Active, 'status_message' => $succeeded ? null : "Apply failed: {$error}"])->save();
+
+            return;
+        }
+
+        $database->forceFill([
+            'status' => $succeeded ? ResourceStatus::Active : ResourceStatus::Failed,
+            'status_message' => $succeeded ? null : $error,
+        ])->save();
+
+        if ($succeeded) {
+            DatabaseCreated::dispatch($database->id, $database->organization_id, $database->server_id, $database->name, $database->databaseServer->engine->value, $database->site_id);
+        }
     }
 
     private function user(string $commandId, bool $succeeded, ?string $error): void

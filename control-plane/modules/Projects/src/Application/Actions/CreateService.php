@@ -53,6 +53,7 @@ final class CreateService
             (string) $data['engine'],
             (string) $data['name'],
             $userId,
+            array_intersect_key($data, array_flip(['maxmemory_mb', 'eviction', 'persistence'])),
         );
 
         return ($this->link)($environment, ServiceKind::Database, $database->id, $database->name, $x, $y);

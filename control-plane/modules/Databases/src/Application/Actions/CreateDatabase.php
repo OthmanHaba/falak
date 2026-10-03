@@ -7,6 +7,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Kiln\Databases\Application\AgentCommands;
 use Kiln\Databases\Application\Identifiers;
+use Kiln\Databases\Application\KeyValue\CreateKeyValueInstance;
 use Kiln\Databases\Domain\Enums\ResourceStatus;
 use Kiln\Databases\Domain\Models\Database;
 use Kiln\Databases\Domain\Models\DatabaseServer;
@@ -18,14 +19,21 @@ final class CreateDatabase
     public function __construct(
         private readonly AgentCommands $commands,
         private readonly CreateDatabaseUser $createUser,
+        private readonly CreateKeyValueInstance $createInstance,
         private readonly AuditLog $audit,
     ) {}
 
     /**
-     * @param  array{name: string, charset?: ?string, collation?: ?string, site_id?: ?string, user?: ?array{username: string, password?: ?string, host?: ?string}}  $data
+     * Redis / Valkey: an instance ({@see CreateKeyValueInstance}; `user` is ignored, the instance has its own).
+     *
+     * @param  array{name: string, charset?: ?string, collation?: ?string, site_id?: ?string, user?: ?array{username: string, password?: ?string, host?: ?string}, maxmemory_mb?: ?int, eviction?: ?string, persistence?: ?string}  $data
      */
     public function __invoke(DatabaseServer $server, array $data, ?string $actorId = null): Database
     {
+        if ($server->engine->isKeyValue()) {
+            return ($this->createInstance)($server, $data, $actorId);
+        }
+
         $name = $data['name'];
         Identifiers::assertValid($server->engine, $name, 'name');
 
