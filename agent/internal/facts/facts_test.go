@@ -43,7 +43,11 @@ func TestCollect(t *testing.T) {
 		}, nil
 	}
 	defer func() { Interfaces = old }()
-	fr := (&runnertest.Fake{}).On("docker version", runner.Result{Stdout: []byte("27.3.1\n")})
+	write(t, root, "/usr/bin/redis-server", "")
+	write(t, root, "/usr/bin/valkey-server", "")
+	fr := (&runnertest.Fake{}).On("docker version", runner.Result{Stdout: []byte("27.3.1\n")}).
+		On(filepath.Join(root, "/usr/bin/redis-server"), runner.Result{Stdout: []byte("Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=1\n")}).
+		On(filepath.Join(root, "/usr/bin/valkey-server"), runner.Result{Stdout: []byte("Valkey server v=8.1.1 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=1\n")})
 	f, err := Collect(context.Background(), fr, hostfs.FS{Root: root}, "v1.0.0")
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +62,9 @@ func TestCollect(t *testing.T) {
 		t.Fatalf("%+v", f)
 	}
 	if len(f.Runtimes["php"]) != 2 || f.Runtimes["php"][1] != "8.4" || f.Runtimes["node"][0] != "22.11.0" {
+		t.Fatalf("%+v", f.Runtimes)
+	}
+	if f.Runtimes["redis"][0] != "7.0.15" || f.Runtimes["valkey"][0] != "8.1.1" {
 		t.Fatalf("%+v", f.Runtimes)
 	}
 	b, _ := json.Marshal(f)
@@ -153,5 +160,15 @@ func TestDockerAbsentIsNull(t *testing.T) {
 	json.Unmarshal(b, &m)
 	if v, ok := m["docker"]; !ok || v != nil {
 		t.Fatalf("docker should be null: %s", b)
+	}
+}
+
+func TestKeyValueVersion(t *testing.T) {
+	// valkey-redis-compat: redis-server is Valkey, which must not be reported as Redis.
+	if b, v := KeyValueVersion("Valkey server v=8.1.1 sha=0"); b != "valkey" || v != "8.1.1" {
+		t.Fatal(b, v)
+	}
+	if b, v := KeyValueVersion(""); b != "" || v != "" {
+		t.Fatal(b, v)
 	}
 }

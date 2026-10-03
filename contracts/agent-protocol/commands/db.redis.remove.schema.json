@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/db.redis.remove.schema.json",
+  "title": "db.redis.remove — stop and delete one Redis / Valkey instance (feature db.redis)",
+  "description": "Stops and disables <engine>-server@kiln-<name>, deletes its configuration file and its data directory. Idempotent.",
+  "x-kiln-redeliverable": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "engine",
+    "name"
+  ],
+  "properties": {
+    "engine": {
+      "enum": [
+        "redis",
+        "valkey"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,40}$"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the host state was modified"
+        }
+      }
+    }
+  }
+}

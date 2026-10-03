@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kiln.dev/agent-protocol/commands/db.redis.apply.schema.json",
+  "title": "db.redis.apply — converge one Redis / Valkey instance (feature db.redis)",
+  "description": "Writes /etc/redis/redis-kiln-<name>.conf (Valkey: /etc/valkey/valkey-kiln-<name>.conf), 0640 owned by the engine user, with the data in /var/lib/<engine>/kiln-<name>; enables and starts the distribution's template unit <engine>-server@kiln-<name>, restarting it only when the file changed, and waits for PING with the password. CONFIG, DEBUG, MODULE and SHUTDOWN are disabled in the instance. Fails with 'port N is in use by <process>' when another process holds the port. The stock instance on 6379 is never touched.",
+  "x-kiln-redeliverable": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "engine",
+    "name",
+    "port",
+    "password",
+    "maxmemory_mb",
+    "eviction",
+    "persistence"
+  ],
+  "properties": {
+    "engine": {
+      "enum": [
+        "redis",
+        "valkey"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,40}$",
+      "description": "Instance name; the unit is <engine>-server@kiln-<name>"
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1024,
+      "maximum": 65535
+    },
+    "password": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._~-]{12,128}$",
+      "description": "requirepass of the default user. Written to the config file only; redis-cli gets it through REDISCLI_AUTH"
+    },
+    "bind": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "anyOf": [
+          {
+            "format": "ipv4"
+          },
+          {
+            "format": "ipv6"
+          }
+        ]
+      },
+      "description": "Addresses to listen on. 127.0.0.1 is always included; absent = 127.0.0.1 only. Who can reach them is up to the firewall"
+    },
+    "maxmemory_mb": {
+      "type": "integer",
+      "minimum": 16,
+      "maximum": 1048576
+    },
+    "eviction": {
+      "enum": [
+        "noeviction",
+        "allkeys-lru",
+        "allkeys-lfu",
+        "allkeys-random",
+        "volatile-lru",
+        "volatile-lfu",
+        "volatile-random",
+        "volatile-ttl"
+      ]
+    },
+    "persistence": {
+      "enum": [
+        "rdb",
+        "aof",
+        "none"
+      ],
+      "description": "rdb: snapshots (save 3600 1 300 100 60 10000); aof: append-only file, fsync every second; none: in memory only"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "restarted",
+        "port"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "true when the configuration changed or the instance was (re)started"
+        },
+        "restarted": {
+          "type": "boolean"
+        },
+        "port": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

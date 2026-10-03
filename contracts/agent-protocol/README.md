@@ -36,7 +36,8 @@ feature name: the agent lists it in `facts.features` (`agent/internal/version.Fe
 removes the field for agents that do not (`Fleet\Application\PayloadCompatibility::FIELDS`). When an agent reports
 a new version (`Fleet\Events\AgentVersionChanged`), modules re-send state they would otherwise deduplicate.
 Current features: `edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`, `fn.v1`, `fn.v2`, `fn.v3`,
-`db.containers`, `compose.v2`, `docker.networks`, `docker.networks.create`, `compose.up.services`, `provision.v2`.
+`db.containers`, `compose.v2`, `docker.networks`, `docker.networks.create`, `compose.up.services`, `provision.v2`,
+`db.redis`.
 
 A feature can also gate a whole **command**: the control plane only queues it for agents that list the feature
 (older agents would fail it as an unknown type). `provision.v2` adds `provision.inspect` and `provision.apply`
@@ -65,6 +66,17 @@ agent which components were adopted: their `packages` are never installed (remov
 `unattended_upgrades` gets no Kiln config. `components` is stripped for agents without `provision.v2`, which also
 never get `provision.inspect` and keep today's plan.
 
+## Redis and Valkey instances (`db.redis`)
+`db.redis.apply` / `db.redis.remove` (`engine`: `redis` | `valkey`) manage one instance per Kiln service, run by the
+distribution's template unit: `redis-server@kiln-<name>` reads `/etc/redis/redis-kiln-<name>.conf`,
+`valkey-server@kiln-<name>` reads `/etc/valkey/valkey-kiln-<name>.conf` (Debian/Ubuntu ship both templates; Valkey is
+in the archive from Ubuntu 26.04 / Debian 13). The file is 0640, owned by the engine user, holds `requirepass`, and
+disables `CONFIG`, `DEBUG`, `MODULE` and `SHUTDOWN`; data lives in `/var/lib/<engine>/kiln-<name>`. Apply restarts
+only when the file changed, refuses a port another process listens on (`port 6381 is in use by <process>`), and waits
+for `PING` (password through `REDISCLI_AUTH`). `bind` lists extra listen addresses (127.0.0.1 is always included).
+The stock instance on 6379 is never touched. The control plane only queues these commands for agents that list
+`db.redis`; such agents also report `facts.runtimes.redis` / `.valkey` (`<engine>-server --version`).
+
 ## Agent sessions and lost deliveries
 Every `kiln-agent` process sends a random session id (`X-Kiln-Agent-Session: s-<32 hex>`, 8-64 characters of
 `[A-Za-z0-9._:-]`) on every mTLS request. Agents from before sessions send none; that is accepted.
@@ -79,7 +91,8 @@ Every `kiln-agent` process sends a random session id (`X-Kiln-Agent-Session: s-<
 A lost command whose schema has `"x-kiln-redeliverable": true` at its root is queued again (up to 5 deliveries);
 the agent answers a command id it already finished from its journal, so nothing runs twice. Redeliverable:
 declarative state (`edge.caddy.apply`, `edge.cert.install`, `telemetry.configure`, `proc.apply`, `cron.apply`,
-`net.firewall.apply`, `net.wireguard.apply`, `db.user.apply`, `system.ssh_key.sync`), read-only commands
+`net.firewall.apply`, `net.wireguard.apply`, `db.user.apply`, `db.redis.apply`, `db.redis.remove`,
+`system.ssh_key.sync`), read-only commands
 (`proc.status`, `system.facts`, `docker.compose.ps`, `provision.inspect`) and `system.upgrade_agent` (a no-op once
 installed). Any other type fails instead, so the deployment waiting on it fails fast: `failed` with "The agent
 restarted before running the command" when it was never started, `timed_out` otherwise (a late result still

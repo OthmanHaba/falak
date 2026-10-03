@@ -60,6 +60,8 @@ func (db *DB) Register(reg *commands.Registry) {
 	reg.Register("db.user.apply", commands.Typed(db.UserApply))
 	reg.Register("db.backup", commands.Typed(db.Backup))
 	reg.Register("db.restore", commands.Typed(db.Restore))
+	reg.Register("db.redis.apply", commands.Typed(db.RedisApply))
+	reg.Register("db.redis.remove", commands.Typed(db.RedisRemove))
 }
 
 var ident = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,62}$`)
