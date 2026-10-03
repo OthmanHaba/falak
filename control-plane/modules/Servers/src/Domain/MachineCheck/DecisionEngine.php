@@ -224,11 +224,16 @@ final class DecisionEngine
         $wantedLabel = (string) ($engines[$wanted]['label'] ?? $definition['label'] ?? $wanted);
         $service = (string) ($definition['service'] ?? $wanted);
         $notes = [];
+        // Processes that may hold the engine's port: its own once adopted, and those of another engine already blocked
+        // above (one conflict, reported once).
+        $holders = [];
 
         foreach ($present as $key => $p) {
             if ($key === $wanted) {
                 continue;
             }
+
+            $holders = [...$holders, ...(array) $engines[$key]['processes']];
 
             $other = trim("{$engines[$key]['label']} {$p['version']}");
             $notes[] = Note::block("{$other} is installed, but this server is set up for {$wantedLabel}.",
@@ -246,7 +251,7 @@ final class DecisionEngine
         }
 
         foreach ((array) ($engines[$wanted]['ports'] ?? []) as $port) {
-            $notes = [...$notes, ...$this->portNotes($report, (int) $port, $wantedLabel, $mine !== null ? (array) $engines[$wanted]['processes'] : [])];
+            $notes = [...$notes, ...$this->portNotes($report, (int) $port, $wantedLabel, [...$holders, ...($mine !== null ? (array) $engines[$wanted]['processes'] : [])])];
         }
 
         if ($this->hasBlock($notes)) {

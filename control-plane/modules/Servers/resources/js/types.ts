@@ -1,4 +1,4 @@
-export type ServerStatus = 'creating' | 'provisioning' | 'active' | 'error' | 'deleting';
+export type ServerStatus = 'creating' | 'provisioning' | 'needs_attention' | 'active' | 'error' | 'deleting';
 export type ServerTypeValue = 'app' | 'web' | 'db' | 'cache' | 'worker' | 'lb' | 'builder';
 export type StackComponent = 'php' | 'node' | 'database' | 'cache' | 'docker';
 
@@ -134,6 +134,48 @@ export interface SparklinePoint {
     t: string;
     cpu: number | null;
     mem: number | null;
+}
+
+export type MachineCheckDecision = 'install' | 'adopt' | 'complete' | 'block' | 'skip';
+export type MachineCheckSeverity = 'info' | 'warning' | 'block';
+
+export interface MachineCheckNote {
+    severity: MachineCheckSeverity;
+    message: string;
+    hint: string | null;
+}
+
+/** One component of the machine check (Servers\Domain\MachineCheck\ComponentDecision::toArray). */
+export interface MachineCheckComponent {
+    component: string;
+    label: string;
+    decision: MachineCheckDecision;
+    /** Install · Use existing · Install missing parts · Blocked · Not managed */
+    decision_label: string;
+    severity: MachineCheckSeverity;
+    reason: string;
+    hint: string | null;
+    found: { name: string; version: string | null; source: string | null }[];
+    install: string[];
+    keep: string[];
+    service: string | null;
+    notes: MachineCheckNote[];
+}
+
+/** The latest machine check (provision.inspect) and the decisions for the server's current stack. */
+export interface MachineCheck {
+    /** The agent runs the check (feature provision.v2). */
+    supported: boolean;
+    status: 'running' | 'finished' | 'failed' | null;
+    purpose: 'provision' | 'check' | null;
+    checked_at: string | null;
+    agent_version: string | null;
+    error: string | null;
+    command_id: string | null;
+    blocking: boolean;
+    summary: string | null;
+    /** Blocks first, then warnings. */
+    components: MachineCheckComponent[];
 }
 
 export interface AgentUpgrade {

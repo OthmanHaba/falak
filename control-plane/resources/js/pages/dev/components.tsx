@@ -55,6 +55,7 @@ const STATUSES = [
     'building',
     'deploying',
     'provisioning',
+    'needs-attention',
     'queued',
     'failed',
     'crashed',

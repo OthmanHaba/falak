@@ -19,7 +19,7 @@ export interface ServerHeader {
     name: string;
     type: string;
     type_label: string;
-    status: 'creating' | 'provisioning' | 'active' | 'error' | 'deleting';
+    status: 'creating' | 'provisioning' | 'needs_attention' | 'active' | 'error' | 'deleting';
     status_message: string | null;
     provider: string;
     provider_label: string;
@@ -66,7 +66,8 @@ export interface ServerState {
 
 /**
  * One status for a server, combining the lifecycle status and agent connectivity:
- * creating → "Waiting for agent" (custom) / "Creating"; provisioning; active + online → Online; active + offline → Offline; error; deleting.
+ * creating → "Waiting for agent" (custom) / "Creating"; provisioning; needs_attention (the machine check blocks);
+ * active + online → Online; active + offline → Offline; error; deleting.
  */
 export function serverState(server: Pick<ServerHeader, 'status' | 'provider' | 'agent'>): ServerState {
     switch (server.status) {
@@ -76,6 +77,8 @@ export function serverState(server: Pick<ServerHeader, 'status' | 'provider' | '
                 : { status: 'provisioning', label: 'Creating' };
         case 'provisioning':
             return { status: 'provisioning', label: 'Provisioning' };
+        case 'needs_attention':
+            return { status: 'needs-attention', label: 'Needs attention', tone: 'warning' };
         case 'error':
             return { status: 'failed', label: 'Failed' };
         case 'deleting':

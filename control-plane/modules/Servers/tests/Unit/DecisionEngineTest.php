@@ -162,8 +162,12 @@ it('blocks MySQL from Oracle when MariaDB is wanted, and the reverse', function 
     expect($database->decision)->toBe(Decision::Block)
         ->and($database->reason)->toBe('MySQL 8.4.2 is installed, but this server is set up for MariaDB.')
         ->and($database->hint())->toContain('apt purge mysql-community-server')
-        // ... and its mysqld holds the port MariaDB needs.
-        ->and($database->blocks()[1]->message)->toBe('Port 3306 is in use by mysqld (mysql.service), which MariaDB needs.');
+        // Its mysqld on 3306 is the same conflict, not a second one about the port.
+        ->and($database->blocks())->toHaveCount(1);
+
+    // Something else on the port still is.
+    $other = mc_listen(mc_report(), 3306, 'proxysql', 'proxysql.service');
+    expect(mc_decide($other, mc_wanted(mc_app_stack('mariadb')))->for('database')->reason)->toBe('Port 3306 is in use by proxysql, which MariaDB needs.');
 
     $mariadb = mc_package(mc_report(), 'mariadb-server', '1:10.11.8-0ubuntu0.24.04.1');
     expect(mc_decide($mariadb, mc_wanted(mc_app_stack('mysql')))->for('database')->reason)->toBe('MariaDB 10.11.8 is installed, but this server is set up for MySQL.');
