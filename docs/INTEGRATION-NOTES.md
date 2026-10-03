@@ -438,29 +438,36 @@ compose apps (phase 4) are still open.
   `ProtectSystem=strict`). The drop-in points `ExecStart` at Kiln's config `/etc/kiln-<engine>/<name>.conf`: the
   template's own path is under `/etc/redis`, which Debian makes 0770 `redis:redis` (found on a real systemd: the
   instance user could not open it).
-  **Isolation:** every instance runs as its own system user `kiln-<engine>-<name>` (nologin, no home) set by a drop-in
+  **Isolation:** every instance runs as its own system user `kiln-<engine>-<name>` (nologin, no home; past 32
+  characters `kiln-rh-` / `kiln-vh-` + a hash no plain name can produce; the agent only adopts or deletes a user with
+  its GECOS, home `/nonexistent` and a nologin shell, and isolated sites never get `kiln*` unix users) set by a drop-in
   `/etc/systemd/system/<unit>.d/50-kiln.conf` that also resets `ReadWritePaths=` to the instance's data directory
   `/var/lib/kiln-<engine>/<name>` (0700, that user) and its runtime directory. The config (password) is 0640
   `root:<instance group>`. So the stock instance on 6379 (no password, `CONFIG`/`DEBUG` enabled, user `redis`, writable
   `/var/lib/redis` only) can neither read, reload nor overwrite an instance's data, and instances can't reach each
   other's. Kiln never changes the stock instance. **Commands:** `CONFIG` is renamed to a random per-instance name only
   the agent knows (root-only state `/var/lib/kiln/db/redis/<engine>-<name>.json`, plus the config file);
-  `DEBUG`, `MODULE`, `SHUTDOWN`, `REPLICAOF`, `SLAVEOF`, `MIGRATE`, `ACL` and `MONITOR` are disabled (`MONITOR` would
-  show the agent's commands to a client); `SYNC`/`PSYNC`/`REPLCONF` stay for phase 3's `redis-cli --rdb`,
+  `DEBUG`, `MODULE`, `SHUTDOWN`, `REPLICAOF`, `SLAVEOF`, `MIGRATE`, `ACL`, `MONITOR`, `SLOWLOG` and (Valkey 8.1+)
+  `COMMANDLOG` are disabled (the last three would show the agent's commands: the secret name, on 6.0 passwords);
+  errors carry neither the name nor any value; `SYNC`/`PSYNC`/`REPLCONF` stay for phase 3's `redis-cli --rdb`,
   `EVAL`/`FUNCTION` for Laravel. redis-cli gets commands on stdin and the password in `REDISCLI_AUTH`.
   **Changes:** memory limit, eviction, password and persistence are changed live through the renamed `CONFIG SET`;
-  then the file is rewritten to match, without a restart. A new port, bind address or drop-in restarts the unit,
-  after `SAVE` unless the persistence is `none`. Persistence switches keep the data: AOF on = stale
+  then the file is rewritten to match, without a restart. The current mode is always asked from the running process
+  (`INFO persistence`, `CONFIG GET save`; its config file when it is down), so an AOF in use is never moved. A new
+  port, bind address, drop-in or set of disabled commands restarts the unit as stop → move aside → start, after
+  setting save points live and `SAVE` (the stop then snapshots the rest), or for `none` switching snapshots and AOF off
+  first. Applies of one instance are serialized; `db.redis.apply` has its own 1 h timeout
+  (`databases.timeouts.redis_apply`) and the agent ends its waits before it; `TimeoutStartSec=20min` covers big loads. Persistence switches keep the data: AOF on = stale
   `appendonlydir`/`appendonly.aof` moved aside (`.kiln-<UTC time>`), `CONFIG SET appendonly yes`, wait for the
   rewrite (`INFO persistence`); AOF off = `SAVE` first; a restart into AOF starts without it from `dump.rdb` and
-  switches it on live (Redis 6–8 / Valkey start empty otherwise). `none` keeps nothing on disk: files of the earlier
+  switches it on live; that first start keeps the rdb save points (Redis 6–8 / Valkey start empty otherwise). `none` keeps nothing on disk: files of the earlier
   mode are moved aside and every restart (reboot, port change, upgrade) starts empty; the UI says so. The agent
   records what runs (config hash, port, bind, persistence, password) only after a successful start / live change and
   `PING`, so a redelivered apply after a failure converges instead of seeing "unchanged". `LOADING` extends the wait
   for `PING` to 15 minutes. Paths are `Lstat`-checked (no chmod / chown / write through symlinks).
   `KILN_REDIS_INTEGRATION=1 go test ./internal/db -run TestRedisIntegration` runs apply / remove against Redis 6.0,
-  7.0, 8.0 and Valkey 8.1, 9.0 in Docker (config accepted, renamed CONFIG, live and restart persistence switches keep
-  every key).
+  7.0, 8.0 and Valkey 7.2, 8.1, 9.0 in Docker (config accepted, renamed / disabled commands unknown to clients,
+  redacted errors, live and restart persistence switches keep every key, none through a restart starts empty).
 - **Gating.** `CreateKeyValueInstance` refuses servers whose agent lacks `db.redis` ("Update the agent on <server>
   first"). The command is new, so no `PayloadCompatibility` field: `bind` is in the schema from the start (phase 1 sends
   `["127.0.0.1"]`, the agent always includes it) so network access needs no new feature.
