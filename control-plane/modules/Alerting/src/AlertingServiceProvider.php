@@ -37,6 +37,7 @@ use Kiln\Insights\Events\IssueRegressed;
 use Kiln\Insights\Events\IssueResolved;
 use Kiln\Insights\Events\ThresholdBreached;
 use Kiln\Kernel\Support\ModuleServiceProvider;
+use Kiln\Servers\Events\ServerNeedsAttention;
 use Kiln\Servers\Events\ServerProvisioned;
 
 class AlertingServiceProvider extends ModuleServiceProvider
@@ -85,6 +86,7 @@ class AlertingServiceProvider extends ModuleServiceProvider
         Event::listen(AgentWentOffline::class, [MapModuleEvents::class, 'agentWentOffline']);
         Event::listen(AgentCameOnline::class, [MapModuleEvents::class, 'agentCameOnline']);
         Event::listen(ServerProvisioned::class, [MapModuleEvents::class, 'serverProvisioned']);
+        Event::listen(ServerNeedsAttention::class, [MapModuleEvents::class, 'serverNeedsAttention']);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationAlerting::class);
 
         // Any module event implementing Alerting\Contracts\Alertable (instanceof check before resolving anything).

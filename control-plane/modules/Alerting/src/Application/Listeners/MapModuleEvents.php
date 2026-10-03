@@ -14,6 +14,7 @@ use Kiln\Insights\Events\IssueRegressed;
 use Kiln\Insights\Events\IssueResolved;
 use Kiln\Insights\Events\ThresholdBreached;
 use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\Servers\Events\ServerNeedsAttention;
 use Kiln\Servers\Events\ServerProvisioned;
 
 /**
@@ -35,6 +36,7 @@ final class MapModuleEvents
         'fleet.agent_offline' => ['Server agent offline', 'Fleet', Severity::Critical],
         'fleet.agent_online' => ['Server agent back online', 'Fleet', Severity::Info],
         'servers.provisioned' => ['Server provisioned', 'Servers', Severity::Info],
+        'servers.needs_attention' => ['Server needs attention', 'Servers', Severity::Warning],
     ];
 
     public function __construct(
@@ -125,6 +127,13 @@ final class MapModuleEvents
     {
         $this->raise(new AlertData($event->organizationId, 'servers.provisioned', Severity::Info, "Server {$event->name} is ready",
             "The {$event->type} server finished provisioning.", "/servers/{$event->serverId}", context: ['server_id' => $event->serverId, 'type' => $event->type]));
+    }
+
+    public function serverNeedsAttention(ServerNeedsAttention $event): void
+    {
+        $this->raise(new AlertData($event->organizationId, 'servers.needs_attention', Severity::Warning, "Server {$event->name} needs attention",
+            'The machine check found '.(count($event->blocks) === 1 ? 'a conflict' : count($event->blocks).' conflicts').' to fix before provisioning: '.implode(' ', $event->blocks),
+            "/servers/{$event->serverId}", context: ['server_id' => $event->serverId]));
     }
 
     private function raise(AlertData $alert): void

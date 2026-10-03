@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use Kiln\Servers\Http\Controllers\Api\ServerApiController;
 use Kiln\Servers\Http\Controllers\DatabaseEngineController;
+use Kiln\Servers\Http\Controllers\MachineCheckController;
 
 Route::middleware(['auth:sanctum', 'org'])->prefix('v1')->name('api.v1.')->group(function () {
     Route::get('servers', [ServerApiController::class, 'index'])->name('servers.index');
@@ -11,4 +12,6 @@ Route::middleware(['auth:sanctum', 'org'])->prefix('v1')->name('api.v1.')->group
     Route::delete('servers/{server}', [ServerApiController::class, 'destroy'])->name('servers.destroy');
     Route::post('servers/{server}/agent/upgrade', [ServerApiController::class, 'upgradeAgent'])->middleware('throttle:30,1')->name('servers.agent.upgrade');
     Route::post('servers/{server}/database-engine', [DatabaseEngineController::class, 'storeApi'])->middleware('throttle:10,1')->name('servers.database-engine.store');
+    Route::get('servers/{server}/inspection', [MachineCheckController::class, 'show'])->name('servers.inspection.show');
+    Route::post('servers/{server}/inspection', [MachineCheckController::class, 'storeApi'])->middleware('throttle:10,1')->name('servers.inspection.store');
 });

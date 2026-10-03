@@ -65,7 +65,7 @@ final class MachineChecks
      */
     public function current(Server $server): ?MachineCheck
     {
-        $inspection = $server->machineInspection;
+        $inspection = $server->machineInspection()->first();
 
         if (! $inspection instanceof MachineInspection || $inspection->report === null || ! $this->supported($server)) {
             return null;

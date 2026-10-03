@@ -32,12 +32,12 @@ function servers_poll(array $headers): array
     return test()->getJson('/agent/v1/commands?wait=0', $headers)->assertOk()->json('commands');
 }
 
-function servers_finish(array $headers, string $commandId, int $exitCode = 0, ?string $error = null): void
+function servers_finish(array $headers, string $commandId, int $exitCode = 0, ?string $error = null, ?array $result = null): void
 {
     $events = [
         ['command_id' => $commandId, 'seq' => 0, 'kind' => 'started', 'at' => now()->toIso8601ZuluString()],
         ['command_id' => $commandId, 'seq' => 1, 'kind' => 'output', 'stream' => 'stdout', 'data' => "ok\n", 'at' => now()->toIso8601ZuluString()],
-        array_filter(['command_id' => $commandId, 'seq' => 2, 'kind' => 'finished', 'exit_code' => $exitCode, 'error' => $error, 'at' => now()->toIso8601ZuluString()], fn ($v) => $v !== null),
+        array_filter(['command_id' => $commandId, 'seq' => 2, 'kind' => 'finished', 'exit_code' => $exitCode, 'error' => $error, 'result' => $result, 'at' => now()->toIso8601ZuluString()], fn ($v) => $v !== null),
     ];
 
     test()->call('POST', "/agent/v1/commands/{$commandId}/events", [], [], [], test()->transformHeadersToServerVars($headers), fleet_ndjson($events))->assertNoContent();
