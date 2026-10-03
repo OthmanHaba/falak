@@ -301,11 +301,17 @@ final class CreateSite
     }
 
     /**
-     * Linux user for an isolated site: ^[a-z_][a-z0-9_-]{0,31}$, unique among sites.
+     * Linux user for an isolated site: ^[a-z_][a-z0-9_-]{0,31}$, unique among sites. Names starting with "kiln" are
+     * Kiln's own (the shared deploy user, Redis / Valkey instance users kiln-redis-* / kiln-valkey-*): such slugs get
+     * an "s-" prefix. Existing sites keep their users.
      */
     private function unixUser(string $slug): string
     {
-        $base = substr(ctype_digit($slug[0]) ? "s{$slug}" : $slug, 0, 28);
+        $base = substr(match (true) {
+            ctype_digit($slug[0]) => "s{$slug}",
+            str_starts_with($slug, 'kiln') => "s-{$slug}",
+            default => $slug,
+        }, 0, 28);
         $user = rtrim($base, '-');
 
         for ($i = 2; Site::query()->where('unix_user', $user)->exists(); $i++) {

@@ -68,6 +68,15 @@ it('creates a Laravel site on several servers with a leader, preset defaults and
     expect(AuditEntry::query()->where('action', 'site.created')->exists())->toBeTrue();
 });
 
+it('never gives an isolated site a unix user in Kiln\'s kiln- namespace (Redis / Valkey instance users)', function () {
+    $server = sites_server($this->organization->id, php: ['8.4'], phpRuntime: 'fpm');
+
+    foreach (['kiln-redis-cache' => 's-kiln-redis-cache', 'Kiln' => 's-kiln', 'kilnworks' => 's-kilnworks'] as $name => $user) {
+        $this->post('/sites', sites_input([$server->id], ['runtime' => 'php-fpm', 'php_version' => '8.4', 'isolated' => true, 'name' => $name]))->assertSessionHasNoErrors();
+        expect(Site::query()->where('name', $name)->value('unix_user'))->toBe($user);
+    }
+});
+
 it('prepares isolated php-fpm sites: unix user, then the FPM pool', function () {
     $server = sites_server($this->organization->id, php: ['8.3', '8.4'], phpRuntime: 'fpm');
 
