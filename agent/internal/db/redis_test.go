@@ -81,7 +81,7 @@ func TestRedisApplyWritesConfigStartsAndIsIdempotent(t *testing.T) {
 	}
 	for _, want := range []string{
 		"port 6380\n", "bind 127.0.0.1\n", "protected-mode yes\n", `requirepass "Xk3pQ9vR2mT7wL4nB8cF6hJ1"` + "\n",
-		"maxmemory 128mb\n", "maxmemory-policy noeviction\n", "save 3600 1 300 100 60 10000\n", "appendonly no\n",
+		"maxmemory 128mb\n", "maxmemory-policy noeviction\n", "save 3600 1\nsave 300 100\nsave 60 10000\n", "appendonly no\n",
 		"dir /var/lib/redis/kiln-cache\n", "pidfile /run/redis-kiln-cache/redis-server.pid\n",
 		`rename-command CONFIG ""`, `rename-command DEBUG ""`, `rename-command MODULE ""`, `rename-command SHUTDOWN ""`,
 	} {

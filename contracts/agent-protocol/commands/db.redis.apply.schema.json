@@ -77,7 +77,7 @@
         "aof",
         "none"
       ],
-      "description": "rdb: snapshots (save 3600 1 300 100 60 10000); aof: append-only file, fsync every second; none: in memory only"
+      "description": "rdb: snapshots (save 3600 1, 300 100, 60 10000); aof: append-only file, fsync every second; none: in memory only"
     }
   },
   "$defs": {

@@ -145,7 +145,10 @@ func renderRedisConf(k kvEngine, p RedisApplyPayload, bind []string) string {
 	w("maxmemory-policy %s", p.Eviction)
 	switch p.Persistence {
 	case "rdb":
-		w("save 3600 1 300 100 60 10000")
+		// One pair per line: Redis 6.0 (Ubuntu 22.04) does not take several pairs on one save line.
+		w("save 3600 1")
+		w("save 300 100")
+		w("save 60 10000")
 		w("appendonly no")
 	case "aof":
 		w(`save ""`)
