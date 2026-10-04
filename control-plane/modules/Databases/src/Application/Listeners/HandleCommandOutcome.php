@@ -66,7 +66,7 @@ final class HandleCommandOutcome implements ShouldQueue
     {
         match ($type) {
             'db.create', 'db.drop', 'db.redis.remove' => $this->database($commandId, $succeeded, $error),
-            'db.redis.apply' => $this->instance($commandId, $succeeded, $error),
+            'db.redis.apply' => $this->instance($commandId, $succeeded, $error, $result ?? []),
             'db.user.apply' => $this->user($commandId, $succeeded, $error),
             'db.backup' => $this->backup($commandId, $succeeded, $error, $result ?? []),
             'db.restore' => $this->restore($commandId, $succeeded, $error, $result ?? []),
@@ -125,7 +125,7 @@ final class HandleCommandOutcome implements ShouldQueue
      * db.redis.apply settles the instance (pending → active + DatabaseCreated, or failed) and its `default` user
      * (a password rotation). A failed re-apply of an active instance keeps it active with the reason.
      */
-    private function instance(string $commandId, bool $succeeded, ?string $error): void
+    private function instance(string $commandId, bool $succeeded, ?string $error, array $result = []): void
     {
         $this->user($commandId, $succeeded, $error);
 
@@ -133,6 +133,19 @@ final class HandleCommandOutcome implements ShouldQueue
 
         if (! $database || $database->status === ResourceStatus::Deleting) {
             return;
+        }
+
+        // What the instance listens on (db.redis.network agents report it): container_host is what containers on the
+        // server connect to, bind what references from other servers need.
+        if ($succeeded && is_array($result['bind'] ?? null)) {
+            $database->forceFill(['network' => [
+                ...(array) $database->network,
+                'bind' => array_values(array_map('strval', $result['bind'])),
+                'container_host' => is_string($result['container_host'] ?? null) && $result['container_host'] !== '' ? $result['container_host'] : null,
+                'skipped' => array_values(array_map('strval', (array) ($result['skipped'] ?? []))),
+                // The apply this answers (ConvergeKeyValueNetwork: one is in flight while the instance's command differs).
+                'applied_command' => $commandId,
+            ]])->save();
         }
 
         if ($database->status === ResourceStatus::Active) {

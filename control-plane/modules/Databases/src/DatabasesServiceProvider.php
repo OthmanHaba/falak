@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use Kiln\Alerting\Contracts\AlertTypes;
 use Kiln\Alerting\Contracts\Severity;
 use Kiln\Databases\Application\Jobs\RunDueBackups;
+use Kiln\Databases\Application\Listeners\ConvergeKeyValueNetworkOnChange;
 use Kiln\Databases\Application\Listeners\DeleteOrganizationData;
 use Kiln\Databases\Application\Listeners\EnableContainerAccessOnUpgrade;
 use Kiln\Databases\Application\Listeners\ForgetDeletedServer;
@@ -42,10 +43,14 @@ use Kiln\Identity\Contracts\Role;
 use Kiln\Identity\Events\OrganizationDeleted;
 use Kiln\Kernel\Support\ModuleServiceProvider;
 use Kiln\Network\Contracts\ContainerHostPorts;
+use Kiln\Network\Events\PrivateNetworkChanged;
+use Kiln\Projects\Events\ServiceLinked;
+use Kiln\Projects\Events\ServiceUnlinked;
 use Kiln\Servers\Events\DatabaseEngineInstalled;
 use Kiln\Servers\Events\DatabaseEngineInstallFailed;
 use Kiln\Servers\Events\ServerDeleted;
 use Kiln\Servers\Events\ServerProvisioned;
+use Kiln\Sites\Events\SiteTargetsChanged;
 
 class DatabasesServiceProvider extends ModuleServiceProvider
 {
@@ -94,6 +99,12 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         Event::listen(DatabaseEngineInstallFailed::class, ForgetFailedEngine::class);
         Event::listen(AgentVersionChanged::class, EnableContainerAccessOnUpgrade::class);
         Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
+        // Redis / Valkey network access follows who uses an instance and how servers reach each other.
+        Event::listen(ServiceLinked::class, [ConvergeKeyValueNetworkOnChange::class, 'serviceLinked']);
+        Event::listen(ServiceUnlinked::class, [ConvergeKeyValueNetworkOnChange::class, 'serviceUnlinked']);
+        Event::listen(SiteTargetsChanged::class, [ConvergeKeyValueNetworkOnChange::class, 'siteTargetsChanged']);
+        Event::listen(PrivateNetworkChanged::class, [ConvergeKeyValueNetworkOnChange::class, 'privateNetworkChanged']);
+        Event::listen(ServerProvisioned::class, [ConvergeKeyValueNetworkOnChange::class, 'serverProvisioned']);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationData::class);
 
         if (($invalid = (array) config('databases.container_networks_invalid', [])) !== [] && $this->app->runningInConsole()) {

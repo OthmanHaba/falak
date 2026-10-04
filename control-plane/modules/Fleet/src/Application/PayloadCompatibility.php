@@ -53,6 +53,12 @@ final class PayloadCompatibility
             'db.user.apply' => ['containers'],
             'net.firewall.apply' => ['container_ports'],
         ],
+        // Redis / Valkey instances reached from containers (docker0) and over private networks (peers); the control
+        // plane sends neither non-loopback binds nor key-value container ports to older agents anyway.
+        'db.redis.network' => [
+            'db.redis.apply' => ['containers'],
+            'net.firewall.apply' => ['container_ports.*.peers'],
+        ],
     ];
 
     /**

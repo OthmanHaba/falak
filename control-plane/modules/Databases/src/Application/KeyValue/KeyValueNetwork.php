@@ -1,0 +1,241 @@
+<?php
+
+namespace Kiln\Databases\Application\KeyValue;
+
+use Kiln\Databases\Contracts\Data\DatabaseConsumer;
+use Kiln\Databases\Domain\Models\Database;
+use Kiln\Databases\Domain\Models\DatabaseServer;
+use Kiln\Network\Contracts\PrivateNetwork;
+use Kiln\Projects\Contracts\ProjectDirectory;
+use Kiln\Projects\Contracts\ServiceKind;
+use Kiln\Servers\Contracts\ServerDirectory;
+use Kiln\Sites\Contracts\SiteDirectory;
+
+/**
+ * Who reaches a Redis / Valkey instance, and on which address (feature db.redis.network).
+ *
+ * - Native sites on the instance's server: 127.0.0.1.
+ * - Containers on the instance's server (Docker sites, compose stacks, functions): the Docker default bridge's
+ *   address (docker0, reported by the agent as container_host). Every bridge network's containers reach it through
+ *   their own gateway; the firewall accepts the port on the Docker bridges from the Docker ranges only.
+ * - Other servers (native or containers, whose traffic is NATed to their server's address): the instance's server's
+ *   private address on a network both share — a Kiln private network (WireGuard) first, else the provider private
+ *   network (both servers have a provider private IPv4 from the same provider). Never the public address: without a
+ *   shared private network the reference stays unresolved. The firewall accepts the port from those servers'
+ *   addresses on that network only ("peers").
+ *
+ * The consumers are the sites placed in the instance's environment (references only resolve there), so the instance
+ * listens on its private address only while a site of its environment runs on another server.
+ */
+final class KeyValueNetwork
+{
+    public const FEATURE = 'db.redis.network';
+
+    public function __construct(
+        private readonly ServerDirectory $servers,
+        private readonly PrivateNetwork $network,
+        private readonly ProjectDirectory $projects,
+        private readonly SiteDirectory $sites,
+    ) {}
+
+    /** The instance's server can listen beyond 127.0.0.1 (its agent supports db.redis.network). */
+    public static function enabled(DatabaseServer $server): bool
+    {
+        return $server->engine->isKeyValue() && $server->container_access;
+    }
+
+    /** Docker ranges the server's containers connect from; empty when container access is configured off. */
+    public static function containerRanges(): array
+    {
+        return array_values((array) config('databases.container_networks', []));
+    }
+
+    /**
+     * The sites of the instance's environment, as database consumers.
+     *
+     * @return list<DatabaseConsumer>
+     */
+    public function consumers(Database $database): array
+    {
+        $placed = $this->projects->projectOf(ServiceKind::Database, $database->id);
+
+        if ($placed === null) {
+            return [];
+        }
+
+        $consumers = [];
+
+        foreach ($this->projects->servicesIn($placed->environmentId) as $service) {
+            if ($service->kind !== ServiceKind::Site || ($site = $this->sites->find($service->refId)) === null) {
+                continue;
+            }
+
+            $consumers[] = new DatabaseConsumer($site->name, array_values(array_map('strtolower', $site->serverIds())), $site->runtime->usesDocker());
+        }
+
+        return $consumers;
+    }
+
+    /**
+     * How $serverIds (servers other than the instance's) reach it: the instance server's address on the first network
+     * all of them share with it, and each one's own address there (what the firewall lets in; containers are NATed to
+     * it). Kiln private networks first (oldest of the instance's server), then the provider private network.
+     *
+     * @param  list<string>  $serverIds
+     * @return array{host: ?string, via: ?string, peers: array<string, string>, missing: list<string>} missing: servers
+     *                                                                                                 sharing no
+     *                                                                                                 private network
+     *                                                                                                 with it at all
+     */
+    public function reach(Database $database, array $serverIds): array
+    {
+        $serverIds = array_values(array_unique(array_diff(array_map('strtolower', $serverIds), [$database->server_id])));
+        $candidates = $this->candidates($database->server_id, $serverIds);
+
+        foreach ($candidates as $candidate) {
+            if (count($candidate['peers']) === count($serverIds)) {
+                return ['host' => $candidate['host'], 'via' => $candidate['via'], 'peers' => $candidate['peers'], 'missing' => []];
+            }
+        }
+
+        $covered = array_merge(...array_map(fn (array $c) => array_keys($c['peers']), $candidates ?: [['peers' => []]]));
+
+        return ['host' => null, 'via' => null, 'peers' => [], 'missing' => array_values(array_diff($serverIds, $covered))];
+    }
+
+    /**
+     * What the instance should listen on and let in.
+     *
+     * @return array{bind: list<string>, containers: bool, peers: list<string>}
+     */
+    public function desired(Database $database): array
+    {
+        $server = $database->databaseServer;
+
+        if (! self::enabled($server)) {
+            return ['bind' => ['127.0.0.1'], 'containers' => false, 'peers' => []];
+        }
+
+        $bind = [];
+        $peers = [];
+
+        foreach ($this->consumers($database) as $consumer) {
+            $others = array_values(array_diff($consumer->serverIds, [$database->server_id]));
+
+            if ($others === []) {
+                continue;
+            }
+
+            $reach = $this->reach($database, $consumer->serverIds);
+
+            if ($reach['host'] !== null) {
+                $bind[] = $reach['host'];
+                array_push($peers, ...array_values($reach['peers']));
+            }
+        }
+
+        $bind = array_values(array_unique($bind));
+        sort($bind);
+        $peers = array_values(array_unique($peers));
+        sort($peers);
+
+        return ['bind' => ['127.0.0.1', ...$bind], 'containers' => self::containerRanges() !== [], 'peers' => $peers];
+    }
+
+    /**
+     * Where the consumer reaches the instance: native on its server → 127.0.0.1; containers there → the Docker bridge
+     * address the agent reported; any other server (native or containers) → the instance server's private address on a
+     * network they share (WireGuard first, then the provider's). Never a public address. The address must be one the
+     * instance listens on already (the agent reported it), else the reference waits for the re-apply.
+     *
+     * @return array{host: ?string, reason: ?string}
+     */
+    public function hostFor(Database $database, DatabaseConsumer $consumer): array
+    {
+        $engine = $database->databaseServer;
+        $label = $engine->engine->label();
+        $instance = "the {$label} instance {$database->name} on {$engine->server_name}";
+        $elsewhere = array_values(array_diff(array_map('strtolower', $consumer->serverIds), [$database->server_id]));
+        $network = (array) $database->network;
+        $bound = (array) ($network['bind'] ?? ['127.0.0.1']);
+        $update = "update the agent on {$engine->server_name} (Redis / Valkey network access needs agent support for db.redis.network)";
+
+        if ($elsewhere === [] && ! $consumer->containerized) {
+            return ['host' => '127.0.0.1', 'reason' => null];
+        }
+
+        if (! self::enabled($engine)) {
+            $where = $elsewhere !== [] ? 'runs on '.$this->names($elsewhere) : 'runs in a container';
+
+            return ['host' => null, 'reason' => "{$consumer->name} {$where}, but {$instance} only accepts connections from that server itself: {$update}."];
+        }
+
+        if ($elsewhere === []) {
+            $host = $network['container_host'] ?? null;
+
+            if ($host === null || self::containerRanges() === []) {
+                return ['host' => null, 'reason' => "{$consumer->name} runs in a container, but {$instance} does not listen on the Docker bridge (docker0) yet: ".(self::containerRanges() === [] ? 'container access is turned off (KILN_DOCKER_NETWORKS).' : 'is Docker installed and running there? Kiln applies the instance again once it is.')];
+            }
+
+            return ['host' => $host, 'reason' => null];
+        }
+
+        $reach = $this->reach($database, $consumer->serverIds);
+
+        if ($reach['host'] === null) {
+            $missing = $reach['missing'] !== [] ? $reach['missing'] : $elsewhere;
+
+            return ['host' => null, 'reason' => "{$consumer->name} runs on ".$this->names($missing).", which shares no private network with {$engine->server_name}, and {$instance} is never exposed on a public address. Add both servers to a private network (Network → Private networks)".($reach['missing'] === [] ? ' — one network that all of the site\'s servers share' : '').'.'];
+        }
+
+        if (! in_array($reach['host'], $bound, true)) {
+            return ['host' => null, 'reason' => "{$consumer->name} runs on ".$this->names($elsewhere).", and {$instance} does not listen on {$reach['host']} ({$reach['via']}) yet: Kiln is applying it (a restart that keeps the data); deploy again once it is done."];
+        }
+
+        return ['host' => $reach['host'], 'reason' => null];
+    }
+
+    /** @param  list<string>  $serverIds */
+    private function names(array $serverIds): string
+    {
+        return implode(', ', array_map(fn (string $id) => $this->servers->find($id)?->name ?? $id, $serverIds));
+    }
+
+    /**
+     * @param  list<string>  $serverIds
+     * @return list<array{host: string, via: string, peers: array<string, string>}>
+     */
+    private function candidates(string $instanceServerId, array $serverIds): array
+    {
+        $candidates = [];
+        $peerNetworks = [];
+
+        foreach ($serverIds as $id) {
+            foreach ($this->network->networksOf($id) as $membership) {
+                $peerNetworks[$membership->networkId][$id] = $membership->address;
+            }
+        }
+
+        foreach ($this->network->networksOf($instanceServerId) as $membership) {
+            $candidates[] = ['host' => $membership->address, 'via' => "private network {$membership->name}", 'peers' => $peerNetworks[$membership->networkId] ?? []];
+        }
+
+        $instance = $this->servers->find($instanceServerId);
+
+        if ($instance?->privateIpv4 !== null) {
+            $peers = [];
+
+            foreach ($serverIds as $id) {
+                $server = $this->servers->find($id);
+
+                if ($server?->privateIpv4 !== null && $server->provider === $instance->provider) {
+                    $peers[$id] = $server->privateIpv4;
+                }
+            }
+
+            $candidates[] = ['host' => $instance->privateIpv4, 'via' => 'provider private network', 'peers' => $peers];
+        }
+
+        return $candidates;
+    }
+}

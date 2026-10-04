@@ -138,12 +138,14 @@ final class CommandPayloads
     }
 
     /**
-     * db.redis.apply: the full desired state of a Redis / Valkey instance. Phase 1 binds 127.0.0.1 only (the agent
-     * always includes it); private-network and container addresses join `bind` with network access.
+     * db.redis.apply: the full desired state of a Redis / Valkey instance. `bind` is 127.0.0.1 plus the private
+     * addresses other servers of its environment reach it on, `containers` adds the Docker bridge's address
+     * (KeyValueNetwork::desired(); both only for agents with db.redis.network, which strips `containers` otherwise).
      *
+     * @param  array{bind?: list<string>, containers?: bool}  $network
      * @return array<string, mixed>
      */
-    public static function redisApply(DatabaseServer $server, Database $database, #[\SensitiveParameter] string $password): array
+    public static function redisApply(DatabaseServer $server, Database $database, #[\SensitiveParameter] string $password, array $network = []): array
     {
         $settings = KeyValueSettings::of($database);
 
@@ -152,7 +154,8 @@ final class CommandPayloads
             'name' => $database->name,
             'port' => (int) $database->port,
             'password' => $password,
-            'bind' => ['127.0.0.1'],
+            'bind' => array_values($network['bind'] ?? ['127.0.0.1']),
+            ...(($network['containers'] ?? false) ? ['containers' => true] : []),
             'maxmemory_mb' => $settings['maxmemory_mb'],
             'eviction' => $settings['eviction'],
             'persistence' => $settings['persistence'],
