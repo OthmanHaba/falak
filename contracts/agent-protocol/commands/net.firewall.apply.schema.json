@@ -85,14 +85,13 @@
     },
     "container_ports": {
       "type": "array",
-      "description": "feature db.containers: host ports the server's containers may reach. Accepted on the Docker bridges only (iifname docker0 and br-*) from sources, then dropped from everywhere else — before the private-network and user rules, so only loopback and containers reach them.",
+      "description": "feature db.containers: host ports the server's containers may reach. Accepted on the Docker bridges only (iifname docker0 and br-*) from sources, then dropped from everywhere else — before the private-network and user rules, so only loopback and containers reach them. Peers (feature db.redis.network): addresses of other servers also accepted for the ports, on any interface, ahead of the drop.",
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": [
           "id",
-          "ports",
-          "sources"
+          "ports"
         ],
         "properties": {
           "id": {
@@ -109,10 +108,17 @@
           },
           "sources": {
             "type": "array",
-            "minItems": 1,
+            "minItems": 0,
             "items": {
               "type": "string",
-              "description": "Docker address range (CIDR)"
+              "description": "Docker address range (CIDR); sources or peers must not be empty"
+            }
+          },
+          "peers": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "IPv4/IPv6 address or CIDR of a server allowed to reach the ports (private network / provider private address)"
             }
           },
           "ports": {

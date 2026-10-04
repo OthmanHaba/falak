@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net"
 	"os"
 	"regexp"
 	"slices"
@@ -120,11 +119,14 @@ type RedisApplyPayload struct {
 	Name     string `json:"name"`
 	Port     int    `json:"port"`
 	Password string `json:"password"`
-	// Bind: addresses to listen on. 127.0.0.1 is always included (the agent checks the instance there).
-	Bind        []string `json:"bind,omitempty"`
-	MaxMemoryMB int      `json:"maxmemory_mb"`
-	Eviction    string   `json:"eviction"`
-	Persistence string   `json:"persistence"`
+	// Bind: addresses to listen on. 127.0.0.1 is always included (the agent checks the instance there); only
+	// loopback, private and WireGuard addresses are accepted (see resolveBind).
+	Bind []string `json:"bind,omitempty"`
+	// Containers (feature db.redis.network): also listen on the Docker bridge's address (docker0).
+	Containers  bool   `json:"containers,omitempty"`
+	MaxMemoryMB int    `json:"maxmemory_mb"`
+	Eviction    string `json:"eviction"`
+	Persistence string `json:"persistence"`
 }
 
 // RedisApplyResult is db.redis.apply's result.
@@ -132,6 +134,11 @@ type RedisApplyResult struct {
 	Changed   bool `json:"changed"`
 	Restarted bool `json:"restarted"`
 	Port      int  `json:"port"`
+	// Bind is what the instance listens on; ContainerHost the address containers use (docker0's), Skipped wanted
+	// addresses the host doesn't have yet (feature db.redis.network).
+	Bind          []string `json:"bind,omitempty"`
+	ContainerHost string   `json:"container_host,omitempty"`
+	Skipped       []string `json:"skipped,omitempty"`
 }
 
 // RedisRemovePayload is db.redis.remove.
@@ -151,37 +158,27 @@ type redisState struct {
 	Disabled    string   `json:"disabled,omitempty"` // commands renamed to "" in the running process
 }
 
-func (p *RedisApplyPayload) validate() ([]string, error) {
+func (p *RedisApplyPayload) validate() error {
 	bad := func(format string, a ...any) error { return &commands.PayloadError{Err: fmt.Errorf(format, a...)} }
 	if !redisName.MatchString(p.Name) {
-		return nil, bad("invalid name %q", p.Name)
+		return bad("invalid name %q", p.Name)
 	}
 	if p.Port < 1024 || p.Port > 65535 {
-		return nil, bad("invalid port %d", p.Port)
+		return bad("invalid port %d", p.Port)
 	}
 	if !redisPassword.MatchString(p.Password) {
-		return nil, bad("invalid password (12-128 characters of A-Z a-z 0-9 . _ ~ -)")
+		return bad("invalid password (12-128 characters of A-Z a-z 0-9 . _ ~ -)")
 	}
 	if p.MaxMemoryMB < 16 || p.MaxMemoryMB > 1<<20 {
-		return nil, bad("invalid maxmemory_mb %d", p.MaxMemoryMB)
+		return bad("invalid maxmemory_mb %d", p.MaxMemoryMB)
 	}
 	if !slices.Contains(redisEviction, p.Eviction) {
-		return nil, bad("invalid eviction %q", p.Eviction)
+		return bad("invalid eviction %q", p.Eviction)
 	}
 	if !slices.Contains(redisPersist, p.Persistence) {
-		return nil, bad("invalid persistence %q", p.Persistence)
+		return bad("invalid persistence %q", p.Persistence)
 	}
-	bind := []string{"127.0.0.1"}
-	for _, a := range p.Bind {
-		ip := net.ParseIP(a)
-		if ip == nil || ip.IsUnspecified() {
-			return nil, bad("invalid bind address %q", a)
-		}
-		if s := ip.String(); !slices.Contains(bind, s) {
-			bind = append(bind, s)
-		}
-	}
-	return bind, nil
+	return nil
 }
 
 // disabledCommands are the commands renamed to "" for this engine version (renaming one the server doesn't know is a
@@ -361,9 +358,17 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 	if err != nil {
 		return nil, err
 	}
-	bind, err := p.validate()
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	resolved, err := db.resolveBind(p.Bind, p.Containers)
 	if err != nil {
 		return nil, err
+	}
+	bind := resolved.addrs
+	result := func(r RedisApplyResult) RedisApplyResult {
+		r.Port, r.Bind, r.ContainerHost, r.Skipped = p.Port, bind, resolved.containerHost, resolved.skipped
+		return r
 	}
 	if !db.kvInstalled(k) {
 		return nil, fmt.Errorf("%s is not installed on this server (no %s@.service unit); install it first", k.label, k.server)
@@ -400,7 +405,7 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 
 	// Already live: the marker is only written once the running process uses exactly this file.
 	if active && state.Applied == hashOf(desired) && string(onDisk) == desired && db.fileIs(k.dropIn(p.Name), dropIn) && want.pingWait(ctx) == nil {
-		return RedisApplyResult{Port: p.Port}, nil
+		return result(RedisApplyResult{}), nil
 	}
 
 	if err := db.ensureInstanceUser(ctx, k, p.Name); err != nil {
@@ -459,7 +464,7 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 			if err := db.saveRedisState(k, p.Name, final); err != nil {
 				return nil, err
 			}
-			return RedisApplyResult{Changed: true, Port: p.Port}, nil
+			return result(RedisApplyResult{Changed: true}), nil
 		}
 		// A wait that ran out of time (the rewrite or the load continues) or a cancelled command is not a reason to
 		// restart: a restart would interrupt the rewrite with little time left. The redelivery waits again.
@@ -562,7 +567,7 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 	if st != nil {
 		fmt.Fprintf(st.Stdout(), "%s (user %s) listening on %d\n", unit, user, p.Port)
 	}
-	return RedisApplyResult{Changed: true, Restarted: true, Port: p.Port}, nil
+	return result(RedisApplyResult{Changed: true, Restarted: true}), nil
 }
 
 // prepareStop makes the coming stop keep or drop the data as the new persistence wants.

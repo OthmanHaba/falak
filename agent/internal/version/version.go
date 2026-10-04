@@ -47,6 +47,10 @@ var Features = []string{
 	// db.redis.apply / db.redis.remove: Redis and Valkey instances (redis-server@kiln-<name>), facts.runtimes redis /
 	// valkey versions.
 	"db.redis",
+	// db.redis.apply containers (listen on docker0's address too; bind addresses limited to loopback, private and
+	// WireGuard ones, missing ones skipped and reported) and net.firewall.apply container_ports[].peers: Redis / Valkey
+	// instances reached from the server's containers and over private networks.
+	"db.redis.network",
 }
 
 var (

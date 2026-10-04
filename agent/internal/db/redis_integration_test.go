@@ -141,6 +141,49 @@ func TestRedisIntegration(t *testing.T) {
 			}
 			set("a", "1")
 
+			// Network access (db.redis.network): the container's own address stands in for docker0's. The bind change
+			// restarts the instance (data kept); another container reaches it there with the password only.
+			ipRes, err := d.docker(ctx, nil, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", d.container)
+			ip := strings.TrimSpace(string(ipRes.Stdout))
+			if err != nil || ip == "" {
+				t.Fatalf("container address: %q %v", ip, err)
+			}
+			fakeInterfaces(t, iface("lo", "127.0.0.1"), iface("docker0", ip))
+			p.Containers = true
+			if r := apply(p); !r.Restarted || r.ContainerHost != ip || strings.Join(r.Bind, " ") != "127.0.0.1 "+ip {
+				t.Fatalf("%+v", r)
+			}
+			if get("a") != "1" {
+				t.Fatal("lost a after the bind change")
+			}
+			if out, err := c().do(ctx, c().config, "GET", "bind"); err != nil || !strings.Contains(out, ip) {
+				t.Fatalf("bind: %q %v", out, err)
+			}
+			remote := func(auth bool) string {
+				args := []string{"run", "--rm", "--entrypoint", k.cli}
+				if auth {
+					args = append(args, "-e", "REDISCLI_AUTH="+p.Password)
+				}
+				res, _ := d.docker(ctx, nil, append(args, img.image, "-h", ip, "-p", fmt.Sprint(p.Port), "--no-auth-warning", "GET", "a")...)
+				return strings.TrimSpace(string(res.Stdout) + string(res.Stderr))
+			}
+			if out := remote(true); out != "1" {
+				t.Fatalf("from another container: %q", out)
+			}
+			if out := remote(false); !strings.Contains(out, "NOAUTH") {
+				t.Fatalf("without the password: %q", out)
+			}
+			// A public address is refused before anything changes.
+			p.Bind = []string{"8.8.8.8"}
+			if _, err := db.RedisApply(ctx, p, st); err == nil || !strings.Contains(err.Error(), "refusing") {
+				t.Fatal(err)
+			}
+			// Back to loopback only (later restarts may give the container another address).
+			p.Bind, p.Containers = nil, false
+			if r := apply(p); !r.Restarted || get("a") != "1" {
+				t.Fatalf("%+v", r)
+			}
+
 			// The renamed CONFIG works for the agent only; the disabled commands are gone.
 			if out, err := c().do(ctx, c().config, "GET", "maxmemory"); err != nil || !strings.Contains(out, "67108864") {
 				t.Fatalf("secret CONFIG GET: %q %v", out, err)

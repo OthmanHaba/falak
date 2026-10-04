@@ -560,6 +560,7 @@ func TestRedisApplyValkeyPathsAndLongNames(t *testing.T) {
 	db, root := newDB(t, f, nil)
 	h := newRedisHost(t, f, root)
 	p := redisPayload()
+	fakeInterfaces(t, iface("lo", "127.0.0.1"), iface("eth1", "10.0.0.5"))
 	p.Engine, p.Name, p.Bind = "valkey", "sessions", []string{"10.0.0.5", "127.0.0.1"}
 	applyOK(t, db, p)
 	b, err := os.ReadFile(filepath.Join(root, "/etc/kiln-valkey/sessions.conf"))

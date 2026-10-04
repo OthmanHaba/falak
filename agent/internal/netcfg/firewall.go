@@ -70,12 +70,14 @@ type FirewallPayload struct {
 
 // ContainerPorts opens ports to the Docker bridge interfaces only (feature db.containers): accepted from Sources (the
 // Docker address ranges) on the bridges, then dropped from everywhere else — ahead of private-network and user rules,
-// so only loopback and containers reach the port.
+// so only loopback and containers reach the port. Peers (feature db.redis.network) are addresses of other servers
+// also accepted, on any interface (a Redis instance used by the project's servers over a private network).
 type ContainerPorts struct {
 	ID       string   `json:"id"`
 	Protocol string   `json:"protocol"`
 	Ports    []string `json:"ports"`
 	Sources  []string `json:"sources"`
+	Peers    []string `json:"peers,omitempty"`
 	Comment  string   `json:"comment"`
 }
 
@@ -141,16 +143,27 @@ func RenderRuleset(p FirewallPayload) (string, error) {
 		if len(c.Ports) == 0 {
 			return "", perr("container ports %s: no ports", c.ID)
 		}
-		if len(c.Sources) == 0 {
+		if len(c.Sources) == 0 && len(c.Peers) == 0 {
 			return "", perr("container ports %s: no sources", c.ID)
 		}
-		lines, err := renderRule(Rule{ID: "containers-" + c.ID, Protocol: c.Protocol, Ports: c.Ports, Sources: c.Sources, Comment: c.Comment})
-		if err != nil {
-			return "", err
+		if len(c.Sources) > 0 {
+			lines, err := renderRule(Rule{ID: "containers-" + c.ID, Protocol: c.Protocol, Ports: c.Ports, Sources: c.Sources, Comment: c.Comment})
+			if err != nil {
+				return "", err
+			}
+			for _, iface := range dockerBridges {
+				for _, l := range lines {
+					b.WriteString("\t\tiifname \"" + iface + "\" " + l + "\n")
+				}
+			}
 		}
-		for _, iface := range dockerBridges {
+		if len(c.Peers) > 0 {
+			lines, err := renderRule(Rule{ID: "containers-" + c.ID + "-peers", Protocol: c.Protocol, Ports: c.Ports, Sources: c.Peers, Comment: c.Comment})
+			if err != nil {
+				return "", err
+			}
 			for _, l := range lines {
-				b.WriteString("\t\tiifname \"" + iface + "\" " + l + "\n")
+				b.WriteString("\t\t" + l + "\n")
 			}
 		}
 		drop, err := renderRule(Rule{ID: "containers-" + c.ID + "-only", Action: "drop", Protocol: c.Protocol, Ports: c.Ports, Comment: "only containers"})

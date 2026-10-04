@@ -93,6 +93,41 @@ func TestRenderRulesetContainerPorts(t *testing.T) {
 	}
 }
 
+// A Redis instance used over a private network: its consumers' addresses are accepted (any interface) besides the
+// containers, then the port is dropped for everyone else — the private network's accept-all rule included.
+func TestRenderRulesetContainerPortsWithPeers(t *testing.T) {
+	p := payload()
+	p.Rules = append([]Rule{{ID: "wg-net-interface", Protocol: "any", Interface: "wg-kiln"}}, p.Rules...)
+	p.ContainerPorts = []ContainerPorts{
+		{ID: "redis-cache", Protocol: "tcp", Ports: []string{"6380"}, Sources: []string{"172.16.0.0/12"}, Peers: []string{"10.90.0.2", "10.0.1.7"}, Comment: "Redis cache"},
+		// Only peers (container access off: no Docker ranges configured).
+		{ID: "redis-jobs", Protocol: "tcp", Ports: []string{"6381"}, Peers: []string{"10.90.0.4"}, Comment: "Redis jobs"},
+	}
+	rs, err := RenderRuleset(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := `iifname "br-*" ip saddr 172.16.0.0/12 tcp dport 6380 accept comment "kiln:containers-redis-cache Redis cache"`
+	peers := `ip saddr { 10.90.0.2, 10.0.1.7 } tcp dport 6380 accept comment "kiln:containers-redis-cache-peers Redis cache"`
+	drop := `tcp dport 6380 drop comment "kiln:containers-redis-cache-only only containers"`
+	for _, w := range []string{bridge, peers, drop, `ip saddr 10.90.0.4 tcp dport 6381 accept`, `tcp dport 6381 drop`} {
+		if !strings.Contains(rs, w) {
+			t.Fatalf("missing %q in\n%s", w, rs)
+		}
+	}
+	if strings.Contains(rs, `tcp dport 6381 accept comment "kiln:containers-redis-jobs Redis jobs"`) {
+		t.Fatalf("bridge rule without sources:\n%s", rs)
+	}
+	if !(strings.Index(rs, peers) < strings.Index(rs, drop) && strings.Index(rs, drop) < strings.Index(rs, `"kiln:wg-net-interface"`)) {
+		t.Fatalf("order:\n%s", rs)
+	}
+	for _, bad := range []ContainerPorts{{ID: "x", Ports: []string{"6380"}, Peers: []string{"nope"}}, {ID: "x", Ports: []string{"6380"}, Peers: []string{}}} {
+		if _, err := RenderRuleset(FirewallPayload{ContainerPorts: []ContainerPorts{bad}}); !commands.IsPayloadError(err) {
+			t.Fatalf("accepted %+v", bad)
+		}
+	}
+}
+
 func TestFirewallApply(t *testing.T) {
 	root := t.TempDir()
 	applied := false
