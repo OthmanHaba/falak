@@ -3,7 +3,7 @@ import { copyText } from '@/components/kiln/copy-button';
 import { errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
 import { cn } from '@/lib/utils';
-import { Eye, EyeOff, Info } from 'lucide-react';
+import { AlertTriangle, Eye, EyeOff, Info } from 'lucide-react';
 import { useState } from 'react';
 import { resourceStatus, useDatabasePanel } from './api';
 
@@ -217,6 +217,34 @@ export function DatabaseOverviewTab({ ctx }: ServiceTabProps) {
                     </p>
                 )}
             </Section>
+
+            {keyValue && connection.access && connection.access.length > 0 && (
+                <Section
+                    title="Who can connect"
+                    description="Sites of this environment and the address their references resolve to. Other servers connect over a private network only; the instance is never exposed on a public address."
+                >
+                    <ul className="grid gap-2" data-testid="instance-access">
+                        {connection.access.map((item) => (
+                            <li key={item.name} className="grid gap-0.5 text-sm">
+                                <div className="flex min-w-0 items-center gap-2">
+                                    <span className="text-fg font-medium">{item.name}</span>
+                                    {item.host ? (
+                                        <code className="text-fg-muted truncate font-mono text-xs">
+                                            {item.host}:{connection.port}
+                                        </code>
+                                    ) : (
+                                        <span className="text-warning inline-flex items-center gap-1 text-xs">
+                                            <AlertTriangle className="size-3.5" aria-hidden />
+                                            Can&apos;t connect
+                                        </span>
+                                    )}
+                                </div>
+                                {item.reason && <p className="text-fg-muted text-xs">{item.reason}</p>}
+                            </li>
+                        ))}
+                    </ul>
+                </Section>
+            )}
 
             <Section
                 title="Use from another service"
