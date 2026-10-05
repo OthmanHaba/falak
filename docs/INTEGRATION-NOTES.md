@@ -548,6 +548,11 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   taking it as live. Docker integration test: an instance whose address (in a holder container's namespace, NET_ADMIN)
   is removed before a restart comes up on it once it is back — 6.0 through the restart, 7.0 / 8.0 / Valkey 7.2–9.0
   through the start — with its data, on all six images.
+- **WireGuard tools (pre-existing bug, found in the live test):** nothing installed `wireguard-tools`, so on a fresh
+  Ubuntu server `net.wireguard.apply` failed ("Unit wg-quick@wg-… .service does not exist") and Kiln private networks
+  never came up. The agent now installs it on demand (`system.Apt.Ensure`, apt-get update with its repository recovery
+  first) before it writes the config, when `wg-quick` is missing; servers outside private networks don't get it. Keys
+  never needed it (the agent generates them itself).
 - **Control plane** (`Databases\Application\KeyValue\KeyValueNetwork`): a key-value engine row's `container_access`
   turns on when the agent has `db.redis.network` (`EnableContainerAccess`, on upgrade / provisioning / engine install,
   dedicated cache servers too), which re-applies the instances (one restart each). Desired state per instance:

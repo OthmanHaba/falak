@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -195,6 +196,8 @@ func TestWireGuard(t *testing.T) {
 	f.OnFunc("systemctl enable --now", func(runnertest.Call) (runner.Result, error) { active = true; return runner.Result{}, nil })
 	f.On("wg-quick strip", runner.Result{Stdout: []byte("[Interface]\nPrivateKey = x\n")})
 	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
+	os.MkdirAll(filepath.Join(root, "usr/bin"), 0o755)
+	os.WriteFile(filepath.Join(root, "usr/bin/wg-quick"), []byte("#!/bin/bash\n"), 0o755)
 	peerKey := base64.StdEncoding.EncodeToString(make([]byte, 32))
 	p := WireGuardPayload{Address: "10.90.0.3/24", Peers: []Peer{{PublicKey: peerKey, Endpoint: "203.0.113.1:51820", AllowedIPs: []string{"10.90.0.1/32"}, PersistentKeepalive: 25}}}
 	r, err := n.WireGuardApply(context.Background(), p, st)
@@ -242,6 +245,51 @@ func TestWireGuard(t *testing.T) {
 	}
 	if _, err := os.Stat(keyFile); err != nil {
 		t.Fatal("key should be kept for identity stability")
+	}
+}
+
+// A fresh Ubuntu server has no wireguard-tools (provisioning doesn't install them): the first apply installs them
+// (apt-get update first) before it enables wg-quick@<interface>; once installed nothing is installed again.
+func TestWireGuardInstallsTheToolsWhenMissing(t *testing.T) {
+	root := t.TempDir()
+	f := &runnertest.Fake{}
+	f.On("systemctl is-active", runner.Result{ExitCode: 3})
+	f.OnFunc("apt-get install", func(runnertest.Call) (runner.Result, error) {
+		os.MkdirAll(filepath.Join(root, "usr/bin"), 0o755)
+		os.WriteFile(filepath.Join(root, "usr/bin/wg-quick"), []byte("#!/bin/bash\n"), 0o755)
+		return runner.Result{}, nil
+	})
+	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
+	p := WireGuardPayload{Interface: "wg-a1b2c3d4", Address: "10.90.0.3/24"}
+	if _, err := n.WireGuardApply(context.Background(), p, st); err != nil {
+		t.Fatal(err)
+	}
+	lines := f.Lines()
+	idx := func(prefix string) int {
+		return slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(l, prefix) })
+	}
+	inst, upd, enable := idx("apt-get install"), idx("apt-get update"), idx("systemctl enable --now wg-quick@wg-a1b2c3d4")
+	if upd < 0 || inst < upd || enable < inst || !strings.Contains(lines[inst], "wireguard-tools") {
+		t.Fatal(lines)
+	}
+	f.Reset()
+	if _, err := n.WireGuardApply(context.Background(), p, st); err != nil {
+		t.Fatal(err)
+	}
+	if idx := slices.IndexFunc(f.Lines(), func(l string) bool { return strings.HasPrefix(l, "apt-get") || strings.HasPrefix(l, "dpkg-query") }); idx >= 0 {
+		t.Fatal(f.Lines())
+	}
+
+	// The install failing fails the command before anything is written.
+	root2 := t.TempDir()
+	f2 := &runnertest.Fake{}
+	f2.On("apt-get install", runner.Result{ExitCode: 100, Stderr: []byte("E: Unable to locate package wireguard-tools")})
+	n2 := New(Deps{Runner: f2, FS: hostfs.FS{Root: root2}})
+	if _, err := n2.WireGuardApply(context.Background(), p, st); err == nil || !strings.Contains(err.Error(), "install wireguard-tools") {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root2, "etc/wireguard/wg-a1b2c3d4.conf")); err == nil {
+		t.Fatal("config written although the tools are missing")
 	}
 }
 
