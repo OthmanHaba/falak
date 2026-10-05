@@ -38,4 +38,9 @@ final class FakeServerDirectory implements ServerDirectory
     {
         return [];
     }
+
+    public function installableCaches(string $serverId): array
+    {
+        return ['redis'];
+    }
 }

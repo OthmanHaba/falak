@@ -2,6 +2,7 @@
 bd5da5219bcea6cc9e74d71e298cdd3f11223970:agent/testdata/command-examples/net.tunnel.apply.json:generic-api-key:1
 # Fake Redis passwords in db.redis tests and the db.redis.apply example (Xk3pQ9…, Nn4vX8…; not real credentials).
 0462eb11ffd3577e348799a5d48e62b2dd7f36fe:agent/internal/db/redis_test.go:generic-api-key:1066
+a41724c03fd32bcdb7d4f2a9dbe6f27341ca2918:agent/internal/db/redis_integration_test.go:generic-api-key:415
 72668a8399d3e5da2d4be57644636f8f3ae9592d:agent/internal/db/redis_test.go:generic-api-key:933
 f0b43b81f4d3c6f0a52bffebb3196c382777bfc4:agent/internal/db/redis_integration_test.go:generic-api-key:113
 f0b43b81f4d3c6f0a52bffebb3196c382777bfc4:agent/internal/db/redis_integration_test.go:generic-api-key:148
@@ -9,3 +10,4 @@ f0b43b81f4d3c6f0a52bffebb3196c382777bfc4:agent/internal/db/redis_test.go:generic
 b58b575af808c59e43087b887472dc4135c1dd3c:agent/testdata/command-examples/db.redis.apply.json:generic-api-key:1
 b58b575af808c59e43087b887472dc4135c1dd3c:agent/internal/db/redis_test.go:generic-api-key:60
 b58b575af808c59e43087b887472dc4135c1dd3c:agent/internal/db/redis_test.go:generic-api-key:122
+84f53a9989f75727a6d0673330b9300fa3c624f8:agent/testdata/command-examples/db.redis.apply.json:generic-api-key:1

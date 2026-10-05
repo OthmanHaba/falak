@@ -66,6 +66,7 @@ type Components struct {
 	Edge       *edge.Manager
 	Deployer   *deploy.Deployer
 	Functions  *functions.Functions
+	DB         *db.DB
 }
 
 // Build constructs every executor and registers the full v1 catalogue.
@@ -112,7 +113,8 @@ func Build(d Deps) *Components {
 	dock.Register(reg) // docker.* + deploy.container.swap
 	sup.Register(reg)
 	sched.Register(reg)
-	db.New(db.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, StateDir: cfg.StateDir}).Register(reg)
+	dbs := db.New(db.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, StateDir: cfg.StateDir})
+	dbs.Register(reg)
 	netcfg.New(netcfg.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
 	fns := functions.New(functions.Deps{FS: d.FS, Runner: d.Runner, Docker: docker.NewClient(cfg.DockerSock), Gateway: fngateway.NewClient(""),
 		Logger: log.With("component", "functions"), Binary: BinaryPath, Version: version.Version})
@@ -120,7 +122,7 @@ func Build(d Deps) *Components {
 	d.Telemetry.Register(reg)
 	terms.Register(reg)
 
-	return &Components{Registry: reg, Supervisor: sup, Cron: sched, PTY: terms, Docker: dock, Edge: edgeMgr, Deployer: dep, Functions: fns}
+	return &Components{Registry: reg, Supervisor: sup, Cron: sched, PTY: terms, Docker: dock, Edge: edgeMgr, Deployer: dep, Functions: fns, DB: dbs}
 }
 
 // ensureEnrolled enrolls only when there is no identity yet: `kiln-agent run` never replaces one because
@@ -250,7 +252,8 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	var polling, loops sync.WaitGroup
 	polling.Add(1)
 	go func() { defer polling.Done(); poller.Run(pollCtx) }()
-	for _, fn := range []func(context.Context){hb.Run, renewer.Run} {
+	// RedisWatch: Redis / Valkey instances listen on docker0 / WireGuard addresses that may appear after they started.
+	for _, fn := range []func(context.Context){hb.Run, renewer.Run, comps.DB.RedisWatch} {
 		loops.Add(1)
 		go func(f func(context.Context)) { defer loops.Done(); f(runCtx) }(fn)
 	}

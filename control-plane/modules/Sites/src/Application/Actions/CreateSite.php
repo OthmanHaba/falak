@@ -61,6 +61,11 @@ final class CreateSite
 
         $project = $source === ComposeSource::Repo ? $this->composeSettings->project($data) : null;
 
+        if ($source === ComposeSource::Inline && ($data['compose_services'] ?? []) !== []) {
+            // An inline stack's services can run as Kiln services too (the file is stored, so extraction reads it).
+            $project = ['files' => [], 'profiles' => [], 'services' => [], 'adjustments' => [], 'extract' => $this->composeSettings->project($data)['extract']];
+        }
+
         if (($project['extract'] ?? []) !== []) {
             // A service that runs as a Kiln database or its own site is not public in the stack.
             $leaving = array_column($project['extract'], 'service');

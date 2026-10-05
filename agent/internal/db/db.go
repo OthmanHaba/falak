@@ -17,6 +17,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/kiln/agent/internal/commands"
 	"github.com/kiln/agent/internal/hostfs"
@@ -34,7 +35,12 @@ type Deps struct {
 }
 
 // DB holds the executors.
-type DB struct{ d Deps }
+type DB struct {
+	d Deps
+
+	watchMu    sync.Mutex
+	watchTried map[string]watchAttempts // unit → RedisWatch's restarts / starts of it
+}
 
 // New builds db executors.
 func New(d Deps) *DB {

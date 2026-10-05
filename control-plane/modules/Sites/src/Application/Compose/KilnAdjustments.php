@@ -12,10 +12,14 @@ use Kiln\Sites\Contracts\Data\ComposeRewrites;
  * For repository projects ($repoFiles given) paths are root-relative (ComposeProject) and the files the project
  * mounts are shipped under <release>/repo/: bind sources, env_file entries and configs/secrets files found in the
  * repository point there; bind sources the repository lacks (data folders) become named volumes unless the user
- * keeps them; env files it lacks are replaced by Kiln's variables. Inline projects keep their paths.
+ * keeps them; env files it lacks are replaced by Kiln's variables. Inline projects keep their paths and container names;
+ * both get `restart: unless-stopped` on services without a restart policy.
  */
 final class KilnAdjustments
 {
+    /** Rewritten keys added to a service that didn't set them (ServiceReferences, cache mode: next to a REDIS_HOST). */
+    private const ADDED_KEYS = ['REDIS_PORT' => true, 'REDIS_PASSWORD' => true];
+
     /** The release directory holding shipped repository files (agent docker.AssetsDir). */
     public const REPO_DIR = 'repo';
 
@@ -91,6 +95,12 @@ final class KilnAdjustments
                 $service['environment'] = self::rewriteEnvironment($service['environment'], $own, (string) $name, $note);
             }
 
+            // Inline projects too (templates are inline): without a policy Docker leaves containers stopped after a reboot.
+            if (! isset($service['restart']) && ! isset($service['deploy']['restart_policy'])) {
+                $service['restart'] = 'unless-stopped';
+                $restartDefaults[] = $name;
+            }
+
             if (! $repo) {
                 $services[$name] = $service;
 
@@ -100,11 +110,6 @@ final class KilnAdjustments
             if (isset($service['container_name'])) {
                 $note('container_name', $name, 'container_name removed: Kiln names containers per environment and release.');
                 unset($service['container_name']);
-            }
-
-            if (! isset($service['restart']) && ! isset($service['deploy']['restart_policy'])) {
-                $service['restart'] = 'unless-stopped';
-                $restartDefaults[] = $name;
             }
 
             if (is_array($service['volumes'] ?? null)) {
@@ -260,7 +265,15 @@ final class KilnAdjustments
                 if (isset($rewrites[$key])) {
                     $environment[$i] = $key.'=${'.ComposeRewrites::variable($service, $key).'}';
                     $note('variable', $service, "{$key} points at {$rewrites[$key]}.");
+                    unset($rewrites[$key]);
                 }
+            }
+
+            // A Kiln Redis' REDIS_PORT / REDIS_PASSWORD next to a REDIS_HOST the service set without them are added (the
+            // instance listens on 6380+ and always has a password). Other keys the service no longer sets stay out.
+            foreach (array_intersect_key($rewrites, self::ADDED_KEYS) as $key => $replacement) {
+                $environment[] = $key.'=${'.ComposeRewrites::variable($service, $key).'}';
+                $note('variable', $service, "{$key} added: {$replacement}.");
             }
 
             return $environment;
@@ -270,7 +283,13 @@ final class KilnAdjustments
             if (isset($rewrites[(string) $key])) {
                 $environment[$key] = '${'.ComposeRewrites::variable($service, (string) $key).'}';
                 $note('variable', $service, "{$key} points at {$rewrites[(string) $key]}.");
+                unset($rewrites[(string) $key]);
             }
+        }
+
+        foreach (array_intersect_key($rewrites, self::ADDED_KEYS) as $key => $replacement) {
+            $environment[$key] = '${'.ComposeRewrites::variable($service, (string) $key).'}';
+            $note('variable', $service, "{$key} added: {$replacement}.");
         }
 
         return $environment;

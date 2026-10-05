@@ -23,7 +23,7 @@ set +a
 EDGE="https://kiln.test:${SIM_EDGE_HTTPS_PORT}"
 CURL=(curl -sS --cacert .data/edge-root.crt --resolve "kiln.test:${SIM_EDGE_HTTPS_PORT}:127.0.0.1")
 STATE=.data/e2e.env
-ALL_STAGES="bootstrap servers sites deploy release rollback failure octane bun release_env redis waiting observability compose compose_redeploy compose_failure templates"
+ALL_STAGES="bootstrap servers sites deploy release rollback failure octane bun release_env redis waiting observability compose compose_redeploy compose_failure redis_network templates"
 STAGES="${ONLY:-${STAGES:-$ALL_STAGES}}"
 STAGES="${STAGES//,/ }"
 SKIP="${SKIP:-}"
@@ -150,10 +150,10 @@ wait_targets_ready() { # wait_targets_ready SITE_ID  (site targets finish prepar
     return 1
 }
 
-deploy_and_wait() { # deploy_and_wait SITE_ID COMMIT LABEL EXPECT(succeeded|failed) -> sets DEPLOYMENT_ID
+deploy_and_wait() { # deploy_and_wait SITE_ID COMMIT LABEL EXPECT(succeeded|failed) -> sets DEPLOYMENT_ID (COMMIT "" = the default)
     local site=$1 commit=$2 label=$3 expect=$4 s="" deadline=$((SECONDS + 1500))
     wait_targets_ready "$site" || return 1
-    api POST "/sites/$site/deployments" "{\"commit\":\"$commit\"}"
+    if [[ -n $commit ]]; then api POST "/sites/$site/deployments" "{\"commit\":\"$commit\"}"; else api POST "/sites/$site/deployments" '{}'; fi
     if [[ $API_CODE != 201 ]]; then bad "$label: POST deployments -> $API_CODE: $API_BODY"; return 1; fi
     DEPLOYMENT_ID=$(jq -r .data.id <<<"$API_BODY")
     while (( SECONDS < deadline )); do
@@ -595,6 +595,94 @@ stage_compose_failure() {
     while (( SECONDS < deadline )); do health=$(compose_get /health); [[ $health == ok ]] && break; sleep 1; done
     if [[ $health == ok && "$(compose_get / | jq -r .greeting 2>/dev/null)" == "hello v2" ]]; then ok "the previous healthy release serves again"; else bad "after rollback: health=$health body=$(compose_get /)"; fi
     if [[ "$(compose_get /get | jq -r .marker 2>/dev/null)" == "$COMPOSE_MARKER" ]]; then ok "redis data intact after the rollback"; else bad "redis data lost after rollback"; fi
+}
+
+# ---------------------------------------------------------------------------------------------- redis network
+redis_cli() { # redis_cli CONTAINER PASSWORD HOST PORT CMD... -> reply (5 s at most; the password through REDISCLI_AUTH)
+    local c=$1 pw=$2 host=$3 port=$4; shift 4
+    sx "$c" env REDISCLI_AUTH="$pw" timeout 5 redis-cli --no-auth-warning -h "$host" -p "$port" "$@" 2>&1 | tr -d '\r'
+}
+
+stage_redis_network() {
+    step "redis network: a site on app-1 reaches the Kiln Redis on app-2 over the private network; a compose stack's redis becomes a Kiln Redis its containers reach through docker0"
+    [[ -n ${SITE_EARLY:-} && -n ${SITE_API:-} ]] || { bad "needs the redis and waiting stages first"; return 1; }
+    api GET "/servers/$SERVER_srv_app_2"
+    local app2_ip app1_ip public_ip
+    app2_ip=$(jq -r '.data.private_ipv4 // empty' <<<"$API_BODY"); public_ip=$(jq -r '.data.ipv4 // empty' <<<"$API_BODY")
+    api GET "/servers/$SERVER_srv_app_1"
+    app1_ip=$(jq -r '.data.private_ipv4 // empty' <<<"$API_BODY")
+    if [[ $app2_ip =~ ^10\. && $app1_ip =~ ^10\. ]]; then ok "app-1 / app-2 private addresses $app1_ip / $app2_ip (provider private network: the sim's fleet network)"; else bad "private addresses: app-1 '$app1_ip' app-2 '$app2_ip'"; return 1; fi
+
+    # The cache instance (redis stage) listens on app-2's private address (the shop site of its environment runs on app-1
+    # too) and on docker0; never on a public address.
+    local bind; bind=$(sx srv-app-2 sed -n 's/^bind //p' /etc/kiln-redis/cache.conf | tr -d '\r')
+    if [[ " $bind " == *" 127.0.0.1 "* && " $bind " == *" $app2_ip "* && " $bind " == *" 172.17.0.1 "* ]]; then ok "cache binds $bind"; else bad "cache bind: '$bind' (want 127.0.0.1, $app2_ip, 172.17.0.1)"; fi
+    if [[ -n $public_ip && " $bind " == *" $public_ip "* ]]; then bad "cache listens on the public address $public_ip"; fi
+    if sx srv-app-2 bash -c 'grep -q "^protected-mode yes" /etc/kiln-redis/cache.conf && grep -q "^requirepass " /etc/kiln-redis/cache.conf'; then ok "protected-mode and requirepass stay"; else bad "protected-mode / requirepass missing"; fi
+
+    # The early site (Bun, app-1) references cache.REDIS_*: it gets app-2's private address.
+    api GET "/sites/$SITE_EARLY/env"
+    local env; env=$(jq -r '.data.content' <<<"$API_BODY" | grep -vE '^REDIS_(URL|HOST|PORT|PASSWORD)=')
+    env+=$'\nREDIS_URL=${{ cache.REDIS_URL }}\nREDIS_HOST=${{ cache.REDIS_HOST }}\nREDIS_PORT=${{ cache.REDIS_PORT }}\nREDIS_PASSWORD=${{ cache.REDIS_PASSWORD }}\n'
+    api PUT "/sites/$SITE_EARLY/env" "$(jq -n --arg c "$env" '{content: $c}')"
+    [[ $API_CODE == 200 ]] || { bad "PUT env (early) -> $API_CODE: $API_BODY"; return 1; }
+    deploy_and_wait "$SITE_EARLY" "$(git_head bun-demo)" "early (app-1) deploy with cache references" succeeded || return 1
+    local host port pw url
+    host=$(proc_env srv-app-1 '[s]rc/index.ts' REDIS_HOST); port=$(proc_env srv-app-1 '[s]rc/index.ts' REDIS_PORT)
+    pw=$(proc_env srv-app-1 '[s]rc/index.ts' REDIS_PASSWORD); url=$(proc_env srv-app-1 '[s]rc/index.ts' REDIS_URL)
+    if [[ $host == "$app2_ip" && $url == "redis://default:"*"@$app2_ip:$port" ]]; then ok "app-1 process env: REDIS_HOST $host, REDIS_URL redis://default:…@$host:$port"; else bad "app-1 env: REDIS_HOST='$host' REDIS_URL='${url//:*@/:…@}'"; return 1; fi
+    if [[ "$(redis_cli srv-app-1 "$pw" "$host" "$port" SET net-e2e from-app-1)" == OK && "$(redis_cli srv-app-2 "$pw" 127.0.0.1 "$port" GET net-e2e)" == from-app-1 ]]; then ok "app-1 writes to the instance on app-2 over the private network"; else bad "app-1 -> $host:$port: $(redis_cli srv-app-1 "$pw" "$host" "$port" PING)"; fi
+    if [[ "$(redis_cli srv-app-1 '' "$host" "$port" GET net-e2e)" == *NOAUTH* ]]; then ok "without the password: NOAUTH"; else bad "no password still works?"; fi
+    # db-1 runs no site of the environment: the firewall drops it (no answer at all).
+    if [[ "$(redis_cli srv-db-1 "$pw" "$host" "$port" PING)" != PONG ]]; then ok "db-1 (not a consumer) can't reach the instance"; else bad "db-1 reached the instance"; fi
+    local rules; rules=$(sx srv-app-2 nft list table inet kiln 2>/dev/null)
+    if grep -qE "ip saddr [^d]*$app1_ip[^d]* tcp dport $port accept" <<<"$rules" && grep -q "tcp dport $port drop" <<<"$rules"; then ok "app-2 firewall: $port open to $app1_ip (peers) and the Docker ranges only"; else bad "app-2 firewall: $(grep -E "dport $port" <<<"$rules" | tr -s '\t' ' ')"; fi
+
+    # A compose stack (inline: the sim's git server has no API to read a repository's compose file from) whose redis
+    # service (official image) becomes a Kiln Redis: taken out of the stack, the probe's REDIS_HOST rewritten
+    # (REDIS_PORT / REDIS_PASSWORD added); its healthcheck (compose up --wait) passes only when it reaches the instance
+    # through docker0 with the password.
+    local compose
+    compose=$(cat <<'YAML'
+services:
+  probe:
+    image: redis:7.4.1-alpine
+    command: ["sh", "-c", "while true; do REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli --no-auth-warning -h \"$$REDIS_HOST\" -p \"$$REDIS_PORT\" SET probe \"$$(hostname)\" >/dev/null; sleep 2; done"]
+    environment:
+      REDIS_HOST: cache
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli --no-auth-warning -h \"$$REDIS_HOST\" -p \"$$REDIS_PORT\" ping | grep -q PONG"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  cache:
+    image: redis:7.4.1-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "64mb"]
+YAML
+)
+    api POST /sites "$(jq -n --arg c "$compose" --arg s "$SERVER_srv_app_2" '{name: "compose-kiln", runtime: "compose", server_ids: [$s], compose_source: "inline", compose_content: $c, compose_services: {cache: {mode: "database", engine: "redis"}}}')"
+    [[ $API_CODE == 201 ]] || { bad "POST /sites (compose-kiln) -> $API_CODE: $API_BODY"; return 1; }
+    local site slug; site=$(jq -r .data.id <<<"$API_BODY"); slug=$(jq -r .data.slug <<<"$API_BODY")
+    save SITE_COMPOSE_KILN "$site"
+    if [[ "$(jq -r '.warnings // [] | length' <<<"$API_BODY")" == 0 ]]; then ok "compose-kiln created, cache taken out of the stack"; else bad "compose-kiln warnings: $(jq -c .warnings <<<"$API_BODY")"; fi
+    local inst="$slug-cache" deadline=$((SECONDS + 180))
+    while (( SECONDS < deadline )); do sx srv-app-2 grep -q '^bind .*172\.17\.0\.1' "/etc/kiln-redis/$inst.conf" 2>/dev/null && sx srv-app-2 systemctl is-active --quiet "redis-server@kiln-$inst.service" && break; sleep 2; done
+    if sx srv-app-2 systemctl is-active --quiet "redis-server@kiln-$inst.service"; then ok "Kiln Redis $inst running on app-2 (bind $(sx srv-app-2 sed -n 's/^bind //p' "/etc/kiln-redis/$inst.conf" | tr -d '\r'))"; else bad "instance $inst not running"; return 1; fi
+    if sx srv-app-2 grep -q '^appendonly yes' "/etc/kiln-redis/$inst.conf" && sx srv-app-2 grep -q '^maxmemory 64mb' "/etc/kiln-redis/$inst.conf"; then ok "the service's --appendonly yes / --maxmemory 64mb kept"; else bad "flags not kept: $(sx srv-app-2 grep -E '^(appendonly|maxmemory) ' "/etc/kiln-redis/$inst.conf" | tr '\n' ' ')"; fi
+    sleep 3 # the apply's result (container_host) is recorded right after the command
+    deploy_and_wait "$site" "" "compose-kiln deploy (probe healthy only through docker0 + password)" succeeded || return 1
+
+    local containers; containers=$(sx srv-app-2 bash -c "docker ps --filter label=kiln.site=$slug --format '{{.Label \"kiln.service\"}}'" | tr -d '\r' | sort | tr '\n' ' ')
+    if [[ $containers == "probe " ]]; then ok "the stack runs probe only (no redis container)"; else bad "stack containers: '$containers'"; fi
+    local cid envs c_host c_port c_pw
+    cid=$(sx srv-app-2 docker ps -q --filter "label=kiln.site=$slug" --filter label=kiln.service=probe | tr -d '\r' | head -1)
+    envs=$(sx srv-app-2 docker inspect "$cid" --format '{{range .Config.Env}}{{println .}}{{end}}' | tr -d '\r')
+    c_host=$(sed -n 's/^REDIS_HOST=//p' <<<"$envs"); c_port=$(sed -n 's/^REDIS_PORT=//p' <<<"$envs"); c_pw=$(sed -n 's/^REDIS_PASSWORD=//p' <<<"$envs")
+    if [[ $c_host == 172.17.0.1 && $c_port -ge 6380 && -n $c_pw ]]; then ok "probe container: REDIS_HOST 172.17.0.1, REDIS_PORT $c_port, REDIS_PASSWORD set"; else bad "probe env: host='$c_host' port='$c_port'"; fi
+    if [[ "$(redis_cli srv-app-2 "$c_pw" 127.0.0.1 "$c_port" GET probe)" == "${cid:0:12}" ]]; then ok "the probe container writes to the Kiln instance $inst"; else bad "probe key in $inst: '$(redis_cli srv-app-2 "$c_pw" 127.0.0.1 "$c_port" GET probe)' (want ${cid:0:12})"; fi
+    if [[ -z "$(redis_cli srv-app-2 "$c_pw" 127.0.0.1 "$c_port" GET net-e2e)" ]]; then ok "instances keep their data apart (cache's key not in $inst)"; else bad "data shared between instances"; fi
+    # Its environment's sites run on app-1 too, so app-2's firewall lets app-1 in for this port as well; db-1 stays out.
+    if [[ "$(redis_cli srv-db-1 "$c_pw" "$app2_ip" "$c_port" PING)" != PONG ]]; then ok "db-1 can't reach $inst"; else bad "db-1 reached $inst"; fi
 }
 
 wait_deployment() { # wait_deployment ID -> final status (sets API_BODY)

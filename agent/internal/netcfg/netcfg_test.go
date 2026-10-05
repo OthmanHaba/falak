@@ -5,12 +5,15 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kiln/agent/internal/commands"
 	"github.com/kiln/agent/internal/hostfs"
@@ -93,6 +96,41 @@ func TestRenderRulesetContainerPorts(t *testing.T) {
 	}
 }
 
+// A Redis instance used over a private network: its consumers' addresses are accepted (any interface) besides the
+// containers, then the port is dropped for everyone else — the private network's accept-all rule included.
+func TestRenderRulesetContainerPortsWithPeers(t *testing.T) {
+	p := payload()
+	p.Rules = append([]Rule{{ID: "wg-net-interface", Protocol: "any", Interface: "wg-kiln"}}, p.Rules...)
+	p.ContainerPorts = []ContainerPorts{
+		{ID: "redis-cache", Protocol: "tcp", Ports: []string{"6380"}, Sources: []string{"172.16.0.0/12"}, Peers: []string{"10.90.0.2", "10.0.1.7"}, Comment: "Redis cache"},
+		// Only peers (container access off: no Docker ranges configured).
+		{ID: "redis-jobs", Protocol: "tcp", Ports: []string{"6381"}, Peers: []string{"10.90.0.4"}, Comment: "Redis jobs"},
+	}
+	rs, err := RenderRuleset(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := `iifname "br-*" ip saddr 172.16.0.0/12 tcp dport 6380 accept comment "kiln:containers-redis-cache Redis cache"`
+	peers := `ip saddr { 10.90.0.2, 10.0.1.7 } tcp dport 6380 accept comment "kiln:containers-redis-cache-peers Redis cache"`
+	drop := `tcp dport 6380 drop comment "kiln:containers-redis-cache-only only containers"`
+	for _, w := range []string{bridge, peers, drop, `ip saddr 10.90.0.4 tcp dport 6381 accept`, `tcp dport 6381 drop`} {
+		if !strings.Contains(rs, w) {
+			t.Fatalf("missing %q in\n%s", w, rs)
+		}
+	}
+	if strings.Contains(rs, `tcp dport 6381 accept comment "kiln:containers-redis-jobs Redis jobs"`) {
+		t.Fatalf("bridge rule without sources:\n%s", rs)
+	}
+	if !(strings.Index(rs, peers) < strings.Index(rs, drop) && strings.Index(rs, drop) < strings.Index(rs, `"kiln:wg-net-interface"`)) {
+		t.Fatalf("order:\n%s", rs)
+	}
+	for _, bad := range []ContainerPorts{{ID: "x", Ports: []string{"6380"}, Peers: []string{"nope"}}, {ID: "x", Ports: []string{"6380"}, Peers: []string{}}} {
+		if _, err := RenderRuleset(FirewallPayload{ContainerPorts: []ContainerPorts{bad}}); !commands.IsPayloadError(err) {
+			t.Fatalf("accepted %+v", bad)
+		}
+	}
+}
+
 func TestFirewallApply(t *testing.T) {
 	root := t.TempDir()
 	applied := false
@@ -160,6 +198,8 @@ func TestWireGuard(t *testing.T) {
 	f.OnFunc("systemctl enable --now", func(runnertest.Call) (runner.Result, error) { active = true; return runner.Result{}, nil })
 	f.On("wg-quick strip", runner.Result{Stdout: []byte("[Interface]\nPrivateKey = x\n")})
 	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
+	os.MkdirAll(filepath.Join(root, "usr/bin"), 0o755)
+	os.WriteFile(filepath.Join(root, "usr/bin/wg-quick"), []byte("#!/bin/bash\n"), 0o755)
 	peerKey := base64.StdEncoding.EncodeToString(make([]byte, 32))
 	p := WireGuardPayload{Address: "10.90.0.3/24", Peers: []Peer{{PublicKey: peerKey, Endpoint: "203.0.113.1:51820", AllowedIPs: []string{"10.90.0.1/32"}, PersistentKeepalive: 25}}}
 	r, err := n.WireGuardApply(context.Background(), p, st)
@@ -207,6 +247,51 @@ func TestWireGuard(t *testing.T) {
 	}
 	if _, err := os.Stat(keyFile); err != nil {
 		t.Fatal("key should be kept for identity stability")
+	}
+}
+
+// A fresh Ubuntu server has no wireguard-tools (provisioning doesn't install them): the first apply installs them
+// (apt-get update first) before it enables wg-quick@<interface>; once installed nothing is installed again.
+func TestWireGuardInstallsTheToolsWhenMissing(t *testing.T) {
+	root := t.TempDir()
+	f := &runnertest.Fake{}
+	f.On("systemctl is-active", runner.Result{ExitCode: 3})
+	f.OnFunc("apt-get install", func(runnertest.Call) (runner.Result, error) {
+		os.MkdirAll(filepath.Join(root, "usr/bin"), 0o755)
+		os.WriteFile(filepath.Join(root, "usr/bin/wg-quick"), []byte("#!/bin/bash\n"), 0o755)
+		return runner.Result{}, nil
+	})
+	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
+	p := WireGuardPayload{Interface: "wg-a1b2c3d4", Address: "10.90.0.3/24"}
+	if _, err := n.WireGuardApply(context.Background(), p, st); err != nil {
+		t.Fatal(err)
+	}
+	lines := f.Lines()
+	idx := func(prefix string) int {
+		return slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(l, prefix) })
+	}
+	inst, upd, enable := idx("apt-get install"), idx("apt-get update"), idx("systemctl enable --now wg-quick@wg-a1b2c3d4")
+	if upd < 0 || inst < upd || enable < inst || !strings.Contains(lines[inst], "wireguard-tools") {
+		t.Fatal(lines)
+	}
+	f.Reset()
+	if _, err := n.WireGuardApply(context.Background(), p, st); err != nil {
+		t.Fatal(err)
+	}
+	if idx := slices.IndexFunc(f.Lines(), func(l string) bool { return strings.HasPrefix(l, "apt-get") || strings.HasPrefix(l, "dpkg-query") }); idx >= 0 {
+		t.Fatal(f.Lines())
+	}
+
+	// The install failing fails the command before anything is written.
+	root2 := t.TempDir()
+	f2 := &runnertest.Fake{}
+	f2.On("apt-get install", runner.Result{ExitCode: 100, Stderr: []byte("E: Unable to locate package wireguard-tools")})
+	n2 := New(Deps{Runner: f2, FS: hostfs.FS{Root: root2}})
+	if _, err := n2.WireGuardApply(context.Background(), p, st); err == nil || !strings.Contains(err.Error(), "install wireguard-tools") {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root2, "etc/wireguard/wg-a1b2c3d4.conf")); err == nil {
+		t.Fatal("config written although the tools are missing")
 	}
 }
 
@@ -267,5 +352,76 @@ func TestTunnelApplyInstallsRunsAndRemoves(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, p)); err == nil {
 			t.Errorf("%s left behind", p)
 		}
+	}
+}
+
+// Peers are accepted on the interface they arrive on: the one the control plane names (a Kiln WireGuard network's,
+// whether or not its config exists yet), a Kiln WireGuard network's range from its config, or the provider NIC whose
+// subnet holds them; else on any interface. The route is never asked: a private address without a specific route goes
+// through the default route (eth0), which would pin a WireGuard peer to the public NIC.
+func TestFirewallApplyRestrictsPeersToTheirInterface(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "etc/wireguard"), 0o700)
+	os.WriteFile(filepath.Join(root, "etc/wireguard/wg-a1b2c3d4.conf"), []byte("# Managed by Kiln (net.wireguard.apply) — do not edit\n[Interface]\nPrivateKey = x\nAddress = 10.90.0.1/24\nListenPort = 51820\n"), 0o600)
+	os.WriteFile(filepath.Join(root, "etc/wireguard/wg0.conf"), []byte("[Interface]\nAddress = 10.91.0.1/24\n"), 0o600)
+	old := localNets
+	localNets = func() ([]localNet, error) {
+		parse := func(iface, cidr string) localNet {
+			ip, n, _ := net.ParseCIDR(cidr)
+			n.IP = ip
+			return localNet{iface: iface, net: n}
+		}
+		return []localNet{parse("lo", "127.0.0.1/8"), parse("eth0", "203.0.113.5/24"), parse("eth1", "10.114.0.2/20"), parse("docker0", "172.17.0.1/16")}, nil
+	}
+	t.Cleanup(func() { localNets = old })
+	f := &runnertest.Fake{}
+	// What a real host answers for any private address: the default route.
+	f.On("ip -o route get", runner.Result{Stdout: []byte("10.92.0.2 via 203.0.113.1 dev eth0 src 203.0.113.5 uid 0 \\    cache \n")})
+	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
+	p := payload()
+	p.ContainerPorts = []ContainerPorts{{ID: "redis-cache", Protocol: "tcp", Ports: []string{"6380"},
+		// 10.92.0.2: a WireGuard network whose config hasn't arrived on this server yet; the control plane names it.
+		Peers:          []string{"10.90.0.2", "10.114.0.3", "10.92.0.2", "10.91.0.2", "172.17.0.9", "10.90.0.5", "10.0.1.7"},
+		PeerInterfaces: map[string]string{"10.92.0.2": "wg-e5f6a7b8"},
+		Comment:        "Redis cache"}}
+	if _, err := n.FirewallApply(context.Background(), p, st); err != nil {
+		t.Fatal(err)
+	}
+	rs, _ := os.ReadFile(filepath.Join(root, RulesetPath))
+	for _, w := range []string{
+		`iifname "wg-a1b2c3d4" ip saddr { 10.90.0.2, 10.90.0.5 } tcp dport 6380 accept comment "kiln:containers-redis-cache-peers Redis cache"`,
+		`iifname "wg-e5f6a7b8" ip saddr 10.92.0.2 tcp dport 6380 accept`,
+		`iifname "eth1" ip saddr 10.114.0.3 tcp dport 6380 accept`,
+		// Not Kiln's WireGuard, no local subnet, or a container bridge: any interface, as before.
+		"\t\tip saddr { 10.91.0.2, 172.17.0.9, 10.0.1.7 } tcp dport 6380 accept",
+	} {
+		if !strings.Contains(string(rs), w) {
+			t.Fatalf("missing %q in\n%s", w, rs)
+		}
+	}
+	if strings.Contains(string(rs), `iifname "eth0"`) || f.Ran("ip -o route get 10.92.0.2") {
+		t.Fatalf("a peer pinned to the default route's interface:\n%s", rs)
+	}
+	if strings.Index(string(rs), `kiln:containers-redis-cache-peers`) > strings.Index(string(rs), `kiln:containers-redis-cache-only`) {
+		t.Fatalf("peers after the drop:\n%s", rs)
+	}
+	// A bad interface name from the payload is refused.
+	p.ContainerPorts[0].PeerInterfaces = map[string]string{"10.92.0.2": "wg x"}
+	if _, err := n.FirewallApply(context.Background(), p, st); !commands.IsPayloadError(err) {
+		t.Fatal(err)
+	}
+}
+
+// Too little time left for the install: fail before apt starts (a killed install leaves dpkg interrupted).
+func TestWireGuardDoesNotStartAnInstallThatCannotFinish(t *testing.T) {
+	f := &runnertest.Fake{}
+	n := New(Deps{Runner: f, FS: hostfs.FS{Root: t.TempDir()}})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if _, err := n.WireGuardApply(ctx, WireGuardPayload{Interface: "wg-a1b2c3d4", Address: "10.90.0.3/24"}, st); err == nil || !strings.Contains(err.Error(), "retried with more time") {
+		t.Fatal(err)
+	}
+	if len(f.Lines()) != 0 {
+		t.Fatal(f.Lines())
 	}
 }

@@ -41,8 +41,10 @@ interface DatabaseConnections
      * containerized consumer (Docker, compose, function) on that server the server's own address (private network,
      * provider private IP, public IP), which its containers reach through the Docker bridge. For a dedicated
      * database server: its private network (WireGuard) address, else its provider private IP, else its public IP.
-     * Credentials are those of the oldest user granted access. Redis / Valkey instances: {@see REDIS_KEYS}, host
-     * 127.0.0.1 (instances listen on localhost only for now; {@see unreachable()} names other consumers).
+     * Credentials are those of the oldest user granted access. Redis / Valkey instances: {@see REDIS_KEYS}; host
+     * 127.0.0.1 for native sites on its server, the Docker bridge address (docker0) for containers there, and for
+     * other servers the instance server's private address on a network they share (WireGuard first, then the
+     * provider private network) — never a public one ({@see unreachable()} explains a consumer it can't serve).
      *
      * @param  ?DatabaseConsumer  $consumer  who connects (null: a native consumer)
      * @return array<string, string> empty when the database does not exist
@@ -52,7 +54,9 @@ interface DatabaseConnections
     /**
      * Why the consumer cannot connect to the host in {@see HOST_KEYS}, or null when it can. An engine on an app/worker
      * server is reachable from that server only: by native sites, and by containers once the server's agent supports
-     * container access (feature db.containers) — not from other servers.
+     * container access (feature db.containers) — not from other servers. A Redis / Valkey instance (agents with
+     * db.redis.network): containers on its server once it listens on the Docker bridge, other servers only over a
+     * private network both share and once it listens there.
      */
     public function unreachable(string $databaseId, DatabaseConsumer $consumer): ?string;
 }

@@ -170,12 +170,13 @@ final class EloquentComposeSites implements ComposeSites
             Site::withoutEvents(fn () => $site->forceFill(['compose_snapshot' => $yaml])->save());
         }
 
-        // Kiln's adjustments (docs/plans/COMPOSE_APPS.md): extracted services out, their variables rewritten and,
-        // for repository projects, mounted repository files pointed at <release>/repo/.
+        // Kiln's adjustments (docs/plans/COMPOSE_APPS.md), at every deploy (an inline file is stored as written):
+        // extracted services out, their variables rewritten, a restart policy where none is set and, for repository
+        // projects, mounted repository files pointed at <release>/repo/.
         $config = $site->composeConfig();
         $adjustedWarnings = [];
 
-        if ($config !== null && ($repoFiles !== null || $config->extracted() !== [])) {
+        if ($config !== null) {
             try {
                 $loaded = YamlComposeInspector::load($yaml);
             } catch (ParseException $e) {

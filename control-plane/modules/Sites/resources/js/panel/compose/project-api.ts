@@ -16,7 +16,7 @@ export interface InspectedService {
     healthcheck: boolean;
     depends_on: string[];
     variables: string[];
-    database_engine: 'postgresql' | 'mysql' | 'mariadb' | null;
+    database_engine: 'postgresql' | 'mysql' | 'mariadb' | 'redis' | 'valkey' | null;
     mode: ComposeServiceChoice['mode'];
     /** Other services of the stack it uses (depends_on, hosts in its environment). */
     uses?: string[];
@@ -52,7 +52,16 @@ export interface Inspection {
     adjusted?: string;
 }
 
-export const ENGINE_LABELS: Record<string, string> = { postgresql: 'PostgreSQL', mysql: 'MySQL', mariadb: 'MariaDB' };
+export const ENGINE_LABELS: Record<string, string> = {
+    postgresql: 'PostgreSQL',
+    mysql: 'MySQL',
+    mariadb: 'MariaDB',
+    redis: 'Redis',
+    valkey: 'Valkey',
+};
+
+/** Redis / Valkey: a Kiln instance (not a database inside an engine). */
+export const KEY_VALUE_ENGINES = ['redis', 'valkey'];
 
 /**
  * Debounced POST to an inspect endpoint; the latest answer wins. `body` null skips (nothing to inspect yet).

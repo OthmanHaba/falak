@@ -30,7 +30,13 @@ interface ComposeServiceExtraction
      * POSTGRES_DB / MYSQL_DATABASE / MARIADB_DATABASE, else <slug>_<service>) with its own user, or the existing
      * $databaseId of the same engine. Placed next to the stack in its environment.
      *
-     * @param  string  $engine  postgresql | mysql | mariadb (the leader's engine)
+     * Redis / Valkey (official `redis` / `valkey/valkey` images only): a new instance <slug>-<service> on the leader,
+     * which must run that engine (else a ValidationException saying why: the other cache engine, not installed, or not
+     * offered for its OS), with the service's `--maxmemory` / `--maxmemory-policy` / `--appendonly yes` flags; the
+     * stack's containers reach it through the Docker bridge (Databases' Redis network access). The container's data is
+     * not copied.
+     *
+     * @param  string  $engine  postgresql | mysql | mariadb (the leader's engine) | redis | valkey (the image's)
      *
      * @throws ValidationException keys: service, engine, database_id, compose
      * @throws SourceControlException

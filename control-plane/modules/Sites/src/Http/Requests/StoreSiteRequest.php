@@ -88,7 +88,7 @@ final class StoreSiteRequest extends FormRequest
             'compose_services' => ['nullable', 'array', 'max:100'],
             'compose_services.*' => ['array:mode,engine,database_id,site'],
             'compose_services.*.mode' => ['required', Rule::in([ComposeConfig::MODE_KEEP, ComposeConfig::MODE_DATABASE, ComposeConfig::MODE_SITE])],
-            'compose_services.*.engine' => ['nullable', Rule::in(['postgresql', 'mysql', 'mariadb'])],
+            'compose_services.*.engine' => ['nullable', Rule::in(['postgresql', 'mysql', 'mariadb', 'redis', 'valkey'])],
             'compose_services.*.database_id' => ['nullable', 'string', 'size:26'],
             'compose_services.*.site' => ['nullable', 'array'],
             'compose_adjustments' => ['nullable', 'array:keep_binds'],

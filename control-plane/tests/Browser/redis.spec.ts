@@ -95,6 +95,10 @@ for (const theme of ['dark', 'light'] as const) {
             await expect(page.getByText(`\${{ sessions.${key} }}`, { exact: true })).toBeVisible();
         }
         await expect(page.getByRole('tab', { name: 'Databases & users' })).toHaveCount(0);
+        // Who can connect (phase 2): the sites of the environment, each with its host or why it can't connect (the demo
+        // agent has no db.redis.network: other servers and containers are told to update it).
+        await expect(page.getByRole('heading', { name: 'Who can connect' })).toBeVisible();
+        await expect(page.getByTestId('instance-access').getByRole('listitem').first()).toBeVisible();
         await shot(page, theme, 'overview');
 
         // Rotate password: applied to the instance (queued for app-1), the reveal is reset.

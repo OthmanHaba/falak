@@ -298,7 +298,22 @@ func (a Apt) InstallRaw(ctx context.Context, pkgs []string, extra ...string) err
 		return nil
 	}
 	args := append(append(append([]string{"install"}, aptOpts...), extra...), pkgs...)
-	_, err := runner.Check(ctx, a.R, runner.Cmd{Name: "apt-get", Args: args, Env: AptEnv, Stdout: a.Stdout, Stderr: a.Stderr})
+	return a.aptGet(ctx, args)
+}
+
+// aptGet runs apt-get. When an earlier dpkg run was interrupted (an install killed half way: apt then refuses with
+// "dpkg was interrupted, you must manually run 'dpkg --configure -a'"), it finishes that run first and tries again once.
+func (a Apt) aptGet(ctx context.Context, args []string) error {
+	cmd := runner.Cmd{Name: "apt-get", Args: args, Env: AptEnv, Stdout: a.Stdout, Stderr: a.Stderr}
+	res, err := runner.Check(ctx, a.R, cmd)
+	if err == nil || !strings.Contains(string(res.Stderr)+string(res.Stdout), "dpkg --configure -a") {
+		return err
+	}
+	a.warn("warning: an earlier package installation was interrupted; running dpkg --configure -a")
+	if _, cerr := runner.Check(ctx, a.R, runner.Cmd{Name: "dpkg", Args: []string{"--configure", "-a", "--force-confdef", "--force-confold"}, Env: AptEnv, Stdout: a.Stdout, Stderr: a.Stderr}); cerr != nil {
+		return fmt.Errorf("dpkg --configure -a (finishing an interrupted installation): %w", cerr)
+	}
+	_, err = runner.Check(ctx, a.R, cmd)
 	return err
 }
 
@@ -334,8 +349,7 @@ func (a Apt) Remove(ctx context.Context, pkgs []string) ([]string, error) {
 		return nil, nil
 	}
 	args := append(append([]string{"remove"}, aptOpts...), rm...)
-	_, err = runner.Check(ctx, a.R, runner.Cmd{Name: "apt-get", Args: args, Env: AptEnv, Stdout: a.Stdout, Stderr: a.Stderr})
-	return rm, err
+	return rm, a.aptGet(ctx, args)
 }
 
 // Upgradable returns installed packages whose candidate differs from the installed version.

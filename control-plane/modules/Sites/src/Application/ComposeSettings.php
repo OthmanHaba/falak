@@ -338,6 +338,22 @@ final class ComposeSettings
             try {
                 if ($item['mode'] === ComposeConfig::MODE_DATABASE) {
                     $extraction->toDatabase($site->id, $item['service'], $item['database_id'], (string) $item['engine'], $compose);
+                    $decision = (array) ($site->fresh()?->compose_services[$item['service']] ?? []);
+                    $tls = array_map('strval', (array) ($decision['tls_references'] ?? []));
+                    $unclear = array_map('strval', (array) ($decision['unclear_companions'] ?? []));
+                    $one = fn (array $list, string $single, string $plural) => count($list) === 1 ? $single : $plural;
+
+                    if ($tls !== []) {
+                        $warnings[] = "{$item['service']}: ".implode(', ', $tls).' '.$one($tls, 'connects', 'connect')." over TLS (rediss:// / valkeys://), which a Kiln instance doesn't offer, so ".$one($tls, 'it was', 'they were')." left pointing at {$item['service']}: point ".$one($tls, 'it', 'them')." at the Kiln instance's REDIS_URL (redis://) yourself.";
+                    }
+
+                    if (($healthchecks = array_map('strval', (array) ($decision['healthchecks'] ?? []))) !== []) {
+                        $warnings[] = "{$item['service']}: the healthcheck of ".implode(', ', $healthchecks).' still '.$one($healthchecks, 'names', 'name')." {$item['service']}, which no longer runs in the stack, so ".$one($healthchecks, 'it fails', 'they fail').': point '.$one($healthchecks, 'it', 'them')." at the Kiln service's host and port (and password) from the service's variables — Kiln rewrites variables, not commands.";
+                    }
+
+                    if ($unclear !== []) {
+                        $warnings[] = "{$item['service']}: ".implode(', ', $unclear).' '.$one($unclear, 'was', 'were').' left as '.$one($unclear, 'it is', 'they are').": next to a host that pointed at {$item['service']}, but also to one pointing at another service, so Kiln can't tell whose ".$one($unclear, 'it is', 'they are').'. If '.$one($unclear, 'it belongs', 'they belong')." to {$item['service']}, set ".$one($unclear, 'it', 'them')." to the Kiln instance's REDIS_PORT / REDIS_PASSWORD (the instance listens on 6380+ and has a password).";
+                    }
                 } else {
                     $created = $extraction->toSite($site->id, $item['service'], $item['site'], $compose);
                     array_push($warnings, ...$this->reachWarnings($site, $item['service'], $created));

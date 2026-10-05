@@ -216,7 +216,7 @@ it('exposes REDIS_* variables to native consumers on the server and explains why
 
     expect($connections->unreachable($data->id, new DatabaseConsumer('shop', [$engine->server_id], false)))->toBeNull()
         ->and($connections->unreachable($data->id, new DatabaseConsumer('shop', [$engine->server_id], true)))->toContain('runs in a container')
-        ->and($connections->unreachable($data->id, new DatabaseConsumer('shop', [$engine->server_id, '01j9zq4n8v2m6r0t3w5y7b9d1f'], false)))->toContain('accepts connections from that server only');
+        ->and($connections->unreachable($data->id, new DatabaseConsumer('shop', [$engine->server_id, '01j9zq4n8v2m6r0t3w5y7b9d1f'], false)))->toContain('only accepts connections from that server itself');
 
     expect(app(DatabaseDirectory::class)->forServer($engine->server_id)[0]->port)->toBe(6380);
 });

@@ -29,6 +29,9 @@ final readonly class ServerData
         public ?string $cacheEngine,
         public bool $docker,
         public string $unixUser,
+        // Provider servers: the credential (account) Kiln created it with, and its region.
+        public ?string $providerCredentialId = null,
+        public ?string $region = null,
     ) {}
 
     public function isActive(): bool

@@ -150,10 +150,18 @@ export interface ConnectionHost {
     hint: string;
 }
 
+/** Redis / Valkey: a site of the instance's environment, and the host its references resolve to (or why not). */
+export interface ConnectionAccess {
+    name: string;
+    host: string | null;
+    reason: string | null;
+}
+
 export interface Connection {
     engine: EngineName;
     kind: EngineKind;
     driver: string;
     port: number;
     hosts: ConnectionHost[];
+    access?: ConnectionAccess[];
 }

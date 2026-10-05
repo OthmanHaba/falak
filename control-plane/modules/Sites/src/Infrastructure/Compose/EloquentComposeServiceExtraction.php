@@ -10,11 +10,13 @@ use Kiln\Databases\Contracts\Data\DatabaseData;
 use Kiln\Databases\Contracts\DatabaseDirectory;
 use Kiln\Databases\Contracts\DatabaseProvisioner;
 use Kiln\Projects\Contracts\ProjectDirectory;
+use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Application\Actions\SaveEnvironment;
 use Kiln\Sites\Application\Compose\ComposeInterpolation;
 use Kiln\Sites\Application\Compose\ComposeNetworks;
 use Kiln\Sites\Application\Compose\ComposeProject;
 use Kiln\Sites\Application\Compose\ComposeProjectException;
+use Kiln\Sites\Application\Compose\RedisCommand;
 use Kiln\Sites\Application\Compose\RepoComposeInspection;
 use Kiln\Sites\Application\Compose\ServiceReferences;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
@@ -39,12 +41,20 @@ use Throwable;
 
 final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
 {
-    /** Images Kiln can replace with a managed database, by engine. */
+    /**
+     * Images Kiln can replace with a managed database, by engine (SQL: the image name; Redis / Valkey: the official
+     * repositories only — redis-stack, bitnami/redis etc. stay containers).
+     */
     private const ENGINE_IMAGES = [
         'postgresql' => ['postgres', 'postgis', 'pgvector', 'timescaledb'],
         'mysql' => ['mysql', 'percona'],
         'mariadb' => ['mariadb'],
+        'redis' => ['redis'],
+        'valkey' => ['valkey/valkey'],
     ];
+
+    /** Key-value engines: an instance per service, named <stack>-<service>. */
+    private const KEY_VALUE = ['redis', 'valkey'];
 
     /** The service's database name, by engine (official image conventions). */
     private const NAME_KEYS = [
@@ -61,6 +71,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         private readonly SiteDomains $domains,
         private readonly ComposeSites $composeSites,
         private readonly SourceControlGateway $sourceControl,
+        private readonly ServerDirectory $servers,
     ) {}
 
     public function toDatabase(string $siteId, string $service, ?string $databaseId, string $engine, ?string $compose = null): DatabaseData
@@ -70,14 +81,17 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         $engine = strtolower($engine);
 
         if (! array_key_exists($engine, self::ENGINE_IMAGES)) {
-            throw ValidationException::withMessages(['engine' => 'Kiln manages PostgreSQL, MySQL and MariaDB databases.']);
+            throw ValidationException::withMessages(['engine' => 'Kiln manages PostgreSQL, MySQL, MariaDB, Redis and Valkey databases.']);
         }
 
+        $keyValue = in_array($engine, self::KEY_VALUE, true);
         $image = strtolower((string) ($definition['image'] ?? ''));
-        $repository = basename(explode(':', explode('@', $image)[0])[0]);
+        $repository = $keyValue ? self::repository($image) : basename(self::repository($image));
 
-        if ($image !== '' && ! in_array($repository, self::ENGINE_IMAGES[$engine], true)) {
-            throw ValidationException::withMessages(['engine' => "Service {$service} runs {$image}, not a ".self::label($engine).' image.']);
+        if (($image !== '' || $keyValue) && ! in_array($repository, self::ENGINE_IMAGES[$engine], true)) {
+            throw ValidationException::withMessages(['engine' => $image === ''
+                ? "Service {$service} has no image: only services running the official ".self::label($engine).' image can become a Kiln '.self::label($engine).'.'
+                : "Service {$service} runs {$image}, not ".($keyValue ? 'the official '.self::label($engine).' image' : 'a '.self::label($engine).' image').'.']);
         }
 
         $existing = null;
@@ -108,21 +122,46 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             throw ValidationException::withMessages(['service' => 'The stack has no server to create the database on.']);
         }
 
+        if ($existing === null && $keyValue) {
+            $this->assertRunsCache((string) $leader, $engine, $service);
+        }
+
         $this->claim($stack, $service);
 
         try {
-            $database = $existing ?? $this->databases->create($stack->organization_id, (string) $leader, $engine, $this->databaseName($stack, $service, $engine, $definition, (string) $leader), Auth::id());
+            $database = $existing ?? ($keyValue
+                ? $this->databases->create($stack->organization_id, (string) $leader, $engine, $this->instanceName($stack, $service, (string) $leader), Auth::id(), RedisCommand::settings($definition['command'] ?? null))
+                : $this->databases->create($stack->organization_id, (string) $leader, $engine, $this->databaseName($stack, $service, $engine, $definition, (string) $leader), Auth::id()));
         } catch (Throwable $e) {
             $this->release($stack, $service);
 
             throw $e;
         }
 
-        $this->record($stack, $service, [
+        $decision = [
             'mode' => 'database',
             'database_id' => $database->id,
-            'rewrites' => ServiceReferences::find($document, $service, 'database', $this->stackVariables($stack)),
-        ]);
+            'rewrites' => ServiceReferences::find($document, $service, $keyValue ? 'cache' : 'database', $this->stackVariables($stack)),
+        ];
+
+        // rediss:// / valkeys:// values keep pointing at the service: a Kiln instance has no TLS (ComposeSettings warns).
+        if ($keyValue && ($tls = ServiceReferences::tlsReferences($document, $service, $this->stackVariables($stack))) !== []) {
+            $decision['tls_references'] = $tls;
+        }
+
+        // REDIS_PORT / REDIS_PASSWORD next to a host of another prefix, in a group that also points at another service:
+        // left as they are (ComposeSettings warns).
+        if ($keyValue && ($unclear = ServiceReferences::unclearCompanions($document, $service, $this->stackVariables($stack))) !== []) {
+            $decision['unclear_companions'] = $unclear;
+        }
+
+        // Healthchecks of the remaining services that name the service (`redis-cli -h cache ping`, `pg_isready -h db`): a
+        // command isn't rewritten (its host, port and password flags differ per tool), so ComposeSettings warns.
+        if (($healthchecks = ServiceReferences::healthchecksNaming($document, $service)) !== []) {
+            $decision['healthchecks'] = $healthchecks;
+        }
+
+        $this->record($stack, $service, $decision);
 
         // On the canvas "<stack> <service>" (handle e.g. shop-db): the stack's own name is usually the database's too.
         ComposeServiceExtracted::dispatch($stack->id, $stack->organization_id, $service, 'database', $database->id, "{$stack->name} {$service}");
@@ -554,7 +593,8 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             }
 
             $variables = array_map('strval', (array) ($current->variables ?? []));
-            $next = array_replace($variables, array_intersect_key($replacements, $variables));
+            // A Kiln Redis' REDIS_PORT / REDIS_PASSWORD join a REDIS_HOST that had none (as in the stack).
+            $next = array_replace($variables, array_intersect_key($replacements, $variables), array_intersect_key($replacements, ['REDIS_PORT' => true, 'REDIS_PASSWORD' => true]));
 
             if ($next !== $variables) {
                 app(SaveEnvironment::class)($site, $next, (array) ($current->exposed ?? []), Auth::id(), 'site.environment_updated');
@@ -587,7 +627,76 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             'postgresql' => 'PostgreSQL',
             'mysql' => 'MySQL',
             'mariadb' => 'MariaDB',
+            'redis' => 'Redis',
+            'valkey' => 'Valkey',
             default => $engine,
         };
+    }
+
+    /** "docker.io/library/redis:7-alpine@sha256:…" → "redis"; "valkey/valkey:8" → "valkey/valkey". */
+    private static function repository(string $image): string
+    {
+        $name = explode('@', $image)[0];
+        // A tag follows the last ':' after the last '/' (a registry may carry a port: registry:5000/redis).
+        $slash = strrpos($name, '/');
+        $colon = strrpos($name, ':');
+
+        if ($colon !== false && ($slash === false || $colon > $slash)) {
+            $name = substr($name, 0, $colon);
+        }
+
+        return (string) preg_replace('#^(docker\.io/)?(library/)?#', '', $name);
+    }
+
+    /**
+     * The stack's server must run the engine (one cache engine per server): a clear error when it runs the other one,
+     * none (install it first), or can't run Valkey at all (servers.caches_by_os).
+     *
+     * @throws ValidationException
+     */
+    private function assertRunsCache(string $serverId, string $engine, string $service): void
+    {
+        $server = $this->servers->find($serverId);
+        $label = self::label($engine);
+        $name = $server?->name ?? 'the stack\'s server';
+        $running = $server?->cacheEngine;
+
+        if ($running === $engine) {
+            return;
+        }
+
+        if ($running !== null) {
+            throw ValidationException::withMessages(['engine' => "{$service} runs {$label}, but {$name} runs ".self::label($running)." (one cache engine per server). Keep {$service} in the stack, or switch its image to ".($running === 'redis' ? 'redis' : 'valkey/valkey').'.']);
+        }
+
+        if (! in_array($engine, $this->servers->installableCaches($serverId), true)) {
+            throw ValidationException::withMessages(['engine' => "{$label} isn't available for {$name}'s operating system (Kiln offers Valkey on Ubuntu 24.04, 26.04 and Debian 13). Keep {$service} in the stack, or switch its image to redis."]);
+        }
+
+        throw ValidationException::withMessages(['engine' => "{$name} doesn't run {$label} yet: install it first (Servers → {$name} → Settings), then pick Kiln database for {$service} again."]);
+    }
+
+    /**
+     * An instance name for the service: <stack>-<service> (Redis / Valkey names: a-z first, then a-z 0-9 _ -, at most
+     * 41), then -2, -3… when the server already has it.
+     */
+    private function instanceName(Site $stack, string $service, string $serverId): string
+    {
+        $base = trim((string) preg_replace('/[^a-z0-9_-]+/', '-', Str::lower("{$stack->slug}-{$service}")), '-_');
+        $base = preg_match('/^[a-z]/', $base) === 1 ? $base : "r-{$base}";
+        $base = rtrim(substr($base, 0, 41), '-_');
+        $taken = array_map(fn (DatabaseData $d) => strtolower($d->name), $this->databaseDirectory->forServer($serverId));
+
+        if (! in_array($base, [...$taken, 'default', 'kiln'], true)) {
+            return $base;
+        }
+
+        for ($i = 2; ; $i++) {
+            $candidate = rtrim(substr($base, 0, 41 - strlen("-{$i}")), '-_')."-{$i}";
+
+            if (! in_array($candidate, $taken, true)) {
+                return $candidate;
+            }
+        }
     }
 }

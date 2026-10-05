@@ -150,3 +150,33 @@ func TestAptCandidate(t *testing.T) {
 		}
 	}
 }
+
+// An install killed half way (a command timeout) leaves dpkg interrupted: the next install finishes it first.
+func TestAptInstallFinishesAnInterruptedDpkgRun(t *testing.T) {
+	interrupted := true
+	f := &runnertest.Fake{}
+	f.OnFunc("apt-get install", func(runnertest.Call) (runner.Result, error) {
+		if interrupted {
+			return runner.Result{ExitCode: 100, Stderr: []byte("E: dpkg was interrupted, you must manually run 'dpkg --configure -a' to correct the problem.\n")}, nil
+		}
+		return runner.Result{}, nil
+	})
+	f.OnFunc("dpkg --configure -a", func(runnertest.Call) (runner.Result, error) { interrupted = false; return runner.Result{}, nil })
+	if err := (Apt{R: f, FS: aptSources(t, nil)}).InstallRaw(context.Background(), []string{"wireguard-tools"}); err != nil {
+		t.Fatal(err)
+	}
+	if l := f.Lines(); len(l) != 3 || !strings.HasPrefix(l[1], "dpkg --configure -a") || !strings.HasPrefix(l[2], "apt-get install") {
+		t.Fatal(l)
+	}
+
+	// Other failures are not retried, and a failing dpkg --configure -a is reported.
+	g := (&runnertest.Fake{}).On("apt-get install", runner.Result{ExitCode: 100, Stderr: []byte("E: Unable to locate package nope\n")})
+	if err := (Apt{R: g, FS: aptSources(t, nil)}).InstallRaw(context.Background(), []string{"nope"}); err == nil || len(g.Lines()) != 1 {
+		t.Fatal(err, g.Lines())
+	}
+	h := (&runnertest.Fake{}).On("apt-get install", runner.Result{ExitCode: 100, Stderr: []byte("E: dpkg was interrupted, you must manually run 'dpkg --configure -a' to correct the problem.\n")}).
+		On("dpkg --configure -a", runner.Result{ExitCode: 1})
+	if err := (Apt{R: h, FS: aptSources(t, nil)}).InstallRaw(context.Background(), []string{"x"}); err == nil || !strings.Contains(err.Error(), "dpkg --configure -a") {
+		t.Fatal(err)
+	}
+}

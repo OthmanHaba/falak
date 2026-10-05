@@ -53,6 +53,27 @@ final class PayloadCompatibility
             'db.user.apply' => ['containers'],
             'net.firewall.apply' => ['container_ports'],
         ],
+        // Redis / Valkey instances reached from containers (docker0) and over private networks (peers); the control
+        // plane sends neither non-loopback binds nor key-value container ports to older agents anyway.
+        'db.redis.network' => [
+            'db.redis.apply' => ['containers'],
+            'net.firewall.apply' => ['container_ports.*.peers'],
+        ],
+        // The interface of a WireGuard peer (rc.1 / rc.2 agents with db.redis.network decode strictly and guess it).
+        'net.firewall.peer_interfaces' => [
+            'net.firewall.apply' => ['container_ports.*.peer_interfaces'],
+        ],
+    ];
+
+    /**
+     * feature => [command type => [top-level field => the value agents without the feature get]].
+     *
+     * @var array<string, array<string, array<string, mixed>>>
+     */
+    public const VALUES = [
+        'db.redis.network' => [
+            'db.redis.apply' => ['bind' => ['127.0.0.1']],
+        ],
     ];
 
     /**
@@ -60,6 +81,21 @@ final class PayloadCompatibility
      */
     public static function adapt(string $type, object $document, array $features): object
     {
+        // Values only an agent with the feature may get: older agents get the safe value instead (the field itself is
+        // understood). Redis / Valkey: a bind beyond loopback is never sent to an agent that can't vet it (an agent
+        // downgraded after its engine's container access was turned on).
+        foreach (self::VALUES as $feature => $commands) {
+            if (in_array($feature, $features, true) || ! isset($commands[$type])) {
+                continue;
+            }
+
+            foreach ($commands[$type] as $field => $value) {
+                if (property_exists($document, $field)) {
+                    $document->{$field} = $value;
+                }
+            }
+        }
+
         foreach (self::FIELDS as $feature => $commands) {
             if (in_array($feature, $features, true) || ! isset($commands[$type])) {
                 continue;

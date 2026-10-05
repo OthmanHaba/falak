@@ -35,6 +35,15 @@ return [
         'persistence' => 'rdb',
         'evictions' => ['noeviction', 'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru', 'volatile-lfu', 'volatile-random', 'volatile-ttl'],
         'persistences' => ['rdb', 'aof', 'none'],
+        // Providers whose servers of one account and region share a private network by default, used when no Kiln
+        // private network connects an instance's server with a site's: DigitalOcean (each region's default VPC) and
+        // Lightsail (instances of a region reach each other's private IP). Not Hetzner, Vultr, Linode: their private
+        // networks are opt-in and can differ per server, so a private IPv4 says nothing about who shares it. Servers
+        // must be created by Kiln with the same provider credential, in the same region.
+        'provider_private_networks' => ['digitalocean', 'lightsail'],
+        // Custom servers: their private IPv4s are taken as one network (never in production — they may be NATed or
+        // in different networks). The sim's fleet network uses it.
+        'custom_private_network' => (bool) env('KILN_REDIS_CUSTOM_PRIVATE_NETWORK', false),
     ],
 
     'password_length' => 32,

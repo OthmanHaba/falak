@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kiln.dev/agent-protocol/commands/db.redis.apply.schema.json",
   "title": "db.redis.apply \u2014 converge one Redis / Valkey instance (feature db.redis)",
-  "description": "Converges one instance of the distribution's template unit <engine>-server@kiln-<name>, its config /etc/kiln-<engine>/<name>.conf (0640 root:<instance group>; the drop-in points ExecStart at it because Debian's /etc/redis is 0770 redis:redis). Each instance runs as its own system user (kiln-<engine>-<name>, or kiln-rh-/kiln-vh-<hash> for long names; created on first apply with a Kiln GECOS, and a same-named user Kiln did not create is refused) through a drop-in /etc/systemd/system/<unit>.d/50-kiln.conf that limits writes to its data directory /var/lib/kiln-<engine>/<name> (0700) and its runtime directory. CONFIG is renamed to a random name only the agent knows; DEBUG, MODULE, SHUTDOWN, REPLICAOF, SLAVEOF, MIGRATE, ACL, MONITOR, SLOWLOG (and COMMANDLOG on Valkey 8.1+) are disabled. Memory limit, eviction, password and persistence change on the running instance; a new port, bind, drop-in or set of disabled commands restarts it: stop (save points set live first so the stop snapshots; none: snapshots off), files the new mode must not load moved aside, start. The current mode is asked from the running process (INFO persistence, CONFIG GET save), so a live AOF is never moved aside; switching to AOF never loads a stale AOF and never starts empty (AOF is switched on live after a start from dump.rdb with snapshots). Applies of one instance are serialized; waits end before the command's deadline. Fails with 'port N is in use by <process>' when another process holds a new port. Waits for PING (LOADING extends the wait). Idempotent: unchanged state is a no-op only once the running process is known to use it. The stock instance on 6379 is never touched.",
+  "description": "Converges one instance of the distribution's template unit <engine>-server@kiln-<name>, its config /etc/kiln-<engine>/<name>.conf (0640 root:<instance group>; the drop-in points ExecStart at it because Debian's /etc/redis is 0770 redis:redis). Each instance runs as its own system user (kiln-<engine>-<name>, or kiln-rh-/kiln-vh-<hash> for long names; created on first apply with a Kiln GECOS, and a same-named user Kiln did not create is refused) through a drop-in /etc/systemd/system/<unit>.d/50-kiln.conf that limits writes to its data directory /var/lib/kiln-<engine>/<name> (0700) and its runtime directory. CONFIG is renamed to a random name only the agent knows; DEBUG, MODULE, SHUTDOWN, REPLICAOF, SLAVEOF, MIGRATE, ACL, MONITOR, SLOWLOG (and COMMANDLOG on Valkey 8.1+) are disabled. Memory limit, eviction, password and persistence change on the running instance; a new port, bind, drop-in or set of disabled commands restarts it: stop (save points set live first so the stop snapshots; none: snapshots off), files the new mode must not load moved aside, start. The current mode is asked from the running process (INFO persistence, CONFIG GET save), so a live AOF is never moved aside; switching to AOF never loads a stale AOF and never starts empty (AOF is switched on live after a start from dump.rdb with snapshots). Applies of one instance are serialized; waits end before the command's deadline. Fails with 'port N is in use by <process>' when another process holds a new port. Waits for PING (LOADING extends the wait). Idempotent: unchanged state is a no-op only once the running process is known to use it. The stock instance on 6379 is never touched. Feature db.redis.network adds `containers` and the bind checks.",
   "x-kiln-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
@@ -52,7 +52,11 @@
           }
         ]
       },
-      "description": "Addresses to listen on. 127.0.0.1 is always included; absent = 127.0.0.1 only. Who can reach them is up to the firewall"
+      "description": "Addresses to listen on. 127.0.0.1 is always included; absent = 127.0.0.1 only. Only loopback, private (RFC 1918, CGNAT 100.64.0.0/10, IPv6 ULA fc00::/7) and WireGuard interface addresses are accepted (anything else fails the command, 0.0.0.0 / :: included); an accepted address the host does not have is left out and reported in `skipped`. Who can reach them is up to the firewall"
+    },
+    "containers": {
+      "type": "boolean",
+      "description": "feature db.redis.network: also listen on the Docker default bridge's address (docker0, 172.17.0.1 out of the box), which every container on the server reaches through its network's gateway. Reported as container_host; nothing when Docker is not installed"
     },
     "maxmemory_mb": {
       "type": "integer",
@@ -99,6 +103,24 @@
         },
         "port": {
           "type": "integer"
+        },
+        "bind": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "feature db.redis.network: the addresses the instance listens on"
+        },
+        "container_host": {
+          "type": "string",
+          "description": "feature db.redis.network: docker0's address when `containers` was asked and the bridge exists"
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "feature db.redis.network: requested addresses the host does not have (yet)"
         }
       }
     }

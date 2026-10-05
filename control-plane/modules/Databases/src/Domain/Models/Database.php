@@ -19,6 +19,7 @@ use Kiln\Databases\Domain\Enums\ResourceStatus;
  * @property ?string $collation
  * @property ?int $port key-value instances: the instance's own port (6380–6479)
  * @property ?array{maxmemory_mb?: int, eviction?: string, persistence?: string} $settings key-value instances
+ * @property ?array{wanted?: array{bind: list<string>, containers: bool}, bind?: list<string>, container_host?: ?string, skipped?: list<string>, applied_command?: string} $network key-value instances: what was sent / what the agent listens on
  * @property ?string $site_id opaque Sites ULID
  * @property ResourceStatus $status
  * @property ?string $status_message
@@ -41,7 +42,7 @@ class Database extends Model
      */
     protected function casts(): array
     {
-        return ['status' => ResourceStatus::class, 'port' => 'integer', 'settings' => 'array'];
+        return ['status' => ResourceStatus::class, 'port' => 'integer', 'settings' => 'array', 'network' => 'array'];
     }
 
     /**

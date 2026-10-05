@@ -37,7 +37,7 @@ removes the field for agents that do not (`Fleet\Application\PayloadCompatibilit
 a new version (`Fleet\Events\AgentVersionChanged`), modules re-send state they would otherwise deduplicate.
 Current features: `edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`, `fn.v1`, `fn.v2`, `fn.v3`,
 `db.containers`, `compose.v2`, `docker.networks`, `docker.networks.create`, `compose.up.services`, `provision.v2`,
-`db.redis`.
+`db.redis`, `db.redis.network`, `net.firewall.peer_interfaces`.
 
 A feature can also gate a whole **command**: the control plane only queues it for agents that list the feature
 (older agents would fail it as an unknown type). `provision.v2` adds `provision.inspect` and `provision.apply`
@@ -101,6 +101,22 @@ failure converges. Apply refuses a new port another process listens on (`port 63
 waits for `PING` (`LOADING` extends the wait to 15 minutes). The stock instance is never touched. The control plane
 only queues these commands for agents that list `db.redis`; such agents also report `facts.runtimes.redis` /
 `.valkey` (`<engine>-server --version`).
+
+**Network access (`db.redis.network`).** `bind` only accepts loopback, private (RFC 1918, CGNAT `100.64.0.0/10`, IPv6
+ULA `fc00::/7`) and WireGuard interface addresses (a private network whose range is public: the interface's sysfs
+`DEVTYPE=wireguard`, without sysfs the `wg` name prefix); anything else, `0.0.0.0` / `::` and link-local included,
+fails the command before anything changes. An accepted address the host does not have (yet) is left out and reported
+in the result's `skipped` (Redis would refuse to start); the control plane applies again when it appears.
+`containers: true` adds the Docker default bridge's IPv4 (`docker0`, when it exists and is private): containers on
+any bridge network of the server reach it through their gateway. The result reports `bind` (what the instance
+listens on) and `container_host`. A changed bind list restarts the instance the usual way (data kept).
+`net.firewall.apply` `container_ports[].peers` (same feature) are other servers' addresses accepted for the ports on
+the interface they arrive on — `container_ports[].peer_interfaces` (address → interface) when the control plane names
+it (a Kiln WireGuard network's, also before its config reaches the server), else the agent's: a Kiln WireGuard network
+whose `Address` range holds the peer, a local subnet; none: any interface — after the Docker-bridge accepts and before
+the port's drop: `sources` may then be empty. `peer_interfaces` needs feature `net.firewall.peer_interfaces`
+(stripped otherwise). Both fields
+are stripped for agents without the feature (the control plane never sends them non-loopback binds either).
 
 ## Agent sessions and lost deliveries
 Every `kiln-agent` process sends a random session id (`X-Kiln-Agent-Session: s-<32 hex>`, 8-64 characters of

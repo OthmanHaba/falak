@@ -62,7 +62,8 @@ Kiln never edits the repo file. At render time it applies an overlay and shows i
   mounts of repo files (`./nginx.conf`) are kept and the files are shipped with the release (below);
 - `env_file` keys folded into the site variables (the files themselves are not shipped unless committed);
 - services replaced by Kiln databases or split into Kiln sites removed, with their references rewritten;
-- `restart: unless-stopped` when missing; a warning per public service without a healthcheck;
+- `restart: unless-stopped` when missing (inline projects too, at every deploy — fixed in v0.7.1: inline stacks got no
+  policy and stayed Exited after a reboot); a warning per public service without a healthcheck;
 - policy violations stay blocking unless the org allows privileged compose.
 
 ## Full compose support

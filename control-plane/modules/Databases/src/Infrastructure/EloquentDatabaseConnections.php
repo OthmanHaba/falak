@@ -3,6 +3,7 @@
 namespace Kiln\Databases\Infrastructure;
 
 use Kiln\Databases\Application\KeyValue\ApplyKeyValueInstance;
+use Kiln\Databases\Application\KeyValue\KeyValueNetwork;
 use Kiln\Databases\Contracts\Data\DatabaseConsumer;
 use Kiln\Databases\Contracts\DatabaseConnections;
 use Kiln\Databases\Domain\Enums\Engine;
@@ -18,6 +19,7 @@ final class EloquentDatabaseConnections implements DatabaseConnections
     public function __construct(
         private readonly ServerDirectory $servers,
         private readonly PrivateNetwork $network,
+        private readonly KeyValueNetwork $keyValueNetwork,
     ) {}
 
     public function keysFor(string $engine): array
@@ -41,7 +43,7 @@ final class EloquentDatabaseConnections implements DatabaseConnections
         $engine = $database->databaseServer->engine;
 
         if ($engine->isKeyValue()) {
-            return $this->keyValue($database);
+            return $this->keyValue($database, $consumer);
         }
 
         // Engines on app/worker servers are for that server only (see CommandPayloads::remote): native sites reach
@@ -78,7 +80,7 @@ final class EloquentDatabaseConnections implements DatabaseConnections
         $engine = Database::query()->with('databaseServer')->find($databaseId)?->databaseServer;
 
         if ($engine !== null && $engine->engine->isKeyValue()) {
-            return $this->keyValueUnreachable($engine, $consumer);
+            return $this->keyValueUnreachable($engine, $consumer, $databaseId);
         }
 
         if ($engine === null || $engine->dedicated) {
@@ -103,13 +105,14 @@ final class EloquentDatabaseConnections implements DatabaseConnections
     }
 
     /**
-     * Redis / Valkey: REDIS_URL redis://default:<password>@127.0.0.1:<port> plus Laravel's REDIS_* keys.
+     * Redis / Valkey: REDIS_URL redis://default:<password>@<host>:<port> plus Laravel's REDIS_* keys. The host depends
+     * on the consumer ({@see keyValueHost()}); an unreachable one keeps 127.0.0.1 ({@see unreachable()} says why).
      *
      * @return array<string, string>
      */
-    private function keyValue(Database $database): array
+    private function keyValue(Database $database, ?DatabaseConsumer $consumer): array
     {
-        $host = '127.0.0.1';
+        $host = $consumer !== null ? ($this->keyValueNetwork->hostFor($database, $consumer)['host'] ?? '127.0.0.1') : '127.0.0.1';
         $port = (string) ($database->port ?? $database->databaseServer->port);
         $password = ApplyKeyValueInstance::userOf($database)?->password;
 
@@ -123,28 +126,16 @@ final class EloquentDatabaseConnections implements DatabaseConnections
             $variables['REDIS_PASSWORD'] = $password;
         }
 
-        $variables['REDIS_URL'] = 'redis://'.($password !== null ? 'default:'.rawurlencode($password).'@' : '').$host.':'.$port;
+        $variables['REDIS_URL'] = 'redis://'.($password !== null ? 'default:'.rawurlencode($password).'@' : '').$this->urlHost($host).':'.$port;
 
         return $variables;
     }
 
-    /** Instances listen on 127.0.0.1 only for now: native consumers on the same server reach them. */
-    private function keyValueUnreachable(DatabaseServer $engine, DatabaseConsumer $consumer): ?string
+    private function keyValueUnreachable(DatabaseServer $engine, DatabaseConsumer $consumer, string $databaseId): ?string
     {
-        $label = $engine->engine->label();
-        $elsewhere = array_values(array_diff($consumer->serverIds, [$engine->server_id]));
+        $database = Database::query()->with('databaseServer')->find($databaseId);
 
-        if ($elsewhere !== []) {
-            $names = array_map(fn (string $id) => $this->servers->find($id)?->name ?? $id, $elsewhere);
-
-            return "{$consumer->name} runs on ".implode(', ', $names).", but the {$label} instance on {$engine->server_name} accepts connections from that server only for now.";
-        }
-
-        if ($consumer->containerized) {
-            return "{$consumer->name} runs in a container, but {$label} instances accept connections from {$engine->server_name} itself only for now (container access comes in a later release).";
-        }
-
-        return null;
+        return $database !== null ? $this->keyValueNetwork->hostFor($database, $consumer)['reason'] : null;
     }
 
     /** Most private address first: WireGuard mesh → provider private IP → public IP. */
