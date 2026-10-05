@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "59e9eef669b048273a5aebf36062054e",
+    "content-hash": "a494322d394a618453ce20c9b0f01dec",
     "packages": [
         {
             "name": "brick/math",
@@ -510,6 +510,64 @@
                 }
             ],
             "time": "2025-03-06T22:45:56+00:00"
+        },
+        {
+            "name": "falak/apm-laravel",
+            "version": "1.0.0",
+            "dist": {
+                "type": "path",
+                "url": "packages/falak-apm-laravel",
+                "reference": "ed0268d14f042a5352a5acc200c3bb183acc6883"
+            },
+            "require": {
+                "illuminate/contracts": "^11.0|^12.0|^13.0",
+                "illuminate/support": "^11.0|^12.0|^13.0",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "guzzlehttp/guzzle": "^7.8",
+                "orchestra/testbench": "^9.0|^10.0|^11.0",
+                "pestphp/pest": "^3.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Falak\\Apm\\ApmServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Falak\\Apm\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Falak\\Apm\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "pest"
+                ]
+            },
+            "license": [
+                "Apache-2.0"
+            ],
+            "description": "Falak APM for Laravel: Nightwatch-style request, query, job, cache, mail, notification, command, schedule, exception and log telemetry exported as OTLP/HTTP JSON to the local falak-agent.",
+            "keywords": [
+                "apm",
+                "falak",
+                "laravel",
+                "observability",
+                "opentelemetry",
+                "otlp"
+            ],
+            "transport-options": {
+                "symlink": false,
+                "relative": true
+            }
         },
         {
             "name": "fruitcake/php-cors",
@@ -1057,64 +1115,6 @@
                 }
             ],
             "time": "2026-08-24T17:13:02+00:00"
-        },
-        {
-            "name": "falak/apm-laravel",
-            "version": "1.0.0",
-            "dist": {
-                "type": "path",
-                "url": "packages/falak-apm-laravel",
-                "reference": "f524f86301ac50a72abb344eca05f9a2cf4ce6f3"
-            },
-            "require": {
-                "illuminate/contracts": "^11.0|^12.0|^13.0",
-                "illuminate/support": "^11.0|^12.0|^13.0",
-                "php": "^8.2"
-            },
-            "require-dev": {
-                "guzzlehttp/guzzle": "^7.8",
-                "orchestra/testbench": "^9.0|^10.0|^11.0",
-                "pestphp/pest": "^3.0"
-            },
-            "type": "library",
-            "extra": {
-                "laravel": {
-                    "providers": [
-                        "Falak\\Apm\\ApmServiceProvider"
-                    ]
-                }
-            },
-            "autoload": {
-                "psr-4": {
-                    "Falak\\Apm\\": "src/"
-                }
-            },
-            "autoload-dev": {
-                "psr-4": {
-                    "Falak\\Apm\\Tests\\": "tests/"
-                }
-            },
-            "scripts": {
-                "test": [
-                    "pest"
-                ]
-            },
-            "license": [
-                "MIT"
-            ],
-            "description": "Falak APM for Laravel: Nightwatch-style request, query, job, cache, mail, notification, command, schedule, exception and log telemetry exported as OTLP/HTTP JSON to the local falak-agent.",
-            "keywords": [
-                "apm",
-                "falak",
-                "laravel",
-                "observability",
-                "opentelemetry",
-                "otlp"
-            ],
-            "transport-options": {
-                "symlink": false,
-                "relative": true
-            }
         },
         {
             "name": "laminas/laminas-diactoros",
