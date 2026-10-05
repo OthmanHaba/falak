@@ -196,12 +196,24 @@ the organization allows privileged compose. The site resource then carries `comp
 public_services[] (with host_port, test_domain, url, health_check_path), template}`.
 
 Repository sources also take `compose_files` (list, `-f` order),
-`compose_profiles`, `compose_services` `{<service>: {mode: keep|database|site, engine?, database_id?, site?}}` and
+`compose_profiles`, `compose_services` `{<service>: {mode: keep|database|site, engine?, database_id?, site?}}`
+(`engine`: `postgresql|mysql|mariadb|redis|valkey`; inline sources take `compose_services` too, read from the stored
+file) and
 `compose_adjustments {keep_binds: ["service:./path"]}`; with `compose_files`, creation reads the repository first
 (files load, public services exist, required `${VAR}`s have a value in `variables`; `422` otherwise). Panel endpoints
 for the create flow: `POST /sites/compose/candidates` and `POST /sites/compose/inspect` (`{source_connection_id,
 repository, branch, compose_files, …}` → services, variables, adjustments, the merged and adjusted YAML; `no_api: true`
 for plain git servers), and `POST /sites/{site}/compose/inspect` for existing sites.
+
+A service running the official `redis` or `valkey/valkey` image (any tag; not `redis/redis-stack`, `bitnami/redis` or
+other registries) has `database_engine: redis|valkey` and can become a Kiln Redis / Valkey instance (`mode: database`,
+`engine` = the image's): `<slug>-<service>` on the stack's leader, which must run that engine (else the service stays
+in the stack with a warning: the other cache engine runs there, it isn't installed yet, or Valkey isn't offered for
+its OS). `--maxmemory`, `--maxmemory-policy` and `--appendonly yes` in its `command` carry over. The other services'
+`REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` / `REDIS_URL`, `redis://[…@]<service>[:port]` and `<service>:<port>`
+inside any value point at the instance (`${{ <stack> <service>.REDIS_… }}`), and a `REDIS_HOST` without `REDIS_PORT` /
+`REDIS_PASSWORD` next to it gains them. The containers reach it through the Docker bridge. The container's data is not
+copied.
 
 Every public service has domains of its own (Edge `edge_domains` rows with `compose_service`; the first public service
 is the site itself). A `domain` chosen here becomes the service's first domain row; after that the service's domains
@@ -351,9 +363,21 @@ case-insensitively with spaces/dots/underscores as dashes. Database services exp
 `DB_DATABASE`,
 `DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the database); site services expose their own variables.
 Redis and Valkey services (instances) expose `REDIS_URL` (`redis://default:<password>@<host>:<port>`), `REDIS_HOST`,
-`REDIS_PORT` (the instance's own port, 6380–6479), `REDIS_PASSWORD` and `REDIS_CLIENT` (`phpredis`). In v0.7.0 an
-instance listens on 127.0.0.1 only: `REDIS_HOST` / `REDIS_URL` resolve for native sites on the instance's server;
-containers and sites on other servers get a resolution error naming the reason.
+`REDIS_PORT` (the instance's own port, 6380–6479), `REDIS_PASSWORD` and `REDIS_CLIENT` (`phpredis`). `REDIS_HOST` /
+`REDIS_URL` depend on the site (v0.7.1, agents with `db.redis.network`; older agents keep the instance on 127.0.0.1 and
+everyone else gets a resolution error saying to update the agent):
+- a native site on the instance's server: `127.0.0.1`;
+- a container there (Docker site, compose stack, function): the Docker bridge's address (`docker0`, `172.17.0.1` out of
+  the box), which the instance listens on; the firewall opens the instance's port to the Docker ranges on the bridges
+  only;
+- a site on another server of the environment (native or containers, also a site spanning both): the instance server's
+  address on a private network they share — a Kiln private network (WireGuard) first, else the provider private network
+  (both servers have a provider private IPv4 from the same provider). The instance listens there while a site of its
+  environment runs on another server; the firewall opens its port to those servers' addresses only. **Never a public
+  address:** servers sharing no private network get `… shares no private network with <server> … Add both servers to a
+  private network (Network → Private networks)`. Until the agent listens on the address (a restart that keeps the data),
+  the reference says so (`does not listen on <address> yet`).
+The instance always keeps its password, `protected-mode` and the disabled commands.
 Unknown services/keys and cycles fail the deployment: `Unresolved variable references: …`.
 An engine on an app or worker server serves that server only, and `DB_HOST` / `DATABASE_URL` resolve only for a
 consumer running on that server alone:

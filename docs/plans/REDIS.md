@@ -69,7 +69,8 @@ password (as in every Redis install) and is readable only by root and `redis`.
 ## Network and container access
 
 - `bind` covers `127.0.0.1`, plus the server's private address when the project has services on other servers
-  (the SQL engines' "remote" rule), plus the Docker bridge gateways when container access is on.
+  (the SQL engines' "remote" rule), plus the Docker bridge gateways when container access is on. *(As built: the
+  environment's sites' servers, docker0's address; see Phases.)*
 - `DatabaseContainerPorts` reports **each instance's port**, so the Network module's firewall opens exactly those
   ports to the Docker ranges on the bridges, and the private address to the project's servers. Public access stays
   closed.
@@ -122,10 +123,24 @@ these keys.
 ## Phases
 
 1. **Engine + instances:** enum, migration, inventory, facts versions, `caches_by_os`, agent `db.redis.apply` /
-   `remove`, create / delete through `DatabaseProvisioner` (canvas), connections + references, Databases UI.
-2. **Network:** bind addresses, per-instance firewall ports, container access, remote access.
+   `remove`, create / delete through `DatabaseProvisioner` (canvas), connections + references, Databases UI. *Built
+   (v0.7.0).*
+2. **Network:** bind addresses, per-instance firewall ports, container access, remote access. *Built (v0.7.1); see
+   "As built" below.*
 3. **Backups + restore.**
-4. **Compose apps.**
+4. **Compose apps.** *Built (v0.7.1).*
+
+### As built (v0.7.1, phases 2 and 4)
+Details in `docs/INTEGRATION-NOTES.md` ("Redis and Valkey network access and compose apps"). Deviations from the plan:
+- A new agent feature `db.redis.network` after all (the plan expected none): the agent now refuses public bind
+  addresses, skips missing ones and resolves `containers` to docker0; older agents keep 127.0.0.1.
+- Containers use **docker0's address** (one bind for every bridge network on the server), not each network's gateway.
+- "The project's servers" became **the servers of the sites in the instance's environment** (references resolve per
+  environment); the firewall opens the port to exactly those servers' private addresses (`container_ports[].peers`),
+  not to every private-network member. Private address order: Kiln private network, then the provider private network
+  (same provider); never public — such references stay unresolved with a message.
+- Compose: the leader must already run the image's engine (no automatic engine install); `REDIS_PORT` /
+  `REDIS_PASSWORD` are added next to a `REDIS_HOST` that had none; inline stacks can take services out at creation.
 
 Each phase: Pest + Go tests, the sim E2E for create → reference → deploy a Laravel site that uses
 `REDIS_URL`, review by a separate reviewer, then an rc tag.

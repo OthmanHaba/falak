@@ -412,8 +412,8 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
 - The agent refreshes OTLP `host.name` with every facts collection (see *Site web logs*).
 
 ## Redis and Valkey (v0.7.0, phase 1)
-Plan: `docs/plans/REDIS.md`. Phase 1 = engine + instances; network access (phase 2), backups / restore (phase 3) and
-compose apps (phase 4) are still open.
+Plan: `docs/plans/REDIS.md`. Phase 1 = engine + instances; network access (phase 2) and compose apps (phase 4) came
+with v0.7.1 (next section); backups / restore (phase 3) are still open.
 - **Engines.** `Databases\Domain\Enums\Engine` gained `Redis` / `Valkey` and `kind()` (`EngineKind::Sql | KeyValue`).
   SQL-only methods (charset, collation, privileges) answer null / `[]` for key-value engines; `isMysqlFamily()` is
   MySQL / MariaDB only (it used to be "not PostgreSQL"). `databases_servers` is unique per `(server_id, engine)`: an app
@@ -421,8 +421,8 @@ compose apps (phase 4) are still open.
   type's row is `dedicated`); `sync($serverId, ?Engine)` returns the row of that engine (SQL by default). Versions come
   from `facts.runtimes.redis|valkey` (agent: `<engine>-server --version`; a `redis-server` that is really Valkey,
   Debian's valkey-redis-compat, is not reported as Redis) or `databases.distro_versions` (per engine, falling back to
-  Ubuntu 24.04's). Lookups by server take the engine; container access, container firewall ports and restore targets
-  stay SQL-only.
+  Ubuntu 24.04's). Lookups by server take the engine; restore targets stay SQL-only (container access and firewall ports
+  for instances: v0.7.1).
 - **Instances.** A Redis / Valkey "database" is an instance: `databases_databases.port` (lowest free of
   `databases.key_value.ports` 6380–6479; taken = the server's other instances of both engines and
   `ServerDirectory::takenPorts()`, the latest machine check's listeners and published container ports) and `settings`
@@ -478,7 +478,8 @@ compose apps (phase 4) are still open.
   restart during a throttled first AOF rewrite keeps every key — without the fix Redis 6.0 / 7.0 came back empty).
 - **Gating.** `CreateKeyValueInstance` refuses servers whose agent lacks `db.redis` ("Update the agent on <server>
   first"). The command is new, so no `PayloadCompatibility` field: `bind` is in the schema from the start (phase 1 sends
-  `["127.0.0.1"]`, the agent always includes it) so network access needs no new feature.
+  `["127.0.0.1"]`, the agent always includes it). Phase 2 still added a feature (`db.redis.network`): the agent's
+  behaviour changed (bind checks, `containers`), and a phase-1 agent would bind any address it is sent.
 - **Lifecycle.** `db.redis.apply` settles the instance (pending → active + `DatabaseCreated`, or failed) and its user;
   a failed re-apply of an active instance keeps it active with "Apply failed: …". Password rotation
   (`ApplyDatabaseUser` on a key-value user) and `PUT /databases/databases/{database}/settings` re-apply the instance
@@ -521,6 +522,72 @@ compose apps (phase 4) are still open.
 - **Not verified:** the sim E2E stage has not been run yet; Playwright (needs the sim); Ubuntu 22.04's Redis 6.0 and
   26.04 under systemd (Redis 6.0 and Valkey 9.0 only in the Docker integration test). A real Ubuntu 24.04 (Redis, Valkey 7.2) and 26.04 (Valkey 9.0) VM is needed before
   the rc.
+
+## Redis and Valkey network access and compose apps (v0.7.1, phases 2 and 4)
+- **Feature `db.redis.network`** (agent): `db.redis.apply` `bind` only takes loopback, private (RFC 1918, CGNAT
+  `100.64.0.0/10`, ULA `fc00::/7`) and WireGuard interface addresses (sysfs `DEVTYPE=wireguard`, else the `wg` name
+  prefix, so a private network with a public range still works); anything else (`0.0.0.0`, `::`, link-local, public)
+  fails the command before anything changes. An accepted address the host doesn't have yet is skipped and reported
+  (`skipped`: Redis refuses to start on a missing address); `containers: true` adds `docker0`'s IPv4 (if it exists and
+  is private). The result reports `bind` and `container_host`. A changed bind restarts through the phase-1 path (data
+  kept: tested with a key across the restart, and in the Docker integration test on all six versions, which also
+  connects from another container with and without the password). `net.firewall.apply` `container_ports[].peers`:
+  addresses accepted for the port on any interface, after the Docker-bridge accepts and before the port's drop (so a
+  private network's accept-all rule doesn't open the instance to every member). Both fields are stripped for older
+  agents (`PayloadCompatibility`).
+- **Control plane** (`Databases\Application\KeyValue\KeyValueNetwork`): a key-value engine row's `container_access`
+  turns on when the agent has `db.redis.network` (`EnableContainerAccess`, on upgrade / provisioning / engine install,
+  dedicated cache servers too), which re-applies the instances (one restart each). Desired state per instance:
+  `bind` = 127.0.0.1 + the instance server's address on a private network shared with each other server running a site
+  of the instance's **environment** (references only resolve there; the SQL "remote" rule is "dedicated server listens
+  everywhere", which Redis must never do): a Kiln private network first (oldest of the instance's server that all of
+  the site's servers share), else the provider private network (both servers have a provider private IPv4 and the same
+  provider — `custom` included, which is how the sim's fleet network works). `containers` = container access on and
+  `KILN_DOCKER_NETWORKS` not empty. `peers` = those servers' addresses on that network (their containers are NATed to
+  them). `DatabaseContainerPorts` reports each instance's own port (`<engine>-<name>`, Docker ranges + peers); the SQL
+  entries are unchanged. `databases_databases.network` keeps `wanted` (last sent), `bind` / `container_host` / `skipped`
+  (last reported) and `applied_command`.
+- **Convergence** (`ConvergeKeyValueNetwork`, queued listener): `ServiceLinked` / `ServiceUnlinked` (Projects),
+  `SiteTargetsChanged` (Sites), `PrivateNetworkChanged` (Network), `ServerProvisioned` (Servers). Firewalls of the
+  organization's instance servers converge (a no-op when the hash is unchanged); an instance is re-applied only when its
+  desired bind / containers differ from `wanted`, or once its last apply settled with a wanted address skipped (a
+  private network converged since), or — on `ServerProvisioned` — when it should listen on docker0 but found none.
+  An apply in flight is never stacked (settled = `applied_command` is the instance's `command_id`).
+- **References** (`KeyValueNetwork::hostFor`): native on the instance's server → `127.0.0.1`; containers there →
+  `container_host`; any other server (native, containers, or a site spanning both) → the shared private address. Never
+  public: no shared network → "… shares no private network with <server>, and the Redis instance … is never exposed on
+  a public address. Add both servers to a private network (Network → Private networks)". An address the agent doesn't
+  report yet → "does not listen on <address> (<network>) yet … deploy again once it is done". Old agents → "update the
+  agent". The panel's Overview lists **Who can connect**: the environment's sites, each with its host or that reason;
+  the Connect card's hosts follow what the agent reported (Same server, Containers, Private network / Provider private
+  IP).
+- **Deviation (docker0, not per-network gateways):** the instance listens on `docker0`'s address only, not on each
+  compose network's gateway: packets to a local address are delivered by the host's input path whatever bridge they come
+  from, so every container on the server reaches `172.17.0.1` (the firewall accepts `docker0` and `br-*`), while binding
+  every stack's gateway would restart instances whenever a stack network appears. SQL's container access resolves to the
+  server's own address instead, which for Redis could be a public one.
+- **Compose apps (phase 4):** `RepoComposeInspection` / `EloquentComposeServiceExtraction` offer `redis` /
+  `docker.io/library/redis` / `valkey/valkey` (any tag or digest; not `redis/redis-stack`, `bitnami/redis`, other
+  registries, built images) as `database_engine: redis|valkey`. `toDatabase(..., 'redis'|'valkey')` creates
+  `<slug>-<service>` (then `-2`, `-3`) on the leader with `RedisCommand::settings()` (`--maxmemory` in whole MB, at
+  least 16; `--maxmemory-policy`; `--appendonly yes` → aof; string or list commands starting with
+  `redis-server`/`valkey-server` or a flag; shells and config files → defaults). The leader must run the image's engine
+  (`ServerDirectory::installableCaches()` is new, for the message): another cache engine → "one cache engine per server";
+  none → install it first; Valkey not offered for the OS (`servers.caches_by_os`) → say so. `ServiceReferences` mode
+  `cache`: `redis://` / `valkey://` URLs of the service anywhere in a value → `{ref:REDIS_URL}` (path such as `/1`
+  kept, credentials replaced), `<service>:<port>` anywhere → `{ref:REDIS_HOST}:{ref:REDIS_PORT}`, the bare name under a
+  host key → `{ref:REDIS_HOST}`, `REDIS_`/`VALKEY_` …PORT / …PASS(WORD) companions; a `REDIS_HOST` without
+  `REDIS_PORT` / `REDIS_PASSWORD` gains them (`KilnAdjustments` adds only those two keys to a service's environment;
+  split-out sites too) — clients default to 6379 and no password. Inline stacks take `compose_services` at creation too
+  (they were repository-only; the sim needs it: its git server has no API). The UI says the container's data is not
+  copied (SQL too).
+- **Sim** stage `redis_network` (after `compose_failure`): the `cache` instance on app-2 binds 127.0.0.1, app-2's
+  fleet address and docker0 (shop and early run on app-1); the early site on app-1 gets `REDIS_HOST` = app-2's private
+  address, writes over it, NOAUTH without the password, db-1 gets no answer, app-2's nftables accept the port from
+  app-1 and drop it otherwise; an inline stack whose `cache` (redis:7.4.1-alpine, `--appendonly yes --maxmemory 64mb`)
+  becomes a Kiln Redis deploys only if its probe's healthcheck reaches the instance through docker0 with the password,
+  and its key lands in the instance, not in `cache`. The sim has no WireGuard network: the WireGuard path is Pest-tested
+  only.
 
 ## Not covered by the E2E yet (unit/feature tested only)
 Docker/Compose runtimes and docker builds on a real BuildKit, database backups/restore to real S3, WireGuard private
