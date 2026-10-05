@@ -11,6 +11,7 @@ use Kiln\Databases\Domain\Models\Database;
 use Kiln\Databases\Domain\Models\DatabaseServer;
 use Kiln\Fleet\Contracts\AgentDirectory;
 use Kiln\Identity\Contracts\AuditLog;
+use Kiln\Network\Contracts\Firewalls;
 
 /**
  * Creates a Redis / Valkey instance: its own port, settings and `default` user (generated password), then
@@ -27,6 +28,7 @@ final class CreateKeyValueInstance
         private readonly KeyValueSettings $settings,
         private readonly ApplyKeyValueInstance $apply,
         private readonly AuditLog $audit,
+        private readonly Firewalls $firewalls,
     ) {}
 
     /**
@@ -39,8 +41,15 @@ final class CreateKeyValueInstance
         $name = $data['name'];
         Identifiers::assertValid($server->engine, $name, 'name');
 
-        if (! ($this->agents->forServer($server->server_id)?->supports(self::FEATURE) ?? false)) {
+        $agent = $this->agents->forServer($server->server_id);
+
+        if (! ($agent?->supports(self::FEATURE) ?? false)) {
             throw ValidationException::withMessages(['server_id' => "Update the agent on {$server->server_name} first: {$server->engine->label()} instances need a newer agent (feature db.redis)."]);
+        }
+
+        // An engine row registered on the way here (no install / provisioning event turned network access on yet).
+        if (! $server->container_access && $agent->supports(KeyValueNetwork::FEATURE)) {
+            $server->forceFill(['container_access' => true])->save();
         }
 
         $settings = $this->settings->resolve($server->server_id, $data, KeyValueSettings::defaults(), capDefault: true);
@@ -82,6 +91,10 @@ final class CreateKeyValueInstance
 
             return $database->refresh();
         });
+
+        if (KeyValueNetwork::enabled($server)) {
+            $this->firewalls->converge($server->server_id);
+        }
 
         $this->audit->record('databases.database_created', 'database', $database->id, [
             'name' => $name, 'server_id' => $server->server_id, 'engine' => $server->engine->value, 'port' => $database->port,

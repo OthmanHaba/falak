@@ -299,3 +299,14 @@ it('shows who can connect, and from where, on the instance panel', function () {
         ->and($access['blog']['host'])->toBeNull()
         ->and($access['blog']['reason'])->toContain('Add both servers to a private network');
 });
+
+it('turns network access on for an engine registered on the way to the first instance', function () {
+    $server = databases_server($this->organization, 'postgresql', ServerType::App, ['status' => ServerStatus::Active, 'stack' => ['database' => 'postgresql', 'cache' => 'redis']]);
+    Agent::factory()->create(['server_id' => $server->id, 'organization_id' => $this->organization->id, 'facts' => ['features' => KV_NET, 'memory_bytes' => 2 * 1024 ** 3]]);
+
+    app(DatabaseProvisioner::class)->create($this->organization->id, $server->id, 'redis', 'cache');
+
+    expect(DatabaseServer::query()->where('server_id', $server->id)->where('engine', 'redis')->value('container_access'))->toBeTrue()
+        ->and($this->agents->last('db.redis.apply')['payload'])->toMatchArray(['containers' => true])
+        ->and(collect($this->agents->last('net.firewall.apply', $server->id)['payload']['container_ports'] ?? [])->pluck('id')->all())->toContain('redis-cache');
+});
