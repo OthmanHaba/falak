@@ -1,0 +1,37 @@
+{
+    "name": "kiln/apm-laravel",
+    "description": "Kiln APM for Laravel: Nightwatch-style request, query, job, cache, mail, notification, command, schedule, exception and log telemetry exported as OTLP/HTTP JSON to the local kiln-agent.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "apm", "opentelemetry", "otlp", "observability", "kiln"],
+    "require": {
+        "php": "^8.2",
+        "illuminate/contracts": "^11.0|^12.0|^13.0",
+        "illuminate/support": "^11.0|^12.0|^13.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0|^10.0|^11.0",
+        "pestphp/pest": "^3.0",
+        "guzzlehttp/guzzle": "^7.8"
+    },
+    "autoload": {
+        "psr-4": { "Kiln\\Apm\\": "src/" }
+    },
+    "autoload-dev": {
+        "psr-4": { "Kiln\\Apm\\Tests\\": "tests/" }
+    },
+    "extra": {
+        "laravel": {
+            "providers": ["Kiln\\Apm\\ApmServiceProvider"]
+        }
+    },
+    "scripts": {
+        "test": "pest"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": { "pestphp/pest-plugin": true }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
