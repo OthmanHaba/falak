@@ -10,6 +10,7 @@ use Kiln\Projects\Contracts\VariableReferences;
 use Kiln\Servers\Domain\Models\Server;
 use Kiln\Sites\Application\Compose\KilnAdjustments;
 use Kiln\Sites\Contracts\ComposeServiceExtraction;
+use Kiln\Sites\Contracts\SiteFactory;
 use Kiln\Sites\Domain\Models\Site;
 use Symfony\Component\Yaml\Yaml;
 use Tests\Support\FakeAgentGateway;
@@ -176,4 +177,28 @@ it('names the instance apart from one the server has, and keeps defaults when th
 
     expect($instance->name)->toBe("{$stack->slug}-cache-2")->and($instance->port)->not->toBe($taken->port)
         ->and($this->agents->last('db.redis.apply')['payload'])->toMatchArray(['maxmemory_mb' => 128, 'eviction' => 'noeviction', 'persistence' => 'rdb']);
+});
+
+it('takes the redis service of an inline stack out at creation (API users, plain git servers)', function () {
+    $server = compose_redis_server($this);
+    $yaml = <<<'YAML'
+services:
+  probe:
+    image: redis:7.4.1-alpine
+    environment: {REDIS_HOST: cache}
+  cache:
+    image: redis:7.4.1-alpine
+    command: ["redis-server", "--maxmemory", "64mb"]
+YAML;
+
+    $created = app(SiteFactory::class)->create($this->organization->id, $this->user->id, [
+        'name' => 'probe', 'runtime' => 'compose', 'server_ids' => [$server->id], 'compose_source' => 'inline', 'compose_content' => $yaml,
+        'compose_services' => ['cache' => ['mode' => 'database', 'engine' => 'redis']],
+    ]);
+
+    $decision = $created->site->compose?->mode('cache');
+    $instance = Database::query()->where('server_id', $server->id)->where('name', "{$created->site->slug}-cache")->first();
+    expect($created->warnings)->toBe([])->and($decision)->toBe('database')->and($instance)->not->toBeNull()
+        ->and($this->agents->last('db.redis.apply')['payload'])->toMatchArray(['maxmemory_mb' => 64, 'containers' => true])
+        ->and($this->extraction->rewrites($created->site->id)->forService('probe'))->toHaveKeys(['REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD']);
 });
