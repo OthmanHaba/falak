@@ -3,10 +3,10 @@ name: control-plane
 on:
   push:
     branches: [main]
-    paths: ['control-plane/**', 'contracts/**', '.github/workflows/control-plane.yml']
+    paths: ['control-plane/**', 'contracts/**', 'tools/**', '.github/workflows/control-plane.yml']
   pull_request:
     branches: [main]
-    paths: ['control-plane/**', 'contracts/**', '.github/workflows/control-plane.yml']
+    paths: ['control-plane/**', 'contracts/**', 'tools/**', '.github/workflows/control-plane.yml']
 
 defaults:
   run:
@@ -55,6 +55,10 @@ jobs:
         run: |
           composer install -q --no-interaction --no-scripts --no-progress --prefer-dist
           bun install --frozen-lockfile
+
+      - name: Brand check
+        working-directory: .
+        run: tools/check-brand.sh
 
       - name: Pint
         run: vendor/bin/pint --test
