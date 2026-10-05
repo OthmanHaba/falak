@@ -129,7 +129,7 @@ export function TemplateGallery({ templates, categories, onPick, compact = false
                                 'h-7 shrink-0 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-150',
                                 'focus-visible:outline-primary focus-visible:outline-2 focus-visible:outline-offset-2',
                                 filter === chip.value
-                                    ? 'border-primary/40 bg-primary-soft text-primary'
+                                    ? 'border-primary/40 bg-primary-soft text-primary-on-soft'
                                     : 'border-border text-fg-muted hover:bg-surface-2 hover:text-fg',
                             )}
                         >

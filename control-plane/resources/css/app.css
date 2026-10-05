@@ -21,113 +21,123 @@
 .dark {
     color-scheme: dark;
 
-    --bg: #0b0a0f;
-    --bg-canvas: #0e0d13;
-    --grid: #1d1b26;
-    --surface-1: #13121a;
-    --surface-2: #1a1823;
-    --surface-3: #23202e;
-    --border: #26232f;
-    --border-strong: #35313f;
-    --text: #ecebf2;
-    --text-muted: #a19eb0;
-    --text-faint: #6d6a7c;
-    --text-on-accent: #ffffff;
+    --bg: #0b0f0c;
+    --bg-canvas: #0d120e;
+    --grid: #1e2820;
+    --surface-1: #111713;
+    --surface-2: #17201a;
+    --surface-3: #1e2921;
+    --border: #243128;
+    --border-strong: #324236;
+    --text: #f2f5f2;
+    --text-muted: #a7b0a9;
+    --text-faint: #6e786f;
+    /* Text on the light-ish accent / success fills of the dark theme: dark, for WCAG AA (6.9:1 on --accent). */
+    --text-on-accent: #0b0f0c;
+    /* Text on --danger fills. */
+    --text-on-danger: #ffffff;
 
-    --accent: #8b5cf6;
-    --accent-hover: #7c4ddf;
-    --accent-soft: rgba(139, 92, 246, 0.14);
+    --accent: #7fa66a;
+    --accent-hover: #93b87e;
+    --accent-soft: #1b2a1d;
+    /* Accent-colored text on --accent-soft (tags, selected chips). */
+    --accent-on-soft: #93b87e;
+    --selection: rgba(127, 166, 106, 0.3);
 
-    --success: #22c55e;
-    --success-soft: rgba(34, 197, 94, 0.14);
+    --success: #5dbe7a;
+    --success-soft: rgba(93, 190, 122, 0.14);
     --warning: #f59e0b;
     --warning-soft: rgba(245, 158, 11, 0.14);
     --danger: #ef4444;
     --danger-soft: rgba(239, 68, 68, 0.14);
     --info: #38bdf8;
     --info-soft: rgba(56, 189, 248, 0.14);
-    --faint-soft: rgba(109, 106, 124, 0.16);
+    --faint-soft: rgba(110, 120, 111, 0.16);
 
-    --overlay: rgba(5, 4, 8, 0.64);
+    --overlay: rgba(4, 6, 5, 0.64);
     --elevation-panel: 0 8px 32px rgba(0, 0, 0, 0.45);
     /* Floating panels over the canvas: a hairline ring plus a soft, wide shadow. */
     --elevation-float: 0 0 0 1px rgba(255, 255, 255, 0.02), 0 24px 64px -12px rgba(0, 0, 0, 0.6), 0 8px 24px -8px rgba(0, 0, 0, 0.5);
     /* Veil over a panel that recedes under a stacked one. */
-    --panel-dim: rgba(5, 4, 8, 0.45);
+    --panel-dim: rgba(4, 6, 5, 0.45);
     /* Canvas groups: a tinted, translucent frame. */
     --group-bg: rgba(255, 255, 255, 0.025);
     --group-border: rgba(255, 255, 255, 0.07);
 
-    /* Chart series (MetricChart), fixed order; validated for CVD separation + contrast on --surface-1. */
-    --chart-1: #8b5cf6;
+    /* Chart series (MetricChart), fixed order: brand green first, then hues far from it (no second green). */
+    --chart-1: #7fa66a;
     --chart-2: #d95926;
-    --chart-3: #199e70;
+    --chart-3: #8b5cf6;
     --chart-4: #3987e5;
     --chart-5: #d55181;
 
     /* ANSI palette for LogViewer. */
-    --ansi-black: #3a3645;
+    --ansi-black: #2f3a32;
     --ansi-red: #f87171;
     --ansi-green: #4ade80;
     --ansi-yellow: #fbbf24;
     --ansi-blue: #60a5fa;
     --ansi-magenta: #c084fc;
     --ansi-cyan: #22d3ee;
-    --ansi-white: #e5e4ec;
-    --ansi-bright-black: #6d6a7c;
+    --ansi-white: #e4e9e4;
+    --ansi-bright-black: #6e786f;
 }
 
 .light {
     color-scheme: light;
 
-    --bg: #fbfbfc;
-    --bg-canvas: #f6f6f8;
-    --grid: #e4e3ea;
+    --bg: #f4f7f3;
+    --bg-canvas: #f0f4ef;
+    --grid: #d8e0d7;
     --surface-1: #ffffff;
-    --surface-2: #f4f3f7;
-    --surface-3: #ebe9f1;
-    --border: #e7e5ee;
-    --border-strong: #d4d1de;
-    --text: #17151f;
-    --text-muted: #5d5a6b;
-    --text-faint: #8e8b9c;
+    --surface-2: #edf2ec;
+    --surface-3: #e4ebe3;
+    --border: #d8e0d7;
+    --border-strong: #c3cec2;
+    --text: #172019;
+    --text-muted: #5f6d62;
+    --text-faint: #8a968c;
+    --text-on-accent: #ffffff;
+    --text-on-danger: #ffffff;
 
-    --accent: #7c3aed;
-    --accent-hover: #6d28d9;
-    --accent-soft: rgba(124, 58, 237, 0.1);
+    --accent: #4f7a5a;
+    --accent-hover: #3f674a;
+    --accent-soft: #e1eae0;
+    --accent-on-soft: #3f674a;
+    --selection: rgba(79, 122, 90, 0.24);
 
-    --success: #16a34a;
-    --success-soft: rgba(34, 197, 94, 0.14);
+    --success: #22863a;
+    --success-soft: rgba(34, 134, 58, 0.12);
     --warning: #d97706;
     --warning-soft: rgba(245, 158, 11, 0.16);
     --danger: #dc2626;
     --danger-soft: rgba(239, 68, 68, 0.12);
     --info: #0284c7;
     --info-soft: rgba(56, 189, 248, 0.16);
-    --faint-soft: rgba(142, 139, 156, 0.16);
+    --faint-soft: rgba(138, 150, 140, 0.16);
 
-    --overlay: rgba(23, 21, 31, 0.28);
-    --elevation-panel: 0 8px 24px rgba(20, 16, 40, 0.08);
-    --elevation-float: 0 0 0 1px rgba(20, 16, 40, 0.02), 0 24px 56px -16px rgba(20, 16, 40, 0.16), 0 6px 16px -6px rgba(20, 16, 40, 0.08);
-    --panel-dim: rgba(246, 246, 248, 0.55);
-    --group-bg: rgba(23, 21, 31, 0.028);
-    --group-border: rgba(23, 21, 31, 0.08);
+    --overlay: rgba(23, 32, 25, 0.28);
+    --elevation-panel: 0 8px 24px rgba(16, 28, 20, 0.08);
+    --elevation-float: 0 0 0 1px rgba(16, 28, 20, 0.02), 0 24px 56px -16px rgba(16, 28, 20, 0.16), 0 6px 16px -6px rgba(16, 28, 20, 0.08);
+    --panel-dim: rgba(240, 244, 239, 0.55);
+    --group-bg: rgba(23, 32, 25, 0.028);
+    --group-border: rgba(23, 32, 25, 0.08);
 
-    --chart-1: #7c3aed;
+    --chart-1: #4f7a5a;
     --chart-2: #eb6834;
-    --chart-3: #1baf7a;
+    --chart-3: #7c3aed;
     --chart-4: #2a78d6;
     --chart-5: #e87ba4;
 
-    --ansi-black: #17151f;
+    --ansi-black: #172019;
     --ansi-red: #dc2626;
     --ansi-green: #15803d;
     --ansi-yellow: #a16207;
     --ansi-blue: #1d4ed8;
     --ansi-magenta: #7e22ce;
     --ansi-cyan: #0e7490;
-    --ansi-white: #5d5a6b;
-    --ansi-bright-black: #8e8b9c;
+    --ansi-white: #5f6d62;
+    --ansi-bright-black: #8a968c;
 }
 
 @theme {
@@ -180,14 +190,16 @@
     --color-fg-muted: var(--text-muted);
     --color-fg-faint: var(--text-faint);
     --color-on-accent: var(--text-on-accent);
+    --color-on-danger: var(--text-on-danger);
     --color-overlay: var(--overlay);
     --color-group: var(--group-bg);
     --color-group-border: var(--group-border);
 
-    /* `primary` IS the Falak accent (violet). */
+    /* `primary` IS the Falak accent (brand green). */
     --color-primary: var(--accent);
     --color-primary-hover: var(--accent-hover);
     --color-primary-soft: var(--accent-soft);
+    --color-primary-on-soft: var(--accent-on-soft);
     --color-primary-foreground: var(--text-on-accent);
 
     --color-success: var(--success);
@@ -209,7 +221,7 @@
     /*
      * Legacy aliases for the pre-redesign pages (components/ui/*, module pages) so they render in the Falak palette
      * until each is rebuilt. New code uses the Falak names above. Note `accent` here is the legacy *hover surface*,
-     * not the violet accent (that is `primary`).
+     * not the green accent (that is `primary`).
      */
     --color-background: var(--bg);
     --color-foreground: var(--text);
@@ -224,7 +236,7 @@
     --color-accent: var(--surface-2);
     --color-accent-foreground: var(--text);
     --color-destructive: var(--danger);
-    --color-destructive-foreground: var(--text-on-accent);
+    --color-destructive-foreground: var(--text-on-danger);
     --color-input: var(--border-strong);
     --color-ring: var(--accent);
     --color-sidebar: var(--surface-1);
@@ -334,7 +346,7 @@
     }
 
     ::selection {
-        background-color: var(--accent-soft);
+        background-color: var(--selection);
     }
 
     /* §2 Focus: 2px accent ring, 2px offset, on every interactive element. */
@@ -488,7 +500,7 @@
 }
 .falak-canvas .react-flow__nodesselection-rect,
 .falak-canvas .react-flow__selection {
-    background: var(--accent-soft);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
     border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
     border-radius: 6px;
 }

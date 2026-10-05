@@ -31,28 +31,35 @@ in components.**
 ### Color — dark (default)
 | Token | Value | Use |
 |---|---|---|
-| `--bg` | `#0b0a0f` | app background |
-| `--bg-canvas` | `#0e0d13` | canvas (dotted grid `--grid` `#1d1b26`, 1px dots every 20px) |
-| `--surface-1` | `#13121a` | panels, cards |
-| `--surface-2` | `#1a1823` | hover, inputs, nested |
-| `--surface-3` | `#23202e` | active, selected |
-| `--border` | `#26232f` | hairlines (1px) |
-| `--border-strong` | `#35313f` | focused inputs, selected cards |
-| `--text` | `#ecebf2` | primary text |
-| `--text-muted` | `#a19eb0` | secondary |
-| `--text-faint` | `#6d6a7c` | tertiary, placeholders |
-| `--accent` | `#8b5cf6` | primary buttons, focus ring, links (violet) |
-| `--accent-hover` | `#7c4ddf` | |
-| `--accent-soft` | `rgba(139,92,246,.14)` | selected nav, soft badges |
-| `--success` | `#22c55e` · soft `rgba(34,197,94,.14)` | active/healthy |
+| `--bg` | `#0b0f0c` | app background |
+| `--bg-canvas` | `#0d120e` | canvas (dotted grid `--grid` `#1e2820`, 1px dots every 20px) |
+| `--surface-1` | `#111713` | panels, cards |
+| `--surface-2` | `#17201a` | hover, inputs, nested (elevated) |
+| `--surface-3` | `#1e2921` | active, selected |
+| `--border` | `#243128` | hairlines (1px) |
+| `--border-strong` | `#324236` | focused inputs, selected cards |
+| `--text` | `#f2f5f2` | primary text |
+| `--text-muted` | `#a7b0a9` | secondary |
+| `--text-faint` | `#6e786f` | tertiary, placeholders |
+| `--accent` | `#7fa66a` | primary buttons, focus ring, links (brand green) |
+| `--accent-hover` | `#93b87e` | |
+| `--accent-soft` | `#1b2a1d` | selected nav, soft badges (`--accent-on-soft` `#93b87e` for text on it) |
+| `--text-on-accent` | `#0b0f0c` | text on accent / success fills (dark: AA on the light green) |
+| `--text-on-danger` | `#ffffff` | text on danger fills |
+| `--selection` | `rgba(127,166,106,.3)` | text selection, terminal selection |
+| `--success` | `#5dbe7a` · soft `rgba(93,190,122,.14)` | active/healthy |
 | `--warning` | `#f59e0b` · soft | building/deploying/degraded |
 | `--danger` | `#ef4444` · soft | failed/crashed/offline |
 | `--info` | `#38bdf8` · soft | queued/informational |
 
 ### Color — light
-`--bg #fbfbfc`, `--bg-canvas #f6f6f8` (grid `#e4e3ea`), `--surface-1 #ffffff`, `--surface-2 #f4f3f7`,
-`--surface-3 #ebe9f1`, `--border #e7e5ee`, `--border-strong #d4d1de`, `--text #17151f`, `--text-muted #5d5a6b`,
-`--text-faint #8e8b9c`; accent/status identical hues (accent `#7c3aed` for contrast).
+`--bg #f4f7f3`, `--bg-canvas #f0f4ef` (grid `#d8e0d7`), `--surface-1 #ffffff`, `--surface-2 #edf2ec`,
+`--surface-3 #e4ebe3`, `--border #d8e0d7`, `--border-strong #c3cec2`, `--text #172019`, `--text-muted #5f6d62`,
+`--text-faint #8a968c`, `--accent #4f7a5a` (hover `#3f674a`, soft `#e1eae0`, on-soft `#3f674a`),
+`--text-on-accent #ffffff`, `--success #22863a`; warning/danger/info as dark with darker shades for contrast.
+
+Brand core: `#0b0f0c` + `#4f7a5a` + `#f2f5f2`. The mark (`FalakMark`, `public/favicon.svg`) is a sphere with two
+orbit bands, always in the accent green next to the "Falak" wordmark in `--text`; at ≤ 20px the bands are thicker.
 
 ### Type
 - UI: **Inter** (variable, `@fontsource-variable/inter`), code/logs/ids: **JetBrains Mono**
