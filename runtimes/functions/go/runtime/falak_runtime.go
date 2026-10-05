@@ -484,8 +484,8 @@ func falakInt(k string, v int64) falakKV {
 func falakBool(k string, v bool) falakKV { return falakKV{k, map[string]any{"boolValue": v}} }
 
 type falakEvent struct {
-	Name       string   `json:"name"`
-	Time       string   `json:"timeUnixNano"`
+	Name       string    `json:"name"`
+	Time       string    `json:"timeUnixNano"`
 	Attributes []falakKV `json:"attributes"`
 }
 
@@ -496,13 +496,13 @@ type falakStatus struct {
 
 type falakSpan struct {
 	mu           sync.Mutex
-	TraceID      string      `json:"traceId"`
-	SpanID       string      `json:"spanId"`
-	ParentSpanID string      `json:"parentSpanId,omitempty"`
-	Name         string      `json:"name"`
-	Kind         int         `json:"kind"`
-	Start        string      `json:"startTimeUnixNano"`
-	End          string      `json:"endTimeUnixNano"`
+	TraceID      string       `json:"traceId"`
+	SpanID       string       `json:"spanId"`
+	ParentSpanID string       `json:"parentSpanId,omitempty"`
+	Name         string       `json:"name"`
+	Kind         int          `json:"kind"`
+	Start        string       `json:"startTimeUnixNano"`
+	End          string       `json:"endTimeUnixNano"`
 	Attributes   []falakKV    `json:"attributes"`
 	Events       []falakEvent `json:"events"`
 	Status       *falakStatus `json:"status,omitempty"`

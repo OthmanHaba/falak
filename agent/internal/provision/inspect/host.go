@@ -83,9 +83,9 @@ func ParseProcSwaps(s string) []Swap {
 }
 
 const (
-	falakNodeRoot     = "/opt/falak/node/"
-	falakFrankenPHP   = "/usr/local/bin/frankenphp"
-	falakFrankenMark  = "/etc/falak/frankenphp.version"
+	falakNodeRoot    = "/opt/falak/node/"
+	falakFrankenPHP  = "/usr/local/bin/frankenphp"
+	falakFrankenMark = "/etc/falak/frankenphp.version"
 	nodesourceDomain = "nodesource.com"
 )
 
@@ -249,7 +249,7 @@ type Unattended struct {
 	Installed bool `json:"installed"`
 	// Periodic holds APT::Periodic::* from 20auto-upgrades ("Update-Package-Lists", "Unattended-Upgrade"); nil when
 	// the file does not exist.
-	Periodic      map[string]string `json:"periodic"`
+	Periodic       map[string]string `json:"periodic"`
 	ManagedByFalak bool              `json:"managed_by_falak"`
 }
 

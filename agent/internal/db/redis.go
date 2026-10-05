@@ -100,14 +100,15 @@ func (k kvEngine) dropIn(name string) string    { return k.dropInDir(name) + "/5
 func (k kvEngine) runDir(name string) string    { return "/run/" + k.name + "-" + k.instance(name) }
 
 // user is the instance's system user: falak-redis-<name> / falak-valkey-<name>, or past the 32 characters useradd takes
-// falak-rh-<hash> / falak-vh-<hash>, which no plain name can produce (plain ones always start falak-redis- / falak-valkey-).
+// falak-rh-<hash> / falak-vh-<hash> (23 hex digits, 32 characters), which no plain name can produce (plain ones always
+// start falak-redis- / falak-valkey-).
 func (k kvEngine) user(name string) string {
 	u := "falak-" + k.name + "-" + name
 	if len(u) <= 32 {
 		return u
 	}
 	sum := sha256.Sum256([]byte(k.name + "\x00" + name))
-	return "falak-" + k.name[:1] + "h-" + hex.EncodeToString(sum[:12])
+	return ("falak-" + k.name[:1] + "h-" + hex.EncodeToString(sum[:12]))[:32]
 }
 
 // gecos marks the users the agent creates; only such users are adopted or deleted.

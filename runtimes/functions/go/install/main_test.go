@@ -19,7 +19,7 @@ func TestInspect(t *testing.T) {
 		"method is not it":   {files: map[string]string{"main.go": "package main\ntype T int\nfunc (T) Handler() {}\n"}, err: "export a Handler"},
 		"own main":           {files: map[string]string{"main.go": "package main\nfunc main() {}\nfunc Handler() {}\n"}, err: "declares main()"},
 		"reserved Event":     {files: map[string]string{"main.go": "package main\ntype Event struct{}\nfunc Handler() {}\n"}, err: "reserved"},
-		"reserved falak":      {files: map[string]string{"main.go": "package main\nvar falakX = 1\nfunc Handler() {}\n"}, err: "reserved"},
+		"reserved falak":     {files: map[string]string{"main.go": "package main\nvar falakX = 1\nfunc Handler() {}\n"}, err: "reserved"},
 		"other package":      {files: map[string]string{"main.go": "package handler\nfunc Handler() {}\n"}, err: "must be package main"},
 		"reserved file":      {files: map[string]string{"main.go": "package main\nfunc Handler() {}\n", "falak_main.go": "package main\n"}, err: "reserved"},
 		"tests are ignored":  {files: map[string]string{"main.go": "package main\nfunc Handler() {}\n", "x_test.go": "package other\n"}, want: exports{handler: true}},

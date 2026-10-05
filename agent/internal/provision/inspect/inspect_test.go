@@ -207,7 +207,7 @@ func itoa(i int) string { b, _ := json.Marshal(i); return string(b) }
 func TestUnitFromCgroup(t *testing.T) {
 	for in, want := range map[string]string{
 		"0::/system.slice/nginx.service\n":                                      "nginx.service",
-		"0::/system.slice/falak-edge.service\n":                                  "falak-edge.service",
+		"0::/system.slice/falak-edge.service\n":                                 "falak-edge.service",
 		"12:pids:/system.slice/docker.service\n0::/system.slice/docker.service": "docker.service",
 		"0::/user.slice/user-1000.slice/session-3.scope\n":                      "session-3.scope",
 		"0::/\n": "",
@@ -299,7 +299,7 @@ func incidentHost(t *testing.T) (*runnertest.Fake, hostfs.FS) {
 		"/etc/apt/apt.conf.d/20auto-upgrades":            "APT::Periodic::Update-Package-Lists \"1\";\nAPT::Periodic::Unattended-Upgrade \"0\";\n",
 		"/usr/local/bin/php":                             "",
 		"/root/.nvm/versions/node/v20.11.0/bin/node":     "",
-		"/opt/falak/node/22.20.0/bin/node":                "",
+		"/opt/falak/node/22.20.0/bin/node":               "",
 		"/usr/sbin/ufw":                                  "",
 		"/usr/sbin/nft":                                  "",
 		"/usr/sbin/sshd":                                 "",
