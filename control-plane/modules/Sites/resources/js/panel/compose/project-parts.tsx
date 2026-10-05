@@ -3,7 +3,7 @@ import { type ComposeServiceChoice } from '@/lib/registry';
 import { Database, FileCode2, Hammer, Plus, Trash2, Wand2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { lineDiff } from '../api';
-import { ENGINE_LABELS, type Adjustment, type InspectedService, type InspectedVariable, type Inspection } from './project-api';
+import { ENGINE_LABELS, KEY_VALUE_ENGINES, type Adjustment, type InspectedService, type InspectedVariable, type Inspection } from './project-api';
 import { DiffView } from './yaml-editor';
 
 const parseProfiles = (text: string) =>
@@ -203,11 +203,27 @@ export function ServicesTable({
                         </div>
                         {row === 'public' && renderPublic?.(service)}
                         {row === 'database' && (
-                            <p className="text-fg-muted flex items-center gap-1.5 text-xs">
-                                <Database className="size-3.5" aria-hidden />
-                                Kiln creates a {ENGINE_LABELS[choice.engine ?? ''] ?? 'database'} database (backups, metrics) and points the stack’s
-                                variables that used {service.name} at it.
-                            </p>
+                            <div className="grid gap-1" data-testid={`compose-database-note-${service.name}`}>
+                                <p className="text-fg-muted flex items-center gap-1.5 text-xs">
+                                    <Database className="size-3.5" aria-hidden />
+                                    {KEY_VALUE_ENGINES.includes(choice.engine ?? '') ? (
+                                        <>
+                                            Kiln creates a {ENGINE_LABELS[choice.engine ?? '']} instance on the stack’s server (password, memory
+                                            limit, persistence) and points the stack’s variables that used {service.name} at it; the containers reach
+                                            it through the Docker bridge.
+                                        </>
+                                    ) : (
+                                        <>
+                                            Kiln creates a {ENGINE_LABELS[choice.engine ?? ''] ?? 'database'} database (backups, metrics) and points
+                                            the stack’s variables that used {service.name} at it.
+                                        </>
+                                    )}
+                                </p>
+                                <p className="text-warning text-xs">
+                                    {service.name}’s existing data is not copied: the Kiln{' '}
+                                    {KEY_VALUE_ENGINES.includes(choice.engine ?? '') ? 'instance' : 'database'} starts empty.
+                                </p>
+                            </div>
                         )}
                         {row === 'site' && (
                             <div className="grid gap-2 sm:grid-cols-2">
