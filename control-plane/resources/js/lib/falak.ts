@@ -12,7 +12,8 @@ export function defaultEnvironment(project: FalakProject): FalakEnvironment | nu
 export function currentProject(falak: FalakShared | null | undefined): { project: FalakProject | null; environment: FalakEnvironment | null } {
     if (!falak) return { project: null, environment: null };
     const project = falak.projects.find((item) => item.id === falak.current.project_id) ?? null;
-    const environment = project?.environments.find((env) => env.id === falak.current.environment_id) ?? (project ? defaultEnvironment(project) : null);
+    const environment =
+        project?.environments.find((env) => env.id === falak.current.environment_id) ?? (project ? defaultEnvironment(project) : null);
 
     return { project, environment };
 }

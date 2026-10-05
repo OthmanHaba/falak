@@ -402,7 +402,10 @@ function layout(services: CanvasService[], groups: CanvasGroup[], editable: bool
                 position: { x: member.x - box.x, y: member.y - box.y },
                 data: { service: member.service },
                 hidden: hideMembers,
-                className: cn(leaving.has(group.id) && group.collapsed && 'falak-leaving', !group.collapsed && leaving.has(group.id) && 'falak-enter'),
+                className: cn(
+                    leaving.has(group.id) && group.collapsed && 'falak-leaving',
+                    !group.collapsed && leaving.has(group.id) && 'falak-enter',
+                ),
                 draggable: editable,
                 selectable: false,
                 zIndex: 1,
