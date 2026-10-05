@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Fleet\Http\Controllers\Agent;
+namespace Falak\Fleet\Http\Controllers\Agent;
 
+use Falak\Fleet\Application\Actions\RecordHeartbeat;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Kiln\Fleet\Application\Actions\RecordHeartbeat;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Kernel\Http\Controller;
 
 /**
  * POST /agent/v1/heartbeat — heartbeat.schema.json → 204.

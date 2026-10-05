@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Identity\Application\Actions;
+namespace Falak\Identity\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Domain\Models\Organization;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Domain\Models\Organization;
 
 final class UpdateOrganization
 {

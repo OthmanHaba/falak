@@ -12,14 +12,14 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
 )
 
 // Options configures a Supervisor.
 type Options struct {
 	StateDir string // proc.json lives here ("" = no persistence)
-	LogDir   string // default program log directory (default /var/log/kiln)
+	LogDir   string // default program log directory (default /var/log/falak)
 	Sink     obs.Sink
 	Logger   *slog.Logger
 }
@@ -44,7 +44,7 @@ type program struct {
 // New creates a Supervisor. Call Start to restore persisted state.
 func New(o Options) *Supervisor {
 	if o.LogDir == "" {
-		o.LogDir = "/var/log/kiln"
+		o.LogDir = "/var/log/falak"
 	}
 	if o.Sink == nil {
 		o.Sink = obs.Nop{}

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/terminal.input.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/terminal.input.schema.json",
   "title": "terminal.input — write bytes to a session",
   "type": "object",
   "additionalProperties": false,

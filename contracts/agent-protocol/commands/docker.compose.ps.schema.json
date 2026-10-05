@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/docker.compose.ps.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/docker.compose.ps.schema.json",
   "title": "docker.compose.ps — per-service state of a compose project (Engine API; read-only)",
-  "x-kiln-redeliverable": true,
+  "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [

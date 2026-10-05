@@ -1,9 +1,9 @@
-import { Button } from '@/components/kiln/button';
-import { CodeBlock } from '@/components/kiln/code-block';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { Section } from '@/components/kiln/section';
-import { StatusBadge } from '@/components/kiln/status';
+import { Button } from '@/components/falak/button';
+import { CodeBlock } from '@/components/falak/code-block';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { Section } from '@/components/falak/section';
+import { StatusBadge } from '@/components/falak/status';
 import SettingsLayout from '@/layouts/settings/layout';
 import { router, useForm } from '@inertiajs/react';
 import { useState, type FormEventHandler } from 'react';

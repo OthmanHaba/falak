@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Servers\Http\Requests;
+namespace Falak\Servers\Http\Requests;
 
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Providers\Contracts\ProviderType;
+use Falak\Servers\Contracts\ServerType;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Providers\Contracts\ProviderType;
-use Kiln\Servers\Contracts\ServerType;
 
 final class StoreServerRequest extends FormRequest
 {

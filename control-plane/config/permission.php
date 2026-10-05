@@ -12,7 +12,7 @@ use Spatie\Permission\Models\Role;
  * (organization_id = null) and synced from the Identity PermissionRegistry after migrations.
  *
  * The package's Gate::before hook is disabled on purpose: authorization always goes through
- * Kiln\Identity\Contracts\OrganizationAccess so every check is explicitly organization-scoped.
+ * Falak\Identity\Contracts\OrganizationAccess so every check is explicitly organization-scoped.
  */
 return [
     'models' => [
@@ -49,7 +49,7 @@ return [
 
     'cache' => [
         'expiration_time' => DateInterval::createFromDateString('24 hours'),
-        'key' => 'kiln.identity.permission.cache',
+        'key' => 'falak.identity.permission.cache',
         'store' => 'default',
     ],
 ];

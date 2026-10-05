@@ -1,22 +1,22 @@
 #!/bin/sh
-# install-cli.sh — install the `kiln` CLI on macOS or Linux (amd64/arm64).
+# install-cli.sh — install the `falak` CLI on macOS or Linux (amd64/arm64).
 #
-#   curl -fsSL https://github.com/OthmanHaba/kiln/releases/latest/download/install-cli.sh | sh
+#   curl -fsSL https://github.com/OthmanHaba/falak/releases/latest/download/install-cli.sh | sh
 #
 # Then log in (the token comes from <panel>/settings/api-tokens):
-#   kiln login --url https://kiln.example.com
+#   falak login --url https://falak.example.com
 #
 # Environment:
-#   KILN_VERSION      tag to install (default: the release this script came from, else the latest)
-#   KILN_INSTALL_DIR  where to put the binary (default /usr/local/bin if writable, else ~/.local/bin)
-#   KILN_URL          if set, run `kiln login --url $KILN_URL` after installing (asks for the token)
-#   KILN_REPO         GitHub owner/repo to download from
-# This is the client CLI. kiln-ctl (the server admin tool) is installed on the control-plane host by install.sh.
+#   FALAK_VERSION      tag to install (default: the release this script came from, else the latest)
+#   FALAK_INSTALL_DIR  where to put the binary (default /usr/local/bin if writable, else ~/.local/bin)
+#   FALAK_URL          if set, run `falak login --url $FALAK_URL` after installing (asks for the token)
+#   FALAK_REPO         GitHub owner/repo to download from
+# This is the client CLI. falak-ctl (the server admin tool) is installed on the control-plane host by install.sh.
 set -eu
 
-DEFAULT_REPO="OthmanHaba/kiln"
-VERSION="${KILN_VERSION:-}"
-REPO="${KILN_REPO:-$DEFAULT_REPO}"
+DEFAULT_REPO="OthmanHaba/falak"
+VERSION="${FALAK_VERSION:-}"
+REPO="${FALAK_REPO:-$DEFAULT_REPO}"
 
 if [ -t 1 ]; then B=$(printf '\033[1m'); R=$(printf '\033[31m'); G=$(printf '\033[32m'); N=$(printf '\033[0m'); else B=; R=; G=; N=; fi
 info() { printf '%s==>%s %s\n' "$B" "$N" "$*"; }
@@ -35,7 +35,7 @@ case "$(uname -m)" in
   arm64 | aarch64) arch=arm64 ;;
   *) die "unsupported CPU $(uname -m) (amd64 and arm64 only)" ;;
 esac
-asset="kiln-$os-$arch"
+asset="falak-$os-$arch"
 
 if [ -n "$VERSION" ]; then
   base="https://github.com/$REPO/releases/download/$VERSION"
@@ -43,11 +43,11 @@ else
   base="https://github.com/$REPO/releases/latest/download"
 fi
 
-if [ -z "${KILN_INSTALL_DIR:-}" ]; then
-  if [ -w /usr/local/bin ]; then KILN_INSTALL_DIR=/usr/local/bin; else KILN_INSTALL_DIR="$HOME/.local/bin"; fi
+if [ -z "${FALAK_INSTALL_DIR:-}" ]; then
+  if [ -w /usr/local/bin ]; then FALAK_INSTALL_DIR=/usr/local/bin; else FALAK_INSTALL_DIR="$HOME/.local/bin"; fi
 fi
 
-tmp="$(mktemp -d "${TMPDIR:-/tmp}/kiln-cli.XXXXXX")"
+tmp="$(mktemp -d "${TMPDIR:-/tmp}/falak-cli.XXXXXX")"
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
 info "Downloading $asset (${VERSION:-latest}) from $REPO"
@@ -64,26 +64,26 @@ fi
 [ "$got" = "$want" ] || die "checksum mismatch for $asset (expected $want, got $got)"
 ok "checksum verified"
 
-mkdir -p "$KILN_INSTALL_DIR"
+mkdir -p "$FALAK_INSTALL_DIR"
 chmod 755 "$tmp/$asset"
-mv "$tmp/$asset" "$KILN_INSTALL_DIR/kiln" || die "cannot write $KILN_INSTALL_DIR (set KILN_INSTALL_DIR, or re-run with sudo)"
+mv "$tmp/$asset" "$FALAK_INSTALL_DIR/falak" || die "cannot write $FALAK_INSTALL_DIR (set FALAK_INSTALL_DIR, or re-run with sudo)"
 # curl sets no quarantine flag, but clear it in case the file was fetched another way.
-[ "$os" = darwin ] && xattr -d com.apple.quarantine "$KILN_INSTALL_DIR/kiln" 2>/dev/null || true
-ok "installed $("$KILN_INSTALL_DIR/kiln" version) to $KILN_INSTALL_DIR/kiln"
+[ "$os" = darwin ] && xattr -d com.apple.quarantine "$FALAK_INSTALL_DIR/falak" 2>/dev/null || true
+ok "installed $("$FALAK_INSTALL_DIR/falak" version) to $FALAK_INSTALL_DIR/falak"
 
 # shellcheck disable=SC2016  # $PATH is meant literally in the printed line
 case ":$PATH:" in
-  *":$KILN_INSTALL_DIR:"*) ;;
-  *) printf '\n  %s is not on your PATH. Add this to your shell profile:\n    export PATH="%s:$PATH"\n' "$KILN_INSTALL_DIR" "$KILN_INSTALL_DIR" ;;
+  *":$FALAK_INSTALL_DIR:"*) ;;
+  *) printf '\n  %s is not on your PATH. Add this to your shell profile:\n    export PATH="%s:$PATH"\n' "$FALAK_INSTALL_DIR" "$FALAK_INSTALL_DIR" ;;
 esac
 
-if [ -n "${KILN_URL:-}" ]; then
+if [ -n "${FALAK_URL:-}" ]; then
   if [ -r /dev/tty ]; then
-    info "Logging in to $KILN_URL (create a token at $KILN_URL/settings/api-tokens)"
-    "$KILN_INSTALL_DIR/kiln" login --url "$KILN_URL" </dev/tty || die "login failed — retry: kiln login --url $KILN_URL"
+    info "Logging in to $FALAK_URL (create a token at $FALAK_URL/settings/api-tokens)"
+    "$FALAK_INSTALL_DIR/falak" login --url "$FALAK_URL" </dev/tty || die "login failed — retry: falak login --url $FALAK_URL"
   else
-    printf '\n  No terminal for the token prompt. Log in with: kiln login --url %s\n' "$KILN_URL"
+    printf '\n  No terminal for the token prompt. Log in with: falak login --url %s\n' "$FALAK_URL"
   fi
 else
-  printf '\n  Next: kiln login --url https://<your-panel>   (token from <panel>/settings/api-tokens)\n'
+  printf '\n  Next: falak login --url https://<your-panel>   (token from <panel>/settings/api-tokens)\n'
 fi

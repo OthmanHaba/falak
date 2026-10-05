@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/docker.compose.pull.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/docker.compose.pull.schema.json",
   "title": "docker.compose.pull — write a project's files and pull its images (deploy FETCH for compose sites)",
   "type": "object",
   "additionalProperties": false,

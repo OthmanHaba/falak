@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Route;
 
-class KilnWelcomeMail extends Mailable
+class FalakWelcomeMail extends Mailable
 {
     public function build()
     {
@@ -24,7 +24,7 @@ class KilnWelcomeMail extends Mailable
     }
 }
 
-class KilnInvoicePaid extends Notification
+class FalakInvoicePaid extends Notification
 {
     public function via($notifiable)
     {
@@ -64,7 +64,7 @@ it('records outgoing requests and propagates traceparent', function () {
 
 it('records mail', function () {
     Route::get('/mail', function () {
-        Mail::to(['a@example.com', 'b@example.com'])->cc('c@example.com')->send(new KilnWelcomeMail);
+        Mail::to(['a@example.com', 'b@example.com'])->cc('c@example.com')->send(new FalakWelcomeMail);
 
         return 'ok';
     });
@@ -74,17 +74,17 @@ it('records mail', function () {
     $mail = $this->transport->spansOfType('mail')[0];
     expect($mail['kind'])->toBe(1)
         ->and($mail['attrs'])->toMatchArray([
-            'kiln.mail.class' => KilnWelcomeMail::class,
-            'kiln.mail.recipients_count' => 3,
-            'kiln.mail.mailer' => 'array',
+            'falak.mail.class' => FalakWelcomeMail::class,
+            'falak.mail.recipients_count' => 3,
+            'falak.mail.mailer' => 'array',
         ]);
 });
 
 it('records notifications sent and failed', function () {
     Route::get('/notify', function () {
         $notifiable = (new AnonymousNotifiable)->route('mail', 'x@example.com');
-        $notifiable->notify(new KilnInvoicePaid);
-        event(new NotificationFailed($notifiable, new KilnInvoicePaid, 'vonage', []));
+        $notifiable->notify(new FalakInvoicePaid);
+        event(new NotificationFailed($notifiable, new FalakInvoicePaid, 'vonage', []));
 
         return 'ok';
     });
@@ -92,14 +92,14 @@ it('records notifications sent and failed', function () {
     $this->get('/notify')->assertOk();
 
     $notifications = collect($this->transport->spansOfType('notification'));
-    expect($notifications->first(fn ($s) => $s['attrs']['kiln.notification.status'] === 'sent')['attrs'])->toMatchArray([
-        'kiln.notification.class' => KilnInvoicePaid::class,
-        'kiln.notification.channel' => 'mail',
-        'kiln.notification.status' => 'sent',
+    expect($notifications->first(fn ($s) => $s['attrs']['falak.notification.status'] === 'sent')['attrs'])->toMatchArray([
+        'falak.notification.class' => FalakInvoicePaid::class,
+        'falak.notification.channel' => 'mail',
+        'falak.notification.status' => 'sent',
     ]);
 
-    $failed = $notifications->first(fn ($s) => $s['attrs']['kiln.notification.status'] === 'failed');
-    expect($failed['attrs']['kiln.notification.channel'])->toBe('vonage')
+    $failed = $notifications->first(fn ($s) => $s['attrs']['falak.notification.status'] === 'failed');
+    expect($failed['attrs']['falak.notification.channel'])->toBe('vonage')
         ->and($failed['status']['code'])->toBe(2);
 });
 
@@ -115,7 +115,7 @@ it('records cache hit, miss, write and forget', function () {
 
     $this->get('/cache')->assertOk();
 
-    $ops = collect($this->transport->spansOfType('cache'))->map(fn ($s) => [$s['attrs']['kiln.cache.op'], $s['attrs']['kiln.cache.key'], $s['attrs']['kiln.cache.store']])->all();
+    $ops = collect($this->transport->spansOfType('cache'))->map(fn ($s) => [$s['attrs']['falak.cache.op'], $s['attrs']['falak.cache.key'], $s['attrs']['falak.cache.store']])->all();
 
     expect($ops)->toContain(['miss', 'missing', 'array'], ['write', 'present', 'array'], ['hit', 'present', 'array'], ['forget', 'present', 'array']);
 });
@@ -128,20 +128,20 @@ function rerouteCommandEvents($app): void
 
 it('records artisan commands as their own trace with exit code', function () {
     rerouteCommandEvents($this->app);
-    Artisan::command('kiln:ok', fn () => 0);
-    Artisan::command('kiln:bad', fn () => 3);
+    Artisan::command('falak:ok', fn () => 0);
+    Artisan::command('falak:bad', fn () => 3);
 
-    Artisan::call('kiln:ok');
-    Artisan::call('kiln:bad');
+    Artisan::call('falak:ok');
+    Artisan::call('falak:bad');
 
-    $commands = collect($this->transport->spansOfType('command'))->keyBy(fn ($s) => $s['attrs']['kiln.command.name']);
+    $commands = collect($this->transport->spansOfType('command'))->keyBy(fn ($s) => $s['attrs']['falak.command.name']);
 
-    expect($commands['kiln:ok']['attrs']['process.exit.code'])->toBe(0)
-        ->and($commands['kiln:ok'])->not->toHaveKey('parentSpanId')
-        ->and($commands['kiln:ok']['status']['code'])->toBe(0)
-        ->and($commands['kiln:bad']['attrs']['process.exit.code'])->toBe(3)
-        ->and($commands['kiln:bad']['status']['code'])->toBe(2)
-        ->and($commands['kiln:ok']['traceId'])->not->toBe($commands['kiln:bad']['traceId']);
+    expect($commands['falak:ok']['attrs']['process.exit.code'])->toBe(0)
+        ->and($commands['falak:ok'])->not->toHaveKey('parentSpanId')
+        ->and($commands['falak:ok']['status']['code'])->toBe(0)
+        ->and($commands['falak:bad']['attrs']['process.exit.code'])->toBe(3)
+        ->and($commands['falak:bad']['status']['code'])->toBe(2)
+        ->and($commands['falak:ok']['traceId'])->not->toBe($commands['falak:bad']['traceId']);
 });
 
 it('records scheduled tasks run by schedule:run', function () {
@@ -149,36 +149,36 @@ it('records scheduled tasks run by schedule:run', function () {
     $ran = false;
     $this->app->make(Schedule::class)->call(function () use (&$ran) {
         $ran = true;
-    })->everyMinute()->name('kiln-cleanup');
+    })->everyMinute()->name('falak-cleanup');
 
     Artisan::call('schedule:run');
     expect($ran)->toBeTrue();
 
     $task = $this->transport->spansOfType('scheduled_task')[0];
-    $command = collect($this->transport->spansOfType('command'))->first(fn ($s) => $s['attrs']['kiln.command.name'] === 'schedule:run');
+    $command = collect($this->transport->spansOfType('command'))->first(fn ($s) => $s['attrs']['falak.command.name'] === 'schedule:run');
 
     expect($task['attrs'])->toMatchArray([
-        'kiln.event.type' => 'scheduled_task',
-        'kiln.schedule.name' => 'kiln-cleanup',
-        'kiln.schedule.expression' => '* * * * *',
-        'kiln.schedule.status' => 'finished',
+        'falak.event.type' => 'scheduled_task',
+        'falak.schedule.name' => 'falak-cleanup',
+        'falak.schedule.expression' => '* * * * *',
+        'falak.schedule.status' => 'finished',
     ])->and($task['parentSpanId'])->toBe($command['spanId']);
 });
 
 it('records failed and skipped scheduled tasks as standalone traces', function () {
-    $event = new ScheduleEvent($this->app->make(\Illuminate\Console\Scheduling\CacheEventMutex::class), 'php artisan kiln:nightly');
+    $event = new ScheduleEvent($this->app->make(\Illuminate\Console\Scheduling\CacheEventMutex::class), 'php artisan falak:nightly');
     $event->dailyAt('03:00');
 
     event(new \Illuminate\Console\Events\ScheduledTaskStarting($event));
     event(new ScheduledTaskFailed($event, new RuntimeException('nightly failed')));
     event(new ScheduledTaskSkipped($event));
 
-    $tasks = collect($this->transport->spansOfType('scheduled_task'))->keyBy(fn ($s) => $s['attrs']['kiln.schedule.status']);
+    $tasks = collect($this->transport->spansOfType('scheduled_task'))->keyBy(fn ($s) => $s['attrs']['falak.schedule.status']);
 
     expect($tasks['failed']['status']['code'])->toBe(2)
-        ->and($tasks['failed']['attrs']['kiln.schedule.expression'])->toBe('0 3 * * *')
-        ->and(collect($tasks['failed']['events'])->firstWhere('name', 'exception')['attrs']['kiln.exception.handled'])->toBeFalse()
-        ->and($tasks['skipped']['attrs']['kiln.schedule.name'])->toBe('php artisan kiln:nightly');
+        ->and($tasks['failed']['attrs']['falak.schedule.expression'])->toBe('0 3 * * *')
+        ->and(collect($tasks['failed']['events'])->firstWhere('name', 'exception')['attrs']['falak.exception.handled'])->toBeFalse()
+        ->and($tasks['skipped']['attrs']['falak.schedule.name'])->toBe('php artisan falak:nightly');
 });
 
 it('ships logs as OTLP logs correlated with the active span', function () {
@@ -197,6 +197,6 @@ it('ships logs as OTLP logs correlated with the active span', function () {
         ->and($record['severityText'])->toBe('WARNING')
         ->and($record['traceId'])->toBe($root['traceId'])
         ->and($record['spanId'])->toBe($root['spanId'])
-        ->and($record['attrs']['kiln.context.order'])->toBe(7)
-        ->and($record['attrs']['kiln.context.password'])->toBe('[redacted]');
+        ->and($record['attrs']['falak.context.order'])->toBe(7)
+        ->and($record['attrs']['falak.context.password'])->toBe('[redacted]');
 });

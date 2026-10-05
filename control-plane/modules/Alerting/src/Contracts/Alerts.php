@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Alerting\Contracts;
+namespace Falak\Alerting\Contracts;
 
-use Kiln\Alerting\Contracts\Data\AlertData;
+use Falak\Alerting\Contracts\Data\AlertData;
 
 /**
  * Raise an alert directly (the event-based path is {@see Alertable}). Routing, quiet hours,

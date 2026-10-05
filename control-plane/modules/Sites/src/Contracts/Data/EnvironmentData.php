@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
 /**
  * One version of a site's environment. Contains secrets: never log it or send it to the UI.

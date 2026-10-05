@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Tests\Feature\Auth;
+namespace Falak\Identity\Tests\Feature\Auth;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;

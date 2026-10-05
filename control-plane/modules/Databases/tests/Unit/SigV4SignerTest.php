@@ -1,7 +1,7 @@
 <?php
 
-use Kiln\Databases\Infrastructure\ObjectStorage\EndpointGuard;
-use Kiln\Databases\Infrastructure\ObjectStorage\SigV4Signer;
+use Falak\Databases\Infrastructure\ObjectStorage\EndpointGuard;
+use Falak\Databases\Infrastructure\ObjectStorage\SigV4Signer;
 
 /*
 | Vectors from the AWS documentation:

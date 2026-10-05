@@ -1,4 +1,4 @@
-// Package cron is kiln-agent's built-in scheduler (replaces crontab juggling). It runs the desired job
+// Package cron is falak-agent's built-in scheduler (replaces crontab juggling). It runs the desired job
 // set from cron.apply and emits a heartbeat for every run so the control plane can detect missed runs.
 package cron
 

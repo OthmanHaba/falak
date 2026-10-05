@@ -1,10 +1,10 @@
-import { Button } from '@/components/kiln/button';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Pagination } from '@/components/kiln/pagination';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Select } from '@/components/kiln/select';
-import { StatusBadge } from '@/components/kiln/status';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Pagination } from '@/components/falak/pagination';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Select } from '@/components/falak/select';
+import { StatusBadge } from '@/components/falak/status';
+import { Tag } from '@/components/falak/tag';
 import ObservabilityLayout from '@/layouts/observability-layout';
 import { type Paginated } from '@/types';
 import { Link, router } from '@inertiajs/react';

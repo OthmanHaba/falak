@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Projects\Contracts\Data;
+namespace Falak\Projects\Contracts\Data;
 
 /**
  * Result of resolving `${{ service.KEY }}` references in a site's variables. Contains secrets

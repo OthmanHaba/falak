@@ -1,9 +1,9 @@
 <?php
 
-use Kiln\Servers\Domain\MachineCheck\Decision;
-use Kiln\Servers\Domain\MachineCheck\MachineReport;
-use Kiln\Servers\Domain\MachineCheck\Severity;
-use Kiln\Servers\Domain\Stack\Stack;
+use Falak\Servers\Domain\MachineCheck\Decision;
+use Falak\Servers\Domain\MachineCheck\MachineReport;
+use Falak\Servers\Domain\MachineCheck\Severity;
+use Falak\Servers\Domain\Stack\Stack;
 
 require_once __DIR__.'/../Support/machine_reports.php';
 
@@ -13,10 +13,10 @@ function mc_review_stack(?string $database = 'postgresql', ?string $cache = 'red
 }
 
 /*
- * What Kiln itself installs on each supported Ubuntu release (the archive's versions): a server Kiln provisioned must
+ * What Falak itself installs on each supported Ubuntu release (the archive's versions): a server Falak provisioned must
  * never block on its own engines. Valkey first ships with 26.04.
  */
-dataset('kiln_installed_engines', [
+dataset('falak_installed_engines', [
     'jammy postgresql' => ['22.04', 'database', 'postgresql', 'postgresql-14', '14.18-0ubuntu0.22.04.1', '14'],
     'jammy mysql' => ['22.04', 'database', 'mysql', 'mysql-server-8.0', '8.0.42-0ubuntu0.22.04.1', '8.0.42'],
     'jammy mariadb' => ['22.04', 'database', 'mariadb', 'mariadb-server', '1:10.6.22-0ubuntu0.22.04.1', '10.6.22'],
@@ -32,16 +32,16 @@ dataset('kiln_installed_engines', [
     'resolute valkey' => ['26.04', 'cache', 'valkey', 'valkey-server', '8.1.1+dfsg1-2', '8.1.1'],
 ]);
 
-it('adopts the engine Kiln installs on every supported release', function (string $os, string $component, string $engine, string $package, string $version, string $shown) {
+it('adopts the engine Falak installs on every supported release', function (string $os, string $component, string $engine, string $package, string $version, string $shown) {
     $report = mc_package(mc_report(['os' => ['id' => 'ubuntu', 'version' => $os]]), $package, $version);
     $stack = $component === 'database' ? mc_review_stack($engine) : mc_review_stack(cache: $engine);
     $decision = mc_decide($report, mc_wanted($stack))->for($component);
 
     expect($decision->decision)->toBe(Decision::Adopt)
         ->and($decision->found[0]['version'])->toBe($shown);
-})->with('kiln_installed_engines');
+})->with('falak_installed_engines');
 
-it('adopts the docker.io Kiln installs on every supported release', function (string $version) {
+it('adopts the docker.io Falak installs on every supported release', function (string $version) {
     $report = mc_docker_io(mc_report(), ['compose', 'buildx']);
     $report['packages'] = array_map(fn (array $p) => $p['name'] === 'docker.io' ? [...$p, 'version' => $version] : $p, $report['packages']);
     $report['docker']['server_version'] = MachineReport::upstream($version);
@@ -112,10 +112,10 @@ it('lets in users the allow lists match by name, wildcard or group', function ()
     expect(mc_decide($report, mc_wanted(mc_review_stack()))->for('ssh')->decision)->toBe(Decision::Block);
 });
 
-it('writes Kiln\'s automatic-update config over Ubuntu\'s stock one and keeps a customised one', function () {
+it('writes Falak\'s automatic-update config over Ubuntu\'s stock one and keeps a customised one', function () {
     expect(mc_decide(mc_report(), mc_wanted(mc_review_stack()))->for('unattended_upgrades')->decision)->toBe(Decision::Install);
 
-    $custom = mc_report(['unattended_upgrades' => ['installed' => true, 'periodic' => ['Update-Package-Lists' => '1', 'Unattended-Upgrade' => '1', 'AutocleanInterval' => '7'], 'managed_by_kiln' => false]]);
+    $custom = mc_report(['unattended_upgrades' => ['installed' => true, 'periodic' => ['Update-Package-Lists' => '1', 'Unattended-Upgrade' => '1', 'AutocleanInterval' => '7'], 'managed_by_falak' => false]]);
     expect(mc_decide($custom, mc_wanted(mc_review_stack()))->for('unattended_upgrades')->decision)->toBe(Decision::Adopt);
 });
 

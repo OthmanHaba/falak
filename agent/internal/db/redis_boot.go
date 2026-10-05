@@ -11,27 +11,27 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // Instances that listen on docker0 or a WireGuard address after a reboot.
 //
-// Both kinds of address appear late in the boot: docker0 once docker.service has started, a Kiln private network's
+// Both kinds of address appear late in the boot: docker0 once docker.service has started, a Falak private network's
 // once its wg-quick@<interface>.service is up. The template unit is only After=network.target, so an instance can
 // start before its address exists: Redis 6.2+ / Valkey then refuse to start ("Failed listening on port") and systemd
 // gives up after its default 5 starts in 10 s; Redis 6.0 starts without the address and never picks it up.
 //
-//   - A second drop-in, 40-kiln-boot.conf, orders the instance after network-online.target, docker.service and the
-//     Kiln WireGuard units on the host (ordering only: none of them is pulled in, an absent one is ignored) and makes
+//   - A second drop-in, 40-falak-boot.conf, orders the instance after network-online.target, docker.service and the
+//     Falak WireGuard units on the host (ordering only: none of them is pulled in, an absent one is ignored) and makes
 //     systemd retry every 2 s (at most 150 starts in 10 minutes). It only needs a daemon-reload, never a restart: it is kept apart from
-//     50-kiln.conf, whose changes restart the instance.
+//     50-falak.conf, whose changes restart the instance.
 //   - RedisWatch checks every instance once a minute: an instance whose configured addresses all exist but that does not
 //     listen on each of them is restarted (data kept: snapshotted first), a failed one started. Attempts back off
 //     (1, 2, 5, then every 10 minutes) while they don't help; the backoff starts over once the instance is healthy or
 //     one of its addresses was gone (it came back: worth trying at once).
 
 // wgQuickConf is the header net.wireguard.apply writes into /etc/wireguard/<interface>.conf.
-const wgQuickConf = "# Managed by Kiln (net.wireguard.apply)"
+const wgQuickConf = "# Managed by Falak (net.wireguard.apply)"
 
 var wgIfaceName = regexp.MustCompile(`^[A-Za-z0-9_=+.-]{1,15}$`)
 
@@ -41,13 +41,13 @@ var (
 	RedisWatchDelay    = 30 * time.Second
 )
 
-func (k kvEngine) bootDropIn(name string) string { return k.dropInDir(name) + "/40-kiln-boot.conf" }
+func (k kvEngine) bootDropIn(name string) string { return k.dropInDir(name) + "/40-falak-boot.conf" }
 
 // renderRedisBootDropIn orders the instance after the units that bring its addresses up and keeps systemd retrying.
 func renderRedisBootDropIn(wgUnits []string) string {
 	after := append([]string{"network-online.target", "docker.service"}, wgUnits...)
-	return "# Managed by the Kiln agent (db.redis.apply): changes are overwritten.\n" +
-		"# Start once docker0 and Kiln's WireGuard addresses can exist (ordering only), and keep retrying until they do.\n" +
+	return "# Managed by the Falak agent (db.redis.apply): changes are overwritten.\n" +
+		"# Start once docker0 and Falak's WireGuard addresses can exist (ordering only), and keep retrying until they do.\n" +
 		"[Unit]\n" +
 		"Wants=network-online.target\n" +
 		"After=" + strings.Join(after, " ") + "\n" +
@@ -60,8 +60,8 @@ func renderRedisBootDropIn(wgUnits []string) string {
 		"RestartSec=2s\n"
 }
 
-// kilnWireGuardUnits lists wg-quick@<interface>.service for the Kiln WireGuard configs in /etc/wireguard.
-func (db *DB) kilnWireGuardUnits() []string {
+// falakWireGuardUnits lists wg-quick@<interface>.service for the Falak WireGuard configs in /etc/wireguard.
+func (db *DB) falakWireGuardUnits() []string {
 	entries, err := os.ReadDir(db.d.FS.P("/etc/wireguard"))
 	if err != nil {
 		return nil
@@ -86,7 +86,7 @@ func (db *DB) ensureBootDropIn(ctx context.Context, k kvEngine, name string) err
 	if err := db.notSymlink(path); err != nil {
 		return err
 	}
-	changed, err := db.d.FS.WriteFile(path, []byte(renderRedisBootDropIn(db.kilnWireGuardUnits())), 0o644)
+	changed, err := db.d.FS.WriteFile(path, []byte(renderRedisBootDropIn(db.falakWireGuardUnits())), 0o644)
 	if err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}

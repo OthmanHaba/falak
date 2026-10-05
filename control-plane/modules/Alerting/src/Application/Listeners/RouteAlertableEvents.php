@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Alerting\Application\Listeners;
+namespace Falak\Alerting\Application\Listeners;
 
+use Falak\Alerting\Contracts\Alertable;
+use Falak\Alerting\Contracts\Alerts;
 use Illuminate\Contracts\Container\Container;
-use Kiln\Alerting\Contracts\Alertable;
-use Kiln\Alerting\Contracts\Alerts;
 
 /**
  * Wildcard listener: any event implementing Alertable is routed, so emitting modules never

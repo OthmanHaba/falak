@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Databases\Application\Actions;
+namespace Falak\Databases\Application\Actions;
 
+use Falak\Databases\Domain\Models\Backup;
+use Falak\Databases\Domain\Models\BackupSchedule;
+use Falak\Databases\Domain\Models\StorageProvider;
+use Falak\Identity\Contracts\AuditLog;
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Domain\Models\Backup;
-use Kiln\Databases\Domain\Models\BackupSchedule;
-use Kiln\Databases\Domain\Models\StorageProvider;
-use Kiln\Identity\Contracts\AuditLog;
 
 /**
  * Removes a provider (objects in the bucket are left untouched). Backups stored there become
- * unrestorable from Kiln.
+ * unrestorable from Falak.
  */
 final class DeleteStorageProvider
 {

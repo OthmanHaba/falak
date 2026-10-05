@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Apm\Logging;
+namespace Falak\Apm\Logging;
 
 use Illuminate\Container\Container;
-use Kiln\Apm\Recorder;
+use Falak\Apm\Recorder;
 use Monolog\Handler\AbstractProcessingHandler;
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -12,9 +12,9 @@ use Throwable;
 /**
  * Monolog handler that buffers records as OTLP logs (correlated with the active trace/span).
  *
- *   'channels' => ['kiln' => ['driver' => 'monolog', 'handler' => Kiln\Apm\Logging\OtlpHandler::class]]
+ *   'channels' => ['falak' => ['driver' => 'monolog', 'handler' => Falak\Apm\Logging\OtlpHandler::class]]
  *
- * Set `kiln-apm.logs_via` to 'handler' when using it to avoid double capture.
+ * Set `falak-apm.logs_via` to 'handler' when using it to avoid double capture.
  */
 final class OtlpHandler extends AbstractProcessingHandler
 {

@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Servers\Contracts;
+namespace Falak\Servers\Contracts;
 
 /**
  * creating → provisioning → active; provisioning → needs_attention → provisioning; any → error; any → deleting.
  * "creating" covers machine creation at the provider and waiting for the agent to enroll. "provisioning" covers the
- * machine check and applying the plan; "needs_attention" means the machine check found a conflict Kiln won't resolve
+ * machine check and applying the plan; "needs_attention" means the machine check found a conflict Falak won't resolve
  * on its own, and nothing was applied.
  */
 enum ServerStatus: string

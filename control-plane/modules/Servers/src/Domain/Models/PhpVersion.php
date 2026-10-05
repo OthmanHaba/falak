@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Servers\Domain\Models;
+namespace Falak\Servers\Domain\Models;
 
+use Falak\Servers\Contracts\Data\PhpSettings;
+use Falak\Servers\Domain\Enums\PhpVersionStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Kiln\Servers\Contracts\Data\PhpSettings;
-use Kiln\Servers\Domain\Enums\PhpVersionStatus;
 
 /**
  * @property string $id

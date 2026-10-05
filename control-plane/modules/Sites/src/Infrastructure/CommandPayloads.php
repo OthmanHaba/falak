@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Sites\Infrastructure;
+namespace Falak\Sites\Infrastructure;
 
-use Kiln\Servers\Contracts\Data\PhpSettings;
-use Kiln\Sites\Domain\Models\Site;
+use Falak\Servers\Contracts\Data\PhpSettings;
+use Falak\Sites\Domain\Models\Site;
 
 /**
  * Agent command payloads built by Sites (validated against contracts/agent-protocol by the gateway).
@@ -39,7 +39,7 @@ final class CommandPayloads
             'pool' => $site->slug,
             'user' => $site->unix_user,
             'group' => $site->unix_user,
-            'listen' => "/run/php/kiln-{$site->slug}-{$phpVersion}.sock",
+            'listen' => "/run/php/falak-{$site->slug}-{$phpVersion}.sock",
             'pm' => $fpm['pm'],
             'max_children' => max(1, (int) $fpm['max_children']),
             'start_servers' => max(1, (int) $fpm['start_servers']),

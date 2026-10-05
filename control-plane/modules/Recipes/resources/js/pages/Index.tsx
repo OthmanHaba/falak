@@ -1,14 +1,14 @@
-import { Button } from '@/components/kiln/button';
-import { CodeBlock } from '@/components/kiln/code-block';
-import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
-import { DataTable } from '@/components/kiln/data-table';
-import { Dialog } from '@/components/kiln/dialog';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Section } from '@/components/kiln/section';
-import { StatusBadge } from '@/components/kiln/status';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { CodeBlock } from '@/components/falak/code-block';
+import { ConfirmDestructive } from '@/components/falak/confirm-destructive';
+import { DataTable } from '@/components/falak/data-table';
+import { Dialog } from '@/components/falak/dialog';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Section } from '@/components/falak/section';
+import { StatusBadge } from '@/components/falak/status';
+import { Tag } from '@/components/falak/tag';
 import SettingsLayout from '@/layouts/settings/layout';
 import { Link, router, useForm } from '@inertiajs/react';
 import { Copy, Eye, History, Pencil, Play, Plus, ScrollText, Trash2 } from 'lucide-react';
@@ -191,7 +191,7 @@ export default function Index({ recipes, builtins, recentRuns, can }: Props) {
 
             <Section
                 title="Built-in recipes"
-                description="Maintained by Kiln. Run them as they are, or copy one into your library to change it."
+                description="Maintained by Falak. Run them as they are, or copy one into your library to change it."
                 bare
             >
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

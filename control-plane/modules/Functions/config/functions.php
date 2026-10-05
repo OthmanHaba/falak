@@ -1,46 +1,46 @@
 <?php
 
-// Compose passes an empty KILN_IMAGE_PREFIX when the install's .env has none.
-$prefix = rtrim((string) (env('KILN_IMAGE_PREFIX') ?: 'ghcr.io/othmanhaba'), '/');
-$version = (string) (env('KILN_VERSION') ?: 'latest');
+// Compose passes an empty FALAK_IMAGE_PREFIX when the install's .env has none.
+$prefix = rtrim((string) (env('FALAK_IMAGE_PREFIX') ?: 'ghcr.io/othmanhaba'), '/');
+$version = (string) (env('FALAK_VERSION') ?: 'latest');
 $tag = preg_match('/^v\d+\.\d+\.\d+/', $version) === 1 ? $version : 'latest';
 
 return [
     // Runtimes a function can use. Their images follow the runtime convention in runtimes/functions/bun/README.md
-    // (kiln-fn-install / kiln-fn-serve / kiln-fn-run) and are released with Kiln, so their tag is Kiln's version.
+    // (falak-fn-install / falak-fn-serve / falak-fn-run) and are released with Falak, so their tag is Falak's version.
     // `family` picks the starters (ts: Bun, Node and Deno share them; python; go).
     'runtimes' => [
         'bun' => [
             'label' => 'Bun',
-            'image' => env('KILN_FN_BUN_IMAGE', "{$prefix}/kiln-fn-bun:{$tag}"),
+            'image' => env('FALAK_FN_BUN_IMAGE', "{$prefix}/falak-fn-bun:{$tag}"),
             'entrypoint' => 'index.ts',
             'language' => 'typescript',
             'family' => 'ts',
         ],
         'node' => [
             'label' => 'Node.js',
-            'image' => env('KILN_FN_NODE_IMAGE', "{$prefix}/kiln-fn-node:{$tag}"),
+            'image' => env('FALAK_FN_NODE_IMAGE', "{$prefix}/falak-fn-node:{$tag}"),
             'entrypoint' => 'index.ts',
             'language' => 'typescript',
             'family' => 'ts',
         ],
         'deno' => [
             'label' => 'Deno',
-            'image' => env('KILN_FN_DENO_IMAGE', "{$prefix}/kiln-fn-deno:{$tag}"),
+            'image' => env('FALAK_FN_DENO_IMAGE', "{$prefix}/falak-fn-deno:{$tag}"),
             'entrypoint' => 'index.ts',
             'language' => 'typescript',
             'family' => 'ts',
         ],
         'python' => [
             'label' => 'Python',
-            'image' => env('KILN_FN_PYTHON_IMAGE', "{$prefix}/kiln-fn-python:{$tag}"),
+            'image' => env('FALAK_FN_PYTHON_IMAGE', "{$prefix}/falak-fn-python:{$tag}"),
             'entrypoint' => 'main.py',
             'language' => 'python',
             'family' => 'python',
         ],
         'go' => [
             'label' => 'Go',
-            'image' => env('KILN_FN_GO_IMAGE', "{$prefix}/kiln-fn-go:{$tag}"),
+            'image' => env('FALAK_FN_GO_IMAGE', "{$prefix}/falak-fn-go:{$tag}"),
             'entrypoint' => 'main.go',
             'language' => 'go',
             'family' => 'go',

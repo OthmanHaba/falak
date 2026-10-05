@@ -1,9 +1,9 @@
 <?php
 
-use Kiln\Identity\Contracts\Role;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteCommand;
+use Falak\Identity\Contracts\Role;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteCommand;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -18,9 +18,9 @@ beforeEach(function () {
 });
 
 it('edits the deploy script', function () {
-    $this->put("/sites/{$this->site->id}/deploy-script", ['script' => "\$KILN_FETCH\r\n\$KILN_ACTIVATE\r\n\r\n"])->assertSessionHasNoErrors();
+    $this->put("/sites/{$this->site->id}/deploy-script", ['script' => "\$FALAK_FETCH\r\n\$FALAK_ACTIVATE\r\n\r\n"])->assertSessionHasNoErrors();
 
-    expect($this->site->refresh()->deploy_script)->toBe("\$KILN_FETCH\n\$KILN_ACTIVATE\n");
+    expect($this->site->refresh()->deploy_script)->toBe("\$FALAK_FETCH\n\$FALAK_ACTIVATE\n");
 
     [$viewer] = memberOf($this->organization, Role::Viewer);
     $this->actingAs($viewer)->put("/sites/{$this->site->id}/deploy-script", ['script' => 'x'])->assertForbidden();
@@ -33,7 +33,7 @@ it('runs a command on the leader by default as the site user and records the out
     expect($exec['server_id'])->toBe($this->a->id)
         ->and($exec['payload']['user'])->toBe('shop')
         ->and($exec['payload']['script'])->toContain('php8.4 artisan migrate:status')
-        ->and($exec['payload']['env'])->toMatchArray(['KILN_SITE' => 'shop', 'KILN_ROLE' => 'leader', 'KILN_PHP' => 'php8.4']);
+        ->and($exec['payload']['env'])->toMatchArray(['FALAK_SITE' => 'shop', 'FALAK_ROLE' => 'leader', 'FALAK_PHP' => 'php8.4']);
 
     $command = SiteCommand::query()->firstOrFail();
     expect($command->status)->toBe('queued')->and($command->command_id)->toBe($exec['id']);
@@ -45,7 +45,7 @@ it('runs a command on the leader by default as the site user and records the out
     $this->post("/sites/{$this->site->id}/commands", ['command' => 'ls', 'server_id' => $this->b->id])->assertSessionHasNoErrors();
     sites_finish($this->agents->last('system.exec'));
 
-    expect($this->agents->last('system.exec')['payload']['env']['KILN_IS_LEADER'])->toBe('0')
+    expect($this->agents->last('system.exec')['payload']['env']['FALAK_IS_LEADER'])->toBe('0')
         ->and(SiteCommand::query()->latest('id')->first()->status)->toBe('succeeded');
 });
 
@@ -71,16 +71,16 @@ it('keeps a bounded command history', function () {
 it('exposes deploy variables with exposed environment keys through the directory', function () {
     $this->put("/sites/{$this->site->id}/environment", ['content' => "APP_ENV=production\nSECRET=x", 'exposed' => ['APP_ENV']]);
 
-    $vars = app(SiteDirectory::class)->deployVariables($this->site->id, $this->b->id, ['KILN_COMMIT' => 'abc', 'NOT_KILN' => 'x']);
+    $vars = app(SiteDirectory::class)->deployVariables($this->site->id, $this->b->id, ['FALAK_COMMIT' => 'abc', 'NOT_FALAK' => 'x']);
 
     expect($vars)->toMatchArray([
         'APP_ENV' => 'production',
-        'KILN_SITE' => 'shop',
-        'KILN_SITE_ROOT' => '/srv/kiln/sites/shop',
-        'KILN_SHARED_DIR' => '/srv/kiln/sites/shop/shared',
-        'KILN_ROLE' => 'member',
-        'KILN_IS_LEADER' => '0',
-        'KILN_PHP' => 'php8.4',
-        'KILN_COMMIT' => 'abc',
-    ])->and($vars)->not->toHaveKey('SECRET')->not->toHaveKey('NOT_KILN');
+        'FALAK_SITE' => 'shop',
+        'FALAK_SITE_ROOT' => '/srv/falak/sites/shop',
+        'FALAK_SHARED_DIR' => '/srv/falak/sites/shop/shared',
+        'FALAK_ROLE' => 'member',
+        'FALAK_IS_LEADER' => '0',
+        'FALAK_PHP' => 'php8.4',
+        'FALAK_COMMIT' => 'abc',
+    ])->and($vars)->not->toHaveKey('SECRET')->not->toHaveKey('NOT_FALAK');
 });

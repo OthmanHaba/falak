@@ -1,11 +1,11 @@
 <?php
 
-use Kiln\Sites\Application\Compose\ComposeNetworks;
-use Kiln\Sites\Application\Compose\ServiceReferences;
+use Falak\Sites\Application\Compose\ComposeNetworks;
+use Falak\Sites\Application\Compose\ServiceReferences;
 use Symfony\Component\Yaml\Yaml;
 
 /*
- * A compose service run as its own Kiln site: the stack networks it was on (by their real names) and the stack's
+ * A compose service run as its own Falak site: the stack networks it was on (by their real names) and the stack's
  * services it uses (docs/plans/COMPOSE_APPS.md, follow-up: split-out services keep reaching the stack).
  */
 

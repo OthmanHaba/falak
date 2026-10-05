@@ -9,9 +9,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 func errFmt(s string) error { return errors.New(s) }
@@ -181,19 +181,19 @@ func EnsureUser(ctx context.Context, r runner.Runner, fs hostfs.FS, p UserSpec, 
 }
 
 func syncSudoers(ctx context.Context, r runner.Runner, fs hostfs.FS, name, mode string) (bool, error) {
-	path := "/etc/sudoers.d/kiln-" + name
+	path := "/etc/sudoers.d/falak-" + name
 	if mode == "" || mode == "none" {
 		return fs.Remove(path)
 	}
 	if mode != "nopasswd" {
 		return false, &commands.PayloadError{Err: fmt.Errorf("unknown sudo mode %q", mode)}
 	}
-	want := []byte(fmt.Sprintf("# Managed by Kiln\n%s ALL=(ALL:ALL) NOPASSWD:ALL\n", name))
+	want := []byte(fmt.Sprintf("# Managed by Falak\n%s ALL=(ALL:ALL) NOPASSWD:ALL\n", name))
 	if cur, err := fs.ReadFile(path); err == nil && string(cur) == string(want) {
 		return false, nil
 	}
 	// Validate a candidate before it can break sudo.
-	tmp := path + ".kiln-check"
+	tmp := path + ".falak-check"
 	if _, err := fs.WriteFile(tmp, want, 0o440); err != nil {
 		return false, err
 	}

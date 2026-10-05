@@ -1,16 +1,16 @@
 <?php
 
-use Kiln\Fleet\Domain\Models\Command;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Models\SshKey;
+use Falak\Fleet\Domain\Models\Command;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Identity\Contracts\Role;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Models\SshKey;
 use phpseclib3\Crypt\EC;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 beforeEach(function () {
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test']);
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test']);
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
     $this->publicKey = EC::createKey('Ed25519')->getPublicKey()->toString('OpenSSH', ['comment' => 'me@laptop']);
 });
@@ -52,7 +52,7 @@ it('attaches keys to servers and syncs authorized_keys with a schema-valid paylo
 
     expect($envelopes)->toHaveCount(2)
         ->and($root['payload']['keys'])->toBe([['id' => $key->id, 'name' => 'laptop', 'public_key' => $key->public_key]])
-        ->and($envelopes->firstWhere('payload.user', 'kiln')['payload']['keys'])->toBe([])
+        ->and($envelopes->firstWhere('payload.user', 'falak')['payload']['keys'])->toBe([])
         ->and(app(ProtocolSchemas::class)->validateCommand('system.ssh_key.sync', ProtocolSchemas::toJson($root['payload'])))->toBe([]);
 
     $this->post("/servers/{$server->id}/ssh-keys", ['ssh_key_id' => $key->id, 'unix_user' => 'postgres'])->assertSessionHasErrors('unix_user');
@@ -65,13 +65,13 @@ it('deleting a key removes it from every server', function () {
     [$server, $agent] = activeServerWithAgent();
     $this->post('/ssh-keys', ['name' => 'laptop', 'public_key' => $this->publicKey]);
     $key = SshKey::query()->firstOrFail();
-    $this->post("/servers/{$server->id}/ssh-keys", ['ssh_key_id' => $key->id, 'unix_user' => 'kiln']);
+    $this->post("/servers/{$server->id}/ssh-keys", ['ssh_key_id' => $key->id, 'unix_user' => 'falak']);
     servers_poll($agent['headers']);
 
     $this->delete("/ssh-keys/{$key->id}")->assertSessionHasNoErrors();
 
     expect(SshKey::query()->count())->toBe(0)
-        ->and(collect(servers_poll($agent['headers']))->firstWhere('payload.user', 'kiln')['payload']['keys'])->toBe([]);
+        ->and(collect(servers_poll($agent['headers']))->firstWhere('payload.user', 'falak')['payload']['keys'])->toBe([]);
 });
 
 it('does not sync keys to servers that are not active yet', function () {
@@ -79,7 +79,7 @@ it('does not sync keys to servers that are not active yet', function () {
     $server = Server::query()->firstOrFail();
     $this->post('/ssh-keys', ['name' => 'laptop', 'public_key' => $this->publicKey]);
 
-    $this->post("/servers/{$server->id}/ssh-keys", ['ssh_key_id' => SshKey::query()->value('id'), 'unix_user' => 'kiln'])->assertSessionHasNoErrors();
+    $this->post("/servers/{$server->id}/ssh-keys", ['ssh_key_id' => SshKey::query()->value('id'), 'unix_user' => 'falak'])->assertSessionHasNoErrors();
 
     expect(Command::query()->count())->toBe(0);
 });

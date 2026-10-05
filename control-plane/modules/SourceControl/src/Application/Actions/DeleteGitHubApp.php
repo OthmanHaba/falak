@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\SourceControl\Application\Actions;
+namespace Falak\SourceControl\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\SourceControl\Domain\Models\Connection;
-use Kiln\SourceControl\Domain\Models\GitHubApp;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\SourceControl\Domain\Models\Connection;
+use Falak\SourceControl\Domain\Models\GitHubApp;
 
 /**
  * Forget a registered GitHub App: uninstall it from every account (best effort), disconnect its connections and

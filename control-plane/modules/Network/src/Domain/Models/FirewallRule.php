@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Network\Domain\Models;
+namespace Falak\Network\Domain\Models;
 
+use Falak\Network\Domain\Enums\RuleAction;
+use Falak\Network\Domain\Enums\RuleProtocol;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Kiln\Network\Domain\Enums\RuleAction;
-use Kiln\Network\Domain\Enums\RuleProtocol;
 
 /**
  * @property string $id

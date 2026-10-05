@@ -1,9 +1,9 @@
 <?php
 
+use Falak\Servers\Application\ServerFacts;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Events\ServerUpdated;
 use Illuminate\Support\Facades\Event;
-use Kiln\Servers\Application\ServerFacts;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Events\ServerUpdated;
 
 beforeEach(fn () => Event::fake([ServerUpdated::class]));
 

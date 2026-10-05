@@ -2,7 +2,7 @@
 
 return [
     // system.exec timeout for recipe runs (seconds); a run may lower or raise it up to max_timeout.
-    'timeout' => (int) env('KILN_RECIPES_TIMEOUT', 900),
+    'timeout' => (int) env('FALAK_RECIPES_TIMEOUT', 900),
     'max_timeout' => 3600,
 
     // Maximum servers per run.

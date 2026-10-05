@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Projects\Application\Actions;
+namespace Falak\Projects\Application\Actions;
 
-use Kiln\Projects\Domain\Models\Favorite;
-use Kiln\Projects\Domain\Models\Project;
+use Falak\Projects\Domain\Models\Favorite;
+use Falak\Projects\Domain\Models\Project;
 
 /**
  * Star / unstar a project for one user (Projects dashboard: favorites are pinned first).

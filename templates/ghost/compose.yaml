@@ -8,7 +8,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      url: ${{ kiln.url(ghost) }}
+      url: ${{ falak.url(ghost) }}
       NODE_ENV: production
       database__client: mysql
       database__connection__host: db

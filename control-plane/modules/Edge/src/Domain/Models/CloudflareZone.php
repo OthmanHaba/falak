@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Domain\Models;
+namespace Falak\Edge\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * A Cloudflare zone an organization lets Kiln manage: DNS records for its domains, generated names under it.
+ * A Cloudflare zone an organization lets Falak manage: DNS records for its domains, generated names under it.
  *
  * @property string $id
  * @property string $organization_id
@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $name e.g. example.com
  * @property bool $proxied default for new records (orange cloud)
  * @property ?string $plan Cloudflare plan (free | pro | business | enterprise), last read from the zone
- * @property bool $rate_limited Kiln has rate limit rules in the zone
+ * @property bool $rate_limited Falak has rate limit rules in the zone
  * @property ?string $security_level_before the security level to return to while Under Attack mode is on
  * @property DnsCredential $credential
  */

@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Alerting\Application\Listeners;
+namespace Falak\Alerting\Application\Listeners;
 
+use Falak\Alerting\Domain\Models\Alert;
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Alerting\Domain\Models\DedupState;
+use Falak\Alerting\Domain\Models\Notification;
+use Falak\Alerting\Domain\Models\Rule;
+use Falak\Identity\Events\OrganizationDeleted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\DB;
-use Kiln\Alerting\Domain\Models\Alert;
-use Kiln\Alerting\Domain\Models\Channel;
-use Kiln\Alerting\Domain\Models\DedupState;
-use Kiln\Alerting\Domain\Models\Notification;
-use Kiln\Alerting\Domain\Models\Rule;
-use Kiln\Identity\Events\OrganizationDeleted;
 
 final class DeleteOrganizationAlerting implements ShouldQueue
 {

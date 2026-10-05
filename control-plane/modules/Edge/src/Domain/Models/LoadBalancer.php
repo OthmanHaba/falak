@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Edge\Domain\Models;
+namespace Falak\Edge\Domain\Models;
 
+use Falak\Edge\Domain\Enums\LbPolicy;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
-use Kiln\Edge\Domain\Enums\LbPolicy;
 
 /**
  * A load-balancer server (type lb) terminating TLS for a site and proxying to its targets.

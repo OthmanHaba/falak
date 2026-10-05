@@ -2,41 +2,41 @@
 
 namespace Database\Seeders;
 
+use Falak\Fleet\Contracts\AgentStatus;
+use Falak\Fleet\Contracts\CommandStatus;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\Command;
+use Falak\Network\Domain\Enums\ApplyStatus;
+use Falak\Network\Domain\Enums\KeyStatus;
+use Falak\Network\Domain\Enums\RuleAction;
+use Falak\Network\Domain\Enums\RuleProtocol;
+use Falak\Network\Domain\Models\FirewallRule;
+use Falak\Network\Domain\Models\FirewallState;
+use Falak\Network\Domain\Models\PrivateNetwork;
+use Falak\Network\Domain\Models\PrivateNetworkMember;
+use Falak\Recipes\Domain\Enums\RunStatus;
+use Falak\Recipes\Domain\Enums\TargetStatus as RunTargetStatus;
+use Falak\Recipes\Domain\Models\Recipe;
+use Falak\Recipes\Domain\Models\Run;
+use Falak\Recipes\Domain\Models\RunTarget;
+use Falak\Servers\Application\Actions\AttachSshKey;
+use Falak\Servers\Application\Actions\CreateSshKey;
+use Falak\Servers\Application\MachineChecks;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Enums\PhpVersionStatus;
+use Falak\Servers\Domain\Models\MachineInspection;
+use Falak\Servers\Domain\Models\PhpVersion;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Stack\Stack;
+use Falak\Terminal\Domain\Enums\SessionStatus;
+use Falak\Terminal\Domain\Models\TerminalFrame;
+use Falak\Terminal\Domain\Models\TerminalSession;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Contracts\AgentStatus;
-use Kiln\Fleet\Contracts\CommandStatus;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\Command;
-use Kiln\Network\Domain\Enums\ApplyStatus;
-use Kiln\Network\Domain\Enums\KeyStatus;
-use Kiln\Network\Domain\Enums\RuleAction;
-use Kiln\Network\Domain\Enums\RuleProtocol;
-use Kiln\Network\Domain\Models\FirewallRule;
-use Kiln\Network\Domain\Models\FirewallState;
-use Kiln\Network\Domain\Models\PrivateNetwork;
-use Kiln\Network\Domain\Models\PrivateNetworkMember;
-use Kiln\Recipes\Domain\Enums\RunStatus;
-use Kiln\Recipes\Domain\Enums\TargetStatus as RunTargetStatus;
-use Kiln\Recipes\Domain\Models\Recipe;
-use Kiln\Recipes\Domain\Models\Run;
-use Kiln\Recipes\Domain\Models\RunTarget;
-use Kiln\Servers\Application\Actions\AttachSshKey;
-use Kiln\Servers\Application\Actions\CreateSshKey;
-use Kiln\Servers\Application\MachineChecks;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Enums\PhpVersionStatus;
-use Kiln\Servers\Domain\Models\MachineInspection;
-use Kiln\Servers\Domain\Models\PhpVersion;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Stack\Stack;
-use Kiln\Terminal\Domain\Enums\SessionStatus;
-use Kiln\Terminal\Domain\Models\TerminalFrame;
-use Kiln\Terminal\Domain\Models\TerminalSession;
 
 /**
  * Realistic infrastructure for the UI demo (called by UiDemoSeeder): agents with heartbeat metrics, PHP versions,
@@ -211,8 +211,8 @@ class InfrastructureDemoSeeder extends Seeder
             "\e[1m==> Preparing system\e[0m",
             'Hit:1 http://mirror.hetzner.com/ubuntu/packages noble InRelease',
             'Reading package lists... Done',
-            "\e[1m==> Creating kiln user\e[0m",
-            'useradd: kiln (uid 1001) created',
+            "\e[1m==> Creating falak user\e[0m",
+            'useradd: falak (uid 1001) created',
             "\e[1m==> Installing PHP 8.4 (FrankenPHP)\e[0m",
             'Setting up frankenphp (1.4.4) ...',
             "\e[32m✓\e[0m frankenphp.service enabled",
@@ -314,7 +314,7 @@ class InfrastructureDemoSeeder extends Seeder
             'swap' => [['name' => '/swap.img', 'type' => 'file', 'size_bytes' => 4 * self::GB]],
             'node' => [['path' => '/usr/bin/node', 'version' => '20.19.2', 'source' => 'nodesource', 'package' => 'nodejs', 'repo' => 'https://deb.nodesource.com/node_20.x']],
             'php' => [], 'frankenphp' => [],
-            'unattended_upgrades' => ['installed' => true, 'periodic' => ['Update-Package-Lists' => '1', 'Unattended-Upgrade' => '1'], 'managed_by_kiln' => false],
+            'unattended_upgrades' => ['installed' => true, 'periodic' => ['Update-Package-Lists' => '1', 'Unattended-Upgrade' => '1'], 'managed_by_falak' => false],
             'fail2ban' => ['installed' => false, 'active' => false, 'jails' => []],
             'errors' => [],
         ];
@@ -345,7 +345,7 @@ class InfrastructureDemoSeeder extends Seeder
             'provider' => 'custom',
             'timezone' => 'Europe/Amsterdam',
             'stack' => Stack::defaultsFor(ServerType::Worker),
-            'install_command' => 'curl -fsSL https://panel.kiln.test/install/'.Str::lower(Str::random(40)).' | sudo bash',
+            'install_command' => 'curl -fsSL https://panel.falak.test/install/'.Str::lower(Str::random(40)).' | sudo bash',
         ]);
     }
 
@@ -362,12 +362,12 @@ class InfrastructureDemoSeeder extends Seeder
 
         foreach (['app-1', 'app-2', 'db-1'] as $name) {
             if (isset($servers[$name])) {
-                $attach($servers[$name], $laptop, 'kiln');
+                $attach($servers[$name], $laptop, 'falak');
             }
         }
 
         if (isset($servers['app-1'])) {
-            $attach($servers['app-1'], $ci, 'kiln');
+            $attach($servers['app-1'], $ci, 'falak');
             $attach($servers['app-1'], $laptop, 'root');
         }
     }
@@ -447,14 +447,14 @@ class InfrastructureDemoSeeder extends Seeder
             'organization_id' => $organizationId,
             'name' => 'backend',
             'cidr' => '10.90.0.0/24',
-            'interface' => 'kiln0',
+            'interface' => 'falak0',
             'listen_port' => 51820,
         ]);
         PrivateNetwork::query()->create([
             'organization_id' => $organizationId,
             'name' => 'observability',
             'cidr' => '10.91.0.0/24',
-            'interface' => 'kiln1',
+            'interface' => 'falak1',
             'listen_port' => 51821,
         ]);
 
@@ -556,7 +556,7 @@ class InfrastructureDemoSeeder extends Seeder
             'server_id' => $server->id,
             'server_name' => $server->name,
             'user_id' => $userId,
-            'unix_user' => 'kiln',
+            'unix_user' => 'falak',
             'status' => SessionStatus::Closed,
             'cols' => 120,
             'rows' => 32,
@@ -576,13 +576,13 @@ class InfrastructureDemoSeeder extends Seeder
         ]);
 
         $output = [
-            [0, "\e[32mkiln@app-1\e[0m:\e[34m~\e[0m$ "],
+            [0, "\e[32mfalak@app-1\e[0m:\e[34m~\e[0m$ "],
             [900, "uptime\r\n"],
             [1100, " 14:02:11 up 12 days,  3:04,  1 user,  load average: 0.41, 0.38, 0.35\r\n"],
-            [1200, "\e[32mkiln@app-1\e[0m:\e[34m~\e[0m$ "],
+            [1200, "\e[32mfalak@app-1\e[0m:\e[34m~\e[0m$ "],
             [3200, "df -h /\r\n"],
             [3400, "Filesystem      Size  Used Avail Use% Mounted on\r\n/dev/sda1       152G   64G   82G  44% /\r\n"],
-            [3500, "\e[32mkiln@app-1\e[0m:\e[34m~\e[0m$ "],
+            [3500, "\e[32mfalak@app-1\e[0m:\e[34m~\e[0m$ "],
             [6000, "exit\r\nlogout\r\n"],
         ];
         $bytes = 0;

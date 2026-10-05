@@ -1,14 +1,14 @@
 <?php
 
 use Carbon\CarbonImmutable;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Falak\Telemetry\Contracts\MetricsBackend;
+use Falak\Telemetry\Infrastructure\Metrics\MimirBackend;
+use Falak\Telemetry\Infrastructure\Metrics\VictoriaMetricsBackend;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
-use Kiln\Telemetry\Contracts\MetricsBackend;
-use Kiln\Telemetry\Infrastructure\Metrics\MimirBackend;
-use Kiln\Telemetry\Infrastructure\Metrics\VictoriaMetricsBackend;
 
 beforeEach(function () {
     Http::preventStrayRequests();
@@ -67,13 +67,13 @@ it('parses instant vectors and scalars', function () {
 });
 
 it('sends the Mimir tenant header and bearer token', function () {
-    config(['telemetry.metrics.backend' => 'mimir', 'telemetry.metrics.query_url' => 'http://mimir:9009/prometheus', 'telemetry.metrics.tenant' => 'kiln', 'telemetry.metrics.token' => 'secret']);
+    config(['telemetry.metrics.backend' => 'mimir', 'telemetry.metrics.query_url' => 'http://mimir:9009/prometheus', 'telemetry.metrics.tenant' => 'falak', 'telemetry.metrics.token' => 'secret']);
     Http::fake(['mimir:9009/prometheus/api/v1/query' => Http::response(['status' => 'success', 'data' => ['resultType' => 'vector', 'result' => []]])]);
 
     expect(app(MetricsBackend::class)->query('up'))->toBe([]);
 
     Http::assertSent(fn (Request $request) => $request->url() === 'http://mimir:9009/prometheus/api/v1/query'
-        && $request->header('X-Scope-OrgID') === ['kiln']
+        && $request->header('X-Scope-OrgID') === ['falak']
         && $request->header('Authorization') === ['Bearer secret']);
 });
 

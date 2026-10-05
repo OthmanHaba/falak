@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Queries;
+namespace Falak\Telemetry\Application\Queries;
 
+use Falak\Telemetry\Contracts\PromQl;
 use InvalidArgumentException;
-use Kiln\Telemetry\Contracts\PromQl;
 
 /**
  * Builds LogQL from structured filters. The organization matcher is always present, so users can
@@ -16,9 +16,9 @@ final class LogQueryBuilder
      */
     public static function build(string $organizationId, array $filters): string
     {
-        $matchers = [PromQl::label('kiln_org_id', strtoupper($organizationId))];
+        $matchers = [PromQl::label('falak_org_id', strtoupper($organizationId))];
 
-        foreach (['server_id' => 'kiln_server_id', 'site_id' => 'kiln_site_id', 'service' => 'service_name'] as $filter => $label) {
+        foreach (['server_id' => 'falak_server_id', 'site_id' => 'falak_site_id', 'service' => 'service_name'] as $filter => $label) {
             if (($value = $filters[$filter] ?? null) !== null && $value !== '') {
                 $matchers[] = PromQl::label($label, $filter === 'service' ? (string) $value : strtoupper((string) $value));
             }
@@ -27,14 +27,14 @@ final class LogQueryBuilder
         // kind: "app" (the site's own output) or "access" (edge HTTP access log), see observability/README.md. App is
         // "not access", so records of agents that predate the label still match.
         if (($kind = $filters['kind'] ?? null) !== null && $kind !== '') {
-            $matchers[] = $kind === 'access' ? PromQl::label('kiln_log_kind', 'access') : 'kiln_log_kind!='.PromQl::quote('access');
+            $matchers[] = $kind === 'access' ? PromQl::label('falak_log_kind', 'access') : 'falak_log_kind!='.PromQl::quote('access');
         }
 
         $query = '{'.implode(', ', $matchers).'}';
 
-        // Compose sites: container logs carry the compose service as structured metadata (kiln.compose.service).
+        // Compose sites: container logs carry the compose service as structured metadata (falak.compose.service).
         if (($composeService = $filters['compose_service'] ?? null) !== null && $composeService !== '') {
-            $query .= ' | kiln_compose_service='.PromQl::quote((string) $composeService);
+            $query .= ' | falak_compose_service='.PromQl::quote((string) $composeService);
         }
 
         if (($search = $filters['search'] ?? null) !== null && $search !== '') {
@@ -70,13 +70,13 @@ final class LogQueryBuilder
     public static function access(string $organizationId, string $siteSlug, array $filters): string
     {
         $matchers = [
-            PromQl::label('kiln_org_id', strtoupper($organizationId)),
+            PromQl::label('falak_org_id', strtoupper($organizationId)),
             PromQl::label('service_name', $siteSlug),
-            PromQl::label('kiln_log_kind', 'access'),
+            PromQl::label('falak_log_kind', 'access'),
         ];
 
         if (($server = $filters['server_id'] ?? null) !== null && $server !== '') {
-            $matchers[] = PromQl::label('kiln_server_id', strtoupper((string) $server));
+            $matchers[] = PromQl::label('falak_server_id', strtoupper((string) $server));
         }
 
         $query = '{'.implode(', ', $matchers).'}';
@@ -86,11 +86,11 @@ final class LogQueryBuilder
         }
 
         if (($deployment = $filters['deployment_id'] ?? null) !== null && $deployment !== '') {
-            $query .= ' | kiln_deployment_id='.PromQl::quote(strtoupper((string) $deployment));
+            $query .= ' | falak_deployment_id='.PromQl::quote(strtoupper((string) $deployment));
         }
 
         if (($release = $filters['release_id'] ?? null) !== null && $release !== '') {
-            $query .= ' | kiln_release_id='.PromQl::quote(strtoupper((string) $release));
+            $query .= ' | falak_release_id='.PromQl::quote(strtoupper((string) $release));
         }
 
         if (($method = $filters['method'] ?? null) !== null && $method !== '') {

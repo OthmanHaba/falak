@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/terminal.resize.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/terminal.resize.schema.json",
   "title": "terminal.resize — resize a session",
   "type": "object",
   "additionalProperties": false,

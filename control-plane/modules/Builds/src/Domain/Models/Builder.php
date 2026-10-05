@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Builds\Domain\Models;
+namespace Falak\Builds\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -8,7 +8,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 /**
- * A kiln-builder worker authenticated with a bearer token (only its SHA-256 is stored).
+ * A falak-builder worker authenticated with a bearer token (only its SHA-256 is stored).
  *
  * @property string $id
  * @property ?string $organization_id

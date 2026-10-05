@@ -1,25 +1,25 @@
 <?php
 
-namespace Kiln\Telemetry\Http\Controllers\Api;
+namespace Falak\Telemetry\Http\Controllers\Api;
 
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Telemetry\Application\Queries\LogQueryBuilder;
+use Falak\Telemetry\Contracts\Data\LogLine;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Falak\Telemetry\Contracts\LogsQuery;
+use Falak\Telemetry\Http\Controllers\LogController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Telemetry\Application\Queries\LogQueryBuilder;
-use Kiln\Telemetry\Contracts\Data\LogLine;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
-use Kiln\Telemetry\Contracts\LogsQuery;
-use Kiln\Telemetry\Http\Controllers\LogController;
 
 /**
  * GET /api/v1/sites/{site}/logs?since=<seconds>&limit=&level=&kind=&cursor= — newest first; `meta.cursor`
- * pages to older lines (the `kiln logs` CLI). `kind`: app (the site's own output) or access (edge requests).
+ * pages to older lines (the `falak logs` CLI). `kind`: app (the site's own output) or access (edge requests).
  */
 final class SiteLogsApiController extends Controller
 {
@@ -69,7 +69,7 @@ final class SiteLogsApiController extends Controller
 
         $names = [];
         $entries = array_map(function (LogLine $line) use ($servers, &$names) {
-            $serverId = $line->labels['kiln_server_id'] ?? null;
+            $serverId = $line->labels['falak_server_id'] ?? null;
 
             if ($serverId !== null && ! array_key_exists($serverId, $names)) {
                 $names[$serverId] = $servers->find(strtolower($serverId))?->name;

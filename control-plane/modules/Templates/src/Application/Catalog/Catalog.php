@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Templates\Application\Catalog;
+namespace Falak\Templates\Application\Catalog;
 
-use Kiln\Templates\Domain\Template;
+use Falak\Templates\Domain\Template;
 
 /**
- * The curated catalog shipped with Kiln (templates/<slug>/ at the repository root).
+ * The curated catalog shipped with Falak (templates/<slug>/ at the repository root).
  */
 interface Catalog
 {

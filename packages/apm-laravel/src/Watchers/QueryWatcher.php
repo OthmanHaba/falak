@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Apm\Watchers;
+namespace Falak\Apm\Watchers;
 
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Events\QueryExecuted;
-use Kiln\Apm\Recorder;
-use Kiln\Apm\Span;
+use Falak\Apm\Recorder;
+use Falak\Apm\Span;
 
 final class QueryWatcher
 {
@@ -37,7 +37,7 @@ final class QueryWatcher
                 'db.system.name' => self::SYSTEMS[$driver] ?? $driver,
                 'db.query.text' => $event->sql,
                 'db.namespace' => (string) $connection->getDatabaseName(),
-                'kiln.query.connection' => $event->connectionName,
+                'falak.query.connection' => $event->connectionName,
             ]);
         });
     }

@@ -1,14 +1,14 @@
 <?php
 
+use Falak\Fleet\Events\CommandFinished;
+use Falak\Identity\Contracts\Role;
+use Falak\Sites\Contracts\SiteFactory;
+use Falak\Sites\Domain\Models\ComposeState;
+use Falak\Sites\Domain\Models\OrganizationSettings;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
+use Falak\Sites\Events\SiteUpdated;
 use Illuminate\Support\Facades\Event;
-use Kiln\Fleet\Events\CommandFinished;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Sites\Contracts\SiteFactory;
-use Kiln\Sites\Domain\Models\ComposeState;
-use Kiln\Sites\Domain\Models\OrganizationSettings;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
-use Kiln\Sites\Events\SiteUpdated;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -18,7 +18,7 @@ beforeEach(function () {
     [$this->user, $this->organization] = actingAsMember(Role::Admin);
     $this->agents = sites_fake_agents();
     sites_fake_source_control();
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
     $this->server = sites_server($this->organization->id, ['name' => 'app-1'], docker: true);
     $this->site = app(SiteFactory::class)->create($this->organization->id, $this->user->id, [
         'name' => 'stack', 'runtime' => 'compose', 'server_ids' => [$this->server->id], 'compose_source' => 'inline', 'compose_content' => STACK,
@@ -34,7 +34,7 @@ it('shows compose settings with the parsed summary, history and policy', functio
         ->assertJsonPath('data.version', 1)
         ->assertJsonPath('data.summary.services.1.name', 'api')
         ->assertJsonPath('data.summary.services.1.ports', [9000])
-        ->assertJsonPath('data.public_services.0.url', 'https://stack.kiln.test')
+        ->assertJsonPath('data.public_services.0.url', 'https://stack.falak.test')
         ->assertJsonPath('data.policy.allow_privileged', false)
         ->assertJsonPath('data.can.update', true);
 });
@@ -62,7 +62,7 @@ it('saves inline versions, public services with allocated ports, and restores hi
         ['service' => 'web', 'port' => 80, 'domain' => null, 'host_port' => 3000],
         ['service' => 'api', 'port' => 9000, 'domain' => 'api.example.com', 'host_port' => 3001],
     ])->and($site->app_port)->toBe(3000)
-        ->and($site->publicService('api')->testDomain)->toBe('api-stack.kiln.test');
+        ->and($site->publicService('api')->testDomain)->toBe('api-stack.falak.test');
     Event::assertDispatched(SiteUpdated::class, fn ($e) => in_array('public_services', $e->changed, true) && in_array('compose_content', $e->changed, true));
 
     // Stale editor.
@@ -113,7 +113,7 @@ it('refreshes service state with docker.compose.ps and restarts services', funct
         ->assertJsonPath('data.services.0.service', 'web')
         ->assertJsonPath('data.services.0.server_name', 'app-1')
         ->assertJsonPath('data.services.0.cpu_percent', 2.5)
-        ->assertJsonPath('data.services.0.public.url', 'https://stack.kiln.test')
+        ->assertJsonPath('data.services.0.public.url', 'https://stack.falak.test')
         ->assertJsonPath('data.servers.0.refreshing', false);
 
     $this->postJson("/sites/{$this->site->id}/compose/restart", ['service' => 'web'])->assertStatus(202);

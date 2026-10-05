@@ -1,0 +1,2 @@
+#!/bin/sh
+exec node /opt/falak-fn/node/install.mjs "$@"

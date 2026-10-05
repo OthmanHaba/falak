@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Databases\Application\Actions;
+namespace Falak\Databases\Application\Actions;
 
-use Kiln\Databases\Domain\Models\BackupSchedule;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Databases\Domain\Models\BackupSchedule;
+use Falak\Identity\Contracts\AuditLog;
 
 /**
  * Deletes a schedule. Its backups stay (history + restorable objects).

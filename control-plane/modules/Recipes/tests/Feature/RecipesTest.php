@@ -1,10 +1,10 @@
 <?php
 
+use Falak\Identity\Contracts\Role;
+use Falak\Recipes\Domain\Models\Recipe;
+use Falak\Recipes\Infrastructure\BuiltinRecipes;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Recipes\Domain\Models\Recipe;
-use Kiln\Recipes\Infrastructure\BuiltinRecipes;
 use Tests\Support\FakeAgentGateway;
 
 beforeEach(function () {
@@ -33,8 +33,8 @@ it('creates, updates and deletes recipes with audit entries', function () {
     expect($recipe->organization_id)->toBe($organization->id)
         ->and($recipe->script)->toBe("cd /var/log\ntail -n 50 syslog");
 
-    $this->put("/recipes/{$recipe->id}", ['name' => 'Tail logs', 'script' => 'tail /var/log/kern.log', 'user' => 'kiln', 'description' => 'kernel'])->assertSessionHasNoErrors();
-    expect($recipe->refresh()->user)->toBe('kiln')->and($recipe->description)->toBe('kernel');
+    $this->put("/recipes/{$recipe->id}", ['name' => 'Tail logs', 'script' => 'tail /var/log/kern.log', 'user' => 'falak', 'description' => 'kernel'])->assertSessionHasNoErrors();
+    expect($recipe->refresh()->user)->toBe('falak')->and($recipe->description)->toBe('kernel');
 
     $this->delete("/recipes/{$recipe->id}")->assertRedirect('/settings/recipes');
     expect(Recipe::query()->count())->toBe(0);

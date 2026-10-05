@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Databases\Infrastructure;
+namespace Falak\Databases\Infrastructure;
 
-use Kiln\Databases\Application\KeyValue\KeyValueSettings;
-use Kiln\Databases\Contracts\Data\DatabaseData;
-use Kiln\Databases\Contracts\DatabaseDirectory;
-use Kiln\Databases\Domain\Models\Database;
+use Falak\Databases\Application\KeyValue\KeyValueSettings;
+use Falak\Databases\Contracts\Data\DatabaseData;
+use Falak\Databases\Contracts\DatabaseDirectory;
+use Falak\Databases\Domain\Models\Database;
 
 final class EloquentDatabaseDirectory implements DatabaseDirectory
 {

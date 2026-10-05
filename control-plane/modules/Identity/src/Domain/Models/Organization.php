@@ -1,7 +1,9 @@
 <?php
 
-namespace Kiln\Identity\Domain\Models;
+namespace Falak\Identity\Domain\Models;
 
+use Falak\Identity\Contracts\Data\OrganizationData;
+use Falak\Identity\Database\Factories\OrganizationFactory;
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -9,8 +11,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Kiln\Identity\Contracts\Data\OrganizationData;
-use Kiln\Identity\Database\Factories\OrganizationFactory;
 
 /**
  * The tenant boundary: every other module scopes its data by organization_id.

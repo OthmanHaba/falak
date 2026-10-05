@@ -1,3 +1,3 @@
-module kiln-fn-go-install
+module falak-fn-go-install
 
 go 1.27

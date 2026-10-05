@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Alerting\Domain\Models;
+namespace Falak\Alerting\Domain\Models;
 
+use Falak\Alerting\Contracts\Severity;
+use Falak\Alerting\Domain\Enums\AlertOutcome;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Kiln\Alerting\Contracts\Severity;
-use Kiln\Alerting\Domain\Enums\AlertOutcome;
 
 /**
  * @property string $id

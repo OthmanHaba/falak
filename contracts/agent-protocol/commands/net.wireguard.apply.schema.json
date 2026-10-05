@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/net.wireguard.apply.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/net.wireguard.apply.schema.json",
   "title": "net.wireguard.apply — WireGuard interface for the private network (keys generated on host if absent)",
-  "x-kiln-redeliverable": true,
+  "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,7 +13,7 @@
     "interface": {
       "type": "string",
       "pattern": "^[a-z0-9-]{1,15}$",
-      "default": "wg-kiln"
+      "default": "wg-falak"
     },
     "address": {
       "type": "string",

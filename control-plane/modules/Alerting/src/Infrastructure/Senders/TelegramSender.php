@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Alerting\Infrastructure\Senders;
+namespace Falak\Alerting\Infrastructure\Senders;
 
-use Kiln\Alerting\Application\AlertMessage;
-use Kiln\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Application\AlertMessage;
+use Falak\Alerting\Domain\Enums\ChannelType;
 
 /** Telegram bot sendMessage. Config: {bot_token, chat_id}. */
 final class TelegramSender extends HttpSender
@@ -36,7 +36,7 @@ final class TelegramSender extends HttpSender
         }
 
         if ($message->url) {
-            $text .= "\n".'<a href="'.e($message->url).'">Open in Kiln</a>';
+            $text .= "\n".'<a href="'.e($message->url).'">Open in Falak</a>';
         }
 
         $response = $this->post(rtrim((string) config('alerting.telegram_api'), '/')."/bot{$token}/sendMessage", [

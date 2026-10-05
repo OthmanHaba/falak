@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 const adoptPlan = `{
@@ -78,8 +78,8 @@ func TestApplyAdoptedComponentsAreVerifiedNeverInstalled(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(root, "etc/apt/apt.conf.d/20auto-upgrades")); string(b) != custom {
 		t.Fatal("adopted unattended-upgrades config overwritten:", string(b))
 	}
-	if _, err := os.Stat(filepath.Join(root, "etc/apt/apt.conf.d/52kiln-unattended")); err == nil {
-		t.Fatal("Kiln's unattended config written for an adopted one")
+	if _, err := os.Stat(filepath.Join(root, "etc/apt/apt.conf.d/52falak-unattended")); err == nil {
+		t.Fatal("Falak's unattended config written for an adopted one")
 	}
 
 	// The machine changed after the check: an adopted package is gone. The step fails; nothing installs it.

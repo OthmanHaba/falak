@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Infrastructure;
+namespace Falak\Fleet\Infrastructure;
 
 use JsonException;
 use Opis\JsonSchema\Errors\ErrorFormatter;
@@ -9,17 +9,17 @@ use stdClass;
 
 /**
  * Validates documents against contracts/agent-protocol JSON Schemas (draft 2020-12).
- * Schemas reference each other by their $id under https://kiln.dev/agent-protocol/.
+ * Schemas reference each other by their $id under https://falak.sh/agent-protocol/.
  */
 final class ProtocolSchemas
 {
-    public const BASE_ID = 'https://kiln.dev/agent-protocol/';
+    public const BASE_ID = 'https://falak.sh/agent-protocol/';
 
     /**
      * Schema root keyword marking a command type as safe to deliver again after it was lost (the agent restarted
      * before running it, or never acknowledged it): declarative `*.apply` state and read-only commands.
      */
-    public const REDELIVERABLE = 'x-kiln-redeliverable';
+    public const REDELIVERABLE = 'x-falak-redeliverable';
 
     private ?Validator $validator = null;
 

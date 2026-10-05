@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure;
+namespace Falak\SourceControl\Infrastructure;
 
 use phpseclib3\Crypt\EC;
 
@@ -15,7 +15,7 @@ class DeployKeyGenerator
     public function generate(string $comment): array
     {
         $key = EC::createKey('Ed25519');
-        $comment = preg_replace('/[^A-Za-z0-9@._:-]+/', '-', $comment) ?: 'kiln';
+        $comment = preg_replace('/[^A-Za-z0-9@._:-]+/', '-', $comment) ?: 'falak';
         $public = trim($key->getPublicKey()->toString('OpenSSH', ['comment' => $comment]));
 
         return [

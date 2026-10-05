@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Telemetry\Http\Controllers;
+namespace Falak\Telemetry\Http\Controllers;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;

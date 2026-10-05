@@ -1,7 +1,7 @@
-# Kiln function runtime: Node.js
+# Falak function runtime: Node.js
 
 Node.js 24 (`node:24-slim`) for Cloud Functions. It follows the runtime convention in `../bun/README.md`
-(`kiln-fn-install`, `kiln-fn-serve`, `kiln-fn-run`; same mounts, environment, isolation and telemetry as Bun).
+(`falak-fn-install`, `falak-fn-serve`, `falak-fn-run`; same mounts, environment, isolation and telemetry as Bun).
 
 ```ts
 import { Hono } from 'hono'
@@ -19,7 +19,7 @@ export default app            // a Hono app, { fetch }, or a fetch(request) func
 - **Serving**: a small `node:http` ↔ Fetch adapter (`serve.mjs`) passes a standard `Request` to the default export
   and streams the `Response` back. Like `@hono/node-server`, the raw request and response are the handler's env
   (`c.env.incoming`, `c.env.outgoing`). WebSockets are not supported on Node; use Bun or Deno for them.
-- **Dependencies**: without a `package.json`, `kiln-fn-install` reads the imports of every source file
+- **Dependencies**: without a `package.json`, `falak-fn-install` reads the imports of every source file
   (`../shared/scan.mjs`) and writes one with each npm package at its latest version, then runs `npm install`.
   `package-lock.json` stays in the release; the agent keeps it per code version, and a later install of the same
   code runs `npm ci` with it. A `package.json` among the function's files is used as is. The npm cache is `/cache/npm`.
@@ -27,5 +27,5 @@ export default app            // a Hono app, { fetch }, or a fetch(request) func
   calls made with `fetch` are traced; other HTTP clients are not.
 
 ```sh
-docker build -t kiln-fn-node:dev -f runtimes/functions/node/Dockerfile runtimes/functions
+docker build -t falak-fn-node:dev -f runtimes/functions/node/Dockerfile runtimes/functions
 ```

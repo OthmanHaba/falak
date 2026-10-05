@@ -1,4 +1,4 @@
-import { useFieldControl } from '@/components/kiln/field';
+import { useFieldControl } from '@/components/falak/field';
 import { cn } from '@/lib/utils';
 import { useRef, type KeyboardEvent } from 'react';
 

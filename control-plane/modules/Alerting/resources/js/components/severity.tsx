@@ -1,4 +1,4 @@
-import { StatusBadge, StatusDot, type StatusTone } from '@/components/kiln/status';
+import { StatusBadge, StatusDot, type StatusTone } from '@/components/falak/status';
 import { type Severity } from '../types';
 
 export const SEVERITY_TONE: Record<Severity, StatusTone> = { info: 'info', warning: 'warning', critical: 'danger' };

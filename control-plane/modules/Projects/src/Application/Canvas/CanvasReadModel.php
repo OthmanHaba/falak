@@ -1,31 +1,31 @@
 <?php
 
-namespace Kiln\Projects\Application\Canvas;
+namespace Falak\Projects\Application\Canvas;
 
 use DateTimeInterface;
+use Falak\Databases\Contracts\Data\DatabaseData;
+use Falak\Databases\Contracts\DatabaseDirectory;
+use Falak\Deployments\Contracts\Data\DeploymentSummary;
+use Falak\Deployments\Contracts\DeploymentDirectory;
+use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Projects\Contracts\VariableReferences;
+use Falak\Projects\Domain\Models\Environment;
+use Falak\Projects\Domain\Models\Group;
+use Falak\Projects\Domain\Models\Service;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Sites\Contracts\ComposeInspector;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\Data\ComposeServiceState;
+use Falak\Sites\Contracts\Data\ComposeSummary;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteDomains;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetStatus;
 use Illuminate\Support\Carbon;
-use Kiln\Databases\Contracts\Data\DatabaseData;
-use Kiln\Databases\Contracts\DatabaseDirectory;
-use Kiln\Deployments\Contracts\Data\DeploymentSummary;
-use Kiln\Deployments\Contracts\DeploymentDirectory;
-use Kiln\Fleet\Contracts\AgentDirectory;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Projects\Contracts\VariableReferences;
-use Kiln\Projects\Domain\Models\Environment;
-use Kiln\Projects\Domain\Models\Group;
-use Kiln\Projects\Domain\Models\Service;
-use Kiln\Servers\Contracts\Data\ServerData;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Sites\Contracts\ComposeInspector;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\Data\ComposeServiceState;
-use Kiln\Sites\Contracts\Data\ComposeSummary;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteDomains;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetStatus;
 
 /**
  * Everything the canvas renders for one environment, in one request (UI_DESIGN §9 `Canvas`):

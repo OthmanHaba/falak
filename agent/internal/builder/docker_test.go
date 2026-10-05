@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 const digest = "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
@@ -31,7 +31,7 @@ func writeMetadata(c runnertest.Call) (runner.Result, error) {
 func TestDockerBuildxGeneratedDockerfile(t *testing.T) {
 	f := &runnertest.Fake{}
 	fakeGit(t, f, filepath.Join(fixtures, "next"))
-	f.On("docker buildx inspect", runner.Result{ExitCode: 1, Stderr: []byte("no builder \"kiln\" found")})
+	f.On("docker buildx inspect", runner.Result{ExitCode: 1, Stderr: []byte("no builder \"falak\" found")})
 	var dockerfile, dockerCfg string
 	f.OnFunc("docker buildx build", func(c runnertest.Call) (runner.Result, error) {
 		for i, a := range c.Args {
@@ -51,7 +51,7 @@ func TestDockerBuildxGeneratedDockerfile(t *testing.T) {
 	b := newBuilder(t, f)
 	var out bytes.Buffer
 	job := Job{ID: "b-docker", Mode: ModeDocker, Repo: Repo{URL: "https://x/y.git"}, Docker: &DockerSpec{
-		Image: "registry.kiln.test:5000/acme/web:01JB", Tags: []string{"registry.kiln.test:5000/acme/web:latest"},
+		Image: "registry.falak.test:5000/acme/web:01JB", Tags: []string{"registry.falak.test:5000/acme/web:latest"},
 		BuildArgs: map[string]string{"Z_ARG": "1", "A_ARG": "2"}, Platforms: []string{"linux/amd64", "linux/arm64"},
 		Registry: &RegistryAuth{Username: "robot", Password: "hunter2-pass"},
 	}}
@@ -59,10 +59,10 @@ func TestDockerBuildxGeneratedDockerfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
-	if res.Image == nil || res.Image.Digest != digest || res.Image.Pinned != "registry.kiln.test:5000/acme/web@"+digest || res.Image.Ref != job.Docker.Image {
+	if res.Image == nil || res.Image.Digest != digest || res.Image.Pinned != "registry.falak.test:5000/acme/web@"+digest || res.Image.Ref != job.Docker.Image {
 		t.Fatalf("image = %+v", res.Image)
 	}
-	if !f.Ran("docker buildx create --name kiln --driver docker-container") {
+	if !f.Ran("docker buildx create --name falak --driver docker-container") {
 		t.Fatalf("builder not created: %v", f.Lines())
 	}
 	var build runnertest.Call
@@ -73,13 +73,13 @@ func TestDockerBuildxGeneratedDockerfile(t *testing.T) {
 	}
 	args := build.Args
 	cache := filepath.Join(b.CacheDir, "buildkit", cacheKey("https://x/y.git", ""))
-	wantSeq := []string{"buildx", "build", "--progress", "plain", "--builder", "kiln", "--file"}
+	wantSeq := []string{"buildx", "build", "--progress", "plain", "--builder", "falak", "--file"}
 	if strings.Join(args[:7], " ") != strings.Join(wantSeq, " ") {
 		t.Fatalf("args = %v", args)
 	}
 	line := strings.Join(args, " ")
 	for _, want := range []string{
-		"--tag registry.kiln.test:5000/acme/web:01JB --tag registry.kiln.test:5000/acme/web:latest",
+		"--tag registry.falak.test:5000/acme/web:01JB --tag registry.falak.test:5000/acme/web:latest",
 		"--platform linux/amd64,linux/arm64",
 		"--build-arg A_ARG=2 --build-arg Z_ARG=1",
 		"--cache-to type=local,dest=" + cache + ",mode=max",
@@ -101,7 +101,7 @@ func TestDockerBuildxGeneratedDockerfile(t *testing.T) {
 		t.Fatalf("generated Dockerfile:\n%s", dockerfile)
 	}
 	wantAuth := base64.StdEncoding.EncodeToString([]byte("robot:hunter2-pass"))
-	if !strings.Contains(dockerCfg, `"registry.kiln.test:5000"`) || !strings.Contains(dockerCfg, wantAuth) {
+	if !strings.Contains(dockerCfg, `"registry.falak.test:5000"`) || !strings.Contains(dockerCfg, wantAuth) {
 		t.Fatalf("docker config = %s", dockerCfg)
 	}
 	if strings.Contains(out.String(), "hunter2-pass") {

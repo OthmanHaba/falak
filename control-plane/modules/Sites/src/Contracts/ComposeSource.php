@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
 /**
  * Where a compose site's compose file comes from (docs/COMPOSE_TEMPLATES.md §1.1).
  */
 enum ComposeSource: string
 {
-    /** `compose_file` in the site's git repository (built by kiln-builder in docker mode). */
+    /** `compose_file` in the site's git repository (built by falak-builder in docker mode). */
     case Repo = 'repo';
-    /** `compose_content` stored in Kiln and versioned like environment variables. */
+    /** `compose_content` stored in Falak and versioned like environment variables. */
     case Inline = 'inline';
 
     public function label(): string

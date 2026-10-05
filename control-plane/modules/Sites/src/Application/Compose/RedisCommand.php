@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Sites\Application\Compose;
+namespace Falak\Sites\Application\Compose;
 
 /**
- * The settings a compose Redis / Valkey service sets on its command line, for the Kiln instance replacing it:
+ * The settings a compose Redis / Valkey service sets on its command line, for the Falak instance replacing it:
  * `--maxmemory <n>[kb|mb|gb|k|m|g]` (whole MB, at least 16), `--maxmemory-policy <policy>` and `--appendonly yes`
  * (aof). Only these flags, in `redis-server …` / `valkey-server …` commands given as a string or a list; anything
- * else (a config file, shell wrappers, variables) is ignored and the instance gets Kiln's defaults.
+ * else (a config file, shell wrappers, variables) is ignored and the instance gets Falak's defaults.
  */
 final class RedisCommand
 {
@@ -56,7 +56,7 @@ final class RedisCommand
             default => 1,
         };
 
-        // 0 = no limit in Redis: Kiln's default (bounded by the server's RAM) applies instead.
+        // 0 = no limit in Redis: Falak's default (bounded by the server's RAM) applies instead.
         return $bytes === 0 ? null : max(16, intdiv($bytes, 1024 ** 2));
     }
 }

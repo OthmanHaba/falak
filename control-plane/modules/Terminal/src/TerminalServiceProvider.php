@@ -1,7 +1,21 @@
 <?php
 
-namespace Kiln\Terminal;
+namespace Falak\Terminal;
 
+use Falak\Fleet\Events\CommandFailed;
+use Falak\Fleet\Events\CommandFinished;
+use Falak\Fleet\Events\CommandOutputReceived;
+use Falak\Identity\Contracts\PermissionRegistry;
+use Falak\Identity\Contracts\Role;
+use Falak\Kernel\Support\ModuleServiceProvider;
+use Falak\Servers\Events\ServerDeleted;
+use Falak\Terminal\Application\Jobs\SweepTerminalSessions;
+use Falak\Terminal\Application\Listeners\CloseSessionsOfDeletedServer;
+use Falak\Terminal\Application\Listeners\HandleTerminalCommandOutcome;
+use Falak\Terminal\Application\Listeners\StreamTerminalOutput;
+use Falak\Terminal\Domain\Models\TerminalSession;
+use Falak\Terminal\Domain\Policies\TerminalSessionPolicy;
+use Falak\Terminal\Http\Channels\TerminalSessionChannel;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Request;
@@ -9,20 +23,6 @@ use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
-use Kiln\Fleet\Events\CommandFailed;
-use Kiln\Fleet\Events\CommandFinished;
-use Kiln\Fleet\Events\CommandOutputReceived;
-use Kiln\Identity\Contracts\PermissionRegistry;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Kernel\Support\ModuleServiceProvider;
-use Kiln\Servers\Events\ServerDeleted;
-use Kiln\Terminal\Application\Jobs\SweepTerminalSessions;
-use Kiln\Terminal\Application\Listeners\CloseSessionsOfDeletedServer;
-use Kiln\Terminal\Application\Listeners\HandleTerminalCommandOutcome;
-use Kiln\Terminal\Application\Listeners\StreamTerminalOutput;
-use Kiln\Terminal\Domain\Models\TerminalSession;
-use Kiln\Terminal\Domain\Policies\TerminalSessionPolicy;
-use Kiln\Terminal\Http\Channels\TerminalSessionChannel;
 
 class TerminalServiceProvider extends ModuleServiceProvider
 {

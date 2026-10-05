@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
 /**
  * The Laravel Octane server a site runs (`php artisan octane:start --server=…`).
  *
- *  - FrankenPHP: worker mode through the frankenphp binary Kiln installs for FrankenPHP servers
+ *  - FrankenPHP: worker mode through the frankenphp binary Falak installs for FrankenPHP servers
  *    (/usr/local/bin/frankenphp, found on PATH by Octane). Only on the FrankenPHP runtime.
  *  - Swoole: needs the swoole (or openswoole) PHP extension for the site's PHP version.
  *  - RoadRunner: needs the `rr` binary on PATH or in the project root and `spiral/roadrunner-cli` +

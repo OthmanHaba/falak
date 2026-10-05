@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/version"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/version"
 )
 
 // Builder runs build jobs. Zero values of optional fields get sensible defaults.
@@ -44,7 +44,7 @@ func (b *Builder) defaults() {
 		b.HTTP = &http.Client{Timeout: 30 * time.Minute}
 	}
 	if b.WorkDir == "" {
-		b.WorkDir = filepath.Join(os.TempDir(), "kiln-builder")
+		b.WorkDir = filepath.Join(os.TempDir(), "falak-builder")
 	}
 	if b.CacheDir == "" {
 		b.CacheDir = filepath.Join(b.WorkDir, "cache")
@@ -288,7 +288,7 @@ func (b *Builder) buildNative(ctx context.Context, j *job) (*ArtifactResult, *Ma
 		Provider: plan.Provider, Framework: plan.Framework, Runtime: plan.Runtime,
 		PHPVersion: plan.PHPVersion, NodeVersion: plan.NodeVersion, BunVersion: plan.BunVersion, DenoVersion: plan.DenoVersion,
 		PackageManager: plan.PackageManager, StartCommand: plan.StartCommand, Entrypoint: plan.Entrypoint,
-		DetectedBy: plan.DetectedBy, Steps: j.steps, Builder: "kiln-builder " + version.Version,
+		DetectedBy: plan.DetectedBy, Steps: j.steps, Builder: "falak-builder " + version.Version,
 	}
 	if man.Steps == nil {
 		man.Steps = []StepResult{}
@@ -398,7 +398,7 @@ func (b *Builder) viaCorepack(p *Plan, binDir string) bool {
 func (b *Builder) buildEnv(j *job) []string {
 	c := b.CacheDir
 	env := []string{
-		"CI=true", "KILN_BUILD=1", "KILN_BUILD_ID=" + j.ID, "KILN_COMMIT=" + j.checkout.Commit,
+		"CI=true", "FALAK_BUILD=1", "FALAK_BUILD_ID=" + j.ID, "FALAK_COMMIT=" + j.checkout.Commit,
 		"COMPOSER_CACHE_DIR=" + filepath.Join(c, "composer"), "COMPOSER_NO_INTERACTION=1", "COMPOSER_ALLOW_SUPERUSER=1",
 		"npm_config_cache=" + filepath.Join(c, "npm"), "npm_config_store_dir=" + filepath.Join(c, "pnpm"),
 		"YARN_CACHE_FOLDER=" + filepath.Join(c, "yarn"), "BUN_INSTALL_CACHE_DIR=" + filepath.Join(c, "bun"),

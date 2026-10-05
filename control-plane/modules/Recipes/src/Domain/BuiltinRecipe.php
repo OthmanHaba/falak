@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Recipes\Domain;
+namespace Falak\Recipes\Domain;
 
 /**
- * A read-only starter recipe shipped with Kiln.
+ * A read-only starter recipe shipped with Falak.
  */
 final readonly class BuiltinRecipe
 {

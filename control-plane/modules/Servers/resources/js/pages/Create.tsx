@@ -1,13 +1,13 @@
-import { AppShell } from '@/components/kiln/app-shell';
-import { Button } from '@/components/kiln/button';
-import { Checkbox } from '@/components/kiln/checkbox';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { PageHeader, Section } from '@/components/kiln/section';
-import { Select, type SelectOption } from '@/components/kiln/select';
-import { Skeleton } from '@/components/kiln/skeleton';
-import { Tag } from '@/components/kiln/tag';
+import { AppShell } from '@/components/falak/app-shell';
+import { Button } from '@/components/falak/button';
+import { Checkbox } from '@/components/falak/checkbox';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { PageHeader, Section } from '@/components/falak/section';
+import { Select, type SelectOption } from '@/components/falak/select';
+import { Skeleton } from '@/components/falak/skeleton';
+import { Tag } from '@/components/falak/tag';
 import { cn } from '@/lib/utils';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { Check, KeyRound, Terminal } from 'lucide-react';
@@ -257,7 +257,7 @@ export default function Create({ types, providers, credentials, options, sshKeys
                         label="Name"
                         required
                         error={errors.name ?? nameError}
-                        hint={!errors.name && !nameError ? 'Shown in Kiln and used as the hostname.' : undefined}
+                        hint={!errors.name && !nameError ? 'Shown in Falak and used as the hostname.' : undefined}
                     >
                         <Input
                             value={data.name}
@@ -410,7 +410,7 @@ export default function Create({ types, providers, credentials, options, sshKeys
                                 <Terminal className="size-4" aria-hidden />
                             </span>
                             <p className="text-fg-muted text-sm">
-                                After you create the server, Kiln shows a one-line install command. Run it as root on the machine; the agent dials
+                                After you create the server, Falak shows a one-line install command. Run it as root on the machine; the agent dials
                                 out, enrolls, and provisioning starts on its own — you can watch it live.
                             </p>
                         </div>
@@ -530,7 +530,7 @@ export default function Create({ types, providers, credentials, options, sshKeys
 
                 <Section
                     title={`${selectedType.components.length > 0 ? 5 : 4}. Access`}
-                    description="SSH keys installed for the kiln user once the server is provisioned."
+                    description="SSH keys installed for the falak user once the server is provisioned."
                     aside={
                         <Button variant="ghost" size="sm" asChild>
                             <Link href="/ssh-keys">Manage keys</Link>

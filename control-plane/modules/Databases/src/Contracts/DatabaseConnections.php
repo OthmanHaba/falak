@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Databases\Contracts;
+namespace Falak\Databases\Contracts;
 
-use Kiln\Databases\Contracts\Data\DatabaseConsumer;
+use Falak\Databases\Contracts\Data\DatabaseConsumer;
 
 /**
  * Connection variables of a database, for Projects' variable references (`${{ db.DATABASE_URL }}`).

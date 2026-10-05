@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Identity\Infrastructure;
+namespace Falak\Identity\Infrastructure;
 
-use Kiln\Identity\Contracts\Data\OrganizationData;
-use Kiln\Identity\Contracts\Data\UserData;
-use Kiln\Identity\Contracts\OrganizationDirectory;
-use Kiln\Identity\Domain\Models\Organization;
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Contracts\Data\OrganizationData;
+use Falak\Identity\Contracts\Data\UserData;
+use Falak\Identity\Contracts\OrganizationDirectory;
+use Falak\Identity\Domain\Models\Organization;
+use Falak\Identity\Domain\Models\User;
 
 final class EloquentOrganizationDirectory implements OrganizationDirectory
 {

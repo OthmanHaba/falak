@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
 )
 
 // SwapPayload is deploy.container.swap.
@@ -76,7 +76,7 @@ func (p SwapPayload) runSpec(color string) RunPayload {
 		}
 	}
 	return RunPayload{
-		Name: "kiln-" + p.Site + "-" + color, Image: p.Image, Env: p.Env, Command: p.Command,
+		Name: "falak-" + p.Site + "-" + color, Image: p.Image, Env: p.Env, Command: p.Command,
 		Ports:   []PortSpec{{HostIP: "127.0.0.1", HostPort: p.port(color), ContainerPort: p.ContainerPort}},
 		Volumes: p.Volumes, Network: p.Network, Networks: p.Networks, Labels: labels, RestartPolicy: "unless-stopped",
 		MemoryBytes: p.MemoryBytes, CPUs: p.CPUs,
@@ -142,7 +142,7 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 	}
 
 	// Idempotent: same spec already live and healthy → just make sure the edge points at it.
-	if activeC != nil && activeC.Labels["kiln.swap-hash"] == hash && p.Pull != "always" {
+	if activeC != nil && activeC.Labels["falak.swap-hash"] == hash && p.Pull != "always" {
 		up := "127.0.0.1:" + strconv.Itoa(p.port(active))
 		if s.healthy(ctx, p.port(active), h) {
 			if err := s.setEdge(ctx, p.EdgeRouteID, up); err != nil {
@@ -157,7 +157,7 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 		target = other(active)
 	}
 	spec := p.runSpec(target)
-	spec.Labels["kiln.swap-hash"] = hash
+	spec.Labels["falak.swap-hash"] = hash
 	fmt.Fprintf(st.Stdout(), "starting %s (%s) on 127.0.0.1:%d\n", spec.Name, p.Image, p.port(target))
 	if err := s.ensureImage(ctx, p.Image, p.Pull, p.RegistryAuth, st); err != nil {
 		return nil, err

@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Identity\Http\Middleware;
+namespace Falak\Identity\Http\Middleware;
 
 use Closure;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
 use Illuminate\Http\Request;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
 use Symfony\Component\HttpFoundation\Response;
 
 /**

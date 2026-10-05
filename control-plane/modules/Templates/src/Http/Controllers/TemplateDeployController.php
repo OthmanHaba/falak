@@ -1,21 +1,21 @@
 <?php
 
-namespace Kiln\Templates\Http\Controllers;
+namespace Falak\Templates\Http\Controllers;
 
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Projects\Contracts\Data\EnvironmentData;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Sites\Contracts\Data\DomainChoice;
+use Falak\Templates\Application\Actions\DeployTemplate;
+use Falak\Templates\Application\Catalog\TemplateRepository;
+use Falak\Templates\Domain\TemplateSource;
+use Falak\Templates\TemplatesServiceProvider;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Projects\Contracts\Data\EnvironmentData;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Sites\Contracts\Data\DomainChoice;
-use Kiln\Templates\Application\Actions\DeployTemplate;
-use Kiln\Templates\Application\Catalog\TemplateRepository;
-use Kiln\Templates\Domain\TemplateSource;
-use Kiln\Templates\TemplatesServiceProvider;
 
 /**
  * POST /projects/{project}/{environment}/templates/{slug}/deploy — the Deploy button of the configure form.

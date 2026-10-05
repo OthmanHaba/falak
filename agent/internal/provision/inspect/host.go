@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Firewall is the state of host firewalls besides Kiln's (table inet kiln).
+// Firewall is the state of host firewalls besides Falak's (table inet falak).
 type Firewall struct {
 	UFW       string   `json:"ufw"`       // active, inactive or absent
 	Firewalld string   `json:"firewalld"` // active, inactive or absent
@@ -41,7 +41,7 @@ func (in *Inspector) firewall(ctx context.Context, r *Report) error {
 	return err
 }
 
-// ParseNftTables parses `nft list tables` ("table inet kiln" → "inet kiln").
+// ParseNftTables parses `nft list tables` ("table inet falak" → "inet falak").
 func ParseNftTables(out string) []string {
 	ts := []string{}
 	for _, line := range strings.Split(out, "\n") {
@@ -83,9 +83,9 @@ func ParseProcSwaps(s string) []Swap {
 }
 
 const (
-	kilnNodeRoot     = "/opt/kiln/node/"
-	kilnFrankenPHP   = "/usr/local/bin/frankenphp"
-	kilnFrankenMark  = "/etc/kiln/frankenphp.version"
+	falakNodeRoot    = "/opt/falak/node/"
+	falakFrankenPHP  = "/usr/local/bin/frankenphp"
+	falakFrankenMark = "/etc/falak/frankenphp.version"
 	nodesourceDomain = "nodesource.com"
 )
 
@@ -94,11 +94,11 @@ var semverish = regexp.MustCompile(`v?(\d+\.\d+(?:\.\d+)?)`)
 func (in *Inspector) runtimes(ctx context.Context, r *Report) error {
 	r.Node = in.nodes(ctx, r)
 	r.PHP = in.phps(ctx, r)
-	if in.exists(kilnFrankenPHP) {
-		b := Binary{Path: kilnFrankenPHP, Source: "manual"}
-		if v, err := in.d.FS.ReadFile(kilnFrankenMark); err == nil {
-			b.Source, b.Version = "kiln", strings.TrimPrefix(strings.TrimSpace(string(v)), "v")
-		} else if out, err := in.output(ctx, kilnFrankenPHP, "version"); err == nil {
+	if in.exists(falakFrankenPHP) {
+		b := Binary{Path: falakFrankenPHP, Source: "manual"}
+		if v, err := in.d.FS.ReadFile(falakFrankenMark); err == nil {
+			b.Source, b.Version = "falak", strings.TrimPrefix(strings.TrimSpace(string(v)), "v")
+		} else if out, err := in.output(ctx, falakFrankenPHP, "version"); err == nil {
 			if m := semverish.FindStringSubmatch(out); m != nil {
 				b.Version = m[1]
 			}
@@ -111,7 +111,7 @@ func (in *Inspector) runtimes(ctx context.Context, r *Report) error {
 	return nil
 }
 
-// nodes finds node binaries: Kiln's (/opt/kiln/node), on PATH (/usr/local/bin, /usr/bin, snap) and nvm's.
+// nodes finds node binaries: Falak's (/opt/falak/node), on PATH (/usr/local/bin, /usr/bin, snap) and nvm's.
 func (in *Inspector) nodes(ctx context.Context, r *Report) []Binary {
 	cands := []string{"/usr/local/bin/node", "/usr/bin/node", "/snap/bin/node"}
 	homes := []string{"/root"}
@@ -126,10 +126,10 @@ func (in *Inspector) nodes(ctx context.Context, r *Report) []Binary {
 			cands = append(cands, h+"/.nvm/versions/node/"+v.Name()+"/bin/node")
 		}
 	}
-	if vs, err := os.ReadDir(in.d.FS.P(kilnNodeRoot)); err == nil {
+	if vs, err := os.ReadDir(in.d.FS.P(falakNodeRoot)); err == nil {
 		for _, v := range vs {
 			if !strings.HasPrefix(v.Name(), ".") {
-				cands = append(cands, kilnNodeRoot+v.Name()+"/bin/node")
+				cands = append(cands, falakNodeRoot+v.Name()+"/bin/node")
 			}
 		}
 	}
@@ -139,7 +139,7 @@ func (in *Inspector) nodes(ctx context.Context, r *Report) []Binary {
 			continue
 		}
 		b := Binary{Path: c, Source: in.nodeSource(r, c)}
-		// Versions come from the install layout (nvm and Kiln name their directories after it), the package or the
+		// Versions come from the install layout (nvm and Falak name their directories after it), the package or the
 		// snap: a binary in a user's tree is never executed. Only another node is asked, and only when root owns it.
 		b.Version = in.nodeVersion(r, c, b.Source)
 		if b.Version == "" {
@@ -157,7 +157,7 @@ func (in *Inspector) nodes(ctx context.Context, r *Report) []Binary {
 	return out
 }
 
-var nodeDirVersion = regexp.MustCompile(`/(?:\.nvm/versions/node|opt/kiln/node)/v?(\d+\.\d+\.\d+)/`)
+var nodeDirVersion = regexp.MustCompile(`/(?:\.nvm/versions/node|opt/falak/node)/v?(\d+\.\d+\.\d+)/`)
 
 // nodeVersion tells a node's version without running it ("" when only the binary could tell).
 func (in *Inspector) nodeVersion(r *Report, path, source string) string {
@@ -166,7 +166,7 @@ func (in *Inspector) nodeVersion(r *Report, path, source string) string {
 		target = t
 	}
 	switch source {
-	case "kiln", "nvm":
+	case "falak", "nvm":
 		if m := nodeDirVersion.FindStringSubmatch(target); m != nil {
 			return m[1]
 		}
@@ -200,14 +200,14 @@ func upstreamVersion(v string) string {
 }
 
 func (in *Inspector) nodeSource(r *Report, path string) string {
-	// Kiln's default version is a symlink /usr/local/bin/node → /opt/kiln/node/<version>/bin/node.
+	// Falak's default version is a symlink /usr/local/bin/node → /opt/falak/node/<version>/bin/node.
 	target := path
 	if t, err := os.Readlink(in.d.FS.P(path)); err == nil {
 		target = t
 	}
 	switch {
-	case strings.HasPrefix(target, kilnNodeRoot) || strings.HasPrefix(path, kilnNodeRoot):
-		return "kiln"
+	case strings.HasPrefix(target, falakNodeRoot) || strings.HasPrefix(path, falakNodeRoot):
+		return "falak"
 	case strings.Contains(path, "/.nvm/"):
 		return "nvm"
 	case strings.HasPrefix(path, "/snap/") || strings.HasPrefix(target, "/snap/"):
@@ -249,8 +249,8 @@ type Unattended struct {
 	Installed bool `json:"installed"`
 	// Periodic holds APT::Periodic::* from 20auto-upgrades ("Update-Package-Lists", "Unattended-Upgrade"); nil when
 	// the file does not exist.
-	Periodic      map[string]string `json:"periodic"`
-	ManagedByKiln bool              `json:"managed_by_kiln"`
+	Periodic       map[string]string `json:"periodic"`
+	ManagedByFalak bool              `json:"managed_by_falak"`
 }
 
 const autoUpgrades = "/etc/apt/apt.conf.d/20auto-upgrades"
@@ -264,7 +264,7 @@ func (in *Inspector) unattended(r *Report) error {
 		for _, m := range aptPeriodic.FindAllStringSubmatch(string(b), -1) {
 			u.Periodic[m[1]] = m[2]
 		}
-		u.ManagedByKiln = strings.HasPrefix(string(b), "// Managed by Kiln")
+		u.ManagedByFalak = strings.HasPrefix(string(b), "// Managed by Falak")
 	}
 	r.UnattendedUpgrades = u
 	return nil

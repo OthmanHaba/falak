@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Deployments\Application\Actions;
+namespace Falak\Deployments\Application\Actions;
 
+use Falak\Deployments\Domain\Enums\Strategy;
+use Falak\Deployments\Domain\Models\SiteSettings;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Sites\Contracts\Data\SiteData;
 use Illuminate\Validation\ValidationException;
-use Kiln\Deployments\Domain\Enums\Strategy;
-use Kiln\Deployments\Domain\Models\SiteSettings;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Sites\Contracts\Data\SiteData;
 
 final class UpdateDeploySettings
 {

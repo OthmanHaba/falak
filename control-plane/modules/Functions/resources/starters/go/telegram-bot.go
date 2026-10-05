@@ -70,7 +70,7 @@ func withoutURL(err error) error {
 func reply(text string) string {
 	switch text {
 	case "/start":
-		return "Hi! I run on a Kiln function. Send me anything and I will echo it."
+		return "Hi! I run on a Falak function. Send me anything and I will echo it."
 	case "/help":
 		return "Commands: /start, /help, /time. Anything else is echoed back."
 	case "/time":

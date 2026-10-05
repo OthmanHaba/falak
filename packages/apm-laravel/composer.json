@@ -1,28 +1,28 @@
 {
-    "name": "kiln/apm-laravel",
-    "description": "Kiln APM for Laravel: Nightwatch-style request, query, job, cache, mail, notification, command, schedule, exception and log telemetry exported as OTLP/HTTP JSON to the local kiln-agent.",
+    "name": "falak/apm-laravel",
+    "description": "Falak APM for Laravel: Nightwatch-style request, query, job, cache, mail, notification, command, schedule, exception and log telemetry exported as OTLP/HTTP JSON to the local falak-agent.",
     "type": "library",
     "license": "Apache-2.0",
-    "keywords": ["laravel", "apm", "opentelemetry", "otlp", "observability", "kiln"],
+    "keywords": ["laravel", "apm", "opentelemetry", "otlp", "observability", "falak"],
     "require": {
         "php": "^8.2",
-        "illuminate/contracts": "^11.0|^12.0|^13.0",
-        "illuminate/support": "^11.0|^12.0|^13.0"
+        "illuminate/contracts": "^12.0|^13.0",
+        "illuminate/support": "^12.0|^13.0"
     },
     "require-dev": {
-        "orchestra/testbench": "^9.0|^10.0|^11.0",
+        "orchestra/testbench": "^10.0|^11.0",
         "pestphp/pest": "^3.0",
         "guzzlehttp/guzzle": "^7.8"
     },
     "autoload": {
-        "psr-4": { "Kiln\\Apm\\": "src/" }
+        "psr-4": { "Falak\\Apm\\": "src/" }
     },
     "autoload-dev": {
-        "psr-4": { "Kiln\\Apm\\Tests\\": "tests/" }
+        "psr-4": { "Falak\\Apm\\Tests\\": "tests/" }
     },
     "extra": {
         "laravel": {
-            "providers": ["Kiln\\Apm\\ApmServiceProvider"]
+            "providers": ["Falak\\Apm\\ApmServiceProvider"]
         }
     },
     "scripts": {

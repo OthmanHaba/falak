@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Network\Domain\Support;
+namespace Falak\Network\Domain\Support;
 
 /**
  * Strict validation of firewall rule ports and sources.

@@ -1,12 +1,12 @@
 <?php
 
+use Falak\Insights\Http\Controllers\CommentController;
+use Falak\Insights\Http\Controllers\HeartbeatController;
+use Falak\Insights\Http\Controllers\IssueController;
+use Falak\Insights\Http\Controllers\OverviewController;
+use Falak\Insights\Http\Controllers\ThresholdController;
+use Falak\Kernel\Http\LegacyRedirect;
 use Illuminate\Support\Facades\Route;
-use Kiln\Insights\Http\Controllers\CommentController;
-use Kiln\Insights\Http\Controllers\HeartbeatController;
-use Kiln\Insights\Http\Controllers\IssueController;
-use Kiln\Insights\Http\Controllers\OverviewController;
-use Kiln\Insights\Http\Controllers\ThresholdController;
-use Kiln\Kernel\Http\LegacyRedirect;
 
 $ulid = '[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}';
 

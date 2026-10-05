@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Sites\Infrastructure\Compose;
+namespace Falak\Sites\Infrastructure\Compose;
 
-use Kiln\Sites\Contracts\ComposeInspector;
-use Kiln\Sites\Contracts\Data\ComposeServiceSummary;
-use Kiln\Sites\Contracts\Data\ComposeSummary;
+use Falak\Sites\Contracts\ComposeInspector;
+use Falak\Sites\Contracts\Data\ComposeServiceSummary;
+use Falak\Sites\Contracts\Data\ComposeSummary;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
@@ -16,7 +16,7 @@ use Symfony\Component\Yaml\Yaml;
  */
 final class YamlComposeInspector implements ComposeInspector
 {
-    public const LEADER_COMMAND_LABEL = 'kiln.deploy.leader_command';
+    public const LEADER_COMMAND_LABEL = 'falak.deploy.leader_command';
 
     public function parse(string $yaml): ComposeSummary
     {
@@ -132,7 +132,7 @@ final class YamlComposeInspector implements ComposeInspector
             [$ports, $published] = $this->ports($service['ports'] ?? [], $service['expose'] ?? []);
 
             if ($published !== []) {
-                $warnings[] = "Host ports of {$name} (".implode(', ', $published).') are not published; Kiln publishes public services itself.';
+                $warnings[] = "Host ports of {$name} (".implode(', ', $published).') are not published; Falak publishes public services itself.';
             }
 
             $labels = self::labels($service['labels'] ?? []);

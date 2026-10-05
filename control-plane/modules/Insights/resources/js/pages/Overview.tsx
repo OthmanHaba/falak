@@ -1,12 +1,12 @@
-import { Button } from '@/components/kiln/button';
-import { DataTable, type DataTableColumn } from '@/components/kiln/data-table';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Menu } from '@/components/kiln/menu';
-import { MetricChart, type MetricPoint } from '@/components/kiln/metric-chart';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Segmented } from '@/components/kiln/segmented';
-import { Select } from '@/components/kiln/select';
-import { Stat } from '@/components/kiln/stat';
+import { Button } from '@/components/falak/button';
+import { DataTable, type DataTableColumn } from '@/components/falak/data-table';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Menu } from '@/components/falak/menu';
+import { MetricChart, type MetricPoint } from '@/components/falak/metric-chart';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Segmented } from '@/components/falak/segmented';
+import { Select } from '@/components/falak/select';
+import { Stat } from '@/components/falak/stat';
 import ObservabilityLayout from '@/layouts/observability-layout';
 import { Link, router } from '@inertiajs/react';
 import { Activity, ExternalLink, Gauge, ScrollText, Timer } from 'lucide-react';
@@ -150,7 +150,7 @@ export default function Overview({ filters, ranges, projects, sites, overview, s
                 <EmptyState
                     icon={<Gauge />}
                     title="No application data yet"
-                    description="Requests, jobs, queries and exceptions appear here once a Laravel site reports insights through the Kiln agent. Deploy a site with the Kiln Insights package installed to start collecting."
+                    description="Requests, jobs, queries and exceptions appear here once a Laravel site reports insights through the Falak agent. Deploy a site with the Falak Insights package installed to start collecting."
                     action={
                         <Button asChild variant="primary">
                             <Link href="/projects">Go to projects</Link>

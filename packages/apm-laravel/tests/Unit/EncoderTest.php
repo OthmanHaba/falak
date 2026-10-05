@@ -1,10 +1,10 @@
 <?php
 
-use Kiln\Apm\Otlp\Encoder;
-use Kiln\Apm\Recorder;
-use Kiln\Apm\Redactor;
-use Kiln\Apm\Span;
-use Kiln\Apm\Tests\FakeTransport;
+use Falak\Apm\Otlp\Encoder;
+use Falak\Apm\Recorder;
+use Falak\Apm\Redactor;
+use Falak\Apm\Span;
+use Falak\Apm\Tests\FakeTransport;
 
 /** Structural validation against the OTLP/JSON mapping of opentelemetry-proto. */
 function assertOtlpAttributes(array $attributes): void
@@ -25,7 +25,7 @@ function assertOtlpAttributes(array $attributes): void
 
 it('produces valid OTLP/JSON trace payloads', function () {
     $transport = new FakeTransport;
-    $recorder = new Recorder([], $transport, new Encoder(['service.name' => 'shop', 'kiln.site.id' => '01J']), new Redactor);
+    $recorder = new Recorder([], $transport, new Encoder(['service.name' => 'shop', 'falak.site.id' => '01J']), new Redactor);
 
     $recorder->beginTrace('request', 'GET /x', Span::KIND_SERVER, ['http.request.method' => 'GET', 'ratio' => 0.5, 'flag' => true, 'list' => ['a', 'b'], 'map' => ['k' => 1]]);
     $recorder->record('query', 'sqlite', Span::KIND_CLIENT, $recorder->now(), $recorder->now() + 1000, ['db.query.text' => 'select 1']);
@@ -40,8 +40,8 @@ it('produces valid OTLP/JSON trace payloads', function () {
 
     $rs = $payload['resourceSpans'][0];
     assertOtlpAttributes($rs['resource']['attributes']);
-    expect(FakeTransport::attrs($rs['resource']['attributes']))->toMatchArray(['service.name' => 'shop', 'kiln.site.id' => '01J'])
-        ->and($rs['scopeSpans'][0]['scope'])->toBe(['name' => 'kiln/apm-laravel', 'version' => Encoder::VERSION]);
+    expect(FakeTransport::attrs($rs['resource']['attributes']))->toMatchArray(['service.name' => 'shop', 'falak.site.id' => '01J'])
+        ->and($rs['scopeSpans'][0]['scope'])->toBe(['name' => 'falak/apm-laravel', 'version' => Encoder::VERSION]);
 
     $spans = $rs['scopeSpans'][0]['spans'];
     expect($spans)->toHaveCount(2);

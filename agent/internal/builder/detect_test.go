@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 func stepLines(p Plan) []string {

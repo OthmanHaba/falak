@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Terminal\Domain\Models;
+namespace Falak\Terminal\Domain\Models;
 
+use Falak\Terminal\Domain\Enums\SessionStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Kiln\Terminal\Domain\Enums\SessionStatus;
 
 /**
  * @property string $id also the agent-side session_id

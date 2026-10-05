@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Insights\Application\Actions;
+namespace Falak\Insights\Application\Actions;
 
 use Illuminate\Support\Facades\DB;
 

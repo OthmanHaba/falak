@@ -14,8 +14,8 @@
       "/v1/chat/completions"
     ],
     [
-      "/repos/kiln/agent/pulls",
-      "/repos/kiln/agent/pulls"
+      "/repos/falak/agent/pulls",
+      "/repos/falak/agent/pulls"
     ],
     [
       "/bot123456:AAEhBP0av28X5mJBEdcJfZc3K8rT1pq0xYz/sendMessage",

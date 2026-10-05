@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Edge\Contracts\Data;
+namespace Falak\Edge\Contracts\Data;
 
 use DateTimeImmutable;
-use Kiln\Edge\Application\DnsInstructions;
-use Kiln\Edge\Contracts\DnsStatus;
+use Falak\Edge\Application\DnsInstructions;
+use Falak\Edge\Contracts\DnsStatus;
 
 final readonly class DnsCheckResult
 {

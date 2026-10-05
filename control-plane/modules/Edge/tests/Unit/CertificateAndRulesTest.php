@@ -1,9 +1,9 @@
 <?php
 
-use Kiln\Edge\Domain\Certificates\PemCertificate;
-use Kiln\Edge\Domain\Models\Certificate;
-use Kiln\Edge\Http\Rules\Cidr;
-use Kiln\Edge\Infrastructure\PayloadHash;
+use Falak\Edge\Domain\Certificates\PemCertificate;
+use Falak\Edge\Domain\Models\Certificate;
+use Falak\Edge\Http\Rules\Cidr;
+use Falak\Edge\Infrastructure\PayloadHash;
 
 require_once __DIR__.'/../Support/helpers.php';
 

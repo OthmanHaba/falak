@@ -21,7 +21,7 @@ import {
     hasServiceIcon,
     toast,
     type SetupProgress,
-} from '@/components/kiln';
+} from '@/components/falak';
 import { errorMessage, requestJson } from '@/lib/http';
 import { shellContext } from '@/lib/registry';
 import { cn } from '@/lib/utils';
@@ -55,8 +55,8 @@ interface Props {
 type Sort = 'activity' | 'name' | 'created';
 type View = 'grid' | 'list';
 
-const SETUP_DISMISSED = 'kiln:setup-dismissed';
-const PREFS = 'kiln:projects-view';
+const SETUP_DISMISSED = 'falak:setup-dismissed';
+const PREFS = 'falak:projects-view';
 const SORTS: { id: Sort; label: string }[] = [
     { id: 'activity', label: 'Recent activity' },
     { id: 'name', label: 'Name' },

@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Functions\Infrastructure;
+namespace Falak\Functions\Infrastructure;
 
-use Kiln\Functions\Application\FunctionStore;
-use Kiln\Functions\Domain\Models\FunctionSchedule;
-use Kiln\Processes\Contracts\Data\SourcedJob;
-use Kiln\Processes\Contracts\ScheduleSources;
-use Kiln\Sites\Contracts\Data\SiteData;
+use Falak\Functions\Application\FunctionStore;
+use Falak\Functions\Domain\Models\FunctionSchedule;
+use Falak\Processes\Contracts\Data\SourcedJob;
+use Falak\Processes\Contracts\ScheduleSources;
+use Falak\Sites\Contracts\Data\SiteData;
 
 /**
- * A function's enabled schedules as cron jobs of its leader server. Each runs `kiln-agent fn-run`, which asks the
- * server's function gateway to run the live release once (kiln-fn-run) and exits with the run's code, so the
+ * A function's enabled schedules as cron jobs of its leader server. Each runs `falak-agent fn-run`, which asks the
+ * server's function gateway to run the live release once (falak-fn-run) and exits with the run's code, so the
  * agent's scheduler handles overlap, timeouts and heartbeats as for any job.
  */
 final class FunctionScheduleSources implements ScheduleSources
@@ -46,7 +46,7 @@ final class FunctionScheduleSources implements ScheduleSources
     public static function command(string $slug, FunctionSchedule $schedule): string
     {
         return implode(' ', [
-            '/usr/local/bin/kiln-agent fn-run',
+            '/usr/local/bin/falak-agent fn-run',
             '--site', escapeshellarg($slug),
             '--schedule', escapeshellarg($schedule->key()),
             '--name', escapeshellarg($schedule->name),

@@ -60,7 +60,7 @@ export const ENGINE_LABELS: Record<string, string> = {
     valkey: 'Valkey',
 };
 
-/** Redis / Valkey: a Kiln instance (not a database inside an engine). */
+/** Redis / Valkey: a Falak instance (not a database inside an engine). */
 export const KEY_VALUE_ENGINES = ['redis', 'valkey'];
 
 /**

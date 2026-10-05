@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Functions\Domain\Models;
+namespace Falak\Functions\Domain\Models;
 
+use Falak\Functions\Application\Code;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Kiln\Functions\Application\Code;
 use LogicException;
 
 /**

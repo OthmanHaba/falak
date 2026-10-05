@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Contracts;
+namespace Falak\Identity\Contracts;
 
 /**
  * Organization roles, from most to least privileged.

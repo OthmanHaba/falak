@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Identity\Http\Requests\Settings;
+namespace Falak\Identity\Http\Requests\Settings;
 
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
-use Kiln\Identity\Domain\Models\User;
 
 class ProfileUpdateRequest extends FormRequest
 {

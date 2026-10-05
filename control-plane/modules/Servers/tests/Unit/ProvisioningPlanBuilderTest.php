@@ -1,13 +1,13 @@
 <?php
 
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Enums\PhpVersionStatus;
+use Falak\Servers\Domain\Models\PhpVersion;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Stack\Stack;
+use Falak\Servers\Infrastructure\ProvisioningPlanBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Enums\PhpVersionStatus;
-use Kiln\Servers\Domain\Models\PhpVersion;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Stack\Stack;
-use Kiln\Servers\Infrastructure\ProvisioningPlanBuilder;
 
 uses(RefreshDatabase::class);
 
@@ -51,7 +51,7 @@ it('builds an all-in-one app server plan', function () {
         ->and($plan['runtimes']['node'])->toBe(['versions' => [config('servers.node_versions.22')], 'default' => config('servers.node_versions.22')])
         ->and($plan['runtimes']['caddy'])->toBe(['enabled' => false])
         ->and(array_column($plan['services'], 'name'))->toBe(['fail2ban', 'postgresql', 'redis-server'])
-        ->and($plan['users'][0])->toMatchArray(['name' => 'kiln', 'groups' => ['www-data'], 'sudo' => 'none'])
+        ->and($plan['users'][0])->toMatchArray(['name' => 'falak', 'groups' => ['www-data'], 'sudo' => 'none'])
         ->and($plan['ssh'])->toBe(['port' => 2222, 'permit_root_login' => 'prohibit-password', 'password_authentication' => false])
         ->and($plan['unattended_upgrades']['enabled'])->toBeTrue();
 });
@@ -111,7 +111,7 @@ it('derives RFC 1123 hostnames', function (string $name, string $hostname) {
     ['Web 01', 'web-01'],
     ['api.prod', 'api-prod'],
     ['--Ünïcode__box--', 'unicode-box'],
-    ['___', 'kiln-server'],
+    ['___', 'falak-server'],
     [str_repeat('a', 80), str_repeat('a', 63)],
 ]);
 

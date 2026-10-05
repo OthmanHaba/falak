@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Deployments\Infrastructure;
+namespace Falak\Deployments\Infrastructure;
 
-use Kiln\Deployments\Contracts\Data\FunctionSource;
-use Kiln\Deployments\Contracts\FunctionSources;
+use Falak\Deployments\Contracts\Data\FunctionSource;
+use Falak\Deployments\Contracts\FunctionSources;
 
 /** Default until the Functions module binds its own: no function has code. */
 final class NoFunctionSources implements FunctionSources

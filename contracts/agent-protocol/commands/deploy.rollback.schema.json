@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/deploy.rollback.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/deploy.rollback.schema.json",
   "title": "deploy.rollback — point `current` at an earlier release",
   "type": "object",
   "additionalProperties": false,
@@ -11,7 +11,7 @@
     "site": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-      "description": "Site slug (directory name under /srv/kiln/sites)"
+      "description": "Site slug (directory name under /srv/falak/sites)"
     },
     "sites_root": {
       "allOf": [
@@ -20,7 +20,7 @@
           "pattern": "^/"
         }
       ],
-      "default": "/srv/kiln/sites"
+      "default": "/srv/falak/sites"
     },
     "release_id": {
       "type": "string",
@@ -89,7 +89,7 @@
           "description": "e.g. /usr/bin/php8.4 or 'frankenphp php-cli'"
         }
       },
-      "description": "Deployment context. Labels the deployment lifecycle OTLP log events (kiln.event.type=deployment, kiln.deployment.id, kiln.site.id, kiln.release.id, kiln.deployment.phase, kiln.deployment.status); in deploy.hook also exposed to scripts as KILN_SITE_ID, KILN_DEPLOYMENT_ID, KILN_COMMIT, KILN_AUTHOR, KILN_BRANCH, KILN_TRIGGER, KILN_PHP_BINARY"
+      "description": "Deployment context. Labels the deployment lifecycle OTLP log events (falak.event.type=deployment, falak.deployment.id, falak.site.id, falak.release.id, falak.deployment.phase, falak.deployment.status); in deploy.hook also exposed to scripts as FALAK_SITE_ID, FALAK_DEPLOYMENT_ID, FALAK_COMMIT, FALAK_AUTHOR, FALAK_BRANCH, FALAK_TRIGGER, FALAK_PHP_BINARY"
     }
   },
   "$defs": {

@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Alerting\Application;
+namespace Falak\Alerting\Application;
 
 use DateTimeImmutable;
-use Kiln\Alerting\Contracts\Severity;
-use Kiln\Alerting\Domain\Models\Alert;
+use Falak\Alerting\Contracts\Severity;
+use Falak\Alerting\Domain\Models\Alert;
 
 /**
  * What a channel sender renders: an alert (or a test message).
@@ -51,7 +51,7 @@ final readonly class AlertMessage
             $organizationId,
             'alerting.test',
             Severity::Info,
-            'Kiln test alert',
+            'Falak test alert',
             "This is a test message for the \"{$channelName}\" channel. If you can read it, the channel works.",
             url('/settings/alert-channels'),
             [],

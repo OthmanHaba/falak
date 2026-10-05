@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Network\Events;
+namespace Falak\Network\Events;
 
 use Illuminate\Foundation\Events\Dispatchable;
 

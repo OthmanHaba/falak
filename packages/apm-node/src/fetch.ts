@@ -4,7 +4,7 @@ import { SCOPE } from './version.js';
 
 export type FetchHandler<Args extends unknown[] = unknown[]> = (request: Request, ...rest: Args) => Response | Promise<Response>;
 
-export interface WithKilnRequestOptions {
+export interface WithFalakRequestOptions {
   /** Low-cardinality route template, e.g. "/users/:id" (or a function of the request). */
   route?: string | ((request: Request) => string | undefined);
   /** Authenticated user id for `enduser.id`. */
@@ -20,18 +20,18 @@ const headerGetter: TextMapGetter<Headers> = {
 
 /**
  * Wrap a fetch-style handler (Bun.serve, Deno.serve, Hono `app.fetch`, Cloudflare-style
- * workers, Next route handlers) in a SERVER span with kiln.event.type=request.
+ * workers, Next route handlers) in a SERVER span with falak.event.type=request.
  */
-export function withKilnRequest<Args extends unknown[]>(handler: FetchHandler<Args>, options: WithKilnRequestOptions = {}): FetchHandler<Args> {
+export function withFalakRequest<Args extends unknown[]>(handler: FetchHandler<Args>, options: WithFalakRequestOptions = {}): FetchHandler<Args> {
   const tracer = trace.getTracer(SCOPE);
 
-  return async function kilnRequest(request: Request, ...rest: Args): Promise<Response> {
+  return async function falakRequest(request: Request, ...rest: Args): Promise<Response> {
     const url = new URL(request.url);
     const route = typeof options.route === 'function' ? options.route(request) : options.route;
     const parent = propagation.extract(context.active(), request.headers, headerGetter);
 
     const attributes: Attributes = {
-      'kiln.event.type': 'request',
+      'falak.event.type': 'request',
       'http.request.method': request.method,
       'url.path': url.pathname,
       'url.scheme': url.protocol.replace(':', ''),

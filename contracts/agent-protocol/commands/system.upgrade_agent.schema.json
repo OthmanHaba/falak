@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/system.upgrade_agent.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/system.upgrade_agent.schema.json",
   "title": "system.upgrade_agent — download (sha256-verified), pre-flight `<new> version`, swap atomically (previous kept as <bin>.prev) and restart",
-  "x-kiln-redeliverable": true,
+  "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [

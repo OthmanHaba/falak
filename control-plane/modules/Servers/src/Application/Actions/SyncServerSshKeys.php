@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Servers\Application\Actions;
+namespace Falak\Servers\Application\Actions;
 
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Models\SshKey;
+use Falak\Servers\Infrastructure\CommandPayloads;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Models\SshKey;
-use Kiln\Servers\Infrastructure\CommandPayloads;
 
 /**
  * Converges authorized_keys for every managed unix user (system.ssh_key.sync, one command per user).

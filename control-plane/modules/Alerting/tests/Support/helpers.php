@@ -1,9 +1,9 @@
 <?php
 
-use Kiln\Alerting\Domain\Enums\ChannelType;
-use Kiln\Alerting\Domain\Models\Channel;
-use Kiln\Alerting\Domain\Models\Rule;
-use Kiln\Insights\Events\IssueOpened;
+use Falak\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Alerting\Domain\Models\Rule;
+use Falak\Insights\Events\IssueOpened;
 
 const ALERTING_SLACK_URL = 'https://hooks.slack.com/services/T000/B000/SECRETSECRETSECRET';
 
@@ -14,7 +14,7 @@ function alerting_channel(string $organizationId, ChannelType $type = ChannelTyp
         ChannelType::Slack => ['webhook_url' => ALERTING_SLACK_URL],
         ChannelType::Discord => ['webhook_url' => 'https://discord.com/api/webhooks/123/SECRETTOKEN'],
         ChannelType::Telegram => ['bot_token' => '123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'chat_id' => '-100123'],
-        ChannelType::Webhook => ['url' => 'https://hooks.example.com/kiln', 'secret' => 'a-very-long-signing-secret'],
+        ChannelType::Webhook => ['url' => 'https://hooks.example.com/falak', 'secret' => 'a-very-long-signing-secret'],
     };
 
     return Channel::query()->create([

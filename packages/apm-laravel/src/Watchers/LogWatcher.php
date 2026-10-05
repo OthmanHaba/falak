@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Apm\Watchers;
+namespace Falak\Apm\Watchers;
 
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Log\Events\MessageLogged;
-use Kiln\Apm\Recorder;
+use Falak\Apm\Recorder;
 use Stringable;
 
 /**
  * Captures everything that goes through Laravel's logger (all channels). Use
- * Kiln\Apm\Logging\OtlpHandler instead for per-channel Monolog wiring.
+ * Falak\Apm\Logging\OtlpHandler instead for per-channel Monolog wiring.
  */
 final class LogWatcher
 {

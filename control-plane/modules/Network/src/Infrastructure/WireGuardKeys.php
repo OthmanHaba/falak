@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Network\Infrastructure;
+namespace Falak\Network\Infrastructure;
 
 use InvalidArgumentException;
 

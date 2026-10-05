@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/otlp"
+	"github.com/OthmanHaba/falak/agent/internal/otlp"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
@@ -64,7 +64,7 @@ func span(name string, startOff, durMs int, attrs ...*commonpb.KeyValue) *tracep
 
 func batch(spans ...*tracepb.Span) []*tracepb.ResourceSpans {
 	return []*tracepb.ResourceSpans{{
-		Resource:   &resourcepb.Resource{Attributes: []*commonpb.KeyValue{otlp.Str("kiln.site.id", "01SITE")}},
+		Resource:   &resourcepb.Resource{Attributes: []*commonpb.KeyValue{otlp.Str("falak.site.id", "01SITE")}},
 		ScopeSpans: []*tracepb.ScopeSpans{{Spans: spans}},
 	}}
 }
@@ -73,9 +73,9 @@ func TestExceptionLine(t *testing.T) {
 	p := &fakePoster{}
 	now := base
 	tee := New(p, func() time.Time { return now }, nil)
-	root := span("GET /orders/{id}", 1, 120, otlp.Str("kiln.event.type", "request"), otlp.Str("http.route", "/orders/{id}"),
+	root := span("GET /orders/{id}", 1, 120, otlp.Str("falak.event.type", "request"), otlp.Str("http.route", "/orders/{id}"),
 		otlp.Str("http.request.method", "GET"), otlp.Str("enduser.id", "42"))
-	child := span("select", 1, 5, otlp.Str("kiln.event.type", "query"), otlp.Str("db.query.text", "select * from t where id = 5"))
+	child := span("select", 1, 5, otlp.Str("falak.event.type", "query"), otlp.Str("db.query.text", "select * from t where id = 5"))
 	child.Status = &tracepb.Status{Code: tracepb.Status_STATUS_CODE_ERROR}
 	child.Events = []*tracepb.Span_Event{{Name: "exception", TimeUnixNano: uint64(base.Add(time.Second).UnixNano()), Attributes: []*commonpb.KeyValue{
 		otlp.Str("exception.type", "PDOException"), otlp.Str("exception.message", "gone away"), otlp.Str("exception.stacktrace", "#0 main"),
@@ -108,16 +108,16 @@ func TestAggregatesPerMinute(t *testing.T) {
 	tee := New(p, func() time.Time { return now }, nil)
 	var spans []*tracepb.Span
 	for i := 1; i <= 100; i++ {
-		attrs := []*commonpb.KeyValue{otlp.Str("kiln.event.type", "request"), otlp.Str("http.route", "/api/items"),
+		attrs := []*commonpb.KeyValue{otlp.Str("falak.event.type", "request"), otlp.Str("http.route", "/api/items"),
 			otlp.Str("http.request.method", "GET"), otlp.Any("http.response.status_code", int64(200))}
 		if i%10 == 0 {
 			attrs[3] = otlp.Any("http.response.status_code", int64(503))
 		}
 		spans = append(spans, span("GET /api/items", 0, i, attrs...))
 	}
-	spans = append(spans, span("App\\Jobs\\Ship", 2, 50, otlp.Str("kiln.event.type", "job"), otlp.Str("kiln.job.class", "App\\Jobs\\Ship"), otlp.Str("kiln.job.status", "failed")))
+	spans = append(spans, span("App\\Jobs\\Ship", 2, 50, otlp.Str("falak.event.type", "job"), otlp.Str("falak.job.class", "App\\Jobs\\Ship"), otlp.Str("falak.job.status", "failed")))
 	// Next minute: must stay open.
-	spans = append(spans, span("GET /api/items", 61, 1, otlp.Str("kiln.event.type", "request"), otlp.Str("http.route", "/api/items")))
+	spans = append(spans, span("GET /api/items", 61, 1, otlp.Str("falak.event.type", "request"), otlp.Str("http.route", "/api/items")))
 	tee.ObserveSpans(batch(spans...))
 
 	now = base.Add(time.Minute + Grace - time.Second) // inside grace → nothing
@@ -173,7 +173,7 @@ func TestFlushRetriesKeepLines(t *testing.T) {
 	if err := tee.Flush(context.Background()); err != nil || len(p.byKind("exception")) != 1 {
 		t.Fatalf("retry failed: %v", err)
 	}
-	// Exceptions on spans without kiln.event.type are still reported; handled=true when status not ERROR.
+	// Exceptions on spans without falak.event.type are still reported; handled=true when status not ERROR.
 	if p.byKind("exception")[0]["handled"] != true {
 		t.Fatal("handled default")
 	}

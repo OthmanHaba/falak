@@ -19,7 +19,7 @@ import {
     Textarea,
     Tooltip,
     toast,
-} from '@/components/kiln';
+} from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { HttpError, errorMessage, requestJson, type HttpMethod } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
@@ -192,7 +192,7 @@ function DomainDialog({
             open={open}
             onOpenChange={onOpenChange}
             title={domain ? `Edit ${domain.name}` : service ? `Add a domain for ${service}` : 'Add domain'}
-            description="Bring your own domain (Kiln shows the DNS record and checks it), or generate one that works right away."
+            description="Bring your own domain (Falak shows the DNS record and checks it), or generate one that works right away."
             footer={
                 <>
                     <Button variant="ghost" onClick={() => onOpenChange(false)}>
@@ -454,7 +454,7 @@ function ZoneRateLimitText({ rule }: { rule: ZoneRateLimit }) {
     );
 }
 
-/** A domain's Cloudflare rate limit: Kiln's edge (Caddy) has none, so the rule lives in the zone's rate limiting rules. */
+/** A domain's Cloudflare rate limit: Falak's edge (Caddy) has none, so the rule lives in the zone's rate limiting rules. */
 function RateLimitDialog({
     siteId,
     domain,
@@ -551,7 +551,7 @@ function RateLimitDialog({
                 <form id="rate-limit-form" onSubmit={save} className="grid gap-4">
                     {!data.proxied && (
                         <Callout tone="warning">
-                            Needs the Cloudflare proxy (orange cloud): Kiln’s edge (Caddy) has no rate limiting, so a rule only applies to names
+                            Needs the Cloudflare proxy (orange cloud): Falak’s edge (Caddy) has no rate limiting, so a rule only applies to names
                             Cloudflare proxies.
                         </Callout>
                     )}
@@ -1515,8 +1515,8 @@ function CloudflareTag({ cloudflare }: { cloudflare: NonNullable<EdgeDomain['clo
             content={
                 problem?.error ??
                 (pending
-                    ? `Kiln is creating the DNS record in ${cloudflare.zone}.`
-                    : `DNS managed by Kiln in ${cloudflare.zone}: ${cloudflare.records.map((record) => `${record.type} ${record.content}`).join(', ')}`)
+                    ? `Falak is creating the DNS record in ${cloudflare.zone}.`
+                    : `DNS managed by Falak in ${cloudflare.zone}: ${cloudflare.records.map((record) => `${record.type} ${record.content}`).join(', ')}`)
             }
         >
             <span>

@@ -1,19 +1,19 @@
 <?php
 
-namespace Kiln\Processes\Infrastructure;
+namespace Falak\Processes\Infrastructure;
 
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\Data\CommandHandle;
+use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Falak\Processes\Application\ServerConverger;
+use Falak\Processes\Contracts\OctaneRouting;
+use Falak\Processes\Contracts\ProcessControl;
+use Falak\Processes\Domain\Models\ServerState;
+use Falak\Processes\Events\ProcessesRestarted;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\TargetStatus;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\Data\CommandHandle;
-use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
-use Kiln\Processes\Application\ServerConverger;
-use Kiln\Processes\Contracts\OctaneRouting;
-use Kiln\Processes\Contracts\ProcessControl;
-use Kiln\Processes\Domain\Models\ServerState;
-use Kiln\Processes\Events\ProcessesRestarted;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\TargetStatus;
 use Throwable;
 
 final class AgentProcessControl implements ProcessControl
@@ -81,7 +81,7 @@ final class AgentProcessControl implements ProcessControl
                 && $this->octane->listeningPort($site->id, $target->serverId) !== null;
             $others = array_values(array_diff($running, $reload ? [$horizon, $octane] : [$horizon]));
             $key = "processes.restart:{$site->id}:{$target->serverId}:".Str::ulid();
-            $env = ['KILN_SITE_ID' => strtoupper($site->id), 'KILN_SERVER_ID' => strtoupper($target->serverId)];
+            $env = ['FALAK_SITE_ID' => strtoupper($site->id), 'FALAK_SERVER_ID' => strtoupper($target->serverId)];
 
             try {
                 if (in_array($horizon, $running, true)) {

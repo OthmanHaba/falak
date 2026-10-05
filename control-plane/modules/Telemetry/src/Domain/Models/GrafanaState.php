@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Telemetry\Domain\Models;
+namespace Falak\Telemetry\Domain\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;

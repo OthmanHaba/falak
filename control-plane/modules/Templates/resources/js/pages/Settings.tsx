@@ -11,7 +11,7 @@ import {
     Tag,
     toast,
     type DataTableColumn,
-} from '@/components/kiln';
+} from '@/components/falak';
 import SettingsLayout from '@/layouts/settings/layout';
 import { errorMessage, requestJson } from '@/lib/http';
 import { router } from '@inertiajs/react';
@@ -159,7 +159,7 @@ function ImportDialog({ open, onOpenChange, maxKb }: { open: boolean; onOpenChan
                 {mode === 'url' && (
                     <Field
                         label="URL"
-                        hint="An https URL of a bundle, or of a template.yaml with compose.yaml next to it (e.g. a raw GitHub file). Fetched by Kiln; private addresses are refused."
+                        hint="An https URL of a bundle, or of a template.yaml with compose.yaml next to it (e.g. a raw GitHub file). Fetched by Falak; private addresses are refused."
                         error={urlError}
                     >
                         <div className="flex gap-2">

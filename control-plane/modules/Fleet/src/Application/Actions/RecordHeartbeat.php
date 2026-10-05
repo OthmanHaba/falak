@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Fleet\Application\Actions;
+namespace Falak\Fleet\Application\Actions;
 
+use Falak\Fleet\Application\CommandRedelivery;
+use Falak\Fleet\Contracts\AgentStatus;
+use Falak\Fleet\Contracts\CommandStatus;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\AgentMetric;
+use Falak\Fleet\Events\AgentCameOnline;
+use Falak\Fleet\Events\AgentFactsReported;
+use Falak\Fleet\Events\AgentVersionChanged;
 use Illuminate\Support\Carbon;
-use Kiln\Fleet\Application\CommandRedelivery;
-use Kiln\Fleet\Contracts\AgentStatus;
-use Kiln\Fleet\Contracts\CommandStatus;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\AgentMetric;
-use Kiln\Fleet\Events\AgentCameOnline;
-use Kiln\Fleet\Events\AgentFactsReported;
-use Kiln\Fleet\Events\AgentVersionChanged;
 
 final class RecordHeartbeat
 {
@@ -18,7 +18,7 @@ final class RecordHeartbeat
 
     /**
      * @param  array<string, mixed>  $heartbeat  validated heartbeat.schema.json document
-     * @param  ?string  $session  the reporting agent process (X-Kiln-Agent-Session)
+     * @param  ?string  $session  the reporting agent process (X-Falak-Agent-Session)
      */
     public function __invoke(Agent $agent, array $heartbeat, ?string $ip = null, ?string $session = null): void
     {

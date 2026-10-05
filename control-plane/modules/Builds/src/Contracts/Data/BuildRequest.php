@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Builds\Contracts\Data;
+namespace Falak\Builds\Contracts\Data;
 
 final readonly class BuildRequest
 {

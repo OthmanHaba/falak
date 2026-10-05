@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Templates\Application\Inputs;
+namespace Falak\Templates\Application\Inputs;
 
+use Falak\Templates\Domain\InputType;
+use Falak\Templates\Domain\Template;
+use Falak\Templates\Domain\TemplateInput;
 use Illuminate\Validation\ValidationException;
-use Kiln\Templates\Domain\InputType;
-use Kiln\Templates\Domain\Template;
-use Kiln\Templates\Domain\TemplateInput;
 
 /**
  * The values a site created from a template starts with: what the user entered, else a freshly generated value

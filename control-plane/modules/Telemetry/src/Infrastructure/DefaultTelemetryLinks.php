@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure;
+namespace Falak\Telemetry\Infrastructure;
 
 use DateTimeInterface;
-use Kiln\Telemetry\Contracts\TelemetryLinks;
-use Kiln\Telemetry\Infrastructure\Grafana\GrafanaNames;
+use Falak\Telemetry\Contracts\TelemetryLinks;
+use Falak\Telemetry\Infrastructure\Grafana\GrafanaNames;
 
 /**
  * Relative in-app URLs (usable as Inertia links) plus absolute Grafana URLs.
@@ -39,8 +39,8 @@ final class DefaultTelemetryLinks implements TelemetryLinks
         }
 
         $panes = ['a' => [
-            'datasource' => 'kiln-tempo',
-            'queries' => [['refId' => 'A', 'datasource' => ['type' => 'tempo', 'uid' => 'kiln-tempo'], 'queryType' => 'traceql', 'query' => strtolower($traceId)]],
+            'datasource' => 'falak-tempo',
+            'queries' => [['refId' => 'A', 'datasource' => ['type' => 'tempo', 'uid' => 'falak-tempo'], 'queryType' => 'traceql', 'query' => strtolower($traceId)]],
             'range' => ['from' => 'now-24h', 'to' => 'now'],
         ]];
 

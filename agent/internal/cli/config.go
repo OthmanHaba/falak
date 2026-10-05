@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-// Credentials are stored in <config dir>/kiln/credentials.json with mode 0600.
+// Credentials are stored in <config dir>/falak/credentials.json with mode 0600.
 type Credentials struct {
 	URL          string `json:"url"`
 	Token        string `json:"token"`
@@ -15,17 +15,17 @@ type Credentials struct {
 	Organization string `json:"organization,omitempty"`
 }
 
-// ConfigDir resolves the CLI config dir: $KILN_CONFIG_DIR, else os.UserConfigDir()/kiln
-// (~/Library/Application Support/kiln on macOS, $XDG_CONFIG_HOME/kiln or ~/.config/kiln on Linux).
+// ConfigDir resolves the CLI config dir: $FALAK_CONFIG_DIR, else os.UserConfigDir()/falak
+// (~/Library/Application Support/falak on macOS, $XDG_CONFIG_HOME/falak or ~/.config/falak on Linux).
 func ConfigDir(getenv func(string) string) (string, error) {
-	if d := getenv("KILN_CONFIG_DIR"); d != "" {
+	if d := getenv("FALAK_CONFIG_DIR"); d != "" {
 		return d, nil
 	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "kiln"), nil
+	return filepath.Join(base, "falak"), nil
 }
 
 func credentialsPath(dir string) string { return filepath.Join(dir, "credentials.json") }

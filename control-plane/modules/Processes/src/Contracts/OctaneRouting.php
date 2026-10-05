@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Processes\Contracts;
+namespace Falak\Processes\Contracts;
 
-use Kiln\Processes\Events\OctaneRoutingChanged;
+use Falak\Processes\Events\OctaneRoutingChanged;
 
 /**
  * Whether the edge may reverse-proxy a site to its Octane server on a server.

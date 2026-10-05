@@ -57,5 +57,5 @@ func edgeAccessACL(mode os.FileMode, edgeUID uint32) []byte {
 	)
 }
 
-// EdgeUser is the system user of kiln-edge (Caddy / FrankenPHP), granted access to closed site directories.
+// EdgeUser is the system user of falak-edge (Caddy / FrankenPHP), granted access to closed site directories.
 var EdgeUser = "caddy"

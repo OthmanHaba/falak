@@ -1,5 +1,5 @@
 import { domainPayload, DomainPicker, type DomainChoice } from '@/components/domain-picker';
-import { Button, Callout, Checkbox, CodeBlock, Field, IconButton, Input, Select, Skeleton, Switch, Tag, Tooltip } from '@/components/kiln';
+import { Button, Callout, Checkbox, CodeBlock, Field, IconButton, Input, Select, Skeleton, Switch, Tag, Tooltip } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, HttpError, requestJson } from '@/lib/http';
 import { cn } from '@/lib/utils';

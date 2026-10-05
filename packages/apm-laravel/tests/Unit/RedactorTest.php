@@ -1,18 +1,18 @@
 <?php
 
-use Kiln\Apm\Redactor;
-use Kiln\Apm\Span;
+use Falak\Apm\Redactor;
+use Falak\Apm\Span;
 
 it('redacts denylisted attribute keys, url query params and SQL literals', function () {
     $redactor = new Redactor(['cache_keys' => ['users:*:profile']]);
     $span = new Span(str_repeat('a', 32), str_repeat('b', 16), null, 'x', Span::KIND_CLIENT, 1, [
-        'kiln.event.type' => 'outgoing_request',
+        'falak.event.type' => 'outgoing_request',
         'url.full' => 'https://u:pw@api.test/x?token=abc&q=shoes&Authorization=1#frag',
         'http.request.header.authorization' => 'Bearer abc',
         'http.request.header.cookie' => 'sid=1',
         'db.query.text' => "update users set password = 'p@ss' where email = 'a@b.c' and id = ?",
-        'kiln.cache.key' => 'users:1:profile',
-        'kiln.custom' => 'visible',
+        'falak.cache.key' => 'users:1:profile',
+        'falak.custom' => 'visible',
     ]);
 
     $redactor->span($span);
@@ -22,8 +22,8 @@ it('redacts denylisted attribute keys, url query params and SQL literals', funct
         'http.request.header.authorization' => '[redacted]',
         'http.request.header.cookie' => '[redacted]',
         'db.query.text' => 'update users set password = ? where email = ? and id = ?',
-        'kiln.cache.key' => '[redacted]',
-        'kiln.custom' => 'visible',
+        'falak.cache.key' => '[redacted]',
+        'falak.custom' => 'visible',
     ]);
 });
 
@@ -34,12 +34,12 @@ it('redacts nested log context keys', function () {
 
 it('supports configured callbacks and survives broken ones', function () {
     $redactor = new Redactor(['callbacks' => [
-        fn (array $a, string $type) => ['kiln.event.type' => $type, 'rewritten' => true],
+        fn (array $a, string $type) => ['falak.event.type' => $type, 'rewritten' => true],
         fn () => throw new RuntimeException('bad callback'),
     ]]);
-    $span = new Span(str_repeat('a', 32), str_repeat('b', 16), null, 'x', Span::KIND_INTERNAL, 1, ['kiln.event.type' => 'cache']);
+    $span = new Span(str_repeat('a', 32), str_repeat('b', 16), null, 'x', Span::KIND_INTERNAL, 1, ['falak.event.type' => 'cache']);
 
     $redactor->span($span);
 
-    expect($span->attributes)->toBe(['kiln.event.type' => 'cache', 'rewritten' => true]);
+    expect($span->attributes)->toBe(['falak.event.type' => 'cache', 'rewritten' => true]);
 });

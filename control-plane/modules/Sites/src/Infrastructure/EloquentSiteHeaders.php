@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Sites\Infrastructure;
+namespace Falak\Sites\Infrastructure;
 
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Sites\Contracts\SiteDomains;
-use Kiln\Sites\Contracts\SiteHeaders;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Sites\Contracts\SiteDomains;
+use Falak\Sites\Contracts\SiteHeaders;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
 
 final class EloquentSiteHeaders implements SiteHeaders
 {

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Domain\Models;
+namespace Falak\Fleet\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;

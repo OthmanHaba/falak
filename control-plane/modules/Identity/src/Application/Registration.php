@@ -1,17 +1,17 @@
 <?php
 
-namespace Kiln\Identity\Application;
+namespace Falak\Identity\Application;
 
 use Closure;
+use Falak\Identity\Application\Actions\AcceptInvitation;
+use Falak\Identity\Domain\Models\Invitation;
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Application\Actions\AcceptInvitation;
-use Kiln\Identity\Domain\Models\Invitation;
-use Kiln\Identity\Domain\Models\User;
 
 /**
- * Who may sign up (config identity.registration, KILN_REGISTRATION): open, invite or closed. A panel without any
+ * Who may sign up (config identity.registration, FALAK_REGISTRATION): open, invite or closed. A panel without any
  * user is always open so the first administrator can register.
  */
 final class Registration

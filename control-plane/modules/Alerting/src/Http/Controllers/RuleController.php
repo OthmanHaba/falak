@@ -1,22 +1,22 @@
 <?php
 
-namespace Kiln\Alerting\Http\Controllers;
+namespace Falak\Alerting\Http\Controllers;
 
 use DateTimeZone;
+use Falak\Alerting\Application\Actions\DeleteRule;
+use Falak\Alerting\Application\Actions\SaveRule;
+use Falak\Alerting\Contracts\AlertTypes;
+use Falak\Alerting\Contracts\Severity;
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Alerting\Domain\Models\Rule;
+use Falak\Alerting\Http\Requests\RuleRequest;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Alerting\Application\Actions\DeleteRule;
-use Kiln\Alerting\Application\Actions\SaveRule;
-use Kiln\Alerting\Contracts\AlertTypes;
-use Kiln\Alerting\Contracts\Severity;
-use Kiln\Alerting\Domain\Models\Channel;
-use Kiln\Alerting\Domain\Models\Rule;
-use Kiln\Alerting\Http\Requests\RuleRequest;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
 
 final class RuleController extends Controller
 {

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
 )
 
 // EventPoster is the subset of Client used by the Outbox.

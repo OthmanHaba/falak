@@ -1,26 +1,26 @@
 <?php
 
-namespace Kiln\Edge\Application;
+namespace Falak\Edge\Application;
 
+use Falak\Edge\Application\Jobs\SyncCloudflareDns;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Domain\Models\CloudflareTunnel;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Domain\Models\DnsCredential;
+use Falak\Edge\Domain\Models\OriginLock;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareApi;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Network\Contracts\Firewalls;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Sites\Contracts\SiteDirectory;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Edge\Domain\Models\CloudflareTunnel;
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Domain\Models\DnsCredential;
-use Kiln\Edge\Domain\Models\OriginLock;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareApi;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Network\Contracts\Firewalls;
-use Kiln\Servers\Contracts\Data\ServerData;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Sites\Contracts\SiteDirectory;
 use Throwable;
 
 /**
@@ -54,7 +54,7 @@ final class CloudflareTunnels
         }
 
         $api = CloudflareApi::with($credential->api_token);
-        $name = 'kiln-'.Str::slug($server->name).'-'.substr($server->id, -6);
+        $name = 'falak-'.Str::slug($server->name).'-'.substr($server->id, -6);
 
         try {
             $tunnelId = $api->createTunnel($credential->account_id, $name);

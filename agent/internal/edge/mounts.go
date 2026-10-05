@@ -9,7 +9,7 @@ import (
 )
 
 // Mount sends <PathPrefix> and <PathPrefix>/* of a site to another upstream: a function, through the server's
-// gateway (Dial 127.0.0.1:7070 with X-Kiln-Function) or through its own domain over HTTPS (TLSServerName).
+// gateway (Dial 127.0.0.1:7070 with X-Falak-Function) or through its own domain over HTTPS (TLSServerName).
 type Mount struct {
 	PathPrefix     string            `json:"path_prefix"`
 	StripPrefix    bool              `json:"strip_prefix,omitempty"`

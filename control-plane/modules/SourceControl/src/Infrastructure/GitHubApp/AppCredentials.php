@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\GitHubApp;
+namespace Falak\SourceControl\Infrastructure\GitHubApp;
 
 use SensitiveParameter;
 
@@ -30,7 +30,7 @@ final readonly class AppCredentials
         return $this->key === self::ENV;
     }
 
-    /** Whether the app can be installed through Kiln (installation URLs need the slug). */
+    /** Whether the app can be installed through Falak (installation URLs need the slug). */
     public function installable(): bool
     {
         return $this->slug !== '';

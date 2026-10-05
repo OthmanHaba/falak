@@ -1,5 +1,5 @@
-import { toast } from '@/components/kiln';
-import { copyText } from '@/components/kiln/copy-button';
+import { toast } from '@/components/falak';
+import { copyText } from '@/components/falak/copy-button';
 import { registerCommands, registerServiceActions, registerServiceTabs } from '@/lib/registry';
 import { type SharedData } from '@/types';
 import { Copy, ExternalLink, Plus, Settings, Trash2 } from 'lucide-react';
@@ -14,7 +14,7 @@ const onCanvas = () => /^\/projects\/[0-9A-Za-z]{26}\/(?!settings(\/|$))[^/]+/.t
 registerCommands({
     id: 'projects.canvas',
     commands: ({ props }: { props: SharedData }) => {
-        const project = props.kiln?.projects.find((item) => item.id === props.kiln?.current.project_id);
+        const project = props.falak?.projects.find((item) => item.id === props.falak?.current.project_id);
 
         return [
             ...(onCanvas()

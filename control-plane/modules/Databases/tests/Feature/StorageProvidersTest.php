@@ -1,12 +1,12 @@
 <?php
 
+use Falak\Databases\Domain\Enums\StorageDriver;
+use Falak\Databases\Domain\Models\StorageProvider;
+use Falak\Databases\Infrastructure\ObjectStorage\ObjectStores;
+use Falak\Identity\Contracts\Role;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Kiln\Databases\Domain\Enums\StorageDriver;
-use Kiln\Databases\Domain\Models\StorageProvider;
-use Kiln\Databases\Infrastructure\ObjectStorage\ObjectStores;
-use Kiln\Identity\Contracts\Role;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -18,17 +18,17 @@ beforeEach(function () {
 });
 
 dataset('drivers', [
-    's3' => [['driver' => 's3', 'region' => 'eu-central-1'], 'https://s3.eu-central-1.amazonaws.com', false, 'https://kiln-backups.s3.eu-central-1.amazonaws.com/acme/x.sql.gz'],
-    'r2' => [['driver' => 'r2', 'account_id' => str_repeat('ab', 16)], 'https://'.str_repeat('ab', 16).'.r2.cloudflarestorage.com', true, 'https://'.str_repeat('ab', 16).'.r2.cloudflarestorage.com/kiln-backups/acme/x.sql.gz'],
-    'b2' => [['driver' => 'b2', 'region' => 'us-west-004'], 'https://s3.us-west-004.backblazeb2.com', false, 'https://kiln-backups.s3.us-west-004.backblazeb2.com/acme/x.sql.gz'],
-    'spaces' => [['driver' => 'spaces', 'region' => 'fra1'], 'https://fra1.digitaloceanspaces.com', false, 'https://kiln-backups.fra1.digitaloceanspaces.com/acme/x.sql.gz'],
-    'minio' => [['driver' => 'minio', 'endpoint' => 'https://minio.example.com:9000'], 'https://minio.example.com:9000', true, 'https://minio.example.com:9000/kiln-backups/acme/x.sql.gz'],
+    's3' => [['driver' => 's3', 'region' => 'eu-central-1'], 'https://s3.eu-central-1.amazonaws.com', false, 'https://falak-backups.s3.eu-central-1.amazonaws.com/acme/x.sql.gz'],
+    'r2' => [['driver' => 'r2', 'account_id' => str_repeat('ab', 16)], 'https://'.str_repeat('ab', 16).'.r2.cloudflarestorage.com', true, 'https://'.str_repeat('ab', 16).'.r2.cloudflarestorage.com/falak-backups/acme/x.sql.gz'],
+    'b2' => [['driver' => 'b2', 'region' => 'us-west-004'], 'https://s3.us-west-004.backblazeb2.com', false, 'https://falak-backups.s3.us-west-004.backblazeb2.com/acme/x.sql.gz'],
+    'spaces' => [['driver' => 'spaces', 'region' => 'fra1'], 'https://fra1.digitaloceanspaces.com', false, 'https://falak-backups.fra1.digitaloceanspaces.com/acme/x.sql.gz'],
+    'minio' => [['driver' => 'minio', 'endpoint' => 'https://minio.example.com:9000'], 'https://minio.example.com:9000', true, 'https://minio.example.com:9000/falak-backups/acme/x.sql.gz'],
 ]);
 
 it('creates providers with derived endpoints and encrypted credentials', function (array $input, string $endpoint, bool $pathStyle, string $objectUrl) {
     $this->post('/databases/storage', [
         'name' => 'Primary',
-        'bucket' => 'kiln-backups',
+        'bucket' => 'falak-backups',
         'prefix' => '/acme/',
         'access_key_id' => 'AKIAEXAMPLEKEY123456',
         'secret_access_key' => 'very-secret-value',
@@ -56,7 +56,7 @@ it('never sends credentials to the UI', function () {
 });
 
 it('requires https endpoints and the r2 account id', function () {
-    $base = ['name' => 'X', 'bucket' => 'kiln-backups', 'access_key_id' => 'a', 'secret_access_key' => 'b'];
+    $base = ['name' => 'X', 'bucket' => 'falak-backups', 'access_key_id' => 'a', 'secret_access_key' => 'b'];
 
     $this->post('/databases/storage', [...$base, 'driver' => 'minio', 'endpoint' => 'http://minio.local'])->assertSessionHasErrors('endpoint');
     $this->post('/databases/storage', [...$base, 'driver' => 'r2'])->assertSessionHasErrors('account_id');
@@ -66,14 +66,14 @@ it('requires https endpoints and the r2 account id', function () {
 it('keeps stored credentials when the secret is left blank on update', function () {
     $provider = databases_provider($this->organization, ['verified_at' => now()]);
 
-    $this->put("/databases/storage/{$provider->id}", ['name' => 'Renamed', 'driver' => 's3', 'region' => 'eu-central-1', 'bucket' => 'kiln-backups'])->assertSessionHasNoErrors();
+    $this->put("/databases/storage/{$provider->id}", ['name' => 'Renamed', 'driver' => 's3', 'region' => 'eu-central-1', 'bucket' => 'falak-backups'])->assertSessionHasNoErrors();
 
     expect($provider->refresh())
         ->name->toBe('Renamed')
         ->secret_access_key->toBe('super-secret-access-key-value')
         ->verified_at->not->toBeNull();
 
-    $this->put("/databases/storage/{$provider->id}", ['name' => 'Renamed', 'driver' => 's3', 'region' => 'eu-central-1', 'bucket' => 'kiln-backups', 'secret_access_key' => 'rotated'])->assertSessionHasNoErrors();
+    $this->put("/databases/storage/{$provider->id}", ['name' => 'Renamed', 'driver' => 's3', 'region' => 'eu-central-1', 'bucket' => 'falak-backups', 'secret_access_key' => 'rotated'])->assertSessionHasNoErrors();
     expect($provider->refresh())->secret_access_key->toBe('rotated')->verified_at->toBeNull();
 });
 
@@ -86,7 +86,7 @@ it('verifies a provider with a signed PUT and DELETE of a probe object', functio
     expect($provider->refresh()->verified_at)->not->toBeNull();
     Http::assertSentInOrder([
         fn (Request $r) => $r->method() === 'PUT'
-            && str_starts_with($r->url(), 'https://kiln-backups.s3.eu-central-1.amazonaws.com/acme/.kiln-verify-')
+            && str_starts_with($r->url(), 'https://falak-backups.s3.eu-central-1.amazonaws.com/acme/.falak-verify-')
             && str_starts_with($r->header('Authorization')[0], 'AWS4-HMAC-SHA256 Credential=AKIAEXAMPLEKEY123456/')
             && $r->header('x-amz-content-sha256')[0] === hash('sha256', $r->body()),
         fn (Request $r) => $r->method() === 'DELETE' && str_contains($r->header('Authorization')[0], 'SignedHeaders=host;x-amz-content-sha256;x-amz-date'),
@@ -125,7 +125,7 @@ it('refuses to delete providers used by schedules', function () {
 
 it('refuses storage endpoints on private addresses unless allowed', function () {
     Http::fake(['*' => Http::response('', 200)]);
-    $base = ['name' => 'Lan', 'driver' => 'minio', 'bucket' => 'kiln-backups', 'access_key_id' => 'a', 'secret_access_key' => 'b'];
+    $base = ['name' => 'Lan', 'driver' => 'minio', 'bucket' => 'falak-backups', 'access_key_id' => 'a', 'secret_access_key' => 'b'];
 
     $this->post('/databases/storage', [...$base, 'endpoint' => 'https://127.0.0.1:9000'])->assertSessionHasErrors('endpoint');
     $this->post('/databases/storage', [...$base, 'endpoint' => 'https://169.254.169.254'])->assertSessionHasErrors('endpoint');

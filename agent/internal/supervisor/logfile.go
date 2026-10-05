@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
 )
 
 // rotFile is an append-only log file rotated to "<path>.1" when it exceeds max bytes.

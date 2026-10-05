@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Processes\Contracts;
+namespace Falak\Processes\Contracts;
 
-use Kiln\Processes\Http\Requests\ProcessRules;
+use Falak\Processes\Http\Requests\ProcessRules;
 
 /**
  * The schedule expressions the agent's scheduler runs: 5-field cron, @hourly … @yearly, `@every <duration>`.

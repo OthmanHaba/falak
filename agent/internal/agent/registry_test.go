@@ -5,11 +5,11 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/config"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner/runnertest"
-	"github.com/kiln/agent/internal/telemetry"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/config"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/telemetry"
 )
 
 // buildTestRegistry builds the production registry against a temp host root and a fake runner.

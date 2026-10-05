@@ -1,24 +1,24 @@
 <?php
 
+use Falak\Databases\Application\Actions\EnableContainerAccess;
+use Falak\Databases\Application\EngineInventory;
+use Falak\Databases\Contracts\DatabaseProvisioner;
+use Falak\Databases\Domain\Models\Database;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Projects\Contracts\VariableReferences;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Sites\Application\Compose\FalakAdjustments;
+use Falak\Sites\Contracts\ComposeServiceExtraction;
+use Falak\Sites\Contracts\SiteFactory;
+use Falak\Sites\Domain\Models\Site;
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Application\Actions\EnableContainerAccess;
-use Kiln\Databases\Application\EngineInventory;
-use Kiln\Databases\Contracts\DatabaseProvisioner;
-use Kiln\Databases\Domain\Models\Database;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Projects\Contracts\VariableReferences;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Sites\Application\Compose\KilnAdjustments;
-use Kiln\Sites\Contracts\ComposeServiceExtraction;
-use Kiln\Sites\Contracts\SiteFactory;
-use Kiln\Sites\Domain\Models\Site;
 use Symfony\Component\Yaml\Yaml;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 /*
- * Compose apps' Redis / Valkey services as Kiln instances (v0.7.1, phase 4 of docs/plans/REDIS.md): the official
+ * Compose apps' Redis / Valkey services as Falak instances (v0.7.1, phase 4 of docs/plans/REDIS.md): the official
  * images only, an instance on the stack's server, the stack's references rewritten, the containers reaching it through
  * the Docker bridge.
  */
@@ -84,7 +84,7 @@ beforeEach(function () {
     $this->extraction = app(ComposeServiceExtraction::class);
 });
 
-it('replaces an official redis service with a Kiln Redis on the stack server, its flags kept and its references rewritten', function () {
+it('replaces an official redis service with a Falak Redis on the stack server, its flags kept and its references rewritten', function () {
     $server = compose_redis_server($this);
     $stack = compose_redis_stack($this, $server);
 
@@ -121,22 +121,22 @@ it('replaces an official redis service with a Kiln Redis on the stack server, it
     $this->agents->succeed($apply['handle'], ['changed' => true, 'restarted' => true, 'port' => $apply['payload']['port'], 'bind' => ['127.0.0.1', '172.17.0.1'], 'container_host' => '172.17.0.1']);
     $resolved = app(VariableReferences::class)->resolve($this->environment->id, $stack->id, $dotenv);
     $port = Database::query()->findOrFail($instance->id)->port;
-    $password = $resolved->variables['KILN_SVC_APP_REDIS_PASSWORD'];
+    $password = $resolved->variables['FALAK_SVC_APP_REDIS_PASSWORD'];
     expect($resolved->errors)->toBe([])
-        ->and($resolved->variables['KILN_SVC_APP_REDIS_HOST'])->toBe('172.17.0.1')
-        ->and($resolved->variables['KILN_SVC_APP_REDIS_PORT'])->toBe((string) $port)
+        ->and($resolved->variables['FALAK_SVC_APP_REDIS_HOST'])->toBe('172.17.0.1')
+        ->and($resolved->variables['FALAK_SVC_APP_REDIS_PORT'])->toBe((string) $port)
         ->and($password)->toMatch('/^[A-Za-z0-9]{32}$/')
-        ->and($resolved->variables['KILN_SVC_APP_CACHE_URL'])->toBe("redis://default:{$password}@172.17.0.1:{$port}/1")
-        ->and($resolved->variables['KILN_SVC_WORKER_QUEUE_ADDR'])->toBe("172.17.0.1:{$port}");
+        ->and($resolved->variables['FALAK_SVC_APP_CACHE_URL'])->toBe("redis://default:{$password}@172.17.0.1:{$port}/1")
+        ->and($resolved->variables['FALAK_SVC_WORKER_QUEUE_ADDR'])->toBe("172.17.0.1:{$port}");
 
     // Rendering: the service is gone, the remaining services read the rewritten variables (REDIS_PASSWORD added).
-    $doc = KilnAdjustments::apply(Yaml::parse(CACHE_STACK), $stack->refresh()->composeConfig(), null, $this->extraction->rewrites($stack->id))['doc'];
+    $doc = FalakAdjustments::apply(Yaml::parse(CACHE_STACK), $stack->refresh()->composeConfig(), null, $this->extraction->rewrites($stack->id))['doc'];
     expect($doc['services'])->not->toHaveKey('cache')
-        ->and($doc['services']['app']['environment'])->toMatchArray(['REDIS_HOST' => '${KILN_SVC_APP_REDIS_HOST}', 'REDIS_PORT' => '${KILN_SVC_APP_REDIS_PORT}', 'REDIS_PASSWORD' => '${KILN_SVC_APP_REDIS_PASSWORD}', 'SESSION_DRIVER' => 'redis'])
-        ->and($doc['services']['worker']['environment'])->toBe(['BROKER=${KILN_SVC_WORKER_BROKER}', 'QUEUE_ADDR=${KILN_SVC_WORKER_QUEUE_ADDR}', 'OTHER=mycache:6379']);
+        ->and($doc['services']['app']['environment'])->toMatchArray(['REDIS_HOST' => '${FALAK_SVC_APP_REDIS_HOST}', 'REDIS_PORT' => '${FALAK_SVC_APP_REDIS_PORT}', 'REDIS_PASSWORD' => '${FALAK_SVC_APP_REDIS_PASSWORD}', 'SESSION_DRIVER' => 'redis'])
+        ->and($doc['services']['worker']['environment'])->toBe(['BROKER=${FALAK_SVC_WORKER_BROKER}', 'QUEUE_ADDR=${FALAK_SVC_WORKER_QUEUE_ADDR}', 'OTHER=mycache:6379']);
 });
 
-it('creates a Kiln Valkey from valkey/valkey where the server runs Valkey', function () {
+it('creates a Falak Valkey from valkey/valkey where the server runs Valkey', function () {
     $server = compose_redis_server($this, 'valkey', ['os' => 'ubuntu 26.04']);
     $stack = compose_redis_stack($this, $server);
 
@@ -203,7 +203,7 @@ YAML;
         ->and($this->extraction->rewrites($created->site->id)->forService('probe'))->toHaveKeys(['REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD']);
 });
 
-it('leaves rediss:// references pointing at the service with a warning: a Kiln instance has no TLS', function () {
+it('leaves rediss:// references pointing at the service with a warning: a Falak instance has no TLS', function () {
     $server = compose_redis_server($this);
     $yaml = <<<'YAML'
 services:
@@ -222,7 +222,7 @@ YAML;
         'compose_services' => ['cache' => ['mode' => 'database', 'engine' => 'redis']],
     ]);
 
-    expect($created->warnings)->toBe(["cache: REDIS_URL (app) connects over TLS (rediss:// / valkeys://), which a Kiln instance doesn't offer, so it was left pointing at cache: point it at the Kiln instance's REDIS_URL (redis://) yourself."])
+    expect($created->warnings)->toBe(["cache: REDIS_URL (app) connects over TLS (rediss:// / valkeys://), which a Falak instance doesn't offer, so it was left pointing at cache: point it at the Falak instance's REDIS_URL (redis://) yourself."])
         ->and(Site::query()->findOrFail($created->site->id)->compose_services['cache']['tls_references'])->toBe(['REDIS_URL (app)'])
         // The plain host is rewritten; the TLS URL and its group's password are not.
         ->and(array_keys($this->extraction->rewrites($created->site->id)->forService('app')))->toBe(['QUEUE_HOST']);

@@ -6,7 +6,7 @@ export interface SpanEventDto {
     attributes: Record<string, AttributeValue>;
 }
 
-/** Mirrors Kiln\Telemetry\Contracts\Data\Span::toArray(). */
+/** Mirrors Falak\Telemetry\Contracts\Data\Span::toArray(). */
 export interface SpanDto {
     trace_id: string;
     span_id: string;

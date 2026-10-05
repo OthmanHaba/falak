@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Sites\Domain\Presets;
+namespace Falak\Sites\Domain\Presets;
 
-use Kiln\Sites\Contracts\BuildMode;
-use Kiln\Sites\Contracts\Data\SharedPath;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\BuildMode;
+use Falak\Sites\Contracts\Data\SharedPath;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteRuntime;
 
 /**
  * Framework defaults applied when a site is created (all editable afterwards).
@@ -55,7 +55,7 @@ final readonly class Preset
                 // server; the agent tails storage/logs per site (see EloquentServerSites).
                 'LOG_CHANNEL' => 'daily',
             ], ['scheduler' => true, 'horizon' => false, 'octane' => false], '/up'),
-            Framework::Statamic => new self($framework, $php, 'public', self::paths(['storage', 'directory'], ['.env', 'file'], ['content', 'directory'], ['users', 'directory'], ['public/assets', 'directory']), self::laravelScript("\$KILN_PHP please stache:warm\n"), [
+            Framework::Statamic => new self($framework, $php, 'public', self::paths(['storage', 'directory'], ['.env', 'file'], ['content', 'directory'], ['users', 'directory'], ['public/assets', 'directory']), self::laravelScript("\$FALAK_PHP please stache:warm\n"), [
                 'APP_NAME' => '',
                 'APP_ENV' => 'production',
                 'APP_KEY' => '',
@@ -63,41 +63,41 @@ final readonly class Preset
                 'APP_URL' => '',
             ], ['scheduler' => true]),
             Framework::Symfony => new self($framework, $php, 'public', self::paths(['var/log', 'directory'], ['.env.local', 'file']), <<<'SH'
-                $KILN_FETCH
+                $FALAK_FETCH
 
-                cd "$KILN_RELEASE_DIR"
-                $KILN_PHP bin/console cache:clear --env=prod --no-debug
-                if [ "$KILN_IS_LEADER" = "1" ]; then
-                    $KILN_PHP bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
+                cd "$FALAK_RELEASE_DIR"
+                $FALAK_PHP bin/console cache:clear --env=prod --no-debug
+                if [ "$FALAK_IS_LEADER" = "1" ]; then
+                    $FALAK_PHP bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
                 fi
 
-                $KILN_ACTIVATE
-                $KILN_RESTART_PROCS
+                $FALAK_ACTIVATE
+                $FALAK_RESTART_PROCS
                 SH, ['APP_ENV' => 'prod', 'APP_SECRET' => '']),
             Framework::WordPress => new self($framework, $php, '', self::paths(['wp-content/uploads', 'directory'], ['wp-config.php', 'file']), <<<'SH'
-                $KILN_FETCH
+                $FALAK_FETCH
 
-                $KILN_ACTIVATE
+                $FALAK_ACTIVATE
                 SH),
             Framework::Php => new self($framework, $php, 'public', [], <<<'SH'
-                $KILN_FETCH
+                $FALAK_FETCH
 
-                $KILN_ACTIVATE
-                $KILN_RESTART_PROCS
+                $FALAK_ACTIVATE
+                $FALAK_RESTART_PROCS
                 SH),
             Framework::Next => new self($framework, $js, '', [], self::nodeScript(), ['NODE_ENV' => 'production', 'NEXT_TELEMETRY_DISABLED' => '1'], healthCheckPath: '/'),
             Framework::Nuxt => new self($framework, $js, '', [], self::nodeScript(), ['NODE_ENV' => 'production', 'NITRO_PRESET' => 'node-server'], healthCheckPath: '/'),
             Framework::Node => new self($framework, $js, '', [], self::nodeScript(), ['NODE_ENV' => 'production'], healthCheckPath: '/'),
-            // Built sites: kiln-builder packages the detected output dir (dist/, build/, out/, public/) as the release root.
+            // Built sites: falak-builder packages the detected output dir (dist/, build/, out/, public/) as the release root.
             Framework::Static => new self($framework, [SiteRuntime::Static], '', [], <<<'SH'
-                $KILN_FETCH
+                $FALAK_FETCH
 
-                $KILN_ACTIVATE
+                $FALAK_ACTIVATE
                 SH),
             Framework::Docker => new self($framework, [SiteRuntime::Docker, SiteRuntime::Compose], '', [], <<<'SH'
-                $KILN_FETCH
+                $FALAK_FETCH
 
-                $KILN_ACTIVATE
+                $FALAK_ACTIVATE
                 SH, healthCheckPath: '/'),
         };
     }
@@ -114,27 +114,27 @@ final readonly class Preset
     private static function laravelScript(string $extra = ''): string
     {
         return <<<SH
-            \$KILN_FETCH
+            \$FALAK_FETCH
 
-            cd "\$KILN_RELEASE_DIR"
-            if [ "\$KILN_IS_LEADER" = "1" ]; then
-                \$KILN_PHP artisan migrate --force
+            cd "\$FALAK_RELEASE_DIR"
+            if [ "\$FALAK_IS_LEADER" = "1" ]; then
+                \$FALAK_PHP artisan migrate --force
             fi
-            \$KILN_PHP artisan optimize
-            \$KILN_PHP artisan storage:link --force
+            \$FALAK_PHP artisan optimize
+            \$FALAK_PHP artisan storage:link --force
             {$extra}
-            \$KILN_ACTIVATE
-            \$KILN_RESTART_PROCS
+            \$FALAK_ACTIVATE
+            \$FALAK_RESTART_PROCS
             SH;
     }
 
     private static function nodeScript(): string
     {
         return <<<'SH'
-            $KILN_FETCH
+            $FALAK_FETCH
 
-            $KILN_ACTIVATE
-            $KILN_RESTART_PROCS
+            $FALAK_ACTIVATE
+            $FALAK_RESTART_PROCS
             SH;
     }
 }

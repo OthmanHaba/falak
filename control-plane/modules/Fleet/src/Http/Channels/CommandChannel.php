@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Fleet\Http\Channels;
+namespace Falak\Fleet\Http\Channels;
 
+use Falak\Fleet\Domain\Models\Command;
+use Falak\Identity\Contracts\OrganizationAccess;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Fleet\Domain\Models\Command;
-use Kiln\Identity\Contracts\OrganizationAccess;
 
 /**
  * private-fleet.commands.{commandId}: members of the command's organization with fleet.commands.view.

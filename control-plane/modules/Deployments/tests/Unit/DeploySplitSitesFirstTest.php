@@ -1,6 +1,6 @@
 <?php
 
-use Kiln\Deployments\Application\Listeners\DeploySplitSitesFirst;
+use Falak\Deployments\Application\Listeners\DeploySplitSitesFirst;
 
 // A queued listener's failed() is Laravel's hook for a failed job (CallQueuedListener calls it with the event and the
 // exception): the listener's handlers must not use that name, and lock contention is retried.

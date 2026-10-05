@@ -1,24 +1,24 @@
 <?php
 
-namespace Kiln\Edge\Application\Listeners;
+namespace Falak\Edge\Application\Listeners;
 
+use Falak\Edge\Application\Jobs\SyncCloudflareDns;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Domain\Enums\ApplyStatus;
+use Falak\Edge\Domain\Enums\InstallStatus;
+use Falak\Edge\Domain\Models\CertificateInstall;
+use Falak\Edge\Domain\Models\CloudflareTunnel;
+use Falak\Edge\Domain\Models\OriginLock;
+use Falak\Edge\Domain\Models\ServerState;
+use Falak\Edge\Events\CertificateInstallFailed;
+use Falak\Edge\Events\CertificateIssued;
+use Falak\Edge\Events\EdgeApplied;
+use Falak\Fleet\Events\CommandFailed;
+use Falak\Fleet\Events\CommandFinished;
+use Falak\Network\Contracts\Firewalls;
+use Falak\Sites\Contracts\SiteDirectory;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Str;
-use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Edge\Domain\Enums\ApplyStatus;
-use Kiln\Edge\Domain\Enums\InstallStatus;
-use Kiln\Edge\Domain\Models\CertificateInstall;
-use Kiln\Edge\Domain\Models\CloudflareTunnel;
-use Kiln\Edge\Domain\Models\OriginLock;
-use Kiln\Edge\Domain\Models\ServerState;
-use Kiln\Edge\Events\CertificateInstallFailed;
-use Kiln\Edge\Events\CertificateIssued;
-use Kiln\Edge\Events\EdgeApplied;
-use Kiln\Fleet\Events\CommandFailed;
-use Kiln\Fleet\Events\CommandFinished;
-use Kiln\Network\Contracts\Firewalls;
-use Kiln\Sites\Contracts\SiteDirectory;
 
 /**
  * Settles edge.caddy.apply / edge.cert.install commands dispatched by Edge.
@@ -43,7 +43,7 @@ final class HandleEdgeCommandOutcome implements ShouldQueue
         $active = (bool) ($event->result['active'] ?? false);
         $updated = CloudflareTunnel::query()->where('command_id', $event->commandId)->update([
             'status' => $active ? CloudflareTunnel::ACTIVE : CloudflareTunnel::ERROR,
-            'error' => $active ? null : 'cloudflared is installed but not running (journalctl -u kiln-cloudflared).',
+            'error' => $active ? null : 'cloudflared is installed but not running (journalctl -u falak-cloudflared).',
         ]);
 
         if ($updated > 0 && $active) {

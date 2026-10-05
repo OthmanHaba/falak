@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Servers\Application;
+namespace Falak\Servers\Application;
 
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Events\ServerUpdated;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Events\ServerUpdated;
 
 final class ServerStatusUpdater
 {

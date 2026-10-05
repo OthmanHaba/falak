@@ -1,19 +1,19 @@
 <?php
 
+use Falak\Deployments\Domain\Models\Release;
+use Falak\Deployments\Domain\Models\ServerRelease;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Sites\Contracts\BuildMode;
+use Falak\Sites\Contracts\Data\LaravelSettings;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetRole;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
 use Illuminate\Support\Str;
-use Kiln\Deployments\Domain\Models\Release;
-use Kiln\Deployments\Domain\Models\ServerRelease;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Sites\Contracts\BuildMode;
-use Kiln\Sites\Contracts\Data\LaravelSettings;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetRole;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../../../../tests/Support/FakeAgentGateway.php';
@@ -44,7 +44,7 @@ function processes_site(string $organizationId, array $servers, array $attribute
         'web_directory' => 'public',
         'unix_user' => $slug,
         'isolated' => true,
-        'deploy_script' => '$KILN_FETCH',
+        'deploy_script' => '$FALAK_FETCH',
         'laravel' => new LaravelSettings,
         'shared_paths' => [],
         ...$attributes,

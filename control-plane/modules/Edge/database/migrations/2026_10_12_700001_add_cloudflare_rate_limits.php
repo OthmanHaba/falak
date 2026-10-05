@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Rate limits through Cloudflare (Kiln's edge, stock Caddy, has none): a rule per proxied domain, compiled into the
+ * Rate limits through Cloudflare (Falak's edge, stock Caddy, has none): a rule per proxied domain, compiled into the
  * zone's http_ratelimit rules, and the zone's plan (what Cloudflare allows: rules, fields, periods).
  */
 return new class extends Migration
@@ -18,7 +18,7 @@ return new class extends Migration
         });
         Schema::table('edge_cloudflare_zones', function (Blueprint $table) {
             $table->string('plan', 32)->nullable()->after('proxied');
-            // Kiln has rate limit rules in the zone (domain removals re-sync only then).
+            // Falak has rate limit rules in the zone (domain removals re-sync only then).
             $table->boolean('rate_limited')->default(false)->after('plan');
         });
     }

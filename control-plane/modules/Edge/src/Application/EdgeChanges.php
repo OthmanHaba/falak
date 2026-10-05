@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Edge\Application;
+namespace Falak\Edge\Application;
 
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Edge\Infrastructure\RouteCompiler;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Infrastructure\RouteCompiler;
 
 /**
  * Schedules a (debounced) re-apply on every server whose config depends on a site.

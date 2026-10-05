@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Apm\Watchers;
+namespace Falak\Apm\Watchers;
 
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -10,13 +10,13 @@ use Illuminate\Queue\Events\JobProcessed;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Events\JobReleasedAfterException;
 use Illuminate\Queue\Queue;
-use Kiln\Apm\Recorder;
-use Kiln\Apm\Span;
+use Falak\Apm\Recorder;
+use Falak\Apm\Span;
 use Throwable;
 
 /**
  * Each job on an async connection becomes its own trace, linked to the trace that dispatched
- * it through `kiln.traceparent` in the job payload. Sync jobs are child spans of the caller.
+ * it through `falak.traceparent` in the job payload. Sync jobs are child spans of the caller.
  */
 final class JobWatcher
 {
@@ -41,7 +41,7 @@ final class JobWatcher
 
                 $traceparent = $app->make(Recorder::class)->traceparent();
 
-                return $traceparent !== null ? ['kiln' => ['traceparent' => $traceparent]] : [];
+                return $traceparent !== null ? ['falak' => ['traceparent' => $traceparent]] : [];
             } catch (Throwable) {
                 return [];
             }
@@ -72,9 +72,9 @@ final class JobWatcher
                 'messaging.system' => 'laravel',
                 'messaging.destination.name' => (string) $job->getQueue(),
                 'messaging.message.id' => (string) $job->getJobId(),
-                'kiln.job.class' => $class,
-                'kiln.job.attempt' => (int) $job->attempts(),
-                'kiln.queue.connection' => (string) $event->connectionName,
+                'falak.job.class' => $class,
+                'falak.job.attempt' => (int) $job->attempts(),
+                'falak.queue.connection' => (string) $event->connectionName,
             ];
 
             if ($event->connectionName === 'sync' && $this->recorder->active()) {
@@ -88,11 +88,11 @@ final class JobWatcher
 
             $links = [];
             $payload = $job->payload();
-            $parent = is_string($payload['kiln']['traceparent'] ?? null) ? Recorder::parseTraceparent($payload['kiln']['traceparent']) : null;
+            $parent = is_string($payload['falak']['traceparent'] ?? null) ? Recorder::parseTraceparent($payload['falak']['traceparent']) : null;
 
             if ($parent !== null) {
-                $links[] = ['traceId' => $parent['traceId'], 'spanId' => $parent['spanId'], 'attributes' => ['kiln.link.type' => 'dispatched_by']];
-                $attributes['kiln.job.dispatch_trace_id'] = $parent['traceId'];
+                $links[] = ['traceId' => $parent['traceId'], 'spanId' => $parent['spanId'], 'attributes' => ['falak.link.type' => 'dispatched_by']];
+                $attributes['falak.job.dispatch_trace_id'] = $parent['traceId'];
             }
 
             $span = $this->recorder->beginTrace('job', $class, Span::KIND_CONSUMER, $attributes, null, null, $links);
@@ -114,7 +114,7 @@ final class JobWatcher
             array_splice($this->stack, $index, 1);
 
             if ($span !== null) {
-                $span->attributes['kiln.job.status'] = $status;
+                $span->attributes['falak.job.status'] = $status;
 
                 if ($exception !== null) {
                     $this->recorder->recordException($exception, false, $span);

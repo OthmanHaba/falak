@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Sites\Application\Listeners;
+namespace Falak\Sites\Application\Listeners;
 
+use Falak\Identity\Events\OrganizationDeleted;
+use Falak\Sites\Application\Actions\DeleteSite;
+use Falak\Sites\Domain\Models\Site;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Kiln\Identity\Events\OrganizationDeleted;
-use Kiln\Sites\Application\Actions\DeleteSite;
-use Kiln\Sites\Domain\Models\Site;
 
 final class DeleteOrganizationSites implements ShouldQueue
 {

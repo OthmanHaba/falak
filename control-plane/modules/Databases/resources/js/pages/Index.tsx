@@ -85,7 +85,7 @@ export default function Index({ servers, recentBackups, storageProviders }: Prop
                                         </TableCell>
                                         {server.kind === 'key_value' ? (
                                             <>
-                                                {/* Instances have their own ports; the stock one on 6379 is not Kiln's. */}
+                                                {/* Instances have their own ports; the stock one on 6379 is not Falak's. */}
                                                 <TableCell className="tabular-nums">{server.instance_ports?.join(', ') || '—'}</TableCell>
                                                 <TableCell className="tabular-nums">
                                                     {server.databases_count ?? 0} instance{server.databases_count === 1 ? '' : 's'}

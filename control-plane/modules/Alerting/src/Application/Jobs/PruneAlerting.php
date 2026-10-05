@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Alerting\Application\Jobs;
+namespace Falak\Alerting\Application\Jobs;
 
+use Falak\Alerting\Domain\Models\Alert;
+use Falak\Alerting\Domain\Models\DedupState;
+use Falak\Alerting\Domain\Models\Notification;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
-use Kiln\Alerting\Domain\Models\Alert;
-use Kiln\Alerting\Domain\Models\DedupState;
-use Kiln\Alerting\Domain\Models\Notification;
 
 /**
  * Deletes alert history, deliveries, rule hits and notifications older than alerting.retention_days,

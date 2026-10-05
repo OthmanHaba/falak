@@ -6,6 +6,8 @@
  * consecutive requests through it, asserting nothing from one request leaks into the next.
  */
 
+use Falak\Identity\Application\Actions\CreateOrganization;
+use Falak\Identity\Application\Actions\RegisterUser;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Foundation\Application;
@@ -14,8 +16,6 @@ use Illuminate\Foundation\Vite;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\HtmlString;
-use Kiln\Identity\Application\Actions\CreateOrganization;
-use Kiln\Identity\Application\Actions\RegisterUser;
 use Laravel\Octane\ApplicationFactory;
 use Laravel\Octane\RequestContext;
 use Laravel\Octane\Testing\Fakes\FakeClient;
@@ -27,7 +27,7 @@ use Symfony\Component\HttpFoundation\Response;
 const WORKER_ENV = ['DB_CONNECTION' => 'sqlite', 'SESSION_DRIVER' => 'cookie', 'CACHE_STORE' => 'array', 'APP_RUNNING_IN_CONSOLE' => false];
 
 beforeEach(function () {
-    $this->database = tempnam(sys_get_temp_dir(), 'kiln-worker-').'.sqlite';
+    $this->database = tempnam(sys_get_temp_dir(), 'falak-worker-').'.sqlite';
     touch($this->database);
     $this->savedEnv = [];
 
@@ -179,7 +179,7 @@ it('keeps module shared props and the Ziggy route() function on every full page 
         $response = through($this, 'alice', 'GET', '/settings/profile');
         $props = page($response)['props'];
 
-        expect($props)->toHaveKeys(['organization', 'kiln', 'auth', 'flash'])
+        expect($props)->toHaveKeys(['organization', 'falak', 'auth', 'flash'])
             ->and((string) $response->getContent())->toContain('const Ziggy=');
     }
 });

@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Fleet\Http\Controllers\Agent;
+namespace Falak\Fleet\Http\Controllers\Agent;
 
+use Falak\Fleet\Application\Actions\IngestCommandEvents;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
-use Kiln\Fleet\Application\Actions\IngestCommandEvents;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Kernel\Http\Controller;
 
 /**
  * POST /agent/v1/commands/{id}/events — NDJSON of event.schema.json → 204 (idempotent on (command_id, seq)).
@@ -33,7 +33,7 @@ final class CommandEventsController extends Controller
         // (decoding to PHP arrays would turn {} into []). A mismatch is logged, never rejected.
         foreach ($raw as $object) {
             if (($object->kind ?? null) === 'finished' && isset($object->result) && ($errors = $schemas->validateCommandResult($model->type, $object->result)) !== []) {
-                Log::warning('kiln.fleet: command result does not match its schema', ['command_id' => $model->id, 'type' => $model->type, 'errors' => $errors]);
+                Log::warning('falak.fleet: command result does not match its schema', ['command_id' => $model->id, 'type' => $model->type, 'errors' => $errors]);
             }
         }
 

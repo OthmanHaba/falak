@@ -1,8 +1,8 @@
 <?php
 
+use Falak\Templates\Application\Catalog\TemplateParser;
+use Falak\Templates\Application\Inputs\InputResolver;
 use Illuminate\Validation\ValidationException;
-use Kiln\Templates\Application\Catalog\TemplateParser;
-use Kiln\Templates\Application\Inputs\InputResolver;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -21,7 +21,7 @@ it('fills generated values, defaults and the user input', function () {
         ->and($values['TIMEZONE'])->toBe('Europe/Berlin')
         ->and($values['SIGNUPS'])->toBe('true')
         ->and($values['WORKERS'])->toBe('2')
-        ->and($values['PUBLIC_URL'])->toBe('${{ kiln.url(web) }}')
+        ->and($values['PUBLIC_URL'])->toBe('${{ falak.url(web) }}')
         ->and($values['DATABASE_URL'])->toBe('${{ postgres.DATABASE_URL }}');
 });
 

@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Projects\Application\Canvas;
+namespace Falak\Projects\Application\Canvas;
 
 use DateTimeInterface;
-use Kiln\Deployments\Contracts\DeploymentDirectory;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Projects\Domain\Models\Environment;
-use Kiln\Projects\Domain\Models\Service;
+use Falak\Deployments\Contracts\DeploymentDirectory;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Projects\Domain\Models\Environment;
+use Falak\Projects\Domain\Models\Service;
 
 /**
  * The canvas Activity rail (UI_DESIGN §4): recent deployments of the environment's sites and services added

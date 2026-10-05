@@ -1,10 +1,10 @@
 <?php
 
+use Falak\Identity\Contracts\Role;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Events\SiteDeleted;
+use Falak\Sites\Events\SiteUpdated;
 use Illuminate\Support\Facades\Event;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Events\SiteDeleted;
-use Kiln\Sites\Events\SiteUpdated;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -64,7 +64,7 @@ it('stops a deleted docker site\'s blue and green containers on its servers', fu
 
     $stops = $this->agents->ofType('docker.stop');
     expect($stops)->toHaveCount(2)
-        ->and(array_column(array_column($stops, 'payload'), 'name'))->toBe(['kiln-api-blue', 'kiln-api-green'])
+        ->and(array_column(array_column($stops, 'payload'), 'name'))->toBe(['falak-api-blue', 'falak-api-green'])
         ->and(array_unique(array_column(array_column($stops, 'payload'), 'remove')))->toBe([true])
         ->and(array_unique(array_column($stops, 'server_id')))->toBe([$this->server->id]);
 });

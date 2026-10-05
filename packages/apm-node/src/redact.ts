@@ -3,7 +3,7 @@ import type { Attributes, AttributeValue } from '@opentelemetry/api';
 export const REDACTED = '[redacted]';
 
 /** Attributes whose *values* are handled by dedicated rules rather than the key denylist. */
-const EXEMPT = new Set(['kiln.event.type', 'db.query.text', 'db.statement', 'kiln.cache.key']);
+const EXEMPT = new Set(['falak.event.type', 'db.query.text', 'db.statement', 'falak.cache.key']);
 const URL_KEYS = new Set(['url.full', 'http.url']);
 const QUERY_KEYS = new Set(['url.query']);
 const TARGET_KEYS = new Set(['http.target']);
@@ -66,7 +66,7 @@ export class Redactor {
       return i === -1 ? value : `${value.slice(0, i)}?${this.queryString(value.slice(i + 1))}`;
     }
     if (key === 'db.query.text' || key === 'db.statement') return this.sql(value);
-    if (key === 'kiln.cache.key') return this.isSensitive(value) ? REDACTED : value;
+    if (key === 'falak.cache.key') return this.isSensitive(value) ? REDACTED : value;
     if (EXEMPT.has(key)) return value;
     return this.isSensitive(key) ? REDACTED : value;
   }

@@ -7,19 +7,19 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/system"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/system"
 )
 
 // net.tunnel.apply — Cloudflare Tunnel: a pinned, checksum-verified cloudflared running the tunnel whose token the
 // control plane passes. The token reaches cloudflared as a systemd credential; the service runs as a dynamic user.
 const (
 	CloudflaredBinary = "/usr/local/bin/cloudflared"
-	TunnelUnitPath    = "/etc/systemd/system/kiln-cloudflared.service"
-	TunnelTokenPath   = "/etc/kiln/cloudflared.token"
-	tunnelMarker      = "/etc/kiln/cloudflared.version"
-	tunnelUnit        = "kiln-cloudflared.service"
+	TunnelUnitPath    = "/etc/systemd/system/falak-cloudflared.service"
+	TunnelTokenPath   = "/etc/falak/cloudflared.token"
+	tunnelMarker      = "/etc/falak/cloudflared.version"
+	tunnelUnit        = "falak-cloudflared.service"
 )
 
 var (
@@ -43,10 +43,10 @@ type TunnelResult struct {
 	Version string `json:"version,omitempty"`
 }
 
-// RenderTunnelUnit is kiln-cloudflared.service.
+// RenderTunnelUnit is falak-cloudflared.service.
 func RenderTunnelUnit() string {
 	return `[Unit]
-Description=Kiln: Cloudflare Tunnel (cloudflared)
+Description=Falak: Cloudflare Tunnel (cloudflared)
 After=network-online.target
 Wants=network-online.target
 
@@ -124,7 +124,7 @@ func (n *Net) TunnelApply(ctx context.Context, p TunnelPayload, st commands.Stre
 		}
 		changed = true
 	}
-	if err := n.d.FS.MkdirAll("/etc/kiln", 0o755); err != nil {
+	if err := n.d.FS.MkdirAll("/etc/falak", 0o755); err != nil {
 		return nil, err
 	}
 	tokenChanged, err := n.d.FS.WriteFile(TunnelTokenPath, []byte(strings.TrimSpace(p.Token)), 0o600)

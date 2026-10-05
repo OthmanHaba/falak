@@ -1,24 +1,24 @@
 <?php
 
-namespace Kiln\Deployments\Http\Controllers\Api;
+namespace Falak\Deployments\Http\Controllers\Api;
 
+use Falak\Deployments\Application\Actions\TriggerDeployment;
+use Falak\Deployments\Application\Orchestration\Orchestrator;
+use Falak\Deployments\Domain\Enums\ReleaseStatus;
+use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\OutputLine;
+use Falak\Deployments\Domain\Models\Release;
+use Falak\Deployments\Domain\Policies\DeploymentPermissions;
+use Falak\Deployments\Http\Controllers\PresentsDeployments;
+use Falak\Deployments\Http\Controllers\ResolvesSites;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Kiln\Deployments\Application\Actions\TriggerDeployment;
-use Kiln\Deployments\Application\Orchestration\Orchestrator;
-use Kiln\Deployments\Domain\Enums\ReleaseStatus;
-use Kiln\Deployments\Domain\Enums\Trigger;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\OutputLine;
-use Kiln\Deployments\Domain\Models\Release;
-use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
-use Kiln\Deployments\Http\Controllers\PresentsDeployments;
-use Kiln\Deployments\Http\Controllers\ResolvesSites;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
 
 /**
- * Public API v1 used by the `kiln` CLI (agent/internal/cli/api). Sanctum tokens pinned to one
+ * Public API v1 used by the `falak` CLI (agent/internal/cli/api). Sanctum tokens pinned to one
  * organization; abilities are permission names.
  */
 final class DeploymentApiController extends Controller

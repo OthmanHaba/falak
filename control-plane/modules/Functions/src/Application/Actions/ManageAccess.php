@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Functions\Application\Actions;
+namespace Falak\Functions\Application\Actions;
 
+use Falak\Deployments\Contracts\DeploymentDirectory;
+use Falak\Deployments\Contracts\DeploymentTrigger;
+use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Functions\Domain\Models\CloudFunction;
+use Falak\Functions\Domain\Models\FunctionApiKey;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Sites\Contracts\Data\SiteData;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Deployments\Contracts\DeploymentDirectory;
-use Kiln\Deployments\Contracts\DeploymentTrigger;
-use Kiln\Fleet\Contracts\AgentDirectory;
-use Kiln\Functions\Domain\Models\CloudFunction;
-use Kiln\Functions\Domain\Models\FunctionApiKey;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Sites\Contracts\Data\SiteData;
 
 /**
  * Settings → Access: API keys and the IP allowlist of a function. The gateway enforces them; a change redeploys the
@@ -130,7 +130,7 @@ final class ManageAccess
     {
         foreach ($site->serverIds() as $serverId) {
             if (! ($this->agents->forServer($serverId)?->supports('fn.v2') ?? false)) {
-                throw ValidationException::withMessages(['access' => 'Update the Kiln agent on the function’s server first: it is too old to enforce access rules.']);
+                throw ValidationException::withMessages(['access' => 'Update the Falak agent on the function’s server first: it is too old to enforce access rules.']);
             }
         }
     }

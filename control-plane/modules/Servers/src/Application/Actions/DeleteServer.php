@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Servers\Application\Actions;
+namespace Falak\Servers\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Servers\Application\Jobs\DestroyServer;
-use Kiln\Servers\Application\ServerStatusUpdater;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Domain\Models\Server;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Servers\Application\Jobs\DestroyServer;
+use Falak\Servers\Application\ServerStatusUpdater;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Domain\Models\Server;
 
 final class DeleteServer
 {

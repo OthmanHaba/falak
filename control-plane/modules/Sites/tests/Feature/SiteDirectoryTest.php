@@ -1,10 +1,10 @@
 <?php
 
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Events\OrganizationDeleted;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteHeaders;
-use Kiln\Sites\Domain\Models\Site;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Events\OrganizationDeleted;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteHeaders;
+use Falak\Sites\Domain\Models\Site;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -12,7 +12,7 @@ beforeEach(function () {
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
     sites_fake_agents();
     $this->git = sites_fake_source_control();
-    config(['sites.test_domain' => 'preview.kiln.dev']);
+    config(['sites.test_domain' => 'preview.falak.sh']);
 });
 
 it('looks sites up by organization, server, repository and leader', function () {
@@ -36,17 +36,17 @@ it('looks sites up by organization, server, repository and leader', function () 
         ->and(array_map(fn ($p) => $p->path, $directory->sharedPaths($shop->id)))->toBe(['storage', '.env']);
 
     $data = $directory->find($shop->id);
-    expect($data->testDomain)->toBe('shop.preview.kiln.dev')
-        ->and($data->documentRoot())->toBe('/srv/kiln/sites/shop/current/public')
+    expect($data->testDomain)->toBe('shop.preview.falak.sh')
+        ->and($data->documentRoot())->toBe('/srv/falak/sites/shop/current/public')
         ->and($data->serverIds())->toBe([$b->id, $a->id])
         ->and($data->leader()->serverId)->toBe($b->id);
 
     $blog = $directory->forServer($b->id)[0];
-    expect($blog->documentRoot())->toBe('/srv/kiln/sites/blog/current')->and($blog->fpmSocket())->toBeNull();
+    expect($blog->documentRoot())->toBe('/srv/falak/sites/blog/current')->and($blog->fpmSocket())->toBeNull();
 
     $header = app(SiteHeaders::class)->for($shop->id);
     expect($header['servers'][0])->toBe(['id' => $b->id, 'name' => 'web-2', 'role' => 'leader'])
-        ->and($header['test_domain'])->toBe('shop.preview.kiln.dev');
+        ->and($header['test_domain'])->toBe('shop.preview.falak.sh');
 });
 
 it('deletes sites of a deleted organization', function () {

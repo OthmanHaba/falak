@@ -1,20 +1,20 @@
 <?php
 
-use Kiln\Edge\Application\ComposeServiceDomains;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\Header;
-use Kiln\Edge\Domain\Models\Redirect;
-use Kiln\Edge\Domain\Models\SecurityRule;
-use Kiln\Edge\Domain\Models\ServiceSetting;
-use Kiln\Edge\Domain\Models\SiteSetting;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteFactory;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Events\ComposeServiceExtracted;
-use Kiln\Sites\Events\ComposeServicesUnpublished;
+use Falak\Edge\Application\ComposeServiceDomains;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\Header;
+use Falak\Edge\Domain\Models\Redirect;
+use Falak\Edge\Domain\Models\SecurityRule;
+use Falak\Edge\Domain\Models\ServiceSetting;
+use Falak\Edge\Domain\Models\SiteSetting;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Identity\Contracts\Role;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteFactory;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Events\ComposeServiceExtracted;
+use Falak\Sites\Events\ComposeServicesUnpublished;
 
 /*
  * Edge for every public service of a compose site (docs/plans/COMPOSE_APPS.md, phase 2), with the real Sites module:
@@ -29,7 +29,7 @@ beforeEach(function () {
     [$this->user, $this->organization] = actingAsMember(Role::Admin);
     $this->agents = sites_fake_agents();
     sites_fake_source_control();
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
     $this->server = sites_server($this->organization->id, ['name' => 'app-1'], docker: true);
     $this->site = app(SiteFactory::class)->create($this->organization->id, $this->user->id, [
         'name' => 'stack', 'runtime' => 'compose', 'server_ids' => [$this->server->id], 'compose_source' => 'inline', 'compose_content' => COMPOSE_STACK,
@@ -55,7 +55,7 @@ it('turns the domains chosen at creation into rows per service', function () {
         ->and(app(SiteDirectory::class)->find($this->site->id)->compose->publicServices[1]->healthCheckPath)->toBe('/healthz');
 
     $this->getJson("{$this->base}/domains")->assertOk()
-        ->assertJsonPath('data.services.0', ['service' => 'web', 'primary' => true, 'port' => 80, 'test_domain' => 'stack.kiln.test', 'health_check_path' => null])
+        ->assertJsonPath('data.services.0', ['service' => 'web', 'primary' => true, 'port' => 80, 'test_domain' => 'stack.falak.test', 'health_check_path' => null])
         ->assertJsonPath('data.services.1.service', 'admin')
         ->assertJsonPath('data.services.1.health_check_path', '/healthz')
         ->assertJsonPath('data.domains.0.name', 'admin.example.com')
@@ -94,8 +94,8 @@ it('adds domains to a service, keeps a primary per service and mirrors the first
     $routeId = app(EdgeRoutes::class)->routeId($this->site->id);
     $payload = app(EdgeRoutes::class)->compile($this->server->id);
     $admin = collect($payload['sites'])->firstWhere('id', "{$routeId}-svc-admin");
-    expect($admin['domains'])->toBe(['admin.example.com', 'admin-stack.kiln.test'])
-        ->and(collect($payload['sites'])->firstWhere('id', $routeId)['domains'])->toBe(['stack.example.com', 'www2.example.com', 'stack.kiln.test'])
+    expect($admin['domains'])->toBe(['admin.example.com', 'admin-stack.falak.test'])
+        ->and(collect($payload['sites'])->firstWhere('id', $routeId)['domains'])->toBe(['stack.example.com', 'www2.example.com', 'stack.falak.test'])
         ->and(collect(app(EdgeRoutes::class)->domainsFor($this->site->id, 'admin'))->pluck('name')->all())->toBe(['admin.example.com'])
         ->and(collect(app(EdgeRoutes::class)->domainsFor($this->site->id))->pluck('name')->all())->toBe(['stack.example.com', 'www2.example.com']);
 });
@@ -264,7 +264,7 @@ it('moves the stack\'s own domains with a split-out first service, and the next 
 
     $routeId = app(EdgeRoutes::class)->routeId($this->site->id);
     $payload = app(EdgeRoutes::class)->compile($this->server->id);
-    expect(collect($payload['sites'])->firstWhere('id', $routeId)['domains'])->toBe(['admin.example.com', 'stack.kiln.test']);
+    expect(collect($payload['sites'])->firstWhere('id', $routeId)['domains'])->toBe(['admin.example.com', 'stack.falak.test']);
 })->with(['extraction first' => false, 'import first' => true]);
 
 it('hands domains over when the public services are reordered', function () {
@@ -280,8 +280,8 @@ it('hands domains over when the public services are reordered', function () {
 
     $routeId = app(EdgeRoutes::class)->routeId($this->site->id);
     $payload = app(EdgeRoutes::class)->compile($this->server->id);
-    expect(collect($payload['sites'])->firstWhere('id', $routeId)['domains'])->toBe(['admin.example.com', 'stack.kiln.test'])
-        ->and(collect($payload['sites'])->firstWhere('id', "{$routeId}-svc-web")['domains'])->toBe(['stack.example.com', 'web-stack.kiln.test']);
+    expect(collect($payload['sites'])->firstWhere('id', $routeId)['domains'])->toBe(['admin.example.com', 'stack.falak.test'])
+        ->and(collect($payload['sites'])->firstWhere('id', "{$routeId}-svc-web")['domains'])->toBe(['stack.example.com', 'web-stack.falak.test']);
 });
 
 it('removes the domains and rules of a service that is no longer public', function () {

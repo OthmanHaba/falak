@@ -1,4 +1,4 @@
-import { Menu, SERVICE_CARD, ServiceCard, ServiceIcon, StatusDot, serviceIconKey, type MenuAction } from '@/components/kiln';
+import { Menu, SERVICE_CARD, ServiceCard, ServiceIcon, StatusDot, serviceIconKey, type MenuAction } from '@/components/falak';
 import { cn } from '@/lib/utils';
 import { type CanvasEdge, type CanvasGroup, type CanvasService, type ComposeChild } from '@/types';
 import {
@@ -48,10 +48,10 @@ function Handles() {
     return (
         <>
             {SIDES.map(([id, position]) => (
-                <Handle key={`t-${id}`} id={`t-${id}`} type="target" position={position} className="kiln-handle" isConnectable={false} />
+                <Handle key={`t-${id}`} id={`t-${id}`} type="target" position={position} className="falak-handle" isConnectable={false} />
             ))}
             {SIDES.map(([id, position]) => (
-                <Handle key={`s-${id}`} id={`s-${id}`} type="source" position={position} className="kiln-handle" isConnectable={false} />
+                <Handle key={`s-${id}`} id={`s-${id}`} type="source" position={position} className="falak-handle" isConnectable={false} />
             ))}
         </>
     );
@@ -402,7 +402,10 @@ function layout(services: CanvasService[], groups: CanvasGroup[], editable: bool
                 position: { x: member.x - box.x, y: member.y - box.y },
                 data: { service: member.service },
                 hidden: hideMembers,
-                className: cn(leaving.has(group.id) && group.collapsed && 'kiln-leaving', !group.collapsed && leaving.has(group.id) && 'kiln-enter'),
+                className: cn(
+                    leaving.has(group.id) && group.collapsed && 'falak-leaving',
+                    !group.collapsed && leaving.has(group.id) && 'falak-enter',
+                ),
                 draggable: editable,
                 selectable: false,
                 zIndex: 1,
@@ -443,7 +446,7 @@ function layout(services: CanvasService[], groups: CanvasGroup[], editable: bool
                     position: { x: member.x - box.x, y: member.y - box.y },
                     data: { service, child: member.child },
                     hidden: collapsed && !leaving.has(service.id),
-                    className: cn(leaving.has(service.id) && collapsed && 'kiln-leaving', leaving.has(service.id) && !collapsed && 'kiln-enter'),
+                    className: cn(leaving.has(service.id) && collapsed && 'falak-leaving', leaving.has(service.id) && !collapsed && 'falak-enter'),
                     draggable: editable,
                     selectable: false,
                     zIndex: 1,
@@ -473,7 +476,7 @@ function layout(services: CanvasService[], groups: CanvasGroup[], editable: bool
 
 function readViewport(key: string): Viewport | null {
     try {
-        const value = JSON.parse(window.sessionStorage.getItem(`kiln:viewport:${key}`) ?? 'null');
+        const value = JSON.parse(window.sessionStorage.getItem(`falak:viewport:${key}`) ?? 'null');
 
         return value && typeof value.x === 'number' && typeof value.zoom === 'number' ? value : null;
     } catch {
@@ -585,7 +588,7 @@ export function CanvasBoard({
                     sourceHandle: 's-r',
                     targetHandle: 't-l',
                     data: { points: routeEdge(source, target, obstacles) },
-                    className: cn('kiln-edge', active && 'kiln-edge-active'),
+                    className: cn('falak-edge', active && 'falak-edge-active'),
                     markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: active ? 'var(--accent)' : 'var(--text-faint)' },
                     focusable: false,
                     selectable: false,
@@ -722,7 +725,7 @@ export function CanvasBoard({
     return (
         <BoardContext.Provider value={board}>
             <ReactFlow<BoardNode, RoutedEdge>
-                className="kiln-canvas"
+                className="falak-canvas"
                 colorMode={colorMode}
                 nodes={nodes}
                 edges={flowEdges}
@@ -746,7 +749,7 @@ export function CanvasBoard({
                 }}
                 onMoveEnd={(_event, viewport) => {
                     try {
-                        window.sessionStorage.setItem(`kiln:viewport:${viewportKey}`, JSON.stringify(viewport));
+                        window.sessionStorage.setItem(`falak:viewport:${viewportKey}`, JSON.stringify(viewport));
                     } catch {
                         // Not remembered.
                     }

@@ -16,24 +16,24 @@ return [
 
     // Node majors offered, pinned to exact releases (provision.apply wants full semver).
     'node_versions' => [
-        '20' => env('KILN_NODE_20', '20.19.5'),
-        '22' => env('KILN_NODE_22', '22.20.0'),
-        '24' => env('KILN_NODE_24', '24.9.0'),
+        '20' => env('FALAK_NODE_20', '20.19.5'),
+        '22' => env('FALAK_NODE_22', '22.20.0'),
+        '24' => env('FALAK_NODE_24', '24.9.0'),
     ],
     'default_node' => '22',
 
     'frankenphp' => [
-        'version' => env('KILN_FRANKENPHP_VERSION', '1.9.1'),
-        'sha256' => env('KILN_FRANKENPHP_SHA256'),
+        'version' => env('FALAK_FRANKENPHP_VERSION', '1.9.1'),
+        'sha256' => env('FALAK_FRANKENPHP_SHA256'),
     ],
 
     // Optional download mirrors for runtimes fetched over HTTPS during provisioning (air-gapped installs, a
     // caching proxy in front of GitHub / nodejs.org). Unset = the upstream release URLs.
-    //   KILN_FRANKENPHP_MIRROR  replaces https://github.com/php/frankenphp/releases/download
-    //   KILN_NODE_MIRROR        replaces https://nodejs.org/dist
+    //   FALAK_FRANKENPHP_MIRROR  replaces https://github.com/php/frankenphp/releases/download
+    //   FALAK_NODE_MIRROR        replaces https://nodejs.org/dist
     'mirrors' => [
-        'frankenphp' => env('KILN_FRANKENPHP_MIRROR'),
-        'node' => env('KILN_NODE_MIRROR'),
+        'frankenphp' => env('FALAK_FRANKENPHP_MIRROR'),
+        'node' => env('FALAK_NODE_MIRROR'),
     ],
 
     // Engine => Ubuntu packages + systemd service.
@@ -61,7 +61,7 @@ return [
     'base_packages' => ['acl', 'ca-certificates', 'curl', 'fail2ban', 'git', 'htop', 'jq', 'rsync', 'sqlite3', 'unattended-upgrades', 'unzip', 'zip'],
 
     // Unix user owning sites and receiving synced SSH keys.
-    'unix_user' => 'kiln',
+    'unix_user' => 'falak',
 
     // Swap by RAM: first threshold (bytes) the machine is below wins; null = no managed swapfile.
     'swap' => [
@@ -77,9 +77,9 @@ return [
     'machine_check' => [
         'timeout' => 180,
 
-        // Lowest versions Kiln adopts or completes; anything older blocks. Compared with version_compare on the
+        // Lowest versions Falak adopts or completes; anything older blocks. Compared with version_compare on the
         // upstream version (Debian epoch and revision stripped; PostgreSQL by major from postgresql-NN). Each is what
-        // Kiln itself installs on the oldest supported release, so a server Kiln provisioned never blocks: Ubuntu 22.04
+        // Falak itself installs on the oldest supported release, so a server Falak provisioned never blocks: Ubuntu 22.04
         // ships PostgreSQL 14, MySQL 8.0, MariaDB 10.6, Redis 6.0 and docker.io 20.10 (24.0 / 26.1 in jammy-updates);
         // Valkey first ships with 24.04 (noble-updates, 7.2), its first release.
         'minimum_versions' => [
@@ -99,7 +99,7 @@ return [
             'docker.io' => ['label' => "Ubuntu's archive", 'compose' => 'docker-compose-v2', 'buildx' => 'docker-buildx', 'repo' => null],
         ],
 
-        // Engines Kiln can install or adopt, and the ones that conflict with them (same kind, same port). `packages`
+        // Engines Falak can install or adopt, and the ones that conflict with them (same kind, same port). `packages`
         // are regular expressions over installed package names; `processes` may hold the engine's port.
         'engines' => [
             'postgresql' => ['label' => 'PostgreSQL', 'kind' => 'database', 'packages' => ['/^postgresql-\d+$/'], 'processes' => ['postgres'], 'ports' => [5432]],

@@ -6,10 +6,10 @@ php_server {
 	resolve_root_symlink
 	worker {
 		file /app/public/frankenphp-worker.php
-		num {$KILN_PHP_WORKERS}
+		num {$FALAK_PHP_WORKERS}
 		env APP_BASE_PATH /app
 		env LARAVEL_OCTANE 1
 		# Recycle a worker after this many requests (bounds any slow leak).
-		env MAX_REQUESTS {$KILN_WORKER_MAX_REQUESTS:1000}
+		env MAX_REQUESTS {$FALAK_WORKER_MAX_REQUESTS:1000}
 	}
 }

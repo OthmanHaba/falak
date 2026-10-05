@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/fn.status.schema.json",
-  "title": "fn.status — instances and counters of the server's functions (from kiln-fn-gateway)",
+  "$id": "https://falak.sh/agent-protocol/commands/fn.status.schema.json",
+  "title": "fn.status — instances and counters of the server's functions (from falak-fn-gateway)",
   "type": "object",
   "additionalProperties": false,
   "properties": {

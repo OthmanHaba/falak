@@ -16,7 +16,7 @@ function describe(error: unknown): { type: string; message: string; stack: strin
 }
 
 /**
- * Record an OTel `exception` event with kiln.exception.handled. Returns false when there
+ * Record an OTel `exception` event with falak.exception.handled. Returns false when there
  * is no span to attach it to.
  */
 export function recordException(error: unknown, options: RecordExceptionOptions = {}): boolean {
@@ -31,7 +31,7 @@ export function recordException(error: unknown, options: RecordExceptionOptions 
     'exception.message': message,
     ...(stack ? { 'exception.stacktrace': stack } : {}),
     'exception.escaped': !handled,
-    'kiln.exception.handled': handled,
+    'falak.exception.handled': handled,
   });
 
   if (!handled) {

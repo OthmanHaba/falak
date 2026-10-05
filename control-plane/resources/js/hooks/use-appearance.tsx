@@ -10,7 +10,7 @@ export type ResolvedAppearance = 'dark' | 'light';
  * `dark`/`light` class on <html> for the first paint; this module keeps it in sync on the client.
  */
 const COOKIE = 'appearance';
-const EVENT = 'kiln:appearance';
+const EVENT = 'falak:appearance';
 
 const isAppearance = (value: unknown): value is Appearance => value === 'dark' || value === 'light' || value === 'system';
 

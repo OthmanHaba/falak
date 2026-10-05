@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 
-// Kiln E2E demo: each route exercises one thing the platform must observe.
+// Falak E2E demo: each route exercises one thing the platform must observe.
 
 Route::get('/', function () {
     return response()->json([
@@ -49,5 +49,5 @@ Route::get('/outgoing', fn () => response()->json([
 ]));
 
 Route::get('/boom', function () {
-    throw new RuntimeException('Kiln E2E demo exception');
+    throw new RuntimeException('Falak E2E demo exception');
 });

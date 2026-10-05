@@ -1,4 +1,4 @@
-import { Button, Callout, Section, SkeletonRows, Tag, Tooltip } from '@/components/kiln';
+import { Button, Callout, Section, SkeletonRows, Tag, Tooltip } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { type ServiceTabProps } from '@/lib/registry';
 import { cn } from '@/lib/utils';
@@ -36,7 +36,7 @@ export function DeployScriptSettings({ ctx }: ServiceTabProps) {
 
     const dirty = script !== data.script;
     const lines = script.split('\n').length;
-    const missing = ['KILN_FETCH', 'KILN_ACTIVATE'].filter((macro) => !new RegExp(`\\$\\{?${macro}\\b`).test(script));
+    const missing = ['FALAK_FETCH', 'FALAK_ACTIVATE'].filter((macro) => !new RegExp(`\\$\\{?${macro}\\b`).test(script));
     const submit = () => dirty && void save('PUT', url, { script }, 'Deploy script saved — used by the next deploy');
 
     const insert = (text: string) => {

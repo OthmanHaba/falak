@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Alerting\Infrastructure;
+namespace Falak\Alerting\Infrastructure;
 
-use Kiln\Alerting\Application\Jobs\RouteAlert;
-use Kiln\Alerting\Contracts\Alerts;
-use Kiln\Alerting\Contracts\Data\AlertData;
+use Falak\Alerting\Application\Jobs\RouteAlert;
+use Falak\Alerting\Contracts\Alerts;
+use Falak\Alerting\Contracts\Data\AlertData;
 
 final class QueuedAlerts implements Alerts
 {

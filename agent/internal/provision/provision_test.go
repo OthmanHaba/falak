@@ -12,10 +12,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 // hostSim is a fake host: tracks installed packages and systemd state.
@@ -158,7 +158,7 @@ func TestApplyConvergesAndIsIdempotent(t *testing.T) {
 		t.Fatal(names)
 	}
 	for _, w := range []string{"hostnamectl set-hostname web-1", "timedatectl set-timezone UTC", "mkswap /swapfile", "swapon /swapfile",
-		"apt-get remove -y", "useradd", "systemctl enable cron", "systemctl start cron", "sshd -t", "systemctl reload-or-restart ssh.service", "systemctl restart kiln-edge.service"} {
+		"apt-get remove -y", "useradd", "systemctl enable cron", "systemctl start cron", "sshd -t", "systemctl reload-or-restart ssh.service", "systemctl restart falak-edge.service"} {
 		if !f.Ran(w) {
 			t.Fatalf("missing %q:\n%s", w, strings.Join(f.Lines(), "\n"))
 		}
@@ -166,11 +166,11 @@ func TestApplyConvergesAndIsIdempotent(t *testing.T) {
 	if !h.pkgs["caddy"] || !h.pkgs["unattended-upgrades"] || !h.pkgs["git"] {
 		t.Fatal(h.pkgs)
 	}
-	b, _ := os.ReadFile(filepath.Join(root, "etc/apt/apt.conf.d/52kiln-unattended"))
+	b, _ := os.ReadFile(filepath.Join(root, "etc/apt/apt.conf.d/52falak-unattended"))
 	if !strings.Contains(string(b), `Automatic-Reboot "true"`) || !strings.Contains(string(b), `"03:30"`) {
 		t.Fatal(string(b))
 	}
-	b, _ = os.ReadFile(filepath.Join(root, "etc/ssh/sshd_config.d/50-kiln.conf"))
+	b, _ = os.ReadFile(filepath.Join(root, "etc/ssh/sshd_config.d/50-falak.conf"))
 	if !strings.Contains(string(b), "PasswordAuthentication no") {
 		t.Fatal(string(b))
 	}
@@ -245,7 +245,7 @@ func TestFailedStepContinuesAndSSHRestores(t *testing.T) {
 	f.On("sshd -t", runner.Result{ExitCode: 255, Stderr: []byte("bad config")})
 	newHost(f, root)
 	os.MkdirAll(filepath.Join(root, "etc/ssh/sshd_config.d"), 0o755)
-	os.WriteFile(filepath.Join(root, "etc/ssh/sshd_config.d/50-kiln.conf"), []byte("Port 22\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "etc/ssh/sshd_config.d/50-falak.conf"), []byte("Port 22\n"), 0o644)
 	p := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
 	r, err := p.Apply(context.Background(), Plan{Hostname: "x", Timezone: "UTC", SSH: &SSH{Port: 2222}}, commands.NewTestStream("c", &commands.Collector{}))
 	if err == nil || !strings.Contains(err.Error(), "hostname, ssh") {
@@ -255,7 +255,7 @@ func TestFailedStepContinuesAndSSHRestores(t *testing.T) {
 	if len(res.Steps) != 3 || res.Steps[1].Error != "" || !res.Steps[1].Changed {
 		t.Fatalf("%+v", res)
 	}
-	b, _ := os.ReadFile(filepath.Join(root, "etc/ssh/sshd_config.d/50-kiln.conf"))
+	b, _ := os.ReadFile(filepath.Join(root, "etc/ssh/sshd_config.d/50-falak.conf"))
 	if string(b) != "Port 22\n" {
 		t.Fatal("not restored", string(b))
 	}
@@ -407,7 +407,7 @@ func TestAptStepsRecoverFromAnOndrejSourceWithoutARelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %+v", err, r)
 	}
-	if _, err := os.Stat(ondrej + ".disabled-by-kiln"); err != nil || !h.pkgs["git"] || !h.pkgs["caddy"] {
+	if _, err := os.Stat(ondrej + ".disabled-by-falak"); err != nil || !h.pkgs["git"] || !h.pkgs["caddy"] {
 		t.Fatalf("source not disabled or packages missing: %v %v", err, h.pkgs)
 	}
 	st.Flush()

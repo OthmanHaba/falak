@@ -11,7 +11,7 @@ import {
     Section,
     Tag,
     Textarea,
-} from '@/components/kiln';
+} from '@/components/falak';
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { ArrowLeft, Copy, ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';

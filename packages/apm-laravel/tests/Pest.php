@@ -1,5 +1,5 @@
 <?php
 
-use Kiln\Apm\Tests\TestCase;
+use Falak\Apm\Tests\TestCase;
 
 uses(TestCase::class)->in('Feature', 'Unit');

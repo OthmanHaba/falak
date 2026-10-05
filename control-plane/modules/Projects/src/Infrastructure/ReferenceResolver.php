@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Projects\Infrastructure;
+namespace Falak\Projects\Infrastructure;
 
-use Kiln\Databases\Contracts\Data\DatabaseConsumer;
-use Kiln\Databases\Contracts\DatabaseConnections;
-use Kiln\Projects\Contracts\Data\ResolvedVariables;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Projects\Contracts\VariableReferences;
-use Kiln\Projects\Domain\Models\Service;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Databases\Contracts\Data\DatabaseConsumer;
+use Falak\Databases\Contracts\DatabaseConnections;
+use Falak\Projects\Contracts\Data\ResolvedVariables;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Projects\Contracts\VariableReferences;
+use Falak\Projects\Domain\Models\Service;
+use Falak\Sites\Contracts\SiteDirectory;
 
 /**
  * `${{ service.KEY }}` resolution within one environment. Site variables may themselves contain

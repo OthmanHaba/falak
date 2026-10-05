@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/docker.compose.restart.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/docker.compose.restart.schema.json",
   "title": "docker.compose.restart — restart the containers of a compose project (all or the listed services)",
   "type": "object",
   "additionalProperties": false,

@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Sites\Application;
+namespace Falak\Sites\Application;
 
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
+use Falak\Sites\Events\SiteTargetFailed;
+use Falak\Sites\Events\SiteTargetReady;
+use Falak\Sites\Infrastructure\CommandPayloads;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
-use Kiln\Sites\Events\SiteTargetFailed;
-use Kiln\Sites\Events\SiteTargetReady;
-use Kiln\Sites\Infrastructure\CommandPayloads;
 
 /**
  * Prepares a site on one server, one agent command at a time:
@@ -78,8 +78,8 @@ final class TargetProvisioner
     {
         $commands = match ($site->runtime) {
             SiteRuntime::Docker => [
-                ['docker.stop', ['name' => "kiln-{$site->slug}-blue", 'remove' => true]],
-                ['docker.stop', ['name' => "kiln-{$site->slug}-green", 'remove' => true]],
+                ['docker.stop', ['name' => "falak-{$site->slug}-blue", 'remove' => true]],
+                ['docker.stop', ['name' => "falak-{$site->slug}-green", 'remove' => true]],
             ],
             SiteRuntime::Compose => [
                 ['docker.compose.down', ['project' => $site->slug, 'directory' => $site->rootPath(), 'volumes' => $volumes]],

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts;
+namespace Falak\Telemetry\Contracts;
 
 /**
  * Helpers for building PromQL / LogQL / TraceQL safely from untrusted values.

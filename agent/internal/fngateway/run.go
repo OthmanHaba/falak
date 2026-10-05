@@ -5,10 +5,10 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	"github.com/kiln/agent/internal/docker"
+	"github.com/OthmanHaba/falak/agent/internal/docker"
 )
 
-// RunOptions of `kiln-agent fn-gateway`.
+// RunOptions of `falak-agent fn-gateway`.
 type RunOptions struct {
 	Listen       string
 	AdminSocket  string

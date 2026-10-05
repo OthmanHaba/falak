@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/config"
-	"github.com/kiln/agent/internal/enroll"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/config"
+	"github.com/OthmanHaba/falak/agent/internal/enroll"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
-// serviceFake answers systemctl like a host where kiln-agent.service is running (or not); stops records how many
+// serviceFake answers systemctl like a host where falak-agent.service is running (or not); stops records how many
 // enrollments the fleet had seen when the service was stopped.
 func serviceFake(fleet *fakeFleet, running bool, stopsAt *[]int) *runnertest.Fake {
 	f := &runnertest.Fake{}
@@ -57,17 +57,17 @@ func TestEnrollStopsAndRestartsARunningAgent(t *testing.T) {
 		t.Fatalf("the service must stop before the new enrollment: %v", stops)
 	}
 	lines := strings.Join(f.Lines(), "|")
-	if lines != "systemctl is-active --quiet kiln-agent.service|systemctl stop kiln-agent.service|systemctl start kiln-agent.service" {
+	if lines != "systemctl is-active --quiet falak-agent.service|systemctl stop falak-agent.service|systemctl start falak-agent.service" {
 		t.Fatal(lines)
 	}
-	if !strings.Contains(out.String(), "stopping kiln-agent while its identity is replaced") || !strings.HasSuffix(out.String(), "started kiln-agent again\n") {
+	if !strings.Contains(out.String(), "stopping falak-agent while its identity is replaced") || !strings.HasSuffix(out.String(), "started falak-agent again\n") {
 		t.Fatalf("%q", out.String())
 	}
 
 	// A failed enrollment starts it again too, with the old identity.
 	cfg.Token = "already-used"
 	f = serviceFake(fleet, true, &stops)
-	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard, f); err == nil || !f.Ran("systemctl start kiln-agent.service") {
+	if err := EnrollOnly(ctx, cfg, quiet(), io.Discard, f); err == nil || !f.Ran("systemctl start falak-agent.service") {
 		t.Fatalf("%v %v", err, f.Lines())
 	}
 
@@ -145,7 +145,7 @@ func TestUnfinishedReplacementIsRestoredOnStart(t *testing.T) {
 	os.MkdirAll(filepath.Join(cfg.EtcDir, PreviousDir, "20250101T000000Z"), 0o700)
 
 	var logs bytes.Buffer
-	cfg.Token = "" // `kiln-agent run` without a token
+	cfg.Token = "" // `falak-agent run` without a token
 	id, err := ensureEnrolled(ctx, cfg, slog.New(slog.NewTextHandler(&logs, nil)), true)
 	if err != nil || id.State.AgentID != fleetAgentIDs[0] || read(t, paths.Cert()) != cert {
 		t.Fatalf("%v %+v", err, id)
@@ -181,7 +181,7 @@ func identityConfig(t *testing.T, fleet *fakeFleet) config.Config {
 	cfg := config.Default()
 	cfg.PanelURL, cfg.Token, cfg.Insecure = fleet.srv.URL, "one-time", true
 	cfg.HostRoot = root
-	cfg.EtcDir = filepath.Join(root, "etc/kiln")
+	cfg.EtcDir = filepath.Join(root, "etc/falak")
 	return cfg
 }
 
@@ -212,9 +212,9 @@ func TestEnrollReplacesAnExistingIdentity(t *testing.T) {
 	os.WriteFile(filepath.Join(state, "commands.json"), []byte(`{"old":1}`), 0o600)
 	os.WriteFile(filepath.Join(state, "proc.json"), []byte(`{}`), 0o600)
 	os.WriteFile(filepath.Join(cfg.EtcDir, "telemetry.json"), []byte(`{"sites":[]}`), 0o600)
-	os.WriteFile(filepath.Join(cfg.EtcDir, "agent.env"), []byte("KILN_TOKEN=used\n"), 0o600)
+	os.WriteFile(filepath.Join(cfg.EtcDir, "agent.env"), []byte("FALAK_TOKEN=used\n"), 0o600)
 
-	// `kiln-agent run` never re-enrolls on its own.
+	// `falak-agent run` never re-enrolls on its own.
 	if _, err := ensureEnrolled(ctx, cfg, quiet(), true); err != nil || fleet.enrolls != 1 {
 		t.Fatalf("run re-enrolled: %v (%d enrollments)", err, fleet.enrolls)
 	}
@@ -320,7 +320,7 @@ func TestCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := Check(ctx, CheckOptions{Config: cfg, Out: &out}); err != nil || out.String() != "kiln-agent connected as "+fleetAgentIDs[0]+"\n" {
+	if err := Check(ctx, CheckOptions{Config: cfg, Out: &out}); err != nil || out.String() != "falak-agent connected as "+fleetAgentIDs[0]+"\n" {
 		t.Fatalf("%q %v", out.String(), err)
 	}
 
@@ -350,7 +350,7 @@ func TestCheck(t *testing.T) {
 	fleet.mu.Unlock()
 	start := time.Now()
 	err = Check(ctx, CheckOptions{Config: cfg, Wait: time.Minute})
-	if err == nil || !strings.HasPrefix(err.Error(), "revoked: this agent was revoked or its server was removed from Kiln (agent "+fleetAgentIDs[0]+")") || time.Since(start) > 10*time.Second {
+	if err == nil || !strings.HasPrefix(err.Error(), "revoked: this agent was revoked or its server was removed from Falak (agent "+fleetAgentIDs[0]+")") || time.Since(start) > 10*time.Second {
 		t.Fatalf("revoked: %v", err)
 	}
 

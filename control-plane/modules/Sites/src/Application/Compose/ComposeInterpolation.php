@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Application\Compose;
+namespace Falak\Sites\Application\Compose;
 
 /**
  * Compose interpolation with a stack's variables: `${VAR}`, `${VAR:-default}` / `${VAR-default}` and `$VAR`; unknown

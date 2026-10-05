@@ -1,10 +1,10 @@
 <?php
 
+use Falak\SourceControl\Contracts\ProviderType;
+use Falak\SourceControl\Domain\Models\Connection;
+use Falak\SourceControl\Domain\Models\GitHubApp;
+use Falak\SourceControl\Domain\Models\Webhook;
 use Illuminate\Testing\TestResponse;
-use Kiln\SourceControl\Contracts\ProviderType;
-use Kiln\SourceControl\Domain\Models\Connection;
-use Kiln\SourceControl\Domain\Models\GitHubApp;
-use Kiln\SourceControl\Domain\Models\Webhook;
 use phpseclib3\Crypt\RSA;
 
 /**
@@ -90,11 +90,11 @@ function sc_github_app(string $organizationId, array $attributes = []): GitHubAp
     $app = new GitHubApp(array_merge([
         'organization_id' => $organizationId,
         'app_id' => '4242',
-        'slug' => 'kiln-acme',
-        'name' => 'Kiln (acme)',
+        'slug' => 'falak-acme',
+        'name' => 'Falak (acme)',
         'owner_login' => 'acme',
         'owner_type' => 'Organization',
-        'html_url' => 'https://github.com/apps/kiln-acme',
+        'html_url' => 'https://github.com/apps/falak-acme',
         'client_id' => 'Iv1.abc',
     ], $attributes));
     $app->client_secret = 'client-secret';

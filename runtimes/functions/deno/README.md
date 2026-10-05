@@ -1,7 +1,7 @@
-# Kiln function runtime: Deno
+# Falak function runtime: Deno
 
 Deno 2 (`denoland/deno`, Debian) for Cloud Functions. It follows the runtime convention in `../bun/README.md`
-(`kiln-fn-install`, `kiln-fn-serve`, `kiln-fn-run`; same mounts, environment, isolation and telemetry as Bun).
+(`falak-fn-install`, `falak-fn-serve`, `falak-fn-run`; same mounts, environment, isolation and telemetry as Bun).
 
 ```ts
 import { Hono } from 'hono'       // or 'npm:hono', 'jsr:@hono/hono'
@@ -19,10 +19,10 @@ export default app            // a Hono app, { fetch }, or a fetch(request) func
 Everything is resolved at install time, into the release, so serving needs no network and no writable cache
 (the release is mounted read-only):
 
-- **No `deno.json`**: `kiln-fn-install` writes one. Without a `package.json`, the imports of the source files
+- **No `deno.json`**: `falak-fn-install` writes one. Without a `package.json`, the imports of the source files
   (`../shared/scan.mjs`) become `"<pkg>": "npm:<pkg>"` entries, so bare imports like `hono` work as on Bun and
   Node. With a `package.json`, its dependencies are used.
-- **Your own `deno.json`**: kept. Kiln only adds `"nodeModulesDir": "auto"` (npm packages in `/app/node_modules`) and
+- **Your own `deno.json`**: kept. Falak only adds `"nodeModulesDir": "auto"` (npm packages in `/app/node_modules`) and
   `"vendor": true` (`jsr:` and `https:` modules in `/app/vendor`) when they are missing. A `deno.jsonc` is used as
   is and needs both settings itself.
 - `deno install --entrypoint <entry>` writes `deno.lock`. The agent keeps it (and the generated `deno.json`) per code
@@ -30,12 +30,12 @@ Everything is resolved at install time, into the release, so serving needs no ne
 
 ## Serving and permissions
 
-`kiln-fn-serve` and `kiln-fn-run` run with `--cached-only` (no module downloads), a scratch `DENO_DIR` in `/tmp`,
+`falak-fn-serve` and `falak-fn-run` run with `--cached-only` (no module downloads), a scratch `DENO_DIR` in `/tmp`,
 and these permissions:
 
 ```
 --allow-net --allow-env --allow-sys
---allow-read=/app,/tmp,/run/kiln-otlp --allow-write=/tmp,/run/kiln-otlp
+--allow-read=/app,/tmp,/run/falak-otlp --allow-write=/tmp,/run/falak-otlp
 ```
 
 `--allow-sys` (hostname, OS and user info) is there because common npm packages, database drivers among them, read
@@ -45,5 +45,5 @@ Telemetry uses the shared tracer (`../shared/telemetry.mjs`); Deno's `fetch` can
 over `Deno.connect` with a minimal HTTP/1.1 request.
 
 ```sh
-docker build -t kiln-fn-deno:dev -f runtimes/functions/deno/Dockerfile runtimes/functions
+docker build -t falak-fn-deno:dev -f runtimes/functions/deno/Dockerfile runtimes/functions
 ```

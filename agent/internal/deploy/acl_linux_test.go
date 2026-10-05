@@ -59,7 +59,7 @@ func TestCloseDirKeepsOthersOutButTheEdgeIn(t *testing.T) {
 	if err != nil || n != len(edgeAccessACL(0o750, 0)) {
 		t.Fatalf("access ACL: %d bytes, %v", n, err)
 	}
-	EdgeUser = "kiln-no-such-user"
+	EdgeUser = "falak-no-such-user"
 	if _, err := closeDir(dir); err != nil {
 		t.Fatal(err)
 	}

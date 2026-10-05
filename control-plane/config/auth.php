@@ -1,6 +1,6 @@
 <?php
 
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Domain\Models\User;
 
 return [
 

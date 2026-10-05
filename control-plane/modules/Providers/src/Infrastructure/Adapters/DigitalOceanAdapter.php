@@ -1,17 +1,17 @@
 <?php
 
-namespace Kiln\Providers\Infrastructure\Adapters;
+namespace Falak\Providers\Infrastructure\Adapters;
 
+use Falak\Providers\Contracts\Data\Image;
+use Falak\Providers\Contracts\Data\Machine;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\Data\Region;
+use Falak\Providers\Contracts\Data\Size;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\ProviderType;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Kiln\Providers\Contracts\Data\Image;
-use Kiln\Providers\Contracts\Data\Machine;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\Data\Region;
-use Kiln\Providers\Contracts\Data\Size;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Contracts\ProviderType;
 
 /**
  * DigitalOcean API v2 — https://docs.digitalocean.com/reference/api/

@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Builds\Contracts\Data;
+namespace Falak\Builds\Contracts\Data;
 
 use DateTimeImmutable;
-use Kiln\Builds\Contracts\BuildStatus;
+use Falak\Builds\Contracts\BuildStatus;
 
 final readonly class BuildData
 {

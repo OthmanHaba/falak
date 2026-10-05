@@ -1,5 +1,5 @@
 <?php
 
-namespace Kiln\Alerting\Domain\Policies;
+namespace Falak\Alerting\Domain\Policies;
 
 final class RulePolicy extends AlertingPolicy {}

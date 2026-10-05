@@ -1,10 +1,10 @@
 <?php
 
+use Falak\Identity\Contracts\Role;
+use Falak\SourceControl\Contracts\ProviderType;
+use Falak\SourceControl\Domain\Models\Push;
+use Falak\SourceControl\Events\PushReceived;
 use Illuminate\Support\Facades\Event;
-use Kiln\Identity\Contracts\Role;
-use Kiln\SourceControl\Contracts\ProviderType;
-use Kiln\SourceControl\Domain\Models\Push;
-use Kiln\SourceControl\Events\PushReceived;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -127,7 +127,7 @@ it('verifies custom (Gitea / Forgejo / generic) webhooks', function (string $sty
         'gitea' => ['X-Gitea-Event' => 'push', 'X-Gitea-Signature' => sc_sign($payload)],
         'forgejo' => ['X-Forgejo-Event' => 'push', 'X-Forgejo-Signature' => sc_sign($payload)],
         'github' => ['X-Hub-Signature-256' => 'sha256='.sc_sign($payload)],
-        'token' => ['X-Kiln-Token' => 'topsecret'],
+        'token' => ['X-Falak-Token' => 'topsecret'],
     };
 
     sc_post_webhook($webhook, $payload, $headers)->assertStatus(202)->assertJson(['received' => 1]);
@@ -138,7 +138,7 @@ it('verifies custom (Gitea / Forgejo / generic) webhooks', function (string $sty
 it('rejects unsigned custom webhooks', function () {
     $webhook = sc_webhook(sc_connection($this->organization->id, ProviderType::Custom, 'none', []));
 
-    sc_post_webhook($webhook, sc_github_push(), ['X-Gitea-Signature' => 'nope', 'X-Kiln-Token' => 'wrong'])->assertUnauthorized();
+    sc_post_webhook($webhook, sc_github_push(), ['X-Gitea-Signature' => 'nope', 'X-Falak-Token' => 'wrong'])->assertUnauthorized();
 });
 
 it('returns 404 for unknown webhooks', function () {

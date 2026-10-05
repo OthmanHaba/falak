@@ -1,40 +1,40 @@
 <?php
 
-namespace Kiln\Sites\Infrastructure\Compose;
+namespace Falak\Sites\Infrastructure\Compose;
 
+use Falak\Databases\Contracts\Data\DatabaseData;
+use Falak\Databases\Contracts\DatabaseDirectory;
+use Falak\Databases\Contracts\DatabaseProvisioner;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Sites\Application\Actions\SaveEnvironment;
+use Falak\Sites\Application\Compose\ComposeInterpolation;
+use Falak\Sites\Application\Compose\ComposeNetworks;
+use Falak\Sites\Application\Compose\ComposeProject;
+use Falak\Sites\Application\Compose\ComposeProjectException;
+use Falak\Sites\Application\Compose\RedisCommand;
+use Falak\Sites\Application\Compose\RepoComposeInspection;
+use Falak\Sites\Application\Compose\ServiceReferences;
+use Falak\Sites\Contracts\ComposeServiceExtraction;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Data\ComposeRewrites;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\Data\SitePlacement;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteDomains;
+use Falak\Sites\Contracts\SiteFactory;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Presets\Preset;
+use Falak\Sites\Events\ComposeServiceExtracted;
+use Falak\Sites\Events\SiteUpdated;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Contracts\SourceControlGateway;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Contracts\Data\DatabaseData;
-use Kiln\Databases\Contracts\DatabaseDirectory;
-use Kiln\Databases\Contracts\DatabaseProvisioner;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Sites\Application\Actions\SaveEnvironment;
-use Kiln\Sites\Application\Compose\ComposeInterpolation;
-use Kiln\Sites\Application\Compose\ComposeNetworks;
-use Kiln\Sites\Application\Compose\ComposeProject;
-use Kiln\Sites\Application\Compose\ComposeProjectException;
-use Kiln\Sites\Application\Compose\RedisCommand;
-use Kiln\Sites\Application\Compose\RepoComposeInspection;
-use Kiln\Sites\Application\Compose\ServiceReferences;
-use Kiln\Sites\Contracts\ComposeServiceExtraction;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Data\ComposeRewrites;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\Data\SitePlacement;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteDomains;
-use Kiln\Sites\Contracts\SiteFactory;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Presets\Preset;
-use Kiln\Sites\Events\ComposeServiceExtracted;
-use Kiln\Sites\Events\SiteUpdated;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Contracts\SourceControlGateway;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 use Throwable;
@@ -42,7 +42,7 @@ use Throwable;
 final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
 {
     /**
-     * Images Kiln can replace with a managed database, by engine (SQL: the image name; Redis / Valkey: the official
+     * Images Falak can replace with a managed database, by engine (SQL: the image name; Redis / Valkey: the official
      * repositories only — redis-stack, bitnami/redis etc. stay containers).
      */
     private const ENGINE_IMAGES = [
@@ -81,7 +81,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         $engine = strtolower($engine);
 
         if (! array_key_exists($engine, self::ENGINE_IMAGES)) {
-            throw ValidationException::withMessages(['engine' => 'Kiln manages PostgreSQL, MySQL, MariaDB, Redis and Valkey databases.']);
+            throw ValidationException::withMessages(['engine' => 'Falak manages PostgreSQL, MySQL, MariaDB, Redis and Valkey databases.']);
         }
 
         $keyValue = in_array($engine, self::KEY_VALUE, true);
@@ -90,7 +90,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
 
         if (($image !== '' || $keyValue) && ! in_array($repository, self::ENGINE_IMAGES[$engine], true)) {
             throw ValidationException::withMessages(['engine' => $image === ''
-                ? "Service {$service} has no image: only services running the official ".self::label($engine).' image can become a Kiln '.self::label($engine).'.'
+                ? "Service {$service} has no image: only services running the official ".self::label($engine).' image can become a Falak '.self::label($engine).'.'
                 : "Service {$service} runs {$image}, not ".($keyValue ? 'the official '.self::label($engine).' image' : 'a '.self::label($engine).' image').'.']);
         }
 
@@ -144,7 +144,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             'rewrites' => ServiceReferences::find($document, $service, $keyValue ? 'cache' : 'database', $this->stackVariables($stack)),
         ];
 
-        // rediss:// / valkeys:// values keep pointing at the service: a Kiln instance has no TLS (ComposeSettings warns).
+        // rediss:// / valkeys:// values keep pointing at the service: a Falak instance has no TLS (ComposeSettings warns).
         if ($keyValue && ($tls = ServiceReferences::tlsReferences($document, $service, $this->stackVariables($stack))) !== []) {
             $decision['tls_references'] = $tls;
         }
@@ -316,7 +316,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         $stack = Site::query()->with('targets')->find(strtolower($siteId));
 
         if ($stack === null || $stack->runtime !== SiteRuntime::Compose) {
-            throw ValidationException::withMessages(['service' => 'Only services of a Docker Compose stack can run as Kiln services.']);
+            throw ValidationException::withMessages(['service' => 'Only services of a Docker Compose stack can run as Falak services.']);
         }
 
         return $stack;
@@ -380,8 +380,8 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
 
     /**
      * The keys of a service's env files (`env_file:` entries of the merged project, relative to the stack's root
-     * directory), read from the repository like the inspection reads them; later files win. Kiln's own `.env` (the
-     * stack's variables) and files Kiln can't read (inline stacks, plain git servers, missing optional files) add
+     * directory), read from the repository like the inspection reads them; later files win. Falak's own `.env` (the
+     * stack's variables) and files Falak can't read (inline stacks, plain git servers, missing optional files) add
      * nothing.
      *
      * @param  array<string, mixed>  $definition
@@ -402,7 +402,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         foreach ($entries as $entry) {
             $path = (string) preg_replace('#^(\./)+#', '', (string) (is_array($entry) ? ($entry['path'] ?? '') : $entry));
 
-            // Kiln's own .env (the stack's variables), absolute paths and paths leaving the repository add nothing.
+            // Falak's own .env (the stack's variables), absolute paths and paths leaving the repository add nothing.
             if ($path === '' || $path === '.env' || str_starts_with($path, '/')) {
                 continue;
             }
@@ -437,7 +437,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             $variables = [...$variables, ...RepoComposeInspection::envFile((string) $content)];
         }
 
-        return array_filter($variables, fn (string $key) => ! str_starts_with($key, 'KILN_'), ARRAY_FILTER_USE_KEY);
+        return array_filter($variables, fn (string $key) => ! str_starts_with($key, 'FALAK_'), ARRAY_FILTER_USE_KEY);
     }
 
     /**
@@ -447,7 +447,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
     private function repositoryPath(Site $stack, string $context): ?string
     {
         if (preg_match('#^[a-z][a-z0-9+.\-]*://|^git@#i', $context) === 1) {
-            throw ValidationException::withMessages(['service' => 'The service builds from a remote context; only folders of the repository can become a Kiln site.']);
+            throw ValidationException::withMessages(['service' => 'The service builds from a remote context; only folders of the repository can become a Falak site.']);
         }
 
         $parts = [];
@@ -549,7 +549,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             $services = (array) ($locked->compose_services ?? []);
 
             if (in_array($services[$service]['mode'] ?? 'keep', ['database', 'site', 'pending'], true)) {
-                throw ValidationException::withMessages(['service' => "{$service} already runs as a Kiln service."]);
+                throw ValidationException::withMessages(['service' => "{$service} already runs as a Falak service."]);
             }
 
             $locked->forceFill(['compose_services' => [...$services, $service => ['mode' => 'pending']]])->save();
@@ -572,7 +572,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
     /** @param  array<string, mixed>  $decision */
     /**
      * Services split out into their own site carry the stack's variables they had: when a service they use moves to a
-     * Kiln database (or a site), their variables pointing at it get the same rewrite as services still in the stack.
+     * Falak database (or a site), their variables pointing at it get the same rewrite as services still in the stack.
      */
     private function syncSplitSites(Site $stack): void
     {
@@ -593,7 +593,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             }
 
             $variables = array_map('strval', (array) ($current->variables ?? []));
-            // A Kiln Redis' REDIS_PORT / REDIS_PASSWORD join a REDIS_HOST that had none (as in the stack).
+            // A Falak Redis' REDIS_PORT / REDIS_PASSWORD join a REDIS_HOST that had none (as in the stack).
             $next = array_replace($variables, array_intersect_key($replacements, $variables), array_intersect_key($replacements, ['REDIS_PORT' => true, 'REDIS_PASSWORD' => true]));
 
             if ($next !== $variables) {
@@ -670,10 +670,10 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         }
 
         if (! in_array($engine, $this->servers->installableCaches($serverId), true)) {
-            throw ValidationException::withMessages(['engine' => "{$label} isn't available for {$name}'s operating system (Kiln offers Valkey on Ubuntu 24.04, 26.04 and Debian 13). Keep {$service} in the stack, or switch its image to redis."]);
+            throw ValidationException::withMessages(['engine' => "{$label} isn't available for {$name}'s operating system (Falak offers Valkey on Ubuntu 24.04, 26.04 and Debian 13). Keep {$service} in the stack, or switch its image to redis."]);
         }
 
-        throw ValidationException::withMessages(['engine' => "{$name} doesn't run {$label} yet: install it first (Servers → {$name} → Settings), then pick Kiln database for {$service} again."]);
+        throw ValidationException::withMessages(['engine' => "{$name} doesn't run {$label} yet: install it first (Servers → {$name} → Settings), then pick Falak database for {$service} again."]);
     }
 
     /**
@@ -687,7 +687,7 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
         $base = rtrim(substr($base, 0, 41), '-_');
         $taken = array_map(fn (DatabaseData $d) => strtolower($d->name), $this->databaseDirectory->forServer($serverId));
 
-        if (! in_array($base, [...$taken, 'default', 'kiln'], true)) {
+        if (! in_array($base, [...$taken, 'default', 'falak'], true)) {
             return $base;
         }
 

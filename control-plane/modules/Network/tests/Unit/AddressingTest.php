@@ -1,9 +1,9 @@
 <?php
 
-use Kiln\Network\Domain\Support\AddressRules;
-use Kiln\Network\Domain\Support\Ipv4Cidr;
-use Kiln\Network\Infrastructure\CanonicalJson;
-use Kiln\Network\Infrastructure\WireGuardKeys;
+use Falak\Network\Domain\Support\AddressRules;
+use Falak\Network\Domain\Support\Ipv4Cidr;
+use Falak\Network\Infrastructure\CanonicalJson;
+use Falak\Network\Infrastructure\WireGuardKeys;
 
 it('normalizes and inspects IPv4 CIDRs', function () {
     $range = Ipv4Cidr::parse('10.90.0.7/24');

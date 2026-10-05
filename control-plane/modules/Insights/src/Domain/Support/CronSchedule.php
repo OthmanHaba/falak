@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Insights\Domain\Support;
+namespace Falak\Insights\Domain\Support;
 
 use Carbon\CarbonImmutable;
 use Cron\CronExpression;

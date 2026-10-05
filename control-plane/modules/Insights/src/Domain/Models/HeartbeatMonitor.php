@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Insights\Domain\Models;
+namespace Falak\Insights\Domain\Models;
 
+use Falak\Insights\Domain\Support\CronSchedule;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Kiln\Insights\Domain\Support\CronSchedule;
 
 /**
  * A scheduled task observed through cron heartbeats (created on its first heartbeat).

@@ -1,4 +1,4 @@
-import { toast } from '@/components/kiln';
+import { toast } from '@/components/falak';
 import { requestJson } from '@/lib/http';
 import { registerServiceActions, registerServiceSettingsSections, registerServiceTabs } from '@/lib/registry';
 import { RefreshCcw } from 'lucide-react';

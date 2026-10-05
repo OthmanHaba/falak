@@ -1,13 +1,13 @@
 <?php
 
-use Kiln\Sites\Contracts\ComposeInspector;
-use Kiln\Sites\Contracts\Data\ComposeServiceSummary;
-use Kiln\Sites\Contracts\Data\ComposeSummary;
-use Kiln\Templates\Application\Catalog\TemplateParser;
-use Kiln\Templates\Application\Catalog\TemplateValidator;
-use Kiln\Templates\Application\Compose\ComposeAnalyzer;
-use Kiln\Templates\Infrastructure\InspectorComposeAnalyzer;
-use Kiln\Templates\Tests\Support\FakeComposeInspector;
+use Falak\Sites\Contracts\ComposeInspector;
+use Falak\Sites\Contracts\Data\ComposeServiceSummary;
+use Falak\Sites\Contracts\Data\ComposeSummary;
+use Falak\Templates\Application\Catalog\TemplateParser;
+use Falak\Templates\Application\Catalog\TemplateValidator;
+use Falak\Templates\Application\Compose\ComposeAnalyzer;
+use Falak\Templates\Infrastructure\InspectorComposeAnalyzer;
+use Falak\Templates\Tests\Support\FakeComposeInspector;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -31,11 +31,11 @@ it('reports compose problems', function (string $compose, string $expected) {
     'interpolated image' => ["services:\n  web:\n    image: nginx:\${TAG}\n    expose: ['80']", 'must not be interpolated'],
     'build' => ["services:\n  web:\n    build: .\n    image: nginx:1\n    expose: ['80']", 'cannot build images'],
     'no image' => ["services:\n  web:\n    expose: ['80']", '.image is required'],
-    'unknown variable' => ["services:\n  web:\n    image: nginx:1\n    expose: ['80']\n    environment: [X=\${NOPE}]", '${NOPE} is neither an input nor a Kiln variable'],
+    'unknown variable' => ["services:\n  web:\n    image: nginx:1\n    expose: ['80']\n    environment: [X=\${NOPE}]", '${NOPE} is neither an input nor a Falak variable'],
     'missing public service' => ["services:\n  api:\n    image: nginx:1\n    expose: ['80']", 'public service web is not a service'],
     'port not exposed' => ["services:\n  web:\n    image: nginx:1\n    expose: ['81']", 'must expose port 80'],
-    'placeholder of private service' => ["services:\n  web:\n    image: nginx:1\n    expose: ['80']\n    environment: [U=\${{ kiln.url(db) }}]", 'db is not a public service'],
-    'unknown kiln placeholder' => ["services:\n  web:\n    image: nginx:1\n    expose: ['80']\n    environment: [U=\${{ kiln.secret }}]", 'unknown Kiln placeholder'],
+    'placeholder of private service' => ["services:\n  web:\n    image: nginx:1\n    expose: ['80']\n    environment: [U=\${{ falak.url(db) }}]", 'db is not a public service'],
+    'unknown falak placeholder' => ["services:\n  web:\n    image: nginx:1\n    expose: ['80']\n    environment: [U=\${{ falak.secret }}]", 'unknown Falak placeholder'],
     'reference in compose' => ["services:\n  web:\n    image: nginx:1\n    expose: ['80']\n    environment: [U=\${{ pg.DATABASE_URL }}]", 'belong in input defaults'],
     'container_name' => ["services:\n  web:\n    image: nginx:1\n    container_name: web\n    expose: ['80']", 'container_name'],
     'privileged' => ["services:\n  web:\n    image: nginx:1\n    privileged: true\n    expose: ['80']", 'Service web runs privileged.'],
@@ -48,7 +48,7 @@ it('reports compose problems', function (string $compose, string $expected) {
 ]);
 
 it('allows digests, named volumes, release-relative binds and safe capabilities', function () {
-    $compose = "services:\n  web:\n    image: nginx@sha256:".str_repeat('a', 64)."\n    cap_add: [NET_BIND_SERVICE]\n    volumes: ['data:/data', './config:/config:ro']\n    expose: ['80']\n    environment: [T=\${TOKEN}, S=\${KILN_SITE_ID}]\nvolumes:\n  data: {}";
+    $compose = "services:\n  web:\n    image: nginx@sha256:".str_repeat('a', 64)."\n    cap_add: [NET_BIND_SERVICE]\n    volumes: ['data:/data', './config:/config:ro']\n    expose: ['80']\n    environment: [T=\${TOKEN}, S=\${FALAK_SITE_ID}]\nvolumes:\n  data: {}";
 
     expect(validator_problems($compose))->toBe([]);
 });

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Domain\Enums;
+namespace Falak\Edge\Domain\Enums;
 
 enum LbPolicy: string
 {

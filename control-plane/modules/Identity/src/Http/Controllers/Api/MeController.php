@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Identity\Http\Controllers\Api;
+namespace Falak\Identity\Http\Controllers\Api;
 
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Identity\Domain\Models\PersonalAccessToken;
+use Falak\Identity\Domain\Models\User;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Identity\Domain\Models\PersonalAccessToken;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Kernel\Http\Controller;
 
 final class MeController extends Controller
 {

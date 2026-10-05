@@ -1,4 +1,4 @@
-import { Section } from '@/components/kiln/section';
+import { Section } from '@/components/falak/section';
 import ServerLayout, { type ServerHeader } from '@/layouts/server-layout';
 import { usePoll } from '@inertiajs/react';
 import { Film, SquareTerminal } from 'lucide-react';
@@ -25,7 +25,7 @@ export default function Server({ server, unixUser, sessions, recordings, default
         <ServerLayout server={server} tab="terminal" reloadOnly={['server', 'sessions', 'recordings']}>
             <Section
                 title="Open a shell"
-                description={`A browser terminal through the Kiln agent — no inbound SSH needed. Sessions are recorded and close after ${formatDuration(idleTimeout)} idle.`}
+                description={`A browser terminal through the Falak agent — no inbound SSH needed. Sessions are recorded and close after ${formatDuration(idleTimeout)} idle.`}
             >
                 {can.open ? (
                     <OpenSessionForm serverId={server.id} defaultUser={defaultUser} unixUser={unixUser} />

@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Jobs;
+namespace Falak\Telemetry\Application\Jobs;
 
+use Falak\Telemetry\Contracts\TelemetryConfigurator;
+use Falak\Telemetry\Domain\Models\PendingConfiguration;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Kiln\Telemetry\Contracts\TelemetryConfigurator;
-use Kiln\Telemetry\Domain\Models\PendingConfiguration;
 
 /**
  * Sends telemetry.configure to servers whose agent enrolled at least `configure_delay_seconds` ago.

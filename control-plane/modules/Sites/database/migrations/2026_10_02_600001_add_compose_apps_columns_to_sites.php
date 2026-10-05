@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Compose apps from a repository (docs/plans/COMPOSE_APPS.md, lane contract): several compose files (-f order),
- * active profiles, a decision per service (keep / Kiln database / own Kiln site) and the user's choices about
- * Kiln's adjustments. `compose_file` is kept (the first file) and copied into `compose_files`.
+ * active profiles, a decision per service (keep / Falak database / own Falak site) and the user's choices about
+ * Falak's adjustments. `compose_file` is kept (the first file) and copied into `compose_files`.
  */
 return new class extends Migration
 {

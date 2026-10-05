@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/net.tunnel.apply.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/net.tunnel.apply.schema.json",
   "title": "net.tunnel.apply — Cloudflare Tunnel: install (pinned, sha256-verified) cloudflared and run the tunnel of the given token, or remove it",
   "type": "object",
   "additionalProperties": false,
@@ -50,7 +50,7 @@
         },
         "active": {
           "type": "boolean",
-          "description": "kiln-cloudflared.service is running"
+          "description": "falak-cloudflared.service is running"
         },
         "version": {
           "type": "string"

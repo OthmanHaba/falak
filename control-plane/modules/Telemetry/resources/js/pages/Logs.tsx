@@ -1,8 +1,8 @@
-import { Checkbox } from '@/components/kiln/checkbox';
-import { Input } from '@/components/kiln/input';
-import { Segmented } from '@/components/kiln/segmented';
-import { Select } from '@/components/kiln/select';
-import { Tag } from '@/components/kiln/tag';
+import { Checkbox } from '@/components/falak/checkbox';
+import { Input } from '@/components/falak/input';
+import { Segmented } from '@/components/falak/segmented';
+import { Select } from '@/components/falak/select';
+import { Tag } from '@/components/falak/tag';
 import ObservabilityLayout from '@/layouts/observability-layout';
 import { Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';

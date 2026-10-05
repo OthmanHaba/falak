@@ -1,11 +1,11 @@
 <?php
 
-use Kiln\Identity\Contracts\Role;
-use Kiln\Projects\Domain\Models\Service;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Domain\Models\ComposeVersion;
+use Falak\Identity\Contracts\Role;
+use Falak\Projects\Domain\Models\Service;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Domain\Models\ComposeVersion;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -13,7 +13,7 @@ beforeEach(function () {
     [$this->user, $this->organization] = actingAsMember(Role::Viewer);
     $this->environment = projects_default_env($this->organization);
     $this->url = "/projects/{$this->environment->project_id}/production";
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
 });
 
 it('returns every service of the environment with live status, servers and reference edges', function () {
@@ -66,7 +66,7 @@ it('returns every service of the environment with live status, servers and refer
             'icon' => 'laravel',
             'status' => 'active',
             'status_label' => 'Active · 2m ago',
-            'url' => "https://{$shop->slug}.kiln.test",
+            'url' => "https://{$shop->slug}.falak.test",
             'subtitle' => 'Laravel · PHP 8.4',
             'servers' => [
                 ['id' => $web1->id, 'name' => 'web-1', 'leader' => true, 'online' => true],
@@ -153,8 +153,8 @@ it('renders the canvas page with project, environment, canvas and panel props', 
         ->has('canvas.edges', 0)
         ->where('panel', null)
         ->where('can.manage', false)
-        ->where('kiln.current.project_id', $this->environment->project_id)
-        ->where('kiln.current.environment_id', $this->environment->id));
+        ->where('falak.current.project_id', $this->environment->project_id)
+        ->where('falak.current.environment_id', $this->environment->id));
 
     $this->get("{$this->url}/service/site/{$site->id}/variables")->assertOk()->assertInertia(fn ($page) => $page
         ->component('Projects/Canvas', false)

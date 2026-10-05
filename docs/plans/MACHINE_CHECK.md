@@ -30,10 +30,10 @@ where it can be tested, shown and explained, and keeps the agent's apt step dumb
 
 | Decision | Meaning | UI label |
 |---|---|---|
-| `install` | Nothing there; Kiln installs / configures it as before. | Install |
-| `adopt` | A compatible, working one is there; Kiln uses it and does not install the package. | Use existing |
-| `complete` | Partly there; Kiln installs only the missing pieces, **from the same source**. | Install missing parts |
-| `block` | A conflict Kiln won't resolve automatically; reason plus a fix hint. Nothing is applied. | Blocked |
+| `install` | Nothing there; Falak installs / configures it as before. | Install |
+| `adopt` | A compatible, working one is there; Falak uses it and does not install the package. | Use existing |
+| `complete` | Partly there; Falak installs only the missing pieces, **from the same source**. | Install missing parts |
+| `block` | A conflict Falak won't resolve automatically; reason plus a fix hint. Nothing is applied. | Blocked |
 | `skip` | Not part of this server's stack; only reported because something was found. | Not managed |
 
 Every row and every note carries a severity: `info`, `warning` or `block`. A row's severity is the highest of its
@@ -47,24 +47,24 @@ Minimum versions, package families, ports and the container process names live i
 | Component | Install | Adopt | Complete | Block | Notes (info / warning) |
 |---|---|---|---|---|---|
 | Base packages | some missing (apt installs those) | all present | — | — | — |
-| Docker (engine, compose, buildx) | nothing found → `docker.io docker-compose-v2 docker-buildx` | engine + compose + buildx work | missing compose / buildx from the engine's family: Docker repo → `docker-compose-plugin` / `docker-buildx-plugin`; Ubuntu `docker.io` → `docker-compose-v2` / `docker-buildx` | engine below `minimum_versions.docker`; snap Docker; rootless-only Docker; `podman-docker`; a masked `docker.service`; only the CLI (no engine, no `docker.service`); Docker-repo engine with pieces missing but the Docker apt repo not configured; a manual (non-package) engine with pieces missing | warning: `daemon.json` `iptables: false` (published ports and Kiln's container firewall need iptables), `userns-remap` (release file ownership); info: `bip` / `default-address-pools`, Docker installed but not wanted (`skip`) |
+| Docker (engine, compose, buildx) | nothing found → `docker.io docker-compose-v2 docker-buildx` | engine + compose + buildx work | missing compose / buildx from the engine's family: Docker repo → `docker-compose-plugin` / `docker-buildx-plugin`; Ubuntu `docker.io` → `docker-compose-v2` / `docker-buildx` | engine below `minimum_versions.docker`; snap Docker; rootless-only Docker; `podman-docker`; a masked `docker.service`; only the CLI (no engine, no `docker.service`); Docker-repo engine with pieces missing but the Docker apt repo not configured; a manual (non-package) engine with pieces missing | warning: `daemon.json` `iptables: false` (published ports and Falak's container firewall need iptables), `userns-remap` (release file ownership); info: `bip` / `default-address-pools`, Docker installed but not wanted (`skip`) |
 | Database (PostgreSQL, MySQL, MariaDB) | wanted engine absent | wanted engine present (any source: Ubuntu, PGDG `postgresql-NN`, Oracle `mysql-community-server`, MariaDB repo) at or above the minimum → keep its packages, cluster and major version, only enable/start the service | — | version below minimum; another engine of the same kind (MySQL ↔ MariaDB, Percona); the engine's port held by a container (`docker-proxy` / a published container port) or by another process | info: engines found that are not wanted (`skip`, e.g. MySQL on a PostgreSQL server) |
 | Cache (Redis, Valkey) | wanted engine absent | wanted engine present (Ubuntu or vendor repo) at or above the minimum | — | below minimum; the other engine (both own 6379); 6379 held by a container or another process | info: unwanted engines |
-| Edge (Caddy / kiln-edge, ports 80, 443, 2019) | servers that serve HTTP, ports free | `kiln-edge.service` already there (re-provision); a Caddy package (any source) without an active `caddy.service` is reused | — | 80 / 443 / 2019 held by a non-Kiln process (nginx, apache2, a container's `docker-proxy`, …); an active non-Kiln `caddy.service` (Kiln would disable it) | warning: nginx / apache2 installed and enabled but not listening (they would take port 80 on the next boot) |
-| PHP and FrankenPHP | wanted versions absent | — | some wanted versions / extensions present (installed from their current source; the runtime keeps the v0.5.2 rules: `ppa:ondrej/php` when it builds the release, otherwise the archive) | — | warning: a non-package `php` / `frankenphp` in `/usr/local/bin` that Kiln's would replace or shadow; info: other PHP versions |
-| Node | Kiln's `/opt/kiln/node/<version>` (always) | Kiln's wanted version already there | — | — | warning: a non-Kiln `/usr/local/bin/node` (Kiln's symlink replaces it); info: nvm, NodeSource, Ubuntu, snap installs (left alone) |
-| SSH | Kiln's drop-in `50-kiln.conf` (port, root login, no passwords) | — | — | password login (`PasswordAuthentication` or `KbdInteractiveAuthentication` yes) would be disabled while no user sshd lets in has an `authorized_keys` entry: login users are root and UID ≥ 1000 with a shell; root's keys do not count when the current `PermitRootLogin` or a drop-in read before Kiln's is `no` / `forced-commands-only`; `AllowUsers` / `DenyUsers` / `AllowGroups` / `DenyGroups` (user part of `user@host`, wildcards) are applied | warning: an earlier `sshd_config.d` file sets `PasswordAuthentication` / `PermitRootLogin` / `Port` and wins over Kiln's (sshd keeps the first value); sshd listens on a port other than the server's SSH port (Kiln moves it) |
-| Firewall | Kiln's `table inet kiln` (applied by the Network module after provisioning) | — | — | — | **warning** when ufw or firewalld is active (see below); info: other nftables tables |
+| Edge (Caddy / falak-edge, ports 80, 443, 2019) | servers that serve HTTP, ports free | `falak-edge.service` already there (re-provision); a Caddy package (any source) without an active `caddy.service` is reused | — | 80 / 443 / 2019 held by a non-Falak process (nginx, apache2, a container's `docker-proxy`, …); an active non-Falak `caddy.service` (Falak would disable it) | warning: nginx / apache2 installed and enabled but not listening (they would take port 80 on the next boot) |
+| PHP and FrankenPHP | wanted versions absent | — | some wanted versions / extensions present (installed from their current source; the runtime keeps the v0.5.2 rules: `ppa:ondrej/php` when it builds the release, otherwise the archive) | — | warning: a non-package `php` / `frankenphp` in `/usr/local/bin` that Falak's would replace or shadow; info: other PHP versions |
+| Node | Falak's `/opt/falak/node/<version>` (always) | Falak's wanted version already there | — | — | warning: a non-Falak `/usr/local/bin/node` (Falak's symlink replaces it); info: nvm, NodeSource, Ubuntu, snap installs (left alone) |
+| SSH | Falak's drop-in `50-falak.conf` (port, root login, no passwords) | — | — | password login (`PasswordAuthentication` or `KbdInteractiveAuthentication` yes) would be disabled while no user sshd lets in has an `authorized_keys` entry: login users are root and UID ≥ 1000 with a shell; root's keys do not count when the current `PermitRootLogin` or a drop-in read before Falak's is `no` / `forced-commands-only`; `AllowUsers` / `DenyUsers` / `AllowGroups` / `DenyGroups` (user part of `user@host`, wildcards) are applied | warning: an earlier `sshd_config.d` file sets `PasswordAuthentication` / `PermitRootLogin` / `Port` and wins over Falak's (sshd keeps the first value); sshd listens on a port other than the server's SSH port (Falak moves it) |
+| Firewall | Falak's `table inet falak` (applied by the Network module after provisioning) | — | — | — | **warning** when ufw or firewalld is active (see below); info: other nftables tables |
 | Swap | no active swap and the RAM rule wants one → `/swapfile` | any active swap device or file → keep it, no `/swapfile` | — | — | info: none needed (≥ 8 GB RAM) |
-| Hostname | provider servers (named by Kiln at creation) | custom servers keep the machine's hostname | — | — | — |
-| Unattended upgrades | absent, Ubuntu's stock `20auto-upgrades` (both settings "1", nothing else) or Kiln's own config → Kiln's `20auto-upgrades` + `52kiln-unattended` | a customised config → not overwritten | — | — | warning: the existing config disables automatic upgrades |
-| fail2ban | absent → install + enable | installed → keep its jails (Kiln writes none) and enable the service | — | — | info: number of custom jail files |
+| Hostname | provider servers (named by Falak at creation) | custom servers keep the machine's hostname | — | — | — |
+| Unattended upgrades | absent, Ubuntu's stock `20auto-upgrades` (both settings "1", nothing else) or Falak's own config → Falak's `20auto-upgrades` + `52falak-unattended` | a customised config → not overwritten | — | — | warning: the existing config disables automatic upgrades |
+| fail2ban | absent → install + enable | installed → keep its jails (Falak writes none) and enable the service | — | — | info: number of custom jail files |
 
 ### Why ufw / firewalld is a warning, not a block
 
-`agent/internal/netcfg/firewall.go` owns only `table inet kiln` and never touches other tables. With ufw (iptables-nft)
+`agent/internal/netcfg/firewall.go` owns only `table inet falak` and never touches other tables. With ufw (iptables-nft)
 or firewalld active, a packet is checked by every base chain on the input hook, so a port must be allowed by both
-firewalls. Nothing Kiln does can lock the machine out because of ufw (Kiln never enables or changes it; SSH stays as
+firewalls. Nothing Falak does can lock the machine out because of ufw (Falak never enables or changes it; SSH stays as
 reachable as it was), and provisioning itself does not depend on inbound ports (the agent connects out). The
 failure mode is "a site is not reachable", which a warning with the fix (`ufw allow 80,443/tcp` or `ufw disable`)
 explains. Blocking would stop every machine that merely has ufw enabled with sensible rules.
@@ -128,7 +128,7 @@ enroll / Re-provision ──► agent has provision.v2? ──no──► provis
 
 ## Minimum versions
 
-What Kiln itself installs on the oldest supported release (Ubuntu 22.04), so that no server Kiln provisioned blocks on
+What Falak itself installs on the oldest supported release (Ubuntu 22.04), so that no server Falak provisioned blocks on
 its own engines: Docker 20.10 (jammy's docker.io; 24.0 / 26.1 in jammy-updates), PostgreSQL 14, MySQL 8.0, MariaDB 10.6,
 Redis 6.0, Valkey 7.2 (first shipped by Ubuntu 26.04 as 8.1). Tests carry the jammy, noble and resolute versions of
 every engine and docker.io.
@@ -137,7 +137,7 @@ every engine and docker.io.
 
 The inspector runs as root on machines other users share. It runs only absolute paths (system directories, or the
 Docker CLI and runtime binaries it found) and only when the file and every directory on its path, before and after
-symlinks, are root-owned and not group- or world-writable. Versions of nvm and Kiln Node installs come from their
+symlinks, are root-owned and not group- or world-writable. Versions of nvm and Falak Node installs come from their
 directory names, packaged ones from the package; a writable Docker CLI plugin is reported, not run. URL credentials
 (`https://user:token@host`) are removed from repository URLs, apt source URIs and detector errors. A package whose
 installed version no repository offers takes the origin of the repository offering the package (cloud images whose
@@ -145,15 +145,15 @@ lists differ from the installed versions); without any package lists the origin 
 
 ## Open questions (decided safely for now)
 
-1. **Explicit hostname.** Kiln has no "hostname" setting separate from the server name. Custom servers keep the
+1. **Explicit hostname.** Falak has no "hostname" setting separate from the server name. Custom servers keep the
    machine's hostname; provider servers are named as before. A future setting could opt in to renaming.
 2. **ufw / firewalld**: warning (above). If users prefer, this can become a block with an "I understand" override.
-3. **SSH port mismatch**: warning, Kiln keeps moving sshd to the server's SSH port (the Network firewall opens
+3. **SSH port mismatch**: warning, Falak keeps moving sshd to the server's SSH port (the Network firewall opens
    `network.ssh_port`). Adopting the machine's port needs a per-server port in the firewall first.
 4. **Provision after Re-check** uses the stored report (the user just looked at it) rather than inspecting again.
 5. **Percona Server** and other MySQL forks are treated as "another engine" (block) rather than adopted.
 6. **Rootless Docker next to a system daemon** only warns; rootless-only blocks.
-7. **Later converges on an active server** (PHP versions, timezone) use the stored report, which predates Kiln's own
+7. **Later converges on an active server** (PHP versions, timezone) use the stored report, which predates Falak's own
    installs; that reproduces what the first plan did. A block found by a re-check on an active server is shown, but
    does not change the server's status or stop converges (only a new database engine is refused).
 8. **The inspect result is not schema-validated before use**: Fleet only logs result/schema mismatches, and the

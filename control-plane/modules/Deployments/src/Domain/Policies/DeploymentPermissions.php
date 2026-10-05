@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Deployments\Domain\Policies;
+namespace Falak\Deployments\Domain\Policies;
 
 /**
  * Permission names (also Sanctum token abilities).

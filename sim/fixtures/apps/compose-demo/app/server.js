@@ -1,4 +1,4 @@
-// Kiln sim compose demo: a dependency-free HTTP server that keeps state in Redis (RESP over a raw socket).
+// Falak sim compose demo: a dependency-free HTTP server that keeps state in Redis (RESP over a raw socket).
 //   GET /            {app, release, greeting, hits}
 //   GET /health      ok (200) — the E2E "broken release" changes HEALTHY to false
 //   GET /set?value=x store x in Redis (key "marker")
@@ -54,9 +54,9 @@ http.createServer(async (req, res) => {
         }
         if (url.pathname === '/get') return json(res, 200, { marker: await redis('GET', 'marker') });
         const hits = await redis('INCR', 'hits');
-        return json(res, 200, { app: 'kiln-compose-demo', release: process.env.KILN_RELEASE_ID || null, greeting: process.env.APP_GREETING, hits });
+        return json(res, 200, { app: 'falak-compose-demo', release: process.env.FALAK_RELEASE_ID || null, greeting: process.env.APP_GREETING, hits });
     } catch (error) {
         console.error('request failed:', error.message);
         return json(res, 500, { error: error.message });
     }
-}).listen(Number(process.env.PORT || 8080), () => console.log('kiln-compose-demo listening on :' + (process.env.PORT || 8080)));
+}).listen(Number(process.env.PORT || 8080), () => console.log('falak-compose-demo listening on :' + (process.env.PORT || 8080)));

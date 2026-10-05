@@ -1,20 +1,20 @@
 <?php
 
-namespace Kiln\Deployments\Http\Controllers;
+namespace Falak\Deployments\Http\Controllers;
 
+use Falak\Deployments\Application\Actions\UpdateDeploySettings;
+use Falak\Deployments\Domain\Enums\Strategy;
+use Falak\Deployments\Domain\Models\SiteSettings;
+use Falak\Deployments\Domain\Policies\DeploymentPermissions;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Kernel\Http\Controller;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Sites\Contracts\SiteDeploySettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Kiln\Deployments\Application\Actions\UpdateDeploySettings;
-use Kiln\Deployments\Domain\Enums\Strategy;
-use Kiln\Deployments\Domain\Models\SiteSettings;
-use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Sites\Contracts\SiteDeploySettings;
 
 final class DeploySettingsController extends Controller
 {

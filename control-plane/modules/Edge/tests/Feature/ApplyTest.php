@@ -1,31 +1,31 @@
 <?php
 
+use Falak\Edge\Application\Jobs\ApplyEdgeConfig;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Edge\Domain\Enums\ApplyStatus;
+use Falak\Edge\Domain\Enums\InstallStatus;
+use Falak\Edge\Domain\Enums\WwwRedirect;
+use Falak\Edge\Domain\Models\Certificate;
+use Falak\Edge\Domain\Models\CertificateInstall;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\LoadBalancer;
+use Falak\Edge\Domain\Models\Redirect;
+use Falak\Edge\Domain\Models\ServerState;
+use Falak\Edge\Domain\Models\Upstream;
+use Falak\Edge\Events\CertificateIssued;
+use Falak\Edge\Events\EdgeApplied;
+use Falak\Fleet\Events\CommandFailed;
+use Falak\Fleet\Events\CommandFinished;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Events\ServerDeleted;
+use Falak\Sites\Events\SiteCreated;
+use Falak\Sites\Events\SiteDeleted;
+use Falak\Sites\Events\SiteTargetsChanged;
+use Falak\Sites\Events\SiteUpdated;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
-use Kiln\Edge\Application\Jobs\ApplyEdgeConfig;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Edge\Domain\Enums\ApplyStatus;
-use Kiln\Edge\Domain\Enums\InstallStatus;
-use Kiln\Edge\Domain\Enums\WwwRedirect;
-use Kiln\Edge\Domain\Models\Certificate;
-use Kiln\Edge\Domain\Models\CertificateInstall;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\LoadBalancer;
-use Kiln\Edge\Domain\Models\Redirect;
-use Kiln\Edge\Domain\Models\ServerState;
-use Kiln\Edge\Domain\Models\Upstream;
-use Kiln\Edge\Events\CertificateIssued;
-use Kiln\Edge\Events\EdgeApplied;
-use Kiln\Fleet\Events\CommandFailed;
-use Kiln\Fleet\Events\CommandFinished;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Events\ServerDeleted;
-use Kiln\Sites\Events\SiteCreated;
-use Kiln\Sites\Events\SiteDeleted;
-use Kiln\Sites\Events\SiteTargetsChanged;
-use Kiln\Sites\Events\SiteUpdated;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -172,7 +172,7 @@ it('records container upstreams and only re-applies on change', function () {
 it('marks certificate installs and schedules an apply', function () {
     Event::fake([CertificateIssued::class]);
     $pem = edge_self_signed(['shop.com']);
-    $certificate = Certificate::query()->create(['organization_id' => $this->org, 'site_id' => $this->site->id, 'name' => 'kiln-c1', 'domains' => ['shop.com'], 'cert_pem' => $pem['cert'], 'key_pem' => $pem['key'], 'fingerprint' => str_repeat('e', 64)]);
+    $certificate = Certificate::query()->create(['organization_id' => $this->org, 'site_id' => $this->site->id, 'name' => 'falak-c1', 'domains' => ['shop.com'], 'cert_pem' => $pem['cert'], 'key_pem' => $pem['key'], 'fingerprint' => str_repeat('e', 64)]);
     $install = CertificateInstall::query()->create(['certificate_id' => $certificate->id, 'server_id' => $this->web->id, 'command_id' => '01HCMD00000000000000000000', 'status' => InstallStatus::Pending]);
     Domain::query()->where('name', 'shop.com')->update(['tls_mode' => TlsMode::Custom->value, 'certificate_id' => $certificate->id]);
 
@@ -182,7 +182,7 @@ it('marks certificate installs and schedules an apply', function () {
     Event::assertDispatched(CertificateIssued::class, fn (CertificateIssued $e) => $e->certificateId === $certificate->id && $e->notAfter === '2027-01-01T00:00:00Z' && $e->domains === ['shop.com']);
 
     [$apply] = $this->agents->ofType('edge.caddy.apply');
-    expect($apply['payload']['sites'][0]['tls'])->toBe(['mode' => 'custom', 'cert_name' => 'kiln-c1']);
+    expect($apply['payload']['sites'][0]['tls'])->toBe(['mode' => 'custom', 'cert_name' => 'falak-c1']);
 
     // Failures from another organization are ignored; own failures are recorded.
     event(new CommandFailed('01HCMD00000000000000000000', (string) Str::ulid(), $this->web->id, 'edge.cert.install', 'k', 'failed', 'boom', 1));

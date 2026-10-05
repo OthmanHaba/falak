@@ -1,11 +1,11 @@
 <?php
 
-use Kiln\Identity\Contracts\Role;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Projects\Domain\Models\Project;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Templates\Domain\Models\CustomTemplate;
+use Falak\Identity\Contracts\Role;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Projects\Domain\Models\Project;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Templates\Domain\Models\CustomTemplate;
 use Laravel\Sanctum\Sanctum;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -16,7 +16,7 @@ beforeEach(function () {
     $this->fakes = templates_fakes();
     sites_fake_agents();
     sites_fake_source_control();
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
 
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
     $this->server = sites_server($this->organization->id, docker: true);
@@ -53,14 +53,14 @@ it('creates the compose site with exactly the §5 fields, places it and starts t
         ])
         ->and($payload['template'])->toBe(['slug' => 'hello', 'version' => '1.2.0', 'source' => 'catalog']);
 
-    // Kiln placeholders rendered once (test domain for web, the custom domain for admin); Compose interpolation kept.
+    // Falak placeholders rendered once (test domain for web, the custom domain for admin); Compose interpolation kept.
     expect($payload['compose_content'])
-        ->toContain('APP_URL: https://hello-stack.kiln.test')
+        ->toContain('APP_URL: https://hello-stack.falak.test')
         ->toContain('ADMIN_HOST: admin.example.com')
         ->toContain('SITE: hello-stack')
         ->toContain('APP_SECRET: ${APP_SECRET}')
         ->toContain('"$$NOT_A_VARIABLE"')
-        ->not->toContain('${{ kiln.');
+        ->not->toContain('${{ falak.');
 
     expect($payload['variables'])->toMatchArray([
         'APP_SECRET' => 'from-the-form-0123456789',
@@ -68,7 +68,7 @@ it('creates the compose site with exactly the §5 fields, places it and starts t
         'TIMEZONE' => 'UTC',
         'SIGNUPS' => 'false',
         'WORKERS' => '2',
-        'PUBLIC_URL' => 'https://hello-stack.kiln.test',
+        'PUBLIC_URL' => 'https://hello-stack.falak.test',
         'DATABASE_URL' => '${{ postgres.DATABASE_URL }}',
     ])->and($payload['variables']['DB_PASSWORD'])->toHaveLength(20);
 
@@ -85,7 +85,7 @@ it('creates the compose site with exactly the §5 fields, places it and starts t
     $response->assertJsonPath('data.deployment_id', $this->fakes['deployments']->deployed[0]['id'])
         ->assertJsonPath('data.service_id', $service->id)
         ->assertJsonPath('data.panel_url', "/projects/{$this->project->id}/production/service/site/{$site->id}/deployments")
-        ->assertJsonPath('data.domains', ['web' => 'hello-stack.kiln.test', 'admin' => 'admin.example.com']);
+        ->assertJsonPath('data.domains', ['web' => 'hello-stack.falak.test', 'admin' => 'admin.example.com']);
 
     $this->assertDatabaseHas('identity_audit_log', ['action' => 'templates.deployed', 'subject_id' => $site->id]);
 });
@@ -106,7 +106,7 @@ it('picks a free name and slug', function () {
     $second = $this->fakes['sites']->last();
     expect($second['name'])->toBe('Hello Stack-2')
         ->and($second['slug'])->toBe('hello-stack-2-2')
-        ->and($second['compose_content'])->toContain('https://hello-stack-2-2.kiln.test');
+        ->and($second['compose_content'])->toContain('https://hello-stack-2-2.falak.test');
 });
 
 it('validates inputs, domains and servers', function () {

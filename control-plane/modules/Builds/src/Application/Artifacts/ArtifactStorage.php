@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Builds\Application\Artifacts;
+namespace Falak\Builds\Application\Artifacts;
 
 /**
  * Where native release tarballs live. Builders upload with a presigned PUT; agents download with a

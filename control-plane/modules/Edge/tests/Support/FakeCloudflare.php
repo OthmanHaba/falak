@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Tests\Support;
+namespace Falak\Edge\Tests\Support;
 
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;

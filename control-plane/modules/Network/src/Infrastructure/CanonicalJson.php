@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Network\Infrastructure;
+namespace Falak\Network\Infrastructure;
 
 /**
  * Stable JSON (object keys sorted recursively, lists kept in order) for desired-state hashing.

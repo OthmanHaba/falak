@@ -1,11 +1,11 @@
-# FrankenPHP inside the control-plane image: plain HTTP on :8080 behind the Kiln edge (deploy/edge).
+# FrankenPHP inside the control-plane image: plain HTTP on :8080 behind the Falak edge (deploy/edge).
 # TLS, security headers and agent mTLS are the edge's job.
 #
 # The entrypoint (deploy/control-plane/entrypoint.sh) sizes the PHP thread pool per role and picks the PHP
 # mode; see docs/INSTALL.md ("Performance"):
-#   KILN_FRANKENPHP_THREADS   num_threads / max_threads lines (web: panel, agent-api: agents + builders)
-#   KILN_PHP_SERVER           worker (panel, FrankenPHP worker via Laravel Octane) | classic (one boot per request)
-#   KILN_PHP_WORKERS          worker threads kept booted (worker mode)
+#   FALAK_FRANKENPHP_THREADS   num_threads / max_threads lines (web: panel, agent-api: agents + builders)
+#   FALAK_PHP_SERVER           worker (panel, FrankenPHP worker via Laravel Octane) | classic (one boot per request)
+#   FALAK_PHP_WORKERS          worker threads kept booted (worker mode)
 # FRANKENPHP_CONFIG (custom.env) is still appended for extra directives; if it sets num_threads/max_threads
 # (the 0.2.x hotfix) the entrypoint leaves thread sizing to it.
 {
@@ -17,12 +17,12 @@
 		trusted_proxies static private_ranges
 	}
 	frankenphp {
-		{$KILN_FRANKENPHP_THREADS}
+		{$FALAK_FRANKENPHP_THREADS}
 		{$FRANKENPHP_CONFIG}
 	}
 	log {
 		format json
-		level {$KILN_HTTP_LOG_LEVEL:WARN}
+		level {$FALAK_HTTP_LOG_LEVEL:WARN}
 	}
 }
 
@@ -34,5 +34,5 @@
 	@build path /build/*
 	header @build Cache-Control "public, max-age=31536000, immutable"
 
-	import /etc/frankenphp/php-{$KILN_PHP_SERVER:classic}.caddyfile
+	import /etc/frankenphp/php-{$FALAK_PHP_SERVER:classic}.caddyfile
 }

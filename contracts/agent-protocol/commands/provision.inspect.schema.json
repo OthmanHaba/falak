@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/provision.inspect.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/provision.inspect.schema.json",
   "title": "provision.inspect — read-only machine check: the software already on the host and where it came from (feature provision.v2)",
-  "x-kiln-redeliverable": true,
+  "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [],
@@ -42,7 +42,7 @@
       "properties": {
         "path": { "type": "string" },
         "version": { "type": "string" },
-        "source": { "enum": ["kiln", "archive", "vendor", "nodesource", "nvm", "snap", "manual", "unknown"], "description": "unknown: from a package whose source apt cannot tell (no package lists yet)" },
+        "source": { "enum": ["falak", "archive", "vendor", "nodesource", "nvm", "snap", "manual", "unknown"], "description": "unknown: from a package whose source apt cannot tell (no package lists yet)" },
         "package": { "type": "string" },
         "repo": { "type": "string" }
       }
@@ -95,7 +95,7 @@
         },
         "services": {
           "type": "array",
-          "description": "systemd units that exist (Docker, databases, caches, web servers, kiln-edge, ssh, fail2ban, firewalls)",
+          "description": "systemd units that exist (Docker, databases, caches, web servers, falak-edge, ssh, fail2ban, firewalls)",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -162,7 +162,7 @@
             "daemon": {
               "type": ["object", "null"],
               "additionalProperties": false,
-              "description": "/etc/docker/daemon.json settings that matter to Kiln",
+              "description": "/etc/docker/daemon.json settings that matter to Falak",
               "properties": {
                 "bip": { "type": "string" },
                 "default_address_pools": { "type": "array" },
@@ -214,7 +214,7 @@
           "properties": {
             "ufw": { "enum": ["active", "inactive", "absent"] },
             "firewalld": { "enum": ["active", "inactive", "absent"] },
-            "nft_tables": { "type": "array", "items": { "type": "string" }, "description": "\"<family> <name>\", including Kiln's \"inet kiln\"" }
+            "nft_tables": { "type": "array", "items": { "type": "string" }, "description": "\"<family> <name>\", including Falak's \"inet falak\"" }
           }
         },
         "swap": {
@@ -235,7 +235,7 @@
           "properties": {
             "installed": { "type": "boolean" },
             "periodic": { "type": ["object", "null"], "additionalProperties": { "type": "string" }, "description": "APT::Periodic::* of 20auto-upgrades; null without the file" },
-            "managed_by_kiln": { "type": "boolean" }
+            "managed_by_falak": { "type": "boolean" }
           }
         },
         "fail2ban": {

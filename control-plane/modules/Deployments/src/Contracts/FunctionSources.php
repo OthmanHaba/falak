@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Deployments\Contracts;
+namespace Falak\Deployments\Contracts;
 
-use Kiln\Deployments\Contracts\Data\FunctionSource;
+use Falak\Deployments\Contracts\Data\FunctionSource;
 
 /**
  * The code of function sites (SiteRuntime::Function), implemented by the Functions module. A deployment of a function

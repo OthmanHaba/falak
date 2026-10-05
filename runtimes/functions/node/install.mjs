@@ -1,4 +1,4 @@
-// kiln-fn-install (Node): resolves a function's npm dependencies into /app (node_modules + package-lock.json).
+// falak-fn-install (Node): resolves a function's npm dependencies into /app (node_modules + package-lock.json).
 //
 // Without a package.json, the packages are read from the imports of the source files (shared/scan.mjs): every bare
 // specifier that is not a Node builtin becomes a dependency on its latest version. The lockfile stays in the
@@ -10,18 +10,18 @@ import { join } from "node:path";
 import { scanPackages } from "../shared/scan.mjs";
 
 const app = process.cwd();
-const entry = process.env.KILN_ENTRYPOINT ?? "index.ts";
+const entry = process.env.FALAK_ENTRYPOINT ?? "index.ts";
 
 if (!existsSync(join(app, entry))) {
-  console.error(`kiln: entrypoint ${entry} not found`);
+  console.error(`falak: entrypoint ${entry} not found`);
   process.exit(1);
 }
 
 if (!existsSync(join(app, "package.json"))) {
   const deps = scanPackages(app);
   const dependencies = Object.fromEntries(deps.map((d) => [d, "latest"]));
-  writeFileSync(join(app, "package.json"), JSON.stringify({ name: "kiln-function", private: true, type: "module", dependencies }, null, 2) + "\n");
-  console.log(deps.length ? `kiln: dependencies ${deps.join(", ")}` : "kiln: no dependencies");
+  writeFileSync(join(app, "package.json"), JSON.stringify({ name: "falak-function", private: true, type: "module", dependencies }, null, 2) + "\n");
+  console.log(deps.length ? `falak: dependencies ${deps.join(", ")}` : "falak: no dependencies");
 }
 
 const ci = existsSync(join(app, "package-lock.json"));
@@ -30,5 +30,5 @@ const proc = spawnSync("npm", [ci ? "ci" : "install", "--no-audit", "--no-fund",
   stdio: "inherit",
   env: { ...process.env, npm_config_cache: process.env.npm_config_cache ?? "/cache/npm", npm_config_update_notifier: "false" },
 });
-if (proc.status === 0) console.log(ci ? "kiln: installed the locked versions" : "kiln: dependencies installed");
+if (proc.status === 0) console.log(ci ? "falak: installed the locked versions" : "falak: dependencies installed");
 process.exit(proc.status ?? 1);

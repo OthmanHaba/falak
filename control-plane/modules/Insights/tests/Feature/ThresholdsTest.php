@@ -1,15 +1,15 @@
 <?php
 
+use Falak\Identity\Contracts\Role;
+use Falak\Insights\Application\Actions\EvaluateThresholds;
+use Falak\Insights\Contracts\IssueKind;
+use Falak\Insights\Contracts\IssueStatus;
+use Falak\Insights\Domain\Models\Issue;
+use Falak\Insights\Domain\Models\Threshold;
+use Falak\Insights\Events\IssueOpened;
+use Falak\Insights\Events\IssueRegressed;
+use Falak\Insights\Events\ThresholdBreached;
 use Illuminate\Support\Facades\Event;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Insights\Application\Actions\EvaluateThresholds;
-use Kiln\Insights\Contracts\IssueKind;
-use Kiln\Insights\Contracts\IssueStatus;
-use Kiln\Insights\Domain\Models\Issue;
-use Kiln\Insights\Domain\Models\Threshold;
-use Kiln\Insights\Events\IssueOpened;
-use Kiln\Insights\Events\IssueRegressed;
-use Kiln\Insights\Events\ThresholdBreached;
 
 require_once __DIR__.'/../Support/helpers.php';
 

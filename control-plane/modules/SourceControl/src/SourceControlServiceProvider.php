@@ -1,21 +1,21 @@
 <?php
 
-namespace Kiln\SourceControl;
+namespace Falak\SourceControl;
 
+use Falak\Identity\Contracts\PermissionRegistry;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Events\OrganizationDeleted;
+use Falak\Kernel\Support\ModuleServiceProvider;
+use Falak\SourceControl\Application\Listeners\DeleteOrganizationConnections;
+use Falak\SourceControl\Contracts\SourceControlGateway;
+use Falak\SourceControl\Domain\Models\Connection;
+use Falak\SourceControl\Domain\Policies\ConnectionPolicy;
+use Falak\SourceControl\Infrastructure\EloquentSourceControlGateway;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
-use Kiln\Identity\Contracts\PermissionRegistry;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Events\OrganizationDeleted;
-use Kiln\Kernel\Support\ModuleServiceProvider;
-use Kiln\SourceControl\Application\Listeners\DeleteOrganizationConnections;
-use Kiln\SourceControl\Contracts\SourceControlGateway;
-use Kiln\SourceControl\Domain\Models\Connection;
-use Kiln\SourceControl\Domain\Policies\ConnectionPolicy;
-use Kiln\SourceControl\Infrastructure\EloquentSourceControlGateway;
 
 class SourceControlServiceProvider extends ModuleServiceProvider
 {

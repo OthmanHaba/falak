@@ -2,8 +2,8 @@
 
 namespace App\Providers;
 
+use Falak\Kernel\Support\SharedProps;
 use Illuminate\Support\ServiceProvider;
-use Kiln\Kernel\Support\SharedProps;
 
 class AppServiceProvider extends ServiceProvider
 {

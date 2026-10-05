@@ -8,7 +8,7 @@ services:
         condition: service_healthy
     environment:
       PAPERLESS_REDIS: redis://redis:6379
-      PAPERLESS_URL: ${{ kiln.url(paperless) }}
+      PAPERLESS_URL: ${{ falak.url(paperless) }}
       PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY}
       PAPERLESS_ADMIN_USER: ${PAPERLESS_ADMIN_USER}
       PAPERLESS_ADMIN_PASSWORD: ${PAPERLESS_ADMIN_PASSWORD}

@@ -23,10 +23,10 @@ use Laravel\Octane\Octane;
 
 /*
 |--------------------------------------------------------------------------
-| Octane (FrankenPHP worker mode for the Kiln panel)
+| Octane (FrankenPHP worker mode for the Falak panel)
 |--------------------------------------------------------------------------
 |
-| The production image serves the panel from a FrankenPHP worker (deploy/control-plane: KILN_WORKER_MODE=1,
+| The production image serves the panel from a FrankenPHP worker (deploy/control-plane: FALAK_WORKER_MODE=1,
 | public/frankenphp-worker.php): the application boots once per PHP thread and every request runs in a clone
 | of it. Request state must therefore live in `scoped` bindings or be reset by the listeners below; see
 | docs/INSTALL.md ("Performance") and tests/Unit/WorkerModeTest.php for what is covered.

@@ -1,19 +1,19 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Actions;
+namespace Falak\Telemetry\Application\Actions;
 
+use Falak\Identity\Contracts\OrganizationDirectory;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Falak\Telemetry\Domain\Models\GrafanaState;
+use Falak\Telemetry\Infrastructure\Grafana\DatasourceDefinitions;
+use Falak\Telemetry\Infrastructure\Grafana\GrafanaClient;
+use Falak\Telemetry\Infrastructure\Grafana\GrafanaNames;
 use JsonException;
-use Kiln\Identity\Contracts\OrganizationDirectory;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
-use Kiln\Telemetry\Domain\Models\GrafanaState;
-use Kiln\Telemetry\Infrastructure\Grafana\DatasourceDefinitions;
-use Kiln\Telemetry\Infrastructure\Grafana\GrafanaClient;
-use Kiln\Telemetry\Infrastructure\Grafana\GrafanaNames;
 use RuntimeException;
 use Throwable;
 
 /**
- * Provision Grafana for an organization: shared Kiln datasources, the organization's folder and
+ * Provision Grafana for an organization: shared Falak datasources, the organization's folder and
  * every dashboard from observability/grafana/dashboards imported into it (per-organization uids).
  */
 final class ProvisionGrafana

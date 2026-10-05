@@ -1,5 +1,5 @@
-import { AppShell } from '@/components/kiln/app-shell';
-import { PageHeader } from '@/components/kiln/section';
+import { AppShell } from '@/components/falak/app-shell';
+import { PageHeader } from '@/components/falak/section';
 import { settingsNavFor, shellContext, type SettingsNavItem } from '@/lib/registry';
 import { cn } from '@/lib/utils';
 import { type SharedData } from '@/types';

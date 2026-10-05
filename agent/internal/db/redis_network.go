@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/facts"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/facts"
 )
 
 // Network access of Redis / Valkey instances (feature db.redis.network).
@@ -117,7 +117,7 @@ func (db *DB) resolveBind(requested []string, containers bool) (redisBind, error
 	return out, nil
 }
 
-// isWireGuard tells a WireGuard interface by its kernel device type, else (no sysfs) by Kiln's wg- name prefix.
+// isWireGuard tells a WireGuard interface by its kernel device type, else (no sysfs) by Falak's wg- name prefix.
 func (db *DB) isWireGuard(iface string) bool {
 	if b, err := db.d.FS.ReadFile("/sys/class/net/" + iface + "/uevent"); err == nil {
 		return strings.Contains(string(b), "DEVTYPE=wireguard")

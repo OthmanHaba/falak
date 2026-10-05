@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 func newSys(t *testing.T, f *runnertest.Fake) (*System, string, commands.Stream, *commands.Collector) {
@@ -164,7 +164,7 @@ func TestUserCreate(t *testing.T) {
 	if !f.Ran("useradd --create-home --user-group --shell /bin/bash --groups www-data shop") || !f.Ran("visudo -cf") {
 		t.Fatal(f.Lines())
 	}
-	b, _ := os.ReadFile(filepath.Join(root, "etc/sudoers.d/kiln-shop"))
+	b, _ := os.ReadFile(filepath.Join(root, "etc/sudoers.d/falak-shop"))
 	if !strings.Contains(string(b), "shop ALL=(ALL:ALL) NOPASSWD:ALL") {
 		t.Fatal(string(b))
 	}
@@ -179,7 +179,7 @@ func TestUserCreate(t *testing.T) {
 	// sudo none removes the file
 	p.Sudo = "none"
 	r, _ = EnsureUser(context.Background(), f, s.d.FS, p, st)
-	if !r.Changed || s.d.FS.Exists("/etc/sudoers.d/kiln-shop") {
+	if !r.Changed || s.d.FS.Exists("/etc/sudoers.d/falak-shop") {
 		t.Fatal("sudoers not removed")
 	}
 }
@@ -194,7 +194,7 @@ func TestSSHKeySync(t *testing.T) {
 	}
 	file := filepath.Join(root, "home/deploy/.ssh/authorized_keys")
 	b, _ := os.ReadFile(file)
-	if !strings.Contains(string(b), "ssh-ed25519 AAAAC3Nza kiln:k1\n") {
+	if !strings.Contains(string(b), "ssh-ed25519 AAAAC3Nza falak:k1\n") {
 		t.Fatal(string(b))
 	}
 	if fi, _ := os.Stat(file); fi.Mode().Perm() != 0o600 {
@@ -210,7 +210,7 @@ func TestSSHKeySync(t *testing.T) {
 	s.SSHKeySync(context.Background(), SSHKeyPayload{User: "deploy", Keys: keys, Exclusive: &no}, st)
 	s.SSHKeySync(context.Background(), SSHKeyPayload{User: "deploy", Keys: append(keys, SSHKey{ID: "k2", PublicKey: "ssh-ed25519 BBBB"}), Exclusive: &no}, st)
 	b, _ = os.ReadFile(file)
-	if !strings.HasPrefix(string(b), "ssh-rsa FOREIGN me\n# BEGIN kiln-managed\n") || strings.Count(string(b), blockBegin) != 1 || !strings.Contains(string(b), "kiln:k2") {
+	if !strings.HasPrefix(string(b), "ssh-rsa FOREIGN me\n# BEGIN falak-managed\n") || strings.Count(string(b), blockBegin) != 1 || !strings.Contains(string(b), "falak:k2") {
 		t.Fatal(string(b))
 	}
 }
@@ -226,7 +226,7 @@ func TestUpgradeAgent(t *testing.T) {
 	newBin := []byte("#!new-binary")
 	srv, sum := upgradeServer(t, newBin)
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "kiln-agent")
+	bin := filepath.Join(dir, "falak-agent")
 	os.WriteFile(bin, []byte("old"), 0o755)
 	restarted := make(chan struct{}, 2)
 	run := (&runnertest.Fake{}).On(bin+".new version", runner.Result{Stdout: []byte("v1.1.0\n")})
@@ -286,7 +286,7 @@ func TestUpgradeAgent(t *testing.T) {
 func TestUpgradeAgentKeepsWorkingBinaryWhenTheNewOneDoesNotRun(t *testing.T) {
 	srv, sum := upgradeServer(t, []byte("wrong-arch"))
 	dir := t.TempDir()
-	bin := filepath.Join(dir, "kiln-agent")
+	bin := filepath.Join(dir, "falak-agent")
 	os.WriteFile(bin, []byte("old"), 0o755)
 	run := (&runnertest.Fake{}).On(bin+".new version", runner.Result{ExitCode: 126, Stderr: []byte("exec format error")})
 	restarted := false
@@ -310,10 +310,10 @@ func TestUpgradeAgentKeepsWorkingBinaryWhenTheNewOneDoesNotRun(t *testing.T) {
 func TestUpgradeAgentReplacesASymlinkedBinary(t *testing.T) {
 	srv, sum := upgradeServer(t, []byte("new"))
 	dir := t.TempDir()
-	target := filepath.Join(dir, "ro", "kiln-agent-linux-amd64")
+	target := filepath.Join(dir, "ro", "falak-agent-linux-amd64")
 	os.MkdirAll(filepath.Dir(target), 0o755)
 	os.WriteFile(target, []byte("old"), 0o755)
-	bin := filepath.Join(dir, "kiln-agent")
+	bin := filepath.Join(dir, "falak-agent")
 	os.Symlink(target, bin)
 	s := New(Deps{Runner: &runnertest.Fake{}, HTTP: srv.Client(), BinaryPath: bin, AgentVersion: "dev"})
 	if _, err := s.UpgradeAgent(context.Background(), UpgradePayload{Version: "v1.1.0", URL: srv.URL, SHA256: sum, Restart: new(bool)}, commands.NewTestStream("c", &commands.Collector{})); err != nil {

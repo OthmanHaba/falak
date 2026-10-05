@@ -20,7 +20,7 @@ function isEmpty(response: unknown): boolean {
   return false;
 }
 
-/** ioredis responseHook: turn key/value commands into kiln cache ops (hit / miss / write / forget). */
+/** ioredis responseHook: turn key/value commands into falak cache ops (hit / miss / write / forget). */
 export function redisCacheHook(span: Span, cmdName: string, cmdArgs: unknown[], response: unknown): void {
   const cmd = cmdName.toLowerCase();
   let op: string | undefined;
@@ -31,10 +31,10 @@ export function redisCacheHook(span: Span, cmdName: string, cmdArgs: unknown[], 
 
   if (!op) return;
 
-  span.setAttribute('kiln.event.type', 'cache');
-  span.setAttribute('kiln.cache.op', op);
-  span.setAttribute('kiln.cache.key', String(cmdArgs[0] ?? ''));
-  span.setAttribute('kiln.cache.store', 'redis');
+  span.setAttribute('falak.event.type', 'cache');
+  span.setAttribute('falak.cache.op', op);
+  span.setAttribute('falak.cache.key', String(cmdArgs[0] ?? ''));
+  span.setAttribute('falak.cache.store', 'redis');
 }
 
 /** Auto-instrumentations. Each only activates when its target module is loaded. */

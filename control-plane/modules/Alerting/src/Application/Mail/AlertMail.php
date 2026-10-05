@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Alerting\Application\Mail;
+namespace Falak\Alerting\Application\Mail;
 
+use Falak\Alerting\Application\AlertMessage;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
-use Kiln\Alerting\Application\AlertMessage;
 
 final class AlertMail extends Mailable
 {

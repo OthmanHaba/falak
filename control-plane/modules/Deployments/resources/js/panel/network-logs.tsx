@@ -1,4 +1,4 @@
-import { Button, EmptyState, LogViewer, Select, type LogLine } from '@/components/kiln';
+import { Button, EmptyState, LogViewer, Select, type LogLine } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { type ServicePanelContext } from '@/lib/registry';
 import { Globe, RefreshCw, ScrollText } from 'lucide-react';

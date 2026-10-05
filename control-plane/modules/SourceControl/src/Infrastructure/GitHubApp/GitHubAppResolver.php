@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\GitHubApp;
+namespace Falak\SourceControl\Infrastructure\GitHubApp;
 
-use Kiln\SourceControl\Domain\Models\Connection;
-use Kiln\SourceControl\Domain\Models\GitHubApp;
+use Falak\SourceControl\Domain\Models\Connection;
+use Falak\SourceControl\Domain\Models\GitHubApp;
 
 /**
  * Which GitHub App to use. Precedence: the operator's `GITHUB_APP_*` env app (instance-wide) overrides the

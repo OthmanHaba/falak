@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Databases\Contracts\Data;
+namespace Falak\Databases\Contracts\Data;
 
 /**
  * Who connects to a database through a reference: the host it gets depends on where it runs.

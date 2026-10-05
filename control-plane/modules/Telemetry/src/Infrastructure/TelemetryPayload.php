@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure;
+namespace Falak\Telemetry\Infrastructure;
 
-use Kiln\Telemetry\Contracts\Data\SiteTelemetryTarget;
-use Kiln\Telemetry\Domain\Models\TelemetrySettings;
+use Falak\Telemetry\Contracts\Data\SiteTelemetryTarget;
+use Falak\Telemetry\Domain\Models\TelemetrySettings;
 
 /**
  * Builds the telemetry.configure payload. Ids are sent as canonical upper-case ULIDs, so every
- * signal carries upper-case kiln.* resource attributes (queries normalize the same way).
+ * signal carries upper-case falak.* resource attributes (queries normalize the same way).
  * (contracts/agent-protocol/commands/telemetry.configure.schema.json).
  */
 final class TelemetryPayload

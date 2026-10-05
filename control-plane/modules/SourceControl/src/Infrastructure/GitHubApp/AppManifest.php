@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\GitHubApp;
+namespace Falak\SourceControl\Infrastructure\GitHubApp;
 
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
 
 /**
- * GitHub App Manifest flow (docs.github.com → "Registering a GitHub App from a manifest"): Kiln POSTs a manifest
+ * GitHub App Manifest flow (docs.github.com → "Registering a GitHub App from a manifest"): Falak POSTs a manifest
  * to github.com/settings/apps/new (or an organization's), the user confirms, GitHub redirects back with a
  * one-hour code that {@see convert()} exchanges for the app's id, private key and webhook secret.
  *
- * Least privilege: contents + metadata read (clone, list repositories and branches, read commits). Kiln does
+ * Least privilege: contents + metadata read (clone, list repositories and branches, read commits). Falak does
  * not report commit statuses or build pull-request previews, so it asks for nothing else. The `installation`
  * and `installation_repositories` events are delivered to every app without subscribing.
  */
@@ -37,9 +37,9 @@ class AppManifest
         $appUrl = rtrim((string) config('app.url'), '/');
 
         return [
-            'name' => self::name((string) (parse_url($appUrl, PHP_URL_HOST) ?: 'Kiln'), $suffix ?? Str::lower(Str::random(4))),
+            'name' => self::name((string) (parse_url($appUrl, PHP_URL_HOST) ?: 'Falak'), $suffix ?? Str::lower(Str::random(4))),
             'url' => $appUrl,
-            'description' => "Deploys your repositories with Kiln ({$appUrl}).",
+            'description' => "Deploys your repositories with Falak ({$appUrl}).",
             'hook_attributes' => ['url' => self::webhookUrl($appKey), 'active' => true],
             'redirect_url' => route('source-control.github-app.manifest.callback'),
             'setup_url' => route('source-control.github-app.setup'),
@@ -96,7 +96,7 @@ class AppManifest
         return [
             'id' => (string) $body['id'],
             'slug' => (string) ($body['slug'] ?? ''),
-            'name' => (string) ($body['name'] ?? $body['slug'] ?? 'Kiln'),
+            'name' => (string) ($body['name'] ?? $body['slug'] ?? 'Falak'),
             'owner_login' => isset($body['owner']['login']) ? (string) $body['owner']['login'] : null,
             'owner_type' => isset($body['owner']['type']) ? (string) $body['owner']['type'] : null,
             'html_url' => isset($body['html_url']) ? (string) $body['html_url'] : null,
@@ -110,8 +110,8 @@ class AppManifest
     private static function name(string $host, string $suffix): string
     {
         $tail = ") {$suffix}";
-        $host = mb_substr($host, 0, self::NAME_LIMIT - mb_strlen('Kiln (') - mb_strlen($tail));
+        $host = mb_substr($host, 0, self::NAME_LIMIT - mb_strlen('Falak (') - mb_strlen($tail));
 
-        return "Kiln ({$host}{$tail}";
+        return "Falak ({$host}{$tail}";
     }
 }

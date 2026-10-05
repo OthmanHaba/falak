@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts;
+namespace Falak\Telemetry\Contracts;
 
 use DateTimeInterface;
-use Kiln\Telemetry\Contracts\Data\AccessLogEntry;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Falak\Telemetry\Contracts\Data\AccessLogEntry;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 
 /**
  * A site's edge HTTP access log ("Network Logs"): one entry per request the edge served for the site — on its
- * servers, or on the load balancer in front of them — shipped by the agents to Loki as `kiln_log_kind="access"`
+ * servers, or on the load balancer in front of them — shipped by the agents to Loki as `falak_log_kind="access"`
  * records of the site (`service_name` = slug).
  */
 interface AccessLogs

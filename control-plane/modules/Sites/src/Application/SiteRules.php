@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Sites\Application;
+namespace Falak\Sites\Application;
 
+use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Sites\Contracts\BuildMode;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
+use Falak\SourceControl\Contracts\SourceControlGateway;
 use Illuminate\Validation\ValidationException;
-use Kiln\Fleet\Contracts\AgentDirectory;
-use Kiln\Servers\Contracts\Data\ServerData;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Sites\Contracts\BuildMode;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
-use Kiln\SourceControl\Contracts\SourceControlGateway;
 
 /**
  * Cross-module validation shared by the create / update actions.
@@ -79,7 +79,7 @@ final class SiteRules
             $runtime === SiteRuntime::FrankenPhp && $server->phpRuntime !== 'frankenphp' => "{$server->name} does not run FrankenPHP; use the PHP-FPM runtime.",
             $runtime->isPhp() && $phpVersion !== null && ! in_array($phpVersion, $server->phpVersions, true) => "PHP {$phpVersion} is not installed on {$server->name}.",
             $runtime->usesDocker() && ! $server->docker => "Docker is not installed on {$server->name}.",
-            $runtime->isFunction() && ! ($this->agents->forServer($server->id)?->supports('fn.v1') ?? false) => "The Kiln agent on {$server->name} is too old for functions; update it first.",
+            $runtime->isFunction() && ! ($this->agents->forServer($server->id)?->supports('fn.v1') ?? false) => "The Falak agent on {$server->name} is too old for functions; update it first.",
             default => null,
         };
 

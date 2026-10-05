@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Edge\Infrastructure;
+namespace Falak\Edge\Infrastructure;
 
+use Falak\Edge\Application\Actions\AddDomain;
+use Falak\Edge\Application\ComposeServiceDomains;
+use Falak\Edge\Application\DnsTargets;
+use Falak\Edge\Application\GeneratedDomains;
+use Falak\Edge\Domain\Enums\WwwRedirect;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Sites\Contracts\Data\DomainChoice;
+use Falak\Sites\Contracts\DomainType;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteDomains;
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Application\Actions\AddDomain;
-use Kiln\Edge\Application\ComposeServiceDomains;
-use Kiln\Edge\Application\DnsTargets;
-use Kiln\Edge\Application\GeneratedDomains;
-use Kiln\Edge\Domain\Enums\WwwRedirect;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Sites\Contracts\Data\DomainChoice;
-use Kiln\Sites\Contracts\DomainType;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteDomains;
 
 final class EloquentSiteDomains implements SiteDomains
 {
@@ -57,7 +57,7 @@ final class EloquentSiteDomains implements SiteDomains
         return match ($type) {
             DomainType::Test => self::testDomainBase() !== null
                 ? null
-                : throw ValidationException::withMessages([$field => 'No test domain is configured (KILN_TEST_DOMAIN). Generate a domain or enter your own.']),
+                : throw ValidationException::withMessages([$field => 'No test domain is configured (FALAK_TEST_DOMAIN). Generate a domain or enter your own.']),
             DomainType::Generated => $this->generate($organizationId, $label, $serverIds, $field, $siteId),
             DomainType::Custom => $this->custom((string) $choice?->name, $field),
         };

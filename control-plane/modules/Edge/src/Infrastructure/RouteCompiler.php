@@ -1,32 +1,32 @@
 <?php
 
-namespace Kiln\Edge\Infrastructure;
+namespace Falak\Edge\Infrastructure;
 
+use Falak\Edge\Application\ComposeServiceDomains;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Edge\Domain\Enums\InstallStatus;
+use Falak\Edge\Domain\Models\Certificate;
+use Falak\Edge\Domain\Models\CertificateInstall;
+use Falak\Edge\Domain\Models\CloudflareTunnel;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\Header;
+use Falak\Edge\Domain\Models\LoadBalancer;
+use Falak\Edge\Domain\Models\Mount;
+use Falak\Edge\Domain\Models\Redirect;
+use Falak\Edge\Domain\Models\SecurityRule;
+use Falak\Edge\Domain\Models\ServiceSetting;
+use Falak\Edge\Domain\Models\SiteSetting;
+use Falak\Edge\Domain\Models\Upstream;
+use Falak\Edge\Infrastructure\Dns\CloudflareRanges;
+use Falak\Fleet\Contracts\AgentUpgrades;
+use Falak\Processes\Contracts\OctaneRouting;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetStatus;
 use Illuminate\Support\Collection;
-use Kiln\Edge\Application\ComposeServiceDomains;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Edge\Domain\Enums\InstallStatus;
-use Kiln\Edge\Domain\Models\Certificate;
-use Kiln\Edge\Domain\Models\CertificateInstall;
-use Kiln\Edge\Domain\Models\CloudflareTunnel;
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\Header;
-use Kiln\Edge\Domain\Models\LoadBalancer;
-use Kiln\Edge\Domain\Models\Mount;
-use Kiln\Edge\Domain\Models\Redirect;
-use Kiln\Edge\Domain\Models\SecurityRule;
-use Kiln\Edge\Domain\Models\ServiceSetting;
-use Kiln\Edge\Domain\Models\SiteSetting;
-use Kiln\Edge\Domain\Models\Upstream;
-use Kiln\Edge\Infrastructure\Dns\CloudflareRanges;
-use Kiln\Fleet\Contracts\AgentUpgrades;
-use Kiln\Processes\Contracts\OctaneRouting;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetStatus;
 
 /**
  * Compiles the full edge.caddy.apply payload for one server from every site routed through it:
@@ -252,7 +252,7 @@ final class RouteCompiler
                 continue;
             }
 
-            $headers = ['X-Kiln-Function' => $function->slug, 'X-Kiln-Client-IP' => '{http.vars.client_ip}'];
+            $headers = ['X-Falak-Function' => $function->slug, 'X-Falak-Client-IP' => '{http.vars.client_ip}'];
 
             if ($function->target($serverId)?->status === TargetStatus::Ready) {
                 $out[] = ['path_prefix' => $mount->path_prefix, 'strip_prefix' => $mount->strip_prefix, 'dial' => (string) config('edge.function_gateway', '127.0.0.1:7070'), 'request_headers' => $headers];
@@ -380,7 +380,7 @@ final class RouteCompiler
                 'kind' => 'reverse_proxy',
                 'upstreams' => [['dial' => (string) config('edge.function_gateway', '127.0.0.1:7070')]],
                 // The client IP Caddy resolved (Cloudflare's trusted proxies included), for the gateway's IP allowlist.
-                'request_headers' => ['X-Kiln-Function' => $site->slug, 'X-Kiln-Client-IP' => '{http.vars.client_ip}'],
+                'request_headers' => ['X-Falak-Function' => $site->slug, 'X-Falak-Client-IP' => '{http.vars.client_ip}'],
             ],
         };
     }

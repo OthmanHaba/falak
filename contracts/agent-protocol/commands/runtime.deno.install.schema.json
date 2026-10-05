@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/runtime.deno.install.schema.json",
-  "title": "runtime.deno.install \u2014 install the official Deno binary into /opt/kiln/deno/<version>",
+  "$id": "https://falak.sh/agent-protocol/commands/runtime.deno.install.schema.json",
+  "title": "runtime.deno.install \u2014 install the official Deno binary into /opt/falak/deno/<version>",
   "type": "object",
   "additionalProperties": false,
   "required": [

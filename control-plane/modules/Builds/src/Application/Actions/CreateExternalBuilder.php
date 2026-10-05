@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Builds\Application\Actions;
+namespace Falak\Builds\Application\Actions;
 
-use Kiln\Builds\Domain\Models\Builder;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Builds\Domain\Models\Builder;
+use Falak\Identity\Contracts\AuditLog;
 
 /**
- * A builder the organization runs itself (`kiln-builder serve --url … --token …`). Returns the plain
+ * A builder the organization runs itself (`falak-builder serve --url … --token …`). Returns the plain
  * token, which is shown once.
  */
 final class CreateExternalBuilder

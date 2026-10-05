@@ -8,7 +8,7 @@ function exceptionEvent(span: { events: { name: string; attributes?: Record<stri
 }
 
 describe('exceptions', () => {
-  test('handled exceptions: event with kiln.exception.handled=true, status untouched', () => {
+  test('handled exceptions: event with falak.exception.handled=true, status untouched', () => {
     const p = localProvider();
     const span = p.span('GET', SpanKind.SERVER, { 'http.request.method': 'GET' }, (s) => {
       expect(recordException(new TypeError('soft'), { span: s })).toBe(true);
@@ -17,7 +17,7 @@ describe('exceptions', () => {
     expect(exceptionEvent(span)).toMatchObject({
       'exception.type': 'TypeError',
       'exception.message': 'soft',
-      'kiln.exception.handled': true,
+      'falak.exception.handled': true,
     });
     expect(String(exceptionEvent(span)['exception.stacktrace'])).toContain('TypeError: soft');
     expect(span.status.code).toBe(SpanStatusCode.UNSET);
@@ -29,7 +29,7 @@ describe('exceptions', () => {
       recordException(new Error('boom'), { span: s, handled: false });
     });
 
-    expect(exceptionEvent(span)['kiln.exception.handled']).toBe(false);
+    expect(exceptionEvent(span)['falak.exception.handled']).toBe(false);
     expect(span.status).toEqual({ code: SpanStatusCode.ERROR, message: 'boom' });
   });
 
@@ -41,8 +41,8 @@ describe('exceptions', () => {
     });
     const caught = p.span('work', SpanKind.INTERNAL, {}, (s) => s.recordException(new Error('caught')));
 
-    expect(exceptionEvent(escaped)['kiln.exception.handled']).toBe(false);
-    expect(exceptionEvent(caught)['kiln.exception.handled']).toBe(true);
+    expect(exceptionEvent(escaped)['falak.exception.handled']).toBe(false);
+    expect(exceptionEvent(caught)['falak.exception.handled']).toBe(true);
     expect(caught.status.code).toBe(SpanStatusCode.UNSET);
   });
 

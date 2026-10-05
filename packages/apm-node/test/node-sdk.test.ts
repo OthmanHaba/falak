@@ -13,7 +13,7 @@ beforeAll(() => {
   }
 });
 
-describe('Node.js: import "@kiln/apm-node/register" (NodeSDK + auto-instrumentation)', () => {
+describe('Node.js: import "@falak/apm-node/register" (NodeSDK + auto-instrumentation)', () => {
   test('http server + undici fetch spans are mapped, linked and exported to the agent', async () => {
     const agent = await fakeOtlpServer();
 
@@ -22,11 +22,11 @@ describe('Node.js: import "@kiln/apm-node/register" (NodeSDK + auto-instrumentat
         cwd: root,
         env: {
           ...process.env,
-          KILN_OTLP_ENDPOINT: agent.url,
-          KILN_SERVICE_NAME: 'node-app',
-          KILN_SITE_ID: '01JNODE',
-          KILN_APM_METRICS: 'false',
-          KILN_DIST_INDEX: join(dist, 'index.js'),
+          FALAK_OTLP_ENDPOINT: agent.url,
+          FALAK_SERVICE_NAME: 'node-app',
+          FALAK_SITE_ID: '01JNODE',
+          FALAK_APM_METRICS: 'false',
+          FALAK_DIST_INDEX: join(dist, 'index.js'),
         },
         stdout: 'pipe',
         stderr: 'pipe',
@@ -36,13 +36,13 @@ describe('Node.js: import "@kiln/apm-node/register" (NodeSDK + auto-instrumentat
       expect({ code, err }).toEqual({ code: 0, err: '' });
 
       const spans = otlpSpans(agent.received);
-      const byType = (t: string) => spans.filter((s) => s.attrs['kiln.event.type'] === t);
+      const byType = (t: string) => spans.filter((s) => s.attrs['falak.event.type'] === t);
 
       const hello = byType('request').find((s) => s.attrs['url.path'] === '/hello')!;
       expect(hello).toBeDefined();
       expect(hello.kind).toBe(2);
       expect(hello.attrs).toMatchObject({ 'http.request.method': 'GET', 'http.response.status_code': 200 });
-      expect(hello.resource).toMatchObject({ 'service.name': 'node-app', 'kiln.site.id': '01JNODE' });
+      expect(hello.resource).toMatchObject({ 'service.name': 'node-app', 'falak.site.id': '01JNODE' });
 
       const outgoing = byType('outgoing_request').find((s) => String(s.attrs['url.full']).includes('/downstream'))!;
       expect(outgoing).toBeDefined();
@@ -58,7 +58,7 @@ describe('Node.js: import "@kiln/apm-node/register" (NodeSDK + auto-instrumentat
       const boom = byType('request').find((s) => s.attrs['url.path'] === '/boom')!;
       expect(boom.status.code).toBe(2);
       const event = boom.events.find((e: { name: string }) => e.name === 'exception');
-      expect(event.attributes.find((a: { key: string }) => a.key === 'kiln.exception.handled').value.boolValue).toBe(true);
+      expect(event.attributes.find((a: { key: string }) => a.key === 'falak.exception.handled').value.boolValue).toBe(true);
 
       // the exporter's own requests to the agent are not traced
       expect(spans.some((s) => String(s.attrs['url.full'] ?? '').startsWith(agent.url))).toBe(false);

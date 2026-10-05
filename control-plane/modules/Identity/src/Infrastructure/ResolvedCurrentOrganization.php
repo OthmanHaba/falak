@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Identity\Infrastructure;
+namespace Falak\Identity\Infrastructure;
 
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\Data\OrganizationData;
+use Falak\Identity\Contracts\Exceptions\NoCurrentOrganization;
+use Falak\Identity\Domain\Models\Organization;
+use Falak\Identity\Domain\Models\PersonalAccessToken;
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Http\Request;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\Data\OrganizationData;
-use Kiln\Identity\Contracts\Exceptions\NoCurrentOrganization;
-use Kiln\Identity\Domain\Models\Organization;
-use Kiln\Identity\Domain\Models\PersonalAccessToken;
-use Kiln\Identity\Domain\Models\User;
 
 /**
  * Lazily resolves the current organization (request-scoped binding).

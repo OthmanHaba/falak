@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure\Grafana;
+namespace Falak\Telemetry\Infrastructure\Grafana;
 
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Falak\Telemetry\Infrastructure\HttpClient;
 use Illuminate\Http\Client\PendingRequest;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
-use Kiln\Telemetry\Infrastructure\HttpClient;
 
 /**
  * Grafana HTTP API with a service-account token.
@@ -90,7 +90,7 @@ final class GrafanaClient
      * @param  array<string, mixed>  $dashboard
      * @return array<string, mixed> {id, uid, url, status, version}
      */
-    public function importDashboard(array $dashboard, string $folderUid, string $message = 'Provisioned by Kiln'): array
+    public function importDashboard(array $dashboard, string $folderUid, string $message = 'Provisioned by Falak'): array
     {
         $dashboard['id'] = null;
 

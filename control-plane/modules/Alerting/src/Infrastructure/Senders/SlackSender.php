@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Alerting\Infrastructure\Senders;
+namespace Falak\Alerting\Infrastructure\Senders;
 
-use Kiln\Alerting\Application\AlertMessage;
-use Kiln\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Application\AlertMessage;
+use Falak\Alerting\Domain\Enums\ChannelType;
 
 /** Slack incoming webhook. Config: {webhook_url}. */
 final class SlackSender extends HttpSender

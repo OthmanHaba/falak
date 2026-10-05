@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Edge\Http\Controllers;
+namespace Falak\Edge\Http\Controllers;
 
+use Falak\Edge\Application\CloudflareRateLimits;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Application\CloudflareRateLimits;
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
-use Kiln\Kernel\Http\Controller;
 
 /**
  * A domain's Cloudflare rate limit (panel Settings → Networking and API v1). {domain} is the domain's id or name.

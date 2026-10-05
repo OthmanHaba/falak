@@ -1,11 +1,11 @@
 // bun run examples/bun-server.ts
-import { recordException, start, withKilnRequest } from '@kiln/apm-node';
+import { recordException, start, withFalakRequest } from '@falak/apm-node';
 
 start(); // Bun: lightweight provider (no Node auto-instrumentation)
 
 Bun.serve({
   port: 3000,
-  fetch: withKilnRequest(
+  fetch: withFalakRequest(
     async (req) => {
       try {
         return Response.json({ path: new URL(req.url).pathname });

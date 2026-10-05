@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Network\Domain\Enums;
+namespace Falak\Network\Domain\Enums;
 
 enum RuleProtocol: string
 {

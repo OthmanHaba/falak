@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure;
+namespace Falak\Telemetry\Infrastructure;
 
-use Kiln\Telemetry\Contracts\ServerSites;
+use Falak\Telemetry\Contracts\ServerSites;
 
 /**
  * Default until the Sites module binds its own ServerSites implementation.

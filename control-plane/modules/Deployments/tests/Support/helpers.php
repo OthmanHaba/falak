@@ -1,24 +1,24 @@
 <?php
 
+use Falak\Deployments\Domain\Models\Release;
+use Falak\Deployments\Tests\Support\FakeAnnotations;
+use Falak\Deployments\Tests\Support\FakeBuildService;
+use Falak\Deployments\Tests\Support\FakeEdgeRoutes;
+use Falak\Deployments\Tests\Support\FakeProcessControl;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\Organization;
+use Falak\Identity\Domain\Models\User;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Sites\Contracts\TargetRole;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Domain\Models\EnvironmentVersion;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
+use Falak\Sites\Tests\Support\FakeSourceControlGateway;
+use Falak\SourceControl\Contracts\SourceControlGateway;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use Kiln\Deployments\Domain\Models\Release;
-use Kiln\Deployments\Tests\Support\FakeAnnotations;
-use Kiln\Deployments\Tests\Support\FakeBuildService;
-use Kiln\Deployments\Tests\Support\FakeEdgeRoutes;
-use Kiln\Deployments\Tests\Support\FakeProcessControl;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\Organization;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Sites\Contracts\TargetRole;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Domain\Models\EnvironmentVersion;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
-use Kiln\Sites\Tests\Support\FakeSourceControlGateway;
-use Kiln\SourceControl\Contracts\SourceControlGateway;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../../../Sites/tests/Support/helpers.php';
@@ -49,17 +49,17 @@ final class DeployWorld
 
 const DEPLOY_LARAVEL_SCRIPT = <<<'SH'
     echo "before fetch"
-    $KILN_FETCH
+    $FALAK_FETCH
 
-    cd "$KILN_RELEASE_DIR"
-    if [ "$KILN_IS_LEADER" = "1" ]; then
-        $KILN_PHP artisan migrate --force
+    cd "$FALAK_RELEASE_DIR"
+    if [ "$FALAK_IS_LEADER" = "1" ]; then
+        $FALAK_PHP artisan migrate --force
     fi
-    $KILN_PHP artisan optimize
+    $FALAK_PHP artisan optimize
 
-    $KILN_ACTIVATE
+    $FALAK_ACTIVATE
     echo "activated"
-    $KILN_RESTART_PROCS
+    $FALAK_RESTART_PROCS
     echo "done"
     SH;
 
@@ -121,7 +121,7 @@ function deploy_world(int $servers = 1, array $site = [], Role $role = Role::Own
         'branch' => 'main',
         'push_to_deploy' => false,
         'web_directory' => 'public',
-        'unix_user' => 'kiln',
+        'unix_user' => 'falak',
         'deploy_script' => DEPLOY_LARAVEL_SCRIPT,
         'laravel' => ['scheduler' => true],
         'shared_paths' => [['path' => 'storage', 'type' => 'directory'], ['path' => '.env', 'type' => 'file']],
@@ -142,7 +142,7 @@ function deploy_world(int $servers = 1, array $site = [], Role $role = Role::Own
     EnvironmentVersion::query()->create([
         'site_id' => $model->id,
         'version' => 1,
-        'variables' => ['APP_ENV' => 'production', 'APP_KEY' => 'base64:secret', 'KILN_SITE_ID' => 'stale'],
+        'variables' => ['APP_ENV' => 'production', 'APP_KEY' => 'base64:secret', 'FALAK_SITE_ID' => 'stale'],
         'exposed' => ['APP_ENV'],
         'changed_keys' => [],
         'created_at' => now(),
@@ -172,7 +172,7 @@ function deploy_result(array $command): array
     $payload = $command['payload'];
 
     return match ($command['handle']->type) {
-        'deploy.fetch' => ['changed' => true, 'release_dir' => '/srv/kiln/sites/x/releases/'.$payload['release_id']],
+        'deploy.fetch' => ['changed' => true, 'release_dir' => '/srv/falak/sites/x/releases/'.$payload['release_id']],
         'deploy.prepare' => ['changed' => true],
         'deploy.hook', 'system.exec' => ['exit_code' => 0, 'duration_ms' => 5],
         'deploy.activate' => array_filter(['changed' => true, 'release_id' => $payload['release_id'], 'previous_release_id' => deploy_current_release_upper($payload['site'])]),

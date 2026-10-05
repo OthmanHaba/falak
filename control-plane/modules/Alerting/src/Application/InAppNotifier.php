@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Alerting\Application;
+namespace Falak\Alerting\Application;
 
+use Falak\Alerting\Domain\Models\Alert;
+use Falak\Alerting\Domain\Models\Notification;
+use Falak\Alerting\Events\NotificationCreated;
+use Falak\Identity\Contracts\OrganizationAccess;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Auth\UserProvider;
-use Kiln\Alerting\Domain\Models\Alert;
-use Kiln\Alerting\Domain\Models\Notification;
-use Kiln\Alerting\Events\NotificationCreated;
-use Kiln\Identity\Contracts\OrganizationAccess;
 
 /**
  * Creates notification-center entries for every organization member allowed to see alerts

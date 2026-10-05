@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
 /**
  * Framework presets: defaults for runtime, web directory, deploy script, shared paths and toggles.

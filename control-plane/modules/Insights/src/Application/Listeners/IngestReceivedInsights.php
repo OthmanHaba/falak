@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Insights\Application\Listeners;
+namespace Falak\Insights\Application\Listeners;
 
+use Falak\Fleet\Events\InsightsReceived;
+use Falak\Insights\Application\Actions\IngestInsights;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Kiln\Fleet\Events\InsightsReceived;
-use Kiln\Insights\Application\Actions\IngestInsights;
 
 final class IngestReceivedInsights implements ShouldQueue
 {

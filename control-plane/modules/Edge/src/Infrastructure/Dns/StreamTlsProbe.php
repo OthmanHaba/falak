@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Infrastructure\Dns;
+namespace Falak\Edge\Infrastructure\Dns;
 
 use DateTimeImmutable;
 

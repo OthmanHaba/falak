@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure\Metrics;
+namespace Falak\Telemetry\Infrastructure\Metrics;
 
-use Kiln\Telemetry\Infrastructure\HttpClient;
+use Falak\Telemetry\Infrastructure\HttpClient;
 
 /**
  * Grafana Mimir (http://mimir:9009/prometheus); multi-tenant via X-Scope-OrgID.

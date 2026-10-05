@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Databases\Contracts;
+namespace Falak\Databases\Contracts;
 
-use Kiln\Databases\Contracts\Data\DatabaseData;
+use Falak\Databases\Contracts\Data\DatabaseData;
 
 /**
  * Read-only database lookups for other modules (e.g. Sites showing a site's databases).

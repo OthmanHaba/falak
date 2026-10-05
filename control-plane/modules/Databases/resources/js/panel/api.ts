@@ -1,4 +1,4 @@
-import { toast } from '@/components/kiln';
+import { toast } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, requestJson, type HttpMethod } from '@/lib/http';
 import { type ServicePanelContext } from '@/lib/registry';
@@ -89,7 +89,7 @@ export function formatBytes(bytes: number | null | undefined): string {
     return `${value.toFixed(value < 10 && unit > 0 ? 1 : 0)} ${units[unit]}`;
 }
 
-/** Status words of the Databases module in the Kiln status language. */
+/** Status words of the Databases module in the Falak status language. */
 export function resourceStatus(status: string): string {
     return status === 'pending' ? 'provisioning' : status === 'deleting' ? 'removed' : status;
 }

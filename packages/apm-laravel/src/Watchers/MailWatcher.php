@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Apm\Watchers;
+namespace Falak\Apm\Watchers;
 
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Mail\Events\MessageSending;
 use Illuminate\Mail\Events\MessageSent;
-use Kiln\Apm\Recorder;
-use Kiln\Apm\Span;
+use Falak\Apm\Recorder;
+use Falak\Apm\Span;
 use Symfony\Component\Mime\Email;
 use Throwable;
 
@@ -50,9 +50,9 @@ final class MailWatcher
             $class = $event->data['__laravel_mailable'] ?? $event->data['__laravel_notification'] ?? 'mail';
 
             $this->recorder->record('mail', $class, Span::KIND_INTERNAL, $start, $end, [
-                'kiln.mail.class' => $class,
-                'kiln.mail.recipients_count' => $recipients,
-                'kiln.mail.mailer' => (string) ($event->data['mailer'] ?? ''),
+                'falak.mail.class' => $class,
+                'falak.mail.recipients_count' => $recipients,
+                'falak.mail.mailer' => (string) ($event->data['mailer'] ?? ''),
             ]);
         });
     }

@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Templates\Application\Actions;
+namespace Falak\Templates\Application\Actions;
 
-use Kiln\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\Data\SiteData;
 
 final readonly class DeployedTemplate
 {

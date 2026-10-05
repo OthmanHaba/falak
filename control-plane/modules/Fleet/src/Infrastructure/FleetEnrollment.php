@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Fleet\Infrastructure;
+namespace Falak\Fleet\Infrastructure;
 
-use Kiln\Fleet\Application\Actions\IssueInstallToken;
-use Kiln\Fleet\Application\Actions\RevokeAgent;
-use Kiln\Fleet\Contracts\AgentStatus;
-use Kiln\Fleet\Contracts\Data\InstallToken;
-use Kiln\Fleet\Contracts\Enrollment;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\InstallToken as InstallTokenModel;
+use Falak\Fleet\Application\Actions\IssueInstallToken;
+use Falak\Fleet\Application\Actions\RevokeAgent;
+use Falak\Fleet\Contracts\AgentStatus;
+use Falak\Fleet\Contracts\Data\InstallToken;
+use Falak\Fleet\Contracts\Enrollment;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\InstallToken as InstallTokenModel;
 
 final class FleetEnrollment implements Enrollment
 {

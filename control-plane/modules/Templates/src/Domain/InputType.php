@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Templates\Domain;
+namespace Falak\Templates\Domain;
 
 /**
  * Types of template inputs (docs/COMPOSE_TEMPLATES.md §2); they drive the configure form and validation.

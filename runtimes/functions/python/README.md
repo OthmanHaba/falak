@@ -1,6 +1,6 @@
-# Kiln function runtime: Python
+# Falak function runtime: Python
 
-The image Kiln runs Python functions with (`fn.release.apply` → `kiln-fn-gateway`). It's based on
+The image Falak runs Python functions with (`fn.release.apply` → `falak-fn-gateway`). It's based on
 `python:3.13-slim`, with `uv` for dependencies and `uvicorn` for serving. Build context: `runtimes/functions`, file
 `python/Dockerfile`.
 
@@ -31,9 +31,9 @@ rely on these commands.
 
 | Command | Does |
 |---|---|
-| `kiln-fn-install` | Creates `/app/.venv` (with `--system-site-packages`, so the image's uvicorn is visible) and installs the dependencies into it. |
-| `kiln-fn-serve` | Imports `/app/$KILN_ENTRYPOINT` (default `main.py`) and serves its **`app`** with uvicorn on `0.0.0.0:$PORT`. It listens only once the module is imported, so an accepted connection means ready. One worker; stops gracefully on SIGTERM. |
-| `kiln-fn-run` | Imports the module and calls **`scheduled(event)`**, plain or `async`. |
+| `falak-fn-install` | Creates `/app/.venv` (with `--system-site-packages`, so the image's uvicorn is visible) and installs the dependencies into it. |
+| `falak-fn-serve` | Imports `/app/$FALAK_ENTRYPOINT` (default `main.py`) and serves its **`app`** with uvicorn on `0.0.0.0:$PORT`. It listens only once the module is imported, so an accepted connection means ready. One worker; stops gracefully on SIGTERM. |
+| `falak-fn-run` | Imports the module and calls **`scheduled(event)`**, plain or `async`. |
 
 **What `app` can be:** any ASGI application, such as FastAPI, Starlette, Litestar, Quart, or a plain
 `async def app(scope, receive, send)`.
@@ -72,20 +72,20 @@ A function without dependencies still gets an (empty) virtualenv.
 
 ## Telemetry
 
-When `$KILN_OTLP_SOCKET` exists, the runtime reports to it, with no package needed (`kiln_fn/telemetry.py`). It
+When `$FALAK_OTLP_SOCKET` exists, the runtime reports to it, with no package needed (`falak_fn/telemetry.py`). It
 uses the same encoding as the Bun runtime and follows `contracts/telemetry/README.md`.
 
 - **Requests:** a `request` span per HTTP request.
   - It is named by the route template from Starlette/FastAPI routing, e.g. `GET /hello/{name}`.
   - Apps without that routing get the path with ids replaced, e.g. `/users/:id`.
   - Paths no route matches are grouped as `(unmatched)`.
-  - Each span records the status code and `faas.coldstart` (from the gateway's `X-Kiln-Cold-Start` header).
+  - Each span records the status code and `faas.coldstart` (from the gateway's `X-Falak-Cold-Start` header).
 - **Exceptions** that escape the app: an `exception` event with the stack trace, and ERROR status. FastAPI still
   answers 500 as usual.
 - **Outgoing HTTP:** `outgoing_request` spans for `httpx` (sync and async) and `requests`, under the request or run
-  that made them. No query strings or userinfo, and secret-looking path segments are redacted (`kiln_fn/redact.py`,
+  that made them. No query strings or userinfo, and secret-looking path segments are redacted (`falak_fn/redact.py`,
   the same rules as the other runtimes).
 - **Scheduled runs:** a `scheduled_task` span per run, `finished` or `failed`.
 
 Spans go out in batches from a background thread: every second, or every 256 spans. They never block a request.
-When the socket is down, the spans are dropped. Set `KILN_TELEMETRY=off` to turn it off.
+When the socket is down, the spans are dropped. Set `FALAK_TELEMETRY=off` to turn it off.

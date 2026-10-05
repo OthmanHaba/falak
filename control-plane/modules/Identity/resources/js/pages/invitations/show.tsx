@@ -1,5 +1,5 @@
-import { Button } from '@/components/kiln/button';
-import { RelativeTime } from '@/components/kiln/relative-time';
+import { Button } from '@/components/falak/button';
+import { RelativeTime } from '@/components/falak/relative-time';
 import AuthLayout, { AuthLink } from '@/layouts/auth-layout';
 import { Head, Link, useForm } from '@inertiajs/react';
 
@@ -24,7 +24,7 @@ export default function ShowInvitation({ token, invitation }: InvitationProps) {
             <AuthLayout
                 title="Invitation unavailable"
                 description="This invitation is invalid, has already been used, or has expired. Ask for a new one."
-                footer={<AuthLink href={'/projects'}>Go to Kiln</AuthLink>}
+                footer={<AuthLink href={'/projects'}>Go to Falak</AuthLink>}
             >
                 <Head title="Invitation" />
             </AuthLayout>

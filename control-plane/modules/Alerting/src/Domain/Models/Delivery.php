@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Alerting\Domain\Models;
+namespace Falak\Alerting\Domain\Models;
 
+use Falak\Alerting\Domain\Enums\DeliveryStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Kiln\Alerting\Domain\Enums\DeliveryStatus;
 
 /**
  * @property string $id

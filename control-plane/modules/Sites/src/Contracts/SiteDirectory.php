@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
-use Kiln\Sites\Contracts\Data\EnvironmentData;
-use Kiln\Sites\Contracts\Data\SharedPath;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\Data\SiteTargetData;
+use Falak\Sites\Contracts\Data\EnvironmentData;
+use Falak\Sites\Contracts\Data\SharedPath;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\Data\SiteTargetData;
 
 /**
  * Read-only site lookups for other modules (Edge, Builds, Deployments, Processes, Telemetry, Insights).
@@ -52,9 +52,9 @@ interface SiteDirectory
     public function sharedPaths(string $siteId): array;
 
     /**
-     * Deploy script variables (KILN_*) for a deployment; merged with exposed environment variables.
+     * Deploy script variables (FALAK_*) for a deployment; merged with exposed environment variables.
      *
-     * @param  array<string, string>  $context  e.g. KILN_COMMIT, KILN_RELEASE_DIR, KILN_DEPLOYMENT_ID supplied by Deployments
+     * @param  array<string, string>  $context  e.g. FALAK_COMMIT, FALAK_RELEASE_DIR, FALAK_DEPLOYMENT_ID supplied by Deployments
      * @return array<string, string>
      */
     public function deployVariables(string $siteId, string $serverId, array $context = []): array;

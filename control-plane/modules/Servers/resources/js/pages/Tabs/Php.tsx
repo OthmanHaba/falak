@@ -1,16 +1,16 @@
 import { CommandLog } from '@/components/command-log';
-import { Button, IconButton } from '@/components/kiln/button';
-import { ChangesBar } from '@/components/kiln/changes-bar';
-import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { Menu } from '@/components/kiln/menu';
-import { Section } from '@/components/kiln/section';
-import { Select } from '@/components/kiln/select';
-import { StatusBadge } from '@/components/kiln/status';
-import { Tag } from '@/components/kiln/tag';
-import { toast } from '@/components/kiln/toast';
+import { Button, IconButton } from '@/components/falak/button';
+import { ChangesBar } from '@/components/falak/changes-bar';
+import { ConfirmDestructive } from '@/components/falak/confirm-destructive';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { Menu } from '@/components/falak/menu';
+import { Section } from '@/components/falak/section';
+import { Select } from '@/components/falak/select';
+import { StatusBadge } from '@/components/falak/status';
+import { Tag } from '@/components/falak/tag';
+import { toast } from '@/components/falak/toast';
 import ServerLayout, { type ServerHeader } from '@/layouts/server-layout';
 import { cn } from '@/lib/utils';
 import { router, useForm, usePoll } from '@inertiajs/react';
@@ -155,7 +155,7 @@ function VersionSettings({ server, php, canUpdate }: { server: ServerHeader; php
                 {errorBag.ini && <p className="text-danger text-xs">{errorBag.ini}</p>}
             </Section>
 
-            <Section title="FPM pool defaults" description="Used when Kiln creates a new site pool on this version.">
+            <Section title="FPM pool defaults" description="Used when Falak creates a new site pool on this version.">
                 <div className="grid gap-4 sm:grid-cols-3">
                     <Field label="Process manager" hint="How the pool scales workers.">
                         <Select

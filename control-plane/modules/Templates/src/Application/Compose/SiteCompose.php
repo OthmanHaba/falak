@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Templates\Application\Compose;
+namespace Falak\Templates\Application\Compose;
 
-use Kiln\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\Data\SiteData;
 
 /**
  * Reads the compose fields of a site (docs/COMPOSE_TEMPLATES.md §5) for "Save as template".

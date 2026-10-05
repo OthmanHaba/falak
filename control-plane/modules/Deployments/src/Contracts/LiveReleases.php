@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Deployments\Contracts;
+namespace Falak\Deployments\Contracts;
 
-use Kiln\Deployments\Contracts\Data\LiveRelease;
+use Falak\Deployments\Contracts\Data\LiveRelease;
 
 /**
  * Which release every site runs on a server. Processes supervises a site's programs on a server only once it has a

@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Edge\Application\Actions;
+namespace Falak\Edge\Application\Actions;
 
-use Kiln\Edge\Domain\Models\DnsCredential;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Edge\Domain\Models\DnsCredential;
+use Falak\Identity\Contracts\AuditLog;
 use SensitiveParameter;
 
 final class CreateDnsCredential

@@ -13,7 +13,7 @@ Route::middleware(['auth'])->group(function () {
     // Home is the projects grid (docs/UI_DESIGN.md §3); the old dashboard URL keeps working.
     Route::redirect('dashboard', '/projects')->name('dashboard');
 
-    // Kiln component gallery for UI work; local environment only.
+    // Falak component gallery for UI work; local environment only.
     if (app()->environment('local')) {
         Route::get('dev/components', fn () => Inertia::render('dev/components'))->name('dev.components');
     }

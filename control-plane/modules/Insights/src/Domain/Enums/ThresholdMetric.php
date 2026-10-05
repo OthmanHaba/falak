@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Insights\Domain\Enums;
+namespace Falak\Insights\Domain\Enums;
 
 enum ThresholdMetric: string
 {

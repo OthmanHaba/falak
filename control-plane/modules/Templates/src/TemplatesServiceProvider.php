@@ -1,26 +1,26 @@
 <?php
 
-namespace Kiln\Templates;
+namespace Falak\Templates;
 
+use Falak\Identity\Contracts\PermissionRegistry;
+use Falak\Identity\Contracts\Role;
+use Falak\Kernel\Support\ModuleServiceProvider;
+use Falak\Sites\Contracts\ComposeInspector;
+use Falak\Templates\Application\Catalog\Catalog;
+use Falak\Templates\Application\Catalog\TemplateParser;
+use Falak\Templates\Application\Compose\ComposeAnalyzer;
+use Falak\Templates\Application\Compose\SiteCompose;
+use Falak\Templates\Application\Console\RenderTemplateCommand;
+use Falak\Templates\Application\Import\HostResolver;
+use Falak\Templates\Application\Import\RemoteFetcher;
+use Falak\Templates\Infrastructure\DnsHostResolver;
+use Falak\Templates\Infrastructure\FilesystemCatalog;
+use Falak\Templates\Infrastructure\GuardedHttpFetcher;
+use Falak\Templates\Infrastructure\InspectorComposeAnalyzer;
+use Falak\Templates\Infrastructure\SiteDataCompose;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Client\Factory as Http;
-use Kiln\Identity\Contracts\PermissionRegistry;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Kernel\Support\ModuleServiceProvider;
-use Kiln\Sites\Contracts\ComposeInspector;
-use Kiln\Templates\Application\Catalog\Catalog;
-use Kiln\Templates\Application\Catalog\TemplateParser;
-use Kiln\Templates\Application\Compose\ComposeAnalyzer;
-use Kiln\Templates\Application\Compose\SiteCompose;
-use Kiln\Templates\Application\Console\RenderTemplateCommand;
-use Kiln\Templates\Application\Import\HostResolver;
-use Kiln\Templates\Application\Import\RemoteFetcher;
-use Kiln\Templates\Infrastructure\DnsHostResolver;
-use Kiln\Templates\Infrastructure\FilesystemCatalog;
-use Kiln\Templates\Infrastructure\GuardedHttpFetcher;
-use Kiln\Templates\Infrastructure\InspectorComposeAnalyzer;
-use Kiln\Templates\Infrastructure\SiteDataCompose;
 
 /**
  * One-click templates backed by Docker Compose (docs/COMPOSE_TEMPLATES.md §2–§4): the curated catalog, custom

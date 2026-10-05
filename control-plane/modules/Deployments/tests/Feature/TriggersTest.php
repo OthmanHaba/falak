@@ -1,18 +1,18 @@
 <?php
 
+use Falak\Deployments\Application\Actions\TriggerDeployment;
+use Falak\Deployments\Contracts\DeploymentTrigger;
+use Falak\Deployments\Domain\Enums\DeploymentStatus;
+use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\SiteSettings;
+use Falak\Identity\Contracts\Role;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\SourceControl\Contracts\Data\CommitData;
+use Falak\SourceControl\Events\PushReceived;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Deployments\Application\Actions\TriggerDeployment;
-use Kiln\Deployments\Contracts\DeploymentTrigger;
-use Kiln\Deployments\Domain\Enums\DeploymentStatus;
-use Kiln\Deployments\Domain\Enums\Trigger;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\SiteSettings;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\SourceControl\Contracts\Data\CommitData;
-use Kiln\SourceControl\Events\PushReceived;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -25,7 +25,7 @@ it('deploys through the hook URL with reserved and custom query parameters', fun
     $world = deploy_world();
     $token = hook_token($world);
 
-    $response = $this->postJson("/api/deploy/{$token}?kiln_deploy_branch=release&kiln_deploy_commit=ABCDEF1234567&kiln_deploy_author=CI%20Bot&kiln_deploy_message=Ship%20it&ticket=OPS-1&build-number=42")
+    $response = $this->postJson("/api/deploy/{$token}?falak_deploy_branch=release&falak_deploy_commit=ABCDEF1234567&falak_deploy_author=CI%20Bot&falak_deploy_message=Ship%20it&ticket=OPS-1&build-number=42")
         ->assertAccepted()
         ->assertJsonStructure(['data' => ['id', 'status', 'number', 'url']]);
 
@@ -35,12 +35,12 @@ it('deploys through the hook URL with reserved and custom query parameters', fun
         ->and($deployment->commit)->toBe('abcdef1234567')
         ->and($deployment->commit_author)->toBe('CI Bot')
         ->and($deployment->commit_message)->toBe('Ship it')
-        ->and($deployment->variables)->toBe(['KILN_VAR_TICKET' => 'OPS-1', 'KILN_VAR_BUILD_NUMBER' => '42']);
+        ->and($deployment->variables)->toBe(['FALAK_VAR_TICKET' => 'OPS-1', 'FALAK_VAR_BUILD_NUMBER' => '42']);
 
     $world->builds->succeed();
     $hook = $world->agents->last('deploy.hook')['payload'];
 
-    expect($hook['env'])->toMatchArray(['KILN_VAR_TICKET' => 'OPS-1', 'KILN_VAR_BUILD_NUMBER' => '42', 'KILN_BRANCH' => 'release', 'KILN_TRIGGER' => 'api'])
+    expect($hook['env'])->toMatchArray(['FALAK_VAR_TICKET' => 'OPS-1', 'FALAK_VAR_BUILD_NUMBER' => '42', 'FALAK_BRANCH' => 'release', 'FALAK_TRIGGER' => 'api'])
         ->and($hook['context']['trigger'])->toBe('api')
         ->and($world->builds->builds[$world->builds->last()]['request']->branch)->toBe('release');
 });
@@ -61,7 +61,7 @@ it('validates the hook commit parameter', function () {
     $world = deploy_world(actingAs: false);
     $token = hook_token($world);
 
-    $this->postJson("/api/deploy/{$token}?kiln_deploy_commit=not-a-sha")->assertUnprocessable()->assertJsonValidationErrors('commit');
+    $this->postJson("/api/deploy/{$token}?falak_deploy_commit=not-a-sha")->assertUnprocessable()->assertJsonValidationErrors('commit');
 });
 
 it('deploys on push only for push-to-deploy sites on the pushed branch', function () {
@@ -187,7 +187,7 @@ it('skips the health check and restart when disabled or without programs', funct
 });
 
 it('fails fast when the site cannot be deployed', function () {
-    $world = deploy_world(site: ['deploy_script' => "\$KILN_ACTIVATE\n\$KILN_FETCH\n"]);
+    $world = deploy_world(site: ['deploy_script' => "\$FALAK_ACTIVATE\n\$FALAK_FETCH\n"]);
     $deployment = app(TriggerDeployment::class)(app(SiteDirectory::class)->find($world->site->id), Trigger::Manual);
 
     expect($deployment->status)->toBe(DeploymentStatus::Failed)

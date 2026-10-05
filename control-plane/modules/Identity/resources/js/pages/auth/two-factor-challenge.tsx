@@ -1,6 +1,6 @@
-import { Button } from '@/components/kiln/button';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
+import { Button } from '@/components/falak/button';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
 import AuthLayout from '@/layouts/auth-layout';
 import { Head, useForm } from '@inertiajs/react';
 import { useState, type FormEventHandler } from 'react';

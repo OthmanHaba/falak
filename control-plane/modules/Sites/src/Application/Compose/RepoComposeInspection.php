@@ -1,27 +1,27 @@
 <?php
 
-namespace Kiln\Sites\Application\Compose;
+namespace Falak\Sites\Application\Compose;
 
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Data\ComposeConfig;
-use Kiln\Sites\Contracts\Data\ComposeRewrites;
-use Kiln\Sites\Contracts\Data\ComposeSummary;
-use Kiln\Sites\Infrastructure\Compose\EloquentComposeSites;
-use Kiln\Sites\Infrastructure\Compose\YamlComposeInspector;
-use Kiln\SourceControl\Contracts\Exceptions\NoApi;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Contracts\SourceControlGateway;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Data\ComposeConfig;
+use Falak\Sites\Contracts\Data\ComposeRewrites;
+use Falak\Sites\Contracts\Data\ComposeSummary;
+use Falak\Sites\Infrastructure\Compose\EloquentComposeSites;
+use Falak\Sites\Infrastructure\Compose\YamlComposeInspector;
+use Falak\SourceControl\Contracts\Exceptions\NoApi;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Contracts\SourceControlGateway;
 
 /**
- * What Kiln sees in a repository's compose app before deploying it (docs/plans/COMPOSE_APPS.md, flow step 3–5):
- * the merged project, its services with what Kiln can do with each, the variables it needs, and the adjustments
- * Kiln will make. Files are read through the provider API (under the site's root directory, like the builder);
+ * What Falak sees in a repository's compose app before deploying it (docs/plans/COMPOSE_APPS.md, flow step 3–5):
+ * the merged project, its services with what Falak can do with each, the variables it needs, and the adjustments
+ * Falak will make. Files are read through the provider API (under the site's root directory, like the builder);
  * plain git servers report `no_api`.
  */
 final class RepoComposeInspection
 {
     /**
-     * Images Kiln can replace with a managed database (Databases engines). Redis / Valkey: the official images only
+     * Images Falak can replace with a managed database (Databases engines). Redis / Valkey: the official images only
      * (`redis`, `valkey/valkey`, any tag); redis-stack, bitnami/redis and the like stay containers (modules, other
      * configuration).
      */
@@ -83,7 +83,7 @@ final class RepoComposeInspection
             // repositories of any size; capped in number and time.
             $present = [];
             $deadline = microtime(true) + self::LOOKUP_SECONDS;
-            $references = array_values(array_diff(ComposeProject::references($project['doc']), KilnAdjustments::KILN_FILES));
+            $references = array_values(array_diff(ComposeProject::references($project['doc']), FalakAdjustments::FALAK_FILES));
 
             foreach ($references as $i => $path) {
                 if ($i >= self::MAX_LOOKUPS || microtime(true) > $deadline) {
@@ -91,7 +91,7 @@ final class RepoComposeInspection
                     break;
                 }
 
-                if (! KilnAdjustments::validAssetPath($path)) {
+                if (! FalakAdjustments::validAssetPath($path)) {
                     $warnings[] = "{$path} can’t be shipped to the servers (its name has a backslash or control character); it is treated as missing.";
 
                     continue;
@@ -111,17 +111,17 @@ final class RepoComposeInspection
         $yaml = EloquentComposeSites::dump($doc);
         $summary = $this->inspector->parse($yaml);
         $config ??= new ComposeConfig(ComposeSource::Repo, $files[0] ?? null, [], files: $files, profiles: $profiles);
-        $adjusted = KilnAdjustments::apply($doc, $config, $present, $rewrites ?? new ComposeRewrites, $public);
+        $adjusted = FalakAdjustments::apply($doc, $config, $present, $rewrites ?? new ComposeRewrites, $public);
 
         return [
             'no_api' => false,
             'files' => $project['files'],
             'services' => $this->services($doc, $summary, $present, $config),
-            // What the stack still needs once services moved to Kiln are gone.
+            // What the stack still needs once services moved to Falak are gone.
             'variables' => $this->variables($adjusted['doc'], $reader, $present, $full),
             'volumes' => $summary->volumes,
             'adjustments' => $adjusted['adjustments'],
-            'missing' => array_values(array_filter($references, fn (string $path) => ! KilnAdjustments::inRepo($path, $present))),
+            'missing' => array_values(array_filter($references, fn (string $path) => ! FalakAdjustments::inRepo($path, $present))),
             'violations' => $summary->violations,
             'errors' => [...$summary->errors, ...$adjusted['errors']],
             'warnings' => [...$summary->warnings, ...$adjusted['warnings'], ...$warnings],
@@ -163,14 +163,14 @@ final class RepoComposeInspection
                 'build_context' => is_string($build) ? $build : (is_array($build) ? ($build['context'] ?? '.') : null),
                 'binds' => array_map(fn (string $source) => [
                     'source' => $source,
-                    'in_repo' => str_starts_with($source, './') && (in_array(ComposeProject::clean($source), KilnAdjustments::KILN_FILES, true) || KilnAdjustments::inRepo(ComposeProject::clean($source), $present)),
+                    'in_repo' => str_starts_with($source, './') && (in_array(ComposeProject::clean($source), FalakAdjustments::FALAK_FILES, true) || FalakAdjustments::inRepo(ComposeProject::clean($source), $present)),
                     'key' => "{$service->name}:{$source}",
                 ], $service->bindMounts),
                 'env_files' => array_values(array_map(function (mixed $entry) use ($present) {
                     $path = (string) (is_array($entry) ? ($entry['path'] ?? '') : $entry);
                     $clean = str_starts_with($path, './') ? ComposeProject::clean($path) : $path;
 
-                    return ['path' => $clean, 'in_repo' => str_starts_with($path, './') && ($clean === KilnAdjustments::KILN_ENV || KilnAdjustments::inRepo($clean, $present))];
+                    return ['path' => $clean, 'in_repo' => str_starts_with($path, './') && ($clean === FalakAdjustments::FALAK_ENV || FalakAdjustments::inRepo($clean, $present))];
                 }, self::envFileEntries($definition))),
                 'variables' => array_keys(self::interpolations(self::text($definition))),
                 'database_engine' => $engine,
@@ -195,9 +195,9 @@ final class RepoComposeInspection
     /**
      * Variables the stack reads: `${VAR}` interpolations (required only for `${VAR:?…}` / `${VAR?…}`; a plain
      * `${VAR}` without a value becomes empty) and the keys of its repository env files (their values as defaults,
-     * shown only with $full). Kiln's own KILN_* variables are left out.
+     * shown only with $full). Falak's own FALAK_* variables are left out.
      *
-     * @param  array<string, mixed>  $doc  the adjusted project (services moved to Kiln are gone)
+     * @param  array<string, mixed>  $doc  the adjusted project (services moved to Falak are gone)
      * @param  callable(string): ?string  $reader
      * @param  list<string>  $present
      * @return list<array{name: string, default: ?string, required: bool, services: list<string>, source: string}>
@@ -218,9 +218,9 @@ final class RepoComposeInspection
             foreach (self::envFileEntries((array) $definition) as $env) {
                 $path = (string) (is_array($env) ? ($env['path'] ?? '') : $env);
                 // The adjusted project points shipped env files at ./repo/<path>.
-                $clean = str_starts_with($path, './'.KilnAdjustments::REPO_DIR.'/') ? substr($path, strlen('./'.KilnAdjustments::REPO_DIR.'/')) : null;
+                $clean = str_starts_with($path, './'.FalakAdjustments::REPO_DIR.'/') ? substr($path, strlen('./'.FalakAdjustments::REPO_DIR.'/')) : null;
 
-                if ($clean === null || ! KilnAdjustments::inRepo($clean, $present)) {
+                if ($clean === null || ! FalakAdjustments::inRepo($clean, $present)) {
                     continue;
                 }
 
@@ -238,7 +238,7 @@ final class RepoComposeInspection
             }
         }
 
-        $variables = array_filter($variables, fn (array $v) => ! str_starts_with($v['name'], 'KILN_'));
+        $variables = array_filter($variables, fn (array $v) => ! str_starts_with($v['name'], 'FALAK_'));
 
         foreach ($variables as &$variable) {
             $variable['services'] = array_values(array_unique($variable['services']));

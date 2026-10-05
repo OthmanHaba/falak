@@ -1,4 +1,4 @@
-import { Button, ConfirmDestructive, Field, Input, Section, Select, SkeletonRows, toast } from '@/components/kiln';
+import { Button, ConfirmDestructive, Field, Input, Section, Select, SkeletonRows, toast } from '@/components/falak';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
 import { Trash2 } from 'lucide-react';

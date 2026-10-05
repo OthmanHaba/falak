@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Templates\Infrastructure;
+namespace Falak\Templates\Infrastructure;
 
+use Falak\Templates\Application\Import\FetchFailed;
+use Falak\Templates\Application\Import\HostResolver;
+use Falak\Templates\Application\Import\RemoteFetcher;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as Http;
-use Kiln\Templates\Application\Import\FetchFailed;
-use Kiln\Templates\Application\Import\HostResolver;
-use Kiln\Templates\Application\Import\RemoteFetcher;
 
 /**
  * SSRF-guarded GET: https only, no credentials in the URL, every address the host resolves to must be public

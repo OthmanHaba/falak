@@ -1,20 +1,20 @@
 <?php
 
-namespace Kiln\Servers\Http\Controllers;
+namespace Falak\Servers\Http\Controllers;
 
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Servers\Application\Actions\AttachSshKey;
+use Falak\Servers\Application\Actions\CreateSshKey;
+use Falak\Servers\Application\Actions\DeleteSshKey;
+use Falak\Servers\Application\Actions\DetachSshKey;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Models\SshKey;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Servers\Application\Actions\AttachSshKey;
-use Kiln\Servers\Application\Actions\CreateSshKey;
-use Kiln\Servers\Application\Actions\DeleteSshKey;
-use Kiln\Servers\Application\Actions\DetachSshKey;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Models\SshKey;
 
 final class SshKeyController extends Controller
 {

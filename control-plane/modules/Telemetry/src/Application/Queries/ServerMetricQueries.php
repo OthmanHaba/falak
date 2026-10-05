@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Queries;
+namespace Falak\Telemetry\Application\Queries;
 
-use Kiln\Telemetry\Contracts\PromQl;
+use Falak\Telemetry\Contracts\PromQl;
 
 /**
- * PromQL for the in-app server charts (host metrics from kiln-agent, OTel system.* semconv).
+ * PromQL for the in-app server charts (host metrics from falak-agent, OTel system.* semconv).
  */
 final class ServerMetricQueries
 {
@@ -22,7 +22,7 @@ final class ServerMetricQueries
      */
     public static function for(string $serverId): array
     {
-        $s = '{'.PromQl::label('kiln_server_id', strtoupper($serverId)).'}';
+        $s = '{'.PromQl::label('falak_server_id', strtoupper($serverId)).'}';
 
         return [
             'cpu' => "avg(system_cpu_utilization_ratio{$s}) * 100",

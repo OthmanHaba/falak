@@ -1,17 +1,17 @@
 <?php
 
-namespace Kiln\Alerting\Http\Controllers;
+namespace Falak\Alerting\Http\Controllers;
 
+use Falak\Alerting\Domain\Enums\AlertOutcome;
+use Falak\Alerting\Domain\Models\Alert;
+use Falak\Alerting\Domain\Models\Delivery;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule as ValidationRule;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Alerting\Domain\Enums\AlertOutcome;
-use Kiln\Alerting\Domain\Models\Alert;
-use Kiln\Alerting\Domain\Models\Delivery;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
 
 final class HistoryController extends Controller
 {

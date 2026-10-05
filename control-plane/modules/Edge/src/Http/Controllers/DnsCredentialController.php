@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Edge\Http\Controllers;
+namespace Falak\Edge\Http\Controllers;
 
+use Falak\Edge\Application\Actions\CreateDnsCredential;
+use Falak\Edge\Application\Actions\DeleteDnsCredential;
+use Falak\Edge\Domain\Models\DnsCredential;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Kiln\Edge\Application\Actions\CreateDnsCredential;
-use Kiln\Edge\Application\Actions\DeleteDnsCredential;
-use Kiln\Edge\Domain\Models\DnsCredential;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
 
 final class DnsCredentialController extends Controller
 {

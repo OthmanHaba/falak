@@ -1,4 +1,4 @@
-import { formatDuration } from '@/components/kiln';
+import { formatDuration } from '@/components/falak';
 import { cn } from '@/lib/utils';
 import { Hourglass } from 'lucide-react';
 import { type Deployment } from '../types';

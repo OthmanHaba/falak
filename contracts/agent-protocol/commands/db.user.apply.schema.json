@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/db.user.apply.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/db.user.apply.schema.json",
   "title": "db.user.apply — converge a database user and its grants",
-  "x-kiln-redeliverable": true,
+  "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [

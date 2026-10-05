@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Identity\Application\Actions;
+namespace Falak\Identity\Application\Actions;
 
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Domain\Models\User;
+use Falak\Identity\Infrastructure\ResolvedCurrentOrganization;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Http\Request;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Identity\Infrastructure\ResolvedCurrentOrganization;
 
 final class SwitchOrganization
 {

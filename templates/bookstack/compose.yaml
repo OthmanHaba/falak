@@ -11,7 +11,7 @@ services:
       PUID: "1000"
       PGID: "1000"
       TZ: Etc/UTC
-      APP_URL: ${{ kiln.url(bookstack) }}
+      APP_URL: ${{ falak.url(bookstack) }}
       APP_KEY: ${APP_KEY}
       DB_HOST: db
       DB_PORT: "3306"

@@ -1,9 +1,9 @@
 <?php
 
-use Kiln\Fleet\Infrastructure\Pki\CertificateAuthorityService;
+use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
 
 beforeEach(function () {
-    $this->dir = sys_get_temp_dir().'/kiln-ca-cmd-'.bin2hex(random_bytes(4));
+    $this->dir = sys_get_temp_dir().'/falak-ca-cmd-'.bin2hex(random_bytes(4));
     config(['fleet.ca_path' => $this->dir]);
     app()->forgetInstance(CertificateAuthorityService::class);
 });
@@ -32,7 +32,7 @@ it('initializes the CA and writes a newline-terminated ca.pem', function () {
 });
 
 it('writes a server certificate bundle that parses as leaf + CA', function () {
-    $this->artisan('fleet:ca:server-cert', ['hostnames' => ['agents.kiln.test', '10.0.0.5'], '--out' => $this->dir])->assertSuccessful();
+    $this->artisan('fleet:ca:server-cert', ['hostnames' => ['agents.falak.test', '10.0.0.5'], '--out' => $this->dir])->assertSuccessful();
 
     $bundle = file_get_contents($this->dir.'/agent-api.pem');
     $blocks = pemBlocks($bundle);
@@ -45,9 +45,9 @@ it('writes a server certificate bundle that parses as leaf + CA', function () {
     $leaf = openssl_x509_parse(openssl_x509_read($blocks[0]));
     $ca = openssl_x509_parse(openssl_x509_read($blocks[1]));
 
-    expect($leaf['subject']['CN'])->toBe('agents.kiln.test')
-        ->and($leaf['extensions']['subjectAltName'])->toContain('DNS:agents.kiln.test')->toContain('IP Address:10.0.0.5')
-        ->and($ca['subject']['CN'])->toBe('Kiln Agent CA')
+    expect($leaf['subject']['CN'])->toBe('agents.falak.test')
+        ->and($leaf['extensions']['subjectAltName'])->toContain('DNS:agents.falak.test')->toContain('IP Address:10.0.0.5')
+        ->and($ca['subject']['CN'])->toBe('Falak Agent CA')
         ->and($blocks[1])->toBe(file_get_contents($this->dir.'/ca.pem'));
 
     // The key matches the leaf and is private to the owner.

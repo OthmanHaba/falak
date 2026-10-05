@@ -20,7 +20,7 @@ import (
 //	GET    /v1/functions         [Status]
 //	PUT    /v1/functions/{site}  Spec → ApplyResult
 //	DELETE /v1/functions/{site}  {"removed": bool}
-//	POST   /v1/functions/{site}/run  RunRequest → the run's output, exit code in the X-Kiln-Exit-Code trailer
+//	POST   /v1/functions/{site}/run  RunRequest → the run's output, exit code in the X-Falak-Exit-Code trailer
 func (g *Gateway) AdminHandler() http.Handler {
 	mux := http.NewServeMux()
 	reply := func(w http.ResponseWriter, code int, v any) {

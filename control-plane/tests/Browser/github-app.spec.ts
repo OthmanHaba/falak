@@ -9,14 +9,14 @@ import { globalAllowedConsole } from './routes';
 /**
  * GitHub App walkthrough: Settings → Source control → Connect GitHub (for a GitHub organization) → manifest POST →
  * code conversion → installation → setup callback → installed card → repository browser → Delete app, in both
- * themes. GitHub is faked (./fake-github.ts), so this needs a Kiln started with GITHUB_URL and GITHUB_API_URL
- * pointing at KILN_E2E_FAKE_GITHUB (e.g. http://127.0.0.1:8796); skipped otherwise (the sim talks to real GitHub).
+ * themes. GitHub is faked (./fake-github.ts), so this needs a Falak started with GITHUB_URL and GITHUB_API_URL
+ * pointing at FALAK_E2E_FAKE_GITHUB (e.g. http://127.0.0.1:8796); skipped otherwise (the sim talks to real GitHub).
  */
-const FAKE = process.env.KILN_E2E_FAKE_GITHUB;
+const FAKE = process.env.FALAK_E2E_FAKE_GITHUB;
 const SCREENSHOTS = join(import.meta.dirname, 'screenshots');
 
 test.describe.configure({ mode: 'serial' });
-test.skip(!FAKE, 'KILN_E2E_FAKE_GITHUB is not set');
+test.skip(!FAKE, 'FALAK_E2E_FAKE_GITHUB is not set');
 
 let fake: Server | undefined;
 test.beforeAll(async () => {
@@ -82,7 +82,7 @@ for (const theme of ['dark', 'light'] as const) {
         await card.getByLabel('GitHub organization').fill('acme-e2e');
         await shot(page, theme, 'connect-organization');
 
-        // Manifest POST → (fake) GitHub → conversion → installation → setup callback → back in Kiln.
+        // Manifest POST → (fake) GitHub → conversion → installation → setup callback → back in Falak.
         await card.getByRole('button', { name: 'Connect GitHub' }).click();
         await page.waitForURL(/\/settings\/source-control/);
         await page.waitForLoadState('networkidle');

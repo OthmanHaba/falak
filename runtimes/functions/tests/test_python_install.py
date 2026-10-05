@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kiln_fn import install
+from falak_fn import install
 
 
 def block(*deps: str) -> str:

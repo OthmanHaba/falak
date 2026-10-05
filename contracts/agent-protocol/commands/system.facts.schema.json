@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/system.facts.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/system.facts.schema.json",
   "title": "system.facts — collect host facts",
-  "x-kiln-redeliverable": true,
+  "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [],
   "properties": {},
   "$defs": {
     "result": {
-      "$ref": "https://kiln.dev/agent-protocol/facts.schema.json"
+      "$ref": "https://falak.sh/agent-protocol/facts.schema.json"
     }
   }
 }

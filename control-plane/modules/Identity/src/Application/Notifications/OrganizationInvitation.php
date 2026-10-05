@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Identity\Application\Notifications;
+namespace Falak\Identity\Application\Notifications;
 
+use Falak\Identity\Contracts\Role;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
-use Kiln\Identity\Contracts\Role;
 
 final class OrganizationInvitation extends Notification implements ShouldQueue
 {

@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure\Metrics;
+namespace Falak\Telemetry\Infrastructure\Metrics;
 
-use Kiln\Telemetry\Infrastructure\HttpClient;
+use Falak\Telemetry\Infrastructure\HttpClient;
 
 /**
  * VictoriaMetrics single-node (http://victoriametrics:8428).

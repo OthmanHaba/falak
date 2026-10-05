@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Contracts;
+namespace Falak\Edge\Contracts;
 
 enum DnsStatus: string
 {

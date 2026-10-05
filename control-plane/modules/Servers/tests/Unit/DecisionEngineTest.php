@@ -1,11 +1,11 @@
 <?php
 
-use Kiln\Servers\Domain\MachineCheck\ComponentDecision;
-use Kiln\Servers\Domain\MachineCheck\Decision;
-use Kiln\Servers\Domain\MachineCheck\MachineCheck;
-use Kiln\Servers\Domain\MachineCheck\MachineReport;
-use Kiln\Servers\Domain\MachineCheck\Severity;
-use Kiln\Servers\Domain\Stack\Stack;
+use Falak\Servers\Domain\MachineCheck\ComponentDecision;
+use Falak\Servers\Domain\MachineCheck\Decision;
+use Falak\Servers\Domain\MachineCheck\MachineCheck;
+use Falak\Servers\Domain\MachineCheck\MachineReport;
+use Falak\Servers\Domain\MachineCheck\Severity;
+use Falak\Servers\Domain\Stack\Stack;
 
 require_once __DIR__.'/../Support/machine_reports.php';
 
@@ -36,7 +36,7 @@ it('installs everything on a fresh machine', function () {
         ->and($check->for('database')->service)->toBe('postgresql')
         ->and($check->for('swap')->reason)->toBe('Creates a 2 GB /swapfile.')
         ->and($check->for('base')->install)->toBe(['acl'])
-        // Ubuntu's stock 20auto-upgrades is no customisation: Kiln writes its config as before.
+        // Ubuntu's stock 20auto-upgrades is no customisation: Falak writes its config as before.
         ->and($check->for('unattended_upgrades')->found[0]['source'])->toBe('default config')
         // ufw installed but inactive: nothing to warn about.
         ->and($check->for('firewall')->notes)->toBe([])
@@ -126,15 +126,15 @@ it('blocks nginx on port 80', function () {
     $edge = $check->for('edge');
 
     expect($edge->decision)->toBe(Decision::Block)
-        ->and($edge->reason)->toBe("Port 80 is in use by nginx, which Kiln's edge needs.")
+        ->and($edge->reason)->toBe("Port 80 is in use by nginx, which Falak's edge needs.")
         ->and($edge->hint())->toBe('Stop and disable it (systemctl disable --now nginx.service) or move it to another port, then re-check.')
         ->and($check->blocking())->toBeTrue()
         ->and($check->components[0]->component)->toBe('edge')
-        ->and($check->summary())->toBe("Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Kiln's edge needs.");
+        ->and($check->summary())->toBe("Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Falak's edge needs.");
 });
 
-it('accepts Kiln\'s own edge on its ports (re-provisioning)', function () {
-    $report = mc_service(mc_listen(mc_listen(mc_report(), 80, 'frankenphp', 'kiln-edge.service'), 443, 'frankenphp', 'kiln-edge.service'), 'kiln-edge.service');
+it('accepts Falak\'s own edge on its ports (re-provisioning)', function () {
+    $report = mc_service(mc_listen(mc_listen(mc_report(), 80, 'frankenphp', 'falak-edge.service'), 443, 'frankenphp', 'falak-edge.service'), 'falak-edge.service');
 
     expect(mc_decide($report, mc_wanted(mc_app_stack()))->for('edge')->decision)->toBe(Decision::Adopt);
 });
@@ -160,7 +160,7 @@ it('adopts MySQL from Oracle when MySQL is wanted and the version is supported',
         ->and($database->found)->toBe([['name' => 'MySQL', 'version' => '8.4.2', 'source' => 'repo.mysql.com']]);
 
     $old = mc_package(mc_report(), 'mysql-community-server', '5.7.44-1ubuntu18.04', 'vendor', 'http://repo.mysql.com/apt/ubuntu');
-    expect(mc_decide($old, mc_wanted(mc_app_stack('mysql')))->for('database')->reason)->toBe('MySQL 5.7.44 is older than 8.0, the oldest Kiln supports.');
+    expect(mc_decide($old, mc_wanted(mc_app_stack('mysql')))->for('database')->reason)->toBe('MySQL 5.7.44 is older than 8.0, the oldest Falak supports.');
 });
 
 it('blocks MySQL from Oracle when MariaDB is wanted, and the reverse', function () {
@@ -228,7 +228,7 @@ it('blocks SSH hardening that would lock everyone out', function () {
     expect(mc_decide($report, mc_wanted(mc_app_stack()))->for('ssh')->reason)->toBe('Key-only login, root without password, port 22. Keys found for ubuntu.');
 });
 
-it('warns about sshd drop-ins that win over Kiln\'s and a moved SSH port', function () {
+it('warns about sshd drop-ins that win over Falak\'s and a moved SSH port', function () {
     $report = mc_report();
     $report['ssh']['drop_ins'] = [
         ['file' => '/etc/ssh/sshd_config.d/50-cloud-init.conf', 'settings' => ['passwordauthentication' => 'yes']],
@@ -240,19 +240,19 @@ it('warns about sshd drop-ins that win over Kiln\'s and a moved SSH port', funct
     expect($ssh->decision)->toBe(Decision::Install)
         ->and($ssh->severity())->toBe(Severity::Warning)
         ->and(collect($ssh->notes)->pluck('message')->all())->toBe([
-            "/etc/ssh/sshd_config.d/50-cloud-init.conf sets PasswordAuthentication yes and is read before Kiln's 50-kiln.conf, so it wins.",
-            'sshd listens on port 2222 today; Kiln moves SSH to port 22.',
+            "/etc/ssh/sshd_config.d/50-cloud-init.conf sets PasswordAuthentication yes and is read before Falak's 50-falak.conf, so it wins.",
+            'sshd listens on port 2222 today; Falak moves SSH to port 22.',
         ]);
 });
 
 it('warns, but does not block, when ufw is active', function () {
-    $report = mc_report(['firewall' => ['ufw' => 'active', 'firewalld' => 'absent', 'nft_tables' => ['ip filter', 'ip nat', 'inet kiln', 'inet custom']]]);
+    $report = mc_report(['firewall' => ['ufw' => 'active', 'firewalld' => 'absent', 'nft_tables' => ['ip filter', 'ip nat', 'inet falak', 'inet custom']]]);
     $check = mc_decide($report, mc_wanted(mc_app_stack()));
     $firewall = $check->for('firewall');
 
     expect($firewall->decision)->toBe(Decision::Install)
         ->and($firewall->severity())->toBe(Severity::Warning)
-        ->and($firewall->hint())->toBe('Allow the ports Kiln opens (ufw allow 80,443/tcp) or turn ufw off (ufw disable).')
+        ->and($firewall->hint())->toBe('Allow the ports Falak opens (ufw allow 80,443/tcp) or turn ufw off (ufw disable).')
         ->and($firewall->notes[1]->message)->toBe('Other nftables tables stay as they are: inet custom.')
         ->and($check->blocking())->toBeFalse();
 });
@@ -263,7 +263,7 @@ it('adopts existing swap instead of creating /swapfile', function () {
     expect($check->for('swap')->decision)->toBe(Decision::Adopt)
         ->and($check->for('swap')->reason)->toBe('Keeps the existing swap (/swap.img); no /swapfile is created.');
 
-    // Kiln's own /swapfile converges as before; enough memory needs none.
+    // Falak's own /swapfile converges as before; enough memory needs none.
     expect(mc_decide(mc_report(['swap' => [['name' => '/swapfile', 'type' => 'file', 'size_bytes' => 1 << 30]]]), mc_wanted(mc_app_stack()))->for('swap')->decision)->toBe(Decision::Install)
         ->and(mc_decide(mc_report(), mc_wanted(mc_app_stack(), swapMb: 0))->for('swap')->decision)->toBe(Decision::Skip);
 });
@@ -275,7 +275,7 @@ it('keeps a custom server\'s hostname and names provider servers', function () {
 
 it('adopts an existing unattended-upgrades config and fail2ban with custom jails', function () {
     $report = mc_package(mc_report([
-        'unattended_upgrades' => ['installed' => true, 'periodic' => ['Update-Package-Lists' => '1', 'Unattended-Upgrade' => '0'], 'managed_by_kiln' => false],
+        'unattended_upgrades' => ['installed' => true, 'periodic' => ['Update-Package-Lists' => '1', 'Unattended-Upgrade' => '0'], 'managed_by_falak' => false],
         'fail2ban' => ['installed' => true, 'active' => true, 'jails' => ['/etc/fail2ban/jail.local', '/etc/fail2ban/jail.d/nginx.conf']],
     ]), 'fail2ban', '1.0.2-3ubuntu0.1');
     $check = mc_decide($report, mc_wanted(mc_app_stack()));
@@ -284,13 +284,13 @@ it('adopts an existing unattended-upgrades config and fail2ban with custom jails
         ->and($check->for('unattended_upgrades')->severity())->toBe(Severity::Warning)
         ->and($check->for('fail2ban')->decision)->toBe(Decision::Adopt)
         ->and($check->for('fail2ban')->keep)->toBe(['fail2ban'])
-        ->and($check->for('fail2ban')->notes[0]->message)->toBe('2 custom jail files stay; Kiln writes no jails.');
+        ->and($check->for('fail2ban')->notes[0]->message)->toBe('2 custom jail files stay; Falak writes no jails.');
 
-    $kiln = mc_report(['unattended_upgrades' => ['installed' => true, 'periodic' => ['Unattended-Upgrade' => '1'], 'managed_by_kiln' => true]]);
-    expect(mc_decide($kiln, mc_wanted(mc_app_stack()))->for('unattended_upgrades')->decision)->toBe(Decision::Install);
+    $falak = mc_report(['unattended_upgrades' => ['installed' => true, 'periodic' => ['Unattended-Upgrade' => '1'], 'managed_by_falak' => true]]);
+    expect(mc_decide($falak, mc_wanted(mc_app_stack()))->for('unattended_upgrades')->decision)->toBe(Decision::Install);
 });
 
-it('keeps Kiln\'s Node path and reports other Node installs as info', function () {
+it('keeps Falak\'s Node path and reports other Node installs as info', function () {
     $report = mc_report(['node' => [
         ['path' => '/usr/bin/node', 'version' => '20.18.1', 'source' => 'nodesource', 'package' => 'nodejs', 'repo' => 'https://deb.nodesource.com/node_20.x'],
         ['path' => '/root/.nvm/versions/node/v18.20.4/bin/node', 'version' => '18.20.4', 'source' => 'nvm'],
@@ -299,13 +299,13 @@ it('keeps Kiln\'s Node path and reports other Node installs as info', function (
 
     expect($node->decision)->toBe(Decision::Install)
         ->and($node->severity())->toBe(Severity::Info)
-        ->and($node->notes[0]->message)->toBe("Node 20.18.1 at /usr/bin/node (NodeSource) stays as it is; sites run Kiln's Node.");
+        ->and($node->notes[0]->message)->toBe("Node 20.18.1 at /usr/bin/node (NodeSource) stays as it is; sites run Falak's Node.");
 
-    $kiln = mc_report(['node' => [['path' => '/usr/local/bin/node', 'version' => config('servers.node_versions.22'), 'source' => 'kiln']]]);
-    expect(mc_decide($kiln, mc_wanted(mc_app_stack()))->for('node')->decision)->toBe(Decision::Adopt);
+    $falak = mc_report(['node' => [['path' => '/usr/local/bin/node', 'version' => config('servers.node_versions.22'), 'source' => 'falak']]]);
+    expect(mc_decide($falak, mc_wanted(mc_app_stack()))->for('node')->decision)->toBe(Decision::Adopt);
 });
 
-it('completes PHP that is partly there and warns about a PHP binary shadowing Kiln\'s', function () {
+it('completes PHP that is partly there and warns about a PHP binary shadowing Falak\'s', function () {
     $report = mc_report(['php' => [
         ['path' => '/usr/bin/php8.4', 'version' => '8.4', 'source' => 'vendor', 'package' => 'php8.4-cli', 'repo' => 'https://ppa.launchpadcontent.net/ondrej/php/ubuntu'],
         ['path' => '/usr/local/bin/php', 'version' => '8.2', 'source' => 'manual'],

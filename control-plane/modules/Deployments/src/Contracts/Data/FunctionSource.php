@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Deployments\Contracts\Data;
+namespace Falak\Deployments\Contracts\Data;
 
 /**
  * A function version as the agent's fn.release.apply needs it, with the function's current scaling and limits.

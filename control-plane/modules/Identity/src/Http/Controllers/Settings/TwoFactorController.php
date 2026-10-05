@@ -1,17 +1,17 @@
 <?php
 
-namespace Kiln\Identity\Http\Controllers\Settings;
+namespace Falak\Identity\Http\Controllers\Settings;
 
+use Falak\Identity\Application\Actions\ConfirmTwoFactor;
+use Falak\Identity\Application\Actions\DisableTwoFactor;
+use Falak\Identity\Application\Actions\EnableTwoFactor;
+use Falak\Identity\Application\Actions\RegenerateRecoveryCodes;
+use Falak\Identity\Domain\Models\User;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Application\Actions\ConfirmTwoFactor;
-use Kiln\Identity\Application\Actions\DisableTwoFactor;
-use Kiln\Identity\Application\Actions\EnableTwoFactor;
-use Kiln\Identity\Application\Actions\RegenerateRecoveryCodes;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Kernel\Http\Controller;
 use Laravel\Fortify\Fortify;
 
 final class TwoFactorController extends Controller

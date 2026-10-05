@@ -1,9 +1,9 @@
 <?php
 
+use Falak\Fleet\Domain\Models\CertificateAuthority;
+use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
+use Falak\Fleet\Infrastructure\Pki\InvalidCsr;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Kiln\Fleet\Domain\Models\CertificateAuthority;
-use Kiln\Fleet\Infrastructure\Pki\CertificateAuthorityService;
-use Kiln\Fleet\Infrastructure\Pki\InvalidCsr;
 use phpseclib3\File\X509;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -11,7 +11,7 @@ require_once __DIR__.'/../Support/helpers.php';
 uses(RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->caDir = sys_get_temp_dir().'/kiln-ca-'.bin2hex(random_bytes(4));
+    $this->caDir = sys_get_temp_dir().'/falak-ca-'.bin2hex(random_bytes(4));
     config(['fleet.ca_path' => $this->caDir]);
     app()->forgetInstance(CertificateAuthorityService::class);
     $this->ca = app(CertificateAuthorityService::class);
@@ -24,7 +24,7 @@ afterEach(function () {
 
 function opensslVerify(string $caPem, string $certPem, string $purpose): string
 {
-    $dir = sys_get_temp_dir().'/kiln-verify-'.bin2hex(random_bytes(4));
+    $dir = sys_get_temp_dir().'/falak-verify-'.bin2hex(random_bytes(4));
     mkdir($dir);
     file_put_contents("{$dir}/ca.pem", $caPem);
     file_put_contents("{$dir}/cert.pem", $certPem);
@@ -50,7 +50,7 @@ it('creates a self-signed ECDSA P-256 CA once, encrypted at rest, and writes ca.
     $cert = $x509->loadX509($authority->certificate_pem);
     expect($x509->getPublicKey()->getCurve())->toBe('secp256r1')
         ->and($x509->getExtension('id-ce-basicConstraints'))->toMatchArray(['cA' => true])
-        ->and($x509->getDNProp('id-at-commonName'))->toBe(['Kiln Agent CA'])
+        ->and($x509->getDNProp('id-at-commonName'))->toBe(['Falak Agent CA'])
         ->and($cert)->not->toBeFalse();
 
     expect(opensslVerify($authority->certificate_pem, $authority->certificate_pem, 'any'))->toEndWith('OK');
@@ -113,9 +113,9 @@ it('rejects garbage and tampered CSRs', function () {
 });
 
 it('accepts CSRs produced by OpenSSL (same format as Go crypto/x509)', function () {
-    $dir = sys_get_temp_dir().'/kiln-openssl-'.bin2hex(random_bytes(4));
+    $dir = sys_get_temp_dir().'/falak-openssl-'.bin2hex(random_bytes(4));
     mkdir($dir);
-    shell_exec(sprintf('openssl ecparam -name prime256v1 -genkey -noout -out %1$s/k.pem 2>/dev/null && openssl req -new -key %1$s/k.pem -subj "/CN=host/O=kiln-agent" -out %1$s/r.csr 2>/dev/null', escapeshellarg($dir)));
+    shell_exec(sprintf('openssl ecparam -name prime256v1 -genkey -noout -out %1$s/k.pem 2>/dev/null && openssl req -new -key %1$s/k.pem -subj "/CN=host/O=falak-agent" -out %1$s/r.csr 2>/dev/null', escapeshellarg($dir)));
     $csr = (string) file_get_contents("{$dir}/r.csr");
     array_map('unlink', glob("{$dir}/*") ?: []);
     rmdir($dir);
@@ -126,13 +126,13 @@ it('accepts CSRs produced by OpenSSL (same format as Go crypto/x509)', function 
 });
 
 it('issues serverAuth certificates with SANs for the agent-facing edge', function () {
-    ['certificate' => $issued, 'private_key_pem' => $key] = $this->ca->issueServerCertificate(['agents.kiln.test', '203.0.113.5']);
+    ['certificate' => $issued, 'private_key_pem' => $key] = $this->ca->issueServerCertificate(['agents.falak.test', '203.0.113.5']);
 
     $x509 = new X509;
     $x509->loadX509($issued->pem);
 
     expect($x509->getExtension('id-ce-extKeyUsage'))->toBe(['id-kp-serverAuth'])
-        ->and($x509->getExtension('id-ce-subjectAltName'))->toBe([['dNSName' => 'agents.kiln.test'], ['iPAddress' => '203.0.113.5']])
+        ->and($x509->getExtension('id-ce-subjectAltName'))->toBe([['dNSName' => 'agents.falak.test'], ['iPAddress' => '203.0.113.5']])
         ->and($key)->toContain('PRIVATE KEY');
 
     expect(opensslVerify($this->ca->caPem(), $issued->pem, 'sslserver'))->toEndWith('OK');

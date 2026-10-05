@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/runtime.node.install.schema.json",
-  "title": "runtime.node.install — install Node.js from nodejs.org official tarballs into /opt/kiln/node/<version>",
+  "$id": "https://falak.sh/agent-protocol/commands/runtime.node.install.schema.json",
+  "title": "runtime.node.install — install Node.js from nodejs.org official tarballs into /opt/falak/node/<version>",
   "type": "object",
   "additionalProperties": false,
   "required": [

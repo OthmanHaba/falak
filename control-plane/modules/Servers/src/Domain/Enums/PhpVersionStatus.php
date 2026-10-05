@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Servers\Domain\Enums;
+namespace Falak\Servers\Domain\Enums;
 
 enum PhpVersionStatus: string
 {

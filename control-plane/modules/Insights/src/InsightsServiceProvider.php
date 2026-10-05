@@ -1,30 +1,30 @@
 <?php
 
-namespace Kiln\Insights;
+namespace Falak\Insights;
 
+use Falak\Fleet\Events\InsightsReceived;
+use Falak\Identity\Contracts\PermissionRegistry;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Events\OrganizationDeleted;
+use Falak\Insights\Application\Jobs\DetectMissedHeartbeats;
+use Falak\Insights\Application\Jobs\EvaluateThresholdsJob;
+use Falak\Insights\Application\Jobs\PruneInsightsJob;
+use Falak\Insights\Application\Listeners\DeleteOrganizationInsights;
+use Falak\Insights\Application\Listeners\ExpectScheduledJobs;
+use Falak\Insights\Application\Listeners\IngestReceivedInsights;
+use Falak\Insights\Contracts\IssueDirectory;
+use Falak\Insights\Contracts\SiteNameResolver;
+use Falak\Insights\Domain\Models\HeartbeatMonitor;
+use Falak\Insights\Domain\Models\Issue;
+use Falak\Insights\Domain\Models\Threshold;
+use Falak\Insights\Domain\Policies\OrganizationScopedPolicy;
+use Falak\Insights\Infrastructure\EloquentIssueDirectory;
+use Falak\Insights\Infrastructure\IdSiteNameResolver;
+use Falak\Kernel\Support\ModuleServiceProvider;
+use Falak\Processes\Events\SchedulesApplied;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
-use Kiln\Fleet\Events\InsightsReceived;
-use Kiln\Identity\Contracts\PermissionRegistry;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Events\OrganizationDeleted;
-use Kiln\Insights\Application\Jobs\DetectMissedHeartbeats;
-use Kiln\Insights\Application\Jobs\EvaluateThresholdsJob;
-use Kiln\Insights\Application\Jobs\PruneInsightsJob;
-use Kiln\Insights\Application\Listeners\DeleteOrganizationInsights;
-use Kiln\Insights\Application\Listeners\ExpectScheduledJobs;
-use Kiln\Insights\Application\Listeners\IngestReceivedInsights;
-use Kiln\Insights\Contracts\IssueDirectory;
-use Kiln\Insights\Contracts\SiteNameResolver;
-use Kiln\Insights\Domain\Models\HeartbeatMonitor;
-use Kiln\Insights\Domain\Models\Issue;
-use Kiln\Insights\Domain\Models\Threshold;
-use Kiln\Insights\Domain\Policies\OrganizationScopedPolicy;
-use Kiln\Insights\Infrastructure\EloquentIssueDirectory;
-use Kiln\Insights\Infrastructure\IdSiteNameResolver;
-use Kiln\Kernel\Support\ModuleServiceProvider;
-use Kiln\Processes\Events\SchedulesApplied;
 
 class InsightsServiceProvider extends ModuleServiceProvider
 {

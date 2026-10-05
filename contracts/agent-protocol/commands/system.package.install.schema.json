@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/system.package.install.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/system.package.install.schema.json",
   "title": "system.package.install — apt packages",
   "type": "object",
   "additionalProperties": false,

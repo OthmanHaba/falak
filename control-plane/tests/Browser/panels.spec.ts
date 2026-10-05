@@ -50,12 +50,12 @@ async function canvas(page: Page, project = 'Default') {
 
 /** Wait until no animation runs on the panel layers (enter / recede / exit). */
 async function settled(page: Page) {
-    await page.waitForFunction(() => [...document.querySelectorAll('[data-kiln-panel]')].every((element) => element.getAnimations().length === 0));
+    await page.waitForFunction(() => [...document.querySelectorAll('[data-falak-panel]')].every((element) => element.getAnimations().length === 0));
     await page.waitForTimeout(320); // transform transitions of receding layers
 }
 
 async function layerStyle(page: Page, depth: number) {
-    return page.locator(`[data-kiln-panel][data-depth="${depth}"]`).evaluate((element) => {
+    return page.locator(`[data-falak-panel][data-depth="${depth}"]`).evaluate((element) => {
         const style = getComputedStyle(element);
         const matrix = new DOMMatrixReadOnly(style.transform === 'none' ? undefined : style.transform);
 
@@ -70,7 +70,7 @@ for (const theme of ['dark', 'light'] as const) {
 
         // Opening animates (slide + fade + scale) and ends at rest.
         await page.getByRole('group', { name: /^Marketing:/ }).click();
-        const layer = page.locator('[data-kiln-panel][data-depth="0"]');
+        const layer = page.locator('[data-falak-panel][data-depth="0"]');
         await expect(layer).toBeVisible();
         expect(await layer.evaluate((element) => element.getAnimations().length), 'panel enters with an animation').toBeGreaterThan(0);
         await settled(page);
@@ -131,7 +131,7 @@ for (const theme of ['dark', 'light'] as const) {
         await page.goto(`${url.pathname}?logs=${deployment}&logs_tab=build`, { waitUntil: 'networkidle' });
         await expect(page.getByTestId('deployment-panel')).toBeVisible();
         await expect(page.getByRole('tab', { name: /Build Logs/ })).toHaveAttribute('aria-selected', 'true');
-        await expect(page.locator('[data-kiln-panel]')).toHaveCount(2);
+        await expect(page.locator('[data-falak-panel]')).toHaveCount(2);
 
         // Network logs: no edge access logs yet, said plainly.
         await page.getByRole('tab', { name: 'Network Logs' }).click();
@@ -153,8 +153,8 @@ for (const theme of ['dark', 'light'] as const) {
         await expect(page.getByRole('group', { name: 'Commerce group', exact: true })).toBeVisible();
         await expect(page.getByTestId('volume-strip').first()).toBeVisible();
         expect(await page.getByTestId('volume-strip').count()).toBeGreaterThanOrEqual(4);
-        expect(await page.locator('.kiln-edge').count(), 'reference + depends_on edges').toBeGreaterThanOrEqual(4);
-        await expect(page.locator('.kiln-edge path[marker-end]').first()).toBeAttached();
+        expect(await page.locator('.falak-edge').count(), 'reference + depends_on edges').toBeGreaterThanOrEqual(4);
+        await expect(page.locator('.falak-edge path[marker-end]').first()).toBeAttached();
         await shot(page, theme, 'canvas-groups');
 
         // A compose service opens its site's Services tab.
@@ -236,7 +236,7 @@ for (const theme of ['dark', 'light'] as const) {
         await page.getByRole('button', { name: 'View logs' }).first().click();
         await expect(page.getByTestId('deployment-panel')).toBeVisible();
         await page.waitForLoadState('networkidle');
-        const width = await page.locator('[data-kiln-panel][data-depth="0"]').evaluate((element) => element.getBoundingClientRect().width);
+        const width = await page.locator('[data-falak-panel][data-depth="0"]').evaluate((element) => element.getBoundingClientRect().width);
         expect(width).toBeGreaterThanOrEqual(389);
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         expect(overflow).toBeLessThanOrEqual(1);

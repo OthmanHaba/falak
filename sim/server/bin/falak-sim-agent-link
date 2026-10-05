@@ -1,0 +1,12 @@
+#!/bin/sh
+# Link the host-built agent binary (repo mounted at /opt/falak/src) into PATH, if present.
+set -eu
+. /etc/falak/sim.env
+bin="/opt/falak/src/agent/bin/falak-agent-linux-${SIM_AGENT_ARCH}"
+if [ -f "$bin" ]; then
+  ln -sfn "$bin" /usr/local/bin/falak-agent
+  echo "falak-agent linked from $bin"
+else
+  rm -f /usr/local/bin/falak-agent
+  echo "falak-agent binary not built yet ($bin missing); skipping"
+fi

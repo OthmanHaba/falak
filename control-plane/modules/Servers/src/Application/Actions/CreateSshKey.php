@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Servers\Application\Actions;
+namespace Falak\Servers\Application\Actions;
 
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Servers\Domain\Models\SshKey;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Servers\Domain\Models\SshKey;
 
 final class CreateSshKey
 {

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Deployments\Contracts\Data;
+namespace Falak\Deployments\Contracts\Data;
 
 use DateTimeImmutable;
 

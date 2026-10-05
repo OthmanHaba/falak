@@ -1,7 +1,7 @@
 <?php
 
+use Falak\Templates\Http\Controllers\TemplateDeployController;
 use Illuminate\Support\Facades\Route;
-use Kiln\Templates\Http\Controllers\TemplateDeployController;
 
 // Public API (token auth): deploy a template into a project environment — same body and response as the web route.
 Route::middleware(['auth:sanctum', 'org'])->prefix('v1')->name('api.v1.')->group(function () {

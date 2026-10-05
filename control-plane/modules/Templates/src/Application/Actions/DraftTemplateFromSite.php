@@ -1,26 +1,26 @@
 <?php
 
-namespace Kiln\Templates\Application\Actions;
+namespace Falak\Templates\Application\Actions;
 
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Templates\Application\Catalog\Catalog;
+use Falak\Templates\Application\Catalog\TemplateParser;
+use Falak\Templates\Application\Catalog\TemplateValidator;
+use Falak\Templates\Application\Compose\ComposeAnalyzer;
+use Falak\Templates\Application\Compose\ComposeDocument;
+use Falak\Templates\Application\Compose\FalakPlaceholders;
+use Falak\Templates\Application\Compose\SiteCompose;
+use Falak\Templates\Domain\InvalidTemplate;
+use Falak\Templates\Domain\Models\CustomTemplate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Templates\Application\Catalog\Catalog;
-use Kiln\Templates\Application\Catalog\TemplateParser;
-use Kiln\Templates\Application\Catalog\TemplateValidator;
-use Kiln\Templates\Application\Compose\ComposeAnalyzer;
-use Kiln\Templates\Application\Compose\ComposeDocument;
-use Kiln\Templates\Application\Compose\KilnPlaceholders;
-use Kiln\Templates\Application\Compose\SiteCompose;
-use Kiln\Templates\Domain\InvalidTemplate;
-use Kiln\Templates\Domain\Models\CustomTemplate;
 use Symfony\Component\Yaml\Yaml;
 
 /**
  * "Save as template" (docs/COMPOSE_TEMPLATES.md §3): turn an inline compose site into a template draft the user
  * reviews before saving. Secret values never leave the site — they become generated inputs; the site's domains
- * become Kiln placeholders; other variables become inputs with their current value as default.
+ * become Falak placeholders; other variables become inputs with their current value as default.
  */
 final class DraftTemplateFromSite
 {
@@ -43,7 +43,7 @@ final class DraftTemplateFromSite
     public function __invoke(SiteData $site): array
     {
         $content = $this->compose->content($site)
-            ?? throw ValidationException::withMessages(['site' => 'Only compose sites whose compose file is stored in Kiln (inline) can be saved as templates.']);
+            ?? throw ValidationException::withMessages(['site' => 'Only compose sites whose compose file is stored in Falak (inline) can be saved as templates.']);
 
         try {
             $facts = $this->analyzer->analyze($content);
@@ -59,15 +59,15 @@ final class DraftTemplateFromSite
             $public = $first !== null ? [['service' => (string) $first, 'port' => $facts->services[$first][0], 'domain' => null]] : [];
         }
 
-        // Domains the site is served on → Kiln placeholders (longest first so sub-domains are not split).
+        // Domains the site is served on → Falak placeholders (longest first so sub-domains are not split).
         $replacements = [];
         foreach ($public as $index => $entry) {
             $domain = $entry['domain'] ?? $this->testDomain($site, $entry['service'], $index);
 
             if ($domain !== null) {
-                $replacements["https://{$domain}"] = "\${{ kiln.url({$entry['service']}) }}";
-                $replacements["http://{$domain}"] = "\${{ kiln.url({$entry['service']}) }}";
-                $replacements[$domain] = "\${{ kiln.domain({$entry['service']}) }}";
+                $replacements["https://{$domain}"] = "\${{ falak.url({$entry['service']}) }}";
+                $replacements["http://{$domain}"] = "\${{ falak.url({$entry['service']}) }}";
+                $replacements[$domain] = "\${{ falak.domain({$entry['service']}) }}";
             }
         }
         uksort($replacements, fn (string $a, string $b) => strlen($b) <=> strlen($a));
@@ -79,7 +79,7 @@ final class DraftTemplateFromSite
         $inputs = [];
 
         foreach ($variables as $key => $value) {
-            if (str_starts_with($key, 'KILN_') || preg_match(TemplateParser::KEY_PATTERN, $key) !== 1) {
+            if (str_starts_with($key, 'FALAK_') || preg_match(TemplateParser::KEY_PATTERN, $key) !== 1) {
                 continue;
             }
 
@@ -87,7 +87,7 @@ final class DraftTemplateFromSite
         }
 
         foreach ($referenced as $key) {
-            if (! array_key_exists($key, $variables) && ! in_array($key, KilnPlaceholders::RUNTIME_VARIABLES, true)) {
+            if (! array_key_exists($key, $variables) && ! in_array($key, FalakPlaceholders::RUNTIME_VARIABLES, true)) {
                 $inputs[] = ['key' => $key, 'type' => 'string', 'label' => Str::headline(strtolower($key))];
             }
         }
@@ -125,7 +125,7 @@ final class DraftTemplateFromSite
     {
         $label = Str::headline(strtolower($key));
 
-        if (str_contains($value, '${{') && ! str_contains($value, '${{ kiln.')) {
+        if (str_contains($value, '${{') && ! str_contains($value, '${{ falak.')) {
             // A reference to another service's variable: keep it (resolved at deploy time).
             return ['key' => $key, 'type' => 'string', 'label' => $label, 'default' => $value];
         }

@@ -1,11 +1,11 @@
 <?php
 
+use Falak\Providers\Contracts\Data\Machine;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Infrastructure\Adapters\DigitalOceanAdapter;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Kiln\Providers\Contracts\Data\Machine;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Infrastructure\Adapters\DigitalOceanAdapter;
 
 require_once __DIR__.'/../fixtures.php';
 
@@ -104,7 +104,7 @@ it('lists Ubuntu LTS distribution images', function () {
 it('creates droplets with user data, ssh keys and tags', function () {
     Http::fake(['api.digitalocean.com/v2/droplets' => Http::response(['droplet' => droplet()], 202)]);
 
-    $machine = digitalocean()->createServer(new MachineSpec('web 1', 'fra1', 's-1vcpu-1gb', 'ubuntu-24-04-x64', ['512190'], "#!/bin/sh\necho hi", ['kiln-server' => '01JABC']));
+    $machine = digitalocean()->createServer(new MachineSpec('web 1', 'fra1', 's-1vcpu-1gb', 'ubuntu-24-04-x64', ['512190'], "#!/bin/sh\necho hi", ['falak-server' => '01JABC']));
 
     expect($machine->id)->toBe('3164444')
         ->and($machine->status)->toBe(Machine::STATUS_PROVISIONING)
@@ -120,7 +120,7 @@ it('creates droplets with user data, ssh keys and tags', function () {
         && $r['ssh_keys'] === [512190]
         && $r['user_data'] === "#!/bin/sh\necho hi"
         && $r['ipv6'] === true
-        && $r['tags'] === ['kiln-server:01JABC']);
+        && $r['tags'] === ['falak-server:01JABC']);
 });
 
 it('gets and destroys droplets idempotently', function () {

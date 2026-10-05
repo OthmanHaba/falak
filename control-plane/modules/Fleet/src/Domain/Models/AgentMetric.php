@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Fleet\Domain\Models;
+namespace Falak\Fleet\Domain\Models;
 
+use Falak\Fleet\Contracts\Data\MetricSample;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Kiln\Fleet\Contracts\Data\MetricSample;
 
 /**
  * @property string $agent_id

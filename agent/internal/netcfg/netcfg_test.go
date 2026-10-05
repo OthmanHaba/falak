@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 var st = commands.NewTestStream("c", &commands.Collector{})
@@ -27,7 +27,7 @@ func payload() FirewallPayload {
 	return FirewallPayload{SSHPort: 2222, Rules: []Rule{
 		{ID: "web", Ports: []string{"80", "443"}, Comment: `public "web"`},
 		{ID: "pg", Ports: []string{"5432"}, Sources: []string{"10.0.0.0/8", "fd00::/8", "192.0.2.4"}},
-		{ID: "dns", Protocol: "any", Ports: []string{"53"}, Interface: "wg-kiln"},
+		{ID: "dns", Protocol: "any", Ports: []string{"53"}, Interface: "wg-falak"},
 		{ID: "block", Action: "drop", Protocol: "any", Sources: []string{"198.51.100.0/24"}},
 		{ID: "range", Protocol: "udp", Ports: []string{"60000-61000"}},
 	}}
@@ -39,18 +39,18 @@ func TestRenderRuleset(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, w := range []string{
-		"table inet kiln {}\ndelete table inet kiln\n",
+		"table inet falak {}\ndelete table inet falak\n",
 		"type filter hook input priority filter; policy drop;",
 		"ct state established,related accept",
 		`iif "lo" accept`,
 		"meta l4proto { icmp, ipv6-icmp } accept",
-		`tcp dport 2222 accept comment "kiln:ssh"`,
-		`tcp dport { 80, 443 } accept comment "kiln:web public web"`,
-		`ip saddr { 10.0.0.0/8, 192.0.2.4 } tcp dport 5432 accept comment "kiln:pg"`,
-		`ip6 saddr fd00::/8 tcp dport 5432 accept comment "kiln:pg"`,
-		`iifname "wg-kiln" meta l4proto { tcp, udp } th dport 53 accept comment "kiln:dns"`,
-		`ip saddr 198.51.100.0/24 drop comment "kiln:block"`,
-		`udp dport 60000-61000 accept comment "kiln:range"`,
+		`tcp dport 2222 accept comment "falak:ssh"`,
+		`tcp dport { 80, 443 } accept comment "falak:web public web"`,
+		`ip saddr { 10.0.0.0/8, 192.0.2.4 } tcp dport 5432 accept comment "falak:pg"`,
+		`ip6 saddr fd00::/8 tcp dport 5432 accept comment "falak:pg"`,
+		`iifname "wg-falak" meta l4proto { tcp, udp } th dport 53 accept comment "falak:dns"`,
+		`ip saddr 198.51.100.0/24 drop comment "falak:block"`,
+		`udp dport 60000-61000 accept comment "falak:range"`,
 	} {
 		if !strings.Contains(rs, w) {
 			t.Fatalf("missing %q in\n%s", w, rs)
@@ -70,15 +70,15 @@ func TestRenderRuleset(t *testing.T) {
 // Container access opens a port to the Docker bridges only, ahead of the user's rules (a deny rule can't cut it).
 func TestRenderRulesetContainerPorts(t *testing.T) {
 	p := payload()
-	p.Rules = append([]Rule{{ID: "wg-net-interface", Protocol: "any", Interface: "wg-kiln"}}, p.Rules...)
+	p.Rules = append([]Rule{{ID: "wg-net-interface", Protocol: "any", Interface: "wg-falak"}}, p.Rules...)
 	p.ContainerPorts = []ContainerPorts{{ID: "postgresql", Protocol: "tcp", Ports: []string{"5432"}, Sources: []string{"172.16.0.0/12", "192.168.0.0/16"}, Comment: "PostgreSQL for containers"}}
 	rs, err := RenderRuleset(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	docker0 := `iifname "docker0" ip saddr { 172.16.0.0/12, 192.168.0.0/16 } tcp dport 5432 accept comment "kiln:containers-postgresql PostgreSQL for containers"`
-	bridges := `iifname "br-*" ip saddr { 172.16.0.0/12, 192.168.0.0/16 } tcp dport 5432 accept comment "kiln:containers-postgresql PostgreSQL for containers"`
-	drop := `tcp dport 5432 drop comment "kiln:containers-postgresql-only only containers"`
+	docker0 := `iifname "docker0" ip saddr { 172.16.0.0/12, 192.168.0.0/16 } tcp dport 5432 accept comment "falak:containers-postgresql PostgreSQL for containers"`
+	bridges := `iifname "br-*" ip saddr { 172.16.0.0/12, 192.168.0.0/16 } tcp dport 5432 accept comment "falak:containers-postgresql PostgreSQL for containers"`
+	drop := `tcp dport 5432 drop comment "falak:containers-postgresql-only only containers"`
 	for _, w := range []string{docker0, bridges, drop} {
 		if !strings.Contains(rs, w) {
 			t.Fatalf("missing %q in\n%s", w, rs)
@@ -86,7 +86,7 @@ func TestRenderRulesetContainerPorts(t *testing.T) {
 	}
 	// Only loopback (accepted first) and containers: the drop precedes the private network and the user's rules
 	// (rule "pg" would otherwise open 5432 to 10.0.0.0/8).
-	if !(strings.Index(rs, bridges) < strings.Index(rs, drop) && strings.Index(rs, drop) < strings.Index(rs, `"kiln:wg-net-interface"`) && strings.Index(rs, drop) < strings.Index(rs, `"kiln:pg"`)) {
+	if !(strings.Index(rs, bridges) < strings.Index(rs, drop) && strings.Index(rs, drop) < strings.Index(rs, `"falak:wg-net-interface"`) && strings.Index(rs, drop) < strings.Index(rs, `"falak:pg"`)) {
 		t.Fatalf("order:\n%s", rs)
 	}
 	for _, bad := range []ContainerPorts{{ID: "x", Sources: []string{"172.16.0.0/12"}}, {ID: "x;y", Ports: []string{"5432"}, Sources: []string{"172.16.0.0/12"}}, {ID: "x", Ports: []string{"0"}, Sources: []string{"172.16.0.0/12"}}, {ID: "x", Ports: []string{"5432"}}, {ID: "x", Ports: []string{"5432"}, Sources: []string{"nope"}}} {
@@ -100,7 +100,7 @@ func TestRenderRulesetContainerPorts(t *testing.T) {
 // containers, then the port is dropped for everyone else — the private network's accept-all rule included.
 func TestRenderRulesetContainerPortsWithPeers(t *testing.T) {
 	p := payload()
-	p.Rules = append([]Rule{{ID: "wg-net-interface", Protocol: "any", Interface: "wg-kiln"}}, p.Rules...)
+	p.Rules = append([]Rule{{ID: "wg-net-interface", Protocol: "any", Interface: "wg-falak"}}, p.Rules...)
 	p.ContainerPorts = []ContainerPorts{
 		{ID: "redis-cache", Protocol: "tcp", Ports: []string{"6380"}, Sources: []string{"172.16.0.0/12"}, Peers: []string{"10.90.0.2", "10.0.1.7"}, Comment: "Redis cache"},
 		// Only peers (container access off: no Docker ranges configured).
@@ -110,18 +110,18 @@ func TestRenderRulesetContainerPortsWithPeers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridge := `iifname "br-*" ip saddr 172.16.0.0/12 tcp dport 6380 accept comment "kiln:containers-redis-cache Redis cache"`
-	peers := `ip saddr { 10.90.0.2, 10.0.1.7 } tcp dport 6380 accept comment "kiln:containers-redis-cache-peers Redis cache"`
-	drop := `tcp dport 6380 drop comment "kiln:containers-redis-cache-only only containers"`
+	bridge := `iifname "br-*" ip saddr 172.16.0.0/12 tcp dport 6380 accept comment "falak:containers-redis-cache Redis cache"`
+	peers := `ip saddr { 10.90.0.2, 10.0.1.7 } tcp dport 6380 accept comment "falak:containers-redis-cache-peers Redis cache"`
+	drop := `tcp dport 6380 drop comment "falak:containers-redis-cache-only only containers"`
 	for _, w := range []string{bridge, peers, drop, `ip saddr 10.90.0.4 tcp dport 6381 accept`, `tcp dport 6381 drop`} {
 		if !strings.Contains(rs, w) {
 			t.Fatalf("missing %q in\n%s", w, rs)
 		}
 	}
-	if strings.Contains(rs, `tcp dport 6381 accept comment "kiln:containers-redis-jobs Redis jobs"`) {
+	if strings.Contains(rs, `tcp dport 6381 accept comment "falak:containers-redis-jobs Redis jobs"`) {
 		t.Fatalf("bridge rule without sources:\n%s", rs)
 	}
-	if !(strings.Index(rs, peers) < strings.Index(rs, drop) && strings.Index(rs, drop) < strings.Index(rs, `"kiln:wg-net-interface"`)) {
+	if !(strings.Index(rs, peers) < strings.Index(rs, drop) && strings.Index(rs, drop) < strings.Index(rs, `"falak:wg-net-interface"`)) {
 		t.Fatalf("order:\n%s", rs)
 	}
 	for _, bad := range []ContainerPorts{{ID: "x", Ports: []string{"6380"}, Peers: []string{"nope"}}, {ID: "x", Ports: []string{"6380"}, Peers: []string{}}} {
@@ -135,7 +135,7 @@ func TestFirewallApply(t *testing.T) {
 	root := t.TempDir()
 	applied := false
 	f := &runnertest.Fake{}
-	f.OnFunc("nft list table inet kiln", func(runnertest.Call) (runner.Result, error) {
+	f.OnFunc("nft list table inet falak", func(runnertest.Call) (runner.Result, error) {
 		if applied {
 			return runner.Result{}, nil
 		}
@@ -147,8 +147,8 @@ func TestFirewallApply(t *testing.T) {
 	if err != nil || !r.(FirewallResult).Changed {
 		t.Fatal(r, err)
 	}
-	conf := filepath.Join(root, "etc/kiln/nftables.conf")
-	want := []string{"nft list table inet kiln", "nft -c -f " + conf + ".new", "nft -f " + conf, "systemctl daemon-reload", "systemctl enable kiln-firewall.service"}
+	conf := filepath.Join(root, "etc/falak/nftables.conf")
+	want := []string{"nft list table inet falak", "nft -c -f " + conf + ".new", "nft -f " + conf, "systemctl daemon-reload", "systemctl enable falak-firewall.service"}
 	if strings.Join(f.Lines(), "|") != strings.Join(want, "|") {
 		t.Fatalf("%v", f.Lines())
 	}
@@ -169,18 +169,18 @@ func TestFirewallValidationFailureKeepsOldFile(t *testing.T) {
 	root := t.TempDir()
 	f := (&runnertest.Fake{}).On("nft -c", runner.Result{ExitCode: 1, Stderr: []byte("Error: syntax error")})
 	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
-	os.MkdirAll(filepath.Join(root, "etc/kiln"), 0o755)
-	os.WriteFile(filepath.Join(root, "etc/kiln/nftables.conf"), []byte("old"), 0o600)
+	os.MkdirAll(filepath.Join(root, "etc/falak"), 0o755)
+	os.WriteFile(filepath.Join(root, "etc/falak/nftables.conf"), []byte("old"), 0o600)
 	if _, err := n.FirewallApply(context.Background(), payload(), st); err == nil || !strings.Contains(err.Error(), "untouched") {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(root, "etc/kiln/nftables.conf")); string(b) != "old" {
+	if b, _ := os.ReadFile(filepath.Join(root, "etc/falak/nftables.conf")); string(b) != "old" {
 		t.Fatal("old ruleset replaced")
 	}
 	if f.Ran("nft -f") {
 		t.Fatal("applied invalid ruleset")
 	}
-	if _, err := os.Stat(filepath.Join(root, "etc/kiln/nftables.conf.new")); err == nil {
+	if _, err := os.Stat(filepath.Join(root, "etc/falak/nftables.conf.new")); err == nil {
 		t.Fatal("tmp left")
 	}
 }
@@ -207,14 +207,14 @@ func TestWireGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := r.(WireGuardResult)
-	if !res.Changed || len(res.PublicKey) != 44 || !f.Ran("systemctl enable --now wg-quick@wg-kiln") {
+	if !res.Changed || len(res.PublicKey) != 44 || !f.Ran("systemctl enable --now wg-quick@wg-falak") {
 		t.Fatal(res, f.Lines())
 	}
-	keyFile := filepath.Join(root, "etc/kiln/wireguard/wg-kiln.key")
+	keyFile := filepath.Join(root, "etc/falak/wireguard/wg-falak.key")
 	if fi, _ := os.Stat(keyFile); fi.Mode().Perm() != 0o600 {
 		t.Fatal("key mode")
 	}
-	conf, _ := os.ReadFile(filepath.Join(root, "etc/wireguard/wg-kiln.conf"))
+	conf, _ := os.ReadFile(filepath.Join(root, "etc/wireguard/wg-falak.conf"))
 	if !strings.Contains(string(conf), "Endpoint = 203.0.113.1:51820") || !strings.Contains(string(conf), "PersistentKeepalive = 25") {
 		t.Fatal(string(conf))
 	}
@@ -230,19 +230,19 @@ func TestWireGuard(t *testing.T) {
 	r, _ = n.WireGuardApply(context.Background(), p, st)
 	calls := f.Calls()
 	last := calls[len(calls)-1]
-	if !r.(WireGuardResult).Changed || last.Line != "wg syncconf wg-kiln /dev/stdin" || !strings.Contains(last.Stdin, "[Interface]") {
+	if !r.(WireGuardResult).Changed || last.Line != "wg syncconf wg-falak /dev/stdin" || !strings.Contains(last.Stdin, "[Interface]") {
 		t.Fatal(f.Lines())
 	}
 	// address change → restart
 	p.Address = "10.90.0.4/24"
 	f.Reset()
 	n.WireGuardApply(context.Background(), p, st)
-	if !f.Ran("systemctl restart wg-quick@wg-kiln") {
+	if !f.Ran("systemctl restart wg-quick@wg-falak") {
 		t.Fatal(f.Lines())
 	}
 	p.State = "absent"
 	r, _ = n.WireGuardApply(context.Background(), p, st)
-	if !r.(WireGuardResult).Changed || !f.Ran("systemctl disable --now wg-quick@wg-kiln") {
+	if !r.(WireGuardResult).Changed || !f.Ran("systemctl disable --now wg-quick@wg-falak") {
 		t.Fatal("absent")
 	}
 	if _, err := os.Stat(keyFile); err != nil {
@@ -328,7 +328,7 @@ func TestTunnelApplyInstallsRunsAndRemoves(t *testing.T) {
 	if string(token) != "tok-123" || info.Mode().Perm() != 0o600 || !strings.Contains(string(unit), "LoadCredential=token:"+TunnelTokenPath) || !strings.Contains(string(unit), "DynamicUser=yes") {
 		t.Fatalf("token %q mode %v unit %s", token, info.Mode(), unit)
 	}
-	if want := "systemctl daemon-reload|systemctl enable kiln-cloudflared.service|systemctl restart kiln-cloudflared.service|systemctl is-active --quiet kiln-cloudflared.service"; strings.Join(f.Lines(), "|") != want {
+	if want := "systemctl daemon-reload|systemctl enable falak-cloudflared.service|systemctl restart falak-cloudflared.service|systemctl is-active --quiet falak-cloudflared.service"; strings.Join(f.Lines(), "|") != want {
 		t.Fatalf("%v", f.Lines())
 	}
 
@@ -355,14 +355,14 @@ func TestTunnelApplyInstallsRunsAndRemoves(t *testing.T) {
 	}
 }
 
-// Peers are accepted on the interface they arrive on: the one the control plane names (a Kiln WireGuard network's,
-// whether or not its config exists yet), a Kiln WireGuard network's range from its config, or the provider NIC whose
+// Peers are accepted on the interface they arrive on: the one the control plane names (a Falak WireGuard network's,
+// whether or not its config exists yet), a Falak WireGuard network's range from its config, or the provider NIC whose
 // subnet holds them; else on any interface. The route is never asked: a private address without a specific route goes
 // through the default route (eth0), which would pin a WireGuard peer to the public NIC.
 func TestFirewallApplyRestrictsPeersToTheirInterface(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "etc/wireguard"), 0o700)
-	os.WriteFile(filepath.Join(root, "etc/wireguard/wg-a1b2c3d4.conf"), []byte("# Managed by Kiln (net.wireguard.apply) — do not edit\n[Interface]\nPrivateKey = x\nAddress = 10.90.0.1/24\nListenPort = 51820\n"), 0o600)
+	os.WriteFile(filepath.Join(root, "etc/wireguard/wg-a1b2c3d4.conf"), []byte("# Managed by Falak (net.wireguard.apply) — do not edit\n[Interface]\nPrivateKey = x\nAddress = 10.90.0.1/24\nListenPort = 51820\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "etc/wireguard/wg0.conf"), []byte("[Interface]\nAddress = 10.91.0.1/24\n"), 0o600)
 	old := localNets
 	localNets = func() ([]localNet, error) {
@@ -389,10 +389,10 @@ func TestFirewallApplyRestrictsPeersToTheirInterface(t *testing.T) {
 	}
 	rs, _ := os.ReadFile(filepath.Join(root, RulesetPath))
 	for _, w := range []string{
-		`iifname "wg-a1b2c3d4" ip saddr { 10.90.0.2, 10.90.0.5 } tcp dport 6380 accept comment "kiln:containers-redis-cache-peers Redis cache"`,
+		`iifname "wg-a1b2c3d4" ip saddr { 10.90.0.2, 10.90.0.5 } tcp dport 6380 accept comment "falak:containers-redis-cache-peers Redis cache"`,
 		`iifname "wg-e5f6a7b8" ip saddr 10.92.0.2 tcp dport 6380 accept`,
 		`iifname "eth1" ip saddr 10.114.0.3 tcp dport 6380 accept`,
-		// Not Kiln's WireGuard, no local subnet, or a container bridge: any interface, as before.
+		// Not Falak's WireGuard, no local subnet, or a container bridge: any interface, as before.
 		"\t\tip saddr { 10.91.0.2, 172.17.0.9, 10.0.1.7 } tcp dport 6380 accept",
 	} {
 		if !strings.Contains(string(rs), w) {
@@ -402,7 +402,7 @@ func TestFirewallApplyRestrictsPeersToTheirInterface(t *testing.T) {
 	if strings.Contains(string(rs), `iifname "eth0"`) || f.Ran("ip -o route get 10.92.0.2") {
 		t.Fatalf("a peer pinned to the default route's interface:\n%s", rs)
 	}
-	if strings.Index(string(rs), `kiln:containers-redis-cache-peers`) > strings.Index(string(rs), `kiln:containers-redis-cache-only`) {
+	if strings.Index(string(rs), `falak:containers-redis-cache-peers`) > strings.Index(string(rs), `falak:containers-redis-cache-only`) {
 		t.Fatalf("peers after the drop:\n%s", rs)
 	}
 	// A bad interface name from the payload is refused.

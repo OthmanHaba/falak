@@ -1,9 +1,9 @@
-import { Callout } from '@/components/kiln/callout';
-import { Dialog } from '@/components/kiln/dialog';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Input } from '@/components/kiln/input';
-import { SkeletonRows } from '@/components/kiln/skeleton';
-import { Tag } from '@/components/kiln/tag';
+import { Callout } from '@/components/falak/callout';
+import { Dialog } from '@/components/falak/dialog';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Input } from '@/components/falak/input';
+import { SkeletonRows } from '@/components/falak/skeleton';
+import { Tag } from '@/components/falak/tag';
 import { ExternalLink, FolderGit2, GitBranch, Lock, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { type ConnectionRow, type RepositoryOption } from '../types';
@@ -21,7 +21,7 @@ async function fetchRepositories(connectionId: string, search: string, signal: A
     return body?.data ?? [];
 }
 
-/** Live repository list of a connection (what Kiln can see with its credentials), with search. */
+/** Live repository list of a connection (what Falak can see with its credentials), with search. */
 export function RepositoryBrowser({ connection, onClose }: { connection: ConnectionRow | null; onClose: () => void }) {
     const [search, setSearch] = useState('');
     const [query, setQuery] = useState('');
@@ -61,7 +61,7 @@ export function RepositoryBrowser({ connection, onClose }: { connection: Connect
             open={connection !== null}
             onOpenChange={(open) => !open && onClose()}
             title={`Repositories · ${connection?.name ?? ''}`}
-            description="What Kiln can deploy from with this connection's credentials."
+            description="What Falak can deploy from with this connection's credentials."
             size="lg"
         >
             <div className="grid gap-3">

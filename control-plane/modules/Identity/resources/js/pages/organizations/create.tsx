@@ -1,8 +1,8 @@
-import { AppShell } from '@/components/kiln/app-shell';
-import { Button } from '@/components/kiln/button';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { PageHeader, Section } from '@/components/kiln/section';
+import { AppShell } from '@/components/falak/app-shell';
+import { Button } from '@/components/falak/button';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { PageHeader, Section } from '@/components/falak/section';
 import { Head, useForm } from '@inertiajs/react';
 import { type FormEventHandler } from 'react';
 

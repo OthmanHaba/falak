@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts;
+namespace Falak\Telemetry\Contracts;
 
 use DateTimeInterface;
-use Kiln\Telemetry\Contracts\Data\LogLine;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Falak\Telemetry\Contracts\Data\LogLine;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 
 /**
  * Loki client (query_range). Callers must include an organization matcher
- * (`kiln_org_id="…"`) in the stream selector — build matchers with {@see PromQl::label()}.
+ * (`falak_org_id="…"`) in the stream selector — build matchers with {@see PromQl::label()}.
  */
 interface LogsQuery
 {

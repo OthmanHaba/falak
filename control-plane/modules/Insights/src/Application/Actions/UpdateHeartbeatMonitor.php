@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Insights\Application\Actions;
+namespace Falak\Insights\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Insights\Domain\Models\HeartbeatMonitor;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Insights\Domain\Models\HeartbeatMonitor;
 
 final class UpdateHeartbeatMonitor
 {

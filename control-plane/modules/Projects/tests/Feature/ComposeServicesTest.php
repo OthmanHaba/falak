@@ -1,17 +1,17 @@
 <?php
 
+use Falak\Databases\Application\EngineInventory;
+use Falak\Databases\Contracts\Data\DatabaseData;
+use Falak\Databases\Contracts\DatabaseProvisioner;
+use Falak\Identity\Contracts\Role;
+use Falak\Projects\Contracts\VariableReferences;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Sites\Application\ComposeSettings;
+use Falak\Sites\Contracts\ComposeServiceExtraction;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Events\ComposeServiceExtracted;
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Application\EngineInventory;
-use Kiln\Databases\Contracts\Data\DatabaseData;
-use Kiln\Databases\Contracts\DatabaseProvisioner;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Projects\Contracts\VariableReferences;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Sites\Application\ComposeSettings;
-use Kiln\Sites\Contracts\ComposeServiceExtraction;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Events\ComposeServiceExtracted;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -58,7 +58,7 @@ beforeEach(function () {
     $this->extraction = app(ComposeServiceExtraction::class);
 });
 
-it('replaces a database service with a Kiln database next to the stack and rewrites what pointed at it', function () {
+it('replaces a database service with a Falak database next to the stack and rewrites what pointed at it', function () {
     $database = $this->extraction->toDatabase($this->stack->id, 'db', null, 'postgresql', SHOP_STACK);
 
     expect($database->name)->toBe('shop')
@@ -87,9 +87,9 @@ it('replaces a database service with a Kiln database next to the stack and rewri
     $this->engine->forceFill(['container_access' => true])->save();
     $resolved = app(VariableReferences::class)->resolve($this->environment->id, $this->stack->id, $rewrites);
     expect($resolved->errors)->toBe([])
-        ->and(array_keys($rewrites))->toBe(['KILN_SVC_APP_DATABASE_URL', 'KILN_SVC_APP_DB_HOST', 'KILN_SVC_APP_DB_PASSWORD', 'KILN_SVC_WORKER_PGHOST', 'KILN_SVC_WORKER_PGPORT'])
-        ->and($resolved->variables['KILN_SVC_APP_DB_HOST'])->toBe(Server::query()->find($this->server->id)->private_ipv4)
-        ->and($resolved->variables['KILN_SVC_APP_DATABASE_URL'])->toStartWith('postgresql://shop:');
+        ->and(array_keys($rewrites))->toBe(['FALAK_SVC_APP_DATABASE_URL', 'FALAK_SVC_APP_DB_HOST', 'FALAK_SVC_APP_DB_PASSWORD', 'FALAK_SVC_WORKER_PGHOST', 'FALAK_SVC_WORKER_PGPORT'])
+        ->and($resolved->variables['FALAK_SVC_APP_DB_HOST'])->toBe(Server::query()->find($this->server->id)->private_ipv4)
+        ->and($resolved->variables['FALAK_SVC_APP_DATABASE_URL'])->toStartWith('postgresql://shop:');
 });
 
 it('picks a free database name when another stack\'s database holds the one the service used', function () {
@@ -133,7 +133,7 @@ it('refuses services that are not a database of that engine, and services alread
     $fails(fn () => $this->extraction->toDatabase($this->stack->id, 'db', null, 'postgresql', SHOP_STACK), 'service');
 });
 
-it('runs an app service as its own Kiln site from its build context, with its variables, next to the stack', function () {
+it('runs an app service as its own Falak site from its build context, with its variables, next to the stack', function () {
     $this->stack->forceFill([
         'public_services' => [['service' => 'app', 'port' => 8000, 'host_port' => 20001], ['service' => 'worker', 'port' => 9000, 'host_port' => 20002]],
         'app_port' => 20001,
@@ -167,7 +167,7 @@ it('runs an app service as its own Kiln site from its build context, with its va
 
     // UPSTREAM pointed at the service: it becomes the site's address (here its test domain).
     $model->forceFill(['test_domain_enabled' => true])->save();
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
     expect($this->extraction->rewrites($this->stack->id)->groups)->toBe(['worker' => ['UPSTREAM' => 'https://'.$model->refresh()->testDomain().'/v1']]);
 });
 
@@ -238,7 +238,7 @@ it('gives a split-out site the keys of its env files from the repository, under 
     $connection = $git->addConnection($this->organization->id);
     $git->files = [
         'apps/shared.env' => "SHARED=yes\nPOOL_SIZE=1\n",
-        'apps/shop/api/defaults.env' => "APP_NAME=shop-api\nPOOL_SIZE=5\nMODE=from-file\nKILN_SITE_ID=nope\n",
+        'apps/shop/api/defaults.env' => "APP_NAME=shop-api\nPOOL_SIZE=5\nMODE=from-file\nFALAK_SITE_ID=nope\n",
         'apps/shop/api/local.env' => "POOL_SIZE=10\n",
         'apps/shop/.env' => "SECRET=never\n",
         'outside.env' => "OUTSIDE=yes\n",
@@ -256,7 +256,7 @@ YAML;
 
     $site = $this->extraction->toSite($this->stack->id, 'app', ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker'], $yaml);
 
-    // Later env files win, `environment:` wins over them, KILN_* keys and Kiln's own .env are left out (PORT is the
+    // Later env files win, `environment:` wins over them, FALAK_* keys and Falak's own .env are left out (PORT is the
     // Docker site's own).
     // ../shared.env above the root directory is still in the repository; ../../../outside.env leaves it.
     expect(Site::query()->find($site->id)->environmentVersions()->first()->variables)->toMatchArray([
@@ -264,7 +264,7 @@ YAML;
         'APP_NAME' => 'shop-api',
         'POOL_SIZE' => '10',
         'MODE' => 'production',
-    ])->not->toHaveKeys(['KILN_SITE_ID', 'SECRET', 'OUTSIDE']);
+    ])->not->toHaveKeys(['FALAK_SITE_ID', 'SECRET', 'OUTSIDE']);
 });
 
 it('only lets agents create plain project networks: configured ones and reserved names wait for the stack', function () {
@@ -272,11 +272,11 @@ it('only lets agents create plain project networks: configured ones and reserved
 services:
   app:
     image: api
-    networks: [default, private, named, kilnnet]
+    networks: [default, private, named, falaknet]
 networks:
   private: { internal: true }
   named: { name: shop-named }
-  kilnnet: { name: kiln-internal }
+  falaknet: { name: falak-internal }
 YAML;
     $warnings = app(ComposeSettings::class)->extract(Site::query()->findOrFail($this->stack->id), [
         ['service' => 'app', 'mode' => 'site', 'site' => ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker']],
@@ -286,10 +286,10 @@ YAML;
 
     // Compose v2 reuses a labelled network without checking its configuration: `internal: true` must come from Compose.
     expect($decision['compose_networks'])->toBe(["{$slug}_default" => 'default', 'shop-named' => 'named'])
-        ->and($decision['waited_networks'])->toBe(["{$slug}_private", 'kiln-internal'])
-        ->and(implode("\n", $warnings))->toContain("{$slug}_private, kiln-internal, which only the stack's own deploy can create")
+        ->and($decision['waited_networks'])->toBe(["{$slug}_private", 'falak-internal'])
+        ->and(implode("\n", $warnings))->toContain("{$slug}_private, falak-internal, which only the stack's own deploy can create")
         ->and(collect(app(ComposeSites::class)->stackNetworks($decision['site_id'], $this->server->id))->mapWithKeys(fn ($n) => [$n['name'] => isset($n['compose'])])->all())
-        ->toBe(["{$slug}_default" => true, "{$slug}_private" => false, 'shop-named' => true, 'kiln-internal' => false]);
+        ->toBe(["{$slug}_default" => true, "{$slug}_private" => false, 'shop-named' => true, 'falak-internal' => false]);
 });
 
 it('never asks agents to create an external network a split-out service joins', function () {
@@ -368,7 +368,7 @@ YAML;
     ]);
 });
 
-it('gives the service back when creating the Kiln service fails, and refuses a second claim', function () {
+it('gives the service back when creating the Falak service fails, and refuses a second claim', function () {
     app()->instance(DatabaseProvisioner::class, new class implements DatabaseProvisioner
     {
         public function create(string $organizationId, string $serverId, string $engine, string $name, ?string $actorId = null, array $options = []): DatabaseData
@@ -390,7 +390,7 @@ it('gives the service back when creating the Kiln service fails, and refuses a s
         ->and($this->stack->refresh()->toData()->compose->extracted())->toBe([]);
 });
 
-it('only extracts services for members allowed to create the Kiln service (create flow and Settings → Compose)', function () {
+it('only extracts services for members allowed to create the Falak service (create flow and Settings → Compose)', function () {
     [$viewer] = memberOf($this->organization, Role::Viewer);
     $this->actingAs($viewer);
 
@@ -412,7 +412,7 @@ it('only extracts services for members allowed to create the Kiln service (creat
         ->and($this->stack->refresh()->compose_services['db']['mode'])->toBe('database');
 });
 
-it('rewrites a split-out site\'s variables when a service it uses moves to a Kiln database', function () {
+it('rewrites a split-out site\'s variables when a service it uses moves to a Falak database', function () {
     $site = $this->extraction->toSite($this->stack->id, 'app', ['name' => 'API', 'framework' => 'docker', 'runtime' => 'docker'], SHOP_STACK);
     $model = Site::query()->find($site->id);
     expect($model->environmentVersions()->orderByDesc('version')->first()->variables['DB_HOST'])->toBe('db');

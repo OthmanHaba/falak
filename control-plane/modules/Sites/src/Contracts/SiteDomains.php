@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
+use Falak\Sites\Contracts\Data\DomainChoice;
 use Illuminate\Validation\ValidationException;
-use Kiln\Sites\Contracts\Data\DomainChoice;
 
 /**
  * Site domains owned by Edge. Sites binds a null implementation; Edge (which owns domains, TLS and load balancers)

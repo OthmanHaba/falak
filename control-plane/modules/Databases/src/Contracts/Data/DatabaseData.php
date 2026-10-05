@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Databases\Contracts\Data;
+namespace Falak\Databases\Contracts\Data;
 
 final readonly class DatabaseData
 {

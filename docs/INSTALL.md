@@ -1,20 +1,20 @@
-# Installing Kiln (production)
+# Installing Falak (production)
 
-Kiln runs as a Docker Compose stack on a single Linux host. The installer sets up Docker, writes a
-generated configuration to `/opt/kiln/.env`, starts the stack, and creates the first administrator.
-Day-2 operations use `kiln-ctl`.
+Falak runs as a Docker Compose stack on a single Linux host. The installer sets up Docker, writes a
+generated configuration to `/opt/falak/.env`, starts the stack, and creates the first administrator.
+Day-2 operations use `falak-ctl`.
 
 ```
 internet ──:80/:443──► edge (Caddy)
-                        ├─ kiln.example.com         Let's Encrypt ─► control-plane (FrankenPHP) · reverb (websockets)
-                        ├─ agents.kiln.example.com  Fleet-CA cert + client-cert (mTLS) check ─► control-plane
-                        ├─ registry.kiln.example.com Let's Encrypt + basic auth ─► registry (built-in image registry)
-                        └─ grafana.kiln.example.com Let's Encrypt ─► grafana            (optional)
+                        ├─ falak.example.com         Let's Encrypt ─► control-plane (FrankenPHP) · reverb (websockets)
+                        ├─ agents.falak.example.com  Fleet-CA cert + client-cert (mTLS) check ─► control-plane
+                        ├─ registry.falak.example.com Let's Encrypt + basic auth ─► registry (built-in image registry)
+                        └─ grafana.falak.example.com Let's Encrypt ─► grafana            (optional)
 control-plane · horizon · reverb · scheduler ─► postgres 17 · valkey
-builder (kiln-builder serve: PHP/Composer, Node, Bun) ─► edge
+builder (falak-builder serve: PHP/Composer, Node, Bun) ─► edge
 ```
 
-Releases are published from [github.com/OthmanHaba/kiln](https://github.com/OthmanHaba/kiln); a fork can install its own releases with `--repo OWNER/NAME`.
+Releases are published from [github.com/OthmanHaba/falak](https://github.com/OthmanHaba/falak); a fork can install its own releases with `--repo OWNER/NAME`.
 
 ## 1. Requirements
 
@@ -26,7 +26,7 @@ Releases are published from [github.com/OthmanHaba/kiln](https://github.com/Othm
 | Network | public IPv4 (or IPv6); ports **80** and **443** free and reachable | |
 | DNS | records for the panel, `agents.` and `registry.` hosts (below) | |
 
-This host runs only Kiln. The servers Kiln manages are separate machines.
+This host runs only Falak. The servers Falak manages are separate machines.
 
 **Resource budget** (limits are caps, not reservations). Idle values were measured with three managed servers enrolled and a site deployed (sim) and on a 2-CPU host profile (bench):
 
@@ -34,7 +34,7 @@ This host runs only Kiln. The servers Kiln manages are separate machines.
 |---|---|---|---|
 | control-plane (panel, FrankenPHP worker mode) | 512 MB | 130–150 MB | ~12 MB per booted worker (2 × CPUs), autoscales under load |
 | agent-api (agents, installer, builders) | 512 MB | 70–100 MB | +2–3 MB per waiting long-poll (one per server and builder) |
-| horizon (`KILN_HORIZON_MAX_PROCESSES`, default 4, auto-balanced from 1) | 512 MB | 130–150 MB | |
+| horizon (`FALAK_HORIZON_MAX_PROCESSES`, default 4, auto-balanced from 1) | 512 MB | 130–150 MB | |
 | reverb | 192 MB | 50 MB | |
 | scheduler | 256 MB | 45 MB | a short `schedule:run` process every minute |
 | postgres (`shared_buffers=128MB`) | 512 MB | 40–150 MB | agents' long-polls hold no connection |
@@ -46,9 +46,9 @@ This host runs only Kiln. The servers Kiln manages are separate machines.
 
 The scheduler stays a separate container. Running `schedule:work` inside Horizon would save only its ~45 MB
 and would tie the two services' restarts and health together. Grafana 12+ downloads its Drilldown, Advisor
-and Pyroscope apps on first start. Kiln does not use them, and they add about 110 MB, which put a fresh
+and Pyroscope apps on first start. Falak does not use them, and they add about 110 MB, which put a fresh
 Grafana at ~470 MB against its 512 MB limit. The stack therefore skips that step
-(`KILN_GRAFANA_PREINSTALL_DISABLED=false` in `.env` restores it). On a 2-vCPU / 4 GB host the core stack
+(`FALAK_GRAFANA_PREINSTALL_DISABLED=false` in `.env` restores it). On a 2-vCPU / 4 GB host the core stack
 leaves more than 3 GB free. With `--observability`, plan for 8 GB so builds have room.
 
 ## 2. DNS
@@ -57,76 +57,80 @@ Create these records before you install (replace the IP with your server's publi
 
 | Name | Type | Value | Why |
 |---|---|---|---|
-| `kiln.example.com` | A (and/or AAAA) | `203.0.113.10` | panel, installer script, agent enrollment |
-| `agents.kiln.example.com` | A (and/or AAAA) | `203.0.113.10` | agent API (mTLS) |
-| `registry.kiln.example.com` | A (and/or AAAA) | `203.0.113.10` | built-in image registry: docker builds push, servers pull |
-| `grafana.kiln.example.com` | A (and/or AAAA) | `203.0.113.10` | only with `--observability` |
+| `falak.example.com` | A (and/or AAAA) | `203.0.113.10` | panel, installer script, agent enrollment |
+| `agents.falak.example.com` | A (and/or AAAA) | `203.0.113.10` | agent API (mTLS) |
+| `registry.falak.example.com` | A (and/or AAAA) | `203.0.113.10` | built-in image registry: docker builds push, servers pull |
+| `grafana.falak.example.com` | A (and/or AAAA) | `203.0.113.10` | only with `--observability` |
 
 - The panel, the registry and Grafana get **Let's Encrypt** certificates automatically (HTTP-01/TLS-ALPN on ports 80/443).
-- The **registry** host serves Kiln's built-in image registry (Docker Distribution) behind basic auth: docker-mode
+- The **registry** host serves Falak's built-in image registry (Docker Distribution) behind basic auth: docker-mode
   builds (Dockerfile sites, compose services with `build:`) push there and servers pull from it, pinned by digest.
-  The credentials are generated into `.env` (`KILN_REGISTRY_USERNAME`, `KILN_REGISTRY_PASSWORD`); Kiln hands them
+  The credentials are generated into `.env` (`FALAK_REGISTRY_USERNAME`, `FALAK_REGISTRY_PASSWORD`); Falak hands them
   to builders and servers itself. With `--tls internal` its certificate is not trusted by Docker on other hosts,
   so docker builds need `--tls acme` (or the internal root trusted in each Docker daemon).
-- The **agents** host does *not* use Let's Encrypt. Agents pin Kiln's own Fleet CA, so the edge serves
+- The **agents** host does *not* use Let's Encrypt. Agents pin Falak's own Fleet CA, so the edge serves
   that host with a certificate issued by the Fleet CA, and verifies agent client certificates against it.
   Behind Cloudflare, set all records to **DNS only** (grey cloud): a proxy would terminate TLS and break mTLS.
 - The installer checks that every name resolves to this host's public IP, and it prints the missing records.
-- **Installs from before the registry** get `KILN_REGISTRY_*` added to `.env` by the next `kiln-ctl up` or
-  `kiln-ctl update` (an update run by an older kiln-ctl: run `kiln-ctl up` once afterwards). Add the
-  `registry.` DNS record; `kiln-ctl registry status` checks it.
+- **Installs from before the registry** get `FALAK_REGISTRY_*` added to `.env` by the next `falak-ctl up` or
+  `falak-ctl update` (an update run by an older falak-ctl: run `falak-ctl up` once afterwards). Add the
+  `registry.` DNS record; `falak-ctl registry status` checks it.
 
 ## 3. Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OthmanHaba/kiln/main/deploy/install.sh \
-  | sudo bash -s -- --domain kiln.example.com --email you@example.com
+curl -fsSL https://raw.githubusercontent.com/OthmanHaba/falak/main/deploy/install.sh \
+  | sudo bash -s -- --domain falak.example.com --email you@example.com
 ```
 
+Once [falak.sh](https://falak.sh) serves the script, the short form is
+`curl -fsSL https://falak.sh/install.sh | sudo bash -s -- --domain ... --email ...`; the GitHub URL above is
+the canonical one.
+
 Or pin a release with its own copy of the script:
-`curl -fsSL https://github.com/OthmanHaba/kiln/releases/download/v1.2.3/install.sh | sudo bash -s -- --domain ... --email ...`
+`curl -fsSL https://github.com/OthmanHaba/falak/releases/download/v1.2.3/install.sh | sudo bash -s -- --domain ... --email ...`
 
 What it does:
 
 1. **Preflight:** checks that you are root, the OS, the CPU architecture, RAM, disk, that ports 80/443 are free, and that DNS for the panel and `agents.` host (plus `grafana.` with `--observability`) points at this host's public IP.
 2. Installs **Docker Engine** and the Compose plugin from Docker's official apt repository if they are missing.
-3. Downloads the release bundle `kiln-deploy.tar.gz`, verifies it against `SHA256SUMS`, and unpacks it to
-   `/opt/kiln/{deploy,observability}`. It also installs `kiln-ctl` to `/usr/local/bin`.
-4. Generates `/opt/kiln/.env` (mode 600) with `APP_KEY`, database and Valkey passwords, Reverb keys, the
-   builder token, the OTLP token, and all `KILN_*` URLs.
-5. Pulls the images `ghcr.io/<owner>/kiln-{control-plane,builder,edge}:<version>`, starts the stack, and
+3. Downloads the release bundle `falak-deploy.tar.gz`, verifies it against `SHA256SUMS`, and unpacks it to
+   `/opt/falak/{deploy,observability}`. It also installs `falak-ctl` to `/usr/local/bin`.
+4. Generates `/opt/falak/.env` (mode 600) with `APP_KEY`, database and Valkey passwords, Reverb keys, the
+   builder token, the OTLP token, and all `FALAK_*` URLs.
+5. Pulls the images `ghcr.io/<owner>/falak-{control-plane,builder,edge}:<version>`, starts the stack, and
    waits until every service is healthy. Database migrations run in the `control-plane` service on start.
-6. Creates the first administrator with `kiln:admin` and **prints the password once**.
+6. Creates the first administrator with `falak:admin` and **prints the password once**.
 
 | Option | Env | Default |
 |---|---|---|
-| `--domain NAME` | `KILN_DOMAIN` | required |
-| `--email ADDRESS` | `KILN_EMAIL` | required for Let's Encrypt; also the admin e-mail |
-| `--admin-email ADDRESS` | `KILN_ADMIN_EMAIL` | `--email` |
-| `--version TAG` | `KILN_VERSION` | latest release |
-| `--observability` | `KILN_OBSERVABILITY=1` | off |
-| `--tls acme\|internal` | `KILN_TLS` | `acme` (`internal` = Caddy's local CA, for testing only) |
-| `--repo OWNER/NAME` | `KILN_REPO` | `OthmanHaba/kiln` |
-| `--image-prefix PREFIX` | `KILN_IMAGE_PREFIX` | `ghcr.io/<owner>` |
-| `--build-from-source [--ref REF]` | `KILN_BUILD_FROM_SOURCE=1` | clones the repo and builds images locally (no registry) |
-| `--source-dir PATH` | `KILN_DEPLOY_SOURCE` | use deploy files from a local checkout |
-| `--http-port/--https-port` | `KILN_HTTP_PORT/KILN_HTTPS_PORT` | 80/443 (other ports only with `--tls internal`) |
+| `--domain NAME` | `FALAK_DOMAIN` | required |
+| `--email ADDRESS` | `FALAK_EMAIL` | required for Let's Encrypt; also the admin e-mail |
+| `--admin-email ADDRESS` | `FALAK_ADMIN_EMAIL` | `--email` |
+| `--version TAG` | `FALAK_VERSION` | latest release |
+| `--observability` | `FALAK_OBSERVABILITY=1` | off |
+| `--tls acme\|internal` | `FALAK_TLS` | `acme` (`internal` = Caddy's local CA, for testing only) |
+| `--repo OWNER/NAME` | `FALAK_REPO` | `OthmanHaba/falak` |
+| `--image-prefix PREFIX` | `FALAK_IMAGE_PREFIX` | `ghcr.io/<owner>` |
+| `--build-from-source [--ref REF]` | `FALAK_BUILD_FROM_SOURCE=1` | clones the repo and builds images locally (no registry) |
+| `--source-dir PATH` | `FALAK_DEPLOY_SOURCE` | use deploy files from a local checkout |
+| `--http-port/--https-port` | `FALAK_HTTP_PORT/FALAK_HTTPS_PORT` | 80/443 (other ports only with `--tls internal`) |
 | `--skip-dns-check`, `--force` | | |
 
 Running the installer again is safe. Secrets are kept, settings from the flags are updated, the stack is
 converged, and the admin is not created a second time. To enable observability later, re-run it with
-`--observability`. The installer then creates a Grafana service account token for Kiln
-(`KILN_GRAFANA_TOKEN`). Grafana's `admin` password is `GRAFANA_ADMIN_PASSWORD` in `/opt/kiln/.env`.
+`--observability`. The installer then creates a Grafana service account token for Falak
+(`FALAK_GRAFANA_TOKEN`). Grafana's `admin` password is `GRAFANA_ADMIN_PASSWORD` in `/opt/falak/.env`.
 
 **Who can sign up.** By default anyone who can reach the panel can create an account (and gets an empty
-organization of their own). On a panel reachable from the internet, set `KILN_REGISTRATION` in `/opt/kiln/.env`
-and run `kiln-ctl up`:
+organization of their own). On a panel reachable from the internet, set `FALAK_REGISTRATION` in `/opt/falak/.env`
+and run `falak-ctl up`:
 
 | Value | Sign-up |
 |---|---|
 | `open` (default) | anyone |
 | `invite` | only through an invitation link (invite from **Settings → Members**): the person opens the e-mailed link, chooses *Sign up* and registers with the invited address, which also joins the organization |
-| `closed` | nobody; the *Sign up* links are hidden. Create accounts with `kiln-ctl admin create <email>` |
+| `closed` | nobody; the *Sign up* links are hidden. Create accounts with `falak-ctl admin create <email>` |
 
 An unknown value counts as `closed`. A panel without any account always accepts the first sign-up, so the first
 administrator can register before the setting matters.
@@ -138,46 +142,47 @@ The agent binaries come from the control-plane image, so servers download them f
 ### Files
 
 ```
-/opt/kiln/.env            settings + secrets (install.sh; never commit or share)
-/opt/kiln/custom.env      optional extra app env (GITHUB_APP_*, mirrors, KILN_* tuning) — loaded by the app containers
-/opt/kiln/deploy/         compose.yml, kiln-ctl, image support files (replaced on update; previous kept as deploy.prev)
-/opt/kiln/observability/  Loki/Tempo/Grafana/gateway configs
-/opt/kiln/backups/        kiln-ctl backup output
+/opt/falak/.env            settings + secrets (install.sh; never commit or share)
+/opt/falak/custom.env      optional extra app env (GITHUB_APP_*, mirrors, FALAK_* tuning) — loaded by the app containers
+/opt/falak/deploy/         compose.yml, falak-ctl, image support files (replaced on update; previous kept as deploy.prev)
+/opt/falak/observability/  Loki/Tempo/Grafana/gateway configs
+/opt/falak/backups/        falak-ctl backup output
+/opt/falak/edge/           optional extra sites served by the edge (yours; never touched by updates)
 ```
 
 **Which file?** `.env` holds the settings `deploy/compose.yml` passes to the containers by name (domains, secrets,
-`MAIL_*`, sizing, telemetry, `KILN_REGISTRATION`, …) plus kiln-ctl's own (`KILN_BACKUP_*`, `KILN_PRUNE_IMAGES`).
-Every other app variable — e.g. `GITHUB_APP_*`, `KILN_WEBHOOK_URL`, `KILN_*_MIRROR` — goes in `custom.env`;
+`MAIL_*`, sizing, telemetry, `FALAK_REGISTRATION`, …) plus falak-ctl's own (`FALAK_BACKUP_*`, `FALAK_PRUNE_IMAGES`).
+Every other app variable — e.g. `GITHUB_APP_*`, `FALAK_WEBHOOK_URL`, `FALAK_*_MIRROR` — goes in `custom.env`;
 compose does not forward it from `.env`. A variable compose passes by name always comes from `.env`: setting it in
 `custom.env` has no effect.
 
 For e-mail, set `MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` and
-`MAIL_FROM_ADDRESS` in `/opt/kiln/.env`, then run `kiln-ctl up`.
+`MAIL_FROM_ADDRESS` in `/opt/falak/.env`, then run `falak-ctl up`.
 
 ### Connect GitHub (GitHub App, one click)
 
-Open **Settings → Source control → Connect GitHub**. Kiln registers a private GitHub App for your Kiln organization
+Open **Settings → Source control → Connect GitHub**. Falak registers a private GitHub App for your Falak organization
 (on your personal GitHub account, or on a GitHub organization you own: type its name) using GitHub's
 [app manifest flow](https://docs.github.com/en/apps/sharing-github-apps/registering-a-github-app-from-a-manifest):
-you confirm the app on github.com, Kiln stores its id, private key and webhook secret **encrypted in its database**,
-and GitHub continues straight to the installation page, where you pick the repositories Kiln may deploy. Change
-that selection any time with **Manage access on GitHub**; GitHub sends you back to Kiln afterwards.
+you confirm the app on github.com, Falak stores its id, private key and webhook secret **encrypted in its database**,
+and GitHub continues straight to the installation page, where you pick the repositories Falak may deploy. Change
+that selection any time with **Manage access on GitHub**; GitHub sends you back to Falak afterwards.
 
 - **Access requested:** repository contents and metadata, **read-only**, plus `push` events. No deploy keys and no
   per-repository webhooks: builds clone over HTTPS with installation tokens minted per build (valid for one hour,
   cached for at most 50 minutes, never stored or logged).
-- **Kiln's URL must be reachable from GitHub** for push-to-deploy: the app's single webhook is
-  `https://<panel>/api/webhooks/source-control/github-app/<id>` (shown on the card). `KILN_WEBHOOK_URL` overrides the
-  base URL (set it in `/opt/kiln/custom.env`) if GitHub must reach Kiln through a different host. Creating the app and cloning work without it; only
+- **Falak's URL must be reachable from GitHub** for push-to-deploy: the app's single webhook is
+  `https://<panel>/api/webhooks/source-control/github-app/<id>` (shown on the card). `FALAK_WEBHOOK_URL` overrides the
+  base URL (set it in `/opt/falak/custom.env`) if GitHub must reach Falak through a different host. Creating the app and cloning work without it; only
   push-triggered deploys and installation status updates (suspended / uninstalled on GitHub) need the webhook.
-- **One app per Kiln organization.** GitHub only lets a private app be installed on the account that owns it, so
-  repositories from a second GitHub account need their own app (another Kiln organization), or a token connection.
+- **One app per Falak organization.** GitHub only lets a private app be installed on the account that owns it, so
+  repositories from a second GitHub account need their own app (another Falak organization), or a token connection.
 - **Remove:** *Disconnect* on an installation uninstalls the app from that account; *Delete app* uninstalls it
   everywhere and forgets the credentials. Delete the app registration itself on GitHub (App settings → Advanced).
 - **Personal access tokens** still work (*Use a personal access token instead*), e.g. for GitHub Enterprise Server.
 
-**Operator-managed app (optional).** To use one app you created yourself for every Kiln organization, set these in
-`/opt/kiln/custom.env` (not `.env`: compose does not forward them from there) and run `kiln-ctl up`. When set, they take precedence over registered apps for new installations
+**Operator-managed app (optional).** To use one app you created yourself for every Falak organization, set these in
+`/opt/falak/custom.env` (not `.env`: compose does not forward them from there) and run `falak-ctl up`. When set, they take precedence over registered apps for new installations
 (existing installations keep the app they were made with), and the one-click registration is hidden.
 
 | Variable | Value |
@@ -194,14 +199,14 @@ permissions Contents: read and Metadata: read, and the `push` event.
 
 Servers download FrankenPHP, Node.js, Bun and Deno release binaries during provisioning (sha256-verified).
 If servers cannot reach GitHub / nodejs.org, or you run a caching proxy in front of them, point the agents at
-an HTTPS mirror with the same path layout. Set these in `/opt/kiln/custom.env`, then `kiln-ctl up`:
+an HTTPS mirror with the same path layout. Set these in `/opt/falak/custom.env`, then `falak-ctl up`:
 
 | Variable | Replaces | Fetched path |
 |---|---|---|
-| `KILN_FRANKENPHP_MIRROR` | `https://github.com/php/frankenphp/releases/download` | `<mirror>/v<version>/frankenphp-linux-<arch>` |
-| `KILN_NODE_MIRROR` | `https://nodejs.org/dist` | `<mirror>/v<version>/SHASUMS256.txt`, `node-v<version>-linux-<arch>.tar.gz` |
-| `KILN_BUN_MIRROR` | `https://github.com/oven-sh/bun/releases/download` | `<mirror>/bun-v<version>/SHASUMS256.txt`, `bun-linux-<arch>.zip` |
-| `KILN_DENO_MIRROR` | `https://github.com/denoland/deno/releases/download` | `<mirror>/v<version>/deno-<arch>-unknown-linux-gnu.zip{,.sha256sum}` |
+| `FALAK_FRANKENPHP_MIRROR` | `https://github.com/php/frankenphp/releases/download` | `<mirror>/v<version>/frankenphp-linux-<arch>` |
+| `FALAK_NODE_MIRROR` | `https://nodejs.org/dist` | `<mirror>/v<version>/SHASUMS256.txt`, `node-v<version>-linux-<arch>.tar.gz` |
+| `FALAK_BUN_MIRROR` | `https://github.com/oven-sh/bun/releases/download` | `<mirror>/bun-v<version>/SHASUMS256.txt`, `bun-linux-<arch>.zip` |
+| `FALAK_DENO_MIRROR` | `https://github.com/denoland/deno/releases/download` | `<mirror>/v<version>/deno-<arch>-unknown-linux-gnu.zip{,.sha256sum}` |
 
 Unset (the default) means the upstream URLs. The mirror applies to servers provisioned (or runtimes
 installed) after the change.
@@ -211,9 +216,30 @@ installed) after the change.
 Containers on an app or worker server (compose stacks, Docker sites, functions) reach that server's databases
 through the Docker bridge (agent 0.4.5+). The engines accept connections from Docker's default address pools,
 `172.16.0.0/12,192.168.0.0/16`; the firewall only lets them in on the Docker bridges. If the Docker daemon on your
-servers uses other `default-address-pools`, set `KILN_DOCKER_NETWORKS` (comma-separated IPv4 CIDRs, /8–/30) in
-`/opt/kiln/custom.env` and run `kiln-ctl up`; it applies to database users created or updated afterwards. Entries
+servers uses other `default-address-pools`, set `FALAK_DOCKER_NETWORKS` (comma-separated IPv4 CIDRs, /8–/30) in
+`/opt/falak/custom.env` and run `falak-ctl up`; it applies to database users created or updated afterwards. Entries
 that are not such ranges are ignored with a warning in the logs (Docker's defaults apply when none is left).
+
+### Extra sites on the control-plane host (optional)
+
+The edge (Caddy, ports 80/443) also loads every `/opt/falak/edge/*.caddyfile`. The folder is mounted read-only at
+`/etc/caddy/custom`, so files next to a site file are served from there. Example, a static site in
+`/opt/falak/edge/www/example.com/`:
+
+```
+# /opt/falak/edge/example.com.caddyfile
+example.com {
+	import security_headers
+	encode zstd gzip
+	root * /etc/caddy/custom/www/example.com
+	file_server
+}
+```
+
+Point the domain's DNS at this server, then reload: `falak-ctl compose exec edge caddy reload --config
+/etc/caddy/Caddyfile --adapter caddyfile` (Let's Encrypt issues the certificate on the first request). A broken file
+makes the reload fail and the running config stays; at a container restart it would stop the edge, so validate first
+with `caddy validate` in place of `caddy reload`.
 
 ### Domains for new services
 
@@ -224,81 +250,81 @@ When a service is created (template, Git repository, Docker image) each public e
   leader server (or the site's load balancer); a service on several servers without a load balancer is reached on the
   leader only. sslip.io / nip.io names are shared by all their users (common certificate rate limits, no cookie
   isolation): fine for trying things out, use your own domain for production.
-- **Test domain** — `<slug>.<KILN_TEST_DOMAIN>` when you run a wildcard test domain (the default then).
-- **Custom domain** — Kiln shows the record(s) to add (`A` → the server's IPv4, `AAAA` → its IPv6; one per server for
+- **Test domain** — `<slug>.<FALAK_TEST_DOMAIN>` when you run a wildcard test domain (the default then).
+- **Custom domain** — Falak shows the record(s) to add (`A` → the server's IPv4, `AAAA` → its IPv6; one per server for
   DNS round-robin, or the load balancer only) and checks DNS live until the name points at the server. Cloudflare
   proxying ("orange cloud") is detected: keep the record "DNS only" until the certificate is issued.
 
 Organizations pick the generated-domain provider (sslip.io, nip.io, off) in **Settings → Domains**. Server-wide settings
-in `.env` (then `kiln-ctl up`):
+in `.env` (then `falak-ctl up`):
 
 | Variable | Default | |
 |---|---|---|
-| `KILN_GENERATED_DOMAIN_SUFFIX` | `sslip.io` | `nip.io`, the domain of a self-hosted [sslip.io server](https://github.com/cunnie/sslip.io), or `off` |
-| `KILN_DNS_RESOLVER` | `doh` | how the DNS check resolves: `doh` (DNS-over-HTTPS, no local cache) or `system` (the host's resolver) |
-| `KILN_DNS_DOH_URL` | `https://cloudflare-dns.com/dns-query` | any DNS-over-HTTPS JSON endpoint (e.g. `https://dns.google/resolve`) |
+| `FALAK_GENERATED_DOMAIN_SUFFIX` | `sslip.io` | `nip.io`, the domain of a self-hosted [sslip.io server](https://github.com/cunnie/sslip.io), or `off` |
+| `FALAK_DNS_RESOLVER` | `doh` | how the DNS check resolves: `doh` (DNS-over-HTTPS, no local cache) or `system` (the host's resolver) |
+| `FALAK_DNS_DOH_URL` | `https://cloudflare-dns.com/dns-query` | any DNS-over-HTTPS JSON endpoint (e.g. `https://dns.google/resolve`) |
 
-## 4. Operate: `kiln-ctl`
+## 4. Operate: `falak-ctl`
 
 ```bash
-kiln-ctl status                          # services, health, version, URLs, PHP thread usage, last backup
-kiln-ctl logs [service] [-f]             # e.g. kiln-ctl logs control-plane -f
-kiln-ctl doctor                          # DNS, certificates, ports, disk, containers, agent API (mTLS), PHP threads, backups
-kiln-ctl admin reset-password you@example.com [--password=...]
-kiln-ctl admin create ops@example.com [--token=cli]
-kiln-ctl artisan <command>               # php artisan in the control-plane container
-kiln-ctl prune-images [--dry-run]        # remove Kiln images except the current and previous version
-kiln-ctl registry status                 # built-in image registry: address, size, answers with its credentials
-kiln-ctl registry gc [--dry-run] [--force] # delete registry layers no image references (stops the registry briefly)
-kiln-ctl up | down | restart [service]
+falak-ctl status                          # services, health, version, URLs, PHP thread usage, last backup
+falak-ctl logs [service] [-f]             # e.g. falak-ctl logs control-plane -f
+falak-ctl doctor                          # DNS, certificates, ports, disk, containers, agent API (mTLS), PHP threads, backups
+falak-ctl admin reset-password you@example.com [--password=...]
+falak-ctl admin create ops@example.com [--token=cli]
+falak-ctl artisan <command>               # php artisan in the control-plane container
+falak-ctl prune-images [--dry-run]        # remove Falak images except the current and previous version
+falak-ctl registry status                 # built-in image registry: address, size, answers with its credentials
+falak-ctl registry gc [--dry-run] [--force] # delete registry layers no image references (stops the registry briefly)
+falak-ctl up | down | restart [service]
 ```
 
 ## 5. Upgrade
 
 ```bash
-kiln-ctl update                 # latest release
-kiln-ctl update --version v1.3.0
+falak-ctl update                 # latest release
+falak-ctl update --version v1.3.0
 ```
 
 An update:
 
-1. takes a backup (`backups/kiln-backup-<ts>-pre-update-<old>.tar.gz`);
+1. takes a backup (`backups/falak-backup-<ts>-pre-update-<old>.tar.gz`);
 2. fetches the new deploy bundle and pulls the new images (if a pull fails, nothing changes);
 3. recreates the stack. The `control-plane` service runs the migrations, and `horizon`, `reverb` and
    `scheduler` wait until it is healthy;
 4. recreates every service whose **mounted config files** changed (see below) and prints their names;
 5. health-checks every container and `https://<domain>/up`;
-6. after a successful update, removes older Kiln images (see below).
+6. after a successful update, removes older Falak images (see below).
 
-**Old images.** Each release pulls new `kiln-control-plane`, `kiln-edge` and `kiln-builder` images (about 1 GB
-together), so a host that updates often fills its disk. After a successful update kiln-ctl records the version it
-came from as `KILN_PREVIOUS_VERSION` in `.env` and removes every other tag of those three images: the current and
-the previous version stay, so a manual rollback (`kiln-ctl update --version <previous>`) needs no download.
+**Old images.** Each release pulls new `falak-control-plane`, `falak-edge` and `falak-builder` images (about 1 GB
+together), so a host that updates often fills its disk. After a successful update falak-ctl records the version it
+came from as `FALAK_PREVIOUS_VERSION` in `.env` and removes every other tag of those three images: the current and
+the previous version stay, so a manual rollback (`falak-ctl update --version <previous>`) needs no download.
 Third-party images (Postgres, Valkey, Grafana, …), images still used by a container and volumes are never touched.
-Run it on its own with `kiln-ctl prune-images` (`--dry-run` lists what it would remove); set
-`KILN_PRUNE_IMAGES=0` in `.env` to keep every image. With `KILN_PULL=0` (images built locally, e.g.
-`--build-from-source`) an update never prunes: removed images could not be pulled again. `kiln-ctl prune-images`
+Run it on its own with `falak-ctl prune-images` (`--dry-run` lists what it would remove); set
+`FALAK_PRUNE_IMAGES=0` in `.env` to keep every image. With `FALAK_PULL=0` (images built locally, e.g.
+`--build-from-source`) an update never prunes: removed images could not be pulled again. `falak-ctl prune-images`
 still works there and warns first.
 
 **Registry storage.** Every docker build pushes an image to the built-in registry (`registry-data` volume). Two
 steps keep it from growing forever:
-- **Daily, in the control plane** (`kiln:registry-prune`, 03:45, after the artifacts prune): deletes the images of
-  builds whose artifact was pruned (each site keeps its newest `KILN_ARTIFACTS_KEEP` builds, default 10). An image
+- **Daily, in the control plane** (`falak:registry-prune`, 03:45, after the artifacts prune): deletes the images of
+  builds whose artifact was pruned (each site keeps its newest `FALAK_ARTIFACTS_KEEP` builds, default 10). An image
   stays while a release may still run it (pending, live or kept for rollback), while its build is running or less
   than a day old, and tags that aren't build ids are never touched. Images of a deleted site's builds go
-  `KILN_REGISTRY_DELETED_SITE_GRACE_DAYS` (default 7) days after the build. Preview with
-  `kiln-ctl registry prune --dry-run`; run it now with `kiln-ctl registry prune`.
-- **Weekly, from cron** (`/etc/cron.d/kiln-registry-gc`, Sunday 04:17, written by `kiln-ctl up`/`update`):
-  `kiln-ctl registry gc` deletes the layers nothing references any more, which is what frees disk space. The
+  `FALAK_REGISTRY_DELETED_SITE_GRACE_DAYS` (default 7) days after the build. Preview with
+  `falak-ctl registry prune --dry-run`; run it now with `falak-ctl registry prune`.
+- **Weekly, from cron** (`/etc/cron.d/falak-registry-gc`, Sunday 04:17, written by `falak-ctl up`/`update`):
+  `falak-ctl registry gc` deletes the layers nothing references any more, which is what frees disk space. The
   registry is stopped while it runs (a push during garbage collection could lose layers), so it runs at night and is
   skipped (logged, tried again the next week) while an image build is queued or running, or when the control plane
-  can't tell; `--force` runs it anyway. `KILN_REGISTRY_GC=0` removes the cron entry. Output goes to `/var/log/kiln-registry-gc.log`.
+  can't tell; `--force` runs it anyway. `FALAK_REGISTRY_GC=0` removes the cron entry. Output goes to `/var/log/falak-registry-gc.log`.
 
-**Mounted config files.** Some services read config files bind-mounted from `/opt/kiln/observability/` and
-`/opt/kiln/deploy/` (`loki.yaml`, `tempo.yaml`, the gateway `Caddyfile`, Grafana provisioning and dashboards).
+**Mounted config files.** Some services read config files bind-mounted from `/opt/falak/observability/` and
+`/opt/falak/deploy/` (`loki.yaml`, `tempo.yaml`, the gateway `Caddyfile`, Grafana provisioning and dashboards).
 An update replaces those directories, but a running container keeps the files it was started with (the mount
 holds the old file), and `docker compose up` only recreates services whose compose definition changed. So
-after `compose up`, `kiln-ctl` compares what each running container sees at its Kiln mounts with the files on
+after `compose up`, `falak-ctl` compares what each running container sees at its Falak mounts with the files on
 disk and force-recreates exactly the services that differ:
 
 ```
@@ -306,45 +332,45 @@ disk and force-recreates exactly the services that differ:
   ✓ recreated loki
 ```
 
-The same check runs on `kiln-ctl up`, after a restore and during a rollback. Run it on its own with
-`kiln-ctl reload-configs`, for example after editing `/opt/kiln/observability/loki/loki.yaml` by hand (such
-edits are replaced by the next update). kiln-ctl v0.2.5 and older did not do this, so Loki could keep the previous
-`loki.yaml` (access logs in **Network Logs** were then not queryable). An update is run by the kiln-ctl that is
-already installed, so after updating *from* v0.2.5 or older run `kiln-ctl reload-configs` once; it fixes such
+The same check runs on `falak-ctl up`, after a restore and during a rollback. Run it on its own with
+`falak-ctl reload-configs`, for example after editing `/opt/falak/observability/loki/loki.yaml` by hand (such
+edits are replaced by the next update). falak-ctl v0.2.5 and older did not do this, so Loki could keep the previous
+`loki.yaml` (access logs in **Network Logs** were then not queryable). An update is run by the falak-ctl that is
+already installed, so after updating *from* v0.2.5 or older run `falak-ctl reload-configs` once; it fixes such
 containers.
 
 **Upgrading from 0.2.x with the thread hotfix.** If you added `FRANKENPHP_CONFIG=num_threads 24` to
-`/opt/kiln/custom.env`, the update keeps working: a thread count in `FRANKENPHP_CONFIG` still wins over the
+`/opt/falak/custom.env`, the update keeps working: a thread count in `FRANKENPHP_CONFIG` still wins over the
 automatic sizing (the containers log a notice). It is no longer needed, because agents now long-poll their own
 `agent-api` service (see [Performance](#performance-php-threads-and-worker-mode)). Remove the line, then run
-`kiln-ctl up`. `kiln-ctl doctor` reports it until you do.
+`falak-ctl up`. `falak-ctl doctor` reports it until you do.
 
-If step 3, 4 or 5 fails, `kiln-ctl` **rolls back automatically**. It restores the previous deploy files and
-`KILN_VERSION`, restores the database, storage and Fleet CA from the pre-update backup (the new migrations
+If step 3, 4 or 5 fails, `falak-ctl` **rolls back automatically**. It restores the previous deploy files and
+`FALAK_VERSION`, restores the database, storage and Fleet CA from the pre-update backup (the new migrations
 may already have run), and starts the previous version again.
 
 ### Upgrading the server agents
 
-An update does not touch your servers: each keeps running its `kiln-agent` until you upgrade it. The new
+An update does not touch your servers: each keeps running its `falak-agent` until you upgrade it. The new
 control-plane image ships the matching agent build (`/install/agent/linux-{amd64,arm64}`), and after an update
-`kiln-ctl update` prints how many agents are older. **Servers** shows each agent's version with *update
+`falak-ctl update` prints how many agents are older. **Servers** shows each agent's version with *update
 available*; organization admins update one server (**Update** next to the version in the list, or **Update agent**
 on the server page, `POST /api/v1/servers/{server}/agent/upgrade`), the servers they tick in the list (**Update
 selected**), or every outdated one (**Update all agents**).
 
-The agent downloads the build from the panel, verifies its SHA-256, checks that it runs (`kiln-agent version`),
-swaps it atomically (the previous binary stays as `/usr/local/bin/kiln-agent.prev`), restarts, and reports the new
+The agent downloads the build from the panel, verifies its SHA-256, checks that it runs (`falak-agent version`),
+swaps it atomically (the previous binary stays as `/usr/local/bin/falak-agent.prev`), restarts, and reports the new
 version and binary checksum in its next heartbeat. Supervised programs restart with it (`KillMode=mixed`).
-A bulk update upgrades `KILN_AGENT_UPGRADE_BATCH_SIZE` servers at a time (default 2) and stops at the first
-failure; an upgrade fails when the agent has not come back with the new build within `KILN_AGENT_UPGRADE_TIMEOUT`
+A bulk update upgrades `FALAK_AGENT_UPGRADE_BATCH_SIZE` servers at a time (default 2) and stops at the first
+failure; an upgrade fails when the agent has not come back with the new build within `FALAK_AGENT_UPGRADE_TIMEOUT`
 seconds (default 600). Failures raise the *Agent upgrade failed* alert. To roll a server back by hand:
-`mv /usr/local/bin/kiln-agent.prev /usr/local/bin/kiln-agent && systemctl restart kiln-agent`.
-`kiln-ctl artisan kiln:agents` shows the shipped build and the number of outdated agents.
+`mv /usr/local/bin/falak-agent.prev /usr/local/bin/falak-agent && systemctl restart falak-agent`.
+`falak-ctl artisan falak:agents` shows the shipped build and the number of outdated agents.
 
 Commands in flight during an agent restart are not lost: each agent process has a session id, and commands
 delivered to the previous process are delivered again (Caddy routes, telemetry, processes, cron, firewall and other
 `*.apply` state) or fail with "The agent restarted before running the command" (deploy steps, scripts). A command the
-agent never acknowledges is handled the same way after `KILN_AGENT_COMMAND_LEASE` seconds (default 90). Agents
+agent never acknowledges is handled the same way after `FALAK_AGENT_COMMAND_LEASE` seconds (default 90). Agents
 before this release get the new behaviour after their next upgrade; until then the lease covers them.
 
 ### Performance: PHP threads and worker mode
@@ -353,8 +379,8 @@ The web tier is two FrankenPHP services built from the same image, each with its
 
 | Service | Serves (edge routing, both hosts) | PHP mode | Threads |
 |---|---|---|---|
-| `control-plane` | the panel and the REST API: everything not listed below | **worker mode**: Laravel boots once per thread (Laravel Octane's FrankenPHP worker) | `KILN_PHP_WORKERS` workers (default 2 × CPUs), autoscaled up to `KILN_PHP_MAX_THREADS` (default max(8, 4 × CPUs)) |
-| `agent-api` | `/agent/*` (agents), `/install/*` (installer), `/api/internal/*` (builders, artifacts) | classic (one boot per request) | 32 started, autoscaled up to `KILN_AGENT_API_THREADS` (default 128) |
+| `control-plane` | the panel and the REST API: everything not listed below | **worker mode**: Laravel boots once per thread (Laravel Octane's FrankenPHP worker) | `FALAK_PHP_WORKERS` workers (default 2 × CPUs), autoscaled up to `FALAK_PHP_MAX_THREADS` (default max(8, 4 × CPUs)) |
+| `agent-api` | `/agent/*` (agents), `/install/*` (installer), `/api/internal/*` (builders, artifacts) | classic (one boot per request) | 32 started, autoscaled up to `FALAK_AGENT_API_THREADS` (default 128) |
 
 The split matters because each agent and each builder holds a 30-second long-poll open all the time (it
 returns as soon as a command or build is queued). A waiting long-poll occupies one PHP thread. Up to
@@ -363,18 +389,18 @@ is 4 threads, so three servers plus the builder took all of them, and every page
 the long-polls. Now the panel's threads serve only people. A waiting long-poll costs about 2–3 MB and no
 CPU, and it does not hold a database connection (agents wait on Valkey).
 
-Sizing (in `/opt/kiln/.env`, then `kiln-ctl up`):
+Sizing (in `/opt/falak/.env`, then `falak-ctl up`):
 
-- `KILN_AGENT_API_THREADS`: at least *managed servers + builders + 8*. The default of 128 covers about
+- `FALAK_AGENT_API_THREADS`: at least *managed servers + builders + 8*. The default of 128 covers about
   120 servers within the 512 MB limit of `agent-api`. For bigger fleets, raise it together with that
   limit (about 3 MB per thread).
-- `KILN_PHP_WORKERS` / `KILN_PHP_MAX_THREADS`: the defaults suit 2–8 CPUs. Each panel worker keeps a
+- `FALAK_PHP_WORKERS` / `FALAK_PHP_MAX_THREADS`: the defaults suit 2–8 CPUs. Each panel worker keeps a
   booted app, about 12 MB.
-- `KILN_WORKER_MODE=0`: fallback to classic mode for the panel. It is about 2–4× slower per request but
-  keeps no state between requests. `KILN_PHP_THREADS` then sets the starting thread count.
-- Each container logs its pool at start, e.g. `kiln: web: PHP worker mode, 4 workers, num_threads 6
-  max_threads 8`. `kiln-ctl status` shows live usage (`PHP threads: panel 1/8 busy · agent-api 5/128
-  busy`), and `kiln-ctl doctor` flags a pool that is ≥ 80 % busy or saturated.
+- `FALAK_WORKER_MODE=0`: fallback to classic mode for the panel. It is about 2–4× slower per request but
+  keeps no state between requests. `FALAK_PHP_THREADS` then sets the starting thread count.
+- Each container logs its pool at start, e.g. `falak: web: PHP worker mode, 4 workers, num_threads 6
+  max_threads 8`. `falak-ctl status` shows live usage (`PHP threads: panel 1/8 busy · agent-api 5/128
+  busy`), and `falak-ctl doctor` flags a pool that is ≥ 80 % busy or saturated.
 
 Measured on the production image with 2 pinned CPUs, Postgres and Valkey. Panel TTFB is the median of 20
 requests. Before = v0.2.0 (one shared pool of 4 threads).
@@ -395,14 +421,14 @@ CLI (Horizon, Reverb, scheduler, healthchecks) gets an OPcache file cache, which
 ## 6. Backup and restore
 
 ```bash
-kiln-ctl backup                          # -> /opt/kiln/backups/kiln-backup-<UTC timestamp>.tar.gz
-kiln-ctl restore /opt/kiln/backups/kiln-backup-20260101T030000Z.tar.gz --yes
+falak-ctl backup                          # -> /opt/falak/backups/falak-backup-<UTC timestamp>.tar.gz
+falak-ctl restore /opt/falak/backups/falak-backup-20260101T030000Z.tar.gz --yes
 ```
 
 A backup contains:
 
 - `db.dump`: `pg_dump -Fc` of the database;
-- the `kiln-ca` volume (Fleet CA certificate and agent API certificate), `app-storage` (build artifacts,
+- the `falak-ca` volume (Fleet CA certificate and agent API certificate), `app-storage` (build artifacts,
   app files) and `caddy-data` (ACME account and certificates);
 - `.env` and `custom.env`.
 
@@ -410,24 +436,24 @@ A backup contains:
 > encrypted with `APP_KEY`. A backup is only useful with its **database and `.env` together**. If you lose
 > either one, every server must be re-enrolled. Keep copies **off the host**.
 
-- Retention: the newest `KILN_BACKUP_KEEP` backups are kept (default 14).
+- Retention: the newest `FALAK_BACKUP_KEEP` backups are kept (default 14).
 - Schedule a daily backup with cron:
-  `echo '15 3 * * * root /usr/local/bin/kiln-ctl backup --quiet' > /etc/cron.d/kiln-backup`
-- Encryption: set `KILN_BACKUP_PASSPHRASE` in `.env` to write `*.tar.gz.enc` (AES-256, `openssl enc -pbkdf2`).
+  `echo '15 3 * * * root /usr/local/bin/falak-ctl backup --quiet' > /etc/cron.d/falak-backup`
+- Encryption: set `FALAK_BACKUP_PASSPHRASE` in `.env` to write `*.tar.gz.enc` (AES-256, `openssl enc -pbkdf2`).
   `restore` needs the same passphrase.
-- Off-site copies (S3-compatible, via `curl --aws-sigv4`): set `KILN_BACKUP_S3_ENDPOINT`
-  (e.g. `https://s3.eu-central-1.amazonaws.com`), `KILN_BACKUP_S3_BUCKET`, `KILN_BACKUP_S3_REGION`,
-  `KILN_BACKUP_S3_ACCESS_KEY`, `KILN_BACKUP_S3_SECRET_KEY`, and optionally `KILN_BACKUP_S3_PREFIX`. Uploads
+- Off-site copies (S3-compatible, via `curl --aws-sigv4`): set `FALAK_BACKUP_S3_ENDPOINT`
+  (e.g. `https://s3.eu-central-1.amazonaws.com`), `FALAK_BACKUP_S3_BUCKET`, `FALAK_BACKUP_S3_REGION`,
+  `FALAK_BACKUP_S3_ACCESS_KEY`, `FALAK_BACKUP_S3_SECRET_KEY`, and optionally `FALAK_BACKUP_S3_PREFIX`. Uploads
   use path-style URLs. The local copy is kept even when an upload fails.
 
-**Move to a new host:** install Kiln on the new host with the same `--domain`, copy the backup over, run
-`kiln-ctl restore <file> --yes`, then point DNS at the new host. The restore brings back the old `.env`
+**Move to a new host:** install Falak on the new host with the same `--domain`, copy the backup over, run
+`falak-ctl restore <file> --yes`, then point DNS at the new host. The restore brings back the old `.env`
 (including `APP_KEY`), so agents keep working without re-enrolling.
 
 ## 7. Change the domain
 
 ```bash
-kiln-ctl domain set kiln.new-example.com [--keep-old]
+falak-ctl domain set falak.new-example.com [--keep-old]
 ```
 
 This command:
@@ -442,67 +468,67 @@ This command:
   the move may need a rebuild, because servers get credentials for the current registry name only);
 - with `--keep-old`, redirects the old panel domain to the new one.
 
-Create the new DNS records first. Users of the `kiln` CLI need to run `kiln login --url https://<new>` again.
+Create the new DNS records first. Users of the `falak` CLI need to run `falak login --url https://<new>` again.
 
 ## 8. Uninstall
 
 ```bash
-kiln-ctl backup                                   # optional, then copy it off the host
-cd /opt/kiln && docker compose -p kiln --env-file .env -f deploy/compose.yml --profile observability down -v
-rm -rf /opt/kiln /usr/local/bin/kiln-ctl /etc/cron.d/kiln-backup
+falak-ctl backup                                   # optional, then copy it off the host
+cd /opt/falak && docker compose -p falak --env-file .env -f deploy/compose.yml --profile observability down -v
+rm -rf /opt/falak /usr/local/bin/falak-ctl /etc/cron.d/falak-backup
 ```
 
 `down -v` deletes every volume: the database, the Fleet CA and certificates. Leave out `-v` to keep the
-data. Managed servers keep running. Remove the agent there with `systemctl disable --now kiln-agent`.
+data. Managed servers keep running. Remove the agent there with `systemctl disable --now falak-agent`.
 
 ## 9. Troubleshooting
 
 | Symptom | Check / fix |
 |---|---|
-| Installer: `DNS does not point at this host` | Create the printed A/AAAA records and wait for propagation (`dig +short kiln.example.com`). With Cloudflare, use DNS only. |
+| Installer: `DNS does not point at this host` | Create the printed A/AAAA records and wait for propagation (`dig +short falak.example.com`). With Cloudflare, use DNS only. |
 | Installer: `port 80 is in use` | Stop the other web server, e.g. `systemctl disable --now nginx apache2 caddy`. |
-| Browser shows a certificate error | `kiln-ctl logs edge` and look for ACME errors. Ports 80/443 must be reachable from the internet (cloud firewall / security group). Let's Encrypt rate limits apply to repeated reinstalls. |
-| Stack not healthy | `kiln-ctl status`, `kiln-ctl logs control-plane`. A migration error shows in the `control-plane` logs. |
-| Server install command fails to enroll | The server must reach `https://<domain>` (system CAs) **and** `https://agents.<domain>` (Fleet CA). Run `kiln-ctl doctor`. The agent API must answer `401` without a client certificate. The install command checks both before it changes anything, and stops if the server's clock is more than 5 minutes off (`timedatectl set-ntp true`). |
-| Install command ends with `kiln-agent is installed but not connected` | It runs `kiln-agent check --wait 60s`, which prints the reason: revoked identity, agents host unreachable, TLS error or clock. Run `sudo kiln-agent check` again at any time; logs: `journalctl -u kiln-agent`. |
-| New server stays **Waiting for agent** after you deleted the old one and reinstalled on the same machine | From v0.5.2 a new install command replaces the old identity: the old files move to `/etc/kiln/previous/<UTC time>/`. The agent logs `this agent was revoked or its server was removed from Kiln` while it still has a deleted server's identity. Install commands from Kiln before v0.5.2 enroll only when `/etc/kiln` has no identity, so they keep the deleted server's certificate and get `401`. On such a machine: `sudo systemctl stop kiln-agent && sudo mkdir -p /root/kiln-old && sudo mv /etc/kiln/agent.key /etc/kiln/agent.crt /etc/kiln/ca.crt /etc/kiln/agent.json /root/kiln-old/`, then run a freshly generated install command. |
-| Provisioning step `apt`, `caddy` or `php:<version>` fails on `apt-get update` | The error names the repository and its file under `/etc/apt/sources.list.d`; fix or remove that file and retry. A `ppa:ondrej/php` source without a release for the server's Ubuntu (e.g. 26.04) is disabled automatically (`<file>.disabled-by-kiln`). Without the PPA, PHP comes from Ubuntu's archive: on Ubuntu 26.04 that is PHP 8.5 only, and a server planned with another version gets 8.5 instead (the server's status says so). |
-| Server shows **Needs attention** | The machine check (v0.6.0 agents) found software Kiln won't change on its own and installed nothing. The server page's *Machine check* panel lists each conflict with its fix; after fixing, click **Re-check**, then **Provision**. The rows below are the conflicts it reports. Agents before v0.6.0 skip the check: update the agent and Re-provision to use it. |
-| Machine check: `Port 80/443/2019 is in use by nginx` (apache2, …) | Another web server holds the edge's ports: `systemctl disable --now nginx` (or move it to other ports), then Re-check. Kiln's edge (kiln-edge) serves 80 and 443. |
-| Machine check: `caddy.service is running` | Kiln would stop it for kiln-edge. Move the sites it serves into Kiln, `systemctl disable --now caddy`, Re-check. |
-| Machine check: `A container (…) publishes port 5432/3306/6379/80` | A container holds a port Kiln's engine or edge needs: `docker stop <name>` or publish it on another port, then Re-check. To keep the database in Docker, add it to Kiln as a compose service instead of choosing the engine for the server. |
-| Machine check: `MariaDB … is installed, but this server is set up for MySQL` (or the reverse, Redis ↔ Valkey, Percona) | Kiln won't run two engines of a kind on one machine. Remove the other one (`apt purge mariadb-server`) or create the server in Kiln with the engine that is installed (it is then used as is). |
-| Machine check: `… is older than …, the oldest Kiln supports` | Upgrade the engine or Docker from the same source to at least the minimum (`servers.machine_check.minimum_versions`: Docker 20.10, PostgreSQL 14, MySQL 8.0, MariaDB 10.6, Redis 6.0, Valkey 7.2, what Kiln installs on Ubuntu 22.04), then Re-check. |
-| Machine check: `Docker from Docker's repository has no compose (buildx), and that repository is not configured` | Kiln completes a Docker install only from its own source, never with Ubuntu's packages (they overwrite each other's files). Add Docker's apt repository (docs.docker.com/engine/install/ubuntu) or install `docker-compose-plugin` / `docker-buildx-plugin`, then Re-check. |
-| Machine check: `… has no compose, and Kiln does not know where this Docker came from` | A Docker engine that is no known package (static binary, other vendor): install the compose / buildx plugin next to it, then Re-check. |
-| Machine check: `docker.service is masked` / `Only the Docker CLI is installed` | `systemctl unmask docker.service docker.socket` if Docker should run, or install the engine from the CLI's source (`docker-ce` from Docker's repository); or remove the CLI (`apt purge docker-ce-cli`) and Kiln installs Ubuntu's Docker. Then Re-check. |
-| Machine check: `Docker is installed as a snap` / `Only a rootless Docker is set up` / `podman-docker provides the docker command` | Kiln needs the system Docker daemon from apt. `snap remove docker` (or set up the system daemon, or `apt purge podman-docker`), then Re-check; Kiln then installs Docker, or keeps one you install from Docker's repository. |
-| Machine check: `Password login would be turned off, but no user who may log in over SSH has a key` | Kiln turns off SSH password and keyboard-interactive login. Add your public key to `~/.ssh/authorized_keys` of a sudo user sshd lets in. Root's keys only count when root may log in (`PermitRootLogin` not `no` / `forced-commands-only`), and `AllowUsers` / `DenyUsers` / `AllowGroups` / `DenyGroups` apply. Then Re-check. |
+| Browser shows a certificate error | `falak-ctl logs edge` and look for ACME errors. Ports 80/443 must be reachable from the internet (cloud firewall / security group). Let's Encrypt rate limits apply to repeated reinstalls. |
+| Stack not healthy | `falak-ctl status`, `falak-ctl logs control-plane`. A migration error shows in the `control-plane` logs. |
+| Server install command fails to enroll | The server must reach `https://<domain>` (system CAs) **and** `https://agents.<domain>` (Fleet CA). Run `falak-ctl doctor`. The agent API must answer `401` without a client certificate. The install command checks both before it changes anything, and stops if the server's clock is more than 5 minutes off (`timedatectl set-ntp true`). |
+| Install command ends with `falak-agent is installed but not connected` | It runs `falak-agent check --wait 60s`, which prints the reason: revoked identity, agents host unreachable, TLS error or clock. Run `sudo falak-agent check` again at any time; logs: `journalctl -u falak-agent`. |
+| New server stays **Waiting for agent** after you deleted the old one and reinstalled on the same machine | From v0.5.2 a new install command replaces the old identity: the old files move to `/etc/falak/previous/<UTC time>/`. The agent logs `this agent was revoked or its server was removed from Falak` while it still has a deleted server's identity. Install commands from Falak before v0.5.2 enroll only when `/etc/falak` has no identity, so they keep the deleted server's certificate and get `401`. On such a machine: `sudo systemctl stop falak-agent && sudo mkdir -p /root/falak-old && sudo mv /etc/falak/agent.key /etc/falak/agent.crt /etc/falak/ca.crt /etc/falak/agent.json /root/falak-old/`, then run a freshly generated install command. |
+| Provisioning step `apt`, `caddy` or `php:<version>` fails on `apt-get update` | The error names the repository and its file under `/etc/apt/sources.list.d`; fix or remove that file and retry. A `ppa:ondrej/php` source without a release for the server's Ubuntu (e.g. 26.04) is disabled automatically (`<file>.disabled-by-falak`). Without the PPA, PHP comes from Ubuntu's archive: on Ubuntu 26.04 that is PHP 8.5 only, and a server planned with another version gets 8.5 instead (the server's status says so). |
+| Server shows **Needs attention** | The machine check (v0.6.0 agents) found software Falak won't change on its own and installed nothing. The server page's *Machine check* panel lists each conflict with its fix; after fixing, click **Re-check**, then **Provision**. The rows below are the conflicts it reports. Agents before v0.6.0 skip the check: update the agent and Re-provision to use it. |
+| Machine check: `Port 80/443/2019 is in use by nginx` (apache2, …) | Another web server holds the edge's ports: `systemctl disable --now nginx` (or move it to other ports), then Re-check. Falak's edge (falak-edge) serves 80 and 443. |
+| Machine check: `caddy.service is running` | Falak would stop it for falak-edge. Move the sites it serves into Falak, `systemctl disable --now caddy`, Re-check. |
+| Machine check: `A container (…) publishes port 5432/3306/6379/80` | A container holds a port Falak's engine or edge needs: `docker stop <name>` or publish it on another port, then Re-check. To keep the database in Docker, add it to Falak as a compose service instead of choosing the engine for the server. |
+| Machine check: `MariaDB … is installed, but this server is set up for MySQL` (or the reverse, Redis ↔ Valkey, Percona) | Falak won't run two engines of a kind on one machine. Remove the other one (`apt purge mariadb-server`) or create the server in Falak with the engine that is installed (it is then used as is). |
+| Machine check: `… is older than …, the oldest Falak supports` | Upgrade the engine or Docker from the same source to at least the minimum (`servers.machine_check.minimum_versions`: Docker 20.10, PostgreSQL 14, MySQL 8.0, MariaDB 10.6, Redis 6.0, Valkey 7.2, what Falak installs on Ubuntu 22.04), then Re-check. |
+| Machine check: `Docker from Docker's repository has no compose (buildx), and that repository is not configured` | Falak completes a Docker install only from its own source, never with Ubuntu's packages (they overwrite each other's files). Add Docker's apt repository (docs.docker.com/engine/install/ubuntu) or install `docker-compose-plugin` / `docker-buildx-plugin`, then Re-check. |
+| Machine check: `… has no compose, and Falak does not know where this Docker came from` | A Docker engine that is no known package (static binary, other vendor): install the compose / buildx plugin next to it, then Re-check. |
+| Machine check: `docker.service is masked` / `Only the Docker CLI is installed` | `systemctl unmask docker.service docker.socket` if Docker should run, or install the engine from the CLI's source (`docker-ce` from Docker's repository); or remove the CLI (`apt purge docker-ce-cli`) and Falak installs Ubuntu's Docker. Then Re-check. |
+| Machine check: `Docker is installed as a snap` / `Only a rootless Docker is set up` / `podman-docker provides the docker command` | Falak needs the system Docker daemon from apt. `snap remove docker` (or set up the system daemon, or `apt purge podman-docker`), then Re-check; Falak then installs Docker, or keeps one you install from Docker's repository. |
+| Machine check: `Password login would be turned off, but no user who may log in over SSH has a key` | Falak turns off SSH password and keyboard-interactive login. Add your public key to `~/.ssh/authorized_keys` of a sudo user sshd lets in. Root's keys only count when root may log in (`PermitRootLogin` not `no` / `forced-commands-only`), and `AllowUsers` / `DenyUsers` / `AllowGroups` / `DenyGroups` apply. Then Re-check. |
 | Re-provision of an active server says `Re-provisioning stopped. Machine check: …` | The server keeps running as it is; nothing was applied. Fix the listed conflicts (Machine check panel), then Re-provision again. |
-| Machine check warnings (provisioning goes on) | `ufw`/`firewalld` active: a port must be allowed by both, e.g. `ufw allow 80,443/tcp`. An earlier `sshd_config.d` file (e.g. `50-cloud-init.conf`) wins over Kiln's `50-kiln.conf`. `daemon.json` `"iptables": false` breaks published ports. Existing swap, hostname, fail2ban jails and unattended-upgrades config are kept. |
+| Machine check warnings (provisioning goes on) | `ufw`/`firewalld` active: a port must be allowed by both, e.g. `ufw allow 80,443/tcp`. An earlier `sshd_config.d` file (e.g. `50-cloud-init.conf`) wins over Falak's `50-falak.conf`. `daemon.json` `"iptables": false` breaks published ports. Existing swap, hostname, fail2ban jails and unattended-upgrades config are kept. |
 | Provisioning step `adopt:<component>` fails: `… is no longer installed; run the machine check again` | A package the machine check found was removed since. Re-provision: the check runs again first. |
-| Agents go offline after a restore | The restored `.env` / `APP_KEY` must belong to the same backup as the database. The `kiln-ca` volume is re-synced by the edge within 3 seconds. |
+| Agents go offline after a restore | The restored `.env` / `APP_KEY` must belong to the same backup as the database. The `falak-ca` volume is re-synced by the edge within 3 seconds. |
 | Live updates in the UI don't refresh | Check that the `reverb` service is healthy. Browsers connect to `wss://<domain>/app/…` through the edge. |
-| `KILN_EDGE_SUBNET ... overlaps` | Pick another private /24 in `.env` and re-run the installer. The app trusts proxy headers only from that subnet. |
-| Builds stay queued | `kiln-ctl logs builder`. The builder polls `https://<domain>` with `KILN_BUILDER_TOKEN`. Docker-mode builds need a `builder` server: the bundled builder does native builds only (`KILN_LOCAL_BUILDER_MODES=native`, the default). |
-| Docker build fails at push (`lookup registry.kiln.local … no such host`, `401`, `x509`) | The install has no built-in registry yet or its DNS is missing: run `kiln-ctl up` (adds `KILN_REGISTRY_*`), create the `registry.<domain>` record, then `kiln-ctl registry status`. `x509` with `--tls internal`: see section 2. |
-| Panel slow (seconds per page) | `kiln-ctl doctor`, section *PHP threads*. A saturated `agent-api` pool delays agents, not the panel. Raise `KILN_AGENT_API_THREADS` (or `KILN_PHP_MAX_THREADS` for the panel) in `.env`, then `kiln-ctl up`. See [Performance](#performance-php-threads-and-worker-mode). |
-| Something only breaks in worker mode | Set `KILN_WORKER_MODE=0` in `.env`, run `kiln-ctl up` and report it. The panel then boots Laravel for every request (classic mode). |
-| Low memory | Lower `KILN_HORIZON_MAX_PROCESSES` in `.env`, or move observability to its own host. |
+| `FALAK_EDGE_SUBNET ... overlaps` | Pick another private /24 in `.env` and re-run the installer. The app trusts proxy headers only from that subnet. |
+| Builds stay queued | `falak-ctl logs builder`. The builder polls `https://<domain>` with `FALAK_BUILDER_TOKEN`. Docker-mode builds need a `builder` server: the bundled builder does native builds only (`FALAK_LOCAL_BUILDER_MODES=native`, the default). |
+| Docker build fails at push (`lookup registry.falak.local … no such host`, `401`, `x509`) | The install has no built-in registry yet or its DNS is missing: run `falak-ctl up` (adds `FALAK_REGISTRY_*`), create the `registry.<domain>` record, then `falak-ctl registry status`. `x509` with `--tls internal`: see section 2. |
+| Panel slow (seconds per page) | `falak-ctl doctor`, section *PHP threads*. A saturated `agent-api` pool delays agents, not the panel. Raise `FALAK_AGENT_API_THREADS` (or `FALAK_PHP_MAX_THREADS` for the panel) in `.env`, then `falak-ctl up`. See [Performance](#performance-php-threads-and-worker-mode). |
+| Something only breaks in worker mode | Set `FALAK_WORKER_MODE=0` in `.env`, run `falak-ctl up` and report it. The panel then boots Laravel for every request (classic mode). |
+| Low memory | Lower `FALAK_HORIZON_MAX_PROCESSES` in `.env`, or move observability to its own host. |
 
 ## 10. Testing the installer locally (`--tls internal`)
 
 `--tls internal` makes Caddy issue certificates from its own local CA and skips the DNS check. It also
-allows custom ports, for example `--http-port 8080 --https-port 9443 --domain kiln.test`. Reach the panel with
-`curl -k --resolve kiln.test:9443:127.0.0.1 https://kiln.test:9443/up`. Do not use internal TLS in
+allows custom ports, for example `--http-port 8080 --https-port 9443 --domain falak.test`. Reach the panel with
+`curl -k --resolve falak.test:9443:127.0.0.1 https://falak.test:9443/up`. Do not use internal TLS in
 production: server install scripts and agents would not trust the panel certificate.
 
 Building images yourself (the release workflow does the same, multi-arch):
 
 ```bash
-docker build -f control-plane/Dockerfile --build-arg KILN_VERSION=dev -t kiln-local/kiln-control-plane:dev .
-docker build -f deploy/builder.Dockerfile --build-arg KILN_VERSION=dev -t kiln-local/kiln-builder:dev .
-docker build --build-arg KILN_VERSION=dev -t kiln-local/kiln-edge:dev deploy/edge
+docker build -f control-plane/Dockerfile --build-arg FALAK_VERSION=dev -t falak-local/falak-control-plane:dev .
+docker build -f deploy/builder.Dockerfile --build-arg FALAK_VERSION=dev -t falak-local/falak-builder:dev .
+docker build --build-arg FALAK_VERSION=dev -t falak-local/falak-edge:dev deploy/edge
 ```
 
 ## 11. Releasing (maintainers)
@@ -510,11 +536,11 @@ docker build --build-arg KILN_VERSION=dev -t kiln-local/kiln-edge:dev deploy/edg
 Push a tag `vX.Y.Z` (`vX.Y.Z-rc.N` for pre-releases, which are not tagged `latest`). The
 `.github/workflows/release.yml` workflow then:
 
-- builds `kiln-control-plane`, `kiln-builder` and `kiln-edge` on native amd64 and arm64 runners and pushes
+- builds `falak-control-plane`, `falak-builder` and `falak-edge` on native amd64 and arm64 runners and pushes
   multi-arch manifests to `ghcr.io/<owner>/…:<tag>` and `:latest`;
-- builds `kiln-agent`, `kiln` and `kiln-builder` with `make build`;
-- creates the GitHub release with the binaries, `kiln-deploy.tar.gz`, `install.sh` (pinned to the tag),
-  `kiln-ctl` and `SHA256SUMS`.
+- builds `falak-agent`, `falak` and `falak-builder` with `make build`;
+- creates the GitHub release with the binaries, `falak-deploy.tar.gz`, `install.sh` (pinned to the tag),
+  `falak-ctl` and `SHA256SUMS`.
 
 It uses only `GITHUB_TOKEN`. After the first release, make the three GHCR packages **public** so that hosts can
 pull them anonymously.

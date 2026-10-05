@@ -1,10 +1,10 @@
-import { Button } from '@/components/kiln/button';
-import { DataTable } from '@/components/kiln/data-table';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Input } from '@/components/kiln/input';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Section } from '@/components/kiln/section';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { DataTable } from '@/components/falak/data-table';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Input } from '@/components/falak/input';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Section } from '@/components/falak/section';
+import { Tag } from '@/components/falak/tag';
 import ServerLayout, { type ServerHeader } from '@/layouts/server-layout';
 import { Link, router, usePoll } from '@inertiajs/react';
 import { History, Play, ScrollText, Search } from 'lucide-react';

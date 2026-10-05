@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/system.exec.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/system.exec.schema.json",
   "title": "system.exec — run a shell script (idempotency is the script's responsibility; the agent dedupes on command id)",
   "type": "object",
   "additionalProperties": false,

@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/docker"
-	"github.com/kiln/agent/internal/otlp"
+	"github.com/OthmanHaba/falak/agent/internal/docker"
+	"github.com/OthmanHaba/falak/agent/internal/otlp"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
@@ -254,7 +254,7 @@ func newGateway(t *testing.T, e *fakeEngine, mut ...func(*Options)) (*Gateway, *
 }
 
 func spec(site, release string) Spec {
-	return Spec{Site: site, Release: release, Image: "kiln-fn-bun:test", Entrypoint: "index.ts", ReleaseDir: "/var/lib/kiln/functions/" + site + "/releases/" + release,
+	return Spec{Site: site, Release: release, Image: "falak-fn-bun:test", Entrypoint: "index.ts", ReleaseDir: "/var/lib/falak/functions/" + site + "/releases/" + release,
 		Env: map[string]string{"GREETING": "hi"}, Scaling: Scaling{MinInstances: 0, MaxInstances: 3, Concurrency: 1, IdleTimeoutS: 60}, Limits: Limits{StartTimeoutS: 5, RequestTimeoutS: 5}}
 }
 
@@ -560,7 +560,7 @@ func TestRestartAdoptsRunningContainers(t *testing.T) {
 	mustApply(t, g1, s2)
 	// A leftover container of a release that is no longer current.
 	e.mu.Lock()
-	e.cs["stale"] = &fakeContainer{id: "stale", name: "kiln-fn-hello-r0-0", labels: map[string]string{LabelManaged: "true", LabelService: ServiceName, LabelSite: "hello", LabelRelease: "r0"}}
+	e.cs["stale"] = &fakeContainer{id: "stale", name: "falak-fn-hello-r0-0", labels: map[string]string{LabelManaged: "true", LabelService: ServiceName, LabelSite: "hello", LabelRelease: "r0"}}
 	e.mu.Unlock()
 
 	_, creates, starts := e.count()
@@ -642,7 +642,7 @@ func TestCreateBodyIsHardened(t *testing.T) {
 		hc.NetworkMode != Network || hc.Binds[0] != s.ReleaseDir+":/app:ro" || b.User != UID || len(hc.PortBindings) != 0 {
 		t.Fatalf("not hardened: %+v", b)
 	}
-	if ContainerName(s.Site, s.Release, 2) != "kiln-fn-hello-01j9z8y7x6w5-2" {
+	if ContainerName(s.Site, s.Release, 2) != "falak-fn-hello-01j9z8y7x6w5-2" {
 		t.Fatalf("name %s", ContainerName(s.Site, s.Release, 2))
 	}
 	if b.Labels[LabelSite] != "hello" || b.Labels[LabelService] != ServiceName || b.Labels[LabelSlot] != "2" {
@@ -742,7 +742,7 @@ func shortTemp(t *testing.T) string {
 func telemetrySpec(root, site, release string) Spec {
 	s := spec(site, release)
 	s.ReleaseDir = filepath.Join(root, site, "releases", release)
-	s.Labels = map[string]string{"kiln.site.id": "01SITEULID", "kiln.release.id": "01RELEASEULID"}
+	s.Labels = map[string]string{"falak.site.id": "01SITEULID", "falak.release.id": "01RELEASEULID"}
 	return s
 }
 
@@ -762,7 +762,7 @@ func TestFunctionTelemetryIsStampedAndRelayed(t *testing.T) {
 	}
 
 	// A function claiming to be another site is reported as itself.
-	body := `{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"other"}},{"key":"kiln.site.id","value":{"stringValue":"01OTHERSITE"}},{"key":"kiln.org.id","value":{"stringValue":"01OTHERORG"}},{"key":"telemetry.sdk.language","value":{"stringValue":"js"}}]},"scopeSpans":[{"spans":[{"traceId":"0af7651916cd43dd8448eb211c80319c","spanId":"b7ad6b7169203331","name":"GET /","kind":2,"startTimeUnixNano":"1","endTimeUnixNano":"2"}]}]}]}`
+	body := `{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"other"}},{"key":"falak.site.id","value":{"stringValue":"01OTHERSITE"}},{"key":"falak.org.id","value":{"stringValue":"01OTHERORG"}},{"key":"telemetry.sdk.language","value":{"stringValue":"js"}}]},"scopeSpans":[{"spans":[{"traceId":"0af7651916cd43dd8448eb211c80319c","spanId":"b7ad6b7169203331","name":"GET /","kind":2,"startTimeUnixNano":"1","endTimeUnixNano":"2"}]}]}]}`
 	c := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		var d net.Dialer
 		return d.DialContext(ctx, "unix", filepath.Join(root, "hello", "otlp", "otlp.sock"))
@@ -783,8 +783,8 @@ func TestFunctionTelemetryIsStampedAndRelayed(t *testing.T) {
 	for _, kv := range got[0].Resource.Attributes {
 		attrs[kv.Key] = kv.Value.GetStringValue()
 	}
-	if attrs["service.name"] != "hello" || attrs["kiln.site.id"] != "01SITEULID" || attrs["kiln.release.id"] != "01RELEASEULID" ||
-		attrs["kiln.org.id"] != "" || attrs["telemetry.sdk.language"] != "js" || got[0].ScopeSpans[0].Spans[0].Name != "GET /" {
+	if attrs["service.name"] != "hello" || attrs["falak.site.id"] != "01SITEULID" || attrs["falak.release.id"] != "01RELEASEULID" ||
+		attrs["falak.org.id"] != "" || attrs["telemetry.sdk.language"] != "js" || got[0].ScopeSpans[0].Spans[0].Name != "GET /" {
 		t.Fatalf("resource %v", attrs)
 	}
 
@@ -830,7 +830,7 @@ func TestColdStartsAreMarkedAndGatewayErrorsReported(t *testing.T) {
 	for _, kv := range sp.Attributes {
 		a[kv.Key] = otlp.AttrString(kv.Value)
 	}
-	if a["kiln.event.type"] != "request" || a["http.route"] != gatewayRoute || a["http.response.status_code"] != "502" || sp.Status.GetCode() != tracepb.Status_STATUS_CODE_ERROR {
+	if a["falak.event.type"] != "request" || a["http.route"] != gatewayRoute || a["http.response.status_code"] != "502" || sp.Status.GetCode() != tracepb.Status_STATUS_CODE_ERROR {
 		t.Fatalf("span %v", a)
 	}
 }
@@ -849,13 +849,13 @@ func TestScheduledRunsStreamOutputAndExitCode(t *testing.T) {
 
 	var out strings.Builder
 	code, err := c.Run(context.Background(), "hello", RunRequest{Schedule: "nightly", Name: "Nightly cleanup", Cron: "0 3 * * *"}, &out)
-	if err != nil || code != 0 || !strings.Contains(out.String(), "kiln-fn-run") {
+	if err != nil || code != 0 || !strings.Contains(out.String(), "falak-fn-run") {
 		t.Fatalf("run: %d %v %q", code, err, out.String())
 	}
 	b := e.runs[0]
 	env := strings.Join(b.Env, "\n")
 	if b.Cmd[0] != RunCommand || b.Labels[LabelRun] != "nightly" || b.Labels[LabelSpec] != "run" || b.HostConfig.Binds[0] != s.ReleaseDir+":/app:ro" ||
-		!strings.Contains(env, "KILN_TRIGGER=cron") || !strings.Contains(env, "KILN_SCHEDULE_NAME=Nightly cleanup") || !strings.Contains(env, "KILN_SCHEDULE_CRON=0 3 * * *") ||
+		!strings.Contains(env, "FALAK_TRIGGER=cron") || !strings.Contains(env, "FALAK_SCHEDULE_NAME=Nightly cleanup") || !strings.Contains(env, "FALAK_SCHEDULE_CRON=0 3 * * *") ||
 		!strings.Contains(env, "GREETING=hi") || !b.HostConfig.ReadonlyRootfs {
 		t.Fatalf("run container %+v", b)
 	}

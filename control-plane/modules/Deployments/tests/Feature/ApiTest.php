@@ -1,13 +1,13 @@
 <?php
 
-use Kiln\Deployments\Application\Actions\TriggerDeployment;
-use Kiln\Deployments\Domain\Enums\Trigger;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Identity\Application\Actions\CreateApiToken;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Telemetry\Contracts\Data\LogLine;
-use Kiln\Telemetry\Contracts\LogsQuery;
+use Falak\Deployments\Application\Actions\TriggerDeployment;
+use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Identity\Application\Actions\CreateApiToken;
+use Falak\Identity\Contracts\Role;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Telemetry\Contracts\Data\LogLine;
+use Falak\Telemetry\Contracts\LogsQuery;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -142,7 +142,7 @@ it('reads and writes the site environment as dotenv content', function () {
     [$world, $token] = api_world(['sites.view', 'sites.env.view', 'sites.env.manage']);
 
     $this->withToken($token)->getJson("/api/v1/sites/{$world->site->id}/env")->assertOk()
-        ->assertJsonPath('data.content', "APP_ENV=production\nAPP_KEY=base64:secret\nKILN_SITE_ID=stale\n");
+        ->assertJsonPath('data.content', "APP_ENV=production\nAPP_KEY=base64:secret\nFALAK_SITE_ID=stale\n");
 
     $this->withToken($token)->putJson("/api/v1/sites/{$world->site->slug}/env", ['content' => "APP_ENV=staging\nNEW=\"a b\"\n"])->assertOk()
         ->assertJsonPath('data.version', 2)
@@ -175,7 +175,7 @@ it('returns site logs newest first with a cursor', function () {
             $this->captured[] = [$logql, $limit];
 
             return [
-                new LogLine('1790000000000000002', 'boom', ['kiln_server_id' => 'X', 'service_name' => 'laravel', 'detected_level' => 'error'], ['severity_text' => 'ERROR']),
+                new LogLine('1790000000000000002', 'boom', ['falak_server_id' => 'X', 'service_name' => 'laravel', 'detected_level' => 'error'], ['severity_text' => 'ERROR']),
                 new LogLine('1790000000000000001', 'hello', ['service_name' => 'laravel'], []),
             ];
         }
@@ -187,8 +187,8 @@ it('returns site logs newest first with a cursor', function () {
         ->assertJsonPath('data.0.source', 'laravel')
         ->assertJsonPath('meta.cursor', '1790000000000000001');
 
-    expect($captured[0][0])->toContain('kiln_site_id="'.strtoupper($world->site->id).'"')
-        ->toContain('kiln_org_id="'.strtoupper($world->organization->id).'"')
+    expect($captured[0][0])->toContain('falak_site_id="'.strtoupper($world->site->id).'"')
+        ->toContain('falak_org_id="'.strtoupper($world->organization->id).'"')
         ->and($captured[0][1])->toBe(2)
         ->and($response->json('data.0.at'))->toStartWith('2026-');
 
@@ -208,10 +208,10 @@ it('returns the site access log with filters and a cursor', function () {
             $this->captured[] = [$logql, $limit];
 
             return [
-                new LogLine('1790000000000000002', 'GET /cart?x=1 502 12.3ms', ['service_name' => 'shop', 'kiln_server_id' => '01JSERVER0000000000000000A', 'kiln_log_kind' => 'access'], [
+                new LogLine('1790000000000000002', 'GET /cart?x=1 502 12.3ms', ['service_name' => 'shop', 'falak_server_id' => '01JSERVER0000000000000000A', 'falak_log_kind' => 'access'], [
                     'http_request_method' => 'GET', 'url_path' => '/cart', 'url_query' => 'x=1', 'http_response_status_code' => '502',
                     'http_server_duration_ms' => '12.300', 'http_response_body_size' => '512', 'client_address' => '203.0.113.9',
-                    'user_agent_original' => 'curl/8', 'server_address' => 'shop.test', 'kiln_deployment_id' => '01JDEP0000000000000000000A',
+                    'user_agent_original' => 'curl/8', 'server_address' => 'shop.test', 'falak_deployment_id' => '01JDEP0000000000000000000A',
                 ]),
             ];
         }
@@ -228,8 +228,8 @@ it('returns the site access log with filters and a cursor', function () {
         ->assertJsonPath('data.0.deployment_id', '01jdep0000000000000000000a')
         ->assertJsonPath('meta.cursor', '1790000000000000002');
 
-    expect($captured[0][0])->toBe('{kiln_org_id="'.strtoupper($world->organization->id).'", service_name="'.$world->site->slug.'", kiln_log_kind="access"}'
-        .' |= "/cart" | kiln_deployment_id="01JDEP0000000000000000000A" | http_request_method="GET" | http_response_status_code=~"5.."');
+    expect($captured[0][0])->toBe('{falak_org_id="'.strtoupper($world->organization->id).'", service_name="'.$world->site->slug.'", falak_log_kind="access"}'
+        .' |= "/cart" | falak_deployment_id="01JDEP0000000000000000000A" | http_request_method="GET" | http_response_status_code=~"5.."');
 
     $this->withToken($token)->getJson("/api/v1/sites/{$world->site->id}/access-logs?status=99")->assertUnprocessable();
 });

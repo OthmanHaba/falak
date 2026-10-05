@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Kernel\Support;
+namespace Falak\Kernel\Support;
 
 use Closure;
 use Illuminate\Http\Request;
 
 /**
  * Registry of Inertia props shared with every page. Modules register lazy resolvers from their
- * service provider (`$props->register('kiln', fn (Request $r) => ...)`); the app's Inertia middleware
+ * service provider (`$props->register('falak', fn (Request $r) => ...)`); the app's Inertia middleware
  * merges {@see for()} into its shared props, so app glue never imports module internals.
  */
 final class SharedProps

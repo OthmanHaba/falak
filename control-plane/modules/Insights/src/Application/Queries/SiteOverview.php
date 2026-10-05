@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Insights\Application\Queries;
+namespace Falak\Insights\Application\Queries;
 
 use Carbon\CarbonImmutable;
+use Falak\Insights\Contracts\IssueStatus;
+use Falak\Insights\Domain\Models\Issue;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
-use Kiln\Insights\Contracts\IssueStatus;
-use Kiln\Insights\Domain\Models\Issue;
 
 /**
  * App overview dashboard computed from the per-minute aggregates and occurrences: for one site, a set of sites
@@ -101,7 +101,7 @@ final class SiteOverview
         $misses = 0;
 
         foreach ($cache as $name => $total) {
-            // Cache aggregates are named after kiln.cache.op, optionally suffixed with the store ("hit", "miss:redis").
+            // Cache aggregates are named after falak.cache.op, optionally suffixed with the store ("hit", "miss:redis").
             $op = strtolower(strtok((string) $name, ':') ?: '');
             $hits += $op === 'hit' ? (int) $total : 0;
             $misses += $op === 'miss' ? (int) $total : 0;

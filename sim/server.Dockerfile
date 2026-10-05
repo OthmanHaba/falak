@@ -1,8 +1,8 @@
-# Simulated Kiln-managed server: Ubuntu 24.04 with systemd as PID 1 and sshd.
+# Simulated Falak-managed server: Ubuntu 24.04 with systemd as PID 1 and sshd.
 # Run privileged with its own cgroup namespace (see compose.yml). The agent binary is
-# NOT baked in: the repo is mounted read-only at /opt/kiln/src and, at boot,
-# kiln-sim-agent-link.service symlinks agent/bin/kiln-agent-linux-$SIM_AGENT_ARCH to
-# /usr/local/bin/kiln-agent if it exists. The server boots fine without it.
+# NOT baked in: the repo is mounted read-only at /opt/falak/src and, at boot,
+# falak-sim-agent-link.service symlinks agent/bin/falak-agent-linux-$SIM_AGENT_ARCH to
+# /usr/local/bin/falak-agent if it exists. The server boots fine without it.
 FROM ubuntu:noble-20260911
 
 ENV container=docker \
@@ -33,15 +33,15 @@ RUN apt-get update \
  && rm -f /usr/sbin/policy-rc.d \
  # Per-container SSH host keys are generated at first boot, not baked into the image.
  && rm -f /etc/ssh/ssh_host_* \
- && mkdir -p /etc/kiln /root/.ssh /run/sshd && chmod 700 /root/.ssh \
- && printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\n' > /etc/ssh/sshd_config.d/10-kiln-sim.conf
+ && mkdir -p /etc/falak /root/.ssh /run/sshd && chmod 700 /root/.ssh \
+ && printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\n' > /etc/ssh/sshd_config.d/10-falak-sim.conf
 
 COPY server/units/ /etc/systemd/system/
 COPY server/bin/ /usr/local/sbin/
-RUN chmod +x /usr/local/sbin/kiln-sim-* \
+RUN chmod +x /usr/local/sbin/falak-sim-* \
  # Sim only: apt downloads through the sim apt cache when it is reachable (DIRECT otherwise). Written after the
  # image's own apt-get, so it applies to what the agent installs at runtime.
- && printf 'Acquire::http::Proxy-Auto-Detect "/usr/local/sbin/kiln-sim-apt-proxy";\n' > /etc/apt/apt.conf.d/01kiln-sim-proxy \
+ && printf 'Acquire::http::Proxy-Auto-Detect "/usr/local/sbin/falak-sim-apt-proxy";\n' > /etc/apt/apt.conf.d/01falak-sim-proxy \
  # Sim only: the registry of docker/compose builds is plain HTTP on the fleet network; Docker Hub pulls go
  # through the sim's pull-through cache (dockerd falls back to Docker Hub when the mirror is unreachable).
  && mkdir -p /etc/docker \
@@ -49,7 +49,7 @@ RUN chmod +x /usr/local/sbin/kiln-sim-* \
  && systemctl disable ssh.service \
  # Stock Ubuntu 24.04 socket activation (ssh.socket -> ssh.service). Enabling ssh.service as
  # well makes both bind :22 and one of them fail.
- && systemctl enable ssh.socket kiln-sim-hostkeys.service kiln-sim-trust.service kiln-sim-agent-link.service
+ && systemctl enable ssh.socket falak-sim-hostkeys.service falak-sim-trust.service falak-sim-agent-link.service
 
 STOPSIGNAL SIGRTMIN+3
-ENTRYPOINT ["/usr/local/sbin/kiln-sim-entrypoint"]
+ENTRYPOINT ["/usr/local/sbin/falak-sim-entrypoint"]

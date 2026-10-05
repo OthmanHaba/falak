@@ -1,17 +1,17 @@
 <?php
 
-namespace Kiln\Edge\Application\Actions;
+namespace Falak\Edge\Application\Actions;
 
+use Falak\Edge\Application\ComposeServiceDomains;
+use Falak\Edge\Application\EdgeChanges;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Edge\Domain\Enums\WwwRedirect;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Events\DomainAdded;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Sites\Contracts\Data\SiteData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Application\ComposeServiceDomains;
-use Kiln\Edge\Application\EdgeChanges;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Edge\Domain\Enums\WwwRedirect;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Events\DomainAdded;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Sites\Contracts\Data\SiteData;
 
 final class AddDomain
 {

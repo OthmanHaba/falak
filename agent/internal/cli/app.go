@@ -1,4 +1,4 @@
-// Package cli implements the `kiln` command-line client for the control-plane public API.
+// Package cli implements the `falak` command-line client for the control-plane public API.
 package cli
 
 import (
@@ -13,7 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/kiln/agent/internal/cli/api"
+	"github.com/OthmanHaba/falak/agent/internal/cli/api"
 )
 
 // Exit codes.
@@ -121,7 +121,7 @@ func (a *App) Run(ctx context.Context, argv []string) int {
 	if errors.Is(err, flag.ErrHelp) {
 		return ExitOK
 	}
-	fmt.Fprintln(a.Stderr, "kiln:", err)
+	fmt.Fprintln(a.Stderr, "falak:", err)
 	var ue usageError
 	var ee exitError
 	switch {
@@ -134,9 +134,9 @@ func (a *App) Run(ctx context.Context, argv []string) int {
 }
 
 func (a *App) dispatch(ctx context.Context, argv []string) error {
-	// Leading global flags: kiln --json servers list
+	// Leading global flags: falak --json servers list
 	cmds := a.commands()
-	gfs := a.flagSet("kiln")
+	gfs := a.flagSet("falak")
 	showVersion := gfs.Bool("version", false, "print the version")
 	gfs.Usage = func() { a.usage(a.Stderr, cmds, "") }
 	if err := gfs.Parse(argv); err != nil {
@@ -156,7 +156,7 @@ func (a *App) dispatch(ctx context.Context, argv []string) error {
 	}
 	cmd, prefix, rest := find(cmds, argv)
 	if cmd == nil {
-		return usagef("unknown command %q (run `kiln help`)", strings.Join(prefix, " "))
+		return usagef("unknown command %q (run `falak help`)", strings.Join(prefix, " "))
 	}
 	if cmd.run == nil { // group without subcommand → first sub (servers → servers list)
 		if len(rest) > 0 && !strings.HasPrefix(rest[0], "-") {
@@ -193,8 +193,8 @@ func find(cmds []*command, argv []string) (*command, []string, []string) {
 }
 
 func (a *App) usage(w io.Writer, cmds []*command, _ string) {
-	fmt.Fprintln(w, "kiln — Kiln control-plane CLI")
-	fmt.Fprintln(w, "\nusage: kiln [--json] [--url URL] [--token TOKEN] <command> [args]")
+	fmt.Fprintln(w, "falak — Falak control-plane CLI")
+	fmt.Fprintln(w, "\nusage: falak [--json] [--url URL] [--token TOKEN] <command> [args]")
 	fmt.Fprintln(w, "\ncommands:")
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, c := range cmds {
@@ -207,7 +207,7 @@ func (a *App) usage(w io.Writer, cmds []*command, _ string) {
 		fmt.Fprintf(tw, "  %s %s\t%s\n", c.name, c.args, c.summary)
 	}
 	tw.Flush()
-	fmt.Fprintln(w, "\nenvironment: KILN_URL, KILN_TOKEN (override stored credentials; for CI), KILN_CONFIG_DIR")
+	fmt.Fprintln(w, "\nenvironment: FALAK_URL, FALAK_TOKEN (override stored credentials; for CI), FALAK_CONFIG_DIR")
 	fmt.Fprintln(w, "exit codes: 0 ok, 1 error, 2 usage, 3 deployment failed, 4 newer function version (fn deploy)")
 }
 
@@ -216,8 +216,8 @@ func (a *App) flagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(a.Stderr)
 	fs.BoolVar(&a.jsonOut, "json", a.jsonOut, "print JSON")
-	fs.StringVar(&a.baseURL, "url", a.baseURL, "control-plane URL (env KILN_URL)")
-	fs.StringVar(&a.token, "token", a.token, "API token (env KILN_TOKEN)")
+	fs.StringVar(&a.baseURL, "url", a.baseURL, "control-plane URL (env FALAK_URL)")
+	fs.StringVar(&a.token, "token", a.token, "API token (env FALAK_TOKEN)")
 	return fs
 }
 
@@ -228,11 +228,11 @@ func (a *App) flagErr(err error) error {
 	return usageError{err.Error()}
 }
 
-// parse parses flags interspersed with positionals ("kiln deploy app --wait") and checks the
+// parse parses flags interspersed with positionals ("falak deploy app --wait") and checks the
 // positional count.
 func (a *App) parse(fs *flag.FlagSet, args []string, minPos, maxPos int, synopsis string) ([]string, error) {
 	fs.Usage = func() {
-		fmt.Fprintf(a.Stderr, "usage: kiln %s %s\n", fs.Name(), synopsis)
+		fmt.Fprintf(a.Stderr, "usage: falak %s %s\n", fs.Name(), synopsis)
 		fs.PrintDefaults()
 	}
 	var pos []string
@@ -248,7 +248,7 @@ func (a *App) parse(fs *flag.FlagSet, args []string, minPos, maxPos int, synopsi
 		args = args[1:]
 	}
 	if len(pos) < minPos || (maxPos >= 0 && len(pos) > maxPos) {
-		return nil, usagef("usage: kiln %s %s", fs.Name(), synopsis)
+		return nil, usagef("usage: falak %s %s", fs.Name(), synopsis)
 	}
 	return pos, nil
 }
@@ -263,10 +263,10 @@ func (a *App) api() (api.API, error) {
 		return nil, err
 	}
 	if creds.URL == "" {
-		return nil, errors.New("no control-plane URL: run `kiln login --url https://kiln.example.com` or set KILN_URL")
+		return nil, errors.New("no control-plane URL: run `falak login --url https://falak.example.com` or set FALAK_URL")
 	}
 	if creds.Token == "" {
-		return nil, errors.New("not logged in: run `kiln login` or set KILN_TOKEN")
+		return nil, errors.New("not logged in: run `falak login` or set FALAK_TOKEN")
 	}
 	a.client = a.newAPI(creds.URL, creds.Token)
 	return a.client, nil
@@ -276,7 +276,7 @@ func (a *App) newAPI(url, token string) api.API {
 	if a.NewAPI != nil {
 		return a.NewAPI(url, token)
 	}
-	return api.New(url, token, "kiln-cli/"+a.Version)
+	return api.New(url, token, "falak-cli/"+a.Version)
 }
 
 func (a *App) configDir() (string, error) {
@@ -299,10 +299,10 @@ func (a *App) creds() (Credentials, error) {
 	if err != nil {
 		return c, fmt.Errorf("read credentials: %w", err)
 	}
-	if v := a.Getenv("KILN_URL"); v != "" {
+	if v := a.Getenv("FALAK_URL"); v != "" {
 		c.URL = v
 	}
-	if v := a.Getenv("KILN_TOKEN"); v != "" {
+	if v := a.Getenv("FALAK_TOKEN"); v != "" {
 		c.Token = v
 	}
 	if a.baseURL != "" {

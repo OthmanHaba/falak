@@ -12,7 +12,7 @@ import {
     Switch,
     Tag,
     toast,
-} from '@/components/kiln';
+} from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';

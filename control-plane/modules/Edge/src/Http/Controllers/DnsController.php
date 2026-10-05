@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Edge\Http\Controllers;
+namespace Falak\Edge\Http\Controllers;
 
+use Falak\Edge\Application\DomainOptions;
+use Falak\Edge\Contracts\DnsCheck;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Kiln\Edge\Application\DomainOptions;
-use Kiln\Edge\Contracts\DnsCheck;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
 
 /**
  * The domain picker's data (web session and API): GET domains/options and GET dns/check.

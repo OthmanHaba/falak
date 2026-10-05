@@ -1,6 +1,6 @@
 # Cloudflare integration
 
-Kiln can manage the DNS of your Cloudflare zones: it creates, updates and deletes the records of your services, names
+Falak can manage the DNS of your Cloudflare zones: it creates, updates and deletes the records of your services, names
 new services under your own domain, and keeps everything working behind Cloudflare's proxy (orange cloud: DDoS
 protection, edge cache, hidden server IP). Everything here works on Cloudflare's Free plan.
 
@@ -19,20 +19,20 @@ protection, edge cache, hidden server IP). Everything here works on Cloudflare's
    | Account → Cloudflare Tunnel → Edit | route servers through a Cloudflare Tunnel |
 
    Under **Zone Resources** pick *Specific zone* and your domain.
-2. Paste the token in Kiln and click **Connect**. Kiln verifies it with Cloudflare and stores it encrypted.
+2. Paste the token in Falak and click **Connect**. Falak verifies it with Cloudflare and stores it encrypted.
 3. Click **Manage** next to the zone. New records are proxied (orange) by default; turn that off per zone, or per
    domain in the service's Networking tab.
-4. Fix the zone settings Kiln flags: **SSL/TLS mode Full (strict)**, **minimum TLS 1.2**, **Always Use HTTPS off**
+4. Fix the zone settings Falak flags: **SSL/TLS mode Full (strict)**, **minimum TLS 1.2**, **Always Use HTTPS off**
    (Caddy already redirects to HTTPS, and Cloudflare's redirect would block Let's Encrypt).
 
-## What Kiln does in a managed zone
+## What Falak does in a managed zone
 
 - **Records follow your domains.** Adding `shop.example.com` to a service creates one `A`/`AAAA` record per server it
   runs on (the load balancer of a load-balanced site), and for the `www` host when a www redirect is on. They change
   when the service moves servers and disappear when the domain or service is deleted. Every public service of a
   compose (template) site has domains of its own, with records, proxy and cache settings like any domain.
-- **Only its own records.** Kiln tags each record it creates (`kiln:<id>` in the record's comment) and never changes
-  anything else. If a name already has a record Kiln did not create, the domain shows a **conflict**: delete that
+- **Only its own records.** Falak tags each record it creates (`falak:<id>` in the record's comment) and never changes
+  anything else. If a name already has a record Falak did not create, the domain shows a **conflict**: delete that
   record in Cloudflare, then click **Sync**.
 - **Generated names under your zone.** Settings → Domains → *Cloudflare: example.com* (or "Generate names here" on the
   zone): new services get `service.example.com`; copies in other environments get `service-staging.example.com`.
@@ -47,8 +47,8 @@ protection, edge cache, hidden server IP). Everything here works on Cloudflare's
 
 ## Cloudflare Tunnel (no open ports)
 
-**Settings → Cloudflare → Servers → Route through a tunnel.** Kiln creates a tunnel for the server in your Cloudflare
-account, installs a pinned, checksum-verified `cloudflared` on it (`kiln-cloudflared.service`, a dynamic user, the
+**Settings → Cloudflare → Servers → Route through a tunnel.** Falak creates a tunnel for the server in your Cloudflare
+account, installs a pinned, checksum-verified `cloudflared` on it (`falak-cloudflared.service`, a dynamic user, the
 token passed as a systemd credential) and keeps the tunnel's routes in line with the names the server serves.
 
 - The server's names in your managed zones become a proxied `CNAME` to `<tunnel id>.cfargotunnel.com` — once
@@ -56,7 +56,7 @@ token passed as a systemd credential) and keeps the tunnel's routes in line with
 - Caddy stays in charge: the tunnel sends each name to Caddy on `https://localhost:443` (with the name as SNI), and
   only Let's Encrypt's `/.well-known/acme-challenge/` path to port 80, so certificates are still issued and renewed.
   Routing rules, headers and logs work as before, and logs keep the visitor's IP.
-- Once the tunnel shows **healthy**, you can close ports 80 and 443 on the server's firewall: Kiln's own traffic to
+- Once the tunnel shows **healthy**, you can close ports 80 and 443 on the server's firewall: Falak's own traffic to
   the agent is outbound. Names outside your managed zones (sslip.io, other DNS providers) still need the public IP.
 - **Back to public** removes `cloudflared`, deletes the tunnel and points the names at the server's IP again (open the
   ports first if you closed them).
@@ -66,8 +66,8 @@ token passed as a systemd credential) and keeps the tunnel's routes in line with
 ## Cache, purge and protection
 
 - **Cache mode per domain** (Networking tab → the domain's ⋯ menu): *Standard* (Cloudflare's default: static files),
-  *Everything* (HTML too, one day at the edge — for static and SPA sites) or *Bypass*. Kiln writes them as Cache Rules
-  it tags `kiln:cache:<domain>`; your own Cache Rules in the zone stay untouched.
+  *Everything* (HTML too, one day at the edge — for static and SPA sites) or *Bypass*. Falak writes them as Cache Rules
+  it tags `falak:cache:<domain>`; your own Cache Rules in the zone stay untouched.
 - **Purge after every deploy.** A successful deploy or a rollback purges the site's names (domains, www hosts and a
   template's public domains), so visitors get the new release right away. *Purge Cloudflare cache* in the domain
   menu purges on demand.
@@ -82,15 +82,15 @@ token passed as a systemd credential) and keeps the tunnel's routes in line with
 
 ## Rate limits
 
-Kiln's edge on your servers is stock Caddy, which has no rate limiting, so rate limits are Cloudflare rules: they
+Falak's edge on your servers is stock Caddy, which has no rate limiting, so rate limits are Cloudflare rules: they
 only apply to names Cloudflare **proxies** (orange cloud).
 
 - **Per domain** (Networking tab → the domain's ⋯ menu → *Rate limit…*): optional path prefix, a number of requests per
   window, then *Block* for a while, or *Managed challenge*. Below Enterprise a challenge has no duration: Cloudflare
   challenges each request over the limit, and a visitor who passes starts counting from zero again (Enterprise sets a
   duration for both). Counted per visitor IP (and Cloudflare data center).
-- Kiln writes them as rate limiting rules it tags `kiln:ratelimit:<organization>:<domain>`; your own rules in the zone
-  stay untouched (sent back as they are), and so do the rules of other organizations or other Kiln installs sharing the
+- Falak writes them as rate limiting rules it tags `falak:ratelimit:<organization>:<domain>`; your own rules in the zone
+  stay untouched (sent back as they are), and so do the rules of other organizations or other Falak installs sharing the
   zone. Switching a domain to DNS only takes its rule out of the zone (the setting is kept for when it is proxied
   again, and the rule comes back with the orange cloud); removing the domain removes its rule. Changes to one zone
   run one at a time.
@@ -99,10 +99,10 @@ only apply to names Cloudflare **proxies** (orange cloud).
   window, a 10-second block, and the path is the only request field it can match (no host), so it applies to every
   proxied name of the zone: the other domains of the zone show a *zone-wide rate limit* warning, and a rule without a
   path is refused when the panel itself is in the zone. Pro: 2 rules, host + path, windows up to 1 minute, blocks up
-  to 1 hour. Business: 5 rules, up to 10 minutes / 1 day. Enterprise: Kiln allows up to 100 rules, windows up to
+  to 1 hour. Business: 5 rules, up to 10 minutes / 1 day. Enterprise: Falak allows up to 100 rules, windows up to
   65,535 s and blocks up to 1 day; the actual rule count depends on the Enterprise contract (Cloudflare refuses what
   it doesn't allow).
-- The token needs **Zone → Zone WAF → Edit** (Kiln shows Cloudflare's error otherwise).
+- The token needs **Zone → Zone WAF → Edit** (Falak shows Cloudflare's error otherwise).
 
 ## Limits on the Free plan
 
@@ -112,8 +112,8 @@ only apply to names Cloudflare **proxies** (orange cloud).
 
 ## Stop
 
-- **Stop managing** a zone: Kiln stops changing it; the records it created stay, so services keep resolving.
-- **Disconnect**: every zone of the connection is released the same way, and the token is deleted from Kiln.
+- **Stop managing** a zone: Falak stops changing it; the records it created stay, so services keep resolving.
+- **Disconnect**: every zone of the connection is released the same way, and the token is deleted from Falak.
 
 ## Coming next
 

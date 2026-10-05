@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Apm\Transport;
+namespace Falak\Apm\Transport;
 
 use Throwable;
 
@@ -16,7 +16,7 @@ final class SocketTransport implements Transport
     private array $endpoints = [];
 
     /** @param list<string|null> $endpoints */
-    public function __construct(array $endpoints, private float $timeout = 0.25, private string $userAgent = 'kiln-apm-laravel')
+    public function __construct(array $endpoints, private float $timeout = 0.25, private string $userAgent = 'falak-apm-laravel')
     {
         foreach ($endpoints as $endpoint) {
             if (is_string($endpoint) && $endpoint !== '' && ($parsed = self::parse($endpoint)) !== null) {

@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Templates\Tests\Support;
+namespace Falak\Templates\Tests\Support;
 
+use Falak\Deployments\Contracts\DeploymentTrigger;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Deployments\Contracts\DeploymentTrigger;
 
 final class FakeDeploymentTrigger implements DeploymentTrigger
 {

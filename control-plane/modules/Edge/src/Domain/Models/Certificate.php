@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Domain\Models;
+namespace Falak\Edge\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
- * An uploaded TLS certificate, installed on servers with edge.cert.install as /etc/kiln/certs/<name>.{crt,key}.
+ * An uploaded TLS certificate, installed on servers with edge.cert.install as /etc/falak/certs/<name>.{crt,key}.
  *
  * @property string $id
  * @property string $organization_id

@@ -18,7 +18,7 @@ async function telegram(method: string, payload: Record<string, unknown>) {
 }
 
 function reply(text: string): string {
-    if (text === '/start') return 'Hi! I run on a Kiln function. Send me anything and I will echo it.';
+    if (text === '/start') return 'Hi! I run on a Falak function. Send me anything and I will echo it.';
     if (text === '/help') return 'Commands: /start, /help, /time. Anything else is echoed back.';
     if (text === '/time') return `It is ${new Date().toUTCString()}.`;
     return `You said: ${text}`;

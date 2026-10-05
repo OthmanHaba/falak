@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Deployments\Infrastructure;
+namespace Falak\Deployments\Infrastructure;
 
-use Kiln\Deployments\Contracts\RetainedImages;
-use Kiln\Deployments\Domain\Enums\ReleaseStatus;
-use Kiln\Deployments\Domain\Models\Release;
+use Falak\Deployments\Contracts\RetainedImages;
+use Falak\Deployments\Domain\Enums\ReleaseStatus;
+use Falak\Deployments\Domain\Models\Release;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 

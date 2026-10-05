@@ -1,5 +1,5 @@
-import { Button, CodeBlock, CopyButton, KeyValue, RelativeTime, Section, Select, SkeletonRows, StatusBadge, toast } from '@/components/kiln';
-import { copyText } from '@/components/kiln/copy-button';
+import { Button, CodeBlock, CopyButton, KeyValue, RelativeTime, Section, Select, SkeletonRows, StatusBadge, toast } from '@/components/falak';
+import { copyText } from '@/components/falak/copy-button';
 import { errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
 import { cn } from '@/lib/utils';

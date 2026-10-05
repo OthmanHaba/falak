@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Contracts\Data;
+namespace Falak\Identity\Contracts\Data;
 
 final readonly class OrganizationData
 {

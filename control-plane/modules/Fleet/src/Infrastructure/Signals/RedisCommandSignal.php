@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Infrastructure\Signals;
+namespace Falak\Fleet\Infrastructure\Signals;
 
 use Closure;
 use Illuminate\Contracts\Redis\Factory as RedisFactory;
@@ -59,6 +59,6 @@ final class RedisCommandSignal implements CommandSignal
 
     private function key(string $agentId): string
     {
-        return "kiln:fleet:wake:{$agentId}";
+        return "falak:fleet:wake:{$agentId}";
     }
 }

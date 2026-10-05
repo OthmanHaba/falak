@@ -1,22 +1,22 @@
 <?php
 
-namespace Kiln\Deployments\Application\Orchestration;
+namespace Falak\Deployments\Application\Orchestration;
 
-use Kiln\Builds\Contracts\BuildService;
-use Kiln\Deployments\Contracts\FunctionSources;
-use Kiln\Deployments\Domain\Enums\StepKind;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\DeploymentStep;
-use Kiln\Deployments\Domain\Models\Release;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Fleet\Contracts\AgentDirectory;
-use Kiln\Projects\Contracts\VariableReferences;
-use Kiln\Sites\Contracts\ComposeServiceExtraction;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\Data\SharedPath;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteRuntime;
+use Falak\Builds\Contracts\BuildService;
+use Falak\Deployments\Contracts\FunctionSources;
+use Falak\Deployments\Domain\Enums\StepKind;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\DeploymentStep;
+use Falak\Deployments\Domain\Models\Release;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Projects\Contracts\VariableReferences;
+use Falak\Sites\Contracts\ComposeServiceExtraction;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\Data\SharedPath;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteRuntime;
 use RuntimeException;
 
 /**
@@ -89,9 +89,9 @@ final class StepPayloads
         $data = [
             'yaml' => $rendered->yaml,
             'env' => [...$this->composeVariables($site), ...array_filter([
-                'KILN_SITE_ID' => self::upper($site->id),
-                'KILN_DEPLOYMENT_ID' => self::upper($deployment->id),
-                'KILN_RELEASE_ID' => self::upper($deployment->release_id),
+                'FALAK_SITE_ID' => self::upper($site->id),
+                'FALAK_DEPLOYMENT_ID' => self::upper($deployment->id),
+                'FALAK_RELEASE_ID' => self::upper($deployment->release_id),
             ])],
             'leader' => $rendered->leaderCommands,
             'source' => $site->compose?->source->value ?? 'repo',
@@ -109,7 +109,7 @@ final class StepPayloads
     }
 
     /**
-     * Services split out into their own Kiln sites that aren't live yet: the stack runs without them, so the order is
+     * Services split out into their own Falak sites that aren't live yet: the stack runs without them, so the order is
      *  1. a stack that never ran starts, in a bootstrap pass, only the services those sites use (their `uses` still in
      *     the stack, plus what compose pulls in through depends_on) — the split-out sites need them to pass their own
      *     health checks — and returns them (DeploySplitSitesFirst then deploys the sites, then the full stack);
@@ -141,14 +141,14 @@ final class StepPayloads
         $names = implode(', ', array_map(fn (string $id, string $service) => $this->sites->find($id)?->name ?? $service, $waiting, array_keys($waiting)));
         $deployment->forceFill(['settings' => [...(array) $deployment->settings, 'awaits_sites' => array_values(array_unique($waiting))]])->save();
 
-        // Only services that still run in the stack (not ones moved to Kiln databases or other sites).
+        // Only services that still run in the stack (not ones moved to Falak databases or other sites).
         $bootstrap = array_values(array_unique(array_filter($uses, fn (string $service) => ($services[$service]['mode'] ?? 'keep') === 'keep')));
         sort($bootstrap);
         $agents = $this->agents->forServers($site->serverIds());
         $capable = $agents !== [] && array_reduce($site->serverIds(), fn (bool $ok, string $id) => $ok && ($agents[$id] ?? null)?->supports('compose.up.services') === true, true);
 
         if ($bootstrap === [] || Release::current($site->id) !== null || ! $capable) {
-            throw new RuntimeException("The stack runs without {$names}, its own Kiln site(s) that aren't live yet. Deploying {$names} first; the stack follows when it's live.");
+            throw new RuntimeException("The stack runs without {$names}, its own Falak site(s) that aren't live yet. Deploying {$names} first; the stack follows when it's live.");
         }
 
         $deployment->forceFill(['settings' => [...(array) $deployment->settings, 'bootstrap' => $bootstrap]])->save();
@@ -188,7 +188,7 @@ final class StepPayloads
 
         // Repository files under repo/ need an agent that writes them (feature compose.v2).
         if ($assets !== [] && ! ($this->agents->forServers([$serverId])[$serverId] ?? null)?->supports('compose.v2')) {
-            throw new RuntimeException('The Kiln agent on this server is too old for compose projects that mount repository files; update it first.');
+            throw new RuntimeException('The Falak agent on this server is too old for compose projects that mount repository files; update it first.');
         }
 
         return array_filter([
@@ -227,7 +227,7 @@ final class StepPayloads
     }
 
     /**
-     * system.exec on the leader: `docker compose run --rm <service> <argv>` for every kiln.deploy.leader_command.
+     * system.exec on the leader: `docker compose run --rm <service> <argv>` for every falak.deploy.leader_command.
      * Arguments are shell-escaped one by one (never re-parsed by a shell).
      *
      * @param  array{leader: array<string, list<string>>}  $release
@@ -262,7 +262,7 @@ final class StepPayloads
      */
     private function composeEnv(array $release, string $serverId): array
     {
-        $env = [...array_map('strval', (array) $release['env']), 'KILN_SERVER_ID' => (string) self::upper($serverId)];
+        $env = [...array_map('strval', (array) $release['env']), 'FALAK_SERVER_ID' => (string) self::upper($serverId)];
 
         return array_filter($env, fn ($v, $k) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH);
     }
@@ -461,7 +461,7 @@ final class StepPayloads
     }
 
     /**
-     * KILN_* variables for deploy script sections (plus exposed site environment and KILN_VAR_*).
+     * FALAK_* variables for deploy script sections (plus exposed site environment and FALAK_VAR_*).
      *
      * @return array<string, string>
      */
@@ -470,16 +470,16 @@ final class StepPayloads
         $release = self::upper($deployment->release_id);
 
         $context = array_filter([
-            'KILN_COMMIT' => $deployment->commit,
-            'KILN_COMMIT_AUTHOR' => $deployment->commit_author,
-            'KILN_AUTHOR' => $deployment->commit_author,
-            'KILN_COMMIT_MESSAGE' => $deployment->commit_message !== null ? (string) strtok($deployment->commit_message, "\n") : null,
-            'KILN_BRANCH' => $deployment->branch,
-            'KILN_RELEASE_ID' => $release,
-            'KILN_RELEASE_DIR' => $release ? "{$site->rootPath}/releases/{$release}" : null,
-            'KILN_DEPLOYMENT_ID' => self::upper($deployment->id),
-            'KILN_TRIGGER' => $deployment->trigger->agentValue(),
-            'KILN_PHP_BINARY' => $site->runtime->isPhp() ? ($site->phpVersion ? "php{$site->phpVersion}" : 'php') : null,
+            'FALAK_COMMIT' => $deployment->commit,
+            'FALAK_COMMIT_AUTHOR' => $deployment->commit_author,
+            'FALAK_AUTHOR' => $deployment->commit_author,
+            'FALAK_COMMIT_MESSAGE' => $deployment->commit_message !== null ? (string) strtok($deployment->commit_message, "\n") : null,
+            'FALAK_BRANCH' => $deployment->branch,
+            'FALAK_RELEASE_ID' => $release,
+            'FALAK_RELEASE_DIR' => $release ? "{$site->rootPath}/releases/{$release}" : null,
+            'FALAK_DEPLOYMENT_ID' => self::upper($deployment->id),
+            'FALAK_TRIGGER' => $deployment->trigger->agentValue(),
+            'FALAK_PHP_BINARY' => $site->runtime->isPhp() ? ($site->phpVersion ? "php{$site->phpVersion}" : 'php') : null,
         ], fn ($v) => $v !== null && $v !== '');
 
         foreach ($deployment->variables ?? [] as $key => $value) {
@@ -487,8 +487,8 @@ final class StepPayloads
         }
 
         $variables = $this->resolved($site, $this->sites->deployVariables($site->id, $serverId, $context));
-        $variables['KILN_SITE_ID'] = (string) self::upper($site->id);
-        $variables['KILN_SERVER_ID'] = (string) self::upper($serverId);
+        $variables['FALAK_SITE_ID'] = (string) self::upper($site->id);
+        $variables['FALAK_SERVER_ID'] = (string) self::upper($serverId);
 
         return array_filter($variables, fn ($v, $k) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH);
     }
@@ -507,7 +507,7 @@ final class StepPayloads
 
     /**
      * A compose release's variables: the site's, with the stack variables that pointed at services moved out of the
-     * stack (Kiln databases, own sites) replaced by their rewrites, then resolved like any `${{ }}` reference.
+     * stack (Falak databases, own sites) replaced by their rewrites, then resolved like any `${{ }}` reference.
      *
      * @return array<string, string>
      *
@@ -547,10 +547,10 @@ final class StepPayloads
     public function injected(Deployment $deployment, SiteData $site, string $serverId): array
     {
         return array_filter([
-            'KILN_SITE_ID' => self::upper($site->id),
-            'KILN_SERVER_ID' => self::upper($serverId),
-            'KILN_DEPLOYMENT_ID' => self::upper($deployment->id),
-            'KILN_RELEASE_ID' => self::upper($deployment->release_id),
+            'FALAK_SITE_ID' => self::upper($site->id),
+            'FALAK_SERVER_ID' => self::upper($serverId),
+            'FALAK_DEPLOYMENT_ID' => self::upper($deployment->id),
+            'FALAK_RELEASE_ID' => self::upper($deployment->release_id),
         ]);
     }
 
@@ -659,7 +659,7 @@ final class StepPayloads
         }
 
         $env = $this->releaseVariables($site);
-        // The app listens on its container port; Kiln publishes it on the site's loopback host ports (blue/green).
+        // The app listens on its container port; Falak publishes it on the site's loopback host ports (blue/green).
         $listen = $site->listenPort();
         $env = array_filter([...$env, 'PORT' => (string) $listen, ...$this->injected($deployment, $site, $serverId)], fn ($v, $k) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH);
         $health = (array) $deployment->setting('health', []);
@@ -682,9 +682,9 @@ final class StepPayloads
             // A compose service run as its own site keeps reaching the stack's services (and they it) by name.
             'networks' => $this->compose->stackNetworks($site->id, $serverId) ?: null,
             'labels' => (object) array_filter([
-                'kiln.site.id' => self::upper($site->id),
-                'kiln.deployment.id' => self::upper($deployment->id),
-                'kiln.release.id' => self::upper($deployment->release_id),
+                'falak.site.id' => self::upper($site->id),
+                'falak.deployment.id' => self::upper($deployment->id),
+                'falak.release.id' => self::upper($deployment->release_id),
             ]),
         ], fn ($v) => $v !== null);
     }
@@ -718,7 +718,7 @@ final class StepPayloads
         $env = array_diff_key([
             ...$this->releaseVariables($site),
             ...$this->injected($deployment, $site, $serverId),
-            'KILN_RELEASE_ID' => self::upper($releaseId),
+            'FALAK_RELEASE_ID' => self::upper($releaseId),
         ], ['PORT' => true]);
         $env = array_filter($env, fn ($v, $k) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH);
 
@@ -744,9 +744,9 @@ final class StepPayloads
             // rather than serve it unprotected).
             'access' => $source->access !== [] ? $source->access : null,
             'labels' => (object) array_filter([
-                'kiln.site.id' => self::upper($site->id),
-                'kiln.deployment.id' => self::upper($deployment->id),
-                'kiln.release.id' => self::upper($releaseId),
+                'falak.site.id' => self::upper($site->id),
+                'falak.deployment.id' => self::upper($deployment->id),
+                'falak.release.id' => self::upper($releaseId),
             ]),
         ], fn ($v) => $v !== null);
     }

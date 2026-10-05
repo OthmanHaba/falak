@@ -1,10 +1,10 @@
-import { Button } from '@/components/kiln/button';
-import { Callout } from '@/components/kiln/callout';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Section } from '@/components/kiln/section';
-import { StatusDot } from '@/components/kiln/status';
-import { Tag, type TagProps } from '@/components/kiln/tag';
-import { toast } from '@/components/kiln/toast';
+import { Button } from '@/components/falak/button';
+import { Callout } from '@/components/falak/callout';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Section } from '@/components/falak/section';
+import { StatusDot } from '@/components/falak/status';
+import { Tag, type TagProps } from '@/components/falak/tag';
+import { toast } from '@/components/falak/toast';
 import { cn } from '@/lib/utils';
 import { router } from '@inertiajs/react';
 import { Play, RefreshCw, TriangleAlert } from 'lucide-react';
@@ -122,10 +122,10 @@ export function MachineCheckPanel({ server, check, canUpdate, prominent, reloadO
             description={
                 check.checked_at ? (
                     <>
-                        What Kiln found on the machine and what provisioning does with it · checked <RelativeTime value={check.checked_at} />
+                        What Falak found on the machine and what provisioning does with it · checked <RelativeTime value={check.checked_at} />
                     </>
                 ) : (
-                    'What Kiln found on the machine and what provisioning does with it.'
+                    'What Falak found on the machine and what provisioning does with it.'
                 )
             }
             bare
@@ -184,7 +184,7 @@ export function MachineCheckPanel({ server, check, canUpdate, prominent, reloadO
                 )}
                 {check.blocking && expanded && (
                     <Callout tone="danger" title={server.status === 'active' ? 'Re-provisioning applied nothing' : 'Nothing was installed'}>
-                        Fix the blocked {counts.block === 1 ? 'component' : 'components'} below on the machine, then re-check. Kiln won't change
+                        Fix the blocked {counts.block === 1 ? 'component' : 'components'} below on the machine, then re-check. Falak won't change
                         software it didn't install.{server.status === 'active' && ' The server keeps running as it is.'}
                     </Callout>
                 )}

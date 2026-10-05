@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiln/agent/internal/obs"
-	"github.com/kiln/agent/internal/version"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/version"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
@@ -15,10 +15,10 @@ import (
 
 var _ obs.Sink = (*Relay)(nil)
 
-var agentScope = &commonpb.InstrumentationScope{Name: "kiln-agent", Version: version.Version}
+var agentScope = &commonpb.InstrumentationScope{Name: "falak-agent", Version: version.Version}
 
-// LogKindApp / LogKindAccess are the values of the kiln.log.kind resource attribute (Loki index label
-// kiln_log_kind): a site's application output (log files, supervised programs, cron, containers) vs. the
+// LogKindApp / LogKindAccess are the values of the falak.log.kind resource attribute (Loki index label
+// falak_log_kind): a site's application output (log files, supervised programs, cron, containers) vs. the
 // edge's per-site HTTP access log.
 const (
 	LogKindApp    = "app"
@@ -30,10 +30,10 @@ func (r *Relay) agentResource(site, siteID, service string) *resourcepb.Resource
 	res := &resourcepb.Resource{}
 	cfg := r.cfg.Load()
 	if siteID != "" {
-		res.Attributes = append(res.Attributes, Str("kiln.site.id", siteID))
+		res.Attributes = append(res.Attributes, Str("falak.site.id", siteID))
 	} else if site != "" {
 		if s := cfg.siteBySlug(site); s != nil {
-			res.Attributes = append(res.Attributes, Str("kiln.site.id", s.SiteID))
+			res.Attributes = append(res.Attributes, Str("falak.site.id", s.SiteID))
 		}
 	}
 	switch {
@@ -42,7 +42,7 @@ func (r *Relay) agentResource(site, siteID, service string) *resourcepb.Resource
 	case site != "":
 		res.Attributes = append(res.Attributes, Str("service.name", site))
 	default:
-		res.Attributes = append(res.Attributes, Str("service.name", "kiln-agent"))
+		res.Attributes = append(res.Attributes, Str("service.name", "falak-agent"))
 	}
 	return res
 }
@@ -92,7 +92,7 @@ func (r *Relay) EmitLog(l obs.LogRecord) {
 		kind = LogKindApp // a site's own output (programs, cron, containers, log files)
 	}
 	if kind != "" {
-		res.Attributes = append(res.Attributes, Str("kiln.log.kind", kind))
+		res.Attributes = append(res.Attributes, Str("falak.log.kind", kind))
 	}
 	r.SubmitLogs([]*logspb.ResourceLogs{{
 		Resource:  res,

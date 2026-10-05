@@ -1,5 +1,5 @@
 #!/bin/sh
-# Kiln control-plane entrypoint.
+# Falak control-plane entrypoint.
 #   roles: web (default) | agent-api | horizon | reverb | scheduler | <any command, e.g. php artisan ...>
 #
 #   web        the panel (FrankenPHP). Worker mode by default: Laravel boots once per worker thread.
@@ -7,41 +7,41 @@
 #              internal API (/api/internal/*). Agents and builders hold long-polls (one PHP thread each for
 #              up to 30 s), so they get their own thread pool and can never starve the panel.
 #
-#   KILN_MIGRATE=1          web role runs `migrate --force` before serving (set on exactly one service)
-#   KILN_WAIT_TIMEOUT=120   seconds to wait for Postgres/Valkey before giving up
-#   KILN_EDGE_AGENT_API_HOST  issue/renew the agent-API server certificate from the Fleet CA into
-#                           $KILN_CA_PATH (agent-api.pem/.key) — the edge serves the agents host with it.
+#   FALAK_MIGRATE=1          web role runs `migrate --force` before serving (set on exactly one service)
+#   FALAK_WAIT_TIMEOUT=120   seconds to wait for Postgres/Valkey before giving up
+#   FALAK_EDGE_AGENT_API_HOST  issue/renew the agent-API server certificate from the Fleet CA into
+#                           $FALAK_CA_PATH (agent-api.pem/.key) — the edge serves the agents host with it.
 #
 # PHP thread pool (docs/INSTALL.md, "Performance"; defaults scale with the CPUs visible to the container):
-#   KILN_WORKER_MODE=1          web: FrankenPHP worker mode (Laravel Octane); 0 = classic, boot per request
-#   KILN_PHP_WORKERS            web, worker mode: worker threads kept booted            (default 2 x CPUs)
-#   KILN_PHP_THREADS            web, classic mode: threads started                      (default 2 x CPUs, >= 4)
-#   KILN_PHP_MAX_THREADS        web: ceiling the pool autoscales to under load          (default 4 x CPUs, >= 8)
-#   KILN_AGENT_API_THREADS      agent-api: ceiling; size it >= servers + builders + 8   (default 128; 32 started)
+#   FALAK_WORKER_MODE=1          web: FrankenPHP worker mode (Laravel Octane); 0 = classic, boot per request
+#   FALAK_PHP_WORKERS            web, worker mode: worker threads kept booted            (default 2 x CPUs)
+#   FALAK_PHP_THREADS            web, classic mode: threads started                      (default 2 x CPUs, >= 4)
+#   FALAK_PHP_MAX_THREADS        web: ceiling the pool autoscales to under load          (default 4 x CPUs, >= 8)
+#   FALAK_AGENT_API_THREADS      agent-api: ceiling; size it >= servers + builders + 8   (default 128; 32 started)
 # A `num_threads`/`max_threads` in FRANKENPHP_CONFIG (the 0.2.x hotfix in custom.env) takes precedence.
 set -eu
 cd /app
 
 role="${1:-web}"
-ca_dir="${KILN_CA_PATH:-/kiln/ca}"
+ca_dir="${FALAK_CA_PATH:-/falak/ca}"
 # CLI OPcache file cache (php-cli.ini): start every container from an empty cache.
-rm -rf /tmp/kiln-opcache/* 2>/dev/null || true
-mkdir -p /tmp/kiln-opcache 2>/dev/null || true
+rm -rf /tmp/falak-opcache/* 2>/dev/null || true
+mkdir -p /tmp/falak-opcache 2>/dev/null || true
 mkdir -p "$ca_dir" storage/app/public storage/framework/cache storage/framework/sessions \
-  storage/framework/views storage/logs storage/kiln 2>/dev/null || true
+  storage/framework/views storage/logs storage/falak 2>/dev/null || true
 
-log() { echo "kiln: $*" >&2; }
+log() { echo "falak: $*" >&2; }
 
 wait_for_services() {
-  timeout="${KILN_WAIT_TIMEOUT:-120}"
+  timeout="${FALAK_WAIT_TIMEOUT:-120}"
   # shellcheck disable=SC2016  # PHP code
   php -r '
     $deadline = time() + (int) $argv[1];
-    $dsn = sprintf("pgsql:host=%s;port=%s;dbname=%s", getenv("DB_HOST") ?: "postgres", getenv("DB_PORT") ?: "5432", getenv("DB_DATABASE") ?: "kiln");
+    $dsn = sprintf("pgsql:host=%s;port=%s;dbname=%s", getenv("DB_HOST") ?: "postgres", getenv("DB_PORT") ?: "5432", getenv("DB_DATABASE") ?: "falak");
     $pg = $redis = false;
     while (time() < $deadline) {
         if (! $pg) {
-            try { new PDO($dsn, getenv("DB_USERNAME") ?: "kiln", getenv("DB_PASSWORD") ?: "", [PDO::ATTR_TIMEOUT => 3]); $pg = true; }
+            try { new PDO($dsn, getenv("DB_USERNAME") ?: "falak", getenv("DB_PASSWORD") ?: "", [PDO::ATTR_TIMEOUT => 3]); $pg = true; }
             catch (Throwable $e) { $err = $e->getMessage(); }
         }
         if (! $redis) {
@@ -50,7 +50,7 @@ wait_for_services() {
         if ($pg && $redis) { exit(0); }
         sleep(2);
     }
-    fwrite(STDERR, "kiln: timed out waiting for ".(! $pg ? "Postgres (".($err ?? "?").")" : "Valkey")."\n");
+    fwrite(STDERR, "falak: timed out waiting for ".(! $pg ? "Postgres (".($err ?? "?").")" : "Valkey")."\n");
     exit(1);
   ' "$timeout"
 }
@@ -62,14 +62,14 @@ cache_config() {
   php artisan event:cache --no-interaction >/dev/null 2>&1 || true
 }
 
-# Agents pin the Kiln CA on the mTLS API, so the agents host is served with a certificate issued by the
+# Agents pin the Falak CA on the mTLS API, so the agents host is served with a certificate issued by the
 # Fleet CA (created on first use, key encrypted with APP_KEY in the database). Renewed 30 days before
 # expiry or when it no longer chains to the current CA; the edge hot-reloads when the files change.
 ensure_agent_api_cert() {
-  host="${KILN_EDGE_AGENT_API_HOST:-}"
+  host="${FALAK_EDGE_AGENT_API_HOST:-}"
   [ -n "$host" ] || return 0
-  # Former agent API names (after `kiln-ctl domain set`) stay on the certificate: enrolled agents keep them.
-  hosts="$host $(printf '%s' "${KILN_AGENT_API_HOST_ALIASES:-}" | tr ',' ' ')"
+  # Former agent API names (after `falak-ctl domain set`) stay on the certificate: enrolled agents keep them.
+  hosts="$host $(printf '%s' "${FALAK_AGENT_API_HOST_ALIASES:-}" | tr ',' ' ')"
   if [ -s "$ca_dir/agent-api.pem" ] && [ -s "$ca_dir/ca.pem" ] \
      && openssl x509 -in "$ca_dir/agent-api.pem" -noout -checkend 2592000 >/dev/null 2>&1 \
      && openssl verify -CAfile "$ca_dir/ca.pem" "$ca_dir/agent-api.pem" >/dev/null 2>&1; then
@@ -98,13 +98,13 @@ max() { if [ "$1" -gt "$2" ]; then echo "$1"; else echo "$2"; fi; }
 min() { if [ "$1" -lt "$2" ]; then echo "$1"; else echo "$2"; fi; }
 
 # Size the FrankenPHP thread pool for $1 (web | agent-api) and pick the PHP mode. Exports the variables the
-# Caddyfile reads: KILN_FRANKENPHP_THREADS, KILN_PHP_SERVER, KILN_PHP_WORKERS.
+# Caddyfile reads: FALAK_FRANKENPHP_THREADS, FALAK_PHP_SERVER, FALAK_PHP_WORKERS.
 configure_php() {
   cpus="$(nproc 2>/dev/null || echo 2)"
   cpus="$(int_or "$cpus" 2)"
   [ "$cpus" -ge 1 ] || cpus=2
   # 0.2.x hotfix: FRANKENPHP_CONFIG=num_threads N in custom.env. Declaring the counts twice would fail
-  # (max_threads < num_threads), so the legacy value wins; the KILN_* defaults apply once it is removed.
+  # (max_threads < num_threads), so the legacy value wins; the FALAK_* defaults apply once it is removed.
   legacy="$(printf '%s\n' "${FRANKENPHP_CONFIG:-}" | sed -n 's/.*num_threads[[:space:]]\{1,\}\([0-9]\{1,\}\).*/\1/p' | head -n 1)"
   legacy_max=0
   if printf '%s' "${FRANKENPHP_CONFIG:-}" | grep -q 'max_threads'; then legacy_max=1; fi
@@ -113,51 +113,51 @@ configure_php() {
   mode=classic
   case "$1" in
     web)
-      if [ "${KILN_WORKER_MODE:-1}" != "0" ]; then
+      if [ "${FALAK_WORKER_MODE:-1}" != "0" ]; then
         mode=worker
-        workers="$(max 1 "$(int_or "${KILN_PHP_WORKERS:-}" $((cpus * 2)))")"
+        workers="$(max 1 "$(int_or "${FALAK_PHP_WORKERS:-}" $((cpus * 2)))")"
         # Worker threads plus two regular threads (direct /index.php hits, e.g. from old links).
         threads=$((workers + 2))
       else
-        threads="$(max 1 "$(int_or "${KILN_PHP_THREADS:-}" "$(max 4 $((cpus * 2)))")")"
+        threads="$(max 1 "$(int_or "${FALAK_PHP_THREADS:-}" "$(max 4 $((cpus * 2)))")")"
       fi
-      ceiling="$(int_or "${KILN_PHP_MAX_THREADS:-}" "$(max 8 $((cpus * 4)))")"
+      ceiling="$(int_or "${FALAK_PHP_MAX_THREADS:-}" "$(max 8 $((cpus * 4)))")"
       ;;
     agent-api)
-      ceiling="$(max 2 "$(int_or "${KILN_AGENT_API_THREADS:-}" 128)")"
+      ceiling="$(max 2 "$(int_or "${FALAK_AGENT_API_THREADS:-}" 128)")"
       threads="$(min 32 "$ceiling")"
       ;;
   esac
   ceiling="$(max "$ceiling" "$threads")"
 
   if [ -n "$legacy" ] || [ "$legacy_max" = 1 ]; then
-    log "FRANKENPHP_CONFIG sets the PHP thread count (${FRANKENPHP_CONFIG}); it overrides the $1 defaults. Remove it from custom.env to use the KILN_* sizing (docs/INSTALL.md)."
-    KILN_FRANKENPHP_THREADS=""
+    log "FRANKENPHP_CONFIG sets the PHP thread count (${FRANKENPHP_CONFIG}); it overrides the $1 defaults. Remove it from custom.env to use the FALAK_* sizing (docs/INSTALL.md)."
+    FALAK_FRANKENPHP_THREADS=""
     if [ "$mode" = worker ] && [ -n "$legacy" ] && [ "$workers" -ge "$legacy" ]; then
       workers="$(max 1 $((legacy - 1)))"
     fi
   else
-    KILN_FRANKENPHP_THREADS="num_threads $threads
+    FALAK_FRANKENPHP_THREADS="num_threads $threads
 max_threads $ceiling"
   fi
-  KILN_PHP_SERVER="$mode"
-  KILN_PHP_WORKERS="$(max 1 "$workers")"
-  export KILN_FRANKENPHP_THREADS KILN_PHP_SERVER KILN_PHP_WORKERS
+  FALAK_PHP_SERVER="$mode"
+  FALAK_PHP_WORKERS="$(max 1 "$workers")"
+  export FALAK_FRANKENPHP_THREADS FALAK_PHP_SERVER FALAK_PHP_WORKERS
   summary="PHP $mode mode"
-  if [ "$mode" = worker ]; then summary="$summary, $KILN_PHP_WORKERS workers"; fi
-  if [ -n "$KILN_FRANKENPHP_THREADS" ]; then
-    summary="$summary, $(printf '%s' "$KILN_FRANKENPHP_THREADS" | tr '\n' ' ')"
+  if [ "$mode" = worker ]; then summary="$summary, $FALAK_PHP_WORKERS workers"; fi
+  if [ -n "$FALAK_FRANKENPHP_THREADS" ]; then
+    summary="$summary, $(printf '%s' "$FALAK_FRANKENPHP_THREADS" | tr '\n' ' ')"
   fi
   log "$1: $summary"
 }
 
-echo "$role" > /tmp/kiln-role 2>/dev/null || true
+echo "$role" > /tmp/falak-role 2>/dev/null || true
 
 case "$role" in
   web)
     wait_for_services
     cache_config
-    if [ "${KILN_MIGRATE:-0}" = "1" ]; then
+    if [ "${FALAK_MIGRATE:-0}" = "1" ]; then
       log "running migrations"
       php artisan migrate --force --no-interaction
     fi

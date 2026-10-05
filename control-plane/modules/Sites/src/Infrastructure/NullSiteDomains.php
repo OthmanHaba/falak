@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Sites\Infrastructure;
+namespace Falak\Sites\Infrastructure;
 
+use Falak\Sites\Application\ComposeSettings;
+use Falak\Sites\Contracts\Data\DomainChoice;
+use Falak\Sites\Contracts\DomainType;
+use Falak\Sites\Contracts\SiteDomains;
 use Illuminate\Validation\ValidationException;
-use Kiln\Sites\Application\ComposeSettings;
-use Kiln\Sites\Contracts\Data\DomainChoice;
-use Kiln\Sites\Contracts\DomainType;
-use Kiln\Sites\Contracts\SiteDomains;
 
 /**
  * Used until a domains owner (Edge) rebinds SiteDomains: only the test domain and custom names, nothing routed.

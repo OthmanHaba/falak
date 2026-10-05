@@ -1,11 +1,11 @@
 /**
  * Side-effect entry point:
  *
- *   node --import @kiln/apm-node/register server.js
+ *   node --import @falak/apm-node/register server.js
  *   // or first line of your entry file:
- *   import '@kiln/apm-node/register';
+ *   import '@falak/apm-node/register';
  *
- * Configured entirely from KILN_* / OTEL_* environment variables.
+ * Configured entirely from FALAK_* / OTEL_* environment variables.
  */
 import { runtime } from './env.js';
 import { start } from './sdk.js';

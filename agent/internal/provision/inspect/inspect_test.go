@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 // The incident machine (Ubuntu 26.04, Docker from Docker's repository) as the tools print it.
@@ -207,7 +207,7 @@ func itoa(i int) string { b, _ := json.Marshal(i); return string(b) }
 func TestUnitFromCgroup(t *testing.T) {
 	for in, want := range map[string]string{
 		"0::/system.slice/nginx.service\n":                                      "nginx.service",
-		"0::/system.slice/kiln-edge.service\n":                                  "kiln-edge.service",
+		"0::/system.slice/falak-edge.service\n":                                 "falak-edge.service",
 		"12:pids:/system.slice/docker.service\n0::/system.slice/docker.service": "docker.service",
 		"0::/user.slice/user-1000.slice/session-3.scope\n":                      "session-3.scope",
 		"0::/\n": "",
@@ -256,7 +256,7 @@ func TestParseDaemonJSON(t *testing.T) {
 func TestSSHEffectiveFromFilesFirstValueWins(t *testing.T) {
 	dropIns := []SSHDropIn{
 		{File: "/etc/ssh/sshd_config.d/50-cloud-init.conf", Settings: ParseSSHDConfig("PasswordAuthentication yes\n")},
-		{File: "/etc/ssh/sshd_config.d/50-kiln.conf", Settings: ParseSSHDConfig("# Managed by Kiln\nPort 22\nPasswordAuthentication no\n")},
+		{File: "/etc/ssh/sshd_config.d/50-falak.conf", Settings: ParseSSHDConfig("# Managed by Falak\nPort 22\nPasswordAuthentication no\n")},
 	}
 	eff := EffectiveFromFiles("Include /etc/ssh/sshd_config.d/*.conf\nPermitRootLogin yes\nMatch User backup\n  PasswordAuthentication no\n", dropIns)
 	if eff["passwordauthentication"] != "yes" || eff["permitrootlogin"] != "yes" || eff["port"] != "22" || eff["authorizedkeysfile"] != ".ssh/authorized_keys .ssh/authorized_keys2" {
@@ -272,7 +272,7 @@ func TestParseProcSwapsAndNftTables(t *testing.T) {
 	if len(s) != 2 || s[0].Name != "/dev/vda3" || s[0].SizeBytes != 2097148<<10 || s[1].Name != "/var/swap file" {
 		t.Fatalf("%+v", s)
 	}
-	if ts := ParseNftTables("table inet filter\ntable ip nat\ntable inet kiln\n"); strings.Join(ts, ",") != "inet filter,ip nat,inet kiln" {
+	if ts := ParseNftTables("table inet filter\ntable ip nat\ntable inet falak\n"); strings.Join(ts, ",") != "inet filter,ip nat,inet falak" {
 		t.Fatal(ts)
 	}
 }
@@ -299,7 +299,7 @@ func incidentHost(t *testing.T) (*runnertest.Fake, hostfs.FS) {
 		"/etc/apt/apt.conf.d/20auto-upgrades":            "APT::Periodic::Update-Package-Lists \"1\";\nAPT::Periodic::Unattended-Upgrade \"0\";\n",
 		"/usr/local/bin/php":                             "",
 		"/root/.nvm/versions/node/v20.11.0/bin/node":     "",
-		"/opt/kiln/node/22.20.0/bin/node":                "",
+		"/opt/falak/node/22.20.0/bin/node":               "",
 		"/usr/sbin/ufw":                                  "",
 		"/usr/sbin/nft":                                  "",
 		"/usr/sbin/sshd":                                 "",
@@ -311,7 +311,7 @@ func incidentHost(t *testing.T) (*runnertest.Fake, hostfs.FS) {
 		"/var/lib/apt/lists/de.archive.ubuntu.com_ubuntu_dists_resolute_main_binary-amd64_Packages": "",
 	})
 	os.MkdirAll(fs.P("/usr/local/bin"), 0o755)
-	if err := os.Symlink("/opt/kiln/node/22.20.0/bin/node", fs.P("/usr/local/bin/node")); err != nil {
+	if err := os.Symlink("/opt/falak/node/22.20.0/bin/node", fs.P("/usr/local/bin/node")); err != nil {
 		t.Fatal(err)
 	}
 	f := (&runnertest.Fake{}).
@@ -403,13 +403,13 @@ func TestInspectTheIncidentMachine(t *testing.T) {
 	for _, n := range r.Node {
 		sources[n.Path] = n.Source + " " + n.Version
 	}
-	if sources["/usr/local/bin/node"] != "kiln 22.20.0" || sources["/root/.nvm/versions/node/v20.11.0/bin/node"] != "nvm 20.11.0" || sources["/opt/kiln/node/22.20.0/bin/node"] != "kiln 22.20.0" {
+	if sources["/usr/local/bin/node"] != "falak 22.20.0" || sources["/root/.nvm/versions/node/v20.11.0/bin/node"] != "nvm 20.11.0" || sources["/opt/falak/node/22.20.0/bin/node"] != "falak 22.20.0" {
 		t.Fatalf("%v", sources)
 	}
 	if len(r.PHP) != 2 || r.PHP[0].Version != "8.3" || r.PHP[0].Package != "php8.3-cli" || r.PHP[1] != (Binary{Path: "/usr/local/bin/php", Version: "8.2", Source: "manual"}) {
 		t.Fatalf("%+v", r.PHP)
 	}
-	if u := r.UnattendedUpgrades; u.Installed || u.ManagedByKiln || u.Periodic["Unattended-Upgrade"] != "0" {
+	if u := r.UnattendedUpgrades; u.Installed || u.ManagedByFalak || u.Periodic["Unattended-Upgrade"] != "0" {
 		t.Fatalf("%+v", u)
 	}
 	if f2b := r.Fail2ban; f2b.Installed || !f2b.Active || len(f2b.Jails) != 1 {

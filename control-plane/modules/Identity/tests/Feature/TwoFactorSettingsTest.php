@@ -1,7 +1,7 @@
 <?php
 
+use Falak\Identity\Domain\Models\AuditEntry;
 use Inertia\Testing\AssertableInertia as Assert;
-use Kiln\Identity\Domain\Models\AuditEntry;
 use Laravel\Fortify\Fortify;
 use PragmaRX\Google2FA\Google2FA;
 

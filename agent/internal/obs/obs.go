@@ -9,10 +9,10 @@ type LogRecord struct {
 	Time     time.Time
 	Severity string // TRACE, DEBUG, INFO, WARN, ERROR, FATAL
 	Body     string
-	Site     string            // site slug → service.name + kiln.site.id resource attrs; "" = host/agent
-	SiteID   string            // explicit kiln.site.id resource attr (wins over the slug lookup)
-	Service  string            // overrides service.name when set (e.g. "kiln-agent", "caddy")
-	Kind     string            // kiln.log.kind resource attr: "app" | "access"; "" = "app" for site records
+	Site     string            // site slug → service.name + falak.site.id resource attrs; "" = host/agent
+	SiteID   string            // explicit falak.site.id resource attr (wins over the slug lookup)
+	Service  string            // overrides service.name when set (e.g. "falak-agent", "caddy")
+	Kind     string            // falak.log.kind resource attr: "app" | "access"; "" = "app" for site records
 	Attrs    map[string]string // record attributes (e.g. process.name, log.file.path)
 	TraceID  []byte
 	SpanID   []byte

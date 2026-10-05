@@ -3,7 +3,7 @@
 // Shared fixtures for Providers tests (loaded with require_once; not a test file).
 
 if (! defined('PROVIDERS_TEST_KEY')) {
-    define('PROVIDERS_TEST_KEY', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILhfLAQI6GIEE8z6YcLPiiVBw4Tu9QD2miHt6Q8acbUV dev@kiln');
+    define('PROVIDERS_TEST_KEY', 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILhfLAQI6GIEE8z6YcLPiiVBw4Tu9QD2miHt6Q8acbUV dev@falak');
 }
 
 /** Retry immediately in tests. */

@@ -3,11 +3,11 @@ import { defineConfig, devices } from '@playwright/test';
 /**
  * Browser smoke tests (docs/UI_DESIGN.md §8): `bun run test:browser`.
  *
- *   KILN_E2E_URL       base URL (default https://localhost:8443, the sim; self-signed certs are accepted)
- *   KILN_E2E_EMAIL     login (default admin@kiln.test)
- *   KILN_E2E_PASSWORD  password (default kiln-demo-2026)
+ *   FALAK_E2E_URL       base URL (default https://localhost:8443, the sim; self-signed certs are accepted)
+ *   FALAK_E2E_EMAIL     login (default admin@falak.test)
+ *   FALAK_E2E_PASSWORD  password (default falak-demo-2026)
  */
-export const baseURL = process.env.KILN_E2E_URL ?? 'https://localhost:8443';
+export const baseURL = process.env.FALAK_E2E_URL ?? 'https://localhost:8443';
 
 export default defineConfig({
     testDir: '.',

@@ -1,22 +1,22 @@
 <?php
 
+use Falak\Fleet\Domain\Models\Command;
+use Falak\Fleet\Infrastructure\AgentBinaries;
+use Falak\Identity\Application\Actions\CreateApiToken;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Servers\Domain\Models\Server;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Domain\Models\Command;
-use Kiln\Fleet\Infrastructure\AgentBinaries;
-use Kiln\Identity\Application\Actions\CreateApiToken;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\Servers\Domain\Models\Server;
 
 require_once __DIR__.'/../Support/helpers.php';
 require_once __DIR__.'/../../../Fleet/tests/Support/helpers.php';
 
 beforeEach(function () {
-    $dir = sys_get_temp_dir().'/kiln-agent-bin-'.Str::random(8);
+    $dir = sys_get_temp_dir().'/falak-agent-bin-'.Str::random(8);
     mkdir($dir);
-    file_put_contents("{$dir}/kiln-agent-linux-amd64", 'agent v1.1.0');
-    file_put_contents("{$dir}/kiln-agent-linux-amd64.version", 'v1.1.0');
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test', 'fleet.agent.binaries_path' => $dir, 'fleet.panel_url' => 'https://kiln.example.com']);
+    file_put_contents("{$dir}/falak-agent-linux-amd64", 'agent v1.1.0');
+    file_put_contents("{$dir}/falak-agent-linux-amd64.version", 'v1.1.0');
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test', 'fleet.agent.binaries_path' => $dir, 'fleet.panel_url' => 'https://falak.example.com']);
     app()->forgetInstance(AgentBinaries::class);
 
     [$this->owner, $this->organization] = memberOf();

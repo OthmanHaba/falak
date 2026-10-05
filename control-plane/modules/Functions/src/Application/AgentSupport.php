@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Functions\Application;
+namespace Falak\Functions\Application;
 
-use Kiln\Fleet\Contracts\AgentDirectory;
-use Kiln\Sites\Contracts\Data\SiteData;
+use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Sites\Contracts\Data\SiteData;
 
 /**
  * What the agents on a function's servers can run. Code with more than one file needs agent feature fn.v3 (it
@@ -29,10 +29,10 @@ final class AgentSupport
         foreach ($site->serverIds() as $serverId) {
             $agent = $agents[$serverId] ?? null;
             if ($agent === null) {
-                return 'the function’s server has no connected Kiln agent, which functions with several files need; enroll it first.';
+                return 'the function’s server has no connected Falak agent, which functions with several files need; enroll it first.';
             }
             if (! $agent->supports('fn.v3')) {
-                return 'the Kiln agent on the function’s server is too old for functions with several files; update it first.';
+                return 'the Falak agent on the function’s server is too old for functions with several files; update it first.';
             }
         }
 

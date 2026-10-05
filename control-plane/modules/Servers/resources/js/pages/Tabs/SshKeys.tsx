@@ -1,11 +1,11 @@
-import { Button } from '@/components/kiln/button';
-import { DataTable } from '@/components/kiln/data-table';
-import { Dialog } from '@/components/kiln/dialog';
-import { Field } from '@/components/kiln/field';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Select } from '@/components/kiln/select';
-import { Tag } from '@/components/kiln/tag';
-import { toast } from '@/components/kiln/toast';
+import { Button } from '@/components/falak/button';
+import { DataTable } from '@/components/falak/data-table';
+import { Dialog } from '@/components/falak/dialog';
+import { Field } from '@/components/falak/field';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Select } from '@/components/falak/select';
+import { Tag } from '@/components/falak/tag';
+import { toast } from '@/components/falak/toast';
 import ServerLayout, { type ServerHeader } from '@/layouts/server-layout';
 import { Link, router, useForm } from '@inertiajs/react';
 import { KeyRound, Plus, Unplug } from 'lucide-react';
@@ -171,7 +171,7 @@ export default function SshKeys({ server, sshKeys, availableSshKeys, unixUser, c
                                 options={availableSshKeys.map((key) => ({ value: key.id, label: key.name, description: key.fingerprint }))}
                             />
                         </Field>
-                        <Field label="Unix user" error={form.errors.unix_user} hint="root access is audited; prefer the kiln user.">
+                        <Field label="Unix user" error={form.errors.unix_user} hint="root access is audited; prefer the falak user.">
                             <Select
                                 value={form.data.unix_user}
                                 onValueChange={(value) => form.setData('unix_user', value)}

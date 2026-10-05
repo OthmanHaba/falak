@@ -1,21 +1,21 @@
 <?php
 
-namespace Kiln\Projects\Application\Canvas;
+namespace Falak\Projects\Application\Canvas;
 
 use DateTimeInterface;
-use Kiln\Databases\Contracts\Data\DatabaseData;
-use Kiln\Databases\Contracts\DatabaseDirectory;
-use Kiln\Deployments\Contracts\Data\DeploymentSummary;
-use Kiln\Deployments\Contracts\DeploymentDirectory;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Projects\Domain\Models\Environment;
-use Kiln\Projects\Domain\Models\Favorite;
-use Kiln\Projects\Domain\Models\Project;
-use Kiln\Projects\Domain\Models\Service;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\TargetStatus;
+use Falak\Databases\Contracts\Data\DatabaseData;
+use Falak\Databases\Contracts\DatabaseDirectory;
+use Falak\Deployments\Contracts\Data\DeploymentSummary;
+use Falak\Deployments\Contracts\DeploymentDirectory;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Projects\Domain\Models\Environment;
+use Falak\Projects\Domain\Models\Favorite;
+use Falak\Projects\Domain\Models\Project;
+use Falak\Projects\Domain\Models\Service;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\TargetStatus;
 
 /**
  * Cards of the Projects dashboard (UI_DESIGN §3.1): what's inside each project (service icons of its production

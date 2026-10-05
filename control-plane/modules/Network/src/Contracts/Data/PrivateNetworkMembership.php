@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Network\Contracts\Data;
+namespace Falak\Network\Contracts\Data;
 
 final readonly class PrivateNetworkMembership
 {

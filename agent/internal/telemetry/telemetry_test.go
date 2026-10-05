@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/otlp"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/otlp"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
@@ -42,7 +42,7 @@ func (p *posts) all() string {
 
 func newService(t *testing.T, endpoint string, ins *posts) (*Service, hostfs.FS) {
 	fs := hostfs.FS{Root: t.TempDir()}
-	s, err := New(Options{FS: fs, EtcDir: "/etc/kiln", StateDir: "/var/lib/kiln", HTTPAddr: "127.0.0.1:0",
+	s, err := New(Options{FS: fs, EtcDir: "/etc/falak", StateDir: "/var/lib/falak", HTTPAddr: "127.0.0.1:0",
 		Endpoint: endpoint, ServerID: "01SERVER", HostName: "web-1", Insights: ins, FlushInterval: 20 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +74,7 @@ func TestConfigurePersistsAndIsIdempotent(t *testing.T) {
 	if !res.(Result).Changed {
 		t.Fatal("first apply should change")
 	}
-	info, err := os.Stat(fs.P("/etc/kiln/telemetry.json"))
+	info, err := os.Stat(fs.P("/etc/falak/telemetry.json"))
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("persisted file: %v %v", info, err)
 	}
@@ -83,11 +83,11 @@ func TestConfigurePersistsAndIsIdempotent(t *testing.T) {
 		t.Fatal("second apply must be a no-op")
 	}
 	cfg := s.Relay().Config()
-	if cfg.Endpoint != "https://otel.kiln.example:4318" || cfg.TracesRatio != 0.25 || cfg.OrgID == "" || len(cfg.Sites) != 1 || cfg.BufferMax != 67108864 {
+	if cfg.Endpoint != "https://otel.falak.example:4318" || cfg.TracesRatio != 0.25 || cfg.OrgID == "" || len(cfg.Sites) != 1 || cfg.BufferMax != 67108864 {
 		t.Fatalf("relay config not applied: %+v", cfg)
 	}
 	// Reload from disk on a fresh service.
-	s2, err := New(Options{FS: fs, EtcDir: "/etc/kiln", StateDir: "/var/lib/kiln", Endpoint: "https://enrolled.example:4318"})
+	s2, err := New(Options{FS: fs, EtcDir: "/etc/falak", StateDir: "/var/lib/falak", Endpoint: "https://enrolled.example:4318"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestServiceEndToEnd(t *testing.T) {
 		ScopeSpans: []*tracepb.ScopeSpans{{Spans: []*tracepb.Span{{
 			TraceId: bytes.Repeat([]byte{7}, 16), SpanId: bytes.Repeat([]byte{8}, 8), Name: "GET /",
 			StartTimeUnixNano: uint64(now.Add(-time.Second).UnixNano()), EndTimeUnixNano: uint64(now.UnixNano()),
-			Attributes: []*commonpb.KeyValue{otlp.Str("kiln.event.type", "request")},
+			Attributes: []*commonpb.KeyValue{otlp.Str("falak.event.type", "request")},
 			Events:     []*tracepb.Span_Event{{Name: "exception", Attributes: []*commonpb.KeyValue{otlp.Str("exception.type", "RuntimeException")}}},
 		}}}},
 	}})
@@ -162,7 +162,7 @@ func TestServiceEndToEnd(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("exported %d", len(got))
 	}
-	if v, _ := otlp.Lookup(got[0].Resource.Attributes, "kiln.site.id"); v != "01SITE" {
+	if v, _ := otlp.Lookup(got[0].Resource.Attributes, "falak.site.id"); v != "01SITE" {
 		t.Fatalf("not enriched: %v", got[0].Resource.Attributes)
 	}
 	if !strings.Contains(ins.all(), `"site_id":"01SITE"`) {

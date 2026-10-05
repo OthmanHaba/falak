@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Databases\Domain\Enums;
+namespace Falak\Databases\Domain\Enums;
 
 /**
  * SQL engines hold databases, users and grants; key-value engines (Redis, Valkey) hold instances, one process each,

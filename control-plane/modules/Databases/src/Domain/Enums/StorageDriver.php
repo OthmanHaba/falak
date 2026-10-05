@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Databases\Domain\Enums;
+namespace Falak\Databases\Domain\Enums;
 
 /**
  * S3-compatible object stores backups can be shipped to.

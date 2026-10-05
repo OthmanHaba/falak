@@ -7,7 +7,7 @@
       "redirect_domains": ["www.shop.example.com"],
       "tls": { "mode": "acme" },
       "kind": "frankenphp",
-      "root": "/srv/kiln/sites/shop/current/public",
+      "root": "/srv/falak/sites/shop/current/public",
       "headers": { "X-Frame-Options": "SAMEORIGIN" },
       "max_body_bytes": 104857600
     },
@@ -24,7 +24,7 @@
           "path_prefix": "/api",
           "strip_prefix": true,
           "dial": "127.0.0.1:7070",
-          "request_headers": { "X-Kiln-Function": "api", "X-Kiln-Client-IP": "{http.vars.client_ip}" }
+          "request_headers": { "X-Falak-Function": "api", "X-Falak-Client-IP": "{http.vars.client_ip}" }
         },
         {
           "path_prefix": "/hooks",
@@ -39,8 +39,8 @@
       "domains": ["legacy.example.com"],
       "tls": { "mode": "custom", "cert_name": "legacy" },
       "kind": "php_fpm",
-      "root": "/srv/kiln/sites/legacy/current/public",
-      "php_fpm_socket": "/run/php/kiln-legacy-8.3.sock",
+      "root": "/srv/falak/sites/legacy/current/public",
+      "php_fpm_socket": "/run/php/falak-legacy-8.3.sock",
       "basic_auth": [{ "username": "staging", "password_hash": "$2a$14$Zkx19XLiW6VYouLHR5NmfOFU0z2GTNmpkT/5qqR7hx4IjWJPDhjvG" }],
       "redirects": [{ "from": "/old", "to": "/new", "status": 301 }]
     },
@@ -48,7 +48,7 @@
       "id": "octane",
       "domains": ["octane.example.com"],
       "kind": "reverse_proxy",
-      "root": "/srv/kiln/sites/octane/current/public",
+      "root": "/srv/falak/sites/octane/current/public",
       "upstreams": [{ "dial": "127.0.0.1:8123" }],
       "try_duration_s": 30
     }

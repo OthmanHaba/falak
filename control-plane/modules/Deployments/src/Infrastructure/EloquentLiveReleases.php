@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Deployments\Infrastructure;
+namespace Falak\Deployments\Infrastructure;
 
-use Kiln\Deployments\Contracts\Data\LiveRelease;
-use Kiln\Deployments\Contracts\LiveReleases;
-use Kiln\Deployments\Domain\Models\Release;
-use Kiln\Deployments\Domain\Models\ServerRelease;
+use Falak\Deployments\Contracts\Data\LiveRelease;
+use Falak\Deployments\Contracts\LiveReleases;
+use Falak\Deployments\Domain\Models\Release;
+use Falak\Deployments\Domain\Models\ServerRelease;
 
 final class EloquentLiveReleases implements LiveReleases
 {

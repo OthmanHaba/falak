@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Servers\Application\Actions;
+namespace Falak\Servers\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Servers\Domain\Models\Server;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Servers\Domain\Models\Server;
 
 final class RenameServer
 {

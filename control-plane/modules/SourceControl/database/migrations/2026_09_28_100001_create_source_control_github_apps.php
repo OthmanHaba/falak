@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // GitHub Apps registered through the manifest flow: one per Kiln organization (docs/INTEGRATION-NOTES.md).
+        // GitHub Apps registered through the manifest flow: one per Falak organization (docs/INTEGRATION-NOTES.md).
         Schema::create('source_control_github_apps', function (Blueprint $table) {
             $table->ulid('id')->primary();
             $table->ulid('organization_id')->unique();

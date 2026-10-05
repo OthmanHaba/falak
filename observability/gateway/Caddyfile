@@ -1,4 +1,4 @@
-# Kiln OTLP ingress + metrics-backend router.
+# Falak OTLP ingress + metrics-backend router.
 #
 #   :4318  public OTLP/HTTP (protobuf or JSON)
 #            /v1/traces  -> Tempo  (native OTLP receiver)
@@ -14,7 +14,7 @@
 # The metrics pool actively health-checks both adapters; only the backend whose compose
 # profile is running is healthy, so traffic follows the selected profile automatically.
 #
-# Optional auth: set KILN_OTLP_TOKEN and agents must send "Authorization: Bearer <token>".
+# Optional auth: set FALAK_OTLP_TOKEN and agents must send "Authorization: Bearer <token>".
 
 {
 	admin off
@@ -30,7 +30,7 @@
 		lb_policy first
 		lb_try_duration 3s
 		lb_try_interval 250ms
-		health_uri /-/kiln-ready
+		health_uri /-/falak-ready
 		health_interval 5s
 		health_timeout 3s
 		health_passes 1
@@ -47,7 +47,7 @@
 
 	@unauthorized {
 		path /v1/*
-		expression `"{$KILN_OTLP_TOKEN}" != "" && {http.request.header.Authorization} != "Bearer {$KILN_OTLP_TOKEN}"`
+		expression `"{$FALAK_OTLP_TOKEN}" != "" && {http.request.header.Authorization} != "Bearer {$FALAK_OTLP_TOKEN}"`
 	}
 
 	# route = literal order (handle blocks would be re-sorted by path specificity).
@@ -73,7 +73,7 @@
 			reverse_proxy tempo:3200
 		}
 		handle /ready/metrics {
-			rewrite * /-/kiln-ready
+			rewrite * /-/falak-ready
 			import metrics_pool
 		}
 		handle /healthz {
@@ -90,7 +90,7 @@
 # VictoriaMetrics adapter
 :9101 {
 	rewrite /v1/metrics /opentelemetry/v1/metrics
-	rewrite /-/kiln-ready /health
+	rewrite /-/falak-ready /health
 	# /api/v1/write and /prometheus/api/v1/* are native VictoriaMetrics paths.
 	reverse_proxy victoriametrics:8428
 	# The backend of the inactive profile does not resolve; answer 503 without error spam.
@@ -103,7 +103,7 @@
 :9102 {
 	rewrite /v1/metrics /otlp/v1/metrics
 	rewrite /api/v1/write /api/v1/push
-	rewrite /-/kiln-ready /ready
+	rewrite /-/falak-ready /ready
 	# /prometheus/api/v1/* is the native Mimir query path.
 	reverse_proxy mimir:9009
 	# The backend of the inactive profile does not resolve; answer 503 without error spam.

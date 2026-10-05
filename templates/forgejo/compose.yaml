@@ -7,8 +7,8 @@ services:
     environment:
       USER_UID: "1000"
       USER_GID: "1000"
-      FORGEJO__server__DOMAIN: ${{ kiln.domain(forgejo) }}
-      FORGEJO__server__ROOT_URL: ${{ kiln.url(forgejo) }}/
+      FORGEJO__server__DOMAIN: ${{ falak.domain(forgejo) }}
+      FORGEJO__server__ROOT_URL: ${{ falak.url(forgejo) }}/
       FORGEJO__server__HTTP_PORT: "3000"
       FORGEJO__server__DISABLE_SSH: "true"
       FORGEJO__database__DB_TYPE: sqlite3

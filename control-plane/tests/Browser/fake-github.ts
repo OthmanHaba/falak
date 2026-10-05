@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 /**
  * A tiny stand-in for github.com + api.github.com, enough for the GitHub App manifest flow end to end:
  * manifest form POST → redirect with a code, code conversion, installation page → setup URL, installation
- * details, installation tokens and repository listing. Point Kiln at it with GITHUB_URL and GITHUB_API_URL.
+ * details, installation tokens and repository listing. Point Falak at it with GITHUB_URL and GITHUB_API_URL.
  */
 export function startFakeGitHub(port: number): Promise<Server> {
     const pem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
@@ -50,10 +50,10 @@ export function startFakeGitHub(port: number): Promise<Server> {
             const owner = app.owner ?? 'ada-e2e';
             return json(res, 201, {
                 id: 90210,
-                slug: 'kiln-e2e',
+                slug: 'falak-e2e',
                 name: String(app.manifest.name),
                 owner: { login: owner, type: app.owner ? 'Organization' : 'User' },
-                html_url: `http://127.0.0.1:${port}/apps/kiln-e2e`,
+                html_url: `http://127.0.0.1:${port}/apps/falak-e2e`,
                 client_id: 'Iv1.e2e',
                 client_secret: 'e2e-client-secret',
                 webhook_secret: 'e2e-webhook-secret',

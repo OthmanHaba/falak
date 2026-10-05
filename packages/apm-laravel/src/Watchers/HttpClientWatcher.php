@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Apm\Watchers;
+namespace Falak\Apm\Watchers;
 
 use GuzzleHttp\Promise\Create;
 use Illuminate\Http\Client\Factory;
-use Kiln\Apm\Recorder;
-use Kiln\Apm\Span;
+use Falak\Apm\Recorder;
+use Falak\Apm\Span;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use Throwable;

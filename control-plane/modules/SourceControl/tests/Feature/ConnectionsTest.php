@@ -1,16 +1,16 @@
 <?php
 
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Events\OrganizationDeleted;
+use Falak\SourceControl\Contracts\ProviderType;
+use Falak\SourceControl\Contracts\SourceControlGateway;
+use Falak\SourceControl\Domain\Models\Connection;
+use Falak\SourceControl\Domain\Models\DeployKey;
+use Falak\SourceControl\Domain\Models\Push;
+use Falak\SourceControl\Events\ConnectionDeleted;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Events\OrganizationDeleted;
-use Kiln\SourceControl\Contracts\ProviderType;
-use Kiln\SourceControl\Contracts\SourceControlGateway;
-use Kiln\SourceControl\Domain\Models\Connection;
-use Kiln\SourceControl\Domain\Models\DeployKey;
-use Kiln\SourceControl\Domain\Models\Push;
-use Kiln\SourceControl\Events\ConnectionDeleted;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -96,7 +96,7 @@ it('disconnects after confirmation, cleaning up the provider', function () {
         'api.github.com/*' => Http::response(null, 204),
     ]);
     $connection = sc_connection($organization->id);
-    app(SourceControlGateway::class)->installDeployKey($connection->id, 'acme/shop', 'Kiln');
+    app(SourceControlGateway::class)->installDeployKey($connection->id, 'acme/shop', 'Falak');
     app(SourceControlGateway::class)->ensureWebhook($connection->id, 'acme/shop');
 
     $this->delete("/source-control/connections/{$connection->id}", ['name' => 'wrong'])->assertSessionHasErrors('name');

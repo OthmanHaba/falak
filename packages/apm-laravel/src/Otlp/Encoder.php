@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Apm\Otlp;
+namespace Falak\Apm\Otlp;
 
-use Kiln\Apm\Span;
+use Falak\Apm\Span;
 use Stringable;
 use Throwable;
 
@@ -12,7 +12,7 @@ use Throwable;
  */
 final class Encoder
 {
-    public const SCOPE_NAME = 'kiln/apm-laravel';
+    public const SCOPE_NAME = 'falak/apm-laravel';
 
     public const VERSION = '0.1.0';
 
@@ -145,7 +145,7 @@ final class Encoder
             'exception.message' => $e->getMessage(),
             'exception.stacktrace' => get_class($e).': '.$e->getMessage().' in '.$e->getFile().':'.$e->getLine()."\nStack trace:\n".$e->getTraceAsString(),
             'exception.escaped' => ! $handled,
-            'kiln.exception.handled' => $handled,
+            'falak.exception.handled' => $handled,
             'code.filepath' => $e->getFile(),
             'code.lineno' => $e->getLine(),
         ];

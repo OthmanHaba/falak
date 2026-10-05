@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Deployments\Domain\Models;
+namespace Falak\Deployments\Domain\Models;
 
+use Falak\Deployments\Domain\Enums\ReleaseStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Kiln\Deployments\Domain\Enums\ReleaseStatus;
 
 /**
  * A release of a site: releases/<ID> on native servers (uppercase ULID there), or an image.

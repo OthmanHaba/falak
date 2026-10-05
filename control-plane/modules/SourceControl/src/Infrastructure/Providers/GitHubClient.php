@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\Providers;
+namespace Falak\SourceControl\Infrastructure\Providers;
 
+use Falak\SourceControl\Contracts\Data\BranchData;
+use Falak\SourceControl\Contracts\Data\CommitData;
+use Falak\SourceControl\Contracts\Data\RepositoryData;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Domain\Models\Connection;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
-use Kiln\SourceControl\Contracts\Data\BranchData;
-use Kiln\SourceControl\Contracts\Data\CommitData;
-use Kiln\SourceControl\Contracts\Data\RepositoryData;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Domain\Models\Connection;
 
 /**
  * GitHub REST v3 (github.com or GitHub Enterprise Server via the connection's base URL).

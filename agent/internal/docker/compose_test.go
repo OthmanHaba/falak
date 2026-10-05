@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // addComposeContainer registers a running container of a compose project in the fake engine.
@@ -16,7 +16,7 @@ func addComposeContainer(e *fakeEngine, project, service, image, imageID string)
 	defer e.mu.Unlock()
 	e.seq++
 	c := &fcont{id: "cc" + service, name: project + "-" + service + "-1", image: image, imageID: imageID, running: true, created: int64(e.seq),
-		body: CreateBody{Image: image, Labels: map[string]string{LabelComposeProject: project, LabelComposeService: service, "kiln.site": project}}}
+		body: CreateBody{Image: image, Labels: map[string]string{LabelComposeProject: project, LabelComposeService: service, "falak.site": project}}}
 	e.containers[c.id] = c
 	e.images[image] = imageID
 	return c
@@ -24,7 +24,7 @@ func addComposeContainer(e *fakeEngine, project, service, image, imageID string)
 
 func TestComposeUpWaitEnvFileAndStatus(t *testing.T) {
 	s, e, fr, _, root := newSvc(t)
-	app := addComposeContainer(e, "shop", "app", "registry.kiln.test/kiln/shop-app@sha256:"+strings.Repeat("a", 64), "sha256:appimg")
+	app := addComposeContainer(e, "shop", "app", "registry.falak.test/falak/shop-app@sha256:"+strings.Repeat("a", 64), "sha256:appimg")
 	app.health = "healthy"
 	app.ports = map[string][]PortBinding{"8080/tcp": {{HostIP: "127.0.0.1", HostPort: "3001"}}}
 	redis := addComposeContainer(e, "shop", "redis", "redis:7.4.1", "sha256:redisimg")
@@ -32,10 +32,10 @@ func TestComposeUpWaitEnvFileAndStatus(t *testing.T) {
 	e.repoDigests["sha256:redisimg"] = []string{"redis@sha256:" + strings.Repeat("b", 64)}
 	addComposeContainer(e, "other", "web", "nginx:1", "sha256:nginx")
 
-	dir := "/srv/kiln/sites/shop/releases/01J00000000000000000000000"
+	dir := "/srv/falak/sites/shop/releases/01J00000000000000000000000"
 	fin, _ := exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "shop", Directory: dir,
 		Files:          []ComposeFile{{Name: "compose.yaml", Content: "services: {}\n"}, {Name: ".env", Content: "SECRET=x\n"}},
-		ProjectEnvFile: ".env", Wait: true, WaitTimeoutS: 90, RegistryAuth: &Auth{Username: "u", Password: "p", Server: "registry.kiln.test"}})
+		ProjectEnvFile: ".env", Wait: true, WaitTimeoutS: 90, RegistryAuth: &Auth{Username: "u", Password: "p", Server: "registry.falak.test"}})
 	if fin.Error != "" {
 		t.Fatalf("%+v", fin)
 	}
@@ -145,7 +145,7 @@ func TestComposeReleaseWritesNeverFollowPlantedSymlinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	// repo/conf/nginx.conf, repo.tmp and compose.yaml all point at the host file; repo/escape at a host folder.
-	for _, link := range []string{"repo/conf/nginx.conf", "repo.tmp", "compose.yaml", ".compose.yaml.kiln-tmp"} {
+	for _, link := range []string{"repo/conf/nginx.conf", "repo.tmp", "compose.yaml", ".compose.yaml.falak-tmp"} {
 		if err := os.Symlink(victim, filepath.Join(dir, link)); err != nil {
 			t.Fatal(err)
 		}

@@ -1,11 +1,11 @@
 {
   "site": "api",
-  "image": "registry.kiln.internal/acme/api@sha256:3b6c7a0e9e0c4e5f8a1d2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
+  "image": "registry.falak.internal/acme/api@sha256:3b6c7a0e9e0c4e5f8a1d2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70",
   "pull": "missing",
   "registry_auth": {
-    "username": "kiln",
+    "username": "falak",
     "password": "robot-token",
-    "server": "registry.kiln.internal"
+    "server": "registry.falak.internal"
   },
   "container_port": 8080,
   "ports": {
@@ -14,7 +14,7 @@
   },
   "env": {
     "NODE_ENV": "production",
-    "KILN_RELEASE_ID": "01J9ZT8K3M4N5P6Q7R8S9T0V1X"
+    "FALAK_RELEASE_ID": "01J9ZT8K3M4N5P6Q7R8S9T0V1X"
   },
   "command": [
     "node",
@@ -22,7 +22,7 @@
   ],
   "volumes": [
     {
-      "source": "/srv/kiln/sites/api/shared/uploads",
+      "source": "/srv/falak/sites/api/shared/uploads",
       "target": "/app/uploads"
     }
   ],
@@ -37,6 +37,6 @@
   "edge_route_id": "api",
   "drain_s": 10,
   "labels": {
-    "kiln.deployment.id": "01J9ZT8K3M4N5P6Q7R8S9T0V1Y"
+    "falak.deployment.id": "01J9ZT8K3M4N5P6Q7R8S9T0V1Y"
   }
 }

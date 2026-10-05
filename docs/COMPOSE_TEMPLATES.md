@@ -7,29 +7,29 @@ without user input to keep momentum; revisit if the user disagrees.
 
 ## 1. Compose sites (lane A)
 
-A site with `runtime = compose` is a Docker Compose project managed by Kiln: deployed, routed, observed, rolled back.
+A site with `runtime = compose` is a Docker Compose project managed by Falak: deployed, routed, observed, rolled back.
 
 ### 1.1 Source of the compose file
 | `compose_source` | Where the compose file comes from | Used by |
 |---|---|---|
 | `repo` | `compose_file` path in the site's git repository (default `compose.yaml`, then `docker-compose.yml`) | Git-backed apps |
-| `inline` | `compose_content` stored in Kiln, **versioned** like environment variables (history + restore) | Templates, pasted stacks |
+| `inline` | `compose_content` stored in Falak, **versioned** like environment variables (history + restore) | Templates, pasted stacks |
 
 Repository sources ([plans/COMPOSE_APPS.md](plans/COMPOSE_APPS.md)): `compose_files` (several files merged in `-f`
 order; `compose_file` is the first), `compose_profiles` (services of other profiles don't run), `include` and
-`extends` (files from the repository only). kiln-builder merges the project like `docker compose config` with every
+`extends` (files from the repository only). falak-builder merges the project like `docker compose config` with every
 relative path rebased to the repository root, and ships the repository files it mounts or reads (bind sources,
 `env_file`, `configs`/`secrets` `file:`; at most 200 files / 2 MB) with each release under `<release>/repo/` (agent
 feature `compose.v2`). The control plane previews the same project (`ComposeProject`); both follow
 `contracts/compose/merge-cases.json`.
 
-**Kiln adjustments** (render time; the repository is never edited, Settings → Compose shows the diff): services
-replaced by a Kiln database or split into their own Kiln site are removed with their `depends_on`, and the stack's
+**Falak adjustments** (render time; the repository is never edited, Settings → Compose shows the diff): services
+replaced by a Falak database or split into their own Falak site are removed with their `depends_on`, and the stack's
 variables that pointed at them are rewritten; `container_name` is removed; `restart: unless-stopped` is added where no
 policy is set; bind sources the repository lacks become named volumes `<service>-<path>` (kept across deploys) unless
-the user keeps them as folders; env files the repository lacks are dropped and only those services get Kiln's `.env`
+the user keeps them as folders; env files the repository lacks are dropped and only those services get Falak's `.env`
 (every site variable) instead — other services read site variables through `${VAR}` interpolation, so third-party
-images don't receive unrelated secrets; bind mounts and env files naming Kiln's own release files (`./.env`,
+images don't receive unrelated secrets; bind mounts and env files naming Falak's own release files (`./.env`,
 `./compose.yaml`) keep pointing at them; public services without a healthcheck get a warning. Repository paths may
 use any name except `.`/`..`/empty segments, backslashes and control characters (same rule in the builder, the
 agent and the control plane); the release's `repo/` is rebuilt from scratch on every write, without following links.
@@ -38,24 +38,24 @@ most 100 lookups in 20 s). Only `${VAR:?…}` / `${VAR?…}` are required variab
 names but not the YAML or env-file values.
 
 ### 1.2 Builds — managed servers never build **[decision]**
-Services with `image:` are pulled on the server. Services with `build:` are built by **kiln-builder in docker mode**
-(a `builder` server or a host builder with `KILN_LOCAL_BUILDER_MODES=native,docker`), pushed to the built-in
-registry (production: `registry` service behind `https://registry.<domain>` with basic auth, `KILN_REGISTRY_*` in
+Services with `image:` are pulled on the server. Services with `build:` are built by **falak-builder in docker mode**
+(a `builder` server or a host builder with `FALAK_LOCAL_BUILDER_MODES=native,docker`), pushed to the built-in
+registry (production: `registry` service behind `https://registry.<domain>` with basic auth, `FALAK_REGISTRY_*` in
 `.env`, docs/INSTALL.md §2), and the rendered compose file references them **by digest**. `repo` sources only; `inline` compose may
-not use `build:` (validation error). Old images are deleted daily by `kiln:registry-prune` (builds past
-`KILN_ARTIFACTS_KEEP`, never an image a pending, live or rollback release references — Deployments'
-`RetainedImages` contract) and their layers freed by the weekly `kiln-ctl registry gc` (docs/INSTALL.md → Registry
+not use `build:` (validation error). Old images are deleted daily by `falak:registry-prune` (builds past
+`FALAK_ARTIFACTS_KEEP`, never an image a pending, live or rollback release references — Deployments'
+`RetainedImages` contract) and their layers freed by the weekly `falak-ctl registry gc` (docs/INSTALL.md → Registry
 storage).
 
 ### 1.3 Rendering (control plane, per release)
-Kiln renders the compose file the agent receives:
+Falak renders the compose file the agent receives:
 - Interpolation stays Compose-native (`${VAR}`); the site's variables (after `${{ service.KEY }}` resolution) are
-  written as the project `.env` and passed as `env`. `KILN_SITE_ID/SERVER_ID/DEPLOYMENT_ID/RELEASE_ID` are added.
+  written as the project `.env` and passed as `env`. `FALAK_SITE_ID/SERVER_ID/DEPLOYMENT_ID/RELEASE_ID` are added.
 - Images pinned to digests where known (built images always; pulled images resolved on first deploy and recorded
   in the release so rollback is exact) **[decision]**.
-- **Public services**: `public_services: [{service, port, domain?, health_check_path?}]`. For each, Kiln publishes
+- **Public services**: `public_services: [{service, port, domain?, health_check_path?}]`. For each, Falak publishes
   `127.0.0.1:<allocated host port>:<port>` on that service (removing any other host port mapping for it) and Edge
-  routes the service's domains (and test domain `<service>-<slug>.<KILN_TEST_DOMAIN>` / `<slug>` for the first) to
+  routes the service's domains (and test domain `<service>-<slug>.<FALAK_TEST_DOMAIN>` / `<slug>` for the first) to
   it. On creation `domain` may also be a choice `{type: generated|test|custom, name?}`; a generated one is
   `<service>-<slug>.<leader-ip-with-dashes>.sslip.io` (docs/API.md → Domains and DNS).
 - **Edge per public service** (docs/plans/COMPOSE_APPS.md, phase 2): every public service's domains are Edge domain
@@ -67,28 +67,28 @@ Kiln renders the compose file the agent receives:
   mirrors the service's primary domain. The deploy health check requests each public service through its own
   domains (`health_check_path`, else the site's check path for the first service and "any answer below 500" for the
   others).
-- Labels `kiln.site`, `kiln.release`, `kiln.service` on every service (logs/metrics attribution).
+- Labels `falak.site`, `falak.release`, `falak.service` on every service (logs/metrics attribution).
 - **Policy** (org setting "Allow privileged compose", off by default): reject `privileged: true`, `network_mode: host`,
   `pid: host`, `cap_add` beyond a safe list, host bind mounts outside the release dir, `devices`, and
   `/var/run/docker.sock` mounts. Named volumes are always allowed.
 
 ### 1.4 Deploy flow (Deployments, strategy `compose`)
-Release layout `/srv/kiln/sites/<slug>/releases/<id>/` with the rendered `compose.yaml` + `.env`; project name =
+Release layout `/srv/falak/sites/<slug>/releases/<id>/` with the rendered `compose.yaml` + `.env`; project name =
 site slug (stable, so **named volumes persist across releases**).
 `FETCH` (write files, `docker compose pull`) → `ACTIVATE` (`docker compose up -d --remove-orphans --wait
---wait-timeout <health timeout>`) → `HEALTHCHECK` (Kiln HTTP check of each public service through the edge, like
+--wait-timeout <health timeout>`) → `HEALTHCHECK` (Falak HTTP check of each public service through the edge, like
 other sites) → success. On failure: **rollback** = `up --wait` with the previous release's files (digest-pinned) +
 alert. Multi-server: the project runs on every target (replicated) **[decision]**; the create flow warns when a
 template is marked `stateful` and more than one server is picked. `MIGRATE`/leader hooks: optional
-`kiln.deploy.leader_command` on a service (`docker compose run --rm <service> <cmd>` on the leader before activate).
+`falak.deploy.leader_command` on a service (`docker compose run --rm <service> <cmd>` on the leader before activate).
 
 ### 1.5 Agent
 - `docker.compose.up` gains `wait`, `wait_timeout_s`, `remove_orphans`, `project_env_file`; results include
   per-service state and resolved image digests.
 - New `docker.compose.ps` (per-service: state, health, image digest, ports, restarts) and
   `docker.compose.restart` (optional service list). Schemas in `contracts/agent-protocol/commands/`.
-- Logs: containers labelled `kiln.site` are tailed to OTLP logs with `service.name=<slug>` and
-  `kiln.compose.service`; `docker stats` per container → OTLP metrics (`kiln.container.*`).
+- Logs: containers labelled `falak.site` are tailed to OTLP logs with `service.name=<slug>` and
+  `falak.compose.service`; `docker stats` per container → OTLP metrics (`falak.container.*`).
 
 ### 1.6 UI (panel, compose sites)
 - **Services** tab: one row per compose service — state/health, image (digest short), ports/public URL, restarts,
@@ -99,20 +99,20 @@ template is marked `stateful` and more than one server is picked. `MIGRATE`/lead
   services or one.
 - Canvas card subtitle: `Compose · 3 services`; status aggregates service health.
 
-### 1.7 Services that run as Kiln services (docs/plans/COMPOSE_APPS.md, phase 3)
+### 1.7 Services that run as Falak services (docs/plans/COMPOSE_APPS.md, phase 3)
 `Sites\Contracts\ComposeServiceExtraction` takes a service out of the stack; the decision is stored in
 `compose_services` (`{<service>: {mode: database|site, database_id|site_id, rewrites}}`) and the service leaves the
 stack's public services.
-- **`toDatabase`** — a `postgres`/`mysql`/`mariadb` image service becomes a Kiln database on the stack's leader (named
+- **`toDatabase`** — a `postgres`/`mysql`/`mariadb` image service becomes a Falak database on the stack's leader (named
   after `POSTGRES_DB` / `MYSQL_DATABASE` / `MARIADB_DATABASE`, else `<slug>_<service>`), or links an existing one of
-  the same engine and environment. Projects places it next to the stack as "<stack> <service>". Redis is not a Kiln
+  the same engine and environment. Projects places it next to the stack as "<stack> <service>". Redis is not a Falak
   database: keep it in the stack.
 - **`toSite`** — an app service becomes its own site from the same repository and branch: `root_directory` = its
   build context (relative to the compose file and the stack's own root directory; contexts outside the repository and
   remote contexts are refused), `dockerfile` and container port from the service, its `environment:` as variables
   (`${VAR}` / `${VAR:-default}` filled from the stack's variables) after the keys of its `env_file`s (read from the
-  repository relative to the stack's root directory, also above it inside the repository, later files winning, `environment:` winning over them; Kiln's own
-  `.env`, `KILN_*` keys and files Kiln can't read add nothing), the stack's servers. The user picks framework,
+  repository relative to the stack's root directory, also above it inside the repository, later files winning, `environment:` winning over them; Falak's own
+  `.env`, `FALAK_*` keys and files Falak can't read add nothing), the stack's servers. The user picks framework,
   runtime, name and domain.
 - **`rewrites`** — variables that pointed at the service, in the remaining services and in the stack's variables,
   and what they become: a URL with the service as host (`postgres://u:p@db:5432/app`, `http://api:8000/v1`), the bare
@@ -124,7 +124,7 @@ stack's public services.
 - Rewrites are kept per group (`Sites\Contracts\Data\ComposeRewrites`): each remaining service, and the stack's own
   variables (`.stack`), so `DB_PASSWORD` in two services can point at two databases. The renderer drops the extracted
   services (and `depends_on` on them) and points a service's rewritten key at its own project variable
-  (`DB_PASSWORD: ${KILN_SVC_WORKER_DB_PASSWORD}`); the release `.env` gets those plus the stack's rewritten variables.
+  (`DB_PASSWORD: ${FALAK_SVC_WORKER_DB_PASSWORD}`); the release `.env` gets those plus the stack's rewritten variables.
 - Extracting needs the actor's permission for what it creates: `databases.manage` for a database, `sites.create` for
   a site (otherwise the service stays in the stack, with a warning). The service is claimed under the stack's row
   lock before anything is created; a failed creation gives it back.
@@ -135,17 +135,17 @@ stack's public services.
   (`compose_services[service].networks` / `.network_aliases`; agent feature `docker.networks`, `networks` on
   `docker.run` / `deploy.container.swap`). Before a deploy replaces its container the network must exist, so a
   missing one fails the deploy and leaves the running container in place; `docker compose down` on the stack first
-  detaches Kiln's containers from the stack's networks so Compose can remove them. A plain network of the stack's
+  detaches Falak's containers from the stack's networks so Compose can remove them. A plain network of the stack's
   compose project (no definition, or only a `name:`) carries `compose {project, network}`
   (`compose_services[service].compose_networks`): when it doesn't exist yet the agent creates it with Compose's labels
   (`com.docker.compose.project`, `com.docker.compose.network`; agent feature `docker.networks.create`) and the
   stack's first `docker compose up` adopts it, so a service split out at the stack's creation can deploy first.
   Compose v2 reuses a labelled network without comparing its configuration, so a configured network (driver, driver
   options, IPAM, `internal`, IPv6, `attachable`, labels) is only ever created by Compose; it, `external` networks,
-  reserved names (`bridge`, `host`, `none`, `default`, `kiln*`) and agents without the feature are only waited for, up
+  reserved names (`bridge`, `host`, `none`, `default`, `falak*`) and agents without the feature are only waited for, up
   to 60 s, then the deploy fails with "deploy the compose stack first" (`waited_networks`, with a warning at
   extraction: split such a service out of a stack that already runs).
-- **Kiln database names:** a service replaced by a Kiln database keeps its `POSTGRES_DB` / `MYSQL_DATABASE` name when
+- **Falak database names:** a service replaced by a Falak database keeps its `POSTGRES_DB` / `MYSQL_DATABASE` name when
   it's free on the leader, else `<stack>_<name>`, then `_2`, `_3`…; the rewritten `DATABASE_URL` / `DB_DATABASE`
   carry the new name.
 - **Deploy order:** the stack runs without its split-out services, which may in turn use some of its services
@@ -173,7 +173,7 @@ stack's public services.
 ## 2. Template format (lane B)
 
 `templates/<slug>/template.yaml` + `templates/<slug>/compose.yaml` (+ optional `icon.svg`), in the repo
-(**curated catalog, versioned with Kiln**) **[decision]**. Organizations can add **custom templates** (same format,
+(**curated catalog, versioned with Falak**) **[decision]**. Organizations can add **custom templates** (same format,
 stored in the DB, imported from YAML or created from an existing compose site: "Save as template").
 
 ```yaml
@@ -200,13 +200,13 @@ inputs:
     default: UTC
 ```
 
-`compose.yaml` uses Compose interpolation for inputs (`${N8N_ENCRYPTION_KEY}`) and Kiln placeholders rendered once
-at creation: `${{ kiln.url(<service>) }}` (public https URL of a public service), `${{ kiln.domain(<service>) }}`,
-`${{ kiln.site }}` (slug). Inputs become **site variables** (secrets encrypted, generated once — stable across
+`compose.yaml` uses Compose interpolation for inputs (`${N8N_ENCRYPTION_KEY}`) and Falak placeholders rendered once
+at creation: `${{ falak.url(<service>) }}` (public https URL of a public service), `${{ falak.domain(<service>) }}`,
+`${{ falak.site }}` (slug). Inputs become **site variables** (secrets encrypted, generated once — stable across
 redeploys); they can reference other services: `${{ postgres.DATABASE_URL }}` (§5.3 of UI_DESIGN.md).
 
 **Validation** (catalog CI test + import): schema of template.yaml, compose parses, every `${VAR}` is an input or a
-known Kiln variable, public services exist and expose the port, policy (§1.3) passes, image tags pinned (no
+known Falak variable, public services exist and expose the port, policy (§1.3) passes, image tags pinned (no
 `latest`) **[decision]**.
 
 ### 2.1 Catalog v1 (pinned image versions, each with a working healthcheck)
@@ -259,5 +259,5 @@ site fields:
 and `Sites\Contracts\ComposeInspector::parse(string $yaml): ComposeSummary` (services, exposed ports, volumes,
 policy violations) — lane B uses it for validation and the "Save as template" flow.
 
-**Lane B** (templates) owns the new **Templates** module, `templates/` catalog, rendering of Kiln placeholders +
+**Lane B** (templates) owns the new **Templates** module, `templates/` catalog, rendering of Falak placeholders +
 input generation, and the template UIs; it calls only the contracts above (with test fakes until lane A merges).

@@ -1,16 +1,16 @@
 <?php
 
-use Kiln\Databases\Application\EngineInventory;
-use Kiln\Databases\Domain\Enums\ResourceStatus;
-use Kiln\Databases\Domain\Enums\StorageDriver;
-use Kiln\Databases\Domain\Models\Database;
-use Kiln\Databases\Domain\Models\DatabaseServer;
-use Kiln\Databases\Domain\Models\StorageProvider;
-use Kiln\Databases\Infrastructure\ObjectStorage\EndpointGuard;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Identity\Domain\Models\Organization;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Models\Server;
+use Falak\Databases\Application\EngineInventory;
+use Falak\Databases\Domain\Enums\ResourceStatus;
+use Falak\Databases\Domain\Enums\StorageDriver;
+use Falak\Databases\Domain\Models\Database;
+use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Domain\Models\StorageProvider;
+use Falak\Databases\Infrastructure\ObjectStorage\EndpointGuard;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Identity\Domain\Models\Organization;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Models\Server;
 
 require_once __DIR__.'/../../../../tests/Support/FakeAgentGateway.php';
 
@@ -52,7 +52,7 @@ function databases_provider(Organization $organization, array $attributes = []):
         'driver' => StorageDriver::S3,
         'endpoint' => 'https://s3.eu-central-1.amazonaws.com',
         'region' => 'eu-central-1',
-        'bucket' => 'kiln-backups',
+        'bucket' => 'falak-backups',
         'prefix' => 'acme',
         'path_style' => false,
         'access_key_id' => 'AKIAEXAMPLEKEY123456',

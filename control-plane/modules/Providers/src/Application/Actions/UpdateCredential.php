@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Providers\Application\Actions;
+namespace Falak\Providers\Application\Actions;
 
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Domain\CredentialStatus;
+use Falak\Providers\Domain\Models\ProviderCredential;
+use Falak\Providers\Infrastructure\AdapterFactory;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Domain\CredentialStatus;
-use Kiln\Providers\Domain\Models\ProviderCredential;
-use Kiln\Providers\Infrastructure\AdapterFactory;
 
 /**
  * Renames a credential and/or rotates its secret (new secrets are verified before they replace the old ones).

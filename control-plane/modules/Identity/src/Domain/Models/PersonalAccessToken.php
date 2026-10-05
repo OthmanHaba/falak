@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Domain\Models;
+namespace Falak\Identity\Domain\Models;
 
 use Laravel\Sanctum\PersonalAccessToken as SanctumToken;
 

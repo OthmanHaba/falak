@@ -1,26 +1,26 @@
 <?php
 
-namespace Kiln\Telemetry\Http\Controllers;
+namespace Falak\Telemetry\Http\Controllers;
 
 use Carbon\CarbonImmutable;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Telemetry\Application\Queries\ServerMetricQueries;
+use Falak\Telemetry\Application\Queries\SiteMetricQueries;
+use Falak\Telemetry\Contracts\AccessLogs;
+use Falak\Telemetry\Contracts\Data\AccessLogEntry;
+use Falak\Telemetry\Contracts\Data\MetricSeries;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Falak\Telemetry\Contracts\MetricsBackend;
+use Falak\Telemetry\Contracts\TelemetryLinks;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Telemetry\Application\Queries\ServerMetricQueries;
-use Kiln\Telemetry\Application\Queries\SiteMetricQueries;
-use Kiln\Telemetry\Contracts\AccessLogs;
-use Kiln\Telemetry\Contracts\Data\AccessLogEntry;
-use Kiln\Telemetry\Contracts\Data\MetricSeries;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
-use Kiln\Telemetry\Contracts\MetricsBackend;
-use Kiln\Telemetry\Contracts\TelemetryLinks;
 
 /**
  * JSON behind the service panel's Metrics and Logs tabs for one site (docs/UI_DESIGN.md §5.1).
@@ -52,7 +52,7 @@ final class SiteTelemetryController extends Controller
             'links' => [
                 'logs' => $links->logs(['site_id' => $site->id]),
                 'traces' => $links->traceSearch(['site_id' => $site->id]),
-                'grafana' => $links->grafanaDashboard($site->organizationId, 'kiln-laravel', ['site' => $site->id]),
+                'grafana' => $links->grafanaDashboard($site->organizationId, 'falak-laravel', ['site' => $site->id]),
             ],
         ]);
     }

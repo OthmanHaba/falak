@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Fleet\Contracts\Data;
+namespace Falak\Fleet\Contracts\Data;
 
 use DateTimeImmutable;
-use Kiln\Fleet\Contracts\AgentStatus;
+use Falak\Fleet\Contracts\AgentStatus;
 
 final readonly class AgentInfo
 {

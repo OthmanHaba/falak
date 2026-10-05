@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Recipes\Infrastructure;
+namespace Falak\Recipes\Infrastructure;
 
-use Kiln\Recipes\Domain\BuiltinRecipe;
+use Falak\Recipes\Domain\BuiltinRecipe;
 
 /**
  * Starter recipes available to every organization (runnable as-is, or copied and customised).

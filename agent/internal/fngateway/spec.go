@@ -1,7 +1,7 @@
-// Package fngateway is the per-server function gateway (`kiln-agent fn-gateway`, kiln-fn-gateway.service).
+// Package fngateway is the per-server function gateway (`falak-agent fn-gateway`, falak-fn-gateway.service).
 //
 // Caddy proxies every function's domains to the gateway (127.0.0.1:7070) and names the function in the
-// X-Kiln-Function request header. The gateway owns the function's containers: it starts one when a request
+// X-Falak-Function request header. The gateway owns the function's containers: it starts one when a request
 // arrives and none is running (scale from zero), adds instances while every running one is at its concurrency
 // (up to max_instances), stops instances idle for idle_timeout_s (down to min_instances, zero by default) and
 // switches releases without dropping requests. Stopped instances keep their container, so waking one is a plain
@@ -22,36 +22,36 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kiln/agent/internal/docker"
+	"github.com/OthmanHaba/falak/agent/internal/docker"
 )
 
 // Defaults of the wire contract (docs/plans/FUNCTIONS.md, "Phase 1 wire contract").
 const (
 	DefaultListen   = "127.0.0.1:7070"
-	DefaultAdmin    = "/run/kiln-fn/gateway.sock"
-	DefaultStateDir = "/var/lib/kiln/functions"
+	DefaultAdmin    = "/run/falak-fn/gateway.sock"
+	DefaultStateDir = "/var/lib/falak/functions"
 	// Header is the request header Caddy names the function in; it is removed before the request reaches the
 	// function.
-	Header = "X-Kiln-Function"
+	Header = "X-Falak-Function"
 	// Network is the bridge network every function container is attached to.
-	Network = "kiln-fn"
+	Network = "falak-fn"
 	// ContainerPort is the port the runtime listens on inside the container (PORT).
 	ContainerPort = 8080
 	// UID runs every function container (nobody).
 	UID = "65534:65534"
 	// ServeCommand / InstallCommand are the runtime image's entry points.
-	ServeCommand   = "kiln-fn-serve"
-	InstallCommand = "kiln-fn-install"
+	ServeCommand   = "falak-fn-serve"
+	InstallCommand = "falak-fn-install"
 )
 
 // Container labels.
 const (
-	LabelManaged = "kiln.managed"
-	LabelSite    = "kiln.site"
-	LabelService = "kiln.service"
-	LabelRelease = "kiln.release"
-	LabelSlot    = "kiln.fn.slot"
-	LabelSpec    = "kiln.fn.spec"
+	LabelManaged = "falak.managed"
+	LabelSite    = "falak.site"
+	LabelService = "falak.service"
+	LabelRelease = "falak.release"
+	LabelSlot    = "falak.fn.slot"
+	LabelSpec    = "falak.fn.spec"
 	ServiceName  = "function"
 )
 
@@ -184,13 +184,13 @@ func (s Spec) requestTimeout() time.Duration {
 }
 func (s Spec) idleTimeout() time.Duration { return time.Duration(s.Scaling.IdleTimeoutS) * time.Second }
 
-// ContainerName is kiln-fn-<site>-<release[:12]>-<slot>.
+// ContainerName is falak-fn-<site>-<release[:12]>-<slot>.
 func ContainerName(site, release string, slot int) string {
 	r := release
 	if len(r) > 12 {
 		r = r[:12]
 	}
-	return fmt.Sprintf("kiln-fn-%s-%s-%d", site, r, slot)
+	return fmt.Sprintf("falak-fn-%s-%s-%d", site, r, slot)
 }
 
 // Hardened is the HostConfig every function container gets (serve and install).
@@ -209,18 +209,18 @@ func Hardened(memory int64, cpus float64, pids int64, tmpfsSize string) docker.H
 }
 
 // createBody is the serve container of one instance slot. It publishes no host port: the gateway reaches the
-// instance on its kiln-fn bridge address (<container ip>:8080), so readiness is a real connect to the runtime
+// instance on its falak-fn bridge address (<container ip>:8080), so readiness is a real connect to the runtime
 // (a published loopback port would be accepted by docker-proxy before the runtime listens) and no port range
 // has to be allocated.
 func (s Spec) createBody(slot int) docker.CreateBody {
-	env := []string{"PORT=" + strconv.Itoa(ContainerPort), "KILN_ENTRYPOINT=" + s.Entrypoint, "HOME=/tmp", OTLPSocketEnv + "=" + OTLPMount + "/" + otlpSocketName}
+	env := []string{"PORT=" + strconv.Itoa(ContainerPort), "FALAK_ENTRYPOINT=" + s.Entrypoint, "HOME=/tmp", OTLPSocketEnv + "=" + OTLPMount + "/" + otlpSocketName}
 	keys := make([]string, 0, len(s.Env))
 	for k := range s.Env {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		if k == "PORT" || k == "KILN_ENTRYPOINT" || k == OTLPSocketEnv {
+		if k == "PORT" || k == "FALAK_ENTRYPOINT" || k == OTLPSocketEnv {
 			continue
 		}
 		env = append(env, k+"="+s.Env[k])

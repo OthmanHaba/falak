@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Apm\Watchers;
+namespace Falak\Apm\Watchers;
 
 use Illuminate\Contracts\Debug\ExceptionHandler;
-use Kiln\Apm\Recorder;
+use Falak\Apm\Recorder;
 use Throwable;
 
 /**
  * Every reported exception becomes an `exception` span event on the current span with
- * kiln.exception.handled=true. Request / job / command / schedule watchers flip it to
+ * falak.exception.handled=true. Request / job / command / schedule watchers flip it to
  * handled=false (and the span to ERROR) when the exception escaped the application code.
  */
 final class ExceptionWatcher

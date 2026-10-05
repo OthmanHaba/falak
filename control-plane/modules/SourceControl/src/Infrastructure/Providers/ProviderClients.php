@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\Providers;
+namespace Falak\SourceControl\Infrastructure\Providers;
 
+use Falak\SourceControl\Contracts\ProviderType;
 use Illuminate\Contracts\Container\Container;
-use Kiln\SourceControl\Contracts\ProviderType;
 
 class ProviderClients
 {

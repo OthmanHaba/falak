@@ -45,7 +45,7 @@ export interface TemplateDetail extends TemplateSummary {
     generated: Record<string, string>;
     compose: string;
     template_yaml: string;
-    /** KILN_TEST_DOMAIN base, null when not configured (then every public service needs a domain). */
+    /** FALAK_TEST_DOMAIN base, null when not configured (then every public service needs a domain). */
     test_domain: string | null;
 }
 
@@ -85,7 +85,7 @@ export function detailUrl(template: Pick<TemplateSummary, 'source' | 'slug'>): s
     return `/templates/${template.source}/${template.slug}`;
 }
 
-/** The Kiln slug a name becomes (CreateSite::slug), for previewing test domains. */
+/** The Falak slug a name becomes (CreateSite::slug), for previewing test domains. */
 export function slugify(value: string): string {
     return (
         value

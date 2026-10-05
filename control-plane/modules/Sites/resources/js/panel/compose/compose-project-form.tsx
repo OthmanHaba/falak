@@ -1,12 +1,12 @@
 import { DomainPicker } from '@/components/domain-picker';
-import { Callout, Field, Input, Section, Select, Skeleton } from '@/components/kiln';
+import { Callout, Field, Input, Section, Select, Skeleton } from '@/components/falak';
 import { type ComposeProjectProps, type ComposeServiceChoice } from '@/lib/registry';
 import { useEffect } from 'react';
 import { useCandidates, useInspection, type InspectedService } from './project-api';
 import { AdjustmentsList, InspectionProblems, ProjectFiles, ServicesTable, VariablesList, type RowChoice } from './project-parts';
 
 /**
- * The Git create flow's "Docker Compose app" (docs/plans/COMPOSE_APPS.md): the user names the compose files, Kiln
+ * The Git create flow's "Docker Compose app" (docs/plans/COMPOSE_APPS.md): the user names the compose files, Falak
  * reads them from the branch and lists the services; for each the user decides where it runs.
  */
 export function ComposeProjectForm({
@@ -103,7 +103,7 @@ export function ComposeProjectForm({
                         />
                     )}
                 </Field>
-                <Field label="Health check path" hint="Optional; Kiln checks this path after each deploy.">
+                <Field label="Health check path" hint="Optional; Falak checks this path after each deploy.">
                     <Input
                         mono
                         value={item.health_check_path}
@@ -138,7 +138,7 @@ export function ComposeProjectForm({
 
             {error && <Callout tone="danger">{error}</Callout>}
             {inspection?.no_api && (
-                <Callout tone="info" title="Kiln can’t read this git server’s files">
+                <Callout tone="info" title="Falak can’t read this git server’s files">
                     Services are listed after the first deploy; add public services in Settings → Compose then.
                 </Callout>
             )}
@@ -148,7 +148,7 @@ export function ComposeProjectForm({
                 <>
                     <InspectionProblems inspection={inspection} />
                     {inspection.services.length > 0 && (
-                        <Section title="Services" description="Where each service runs. Public services get a domain through Kiln’s edge.">
+                        <Section title="Services" description="Where each service runs. Public services get a domain through Falak’s edge.">
                             <ServicesTable
                                 services={inspection.services}
                                 choiceOf={choiceOf}
@@ -168,7 +168,7 @@ export function ComposeProjectForm({
                             note={errors.variables ? <p className="text-danger text-xs">{errors.variables}</p> : undefined}
                         />
                     </Section>
-                    <Section title="Kiln adjustments" description="Applied when the stack runs; your repository is never changed.">
+                    <Section title="Falak adjustments" description="Applied when the stack runs; your repository is never changed.">
                         <AdjustmentsList inspection={inspection} />
                     </Section>
                 </>

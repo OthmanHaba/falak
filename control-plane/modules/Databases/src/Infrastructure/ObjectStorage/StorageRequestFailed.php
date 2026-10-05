@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Databases\Infrastructure\ObjectStorage;
+namespace Falak\Databases\Infrastructure\ObjectStorage;
 
 use RuntimeException;
 

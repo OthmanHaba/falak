@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/runtime.fpm.pool.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/runtime.fpm.pool.schema.json",
   "title": "runtime.fpm.pool — PHP-FPM pool for one site",
   "type": "object",
   "additionalProperties": false,
@@ -24,7 +24,7 @@
     "pool": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-      "description": "Site slug (directory name under /srv/kiln/sites)"
+      "description": "Site slug (directory name under /srv/falak/sites)"
     },
     "user": {
       "type": "string",
@@ -37,7 +37,7 @@
     "listen": {
       "type": "string",
       "pattern": "^/",
-      "description": "Unix socket; default /run/php/kiln-<pool>-<php_version>.sock"
+      "description": "Unix socket; default /run/php/falak-<pool>-<php_version>.sock"
     },
     "pm": {
       "enum": [

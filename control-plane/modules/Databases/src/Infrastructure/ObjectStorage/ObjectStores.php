@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Databases\Infrastructure\ObjectStorage;
+namespace Falak\Databases\Infrastructure\ObjectStorage;
 
+use Falak\Databases\Domain\Models\StorageProvider;
 use Illuminate\Http\Client\Factory as HttpFactory;
-use Kiln\Databases\Domain\Models\StorageProvider;
 
 final class ObjectStores
 {

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Kernel;
+namespace Falak\Kernel;
 
 use Illuminate\Support\ServiceProvider;
 
@@ -41,6 +41,6 @@ final class Modules
      */
     public static function providers(): array
     {
-        return array_map(fn (string $m) => "Kiln\\{$m}\\{$m}ServiceProvider", self::ALL);
+        return array_map(fn (string $m) => "Falak\\{$m}\\{$m}ServiceProvider", self::ALL);
     }
 }

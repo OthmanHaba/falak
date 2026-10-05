@@ -1,11 +1,11 @@
 <?php
 
-use Kiln\Deployments\Application\Actions\TriggerDeployment;
-use Kiln\Deployments\Domain\Enums\Trigger;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\SiteSettings;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Deployments\Application\Actions\TriggerDeployment;
+use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\SiteSettings;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Sites\Contracts\SiteDirectory;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -59,11 +59,11 @@ it('uses plain HTTP on port 80 when TLS is off', function () {
 it('follows the configured TLS of hosted test domains', function () {
     $world = deploy_world(site: ['test_domain_enabled' => true]);
     $world->edge->testDomainTlsMode = TlsMode::Internal;
-    config(['sites.test_domain' => 'sites.kiln.test']);
+    config(['sites.test_domain' => 'sites.falak.test']);
 
     $r = health_request($world);
 
-    expect($r['url'])->toContain('.sites.kiln.test/')->and($r['options']['verify'])->toBeFalse();
+    expect($r['url'])->toContain('.sites.falak.test/')->and($r['options']['verify'])->toBeFalse();
 });
 
 /**

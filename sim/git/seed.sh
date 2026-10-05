@@ -6,8 +6,8 @@ set -eu
 apps=/fixtures/apps
 repos=/srv/git
 rm -rf "$repos" && mkdir -p "$repos"
-git config --global user.name "Kiln Sim"
-git config --global user.email "sim@kiln.test"
+git config --global user.name "Falak Sim"
+git config --global user.email "sim@falak.test"
 git config --global init.defaultBranch main
 
 for app in "$apps"/*/; do
@@ -16,14 +16,14 @@ for app in "$apps"/*/; do
     rsync -a --exclude vendor --exclude node_modules --exclude .env "$app" "$work/"
 
     # The Laravel demo vendors the in-repo APM package through a composer path repository.
-    if [ -f "$work/composer.json" ] && grep -q '"kiln/apm-laravel"' "$work/composer.json"; then
+    if [ -f "$work/composer.json" ] && grep -q '"falak/apm-laravel"' "$work/composer.json"; then
         mkdir -p "$work/packages"
-        rsync -a --exclude vendor --exclude composer.lock /packages/apm-laravel/ "$work/packages/kiln-apm-laravel/"
+        rsync -a --exclude vendor --exclude composer.lock /packages/apm-laravel/ "$work/packages/falak-apm-laravel/"
     fi
 
     git -C "$work" init -q
     git -C "$work" add -A
-    [ -d "$work/packages/kiln-apm-laravel" ] && git -C "$work" add -f packages/kiln-apm-laravel
+    [ -d "$work/packages/falak-apm-laravel" ] && git -C "$work" add -f packages/falak-apm-laravel
     git -C "$work" commit -q -m "Initial commit of $name"
     git clone -q --bare "$work" "$repos/$name.git"
     touch "$repos/$name.git/git-daemon-export-ok"

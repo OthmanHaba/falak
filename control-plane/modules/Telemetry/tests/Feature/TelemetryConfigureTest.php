@@ -1,22 +1,22 @@
 <?php
 
-use Kiln\Fleet\Domain\Models\Command;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Events\ServerProvisioned;
-use Kiln\Telemetry\Application\Jobs\DispatchPendingTelemetry;
-use Kiln\Telemetry\Contracts\Data\SiteTelemetryTarget;
-use Kiln\Telemetry\Contracts\ServerSites;
-use Kiln\Telemetry\Contracts\TelemetryConfigurator;
-use Kiln\Telemetry\Domain\Models\PendingConfiguration;
-use Kiln\Telemetry\Domain\Models\TelemetrySettings;
+use Falak\Fleet\Domain\Models\Command;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Events\ServerProvisioned;
+use Falak\Telemetry\Application\Jobs\DispatchPendingTelemetry;
+use Falak\Telemetry\Contracts\Data\SiteTelemetryTarget;
+use Falak\Telemetry\Contracts\ServerSites;
+use Falak\Telemetry\Contracts\TelemetryConfigurator;
+use Falak\Telemetry\Domain\Models\PendingConfiguration;
+use Falak\Telemetry\Domain\Models\TelemetrySettings;
 
 require_once __DIR__.'/../../../Fleet/tests/Support/helpers.php';
 
 beforeEach(function () {
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test', 'telemetry.otlp.endpoint' => 'https://otlp.kiln.test:4318', 'telemetry.otlp.token' => null]);
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test', 'telemetry.otlp.endpoint' => 'https://otlp.falak.test:4318', 'telemetry.otlp.token' => null]);
     [$this->user, $this->organization] = actingAsMember(Role::Admin);
 });
 
@@ -60,7 +60,7 @@ it('dispatches a schema-valid telemetry.configure after an agent enrolls', funct
     $payload = telemetry_payload($commands[0]);
     expect(fleet_schema_errors('commands/telemetry.configure.schema.json', $payload))->toBe([])
         ->and($payload)->toBe([
-            'endpoint' => 'https://otlp.kiln.test:4318',
+            'endpoint' => 'https://otlp.falak.test:4318',
             'resource' => ['org_id' => strtoupper($this->organization->id), 'server_id' => strtoupper($server->id), 'environment' => 'production'],
             'sampling' => ['traces_ratio' => 1.0],
             'metrics' => ['enabled' => true, 'interval_s' => 15],
@@ -94,7 +94,7 @@ it('includes organization overrides, the bearer token and sites from the ServerS
         public function forServer(string $serverId): array
         {
             return [new SiteTelemetryTarget('01jsqte000000000000000000a', 'shop-example-com', 'production', '01jdep0000000000000000000a', null, [
-                ['path' => '/srv/kiln/sites/shop-example-com/shared/storage/logs/*.log', 'format' => 'json'],
+                ['path' => '/srv/falak/sites/shop-example-com/shared/storage/logs/*.log', 'format' => 'json'],
             ])];
         }
     });
@@ -109,7 +109,7 @@ it('includes organization overrides, the bearer token and sites from the ServerS
         ->and($payload['sampling'])->toBe(['traces_ratio' => 0.25])
         ->and($payload['metrics']['interval_s'])->toBe(30)
         ->and($payload['sites'])->toBe([['slug' => 'shop-example-com', 'site_id' => '01JSQTE000000000000000000A', 'environment' => 'production', 'deployment_id' => '01JDEP0000000000000000000A']])
-        ->and($payload['log_sources'])->toBe([['path' => '/srv/kiln/sites/shop-example-com/shared/storage/logs/*.log', 'site' => 'shop-example-com', 'format' => 'json']]);
+        ->and($payload['log_sources'])->toBe([['path' => '/srv/falak/sites/shop-example-com/shared/storage/logs/*.log', 'site' => 'shop-example-com', 'format' => 'json']]);
 });
 
 it('skips servers without an agent and unknown servers', function () {

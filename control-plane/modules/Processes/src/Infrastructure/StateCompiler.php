@@ -1,22 +1,22 @@
 <?php
 
-namespace Kiln\Processes\Infrastructure;
+namespace Falak\Processes\Infrastructure;
 
+use Falak\Deployments\Contracts\Data\LiveRelease;
+use Falak\Deployments\Contracts\LiveReleases;
+use Falak\Processes\Application\OctaneRoutes;
+use Falak\Processes\Contracts\ScheduleSources;
+use Falak\Processes\Domain\Models\Daemon;
+use Falak\Processes\Domain\Models\OctaneRoute;
+use Falak\Processes\Domain\Models\Schedule;
+use Falak\Processes\Domain\Models\Worker;
+use Falak\Sites\Contracts\Data\LaravelSettings;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\OctaneServer;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetStatus;
 use Illuminate\Support\Collection;
-use Kiln\Deployments\Contracts\Data\LiveRelease;
-use Kiln\Deployments\Contracts\LiveReleases;
-use Kiln\Processes\Application\OctaneRoutes;
-use Kiln\Processes\Contracts\ScheduleSources;
-use Kiln\Processes\Domain\Models\Daemon;
-use Kiln\Processes\Domain\Models\OctaneRoute;
-use Kiln\Processes\Domain\Models\Schedule;
-use Kiln\Processes\Domain\Models\Worker;
-use Kiln\Sites\Contracts\Data\LaravelSettings;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\OctaneServer;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetStatus;
 
 /**
  * Compiles the complete desired proc.apply and cron.apply payloads of one server from every site
@@ -25,10 +25,10 @@ use Kiln\Sites\Contracts\TargetStatus;
  * there is no `current/` to run in, so a site's programs and schedules start on its first activation.
  *
  * Every program / job env carries the live release's site variables (the ones its `.env` was written
- * with — Node and Deno don't read `.env`) plus KILN_RELEASE_ID / KILN_DEPLOYMENT_ID, so a deploy changes
+ * with — Node and Deno don't read `.env`) plus FALAK_RELEASE_ID / FALAK_DEPLOYMENT_ID, so a deploy changes
  * the program definitions and proc.apply restarts them with the new release's environment.
  *
- * Ids cross the agent boundary upper-case (KILN_SITE_ID / KILN_SERVER_ID), like telemetry.configure.
+ * Ids cross the agent boundary upper-case (FALAK_SITE_ID / FALAK_SERVER_ID), like telemetry.configure.
  */
 final class StateCompiler
 {
@@ -339,7 +339,7 @@ final class StateCompiler
     }
 
     /**
-     * The release's site variables, then the program's own env, then Kiln's ids (which always win).
+     * The release's site variables, then the program's own env, then Falak's ids (which always win).
      *
      * @param  array<string, string>  $extra
      * @return array<string, string>
@@ -351,11 +351,11 @@ final class StateCompiler
         return [
             ...array_map('strval', $variables),
             ...array_map('strval', $extra),
-            'KILN_SITE' => $site->slug,
-            'KILN_SITE_ID' => strtoupper($site->id),
-            'KILN_SERVER_ID' => strtoupper($serverId),
-            'KILN_RELEASE_ID' => strtoupper($release->releaseId),
-            'KILN_DEPLOYMENT_ID' => strtoupper($release->deploymentId),
+            'FALAK_SITE' => $site->slug,
+            'FALAK_SITE_ID' => strtoupper($site->id),
+            'FALAK_SERVER_ID' => strtoupper($serverId),
+            'FALAK_RELEASE_ID' => strtoupper($release->releaseId),
+            'FALAK_DEPLOYMENT_ID' => strtoupper($release->deploymentId),
         ];
     }
 

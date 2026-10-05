@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
 /**
  * The `site` prop every /sites/{id}/* Inertia page passes to the shared SiteLayout

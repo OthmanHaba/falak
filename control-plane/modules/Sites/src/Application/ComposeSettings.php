@@ -1,25 +1,25 @@
 <?php
 
-namespace Kiln\Sites\Application;
+namespace Falak\Sites\Application;
 
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Sites\Application\Compose\ComposeNetworks;
+use Falak\Sites\Application\Compose\RepoComposeInspection;
+use Falak\Sites\Contracts\ComposeServiceExtraction;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Data\ComposeConfig;
+use Falak\Sites\Contracts\Data\ComposeSummary;
+use Falak\Sites\Contracts\Data\DomainChoice;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDomains;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Domain\Models\ComposeVersion;
+use Falak\Sites\Domain\Models\OrganizationSettings;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Infrastructure\Compose\YamlComposeInspector;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Sites\Application\Compose\ComposeNetworks;
-use Kiln\Sites\Application\Compose\RepoComposeInspection;
-use Kiln\Sites\Contracts\ComposeServiceExtraction;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Data\ComposeConfig;
-use Kiln\Sites\Contracts\Data\ComposeSummary;
-use Kiln\Sites\Contracts\Data\DomainChoice;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDomains;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Domain\Models\ComposeVersion;
-use Kiln\Sites\Domain\Models\OrganizationSettings;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Infrastructure\Compose\YamlComposeInspector;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
 
 /**
  * Validation and persistence of a compose site's source, inline versions and public services
@@ -29,10 +29,10 @@ final class ComposeSettings
 {
     public const DOMAIN_PATTERN = '/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}$/';
 
-    /** Permission to replace a service with a Kiln database (Databases' manage permission). */
+    /** Permission to replace a service with a Falak database (Databases' manage permission). */
     public const DATABASE_PERMISSION = 'databases.manage';
 
-    /** Permission to run a service as its own Kiln site. */
+    /** Permission to run a service as its own Falak site. */
     public const SITE_PERMISSION = 'sites.create';
 
     public function __construct(
@@ -265,14 +265,14 @@ final class ComposeSettings
 
     /**
      * Check a repository project before saving it: it loads, its public services exist and every required variable
-     * has a value. Repositories Kiln can't read (plain git, API errors) are checked at the first deploy instead.
+     * has a value. Repositories Falak can't read (plain git, API errors) are checked at the first deploy instead.
      *
      * @param  list<string>  $files
      * @param  list<string>  $profiles
      * @param  list<array<string, mixed>>  $publicServices
      * @param  array<string, mixed>  $variables
      *
-     * Returns the merged project (YAML), or null when Kiln can't read the repository.
+     * Returns the merged project (YAML), or null when Falak can't read the repository.
      *
      * @throws ValidationException
      */
@@ -311,7 +311,7 @@ final class ComposeSettings
     }
 
     /**
-     * Replace services with Kiln databases / own sites. Failures leave the service in the stack and come back as
+     * Replace services with Falak databases / own sites. Failures leave the service in the stack and come back as
      * warnings (the site itself already exists).
      *
      * @param  list<array{service: string, mode: string, engine: ?string, database_id: ?string, site: array<string, mixed>}>  $extract
@@ -325,7 +325,7 @@ final class ComposeSettings
         $warnings = [];
 
         foreach ($extract as $item) {
-            // A Kiln database or site is created on the actor's behalf: they need that permission too (system actors —
+            // A Falak database or site is created on the actor's behalf: they need that permission too (system actors —
             // no user — run on behalf of someone already checked).
             $permission = $item['mode'] === ComposeConfig::MODE_DATABASE ? self::DATABASE_PERMISSION : self::SITE_PERMISSION;
 
@@ -344,15 +344,15 @@ final class ComposeSettings
                     $one = fn (array $list, string $single, string $plural) => count($list) === 1 ? $single : $plural;
 
                     if ($tls !== []) {
-                        $warnings[] = "{$item['service']}: ".implode(', ', $tls).' '.$one($tls, 'connects', 'connect')." over TLS (rediss:// / valkeys://), which a Kiln instance doesn't offer, so ".$one($tls, 'it was', 'they were')." left pointing at {$item['service']}: point ".$one($tls, 'it', 'them')." at the Kiln instance's REDIS_URL (redis://) yourself.";
+                        $warnings[] = "{$item['service']}: ".implode(', ', $tls).' '.$one($tls, 'connects', 'connect')." over TLS (rediss:// / valkeys://), which a Falak instance doesn't offer, so ".$one($tls, 'it was', 'they were')." left pointing at {$item['service']}: point ".$one($tls, 'it', 'them')." at the Falak instance's REDIS_URL (redis://) yourself.";
                     }
 
                     if (($healthchecks = array_map('strval', (array) ($decision['healthchecks'] ?? []))) !== []) {
-                        $warnings[] = "{$item['service']}: the healthcheck of ".implode(', ', $healthchecks).' still '.$one($healthchecks, 'names', 'name')." {$item['service']}, which no longer runs in the stack, so ".$one($healthchecks, 'it fails', 'they fail').': point '.$one($healthchecks, 'it', 'them')." at the Kiln service's host and port (and password) from the service's variables — Kiln rewrites variables, not commands.";
+                        $warnings[] = "{$item['service']}: the healthcheck of ".implode(', ', $healthchecks).' still '.$one($healthchecks, 'names', 'name')." {$item['service']}, which no longer runs in the stack, so ".$one($healthchecks, 'it fails', 'they fail').': point '.$one($healthchecks, 'it', 'them')." at the Falak service's host and port (and password) from the service's variables — Falak rewrites variables, not commands.";
                     }
 
                     if ($unclear !== []) {
-                        $warnings[] = "{$item['service']}: ".implode(', ', $unclear).' '.$one($unclear, 'was', 'were').' left as '.$one($unclear, 'it is', 'they are').": next to a host that pointed at {$item['service']}, but also to one pointing at another service, so Kiln can't tell whose ".$one($unclear, 'it is', 'they are').'. If '.$one($unclear, 'it belongs', 'they belong')." to {$item['service']}, set ".$one($unclear, 'it', 'them')." to the Kiln instance's REDIS_PORT / REDIS_PASSWORD (the instance listens on 6380+ and has a password).";
+                        $warnings[] = "{$item['service']}: ".implode(', ', $unclear).' '.$one($unclear, 'was', 'were').' left as '.$one($unclear, 'it is', 'they are').": next to a host that pointed at {$item['service']}, but also to one pointing at another service, so Falak can't tell whose ".$one($unclear, 'it is', 'they are').'. If '.$one($unclear, 'it belongs', 'they belong')." to {$item['service']}, set ".$one($unclear, 'it', 'them')." to the Falak instance's REDIS_PORT / REDIS_PASSWORD (the instance listens on 6380+ and has a password).";
                     }
                 } else {
                     $created = $extraction->toSite($site->id, $item['service'], $item['site'], $compose);

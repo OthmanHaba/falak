@@ -49,33 +49,33 @@ export interface FlashMessages {
 }
 
 /** Shared by the Projects module on every authenticated page (docs/UI_DESIGN.md §9). Absent until it ships. */
-export interface KilnEnvironment {
+export interface FalakEnvironment {
     id: string;
     name: string;
     slug: string;
     is_production: boolean;
 }
 
-export interface KilnProject {
+export interface FalakProject {
     id: string;
     name: string;
     icon: string | null;
-    environments: KilnEnvironment[];
+    environments: FalakEnvironment[];
 }
 
-export interface KilnShared {
-    projects: KilnProject[];
+export interface FalakShared {
+    projects: FalakProject[];
     current: { project_id: string | null; environment_id: string | null };
 }
 
 export interface SharedData {
     name: string;
-    kiln?: KilnShared | null;
+    falak?: FalakShared | null;
     flash?: FlashMessages;
     quote: { message: string; author: string };
     auth: Auth;
     organization: OrganizationProps | null;
-    /** Guests only: who may sign up (KILN_REGISTRATION). */
+    /** Guests only: who may sign up (FALAK_REGISTRATION). */
     registration?: 'open' | 'invite' | 'closed' | null;
     [key: string]: unknown;
 }

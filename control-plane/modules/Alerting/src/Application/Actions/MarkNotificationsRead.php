@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Alerting\Application\Actions;
+namespace Falak\Alerting\Application\Actions;
 
-use Kiln\Alerting\Domain\Models\Notification;
+use Falak\Alerting\Domain\Models\Notification;
 
 final class MarkNotificationsRead
 {

@@ -1,17 +1,17 @@
 <?php
 
+use Falak\Fleet\Application\Actions\ClaimCommands;
+use Falak\Fleet\Application\Jobs\SweepFleet;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\CommandStatus;
+use Falak\Fleet\Contracts\Data\CommandHandle;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\Command;
+use Falak\Fleet\Events\AgentVersionChanged;
+use Falak\Fleet\Events\CommandFailed;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Application\Actions\ClaimCommands;
-use Kiln\Fleet\Application\Jobs\SweepFleet;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\CommandStatus;
-use Kiln\Fleet\Contracts\Data\CommandHandle;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\Command;
-use Kiln\Fleet\Events\AgentVersionChanged;
-use Kiln\Fleet\Events\CommandFailed;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -19,12 +19,12 @@ const SESSION_OLD = 'sess-old-0000000000000001';
 const SESSION_NEW = 'sess-new-0000000000000002';
 
 beforeEach(function () {
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test']);
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test']);
     [, $organization] = memberOf();
     $this->serverId = (string) Str::ulid();
     $this->enrolled = fleet_enroll($organization->id, $this->serverId);
     $this->gateway = app(AgentGateway::class);
-    $this->headers = fn (?string $session) => fleet_mtls($this->enrolled['fingerprint']) + ($session !== null ? ['X-Kiln-Agent-Session' => $session] : []);
+    $this->headers = fn (?string $session) => fleet_mtls($this->enrolled['fingerprint']) + ($session !== null ? ['X-Falak-Agent-Session' => $session] : []);
     $this->poll = fn (?string $session) => $this->getJson('/agent/v1/commands?wait=0', ($this->headers)($session))->assertOk();
     $this->beat = fn (?string $session, array $overrides = []) => $this->postJson('/agent/v1/heartbeat', fleet_heartbeat($overrides), ($this->headers)($session))->assertNoContent();
     $this->finish = fn (CommandHandle $handle, ?string $session, int $seq = 1) => $this->call('POST', "/agent/v1/commands/{$handle->id}/events", [], [], [],
@@ -32,7 +32,7 @@ beforeEach(function () {
             ['command_id' => $handle->id, 'seq' => 0, 'kind' => 'started', 'at' => now()->toIso8601ZuluString()],
             ['command_id' => $handle->id, 'seq' => $seq, 'kind' => 'finished', 'exit_code' => 0, 'at' => now()->toIso8601ZuluString()],
         ]))->assertNoContent();
-    // cron.apply is redeliverable (x-kiln-redeliverable); system.exec is not.
+    // cron.apply is redeliverable (x-falak-redeliverable); system.exec is not.
     $this->idempotent = fn () => $this->gateway->dispatch($this->serverId, 'cron.apply', ['jobs' => []]);
     $this->oneShot = fn () => $this->gateway->dispatch($this->serverId, 'system.exec', ['script' => 'x']);
     $this->status = fn (CommandHandle $handle) => $this->gateway->status($handle)->status;

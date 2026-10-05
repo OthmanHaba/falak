@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/kiln/agent/internal/cli/api"
+	"github.com/OthmanHaba/falak/agent/internal/cli/api"
 )
 
 // fakeFunctions serves the /api/v1/functions endpoints, the deployment endpoints `--wait` follows, and the
@@ -122,11 +122,11 @@ func (f *fakeFunctions) serve(w http.ResponseWriter, r *http.Request) {
 		f.json(w, 202, map[string]any{"data": map[string]string{"run_id": "01JRUNBAD"}})
 	case p == api.Path(api.PathFunctionRun, "site", "hooks", "run", "01JRUN"):
 		f.runPolls++
-		out := map[int]string{1: "kiln: running Nightly (manual)\n", 2: "kiln: running Nightly (manual)\ncleaned 3 rows\n"}[min(f.runPolls, 2)]
+		out := map[int]string{1: "falak: running Nightly (manual)\n", 2: "falak: running Nightly (manual)\ncleaned 3 rows\n"}[min(f.runPolls, 2)]
 		run := api.FunctionRun{Status: "running", Output: out}
 		if f.runPolls >= 3 {
 			code := 0
-			run = api.FunctionRun{Status: "succeeded", Finished: true, ExitCode: &code, Output: out + "kiln: Nightly finished in 12ms\n"}
+			run = api.FunctionRun{Status: "succeeded", Finished: true, ExitCode: &code, Output: out + "falak: Nightly finished in 12ms\n"}
 		}
 		f.json(w, 200, map[string]any{"data": run})
 	case p == api.Path(api.PathFunctionRun, "site", "hooks", "run", "01JRUNBAD"):
@@ -144,8 +144,8 @@ func (f *fakeFunctions) serve(w http.ResponseWriter, r *http.Request) {
 func fnHarness(t *testing.T) (*harness, *fakeFunctions) {
 	f := newFakeFunctions(t)
 	h := newHarness(t, nil)
-	h.env["KILN_URL"] = f.srv.URL
-	h.env["KILN_TOKEN"] = token
+	h.env["FALAK_URL"] = f.srv.URL
+	h.env["FALAK_TOKEN"] = token
 	return h, f
 }
 
@@ -173,7 +173,7 @@ func TestFnPullEditDeployAndConflict(t *testing.T) {
 		t.Fatalf("meta %+v", meta)
 	}
 
-	// Edit, add a module in a new folder; dependencies, VCS, dot-files and .kilnignore'd files are not sent.
+	// Edit, add a module in a new folder; dependencies, VCS, dot-files and .falakignore'd files are not sent.
 	os.WriteFile(filepath.Join(dir, "index.ts"), []byte("export default { fetch: () => new Response('v2') }\n"), 0o644)
 	os.MkdirAll(filepath.Join(dir, "routes", "admin"), 0o755)
 	os.WriteFile(filepath.Join(dir, "routes", "admin", "users.ts"), []byte("export const users = []\n"), 0o644)
@@ -181,7 +181,7 @@ func TestFnPullEditDeployAndConflict(t *testing.T) {
 		os.MkdirAll(filepath.Dir(filepath.Join(dir, junk)), 0o755)
 		os.WriteFile(filepath.Join(dir, junk), []byte("x"), 0o644)
 	}
-	os.WriteFile(filepath.Join(dir, ".kilnignore"), []byte("# local only\n*.log\ndist/\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, ".falakignore"), []byte("# local only\n*.log\ndist/\n"), 0o644)
 	outside := filepath.Join(t.TempDir(), "secret.ts")
 	os.WriteFile(outside, []byte("secret"), 0o644)
 	os.Symlink(outside, filepath.Join(dir, "linked.ts"))
@@ -254,7 +254,7 @@ func TestFnRollbackAndRun(t *testing.T) {
 	if code := h.run("fn", "run", "hooks", "Nightly"); code != 0 {
 		t.Fatalf("run: %d %s", code, h.err.String())
 	}
-	if out := h.out.String(); out != "kiln: running Nightly (manual)\ncleaned 3 rows\nkiln: Nightly finished in 12ms\n" {
+	if out := h.out.String(); out != "falak: running Nightly (manual)\ncleaned 3 rows\nfalak: Nightly finished in 12ms\n" {
 		t.Fatalf("streamed output %q", out)
 	}
 	if code := h.run("fn", "run", "hooks", "broken"); code != 1 || !strings.Contains(h.out.String(), "Error: nope") || !strings.Contains(h.err.String(), "exited with code 1") {
@@ -264,10 +264,10 @@ func TestFnRollbackAndRun(t *testing.T) {
 
 func TestFnInvoke(t *testing.T) {
 	h, f := fnHarness(t)
-	if code := h.run("fn", "invoke", "hooks", "hello", "-d", `{"a":1}`, "-H", "X-Kiln-Key: k1"); code != 0 {
+	if code := h.run("fn", "invoke", "hooks", "hello", "-d", `{"a":1}`, "-H", "X-Falak-Key: k1"); code != 0 {
 		t.Fatalf("invoke: %d %s", code, h.err.String())
 	}
-	if f.invoked.Method != "POST" || f.invoked.URL.Path != "/fn/hello" || f.invoked.Header.Get("X-Kiln-Key") != "k1" || f.invoked.Header.Get("Content-Type") != "application/json" || f.body != `{"a":1}` {
+	if f.invoked.Method != "POST" || f.invoked.URL.Path != "/fn/hello" || f.invoked.Header.Get("X-Falak-Key") != "k1" || f.invoked.Header.Get("Content-Type") != "application/json" || f.body != `{"a":1}` {
 		t.Fatalf("request %s %s %v %q", f.invoked.Method, f.invoked.URL.Path, f.invoked.Header, f.body)
 	}
 	if out := h.out.String(); !strings.Contains(out, "200 OK") || !strings.Contains(out, "X-Function: hooks") || !strings.HasSuffix(out, "hello POST\n") {

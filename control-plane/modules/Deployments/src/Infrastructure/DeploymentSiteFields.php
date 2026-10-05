@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Deployments\Infrastructure;
+namespace Falak\Deployments\Infrastructure;
 
-use Kiln\Deployments\Domain\Enums\ReleaseStatus;
-use Kiln\Deployments\Domain\Enums\Strategy;
-use Kiln\Deployments\Domain\Models\Release;
-use Kiln\Deployments\Domain\Models\SiteSettings;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteResourceExtension;
+use Falak\Deployments\Domain\Enums\ReleaseStatus;
+use Falak\Deployments\Domain\Enums\Strategy;
+use Falak\Deployments\Domain\Models\Release;
+use Falak\Deployments\Domain\Models\SiteSettings;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteResourceExtension;
 
 /**
  * Adds `strategy` and `current_release` to the public site API resource.

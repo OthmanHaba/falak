@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Databases\Application\Actions;
+namespace Falak\Databases\Application\Actions;
 
+use Falak\Databases\Application\Passwords;
+use Falak\Databases\Domain\Models\DatabaseUser;
+use Falak\Identity\Contracts\AuditLog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Application\Passwords;
-use Kiln\Databases\Domain\Models\DatabaseUser;
-use Kiln\Identity\Contracts\AuditLog;
 
 final class RotateDatabaseUserPassword
 {

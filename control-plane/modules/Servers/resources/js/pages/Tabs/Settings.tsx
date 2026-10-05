@@ -1,15 +1,15 @@
-import { Button } from '@/components/kiln/button';
-import { Checkbox } from '@/components/kiln/checkbox';
-import { CodeBlock } from '@/components/kiln/code-block';
-import { Combobox } from '@/components/kiln/combobox';
-import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
-import { Dialog } from '@/components/kiln/dialog';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { KeyValue } from '@/components/kiln/key-value';
-import { Section } from '@/components/kiln/section';
-import { Select } from '@/components/kiln/select';
-import { toast } from '@/components/kiln/toast';
+import { Button } from '@/components/falak/button';
+import { Checkbox } from '@/components/falak/checkbox';
+import { CodeBlock } from '@/components/falak/code-block';
+import { Combobox } from '@/components/falak/combobox';
+import { ConfirmDestructive } from '@/components/falak/confirm-destructive';
+import { Dialog } from '@/components/falak/dialog';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { KeyValue } from '@/components/falak/key-value';
+import { Section } from '@/components/falak/section';
+import { Select } from '@/components/falak/select';
+import { toast } from '@/components/falak/toast';
 import ServerLayout, { type ServerHeader } from '@/layouts/server-layout';
 import { router, useForm } from '@inertiajs/react';
 import { Database, KeyRound, Trash2 } from 'lucide-react';
@@ -203,7 +203,7 @@ export default function Settings({ server, database, cache, busy, can }: Props) 
                         <Section
                             id="general"
                             title="General"
-                            description="The name is shown across Kiln. The timezone is applied to the machine by the provisioning plan."
+                            description="The name is shown across Falak. The timezone is applied to the machine by the provisioning plan."
                             footer={
                                 can.update && (
                                     <>
@@ -270,7 +270,7 @@ export default function Settings({ server, database, cache, busy, can }: Props) 
                     <Section
                         id="agent"
                         title="Agent"
-                        description="The Kiln agent keeps this server in sync. A new install command re-binds the server to whichever host runs it and revokes the current agent."
+                        description="The Falak agent keeps this server in sync. A new install command re-binds the server to whichever host runs it and revokes the current agent."
                         footer={
                             can.regenerateInstallCommand &&
                             server.status !== 'deleting' && (
@@ -311,7 +311,7 @@ export default function Settings({ server, database, cache, busy, can }: Props) 
                         <EngineSection
                             id="cache"
                             title="Redis / Valkey"
-                            description="Each Redis or Valkey service you create runs as its own instance (own port and password) next to the stock one on 6379, which Kiln leaves alone."
+                            description="Each Redis or Valkey service you create runs as its own instance (own port and password) next to the stock one on 6379, which Falak leaves alone."
                             block={cache}
                             serverId={server.id}
                             canInstall={can.update}
@@ -324,7 +324,7 @@ export default function Settings({ server, database, cache, busy, can }: Props) 
                             id="danger"
                             tone="danger"
                             title="Danger zone"
-                            description="Deleting revokes the agent and removes the server from Kiln. Services on it stop being managed."
+                            description="Deleting revokes the agent and removes the server from Falak. Services on it stop being managed."
                             footer={
                                 <Button variant="danger" icon={<Trash2 />} onClick={() => setDeleting(true)} disabled={server.status === 'deleting'}>
                                     Delete server
@@ -369,7 +369,7 @@ export default function Settings({ server, database, cache, busy, can }: Props) 
                     if (!open) setDeleteError(undefined);
                 }}
                 title={`Delete ${server.name}?`}
-                description="This cannot be undone. The agent is revoked and the server disappears from Kiln."
+                description="This cannot be undone. The agent is revoked and the server disappears from Falak."
                 confirmText={server.name}
                 confirmLabel="Delete server"
                 onConfirm={destroy}

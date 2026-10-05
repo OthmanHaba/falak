@@ -36,7 +36,7 @@ ingester:
   chunk_target_size: 1572864
 
 limits_config:
-  retention_period: ${KILN_LOGS_RETENTION:-360h}
+  retention_period: ${FALAK_LOGS_RETENTION:-360h}
   allow_structured_metadata: true
   volume_enabled: true
   ingestion_rate_mb: 8
@@ -53,10 +53,10 @@ limits_config:
         - action: index_label
           attributes:
             - host.name
-            - kiln.org.id
-            - kiln.server.id
-            - kiln.site.id
-            - kiln.log.kind
+            - falak.org.id
+            - falak.server.id
+            - falak.site.id
+            - falak.log.kind
 
 compactor:
   working_directory: /loki/compactor

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Infrastructure\Pki;
+namespace Falak\Fleet\Infrastructure\Pki;
 
 use DateTimeImmutable;
 

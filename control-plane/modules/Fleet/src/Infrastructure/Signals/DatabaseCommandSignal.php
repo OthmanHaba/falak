@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Infrastructure\Signals;
+namespace Falak\Fleet\Infrastructure\Signals;
 
 /**
  * Portable wake-up: re-checks the database at a fixed interval. notify() is a no-op because

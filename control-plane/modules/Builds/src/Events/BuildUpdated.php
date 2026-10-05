@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Builds\Events;
+namespace Falak\Builds\Events;
 
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;

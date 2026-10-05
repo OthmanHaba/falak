@@ -1,20 +1,20 @@
 <?php
 
 use Carbon\CarbonImmutable;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Events\OrganizationCreated;
+use Falak\Telemetry\Application\Actions\ProvisionGrafana;
+use Falak\Telemetry\Contracts\Annotations;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Falak\Telemetry\Contracts\TelemetryLinks;
+use Falak\Telemetry\Domain\Models\DeploymentAnnotation;
+use Falak\Telemetry\Domain\Models\GrafanaState;
+use Falak\Telemetry\Infrastructure\Grafana\GrafanaClient;
+use Falak\Telemetry\Infrastructure\Grafana\GrafanaNames;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Events\OrganizationCreated;
-use Kiln\Telemetry\Application\Actions\ProvisionGrafana;
-use Kiln\Telemetry\Contracts\Annotations;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
-use Kiln\Telemetry\Contracts\TelemetryLinks;
-use Kiln\Telemetry\Domain\Models\DeploymentAnnotation;
-use Kiln\Telemetry\Domain\Models\GrafanaState;
-use Kiln\Telemetry\Infrastructure\Grafana\GrafanaClient;
-use Kiln\Telemetry\Infrastructure\Grafana\GrafanaNames;
 
 beforeEach(function () {
     Http::preventStrayRequests();
@@ -33,7 +33,7 @@ function grafana_dashboard_files(): array
 
 it('provisions datasources, the organization folder and every dashboard with per-organization uids', function () {
     Http::fake([
-        'grafana:3000/api/datasources/uid/kiln-metrics' => Http::response(['id' => 7, 'version' => 3, 'uid' => 'kiln-metrics']),
+        'grafana:3000/api/datasources/uid/falak-metrics' => Http::response(['id' => 7, 'version' => 3, 'uid' => 'falak-metrics']),
         'grafana:3000/api/datasources/uid/*' => Http::response(['message' => 'Data source not found'], 404),
         'grafana:3000/api/datasources' => Http::response(['id' => 8]),
         'grafana:3000/api/folders/*' => Http::response(['message' => 'folder not found'], 404),
@@ -47,22 +47,22 @@ it('provisions datasources, the organization folder and every dashboard with per
 
     $files = grafana_dashboard_files();
     expect($files)->not->toBeEmpty()->and($imported)->toHaveCount(count($files))
-        ->and($imported['kiln-server'])->toBe(GrafanaNames::dashboardUid('kiln-server', $organization->id))
-        ->and(strlen($imported['kiln-deployments']))->toBeLessThanOrEqual(40);
+        ->and($imported['falak-server'])->toBe(GrafanaNames::dashboardUid('falak-server', $organization->id))
+        ->and(strlen($imported['falak-deployments']))->toBeLessThanOrEqual(40);
 
     $folderUid = GrafanaNames::folderUid($organization->id);
 
-    Http::assertSent(fn (Request $r) => $r->method() === 'PUT' && $r->url() === 'http://grafana:3000/api/datasources/uid/kiln-metrics'
+    Http::assertSent(fn (Request $r) => $r->method() === 'PUT' && $r->url() === 'http://grafana:3000/api/datasources/uid/falak-metrics'
         && $r['id'] === 7 && $r['version'] === 3 && $r['jsonData']['prometheusType'] === 'Mimir'
         && $r->header('Authorization') === ['Bearer glsa_test']);
-    Http::assertSent(fn (Request $r) => $r->method() === 'POST' && $r->url() === 'http://grafana:3000/api/datasources' && $r['uid'] === 'kiln-loki'
-        && $r['jsonData']['derivedFields'][0]['datasourceUid'] === 'kiln-tempo');
-    Http::assertSent(fn (Request $r) => $r->method() === 'POST' && $r->url() === 'http://grafana:3000/api/datasources' && $r['uid'] === 'kiln-tempo'
-        && $r['jsonData']['tracesToLogsV2']['datasourceUid'] === 'kiln-loki');
+    Http::assertSent(fn (Request $r) => $r->method() === 'POST' && $r->url() === 'http://grafana:3000/api/datasources' && $r['uid'] === 'falak-loki'
+        && $r['jsonData']['derivedFields'][0]['datasourceUid'] === 'falak-tempo');
+    Http::assertSent(fn (Request $r) => $r->method() === 'POST' && $r->url() === 'http://grafana:3000/api/datasources' && $r['uid'] === 'falak-tempo'
+        && $r['jsonData']['tracesToLogsV2']['datasourceUid'] === 'falak-loki');
     Http::assertSent(fn (Request $r) => $r->url() === 'http://grafana:3000/api/folders' && $r['uid'] === $folderUid && $r['title'] === $organization->name);
     Http::assertSent(fn (Request $r) => $r->url() === 'http://grafana:3000/api/dashboards/db'
         && $r['folderUid'] === $folderUid && $r['overwrite'] === true && $r['dashboard']['id'] === null
-        && $r['dashboard']['uid'] === $imported['kiln-server'] && $r['dashboard']['title'] === $organization->name.' · Kiln / Server');
+        && $r['dashboard']['uid'] === $imported['falak-server'] && $r['dashboard']['title'] === $organization->name.' · Falak / Server');
 
     $state = GrafanaState::query()->findOrFail($organization->id);
     expect($state->folder_uid)->toBe($folderUid)->and($state->provisioned_at)->not->toBeNull()->and($state->last_error)->toBeNull();
@@ -79,7 +79,7 @@ it('renames an existing folder and records provisioning failures', function () {
 
     expect(fn () => app(ProvisionGrafana::class)($organization->id))->toThrow(TelemetryQueryFailed::class);
 
-    Http::assertSent(fn (Request $r) => $r->method() === 'PUT' && str_contains($r->url(), '/api/folders/kiln-org-') && $r['title'] === $organization->name);
+    Http::assertSent(fn (Request $r) => $r->method() === 'PUT' && str_contains($r->url(), '/api/folders/falak-org-') && $r['title'] === $organization->name);
     expect(GrafanaState::query()->findOrFail($organization->id)->last_error)->toContain('Dashboard title cannot be empty');
 });
 
@@ -115,7 +115,7 @@ it('creates a deployment annotation and updates it on completion', function () {
     Http::assertSent(fn (Request $r) => $r->method() === 'POST' && $r->url() === 'http://grafana:3000/api/annotations'
         && $r['time'] === $started->getTimestampMs() && ! isset($r['timeEnd'])
         && $r['text'] === 'Deploying abc123'
-        && array_slice($r['tags'], 0, 2) === ['kiln', 'deployment']
+        && array_slice($r['tags'], 0, 2) === ['falak', 'deployment']
         && in_array('site:01jsite000000000000000000a', $r['tags'], true) && in_array('status:started', $r['tags'], true) && in_array('commit:abc123', $r['tags'], true));
     Http::assertSent(fn (Request $r) => $r->method() === 'PATCH' && $r->url() === 'http://grafana:3000/api/annotations/42'
         && $r['timeEnd'] === $finished->getTimestampMs() && in_array('status:succeeded', $r['tags'], true));
@@ -147,9 +147,9 @@ it('builds in-app and Grafana deep links', function () {
         ->and($links->logs(['site_id' => 'S1', 'search' => 'error', 'bogus' => 'x'], $from))->toBe('/observability/logs?site_id=S1&search=error&from=2026-09-27T10%3A00%3A00%2B00%3A00')
         ->and($links->traceSearch(['site_id' => 'S1', 'min_duration_ms' => 1000]))->toBe('/observability/traces?site_id=S1&min_duration_ms=1000')
         ->and($links->grafanaTrace('abc'))->toStartWith('https://grafana.example.com/explore?schemaVersion=1&panes=')
-        ->and($links->grafanaDashboard('01jorg0000000000000000000a', 'kiln-laravel', ['site' => 'S1']))
-        ->toBe('https://grafana.example.com/d/kiln-laravel-000000000a?var-site=S1');
+        ->and($links->grafanaDashboard('01jorg0000000000000000000a', 'falak-laravel', ['site' => 'S1']))
+        ->toBe('https://grafana.example.com/d/falak-laravel-000000000a?var-site=S1');
 
     config(['telemetry.grafana.url' => null, 'telemetry.grafana.public_url' => null]);
-    expect($links->grafanaTrace('abc'))->toBeNull()->and($links->grafanaDashboard('o', 'kiln-server'))->toBeNull();
+    expect($links->grafanaTrace('abc'))->toBeNull()->and($links->grafanaDashboard('o', 'falak-server'))->toBeNull();
 });

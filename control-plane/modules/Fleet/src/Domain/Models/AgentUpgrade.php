@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Fleet\Domain\Models;
+namespace Falak\Fleet\Domain\Models;
 
+use Falak\Fleet\Contracts\AgentUpgradeStatus;
+use Falak\Fleet\Contracts\Data\AgentUpgradeData;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Kiln\Fleet\Contracts\AgentUpgradeStatus;
-use Kiln\Fleet\Contracts\Data\AgentUpgradeData;
 
 /**
  * @property string $id

@@ -1,24 +1,24 @@
 <?php
 
-namespace Kiln\Templates\Application\Console;
+namespace Falak\Templates\Application\Console;
 
+use Falak\Templates\Application\Catalog\Catalog;
+use Falak\Templates\Application\Catalog\TemplateValidator;
+use Falak\Templates\Application\Compose\FalakPlaceholders;
+use Falak\Templates\Application\Inputs\InputResolver;
+use Falak\Templates\Domain\InputType;
+use Falak\Templates\Domain\TemplateInput;
 use Illuminate\Console\Command;
-use Kiln\Templates\Application\Catalog\Catalog;
-use Kiln\Templates\Application\Catalog\TemplateValidator;
-use Kiln\Templates\Application\Compose\KilnPlaceholders;
-use Kiln\Templates\Application\Inputs\InputResolver;
-use Kiln\Templates\Domain\InputType;
-use Kiln\Templates\Domain\TemplateInput;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Template authoring aid: validate a catalog template and print its compose file as Kiln would render it (test
+ * Template authoring aid: validate a catalog template and print its compose file as Falak would render it (test
  * domains under --domain), optionally with a dotenv of sample input values — pipe into
  * `docker compose -f - --env-file <file> config` to check that Compose accepts it.
  */
 final class RenderTemplateCommand extends Command
 {
-    protected $signature = 'templates:render {slug : catalog template} {--domain=kiln.test : test domain base} {--env-file= : write sample input values to this dotenv file}';
+    protected $signature = 'templates:render {slug : catalog template} {--domain=falak.test : test domain base} {--env-file= : write sample input values to this dotenv file}';
 
     protected $description = 'Validate a catalog template and print its rendered compose file';
 
@@ -45,7 +45,7 @@ final class RenderTemplateCommand extends Command
             $domains[$service] = $index === 0 ? "{$template->slug}.{$base}" : "{$service}-{$template->slug}.{$base}";
         }
 
-        $this->output->write(KilnPlaceholders::render($template->composeYaml, $domains, $template->slug), false, OutputInterface::OUTPUT_RAW);
+        $this->output->write(FalakPlaceholders::render($template->composeYaml, $domains, $template->slug), false, OutputInterface::OUTPUT_RAW);
 
         if ($file = $this->option('env-file')) {
             $sample = array_map(fn (TemplateInput $input) => match (true) {
@@ -56,7 +56,7 @@ final class RenderTemplateCommand extends Command
                 default => 'sample',
             }, array_combine($template->inputKeys(), $template->inputs) ?: []);
             $values = $inputs->resolve($template, array_filter($sample, fn ($value) => $value !== null));
-            $lines = array_map(fn (string $key, string $value) => $key.'='.escapeshellarg(KilnPlaceholders::render($value, $domains, $template->slug)), array_keys($values), $values);
+            $lines = array_map(fn (string $key, string $value) => $key.'='.escapeshellarg(FalakPlaceholders::render($value, $domains, $template->slug)), array_keys($values), $values);
             file_put_contents((string) $file, implode("\n", $lines)."\n");
         }
 

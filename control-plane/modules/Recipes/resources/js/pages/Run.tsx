@@ -1,12 +1,12 @@
-import { AppShell } from '@/components/kiln/app-shell';
-import { Button, IconButton } from '@/components/kiln/button';
-import { Checkbox } from '@/components/kiln/checkbox';
-import { Dialog } from '@/components/kiln/dialog';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { PageHeader, Section } from '@/components/kiln/section';
-import { StatusDot } from '@/components/kiln/status';
-import { Tag } from '@/components/kiln/tag';
+import { AppShell } from '@/components/falak/app-shell';
+import { Button, IconButton } from '@/components/falak/button';
+import { Checkbox } from '@/components/falak/checkbox';
+import { Dialog } from '@/components/falak/dialog';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { PageHeader, Section } from '@/components/falak/section';
+import { StatusDot } from '@/components/falak/status';
+import { Tag } from '@/components/falak/tag';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem } from '@/types';
 import { Head, useForm } from '@inertiajs/react';
@@ -302,7 +302,7 @@ export default function Run({ recipe, servers, preselected = [], defaultTimeout,
             >
                 <p className="text-fg-muted text-sm">
                     The script runs as <span className="text-fg font-mono">{recipe.user}</span> on {count} server{count === 1 ? '' : 's'} in parallel.
-                    Changes it makes cannot be undone from Kiln.
+                    Changes it makes cannot be undone from Falak.
                 </p>
             </Dialog>
         </AppShell>

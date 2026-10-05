@@ -1,6 +1,6 @@
 <?php
 
-use Kiln\Recipes\Infrastructure\BuiltinRecipes;
+use Falak\Recipes\Infrastructure\BuiltinRecipes;
 
 it('ships well-formed built-in recipes', function () {
     $all = (new BuiltinRecipes)->all();

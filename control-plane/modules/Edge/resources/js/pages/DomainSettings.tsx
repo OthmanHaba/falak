@@ -1,7 +1,7 @@
-import { Callout } from '@/components/kiln/callout';
-import { Section } from '@/components/kiln/section';
-import { Select } from '@/components/kiln/select';
-import { Tag } from '@/components/kiln/tag';
+import { Callout } from '@/components/falak/callout';
+import { Section } from '@/components/falak/section';
+import { Select } from '@/components/falak/select';
+import { Tag } from '@/components/falak/tag';
 import SettingsLayout from '@/layouts/settings/layout';
 import { router } from '@inertiajs/react';
 import { Globe, Sparkles } from 'lucide-react';
@@ -14,7 +14,7 @@ interface Props {
         effective_suffix: string | null;
         default_suffix: string | null;
         providers: string[];
-        /** Cloudflare zones Kiln manages: `cloudflare:<zone>` generates names under them. */
+        /** Cloudflare zones Falak manages: `cloudflare:<zone>` generates names under them. */
         zones: string[];
         test_domain: string | null;
     };
@@ -64,7 +64,7 @@ export default function DomainSettings({ settings, can }: Props) {
                 {example ? (
                     <p className="text-fg-muted text-xs">
                         Example: <span className="text-fg font-mono">{example}</span>
-                        {zone ? ' — Kiln creates its DNS record in Cloudflare.' : ' → 63.182.218.247'}
+                        {zone ? ' — Falak creates its DNS record in Cloudflare.' : ' → 63.182.218.247'}
                     </p>
                 ) : (
                     <Callout tone="info">
@@ -84,12 +84,12 @@ export default function DomainSettings({ settings, can }: Props) {
                 <p className="text-fg-faint text-xs">
                     Names under sslip.io and nip.io are shared with everyone who uses these services (common certificate rate limits, no cookie
                     isolation between sites): use them to try things out, and your own domain for production. Server operators can point{' '}
-                    <span className="font-mono">KILN_GENERATED_DOMAIN_SUFFIX</span> at a self-hosted sslip.io server.
+                    <span className="font-mono">FALAK_GENERATED_DOMAIN_SUFFIX</span> at a self-hosted sslip.io server.
                 </p>
                 {!can.manage && <p className="text-fg-faint text-xs">Only organization admins can change the provider.</p>}
             </Section>
 
-            <Section title="Test domain" description="A wildcard domain run by the operator of this Kiln install (KILN_TEST_DOMAIN).">
+            <Section title="Test domain" description="A wildcard domain run by the operator of this Falak install (FALAK_TEST_DOMAIN).">
                 <div className="flex items-center gap-2">
                     <Globe className="text-fg-muted size-4" aria-hidden />
                     {settings.test_domain ? (

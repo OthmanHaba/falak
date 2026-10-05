@@ -13,9 +13,9 @@ import (
 var Units = []string{
 	"docker.service", "docker.socket", "containerd.service",
 	"postgresql.service", "mysql.service", "mariadb.service", "redis-server.service", "redis.service", "valkey-server.service", "valkey.service",
-	"nginx.service", "apache2.service", "caddy.service", "kiln-edge.service", "frankenphp.service",
+	"nginx.service", "apache2.service", "caddy.service", "falak-edge.service", "frankenphp.service",
 	"ssh.service", "ssh.socket", "fail2ban.service", "unattended-upgrades.service",
-	"ufw.service", "firewalld.service", "nftables.service", "kiln-firewall.service",
+	"ufw.service", "firewalld.service", "nftables.service", "falak-firewall.service",
 }
 
 // services reports the state of Units that exist.

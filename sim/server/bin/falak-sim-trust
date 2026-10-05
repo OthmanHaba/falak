@@ -1,0 +1,11 @@
+#!/bin/sh
+# Trust the sim edge's TLS root CA (published by the edge to the shared edge-pki volume).
+set -eu
+src=/etc/falak/edge-pki/root.crt
+if [ -s "$src" ]; then
+  cp "$src" /usr/local/share/ca-certificates/falak-sim-edge.crt
+  update-ca-certificates >/dev/null
+  echo "trusting sim edge CA"
+else
+  echo "edge root CA not published yet ($src); skipping"
+fi

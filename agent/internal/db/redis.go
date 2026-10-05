@@ -17,25 +17,25 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/system"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/system"
 )
 
 // Redis and Valkey instances (db.redis.apply / db.redis.remove, feature db.redis).
 //
-// Every Kiln instance is its own process of the distribution's template unit: Debian and Ubuntu ship
+// Every Falak instance is its own process of the distribution's template unit: Debian and Ubuntu ship
 // redis-server@.service (Type=notify, ExecStart=/usr/bin/redis-server /etc/redis/redis-%i.conf --supervised systemd
 // --daemonize no, PIDFile=/run/redis-%i/redis-server.pid, RuntimeDirectory=redis-%i, ProtectSystem=strict) and, where
 // the archive has Valkey, valkey-server@.service (the same for Valkey). An instance "cache" is the unit
-// redis-server@kiln-cache; its drop-in points ExecStart at /etc/kiln-redis/cache.conf (Debian's /etc/redis is 0770
+// redis-server@falak-cache; its drop-in points ExecStart at /etc/falak-redis/cache.conf (Debian's /etc/redis is 0770
 // redis:redis: the instance user can't read it, and must not join the stock instance's group).
 //
 // Isolation from the stock instance (6379, no password, same packages) and from other instances:
-//   - each instance runs as its own system user (kiln-redis-<name>), set by a drop-in
-//     /etc/systemd/system/redis-server@kiln-<name>.service.d/50-kiln.conf that also resets ReadWritePaths= to the
-//     instance's data directory and its runtime directory only, and points ExecStart at Kiln's config file;
-//   - its data lives in /var/lib/kiln-redis/<name> (0700, the instance user), outside the stock engine's directories,
+//   - each instance runs as its own system user (falak-redis-<name>), set by a drop-in
+//     /etc/systemd/system/redis-server@falak-<name>.service.d/50-falak.conf that also resets ReadWritePaths= to the
+//     instance's data directory and its runtime directory only, and points ExecStart at Falak's config file;
+//   - its data lives in /var/lib/falak-redis/<name> (0700, the instance user), outside the stock engine's directories,
 //     so neither the stock process (user redis, writable /var/lib/redis only) nor another instance can read or write it;
 //   - the config file holds the password and is 0640 root:<instance group>.
 //
@@ -53,7 +53,7 @@ import (
 var (
 	redisName     = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,40}$`)
 	redisPassword = regexp.MustCompile(`^[A-Za-z0-9._~-]{12,128}$`)
-	redisCfgName  = regexp.MustCompile(`^kiln-config-[a-f0-9]{32}$`)
+	redisCfgName  = regexp.MustCompile(`^falak-config-[a-f0-9]{32}$`)
 	redisEviction = []string{"noeviction", "allkeys-lru", "allkeys-lfu", "allkeys-random", "volatile-lru", "volatile-lfu", "volatile-random", "volatile-ttl"}
 	redisPersist  = []string{"rdb", "aof", "none"}
 	// Disabled for clients. SYNC / PSYNC / REPLCONF stay (redis-cli --rdb backups), EVAL / FUNCTION stay (Laravel).
@@ -77,41 +77,42 @@ type kvEngine struct {
 	label   string
 	server  string // binary / unit prefix
 	cli     string
-	confDir string // Kiln's own (0755 root): the distribution's /etc/redis is 0770 redis:redis
+	confDir string // Falak's own (0755 root): the distribution's /etc/redis is 0770 redis:redis
 }
 
 func kvEngineFor(name string) (kvEngine, error) {
 	switch name {
 	case "redis":
-		return kvEngine{"redis", "Redis", "redis-server", "redis-cli", "/etc/kiln-redis"}, nil
+		return kvEngine{"redis", "Redis", "redis-server", "redis-cli", "/etc/falak-redis"}, nil
 	case "valkey":
-		return kvEngine{"valkey", "Valkey", "valkey-server", "valkey-cli", "/etc/kiln-valkey"}, nil
+		return kvEngine{"valkey", "Valkey", "valkey-server", "valkey-cli", "/etc/falak-valkey"}, nil
 	}
 	return kvEngine{}, &commands.PayloadError{Err: fmt.Errorf("unknown key-value engine %q", name)}
 }
 
-func (k kvEngine) instance(name string) string  { return "kiln-" + name }
+func (k kvEngine) instance(name string) string  { return "falak-" + name }
 func (k kvEngine) unit(name string) string      { return k.server + "@" + k.instance(name) + ".service" }
 func (k kvEngine) confPath(name string) string  { return k.confDir + "/" + name + ".conf" }
-func (k kvEngine) dataRoot() string             { return "/var/lib/kiln-" + k.name }
+func (k kvEngine) dataRoot() string             { return "/var/lib/falak-" + k.name }
 func (k kvEngine) dataPath(name string) string  { return k.dataRoot() + "/" + name }
 func (k kvEngine) dropInDir(name string) string { return "/etc/systemd/system/" + k.unit(name) + ".d" }
-func (k kvEngine) dropIn(name string) string    { return k.dropInDir(name) + "/50-kiln.conf" }
+func (k kvEngine) dropIn(name string) string    { return k.dropInDir(name) + "/50-falak.conf" }
 func (k kvEngine) runDir(name string) string    { return "/run/" + k.name + "-" + k.instance(name) }
 
-// user is the instance's system user: kiln-redis-<name> / kiln-valkey-<name>, or past the 32 characters useradd takes
-// kiln-rh-<hash> / kiln-vh-<hash>, which no plain name can produce (plain ones always start kiln-redis- / kiln-valkey-).
+// user is the instance's system user: falak-redis-<name> / falak-valkey-<name>, or past the 32 characters useradd takes
+// falak-rh-<hash> / falak-vh-<hash> (23 hex digits, 32 characters), which no plain name can produce (plain ones always
+// start falak-redis- / falak-valkey-).
 func (k kvEngine) user(name string) string {
-	u := "kiln-" + k.name + "-" + name
+	u := "falak-" + k.name + "-" + name
 	if len(u) <= 32 {
 		return u
 	}
 	sum := sha256.Sum256([]byte(k.name + "\x00" + name))
-	return "kiln-" + k.name[:1] + "h-" + hex.EncodeToString(sum[:12])
+	return ("falak-" + k.name[:1] + "h-" + hex.EncodeToString(sum[:12]))[:32]
 }
 
 // gecos marks the users the agent creates; only such users are adopted or deleted.
-func (k kvEngine) gecos(name string) string { return "Kiln " + k.label + " instance " + name }
+func (k kvEngine) gecos(name string) string { return "Falak " + k.label + " instance " + name }
 
 // RedisApplyPayload is db.redis.apply.
 type RedisApplyPayload struct {
@@ -196,7 +197,7 @@ func disabledCommands(k kvEngine, version string) []string {
 func renderRedisConf(k kvEngine, p RedisApplyPayload, bind []string, configName string, appendonly bool, disabled []string) string {
 	var b strings.Builder
 	w := func(format string, a ...any) { fmt.Fprintf(&b, format+"\n", a...) }
-	w("# Managed by the Kiln agent (db.redis.apply): changes are overwritten.")
+	w("# Managed by the Falak agent (db.redis.apply): changes are overwritten.")
 	w("# %s instance %q, unit %s.", k.label, p.Name, k.unit(p.Name))
 	w("port %d", p.Port)
 	w("bind %s", strings.Join(bind, " "))
@@ -235,12 +236,12 @@ func renderRedisConf(k kvEngine, p RedisApplyPayload, bind []string, configName 
 	return b.String()
 }
 
-// renderRedisDropIn runs the instance as its own user, from Kiln's config path (the template's /etc/redis is 0770
+// renderRedisDropIn runs the instance as its own user, from Falak's config path (the template's /etc/redis is 0770
 // redis:redis, which the instance user must not join), writing only its data and runtime directories. The template's
 // Type=notify, RuntimeDirectory, PIDFile and sandboxing (ProtectSystem=strict, …) stay.
 func renderRedisDropIn(k kvEngine, name string) string {
 	user := k.user(name)
-	return "# Managed by the Kiln agent (db.redis.apply): changes are overwritten.\n" +
+	return "# Managed by the Falak agent (db.redis.apply): changes are overwritten.\n" +
 		"[Service]\n" +
 		"ExecStart=\n" +
 		"ExecStart=/usr/bin/" + k.server + " " + k.confPath(name) + " --supervised systemd --daemonize no\n" +
@@ -342,7 +343,7 @@ func newConfigName() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return "kiln-config-" + hex.EncodeToString(b), nil
+	return "falak-config-" + hex.EncodeToString(b), nil
 }
 
 func hashOf(s string) string {
@@ -713,9 +714,9 @@ func (db *DB) moveAside(k kvEngine, name string, files ...string) error {
 		if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		target := path + ".kiln-" + stamp
+		target := path + ".falak-" + stamp
 		for i := 2; exists(target); i++ {
-			target = path + ".kiln-" + stamp + "-" + strconv.Itoa(i)
+			target = path + ".falak-" + stamp + "-" + strconv.Itoa(i)
 		}
 		if err := os.Rename(path, target); err != nil {
 			return fmt.Errorf("move %s aside: %w", f, err)
@@ -817,7 +818,7 @@ func (db *DB) ensureDataDir(k kvEngine, name string) error {
 	return nil
 }
 
-// instanceUser looks the user up: exists, and whether it is the one the agent created for this instance (Kiln's GECOS,
+// instanceUser looks the user up: exists, and whether it is the one the agent created for this instance (Falak's GECOS,
 // home /nonexistent, nologin shell). Any other user of that name (a site user, someone's account) is never adopted or
 // deleted.
 func (db *DB) instanceUser(ctx context.Context, k kvEngine, name string) (exists, ours bool, err error) {
@@ -846,7 +847,7 @@ func (db *DB) ensureInstanceUser(ctx context.Context, k kvEngine, name string) e
 	}
 	if exists {
 		if !ours {
-			return fmt.Errorf("a user named %s already exists and was not created by Kiln for this instance; rename the instance", user)
+			return fmt.Errorf("a user named %s already exists and was not created by Falak for this instance; rename the instance", user)
 		}
 		return nil
 	}
@@ -913,7 +914,7 @@ func (db *DB) RedisRemove(ctx context.Context, p RedisRemovePayload, _ commands.
 		}
 		changed = true
 	} else if exists {
-		db.d.Logger.Warn("not removing a user Kiln did not create for this instance", "user", k.user(p.Name))
+		db.d.Logger.Warn("not removing a user Falak did not create for this instance", "user", k.user(p.Name))
 	}
 	return ChangedResult{Changed: changed}, nil
 }

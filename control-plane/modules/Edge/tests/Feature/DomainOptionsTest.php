@@ -1,22 +1,22 @@
 <?php
 
+use Falak\Edge\Application\DnsInstructions;
+use Falak\Edge\Application\GeneratedDomains;
+use Falak\Edge\Contracts\Data\DnsTarget;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\LoadBalancer;
+use Falak\Edge\Domain\Models\OrganizationSetting;
+use Falak\Edge\Infrastructure\Dns\DnsAnswer;
+use Falak\Edge\Infrastructure\Dns\DnsLookupFailed;
+use Falak\Edge\Infrastructure\Dns\DnsResolver;
+use Falak\Edge\Infrastructure\Dns\DohResolver;
+use Falak\Edge\Infrastructure\Dns\TlsProbe;
+use Falak\Identity\Contracts\Role;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Sites\Domain\Models\EnvironmentVersion;
+use Falak\Sites\Domain\Models\Site;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
-use Kiln\Edge\Application\DnsInstructions;
-use Kiln\Edge\Application\GeneratedDomains;
-use Kiln\Edge\Contracts\Data\DnsTarget;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\LoadBalancer;
-use Kiln\Edge\Domain\Models\OrganizationSetting;
-use Kiln\Edge\Infrastructure\Dns\DnsAnswer;
-use Kiln\Edge\Infrastructure\Dns\DnsLookupFailed;
-use Kiln\Edge\Infrastructure\Dns\DnsResolver;
-use Kiln\Edge\Infrastructure\Dns\DohResolver;
-use Kiln\Edge\Infrastructure\Dns\TlsProbe;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Sites\Domain\Models\EnvironmentVersion;
-use Kiln\Sites\Domain\Models\Site;
 
 /*
  * Domain choices for new sites (generated / test / custom), DNS instructions and the live DNS check. Real Sites +
@@ -111,7 +111,7 @@ it('offers the picker options for the leader server, the load balancer of a bala
         ->and($options['generated'])->toMatchArray(['suffix' => 'sslip.io', 'ipv4' => '63.182.218.247', 'available' => true, 'reason' => null])
         ->and(collect($options['targets'])->pluck('name')->all())->toBe(['app-2', 'app-1']);
 
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
     expect($this->getJson('/domains/options?server_ids[]='.$this->app1->id)->json('data.default'))->toBe('test');
 
     $bare = sites_server($this->organization->id, ['name' => 'fresh', 'ipv4' => null]);
@@ -162,7 +162,7 @@ it('creates a site with a custom domain through the API', function () {
 });
 
 it('keeps sites without a domain choice on the test domain only', function () {
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
 
     $this->post('/sites', sites_input([$this->app1->id]))->assertSessionHasNoErrors();
     $this->post('/sites', sites_input([$this->app1->id], ['name' => 'Blog', 'domain' => ['type' => 'test']]))->assertSessionHasNoErrors();

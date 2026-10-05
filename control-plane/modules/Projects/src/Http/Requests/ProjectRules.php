@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Projects\Http\Requests;
+namespace Falak\Projects\Http\Requests;
 
 /**
  * Validation rules shared by the web and API controllers.

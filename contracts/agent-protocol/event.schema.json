@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/event.schema.json",
+  "$id": "https://falak.sh/agent-protocol/event.schema.json",
   "title": "Command event streamed from agent to control plane (one NDJSON line)",
   "type": "object",
   "required": ["command_id", "seq", "kind", "at"],

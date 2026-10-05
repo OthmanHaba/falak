@@ -1,12 +1,12 @@
 <?php
 
-use Kiln\Deployments\Contracts\DeploymentTrigger;
-use Kiln\Sites\Contracts\ComposeInspector;
-use Kiln\Sites\Contracts\SiteFactory;
-use Kiln\Templates\Application\Catalog\Catalog;
-use Kiln\Templates\Tests\Support\FakeComposeInspector;
-use Kiln\Templates\Tests\Support\FakeDeploymentTrigger;
-use Kiln\Templates\Tests\Support\FakeSiteFactory;
+use Falak\Deployments\Contracts\DeploymentTrigger;
+use Falak\Sites\Contracts\ComposeInspector;
+use Falak\Sites\Contracts\SiteFactory;
+use Falak\Templates\Application\Catalog\Catalog;
+use Falak\Templates\Tests\Support\FakeComposeInspector;
+use Falak\Templates\Tests\Support\FakeDeploymentTrigger;
+use Falak\Templates\Tests\Support\FakeSiteFactory;
 
 require_once __DIR__.'/../../../Sites/tests/Support/helpers.php';
 
@@ -50,7 +50,7 @@ inputs:
     default: 2
   - key: PUBLIC_URL
     type: string
-    default: ${{ kiln.url(web) }}
+    default: ${{ falak.url(web) }}
   - key: DATABASE_URL
     type: string
     default: ${{ postgres.DATABASE_URL }}
@@ -63,11 +63,11 @@ services:
     expose: ["8080"]
     environment:
       APP_SECRET: ${APP_SECRET}
-      APP_URL: ${{ kiln.url(web) }}
-      ADMIN_HOST: ${{ kiln.domain(admin) }}
-      SITE: ${{ kiln.site }}
+      APP_URL: ${{ falak.url(web) }}
+      ADMIN_HOST: ${{ falak.domain(admin) }}
+      SITE: ${{ falak.site }}
       TZ: ${TIMEZONE:-UTC}
-      DEPLOYMENT: ${KILN_DEPLOYMENT_ID}
+      DEPLOYMENT: ${FALAK_DEPLOYMENT_ID}
       DOLLAR: "$$NOT_A_VARIABLE"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
@@ -94,7 +94,7 @@ YAML;
  */
 function templates_fixture_catalog(array $templates = ['hello' => [TEMPLATES_FIXTURE_TEMPLATE, TEMPLATES_FIXTURE_COMPOSE]]): string
 {
-    $path = sys_get_temp_dir().'/kiln-templates-'.bin2hex(random_bytes(6));
+    $path = sys_get_temp_dir().'/falak-templates-'.bin2hex(random_bytes(6));
 
     foreach ($templates as $slug => $files) {
         mkdir("{$path}/{$slug}", 0777, true);

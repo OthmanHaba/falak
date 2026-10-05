@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * kiln-builder processes identify themselves with a run id (new per process start): a build claimed by an earlier
+ * falak-builder processes identify themselves with a run id (new per process start): a build claimed by an earlier
  * run of the same builder name is orphaned the moment the restarted builder polls, and a running build whose
  * builder stops heartbeating is failed after builds.heartbeat_timeout_seconds.
  */

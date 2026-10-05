@@ -1,9 +1,9 @@
 <?php
 
+use Falak\Servers\Http\Controllers\Api\ServerApiController;
+use Falak\Servers\Http\Controllers\DatabaseEngineController;
+use Falak\Servers\Http\Controllers\MachineCheckController;
 use Illuminate\Support\Facades\Route;
-use Kiln\Servers\Http\Controllers\Api\ServerApiController;
-use Kiln\Servers\Http\Controllers\DatabaseEngineController;
-use Kiln\Servers\Http\Controllers\MachineCheckController;
 
 Route::middleware(['auth:sanctum', 'org'])->prefix('v1')->name('api.v1.')->group(function () {
     Route::get('servers', [ServerApiController::class, 'index'])->name('servers.index');

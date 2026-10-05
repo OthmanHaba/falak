@@ -11,9 +11,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // AptEnv is the environment for every apt/dpkg invocation.
@@ -92,7 +92,7 @@ func (a Apt) Missing(ctx context.Context, pkgs []string) ([]string, error) {
 //
 //   - a ppa:ondrej/php source whose release this distribution does not have ("does not have a Release file", e.g.
 //     a PPA added before an upgrade to a release the PPA does not build for) is disabled (renamed to
-//     <file>.disabled-by-kiln) with a warning, and the update runs once more;
+//     <file>.disabled-by-falak) with a warning, and the update runs once more;
 //   - any other repository that breaks the update fails with a RepoError naming the repository and its source file.
 func (a Apt) Update(ctx context.Context) error {
 	err := a.update(ctx)
@@ -141,7 +141,7 @@ const (
 	AptSourcesList = "/etc/apt/sources.list"
 	AptSourcesDir  = "/etc/apt/sources.list.d"
 	// DisabledSuffix is appended to a source file Update disabled; apt ignores files without .list/.sources.
-	DisabledSuffix = ".disabled-by-kiln"
+	DisabledSuffix = ".disabled-by-falak"
 )
 
 // brokenRepo is one repository an apt-get update error line names.

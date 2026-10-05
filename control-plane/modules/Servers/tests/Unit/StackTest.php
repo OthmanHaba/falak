@@ -1,7 +1,7 @@
 <?php
 
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Stack\Stack;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Stack\Stack;
 
 it('has valid defaults for every server type', function (ServerType $type) {
     expect(Stack::defaultsFor($type)->errorsFor($type))->toBe([]);

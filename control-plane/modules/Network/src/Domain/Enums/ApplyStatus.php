@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Network\Domain\Enums;
+namespace Falak\Network\Domain\Enums;
 
 /**
  * Convergence state of a desired-state command (firewall ruleset, WireGuard interface).

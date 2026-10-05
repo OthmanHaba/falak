@@ -1,12 +1,12 @@
 <?php
 
+use Falak\Identity\Contracts\Role;
+use Falak\Templates\Application\Import\HostResolver;
+use Falak\Templates\Domain\Models\CustomTemplate;
+use Falak\Templates\Domain\Models\CustomTemplateRevision;
+use Falak\Templates\Tests\Support\FakeHostResolver;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Templates\Application\Import\HostResolver;
-use Kiln\Templates\Domain\Models\CustomTemplate;
-use Kiln\Templates\Domain\Models\CustomTemplateRevision;
-use Kiln\Templates\Tests\Support\FakeHostResolver;
 
 require_once __DIR__.'/../Support/helpers.php';
 

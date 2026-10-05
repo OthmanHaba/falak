@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
+use Falak\Identity\Application\Actions\RegisterUser;
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Database\Seeder;
-use Kiln\Identity\Application\Actions\RegisterUser;
-use Kiln\Identity\Domain\Models\User;
 
 class DatabaseSeeder extends Seeder
 {

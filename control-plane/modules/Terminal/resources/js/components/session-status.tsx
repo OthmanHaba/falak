@@ -1,4 +1,4 @@
-import { StatusBadge } from '@/components/kiln/status';
+import { StatusBadge } from '@/components/falak/status';
 import { type SessionStatus } from '../types';
 
 const STATUS: Record<SessionStatus, { status: string; label: string }> = {

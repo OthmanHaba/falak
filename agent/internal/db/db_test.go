@@ -14,10 +14,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 // sqlSim fakes a server: remembers databases and users from the SQL it sees on stdin.
@@ -184,11 +184,11 @@ func TestUserApplyPostgres(t *testing.T) {
 			t.Fatal(w, all)
 		}
 	}
-	fi, _ := os.Stat(filepath.Join(root, "var/lib/kiln/db/users.json"))
+	fi, _ := os.Stat(filepath.Join(root, "var/lib/falak/db/users.json"))
 	if fi.Mode().Perm() != 0o600 {
 		t.Fatal(fi.Mode())
 	}
-	b, _ := os.ReadFile(filepath.Join(root, "var/lib/kiln/db/users.json"))
+	b, _ := os.ReadFile(filepath.Join(root, "var/lib/falak/db/users.json"))
 	if strings.Contains(string(b), `"pw"`) {
 		t.Fatal("plaintext password stored")
 	}
@@ -309,7 +309,7 @@ func TestUserApplyRemotePostgresOpensNetworkAccess(t *testing.T) {
 	if _, err := db.UserApply(context.Background(), p, st); err != nil {
 		t.Fatal(err)
 	}
-	conf, err := os.ReadFile(filepath.Join(root, "etc/postgresql/16/main/conf.d/90-kiln-network.conf"))
+	conf, err := os.ReadFile(filepath.Join(root, "etc/postgresql/16/main/conf.d/90-falak-network.conf"))
 	if err != nil || !strings.Contains(string(conf), "listen_addresses = '*'") {
 		t.Fatal("listen_addresses not set on the newest cluster", string(conf), err)
 	}
@@ -360,7 +360,7 @@ func TestUserApplyLocalPostgresLeavesEngineOnLocalhost(t *testing.T) {
 	if _, err := db.UserApply(context.Background(), UserPayload{Engine: "postgres", Username: "app", Password: "pw"}, st); err != nil {
 		t.Fatal(err)
 	}
-	if f.Ran("systemctl") || fileExists(filepath.Join(dir, "conf.d/90-kiln-network.conf")) {
+	if f.Ran("systemctl") || fileExists(filepath.Join(dir, "conf.d/90-falak-network.conf")) {
 		t.Fatal("local user exposed the engine", f.Lines())
 	}
 }
@@ -374,7 +374,7 @@ func TestUserApplyRemoteMySQLBindsAllInterfaces(t *testing.T) {
 	p := UserPayload{Engine: "mysql", Username: "shop", Password: "pw", Remote: true}
 	db.UserApply(context.Background(), p, st)
 	db.UserApply(context.Background(), p, st)
-	b, err := os.ReadFile(filepath.Join(root, "etc/mysql/mysql.conf.d/zz-kiln-network.cnf"))
+	b, err := os.ReadFile(filepath.Join(root, "etc/mysql/mysql.conf.d/zz-falak-network.cnf"))
 	if err != nil || !strings.Contains(string(b), "bind-address = 0.0.0.0") {
 		t.Fatal(string(b), err)
 	}
@@ -414,7 +414,7 @@ func TestUserApplyContainersPostgres(t *testing.T) {
 			t.Fatalf("missing %q in\n%s", w, h)
 		}
 	}
-	if strings.Contains(h, "0.0.0.0/0") || !fileExists(filepath.Join(dir, "conf.d/90-kiln-network.conf")) {
+	if strings.Contains(h, "0.0.0.0/0") || !fileExists(filepath.Join(dir, "conf.d/90-falak-network.conf")) {
 		t.Fatal("expected container ranges only, listening on every interface", h)
 	}
 	r, _ := db.UserApply(context.Background(), p, st)
@@ -455,7 +455,7 @@ func TestUserApplyContainersMySQL(t *testing.T) {
 	if !strings.Contains(all, "TO 'app'@'172.16.0.0/255.240.0.0'") {
 		t.Fatal("container account has no grants:\n" + all)
 	}
-	if b, err := os.ReadFile(filepath.Join(root, "etc/mysql/mysql.conf.d/zz-kiln-network.cnf")); err != nil || !strings.Contains(string(b), "bind-address = 0.0.0.0") {
+	if b, err := os.ReadFile(filepath.Join(root, "etc/mysql/mysql.conf.d/zz-falak-network.cnf")); err != nil || !strings.Contains(string(b), "bind-address = 0.0.0.0") {
 		t.Fatal("MySQL still bound to localhost", err)
 	}
 

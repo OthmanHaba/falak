@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
 use Closure;
+use Falak\Sites\Contracts\DomainType;
 use Illuminate\Validation\ValidationException;
-use Kiln\Sites\Contracts\DomainType;
 
 /**
  * A domain picked in a create form or sent to the API: `{type: generated|test|custom, name?}`. A plain string is a

@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Insights\Application\Actions;
+namespace Falak\Insights\Application\Actions;
 
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Insights\Domain\Models\Issue;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Insights\Domain\Models\Issue;
 
 final class AssignIssue
 {

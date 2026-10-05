@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kiln/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
 )
 
 // FPMPoolPayload is runtime.fpm.pool.
@@ -55,7 +55,7 @@ func RenderPool(p FPMPoolPayload, listenGroup string) string {
 		maxReq = *p.MaxRequests
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "; Managed by Kiln — do not edit\n[kiln-%s]\nuser = %s\ngroup = %s\n", p.Pool, p.User, group)
+	fmt.Fprintf(&b, "; Managed by Falak — do not edit\n[falak-%s]\nuser = %s\ngroup = %s\n", p.Pool, p.User, group)
 	fmt.Fprintf(&b, "listen = %s\nlisten.owner = %s\nlisten.group = %s\nlisten.mode = 0660\n", p.Listen, p.User, listenGroup)
 	fmt.Fprintf(&b, "pm = %s\npm.max_children = %d\n", pm, def(p.MaxChildren, 5))
 	if pm == "dynamic" {
@@ -90,9 +90,9 @@ func (rt *Runtime) FPMPool(ctx context.Context, p FPMPoolPayload, st commands.St
 		return nil, &commands.PayloadError{Err: fmt.Errorf("php_version, pool and user are required")}
 	}
 	if p.Listen == "" {
-		p.Listen = fmt.Sprintf("/run/php/kiln-%s-%s.sock", p.Pool, p.PHPVersion)
+		p.Listen = fmt.Sprintf("/run/php/falak-%s-%s.sock", p.Pool, p.PHPVersion)
 	}
-	file := fmt.Sprintf("/etc/php/%s/fpm/pool.d/kiln-%s.conf", p.PHPVersion, p.Pool)
+	file := fmt.Sprintf("/etc/php/%s/fpm/pool.d/falak-%s.conf", p.PHPVersion, p.Pool)
 	svc := "php" + p.PHPVersion + "-fpm"
 	if p.State == "absent" {
 		removed, err := rt.d.FS.Remove(file)

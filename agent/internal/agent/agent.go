@@ -1,4 +1,4 @@
-// Package agent wires every subsystem of kiln-agent together: enrollment, transport loops, the
+// Package agent wires every subsystem of falak-agent together: enrollment, transport loops, the
 // command registry with all executors, the supervisor, cron, terminals and the telemetry relay.
 package agent
 
@@ -14,28 +14,28 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/config"
-	"github.com/kiln/agent/internal/cron"
-	"github.com/kiln/agent/internal/db"
-	"github.com/kiln/agent/internal/deploy"
-	"github.com/kiln/agent/internal/docker"
-	"github.com/kiln/agent/internal/edge"
-	"github.com/kiln/agent/internal/enroll"
-	"github.com/kiln/agent/internal/facts"
-	"github.com/kiln/agent/internal/fngateway"
-	"github.com/kiln/agent/internal/functions"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/netcfg"
-	"github.com/kiln/agent/internal/provision"
-	"github.com/kiln/agent/internal/pty"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runtime"
-	"github.com/kiln/agent/internal/supervisor"
-	"github.com/kiln/agent/internal/system"
-	"github.com/kiln/agent/internal/telemetry"
-	"github.com/kiln/agent/internal/transport"
-	"github.com/kiln/agent/internal/version"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/config"
+	"github.com/OthmanHaba/falak/agent/internal/cron"
+	"github.com/OthmanHaba/falak/agent/internal/db"
+	"github.com/OthmanHaba/falak/agent/internal/deploy"
+	"github.com/OthmanHaba/falak/agent/internal/docker"
+	"github.com/OthmanHaba/falak/agent/internal/edge"
+	"github.com/OthmanHaba/falak/agent/internal/enroll"
+	"github.com/OthmanHaba/falak/agent/internal/facts"
+	"github.com/OthmanHaba/falak/agent/internal/fngateway"
+	"github.com/OthmanHaba/falak/agent/internal/functions"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/netcfg"
+	"github.com/OthmanHaba/falak/agent/internal/provision"
+	"github.com/OthmanHaba/falak/agent/internal/pty"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runtime"
+	"github.com/OthmanHaba/falak/agent/internal/supervisor"
+	"github.com/OthmanHaba/falak/agent/internal/system"
+	"github.com/OthmanHaba/falak/agent/internal/telemetry"
+	"github.com/OthmanHaba/falak/agent/internal/transport"
+	"github.com/OthmanHaba/falak/agent/internal/version"
 )
 
 // InsightsPoster posts NDJSON to /agent/v1/insights.
@@ -125,14 +125,14 @@ func Build(d Deps) *Components {
 	return &Components{Registry: reg, Supervisor: sup, Cron: sched, PTY: terms, Docker: dock, Edge: edgeMgr, Deployer: dep, Functions: fns, DB: dbs}
 }
 
-// ensureEnrolled enrolls only when there is no identity yet: `kiln-agent run` never replaces one because
-// KILN_TOKEN is still in agent.env (see EnrollOnly). With restore (`run` only), an identity left in an unfinished
+// ensureEnrolled enrolls only when there is no identity yet: `falak-agent run` never replaces one because
+// FALAK_TOKEN is still in agent.env (see EnrollOnly). With restore (`run` only), an identity left in an unfinished
 // replacement's backup comes back before any enrollment.
 func ensureEnrolled(ctx context.Context, cfg config.Config, log *slog.Logger, restore bool) (*enroll.Identity, error) {
 	paths := enroll.Paths{Dir: cfg.EtcDir}
 	if !paths.Enrolled() && !(restore && restoreIncomplete(cfg, log)) {
 		if cfg.PanelURL == "" || cfg.Token == "" {
-			return nil, errors.New("agent is not enrolled: set KILN_PANEL_URL and KILN_TOKEN (or --panel/--token)")
+			return nil, errors.New("agent is not enrolled: set FALAK_PANEL_URL and FALAK_TOKEN (or --panel/--token)")
 		}
 		if err := os.MkdirAll(cfg.EtcDir, 0o711); err != nil {
 			return nil, err
@@ -163,7 +163,7 @@ func enrollInto(ctx context.Context, cfg config.Config, log *slog.Logger, paths 
 	return st, nil
 }
 
-// Run is `kiln-agent run`: enroll if needed, start every subsystem, serve until ctx is cancelled.
+// Run is `falak-agent run`: enroll if needed, start every subsystem, serve until ctx is cancelled.
 func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	id, err := ensureEnrolled(ctx, cfg, log, true)
 	if err != nil {
@@ -180,7 +180,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	log = log.With("agent_id", id.State.AgentID)
 	client := transport.New(id.State.Endpoints.API, id.TLSConfig())
-	client.UserAgent = "kiln-agent/" + version.Version
+	client.UserAgent = "falak-agent/" + version.Version
 	client.Session = transport.NewSessionID()
 	client.AgentID, client.Log = id.State.AgentID, log.With("component", "transport")
 	// Checksum the running build now, before a system.upgrade_agent could replace the file on disk.
@@ -200,7 +200,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Config: cfg, FS: fs, Runner: r, Insights: client, Telemetry: tel, Logger: log,
 		RestartAgent: func() error {
 			// --no-block queues the restart so the upgrade command's finished event is flushed first.
-			_, err := runner.Check(context.Background(), r, runner.Cmd{Name: "systemctl", Args: []string{"--no-block", "restart", "kiln-agent.service"}})
+			_, err := runner.Check(context.Background(), r, runner.Cmd{Name: "systemctl", Args: []string{"--no-block", "restart", "falak-agent.service"}})
 			return err
 		},
 	})
@@ -257,7 +257,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		loops.Add(1)
 		go func(f func(context.Context)) { defer loops.Done(); f(runCtx) }(fn)
 	}
-	log.Info("kiln-agent running", "version", version.Version, "session", client.Session, "commands", len(comps.Registry.Types()))
+	log.Info("falak-agent running", "version", version.Version, "session", client.Session, "commands", len(comps.Registry.Types()))
 	loops.Add(1)
 	go func() {
 		defer loops.Done()

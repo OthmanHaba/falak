@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Contracts\Exceptions;
+namespace Falak\Fleet\Contracts\Exceptions;
 
 use InvalidArgumentException;
 

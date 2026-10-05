@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Builds\Application;
+namespace Falak\Builds\Application;
 
+use Falak\Builds\Application\Artifacts\ArtifactStorage;
+use Falak\Builds\Contracts\BuildStatus;
+use Falak\Builds\Domain\Models\Build;
+use Falak\Builds\Domain\Models\BuildLog;
+use Falak\Builds\Events\BuildCancelled;
+use Falak\Builds\Events\BuildFailed;
+use Falak\Builds\Events\BuildOutputReceived;
+use Falak\Builds\Events\BuildSucceeded;
+use Falak\Builds\Events\BuildUpdated;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
-use Kiln\Builds\Application\Artifacts\ArtifactStorage;
-use Kiln\Builds\Contracts\BuildStatus;
-use Kiln\Builds\Domain\Models\Build;
-use Kiln\Builds\Domain\Models\BuildLog;
-use Kiln\Builds\Events\BuildCancelled;
-use Kiln\Builds\Events\BuildFailed;
-use Kiln\Builds\Events\BuildOutputReceived;
-use Kiln\Builds\Events\BuildSucceeded;
-use Kiln\Builds\Events\BuildUpdated;
 use Throwable;
 
 /**
@@ -21,7 +21,7 @@ use Throwable;
  */
 final class BuildProgress
 {
-    /** kiln-builder finished exit code for timeouts (commands.ExitTimeout). */
+    /** falak-builder finished exit code for timeouts (commands.ExitTimeout). */
     public const EXIT_TIMEOUT = 124;
 
     public function __construct(private readonly ArtifactStorage $storage) {}
@@ -100,7 +100,7 @@ final class BuildProgress
     /**
      * The builder's finished event.
      *
-     * @param  array<string, mixed>|null  $result  kiln-builder Result
+     * @param  array<string, mixed>|null  $result  falak-builder Result
      */
     public function finished(Build $build, int $exitCode, ?array $result, ?string $error): void
     {
@@ -239,7 +239,7 @@ final class BuildProgress
     }
 
     /**
-     * kiln-builder ComposeResult: the compose file and one pinned image per `build:` service.
+     * falak-builder ComposeResult: the compose file and one pinned image per `build:` service.
      *
      * @param  array<string, mixed>  $compose
      */
@@ -292,7 +292,7 @@ final class BuildProgress
 
     /**
      * A relative repository path without ".", ".." or empty segments, backslashes or control characters (any other
-     * name is fine). Same rule as kiln-builder and the agent's docker.compose.* assets.
+     * name is fine). Same rule as falak-builder and the agent's docker.compose.* assets.
      */
     public static function validAssetPath(string $path): bool
     {

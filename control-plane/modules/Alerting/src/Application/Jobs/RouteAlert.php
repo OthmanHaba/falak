@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Alerting\Application\Jobs;
+namespace Falak\Alerting\Application\Jobs;
 
+use Falak\Alerting\Application\AlertRouter;
+use Falak\Alerting\Contracts\Data\AlertData;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Kiln\Alerting\Application\AlertRouter;
-use Kiln\Alerting\Contracts\Data\AlertData;
 
 final class RouteAlert implements ShouldQueue
 {

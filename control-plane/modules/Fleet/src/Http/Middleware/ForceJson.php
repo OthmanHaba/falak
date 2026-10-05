@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Http\Middleware;
+namespace Falak\Fleet\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;

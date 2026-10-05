@@ -3,30 +3,30 @@
 namespace Database\Seeders;
 
 use Carbon\CarbonImmutable;
+use Falak\Alerting\Contracts\Severity;
+use Falak\Alerting\Domain\Enums\AlertOutcome;
+use Falak\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Domain\Enums\DeliveryStatus;
+use Falak\Alerting\Domain\Models\Alert;
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Alerting\Domain\Models\Notification;
+use Falak\Insights\Application\Actions\AssignIssue;
+use Falak\Insights\Application\Actions\ChangeIssueStatus;
+use Falak\Insights\Application\Actions\CommentOnIssue;
+use Falak\Insights\Application\Actions\EvaluateThresholds;
+use Falak\Insights\Application\Actions\IngestInsights;
+use Falak\Insights\Application\Actions\SaveThreshold;
+use Falak\Insights\Application\Actions\SetIssuePriority;
+use Falak\Insights\Application\HeartbeatTracker;
+use Falak\Insights\Contracts\IssuePriority;
+use Falak\Insights\Contracts\IssueStatus;
+use Falak\Insights\Domain\Models\HeartbeatMonitor;
+use Falak\Insights\Domain\Models\Issue;
+use Falak\Processes\Domain\Models\Schedule;
+use Falak\Processes\Infrastructure\ProgramNames;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Sites\Domain\Models\Site;
 use Illuminate\Database\Seeder;
-use Kiln\Alerting\Contracts\Severity;
-use Kiln\Alerting\Domain\Enums\AlertOutcome;
-use Kiln\Alerting\Domain\Enums\ChannelType;
-use Kiln\Alerting\Domain\Enums\DeliveryStatus;
-use Kiln\Alerting\Domain\Models\Alert;
-use Kiln\Alerting\Domain\Models\Channel;
-use Kiln\Alerting\Domain\Models\Notification;
-use Kiln\Insights\Application\Actions\AssignIssue;
-use Kiln\Insights\Application\Actions\ChangeIssueStatus;
-use Kiln\Insights\Application\Actions\CommentOnIssue;
-use Kiln\Insights\Application\Actions\EvaluateThresholds;
-use Kiln\Insights\Application\Actions\IngestInsights;
-use Kiln\Insights\Application\Actions\SaveThreshold;
-use Kiln\Insights\Application\Actions\SetIssuePriority;
-use Kiln\Insights\Application\HeartbeatTracker;
-use Kiln\Insights\Contracts\IssuePriority;
-use Kiln\Insights\Contracts\IssueStatus;
-use Kiln\Insights\Domain\Models\HeartbeatMonitor;
-use Kiln\Insights\Domain\Models\Issue;
-use Kiln\Processes\Domain\Models\Schedule;
-use Kiln\Processes\Infrastructure\ProgramNames;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Sites\Domain\Models\Site;
 
 /**
  * Observability demo data for the UI (called by UiDemoSeeder): a week of request/job/query aggregates with a daily
@@ -168,7 +168,7 @@ class ObservabilityDemoSeeder extends Seeder
      */
     private function exceptions(string $storefront, string $marketing, CarbonImmutable $now): array
     {
-        $release = '/srv/kiln/sites/storefront/releases/01J8REL0000000000000000000';
+        $release = '/srv/falak/sites/storefront/releases/01J8REL0000000000000000000';
         $vendor = [
             "{$release}/vendor/laravel/framework/src/Illuminate/Routing/Controller.php(54): Illuminate\\Routing\\Controller->callAction()",
             "{$release}/vendor/laravel/framework/src/Illuminate/Routing/ControllerDispatcher.php(43): Illuminate\\Routing\\ControllerDispatcher->dispatch()",

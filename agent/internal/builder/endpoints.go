@@ -2,7 +2,7 @@ package builder
 
 import "net/url"
 
-// Control-plane endpoints used by `kiln-builder serve`. All paths live here so they are easy to adjust
+// Control-plane endpoints used by `falak-builder serve`. All paths live here so they are easy to adjust
 // while the Builds module API is being built. Authenticated with `Authorization: Bearer <builder token>`.
 const (
 	// PathNextBuild long-polls for the next build job: 200 + Job JSON, or 204 when none is queued.

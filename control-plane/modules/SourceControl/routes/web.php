@@ -1,10 +1,10 @@
 <?php
 
+use Falak\Kernel\Http\LegacyRedirect;
+use Falak\SourceControl\Http\Controllers\ConnectionController;
+use Falak\SourceControl\Http\Controllers\GitHubAppController;
+use Falak\SourceControl\Http\Controllers\OAuthController;
 use Illuminate\Support\Facades\Route;
-use Kiln\Kernel\Http\LegacyRedirect;
-use Kiln\SourceControl\Http\Controllers\ConnectionController;
-use Kiln\SourceControl\Http\Controllers\GitHubAppController;
-use Kiln\SourceControl\Http\Controllers\OAuthController;
 
 Route::middleware(['auth', 'org'])->group(function () {
     // The page lives in the settings shell (docs/UI_DESIGN.md §3); the old URL redirects.

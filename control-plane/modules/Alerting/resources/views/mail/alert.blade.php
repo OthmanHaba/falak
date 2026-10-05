@@ -17,7 +17,7 @@
 
 @if ($alert->url)
 <x-mail::button :url="$alert->url">
-Open in Kiln
+Open in Falak
 </x-mail::button>
 @endif
 

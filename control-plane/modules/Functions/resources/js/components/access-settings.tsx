@@ -1,4 +1,4 @@
-import { Button, Callout, CopyButton, Dialog, Field, IconButton, Input, RelativeTime, SkeletonRows, Textarea, toast } from '@/components/kiln';
+import { Button, Callout, CopyButton, Dialog, Field, IconButton, Input, RelativeTime, SkeletonRows, Textarea, toast } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
@@ -88,7 +88,7 @@ export function AccessSettings({ ctx }: ServiceTabProps) {
                         <h4 className="text-fg text-sm font-medium">API keys</h4>
                         <p className="text-fg-muted text-xs">
                             With a key, every request needs <code className="text-fg">Authorization: Bearer &lt;key&gt;</code> or{' '}
-                            <code className="text-fg">X-Kiln-Key: &lt;key&gt;</code> (use the second when your code reads Authorization itself).
+                            <code className="text-fg">X-Falak-Key: &lt;key&gt;</code> (use the second when your code reads Authorization itself).
                         </p>
                     </div>
                 </div>
@@ -146,7 +146,7 @@ export function AccessSettings({ ctx }: ServiceTabProps) {
                 open={created !== null}
                 onOpenChange={(open) => !open && setCreated(null)}
                 title="Your new API key"
-                description="Copy it now: Kiln keeps only a hash and cannot show it again."
+                description="Copy it now: Falak keeps only a hash and cannot show it again."
                 footer={<Button onClick={() => setCreated(null)}>Done</Button>}
             >
                 <Callout tone="warning" title="Shown once">

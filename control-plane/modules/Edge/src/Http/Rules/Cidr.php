@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Http\Rules;
+namespace Falak\Edge\Http\Rules;
 
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;

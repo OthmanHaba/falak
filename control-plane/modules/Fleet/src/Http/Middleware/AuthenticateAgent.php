@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Fleet\Http\Middleware;
+namespace Falak\Fleet\Http\Middleware;
 
 use Closure;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\Certificate;
 use Illuminate\Http\Request;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\Certificate;
 use Symfony\Component\HttpFoundation\IpUtils;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * mTLS authentication. The edge verifies the client certificate against the Kiln CA and forwards its
+ * mTLS authentication. The edge verifies the client certificate against the Falak CA and forwards its
  * SHA-256 fingerprint; the header is only honoured when the TCP peer is a configured trusted proxy.
  * A 401 carries a reason code in `error`: a revoked agent (its server was deleted, or an admin revoked it) gets `agent_revoked`.
  */
@@ -45,7 +45,7 @@ final class AuthenticateAgent
 
         // Revoked agent (its server was deleted, or an admin revoked it): the machine needs a new install command.
         if ($agent->isRevoked()) {
-            return $this->unauthorized('agent_revoked', 'This agent was revoked or its server was removed from Kiln. Run a new install command to connect the machine again.');
+            return $this->unauthorized('agent_revoked', 'This agent was revoked or its server was removed from Falak. Run a new install command to connect the machine again.');
         }
 
         if (! $certificate->isUsable()) {

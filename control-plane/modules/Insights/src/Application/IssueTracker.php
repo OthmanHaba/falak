@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Insights\Application;
+namespace Falak\Insights\Application;
 
 use Carbon\CarbonInterface;
+use Falak\Insights\Contracts\IssueKind;
+use Falak\Insights\Contracts\IssueStatus;
+use Falak\Insights\Domain\Models\Issue;
+use Falak\Insights\Events\IssueOpened;
+use Falak\Insights\Events\IssueRegressed;
+use Falak\Insights\Events\IssueResolved;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
-use Kiln\Insights\Contracts\IssueKind;
-use Kiln\Insights\Contracts\IssueStatus;
-use Kiln\Insights\Domain\Models\Issue;
-use Kiln\Insights\Events\IssueOpened;
-use Kiln\Insights\Events\IssueRegressed;
-use Kiln\Insights\Events\IssueResolved;
 
 /**
  * Creates / updates issues by fingerprint and owns their status transitions:

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Databases\Domain\Enums;
+namespace Falak\Databases\Domain\Enums;
 
 /**
  * Convergence state of a database or database user on its server.

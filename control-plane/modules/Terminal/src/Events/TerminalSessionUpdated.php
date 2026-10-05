@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Terminal\Events;
+namespace Falak\Terminal\Events;
 
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;

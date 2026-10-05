@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Network\Infrastructure;
+namespace Falak\Network\Infrastructure;
 
-use Kiln\Network\Application\ApplyFirewall;
-use Kiln\Network\Contracts\Firewalls;
+use Falak\Network\Application\ApplyFirewall;
+use Falak\Network\Contracts\Firewalls;
 
 final class QueuedFirewalls implements Firewalls
 {

@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Terminal\Infrastructure;
+namespace Falak\Terminal\Infrastructure;
 
-use Kiln\Terminal\Domain\Models\TerminalFrame;
-use Kiln\Terminal\Domain\Models\TerminalSession;
+use Falak\Terminal\Domain\Models\TerminalFrame;
+use Falak\Terminal\Domain\Models\TerminalSession;
 
 /**
  * Renders a session recording as asciicast v2 (https://docs.asciinema.org/manual/asciicast/v2/):

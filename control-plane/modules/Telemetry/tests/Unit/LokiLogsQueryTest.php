@@ -1,12 +1,12 @@
 <?php
 
 use Carbon\CarbonImmutable;
+use Falak\Telemetry\Application\Queries\LogQueryBuilder;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Falak\Telemetry\Contracts\LogsQuery;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Kiln\Telemetry\Application\Queries\LogQueryBuilder;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
-use Kiln\Telemetry\Contracts\LogsQuery;
 
 beforeEach(function () {
     Http::preventStrayRequests();
@@ -17,17 +17,17 @@ it('queries Loki with nanosecond bounds and merges streams newest first', functi
     Http::fake(['loki:3100/loki/api/v1/query_range*' => Http::response([
         'status' => 'success',
         'data' => ['resultType' => 'streams', 'result' => [
-            ['stream' => ['service_name' => 'shop', 'kiln_org_id' => 'ORG'], 'values' => [
+            ['stream' => ['service_name' => 'shop', 'falak_org_id' => 'ORG'], 'values' => [
                 ['1700000000000000003', 'third', ['trace_id' => 'abc123', 'severity_text' => 'ERROR']],
                 ['1700000000000000001', 'first'],
             ]],
-            ['stream' => ['service_name' => 'kiln-agent'], 'values' => [
+            ['stream' => ['service_name' => 'falak-agent'], 'values' => [
                 ['1700000000000000002', 'second', ['structuredMetadata' => ['span_id' => 'ff'], 'parsed' => ['level' => 'info']]],
             ]],
         ]],
     ])]);
 
-    $lines = app(LogsQuery::class)->queryRange('{kiln_org_id="ORG"}', CarbonImmutable::createFromTimestamp(1_700_000_000), CarbonImmutable::createFromTimestamp(1_700_000_060), 2);
+    $lines = app(LogsQuery::class)->queryRange('{falak_org_id="ORG"}', CarbonImmutable::createFromTimestamp(1_700_000_000), CarbonImmutable::createFromTimestamp(1_700_000_060), 2);
 
     expect(array_map(fn ($l) => $l->line, $lines))->toBe(['third', 'second'])
         ->and($lines[0]->metadata)->toBe(['trace_id' => 'abc123', 'severity_text' => 'ERROR'])
@@ -36,7 +36,7 @@ it('queries Loki with nanosecond bounds and merges streams newest first', functi
         ->and($lines[1]->metadata)->toBe(['span_id' => 'ff', 'level' => 'info'])
         ->and($lines[0]->toArray()['at'])->toStartWith('2023-11-14T22:13:20.000000');
 
-    Http::assertSent(fn (Request $request) => $request['query'] === '{kiln_org_id="ORG"}'
+    Http::assertSent(fn (Request $request) => $request['query'] === '{falak_org_id="ORG"}'
         && $request['start'] === '1700000000000000000'
         && $request['end'] === '1700000060000000000'
         && (int) $request['limit'] === 2
@@ -44,7 +44,7 @@ it('queries Loki with nanosecond bounds and merges streams newest first', functi
 });
 
 it('orders forward queries oldest first and sends the tenant header', function () {
-    config(['telemetry.loki.tenant' => 'kiln']);
+    config(['telemetry.loki.tenant' => 'falak']);
     Http::fake(['*' => Http::response(['status' => 'success', 'data' => ['resultType' => 'streams', 'result' => [
         ['stream' => [], 'values' => [['1700000000000000009', 'b'], ['999999999000000000', 'a']]],
     ]]])]);
@@ -52,7 +52,7 @@ it('orders forward queries oldest first and sends the tenant header', function (
     $lines = app(LogsQuery::class)->queryRange('{a="b"}', now()->subHour(), now(), 10, 'forward');
 
     expect(array_map(fn ($l) => $l->line, $lines))->toBe(['a', 'b']);
-    Http::assertSent(fn (Request $request) => $request->header('X-Scope-OrgID') === ['kiln'] && $request['direction'] === 'forward');
+    Http::assertSent(fn (Request $request) => $request->header('X-Scope-OrgID') === ['falak'] && $request['direction'] === 'forward');
 });
 
 it('surfaces Loki errors', function () {
@@ -70,31 +70,31 @@ it('surfaces Loki errors', function () {
 it('always scopes LogQL to the organization and escapes user input', function () {
     $query = LogQueryBuilder::build('01jorg0000000000000000000a', [
         'server_id' => '01jsrv0000000000000000000b',
-        'service' => 'shop"} or {kiln_org_id=~".+',
+        'service' => 'shop"} or {falak_org_id=~".+',
         'search' => 'say "hi"\\',
         'trace_id' => 'ABCDEF0123456789',
         'level' => 'error',
     ]);
 
-    expect($query)->toStartWith('{kiln_org_id="01JORG0000000000000000000A", kiln_server_id="01JSRV0000000000000000000B", service_name="shop\"} or {kiln_org_id=~\".+"}')
+    expect($query)->toStartWith('{falak_org_id="01JORG0000000000000000000A", falak_server_id="01JSRV0000000000000000000B", service_name="shop\"} or {falak_org_id=~\".+"}')
         ->toContain(' |= "say \"hi\"\\\\"')
         ->toContain(' | trace_id="abcdef0123456789"')
         ->toContain('severity_text=~"(?i)error.*" or detected_level=~"(?i)error.*"');
 
-    expect(LogQueryBuilder::build('org', ['search' => 'a.*b', 'regex' => true]))->toBe('{kiln_org_id="ORG"} |~ "a.*b"')
+    expect(LogQueryBuilder::build('org', ['search' => 'a.*b', 'regex' => true]))->toBe('{falak_org_id="ORG"} |~ "a.*b"')
         ->and(fn () => LogQueryBuilder::build('org', ['search' => '(unclosed', 'regex' => true]))->toThrow(InvalidArgumentException::class);
 });
 
 it('filters compose container logs by compose service (structured metadata)', function () {
     expect(LogQueryBuilder::build('org', ['site_id' => 'site', 'compose_service' => 'redis', 'search' => 'ready']))
-        ->toBe('{kiln_org_id="ORG", kiln_site_id="SITE"} | kiln_compose_service="redis" |= "ready"');
+        ->toBe('{falak_org_id="ORG", falak_site_id="SITE"} | falak_compose_service="redis" |= "ready"');
 });
 
 it('selects a site log kind and builds access log queries by slug', function () {
-    expect(LogQueryBuilder::build('org', ['site_id' => 'abc', 'kind' => 'app']))->toBe('{kiln_org_id="ORG", kiln_site_id="ABC", kiln_log_kind!="access"}')
-        ->and(LogQueryBuilder::build('org', ['site_id' => 'abc', 'kind' => 'access']))->toBe('{kiln_org_id="ORG", kiln_site_id="ABC", kiln_log_kind="access"}')
+    expect(LogQueryBuilder::build('org', ['site_id' => 'abc', 'kind' => 'app']))->toBe('{falak_org_id="ORG", falak_site_id="ABC", falak_log_kind!="access"}')
+        ->and(LogQueryBuilder::build('org', ['site_id' => 'abc', 'kind' => 'access']))->toBe('{falak_org_id="ORG", falak_site_id="ABC", falak_log_kind="access"}')
         ->and(LogQueryBuilder::access('org', 'shop', ['server_id' => 'srv', 'status' => 404, 'client_ip' => '203.0.113.9']))
-        ->toBe('{kiln_org_id="ORG", service_name="shop", kiln_log_kind="access", kiln_server_id="SRV"} | http_response_status_code="404" | client_address="203.0.113.9"');
+        ->toBe('{falak_org_id="ORG", service_name="shop", falak_log_kind="access", falak_server_id="SRV"} | http_response_status_code="404" | client_address="203.0.113.9"');
 
     LogQueryBuilder::access('org', 'shop', ['status' => '6xx']);
 })->throws(InvalidArgumentException::class);

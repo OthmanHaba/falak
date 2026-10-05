@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/system.user.create.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/system.user.create.schema.json",
   "title": "system.user.create — ensure a unix user exists (never deletes)",
   "type": "object",
   "additionalProperties": false,
@@ -43,7 +43,7 @@
         "nopasswd"
       ],
       "default": "none",
-      "description": "Writes/removes /etc/sudoers.d/kiln-<name>"
+      "description": "Writes/removes /etc/sudoers.d/falak-<name>"
     },
     "isolated": {
       "type": "boolean",

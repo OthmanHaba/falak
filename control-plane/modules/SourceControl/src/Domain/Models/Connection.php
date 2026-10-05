@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\SourceControl\Domain\Models;
+namespace Falak\SourceControl\Domain\Models;
 
+use Falak\SourceControl\Contracts\Data\ConnectionData;
+use Falak\SourceControl\Contracts\ProviderType;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Kiln\SourceControl\Contracts\Data\ConnectionData;
-use Kiln\SourceControl\Contracts\ProviderType;
 
 /**
  * @property string $id

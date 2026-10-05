@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
-use Kiln\Sites\Contracts\OctaneServer;
+use Falak\Sites\Contracts\OctaneServer;
 
 /**
  * Laravel toggles of a site. Octane: `octaneServer` and `octanePort` are set by Sites when Octane is

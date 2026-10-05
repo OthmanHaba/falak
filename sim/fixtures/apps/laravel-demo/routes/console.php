@@ -8,4 +8,4 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::call(fn () => logger('Kiln E2E demo heartbeat'))->everyMinute()->name('demo-heartbeat');
+Schedule::call(fn () => logger('Falak E2E demo heartbeat'))->everyMinute()->name('demo-heartbeat');

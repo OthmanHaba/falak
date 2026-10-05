@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Servers\Domain\Stack;
+namespace Falak\Servers\Domain\Stack;
 
-use Kiln\Servers\Contracts\ServerType;
+use Falak\Servers\Contracts\ServerType;
 
 /**
  * Software selected for a server at creation. PHP versions installed later are tracked in

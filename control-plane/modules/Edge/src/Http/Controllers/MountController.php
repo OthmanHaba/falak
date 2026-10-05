@@ -1,17 +1,17 @@
 <?php
 
-namespace Kiln\Edge\Http\Controllers;
+namespace Falak\Edge\Http\Controllers;
 
+use Falak\Edge\Application\ComposeServiceDomains;
+use Falak\Edge\Application\PathMounts;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Domain\Models\Mount;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Kiln\Edge\Application\ComposeServiceDomains;
-use Kiln\Edge\Application\PathMounts;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Edge\Domain\Models\Mount;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
 
 /**
  * A function's Settings → Paths: the sites whose paths it serves (JSON for the service panel).

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
 final readonly class CreatedSite
 {

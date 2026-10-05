@@ -11,7 +11,7 @@ let instance: Echo<'reverb'> | null | undefined;
 
 /**
  * Lazily-created Echo client for Reverb. Returns null when broadcasting is not configured
- * (no VITE_REVERB_APP_KEY and no runtime `kiln-reverb-key` meta tag), in which case pages fall back to polling.
+ * (no VITE_REVERB_APP_KEY and no runtime `falak-reverb-key` meta tag), in which case pages fall back to polling.
  * Without build-time VITE_REVERB_* settings (prebuilt production images) the websocket goes to the page's own
  * host, where the edge proxies /app and /apps to Reverb.
  */
@@ -28,7 +28,7 @@ export function echo(): Echo<'reverb'> | null {
 
     const key =
         (import.meta.env.VITE_REVERB_APP_KEY as string | undefined) ||
-        document.querySelector<HTMLMetaElement>('meta[name="kiln-reverb-key"]')?.content;
+        document.querySelector<HTMLMetaElement>('meta[name="falak-reverb-key"]')?.content;
 
     if (!key) {
         instance = null;

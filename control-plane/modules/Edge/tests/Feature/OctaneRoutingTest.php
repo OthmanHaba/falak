@@ -1,27 +1,27 @@
 <?php
 
+use Falak\Edge\Application\Jobs\ApplyEdgeConfig;
+use Falak\Edge\Application\Listeners\ReactToSiteChanges;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Edge\Domain\Enums\LbPolicy;
+use Falak\Edge\Domain\Enums\WwwRedirect;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\Header;
+use Falak\Edge\Domain\Models\LoadBalancer;
+use Falak\Edge\Domain\Models\Redirect;
+use Falak\Edge\Domain\Models\SecurityRule;
+use Falak\Edge\Infrastructure\RouteCompiler;
+use Falak\Fleet\Events\CommandFinished;
+use Falak\Processes\Contracts\OctaneRouting;
+use Falak\Processes\Events\OctaneRoutingChanged;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Sites\Contracts\Data\LaravelSettings;
+use Falak\Sites\Contracts\OctaneServer;
+use Falak\Sites\Contracts\SiteRuntime;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
-use Kiln\Edge\Application\Jobs\ApplyEdgeConfig;
-use Kiln\Edge\Application\Listeners\ReactToSiteChanges;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Edge\Domain\Enums\LbPolicy;
-use Kiln\Edge\Domain\Enums\WwwRedirect;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\Header;
-use Kiln\Edge\Domain\Models\LoadBalancer;
-use Kiln\Edge\Domain\Models\Redirect;
-use Kiln\Edge\Domain\Models\SecurityRule;
-use Kiln\Edge\Infrastructure\RouteCompiler;
-use Kiln\Fleet\Events\CommandFinished;
-use Kiln\Processes\Contracts\OctaneRouting;
-use Kiln\Processes\Events\OctaneRoutingChanged;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Sites\Contracts\Data\LaravelSettings;
-use Kiln\Sites\Contracts\OctaneServer;
-use Kiln\Sites\Contracts\SiteRuntime;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -48,7 +48,7 @@ beforeEach(function () {
 
 function edge_octane_site(object $test, array $overrides = [])
 {
-    $site = edge_site($test->sites, $test->org, [$test->web->id], ['slug' => 'shop', 'laravel' => $test->laravel, 'testDomain' => 'shop.kiln.test', ...$overrides]);
+    $site = edge_site($test->sites, $test->org, [$test->web->id], ['slug' => 'shop', 'laravel' => $test->laravel, 'testDomain' => 'shop.falak.test', ...$overrides]);
     Domain::query()->create(['organization_id' => $test->org, 'site_id' => $site->id, 'name' => ($overrides['slug'] ?? 'shop').'.com', 'is_primary' => true, 'www_redirect' => WwwRedirect::ToApex, 'tls_mode' => TlsMode::Auto]);
 
     return $site;
@@ -59,17 +59,17 @@ it('serves an Octane site directly until Processes verified Octane listening, th
     $id = strtolower($site->id);
 
     // Never deployed / starting: FrankenPHP keeps serving (the placeholder release) directly.
-    expect(edge_entry(edge_compile($this->web->id), $id))->toMatchArray(['kind' => 'frankenphp', 'root' => '/srv/kiln/sites/shop/current/public']);
+    expect(edge_entry(edge_compile($this->web->id), $id))->toMatchArray(['kind' => 'frankenphp', 'root' => '/srv/falak/sites/shop/current/public']);
 
     $this->octane->listening[strtolower("{$site->id}:{$this->web->id}")] = 8123;
     $entry = edge_entry(edge_compile($this->web->id), $id);
 
     expect($entry)->toMatchArray([
         'kind' => 'reverse_proxy',
-        'root' => '/srv/kiln/sites/shop/current/public',
+        'root' => '/srv/falak/sites/shop/current/public',
         'upstreams' => [['dial' => '127.0.0.1:8123']],
         'try_duration_s' => 30,
-        'domains' => ['shop.com', 'shop.kiln.test'],
+        'domains' => ['shop.com', 'shop.falak.test'],
         'redirect_domains' => ['www.shop.com'],
     ])->and($entry)->not->toHaveKeys(['php_fpm_socket', 'health_uri'])
         ->and(RouteCompiler::octaneSites(edge_compile($this->web->id)))->toBe([$id]);
@@ -81,7 +81,7 @@ it('never proxies to a port Octane is not verified on (port moved) and ignores O
 
     expect(edge_entry(edge_compile($this->web->id), strtolower($site->id))['kind'])->toBe('frankenphp');
 
-    $off = edge_octane_site($this, ['slug' => 'off', 'laravel' => new LaravelSettings(octane: false, octaneServer: OctaneServer::FrankenPhp, octanePort: 8124), 'testDomain' => 'off.kiln.test']);
+    $off = edge_octane_site($this, ['slug' => 'off', 'laravel' => new LaravelSettings(octane: false, octaneServer: OctaneServer::FrankenPhp, octanePort: 8124), 'testDomain' => 'off.falak.test']);
     $this->octane->listening[strtolower("{$off->id}:{$this->web->id}")] = 8124;
 
     expect(edge_entry(edge_compile($this->web->id), strtolower($off->id))['kind'])->toBe('frankenphp');

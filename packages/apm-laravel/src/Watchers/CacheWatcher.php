@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Apm\Watchers;
+namespace Falak\Apm\Watchers;
 
 use Illuminate\Cache\Events\CacheHit;
 use Illuminate\Cache\Events\CacheMissed;
@@ -10,8 +10,8 @@ use Illuminate\Cache\Events\KeyWritten;
 use Illuminate\Cache\Events\RetrievingKey;
 use Illuminate\Cache\Events\WritingKey;
 use Illuminate\Contracts\Events\Dispatcher;
-use Kiln\Apm\Recorder;
-use Kiln\Apm\Span;
+use Falak\Apm\Recorder;
+use Falak\Apm\Span;
 
 final class CacheWatcher
 {
@@ -50,9 +50,9 @@ final class CacheWatcher
         unset($this->starts[$id]);
 
         $this->recorder->record('cache', 'cache '.$op, Span::KIND_INTERNAL, $start, $end, [
-            'kiln.cache.op' => $op,
-            'kiln.cache.key' => (string) $event->key,
-            'kiln.cache.store' => $store,
+            'falak.cache.op' => $op,
+            'falak.cache.key' => (string) $event->key,
+            'falak.cache.store' => $store,
         ]);
     }
 }

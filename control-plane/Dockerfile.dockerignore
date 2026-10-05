@@ -22,7 +22,7 @@ control-plane/storage/logs/*
 control-plane/storage/framework/cache/*
 control-plane/storage/framework/sessions/*
 control-plane/storage/framework/views/*
-control-plane/storage/kiln
+control-plane/storage/falak
 control-plane/storage/pail
 control-plane/database/*.sqlite
 control-plane/.phpunit.cache

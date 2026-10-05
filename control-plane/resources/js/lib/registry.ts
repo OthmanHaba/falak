@@ -241,7 +241,7 @@ export interface ServiceLayer {
  * Window event that opens the canvas Create picker (⌘K → Create service). A CustomEvent with `detail.option` opens a
  * registered create option directly (e.g. `new CustomEvent(CREATE_SERVICE_EVENT, {detail: {option: 'template'}})`).
  */
-export const CREATE_SERVICE_EVENT = 'kiln:canvas-create';
+export const CREATE_SERVICE_EVENT = 'falak:canvas-create';
 
 export interface CreateOptionProps {
     projectId: string;
@@ -305,7 +305,7 @@ export interface DomainPickerProps {
 let domainPicker: ComponentType<DomainPickerProps> | null = null;
 
 /**
- * The domain picker (generate an sslip.io name, the Kiln test domain, or your own domain with DNS instructions and a
+ * The domain picker (generate an sslip.io name, the Falak test domain, or your own domain with DNS instructions and a
  * live DNS check). Edge owns domains and registers it; forms render it through `<DomainPicker>`
  * (`@/components/domain-picker`), which falls back to a plain domain input.
  */
@@ -320,9 +320,9 @@ export function registeredDomainPicker(): ComponentType<DomainPickerProps> | nul
 /** A compose service's place in a compose app (docs/plans/COMPOSE_APPS.md). */
 export interface ComposeServiceChoice {
     mode: 'keep' | 'database' | 'site';
-    /** Kiln database engine (mode database). */
+    /** Falak database engine (mode database). */
     engine?: string;
-    /** The Kiln site to create (mode site): name, framework, runtime. */
+    /** The Falak site to create (mode site): name, framework, runtime. */
     site?: { name?: string; framework?: string; runtime?: string };
 }
 
@@ -353,7 +353,7 @@ export interface ComposeProjectProps {
 let composeProject: ComponentType<ComposeProjectProps> | null = null;
 
 /**
- * The compose app form of the Git create flow (compose files, services table, variables, Kiln's adjustments).
+ * The compose app form of the Git create flow (compose files, services table, variables, Falak's adjustments).
  * Sites registers it; the create picker renders it through `<ComposeProject>` (`@/components/compose-project`).
  */
 export function registerComposeProject(component: ComponentType<ComposeProjectProps>): void {

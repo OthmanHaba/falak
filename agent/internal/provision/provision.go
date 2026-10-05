@@ -11,12 +11,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/provision/inspect"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runtime"
-	"github.com/kiln/agent/internal/system"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/provision/inspect"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runtime"
+	"github.com/OthmanHaba/falak/agent/internal/system"
 )
 
 // Deps are the collaborators of provision.apply.
@@ -469,7 +469,7 @@ func (p *Provisioner) caddy(ctx context.Context, st commands.Stream, version str
 		}
 		changed = true
 	}
-	list := fmt.Sprintf("# Managed by Kiln\ndeb [signed-by=%s] %s any-version main\n", caddyKeyring, p.d.CaddyRepoURL)
+	list := fmt.Sprintf("# Managed by Falak\ndeb [signed-by=%s] %s any-version main\n", caddyKeyring, p.d.CaddyRepoURL)
 	c, err := p.d.FS.WriteFile(caddyList, []byte(list), 0o644)
 	if err != nil {
 		return changed, err
@@ -548,13 +548,13 @@ func (p *Provisioner) unattended(ctx context.Context, st commands.Stream, u Unat
 	if on {
 		flag = "1"
 	}
-	periodic := fmt.Sprintf("// Managed by Kiln\nAPT::Periodic::Update-Package-Lists \"%s\";\nAPT::Periodic::Unattended-Upgrade \"%s\";\n", flag, flag)
+	periodic := fmt.Sprintf("// Managed by Falak\nAPT::Periodic::Update-Package-Lists \"%s\";\nAPT::Periodic::Unattended-Upgrade \"%s\";\n", flag, flag)
 	rt := u.RebootTime
 	if rt == "" {
 		rt = "04:00"
 	}
-	cfg := fmt.Sprintf("// Managed by Kiln\nUnattended-Upgrade::Automatic-Reboot \"%t\";\nUnattended-Upgrade::Automatic-Reboot-Time \"%s\";\nUnattended-Upgrade::Remove-Unused-Kernel-Packages \"true\";\n", u.AutoReboot, rt)
-	for f, c := range map[string]string{"/etc/apt/apt.conf.d/20auto-upgrades": periodic, "/etc/apt/apt.conf.d/52kiln-unattended": cfg} {
+	cfg := fmt.Sprintf("// Managed by Falak\nUnattended-Upgrade::Automatic-Reboot \"%t\";\nUnattended-Upgrade::Automatic-Reboot-Time \"%s\";\nUnattended-Upgrade::Remove-Unused-Kernel-Packages \"true\";\n", u.AutoReboot, rt)
+	for f, c := range map[string]string{"/etc/apt/apt.conf.d/20auto-upgrades": periodic, "/etc/apt/apt.conf.d/52falak-unattended": cfg} {
 		ch, err := p.d.FS.WriteFile(f, []byte(c), 0o644)
 		if err != nil {
 			return changed, err
@@ -564,7 +564,7 @@ func (p *Provisioner) unattended(ctx context.Context, st commands.Stream, u Unat
 	return changed, nil
 }
 
-const sshdDropIn = "/etc/ssh/sshd_config.d/50-kiln.conf"
+const sshdDropIn = "/etc/ssh/sshd_config.d/50-falak.conf"
 
 // RenderSSHD renders the sshd drop-in.
 func RenderSSHD(s SSH) string {
@@ -580,7 +580,7 @@ func RenderSSHD(s SSH) string {
 	if s.PasswordAuthentication {
 		pa = "yes"
 	}
-	return fmt.Sprintf("# Managed by Kiln\nPort %d\nPermitRootLogin %s\nPasswordAuthentication %s\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nX11Forwarding no\nMaxAuthTries 4\n", port, prl, pa)
+	return fmt.Sprintf("# Managed by Falak\nPort %d\nPermitRootLogin %s\nPasswordAuthentication %s\nKbdInteractiveAuthentication no\nPubkeyAuthentication yes\nX11Forwarding no\nMaxAuthTries 4\n", port, prl, pa)
 }
 
 func (p *Provisioner) ssh(ctx context.Context, st commands.Stream, s SSH) (bool, error) {

@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Sites\Application\Actions;
+namespace Falak\Sites\Application\Actions;
 
+use Falak\Sites\Application\TargetProvisioner;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Domain\Models\SiteTarget;
 use Illuminate\Validation\ValidationException;
-use Kiln\Sites\Application\TargetProvisioner;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Domain\Models\SiteTarget;
 
 final class RetryTarget
 {

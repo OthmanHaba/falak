@@ -1,13 +1,13 @@
-import { Button } from '@/components/kiln/button';
-import { Checkbox } from '@/components/kiln/checkbox';
-import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
-import { CopyButton } from '@/components/kiln/copy-button';
-import { DataTable } from '@/components/kiln/data-table';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Section } from '@/components/kiln/section';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { Checkbox } from '@/components/falak/checkbox';
+import { ConfirmDestructive } from '@/components/falak/confirm-destructive';
+import { CopyButton } from '@/components/falak/copy-button';
+import { DataTable } from '@/components/falak/data-table';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Section } from '@/components/falak/section';
+import { Tag } from '@/components/falak/tag';
 import SettingsLayout from '@/layouts/settings/layout';
 import { router, useForm } from '@inertiajs/react';
 import { KeyRound, Trash2 } from 'lucide-react';
@@ -83,7 +83,7 @@ export default function ApiTokens({ tokens, abilities, plainTextToken }: ApiToke
     return (
         <SettingsLayout
             title="API tokens"
-            description="Tokens authenticate the kiln CLI and API clients. They are scoped to the current organization and never exceed your role."
+            description="Tokens authenticate the falak CLI and API clients. They are scoped to the current organization and never exceed your role."
             wide
         >
             {plainTextToken && (
@@ -169,7 +169,7 @@ export default function ApiTokens({ tokens, abilities, plainTextToken }: ApiToke
                     empty={{
                         icon: <KeyRound />,
                         title: 'No API tokens yet',
-                        description: 'Create a token above to use the kiln CLI or call the API from CI.',
+                        description: 'Create a token above to use the falak CLI or call the API from CI.',
                         size: 'sm',
                     }}
                     columns={[

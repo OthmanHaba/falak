@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Network\Application;
+namespace Falak\Network\Application;
 
 /**
  * Re-converges the firewalls of several servers (private-network membership changes open or close

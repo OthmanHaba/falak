@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Events;
+namespace Falak\Edge\Events;
 
 use Illuminate\Foundation\Events\Dispatchable;
 

@@ -1,15 +1,15 @@
 <?php
 
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\SourceControl\Contracts\Exceptions\ConnectionNotFound;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Contracts\ProviderType;
+use Falak\SourceControl\Contracts\SourceControlGateway;
+use Falak\SourceControl\Domain\Models\DeployKey;
+use Falak\SourceControl\Domain\Models\Webhook;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\SourceControl\Contracts\Exceptions\ConnectionNotFound;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Contracts\ProviderType;
-use Kiln\SourceControl\Contracts\SourceControlGateway;
-use Kiln\SourceControl\Domain\Models\DeployKey;
-use Kiln\SourceControl\Domain\Models\Webhook;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -35,7 +35,7 @@ it('installs a generated deploy key at the provider', function () {
     Http::fake(['api.github.com/repos/acme/shop/keys' => Http::response(['id' => 501], 201)]);
     $connection = sc_connection($this->organization->id);
 
-    $key = $this->gateway->installDeployKey($connection->id, 'acme/shop', 'Kiln shop');
+    $key = $this->gateway->installDeployKey($connection->id, 'acme/shop', 'Falak shop');
 
     expect($key->installed)->toBeTrue()
         ->and($key->publicKey)->toStartWith('ssh-ed25519 ')
@@ -53,7 +53,7 @@ it('keeps the deploy key and reports the error when installation fails', functio
     Http::fake(['api.github.com/*' => Http::response(['message' => 'Resource not accessible'], 403)]);
     $connection = sc_connection($this->organization->id);
 
-    $key = $this->gateway->installDeployKey($connection->id, 'acme/shop', 'Kiln shop');
+    $key = $this->gateway->installDeployKey($connection->id, 'acme/shop', 'Falak shop');
 
     expect($key->installed)->toBeFalse()
         ->and($key->installError)->toContain('Permission denied');
@@ -63,7 +63,7 @@ it('does not call any API for custom git deploy keys', function () {
     Http::fake();
     $connection = sc_connection($this->organization->id, ProviderType::Custom, 'none', []);
 
-    $key = $this->gateway->installDeployKey($connection->id, 'git@git.acme.test:acme/shop.git', 'Kiln');
+    $key = $this->gateway->installDeployKey($connection->id, 'git@git.acme.test:acme/shop.git', 'Falak');
 
     expect($key->installed)->toBeFalse()->and($key->installError)->toBeNull();
     Http::assertNothingSent();
@@ -72,7 +72,7 @@ it('does not call any API for custom git deploy keys', function () {
 it('hands out SSH credentials for deploy keys with known hosts', function () {
     Http::fake(['api.github.com/*' => Http::response(['id' => 1], 201)]);
     $connection = sc_connection($this->organization->id);
-    $key = $this->gateway->installDeployKey($connection->id, 'acme/shop', 'Kiln');
+    $key = $this->gateway->installDeployKey($connection->id, 'acme/shop', 'Falak');
 
     $credentials = $this->gateway->checkoutCredentials($connection->id, 'acme/shop', $key->id);
 
@@ -98,7 +98,7 @@ it('refuses deploy keys of another connection', function () {
     Http::fake(['*' => Http::response(['id' => 1], 201)]);
     $a = sc_connection($this->organization->id);
     $b = sc_connection($this->organization->id);
-    $key = $this->gateway->installDeployKey($a->id, 'acme/shop', 'Kiln');
+    $key = $this->gateway->installDeployKey($a->id, 'acme/shop', 'Falak');
 
     $this->gateway->checkoutCredentials($b->id, 'acme/shop', $key->id);
 })->throws(SourceControlException::class);
@@ -108,7 +108,7 @@ it('removes deploy keys at the provider', function () {
         'api.github.com/repos/acme/shop/keys' => Http::response(['id' => 9], 201),
         'api.github.com/repos/acme/shop/keys/9' => Http::response(null, 204),
     ]);
-    $key = $this->gateway->installDeployKey(sc_connection($this->organization->id)->id, 'acme/shop', 'Kiln');
+    $key = $this->gateway->installDeployKey(sc_connection($this->organization->id)->id, 'acme/shop', 'Falak');
 
     $this->gateway->removeDeployKey($key->id);
 
@@ -117,7 +117,7 @@ it('removes deploy keys at the provider', function () {
 });
 
 it('ensures webhooks idempotently and removes them', function () {
-    config(['source_control.webhook_url' => 'https://hooks.kiln.test']);
+    config(['source_control.webhook_url' => 'https://hooks.falak.test']);
     Http::fake([
         'api.github.com/repos/acme/shop/hooks' => Http::response(['id' => 314], 201),
         'api.github.com/repos/acme/shop/hooks/314' => Http::response(null, 204),
@@ -128,7 +128,7 @@ it('ensures webhooks idempotently and removes them', function () {
     $second = $this->gateway->ensureWebhook($connection->id, 'acme/shop');
 
     expect($first->installed)->toBeTrue()
-        ->and($first->url)->toBe("https://hooks.kiln.test/api/webhooks/source-control/{$first->id}")
+        ->and($first->url)->toBe("https://hooks.falak.test/api/webhooks/source-control/{$first->id}")
         ->and($second->id)->toBe($first->id);
     Http::assertSentCount(1);
 

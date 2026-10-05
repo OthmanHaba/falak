@@ -1,10 +1,10 @@
 <?php
 
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Identity\Domain\Models\Organization;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Models\Server;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Identity\Domain\Models\Organization;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Models\Server;
 
 require_once __DIR__.'/../../../../tests/Support/FakeAgentGateway.php';
 

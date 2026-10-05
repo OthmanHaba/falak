@@ -1,16 +1,16 @@
 <?php
 
-use Kiln\Identity\Contracts\Role;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Sites\Contracts\BuildMode;
-use Kiln\Sites\Contracts\Data\LaravelSettings;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetRole;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
+use Falak\Identity\Contracts\Role;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Sites\Contracts\BuildMode;
+use Falak\Sites\Contracts\Data\LaravelSettings;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetRole;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -34,7 +34,7 @@ function server_tabs_site(Server $server, string $name = 'Storefront'): Site
         'isolated' => true,
         'repository' => 'acme/'.strtolower($name),
         'branch' => 'main',
-        'deploy_script' => '$KILN_FETCH',
+        'deploy_script' => '$FALAK_FETCH',
         'laravel' => new LaravelSettings,
         'shared_paths' => [],
     ]);
@@ -120,7 +120,7 @@ it('renames the server and changes its timezone from Settings', function () {
 });
 
 it('shows the install command in Settings only to agent managers', function () {
-    $this->server->forceFill(['install_command' => 'curl -fsSL https://panel.kiln.test/install/abc | sudo bash'])->save();
+    $this->server->forceFill(['install_command' => 'curl -fsSL https://panel.falak.test/install/abc | sudo bash'])->save();
     [$developer] = memberOf($this->organization, Role::Developer);
 
     $this->get("/servers/{$this->server->id}/settings")->assertInertia(fn ($page) => $page

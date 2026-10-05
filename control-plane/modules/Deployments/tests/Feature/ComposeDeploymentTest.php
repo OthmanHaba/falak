@@ -1,29 +1,29 @@
 <?php
 
+use Falak\Databases\Contracts\Data\DatabaseData;
+use Falak\Deployments\Application\Actions\TriggerDeployment;
+use Falak\Deployments\Application\Listeners\DeploySplitSitesFirst;
+use Falak\Deployments\Application\Orchestration\StepPayloads;
+use Falak\Deployments\Domain\Enums\DeploymentStatus;
+use Falak\Deployments\Domain\Enums\ReleaseStatus;
+use Falak\Deployments\Domain\Enums\Strategy;
+use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\OutputLine;
+use Falak\Deployments\Domain\Models\Release;
+use Falak\Deployments\Domain\Models\SiteSettings;
+use Falak\Deployments\Events\DeploymentFailed;
+use Falak\Deployments\Events\DeploymentRolledBack;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Sites\Contracts\ComposeServiceExtraction;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\Data\ComposeRewrites;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteFactory;
+use Falak\Sites\Domain\Models\ComposeVersion;
+use Falak\Sites\Domain\Models\Site;
 use Illuminate\Support\Facades\Event;
-use Kiln\Databases\Contracts\Data\DatabaseData;
-use Kiln\Deployments\Application\Actions\TriggerDeployment;
-use Kiln\Deployments\Application\Listeners\DeploySplitSitesFirst;
-use Kiln\Deployments\Application\Orchestration\StepPayloads;
-use Kiln\Deployments\Domain\Enums\DeploymentStatus;
-use Kiln\Deployments\Domain\Enums\ReleaseStatus;
-use Kiln\Deployments\Domain\Enums\Strategy;
-use Kiln\Deployments\Domain\Enums\Trigger;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\OutputLine;
-use Kiln\Deployments\Domain\Models\Release;
-use Kiln\Deployments\Domain\Models\SiteSettings;
-use Kiln\Deployments\Events\DeploymentFailed;
-use Kiln\Deployments\Events\DeploymentRolledBack;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Sites\Contracts\ComposeServiceExtraction;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\Data\ComposeRewrites;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteFactory;
-use Kiln\Sites\Domain\Models\ComposeVersion;
-use Kiln\Sites\Domain\Models\Site;
 use Symfony\Component\Yaml\Yaml;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -37,7 +37,7 @@ services:
       REDIS_URL: redis://redis:6379
       SECRET: ${APP_KEY}
     labels:
-      kiln.deploy.leader_command: "node migrate.js --force"
+      falak.deploy.leader_command: "node migrate.js --force"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
   redis:
@@ -56,7 +56,7 @@ function compose_world(int $servers = 1, array $site = []): DeployWorld
         'test_domain_enabled' => true,
         ...$site,
     ]);
-    config(['sites.test_domain' => 'kiln.test', 'builds.registry.username' => 'kiln', 'builds.registry.password' => 'secret']);
+    config(['sites.test_domain' => 'falak.test', 'builds.registry.username' => 'falak', 'builds.registry.password' => 'secret']);
     $world->builds->composeContent = COMPOSE_REPO_FILE;
 
     return $world;
@@ -93,25 +93,25 @@ it('deploys a repo compose site: build → pull everywhere → leader command �
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
         ->and(deploy_types($world->agents, $world->servers[1]->id))->toBe(['docker.compose.pull', 'docker.compose.up', 'deploy.prune'])
         ->and($up['project'])->toBe($world->site->slug)
-        ->and($up['directory'])->toBe("/srv/kiln/sites/{$world->site->slug}/releases/".strtoupper($deployment->release_id))
+        ->and($up['directory'])->toBe("/srv/falak/sites/{$world->site->slug}/releases/".strtoupper($deployment->release_id))
         ->and($up['wait'])->toBeTrue()
         ->and($up['wait_timeout_s'])->toBe(300)
         ->and($up['project_env_file'])->toBe('.env')
-        ->and($up['registry_auth']['username'])->toBe('kiln')
+        ->and($up['registry_auth']['username'])->toBe('falak')
         ->and($up['env']['APP_KEY'])->toBe('base64:secret')
-        ->and($up['env']['KILN_SERVER_ID'])->toBe(strtoupper($world->servers[1]->id))
-        ->and($up['env']['KILN_RELEASE_ID'])->toBe(strtoupper($deployment->release_id))
-        ->and($up['files'][1]['content'])->toContain('KILN_SITE_ID='.strtoupper($world->site->id))
-        ->and($rendered['services']['app']['image'])->toStartWith('registry.kiln.local/kiln/shop/app@sha256:')
+        ->and($up['env']['FALAK_SERVER_ID'])->toBe(strtoupper($world->servers[1]->id))
+        ->and($up['env']['FALAK_RELEASE_ID'])->toBe(strtoupper($deployment->release_id))
+        ->and($up['files'][1]['content'])->toContain('FALAK_SITE_ID='.strtoupper($world->site->id))
+        ->and($rendered['services']['app']['image'])->toStartWith('registry.falak.local/falak/shop/app@sha256:')
         ->and($rendered['services']['app'])->not->toHaveKey('build')
         ->and($rendered['services']['app']['ports'])->toBe(['127.0.0.1:3000:8080'])
-        ->and($rendered['services']['app']['labels']['kiln.release'])->toBe(strtoupper($deployment->release_id))
+        ->and($rendered['services']['app']['labels']['falak.release'])->toBe(strtoupper($deployment->release_id))
         ->and($release->status)->toBe(ReleaseStatus::Active)
         // pulled images are pinned to what the server resolved
         ->and(Yaml::parse($release->compose['yaml'])['services']['redis']['image'])->toBe('redis:7.4.1-alpine@sha256:'.str_repeat('2', 64));
 
     // Health check through the edge on the public service's test domain.
-    expect(collect($GLOBALS['deploy_http_requests'])->pluck('url')->all())->toContain('https://'.$world->site->slug.'.kiln.test/up');
+    expect(collect($GLOBALS['deploy_http_requests'])->pluck('url')->all())->toContain('https://'.$world->site->slug.'.falak.test/up');
 
     // Services tab state recorded from the up result.
     expect(app(ComposeSites::class)->status($world->site->id))->toHaveCount(4);
@@ -247,7 +247,7 @@ it('points stack variables at services moved out of the stack, resolved like oth
     $env = $world->agents->last('docker.compose.up')['payload']['env'];
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
         ->and($env['DATABASE_URL'])->toBe('postgres://shop@10.0.0.5:5432/shop')
-        ->and($env['KILN_SVC_WORKER_DB_PASSWORD'])->toBe('other-db-password')
+        ->and($env['FALAK_SVC_WORKER_DB_PASSWORD'])->toBe('other-db-password')
         ->and($env['APP_KEY'])->toBe('base64:secret');
 });
 
@@ -273,7 +273,7 @@ it('waits for a split-out service\'s own site before deploying the stack without
     deploy_run_all($world->agents);
 
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
-        ->and($deployment->error)->toContain("its own Kiln site(s) that aren't live yet")
+        ->and($deployment->error)->toContain("its own Falak site(s) that aren't live yet")
         ->and($deployment->setting('awaits_sites'))->toBe([$split])
         ->and($world->agents->dispatched('docker.compose.up'))->toBe([]);
 });
@@ -484,7 +484,7 @@ it('checks every public service through the edge', function () {
 
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
         ->and($deployment->error)->toContain('[redis] GET https://cache.example.com/')
-        ->and(collect($GLOBALS['deploy_http_requests'])->pluck('url')->all())->toContain('https://'.$world->site->slug.'.kiln.test/health');
+        ->and(collect($GLOBALS['deploy_http_requests'])->pluck('url')->all())->toContain('https://'.$world->site->slug.'.falak.test/health');
 });
 
 it('checks a public service through its own domains and health check path', function () {
@@ -508,7 +508,7 @@ it('checks a public service through its own domains and health check path', func
 
 it('accepts a redirect from the primary public service (apps that redirect to a login page)', function () {
     $world = compose_world();
-    deploy_http(['https://'.$world->site->slug.'.kiln.test' => 302]);
+    deploy_http(['https://'.$world->site->slug.'.falak.test' => 302]);
     $deployment = compose_deploy($world);
     $world->builds->succeed();
     deploy_run_all($world->agents);

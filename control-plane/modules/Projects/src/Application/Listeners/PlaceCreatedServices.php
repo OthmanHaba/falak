@@ -1,17 +1,17 @@
 <?php
 
-namespace Kiln\Projects\Application\Listeners;
+namespace Falak\Projects\Application\Listeners;
 
-use Kiln\Databases\Events\DatabaseCreated;
-use Kiln\Databases\Events\DatabaseDeleted;
-use Kiln\Projects\Application\Actions\PlaceService;
-use Kiln\Projects\Application\Actions\UnlinkService;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Events\ComposeServiceExtracted;
-use Kiln\Sites\Events\SiteCreated;
-use Kiln\Sites\Events\SiteDeleted;
+use Falak\Databases\Events\DatabaseCreated;
+use Falak\Databases\Events\DatabaseDeleted;
+use Falak\Projects\Application\Actions\PlaceService;
+use Falak\Projects\Application\Actions\UnlinkService;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Events\ComposeServiceExtracted;
+use Falak\Sites\Events\SiteCreated;
+use Falak\Sites\Events\SiteDeleted;
 
 /**
  * Keeps services in sync with Sites and Databases. Runs synchronously so a site created from the
@@ -58,7 +58,7 @@ final class PlaceCreatedServices
     }
 
     /**
-     * A compose stack's database service now runs as a Kiln database: place it next to the stack, in its environment
+     * A compose stack's database service now runs as a Falak database: place it next to the stack, in its environment
      * (its `${{ name.KEY }}` references resolve there). Split-out sites are placed by SiteCreated.
      */
     public function composeServiceExtracted(ComposeServiceExtracted $event): void

@@ -1,5 +1,5 @@
-import { Tag } from '@/components/kiln/tag';
-import { Tooltip } from '@/components/kiln/tooltip';
+import { Tag } from '@/components/falak/tag';
+import { Tooltip } from '@/components/falak/tooltip';
 import { cn } from '@/lib/utils';
 import { Server } from 'lucide-react';
 import { siAkamai, siDigitalocean, siHetzner, siVultr, type SimpleIcon } from 'simple-icons';

@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Sites\Application\Actions;
+namespace Falak\Sites\Application\Actions;
 
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Sites\Contracts\Data\SharedPath;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Events\SiteUpdated;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Sites\Contracts\Data\SharedPath;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Events\SiteUpdated;
 
 final class UpdateSharedPaths
 {

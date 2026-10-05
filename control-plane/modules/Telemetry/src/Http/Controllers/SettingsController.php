@@ -1,20 +1,20 @@
 <?php
 
-namespace Kiln\Telemetry\Http\Controllers;
+namespace Falak\Telemetry\Http\Controllers;
 
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Telemetry\Application\Actions\ProvisionGrafana;
+use Falak\Telemetry\Application\Actions\UpdateTelemetrySettings;
+use Falak\Telemetry\Contracts\MetricsBackend;
+use Falak\Telemetry\Contracts\TelemetryLinks;
+use Falak\Telemetry\Domain\Models\GrafanaState;
+use Falak\Telemetry\Domain\Models\TelemetrySettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Telemetry\Application\Actions\ProvisionGrafana;
-use Kiln\Telemetry\Application\Actions\UpdateTelemetrySettings;
-use Kiln\Telemetry\Contracts\MetricsBackend;
-use Kiln\Telemetry\Contracts\TelemetryLinks;
-use Kiln\Telemetry\Domain\Models\GrafanaState;
-use Kiln\Telemetry\Domain\Models\TelemetrySettings;
 use Throwable;
 
 final class SettingsController extends Controller

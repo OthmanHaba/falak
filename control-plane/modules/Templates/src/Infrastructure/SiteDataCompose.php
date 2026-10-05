@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Templates\Infrastructure;
+namespace Falak\Templates\Infrastructure;
 
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Data\PublicService;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Templates\Application\Compose\SiteCompose;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Data\PublicService;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Templates\Application\Compose\SiteCompose;
 
 /**
  * {@see SiteCompose} over `SiteData::$compose` (source, public services) and the inline compose file from

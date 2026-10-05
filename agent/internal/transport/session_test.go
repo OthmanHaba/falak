@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
 )
 
 func TestSessionHeaderOnPollAndHeartbeat(t *testing.T) {

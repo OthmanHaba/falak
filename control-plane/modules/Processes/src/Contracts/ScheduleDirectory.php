@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Processes\Contracts;
+namespace Falak\Processes\Contracts;
 
-use Kiln\Processes\Contracts\Data\ScheduledJobData;
+use Falak\Processes\Contracts\Data\ScheduledJobData;
 
 /**
  * Scheduled jobs Processes sent to servers with cron.apply (the Laravel scheduler of each site and custom jobs).

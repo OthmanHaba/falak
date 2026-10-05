@@ -1,10 +1,10 @@
 <?php
 
+use Falak\Builds\Http\Controllers\BuildController;
+use Falak\Builds\Http\Controllers\BuilderBinaryController;
+use Falak\Builds\Http\Controllers\BuilderController;
+use Falak\Kernel\Http\LegacyRedirect;
 use Illuminate\Support\Facades\Route;
-use Kiln\Builds\Http\Controllers\BuildController;
-use Kiln\Builds\Http\Controllers\BuilderBinaryController;
-use Kiln\Builds\Http\Controllers\BuilderController;
-use Kiln\Kernel\Http\LegacyRedirect;
 
 Route::middleware(['auth', 'org'])->group(function () {
     Route::get('builds', [BuildController::class, 'index'])->name('builds.index');

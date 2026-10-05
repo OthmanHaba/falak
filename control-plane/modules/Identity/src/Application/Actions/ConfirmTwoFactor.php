@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Identity\Application\Actions;
+namespace Falak\Identity\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Domain\Models\User;
 use Laravel\Fortify\Actions\ConfirmTwoFactorAuthentication;
 
 final class ConfirmTwoFactor

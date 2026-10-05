@@ -1,16 +1,16 @@
-import { Button } from '@/components/kiln/button';
-import { Checkbox } from '@/components/kiln/checkbox';
-import { CopyButton, copyText } from '@/components/kiln/copy-button';
-import { DataTable, type DataTableColumn } from '@/components/kiln/data-table';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Input } from '@/components/kiln/input';
-import { Kbd } from '@/components/kiln/kbd';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Select } from '@/components/kiln/select';
-import { ServiceIcon } from '@/components/kiln/service-icon';
-import { Skeleton } from '@/components/kiln/skeleton';
-import { toast } from '@/components/kiln/toast';
-import { Tooltip } from '@/components/kiln/tooltip';
+import { Button } from '@/components/falak/button';
+import { Checkbox } from '@/components/falak/checkbox';
+import { CopyButton, copyText } from '@/components/falak/copy-button';
+import { DataTable, type DataTableColumn } from '@/components/falak/data-table';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Input } from '@/components/falak/input';
+import { Kbd } from '@/components/falak/kbd';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Select } from '@/components/falak/select';
+import { ServiceIcon } from '@/components/falak/service-icon';
+import { Skeleton } from '@/components/falak/skeleton';
+import { toast } from '@/components/falak/toast';
+import { Tooltip } from '@/components/falak/tooltip';
 import InfrastructureLayout from '@/layouts/infrastructure-layout';
 import { serverState, ServerStatusBadge } from '@/layouts/server-layout';
 import { echo } from '@/lib/echo';
@@ -342,7 +342,7 @@ export default function Index({ servers, sparklines, filters, types, can }: Prop
         <InfrastructureLayout
             section="servers"
             title="Servers"
-            description="The machines your services run on, managed by the Kiln agent."
+            description="The machines your services run on, managed by the Falak agent."
             actions={
                 <>
                     {selection.length > 0 ? (

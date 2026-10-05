@@ -1,16 +1,16 @@
 <?php
 
+use Falak\Identity\Contracts\Role;
+use Falak\Sites\Contracts\ComposeInspector;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Exceptions\ComposeRenderException;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteFactory;
+use Falak\Sites\Domain\Models\ComposeVersion;
+use Falak\Sites\Domain\Models\OrganizationSettings;
+use Falak\Sites\Domain\Models\Site;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Sites\Contracts\ComposeInspector;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Exceptions\ComposeRenderException;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteFactory;
-use Kiln\Sites\Domain\Models\ComposeVersion;
-use Kiln\Sites\Domain\Models\OrganizationSettings;
-use Kiln\Sites\Domain\Models\Site;
 use Symfony\Component\Yaml\Yaml;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -25,7 +25,7 @@ services:
       WEBHOOK_URL: ${WEBHOOK_URL}
     volumes: [n8n-data:/home/node/.n8n]
     labels:
-      kiln.deploy.leader_command: "n8n migrate --flag 'two words'"
+      falak.deploy.leader_command: "n8n migrate --flag 'two words'"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5678/healthz"]
   postgres:
@@ -43,7 +43,7 @@ beforeEach(function () {
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
     $this->agents = sites_fake_agents();
     sites_fake_source_control();
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
     $this->server = sites_server($this->organization->id, ['name' => 'app-1'], docker: true);
 });
 
@@ -120,7 +120,7 @@ it('creates compose sites through the SiteFactory contract (§5)', function () {
         ->and($compose->template)->toBe(['slug' => 'n8n', 'version' => '1.0.0', 'source' => 'catalog'])
         ->and($compose->primary()->service)->toBe('n8n')
         ->and($compose->primary()->hostPort)->toBe(3000)
-        ->and($compose->primary()->testDomain)->toBe('n8n.kiln.test')
+        ->and($compose->primary()->testDomain)->toBe('n8n.falak.test')
         ->and($created->site->appPort)->toBe(3000)
         ->and($site->latestEnvironment->variables)->toMatchArray(['N8N_ENCRYPTION_KEY' => 's3cret', 'WEBHOOK_URL' => '${{ n8n.APP_URL }}'])
         ->and($site->latestEnvironment->variables)->not->toHaveKey('PORT')
@@ -165,15 +165,15 @@ it('allows policy violations when the organization allows privileged compose', f
 
 it('renders releases: loopback public ports, labels, built images, no other host ports', function () {
     $site = app(SiteFactory::class)->create($this->organization->id, $this->user->id, compose_input([$this->server->id]))->site;
-    $rendered = app(ComposeSites::class)->render($site->id, N8N_COMPOSE, ['postgres' => 'registry.kiln.test/kiln/n8n/postgres@sha256:'.str_repeat('a', 64)], '01j9zq4n8v2m6r0t3w5y7b9d1f');
+    $rendered = app(ComposeSites::class)->render($site->id, N8N_COMPOSE, ['postgres' => 'registry.falak.test/falak/n8n/postgres@sha256:'.str_repeat('a', 64)], '01j9zq4n8v2m6r0t3w5y7b9d1f');
     $doc = Yaml::parse($rendered->yaml);
 
     expect($doc['services']['n8n']['ports'])->toBe(['127.0.0.1:3000:5678'])
         ->and($doc['services']['postgres'])->not->toHaveKey('ports')
-        ->and($doc['services']['postgres']['image'])->toStartWith('registry.kiln.test/kiln/n8n/postgres@sha256:')
+        ->and($doc['services']['postgres']['image'])->toStartWith('registry.falak.test/falak/n8n/postgres@sha256:')
         ->and($doc['services']['n8n']['labels'])->toMatchArray([
-            'kiln.site' => 'n8n', 'kiln.release' => '01J9ZQ4N8V2M6R0T3W5Y7B9D1F', 'kiln.service' => 'n8n',
-            'kiln.deploy.leader_command' => "n8n migrate --flag 'two words'",
+            'falak.site' => 'n8n', 'falak.release' => '01J9ZQ4N8V2M6R0T3W5Y7B9D1F', 'falak.service' => 'n8n',
+            'falak.deploy.leader_command' => "n8n migrate --flag 'two words'",
         ])
         ->and($doc['services']['n8n']['environment']['N8N_ENCRYPTION_KEY'])->toBe('${N8N_ENCRYPTION_KEY}')
         ->and($doc['volumes'])->toHaveKeys(['n8n-data', 'pg-data'])

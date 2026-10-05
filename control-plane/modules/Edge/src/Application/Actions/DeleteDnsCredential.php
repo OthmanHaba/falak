@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Edge\Application\Actions;
+namespace Falak\Edge\Application\Actions;
 
+use Falak\Edge\Domain\Models\DnsCredential;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Identity\Contracts\AuditLog;
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Domain\Models\DnsCredential;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Identity\Contracts\AuditLog;
 
 final class DeleteDnsCredential
 {

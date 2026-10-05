@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Edge\Application;
+namespace Falak\Edge\Application;
 
+use Falak\Edge\Domain\Enums\InstallStatus;
+use Falak\Edge\Domain\Models\Certificate;
+use Falak\Edge\Domain\Models\CertificateInstall;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Illuminate\Support\Str;
-use Kiln\Edge\Domain\Enums\InstallStatus;
-use Kiln\Edge\Domain\Models\Certificate;
-use Kiln\Edge\Domain\Models\CertificateInstall;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
 
 /**
  * Converges edge.cert.install on the servers routing a certificate's site.

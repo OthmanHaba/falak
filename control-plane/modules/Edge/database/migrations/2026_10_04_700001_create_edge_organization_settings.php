@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Settings → Domains: which service generated names use (null = the server default, KILN_GENERATED_DOMAIN_SUFFIX).
+        // Settings → Domains: which service generated names use (null = the server default, FALAK_GENERATED_DOMAIN_SUFFIX).
         Schema::create('edge_organization_settings', function (Blueprint $table) {
             $table->ulid('organization_id')->primary();
             $table->string('generated_domain_provider', 64)->nullable();

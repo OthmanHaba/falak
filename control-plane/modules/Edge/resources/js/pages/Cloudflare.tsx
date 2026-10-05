@@ -1,11 +1,11 @@
-import { Button } from '@/components/kiln/button';
-import { Callout } from '@/components/kiln/callout';
-import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { Section } from '@/components/kiln/section';
-import { Switch } from '@/components/kiln/switch';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { Callout } from '@/components/falak/callout';
+import { ConfirmDestructive } from '@/components/falak/confirm-destructive';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { Section } from '@/components/falak/section';
+import { Switch } from '@/components/falak/switch';
+import { Tag } from '@/components/falak/tag';
 import SettingsLayout from '@/layouts/settings/layout';
 import { router, useForm } from '@inertiajs/react';
 import { Cloud, ExternalLink, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
@@ -77,7 +77,7 @@ const TOKEN_PERMISSIONS = [
     { key: 'zone_settings', type: 'edit' },
     { key: 'cache', type: 'purge' },
 ];
-const TOKEN_URL = `https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=${encodeURIComponent(JSON.stringify(TOKEN_PERMISSIONS))}&accountId=*&zoneId=all&name=${encodeURIComponent('Kiln')}`;
+const TOKEN_URL = `https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=${encodeURIComponent(JSON.stringify(TOKEN_PERMISSIONS))}&accountId=*&zoneId=all&name=${encodeURIComponent('Falak')}`;
 
 const SETTING_LABELS: Record<string, string> = { ssl: 'SSL/TLS mode', min_tls_version: 'Minimum TLS version', always_use_https: 'Always Use HTTPS' };
 const SETTING_VALUES: Record<string, string> = { strict: 'Full (strict)', full: 'Full', flexible: 'Flexible', off: 'Off', on: 'On' };
@@ -86,7 +86,7 @@ const RECORD_TONE = { synced: 'success', pending: 'info', conflict: 'warning', e
 
 const options = { preserveScroll: true };
 
-/** Settings → Integrations → Cloudflare: connect a token, pick the zones Kiln manages, check their TLS settings. */
+/** Settings → Integrations → Cloudflare: connect a token, pick the zones Falak manages, check their TLS settings. */
 export default function Cloudflare({ connections, zones, servers, can }: Props) {
     const form = useForm({ name: 'Cloudflare', api_token: '' });
     const [releasing, setReleasing] = useState<ManagedZone | null>(null);
@@ -97,12 +97,12 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
     return (
         <SettingsLayout
             title="Cloudflare"
-            description="Let Kiln create your DNS records, generate names under your zone and put your services behind Cloudflare’s proxy (DDoS protection, edge cache, hidden origin)."
+            description="Let Falak create your DNS records, generate names under your zone and put your services behind Cloudflare’s proxy (DDoS protection, edge cache, hidden origin)."
         >
             {can.manage && (
                 <Section
                     title={connections.length === 0 ? 'Connect Cloudflare' : 'Add a connection'}
-                    description="An API token scoped to the zones Kiln should manage. It is verified with Cloudflare and stored encrypted."
+                    description="An API token scoped to the zones Falak should manage. It is verified with Cloudflare and stored encrypted."
                 >
                     <ol className="text-fg-muted grid list-decimal gap-1 pl-5 text-sm">
                         <li>
@@ -157,7 +157,7 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
                             {connection.error ? <Tag tone="danger">unreachable</Tag> : <Tag tone="success">connected</Tag>}
                         </span>
                     }
-                    description="Zones this token can see. Manage a zone to let Kiln create and remove the DNS records of its domains."
+                    description="Zones this token can see. Manage a zone to let Falak create and remove the DNS records of its domains."
                     aside={
                         can.manage && (
                             <Button variant="ghost" size="sm" icon={<Trash2 />} onClick={() => setDisconnecting(connection)}>
@@ -176,7 +176,7 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
                                     {zone.status !== 'active' && <Tag tone="warning">{zone.status}</Tag>}
                                 </span>
                                 {zone.managed ? (
-                                    <Tag tone="success">managed by Kiln</Tag>
+                                    <Tag tone="success">managed by Falak</Tag>
                                 ) : (
                                     can.manage && (
                                         <Button
@@ -204,7 +204,7 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
                 <Section
                     key={zone.id}
                     title={<span className="font-mono">{zone.name}</span>}
-                    description={`Managed by Kiln through ${zone.connection}. Kiln only changes the records it created (tagged “kiln:” in Cloudflare).`}
+                    description={`Managed by Falak through ${zone.connection}. Falak only changes the records it created (tagged “falak:” in Cloudflare).`}
                     aside={
                         can.manage && (
                             <div className="flex gap-2">
@@ -297,7 +297,7 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
                             ))}
                             {zone.health.ssl && zone.health.ssl.value === 'flexible' && (
                                 <Callout tone="warning">
-                                    Flexible makes Cloudflare talk to your server over plain HTTP, and Kiln redirects HTTP to HTTPS: sites loop. Use
+                                    Flexible makes Cloudflare talk to your server over plain HTTP, and Falak redirects HTTP to HTTPS: sites loop. Use
                                     Full (strict).
                                 </Callout>
                             )}
@@ -307,7 +307,7 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
                     )}
 
                     <div className="grid gap-1">
-                        <p className="text-fg text-sm font-medium">Records Kiln manages ({zone.records.length})</p>
+                        <p className="text-fg text-sm font-medium">Records Falak manages ({zone.records.length})</p>
                         {zone.records.length === 0 ? (
                             <p className="text-fg-muted text-xs">None yet. Add a domain under {zone.name} to a service, or generate one.</p>
                         ) : (
@@ -465,7 +465,7 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
                 open={releasing !== null}
                 onOpenChange={(open) => !open && setReleasing(null)}
                 title={`Stop managing ${releasing?.name}?`}
-                description="Kiln stops changing DNS records in this zone. The records it created stay in Cloudflare, so your services keep resolving."
+                description="Falak stops changing DNS records in this zone. The records it created stay in Cloudflare, so your services keep resolving."
                 confirmText={releasing?.name ?? ''}
                 confirmLabel="Stop managing"
                 onConfirm={() =>
@@ -506,7 +506,7 @@ export default function Cloudflare({ connections, zones, servers, can }: Props) 
     );
 }
 
-/** Tunnel state: Kiln's install status, then Cloudflare's live view (healthy / down, open connections). */
+/** Tunnel state: Falak's install status, then Cloudflare's live view (healthy / down, open connections). */
 function TunnelTag({ tunnel }: { tunnel: NonNullable<TunnelServer['tunnel']> }) {
     if (tunnel.status === 'error') return <Tag tone="danger">tunnel error</Tag>;
     if (tunnel.status === 'installing') return <Tag tone="info">installing cloudflared</Tag>;

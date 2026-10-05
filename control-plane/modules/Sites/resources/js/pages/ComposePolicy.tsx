@@ -1,7 +1,7 @@
-import { Callout } from '@/components/kiln/callout';
-import { Section } from '@/components/kiln/section';
-import { Switch } from '@/components/kiln/switch';
-import { Tag } from '@/components/kiln/tag';
+import { Callout } from '@/components/falak/callout';
+import { Section } from '@/components/falak/section';
+import { Switch } from '@/components/falak/switch';
+import { Tag } from '@/components/falak/tag';
 import SettingsLayout from '@/layouts/settings/layout';
 import { router } from '@inertiajs/react';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';

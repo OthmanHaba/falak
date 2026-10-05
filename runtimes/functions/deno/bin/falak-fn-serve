@@ -1,0 +1,11 @@
+#!/bin/sh
+# Serve (or, as falak-fn-run, run once) with everything resolved at install time: no network for modules, a
+# scratch DENO_DIR in /tmp, and the permissions a function gets.
+script=/opt/falak-fn/deno/serve.mjs
+[ "$(basename "$0")" = falak-fn-run ] && script=/opt/falak-fn/shared/run.mjs
+config=""
+if [ -f /app/deno.jsonc ]; then config=--config=/app/deno.jsonc; elif [ -f /app/deno.json ]; then config=--config=/app/deno.json; fi
+exec deno run --cached-only $config \
+  --allow-net --allow-env --allow-sys \
+  --allow-read=/app,/tmp,/run/falak-otlp --allow-write=/tmp,/run/falak-otlp \
+  "$script" "$@"

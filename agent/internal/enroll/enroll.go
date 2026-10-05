@@ -1,5 +1,5 @@
 // Package enroll implements agent enrollment (one-time token + CSR) and certificate renewal, and
-// persists credentials under the Kiln etc dir with 0600 permissions.
+// persists credentials under the Falak etc dir with 0600 permissions.
 package enroll
 
 import (
@@ -137,7 +137,7 @@ func Enroll(ctx context.Context, o Options) (*State, error) {
 	}
 	st := &State{AgentID: er.AgentID, Endpoints: er.Endpoints, EnrolledAt: time.Now().UTC()}
 	stJSON, _ := json.MarshalIndent(st, "", "  ")
-	// 0711: traversable (kiln-edge reads caddy/ and certs/ as the caddy user) but not listable;
+	// 0711: traversable (falak-edge reads caddy/ and certs/ as the caddy user) but not listable;
 	// every secret inside is 0600.
 	if err := os.MkdirAll(o.Paths.Dir, 0o711); err != nil {
 		return nil, err
@@ -177,7 +177,7 @@ func NewKeyAndCSR(cn string) (*ecdsa.PrivateKey, []byte, error) {
 		cn, _ = os.Hostname()
 	}
 	der, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{
-		Subject:            pkix.Name{CommonName: cn, Organization: []string{"kiln-agent"}},
+		Subject:            pkix.Name{CommonName: cn, Organization: []string{"falak-agent"}},
 		SignatureAlgorithm: x509.ECDSAWithSHA256,
 	}, key)
 	if err != nil {
@@ -295,7 +295,7 @@ func (id *Identity) reload() error {
 	return nil
 }
 
-// TLSConfig returns an mTLS client config pinned to the Kiln CA.
+// TLSConfig returns an mTLS client config pinned to the Falak CA.
 func (id *Identity) TLSConfig() *tls.Config {
 	return &tls.Config{
 		MinVersion: tls.VersionTLS12,

@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Databases\Application\Actions;
+namespace Falak\Databases\Application\Actions;
 
+use Falak\Databases\Domain\Models\DatabaseUser;
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Domain\Models\DatabaseUser;
 
 /**
  * Replaces a user's grants. Databases must live on the same database server.

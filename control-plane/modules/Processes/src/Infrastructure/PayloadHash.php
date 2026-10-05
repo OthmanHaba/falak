@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Processes\Infrastructure;
+namespace Falak\Processes\Infrastructure;
 
 /**
  * sha256 of a payload's canonical JSON (object keys sorted recursively, lists kept in order).

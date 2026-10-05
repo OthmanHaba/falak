@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Providers\Contracts;
+namespace Falak\Providers\Contracts;
 
 enum ProviderType: string
 {

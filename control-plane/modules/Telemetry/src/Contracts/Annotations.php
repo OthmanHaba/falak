@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts;
+namespace Falak\Telemetry\Contracts;
 
 use DateTimeInterface;
 
 /**
- * Grafana annotations (dashboards overlay deployments tagged `kiln`,`deployment`).
+ * Grafana annotations (dashboards overlay deployments tagged `falak`,`deployment`).
  *
  * Calling deployment() again with the same deployment id updates the existing annotation
  * (e.g. started → succeeded extends it into a region ending at $finishedAt).

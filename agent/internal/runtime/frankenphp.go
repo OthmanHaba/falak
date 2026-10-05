@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/system"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/system"
 )
 
 // FrankenPHPPayload is runtime.frankenphp.configure.
@@ -35,9 +35,9 @@ type BinaryResult struct {
 // Paths shared with the edge package.
 const (
 	FrankenPHPBinary = "/usr/local/bin/frankenphp"
-	EdgeUnitPath     = "/etc/systemd/system/kiln-edge.service"
-	EdgeBootstrap    = "/etc/kiln/caddy/bootstrap.json"
-	frankenMarker    = "/etc/kiln/frankenphp.version"
+	EdgeUnitPath     = "/etc/systemd/system/falak-edge.service"
+	EdgeBootstrap    = "/etc/falak/caddy/bootstrap.json"
+	frankenMarker    = "/etc/falak/frankenphp.version"
 )
 
 func frankenArch(a string) (string, error) {
@@ -50,7 +50,7 @@ func frankenArch(a string) (string, error) {
 	return "", fmt.Errorf("unsupported arch %s", a)
 }
 
-// FrankenPHPConfigure installs the static FrankenPHP binary, php.ini and (optionally) kiln-edge.service.
+// FrankenPHPConfigure installs the static FrankenPHP binary, php.ini and (optionally) falak-edge.service.
 func (rt *Runtime) FrankenPHPConfigure(ctx context.Context, p FrankenPHPPayload, st commands.Stream) (any, error) {
 	ver := strings.TrimPrefix(p.Version, "v")
 	if !semver.MatchString(ver) {
@@ -100,7 +100,7 @@ func (rt *Runtime) FrankenPHPConfigure(ctx context.Context, p FrankenPHPPayload,
 	return res, nil
 }
 
-// EdgeUnit describes kiln-edge.service.
+// EdgeUnit describes falak-edge.service.
 type EdgeUnit struct {
 	Binary     string // /usr/bin/caddy or /usr/local/bin/frankenphp
 	User       string // default caddy
@@ -120,9 +120,9 @@ func RenderEdgeUnit(u EdgeUnit) string {
 	if len(u.Groups) > 0 {
 		env += "SupplementaryGroups=" + strings.Join(u.Groups, " ") + "\n"
 	}
-	return fmt.Sprintf(`# Managed by Kiln
+	return fmt.Sprintf(`# Managed by Falak
 [Unit]
-Description=Kiln edge (Caddy/FrankenPHP)
+Description=Falak edge (Caddy/FrankenPHP)
 Documentation=https://caddyserver.com/docs/
 After=network-online.target
 Wants=network-online.target
@@ -176,7 +176,7 @@ func mergeGroups(fs hostfs.FS, want []string) []string {
 // overwrites the file with the full applied config on every edge.caddy.apply.
 const BootstrapConfig = `{"admin":{"listen":"localhost:2019"}}` + "\n"
 
-// EnsureEdgeUnit converges kiln-edge.service (unit, service user, bootstrap config, running state).
+// EnsureEdgeUnit converges falak-edge.service (unit, service user, bootstrap config, running state).
 // restart forces a restart (e.g. new binary) when the unit itself is unchanged.
 func EnsureEdgeUnit(ctx context.Context, r runner.Runner, fs hostfs.FS, st commands.Stream, u EdgeUnit, restart bool) (bool, error) {
 	if u.User == "" {
@@ -215,20 +215,20 @@ func EnsureEdgeUnit(ctx context.Context, r runner.Runner, fs hostfs.FS, st comma
 		if err := run("systemctl", "daemon-reload"); err != nil {
 			return false, err
 		}
-		if err := run("systemctl", "enable", "kiln-edge.service"); err != nil {
+		if err := run("systemctl", "enable", "falak-edge.service"); err != nil {
 			return false, err
 		}
-		return true, run("systemctl", "restart", "kiln-edge.service")
+		return true, run("systemctl", "restart", "falak-edge.service")
 	}
-	res, err := r.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"is-active", "--quiet", "kiln-edge.service"}})
+	res, err := r.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"is-active", "--quiet", "falak-edge.service"}})
 	if err != nil {
 		return false, err
 	}
 	if res.ExitCode != 0 {
-		return true, run("systemctl", "enable", "--now", "kiln-edge.service")
+		return true, run("systemctl", "enable", "--now", "falak-edge.service")
 	}
 	if restart {
-		return true, run("systemctl", "restart", "kiln-edge.service")
+		return true, run("systemctl", "restart", "falak-edge.service")
 	}
 	return changed, nil
 }

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/telemetry.configure.schema.json",
-  "title": "telemetry.configure — OTLP relay configuration (persisted to /etc/kiln/telemetry.json, hot reloaded)",
-  "x-kiln-redeliverable": true,
+  "$id": "https://falak.sh/agent-protocol/commands/telemetry.configure.schema.json",
+  "title": "telemetry.configure — OTLP relay configuration (persisted to /etc/falak/telemetry.json, hot reloaded)",
+  "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [],
@@ -65,7 +65,7 @@
           "slug": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-            "description": "Site slug (directory name under /srv/kiln/sites)"
+            "description": "Site slug (directory name under /srv/falak/sites)"
           },
           "site_id": {
             "type": "string",
@@ -108,7 +108,7 @@
           "site": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-            "description": "Site slug (directory name under /srv/kiln/sites)"
+            "description": "Site slug (directory name under /srv/falak/sites)"
           },
           "format": {
             "enum": [
@@ -123,7 +123,7 @@
               "access"
             ],
             "default": "app",
-            "description": "kiln.log.kind resource attribute (Loki label kiln_log_kind). The edge access logs (/var/log/kiln/access/<slug>.log) are always tailed as kind access; they need no entry here"
+            "description": "falak.log.kind resource attribute (Loki label falak_log_kind). The edge access logs (/var/log/falak/access/<slug>.log) are always tailed as kind access; they need no entry here"
           },
           "multiline": {
             "enum": [

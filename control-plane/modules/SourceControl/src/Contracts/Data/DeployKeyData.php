@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\SourceControl\Contracts\Data;
+namespace Falak\SourceControl\Contracts\Data;
 
-use Kiln\SourceControl\Contracts\SourceControlGateway;
+use Falak\SourceControl\Contracts\SourceControlGateway;
 
 /**
  * A per-repository deploy key. The private key never leaves SourceControl except through

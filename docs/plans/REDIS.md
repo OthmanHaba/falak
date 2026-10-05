@@ -1,20 +1,20 @@
 # Redis and Valkey as database engines (plan, v0.7.0)
 
 Today a server can run Redis or Valkey only as a "cache" component: provisioning installs `redis-server` /
-`valkey-server` and starts the stock service on `127.0.0.1:6379` with no password, and nothing in Kiln manages it.
+`valkey-server` and starts the stock service on `127.0.0.1:6379` with no password, and nothing in Falak manages it.
 The canvas picker shows Redis as "Coming soon" and `POST /services` answers `422 Redis services are not supported
 yet`. v0.7.0 makes Redis and Valkey first-class engines of the Databases module: create one from the canvas, get
 `REDIS_*` references, back it up, restore it, reach it from containers, and turn a compose file's `redis` service
-into a Kiln Redis.
+into a Falak Redis.
 
 ## Decisions (approved 2026-10-03)
 
-- **One instance per service.** Every Kiln Redis is its own `redis-server@kiln-<name>` (or `valkey-server@…`)
+- **One instance per service.** Every Falak Redis is its own `redis-server@falak-<name>` (or `valkey-server@…`)
   process: own port, password, memory limit, eviction policy, persistence and dump file. The Debian packages ship
   the `@` template unit (`/usr/lib/systemd/system/redis-server@.service`, reading `/etc/redis/redis-%i.conf`). Data
   in one service can never be read through another one, and a backup is one service.
 - The stock instance on 6379 is **left alone**: apps that already use `127.0.0.1:6379` keep working, and the
-  machine check rules for 6379 stay as they are. Kiln's instances use **6380–6479**.
+  machine check rules for 6379 stay as they are. Falak's instances use **6380–6479**.
 - First release includes: canvas + Databases UI, backups + restore, compose apps, container access.
 
 ## Data model
@@ -30,7 +30,7 @@ canvas keep working through their contracts.
 
 `Engine` gains `Redis = 'redis'` and `Valkey = 'valkey'`, plus `kind(): EngineKind` (`Sql` | `KeyValue`). The SQL
 methods (charset, collation, privileges, reserved names, `protocol()`) are only called for `Sql` engines; the
-`KeyValue` ones answer `defaultPort() = 6379`, `driver() = 'redis'`, reserved names `default`, `kiln`.
+`KeyValue` ones answer `defaultPort() = 6379`, `driver() = 'redis'`, reserved names `default`, `falak`.
 
 **Defaults:** `maxmemory` 128 MB (bounded by the server's RAM), eviction `noeviction` (safe for queues; caches
 can pick `allkeys-lru`), persistence `rdb` (snapshots) with `aof` and `none` offered. Name pattern
@@ -59,7 +59,7 @@ first".
 
 | Command | Does |
 |---|---|
-| `db.redis.apply` | Writes `/etc/redis/redis-kiln-<name>.conf` (Valkey: `/etc/valkey/valkey-kiln-<name>.conf`), 0640 `redis:redis`: `port`, `bind` (127.0.0.1 + the allowed addresses below), `protected-mode yes`, `requirepass`, `maxmemory`, `maxmemory-policy`, `save` / `appendonly`, `dir /var/lib/redis/kiln-<name>`, `rename-command` for `CONFIG`, `DEBUG`, `MODULE`, `SHUTDOWN` (users can't rewrite the config). Enables and starts `redis-server@kiln-<name>`; restarts only when the file changed; waits for `PING` with the password. Idempotent. |
+| `db.redis.apply` | Writes `/etc/redis/redis-falak-<name>.conf` (Valkey: `/etc/valkey/valkey-falak-<name>.conf`), 0640 `redis:redis`: `port`, `bind` (127.0.0.1 + the allowed addresses below), `protected-mode yes`, `requirepass`, `maxmemory`, `maxmemory-policy`, `save` / `appendonly`, `dir /var/lib/redis/falak-<name>`, `rename-command` for `CONFIG`, `DEBUG`, `MODULE`, `SHUTDOWN` (users can't rewrite the config). Enables and starts `redis-server@falak-<name>`; restarts only when the file changed; waits for `PING` with the password. Idempotent. |
 | `db.redis.remove` | Stops and disables the unit, deletes the config and the data dir. |
 | `db.backup` / `db.restore` with `engine: redis` | See Backups. |
 
@@ -96,7 +96,7 @@ these keys.
 - **Backup:** `redis-cli --rdb <tmp>` (a consistent RDB snapshot from a running instance, no restart), gzip, upload
   through the presigned PUT. Object key `…/<name>-<ts>.rdb(.gz)`. Schedules, retention and pruning are unchanged.
 - **Restore:** download, check the RDB magic (`REDIS` header), stop the unit, move the current dump aside as
-  `dump.rdb.kiln-<ts>`, put the snapshot in place, and, when the instance uses AOF, start it with `appendonly no`,
+  `dump.rdb.falak-<ts>`, put the snapshot in place, and, when the instance uses AOF, start it with `appendonly no`,
   then run `BGREWRITEAOF` and switch AOF back on (Redis would otherwise ignore the RDB). If startup fails, the old
   dump is put back and the restore fails with the log tail.
 - Restore targets: Redis and Valkey instances only (Valkey 8 loads Redis ≤ 7.2 RDBs; a Redis 7.4+/8 RDB can't
@@ -115,7 +115,7 @@ these keys.
 
 - `ENGINE_IMAGES` gains `redis`, `valkey` (official images, any tag); `redis-stack` and `bitnami/redis` stay
   containers (modules / different config).
-- Choosing "Kiln database" for such a service creates a Kiln Redis on the stack's server, removes the service from
+- Choosing "Falak database" for such a service creates a Falak Redis on the stack's server, removes the service from
   the compose file and rewrites references: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_URL`, and
   `redis://<service>:6379` inside other values.
 - The container's data is **not** migrated (same as SQL today). The service panel says so before you confirm.
@@ -137,7 +137,7 @@ Details in `docs/INTEGRATION-NOTES.md` ("Redis and Valkey network access and com
 - Containers use **docker0's address** (one bind for every bridge network on the server), not each network's gateway.
 - "The project's servers" became **the servers of the sites in the instance's environment** (references resolve per
   environment); the firewall opens the port to exactly those servers' private addresses (`container_ports[].peers`),
-  not to every private-network member. Private address order: Kiln private network, then the provider private network
+  not to every private-network member. Private address order: Falak private network, then the provider private network
   (same provider credential and region, DigitalOcean / Lightsail only; custom servers only in the sim); never public —
   such references stay unresolved with a message.
 - Compose: the leader must already run the image's engine (no automatic engine install); `REDIS_PORT` /

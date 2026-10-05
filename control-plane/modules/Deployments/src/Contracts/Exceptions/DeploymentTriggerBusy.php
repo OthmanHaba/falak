@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Deployments\Contracts\Exceptions;
+namespace Falak\Deployments\Contracts\Exceptions;
 
 use Illuminate\Validation\ValidationException;
 

@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Insights\Application\Actions;
+namespace Falak\Insights\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Insights\Contracts\IssuePriority;
-use Kiln\Insights\Domain\Models\Issue;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Insights\Contracts\IssuePriority;
+use Falak\Insights\Domain\Models\Issue;
 
 final class SetIssuePriority
 {

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Contracts\Data;
+namespace Falak\Fleet\Contracts\Data;
 
 final readonly class CommandHandle
 {

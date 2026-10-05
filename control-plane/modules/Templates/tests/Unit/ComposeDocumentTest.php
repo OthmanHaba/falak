@@ -1,17 +1,17 @@
 <?php
 
-use Kiln\Templates\Application\Compose\ComposeDocument;
-use Kiln\Templates\Application\Compose\KilnPlaceholders;
-use Kiln\Templates\Domain\InvalidTemplate;
+use Falak\Templates\Application\Compose\ComposeDocument;
+use Falak\Templates\Application\Compose\FalakPlaceholders;
+use Falak\Templates\Domain\InvalidTemplate;
 
 require_once __DIR__.'/../Support/helpers.php';
 
-it('finds Compose interpolation but not escapes, Kiln placeholders or comments', function () {
+it('finds Compose interpolation but not escapes, Falak placeholders or comments', function () {
     $compose = ComposeDocument::parse(TEMPLATES_FIXTURE_COMPOSE."\n".'# ${IN_A_COMMENT}');
     $names = array_column($compose->variables(), 'optional', 'name');
 
     expect($names)->toBe([
-        'APP_SECRET' => false, 'TIMEZONE' => true, 'KILN_DEPLOYMENT_ID' => false, 'ADMIN_EMAIL' => false, 'DB_PASSWORD' => false,
+        'APP_SECRET' => false, 'TIMEZONE' => true, 'FALAK_DEPLOYMENT_ID' => false, 'ADMIN_EMAIL' => false, 'DB_PASSWORD' => false,
         'SIGNUPS' => false, 'WORKERS' => false, 'PUBLIC_URL' => false, 'DATABASE_URL' => false,
     ]);
 });
@@ -26,7 +26,7 @@ it('scans interpolation forms', function (string $value, array $expected) {
     'required' => ['${D:?missing}', [['name' => 'D', 'optional' => false]]],
     'nested' => ['${E:-${F}}', [['name' => 'E', 'optional' => true], ['name' => 'F', 'optional' => false]]],
     'escaped' => ['$$G and $${H}', []],
-    'kiln' => ['${{ kiln.url(web) }}/x', []],
+    'falak' => ['${{ falak.url(web) }}/x', []],
 ]);
 
 it('reads container ports from ports and expose', function () {
@@ -45,9 +45,9 @@ it('rejects documents without services', function (string $yaml) {
     ComposeDocument::parse($yaml);
 })->throws(InvalidTemplate::class)->with(['', 'services: []', 'version: "3"', "services:\n  a: nope", 'services: [unclosed']);
 
-it('renders Kiln placeholders and leaves variable references alone', function () {
-    $out = KilnPlaceholders::render('${{ kiln.url(web) }} ${{kiln.domain( admin )}} ${{ kiln.site }} ${{ postgres.DATABASE_URL }} ${X}', ['web' => 'hello.kiln.test', 'admin' => 'a.example.com'], 'hello');
+it('renders Falak placeholders and leaves variable references alone', function () {
+    $out = FalakPlaceholders::render('${{ falak.url(web) }} ${{falak.domain( admin )}} ${{ falak.site }} ${{ postgres.DATABASE_URL }} ${X}', ['web' => 'hello.falak.test', 'admin' => 'a.example.com'], 'hello');
 
-    expect($out)->toBe('https://hello.kiln.test a.example.com hello ${{ postgres.DATABASE_URL }} ${X}');
-    expect(fn () => KilnPlaceholders::render('${{ kiln.url(nope) }}', [], 's'))->toThrow(InvalidArgumentException::class);
+    expect($out)->toBe('https://hello.falak.test a.example.com hello ${{ postgres.DATABASE_URL }} ${X}');
+    expect(fn () => FalakPlaceholders::render('${{ falak.url(nope) }}', [], 's'))->toThrow(InvalidArgumentException::class);
 });

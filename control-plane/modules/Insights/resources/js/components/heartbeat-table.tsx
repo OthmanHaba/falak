@@ -1,12 +1,12 @@
-import { Button } from '@/components/kiln/button';
-import { DataTable, type DataTableColumn } from '@/components/kiln/data-table';
-import { Dialog } from '@/components/kiln/dialog';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { StatusDot } from '@/components/kiln/status';
-import { Switch } from '@/components/kiln/switch';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { DataTable, type DataTableColumn } from '@/components/falak/data-table';
+import { Dialog } from '@/components/falak/dialog';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { StatusDot } from '@/components/falak/status';
+import { Switch } from '@/components/falak/switch';
+import { Tag } from '@/components/falak/tag';
 import { cn } from '@/lib/utils';
 import { router, useForm } from '@inertiajs/react';
 import { format } from 'date-fns';
@@ -79,7 +79,7 @@ function EditDialog({ monitor, defaultGrace, onClose }: { monitor: HeartbeatMoni
             open
             onOpenChange={(open) => !open && onClose()}
             title={`Edit ${monitor.job}`}
-            description="Kiln expects a heartbeat for every scheduled run; a run that doesn't report within the grace period opens an issue."
+            description="Falak expects a heartbeat for every scheduled run; a run that doesn't report within the grace period opens an issue."
             footer={
                 <>
                     <Button variant="ghost" onClick={onClose}>
@@ -244,7 +244,7 @@ export function HeartbeatTable({
                     icon: <HeartPulse />,
                     title: 'No scheduled tasks yet',
                     description:
-                        'Every run of a Kiln-managed cron job (Laravel scheduler, cron entries) reports a heartbeat. Tasks appear here after their first run; missed runs open issues.',
+                        'Every run of a Falak-managed cron job (Laravel scheduler, cron entries) reports a heartbeat. Tasks appear here after their first run; missed runs open issues.',
                 }}
             />
             {editing && <EditDialog monitor={editing} defaultGrace={defaultGrace} onClose={() => setEditing(null)} />}

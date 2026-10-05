@@ -48,13 +48,13 @@ ruler_storage:
     dir: /data/rules
 
 limits:
-  compactor_blocks_retention_period: ${KILN_METRICS_RETENTION:-30d}
+  compactor_blocks_retention_period: ${FALAK_METRICS_RETENTION:-30d}
   max_global_series_per_user: 500000
   ingestion_rate: 50000
   ingestion_burst_size: 200000
-  # Promote the Kiln resource attributes to series labels so PromQL matches
+  # Promote the Falak resource attributes to series labels so PromQL matches
   # VictoriaMetrics (which keeps all resource attributes as labels).
-  promote_otel_resource_attributes: "service.name,service.namespace,host.name,deployment.environment.name,kiln.org.id,kiln.server.id,kiln.site.id,kiln.deployment.id,kiln.release.id,container.name"
+  promote_otel_resource_attributes: "service.name,service.namespace,host.name,deployment.environment.name,falak.org.id,falak.server.id,falak.site.id,falak.deployment.id,falak.release.id,container.name"
 
 usage_stats:
   enabled: false

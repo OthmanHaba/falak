@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// DefaultPackages are the dpkg-query patterns every report covers: the components Kiln provisions and the software
+// DefaultPackages are the dpkg-query patterns every report covers: the components Falak provisions and the software
 // that conflicts with them.
 var DefaultPackages = []string{
 	// Docker: Ubuntu's, Docker's and others.

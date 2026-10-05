@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Projects\Domain\Policies;
+namespace Falak\Projects\Domain\Policies;
 
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Projects\Domain\Models\Project;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Projects\Domain\Models\Project;
 
 final class ProjectPolicy
 {

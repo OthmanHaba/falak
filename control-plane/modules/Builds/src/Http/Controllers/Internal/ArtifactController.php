@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Builds\Http\Controllers\Internal;
+namespace Falak\Builds\Http\Controllers\Internal;
 
+use Falak\Builds\Application\Artifacts\ArtifactStorage;
+use Falak\Builds\Infrastructure\Artifacts\LocalArtifactStorage;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Kiln\Builds\Application\Artifacts\ArtifactStorage;
-use Kiln\Builds\Infrastructure\Artifacts\LocalArtifactStorage;
-use Kiln\Kernel\Http\Controller;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**

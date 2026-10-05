@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Servers\Contracts;
+namespace Falak\Servers\Contracts;
 
 /**
  * The `server` prop every /servers/{id}/{tab} Inertia page passes to the shared ServerLayout

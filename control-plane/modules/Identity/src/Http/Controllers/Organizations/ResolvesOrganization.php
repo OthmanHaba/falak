@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Identity\Http\Controllers\Organizations;
+namespace Falak\Identity\Http\Controllers\Organizations;
 
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Domain\Models\Organization;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Domain\Models\Organization;
 
 trait ResolvesOrganization
 {

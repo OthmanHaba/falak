@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\SourceControl\Application\Actions;
+namespace Falak\SourceControl\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Domain\Models\GitHubApp;
-use Kiln\SourceControl\Infrastructure\GitHubApp\AppManifest;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Domain\Models\GitHubApp;
+use Falak\SourceControl\Infrastructure\GitHubApp\AppManifest;
 
 /**
  * Finish the manifest flow: exchange GitHub's one-time code for the new app's credentials and store them

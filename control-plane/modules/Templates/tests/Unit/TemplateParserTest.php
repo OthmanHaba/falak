@@ -1,9 +1,9 @@
 <?php
 
-use Kiln\Templates\Application\Catalog\TemplateParser;
-use Kiln\Templates\Domain\Category;
-use Kiln\Templates\Domain\InputType;
-use Kiln\Templates\Domain\InvalidTemplate;
+use Falak\Templates\Application\Catalog\TemplateParser;
+use Falak\Templates\Domain\Category;
+use Falak\Templates\Domain\InputType;
+use Falak\Templates\Domain\InvalidTemplate;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -65,7 +65,7 @@ it('rejects schema violations with located messages', function (string $yaml, st
     'no public' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai", 'public list at least one'],
     'bad port' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\npublic: [{service: web, port: 99999}]", 'port must be a port number'],
     'bad key' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\npublic: [{service: web, port: 80}]\ninputs: [{key: lower}]", 'must be an environment variable name'],
-    'reserved key' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\npublic: [{service: web, port: 80}]\ninputs: [{key: KILN_X}]", 'reserved'],
+    'reserved key' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\npublic: [{service: web, port: 80}]\ninputs: [{key: FALAK_X}]", 'reserved'],
     'duplicate key' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\npublic: [{service: web, port: 80}]\ninputs: [{key: A}, {key: A}]", 'duplicate key'],
     'bad type' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\npublic: [{service: web, port: 80}]\ninputs: [{key: A, type: color}]", 'type must be one of'],
     'bad generator' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\npublic: [{service: web, port: 80}]\ninputs: [{key: A, type: secret, generate: random(9)}]", 'must be secret(n)'],

@@ -1,13 +1,13 @@
 <?php
 
+use Falak\Providers\Contracts\Data\Machine;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Infrastructure\Adapters\LightsailAdapter;
+use Falak\Providers\Infrastructure\Aws\SigV4Signer;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
-use Kiln\Providers\Contracts\Data\Machine;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Infrastructure\Adapters\LightsailAdapter;
-use Kiln\Providers\Infrastructure\Aws\SigV4Signer;
 
 require_once __DIR__.'/../fixtures.php';
 
@@ -120,7 +120,7 @@ it('creates instances in the target region with user data, same-region key pair 
         image: 'ubuntu_24_04',
         sshKeyIds: ['us-east-1:other-key', 'eu-central-1:dev-abc123'],
         userData: "#!/bin/sh\necho hi",
-        labels: ['kiln-server' => '01J'],
+        labels: ['falak-server' => '01J'],
     ));
 
     expect($machine->id)->toBe('eu-central-1:web-1')
@@ -134,7 +134,7 @@ it('creates instances in the target region with user data, same-region key pair 
         'userData' => "#!/bin/sh\necho hi",
         'keyPairName' => 'dev-abc123',
         'ipAddressType' => 'dualstack',
-        'tags' => [['key' => 'kiln-server', 'value' => '01J']],
+        'tags' => [['key' => 'falak-server', 'value' => '01J']],
     ]);
 });
 

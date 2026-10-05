@@ -12,11 +12,11 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/docker"
-	"github.com/kiln/agent/internal/fngateway"
-	"github.com/kiln/agent/internal/functions"
-	"github.com/kiln/agent/internal/transport"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/docker"
+	"github.com/OthmanHaba/falak/agent/internal/fngateway"
+	"github.com/OthmanHaba/falak/agent/internal/functions"
+	"github.com/OthmanHaba/falak/agent/internal/transport"
 )
 
 // Catalogue is the v1 command catalogue from ARCHITECTURE.md §3.
@@ -39,7 +39,7 @@ var Catalogue = []string{
 const (
 	contractsDir = "../../../contracts/agent-protocol"
 	examplesDir  = "../../testdata/command-examples"
-	idBase       = "https://kiln.dev/agent-protocol/"
+	idBase       = "https://falak.sh/agent-protocol/"
 )
 
 func compiler(t *testing.T) *jsonschema.Compiler {
@@ -184,7 +184,7 @@ func TestComposeResultsValidate(t *testing.T) {
 	cpu, mem := 12.5, int64(64<<20)
 	code := 137
 	svc := docker.ServiceStatus{Service: "app", ContainerID: "abc", ContainerName: "shop-app-1", State: "exited", ExitCode: &code, Health: "unhealthy",
-		Image: "registry.kiln.local/kiln/shop/app@sha256:" + strings.Repeat("a", 64), ImageDigest: "sha256:" + strings.Repeat("a", 64),
+		Image: "registry.falak.local/falak/shop/app@sha256:" + strings.Repeat("a", 64), ImageDigest: "sha256:" + strings.Repeat("a", 64),
 		Ports: []docker.PortStatus{{HostIP: "127.0.0.1", HostPort: 3001, ContainerPort: 8080, Protocol: "tcp"}}, Restarts: 3,
 		StartedAt: "2026-09-27T10:00:00Z", CPUPercent: &cpu, MemoryBytes: &mem, MemoryLimit: &mem}
 	for typ, res := range map[string]any{

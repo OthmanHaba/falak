@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts\Data;
+namespace Falak\Telemetry\Contracts\Data;
 
 use DateTimeImmutable;
 
@@ -47,9 +47,9 @@ final readonly class AccessLogEntry
             clientIp: $str('client_address'),
             userAgent: $str('user_agent_original'),
             host: $str('server_address'),
-            serverId: isset($m['kiln_server_id']) ? strtolower((string) $m['kiln_server_id']) : null,
-            deploymentId: isset($m['kiln_deployment_id']) ? strtolower((string) $m['kiln_deployment_id']) : null,
-            releaseId: isset($m['kiln_release_id']) ? strtolower((string) $m['kiln_release_id']) : null,
+            serverId: isset($m['falak_server_id']) ? strtolower((string) $m['falak_server_id']) : null,
+            deploymentId: isset($m['falak_deployment_id']) ? strtolower((string) $m['falak_deployment_id']) : null,
+            releaseId: isset($m['falak_release_id']) ? strtolower((string) $m['falak_release_id']) : null,
         );
     }
 

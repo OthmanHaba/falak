@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/edge.caddy.apply.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/edge.caddy.apply.schema.json",
   "title": "edge.caddy.apply \u2014 full desired route set; rendered to Caddy JSON and POSTed atomically to the admin API /load",
-  "x-kiln-redeliverable": true,
+  "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -30,7 +30,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Stable route id; becomes Caddy @id kiln-site-<id>",
+            "description": "Stable route id; becomes Caddy @id falak-site-<id>",
             "pattern": "^[a-z0-9-]+$"
           },
           "domains": {
@@ -107,7 +107,7 @@
           "root": {
             "type": "string",
             "pattern": "^/",
-            "description": "Document root, e.g. /srv/kiln/sites/shop/current/public. With kind=reverse_proxy (Laravel Octane): existing files under root are served directly (never *.php, dotfiles or directories) and everything else is proxied"
+            "description": "Document root, e.g. /srv/falak/sites/shop/current/public. With kind=reverse_proxy (Laravel Octane): existing files under root are served directly (never *.php, dotfiles or directories) and everything else is proxied"
           },
           "php_fpm_socket": {
             "type": "string",
@@ -127,7 +127,7 @@
                   "description": "host:port or unix//path",
                   "examples": [
                     "127.0.0.1:8080",
-                    "unix//run/php/kiln-shop-8.4.sock"
+                    "unix//run/php/falak-shop-8.4.sock"
                   ]
                 }
               }
@@ -174,12 +174,12 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "kind=reverse_proxy: headers set on the request sent upstream (functions: X-Kiln-Function)"
+            "description": "kind=reverse_proxy: headers set on the request sent upstream (functions: X-Falak-Function)"
           },
           "mounts": {
             "type": "array",
             "maxItems": 20,
-            "description": "Paths of this site sent to another upstream (agent feature fn.v2): a function through the local gateway (127.0.0.1:7070 + X-Kiln-Function) or its own domain over HTTPS (tls_server_name). Each matches <path_prefix> and <path_prefix>/*, longest first, after the site's access rules and before its redirects and handler.",
+            "description": "Paths of this site sent to another upstream (agent feature fn.v2): a function through the local gateway (127.0.0.1:7070 + X-Falak-Function) or its own domain over HTTPS (tls_server_name). Each matches <path_prefix> and <path_prefix>/*, longest first, after the site's access rules and before its redirects and handler.",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -299,7 +299,7 @@
           "access_log": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-            "description": "Site slug: HTTP access log of the route's hosts written as Caddy JSON to /var/log/kiln/access/<access_log>.log (rotated at 10 MB), shipped by the agent to Loki as kind=access records of that site. Routes of one site share it"
+            "description": "Site slug: HTTP access log of the route's hosts written as Caddy JSON to /var/log/falak/access/<access_log>.log (rotated at 10 MB), shipped by the agent to Loki as kind=access records of that site. Routes of one site share it"
           }
         }
       }

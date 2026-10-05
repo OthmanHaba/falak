@@ -1,6 +1,6 @@
 <?php
 
-use Kiln\Sites\Application\Compose\RedisCommand;
+use Falak\Sites\Application\Compose\RedisCommand;
 
 it('reads the memory limit, eviction and AOF flags of a compose Redis command', function (mixed $command, array $expected) {
     expect(RedisCommand::settings($command))->toBe($expected);

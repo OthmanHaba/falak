@@ -14,8 +14,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 )
 
 // NodePayload is runtime.node.install.
@@ -44,7 +44,7 @@ func nodeArch(a string) (string, error) {
 	return "", fmt.Errorf("unsupported arch %s", a)
 }
 
-// NodeInstall installs an official Node.js tarball into /opt/kiln/node/<version>.
+// NodeInstall installs an official Node.js tarball into /opt/falak/node/<version>.
 func (rt *Runtime) NodeInstall(ctx context.Context, p NodePayload, st commands.Stream) (any, error) {
 	if !semver.MatchString(p.Version) {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid node version %q", p.Version)}
@@ -57,7 +57,7 @@ func (rt *Runtime) NodeInstall(ctx context.Context, p NodePayload, st commands.S
 	if err != nil {
 		return nil, err
 	}
-	prefix := "/opt/kiln/node/" + p.Version
+	prefix := "/opt/falak/node/" + p.Version
 	res := NodeResult{Prefix: prefix}
 	if !rt.d.FS.Exists(prefix + "/bin/node") {
 		name := fmt.Sprintf("node-v%s-linux-%s.tar.gz", p.Version, arch)
@@ -68,10 +68,10 @@ func (rt *Runtime) NodeInstall(ctx context.Context, p NodePayload, st commands.S
 				return nil, err
 			}
 		}
-		if err := rt.d.FS.MkdirAll("/opt/kiln/node", 0o755); err != nil {
+		if err := rt.d.FS.MkdirAll("/opt/falak/node", 0o755); err != nil {
 			return nil, err
 		}
-		tmpDir, err := os.MkdirTemp(rt.d.FS.P("/opt/kiln/node"), ".dl-")
+		tmpDir, err := os.MkdirTemp(rt.d.FS.P("/opt/falak/node"), ".dl-")
 		if err != nil {
 			return nil, err
 		}
@@ -144,7 +144,7 @@ func EnsureSymlink(fs hostfs.FS, link, target string) (bool, error) {
 	if err := fs.MkdirAll(path.Dir(link), 0o755); err != nil {
 		return false, err
 	}
-	tmp := fs.P(link) + ".kiln-tmp"
+	tmp := fs.P(link) + ".falak-tmp"
 	os.Remove(tmp)
 	if err := os.Symlink(target, tmp); err != nil {
 		return false, err

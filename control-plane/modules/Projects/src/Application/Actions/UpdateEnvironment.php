@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Projects\Application\Actions;
+namespace Falak\Projects\Application\Actions;
 
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Projects\Domain\Models\Environment;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Projects\Domain\Models\Environment;
 
 /**
  * Rename an environment (its URL slug follows the name).

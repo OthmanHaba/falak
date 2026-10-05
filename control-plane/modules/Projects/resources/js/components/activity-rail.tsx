@@ -1,4 +1,4 @@
-import { IconButton, RelativeTime, SkeletonRows, StatusDot } from '@/components/kiln';
+import { IconButton, RelativeTime, SkeletonRows, StatusDot } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { Activity, X } from 'lucide-react';
 import { type ActivityItem } from '../types';

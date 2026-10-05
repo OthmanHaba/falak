@@ -14,14 +14,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/docker"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/insights"
-	"github.com/kiln/agent/internal/logs"
-	"github.com/kiln/agent/internal/metrics"
-	"github.com/kiln/agent/internal/obs"
-	"github.com/kiln/agent/internal/otlp"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/docker"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/insights"
+	"github.com/OthmanHaba/falak/agent/internal/logs"
+	"github.com/OthmanHaba/falak/agent/internal/metrics"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/otlp"
 )
 
 // Payload mirrors contracts/agent-protocol/commands/telemetry.configure.schema.json.

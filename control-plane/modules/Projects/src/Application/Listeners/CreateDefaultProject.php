@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Projects\Application\Listeners;
+namespace Falak\Projects\Application\Listeners;
 
-use Kiln\Identity\Events\OrganizationCreated;
-use Kiln\Projects\Application\Actions\EnsureDefaultProject;
+use Falak\Identity\Events\OrganizationCreated;
+use Falak\Projects\Application\Actions\EnsureDefaultProject;
 
 final class CreateDefaultProject
 {

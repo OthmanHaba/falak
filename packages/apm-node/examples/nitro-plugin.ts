@@ -1,7 +1,7 @@
-// server/plugins/kiln.ts (Nuxt 3/4 or standalone Nitro)
-import kiln from '@kiln/apm-node/nitro';
+// server/plugins/falak.ts (Nuxt 3/4 or standalone Nitro)
+import falak from '@falak/apm-node/nitro';
 
 // defineNitroPlugin is auto-imported by Nitro.
 declare const defineNitroPlugin: <T>(plugin: T) => T;
 
-export default defineNitroPlugin(kiln);
+export default defineNitroPlugin(falak);

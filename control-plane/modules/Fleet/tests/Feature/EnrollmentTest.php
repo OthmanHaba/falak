@@ -1,21 +1,21 @@
 <?php
 
+use Falak\Fleet\Contracts\AgentStatus;
+use Falak\Fleet\Contracts\Enrollment;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\InstallToken;
+use Falak\Fleet\Events\AgentEnrolled;
+use Falak\Fleet\Events\AgentRevoked;
+use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
+use Falak\Identity\Domain\Models\AuditEntry;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Contracts\AgentStatus;
-use Kiln\Fleet\Contracts\Enrollment;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\InstallToken;
-use Kiln\Fleet\Events\AgentEnrolled;
-use Kiln\Fleet\Events\AgentRevoked;
-use Kiln\Fleet\Infrastructure\Pki\CertificateAuthorityService;
-use Kiln\Identity\Domain\Models\AuditEntry;
 use phpseclib3\File\X509;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 beforeEach(function () {
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test', 'app.url' => 'https://panel.kiln.test', 'fleet.otlp_endpoint' => 'https://otlp.kiln.test']);
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test', 'app.url' => 'https://panel.falak.test', 'fleet.otlp_endpoint' => 'https://otlp.falak.test']);
     [, $this->organization] = memberOf();
     $this->serverId = (string) Str::ulid();
 });
@@ -30,7 +30,7 @@ it('enrolls an agent with a one-time token and returns a schema-valid response',
         ->and($response->json('ca_pem'))->toBe(app(CertificateAuthorityService::class)->caPem())
         ->and($response->json('ca_pem'))->toEndWith("-----END CERTIFICATE-----\n")
         ->and($response->json('cert_pem'))->toEndWith("-----END CERTIFICATE-----\n")
-        ->and($response->json('endpoints'))->toBe(['api' => 'https://panel.kiln.test/agent/v1', 'otlp' => 'https://otlp.kiln.test']);
+        ->and($response->json('endpoints'))->toBe(['api' => 'https://panel.falak.test/agent/v1', 'otlp' => 'https://otlp.falak.test']);
 
     expect($agent->organization_id)->toBe($this->organization->id)
         ->and($agent->server_id)->toBe($this->serverId)
@@ -118,7 +118,7 @@ it('issuing a new install token invalidates the previous unused one for the serv
     $new = app(Enrollment::class)->issueInstallToken($this->organization->id, $this->serverId);
 
     expect(InstallToken::query()->usable()->count())->toBe(1)
-        ->and($new->command)->toBe("curl -fsSL https://panel.kiln.test/install/{$new->token} | sudo sh")
+        ->and($new->command)->toBe("curl -fsSL https://panel.falak.test/install/{$new->token} | sudo sh")
         ->and($old->token)->not->toBe($new->token);
 
     [$csr] = fleet_csr();

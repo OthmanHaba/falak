@@ -1,4 +1,4 @@
-# Shared build host for the sim: kiln-builder + the toolchains its native/docker modes shell out to.
+# Shared build host for the sim: falak-builder + the toolchains its native/docker modes shell out to.
 FROM php:8.4-cli-trixie
 COPY --from=composer:2.10.3 /usr/bin/composer /usr/local/bin/composer
 COPY --from=oven/bun:1.4.2 /usr/local/bin/bun /usr/local/bin/bun

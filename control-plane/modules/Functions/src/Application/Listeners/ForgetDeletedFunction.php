@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Functions\Application\Listeners;
+namespace Falak\Functions\Application\Listeners;
 
-use Kiln\Functions\Application\FunctionStore;
-use Kiln\Sites\Events\SiteDeleted;
+use Falak\Functions\Application\FunctionStore;
+use Falak\Sites\Events\SiteDeleted;
 
 final class ForgetDeletedFunction
 {

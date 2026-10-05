@@ -13,7 +13,7 @@ import {
     Switch,
     Tag,
     formatDuration,
-} from '@/components/kiln';
+} from '@/components/falak';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
 import { Link } from '@inertiajs/react';

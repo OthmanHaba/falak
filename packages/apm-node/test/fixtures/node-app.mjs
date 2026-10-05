@@ -2,7 +2,7 @@
 // auto-instrumentation (http server, undici fetch) end-to-end against the fake agent.
 import http from 'node:http';
 
-const { shutdown, recordException } = await import(process.env.KILN_DIST_INDEX);
+const { shutdown, recordException } = await import(process.env.FALAK_DIST_INDEX);
 
 const server = http.createServer(async (req, res) => {
   if (req.url.startsWith('/downstream')) {

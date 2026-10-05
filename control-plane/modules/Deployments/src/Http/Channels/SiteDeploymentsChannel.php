@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Deployments\Http\Channels;
+namespace Falak\Deployments\Http\Channels;
 
+use Falak\Deployments\Domain\Policies\DeploymentPermissions;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Sites\Contracts\SiteDirectory;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Sites\Contracts\SiteDirectory;
 
 /**
  * private-deployments.site.{siteId}: deployment list updates for a site.

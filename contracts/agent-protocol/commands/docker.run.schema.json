@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/docker.run.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/docker.run.schema.json",
   "title": "docker.run \u2014 ensure a named container runs with exactly this spec (recreated when spec hash changes)",
   "type": "object",
   "additionalProperties": false,

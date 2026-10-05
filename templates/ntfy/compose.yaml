@@ -5,7 +5,7 @@ services:
     command: ["serve"]
     expose: ["80"]
     environment:
-      NTFY_BASE_URL: ${{ kiln.url(ntfy) }}
+      NTFY_BASE_URL: ${{ falak.url(ntfy) }}
       NTFY_BEHIND_PROXY: "true"
       NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
       NTFY_AUTH_FILE: /var/lib/ntfy/user.db

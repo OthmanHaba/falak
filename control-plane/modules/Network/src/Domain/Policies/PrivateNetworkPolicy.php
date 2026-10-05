@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Network\Domain\Policies;
+namespace Falak\Network\Domain\Policies;
 
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Network\Domain\Models\PrivateNetwork;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Network\Domain\Models\PrivateNetwork;
 
 final class PrivateNetworkPolicy
 {

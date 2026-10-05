@@ -1,6 +1,6 @@
 <?php
 
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
 
 beforeEach(fn () => $this->schemas = app(ProtocolSchemas::class));
 

@@ -16,11 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
-// Opt-in: KILN_REDIS_INTEGRATION=1 go test ./internal/db -run TestRedisIntegration -v
+// Opt-in: FALAK_REDIS_INTEGRATION=1 go test ./internal/db -run TestRedisIntegration -v
 //
 // Runs RedisApply / RedisRemove against real redis-server and valkey-server processes in Docker: the generated config
 // must start each version, the renamed CONFIG must work for the agent and nobody else, and persistence switches (live
@@ -143,8 +143,8 @@ func (d *dockerRunner) listening(ctx context.Context, filter string) (runner.Res
 }
 
 func TestRedisIntegration(t *testing.T) {
-	if os.Getenv("KILN_REDIS_INTEGRATION") == "" {
-		t.Skip("set KILN_REDIS_INTEGRATION=1 (needs Docker and the images in redisIntegrationImages)")
+	if os.Getenv("FALAK_REDIS_INTEGRATION") == "" {
+		t.Skip("set FALAK_REDIS_INTEGRATION=1 (needs Docker and the images in redisIntegrationImages)")
 	}
 	for _, img := range redisIntegrationImages {
 		t.Run(img.image, func(t *testing.T) {
@@ -156,7 +156,7 @@ func TestRedisIntegration(t *testing.T) {
 				os.WriteFile(p, []byte("[Service]\n"), 0o644)
 			}
 			d := &dockerRunner{t: t, root: root, image: img.image, k: k, name: "cache",
-				container: fmt.Sprintf("kiln-redis-it-%s-%d", strings.NewReplacer("/", "-", ":", "-", ".", "-").Replace(img.image), time.Now().UnixNano())}
+				container: fmt.Sprintf("falak-redis-it-%s-%d", strings.NewReplacer("/", "-", ":", "-", ".", "-").Replace(img.image), time.Now().UnixNano())}
 			defer d.docker(context.Background(), nil, "rm", "-f", d.container)
 			db := New(Deps{Runner: d, FS: hostfs.FS{Root: root}, TempDir: t.TempDir()})
 			ctx := context.Background()
@@ -390,7 +390,7 @@ func redisIntegrationLateAddress(t *testing.T, engine, image string) {
 	os.MkdirAll(filepath.Dir(unitFile), 0o755)
 	os.WriteFile(unitFile, []byte("[Service]\n"), 0o644)
 	suffix := fmt.Sprintf("%s-%d", strings.NewReplacer("/", "-", ":", "-", ".", "-").Replace(image), time.Now().UnixNano())
-	d := &dockerRunner{t: t, root: root, image: image, k: k, name: "late", container: "kiln-redis-it-late-" + suffix, netns: "kiln-redis-it-netns-" + suffix}
+	d := &dockerRunner{t: t, root: root, image: image, k: k, name: "late", container: "falak-redis-it-late-" + suffix, netns: "falak-redis-it-netns-" + suffix}
 	defer d.docker(ctx, nil, "rm", "-f", d.container)
 	defer d.docker(ctx, nil, "rm", "-f", d.netns)
 	must := func(args ...string) {

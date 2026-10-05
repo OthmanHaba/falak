@@ -1,20 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/enroll-response.schema.json",
+  "$id": "https://falak.sh/agent-protocol/enroll-response.schema.json",
   "title": "Response to a successful enrollment",
   "type": "object",
   "required": ["agent_id", "cert_pem", "ca_pem", "endpoints"],
   "additionalProperties": false,
   "properties": {
     "agent_id": { "type": "string", "description": "ULID; also the cert CN" },
-    "cert_pem": { "type": "string", "description": "Client certificate signed by the Kiln CA, valid 90 days" },
-    "ca_pem": { "type": "string", "description": "Kiln CA certificate, used to pin the control plane" },
+    "cert_pem": { "type": "string", "description": "Client certificate signed by the Falak CA, valid 90 days" },
+    "ca_pem": { "type": "string", "description": "Falak CA certificate, used to pin the control plane" },
     "endpoints": {
       "type": "object",
       "required": ["api", "otlp"],
       "additionalProperties": false,
       "properties": {
-        "api": { "type": "string", "format": "uri", "description": "mTLS base URL, e.g. https://agents.kiln.example/agent/v1" },
+        "api": { "type": "string", "format": "uri", "description": "mTLS base URL, e.g. https://agents.falak.example/agent/v1" },
         "otlp": { "type": "string", "format": "uri", "description": "OTLP/HTTP endpoint of the observability box" }
       }
     }

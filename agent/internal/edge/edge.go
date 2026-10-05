@@ -23,9 +23,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/logs"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/logs"
 )
 
 // Client is a minimal Caddy admin API client.
@@ -114,7 +114,7 @@ func (c *Client) ReloadFrankenPHP(ctx context.Context) error {
 type Options struct {
 	Client *Client
 	FS     hostfs.FS
-	EtcDir string // /etc/kiln (certs/ and caddy/bootstrap.json live here)
+	EtcDir string // /etc/falak (certs/ and caddy/bootstrap.json live here)
 	Logger *slog.Logger
 }
 
@@ -130,7 +130,7 @@ func New(o Options) *Manager {
 		o.Logger = slog.Default()
 	}
 	if o.EtcDir == "" {
-		o.EtcDir = "/etc/kiln"
+		o.EtcDir = "/etc/falak"
 	}
 	return &Manager{o: o}
 }
@@ -190,7 +190,7 @@ func (m *Manager) Apply(ctx context.Context, p Payload, s commands.Stream) (any,
 
 // PlaceholderRelease is the release `current` points at until a site's first deploy. It is not a ULID,
 // so deploy's release listing, pruning and rollback never treat it as a release.
-const PlaceholderRelease = ".kiln-placeholder"
+const PlaceholderRelease = ".falak-placeholder"
 
 const placeholderPage = `<?php
 http_response_code(503);
@@ -286,7 +286,7 @@ func (m *Manager) persist(cfg []byte) (bool, error) {
 	if err != nil {
 		return changed, err
 	}
-	// kiln-edge.service runs as the caddy user and reads this file at boot.
+	// falak-edge.service runs as the caddy user and reads this file at boot.
 	if g := m.edgeGroup(); g != "" {
 		return changed, m.o.FS.Chown(m.bootstrapPath(), "root", g)
 	}

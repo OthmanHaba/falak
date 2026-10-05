@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Servers\Application\Actions;
+namespace Falak\Servers\Application\Actions;
 
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Models\SshKey;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Models\SshKey;
 
 final class AttachSshKey
 {
-    public const UNIX_USERS = ['kiln', 'root'];
+    public const UNIX_USERS = ['falak', 'root'];
 
     public function __construct(
         private readonly SyncServerSshKeys $sync,
@@ -23,7 +23,7 @@ final class AttachSshKey
         }
 
         if (! in_array($unixUser, self::UNIX_USERS, true)) {
-            throw ValidationException::withMessages(['unix_user' => 'Keys can be installed for the kiln or root user.']);
+            throw ValidationException::withMessages(['unix_user' => 'Keys can be installed for the falak or root user.']);
         }
 
         if ($server->sshKeys()->wherePivot('unix_user', $unixUser)->whereKey($key->id)->exists()) {

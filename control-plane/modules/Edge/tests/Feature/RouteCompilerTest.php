@@ -1,30 +1,30 @@
 <?php
 
+use Falak\Edge\Application\PathMounts;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Edge\Domain\Enums\InstallStatus;
+use Falak\Edge\Domain\Enums\LbPolicy;
+use Falak\Edge\Domain\Enums\WwwRedirect;
+use Falak\Edge\Domain\Models\Certificate;
+use Falak\Edge\Domain\Models\CertificateInstall;
+use Falak\Edge\Domain\Models\DnsCredential;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\Header;
+use Falak\Edge\Domain\Models\LoadBalancer;
+use Falak\Edge\Domain\Models\Mount;
+use Falak\Edge\Domain\Models\Redirect;
+use Falak\Edge\Domain\Models\SecurityRule;
+use Falak\Edge\Domain\Models\ServiceSetting;
+use Falak\Edge\Domain\Models\SiteSetting;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Data\ComposeConfig;
+use Falak\Sites\Contracts\Data\PublicService;
+use Falak\Sites\Contracts\SiteDomains;
+use Falak\Sites\Contracts\SiteRuntime;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Application\PathMounts;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Edge\Domain\Enums\InstallStatus;
-use Kiln\Edge\Domain\Enums\LbPolicy;
-use Kiln\Edge\Domain\Enums\WwwRedirect;
-use Kiln\Edge\Domain\Models\Certificate;
-use Kiln\Edge\Domain\Models\CertificateInstall;
-use Kiln\Edge\Domain\Models\DnsCredential;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\Header;
-use Kiln\Edge\Domain\Models\LoadBalancer;
-use Kiln\Edge\Domain\Models\Mount;
-use Kiln\Edge\Domain\Models\Redirect;
-use Kiln\Edge\Domain\Models\SecurityRule;
-use Kiln\Edge\Domain\Models\ServiceSetting;
-use Kiln\Edge\Domain\Models\SiteSetting;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Data\ComposeConfig;
-use Kiln\Sites\Contracts\Data\PublicService;
-use Kiln\Sites\Contracts\SiteDomains;
-use Kiln\Sites\Contracts\SiteRuntime;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -47,16 +47,16 @@ it('compiles every runtime kind', function (SiteRuntime $runtime, array $expecte
 
     expect($entry)->toMatchArray(['domains' => ['app.example.com'], 'tls' => ['mode' => 'acme'], 'access_log' => 'app', ...$expected]);
 })->with([
-    'frankenphp' => [SiteRuntime::FrankenPhp, ['kind' => 'frankenphp', 'root' => '/srv/kiln/sites/app/current/public']],
-    'php-fpm' => [SiteRuntime::PhpFpm, ['kind' => 'php_fpm', 'root' => '/srv/kiln/sites/app/current/public', 'php_fpm_socket' => '/run/php/kiln-app-8.4.sock']],
-    'static' => [SiteRuntime::Static, ['kind' => 'static', 'root' => '/srv/kiln/sites/app/current/public']],
+    'frankenphp' => [SiteRuntime::FrankenPhp, ['kind' => 'frankenphp', 'root' => '/srv/falak/sites/app/current/public']],
+    'php-fpm' => [SiteRuntime::PhpFpm, ['kind' => 'php_fpm', 'root' => '/srv/falak/sites/app/current/public', 'php_fpm_socket' => '/run/php/falak-app-8.4.sock']],
+    'static' => [SiteRuntime::Static, ['kind' => 'static', 'root' => '/srv/falak/sites/app/current/public']],
     'node' => [SiteRuntime::Node, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']], 'health_uri' => '/up']],
     'bun' => [SiteRuntime::Bun, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
     'deno' => [SiteRuntime::Deno, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
     'docker' => [SiteRuntime::Docker, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
     'compose' => [SiteRuntime::Compose, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:3000']]]],
     // Functions go to the server's function gateway, which starts instances on demand (no health check).
-    'function' => [SiteRuntime::Function, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:7070']], 'request_headers' => ['X-Kiln-Function' => 'app', 'X-Kiln-Client-IP' => '{http.vars.client_ip}']]],
+    'function' => [SiteRuntime::Function, ['kind' => 'reverse_proxy', 'upstreams' => [['dial' => '127.0.0.1:7070']], 'request_headers' => ['X-Falak-Function' => 'app', 'X-Falak-Client-IP' => '{http.vars.client_ip}']]],
 ]);
 
 it('uses the recorded container upstream for docker sites', function () {
@@ -71,12 +71,12 @@ it('uses the recorded container upstream for docker sites', function () {
 
 it('routes every public compose service: primary on the site domains, others on their own domains', function () {
     $site = edge_site($this->sites, $this->org, [$this->web->id], [
-        'runtime' => SiteRuntime::Compose, 'appPort' => 3000, 'testDomain' => 'stack.sites.kiln.test', 'healthCheckPath' => '/',
+        'runtime' => SiteRuntime::Compose, 'appPort' => 3000, 'testDomain' => 'stack.sites.falak.test', 'healthCheckPath' => '/',
         'compose' => new ComposeConfig(ComposeSource::Inline, null, [
-            new PublicService('app', 8080, 'app.example.com', 3000, 'stack.sites.kiln.test'),
-            new PublicService('grafana_ui', 3000, null, 3001, 'grafana-ui-stack.sites.kiln.test'),
-            new PublicService('api', 9000, 'api.example.com', 3002, 'api-stack.sites.kiln.test'),
-            new PublicService('pending', 1, null, null, 'pending-stack.sites.kiln.test'),
+            new PublicService('app', 8080, 'app.example.com', 3000, 'stack.sites.falak.test'),
+            new PublicService('grafana_ui', 3000, null, 3001, 'grafana-ui-stack.sites.falak.test'),
+            new PublicService('api', 9000, 'api.example.com', 3002, 'api-stack.sites.falak.test'),
+            new PublicService('pending', 1, null, null, 'pending-stack.sites.falak.test'),
         ]),
     ]);
     edge_domain($this->org, $site->id, 'www.example.com', ['is_primary' => true]);
@@ -87,21 +87,21 @@ it('routes every public compose service: primary on the site domains, others on 
     expect($primary->pluck('upstreams')->unique()->values()->all())->toBe([[['dial' => '127.0.0.1:3000']]])
         // No Caddy active health check: `up --wait` covers container health and apps may redirect `/`.
         ->and($primary->every(fn ($entry) => ! array_key_exists('health_uri', $entry)))->toBeTrue()
-        ->and($primary->pluck('domains')->flatten()->all())->toContain('www.example.com', 'stack.sites.kiln.test');
+        ->and($primary->pluck('domains')->flatten()->all())->toContain('www.example.com', 'stack.sites.falak.test');
 
     // Domains still only kept in public_services (not imported as rows yet) are routed as before.
     expect(edge_entry($payload, "{$routeId}-svc-app"))->toMatchArray(['domains' => ['app.example.com'], 'upstreams' => [['dial' => '127.0.0.1:3000']], 'tls' => ['mode' => 'acme']])
-        ->and(edge_entry($payload, "{$routeId}-svc-grafana-ui"))->toMatchArray(['domains' => ['grafana-ui-stack.sites.kiln.test'], 'upstreams' => [['dial' => '127.0.0.1:3001']]])
-        ->and(edge_entry($payload, "{$routeId}-svc-api"))->toMatchArray(['domains' => ['api.example.com', 'api-stack.sites.kiln.test'], 'upstreams' => [['dial' => '127.0.0.1:3002']]])
+        ->and(edge_entry($payload, "{$routeId}-svc-grafana-ui"))->toMatchArray(['domains' => ['grafana-ui-stack.sites.falak.test'], 'upstreams' => [['dial' => '127.0.0.1:3001']]])
+        ->and(edge_entry($payload, "{$routeId}-svc-api"))->toMatchArray(['domains' => ['api.example.com', 'api-stack.sites.falak.test'], 'upstreams' => [['dial' => '127.0.0.1:3002']]])
         ->and(collect($payload['sites'])->pluck('id')->filter(fn ($id) => str_contains($id, 'pending'))->all())->toBe([]);
 });
 
 it('routes each public compose service on its own domain rows with its own rules', function () {
     $site = edge_site($this->sites, $this->org, [$this->web->id], [
-        'slug' => 'stack', 'runtime' => SiteRuntime::Compose, 'appPort' => 3000, 'testDomain' => 'stack.kiln.test',
+        'slug' => 'stack', 'runtime' => SiteRuntime::Compose, 'appPort' => 3000, 'testDomain' => 'stack.falak.test',
         'compose' => new ComposeConfig(ComposeSource::Inline, null, [
             new PublicService('web', 8080, null, 3000, null),
-            new PublicService('admin', 9000, null, 3001, 'admin-stack.sites.kiln.test'),
+            new PublicService('admin', 9000, null, 3001, 'admin-stack.sites.falak.test'),
         ]),
     ]);
     edge_domain($this->org, $site->id, 'example.com', ['is_primary' => true]);
@@ -121,14 +121,14 @@ it('routes each public compose service on its own domain rows with its own rules
     $admin = edge_entry($payload, "{$routeId}-svc-admin");
     $adminInternal = edge_entry($payload, "{$routeId}-svc-admin-1");
 
-    expect($site_)->toMatchArray(['domains' => ['example.com', 'stack.kiln.test'], 'upstreams' => [['dial' => '127.0.0.1:3000']]])
+    expect($site_)->toMatchArray(['domains' => ['example.com', 'stack.falak.test'], 'upstreams' => [['dial' => '127.0.0.1:3000']]])
         ->and($site_['headers'])->toBe(['X-Frame-Options' => 'DENY'])
         ->and($site_)->not->toHaveKey('basic_auth')
         ->and($site_['redirects'])->toBe([['from' => '/old', 'to' => '/new', 'status' => 301]])
         ->and($site_['allow_ips'])->toBe(['10.0.0.0/8'])
         // The admin service: its rows (www redirect included) and its test domain, its header wins, its auth, its
         // allow list instead of the site's, both deny lists; not the primary service's redirect.
-        ->and($admin)->toMatchArray(['domains' => ['admin.example.com', 'admin-stack.sites.kiln.test'], 'redirect_domains' => ['www.admin.example.com'], 'upstreams' => [['dial' => '127.0.0.1:3001']], 'tls' => ['mode' => 'acme']])
+        ->and($admin)->toMatchArray(['domains' => ['admin.example.com', 'admin-stack.sites.falak.test'], 'redirect_domains' => ['www.admin.example.com'], 'upstreams' => [['dial' => '127.0.0.1:3001']], 'tls' => ['mode' => 'acme']])
         ->and($admin['headers'])->toBe(['X-Frame-Options' => 'SAMEORIGIN'])
         ->and($admin['basic_auth'])->toBe([['username' => 'ops', 'password_hash' => 'h']])
         ->and($admin)->not->toHaveKey('redirects')
@@ -139,40 +139,40 @@ it('routes each public compose service on its own domain rows with its own rules
 });
 
 it('skips sites that cannot be routed and sites without hosts', function () {
-    edge_site($this->sites, $this->org, [$this->web->id], ['runtime' => SiteRuntime::Node, 'appPort' => null, 'testDomain' => 'a.kiln.test']);
+    edge_site($this->sites, $this->org, [$this->web->id], ['runtime' => SiteRuntime::Node, 'appPort' => null, 'testDomain' => 'a.falak.test']);
     edge_site($this->sites, $this->org, [$this->web->id]); // no domains
 
     expect(edge_compile($this->web->id)['sites'])->toBe([]);
 });
 
 it('routes the test domain and www redirects', function () {
-    $site = edge_site($this->sites, $this->org, [$this->web->id], ['testDomain' => 'shop.kiln.test']);
+    $site = edge_site($this->sites, $this->org, [$this->web->id], ['testDomain' => 'shop.falak.test']);
     edge_domain($this->org, $site->id, 'shop.com', ['is_primary' => true, 'www_redirect' => WwwRedirect::ToWww]);
     edge_domain($this->org, $site->id, 'shop.de', ['www_redirect' => WwwRedirect::ToApex]);
 
     $entry = edge_entry(edge_compile($this->web->id), strtolower($site->id));
 
-    expect($entry['domains'])->toBe(['www.shop.com', 'shop.de', 'shop.kiln.test'])
+    expect($entry['domains'])->toBe(['www.shop.com', 'shop.de', 'shop.falak.test'])
         ->and($entry['redirect_domains'])->toBe(['shop.com', 'www.shop.de']);
 });
 
 it('issues internal certificates for test domains when configured', function () {
     config(['edge.test_domain_tls' => 'internal']);
-    $site = edge_site($this->sites, $this->org, [$this->web->id], ['testDomain' => 'shop.kiln.test']);
+    $site = edge_site($this->sites, $this->org, [$this->web->id], ['testDomain' => 'shop.falak.test']);
     edge_domain($this->org, $site->id, 'shop.com', ['is_primary' => true]);
 
     $payload = edge_compile($this->web->id);
     $id = strtolower($site->id);
 
     expect(edge_entry($payload, $id))->toMatchArray(['domains' => ['shop.com'], 'tls' => ['mode' => 'acme']])
-        ->and(edge_entry($payload, "{$id}-1"))->toMatchArray(['domains' => ['shop.kiln.test'], 'tls' => ['mode' => 'internal'], 'kind' => 'frankenphp']);
+        ->and(edge_entry($payload, "{$id}-1"))->toMatchArray(['domains' => ['shop.falak.test'], 'tls' => ['mode' => 'internal'], 'kind' => 'frankenphp']);
 });
 
 it('groups domains by tls and gates custom certificates on installation', function () {
     $site = edge_site($this->sites, $this->org, [$this->web->id]);
     $pem = edge_self_signed(['secure.example.com']);
     $certificate = Certificate::query()->create([
-        'organization_id' => $this->org, 'site_id' => $site->id, 'name' => 'kiln-cert1', 'domains' => ['secure.example.com'],
+        'organization_id' => $this->org, 'site_id' => $site->id, 'name' => 'falak-cert1', 'domains' => ['secure.example.com'],
         'cert_pem' => $pem['cert'], 'key_pem' => $pem['key'], 'fingerprint' => str_repeat('a', 64),
     ]);
     edge_domain($this->org, $site->id, 'example.com', ['is_primary' => true]);
@@ -188,7 +188,7 @@ it('groups domains by tls and gates custom certificates on installation', functi
     $after = edge_compile($this->web->id);
     expect(edge_entry($after, $id)['domains'])->toBe(['example.com'])
         ->and(edge_entry($after, "{$id}-1"))->toMatchArray(['domains' => ['plain.example.com'], 'tls' => ['mode' => 'off']])
-        ->and(edge_entry($after, "{$id}-2"))->toMatchArray(['domains' => ['secure.example.com'], 'tls' => ['mode' => 'custom', 'cert_name' => 'kiln-cert1']]);
+        ->and(edge_entry($after, "{$id}-2"))->toMatchArray(['domains' => ['secure.example.com'], 'tls' => ['mode' => 'custom', 'cert_name' => 'falak-cert1']]);
 });
 
 it('uses DNS-01 for wildcard domains', function () {
@@ -235,7 +235,7 @@ it('compiles redirects, headers, basic auth and site settings', function () {
 it('load balances through an lb server and serves plain HTTP on the backends', function () {
     $second = edge_server($this->servers, $this->org, ['privateIpv4' => null, 'ipv4' => '198.51.100.9']);
     $lb = edge_server($this->servers, $this->org, ['type' => ServerType::LoadBalancer]);
-    $site = edge_site($this->sites, $this->org, [$this->web->id, $second->id], ['testDomain' => 'shop.kiln.test']);
+    $site = edge_site($this->sites, $this->org, [$this->web->id, $second->id], ['testDomain' => 'shop.falak.test']);
     edge_domain($this->org, $site->id, 'shop.com', ['is_primary' => true, 'www_redirect' => WwwRedirect::ToWww]);
     SecurityRule::query()->create(['site_id' => $site->id, 'username' => 'ops', 'password_hash' => '$2y$10$abc']);
     LoadBalancer::query()->create(['organization_id' => $this->org, 'site_id' => $site->id, 'server_id' => $lb->id, 'policy' => LbPolicy::LeastConn, 'health_uri' => '/up', 'backend_port' => 80, 'weights' => [$this->web->id => 2]]);
@@ -243,7 +243,7 @@ it('load balances through an lb server and serves plain HTTP on the backends', f
 
     $front = edge_entry(edge_compile($lb->id), $id);
     expect($front)->toMatchArray([
-        'domains' => ['www.shop.com', 'shop.kiln.test'],
+        'domains' => ['www.shop.com', 'shop.falak.test'],
         'redirect_domains' => ['shop.com'],
         'tls' => ['mode' => 'acme'],
         'kind' => 'reverse_proxy',
@@ -256,7 +256,7 @@ it('load balances through an lb server and serves plain HTTP on the backends', f
     ]);
 
     $backend = edge_entry(edge_compile($this->web->id), $id);
-    expect($backend)->toMatchArray(['kind' => 'frankenphp', 'tls' => ['mode' => 'off'], 'domains' => ['www.shop.com', 'shop.kiln.test']])
+    expect($backend)->toMatchArray(['kind' => 'frankenphp', 'tls' => ['mode' => 'off'], 'domains' => ['www.shop.com', 'shop.falak.test']])
         ->and($backend)->not->toHaveKey('basic_auth')
         ->and($backend)->not->toHaveKey('access_log');
 
@@ -303,14 +303,14 @@ it('routes a site path to a function: its local gateway on the same server, else
     expect($entry['mounts'])->toBe([
         // longest prefix first
         ['path_prefix' => '/api/hooks', 'strip_prefix' => false, 'dial' => 'hooks-fn.example.com:443', 'tls_server_name' => 'hooks-fn.example.com', 'request_headers' => ['Host' => 'hooks-fn.example.com']],
-        ['path_prefix' => '/api', 'strip_prefix' => true, 'dial' => '127.0.0.1:7070', 'request_headers' => ['X-Kiln-Function' => 'api-fn', 'X-Kiln-Client-IP' => '{http.vars.client_ip}']],
+        ['path_prefix' => '/api', 'strip_prefix' => true, 'dial' => '127.0.0.1:7070', 'request_headers' => ['X-Falak-Function' => 'api-fn', 'X-Falak-Client-IP' => '{http.vars.client_ip}']],
     ]);
 });
 
 it('serves a function path on one public service of a compose site', function () {
     $site = edge_site($this->sites, $this->org, [$this->web->id], [
-        'id' => strtolower((string) Str::ulid()), 'slug' => 'stack', 'runtime' => SiteRuntime::Compose, 'appPort' => 3000, 'testDomain' => 'stack.kiln.test',
-        'compose' => new ComposeConfig(ComposeSource::Inline, null, [new PublicService('web', 80, null, 3000, 'stack.kiln.test'), new PublicService('admin', 9000, null, 3001, 'admin-stack.kiln.test')]),
+        'id' => strtolower((string) Str::ulid()), 'slug' => 'stack', 'runtime' => SiteRuntime::Compose, 'appPort' => 3000, 'testDomain' => 'stack.falak.test',
+        'compose' => new ComposeConfig(ComposeSource::Inline, null, [new PublicService('web', 80, null, 3000, 'stack.falak.test'), new PublicService('admin', 9000, null, 3001, 'admin-stack.falak.test')]),
     ]);
     $function = edge_site($this->sites, $this->org, [$this->web->id], ['id' => strtolower((string) Str::ulid()), 'slug' => 'api-fn', 'runtime' => SiteRuntime::Function]);
     $mounts = app(PathMounts::class);

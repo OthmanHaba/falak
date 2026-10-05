@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Sites\Events;
+namespace Falak\Sites\Events;
 
+use Falak\Sites\Contracts\Data\SitePlacement;
 use Illuminate\Foundation\Events\Dispatchable;
-use Kiln\Sites\Contracts\Data\SitePlacement;
 
 final class SiteCreated
 {

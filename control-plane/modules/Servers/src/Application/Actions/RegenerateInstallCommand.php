@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Servers\Application\Actions;
+namespace Falak\Servers\Application\Actions;
 
-use Kiln\Fleet\Contracts\Enrollment;
-use Kiln\Servers\Domain\Models\Server;
+use Falak\Fleet\Contracts\Enrollment;
+use Falak\Servers\Domain\Models\Server;
 
 /**
  * Issues a fresh one-time install command (e.g. to reinstall the agent or after the previous one expired).

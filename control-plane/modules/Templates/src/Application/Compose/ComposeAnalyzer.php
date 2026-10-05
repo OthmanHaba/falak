@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Templates\Application\Compose;
+namespace Falak\Templates\Application\Compose;
 
 /**
  * Structure + policy checks of a compose file, delegated to the compose runtime's

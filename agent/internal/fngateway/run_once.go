@@ -13,18 +13,18 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/kiln/agent/internal/docker"
+	"github.com/OthmanHaba/falak/agent/internal/docker"
 )
 
 // Scheduled runs: a schedule (or "Run now") runs the function's live release once, in its own container
-// (kiln-fn-run), outside the request instances. The runtime calls the function's scheduled() export and exits 0
+// (falak-fn-run), outside the request instances. The runtime calls the function's scheduled() export and exits 0
 // on success. Output streams back to the caller (the agent's cron job, or the fn.run command).
 
 // RunCommand is the runtime image's entry point for scheduled runs.
-const RunCommand = "kiln-fn-run"
+const RunCommand = "falak-fn-run"
 
 // LabelRun marks scheduled-run containers (never adopted as instances; removed when the gateway restarts).
-const LabelRun = "kiln.fn.run"
+const LabelRun = "falak.fn.run"
 
 // RunRequest is one run of a schedule.
 type RunRequest struct {
@@ -100,7 +100,7 @@ func (g *Gateway) Run(ctx context.Context, site string, r RunRequest, w io.Write
 	}
 	rctx, cancel := context.WithTimeout(ctx, time.Duration(r.TimeoutS)*time.Second)
 	defer cancel()
-	name := "kiln-fn-run-" + site + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	name := "falak-fn-run-" + site + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	code, err := g.o.Engine.RunOnce(rctx, name, spec.runBody(r), w)
 	if rctx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
 		return ExitTimeout, fmt.Errorf("%w after %ds", ErrRunTimeout, r.TimeoutS)
@@ -113,7 +113,7 @@ func (g *Gateway) Run(ctx context.Context, site string, r RunRequest, w io.Write
 func (s Spec) runBody(r RunRequest) docker.CreateBody {
 	b := s.createBody(0)
 	b.Cmd = []string{RunCommand}
-	b.Env = append(b.Env, "KILN_TRIGGER="+r.Trigger, "KILN_SCHEDULE="+r.Schedule, "KILN_SCHEDULE_NAME="+r.Name, "KILN_SCHEDULE_CRON="+r.Cron)
+	b.Env = append(b.Env, "FALAK_TRIGGER="+r.Trigger, "FALAK_SCHEDULE="+r.Schedule, "FALAK_SCHEDULE_NAME="+r.Name, "FALAK_SCHEDULE_CRON="+r.Cron)
 	b.ExposedPorts = nil
 	b.Labels[LabelSlot] = "run"
 	b.Labels[LabelSpec] = "run"
@@ -122,7 +122,7 @@ func (s Spec) runBody(r RunRequest) docker.CreateBody {
 }
 
 // runHandler is POST /v1/functions/{site}/run: the run's output streams as the body; the exit code follows in
-// the X-Kiln-Exit-Code trailer (-1 when the run did not finish).
+// the X-Falak-Exit-Code trailer (-1 when the run did not finish).
 func (g *Gateway) runHandler(w http.ResponseWriter, req *http.Request) {
 	var r RunRequest
 	dec := json.NewDecoder(io.LimitReader(req.Body, 64<<10))
@@ -139,13 +139,13 @@ func (g *Gateway) runHandler(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "unknown function", http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Trailer", "X-Kiln-Exit-Code, X-Kiln-Error")
+	w.Header().Set("Trailer", "X-Falak-Exit-Code, X-Falak-Error")
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	code, err := g.Run(req.Context(), site, r, flushWriter{w})
-	w.Header().Set("X-Kiln-Exit-Code", strconv.Itoa(code))
+	w.Header().Set("X-Falak-Exit-Code", strconv.Itoa(code))
 	if err != nil {
-		w.Header().Set("X-Kiln-Error", strings.ReplaceAll(err.Error(), "\n", " "))
+		w.Header().Set("X-Falak-Error", strings.ReplaceAll(err.Error(), "\n", " "))
 	}
 }
 
@@ -182,8 +182,8 @@ func (c *Client) Run(ctx context.Context, site string, r RunRequest, w io.Writer
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		return -1, err
 	}
-	code, convErr := strconv.Atoi(resp.Trailer.Get("X-Kiln-Exit-Code"))
-	if msg := resp.Trailer.Get("X-Kiln-Error"); msg != "" {
+	code, convErr := strconv.Atoi(resp.Trailer.Get("X-Falak-Exit-Code"))
+	if msg := resp.Trailer.Get("X-Falak-Error"); msg != "" {
 		if convErr != nil {
 			code = -1
 		}

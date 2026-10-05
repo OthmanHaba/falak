@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Network\Contracts;
+namespace Falak\Network\Contracts;
 
-use Kiln\Network\Contracts\Data\PrivateNetworkMembership;
+use Falak\Network\Contracts\Data\PrivateNetworkMembership;
 
 /**
  * Private (WireGuard) network addresses of servers, for other modules — e.g. Edge pointing load

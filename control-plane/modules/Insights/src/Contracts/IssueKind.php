@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Insights\Contracts;
+namespace Falak\Insights\Contracts;
 
 enum IssueKind: string
 {

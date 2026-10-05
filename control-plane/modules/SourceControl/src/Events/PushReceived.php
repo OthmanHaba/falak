@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\SourceControl\Events;
+namespace Falak\SourceControl\Events;
 
+use Falak\SourceControl\Contracts\Data\CommitData;
 use Illuminate\Foundation\Events\Dispatchable;
-use Kiln\SourceControl\Contracts\Data\CommitData;
 
 /**
  * A verified push webhook for a branch (tag pushes and branch deletions are not announced).

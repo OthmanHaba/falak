@@ -1,7 +1,7 @@
 <?php
 
+use Falak\Sites\Http\Controllers\Api\SiteApiController;
 use Illuminate\Support\Facades\Route;
-use Kiln\Sites\Http\Controllers\Api\SiteApiController;
 
 Route::middleware(['auth:sanctum', 'org'])->prefix('v1')->name('api.v1.')->group(function () {
     Route::get('sites', [SiteApiController::class, 'index'])->name('sites.index');

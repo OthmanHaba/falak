@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Providers\Infrastructure\Adapters;
+namespace Falak\Providers\Infrastructure\Adapters;
 
-use Kiln\Providers\Contracts\Data\Machine;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Contracts\ProviderAdapter;
-use Kiln\Providers\Contracts\ProviderType;
+use Falak\Providers\Contracts\Data\Machine;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\ProviderAdapter;
+use Falak\Providers\Contracts\ProviderType;
 
 /**
  * "Bring your own server": nothing is created through an API; servers enroll via the install command.

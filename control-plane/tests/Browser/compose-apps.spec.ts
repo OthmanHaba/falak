@@ -82,7 +82,7 @@ const INSPECTION = {
         { name: 'LOG_LEVEL', default: 'info', required: false, services: ['app'], source: 'compose' },
     ],
     adjustments: [
-        { kind: 'container_name', service: 'web', detail: 'container_name removed: Kiln names containers per environment and release.' },
+        { kind: 'container_name', service: 'web', detail: 'container_name removed: Falak names containers per environment and release.' },
         {
             kind: 'bind_to_volume',
             service: 'app',
@@ -153,19 +153,19 @@ test('creates a Docker Compose app from a repository: files, services, variables
     await form.getByLabel('Override file 1', { exact: true }).fill('docker/compose.prod.yml');
     await expect(form.getByTestId('compose-service-web')).toBeVisible();
 
-    // web public, db replaced by a Kiln database, the storage folder kept as a folder.
+    // web public, db replaced by a Falak database, the storage folder kept as a folder.
     await form.getByRole('combobox', { name: 'web runs' }).click();
     await page.getByRole('option', { name: 'In the stack, public' }).click();
     await expect(form.getByRole('combobox', { name: 'web port' })).toBeVisible();
     await form.getByRole('combobox', { name: 'db runs' }).click();
-    await page.getByRole('option', { name: 'Kiln PostgreSQL database' }).click();
-    await expect(form.getByText(/Kiln creates a PostgreSQL database/)).toBeVisible();
+    await page.getByRole('option', { name: 'Falak PostgreSQL database' }).click();
+    await expect(form.getByText(/Falak creates a PostgreSQL database/)).toBeVisible();
     await expect(form.getByTestId('compose-database-note-db')).toContainText('db’s existing data is not copied');
-    // The official redis image can become a Kiln Redis instance (phase 4 of docs/plans/REDIS.md).
+    // The official redis image can become a Falak Redis instance (phase 4 of docs/plans/REDIS.md).
     await form.getByRole('combobox', { name: 'cache runs' }).click();
-    await page.getByRole('option', { name: 'Kiln Redis database' }).click();
-    await expect(form.getByText(/Kiln creates a Redis instance on the stack’s server/)).toBeVisible();
-    await expect(form.getByTestId('compose-database-note-cache')).toContainText('the Kiln instance starts empty');
+    await page.getByRole('option', { name: 'Falak Redis database' }).click();
+    await expect(form.getByText(/Falak creates a Redis instance on the stack’s server/)).toBeVisible();
+    await expect(form.getByTestId('compose-database-note-cache')).toContainText('the Falak instance starts empty');
     await form.getByTestId('compose-service-app').getByRole('checkbox').check();
 
     // The required variable blocks Deploy until it has a value.
@@ -175,7 +175,7 @@ test('creates a Docker Compose app from a repository: files, services, variables
     await expect(deploy).toBeEnabled();
 
     await form.getByRole('button', { name: 'Show the diff' }).click();
-    await expect(form.getByText('Your project → what Kiln runs')).toBeVisible();
+    await expect(form.getByText('Your project → what Falak runs')).toBeVisible();
 
     await deploy.click();
     await expect.poll(() => created).not.toBeNull();

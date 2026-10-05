@@ -1,9 +1,9 @@
-import { Button } from '@/components/kiln/button';
-import { DataTable } from '@/components/kiln/data-table';
-import { Dialog } from '@/components/kiln/dialog';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { Section } from '@/components/kiln/section';
+import { Button } from '@/components/falak/button';
+import { DataTable } from '@/components/falak/data-table';
+import { Dialog } from '@/components/falak/dialog';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { Section } from '@/components/falak/section';
 import InfrastructureLayout from '@/layouts/infrastructure-layout';
 import { Link, router, useForm } from '@inertiajs/react';
 import { Network, Plus, Scale, Shield } from 'lucide-react';

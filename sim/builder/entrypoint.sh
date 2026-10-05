@@ -1,12 +1,12 @@
 #!/bin/sh
-# Trust the sim edge CA (artifact upload/download goes through https://kiln.test), then serve builds.
+# Trust the sim edge CA (artifact upload/download goes through https://falak.test), then serve builds.
 set -eu
-until [ -s /kiln/edge-pki/root.crt ]; do sleep 1; done
-cp /kiln/edge-pki/root.crt /usr/local/share/ca-certificates/kiln-sim-edge.crt
+until [ -s /falak/edge-pki/root.crt ]; do sleep 1; done
+cp /falak/edge-pki/root.crt /usr/local/share/ca-certificates/falak-sim-edge.crt
 update-ca-certificates >/dev/null
 
 # Docker / compose builds: BuildKit in a container on the fleet network (reaches sim-registry over plain HTTP).
-# kiln-builder reuses an existing buildx builder named "kiln".
+# falak-builder reuses an existing buildx builder named "falak".
 if [ -S /var/run/docker.sock ] && docker version >/dev/null 2>&1; then
     mkdir -p /etc/buildkit
     cat > /etc/buildkit/buildkitd.toml <<TOML
@@ -26,14 +26,14 @@ TOML
     fi
     # Recreate the builder (config may have changed) but keep its state volume: BuildKit's layer cache survives
     # builder restarts and `make reset` (`make clean-cache` removes it).
-    docker buildx rm --keep-state kiln >/dev/null 2>&1 || true
-    docker buildx create --name kiln --driver docker-container \
-        --driver-opt "network=${SIM_BUILDKIT_NETWORK:-kiln-sim_fleet}" \
+    docker buildx rm --keep-state falak >/dev/null 2>&1 || true
+    docker buildx create --name falak --driver docker-container \
+        --driver-opt "network=${SIM_BUILDKIT_NETWORK:-falak-sim_fleet}" \
         --buildkitd-config /etc/buildkit/buildkitd.toml --bootstrap >/dev/null \
-        && echo "sim builder: buildx builder 'kiln' on ${SIM_BUILDKIT_NETWORK:-kiln-sim_fleet}" \
+        && echo "sim builder: buildx builder 'falak' on ${SIM_BUILDKIT_NETWORK:-falak-sim_fleet}" \
         || echo "sim builder: could not create the buildx builder; docker builds will fail" >&2
 else
     echo "sim builder: no Docker socket; native builds only" >&2
 fi
 
-exec /opt/kiln/kiln-builder serve
+exec /opt/falak/falak-builder serve

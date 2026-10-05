@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Servers\Application\Actions;
+namespace Falak\Servers\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Models\SshKey;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Models\SshKey;
 
 /**
  * Deletes a key and removes it from every server it was synced to.

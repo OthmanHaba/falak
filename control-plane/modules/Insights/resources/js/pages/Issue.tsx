@@ -1,16 +1,16 @@
-import { Avatar } from '@/components/kiln/avatar';
-import { Button } from '@/components/kiln/button';
-import { CodeBlock } from '@/components/kiln/code-block';
-import { DataTable, type DataTableColumn } from '@/components/kiln/data-table';
-import { Field } from '@/components/kiln/field';
-import { Textarea } from '@/components/kiln/input';
-import { KeyValue } from '@/components/kiln/key-value';
-import { MetricChart, type MetricPoint } from '@/components/kiln/metric-chart';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Select } from '@/components/kiln/select';
-import { StatusBadge } from '@/components/kiln/status';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/kiln/tabs';
-import { Tag } from '@/components/kiln/tag';
+import { Avatar } from '@/components/falak/avatar';
+import { Button } from '@/components/falak/button';
+import { CodeBlock } from '@/components/falak/code-block';
+import { DataTable, type DataTableColumn } from '@/components/falak/data-table';
+import { Field } from '@/components/falak/field';
+import { Textarea } from '@/components/falak/input';
+import { KeyValue } from '@/components/falak/key-value';
+import { MetricChart, type MetricPoint } from '@/components/falak/metric-chart';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Select } from '@/components/falak/select';
+import { StatusBadge } from '@/components/falak/status';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/falak/tabs';
+import { Tag } from '@/components/falak/tag';
 import ObservabilityLayout from '@/layouts/observability-layout';
 import { Link, router, useForm } from '@inertiajs/react';
 import { format } from 'date-fns';
@@ -104,7 +104,7 @@ interface Props {
 const UNASSIGNED = '__none__';
 
 function describeActivity(entry: ActivityEntry, members: Member[]): string {
-    const who = entry.user ?? 'Kiln';
+    const who = entry.user ?? 'Falak';
 
     switch (entry.type) {
         case 'opened':

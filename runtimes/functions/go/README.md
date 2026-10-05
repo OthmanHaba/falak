@@ -1,6 +1,6 @@
-# Kiln function runtime: Go
+# Falak function runtime: Go
 
-The image Kiln runs Go functions with (`fn.release.apply` → `kiln-fn-gateway`). Based on
+The image Falak runs Go functions with (`fn.release.apply` → `falak-fn-gateway`). Based on
 `golang:<version>-alpine`. Build context: `runtimes/functions`, file `go/Dockerfile`.
 
 ```go
@@ -32,12 +32,12 @@ The same commands as every function runtime (see `../bun/README.md`). The agent 
 
 | Command | Does |
 |---|---|
-| `kiln-fn-install` | Checks the package of `$KILN_ENTRYPOINT` (default `main.go`): `package main`, a `Handler` and/or `Scheduled`, no `main()`. In a copy under `/tmp`, it adds the runtime (`runtime/kiln_runtime.go`) and a generated `main()`, runs `go mod tidy` (creating `go.mod` as module `function` when there is none) and `go build`s a static binary into `/app/.kiln/fn`. `go.mod` and `go.sum` are copied back to `/app`. |
-| `kiln-fn-serve` | Runs `/app/.kiln/fn`: `Handler` on `0.0.0.0:$PORT`. It listens once package initialisation is done, so an accepted connection means ready. A panic answers 500 instead of dropping the connection. SIGTERM shuts down gracefully (10 s). |
-| `kiln-fn-run` | Runs `/app/.kiln/fn run`: calls `Scheduled(ctx, event)` once; exit 0 when it returns nil, 1 on an error or a panic. `ctx` is cancelled on SIGTERM (the run's timeout). |
+| `falak-fn-install` | Checks the package of `$FALAK_ENTRYPOINT` (default `main.go`): `package main`, a `Handler` and/or `Scheduled`, no `main()`. In a copy under `/tmp`, it adds the runtime (`runtime/falak_runtime.go`) and a generated `main()`, runs `go mod tidy` (creating `go.mod` as module `function` when there is none) and `go build`s a static binary into `/app/.falak/fn`. `go.mod` and `go.sum` are copied back to `/app`. |
+| `falak-fn-serve` | Runs `/app/.falak/fn`: `Handler` on `0.0.0.0:$PORT`. It listens once package initialisation is done, so an accepted connection means ready. A panic answers 500 instead of dropping the connection. SIGTERM shuts down gracefully (10 s). |
+| `falak-fn-run` | Runs `/app/.falak/fn run`: calls `Scheduled(ctx, event)` once; exit 0 when it returns nil, 1 on an error or a panic. `ctx` is cancelled on SIGTERM (the run's timeout). |
 
 **`Event`** is declared by the runtime: `Name`, `Schedule`, `Cron`, `Trigger` (`"cron"` or `"manual"`) and
-`ScheduledTime`. Don't declare `main`, `Event`, or names starting with `kiln` in the function's package.
+`ScheduledTime`. Don't declare `main`, `Event`, or names starting with `falak` in the function's package.
 
 **Several files:** every `.go` file next to the entrypoint is part of `package main`; folders are packages of the
 module (`"function/lib"` for `lib/` without your own `go.mod`).
@@ -53,12 +53,12 @@ module (`"function/lib"` for `lib/` without your own `go.mod`).
 
 ## Telemetry
 
-When `$KILN_OTLP_SOCKET` exists, the runtime reports to it (standard library only), encoded like the other runtimes
+When `$FALAK_OTLP_SOCKET` exists, the runtime reports to it (standard library only), encoded like the other runtimes
 and following `contracts/telemetry/README.md`:
 
 - **Requests:** a `request` span per request, named by the `ServeMux` pattern (`GET /hello/{name}`; `GET /{$}` is
   `/`). A `ServeMux` that matches nothing gives `(unmatched)`; other handlers get the path with ids replaced
-  (`/users/:id`). Status code, `faas.coldstart` (from `X-Kiln-Cold-Start`) and a W3C `traceparent` parent.
+  (`/users/:id`). Status code, `faas.coldstart` (from `X-Falak-Cold-Start`) and a W3C `traceparent` parent.
 - **Panics:** an `exception` event with the stack, ERROR status, and a 500.
 - **Outgoing HTTP:** `http.DefaultClient` gets a tracing transport (`http.DefaultTransport` stays an
   `*http.Transport`, so cloning it still works). Calls through it (`http.Get`, `http.DefaultClient.Do`) or through a
@@ -71,15 +71,15 @@ and following `contracts/telemetry/README.md`:
 - **Scheduled runs:** a `scheduled_task` span per run, `finished` or `failed` (with the error).
 
 Spans are batched (every second, or 256 at a time) and never block a request; they are dropped when the socket is
-down. Set `KILN_TELEMETRY=off` to turn it off.
+down. Set `FALAK_TELEMETRY=off` to turn it off.
 
 ## Build and try
 
 ```sh
-docker build -t kiln-fn-go:dev -f runtimes/functions/go/Dockerfile runtimes/functions
+docker build -t falak-fn-go:dev -f runtimes/functions/go/Dockerfile runtimes/functions
 mkdir -p /tmp/fn/app /tmp/fn/cache && cp main.go /tmp/fn/app/ && chmod -R a+rwX /tmp/fn
 docker run --rm --read-only --tmpfs /tmp --user 65534:65534 -v /tmp/fn/app:/app -v /tmp/fn/cache:/cache \
-  kiln-fn-go:dev kiln-fn-install
+  falak-fn-go:dev falak-fn-install
 docker run --rm --read-only --tmpfs /tmp --user 65534:65534 -v /tmp/fn/app:/app:ro -p 127.0.0.1:8080:8080 \
-  kiln-fn-go:dev
+  falak-fn-go:dev
 ```

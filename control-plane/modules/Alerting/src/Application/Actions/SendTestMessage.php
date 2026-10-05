@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Alerting\Application\Actions;
+namespace Falak\Alerting\Application\Actions;
 
-use Kiln\Alerting\Application\AlertMessage;
-use Kiln\Alerting\Domain\Models\Channel;
-use Kiln\Alerting\Infrastructure\Senders\DeliveryFailed;
-use Kiln\Alerting\Infrastructure\Senders\SenderRegistry;
+use Falak\Alerting\Application\AlertMessage;
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Alerting\Infrastructure\Senders\DeliveryFailed;
+use Falak\Alerting\Infrastructure\Senders\SenderRegistry;
 
 /**
  * Sends a test message synchronously. Returns null on success, else the (secret-free) error.

@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Sites\Events;
+namespace Falak\Sites\Events;
 
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
- * A compose stack service now runs as a Kiln service (a database or a site; $refId is the new database / site). The
+ * A compose stack service now runs as a Falak service (a database or a site; $refId is the new database / site). The
  * stack no longer lists the service among its public services. Projects places a database next to the stack in its
  * environment (sites carry their placement in SiteCreated); Edge moves a split-out public service's domains
  * (edge_domains with compose_service = $service) to the new site.

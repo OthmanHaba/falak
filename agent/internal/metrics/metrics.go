@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kiln/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
@@ -210,9 +210,9 @@ func (c *Collector) Collect() *metricspb.ResourceMetrics {
 		return nil
 	}
 	return &metricspb.ResourceMetrics{
-		Resource: &resourcepb.Resource{Attributes: []*commonpb.KeyValue{str("service.name", "kiln-host")}},
+		Resource: &resourcepb.Resource{Attributes: []*commonpb.KeyValue{str("service.name", "falak-host")}},
 		ScopeMetrics: []*metricspb.ScopeMetrics{{
-			Scope:   &commonpb.InstrumentationScope{Name: "kiln-agent/metrics"},
+			Scope:   &commonpb.InstrumentationScope{Name: "falak-agent/metrics"},
 			Metrics: ms,
 		}},
 	}

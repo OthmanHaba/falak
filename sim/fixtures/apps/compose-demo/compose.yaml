@@ -1,4 +1,4 @@
-# Kiln sim fixture: an app built from this repository (build:) + Redis with a named volume.
+# Falak sim fixture: an app built from this repository (build:) + Redis with a named volume.
 services:
   app:
     build:
@@ -6,7 +6,7 @@ services:
     environment:
       REDIS_HOST: redis
       APP_GREETING: ${APP_GREETING:-hello}
-      KILN_RELEASE_ID: ${KILN_RELEASE_ID}
+      FALAK_RELEASE_ID: ${FALAK_RELEASE_ID}
     depends_on:
       redis:
         condition: service_healthy

@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Edge\Application\Actions;
+namespace Falak\Edge\Application\Actions;
 
-use Kiln\Edge\Application\EdgeChanges;
-use Kiln\Edge\Domain\Models\Header;
-use Kiln\Edge\Domain\Models\Redirect;
-use Kiln\Edge\Domain\Models\SecurityRule;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Edge\Application\EdgeChanges;
+use Falak\Edge\Domain\Models\Header;
+use Falak\Edge\Domain\Models\Redirect;
+use Falak\Edge\Domain\Models\SecurityRule;
+use Falak\Identity\Contracts\AuditLog;
 
 /**
  * Deletes a redirect, security rule or header of a site.

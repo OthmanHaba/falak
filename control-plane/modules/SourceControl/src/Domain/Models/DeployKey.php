@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\SourceControl\Domain\Models;
+namespace Falak\SourceControl\Domain\Models;
 
+use Falak\SourceControl\Contracts\Data\DeployKeyData;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Kiln\SourceControl\Contracts\Data\DeployKeyData;
 
 /**
  * @property string $id

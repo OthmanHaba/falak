@@ -1,4 +1,4 @@
-import { Button, Callout, CopyButton, Field, Input, Section, Select, SkeletonRows, Switch, toast } from '@/components/kiln';
+import { Button, Callout, CopyButton, Field, Input, Section, Select, SkeletonRows, Switch, toast } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { HttpError, errorMessage, requestJson, type HttpMethod } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';

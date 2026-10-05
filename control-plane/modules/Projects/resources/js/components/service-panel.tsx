@@ -14,7 +14,7 @@ import {
     Tag,
     toast,
     type MenuAction,
-} from '@/components/kiln';
+} from '@/components/falak';
 import { errorMessage, requestJson } from '@/lib/http';
 import { serviceActionsFor, serviceTabsFor, type ServiceAction, type ServicePanelContext } from '@/lib/registry';
 import { cn } from '@/lib/utils';
@@ -188,7 +188,7 @@ export function ServicePanel({ base, service, kind, refId, tab, renameUrl, onRen
         if (tabs.length < 2) return;
         const onKeyDown = (event: globalThis.KeyboardEvent) => {
             if (event.key !== '[' && event.key !== ']') return;
-            if (root.current?.closest<HTMLElement>('[data-kiln-panel]')?.dataset.depth !== '0') return;
+            if (root.current?.closest<HTMLElement>('[data-falak-panel]')?.dataset.depth !== '0') return;
             const target = event.target as HTMLElement | null;
             if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
             const index = tabs.findIndex((item) => item.id === active);

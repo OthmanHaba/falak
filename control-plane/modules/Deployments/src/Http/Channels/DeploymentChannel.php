@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Deployments\Http\Channels;
+namespace Falak\Deployments\Http\Channels;
 
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Policies\DeploymentPermissions;
+use Falak\Identity\Contracts\OrganizationAccess;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
-use Kiln\Identity\Contracts\OrganizationAccess;
 
 /**
  * private-deployments.{deploymentId}: members of the deployment's organization with deployments.view.

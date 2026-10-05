@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Insights\Infrastructure;
+namespace Falak\Insights\Infrastructure;
 
-use Kiln\Insights\Contracts\SiteNameResolver;
+use Falak\Insights\Contracts\SiteNameResolver;
 
 /**
  * Default until the Sites module binds its own SiteNameResolver: the id is the name.

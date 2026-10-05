@@ -1,5 +1,5 @@
-import { Select } from '@/components/kiln/select';
-import { SkeletonRows } from '@/components/kiln/skeleton';
+import { Select } from '@/components/falak/select';
+import { SkeletonRows } from '@/components/falak/skeleton';
 import { useMemo, useState } from 'react';
 import { BackendError, NotConfigured } from '../components/backend-state';
 import { LogStreamView, useLogStream, type LogFilters } from '../components/log-stream';

@@ -1,6 +1,6 @@
 // Package functions implements the fn.* commands: it writes a function release (the code files the control
-// plane sends), installs its dependencies with the runtime image's kiln-fn-install in a one-shot container, keeps
-// kiln-fn-gateway.service running and registers the release with it (see package fngateway).
+// plane sends), installs its dependencies with the runtime image's falak-fn-install in a one-shot container, keeps
+// falak-fn-gateway.service running and registers the release with it (see package fngateway).
 package functions
 
 import (
@@ -22,25 +22,25 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/docker"
-	"github.com/kiln/agent/internal/fngateway"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/docker"
+	"github.com/OthmanHaba/falak/agent/internal/fngateway"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 const (
 	// Root holds every function: <site>/releases/<release>/ and .cache/<runtime>/.
 	Root            = fngateway.DefaultStateDir
-	GatewayUnitPath = "/etc/systemd/system/kiln-fn-gateway.service"
-	gatewayUnit     = "kiln-fn-gateway.service"
-	markerFile      = ".kiln-release.json"
+	GatewayUnitPath = "/etc/systemd/system/falak-fn-gateway.service"
+	gatewayUnit     = "falak-fn-gateway.service"
+	markerFile      = ".falak-release.json"
 
 	maxFiles     = 200
 	maxBytes     = 2 << 20
 	nobodyID     = 65534
 	defaultKeep  = 5
-	installLabel = "kiln.fn.install"
+	installLabel = "falak.fn.install"
 )
 
 var (
@@ -62,7 +62,7 @@ type Docker interface {
 	NetworkCreate(ctx context.Context, name string, labels map[string]string) error
 }
 
-// Gateway is the admin API of kiln-fn-gateway.
+// Gateway is the admin API of falak-fn-gateway.
 type Gateway interface {
 	Version(ctx context.Context) (string, error)
 	Apply(ctx context.Context, spec fngateway.Spec) (fngateway.ApplyResult, error)
@@ -78,7 +78,7 @@ type Deps struct {
 	Docker  Docker
 	Gateway Gateway
 	Logger  *slog.Logger
-	// Binary runs the gateway (default /usr/local/bin/kiln-agent).
+	// Binary runs the gateway (default /usr/local/bin/falak-agent).
 	Binary string
 	// Version is this agent's version; a gateway reporting another one is restarted on the next release.
 	Version string
@@ -99,7 +99,7 @@ func New(d Deps) *Functions {
 		d.Logger = slog.Default()
 	}
 	if d.Binary == "" {
-		d.Binary = "/usr/local/bin/kiln-agent"
+		d.Binary = "/usr/local/bin/falak-agent"
 	}
 	if d.SocketWait <= 0 {
 		d.SocketWait = 15 * time.Second
@@ -252,7 +252,7 @@ func (p *ApplyPayload) validate() error {
 // maxDepth is how many path segments a function file may have.
 const maxDepth = 8
 
-// validPath: relative, clean, not too deep, no "..", no dot-files (reserved for Kiln's markers), no folder the
+// validPath: relative, clean, not too deep, no "..", no dot-files (reserved for Falak's markers), no folder the
 // installers create (node_modules, __pycache__).
 func validPath(p string) bool {
 	if !fileRe.MatchString(p) || path.Clean(p) != p || len(p) > 255 {
@@ -542,7 +542,7 @@ func (f *Functions) pull(ctx context.Context, p ApplyPayload, st commands.Stream
 	return f.d.Docker.ImagePull(ctx, p.Image, p.RegistryAuth, st.Stdout())
 }
 
-// install runs the runtime's kiln-fn-install in a one-shot, hardened container (with network, for the package
+// install runs the runtime's falak-fn-install in a one-shot, hardened container (with network, for the package
 // registry), streaming its output.
 func (f *Functions) install(ctx context.Context, p ApplyPayload, appDir, cache string, st commands.Stream) error {
 	d := f.d.Docker
@@ -561,13 +561,13 @@ func (f *Functions) install(ctx context.Context, p ApplyPayload, appDir, cache s
 	if len(rel) > 12 {
 		rel = rel[:12]
 	}
-	name := "kiln-fn-install-" + p.Site + "-" + rel
+	name := "falak-fn-install-" + p.Site + "-" + rel
 	_ = d.ContainerRemove(ctx, name)
 	hc := fngateway.Hardened(1<<30, 0, 1024, "512m")
 	hc.Binds = []string{appDir + ":/app:rw", cache + ":/cache:rw"}
 	id, err := d.ContainerCreate(ctx, name, docker.CreateBody{
 		Image: p.Image, Cmd: []string{fngateway.InstallCommand}, User: fngateway.UID, WorkingDir: "/app",
-		Env:        []string{"KILN_ENTRYPOINT=" + p.Entrypoint, "HOME=/tmp"},
+		Env:        []string{"FALAK_ENTRYPOINT=" + p.Entrypoint, "HOME=/tmp"},
 		Labels:     map[string]string{fngateway.LabelManaged: "true", installLabel: p.Site},
 		HostConfig: hc,
 	})
@@ -604,20 +604,20 @@ func (f *Functions) install(ctx context.Context, p ApplyPayload, appDir, cache s
 	return nil
 }
 
-// RenderGatewayUnit is kiln-fn-gateway.service: root (it drives Docker), its own runtime directory for the admin
+// RenderGatewayUnit is falak-fn-gateway.service: root (it drives Docker), its own runtime directory for the admin
 // socket, and a restart that leaves the function containers running (they are adopted on start).
 func RenderGatewayUnit(binary string) string {
 	return `[Unit]
-Description=Kiln: function gateway
+Description=Falak: function gateway
 After=network-online.target docker.service
 Wants=network-online.target docker.service
 
 [Service]
 ExecStart=` + binary + ` fn-gateway
-EnvironmentFile=-/etc/kiln/agent.env
+EnvironmentFile=-/etc/falak/agent.env
 Restart=always
 RestartSec=2
-RuntimeDirectory=kiln-fn
+RuntimeDirectory=falak-fn
 RuntimeDirectoryMode=0750
 KillMode=mixed
 TimeoutStopSec=40

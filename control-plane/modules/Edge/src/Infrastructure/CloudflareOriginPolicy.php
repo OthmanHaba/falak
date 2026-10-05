@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Edge\Infrastructure;
+namespace Falak\Edge\Infrastructure;
 
-use Kiln\Edge\Domain\Models\CloudflareTunnel;
-use Kiln\Edge\Domain\Models\OriginLock;
-use Kiln\Edge\Infrastructure\Dns\CloudflareRanges;
-use Kiln\Network\Contracts\WebOriginPolicy;
+use Falak\Edge\Domain\Models\CloudflareTunnel;
+use Falak\Edge\Domain\Models\OriginLock;
+use Falak\Edge\Infrastructure\Dns\CloudflareRanges;
+use Falak\Network\Contracts\WebOriginPolicy;
 
 /**
  * Web ports of servers locked down behind Cloudflare. `closed` only holds while the server's tunnel is running:

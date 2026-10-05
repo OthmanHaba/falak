@@ -1,22 +1,22 @@
 <?php
 
+use Falak\Identity\Contracts\Role;
+use Falak\Insights\Contracts\IssueDirectory;
+use Falak\Insights\Contracts\IssueKind;
+use Falak\Insights\Contracts\IssueStatus;
+use Falak\Insights\Domain\Models\ExceptionOccurrence;
+use Falak\Insights\Domain\Models\Issue;
+use Falak\Insights\Events\IssueOpened;
+use Falak\Insights\Events\IssueRegressed;
+use Falak\Insights\Events\IssueResolved;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Insights\Contracts\IssueDirectory;
-use Kiln\Insights\Contracts\IssueKind;
-use Kiln\Insights\Contracts\IssueStatus;
-use Kiln\Insights\Domain\Models\ExceptionOccurrence;
-use Kiln\Insights\Domain\Models\Issue;
-use Kiln\Insights\Events\IssueOpened;
-use Kiln\Insights\Events\IssueRegressed;
-use Kiln\Insights\Events\IssueResolved;
 
 require_once __DIR__.'/../Support/helpers.php';
 require_once __DIR__.'/../../../Fleet/tests/Support/helpers.php';
 
 beforeEach(function () {
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test']);
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test']);
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
 });
 

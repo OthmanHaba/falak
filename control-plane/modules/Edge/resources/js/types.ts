@@ -31,7 +31,7 @@ export interface EdgeDomain {
     served_host: string;
     supports_www: boolean;
     wildcard: boolean;
-    /** Set when the domain is in a Cloudflare zone Kiln manages (records created for it). */
+    /** Set when the domain is in a Cloudflare zone Falak manages (records created for it). */
     cloudflare: {
         zone: string;
         proxied: boolean;
@@ -171,7 +171,7 @@ export interface DnsCheckData {
         records: DnsRecord[];
         alternative: DnsRecord | null;
         notes: string[];
-        /** Records Kiln creates itself (a Cloudflare zone it manages). */
+        /** Records Falak creates itself (a Cloudflare zone it manages). */
         managed_by?: { provider: 'cloudflare'; zone: string } | null;
     };
     certificate: { status: 'issued' | 'pending'; message: string; issuer: string | null; expires_at: string | null } | null;

@@ -1,10 +1,10 @@
 <?php
 
-use Kiln\Databases\Contracts\DatabaseConnections;
-use Kiln\Network\Contracts\PrivateNetwork;
-use Kiln\Projects\Contracts\VariableReferences;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Models\Server;
+use Falak\Databases\Contracts\DatabaseConnections;
+use Falak\Network\Contracts\PrivateNetwork;
+use Falak\Projects\Contracts\VariableReferences;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Models\Server;
 
 require_once __DIR__.'/../Support/helpers.php';
 

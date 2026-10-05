@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Fleet\Application\Actions;
+namespace Falak\Fleet\Application\Actions;
 
+use Falak\Fleet\Contracts\AgentStatus;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\InstallToken;
+use Falak\Fleet\Events\AgentEnrolled;
+use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
+use Falak\Fleet\Infrastructure\Pki\InvalidCsr;
+use Falak\Fleet\Infrastructure\Pki\IssuedCertificate;
+use Falak\Identity\Contracts\AuditLog;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Contracts\AgentStatus;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\InstallToken;
-use Kiln\Fleet\Events\AgentEnrolled;
-use Kiln\Fleet\Infrastructure\Pki\CertificateAuthorityService;
-use Kiln\Fleet\Infrastructure\Pki\InvalidCsr;
-use Kiln\Fleet\Infrastructure\Pki\IssuedCertificate;
-use Kiln\Identity\Contracts\AuditLog;
 
 /**
  * Consumes a one-time install token, signs the agent's CSR and registers the agent.

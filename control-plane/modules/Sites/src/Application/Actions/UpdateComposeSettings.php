@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Sites\Application\Actions;
+namespace Falak\Sites\Application\Actions;
 
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Sites\Application\ComposeSettings;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Domain\Models\ComposeVersion;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Events\ComposeServicesUnpublished;
+use Falak\Sites\Events\SiteUpdated;
+use Falak\Sites\Infrastructure\Compose\YamlComposeInspector;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Sites\Application\ComposeSettings;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Domain\Models\ComposeVersion;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Events\ComposeServicesUnpublished;
-use Kiln\Sites\Events\SiteUpdated;
-use Kiln\Sites\Infrastructure\Compose\YamlComposeInspector;
 
 /**
  * Settings → Compose: source (repo path / inline content, versioned), public services. Changes apply on the
@@ -89,7 +89,7 @@ final class UpdateComposeSettings
                 'compose_profiles' => ($project['profiles'] ?? []) ?: null,
                 'compose_services' => ($project['services'] ?? []) ?: null,
                 'compose_adjustments' => ($project['adjustments'] ?? []) ?: null,
-                // The repository project as read now (unchanged when Kiln can't read the repository).
+                // The repository project as read now (unchanged when Falak can't read the repository).
                 ...(isset($project['yaml']) ? ['compose_snapshot' => $project['yaml']] : []),
                 'public_services' => $public === [] ? null : $public,
                 'app_port' => $public[0]['host_port'] ?? null,

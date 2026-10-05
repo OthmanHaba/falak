@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Contracts\Exceptions;
+namespace Falak\Identity\Contracts\Exceptions;
 
 use Symfony\Component\HttpKernel\Exception\HttpException;
 

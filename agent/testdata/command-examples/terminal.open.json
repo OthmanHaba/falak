@@ -2,9 +2,9 @@
   "session_id": "01J9ZT8K3M4N5P6Q7R8S9T0V1W",
   "user": "shop",
   "shell": "/bin/bash",
-  "cwd": "/srv/kiln/sites/shop/current",
+  "cwd": "/srv/falak/sites/shop/current",
   "env": {
-    "KILN_SITE": "shop"
+    "FALAK_SITE": "shop"
   },
   "cols": 120,
   "rows": 32,

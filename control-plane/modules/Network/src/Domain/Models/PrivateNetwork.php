@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Network\Domain\Models;
+namespace Falak\Network\Domain\Models;
 
+use Falak\Network\Domain\Support\Ipv4Cidr;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Kiln\Network\Domain\Support\Ipv4Cidr;
 
 /**
  * A WireGuard full mesh between servers of one organization.

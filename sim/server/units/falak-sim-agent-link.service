@@ -1,0 +1,11 @@
+[Unit]
+Description=Falak sim: link mounted falak-agent binary
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/falak-sim-agent-link
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

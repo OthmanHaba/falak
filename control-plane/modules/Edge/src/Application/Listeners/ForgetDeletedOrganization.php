@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Edge\Application\Listeners;
+namespace Falak\Edge\Application\Listeners;
 
+use Falak\Edge\Domain\Models\DnsCredential;
+use Falak\Identity\Events\OrganizationDeleted;
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Kiln\Edge\Domain\Models\DnsCredential;
-use Kiln\Identity\Events\OrganizationDeleted;
 
 final class ForgetDeletedOrganization implements ShouldQueue
 {

@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Network\Domain\Models;
+namespace Falak\Network\Domain\Models;
 
+use Falak\Network\Domain\Enums\ApplyStatus;
+use Falak\Network\Domain\Enums\KeyStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Kiln\Network\Domain\Enums\ApplyStatus;
-use Kiln\Network\Domain\Enums\KeyStatus;
 
 /**
  * @property string $id

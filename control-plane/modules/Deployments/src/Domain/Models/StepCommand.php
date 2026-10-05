@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Deployments\Domain\Models;
+namespace Falak\Deployments\Domain\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;

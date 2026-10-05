@@ -101,7 +101,7 @@ export interface TopIssue {
     last_seen_at: string;
 }
 
-/** Kiln\Insights\Application\Queries\SiteOverview output. */
+/** Falak\Insights\Application\Queries\SiteOverview output. */
 export interface OverviewData {
     range: string;
     from: string;

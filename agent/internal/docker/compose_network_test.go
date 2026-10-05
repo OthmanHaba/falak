@@ -33,7 +33,7 @@ func TestContainerSwapCreatesAComposeProjectsNetwork(t *testing.T) {
 func TestComposeUpStartsOnlyTheGivenServices(t *testing.T) {
 	s, _, fr, _, _ := newSvc(t)
 	no := false
-	fin, _ := exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "shop", Directory: "/srv/kiln/compose/shop",
+	fin, _ := exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "shop", Directory: "/srv/falak/compose/shop",
 		Files: []ComposeFile{{Name: "compose.yaml", Content: "services: {}\n"}}, RemoveOrphans: &no, Wait: true, Services: []string{"postgres", "redis"}})
 	if fin.Error != "" {
 		t.Fatalf("%+v", fin)
@@ -42,7 +42,7 @@ func TestComposeUpStartsOnlyTheGivenServices(t *testing.T) {
 		t.Fatalf("command %q", got)
 	}
 
-	fin, _ = exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "shop", Directory: "/srv/kiln/compose/shop", Services: []string{"--rm"}})
+	fin, _ = exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "shop", Directory: "/srv/falak/compose/shop", Services: []string{"--rm"}})
 	if fin.ExitCode == nil || *fin.ExitCode != 2 {
 		t.Fatalf("an option as a service was accepted: %+v", fin)
 	}

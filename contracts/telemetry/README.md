@@ -1,11 +1,11 @@
 # Telemetry contract v1
 
-Shared by `kiln-agent` (receiver/relay), `packages/apm-laravel`, `packages/apm-node`, and the control-plane
+Shared by `falak-agent` (receiver/relay), `packages/apm-laravel`, `packages/apm-node`, and the control-plane
 Telemetry + Insights modules.
 
 ## Transport (app → agent)
 The agent exposes a standard **OTLP/HTTP** receiver (both `application/x-protobuf` and `application/json`) on:
-- `unix:/run/kiln/otlp.sock` (preferred for PHP; `POST /v1/traces`, `/v1/logs`, `/v1/metrics`)
+- `unix:/run/falak/otlp.sock` (preferred for PHP; `POST /v1/traces`, `/v1/logs`, `/v1/metrics`)
 - `http://127.0.0.1:4318` (standard OTLP port; used by Node/Bun/Deno exporters)
 
 Apps must **never block a request** on telemetry: the Laravel package flushes after the response is sent
@@ -18,32 +18,32 @@ The agent batches, disk-buffers (bounded, default 64 MB) and exports to the obse
 |---|---|
 | `service.name` | site slug, e.g. `shop-example-com` |
 | `deployment.environment.name` | `production` |
-| `kiln.org.id`, `kiln.server.id`, `kiln.site.id` | ULIDs |
-| `kiln.deployment.id`, `kiln.release.id` | ULIDs of the active release |
+| `falak.org.id`, `falak.server.id`, `falak.site.id` | ULIDs |
+| `falak.deployment.id`, `falak.release.id` | ULIDs of the active release |
 | `host.name` | server hostname |
 
-Apps learn their ids from env vars injected by Deployments: `KILN_SITE_ID`, `KILN_SERVER_ID`, `KILN_DEPLOYMENT_ID`, `KILN_RELEASE_ID`.
+Apps learn their ids from env vars injected by Deployments: `FALAK_SITE_ID`, `FALAK_SERVER_ID`, `FALAK_DEPLOYMENT_ID`, `FALAK_RELEASE_ID`.
 
 ## Event taxonomy (Nightwatch parity)
-Every APM span carries `kiln.event.type`:
+Every APM span carries `falak.event.type`:
 
-| `kiln.event.type` | Span kind | Required attributes |
+| `falak.event.type` | Span kind | Required attributes |
 |---|---|---|
 | `request` | SERVER | `http.request.method`, `http.route`, `http.response.status_code`, `url.path` |
-| `query` | CLIENT | `db.system.name`, `db.query.text` (redacted bindings), `db.namespace`, `kiln.query.connection` |
-| `job` | CONSUMER | `messaging.destination.name` (queue), `kiln.job.class`, `kiln.job.attempt`, `kiln.job.status` (`processed`\|`released`\|`failed`) |
+| `query` | CLIENT | `db.system.name`, `db.query.text` (redacted bindings), `db.namespace`, `falak.query.connection` |
+| `job` | CONSUMER | `messaging.destination.name` (queue), `falak.job.class`, `falak.job.attempt`, `falak.job.status` (`processed`\|`released`\|`failed`) |
 | `outgoing_request` | CLIENT | `http.request.method`, `url.full` (query redacted; functions: no query or userinfo, secret path segments → `{redacted}`), `http.response.status_code` |
-| `mail` | INTERNAL | `kiln.mail.class`, `kiln.mail.recipients_count`, `kiln.mail.mailer` |
-| `notification` | INTERNAL | `kiln.notification.class`, `kiln.notification.channel`, `kiln.notification.status` |
-| `cache` | INTERNAL | `kiln.cache.op` (`hit`\|`miss`\|`write`\|`forget`), `kiln.cache.key`, `kiln.cache.store` |
-| `command` | INTERNAL | `kiln.command.name`, `process.exit.code` |
-| `scheduled_task` | INTERNAL | `kiln.schedule.name`, `kiln.schedule.expression`, `kiln.schedule.status` (`finished`\|`failed`\|`skipped`) |
+| `mail` | INTERNAL | `falak.mail.class`, `falak.mail.recipients_count`, `falak.mail.mailer` |
+| `notification` | INTERNAL | `falak.notification.class`, `falak.notification.channel`, `falak.notification.status` |
+| `cache` | INTERNAL | `falak.cache.op` (`hit`\|`miss`\|`write`\|`forget`), `falak.cache.key`, `falak.cache.store` |
+| `command` | INTERNAL | `falak.command.name`, `process.exit.code` |
+| `scheduled_task` | INTERNAL | `falak.schedule.name`, `falak.schedule.expression`, `falak.schedule.status` (`finished`\|`failed`\|`skipped`) |
 
-- **Timeline spans:** child spans that only mark request phases carry `kiln.timeline.phase`
-  (`bootstrap`\|`middleware`\|`controller`\|`response`) and **no** `kiln.event.type`, so they never skew per-type aggregates.
+- **Timeline spans:** child spans that only mark request phases carry `falak.timeline.phase`
+  (`bootstrap`\|`middleware`\|`controller`\|`response`) and **no** `falak.event.type`, so they never skew per-type aggregates.
 - **User context:** `enduser.id` on the root span when authenticated.
 - **Exceptions:** standard OTel span event `exception` (`exception.type`, `exception.message`, `exception.stacktrace`)
-  plus `kiln.exception.handled` (bool). The span status is `ERROR` for unhandled exceptions.
+  plus `falak.exception.handled` (bool). The span status is `ERROR` for unhandled exceptions.
 - **Logs:** OTLP logs, correlated with `trace_id`/`span_id`.
 - **Redaction:** apps redact before sending (headers, query bindings, cache keys by pattern). Default denylist:
   `password`, `token`, `secret`, `authorization`, `cookie`, `api_key`.

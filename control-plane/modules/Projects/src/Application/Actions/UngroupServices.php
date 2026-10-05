@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Projects\Application\Actions;
+namespace Falak\Projects\Application\Actions;
 
+use Falak\Projects\Domain\Models\Group;
+use Falak\Projects\Domain\Models\Service;
 use Illuminate\Support\Facades\DB;
-use Kiln\Projects\Domain\Models\Group;
-use Kiln\Projects\Domain\Models\Service;
 
 /**
  * Dissolve a canvas group: its services keep their place on screen (positions become absolute again).

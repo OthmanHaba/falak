@@ -12,9 +12,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 func zipWith(t *testing.T, name, body string) []byte {
@@ -59,13 +59,13 @@ func TestBunAndDenoInstallVerifiedBinaries(t *testing.T) {
 	if err != nil || !r.(NodeResult).Changed {
 		t.Fatalf("bun: %v %+v", err, r)
 	}
-	if b, _ := fs.ReadFile("/opt/kiln/bun/1.2.21/bin/bun"); string(b) != "#!bun" {
+	if b, _ := fs.ReadFile("/opt/falak/bun/1.2.21/bin/bun"); string(b) != "#!bun" {
 		t.Fatalf("bun binary %q", b)
 	}
-	if fi, _ := os.Stat(fs.P("/opt/kiln/bun/1.2.21/bin/bun")); fi.Mode().Perm() != 0o755 {
+	if fi, _ := os.Stat(fs.P("/opt/falak/bun/1.2.21/bin/bun")); fi.Mode().Perm() != 0o755 {
 		t.Fatalf("bun mode %v", fi.Mode())
 	}
-	if l, _ := os.Readlink(fs.P("/usr/local/bin/bun")); !strings.HasSuffix(l, "opt/kiln/bun/1.2.21/bin/bun") {
+	if l, _ := os.Readlink(fs.P("/usr/local/bin/bun")); !strings.HasSuffix(l, "opt/falak/bun/1.2.21/bin/bun") {
 		t.Fatalf("bun symlink %q", l)
 	}
 	before := hits
@@ -76,7 +76,7 @@ func TestBunAndDenoInstallVerifiedBinaries(t *testing.T) {
 	if _, err := rt.DenoInstall(context.Background(), JSRuntimePayload{Version: "2.5.1", Mirror: srv.URL + "/deno"}, st); err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := fs.ReadFile("/opt/kiln/deno/2.5.1/bin/deno"); string(b) != "#!deno" {
+	if b, _ := fs.ReadFile("/opt/falak/deno/2.5.1/bin/deno"); string(b) != "#!deno" {
 		t.Fatalf("deno binary %q", b)
 	}
 	if _, err := os.Lstat(fs.P("/usr/local/bin/deno")); !os.IsNotExist(err) {
@@ -99,7 +99,7 @@ func TestJSRuntimeRejectsTamperedArchive(t *testing.T) {
 	if _, err := rt.BunInstall(context.Background(), JSRuntimePayload{Version: "1.2.21", Mirror: srv.URL}, commands.NewTestStream("c", &commands.Collector{})); err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
 		t.Fatalf("expected checksum failure, got %v", err)
 	}
-	if fs.Exists("/opt/kiln/bun/1.2.21/bin/bun") {
+	if fs.Exists("/opt/falak/bun/1.2.21/bin/bun") {
 		t.Fatal("nothing may be installed from a tampered archive")
 	}
 }

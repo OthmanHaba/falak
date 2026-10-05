@@ -1,17 +1,17 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure;
+namespace Falak\Telemetry\Infrastructure;
 
+use Falak\Deployments\Contracts\LiveReleases;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Telemetry\Application\Listeners\ReconfigureOnReleaseActivated;
+use Falak\Telemetry\Contracts\Data\SiteTelemetryTarget;
+use Falak\Telemetry\Contracts\ServerSites;
+use Falak\Telemetry\Contracts\TelemetryConfigurator;
+use Falak\Telemetry\Domain\Models\TelemetrySettings;
 use Illuminate\Support\Str;
-use Kiln\Deployments\Contracts\LiveReleases;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Telemetry\Application\Listeners\ReconfigureOnReleaseActivated;
-use Kiln\Telemetry\Contracts\Data\SiteTelemetryTarget;
-use Kiln\Telemetry\Contracts\ServerSites;
-use Kiln\Telemetry\Contracts\TelemetryConfigurator;
-use Kiln\Telemetry\Domain\Models\TelemetrySettings;
 
 final class AgentTelemetryConfigurator implements TelemetryConfigurator
 {
@@ -47,7 +47,7 @@ final class AgentTelemetryConfigurator implements TelemetryConfigurator
 
     /**
      * The release each site runs on the server: the agent labels the site's records with its deployment and
-     * release ids (Loki structured metadata kiln_deployment_id / kiln_release_id), so logs can be filtered per
+     * release ids (Loki structured metadata falak_deployment_id / falak_release_id), so logs can be filtered per
      * deployment. Re-sent on every activation ({@see ReconfigureOnReleaseActivated}).
      *
      * @param  list<SiteTelemetryTarget>  $targets

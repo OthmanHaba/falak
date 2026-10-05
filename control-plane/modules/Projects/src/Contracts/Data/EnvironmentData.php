@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Projects\Contracts\Data;
+namespace Falak\Projects\Contracts\Data;
 
 final readonly class EnvironmentData
 {

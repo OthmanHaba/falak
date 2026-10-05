@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Projects\Contracts;
+namespace Falak\Projects\Contracts;
 
-use Kiln\Projects\Contracts\Data\ResolvedVariables;
+use Falak\Projects\Contracts\Data\ResolvedVariables;
 
 /**
  * Resolves `${{ <service-name>.<KEY> }}` references in a site's variables against the other services of

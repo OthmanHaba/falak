@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
 )
 
 type memSink struct {
@@ -48,14 +48,14 @@ func appendFile(t *testing.T, p, s string) {
 func TestTailRotationTruncationAndOffsets(t *testing.T) {
 	root := t.TempDir()
 	fs := hostfs.FS{Root: root}
-	logDir := fs.P("/srv/kiln/sites/shop/shared/storage/logs")
+	logDir := fs.P("/srv/falak/sites/shop/shared/storage/logs")
 	os.MkdirAll(logDir, 0o755)
 	logPath := filepath.Join(logDir, "laravel.log")
 	appendFile(t, logPath, "old history line\n")
 
 	sink := &memSink{}
-	tl := NewTailer(fs, "/var/lib/kiln", sink, nil)
-	tl.SetSources([]Source{{Path: "/srv/kiln/sites/shop/shared/storage/logs/*.log", Site: "shop"}})
+	tl := NewTailer(fs, "/var/lib/falak", sink, nil)
+	tl.SetSources([]Source{{Path: "/srv/falak/sites/shop/shared/storage/logs/*.log", Site: "shop"}})
 	tl.Poll()
 	if n := len(sink.bodies()); n != 0 {
 		t.Fatalf("pre-existing history shipped: %v", sink.bodies())
@@ -81,15 +81,15 @@ func TestTailRotationTruncationAndOffsets(t *testing.T) {
 	sink.mu.Lock()
 	r0 := sink.recs[0]
 	sink.mu.Unlock()
-	if r0.Severity != "ERROR" || r0.Site != "shop" || r0.Attrs["log.file.path"] != "/srv/kiln/sites/shop/shared/storage/logs/laravel.log" {
+	if r0.Severity != "ERROR" || r0.Site != "shop" || r0.Attrs["log.file.path"] != "/srv/falak/sites/shop/shared/storage/logs/laravel.log" {
 		t.Fatalf("record %+v", r0)
 	}
 
 	// Restart: offsets are persisted, so only new data is read.
 	appendFile(t, logPath, "after restart\n")
 	sink2 := &memSink{}
-	tl2 := NewTailer(fs, "/var/lib/kiln", sink2, nil)
-	tl2.SetSources([]Source{{Path: "/srv/kiln/sites/shop/shared/storage/logs/*.log", Site: "shop"}})
+	tl2 := NewTailer(fs, "/var/lib/falak", sink2, nil)
+	tl2.SetSources([]Source{{Path: "/srv/falak/sites/shop/shared/storage/logs/*.log", Site: "shop"}})
 	tl2.Poll()
 	if got := sink2.bodies(); len(got) != 1 || got[0] != "after restart" {
 		t.Fatalf("after restart got %q", got)
@@ -101,7 +101,7 @@ func TestTailNewFileFromStart(t *testing.T) {
 	fs := hostfs.FS{Root: root}
 	os.MkdirAll(fs.P("/var/log/app"), 0o755)
 	sink := &memSink{}
-	tl := NewTailer(fs, "/var/lib/kiln", sink, nil)
+	tl := NewTailer(fs, "/var/lib/falak", sink, nil)
 	tl.SetSources([]Source{{Path: "/var/log/app/*.log", Format: "json", Service: "worker"}})
 	tl.Poll()
 	appendFile(t, fs.P("/var/log/app/w.log"), `{"message":"job done","level_name":"WARNING","datetime":"2026-09-26T10:00:00+00:00","trace_id":"5b8efff798038103d269b633813fc60c","queue":"default","attempt":2}`+"\n")
@@ -142,7 +142,7 @@ func TestDemux(t *testing.T) {
 }
 
 func TestDockerFollower(t *testing.T) {
-	sock := filepath.Join(os.TempDir(), fmt.Sprintf("kiln-dock-%d.sock", time.Now().UnixNano()))
+	sock := filepath.Join(os.TempDir(), fmt.Sprintf("falak-dock-%d.sock", time.Now().UnixNano()))
 	l, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func TestDockerFollower(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/containers/json", func(w http.ResponseWriter, r *http.Request) {
 		gotFilter = r.URL.Query().Get("filters")
-		json.NewEncoder(w).Encode([]map[string]any{{"Id": "abc123def456789", "Names": []string{"/shop-blue"}, "Labels": map[string]string{"kiln.site": "shop"}}})
+		json.NewEncoder(w).Encode([]map[string]any{{"Id": "abc123def456789", "Names": []string{"/shop-blue"}, "Labels": map[string]string{"falak.site": "shop"}}})
 	})
 	mux.HandleFunc("/containers/abc123def456789/json", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"Config":{"Tty":false}}`))
@@ -172,7 +172,7 @@ func TestDockerFollower(t *testing.T) {
 
 	sink := &memSink{}
 	d := NewDocker(sock, sink, nil)
-	d.Configure(true, map[string]string{"kiln.managed": "true"})
+	d.Configure(true, map[string]string{"falak.managed": "true"})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	d.Sync(ctx)
@@ -180,7 +180,7 @@ func TestDockerFollower(t *testing.T) {
 	for len(sink.bodies()) < 2 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !strings.Contains(gotFilter, "kiln.managed=true") {
+	if !strings.Contains(gotFilter, "falak.managed=true") {
 		t.Fatalf("label filter not sent: %q", gotFilter)
 	}
 	sink.mu.Lock()
@@ -196,7 +196,7 @@ func TestDockerFollower(t *testing.T) {
 }
 
 func TestDockerFollowerComposeService(t *testing.T) {
-	sock := filepath.Join(os.TempDir(), fmt.Sprintf("kiln-dockc-%d.sock", time.Now().UnixNano()))
+	sock := filepath.Join(os.TempDir(), fmt.Sprintf("falak-dockc-%d.sock", time.Now().UnixNano()))
 	l, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +205,7 @@ func TestDockerFollowerComposeService(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/containers/json", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode([]map[string]any{{"Id": "c0mp05e", "Names": []string{"/shop-redis-1"}, "Created": time.Now().Add(-20 * time.Second).Unix(),
-			"Labels": map[string]string{"kiln.site": "shop", "kiln.service": "redis", "kiln.release": "01J9ZQ4N8V2M6R0T3W5Y7B9D1F"}}})
+			"Labels": map[string]string{"falak.site": "shop", "falak.service": "redis", "falak.release": "01J9ZQ4N8V2M6R0T3W5Y7B9D1F"}}})
 	})
 	mux.HandleFunc("/containers/c0mp05e/json", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"Config":{"Tty":false}}`)) })
 	var logsQuery string
@@ -234,7 +234,7 @@ func TestDockerFollowerComposeService(t *testing.T) {
 		t.Fatalf("recs %+v", sink.recs)
 	}
 	r := sink.recs[0]
-	if r.Site != "shop" || r.Service != "" || r.Attrs["kiln.compose.service"] != "redis" || r.Attrs["kiln.release.id"] != "01J9ZQ4N8V2M6R0T3W5Y7B9D1F" {
+	if r.Site != "shop" || r.Service != "" || r.Attrs["falak.compose.service"] != "redis" || r.Attrs["falak.release.id"] != "01J9ZQ4N8V2M6R0T3W5Y7B9D1F" {
 		t.Fatalf("record %+v", r)
 	}
 	// A container created moments ago is read from its start (its startup lines predate the attach).

@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Identity\Application\Actions;
+namespace Falak\Identity\Application\Actions;
 
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Domain\Models\Invitation;
+use Falak\Identity\Domain\Models\Organization;
+use Falak\Identity\Domain\Models\User;
+use Falak\Identity\Events\MemberJoined;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Domain\Models\Invitation;
-use Kiln\Identity\Domain\Models\Organization;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Identity\Events\MemberJoined;
 
 final class AcceptInvitation
 {

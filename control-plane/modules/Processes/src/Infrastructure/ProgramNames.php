@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Processes\Infrastructure;
+namespace Falak\Processes\Infrastructure;
 
 /**
  * Names of supervised programs and cron jobs: `<site slug>.<suffix>`, unique per server and valid for

@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Apm\Watchers;
+namespace Falak\Apm\Watchers;
 
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Contracts\Events\Dispatcher;
-use Kiln\Apm\Recorder;
-use Kiln\Apm\Span;
+use Falak\Apm\Recorder;
+use Falak\Apm\Span;
 use Throwable;
 
 /**
@@ -32,7 +32,7 @@ final class CommandWatcher
                     return;
                 }
 
-                $attributes = ['kiln.command.name' => $name];
+                $attributes = ['falak.command.name' => $name];
 
                 if ($this->recorder->active()) {
                     $this->stack[] = ['name' => $name, 'span' => $this->recorder->startSpan('command', $name, Span::KIND_INTERNAL, $attributes), 'root' => false];

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Alerting\Events;
+namespace Falak\Alerting\Events;
 
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;

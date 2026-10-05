@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Apm;
+namespace Falak\Apm;
 
 /**
  * State of one in-flight trace (a request, job, command or scheduled task).

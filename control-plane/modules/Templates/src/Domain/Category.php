@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Templates\Domain;
+namespace Falak\Templates\Domain;
 
 enum Category: string
 {

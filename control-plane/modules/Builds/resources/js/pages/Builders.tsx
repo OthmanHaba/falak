@@ -1,17 +1,17 @@
-import { Button } from '@/components/kiln/button';
-import { Callout } from '@/components/kiln/callout';
-import { Checkbox } from '@/components/kiln/checkbox';
-import { CodeBlock } from '@/components/kiln/code-block';
-import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
-import { DataTable, type DataTableColumn } from '@/components/kiln/data-table';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { type MenuAction } from '@/components/kiln/menu';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Section } from '@/components/kiln/section';
-import { StatusBadge, StatusDot } from '@/components/kiln/status';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { Callout } from '@/components/falak/callout';
+import { Checkbox } from '@/components/falak/checkbox';
+import { CodeBlock } from '@/components/falak/code-block';
+import { ConfirmDestructive } from '@/components/falak/confirm-destructive';
+import { DataTable, type DataTableColumn } from '@/components/falak/data-table';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { type MenuAction } from '@/components/falak/menu';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Section } from '@/components/falak/section';
+import { StatusBadge, StatusDot } from '@/components/falak/status';
+import { Tag } from '@/components/falak/tag';
 import SettingsLayout from '@/layouts/settings/layout';
 import { Link, router, useForm } from '@inertiajs/react';
 import { Hammer, Plus, Power, RefreshCw, Server, Trash2 } from 'lucide-react';
@@ -141,8 +141,8 @@ export default function Builders({ builders, localConfigured, panelUrl, plainTok
         { label: 'Remove', icon: <Trash2 />, danger: true, onSelect: () => setRemoving(builder) },
     ];
 
-    const serveCommand = plainToken ? `KILN_URL=${panelUrl} KILN_BUILDER_TOKEN=${plainToken} kiln-builder serve` : '';
-    const installCommand = `curl -fsSL ${panelUrl}/install/builder/linux-amd64 -o /usr/local/bin/kiln-builder && chmod +x /usr/local/bin/kiln-builder`;
+    const serveCommand = plainToken ? `FALAK_URL=${panelUrl} FALAK_BUILDER_TOKEN=${plainToken} falak-builder serve` : '';
+    const installCommand = `curl -fsSL ${panelUrl}/install/builder/linux-amd64 -o /usr/local/bin/falak-builder && chmod +x /usr/local/bin/falak-builder`;
 
     return (
         <SettingsLayout
@@ -164,7 +164,7 @@ export default function Builders({ builders, localConfigured, panelUrl, plainTok
                             'The token is set, but the builder process has not checked in yet. Start it next to the control plane.'
                         ) : (
                             <>
-                                Set <code className="font-mono text-xs">KILN_LOCAL_BUILDER_TOKEN</code> to build on the control-plane host, or add a
+                                Set <code className="font-mono text-xs">FALAK_LOCAL_BUILDER_TOKEN</code> to build on the control-plane host, or add a
                                 builder server below.
                             </>
                         )}
@@ -176,7 +176,7 @@ export default function Builders({ builders, localConfigured, panelUrl, plainTok
 
             <Section
                 title="Builder servers"
-                description="Kiln servers of type Builder. Kiln installs and upgrades kiln-builder on them for you."
+                description="Falak servers of type Builder. Falak installs and upgrades falak-builder on them for you."
                 aside={
                     can.manage && (
                         <Button asChild size="sm">
@@ -205,7 +205,7 @@ export default function Builders({ builders, localConfigured, panelUrl, plainTok
 
             <Section
                 title="External builders"
-                description="Run kiln-builder on any machine with Docker (a CI runner, a spare box). It builds only this organization's sites."
+                description="Run falak-builder on any machine with Docker (a CI runner, a spare box). It builds only this organization's sites."
                 bare
             >
                 {plainToken && (
@@ -227,7 +227,7 @@ export default function Builders({ builders, localConfigured, panelUrl, plainTok
                         size: 'sm',
                         title: 'No external builders',
                         description: can.manage
-                            ? 'Create a token below, then start kiln-builder with it.'
+                            ? 'Create a token below, then start falak-builder with it.'
                             : 'Ask an admin to create a builder token.',
                     }}
                 />

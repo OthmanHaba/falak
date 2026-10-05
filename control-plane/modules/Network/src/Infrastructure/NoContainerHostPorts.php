@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Network\Infrastructure;
+namespace Falak\Network\Infrastructure;
 
-use Kiln\Network\Contracts\ContainerHostPorts;
+use Falak\Network\Contracts\ContainerHostPorts;
 
 /** Default: containers reach no host port. */
 final class NoContainerHostPorts implements ContainerHostPorts

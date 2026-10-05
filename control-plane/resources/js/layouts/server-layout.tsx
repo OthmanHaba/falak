@@ -1,7 +1,7 @@
-import { AppShell } from '@/components/kiln/app-shell';
-import { CopyButton } from '@/components/kiln/copy-button';
-import { StatusBadge, type StatusTone } from '@/components/kiln/status';
-import { tabTriggerClasses } from '@/components/kiln/tabs';
+import { AppShell } from '@/components/falak/app-shell';
+import { CopyButton } from '@/components/falak/copy-button';
+import { StatusBadge, type StatusTone } from '@/components/falak/status';
+import { tabTriggerClasses } from '@/components/falak/tabs';
 import { useEchoChannel } from '@/hooks/use-echo-channel';
 import { shellContext } from '@/lib/registry';
 import { cn } from '@/lib/utils';

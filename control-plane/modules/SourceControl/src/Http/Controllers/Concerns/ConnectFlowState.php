@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\SourceControl\Http\Controllers\Concerns;
+namespace Falak\SourceControl\Http\Controllers\Concerns;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Databases\Application;
+namespace Falak\Databases\Application;
 
 /**
  * Database passwords: long, random and safe to paste into DSNs, .env files and shell commands

@@ -1,7 +1,7 @@
 <?php
 
+use Falak\Fleet\Http\Controllers\InstallController;
 use Illuminate\Support\Facades\Route;
-use Kiln\Fleet\Http\Controllers\InstallController;
 
 // Stateless public installer endpoints (no session / CSRF).
 

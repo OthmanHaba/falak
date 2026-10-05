@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Sites\Application;
+namespace Falak\Sites\Application;
 
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Contracts\SourceControlGateway;
+use Falak\Sites\Domain\Models\Site;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Contracts\SourceControlGateway;
 
 /**
  * Keeps a site's deploy key and push webhook in sync with its repository. Provider failures never block
@@ -33,7 +33,7 @@ final class SourceControlLinker
         }
 
         try {
-            $key = $this->gateway->installDeployKey($site->source_connection_id, $site->repository, "Kiln · {$site->name}");
+            $key = $this->gateway->installDeployKey($site->source_connection_id, $site->repository, "Falak · {$site->name}");
             $site->forceFill(['deploy_key_id' => $key->id])->save();
 
             if (! $key->installed && $key->installError !== null) {

@@ -1,5 +1,5 @@
-import { CodeBlock } from '@/components/kiln/code-block';
-import { StatusBadge } from '@/components/kiln/status';
+import { CodeBlock } from '@/components/falak/code-block';
+import { StatusBadge } from '@/components/falak/status';
 import { type RunStatus, type TargetStatus } from '../types';
 
 const STATUS: Record<RunStatus | TargetStatus, { status: string; label: string; tone?: 'warning' }> = {

@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 func write(t *testing.T, root, p, s string) {
@@ -32,7 +32,7 @@ func TestCollect(t *testing.T) {
 	os.MkdirAll(filepath.Join(root, "/etc/php/8.4"), 0o755)
 	os.MkdirAll(filepath.Join(root, "/etc/php/8.3"), 0o755)
 	os.MkdirAll(filepath.Join(root, "/etc/php/mods-available"), 0o755)
-	os.MkdirAll(filepath.Join(root, "/opt/kiln/node/22.11.0"), 0o755)
+	os.MkdirAll(filepath.Join(root, "/opt/falak/node/22.11.0"), 0o755)
 	old := Interfaces
 	Interfaces = func() ([]Interface, error) {
 		return []Interface{
@@ -111,7 +111,7 @@ func TestIPv4sIgnoreBridgesAndPreferTheDefaultRoute(t *testing.T) {
 			{"lo", ip("127.0.0.1")}, {"eth0", ip("203.0.113.9")}, {"docker0", ip("172.17.0.1")}, {"br-1a2b3c", ip("172.18.0.1")}, {"veth12ab", ip("169.254.1.1")},
 		}, routeTable("eth0"), "203.0.113.9", "<nil>"},
 		{"overlays and VPNs are not the host's private address", []Interface{
-			{"tailscale0", ip("100.101.102.103")}, {"wg-kiln", ip("10.200.0.2")}, {"cni0", ip("10.42.0.1")}, {"flannel.1", ip("10.42.0.0")},
+			{"tailscale0", ip("100.101.102.103")}, {"wg-falak", ip("10.200.0.2")}, {"cni0", ip("10.42.0.1")}, {"flannel.1", ip("10.42.0.0")},
 			{"cali1234", ip("10.1.1.1")}, {"vxlan.calico", ip("10.1.1.2")}, {"ens3", ip("203.0.113.9")},
 		}, routeTable("ens3"), "203.0.113.9", "<nil>"},
 		{"public default route, private network on a second NIC", []Interface{

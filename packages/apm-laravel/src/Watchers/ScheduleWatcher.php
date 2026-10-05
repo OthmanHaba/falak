@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Apm\Watchers;
+namespace Falak\Apm\Watchers;
 
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Events\ScheduledTaskFinished;
 use Illuminate\Console\Events\ScheduledTaskSkipped;
 use Illuminate\Console\Events\ScheduledTaskStarting;
 use Illuminate\Contracts\Events\Dispatcher;
-use Kiln\Apm\Recorder;
-use Kiln\Apm\Span;
+use Falak\Apm\Recorder;
+use Falak\Apm\Span;
 use Throwable;
 
 final class ScheduleWatcher
@@ -47,7 +47,7 @@ final class ScheduleWatcher
                 }
 
                 [$name, $attributes] = $this->describe($event->task);
-                $attributes['kiln.schedule.status'] = 'skipped';
+                $attributes['falak.schedule.status'] = 'skipped';
 
                 if ($this->recorder->active()) {
                     $now = $this->recorder->now();
@@ -75,7 +75,7 @@ final class ScheduleWatcher
             unset($this->running[$id]);
 
             if ($span !== null) {
-                $span->attributes['kiln.schedule.status'] = $status;
+                $span->attributes['falak.schedule.status'] = $status;
 
                 if ($exception !== null) {
                     $this->recorder->recordException($exception, false, $span);
@@ -116,9 +116,9 @@ final class ScheduleWatcher
         $name = trim((string) preg_replace("/^'[^']*php[^']*'\s+'artisan'/", 'artisan', $name));
 
         return [$name, [
-            'kiln.schedule.name' => $name,
-            'kiln.schedule.expression' => (string) ($task->expression ?? ''),
-            'kiln.schedule.timezone' => isset($task->timezone) ? (is_string($task->timezone) ? $task->timezone : (string) $task->timezone->getName()) : null,
+            'falak.schedule.name' => $name,
+            'falak.schedule.expression' => (string) ($task->expression ?? ''),
+            'falak.schedule.timezone' => isset($task->timezone) ? (is_string($task->timezone) ? $task->timezone : (string) $task->timezone->getName()) : null,
         ]];
     }
 

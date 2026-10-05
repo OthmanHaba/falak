@@ -1,7 +1,7 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Kiln\Insights\Domain\Support\CronSchedule;
+use Falak\Insights\Domain\Support\CronSchedule;
 
 it('computes the next run of cron expressions and macros', function (string $expression, string $after, string $expected) {
     expect(CronSchedule::parse($expression)?->nextAfter(CarbonImmutable::parse($after))->toIso8601ZuluString())->toBe($expected);

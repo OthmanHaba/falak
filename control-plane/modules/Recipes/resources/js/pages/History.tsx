@@ -1,8 +1,8 @@
-import { Button } from '@/components/kiln/button';
-import { DataTable } from '@/components/kiln/data-table';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Select } from '@/components/kiln/select';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { DataTable } from '@/components/falak/data-table';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Select } from '@/components/falak/select';
+import { Tag } from '@/components/falak/tag';
 import InfrastructureLayout from '@/layouts/infrastructure-layout';
 import { Link, router, usePoll } from '@inertiajs/react';
 import { History as HistoryIcon, ScrollText, X } from 'lucide-react';

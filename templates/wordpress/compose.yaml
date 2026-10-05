@@ -14,8 +14,8 @@ services:
       WORDPRESS_DB_NAME: wordpress
       WORDPRESS_TABLE_PREFIX: ${TABLE_PREFIX}
       WORDPRESS_CONFIG_EXTRA: |
-        define('WP_HOME', '${{ kiln.url(wordpress) }}');
-        define('WP_SITEURL', '${{ kiln.url(wordpress) }}');
+        define('WP_HOME', '${{ falak.url(wordpress) }}');
+        define('WP_SITEURL', '${{ falak.url(wordpress) }}');
         define('FORCE_SSL_ADMIN', true);
     volumes:
       - wordpress-html:/var/www/html

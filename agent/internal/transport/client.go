@@ -21,10 +21,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
 )
 
-// Client talks to the mTLS API base URL (e.g. https://agents.kiln.example/agent/v1).
+// Client talks to the mTLS API base URL (e.g. https://agents.falak.example/agent/v1).
 type Client struct {
 	base string
 	hc   *http.Client
@@ -50,7 +50,7 @@ const RevokedReportEvery = 10 * time.Minute
 var RevokedRetry = 10 * time.Minute
 
 // SessionHeader carries Client.Session.
-const SessionHeader = "X-Kiln-Agent-Session"
+const SessionHeader = "X-Falak-Agent-Session"
 
 // NewSessionID returns a random id for one agent process ("s-" + 32 hex characters).
 func NewSessionID() string {
@@ -80,7 +80,7 @@ func New(apiBase string, tlsConf *tls.Config) *Client {
 
 // NewWithHTTPClient uses a caller-provided http.Client (tests).
 func NewWithHTTPClient(apiBase string, hc *http.Client) *Client {
-	return &Client{base: strings.TrimRight(apiBase, "/"), hc: hc, UserAgent: "kiln-agent"}
+	return &Client{base: strings.TrimRight(apiBase, "/"), hc: hc, UserAgent: "falak-agent"}
 }
 
 // StatusError is a non-2xx response.
@@ -93,7 +93,7 @@ type StatusError struct {
 
 func (e *StatusError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.Code, e.Body) }
 
-// ReasonAgentRevoked is the 401 reason for the certificate of an agent whose server was deleted from Kiln.
+// ReasonAgentRevoked is the 401 reason for the certificate of an agent whose server was deleted from Falak.
 // Older control planes answer a plain 401.
 const ReasonAgentRevoked = "agent_revoked"
 
@@ -105,7 +105,7 @@ func IsRevoked(err error) bool {
 
 // RevokedMessage tells the operator what a revoked identity means and what to do.
 func RevokedMessage(agentID string) string {
-	return fmt.Sprintf("this agent was revoked or its server was removed from Kiln (agent %s); run a new install command from the panel to connect this machine again", agentID)
+	return fmt.Sprintf("this agent was revoked or its server was removed from Falak (agent %s); run a new install command from the panel to connect this machine again", agentID)
 }
 
 func (c *Client) reportRevoked() {
@@ -190,7 +190,7 @@ type Pong struct {
 	Time    time.Time `json:"time"`
 }
 
-// Ping calls GET /ping, an authenticated no-op (kiln-agent check).
+// Ping calls GET /ping, an authenticated no-op (falak-agent check).
 func (c *Client) Ping(ctx context.Context) (Pong, error) {
 	var p Pong
 	out, err := c.do(ctx, http.MethodGet, "/ping", "", nil, 15*time.Second)

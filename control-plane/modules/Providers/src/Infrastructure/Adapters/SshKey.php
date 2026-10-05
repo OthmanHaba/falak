@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Providers\Infrastructure\Adapters;
+namespace Falak\Providers\Infrastructure\Adapters;
 
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
 
 /**
  * OpenSSH public key helpers for de-duplicating uploaded keys.

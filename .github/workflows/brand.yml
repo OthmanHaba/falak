@@ -1,0 +1,16 @@
+name: brand
+
+# Every push and PR, whatever it touches: no file may bring back the product's previous name.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Brand check
+        run: tools/check-brand.sh

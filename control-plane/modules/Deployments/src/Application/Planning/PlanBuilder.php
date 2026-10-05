@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Deployments\Application\Planning;
+namespace Falak\Deployments\Application\Planning;
 
-use Kiln\Deployments\Domain\Enums\StepKind;
-use Kiln\Deployments\Domain\Enums\StepStatus;
-use Kiln\Deployments\Domain\Enums\Strategy;
-use Kiln\Deployments\Domain\Enums\Trigger;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\DeploymentStep;
-use Kiln\Deployments\Domain\Models\DeploymentTarget;
-use Kiln\Sites\Contracts\SiteRuntime;
+use Falak\Deployments\Domain\Enums\StepKind;
+use Falak\Deployments\Domain\Enums\StepStatus;
+use Falak\Deployments\Domain\Enums\Strategy;
+use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\DeploymentStep;
+use Falak\Deployments\Domain\Models\DeploymentTarget;
+use Falak\Sites\Contracts\SiteRuntime;
 
 /**
  * Turns a deployment into its step DAG (ARCHITECTURE §5):
@@ -156,7 +156,7 @@ final class PlanBuilder
 
     /**
      * Compose (docs/COMPOSE_TEMPLATES.md §1.4): FETCH (write files + pull) on every server → leader command
-     * (MIGRATE, only when a service declares kiln.deploy.leader_command) → ACTIVATE (`up --wait`) → HEALTHCHECK.
+     * (MIGRATE, only when a service declares falak.deploy.leader_command) → ACTIVATE (`up --wait`) → HEALTHCHECK.
      * The compose strategy activates all servers behind one barrier; rolling / canary batch them.
      *
      * @param  list<DeploymentTarget>  $targets  leader first

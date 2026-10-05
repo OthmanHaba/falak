@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Exceptions;
+namespace Falak\Sites\Contracts\Exceptions;
 
 use RuntimeException;
 

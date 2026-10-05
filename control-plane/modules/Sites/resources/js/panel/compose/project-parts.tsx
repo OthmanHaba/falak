@@ -1,4 +1,4 @@
-import { Button, Callout, Checkbox, Field, IconButton, Input, Select, Tag } from '@/components/kiln';
+import { Button, Callout, Checkbox, Field, IconButton, Input, Select, Tag } from '@/components/falak';
 import { type ComposeServiceChoice } from '@/lib/registry';
 import { Database, FileCode2, Hammer, Plus, Trash2, Wand2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -125,7 +125,7 @@ const SITE_FRAMEWORKS = [
 ];
 
 /**
- * One row per service: what it is, and where it runs (in the stack, public, a Kiln database, its own Kiln service).
+ * One row per service: what it is, and where it runs (in the stack, public, a Falak database, its own Falak service).
  * `renderPublic` draws the public settings (create flow) — Settings keeps them in their own section.
  */
 export function ServicesTable({
@@ -157,9 +157,9 @@ export function ServicesTable({
                     { value: 'keep', label: 'In the stack' },
                     ...(withPublic ? [{ value: 'public' as const, label: 'In the stack, public' }] : []),
                     ...(service.database_engine
-                        ? [{ value: 'database' as const, label: `Kiln ${ENGINE_LABELS[service.database_engine]} database` }]
+                        ? [{ value: 'database' as const, label: `Falak ${ENGINE_LABELS[service.database_engine]} database` }]
                         : []),
-                    { value: 'site', label: 'Own Kiln service' },
+                    { value: 'site', label: 'Own Falak service' },
                 ];
                 const missingBinds = service.binds.filter((bind) => !bind.in_repo && bind.source.startsWith('./'));
 
@@ -208,19 +208,19 @@ export function ServicesTable({
                                     <Database className="size-3.5" aria-hidden />
                                     {KEY_VALUE_ENGINES.includes(choice.engine ?? '') ? (
                                         <>
-                                            Kiln creates a {ENGINE_LABELS[choice.engine ?? '']} instance on the stack’s server (password, memory
+                                            Falak creates a {ENGINE_LABELS[choice.engine ?? '']} instance on the stack’s server (password, memory
                                             limit, persistence) and points the stack’s variables that used {service.name} at it; the containers reach
                                             it through the Docker bridge.
                                         </>
                                     ) : (
                                         <>
-                                            Kiln creates a {ENGINE_LABELS[choice.engine ?? ''] ?? 'database'} database (backups, metrics) and points
+                                            Falak creates a {ENGINE_LABELS[choice.engine ?? ''] ?? 'database'} database (backups, metrics) and points
                                             the stack’s variables that used {service.name} at it.
                                         </>
                                     )}
                                 </p>
                                 <p className="text-warning text-xs">
-                                    {service.name}’s existing data is not copied: the Kiln{' '}
+                                    {service.name}’s existing data is not copied: the Falak{' '}
                                     {KEY_VALUE_ENGINES.includes(choice.engine ?? '') ? 'instance' : 'database'} starts empty.
                                 </p>
                             </div>
@@ -278,7 +278,7 @@ export function ServicesTable({
                                         }
                                     />
                                     <span>
-                                        <span className="font-mono">{bind.source}</span> isn’t in the repository: Kiln mounts a named volume (kept
+                                        <span className="font-mono">{bind.source}</span> isn’t in the repository: Falak mounts a named volume (kept
                                         across deploys). Tick to keep an empty folder per release instead.
                                     </span>
                                 </label>
@@ -335,7 +335,7 @@ export function VariablesList({
     );
 }
 
-/** What Kiln changes before the stack runs, with the full diff on demand. */
+/** What Falak changes before the stack runs, with the full diff on demand. */
 export function AdjustmentsList({ inspection }: { inspection: Inspection }) {
     const [diff, setDiff] = useState(false);
     const adjustments: Adjustment[] = inspection.adjustments;
@@ -343,9 +343,9 @@ export function AdjustmentsList({ inspection }: { inspection: Inspection }) {
     return (
         <div className="grid gap-2">
             {adjustments.length === 0 ? (
-                <p className="text-fg-muted text-sm">Kiln runs the project as it is (besides publishing public services on loopback ports).</p>
+                <p className="text-fg-muted text-sm">Falak runs the project as it is (besides publishing public services on loopback ports).</p>
             ) : (
-                <ul className="grid gap-1.5" aria-label="Kiln adjustments">
+                <ul className="grid gap-1.5" aria-label="Falak adjustments">
                     {adjustments.map((item, index) => (
                         <li key={index} className="flex items-start gap-2 text-xs">
                             <Wand2 className="text-fg-faint mt-0.5 size-3.5 shrink-0" aria-hidden />
@@ -362,7 +362,7 @@ export function AdjustmentsList({ inspection }: { inspection: Inspection }) {
                     <Button size="sm" variant="ghost" className="w-fit" onClick={() => setDiff(!diff)}>
                         {diff ? 'Hide the diff' : 'Show the diff'}
                     </Button>
-                    {diff && <DiffView diff={lineDiff(inspection.original, inspection.adjusted)} header="Your project → what Kiln runs" />}
+                    {diff && <DiffView diff={lineDiff(inspection.original, inspection.adjusted)} header="Your project → what Falak runs" />}
                 </div>
             )}
         </div>

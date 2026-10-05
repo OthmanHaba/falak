@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Terminal\Http\Controllers;
+namespace Falak\Terminal\Http\Controllers;
 
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Contracts\OrganizationDirectory;
+use Falak\Kernel\Http\Controller;
+use Falak\Terminal\Domain\Models\TerminalSession;
+use Falak\Terminal\Infrastructure\AsciicastWriter;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Contracts\OrganizationDirectory;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Terminal\Domain\Models\TerminalSession;
-use Kiln\Terminal\Infrastructure\AsciicastWriter;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class RecordingController extends Controller

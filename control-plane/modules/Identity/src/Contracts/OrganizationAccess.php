@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Contracts;
+namespace Falak\Identity\Contracts;
 
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Auth\Authenticatable;

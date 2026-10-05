@@ -1,4 +1,4 @@
-import { Button, Skeleton } from '@/components/kiln';
+import { Button, Skeleton } from '@/components/falak';
 import { type ServiceTab, type ServiceTabProps } from '@/lib/registry';
 import { type ServiceKind } from '@/types';
 import { Link } from '@inertiajs/react';

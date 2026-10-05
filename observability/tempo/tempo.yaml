@@ -23,7 +23,7 @@ ingester:
 
 compactor:
   compaction:
-    block_retention: ${KILN_TRACES_RETENTION:-360h}
+    block_retention: ${FALAK_TRACES_RETENTION:-360h}
 
 metrics_generator:
   registry:
@@ -39,28 +39,28 @@ metrics_generator:
     path: /var/tempo/generator/traces
   processor:
     span_metrics:
-      # Labels become kiln_event_type, http_route, kiln_site_id, ... (dots -> underscores).
-      # Resource attributes are looked up too, so kiln.site.id set by the agent works.
+      # Labels become falak_event_type, http_route, falak_site_id, ... (dots -> underscores).
+      # Resource attributes are looked up too, so falak.site.id set by the agent works.
       # Keep this list low-cardinality: never add ids that are unique per request or raw SQL.
       dimensions:
-        - kiln.event.type
-        - kiln.site.id
-        - kiln.server.id
+        - falak.event.type
+        - falak.site.id
+        - falak.server.id
         - http.route
         - http.request.method
         - http.response.status_code
         - messaging.destination.name
-        - kiln.job.class
-        - kiln.job.status
-        - kiln.cache.op
-        - kiln.cache.store
-        - kiln.mail.class
-        - kiln.notification.class
-        - kiln.notification.channel
-        - kiln.notification.status
-        - kiln.command.name
-        - kiln.schedule.name
-        - kiln.schedule.status
+        - falak.job.class
+        - falak.job.status
+        - falak.cache.op
+        - falak.cache.store
+        - falak.mail.class
+        - falak.notification.class
+        - falak.notification.channel
+        - falak.notification.status
+        - falak.command.name
+        - falak.schedule.name
+        - falak.schedule.status
         - db.system.name
         - server.address
       histogram_buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30]

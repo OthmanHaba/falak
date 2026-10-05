@@ -1,12 +1,12 @@
 <?php
 
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
-use Kiln\Identity\Domain\Models\User;
 
 function runAdmin(array $args): array
 {
-    Artisan::call('kiln:admin', [...$args, '--json' => true]);
+    Artisan::call('falak:admin', [...$args, '--json' => true]);
 
     return json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
 }
@@ -39,7 +39,7 @@ it('is idempotent and can own a named organization', function () {
 });
 
 it('rejects an invalid e-mail', function () {
-    expect(Artisan::call('kiln:admin', ['email' => 'nope']))->toBe(2);
+    expect(Artisan::call('falak:admin', ['email' => 'nope']))->toBe(2);
 });
 
 it('resets the password of an existing admin only when asked', function () {

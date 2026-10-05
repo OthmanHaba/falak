@@ -1,7 +1,7 @@
 <?php
 
 use App\Providers\AppServiceProvider;
-use Kiln\Kernel\Modules;
+use Falak\Kernel\Modules;
 
 return [
     AppServiceProvider::class,

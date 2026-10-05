@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Kernel\Http;
+namespace Falak\Kernel\Http;
 
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 

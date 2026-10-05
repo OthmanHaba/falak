@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Domain;
+namespace Falak\Sites\Domain;
 
 use InvalidArgumentException;
 

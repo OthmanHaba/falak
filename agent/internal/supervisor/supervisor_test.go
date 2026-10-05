@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
 )
 
 type memSink struct {
@@ -288,13 +288,13 @@ func TestValidation(t *testing.T) {
 	}
 }
 
-// A deploy changes a program's env (KILN_RELEASE_ID …): proc.apply restarts it and the new process sees the new env.
+// A deploy changes a program's env (FALAK_RELEASE_ID …): proc.apply restarts it and the new process sees the new env.
 func TestEnvChangeRestartsWithNewEnv(t *testing.T) {
 	s, _, dir := newSup(t)
 	ctx := context.Background()
 	out := filepath.Join(dir, "release")
-	p := Program{Name: "shop.app", Command: sh(`echo "$KILN_RELEASE_ID" > ` + out + `; exec sleep 30`), StopTimeoutS: 2,
-		Env: map[string]string{"KILN_RELEASE_ID": "01RELEASEONE"}}
+	p := Program{Name: "shop.app", Command: sh(`echo "$FALAK_RELEASE_ID" > ` + out + `; exec sleep 30`), StopTimeoutS: 2,
+		Env: map[string]string{"FALAK_RELEASE_ID": "01RELEASEONE"}}
 	if _, err := s.Apply(ctx, []Program{p}); err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestEnvChangeRestartsWithNewEnv(t *testing.T) {
 	eventually(t, 3*time.Second, func() bool { return read() == "01RELEASEONE" }, "first release env")
 	pid := s.Status(nil)[0].PID
 
-	p.Env = map[string]string{"KILN_RELEASE_ID": "01RELEASETWO"}
+	p.Env = map[string]string{"FALAK_RELEASE_ID": "01RELEASETWO"}
 	res, err := s.Apply(ctx, []Program{p})
 	if err != nil || len(res.Restarted) != 1 {
 		t.Fatalf("res %+v err %v", res, err)

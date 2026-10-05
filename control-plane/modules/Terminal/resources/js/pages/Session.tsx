@@ -1,9 +1,9 @@
-import { AppShell } from '@/components/kiln/app-shell';
-import { Avatar } from '@/components/kiln/avatar';
-import { Button } from '@/components/kiln/button';
-import { Tag } from '@/components/kiln/tag';
-import { toast } from '@/components/kiln/toast';
-import { Tooltip } from '@/components/kiln/tooltip';
+import { AppShell } from '@/components/falak/app-shell';
+import { Avatar } from '@/components/falak/avatar';
+import { Button } from '@/components/falak/button';
+import { Tag } from '@/components/falak/tag';
+import { toast } from '@/components/falak/toast';
+import { Tooltip } from '@/components/falak/tooltip';
 import { echo } from '@/lib/echo';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';

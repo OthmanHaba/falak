@@ -4,11 +4,11 @@ services:
     restart: unless-stopped
     expose: ["5678"]
     environment:
-      N8N_HOST: ${{ kiln.domain(n8n) }}
+      N8N_HOST: ${{ falak.domain(n8n) }}
       N8N_PORT: "5678"
       N8N_PROTOCOL: https
-      N8N_EDITOR_BASE_URL: ${{ kiln.url(n8n) }}/
-      WEBHOOK_URL: ${{ kiln.url(n8n) }}/
+      N8N_EDITOR_BASE_URL: ${{ falak.url(n8n) }}/
+      WEBHOOK_URL: ${{ falak.url(n8n) }}/
       N8N_PROXY_HOPS: "1"
       N8N_SECURE_COOKIE: "true"
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}

@@ -1,21 +1,21 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
-use Kiln\Sites\Contracts\BuildMode;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetStatus;
+use Falak\Sites\Contracts\BuildMode;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetStatus;
 
 final readonly class SiteData
 {
     /**
-     * @param  string  $slug  directory name under /srv/kiln/sites and FPM pool name (^[a-z0-9][a-z0-9-]{0,62}$)
-     * @param  string  $rootPath  /srv/kiln/sites/<slug>
+     * @param  string  $slug  directory name under /srv/falak/sites and FPM pool name (^[a-z0-9][a-z0-9-]{0,62}$)
+     * @param  string  $rootPath  /srv/falak/sites/<slug>
      * @param  string  $webDirectory  document root relative to the release ("public", "" for the release root)
      * @param  ?int  $appPort  loopback host port Caddy proxies to (node/bun/deno listen on it; docker/compose publish to it)
-     * @param  ?string  $testDomain  <slug>.<KILN_TEST_DOMAIN> when enabled
+     * @param  ?string  $testDomain  <slug>.<FALAK_TEST_DOMAIN> when enabled
      * @param  list<SharedPath>  $sharedPaths
      * @param  list<SiteTargetData>  $targets
      * @param  ?ComposeConfig  $compose  compose runtime only
@@ -90,7 +90,7 @@ final readonly class SiteData
     /** PHP-FPM pool socket on each target (php-fpm runtime only). */
     public function fpmSocket(): ?string
     {
-        return $this->runtime === SiteRuntime::PhpFpm && $this->phpVersion ? "/run/php/kiln-{$this->slug}-{$this->phpVersion}.sock" : null;
+        return $this->runtime === SiteRuntime::PhpFpm && $this->phpVersion ? "/run/php/falak-{$this->slug}-{$this->phpVersion}.sock" : null;
     }
 
     /** PHP CLI binary on the site's servers (e.g. "php8.4"); plain "php" for non-PHP runtimes. */

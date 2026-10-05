@@ -1,10 +1,10 @@
-import { AppShell } from '@/components/kiln/app-shell';
-import { Button } from '@/components/kiln/button';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Pagination } from '@/components/kiln/pagination';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { PageHeader } from '@/components/kiln/section';
-import { Segmented } from '@/components/kiln/segmented';
+import { AppShell } from '@/components/falak/app-shell';
+import { Button } from '@/components/falak/button';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Pagination } from '@/components/falak/pagination';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { PageHeader } from '@/components/falak/section';
+import { Segmented } from '@/components/falak/segmented';
 import { useEchoChannel } from '@/hooks/use-echo-channel';
 import { cn } from '@/lib/utils';
 import { type Paginated, type SharedData } from '@/types';

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Contracts;
+namespace Falak\Identity\Contracts;
 
 /**
  * Modules declare their permissions (e.g. "servers.create") and the default roles holding them

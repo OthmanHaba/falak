@@ -1,1 +1,1 @@
-{"path": "/etc/logrotate.d/kiln-shop", "content": "/srv/kiln/sites/shop/shared/storage/logs/*.log {\n  daily\n  rotate 14\n  compress\n  missingok\n}\n", "encoding": "utf8", "mode": "0644", "owner": "root", "group": "root", "create_dirs": true, "state": "present"}
+{"path": "/etc/logrotate.d/falak-shop", "content": "/srv/falak/sites/shop/shared/storage/logs/*.log {\n  daily\n  rotate 14\n  compress\n  missingok\n}\n", "encoding": "utf8", "mode": "0644", "owner": "root", "group": "root", "create_dirs": true, "state": "present"}

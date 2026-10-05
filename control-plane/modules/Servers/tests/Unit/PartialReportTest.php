@@ -1,8 +1,8 @@
 <?php
 
-use Kiln\Servers\Domain\MachineCheck\Decision;
-use Kiln\Servers\Domain\MachineCheck\MachineCheck;
-use Kiln\Servers\Domain\Stack\Stack;
+use Falak\Servers\Domain\MachineCheck\Decision;
+use Falak\Servers\Domain\MachineCheck\MachineCheck;
+use Falak\Servers\Domain\Stack\Stack;
 
 require_once __DIR__.'/../Support/machine_reports.php';
 
@@ -57,5 +57,5 @@ it('decides on a partial report without failing', function (array $report) {
 it('names a Node install with no version', function () {
     $check = mc_decide(mc_report(['node' => [['path' => '/usr/bin/node', 'source' => 'unknown']]]), mc_wanted(new Stack(node: '22')));
 
-    expect($check->for('node')->notes[0]->message)->toBe("Node at /usr/bin/node (unknown source) stays as it is; sites run Kiln's Node.");
+    expect($check->for('node')->notes[0]->message)->toBe("Node at /usr/bin/node (unknown source) stays as it is; sites run Falak's Node.");
 });

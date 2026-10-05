@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Alerting\Infrastructure\Senders;
+namespace Falak\Alerting\Infrastructure\Senders;
 
+use Falak\Alerting\Application\AlertMessage;
+use Falak\Alerting\Application\Mail\AlertMail;
+use Falak\Alerting\Domain\Enums\ChannelType;
 use Illuminate\Support\Facades\Mail;
-use Kiln\Alerting\Application\AlertMessage;
-use Kiln\Alerting\Application\Mail\AlertMail;
-use Kiln\Alerting\Domain\Enums\ChannelType;
 use Throwable;
 
 /** Email via the application mailer. Config: {recipients: list<email>}. */

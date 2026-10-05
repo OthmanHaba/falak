@@ -10,7 +10,7 @@ services:
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
-      WEBUI_URL: ${{ kiln.url(open-webui) }}
+      WEBUI_URL: ${{ falak.url(open-webui) }}
       ENABLE_SIGNUP: ${ENABLE_SIGNUP}
       ANONYMIZED_TELEMETRY: "false"
     volumes:

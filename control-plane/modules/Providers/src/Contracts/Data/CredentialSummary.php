@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Providers\Contracts\Data;
+namespace Falak\Providers\Contracts\Data;
 
-use Kiln\Providers\Contracts\ProviderType;
+use Falak\Providers\Contracts\ProviderType;
 
 final readonly class CredentialSummary
 {

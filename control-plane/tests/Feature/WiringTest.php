@@ -5,53 +5,53 @@
 | Alertable events routed by Alerting, flash messages shared to Inertia and the ULID case rule.
 */
 
+use Falak\Alerting\Contracts\Alertable;
+use Falak\Alerting\Contracts\Alerts;
+use Falak\Alerting\Contracts\AlertTypes;
+use Falak\Alerting\Contracts\Data\AlertData;
+use Falak\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Domain\Models\Alert;
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Alerting\Domain\Models\Rule;
+use Falak\Databases\Events\BackupFailed;
+use Falak\Databases\Events\BackupSucceeded;
+use Falak\Databases\Events\RestoreFinished;
+use Falak\Deployments\Contracts\Data\LiveRelease;
+use Falak\Deployments\Contracts\LiveReleases;
+use Falak\Deployments\Events\ReleaseActivated;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Events\CertificateInstallFailed;
+use Falak\Edge\Events\CertificateIssued;
+use Falak\Fleet\Events\AgentRevoked;
+use Falak\Fleet\Events\AgentVersionChanged;
+use Falak\Identity\Contracts\Role;
+use Falak\Insights\Contracts\SiteNameResolver;
+use Falak\Network\Events\FirewallApplied;
+use Falak\Network\Events\FirewallApplyFailed;
+use Falak\Processes\Contracts\ProcessControl;
+use Falak\Processes\Contracts\ScheduleDirectory;
+use Falak\Processes\Events\ProgramCrashLooping;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Sites\Contracts\BuildMode;
+use Falak\Sites\Contracts\Data\LaravelSettings;
+use Falak\Sites\Contracts\Data\SharedPath;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetRole;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
+use Falak\Sites\Events\SiteDeleted;
+use Falak\Sites\Infrastructure\EloquentServerSites;
+use Falak\Sites\Infrastructure\EloquentSiteNameResolver;
+use Falak\Telemetry\Contracts\ServerSites;
+use Falak\Telemetry\Contracts\TelemetryConfigurator;
+use Falak\Telemetry\Domain\Models\TelemetrySettings;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
-use Kiln\Alerting\Contracts\Alertable;
-use Kiln\Alerting\Contracts\Alerts;
-use Kiln\Alerting\Contracts\AlertTypes;
-use Kiln\Alerting\Contracts\Data\AlertData;
-use Kiln\Alerting\Domain\Enums\ChannelType;
-use Kiln\Alerting\Domain\Models\Alert;
-use Kiln\Alerting\Domain\Models\Channel;
-use Kiln\Alerting\Domain\Models\Rule;
-use Kiln\Databases\Events\BackupFailed;
-use Kiln\Databases\Events\BackupSucceeded;
-use Kiln\Databases\Events\RestoreFinished;
-use Kiln\Deployments\Contracts\Data\LiveRelease;
-use Kiln\Deployments\Contracts\LiveReleases;
-use Kiln\Deployments\Events\ReleaseActivated;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Edge\Events\CertificateInstallFailed;
-use Kiln\Edge\Events\CertificateIssued;
-use Kiln\Fleet\Events\AgentRevoked;
-use Kiln\Fleet\Events\AgentVersionChanged;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Insights\Contracts\SiteNameResolver;
-use Kiln\Network\Events\FirewallApplied;
-use Kiln\Network\Events\FirewallApplyFailed;
-use Kiln\Processes\Contracts\ProcessControl;
-use Kiln\Processes\Contracts\ScheduleDirectory;
-use Kiln\Processes\Events\ProgramCrashLooping;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Sites\Contracts\BuildMode;
-use Kiln\Sites\Contracts\Data\LaravelSettings;
-use Kiln\Sites\Contracts\Data\SharedPath;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetRole;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
-use Kiln\Sites\Events\SiteDeleted;
-use Kiln\Sites\Infrastructure\EloquentServerSites;
-use Kiln\Sites\Infrastructure\EloquentSiteNameResolver;
-use Kiln\Telemetry\Contracts\ServerSites;
-use Kiln\Telemetry\Contracts\TelemetryConfigurator;
-use Kiln\Telemetry\Domain\Models\TelemetrySettings;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/FakeAgentGateway.php';
@@ -60,7 +60,7 @@ function wiring_site(string $organizationId, Server $server, string $slug = 'sho
 {
     $site = Site::query()->create([
         'organization_id' => $organizationId, 'name' => ucfirst($slug), 'slug' => $slug, 'runtime' => SiteRuntime::FrankenPhp, 'build_mode' => BuildMode::Native,
-        'framework' => Framework::Laravel, 'php_version' => '8.4', 'unix_user' => 'kiln', 'deploy_script' => '', 'laravel' => new LaravelSettings, 'shared_paths' => [],
+        'framework' => Framework::Laravel, 'php_version' => '8.4', 'unix_user' => 'falak', 'deploy_script' => '', 'laravel' => new LaravelSettings, 'shared_paths' => [],
     ]);
     SiteTarget::query()->create(['site_id' => $site->id, 'server_id' => $server->id, 'role' => TargetRole::Leader, 'status' => TargetStatus::Ready]);
 
@@ -126,8 +126,8 @@ it('tails PHP sites\' shared log directories and labels records with the live re
     $payload = $agents->last('telemetry.configure')['payload'];
 
     expect($payload['log_sources'])->toBe([
-        ['path' => '/srv/kiln/sites/shop/shared/storage/logs/*.log', 'site' => 'shop', 'kind' => 'app', 'multiline' => 'laravel'],
-        ['path' => '/srv/kiln/sites/symfony/shared/var/log/*.log', 'site' => 'symfony', 'kind' => 'app'],
+        ['path' => '/srv/falak/sites/shop/shared/storage/logs/*.log', 'site' => 'shop', 'kind' => 'app', 'multiline' => 'laravel'],
+        ['path' => '/srv/falak/sites/symfony/shared/var/log/*.log', 'site' => 'symfony', 'kind' => 'app'],
     ])->and($payload['sites'])->toContain(['slug' => 'shop', 'site_id' => strtoupper($site->id), 'deployment_id' => '01JDEP0000000000000000000A', 'release_id' => '01JRE00000000000000000000A'])
         ->and($payload['sites'])->toContain(['slug' => 'node', 'site_id' => strtoupper($node->id)]);
 
@@ -237,12 +237,12 @@ it('sends ids upper-case at the agent boundary and accepts either case back', fu
     $server = Server::factory()->create(['organization_id' => $organization->id, 'type' => ServerType::Web]);
     $site = wiring_site($organization->id, $server);
 
-    $vars = app(SiteDirectory::class)->deployVariables($site->id, $server->id, ['KILN_DEPLOYMENT_ID' => strtolower('01J9ZQ3M4B5C6D7E8F9G0H1J2K'), 'KILN_COMMIT' => 'abcdef']);
+    $vars = app(SiteDirectory::class)->deployVariables($site->id, $server->id, ['FALAK_DEPLOYMENT_ID' => strtolower('01J9ZQ3M4B5C6D7E8F9G0H1J2K'), 'FALAK_COMMIT' => 'abcdef']);
 
-    expect($vars['KILN_SITE_ID'])->toBe(strtoupper($site->id))
-        ->and($vars['KILN_SERVER_ID'])->toBe(strtoupper($server->id))
-        ->and($vars['KILN_DEPLOYMENT_ID'])->toBe('01J9ZQ3M4B5C6D7E8F9G0H1J2K')
-        ->and($vars['KILN_COMMIT'])->toBe('abcdef');
+    expect($vars['FALAK_SITE_ID'])->toBe(strtoupper($site->id))
+        ->and($vars['FALAK_SERVER_ID'])->toBe(strtoupper($server->id))
+        ->and($vars['FALAK_DEPLOYMENT_ID'])->toBe('01J9ZQ3M4B5C6D7E8F9G0H1J2K')
+        ->and($vars['FALAK_COMMIT'])->toBe('abcdef');
 
     // Stored lowercase; lookups from agent-provided (upper-case) ids resolve.
     expect($site->id)->toBe(strtolower($site->id))

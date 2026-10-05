@@ -1,0 +1,2 @@
+#!/bin/sh
+exec deno run --allow-all /opt/falak-fn/deno/install.mjs "$@"

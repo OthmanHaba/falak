@@ -1,12 +1,12 @@
-import { Button } from '@/components/kiln/button';
-import { Callout } from '@/components/kiln/callout';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { IntegrationIcon } from '@/components/kiln/integration-icon';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { SecretInput } from '@/components/kiln/secret-input';
-import { Section } from '@/components/kiln/section';
-import { StatusBadge } from '@/components/kiln/status';
+import { Button } from '@/components/falak/button';
+import { Callout } from '@/components/falak/callout';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { IntegrationIcon } from '@/components/falak/integration-icon';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { SecretInput } from '@/components/falak/secret-input';
+import { Section } from '@/components/falak/section';
+import { StatusBadge } from '@/components/falak/status';
 import SettingsLayout from '@/layouts/settings/layout';
 import { router, useForm, usePage } from '@inertiajs/react';
 import { ExternalLink, LayoutDashboard, RefreshCw } from 'lucide-react';
@@ -101,7 +101,7 @@ export default function Settings({ settings, defaults, backends, can }: Props) {
     return (
         <SettingsLayout
             title="Observability"
-            description="Where server agents ship OTLP traces, logs and metrics for this organization, and the backends Kiln queries for charts and log search."
+            description="Where server agents ship OTLP traces, logs and metrics for this organization, and the backends Falak queries for charts and log search."
         >
             <form onSubmit={submit}>
                 <Section
@@ -196,7 +196,7 @@ export default function Settings({ settings, defaults, backends, can }: Props) {
                 </Section>
             </form>
 
-            <Section title="Backends" description="Installation-wide, configured with KILN_* environment variables on the control plane.">
+            <Section title="Backends" description="Installation-wide, configured with FALAK_* environment variables on the control plane.">
                 <ul className="divide-border -my-2 divide-y">
                     <BackendRow
                         icon={backends.metrics.backend.toLowerCase().includes('victoria') ? 'victoriametrics' : 'prometheus'}
@@ -218,7 +218,7 @@ export default function Settings({ settings, defaults, backends, can }: Props) {
                             Provisioned <RelativeTime value={backends.grafana.provisioned_at} /> into this organization's Grafana folder.
                         </>
                     ) : (
-                        'Kiln creates a folder and dashboards for this organization in Grafana.'
+                        'Falak creates a folder and dashboards for this organization in Grafana.'
                     )
                 }
                 aside={
@@ -229,7 +229,7 @@ export default function Settings({ settings, defaults, backends, can }: Props) {
                             loading={provisioning}
                             onClick={provision}
                             disabled={!backends.grafana.configured}
-                            title={backends.grafana.configured ? undefined : 'Set KILN_GRAFANA_URL and KILN_GRAFANA_TOKEN first'}
+                            title={backends.grafana.configured ? undefined : 'Set FALAK_GRAFANA_URL and FALAK_GRAFANA_TOKEN first'}
                         >
                             {backends.grafana.provisioned_at ? 'Re-provision' : 'Provision'}
                         </Button>
@@ -246,7 +246,7 @@ export default function Settings({ settings, defaults, backends, can }: Props) {
                         <LayoutDashboard className="text-fg-faint size-4" aria-hidden />
                         {backends.grafana.configured
                             ? 'No dashboards yet — provision them to get server, site and database dashboards.'
-                            : 'Grafana is not configured on this installation. Charts inside Kiln still work with a metrics backend.'}
+                            : 'Grafana is not configured on this installation. Charts inside Falak still work with a metrics backend.'}
                     </p>
                 ) : (
                     <ul className="grid gap-1.5 sm:grid-cols-2">

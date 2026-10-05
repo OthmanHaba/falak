@@ -1,4 +1,4 @@
-import { Button, Dialog, RelativeTime, SkeletonRows, Tag } from '@/components/kiln';
+import { Button, Dialog, RelativeTime, SkeletonRows, Tag } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { type ServiceActionDialogProps } from '@/lib/registry';
 import { cn } from '@/lib/utils';

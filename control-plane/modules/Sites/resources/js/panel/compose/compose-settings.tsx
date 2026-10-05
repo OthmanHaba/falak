@@ -1,5 +1,5 @@
 import { DomainPicker, type DomainChoice } from '@/components/domain-picker';
-import { Button, Callout, Field, IconButton, Input, RelativeTime, Section, Segmented, Select, SkeletonRows, Tag, toast } from '@/components/kiln';
+import { Button, Callout, Field, IconButton, Input, RelativeTime, Section, Segmented, Select, SkeletonRows, Tag, toast } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { type ComposeServiceChoice, type ServiceTabProps } from '@/lib/registry';
@@ -246,8 +246,8 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                 title="Compose file"
                 description={
                     source === 'repo'
-                        ? 'Read from the repository on every deploy; services with build: are built by kiln-builder and pinned by digest.'
-                        : 'Stored in Kiln and versioned. Interpolation stays Compose-native: ${VAR} reads the site variables.'
+                        ? 'Read from the repository on every deploy; services with build: are built by falak-builder and pinned by digest.'
+                        : 'Stored in Falak and versioned. Interpolation stays Compose-native: ${VAR} reads the site variables.'
                 }
                 aside={
                     <>
@@ -324,7 +324,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                         )}
                         {inspection?.no_api && (
                             <p className="text-fg-muted text-xs">
-                                Kiln can’t read files from this git server; the builder reads them at deploy time.
+                                Falak can’t read files from this git server; the builder reads them at deploy time.
                             </p>
                         )}
                         {data.repository ? (
@@ -374,7 +374,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
                     <Section title="Variables" description="What the stack reads; set the values in the Variables tab.">
                         <VariablesList variables={inspection.variables} />
                     </Section>
-                    <Section title="Kiln adjustments" description="Applied when the stack runs; the repository is never changed.">
+                    <Section title="Falak adjustments" description="Applied when the stack runs; the repository is never changed.">
                         <AdjustmentsList inspection={inspection} />
                     </Section>
                 </>
@@ -382,7 +382,7 @@ export function ComposeSettings({ ctx }: ServiceTabProps) {
 
             <Section
                 title="Public services"
-                description="Kiln publishes each on 127.0.0.1 and routes it through the edge. The first one gets the site's domains; other host ports are not published."
+                description="Falak publishes each on 127.0.0.1 and routes it through the edge. The first one gets the site's domains; other host ports are not published."
                 aside={
                     canUpdate && (
                         <Button

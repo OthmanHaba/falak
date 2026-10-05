@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Insights\Domain\Support;
+namespace Falak\Insights\Domain\Support;
 
 /**
  * Parses PHP (`#0 /file.php(12): Foo->bar()`) and V8/Node (`    at fn (/file.js:1:2)`) stack traces.
@@ -68,7 +68,7 @@ final class StackTrace
 
     /**
      * Strip deployment-specific prefixes so frames match across releases:
-     * /srv/kiln/sites/shop/releases/01J…/app/Foo.php → app/Foo.php
+     * /srv/falak/sites/shop/releases/01J…/app/Foo.php → app/Foo.php
      */
     public static function normalizeFile(string $file): string
     {

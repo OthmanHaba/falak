@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Processes\Events;
+namespace Falak\Processes\Events;
 
+use Falak\Alerting\Contracts\Alertable;
+use Falak\Alerting\Contracts\Data\AlertData;
+use Falak\Alerting\Contracts\Severity;
 use Illuminate\Foundation\Events\Dispatchable;
-use Kiln\Alerting\Contracts\Alertable;
-use Kiln\Alerting\Contracts\Data\AlertData;
-use Kiln\Alerting\Contracts\Severity;
 
 /**
  * proc.status reported a program that keeps exiting (fatal, or in backoff after many restarts).

@@ -1,23 +1,23 @@
 <?php
 
-namespace Kiln\Sites\Infrastructure\Compose;
+namespace Falak\Sites\Infrastructure\Compose;
 
 use DateTimeImmutable;
+use Falak\Sites\Application\Compose\ComposeNetworks;
+use Falak\Sites\Application\Compose\FalakAdjustments;
+use Falak\Sites\Contracts\ComposeServiceExtraction;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Data\ComposeServiceState;
+use Falak\Sites\Contracts\Data\ComposeVersionData;
+use Falak\Sites\Contracts\Data\RenderedCompose;
+use Falak\Sites\Contracts\Exceptions\ComposeRenderException;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Domain\Models\ComposeState;
+use Falak\Sites\Domain\Models\ComposeVersion;
+use Falak\Sites\Domain\Models\OrganizationSettings;
+use Falak\Sites\Domain\Models\Site;
 use Illuminate\Support\Facades\DB;
-use Kiln\Sites\Application\Compose\ComposeNetworks;
-use Kiln\Sites\Application\Compose\KilnAdjustments;
-use Kiln\Sites\Contracts\ComposeServiceExtraction;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Data\ComposeServiceState;
-use Kiln\Sites\Contracts\Data\ComposeVersionData;
-use Kiln\Sites\Contracts\Data\RenderedCompose;
-use Kiln\Sites\Contracts\Exceptions\ComposeRenderException;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Domain\Models\ComposeState;
-use Kiln\Sites\Domain\Models\ComposeVersion;
-use Kiln\Sites\Domain\Models\OrganizationSettings;
-use Kiln\Sites\Domain\Models\Site;
 use stdClass;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
@@ -170,7 +170,7 @@ final class EloquentComposeSites implements ComposeSites
             Site::withoutEvents(fn () => $site->forceFill(['compose_snapshot' => $yaml])->save());
         }
 
-        // Kiln's adjustments (docs/plans/COMPOSE_APPS.md), at every deploy (an inline file is stored as written):
+        // Falak's adjustments (docs/plans/COMPOSE_APPS.md), at every deploy (an inline file is stored as written):
         // extracted services out, their variables rewritten, a restart policy where none is set and, for repository
         // projects, mounted repository files pointed at <release>/repo/.
         $config = $site->composeConfig();
@@ -184,7 +184,7 @@ final class EloquentComposeSites implements ComposeSites
             }
 
             if (is_array($loaded)) {
-                $adjusted = KilnAdjustments::apply($loaded, $config, $repoFiles, $this->extraction()->rewrites($site->id), array_map(fn ($p) => $p->service, $site->publicServices()));
+                $adjusted = FalakAdjustments::apply($loaded, $config, $repoFiles, $this->extraction()->rewrites($site->id), array_map(fn ($p) => $p->service, $site->publicServices()));
 
                 if ($adjusted['errors'] !== []) {
                     throw new ComposeRenderException(implode(' ', $adjusted['errors']));
@@ -261,13 +261,13 @@ final class EloquentComposeSites implements ComposeSites
                 $argv = self::argv($labels[YamlComposeInspector::LEADER_COMMAND_LABEL]);
 
                 if ($argv === null) {
-                    throw new ComposeRenderException("Service {$name}: kiln.deploy.leader_command has unbalanced quotes.");
+                    throw new ComposeRenderException("Service {$name}: falak.deploy.leader_command has unbalanced quotes.");
                 }
 
                 $leader[$name] = $argv;
             }
 
-            $service['labels'] = [...$labels, 'kiln.site' => $site->slug, 'kiln.release' => $release, 'kiln.service' => $name];
+            $service['labels'] = [...$labels, 'falak.site' => $site->slug, 'falak.release' => $release, 'falak.service' => $name];
             $doc['services'][$name] = $service;
         }
 

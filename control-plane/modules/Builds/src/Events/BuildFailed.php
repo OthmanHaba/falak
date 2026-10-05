@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Builds\Events;
+namespace Falak\Builds\Events;
 
+use Falak\Alerting\Contracts\Alertable;
+use Falak\Alerting\Contracts\Data\AlertData;
+use Falak\Alerting\Contracts\Severity;
 use Illuminate\Foundation\Events\Dispatchable;
-use Kiln\Alerting\Contracts\Alertable;
-use Kiln\Alerting\Contracts\Data\AlertData;
-use Kiln\Alerting\Contracts\Severity;
 
 /**
  * A build failed or timed out (cancellations fire BuildCancelled instead).

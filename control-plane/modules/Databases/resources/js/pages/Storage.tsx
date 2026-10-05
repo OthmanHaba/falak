@@ -1,16 +1,16 @@
-import { Button } from '@/components/kiln/button';
-import { Callout } from '@/components/kiln/callout';
-import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
-import { DataTable } from '@/components/kiln/data-table';
-import { Dialog } from '@/components/kiln/dialog';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { IntegrationTile } from '@/components/kiln/integration-icon';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { SecretInput } from '@/components/kiln/secret-input';
-import { StatusBadge } from '@/components/kiln/status';
-import { Switch } from '@/components/kiln/switch';
+import { Button } from '@/components/falak/button';
+import { Callout } from '@/components/falak/callout';
+import { ConfirmDestructive } from '@/components/falak/confirm-destructive';
+import { DataTable } from '@/components/falak/data-table';
+import { Dialog } from '@/components/falak/dialog';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { IntegrationTile } from '@/components/falak/integration-icon';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { SecretInput } from '@/components/falak/secret-input';
+import { StatusBadge } from '@/components/falak/status';
+import { Switch } from '@/components/falak/switch';
 import SettingsLayout from '@/layouts/settings/layout';
 import { cn } from '@/lib/utils';
 import { router, useForm, usePage } from '@inertiajs/react';
@@ -387,7 +387,7 @@ export default function Storage({ providers, drivers, can }: Props) {
                                 mono
                                 value={form.data.prefix}
                                 onChange={(event) => form.setData('prefix', event.target.value)}
-                                placeholder="kiln/"
+                                placeholder="falak/"
                             />
                         </Field>
                     </div>
@@ -429,7 +429,7 @@ export default function Storage({ providers, drivers, can }: Props) {
                 open={deleting !== null}
                 onOpenChange={(value) => !value && setDeleting(null)}
                 title={`Delete ${deleting?.name ?? ''}`}
-                description="Objects in the bucket are not touched, but backups stored there can no longer be restored or pruned from Kiln."
+                description="Objects in the bucket are not touched, but backups stored there can no longer be restored or pruned from Falak."
                 confirmText={deleting?.name ?? ''}
                 confirmLabel="Delete storage"
                 onConfirm={remove}

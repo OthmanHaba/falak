@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Identity\Application\Actions;
+namespace Falak\Identity\Application\Actions;
 
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\Organization;
+use Falak\Identity\Domain\Models\User;
+use Falak\Identity\Events\MemberRoleChanged;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\Organization;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Identity\Events\MemberRoleChanged;
 
 final class ChangeMemberRole
 {

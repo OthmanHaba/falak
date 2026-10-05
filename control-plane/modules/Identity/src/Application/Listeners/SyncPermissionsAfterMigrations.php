@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Identity\Application\Listeners;
+namespace Falak\Identity\Application\Listeners;
 
+use Falak\Identity\Application\Actions\SyncPermissions;
 use Illuminate\Database\Events\MigrationsEnded;
 use Illuminate\Support\Facades\Schema;
-use Kiln\Identity\Application\Actions\SyncPermissions;
 
 /**
  * Keeps roles/permissions converged with the registry after every `migrate` run.

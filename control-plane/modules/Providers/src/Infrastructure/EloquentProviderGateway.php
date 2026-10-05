@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Providers\Infrastructure;
+namespace Falak\Providers\Infrastructure;
 
+use Falak\Providers\Contracts\Data\CredentialSummary;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\ProviderAdapter;
+use Falak\Providers\Contracts\ProviderGateway;
+use Falak\Providers\Domain\Models\ProviderCredential;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Contracts\Config\Repository as Config;
-use Kiln\Providers\Contracts\Data\CredentialSummary;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Contracts\ProviderAdapter;
-use Kiln\Providers\Contracts\ProviderGateway;
-use Kiln\Providers\Domain\Models\ProviderCredential;
 
 final class EloquentProviderGateway implements ProviderGateway
 {

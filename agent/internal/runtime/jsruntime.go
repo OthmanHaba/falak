@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kiln/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
 )
 
 // JSRuntimePayload is runtime.bun.install / runtime.deno.install.
@@ -60,12 +60,12 @@ var deno = jsRuntime{
 	},
 }
 
-// BunInstall installs the official Bun binary into /opt/kiln/bun/<version>/bin/bun.
+// BunInstall installs the official Bun binary into /opt/falak/bun/<version>/bin/bun.
 func (rt *Runtime) BunInstall(ctx context.Context, p JSRuntimePayload, st commands.Stream) (any, error) {
 	return rt.installJSRuntime(ctx, bun, p, st)
 }
 
-// DenoInstall installs the official Deno binary into /opt/kiln/deno/<version>/bin/deno.
+// DenoInstall installs the official Deno binary into /opt/falak/deno/<version>/bin/deno.
 func (rt *Runtime) DenoInstall(ctx context.Context, p JSRuntimePayload, st commands.Stream) (any, error) {
 	return rt.installJSRuntime(ctx, deno, p, st)
 }
@@ -82,7 +82,7 @@ func (rt *Runtime) installJSRuntime(ctx context.Context, r jsRuntime, p JSRuntim
 	if err != nil {
 		return nil, err
 	}
-	prefix := "/opt/kiln/" + r.name + "/" + p.Version
+	prefix := "/opt/falak/" + r.name + "/" + p.Version
 	bin := prefix + "/bin/" + r.name
 	res := NodeResult{Prefix: prefix}
 	if !rt.d.FS.Exists(bin) {
@@ -92,10 +92,10 @@ func (rt *Runtime) installJSRuntime(ctx context.Context, r jsRuntime, p JSRuntim
 				return nil, err
 			}
 		}
-		if err := rt.d.FS.MkdirAll("/opt/kiln/"+r.name, 0o755); err != nil {
+		if err := rt.d.FS.MkdirAll("/opt/falak/"+r.name, 0o755); err != nil {
 			return nil, err
 		}
-		tmpDir, err := os.MkdirTemp(rt.d.FS.P("/opt/kiln/"+r.name), ".dl-")
+		tmpDir, err := os.MkdirTemp(rt.d.FS.P("/opt/falak/"+r.name), ".dl-")
 		if err != nil {
 			return nil, err
 		}

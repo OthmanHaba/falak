@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Identity\Infrastructure;
+namespace Falak\Identity\Infrastructure;
 
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Identity\Domain\Models\PersonalAccessToken;
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Contracts\Auth\Factory as AuthFactory;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\Identity\Domain\Models\PersonalAccessToken;
-use Kiln\Identity\Domain\Models\User;
 
 final class DatabaseAuditLog implements AuditLog
 {

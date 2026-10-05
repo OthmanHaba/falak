@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Databases\Application;
+namespace Falak\Databases\Application;
 
 /**
- * KILN_DOCKER_NETWORKS: the Docker address ranges containers connect from. The agent refuses a db.user.apply whose
+ * FALAK_DOCKER_NETWORKS: the Docker address ranges containers connect from. The agent refuses a db.user.apply whose
  * ranges are not canonical IPv4 networks, so the list is checked once, when the configuration loads: host bits are
  * cleared (172.16.0.1/12 → 172.16.0.0/12), entries that are not IPv4 CIDRs with a /8–/30 prefix (or that cover
- * 0.0.0.0/8 or loopback) are dropped, and when nothing valid is left Kiln falls back to Docker's default pools.
+ * 0.0.0.0/8 or loopback) are dropped, and when nothing valid is left Falak falls back to Docker's default pools.
  * Dropped entries are logged at boot (DatabasesServiceProvider). An empty value turns container access off.
  */
 final class ContainerNetworks

@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Databases\Application\Actions;
+namespace Falak\Databases\Application\Actions;
 
-use Kiln\Databases\Domain\Models\DatabaseUser;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Databases\Domain\Models\DatabaseUser;
+use Falak\Identity\Contracts\AuditLog;
 
 /**
  * Returns the decrypted password (the caller has checked databases.credentials.reveal). Always audited.

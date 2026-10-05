@@ -1,6 +1,6 @@
-import { AppShell } from '@/components/kiln/app-shell';
-import { PageHeader } from '@/components/kiln/section';
-import { tabTriggerClasses } from '@/components/kiln/tabs';
+import { AppShell } from '@/components/falak/app-shell';
+import { PageHeader } from '@/components/falak/section';
+import { tabTriggerClasses } from '@/components/falak/tabs';
 import { shellContext } from '@/lib/registry';
 import { type SharedData } from '@/types';
 import { Head, Link, usePage } from '@inertiajs/react';

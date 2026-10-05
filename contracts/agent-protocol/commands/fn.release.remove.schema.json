@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/fn.release.remove.schema.json",
-  "title": "fn.release.remove — deregister a function from kiln-fn-gateway, remove its containers and releases",
-  "x-kiln-redeliverable": true,
+  "$id": "https://falak.sh/agent-protocol/commands/fn.release.remove.schema.json",
+  "title": "fn.release.remove — deregister a function from falak-fn-gateway, remove its containers and releases",
+  "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [

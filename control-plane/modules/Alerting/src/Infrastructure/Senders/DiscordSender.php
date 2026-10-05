@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Alerting\Infrastructure\Senders;
+namespace Falak\Alerting\Infrastructure\Senders;
 
-use Kiln\Alerting\Application\AlertMessage;
-use Kiln\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Application\AlertMessage;
+use Falak\Alerting\Domain\Enums\ChannelType;
 
 /** Discord webhook. Config: {webhook_url}. Discord answers 204 No Content. */
 final class DiscordSender extends HttpSender
@@ -45,6 +45,6 @@ final class DiscordSender extends HttpSender
             'timestamp' => $message->createdAt->format(DATE_ATOM),
         ], fn ($value) => $value !== null);
 
-        $this->post((string) $config['webhook_url'], ['username' => 'Kiln', 'allowed_mentions' => ['parse' => []], 'embeds' => [$embed]]);
+        $this->post((string) $config['webhook_url'], ['username' => 'Falak', 'allowed_mentions' => ['parse' => []], 'embeds' => [$embed]]);
     }
 }

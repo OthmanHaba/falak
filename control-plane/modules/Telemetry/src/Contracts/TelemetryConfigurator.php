@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts;
+namespace Falak\Telemetry\Contracts;
 
 /**
  * Pushes `telemetry.configure` to agents. Other modules call reconfigure() after changes

@@ -1,32 +1,32 @@
 <?php
 
+use Falak\Databases\Application\Actions\EnableContainerAccess;
+use Falak\Databases\Application\EngineInventory;
+use Falak\Databases\Contracts\Data\DatabaseConsumer;
+use Falak\Databases\Contracts\DatabaseConnections;
+use Falak\Databases\Contracts\DatabaseProvisioner;
+use Falak\Databases\Domain\Models\Database;
+use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Infrastructure\DatabaseContainerPorts;
+use Falak\Fleet\Application\PayloadCompatibility;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Events\AgentFactsReported;
+use Falak\Fleet\Events\AgentVersionChanged;
+use Falak\Identity\Contracts\Role;
+use Falak\Network\Domain\Enums\ApplyStatus;
+use Falak\Network\Domain\Models\PrivateNetwork;
+use Falak\Network\Domain\Models\PrivateNetworkMember;
+use Falak\Network\Events\PrivateNetworkChanged;
+use Falak\Network\Infrastructure\FirewallCompiler;
+use Falak\Projects\Application\Actions\LinkService;
+use Falak\Projects\Application\Actions\UnlinkService;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Projects\Domain\Models\Service;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Events\ServerProvisioned;
 use Illuminate\Support\Str;
-use Kiln\Databases\Application\Actions\EnableContainerAccess;
-use Kiln\Databases\Application\EngineInventory;
-use Kiln\Databases\Contracts\Data\DatabaseConsumer;
-use Kiln\Databases\Contracts\DatabaseConnections;
-use Kiln\Databases\Contracts\DatabaseProvisioner;
-use Kiln\Databases\Domain\Models\Database;
-use Kiln\Databases\Domain\Models\DatabaseServer;
-use Kiln\Databases\Infrastructure\DatabaseContainerPorts;
-use Kiln\Fleet\Application\PayloadCompatibility;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Events\AgentFactsReported;
-use Kiln\Fleet\Events\AgentVersionChanged;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Network\Domain\Enums\ApplyStatus;
-use Kiln\Network\Domain\Models\PrivateNetwork;
-use Kiln\Network\Domain\Models\PrivateNetworkMember;
-use Kiln\Network\Events\PrivateNetworkChanged;
-use Kiln\Network\Infrastructure\FirewallCompiler;
-use Kiln\Projects\Application\Actions\LinkService;
-use Kiln\Projects\Application\Actions\UnlinkService;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Projects\Domain\Models\Service;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Events\ServerProvisioned;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../../../Projects/tests/Support/helpers.php';
@@ -39,7 +39,7 @@ require_once __DIR__.'/../../../Network/tests/Support/helpers.php';
 
 const KV_NET = ['db.redis', 'db.containers', 'db.redis.network'];
 
-/** DigitalOcean droplets Kiln created with one credential in one region: on the region's default VPC. */
+/** DigitalOcean droplets Falak created with one credential in one region: on the region's default VPC. */
 const KV_DO_FRA = ['provider' => 'digitalocean', 'provider_credential_id' => '01k6aaaaaaaaaaaaaaaaaaaaaa', 'region' => 'fra1'];
 
 function kvnet_server(object $test, string $name, array $features = KV_NET, array $attributes = []): Server
@@ -128,10 +128,10 @@ it('keeps instances on 127.0.0.1 for agents without db.redis.network, and strips
         ->and($this->connections->variables($instance->id, kvnet_consumer($other))['REDIS_HOST'])->toBe('127.0.0.1');
 
     $redis = PayloadCompatibility::adapt('db.redis.apply', (object) ['name' => 'cache', 'bind' => ['127.0.0.1'], 'containers' => true], ['db.redis']);
-    $firewall = PayloadCompatibility::adapt('net.firewall.apply', json_decode('{"container_ports":[{"id":"redis-cache","ports":["6380"],"sources":["172.16.0.0/12"],"peers":["10.90.0.2"],"peer_interfaces":{"10.90.0.2":"wg-kiln"}}]}'), ['db.containers']);
+    $firewall = PayloadCompatibility::adapt('net.firewall.apply', json_decode('{"container_ports":[{"id":"redis-cache","ports":["6380"],"sources":["172.16.0.0/12"],"peers":["10.90.0.2"],"peer_interfaces":{"10.90.0.2":"wg-falak"}}]}'), ['db.containers']);
     $kept = PayloadCompatibility::adapt('db.redis.apply', (object) ['containers' => true], ['db.redis', 'db.redis.network']);
     // An rc agent with db.redis.network but not net.firewall.peer_interfaces keeps the peers, without their interfaces.
-    $rc = PayloadCompatibility::adapt('net.firewall.apply', json_decode('{"container_ports":[{"id":"redis-cache","ports":["6380"],"peers":["10.90.0.2"],"peer_interfaces":{"10.90.0.2":"wg-kiln"}}]}'), ['db.containers', 'db.redis.network']);
+    $rc = PayloadCompatibility::adapt('net.firewall.apply', json_decode('{"container_ports":[{"id":"redis-cache","ports":["6380"],"peers":["10.90.0.2"],"peer_interfaces":{"10.90.0.2":"wg-falak"}}]}'), ['db.containers', 'db.redis.network']);
     expect((array) $rc->container_ports[0])->toHaveKey('peers')->not->toHaveKey('peer_interfaces');
     expect((array) $redis)->not->toHaveKey('containers')
         ->and((array) $firewall->container_ports[0])->not->toHaveKey('peers')->not->toHaveKey('peer_interfaces')->toHaveKey('sources')
@@ -308,7 +308,7 @@ it('uses a provider private network only where membership is known: same provide
     $onLightsail = kvnet_instance($this, $l1, 'sessions');
     expect($this->connections->unreachable($onLightsail->id, kvnet_consumer($l2, name: 'shop')))->not->toContain('shares no private network');
 
-    // The sim's custom fleet: only with KILN_REDIS_CUSTOM_PRIVATE_NETWORK.
+    // The sim's custom fleet: only with FALAK_REDIS_CUSTOM_PRIVATE_NETWORK.
     config(['databases.key_value.custom_private_network' => true]);
     expect($this->connections->unreachable($onCustom->id, kvnet_consumer($c2, name: 'shop')))->not->toContain('shares no private network');
 });

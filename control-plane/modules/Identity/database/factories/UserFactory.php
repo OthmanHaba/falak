@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Identity\Database\Factories;
+namespace Falak\Identity\Database\Factories;
 
+use Falak\Identity\Application\Actions\CreateOrganization;
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
-use Kiln\Identity\Application\Actions\CreateOrganization;
-use Kiln\Identity\Domain\Models\User;
 
 /**
  * @extends Factory<User>

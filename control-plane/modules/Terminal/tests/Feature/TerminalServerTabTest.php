@@ -1,7 +1,7 @@
 <?php
 
-use Kiln\Identity\Contracts\Role;
-use Kiln\Servers\Contracts\ServerStatus;
+use Falak\Identity\Contracts\Role;
+use Falak\Servers\Contracts\ServerStatus;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';

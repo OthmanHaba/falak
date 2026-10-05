@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
 /**
- * Variables of a compose stack that pointed at services now running as Kiln services, and what they become — per
+ * Variables of a compose stack that pointed at services now running as Falak services, and what they become — per
  * group: each remaining service's `environment:` and the stack's own variables ({@see STACK}). Two services may use
  * the same name (DB_PASSWORD) for different databases, so a service's rewrite gets its own project `.env` name
- * ({@see variable()}); the renderer points the service's key at it (`DB_PASSWORD: ${KILN_SVC_WORKER_DB_PASSWORD}`).
+ * ({@see variable()}); the renderer points the service's key at it (`DB_PASSWORD: ${FALAK_SVC_WORKER_DB_PASSWORD}`).
  */
 final readonly class ComposeRewrites
 {
@@ -38,7 +38,7 @@ final readonly class ComposeRewrites
     /** The project `.env` variable a service's rewritten key reads. */
     public static function variable(string $service, string $key): string
     {
-        return 'KILN_SVC_'.strtoupper((string) preg_replace('/[^A-Za-z0-9]+/', '_', $service)).'_'.$key;
+        return 'FALAK_SVC_'.strtoupper((string) preg_replace('/[^A-Za-z0-9]+/', '_', $service)).'_'.$key;
     }
 
     /**
