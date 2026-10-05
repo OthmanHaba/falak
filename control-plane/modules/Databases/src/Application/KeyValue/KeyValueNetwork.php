@@ -87,9 +87,9 @@ final class KeyValueNetwork
      *
      * @param  list<string>  $serverIds
      * @return array{host: ?string, via: ?string, interface: ?string, peers: array<string, string>, missing: list<string>} missing: servers
-     *                                                                                                 sharing no
-     *                                                                                                 private network
-     *                                                                                                 with it at all
+     *                                                                                                                     sharing no
+     *                                                                                                                     private network
+     *                                                                                                                     with it at all
      */
     public function reach(Database $database, array $serverIds): array
     {
@@ -111,9 +111,9 @@ final class KeyValueNetwork
      * What the instance should listen on and let in.
      *
      * @return array{bind: list<string>, containers: bool, peers: list<string>, peer_interfaces: array<string, string>}
-     *                                                                    peer_interfaces: the WireGuard interface a peer
-     *                                                                    arrives on (the agent can't tell before the
-     *                                                                    interface exists)
+     *                                                                                                                  peer_interfaces: the WireGuard interface a peer
+     *                                                                                                                  arrives on (the agent can't tell before the
+     *                                                                                                                  interface exists)
      */
     public function desired(Database $database): array
     {

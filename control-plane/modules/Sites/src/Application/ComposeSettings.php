@@ -348,7 +348,7 @@ final class ComposeSettings
                     }
 
                     if ($unclear !== []) {
-                        $warnings[] = "{$item['service']}: ".implode(', ', $unclear).' '.$one($unclear, 'was', 'were')." left as ".$one($unclear, 'it is', 'they are').": next to a host that pointed at {$item['service']}, but also to one pointing at another service, so Kiln can't tell whose ".$one($unclear, 'it is', 'they are').". If ".$one($unclear, 'it belongs', 'they belong')." to {$item['service']}, set ".$one($unclear, 'it', 'them')." to the Kiln instance's REDIS_PORT / REDIS_PASSWORD (the instance listens on 6380+ and has a password).";
+                        $warnings[] = "{$item['service']}: ".implode(', ', $unclear).' '.$one($unclear, 'was', 'were').' left as '.$one($unclear, 'it is', 'they are').": next to a host that pointed at {$item['service']}, but also to one pointing at another service, so Kiln can't tell whose ".$one($unclear, 'it is', 'they are').'. If '.$one($unclear, 'it belongs', 'they belong')." to {$item['service']}, set ".$one($unclear, 'it', 'them')." to the Kiln instance's REDIS_PORT / REDIS_PASSWORD (the instance listens on 6380+ and has a password).";
                     }
                 } else {
                     $created = $extraction->toSite($site->id, $item['service'], $item['site'], $compose);
