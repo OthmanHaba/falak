@@ -7,7 +7,7 @@ Self-hosted server management, deployment and observability — a replacement fo
 |---|---|
 | `control-plane/` | Laravel 12 **modular monolith** (17 modules under `modules/`) + Inertia React TypeScript UI |
 | `agent/` | Go: `falak-agent` (servers, ~10 MB, ~17 MB RAM), `falak` (CLI), `falak-builder` (build worker) |
-| `packages/apm-laravel` | `falak/apm-laravel` — Nightwatch-equivalent instrumentation (Laravel 11/12/13) |
+| `packages/apm-laravel` | `falak/apm-laravel` — Nightwatch-equivalent instrumentation (Laravel 12/13) |
 | `packages/apm-node` | `@falak/apm-node` — OpenTelemetry preset for Node/Bun/Deno/TypeScript apps |
 | `observability/` | Loki + Tempo + Grafana + VictoriaMetrics **or** Mimir, dashboards, alert rules |
 | `contracts/` | Agent protocol + telemetry contract (JSON Schemas shared by PHP and Go) |
@@ -81,7 +81,7 @@ cd ../apm-node && bun install && bun run typecheck && bun test
 cd ../../observability && ./smoke-test.sh --stack all
 ```
 
-CI runs the same in `.github/workflows/` (control-plane, agent, packages with a Laravel 11/12/13 matrix).
+CI runs the same in `.github/workflows/` (control-plane, agent, packages with a Laravel 12/13 matrix).
 
 ---
 

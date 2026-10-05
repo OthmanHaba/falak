@@ -1,6 +1,6 @@
 # falak/apm-laravel
 
-Falak APM for Laravel 11/12 (PHP 8.2+), comparable to Nightwatch. It captures:
+Falak APM for Laravel 12/13 (PHP 8.2+), comparable to Nightwatch. It captures:
 
 - requests, with a timeline
 - queries, with N+1 hints
