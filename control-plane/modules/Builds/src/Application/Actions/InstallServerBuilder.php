@@ -1,22 +1,22 @@
 <?php
 
-namespace Kiln\Builds\Application\Actions;
+namespace Falak\Builds\Application\Actions;
 
-use Kiln\Builds\Domain\Models\Builder;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Servers\Contracts\Data\ServerData;
+use Falak\Builds\Domain\Models\Builder;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Servers\Contracts\Data\ServerData;
 
 /**
  * Register a `builder` server as a build worker: issue a builder token and let the agent install
- * kiln-builder as a systemd service polling this control plane. Re-running rotates the token.
+ * falak-builder as a systemd service polling this control plane. Re-running rotates the token.
  */
 final class InstallServerBuilder
 {
-    public const ENV_PATH = '/etc/kiln/builder.env';
+    public const ENV_PATH = '/etc/falak/builder.env';
 
-    public const UNIT_PATH = '/etc/systemd/system/kiln-builder.service';
+    public const UNIT_PATH = '/etc/systemd/system/falak-builder.service';
 
     public function __construct(
         private readonly AgentGateway $agents,
@@ -69,10 +69,10 @@ final class InstallServerBuilder
         $url = rtrim((string) (config('fleet.panel_url') ?: config('app.url')), '/');
 
         return implode("\n", [
-            "KILN_URL={$url}",
-            "KILN_BUILDER_TOKEN={$token}",
-            'KILN_BUILDER_NAME='.preg_replace('/[^A-Za-z0-9._-]/', '-', $builder->name),
-            'KILN_BUILDER_DIR=/var/lib/kiln-builder',
+            "FALAK_URL={$url}",
+            "FALAK_BUILDER_TOKEN={$token}",
+            'FALAK_BUILDER_NAME='.preg_replace('/[^A-Za-z0-9._-]/', '-', $builder->name),
+            'FALAK_BUILDER_DIR=/var/lib/falak-builder',
             '',
         ]);
     }
@@ -92,12 +92,12 @@ final class InstallServerBuilder
             set -euo pipefail
             arch=\$(uname -m); case "\$arch" in x86_64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; esac
             url={$url}; url="\${url//\{arch\}/\$arch}"
-            curl -fsSL --retry 3 -o /usr/local/bin/kiln-builder.tmp "\$url"
-            chmod 0755 /usr/local/bin/kiln-builder.tmp && mv /usr/local/bin/kiln-builder.tmp /usr/local/bin/kiln-builder
-            mkdir -p /var/lib/kiln-builder
+            curl -fsSL --retry 3 -o /usr/local/bin/falak-builder.tmp "\$url"
+            chmod 0755 /usr/local/bin/falak-builder.tmp && mv /usr/local/bin/falak-builder.tmp /usr/local/bin/falak-builder
+            mkdir -p /var/lib/falak-builder
             systemctl daemon-reload
-            systemctl enable kiln-builder >/dev/null
-            systemctl restart kiln-builder
+            systemctl enable falak-builder >/dev/null
+            systemctl restart falak-builder
             SH;
     }
 
@@ -105,13 +105,13 @@ final class InstallServerBuilder
     {
         return <<<'UNIT'
             [Unit]
-            Description=Kiln build worker
+            Description=Falak build worker
             After=network-online.target docker.service
             Wants=network-online.target
 
             [Service]
-            EnvironmentFile=/etc/kiln/builder.env
-            ExecStart=/usr/local/bin/kiln-builder serve
+            EnvironmentFile=/etc/falak/builder.env
+            ExecStart=/usr/local/bin/falak-builder serve
             Restart=always
             RestartSec=5
             KillMode=mixed

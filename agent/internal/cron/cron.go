@@ -18,10 +18,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/obs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/transport"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/transport"
 )
 
 // InsightsPoster posts NDJSON to POST /agent/v1/insights (implemented by the transport client).
@@ -354,7 +354,7 @@ func (s *Scheduler) run(ctx context.Context, j Job, scheduled time.Time) {
 	for _, k := range keys {
 		env = append(env, k+"="+j.Env[k])
 	}
-	env = append(env, "KILN_SCHEDULE_NAME="+j.Name)
+	env = append(env, "FALAK_SCHEDULE_NAME="+j.Name)
 	started := s.opts.Clock.Now()
 	res, err := s.opts.Runner.Run(rctx, runner.Cmd{Name: "/bin/sh", Args: []string{"-c", j.Command}, User: j.User, Dir: j.Cwd, Env: env, ClearEnv: true})
 	end := s.opts.Clock.Now()
@@ -369,7 +369,7 @@ func (s *Scheduler) run(ctx context.Context, j Job, scheduled time.Time) {
 		code = ExitTimeout
 		errMsg = "timeout after " + timeout.String()
 	case err == nil && code == ExitTimeout:
-		// The command reports its own timeout with timeout(1)'s exit code (kiln-agent fn-run does).
+		// The command reports its own timeout with timeout(1)'s exit code (falak-agent fn-run does).
 		hb.Status = StatusTimeout
 		errMsg = "the command timed out (exit 124)"
 	case err != nil:
@@ -403,7 +403,7 @@ func (s *Scheduler) emitOutput(j Job, res runner.Result) {
 				continue
 			}
 			s.opts.Sink.EmitLog(obs.LogRecord{Time: s.opts.Clock.Now(), Severity: st.sev, Body: l, Site: j.Site,
-				Attrs: map[string]string{"kiln.schedule.name": j.Name, "log.iostream": st.name}})
+				Attrs: map[string]string{"falak.schedule.name": j.Name, "log.iostream": st.name}})
 		}
 	}
 }
@@ -431,10 +431,10 @@ func (s *Scheduler) report(ctx context.Context, j Job, hb Heartbeat, started tim
 		started = hb.At
 	}
 	attrs := map[string]any{
-		"kiln.event.type":          "scheduled_task",
-		"kiln.schedule.name":       j.Name,
-		"kiln.schedule.expression": j.Schedule,
-		"kiln.schedule.status":     spanStatus(hb.Status),
+		"falak.event.type":          "scheduled_task",
+		"falak.schedule.name":       j.Name,
+		"falak.schedule.expression": j.Schedule,
+		"falak.schedule.status":     spanStatus(hb.Status),
 	}
 	if hb.ExitCode != nil {
 		attrs["process.exit.code"] = int64(*hb.ExitCode)
@@ -469,7 +469,7 @@ func (s *Scheduler) report(ctx context.Context, j Job, hb Heartbeat, started tim
 	}()
 }
 
-// spanStatus maps a run status to the telemetry contract's kiln.schedule.status enum.
+// spanStatus maps a run status to the telemetry contract's falak.schedule.status enum.
 func spanStatus(st string) string {
 	switch st {
 	case StatusFinished:

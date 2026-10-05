@@ -8,12 +8,12 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/provision/inspect"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
-	"github.com/kiln/agent/internal/system"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/provision/inspect"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/system"
 )
 
 // provision.inspect reports validate against $defs.result: a bare host where every detector degrades, and a full one.
@@ -44,7 +44,7 @@ func TestInspectReportsValidate(t *testing.T) {
 		Swap:               []inspect.Swap{{Name: "/swap.img", Type: "file", SizeBytes: 1 << 30}},
 		Node:               []inspect.Binary{{Path: "/usr/bin/node", Version: "20.1.0", Source: "nodesource", Package: "nodejs", Repo: "https://deb.nodesource.com/node_20.x"}},
 		PHP:                []inspect.Binary{{Path: "/usr/bin/php8.3", Version: "8.3", Source: inspect.OriginArchive, Package: "php8.3-cli"}},
-		FrankenPHP:         []inspect.Binary{{Path: "/usr/local/bin/frankenphp", Version: "1.9.1", Source: "kiln"}},
+		FrankenPHP:         []inspect.Binary{{Path: "/usr/local/bin/frankenphp", Version: "1.9.1", Source: "falak"}},
 		UnattendedUpgrades: inspect.Unattended{Installed: true, Periodic: map[string]string{"Unattended-Upgrade": "1"}},
 		Fail2ban:           inspect.Fail2ban{Installed: true, Active: yes, Jails: []string{"/etc/fail2ban/jail.local"}},
 		Errors:             []inspect.DetectorError{{Detector: "swap", Error: "open /proc/swaps: no such file"}},

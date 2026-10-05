@@ -1,0 +1,11 @@
+[Unit]
+Description=Falak sim: trust the edge TLS CA
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/falak-sim-trust
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Insights\Events;
+namespace Falak\Insights\Events;
 
 use DateTimeImmutable;
 use Illuminate\Foundation\Events\Dispatchable;

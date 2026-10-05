@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Network\Infrastructure;
+namespace Falak\Network\Infrastructure;
 
-use Kiln\Network\Domain\Enums\KeyStatus;
-use Kiln\Network\Domain\Models\PrivateNetwork;
-use Kiln\Network\Domain\Models\PrivateNetworkMember;
-use Kiln\Servers\Contracts\ServerDirectory;
+use Falak\Network\Domain\Enums\KeyStatus;
+use Falak\Network\Domain\Models\PrivateNetwork;
+use Falak\Network\Domain\Models\PrivateNetworkMember;
+use Falak\Servers\Contracts\ServerDirectory;
 
 /**
  * Builds `net.wireguard.apply` and the key-delivery `system.write_file` payloads.
@@ -16,7 +16,7 @@ final class WireGuardPayloads
 
     public static function keyPath(PrivateNetwork $network): string
     {
-        return "/etc/kiln/wireguard/{$network->interface}.key";
+        return "/etc/falak/wireguard/{$network->interface}.key";
     }
 
     /**

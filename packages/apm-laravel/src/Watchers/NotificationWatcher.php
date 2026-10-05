@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Apm\Watchers;
+namespace Falak\Apm\Watchers;
 
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Notifications\Events\NotificationFailed;
 use Illuminate\Notifications\Events\NotificationSending;
 use Illuminate\Notifications\Events\NotificationSent;
-use Kiln\Apm\Recorder;
-use Kiln\Apm\Span;
+use Falak\Apm\Recorder;
+use Falak\Apm\Span;
 
 final class NotificationWatcher
 {
@@ -45,9 +45,9 @@ final class NotificationWatcher
         $channel = is_string($event->channel) ? $event->channel : get_debug_type($event->channel);
 
         $this->recorder->record('notification', $class, Span::KIND_INTERNAL, $start, $end, [
-            'kiln.notification.class' => $class,
-            'kiln.notification.channel' => $channel,
-            'kiln.notification.status' => $status,
+            'falak.notification.class' => $class,
+            'falak.notification.channel' => $channel,
+            'falak.notification.status' => $status,
         ], $status === 'failed' ? Span::STATUS_ERROR : Span::STATUS_UNSET);
     }
 

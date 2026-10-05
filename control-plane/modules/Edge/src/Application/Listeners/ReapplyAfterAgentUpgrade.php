@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Edge\Application\Listeners;
+namespace Falak\Edge\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Fleet\Events\AgentVersionChanged;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Fleet\Events\AgentVersionChanged;
 
 /**
  * A new agent version may understand edge fields its predecessor had stripped (e.g. per-site access logs), while

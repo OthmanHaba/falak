@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Sites\Infrastructure;
+namespace Falak\Sites\Infrastructure;
 
-use Kiln\Sites\Application\Actions\UpdateSite;
-use Kiln\Sites\Contracts\SiteDeploySettings;
-use Kiln\Sites\Domain\Models\Site;
+use Falak\Sites\Application\Actions\UpdateSite;
+use Falak\Sites\Contracts\SiteDeploySettings;
+use Falak\Sites\Domain\Models\Site;
 
 final class EloquentSiteDeploySettings implements SiteDeploySettings
 {

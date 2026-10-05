@@ -1,4 +1,4 @@
-import { AppShell, Button, Callout, Dialog, Field, PageHeader, Select, toast } from '@/components/kiln';
+import { AppShell, Button, Callout, Dialog, Field, PageHeader, Select, toast } from '@/components/falak';
 import { type SharedData } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { Settings2 } from 'lucide-react';
@@ -23,8 +23,8 @@ function DeployDialog({
     onOpenChange: (open: boolean) => void;
 }) {
     const { props } = usePage<SharedData>();
-    const projects = props.kiln?.projects ?? [];
-    const current = props.kiln?.current;
+    const projects = props.falak?.projects ?? [];
+    const current = props.falak?.current;
     const [projectId, setProjectId] = useState(current?.project_id ?? projects[0]?.id ?? '');
     const project = projects.find((item) => item.id === projectId) ?? null;
     const [environmentId, setEnvironmentId] = useState(

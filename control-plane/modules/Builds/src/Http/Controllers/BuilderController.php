@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Builds\Http\Controllers;
+namespace Falak\Builds\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -8,15 +8,15 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Builds\Application\Actions\CreateExternalBuilder;
-use Kiln\Builds\Application\Actions\InstallServerBuilder;
-use Kiln\Builds\Domain\Models\Builder;
-use Kiln\Builds\Domain\Policies\BuildPolicy;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Servers\Contracts\ServerDirectory;
+use Falak\Builds\Application\Actions\CreateExternalBuilder;
+use Falak\Builds\Application\Actions\InstallServerBuilder;
+use Falak\Builds\Domain\Models\Builder;
+use Falak\Builds\Domain\Policies\BuildPolicy;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Servers\Contracts\ServerDirectory;
 
 final class BuilderController extends Controller
 {
@@ -76,7 +76,7 @@ final class BuilderController extends Controller
         $server = $model->server_id ? $servers->find($model->server_id) : null;
 
         if (! $server) {
-            throw ValidationException::withMessages(['builder' => 'Only builders running on a Kiln server can be reinstalled.']);
+            throw ValidationException::withMessages(['builder' => 'Only builders running on a Falak server can be reinstalled.']);
         }
 
         $install($server, (string) $request->user()?->getAuthIdentifier());

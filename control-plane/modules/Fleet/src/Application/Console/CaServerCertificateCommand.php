@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Fleet\Application\Console;
+namespace Falak\Fleet\Application\Console;
 
 use Illuminate\Console\Command;
-use Kiln\Fleet\Infrastructure\Pki\CertificateAuthorityService;
+use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
 
 /**
- * Agents pin the Kiln CA for the mTLS API, so the agent-facing listener needs a certificate issued by it.
+ * Agents pin the Falak CA for the mTLS API, so the agent-facing listener needs a certificate issued by it.
  */
 final class CaServerCertificateCommand extends Command
 {
@@ -15,7 +15,7 @@ final class CaServerCertificateCommand extends Command
         {--days=397 : Validity in days}
         {--out= : Output directory (defaults to the CA path)}';
 
-    protected $description = 'Issue a TLS server certificate for the agent-facing edge, signed by the Kiln CA';
+    protected $description = 'Issue a TLS server certificate for the agent-facing edge, signed by the Falak CA';
 
     public function handle(CertificateAuthorityService $ca): int
     {

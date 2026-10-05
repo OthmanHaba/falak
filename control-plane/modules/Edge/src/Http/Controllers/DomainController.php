@@ -1,44 +1,44 @@
 <?php
 
-namespace Kiln\Edge\Http\Controllers;
+namespace Falak\Edge\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Application\Actions\AddDomain;
-use Kiln\Edge\Application\Actions\MakePrimaryDomain;
-use Kiln\Edge\Application\Actions\RemoveDomain;
-use Kiln\Edge\Application\Actions\UpdateDomain;
-use Kiln\Edge\Application\CloudflareEdgeControls;
-use Kiln\Edge\Application\CloudflareRateLimits;
-use Kiln\Edge\Application\ComposeServiceDomains;
-use Kiln\Edge\Application\EdgeChanges;
-use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Edge\Domain\Enums\LbPolicy;
-use Kiln\Edge\Domain\Enums\WwwRedirect;
-use Kiln\Edge\Domain\Models\Certificate;
-use Kiln\Edge\Domain\Models\CertificateInstall;
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Domain\Models\DnsCredential;
-use Kiln\Edge\Domain\Models\DnsRecord;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\LoadBalancer;
-use Kiln\Edge\Domain\Models\ServerState;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
-use Kiln\Edge\Infrastructure\EloquentSiteDomains;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Servers\Contracts\Data\ServerData;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Sites\Contracts\Data\DomainChoice;
-use Kiln\Sites\Contracts\DomainType;
-use Kiln\Sites\Contracts\TargetRole;
+use Falak\Edge\Application\Actions\AddDomain;
+use Falak\Edge\Application\Actions\MakePrimaryDomain;
+use Falak\Edge\Application\Actions\RemoveDomain;
+use Falak\Edge\Application\Actions\UpdateDomain;
+use Falak\Edge\Application\CloudflareEdgeControls;
+use Falak\Edge\Application\CloudflareRateLimits;
+use Falak\Edge\Application\ComposeServiceDomains;
+use Falak\Edge\Application\EdgeChanges;
+use Falak\Edge\Application\Jobs\SyncCloudflareDns;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Edge\Domain\Enums\LbPolicy;
+use Falak\Edge\Domain\Enums\WwwRedirect;
+use Falak\Edge\Domain\Models\Certificate;
+use Falak\Edge\Domain\Models\CertificateInstall;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Domain\Models\DnsCredential;
+use Falak\Edge\Domain\Models\DnsRecord;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\LoadBalancer;
+use Falak\Edge\Domain\Models\ServerState;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
+use Falak\Edge\Infrastructure\EloquentSiteDomains;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Sites\Contracts\Data\DomainChoice;
+use Falak\Sites\Contracts\DomainType;
+use Falak\Sites\Contracts\TargetRole;
 
 final class DomainController extends Controller
 {
@@ -82,7 +82,7 @@ final class DomainController extends Controller
                 'served_host' => $domain->servedHost(),
                 'supports_www' => $domain->supportsWwwRedirect(),
                 'wildcard' => $domain->isWildcard(),
-                // In a Cloudflare zone Kiln manages: records are created for it, no DNS instructions needed.
+                // In a Cloudflare zone Falak manages: records are created for it, no DNS instructions needed.
                 'cloudflare' => ($zone = CloudflareZone::forHost($siteData->organizationId, $domain->name)) !== null ? [
                     'zone' => $zone->name,
                     'proxied' => $domain->cloudflare_proxied ?? $zone->proxied,
@@ -196,7 +196,7 @@ final class DomainController extends Controller
         $data = $request->validate(['proxied' => ['present', 'nullable', 'boolean']]);
 
         if (CloudflareZone::forHost($siteData->organizationId, $model->name) === null) {
-            throw ValidationException::withMessages(['proxied' => 'This domain is not in a Cloudflare zone Kiln manages.']);
+            throw ValidationException::withMessages(['proxied' => 'This domain is not in a Cloudflare zone Falak manages.']);
         }
 
         $model->forceFill(['cloudflare_proxied' => $data['proxied']])->save();
@@ -236,7 +236,7 @@ final class DomainController extends Controller
         }
 
         if ($purged === []) {
-            throw ValidationException::withMessages(['purge' => 'Nothing purged: the site has no names in a Cloudflare zone Kiln manages.']);
+            throw ValidationException::withMessages(['purge' => 'Nothing purged: the site has no names in a Cloudflare zone Falak manages.']);
         }
 
         return back()->with('success', 'Purged '.implode(', ', $purged).'.');

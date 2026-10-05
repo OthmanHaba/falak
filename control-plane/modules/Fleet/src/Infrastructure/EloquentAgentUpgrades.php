@@ -1,21 +1,21 @@
 <?php
 
-namespace Kiln\Fleet\Infrastructure;
+namespace Falak\Fleet\Infrastructure;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Application\AgentUpgradeRollout;
-use Kiln\Fleet\Application\ShippedAgent;
-use Kiln\Fleet\Contracts\AgentStatus;
-use Kiln\Fleet\Contracts\AgentUpgrades;
-use Kiln\Fleet\Contracts\AgentUpgradeStatus;
-use Kiln\Fleet\Contracts\Data\AgentUpgradeData;
-use Kiln\Fleet\Contracts\Data\AgentVersionInfo;
-use Kiln\Fleet\Contracts\Exceptions\AgentUpgradeUnavailable;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\AgentUpgrade;
+use Falak\Fleet\Application\AgentUpgradeRollout;
+use Falak\Fleet\Application\ShippedAgent;
+use Falak\Fleet\Contracts\AgentStatus;
+use Falak\Fleet\Contracts\AgentUpgrades;
+use Falak\Fleet\Contracts\AgentUpgradeStatus;
+use Falak\Fleet\Contracts\Data\AgentUpgradeData;
+use Falak\Fleet\Contracts\Data\AgentVersionInfo;
+use Falak\Fleet\Contracts\Exceptions\AgentUpgradeUnavailable;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\AgentUpgrade;
 
 final class EloquentAgentUpgrades implements AgentUpgrades
 {
@@ -98,7 +98,7 @@ final class EloquentAgentUpgrades implements AgentUpgrades
         }
 
         $shipped = $this->shipped->for($agent->arch)
-            ?? throw new AgentUpgradeUnavailable('This control plane publishes no verifiable kiln-agent build for '.($agent->arch ?? 'this architecture').' (see KILN_AGENT_BINARIES_PATH / KILN_AGENT_DOWNLOAD_URL + KILN_AGENT_SHA256_*).');
+            ?? throw new AgentUpgradeUnavailable('This control plane publishes no verifiable falak-agent build for '.($agent->arch ?? 'this architecture').' (see FALAK_AGENT_BINARIES_PATH / FALAK_AGENT_DOWNLOAD_URL + FALAK_AGENT_SHA256_*).');
 
         if ($explicit && $this->sha($agent) === $shipped['sha256']) {
             throw new AgentUpgradeUnavailable("The agent already runs {$shipped['version']}.");

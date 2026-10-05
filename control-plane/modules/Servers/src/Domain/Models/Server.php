@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Servers\Domain\Models;
+namespace Falak\Servers\Domain\Models;
 
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -11,12 +11,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
-use Kiln\Servers\Contracts\Data\ServerData;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Database\Factories\ServerFactory;
-use Kiln\Servers\Domain\Enums\PhpVersionStatus;
-use Kiln\Servers\Domain\Stack\Stack;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Database\Factories\ServerFactory;
+use Falak\Servers\Domain\Enums\PhpVersionStatus;
+use Falak\Servers\Domain\Stack\Stack;
 
 /**
  * @property string $id
@@ -219,7 +219,7 @@ class Server extends Model
             databaseEngine: $this->installing('database') ? null : $this->stack->database,
             cacheEngine: $this->installing('cache') ? null : $this->stack->cache,
             docker: $this->stack->docker,
-            unixUser: (string) config('servers.unix_user', 'kiln'),
+            unixUser: (string) config('servers.unix_user', 'falak'),
             providerCredentialId: $this->provider_credential_id,
             region: $this->region,
         );

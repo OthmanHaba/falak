@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Deployments\Infrastructure;
+namespace Falak\Deployments\Infrastructure;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Deployments\Application\Actions\TriggerDeployment;
-use Kiln\Deployments\Contracts\DeploymentTrigger;
-use Kiln\Deployments\Domain\Enums\Trigger;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Deployments\Application\Actions\TriggerDeployment;
+use Falak\Deployments\Contracts\DeploymentTrigger;
+use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Sites\Contracts\SiteDirectory;
 
 final class ActionDeploymentTrigger implements DeploymentTrigger
 {

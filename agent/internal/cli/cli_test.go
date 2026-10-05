@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/cli/api"
+	"github.com/OthmanHaba/falak/agent/internal/cli/api"
 )
 
-const token = "1|kiln_testtoken"
+const token = "1|falak_testtoken"
 
 // fakeCP is an in-memory control plane implementing the planned /api/v1 surface.
 type fakeCP struct {
@@ -52,7 +52,7 @@ func (f *fakeCP) json(w http.ResponseWriter, code int, v any) {
 }
 
 var servers = []api.Server{
-	{ID: "01JSRV0000000000000000000A", Name: "web-1", Type: "app", Status: "active", Provider: "hetzner", IPv4: "203.0.113.10", PHP: "8.4", SSHUser: "kiln"},
+	{ID: "01JSRV0000000000000000000A", Name: "web-1", Type: "app", Status: "active", Provider: "hetzner", IPv4: "203.0.113.10", PHP: "8.4", SSHUser: "falak"},
 	{ID: "01JSRV0000000000000000000B", Name: "db-1", Type: "db", Status: "active", Provider: "custom", IPv4: "203.0.113.11", SSHPort: 2222},
 }
 
@@ -166,10 +166,10 @@ type harness struct {
 
 func newHarness(t *testing.T, cp *fakeCP) *harness {
 	h := &harness{out: &bytes.Buffer{}, err: &bytes.Buffer{}, dir: t.TempDir(), env: map[string]string{}}
-	h.env["KILN_CONFIG_DIR"] = h.dir
+	h.env["FALAK_CONFIG_DIR"] = h.dir
 	if cp != nil {
-		h.env["KILN_URL"] = cp.srv.URL
-		h.env["KILN_TOKEN"] = token
+		h.env["FALAK_URL"] = cp.srv.URL
+		h.env["FALAK_TOKEN"] = token
 	}
 	h.app = h.newApp("")
 	return h
@@ -208,12 +208,12 @@ func TestParsingAndUsage(t *testing.T) {
 		code int
 		in   string
 	}{
-		{[]string{}, ExitUsage, "usage: kiln"},
+		{[]string{}, ExitUsage, "usage: falak"},
 		{[]string{"help"}, ExitOK, "servers list"},
 		{[]string{"bogus"}, ExitUsage, `unknown command "bogus"`},
 		{[]string{"servers", "bogus"}, ExitUsage, `unknown command "servers bogus"`},
-		{[]string{"deploy"}, ExitUsage, "usage: kiln deploy <site>"},
-		{[]string{"deploy", "a", "b"}, ExitUsage, "usage: kiln deploy"},
+		{[]string{"deploy"}, ExitUsage, "usage: falak deploy <site>"},
+		{[]string{"deploy", "a", "b"}, ExitUsage, "usage: falak deploy"},
 		{[]string{"deploy", "acme", "--nope"}, ExitUsage, "flag provided but not defined"},
 		{[]string{"version"}, ExitOK, "test"},
 		{[]string{"--version"}, ExitOK, "test"},
@@ -225,7 +225,7 @@ func TestParsingAndUsage(t *testing.T) {
 			t.Errorf("%v: code %d, out %q err %q", tc.args, code, h.out.String(), h.err.String())
 		}
 	}
-	// Group default: `kiln servers` == `kiln servers list`; global flags before or after.
+	// Group default: `falak servers` == `falak servers list`; global flags before or after.
 	for _, args := range [][]string{{"servers"}, {"--json", "servers", "list"}, {"servers", "list", "--json"}} {
 		if code := h.run(args...); code != 0 {
 			t.Fatalf("%v: %d %s", args, code, h.err.String())
@@ -260,15 +260,15 @@ func TestLoginStoresCredentials0600(t *testing.T) {
 		t.Fatalf("whoami: %d %s %s", code, h.out.String(), h.err.String())
 	}
 	// Env overrides the stored token (CI); a bad token yields a login hint.
-	h.env["KILN_TOKEN"] = "wrong"
-	if code := h.run("sites", "list"); code != ExitError || !strings.Contains(h.err.String(), "HTTP 401") || !strings.Contains(h.err.String(), "kiln login") {
+	h.env["FALAK_TOKEN"] = "wrong"
+	if code := h.run("sites", "list"); code != ExitError || !strings.Contains(h.err.String(), "HTTP 401") || !strings.Contains(h.err.String(), "falak login") {
 		t.Fatalf("bad env token: %d %s", code, h.err.String())
 	}
 	// --token flag beats env.
 	if code := h.run("sites", "list", "--token", token); code != 0 {
 		t.Fatalf("flag token: %d %s", code, h.err.String())
 	}
-	delete(h.env, "KILN_TOKEN")
+	delete(h.env, "FALAK_TOKEN")
 	if code := h.run("logout"); code != 0 {
 		t.Fatal(code)
 	}
@@ -505,7 +505,7 @@ func TestLogsAndFollow(t *testing.T) {
 func TestSSHAndOpen(t *testing.T) {
 	cp := newFakeCP(t)
 	h := newHarness(t, cp)
-	if code := h.run("ssh", "web-1"); code != 0 || strings.Join(h.execed, " ") != "ssh kiln@203.0.113.10" {
+	if code := h.run("ssh", "web-1"); code != 0 || strings.Join(h.execed, " ") != "ssh falak@203.0.113.10" {
 		t.Fatalf("ssh: %v %s", h.execed, h.err.String())
 	}
 	if code := h.run("ssh", "01JSRV0000000000000000000B", "--user", "root", "--", "-A", "uptime"); code != 0 || strings.Join(h.execed, " ") != "ssh -p 2222 root@203.0.113.11 -A uptime" {

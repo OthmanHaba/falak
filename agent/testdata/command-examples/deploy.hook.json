@@ -2,7 +2,7 @@
   "site": "shop",
   "release_id": "01J9Z8Y7X6W5V4T3S2R1Q0P9N1",
   "name": "migrate",
-  "script": "$KILN_PHP_BINARY artisan migrate --force\n$KILN_PHP_BINARY artisan optimize",
+  "script": "$FALAK_PHP_BINARY artisan migrate --force\n$FALAK_PHP_BINARY artisan optimize",
   "shell": "/bin/bash",
   "user": "shop",
   "cwd": "release",

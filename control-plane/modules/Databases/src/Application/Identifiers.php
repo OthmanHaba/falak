@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Databases\Application;
+namespace Falak\Databases\Application;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Domain\Enums\Engine;
+use Falak\Databases\Domain\Enums\Engine;
 
 /**
  * Database / user name rules shared by every action (mirrors the agent schemas' identifier pattern).

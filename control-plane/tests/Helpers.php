@@ -6,11 +6,11 @@
 */
 
 use Illuminate\Support\Str;
-use Kiln\Identity\Application\Actions\AssignRole;
-use Kiln\Identity\Application\Actions\CreateOrganization;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\Organization;
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Application\Actions\AssignRole;
+use Falak\Identity\Application\Actions\CreateOrganization;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\Organization;
+use Falak\Identity\Domain\Models\User;
 
 /**
  * Create a user who is a member of $organization (or of a fresh organization) with $role,

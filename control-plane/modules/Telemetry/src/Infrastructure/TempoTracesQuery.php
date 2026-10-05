@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure;
+namespace Falak\Telemetry\Infrastructure;
 
 use DateTimeInterface;
-use Kiln\Telemetry\Contracts\Data\Span;
-use Kiln\Telemetry\Contracts\Data\Trace;
-use Kiln\Telemetry\Contracts\Data\TraceSummary;
-use Kiln\Telemetry\Contracts\TracesQuery;
+use Falak\Telemetry\Contracts\Data\Span;
+use Falak\Telemetry\Contracts\Data\Trace;
+use Falak\Telemetry\Contracts\Data\TraceSummary;
+use Falak\Telemetry\Contracts\TracesQuery;
 
 /**
  * Tempo HTTP API: trace by id (/api/v2/traces, falling back to /api/traces) and TraceQL search.

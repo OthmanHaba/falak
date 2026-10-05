@@ -1,25 +1,25 @@
 <?php
 
-namespace Kiln\Projects\Http\Controllers;
+namespace Falak\Projects\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Projects\Application\Actions\CreateProject;
-use Kiln\Projects\Application\Actions\DeleteProject;
-use Kiln\Projects\Application\Actions\ToggleFavorite;
-use Kiln\Projects\Application\Actions\UpdateProject;
-use Kiln\Projects\Application\Canvas\ProjectSummaries;
-use Kiln\Projects\Domain\Models\Project;
-use Kiln\Projects\Domain\Policies\ProjectPolicy;
-use Kiln\Projects\Http\Requests\ProjectRules;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\SourceControl\Contracts\SourceControlGateway;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Projects\Application\Actions\CreateProject;
+use Falak\Projects\Application\Actions\DeleteProject;
+use Falak\Projects\Application\Actions\ToggleFavorite;
+use Falak\Projects\Application\Actions\UpdateProject;
+use Falak\Projects\Application\Canvas\ProjectSummaries;
+use Falak\Projects\Domain\Models\Project;
+use Falak\Projects\Domain\Policies\ProjectPolicy;
+use Falak\Projects\Http\Requests\ProjectRules;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\SourceControl\Contracts\SourceControlGateway;
 
 /**
  * Projects grid, settings page and project CRUD (JSON for fetch clients, redirects for Inertia visits).

@@ -2,10 +2,10 @@
 
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Kiln\Providers\Contracts\Data\Machine;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Infrastructure\Adapters\LinodeAdapter;
+use Falak\Providers\Contracts\Data\Machine;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Infrastructure\Adapters\LinodeAdapter;
 
 require_once __DIR__.'/../fixtures.php';
 
@@ -88,7 +88,7 @@ it('creates instances resolving key ids to key material, with a random root pass
         'api.linode.com/v4/linode/instances' => Http::response(linodeInstance()),
     ]);
 
-    $machine = linode()->createServer(new MachineSpec('web 1', 'us-east', 'g6-nanode-1', 'linode/ubuntu24.04', ['77'], 'echo hi', ['kiln-server' => '01J']));
+    $machine = linode()->createServer(new MachineSpec('web 1', 'us-east', 'g6-nanode-1', 'linode/ubuntu24.04', ['77'], 'echo hi', ['falak-server' => '01J']));
 
     expect($machine->id)->toBe('123')
         ->and($machine->status)->toBe(Machine::STATUS_PROVISIONING)
@@ -103,7 +103,7 @@ it('creates instances resolving key ids to key material, with a random root pass
         && $r['metadata'] === ['user_data' => base64_encode('echo hi')]
         && strlen($r['root_pass']) >= 32
         && $r['booted'] === true
-        && $r['tags'] === ['kiln-server:01J']);
+        && $r['tags'] === ['falak-server:01J']);
 });
 
 it('generates a different root password per server', function () {

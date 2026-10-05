@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Templates\Domain;
+namespace Falak\Templates\Domain;
 
 /**
  * A parsed, schema-valid template (template.yaml + compose.yaml). Whether the compose file satisfies the

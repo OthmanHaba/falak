@@ -2,17 +2,17 @@
 
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Application\Jobs\SweepFleet;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\CommandStatus;
-use Kiln\Fleet\Contracts\Enrollment;
-use Kiln\Fleet\Events\CommandFailed;
-use Kiln\Fleet\Events\CommandFinished;
+use Falak\Fleet\Application\Jobs\SweepFleet;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\CommandStatus;
+use Falak\Fleet\Contracts\Enrollment;
+use Falak\Fleet\Events\CommandFailed;
+use Falak\Fleet\Events\CommandFinished;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 beforeEach(function () {
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test']);
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test']);
     [, $organization] = memberOf();
     $this->serverId = (string) Str::ulid();
     $this->enrolled = fleet_enroll($organization->id, $this->serverId);

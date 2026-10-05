@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Databases\Infrastructure\ObjectStorage;
+namespace Falak\Databases\Infrastructure\ObjectStorage;
 
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Response;
-use Kiln\Databases\Domain\Enums\StorageDriver;
-use Kiln\Databases\Domain\Models\StorageProvider;
+use Falak\Databases\Domain\Enums\StorageDriver;
+use Falak\Databases\Domain\Models\StorageProvider;
 
 /**
  * Minimal S3-compatible client: presigned PUT/GET URLs for agents and header-signed requests

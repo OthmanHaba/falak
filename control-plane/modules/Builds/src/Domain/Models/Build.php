@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Builds\Domain\Models;
+namespace Falak\Builds\Domain\Models;
 
 use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Kiln\Builds\Contracts\BuildStatus;
-use Kiln\Builds\Contracts\Data\BuildData;
+use Falak\Builds\Contracts\BuildStatus;
+use Falak\Builds\Contracts\Data\BuildData;
 
 /**
  * @property string $id
@@ -41,8 +41,8 @@ use Kiln\Builds\Contracts\Data\BuildData;
  * @property ?string $error
  * @property ?int $duration_ms
  * @property ?string $requested_by
- * @property ?string $builder_name name the claiming kiln-builder reported (--name)
- * @property ?string $builder_run_id run id of the claiming kiln-builder process (null: builder without run ids)
+ * @property ?string $builder_name name the claiming falak-builder reported (--name)
+ * @property ?string $builder_run_id run id of the claiming falak-builder process (null: builder without run ids)
  * @property ?Carbon $heartbeat_at last heartbeat or event from the builder
  * @property ?Carbon $assigned_at
  * @property ?Carbon $started_at

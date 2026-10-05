@@ -1,22 +1,22 @@
 <?php
 
-namespace Kiln\Alerting\Http\Controllers;
+namespace Falak\Alerting\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Alerting\Application\Actions\DeleteChannel;
-use Kiln\Alerting\Application\Actions\SaveChannel;
-use Kiln\Alerting\Application\Actions\SendTestMessage;
-use Kiln\Alerting\Domain\Enums\ChannelType;
-use Kiln\Alerting\Domain\Models\Channel;
-use Kiln\Alerting\Http\Requests\ChannelRequest;
-use Kiln\Alerting\Infrastructure\Senders\SenderRegistry;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
+use Falak\Alerting\Application\Actions\DeleteChannel;
+use Falak\Alerting\Application\Actions\SaveChannel;
+use Falak\Alerting\Application\Actions\SendTestMessage;
+use Falak\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Alerting\Http\Requests\ChannelRequest;
+use Falak\Alerting\Infrastructure\Senders\SenderRegistry;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
 
 final class ChannelController extends Controller
 {

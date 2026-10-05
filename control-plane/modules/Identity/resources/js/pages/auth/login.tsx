@@ -1,7 +1,7 @@
-import { Button } from '@/components/kiln/button';
-import { Checkbox } from '@/components/kiln/checkbox';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
+import { Button } from '@/components/falak/button';
+import { Checkbox } from '@/components/falak/checkbox';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
 import AuthLayout, { AuthLink, AuthStatus } from '@/layouts/auth-layout';
 import { type SharedData } from '@/types';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
@@ -25,7 +25,7 @@ export default function Login({ status, canResetPassword, invitation }: LoginPro
 
     return (
         <AuthLayout
-            title="Log in to Kiln"
+            title="Log in to Falak"
             description="Welcome back."
             footer={
                 registration !== 'closed' && (

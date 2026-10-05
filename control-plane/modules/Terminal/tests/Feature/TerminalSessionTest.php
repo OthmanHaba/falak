@@ -1,19 +1,19 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
-use Kiln\Fleet\Events\CommandOutputReceived;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Events\ServerDeleted;
-use Kiln\Terminal\Application\Actions\CloseSession;
-use Kiln\Terminal\Application\Jobs\SweepTerminalSessions;
-use Kiln\Terminal\Domain\Enums\SessionStatus;
-use Kiln\Terminal\Domain\Models\TerminalFrame;
-use Kiln\Terminal\Domain\Models\TerminalSession;
-use Kiln\Terminal\Events\TerminalOutput;
-use Kiln\Terminal\Events\TerminalSessionClosed;
-use Kiln\Terminal\Events\TerminalSessionOpened;
+use Falak\Fleet\Events\CommandOutputReceived;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Events\ServerDeleted;
+use Falak\Terminal\Application\Actions\CloseSession;
+use Falak\Terminal\Application\Jobs\SweepTerminalSessions;
+use Falak\Terminal\Domain\Enums\SessionStatus;
+use Falak\Terminal\Domain\Models\TerminalFrame;
+use Falak\Terminal\Domain\Models\TerminalSession;
+use Falak\Terminal\Events\TerminalOutput;
+use Falak\Terminal\Events\TerminalSessionClosed;
+use Falak\Terminal\Events\TerminalSessionOpened;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -27,12 +27,12 @@ beforeEach(function () {
 it('opens a session with a schema-valid terminal.open command', function () {
     Event::fake([TerminalSessionOpened::class]);
 
-    $session = terminal_open($this->server, ['user' => 'kiln', 'cols' => 120, 'rows' => 40]);
+    $session = terminal_open($this->server, ['user' => 'falak', 'cols' => 120, 'rows' => 40]);
 
     $command = terminal_open_command($this->agents);
     expect($command['payload'])->toBe([
         'session_id' => $session->id,
-        'user' => 'kiln',
+        'user' => 'falak',
         'shell' => '/bin/bash',
         'cols' => 120,
         'rows' => 40,
@@ -46,7 +46,7 @@ it('opens a session with a schema-valid terminal.open command', function () {
         ->and($session->user_id)->toBe($this->user->id)
         ->and(AuditEntry::query()->where('action', 'terminal.session_opened')->where('subject_id', $session->id)->exists())->toBeTrue();
 
-    Event::assertDispatched(TerminalSessionOpened::class, fn ($e) => $e->sessionId === $session->id && $e->unixUser === 'kiln');
+    Event::assertDispatched(TerminalSessionOpened::class, fn ($e) => $e->sessionId === $session->id && $e->unixUser === 'falak');
 });
 
 it('defaults to the configured user and redirects to the session page', function () {

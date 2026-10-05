@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Templates\Http\Controllers;
+namespace Falak\Templates\Http\Controllers;
 
-use Kiln\Templates\Application\Compose\ComposeDocument;
-use Kiln\Templates\Domain\Category;
-use Kiln\Templates\Domain\InvalidTemplate;
-use Kiln\Templates\Domain\Template;
-use Kiln\Templates\Domain\TemplateInput;
-use Kiln\Templates\Domain\TemplateSource;
+use Falak\Templates\Application\Compose\ComposeDocument;
+use Falak\Templates\Domain\Category;
+use Falak\Templates\Domain\InvalidTemplate;
+use Falak\Templates\Domain\Template;
+use Falak\Templates\Domain\TemplateInput;
+use Falak\Templates\Domain\TemplateSource;
 
 trait PresentsTemplates
 {

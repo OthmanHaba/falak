@@ -2,25 +2,25 @@
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
-use Kiln\Fleet\Events\CommandFinished;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Recipes\Domain\Enums\RunStatus;
-use Kiln\Recipes\Domain\Enums\TargetStatus;
-use Kiln\Recipes\Domain\Models\Recipe;
-use Kiln\Recipes\Domain\Models\Run;
-use Kiln\Recipes\Events\RecipeRunFinished;
-use Kiln\Recipes\Events\RecipeRunUpdated;
-use Kiln\Recipes\Http\Channels\RunChannel;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Domain\Models\Server;
+use Falak\Fleet\Events\CommandFinished;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Identity\Contracts\Role;
+use Falak\Recipes\Domain\Enums\RunStatus;
+use Falak\Recipes\Domain\Enums\TargetStatus;
+use Falak\Recipes\Domain\Models\Recipe;
+use Falak\Recipes\Domain\Models\Run;
+use Falak\Recipes\Events\RecipeRunFinished;
+use Falak\Recipes\Events\RecipeRunUpdated;
+use Falak\Recipes\Http\Channels\RunChannel;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Domain\Models\Server;
 use Tests\Support\FakeAgentGateway;
 
 beforeEach(function () {
     $this->agents = FakeAgentGateway::install();
     [$this->user, $this->organization] = actingAsMember(Role::Admin);
     $this->servers = collect(['web-1', 'web-2', 'web-3'])->map(fn (string $name) => Server::factory()->create(['organization_id' => $this->organization->id, 'name' => $name]));
-    $this->recipe = Recipe::query()->create(['organization_id' => $this->organization->id, 'name' => 'Uptime', 'script' => 'uptime', 'user' => 'kiln']);
+    $this->recipe = Recipe::query()->create(['organization_id' => $this->organization->id, 'name' => 'Uptime', 'script' => 'uptime', 'user' => 'falak']);
 });
 
 function recipes_run(array $serverIds, array $extra = []): Run
@@ -40,7 +40,7 @@ it('fans a recipe out to every selected server with schema-valid system.exec pay
         ->and(collect($commands)->map(fn ($c) => $c['handle']->serverId)->sort()->values()->all())->toBe($this->servers->pluck('id')->sort()->values()->all());
 
     foreach ($commands as $command) {
-        expect($command['payload'])->toBe(['script' => 'uptime', 'shell' => '/bin/bash', 'user' => 'kiln', 'env' => ['APP_ENV' => 'production']])
+        expect($command['payload'])->toBe(['script' => 'uptime', 'shell' => '/bin/bash', 'user' => 'falak', 'env' => ['APP_ENV' => 'production']])
             ->and($command['timeout'])->toBe(120)
             ->and($command['handle']->idempotencyKey)->toStartWith('recipes.run:')
             ->and(app(ProtocolSchemas::class)->validateCommand('system.exec', ProtocolSchemas::toJson($command['payload'])))->toBe([]);

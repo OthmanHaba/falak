@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // ---- docker.compose.* (docker compose CLI for up/pull/down; the Engine API for ps/restart) ----
@@ -142,7 +142,7 @@ var serviceNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`)
 func validFileName(n string) bool { return fileNameRe.MatchString(n) && n != "." && n != ".." }
 
 // validAssetPath: a relative repository path (any name a repository may hold, e.g. "logo@2x.png" or "my file.txt")
-// without ".", ".." or empty segments, backslashes or control characters. Same rule as kiln-builder and the
+// without ".", ".." or empty segments, backslashes or control characters. Same rule as falak-builder and the
 // control plane.
 func validAssetPath(p string) bool {
 	if p == "" || len(p) > 512 || strings.HasPrefix(p, "/") || strings.ContainsRune(p, '\\') {
@@ -262,7 +262,7 @@ func writeAssets(release *os.Root, assets []ComposeAsset, decoded [][]byte) erro
 
 // replaceFile writes name atomically: a new file (O_EXCL, so never through a link) renamed over the old entry.
 func replaceFile(root *os.Root, name string, data []byte, mode os.FileMode) error {
-	tmp := "." + name + ".kiln-tmp"
+	tmp := "." + name + ".falak-tmp"
 	if err := root.RemoveAll(tmp); err != nil {
 		return err
 	}
@@ -376,7 +376,7 @@ func (s *Service) composeDown(ctx context.Context, p ComposeDownPayload, st comm
 	return ExitResult{ExitCode: res.ExitCode}, err
 }
 
-// releaseStackNetworks detaches Kiln's own containers (a split-out service run as its own site) from the project's
+// releaseStackNetworks detaches Falak's own containers (a split-out service run as its own site) from the project's
 // networks, so `compose down` can remove them: Docker refuses to remove a network with active endpoints. Best effort:
 // what fails here shows in compose's own output.
 func (s *Service) releaseStackNetworks(ctx context.Context, project string, st commands.Stream) {
@@ -393,7 +393,7 @@ func (s *Service) releaseStackNetworks(ctx context.Context, project string, st c
 		}
 		for _, id := range ids {
 			c, ok, err := s.c.ContainerInspect(ctx, id)
-			// The project's own containers are compose's to remove; only Kiln's are detached.
+			// The project's own containers are compose's to remove; only Falak's are detached.
 			if err != nil || !ok || c.Config.Labels[LabelManaged] != "true" || c.Config.Labels[LabelComposeProject] != "" {
 				continue
 			}
@@ -614,7 +614,7 @@ func (s *Service) compose(ctx context.Context, dir string, env map[string]string
 
 // dockerConfigDir writes a throwaway DOCKER_CONFIG with registry credentials (removed after the command).
 func dockerConfigDir(a *Auth) (string, error) {
-	dir, err := os.MkdirTemp("", "kiln-docker-")
+	dir, err := os.MkdirTemp("", "falak-docker-")
 	if err != nil {
 		return "", err
 	}

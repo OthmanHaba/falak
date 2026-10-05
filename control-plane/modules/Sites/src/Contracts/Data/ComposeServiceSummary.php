@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
 /**
  * One service of a parsed compose file.
@@ -9,11 +9,11 @@ final readonly class ComposeServiceSummary
 {
     /**
      * @param  list<int>  $ports  container ports the service exposes (`ports` targets + `expose`)
-     * @param  list<string>  $publishedPorts  raw host port mappings (Kiln replaces them)
+     * @param  list<string>  $publishedPorts  raw host port mappings (Falak replaces them)
      * @param  list<string>  $volumes  named volumes the service mounts
      * @param  list<string>  $bindMounts  host paths the service bind-mounts
      * @param  list<string>  $dependsOn
-     * @param  ?string  $leaderCommand  label kiln.deploy.leader_command (run once on the leader before activation)
+     * @param  ?string  $leaderCommand  label falak.deploy.leader_command (run once on the leader before activation)
      */
     public function __construct(
         public string $name,

@@ -20,7 +20,7 @@ import (
 // otherwise it matches a path's base name at any depth. Patterns use path.Match syntax.
 // storage/logs/* is what the build itself logged (e.g. laravel.log from composer scripts); it would otherwise be moved
 // into the site's shared storage on the first deploy.
-var DefaultExcludes = []string{".git", ".DS_Store", "/.env", "/.env.*.local", "/.kiln-build", "Thumbs.db", "/storage/logs/*"}
+var DefaultExcludes = []string{".git", ".DS_Store", "/.env", "/.env.*.local", "/.falak-build", "Thumbs.db", "/storage/logs/*"}
 
 // keptAlways ship even when an exclude pattern matches them (the directory placeholder Laravel commits).
 var keptAlways = []string{"storage/logs/.gitignore"}

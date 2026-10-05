@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Builds\Http\Channels;
+namespace Falak\Builds\Http\Channels;
 
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Builds\Domain\Models\Build;
-use Kiln\Builds\Domain\Policies\BuildPolicy;
-use Kiln\Identity\Contracts\OrganizationAccess;
+use Falak\Builds\Domain\Models\Build;
+use Falak\Builds\Domain\Policies\BuildPolicy;
+use Falak\Identity\Contracts\OrganizationAccess;
 
 /**
  * private-builds.{buildId}: members of the build's organization with builds.view.

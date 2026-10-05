@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Servers\Contracts;
+namespace Falak\Servers\Contracts;
 
 enum ServerType: string
 {

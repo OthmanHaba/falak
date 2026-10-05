@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Network\Contracts;
+namespace Falak\Network\Contracts;
 
 /**
  * Host ports the containers on a server may reach, decided by another module (Databases: engines on app/worker

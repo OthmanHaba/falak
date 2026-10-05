@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     expose: ["80"]
     environment:
-      DOMAIN: ${{ kiln.url(vaultwarden) }}
+      DOMAIN: ${{ falak.url(vaultwarden) }}
       ADMIN_TOKEN: ${ADMIN_TOKEN}
       SIGNUPS_ALLOWED: ${SIGNUPS_ALLOWED}
       ROCKET_PORT: "80"

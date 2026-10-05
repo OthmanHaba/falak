@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/db.create.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/db.create.schema.json",
   "title": "db.create — create database if missing",
   "type": "object",
   "additionalProperties": false,

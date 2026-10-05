@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts;
+namespace Falak\Telemetry\Contracts;
 
 use DateTimeInterface;
 
@@ -25,6 +25,6 @@ interface TelemetryLinks
     /** Grafana Explore URL for a trace, or null when Grafana is not configured. */
     public function grafanaTrace(string $traceId): ?string;
 
-    /** Grafana dashboard URL (by base dashboard uid, e.g. "kiln-laravel") for the organization, or null. */
+    /** Grafana dashboard URL (by base dashboard uid, e.g. "falak-laravel") for the organization, or null. */
     public function grafanaDashboard(string $organizationId, string $dashboardUid, array $variables = []): ?string;
 }

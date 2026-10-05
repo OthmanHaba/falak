@@ -1,16 +1,16 @@
 /**
  * Nuxt / Nitro plugin.
  *
- *   // server/plugins/kiln.ts
- *   import kiln from '@kiln/apm-node/nitro';
- *   export default defineNitroPlugin(kiln);
+ *   // server/plugins/falak.ts
+ *   import falak from '@falak/apm-node/nitro';
+ *   export default defineNitroPlugin(falak);
  *
  * Starts the SDK (if not started via --import), opens a SERVER span per request when no
  * instrumentation already did (Bun / Deno / edge presets), and records errors that reach
  * Nitro's error hook as unhandled.
  */
 import { context, propagation, SpanKind, SpanStatusCode, trace, type Span } from '@opentelemetry/api';
-import type { KilnOptions } from './config.js';
+import type { FalakOptions } from './config.js';
 import { recordException } from './exceptions.js';
 import { start } from './sdk.js';
 import { SCOPE } from './version.js';
@@ -26,10 +26,10 @@ interface NitroAppLike {
   hooks: { hook(name: string, fn: (...args: never[]) => unknown): unknown };
 }
 
-const SPAN_KEY = '__kilnSpan';
+const SPAN_KEY = '__falakSpan';
 
-export function createKilnNitroPlugin(options: KilnOptions = {}) {
-  return function kilnNitroPlugin(nitroApp: NitroAppLike): void {
+export function createFalakNitroPlugin(options: FalakOptions = {}) {
+  return function falakNitroPlugin(nitroApp: NitroAppLike): void {
     start(options);
     const tracer = trace.getTracer(SCOPE);
 
@@ -44,7 +44,7 @@ export function createKilnNitroPlugin(options: KilnOptions = {}) {
           method,
           {
             kind: SpanKind.SERVER,
-            attributes: { 'kiln.event.type': 'request', 'http.request.method': method, 'url.path': rawPath.split('?')[0] ?? '/' },
+            attributes: { 'falak.event.type': 'request', 'http.request.method': method, 'url.path': rawPath.split('?')[0] ?? '/' },
           },
           parent,
         );
@@ -79,4 +79,4 @@ export function createKilnNitroPlugin(options: KilnOptions = {}) {
   };
 }
 
-export default createKilnNitroPlugin();
+export default createFalakNitroPlugin();

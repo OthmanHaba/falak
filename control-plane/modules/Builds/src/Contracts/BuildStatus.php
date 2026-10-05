@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Builds\Contracts;
+namespace Falak\Builds\Contracts;
 
 enum BuildStatus: string
 {

@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Builds\Http\Controllers\Internal;
+namespace Falak\Builds\Http\Controllers\Internal;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
-use Kiln\Builds\Domain\Models\Build;
-use Kiln\Builds\Domain\Models\Builder;
-use Kiln\Kernel\Http\Controller;
+use Falak\Builds\Domain\Models\Build;
+use Falak\Builds\Domain\Models\Builder;
+use Falak\Kernel\Http\Controller;
 
 /**
- * POST /api/internal/builds/{build}/heartbeat — kiln-builder, every 20 s while it runs a build. 204; 410 when the
+ * POST /api/internal/builds/{build}/heartbeat — falak-builder, every 20 s while it runs a build. 204; 410 when the
  * build is over on this side (cancelled, failed by the watchdog or reaped): the builder aborts it.
  */
 final class BuildHeartbeatController extends Controller

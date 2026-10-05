@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Full product E2E on the local simulation, driven ONLY through public surfaces:
-#   `artisan kiln:admin` (first-run bootstrap) → REST API /api/v1 → the install command each server prints.
+#   `artisan falak:admin` (first-run bootstrap) → REST API /api/v1 → the install command each server prints.
 #
 #   ./e2e-deploy.sh                          run every stage
 #   ONLY=deploy,release ./e2e-deploy.sh      run selected stages (comma- or space-separated; alias: STAGES)
@@ -20,8 +20,8 @@ set -a
 . ./.data/secrets.env
 set +a
 
-EDGE="https://kiln.test:${SIM_EDGE_HTTPS_PORT}"
-CURL=(curl -sS --cacert .data/edge-root.crt --resolve "kiln.test:${SIM_EDGE_HTTPS_PORT}:127.0.0.1")
+EDGE="https://falak.test:${SIM_EDGE_HTTPS_PORT}"
+CURL=(curl -sS --cacert .data/edge-root.crt --resolve "falak.test:${SIM_EDGE_HTTPS_PORT}:127.0.0.1")
 STATE=.data/e2e.env
 ALL_STAGES="bootstrap servers sites deploy release rollback failure octane bun release_env redis waiting observability compose compose_redeploy compose_failure redis_network templates"
 STAGES="${ONLY:-${STAGES:-$ALL_STAGES}}"
@@ -30,7 +30,7 @@ SKIP="${SKIP:-}"
 if [[ ${FAST:-0} == 1 ]]; then SKIP="$SKIP templates"; fi
 POLL=${POLL:-1}   # seconds between status polls (deployments, targets, servers)
 
-pass=0 fail=0 API_CODE=000 API_BODY='' KILN_TOKEN=${KILN_TOKEN:-}
+pass=0 fail=0 API_CODE=000 API_BODY='' FALAK_TOKEN=${FALAK_TOKEN:-}
 ok()   { printf '  \033[32mPASS\033[0m %s\n' "$*"; pass=$((pass + 1)); }
 bad()  { printf '  \033[31mFAIL\033[0m %s\n' "$*"; fail=$((fail + 1)); }
 step() { printf '\n\033[1m== %s\033[0m  \033[2m(%s)\033[0m\n' "$*" "$(date +%H:%M:%S)"; }
@@ -41,26 +41,26 @@ if [[ ! -s .data/edge-root.crt ]]; then make -s ca >/dev/null; fi
 
 # Run a command in a sim container. `docker exec` on the compose container name: same effect as
 # `docker compose exec -T`, without re-parsing the compose project on each of the few hundred calls.
-sx() { local svc=$1; shift; docker exec "kiln-sim-${svc}-1" "$@"; }
+sx() { local svc=$1; shift; docker exec "falak-sim-${svc}-1" "$@"; }
 
 api() { # api METHOD PATH [JSON] -> sets $API_BODY and $API_CODE (call directly, not in $(...))
     local out; out=$(mktemp)
     API_CODE=$("${CURL[@]}" -o "$out" -w '%{http_code}' -X "$1" "${EDGE}/api/v1$2" \
-        -H "Authorization: Bearer ${KILN_TOKEN}" -H 'Accept: application/json' -H 'Content-Type: application/json' \
+        -H "Authorization: Bearer ${FALAK_TOKEN}" -H 'Accept: application/json' -H 'Content-Type: application/json' \
         ${3:+--data "$3"}) || API_CODE=000
     API_BODY=$(cat "$out"); rm -f "$out"
 }
 
 stage_bootstrap() {
-    step "bootstrap: first admin + API token via kiln:admin"
+    step "bootstrap: first admin + API token via falak:admin"
     local json
-    json=$(sx control-plane php artisan kiln:admin admin@kiln.test --organization="Kiln E2E" --token="e2e-$(date +%s)" --json 2>/dev/null | tail -1)
-    KILN_TOKEN=$(jq -r '.token // empty' <<<"$json")
-    if [[ -n $KILN_TOKEN ]]; then
-        save KILN_TOKEN "$KILN_TOKEN"; save KILN_ORG "$(jq -r .organization_id <<<"$json")"
-        ok "admin@kiln.test owns organization $(jq -r .organization <<<"$json")"
+    json=$(sx control-plane php artisan falak:admin admin@falak.test --organization="Falak E2E" --token="e2e-$(date +%s)" --json 2>/dev/null | tail -1)
+    FALAK_TOKEN=$(jq -r '.token // empty' <<<"$json")
+    if [[ -n $FALAK_TOKEN ]]; then
+        save FALAK_TOKEN "$FALAK_TOKEN"; save FALAK_ORG "$(jq -r .organization_id <<<"$json")"
+        ok "admin@falak.test owns organization $(jq -r .organization <<<"$json")"
     else
-        bad "kiln:admin did not return a token: $json"; return 1
+        bad "falak:admin did not return a token: $json"; return 1
     fi
 
     api GET /me
@@ -183,7 +183,7 @@ stage_sites() {
     api POST /sites "{\"name\":\"shop\",\"framework\":\"laravel\",\"runtime\":\"frankenphp\",\"php_version\":\"8.4\",\"server_ids\":[\"$SERVER_srv_app_1\",\"$SERVER_srv_app_2\"],\"leader_server_id\":\"$SERVER_srv_app_1\",\"source_connection_id\":\"$GIT_CONNECTION\",\"repository\":\"git://sim-git/laravel-demo.git\",\"branch\":\"main\",\"health_check_path\":\"/health\",\"test_domain_enabled\":true}"
     if [[ $API_CODE == 201 ]]; then
         save SITE_SHOP "$(jq -r .data.id <<<"$API_BODY")"
-        save SHOP_HOST "$(jq -r '.data.test_domain // .data.domains[0].name // .data.domains[0] // "shop.sites.kiln.test"' <<<"$API_BODY")"
+        save SHOP_HOST "$(jq -r '.data.test_domain // .data.domains[0].name // .data.domains[0] // "shop.sites.falak.test"' <<<"$API_BODY")"
         ok "site shop created on app-1 (leader) + app-2 -> $SHOP_HOST ($(jq -r '.data.targets | length' <<<"$API_BODY") targets)"
         # No database in this demo: in-memory sqlite for `migrate`, cookie sessions, file cache, sync queue.
         api GET "/sites/$SITE_SHOP/env"
@@ -197,7 +197,7 @@ stage_sites() {
 }
 
 stage_deploy() {
-    step "deploy: build once (kiln-builder native), fetch+prepare all, migrate leader, activate all, health check"
+    step "deploy: build once (falak-builder native), fetch+prepare all, migrate leader, activate all, health check"
     local commit; commit=$(git_head laravel-demo); save SHOP_COMMIT_1 "$commit"
     deploy_and_wait "$SITE_SHOP" "$commit" "first deploy" succeeded || return 1
     save SHOP_DEPLOY_1 "$DEPLOYMENT_ID"
@@ -208,21 +208,21 @@ stage_deploy() {
     for c in srv-app-1 srv-app-2; do
         local body; body=$(site_get "$c" "$SHOP_HOST" /)
         local rel; rel=$(jq -r '.release // empty' 2>/dev/null <<<"$body")
-        local want; want=$(basename "$(sx "$c" bash -c 'readlink /srv/kiln/sites/shop/current' | tr -d '\r')")
+        local want; want=$(basename "$(sx "$c" bash -c 'readlink /srv/falak/sites/shop/current' | tr -d '\r')")
         if [[ -n $rel && $rel == "$want" ]]; then ok "$c serves the Laravel app from the active release ($rel)"; else bad "$c: GET / -> ${body:0:200} (current: $want)"; fi
         [[ $c == srv-app-1 ]] && save SHOP_RELEASE_1 "$rel"
         if [[ "$(site_get "$c" "$SHOP_HOST" /health)" == ok ]]; then ok "$c: /health ok"; else bad "$c: /health failed"; fi
-        if sx "$c" bash -c 'readlink /srv/kiln/sites/*/current' >/dev/null 2>&1; then ok "$c: current -> $(sx "$c" bash -c 'basename $(readlink /srv/kiln/sites/*/current)' | tr -d '\r')"; else bad "$c: no current symlink"; fi
+        if sx "$c" bash -c 'readlink /srv/falak/sites/*/current' >/dev/null 2>&1; then ok "$c: current -> $(sx "$c" bash -c 'basename $(readlink /srv/falak/sites/*/current)' | tr -d '\r')"; else bad "$c: no current symlink"; fi
     done
 }
 
 stage_release() {
     step "release: second commit deploys zero-downtime; releases list shows it active"
-    if git_commit laravel-demo "Second release" "sed -i 's/Kiln Demo/Kiln Demo v2/' .env.example && sed -i \"s/'app' => config('app.name')/'app' => 'Kiln Demo v2'/\" routes/web.php"; then ok "pushed a second commit"; else bad "could not push second commit"; return 1; fi
+    if git_commit laravel-demo "Second release" "sed -i 's/Falak Demo/Falak Demo v2/' .env.example && sed -i \"s/'app' => config('app.name')/'app' => 'Falak Demo v2'/\" routes/web.php"; then ok "pushed a second commit"; else bad "could not push second commit"; return 1; fi
     local commit; commit=$(git_head laravel-demo); save SHOP_COMMIT_2 "$commit"
     deploy_and_wait "$SITE_SHOP" "$commit" "second deploy" succeeded || return 1
     for c in srv-app-1 srv-app-2; do
-        if [[ "$(site_get "$c" "$SHOP_HOST" / | jq -r .app 2>/dev/null)" == "Kiln Demo v2" ]]; then ok "$c serves v2"; else bad "$c does not serve v2"; fi
+        if [[ "$(site_get "$c" "$SHOP_HOST" / | jq -r .app 2>/dev/null)" == "Falak Demo v2" ]]; then ok "$c serves v2"; else bad "$c does not serve v2"; fi
     done
     api GET "/sites/$SITE_SHOP/releases"
     if [[ "$(jq -r '.data[0].commit' <<<"$API_BODY")" == "$commit" && "$(jq -r '.data[0].active' <<<"$API_BODY")" == true ]]; then ok "releases: newest is active ($(jq -r '.data | length' <<<"$API_BODY") retained)"; else bad "releases: $API_BODY"; fi
@@ -281,7 +281,7 @@ octane_wait_mode() { # octane_wait_mode on|off SECONDS -> 0 when the edge serves
 
 octane_load_start() { # background request loop on srv-app-1 through the edge; one HTTP status per line
     sx srv-app-1 bash -c 'rm -f /tmp/octane-codes /tmp/octane-stop' >/dev/null 2>&1
-    docker exec -d kiln-sim-srv-app-1-1 bash -c "while [ ! -f /tmp/octane-stop ]; do curl -sk -o /dev/null -w '%{http_code}\n' -m 60 --resolve '$OCTANE_HOST:443:127.0.0.1' 'https://$OCTANE_HOST/octane' >> /tmp/octane-codes; sleep 0.1; done"
+    docker exec -d falak-sim-srv-app-1-1 bash -c "while [ ! -f /tmp/octane-stop ]; do curl -sk -o /dev/null -w '%{http_code}\n' -m 60 --resolve '$OCTANE_HOST:443:127.0.0.1' 'https://$OCTANE_HOST/octane' >> /tmp/octane-codes; sleep 0.1; done"
 }
 
 octane_load_stop() { # -> "TOTAL FAILED" (non-200 answers, including curl errors = 000)
@@ -293,7 +293,7 @@ stage_octane() {
     api POST /sites "{\"name\":\"octane\",\"framework\":\"laravel\",\"runtime\":\"frankenphp\",\"php_version\":\"8.4\",\"server_ids\":[\"$SERVER_srv_app_1\"],\"source_connection_id\":\"$GIT_CONNECTION\",\"repository\":\"git://sim-git/laravel-demo.git\",\"branch\":\"main\",\"health_check_path\":\"/health\",\"test_domain_enabled\":true}"
     [[ $API_CODE == 201 ]] || { bad "POST /sites (octane) -> $API_CODE: $API_BODY"; return 1; }
     save SITE_OCTANE "$(jq -r .data.id <<<"$API_BODY")"
-    save OCTANE_HOST "$(jq -r '.data.test_domain // "octane.sites.kiln.test"' <<<"$API_BODY")"
+    save OCTANE_HOST "$(jq -r '.data.test_domain // "octane.sites.falak.test"' <<<"$API_BODY")"
     ok "site octane created on app-1 -> $OCTANE_HOST"
     api GET "/sites/$SITE_OCTANE/env"
     local env; env=$(jq -r '.data.content' <<<"$API_BODY" | grep -vE '^(DB_CONNECTION|DB_DATABASE|SESSION_DRIVER|CACHE_STORE|QUEUE_CONNECTION)=')
@@ -314,27 +314,27 @@ stage_octane() {
     if [[ $body == *"not been deployed yet"* ]]; then ok "never-deployed site still serves the placeholder through the edge"; else bad "placeholder not served: ${body:0:200}"; fi
 
     # Healthy commit (the failure stage may have left a broken /health on main).
-    if git_commit laravel-demo "Octane v1" "sed -i \"s#response('broken', 500)#response('ok')#\" routes/web.php && sed -i \"s/'app' => config('app.name')/'app' => 'Kiln Octane v1'/; s/'app' => 'Kiln Demo v2'/'app' => 'Kiln Octane v1'/\" routes/web.php"; then ok "pushed Octane v1"; else bad "could not push Octane v1"; return 1; fi
+    if git_commit laravel-demo "Octane v1" "sed -i \"s#response('broken', 500)#response('ok')#\" routes/web.php && sed -i \"s/'app' => config('app.name')/'app' => 'Falak Octane v1'/; s/'app' => 'Falak Demo v2'/'app' => 'Falak Octane v1'/\" routes/web.php"; then ok "pushed Octane v1"; else bad "could not push Octane v1"; return 1; fi
     deploy_and_wait "$SITE_OCTANE" "$(git_head laravel-demo)" "octane first deploy" succeeded || return 1
 
     if octane_wait_mode on 240; then ok "the edge proxies to Octane: /octane answers from long-lived workers (octane, max served: $(octane_probe))"
     else bad "edge not serving from Octane workers: $(octane_get /octane)"; fi
     if sx srv-app-1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null; then ok "octane listens on 127.0.0.1:$port"; else bad "nothing listens on 127.0.0.1:$port"; fi
     if sx srv-app-1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$((port + 10000))" 2>/dev/null; then ok "octane's FrankenPHP admin API on its own port $((port + 10000)) (edge keeps :2019)"; else bad "no octane admin port $((port + 10000))"; fi
-    if [[ "$(octane_get /)" == *'"Kiln Octane v1"'* ]]; then ok "serves release v1 through Octane"; else bad "GET / -> $(octane_get /)"; fi
-    if [[ "$(octane_get /kiln-static.txt)" == "static.txt served by Caddy" ]]; then ok "public/ files are served directly"; else bad "static file -> $(octane_get /kiln-static.txt | head -c 120)"; fi
+    if [[ "$(octane_get /)" == *'"Falak Octane v1"'* ]]; then ok "serves release v1 through Octane"; else bad "GET / -> $(octane_get /)"; fi
+    if [[ "$(octane_get /falak-static.txt)" == "static.txt served by Caddy" ]]; then ok "public/ files are served directly"; else bad "static file -> $(octane_get /falak-static.txt | head -c 120)"; fi
     if [[ "$(octane_get /frankenphp-worker.php)" != *"<?php"* ]]; then ok "PHP sources in public/ are never served as files"; else bad "frankenphp-worker.php source exposed"; fi
     if [[ "$(octane_get /health)" == ok ]]; then ok "/health ok through Octane"; else bad "/health -> $(octane_get /health)"; fi
 
     # Redeploy under load: Octane restarts on the new release while the edge holds requests -> no failed request.
-    if git_commit laravel-demo "Octane v2" "sed -i \"s/'app' => 'Kiln Octane v1'/'app' => 'Kiln Octane v2'/\" routes/web.php"; then ok "pushed Octane v2"; else bad "could not push Octane v2"; return 1; fi
+    if git_commit laravel-demo "Octane v2" "sed -i \"s/'app' => 'Falak Octane v1'/'app' => 'Falak Octane v2'/\" routes/web.php"; then ok "pushed Octane v2"; else bad "could not push Octane v2"; return 1; fi
     octane_load_start
     sleep 3
     deploy_and_wait "$SITE_OCTANE" "$(git_head laravel-demo)" "octane redeploy under load" succeeded
     sleep 5
     local result total failed; result=$(octane_load_stop); total=${result% *}; failed=${result#* }
     if (( ${total:-0} > 20 && ${failed:-1} == 0 )); then ok "zero failed requests during the redeploy ($total requests)"; else bad "requests during the redeploy: $total total, $failed failed"; fi
-    if [[ "$(octane_get /)" == *'"Kiln Octane v2"'* ]]; then ok "serves release v2 (Octane restarted on the new release)"; else bad "not serving v2: $(octane_get /)"; fi
+    if [[ "$(octane_get /)" == *'"Falak Octane v2"'* ]]; then ok "serves release v2 (Octane restarted on the new release)"; else bad "not serving v2: $(octane_get /)"; fi
     if octane_wait_mode on 60; then ok "still served by Octane workers after the redeploy"; else bad "not in worker mode after the redeploy: $(octane_get /octane)"; fi
 
     # Switch off under load: the edge goes back to FrankenPHP first, then the program stops.
@@ -351,7 +351,7 @@ stage_octane() {
     if [[ $stopped == true ]]; then ok "the octane program stopped after the edge switched back"; else bad "octane still listening on $port"; fi
     result=$(octane_load_stop); total=${result% *}; failed=${result#* }
     if (( ${total:-0} > 10 && ${failed:-1} == 0 )); then ok "zero failed requests while switching Octane off ($total requests)"; else bad "requests while switching off: $total total, $failed failed"; fi
-    if [[ "$(octane_get /)" == *'"Kiln Octane v2"'* && "$(octane_get /health)" == ok ]]; then ok "the app still serves v2 without Octane"; else bad "after disabling: $(octane_get /)"; fi
+    if [[ "$(octane_get /)" == *'"Falak Octane v2"'* && "$(octane_get /health)" == ok ]]; then ok "the app still serves v2 without Octane"; else bad "after disabling: $(octane_get /)"; fi
 }
 
 stage_bun() {
@@ -359,11 +359,11 @@ stage_bun() {
     api POST /sites "{\"name\":\"api\",\"framework\":\"node\",\"runtime\":\"bun\",\"app_port\":3100,\"server_ids\":[\"$SERVER_srv_app_2\"],\"source_connection_id\":\"$GIT_CONNECTION\",\"repository\":\"git://sim-git/bun-demo.git\",\"branch\":\"main\",\"health_check_path\":\"/health\",\"test_domain_enabled\":true}"
     [[ $API_CODE == 201 ]] || { bad "POST /sites (bun) -> $API_CODE: $API_BODY"; return 1; }
     save SITE_API "$(jq -r .data.id <<<"$API_BODY")"
-    save API_HOST "$(jq -r '.data.test_domain // .data.domains[0].name // .data.domains[0] // "api.sites.kiln.test"' <<<"$API_BODY")"
+    save API_HOST "$(jq -r '.data.test_domain // .data.domains[0].name // .data.domains[0] // "api.sites.falak.test"' <<<"$API_BODY")"
     ok "bun site created -> $API_HOST"
     deploy_and_wait "$SITE_API" "$(git_head bun-demo)" "bun deploy" succeeded || return 1
     local body; body=$(site_get srv-app-2 "$API_HOST" /)
-    if jq -e '.app == "kiln-bun-demo"' >/dev/null 2>&1 <<<"$body"; then ok "srv-app-2 serves the Bun app ($body)"; else bad "bun GET / -> ${body:0:200}"; fi
+    if jq -e '.app == "falak-bun-demo"' >/dev/null 2>&1 <<<"$body"; then ok "srv-app-2 serves the Bun app ($body)"; else bad "bun GET / -> ${body:0:200}"; fi
 }
 
 proc_env() { # proc_env CONTAINER PATTERN VAR -> VAR from the process environment (/proc/<pid>/environ) of the newest match
@@ -376,12 +376,12 @@ active_release() { # active_release SITE_ID -> upper-case id of the active relea
 }
 
 stage_release_env() {
-    step "release env: the Bun app's process env carries KILN_RELEASE_ID / KILN_DEPLOYMENT_ID + site variables, and follows each deploy"
+    step "release env: the Bun app's process env carries FALAK_RELEASE_ID / FALAK_DEPLOYMENT_ID + site variables, and follows each deploy"
     local env
     api GET "/sites/$SITE_API/env"
-    env=$(jq -r '.data.content' <<<"$API_BODY" | grep -v '^KILN_E2E_GREETING=')$'\nKILN_E2E_GREETING=hello-from-env\n'
+    env=$(jq -r '.data.content' <<<"$API_BODY" | grep -v '^FALAK_E2E_GREETING=')$'\nFALAK_E2E_GREETING=hello-from-env\n'
     api PUT "/sites/$SITE_API/env" "$(jq -n --arg c "$env" '{content: $c}')"
-    if [[ $API_CODE == 200 ]]; then ok "site variable KILN_E2E_GREETING set"; else bad "PUT env -> $API_CODE: $API_BODY"; fi
+    if [[ $API_CODE == 200 ]]; then ok "site variable FALAK_E2E_GREETING set"; else bad "PUT env -> $API_CODE: $API_BODY"; fi
 
     for round in 1 2; do
         if git_commit bun-demo "Release env round $round" "echo '// round $round' >> src/index.ts"; then ok "pushed bun commit $round"; else bad "could not push bun commit"; return 1; fi
@@ -390,13 +390,13 @@ stage_release_env() {
         want=$(active_release "$SITE_API")
         api GET "/sites/$SITE_API/releases"; deployment=$(jq -r '[.data[] | select(.active)][0].deployment_id // empty | ascii_upcase' <<<"$API_BODY")
         while (( SECONDS < deadline )); do body=$(site_get srv-app-2 "$API_HOST" /); [[ "$(jq -r .release <<<"$body" 2>/dev/null)" == "$want" ]] && break; sleep 1; done
-        if [[ "$(jq -r .release <<<"$body" 2>/dev/null)" == "$want" && "$(jq -r .deployment <<<"$body" 2>/dev/null)" == "$deployment" ]]; then ok "GET / reports KILN_RELEASE_ID=$want KILN_DEPLOYMENT_ID=$deployment (the active release)"; else bad "GET / -> ${body:0:300} (want release $want, deployment $deployment)"; fi
+        if [[ "$(jq -r .release <<<"$body" 2>/dev/null)" == "$want" && "$(jq -r .deployment <<<"$body" 2>/dev/null)" == "$deployment" ]]; then ok "GET / reports FALAK_RELEASE_ID=$want FALAK_DEPLOYMENT_ID=$deployment (the active release)"; else bad "GET / -> ${body:0:300} (want release $want, deployment $deployment)"; fi
         if [[ "$(jq -r .greeting <<<"$body" 2>/dev/null)" == hello-from-env ]]; then ok "the site variable reaches the app"; else bad "greeting: $(jq -r .greeting <<<"$body" 2>/dev/null)"; fi
         # Straight from the supervised process (not a .env the runtime loaded): what proc.apply put into its env.
-        proc_rel=$(proc_env srv-app-2 '[s]rc/index.ts' KILN_RELEASE_ID)
-        proc_dep=$(proc_env srv-app-2 '[s]rc/index.ts' KILN_DEPLOYMENT_ID)
-        proc_greet=$(proc_env srv-app-2 '[s]rc/index.ts' KILN_E2E_GREETING)
-        if [[ $proc_rel == "$want" && $proc_dep == "$deployment" && $proc_greet == hello-from-env ]]; then ok "api.app process env: KILN_RELEASE_ID=$proc_rel KILN_DEPLOYMENT_ID=$proc_dep KILN_E2E_GREETING=$proc_greet"
+        proc_rel=$(proc_env srv-app-2 '[s]rc/index.ts' FALAK_RELEASE_ID)
+        proc_dep=$(proc_env srv-app-2 '[s]rc/index.ts' FALAK_DEPLOYMENT_ID)
+        proc_greet=$(proc_env srv-app-2 '[s]rc/index.ts' FALAK_E2E_GREETING)
+        if [[ $proc_rel == "$want" && $proc_dep == "$deployment" && $proc_greet == hello-from-env ]]; then ok "api.app process env: FALAK_RELEASE_ID=$proc_rel FALAK_DEPLOYMENT_ID=$proc_dep FALAK_E2E_GREETING=$proc_greet"
         else bad "api.app process env: release='$proc_rel' deployment='$proc_dep' greeting='$proc_greet' (want $want / $deployment)"; fi
     done
 }
@@ -423,15 +423,15 @@ stage_redis() {
     done
     if [[ -n $created ]]; then ok "Redis service 'cache' ($created) on app-2"; else bad "create Redis service -> $API_CODE: $API_BODY"; return 1; fi
 
-    local unit=redis-server@kiln-cache.service
+    local unit=redis-server@falak-cache.service
     deadline=$((SECONDS + 180))
     while (( SECONDS < deadline )); do sx srv-app-2 systemctl is-active --quiet "$unit" && break; sleep 2; done
     if sx srv-app-2 systemctl is-active --quiet "$unit"; then ok "$unit running"; else bad "$unit not running: $(sx srv-app-2 journalctl -u "$unit" -n 20 --no-pager 2>&1 | tail -5)"; return 1; fi
-    if [[ "$(sx srv-app-2 stat -c '%U %a' /var/lib/kiln-redis/cache | tr -d '\r')" == "kiln-redis-cache 700" ]]; then ok "data dir is the instance user's, 0700"; else bad "data dir: $(sx srv-app-2 stat -c '%U %a' /var/lib/kiln-redis/cache)"; fi
-    if [[ "$(sx srv-app-2 stat -c '%U:%G %a' /etc/kiln-redis/cache.conf | tr -d '\r')" == "root:kiln-redis-cache 640" ]]; then ok "config 0640 root:kiln-redis-cache"; else bad "config: $(sx srv-app-2 stat -c '%U:%G %a' /etc/kiln-redis/cache.conf)"; fi
-    if sx srv-app-2 bash -c "ps -eo user:32,args | grep -q '^kiln-redis-cache .*redis-server'"; then ok "redis-server runs as kiln-redis-cache"; else bad "instance user: $(sx srv-app-2 ps -eo user:32,args | grep redis-server)"; fi
+    if [[ "$(sx srv-app-2 stat -c '%U %a' /var/lib/falak-redis/cache | tr -d '\r')" == "falak-redis-cache 700" ]]; then ok "data dir is the instance user's, 0700"; else bad "data dir: $(sx srv-app-2 stat -c '%U %a' /var/lib/falak-redis/cache)"; fi
+    if [[ "$(sx srv-app-2 stat -c '%U:%G %a' /etc/falak-redis/cache.conf | tr -d '\r')" == "root:falak-redis-cache 640" ]]; then ok "config 0640 root:falak-redis-cache"; else bad "config: $(sx srv-app-2 stat -c '%U:%G %a' /etc/falak-redis/cache.conf)"; fi
+    if sx srv-app-2 bash -c "ps -eo user:32,args | grep -q '^falak-redis-cache .*redis-server'"; then ok "redis-server runs as falak-redis-cache"; else bad "instance user: $(sx srv-app-2 ps -eo user:32,args | grep redis-server)"; fi
     # The stock instance (no password) can't point itself at the instance's data.
-    if sx srv-app-2 redis-cli -p 6379 CONFIG SET dir /var/lib/kiln-redis/cache 2>&1 | grep -q '^ERR'; then ok "stock 6379 cannot reach the instance's data"; else bad "stock 6379 could CONFIG SET dir into the instance"; fi
+    if sx srv-app-2 redis-cli -p 6379 CONFIG SET dir /var/lib/falak-redis/cache 2>&1 | grep -q '^ERR'; then ok "stock 6379 cannot reach the instance's data"; else bad "stock 6379 could CONFIG SET dir into the instance"; fi
 
     api GET "/sites/$SITE_API/env"
     local env; env=$(jq -r '.data.content' <<<"$API_BODY" | grep -vE '^REDIS_(URL|PORT|PASSWORD)=')
@@ -443,7 +443,7 @@ stage_redis() {
     local url port pw
     url=$(proc_env srv-app-2 '[s]rc/index.ts' REDIS_URL); port=$(proc_env srv-app-2 '[s]rc/index.ts' REDIS_PORT); pw=$(proc_env srv-app-2 '[s]rc/index.ts' REDIS_PASSWORD)
     if [[ $url =~ ^redis://default:[A-Za-z0-9]+@127\.0\.0\.1:${port}$ && $port -ge 6380 && $port -le 6479 ]]; then ok "process env: REDIS_URL redis://default:…@127.0.0.1:$port"; else bad "process env: REDIS_URL='${url//:*@/:…@}' REDIS_PORT='$port'"; return 1; fi
-    if [[ "$(sx srv-app-2 env REDISCLI_AUTH="$pw" redis-cli -p "$port" SET kiln-e2e ok | tr -d '\r')" == OK && "$(sx srv-app-2 env REDISCLI_AUTH="$pw" redis-cli -p "$port" GET kiln-e2e | tr -d '\r')" == ok ]]; then ok "the referenced password works on the instance"; else bad "SET/GET with the referenced password failed"; fi
+    if [[ "$(sx srv-app-2 env REDISCLI_AUTH="$pw" redis-cli -p "$port" SET falak-e2e ok | tr -d '\r')" == OK && "$(sx srv-app-2 env REDISCLI_AUTH="$pw" redis-cli -p "$port" GET falak-e2e | tr -d '\r')" == ok ]]; then ok "the referenced password works on the instance"; else bad "SET/GET with the referenced password failed"; fi
     if sx srv-app-2 env REDISCLI_AUTH="$pw" redis-cli -p "$port" CONFIG GET dir 2>&1 | grep -q '^ERR'; then ok "CONFIG is not available to clients"; else bad "CONFIG still works for clients"; fi
 }
 
@@ -452,7 +452,7 @@ stage_waiting() {
     api POST /sites "{\"name\":\"early\",\"framework\":\"node\",\"runtime\":\"bun\",\"app_port\":3101,\"server_ids\":[\"$SERVER_srv_app_1\"],\"source_connection_id\":\"$GIT_CONNECTION\",\"repository\":\"git://sim-git/bun-demo.git\",\"branch\":\"main\",\"health_check_path\":\"/health\",\"test_domain_enabled\":true}"
     [[ $API_CODE == 201 ]] || { bad "POST /sites (early) -> $API_CODE: $API_BODY"; return 1; }
     save SITE_EARLY "$(jq -r .data.id <<<"$API_BODY")"
-    save EARLY_HOST "$(jq -r '.data.test_domain // .data.domains[0].name // .data.domains[0] // "early.sites.kiln.test"' <<<"$API_BODY")"
+    save EARLY_HOST "$(jq -r '.data.test_domain // .data.domains[0].name // .data.domains[0] // "early.sites.falak.test"' <<<"$API_BODY")"
     local targets; targets=$(jq -r '[.data.targets[].status] | join(",")' <<<"$API_BODY")
     ok "site early created on app-1 (targets: $targets)"
 
@@ -494,19 +494,19 @@ stage_observability() {
     # Telemetry is batched (agent OTLP export, Insights ingestion): poll each signal instead of a fixed wait.
     local traces=0 issues=0 deploys=0 deadline=$((SECONDS + 90))
     while (( SECONDS < deadline )); do
-        traces=$(curl -sS "http://127.0.0.1:${KILN_TEMPO_PORT}/api/search?tags=kiln.event.type%3Drequest&limit=20" | jq '.traces | length' 2>/dev/null)
+        traces=$(curl -sS "http://127.0.0.1:${FALAK_TEMPO_PORT}/api/search?tags=falak.event.type%3Drequest&limit=20" | jq '.traces | length' 2>/dev/null)
         (( ${traces:-0} > 0 )) && break
         sleep 2
     done
-    if (( ${traces:-0} > 0 )); then ok "Tempo has $traces request traces from kiln/apm-laravel"; else bad "no request traces in Tempo"; fi
+    if (( ${traces:-0} > 0 )); then ok "Tempo has $traces request traces from falak/apm-laravel"; else bad "no request traces in Tempo"; fi
     while (( SECONDS < deadline )); do
-        issues=$(sx control-plane php artisan tinker --execute='echo DB::table("insights_issues")->where("title","like","%Kiln E2E demo exception%")->count();' 2>/dev/null | tail -1 | tr -d '\r')
+        issues=$(sx control-plane php artisan tinker --execute='echo DB::table("insights_issues")->where("title","like","%Falak E2E demo exception%")->count();' 2>/dev/null | tail -1 | tr -d '\r')
         [[ ${issues:-0} -ge 1 ]] && break
         sleep 2
     done
     if [[ ${issues:-0} -ge 1 ]]; then ok "Insights grouped the exception into an issue ($issues)"; else bad "no Insights issue for the demo exception"; fi
     while (( SECONDS < deadline )); do
-        deploys=$(curl -sS -G "http://127.0.0.1:${KILN_LOKI_PORT}/loki/api/v1/query_range" --data-urlencode 'query={service_name="kiln-agent"} | kiln_event_type="deployment"' --data-urlencode "start=$(( $(date +%s) - 7200 ))000000000" | jq '[.data.result[].values[]] | length' 2>/dev/null)
+        deploys=$(curl -sS -G "http://127.0.0.1:${FALAK_LOKI_PORT}/loki/api/v1/query_range" --data-urlencode 'query={service_name="falak-agent"} | falak_event_type="deployment"' --data-urlencode "start=$(( $(date +%s) - 7200 ))000000000" | jq '[.data.result[].values[]] | length' 2>/dev/null)
         (( ${deploys:-0} > 0 )) && break
         sleep 2
     done
@@ -514,13 +514,13 @@ stage_observability() {
     # Per-site logs of the web requests themselves (FrankenPHP): the edge's access log and the app's log files.
     local access=0 applog=0
     while (( SECONDS < deadline )); do
-        access=$(loki_count '{service_name="shop", kiln_log_kind="access"} | url_path="/boom" | http_response_status_code="500"')
+        access=$(loki_count '{service_name="shop", falak_log_kind="access"} | url_path="/boom" | http_response_status_code="500"')
         (( ${access:-0} > 0 )) && break
         sleep 2
     done
-    if (( ${access:-0} > 0 )); then ok "edge access log of shop reached Loki (kiln_log_kind=access, $access x GET /boom 500)"; else bad "no access log records for shop in Loki"; fi
+    if (( ${access:-0} > 0 )); then ok "edge access log of shop reached Loki (falak_log_kind=access, $access x GET /boom 500)"; else bad "no access log records for shop in Loki"; fi
     while (( SECONDS < deadline )); do
-        applog=$(loki_count '{service_name="shop", kiln_log_kind="app"} |= "Kiln E2E demo exception" |= "#0 "')
+        applog=$(loki_count '{service_name="shop", falak_log_kind="app"} |= "Falak E2E demo exception" |= "#0 "')
         (( ${applog:-0} > 0 )) && break
         sleep 2
     done
@@ -530,7 +530,7 @@ stage_observability() {
 }
 
 loki_count() { # loki_count LOGQL -> number of lines in the last hour
-    curl -sS -G "http://127.0.0.1:${KILN_LOKI_PORT}/loki/api/v1/query_range" --data-urlencode "query=$1" \
+    curl -sS -G "http://127.0.0.1:${FALAK_LOKI_PORT}/loki/api/v1/query_range" --data-urlencode "query=$1" \
         --data-urlencode "start=$(( $(date +%s) - 3600 ))000000000" | jq '[.data.result[].values[]] | length' 2>/dev/null
 }
 
@@ -538,12 +538,12 @@ loki_count() { # loki_count LOGQL -> number of lines in the last hour
 compose_get() { site_get srv-app-2 "$COMPOSE_HOST" "$1"; }
 
 stage_compose() {
-    step "compose: repo compose site (build: service via kiln-builder docker mode + redis volume) through the API"
+    step "compose: repo compose site (build: service via falak-builder docker mode + redis volume) through the API"
     if sx srv-app-2 bash -c 'systemctl is-active docker' 2>/dev/null | grep -q active; then ok "srv-app-2: docker running"; else bad "srv-app-2: docker not running"; fi
     api POST /sites "{\"name\":\"compose-demo\",\"runtime\":\"compose\",\"server_ids\":[\"$SERVER_srv_app_2\"],\"source_connection_id\":\"$GIT_CONNECTION\",\"repository\":\"git://sim-git/compose-demo.git\",\"branch\":\"main\",\"compose_source\":\"repo\",\"public_services\":[{\"service\":\"app\",\"port\":8080}],\"health_check_path\":\"/health\",\"test_domain_enabled\":true}"
     [[ $API_CODE == 201 ]] || { bad "POST /sites (compose) -> $API_CODE: $API_BODY"; return 1; }
     save SITE_COMPOSE "$(jq -r .data.id <<<"$API_BODY")"
-    save COMPOSE_HOST "$(jq -r '.data.test_domain // "compose-demo.sites.kiln.test"' <<<"$API_BODY")"
+    save COMPOSE_HOST "$(jq -r '.data.test_domain // "compose-demo.sites.falak.test"' <<<"$API_BODY")"
     ok "compose site created -> $COMPOSE_HOST"
 
     deploy_and_wait "$SITE_COMPOSE" "$(git_head compose-demo)" "compose deploy" succeeded || return 1
@@ -552,11 +552,11 @@ stage_compose() {
     save COMPOSE_RELEASE_1 "$(jq -r '.data.release_id // empty' <<<"$API_BODY")"
 
     local body; body=$(compose_get /)
-    if jq -e '.app == "kiln-compose-demo" and .greeting == "hello"' >/dev/null 2>&1 <<<"$body"; then ok "public URL answers through the edge ($body)"; else bad "compose GET / -> ${body:0:200}"; return 1; fi
+    if jq -e '.app == "falak-compose-demo" and .greeting == "hello"' >/dev/null 2>&1 <<<"$body"; then ok "public URL answers through the edge ($body)"; else bad "compose GET / -> ${body:0:200}"; return 1; fi
     if [[ "$(compose_get /health)" == ok ]]; then ok "/health ok through the edge"; else bad "compose /health failed"; fi
 
-    local images; images=$(sx srv-app-2 bash -c 'for c in $(docker ps -q --filter label=kiln.site=compose-demo); do docker inspect "$c" --format "{{index .Config.Labels \"kiln.service\"}}={{.Config.Image}}"; done' 2>/dev/null | tr -d '\r' | sort | tr '\n' ' ')
-    if [[ $images == *"app=sim-registry:5000/kiln/compose-demo/app@sha256:"* ]]; then ok "app runs the built image pinned by digest ($images)"; else bad "app image not digest-pinned: $images"; fi
+    local images; images=$(sx srv-app-2 bash -c 'for c in $(docker ps -q --filter label=falak.site=compose-demo); do docker inspect "$c" --format "{{index .Config.Labels \"falak.service\"}}={{.Config.Image}}"; done' 2>/dev/null | tr -d '\r' | sort | tr '\n' ' ')
+    if [[ $images == *"app=sim-registry:5000/falak/compose-demo/app@sha256:"* ]]; then ok "app runs the built image pinned by digest ($images)"; else bad "app image not digest-pinned: $images"; fi
     if sx srv-app-2 bash -c "docker port compose-demo-app-1 8080" 2>/dev/null | grep -q '^127.0.0.1:'; then ok "app published on loopback only"; else bad "app port not on 127.0.0.1: $(sx srv-app-2 docker port compose-demo-app-1 2>&1)"; fi
 
     local marker; marker="persist-$(date +%s)"
@@ -568,13 +568,13 @@ stage_compose() {
 
     local lines="" deadline=$((SECONDS + 90))
     while (( SECONDS < deadline )); do
-        lines=$(curl -sS -G "http://127.0.0.1:${KILN_LOKI_PORT}/loki/api/v1/query_range" \
-            --data-urlencode 'query={service_name="compose-demo"} | kiln_compose_service="app" |~ "kiln-compose-demo listening|GET /"' \
+        lines=$(curl -sS -G "http://127.0.0.1:${FALAK_LOKI_PORT}/loki/api/v1/query_range" \
+            --data-urlencode 'query={service_name="compose-demo"} | falak_compose_service="app" |~ "falak-compose-demo listening|GET /"' \
             --data-urlencode "start=$(( $(date +%s) - 3600 ))000000000" | jq '[.data.result[].values[]] | length' 2>/dev/null)
         (( ${lines:-0} > 0 )) && break
         sleep 2
     done
-    if (( ${lines:-0} > 0 )); then ok "container logs reached Loki (service_name=compose-demo, kiln_compose_service=app: $lines lines)"; else bad "no compose container logs in Loki"; fi
+    if (( ${lines:-0} > 0 )); then ok "container logs reached Loki (service_name=compose-demo, falak_compose_service=app: $lines lines)"; else bad "no compose container logs in Loki"; fi
 }
 
 stage_compose_redeploy() {
@@ -604,7 +604,7 @@ redis_cli() { # redis_cli CONTAINER PASSWORD HOST PORT CMD... -> reply (5 s at m
 }
 
 stage_redis_network() {
-    step "redis network: a site on app-1 reaches the Kiln Redis on app-2 over the private network; a compose stack's redis becomes a Kiln Redis its containers reach through docker0"
+    step "redis network: a site on app-1 reaches the Falak Redis on app-2 over the private network; a compose stack's redis becomes a Falak Redis its containers reach through docker0"
     [[ -n ${SITE_EARLY:-} && -n ${SITE_API:-} ]] || { bad "needs the redis and waiting stages first"; return 1; }
     api GET "/servers/$SERVER_srv_app_2"
     local app2_ip app1_ip public_ip
@@ -615,10 +615,10 @@ stage_redis_network() {
 
     # The cache instance (redis stage) listens on app-2's private address (the shop site of its environment runs on app-1
     # too) and on docker0; never on a public address.
-    local bind; bind=$(sx srv-app-2 sed -n 's/^bind //p' /etc/kiln-redis/cache.conf | tr -d '\r')
+    local bind; bind=$(sx srv-app-2 sed -n 's/^bind //p' /etc/falak-redis/cache.conf | tr -d '\r')
     if [[ " $bind " == *" 127.0.0.1 "* && " $bind " == *" $app2_ip "* && " $bind " == *" 172.17.0.1 "* ]]; then ok "cache binds $bind"; else bad "cache bind: '$bind' (want 127.0.0.1, $app2_ip, 172.17.0.1)"; fi
     if [[ -n $public_ip && " $bind " == *" $public_ip "* ]]; then bad "cache listens on the public address $public_ip"; fi
-    if sx srv-app-2 bash -c 'grep -q "^protected-mode yes" /etc/kiln-redis/cache.conf && grep -q "^requirepass " /etc/kiln-redis/cache.conf'; then ok "protected-mode and requirepass stay"; else bad "protected-mode / requirepass missing"; fi
+    if sx srv-app-2 bash -c 'grep -q "^protected-mode yes" /etc/falak-redis/cache.conf && grep -q "^requirepass " /etc/falak-redis/cache.conf'; then ok "protected-mode and requirepass stay"; else bad "protected-mode / requirepass missing"; fi
 
     # The early site (Bun, app-1) references cache.REDIS_*: it gets app-2's private address.
     api GET "/sites/$SITE_EARLY/env"
@@ -635,11 +635,11 @@ stage_redis_network() {
     if [[ "$(redis_cli srv-app-1 '' "$host" "$port" GET net-e2e)" == *NOAUTH* ]]; then ok "without the password: NOAUTH"; else bad "no password still works?"; fi
     # db-1 runs no site of the environment: the firewall drops it (no answer at all).
     if [[ "$(redis_cli srv-db-1 "$pw" "$host" "$port" PING)" != PONG ]]; then ok "db-1 (not a consumer) can't reach the instance"; else bad "db-1 reached the instance"; fi
-    local rules; rules=$(sx srv-app-2 nft list table inet kiln 2>/dev/null)
+    local rules; rules=$(sx srv-app-2 nft list table inet falak 2>/dev/null)
     if grep -qE "ip saddr [^d]*$app1_ip[^d]* tcp dport $port accept" <<<"$rules" && grep -q "tcp dport $port drop" <<<"$rules"; then ok "app-2 firewall: $port open to $app1_ip (peers) and the Docker ranges only"; else bad "app-2 firewall: $(grep -E "dport $port" <<<"$rules" | tr -s '\t' ' ')"; fi
 
     # A compose stack (inline: the sim's git server has no API to read a repository's compose file from) whose redis
-    # service (official image) becomes a Kiln Redis: taken out of the stack, the probe's REDIS_HOST rewritten
+    # service (official image) becomes a Falak Redis: taken out of the stack, the probe's REDIS_HOST rewritten
     # (REDIS_PORT / REDIS_PASSWORD added); its healthcheck (compose up --wait) passes only when it reaches the instance
     # through docker0 with the password.
     local compose
@@ -660,26 +660,26 @@ services:
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "64mb"]
 YAML
 )
-    api POST /sites "$(jq -n --arg c "$compose" --arg s "$SERVER_srv_app_2" '{name: "compose-kiln", runtime: "compose", server_ids: [$s], compose_source: "inline", compose_content: $c, compose_services: {cache: {mode: "database", engine: "redis"}}}')"
-    [[ $API_CODE == 201 ]] || { bad "POST /sites (compose-kiln) -> $API_CODE: $API_BODY"; return 1; }
+    api POST /sites "$(jq -n --arg c "$compose" --arg s "$SERVER_srv_app_2" '{name: "compose-falak", runtime: "compose", server_ids: [$s], compose_source: "inline", compose_content: $c, compose_services: {cache: {mode: "database", engine: "redis"}}}')"
+    [[ $API_CODE == 201 ]] || { bad "POST /sites (compose-falak) -> $API_CODE: $API_BODY"; return 1; }
     local site slug; site=$(jq -r .data.id <<<"$API_BODY"); slug=$(jq -r .data.slug <<<"$API_BODY")
-    save SITE_COMPOSE_KILN "$site"
-    if [[ "$(jq -r '.warnings // [] | length' <<<"$API_BODY")" == 0 ]]; then ok "compose-kiln created, cache taken out of the stack"; else bad "compose-kiln warnings: $(jq -c .warnings <<<"$API_BODY")"; fi
+    save SITE_COMPOSE_FALAK "$site"
+    if [[ "$(jq -r '.warnings // [] | length' <<<"$API_BODY")" == 0 ]]; then ok "compose-falak created, cache taken out of the stack"; else bad "compose-falak warnings: $(jq -c .warnings <<<"$API_BODY")"; fi
     local inst="$slug-cache" deadline=$((SECONDS + 180))
-    while (( SECONDS < deadline )); do sx srv-app-2 grep -q '^bind .*172\.17\.0\.1' "/etc/kiln-redis/$inst.conf" 2>/dev/null && sx srv-app-2 systemctl is-active --quiet "redis-server@kiln-$inst.service" && break; sleep 2; done
-    if sx srv-app-2 systemctl is-active --quiet "redis-server@kiln-$inst.service"; then ok "Kiln Redis $inst running on app-2 (bind $(sx srv-app-2 sed -n 's/^bind //p' "/etc/kiln-redis/$inst.conf" | tr -d '\r'))"; else bad "instance $inst not running"; return 1; fi
-    if sx srv-app-2 grep -q '^appendonly yes' "/etc/kiln-redis/$inst.conf" && sx srv-app-2 grep -q '^maxmemory 64mb' "/etc/kiln-redis/$inst.conf"; then ok "the service's --appendonly yes / --maxmemory 64mb kept"; else bad "flags not kept: $(sx srv-app-2 grep -E '^(appendonly|maxmemory) ' "/etc/kiln-redis/$inst.conf" | tr '\n' ' ')"; fi
+    while (( SECONDS < deadline )); do sx srv-app-2 grep -q '^bind .*172\.17\.0\.1' "/etc/falak-redis/$inst.conf" 2>/dev/null && sx srv-app-2 systemctl is-active --quiet "redis-server@falak-$inst.service" && break; sleep 2; done
+    if sx srv-app-2 systemctl is-active --quiet "redis-server@falak-$inst.service"; then ok "Falak Redis $inst running on app-2 (bind $(sx srv-app-2 sed -n 's/^bind //p' "/etc/falak-redis/$inst.conf" | tr -d '\r'))"; else bad "instance $inst not running"; return 1; fi
+    if sx srv-app-2 grep -q '^appendonly yes' "/etc/falak-redis/$inst.conf" && sx srv-app-2 grep -q '^maxmemory 64mb' "/etc/falak-redis/$inst.conf"; then ok "the service's --appendonly yes / --maxmemory 64mb kept"; else bad "flags not kept: $(sx srv-app-2 grep -E '^(appendonly|maxmemory) ' "/etc/falak-redis/$inst.conf" | tr '\n' ' ')"; fi
     sleep 3 # the apply's result (container_host) is recorded right after the command
-    deploy_and_wait "$site" "" "compose-kiln deploy (probe healthy only through docker0 + password)" succeeded || return 1
+    deploy_and_wait "$site" "" "compose-falak deploy (probe healthy only through docker0 + password)" succeeded || return 1
 
-    local containers; containers=$(sx srv-app-2 bash -c "docker ps --filter label=kiln.site=$slug --format '{{.Label \"kiln.service\"}}'" | tr -d '\r' | sort | tr '\n' ' ')
+    local containers; containers=$(sx srv-app-2 bash -c "docker ps --filter label=falak.site=$slug --format '{{.Label \"falak.service\"}}'" | tr -d '\r' | sort | tr '\n' ' ')
     if [[ $containers == "probe " ]]; then ok "the stack runs probe only (no redis container)"; else bad "stack containers: '$containers'"; fi
     local cid envs c_host c_port c_pw
-    cid=$(sx srv-app-2 docker ps -q --filter "label=kiln.site=$slug" --filter label=kiln.service=probe | tr -d '\r' | head -1)
+    cid=$(sx srv-app-2 docker ps -q --filter "label=falak.site=$slug" --filter label=falak.service=probe | tr -d '\r' | head -1)
     envs=$(sx srv-app-2 docker inspect "$cid" --format '{{range .Config.Env}}{{println .}}{{end}}' | tr -d '\r')
     c_host=$(sed -n 's/^REDIS_HOST=//p' <<<"$envs"); c_port=$(sed -n 's/^REDIS_PORT=//p' <<<"$envs"); c_pw=$(sed -n 's/^REDIS_PASSWORD=//p' <<<"$envs")
     if [[ $c_host == 172.17.0.1 && $c_port -ge 6380 && -n $c_pw ]]; then ok "probe container: REDIS_HOST 172.17.0.1, REDIS_PORT $c_port, REDIS_PASSWORD set"; else bad "probe env: host='$c_host' port='$c_port'"; fi
-    if [[ "$(redis_cli srv-app-2 "$c_pw" 127.0.0.1 "$c_port" GET probe)" == "${cid:0:12}" ]]; then ok "the probe container writes to the Kiln instance $inst"; else bad "probe key in $inst: '$(redis_cli srv-app-2 "$c_pw" 127.0.0.1 "$c_port" GET probe)' (want ${cid:0:12})"; fi
+    if [[ "$(redis_cli srv-app-2 "$c_pw" 127.0.0.1 "$c_port" GET probe)" == "${cid:0:12}" ]]; then ok "the probe container writes to the Falak instance $inst"; else bad "probe key in $inst: '$(redis_cli srv-app-2 "$c_pw" 127.0.0.1 "$c_port" GET probe)' (want ${cid:0:12})"; fi
     if [[ -z "$(redis_cli srv-app-2 "$c_pw" 127.0.0.1 "$c_port" GET net-e2e)" ]]; then ok "instances keep their data apart (cache's key not in $inst)"; else bad "data shared between instances"; fi
     # Its environment's sites run on app-1 too, so app-2's firewall lets app-1 in for this port as well; db-1 stays out.
     if [[ "$(redis_cli srv-db-1 "$c_pw" "$app2_ip" "$c_port" PING)" != PONG ]]; then ok "db-1 can't reach $inst"; else bad "db-1 reached $inst"; fi

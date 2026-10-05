@@ -1,8 +1,8 @@
 <?php
 
 use Illuminate\Support\Facades\Http;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Providers\Domain\Models\ProviderCredential;
+use Falak\Identity\Contracts\Role;
+use Falak\Providers\Domain\Models\ProviderCredential;
 
 beforeEach(function () {
     Http::preventStrayRequests();

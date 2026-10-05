@@ -1,4 +1,4 @@
-import { Checkbox, ConfirmDestructive, toast } from '@/components/kiln';
+import { Checkbox, ConfirmDestructive, toast } from '@/components/falak';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { type ServiceActionDialogProps } from '@/lib/registry';
 import { useEffect, useId, useState } from 'react';

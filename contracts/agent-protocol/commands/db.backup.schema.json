@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/db.backup.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/db.backup.schema.json",
   "title": "db.backup — dump a database, compress, write to a local path or PUT to a presigned URL",
   "type": "object",
   "additionalProperties": false,

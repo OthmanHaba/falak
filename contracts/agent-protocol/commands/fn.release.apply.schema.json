@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/fn.release.apply.schema.json",
-  "title": "fn.release.apply — write a function release, install its dependencies and make it live behind kiln-fn-gateway",
-  "x-kiln-redeliverable": true,
+  "$id": "https://falak.sh/agent-protocol/commands/fn.release.apply.schema.json",
+  "title": "fn.release.apply — write a function release, install its dependencies and make it live behind falak-fn-gateway",
+  "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -21,12 +21,12 @@
     "release": {
       "type": "string",
       "pattern": "^[a-z0-9]{1,64}$",
-      "description": "Release id (lowercase); the release dir is /var/lib/kiln/functions/<site>/releases/<release>"
+      "description": "Release id (lowercase); the release dir is /var/lib/falak/functions/<site>/releases/<release>"
     },
     "image": {
       "type": "string",
       "minLength": 1,
-      "description": "Runtime image (kiln-fn-install / kiln-fn-serve convention, runtimes/functions/)"
+      "description": "Runtime image (falak-fn-install / falak-fn-serve convention, runtimes/functions/)"
     },
     "pull": {
       "enum": [
@@ -95,7 +95,7 @@
       "additionalProperties": {
         "type": "string"
       },
-      "description": "Environment of the function (PORT and KILN_ENTRYPOINT are set by the gateway)"
+      "description": "Environment of the function (PORT and FALAK_ENTRYPOINT are set by the gateway)"
     },
     "scaling": {
       "type": "object",
@@ -165,7 +165,7 @@
     "access": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Enforced by kiln-fn-gateway before a request wakes the function (agent feature fn.v2): API keys as sha256 hex digests (Authorization: Bearer <key> or X-Kiln-Key) and an IP allowlist (X-Kiln-Client-IP from Caddy, else the peer). Empty lists = no restriction. Not applied to scheduled runs.",
+      "description": "Enforced by falak-fn-gateway before a request wakes the function (agent feature fn.v2): API keys as sha256 hex digests (Authorization: Bearer <key> or X-Falak-Key) and an IP allowlist (X-Falak-Client-IP from Caddy, else the peer). Empty lists = no restriction. Not applied to scheduled runs.",
       "properties": {
         "api_key_hashes": {
           "type": "array",

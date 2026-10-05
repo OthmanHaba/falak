@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/edge.cert.install.schema.json",
-  "title": "edge.cert.install — custom TLS certificate stored under /etc/kiln/certs/<name>.{crt,key}",
-  "x-kiln-redeliverable": true,
+  "$id": "https://falak.sh/agent-protocol/commands/edge.cert.install.schema.json",
+  "title": "edge.cert.install — custom TLS certificate stored under /etc/falak/certs/<name>.{crt,key}",
+  "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [

@@ -1,9 +1,9 @@
-import { Button, IconButton } from '@/components/kiln/button';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { MetricChart, type MetricPoint } from '@/components/kiln/metric-chart';
-import { Segmented } from '@/components/kiln/segmented';
-import { Skeleton } from '@/components/kiln/skeleton';
-import { Stat } from '@/components/kiln/stat';
+import { Button, IconButton } from '@/components/falak/button';
+import { EmptyState } from '@/components/falak/empty-state';
+import { MetricChart, type MetricPoint } from '@/components/falak/metric-chart';
+import { Segmented } from '@/components/falak/segmented';
+import { Skeleton } from '@/components/falak/skeleton';
+import { Stat } from '@/components/falak/stat';
 import { Link } from '@inertiajs/react';
 import { RotateCw, SlidersHorizontal, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -20,7 +20,7 @@ function chartTime(range: string): (value: number | string) => string {
     return (value) => new Date(value).toLocaleString(undefined, days ? { month: 'short', day: 'numeric' } : { hour: '2-digit', minute: '2-digit' });
 }
 
-/** GET /insights/sites/{siteId}/summary (Kiln\Insights\Http\Controllers\OverviewController::summary). */
+/** GET /insights/sites/{siteId}/summary (Falak\Insights\Http\Controllers\OverviewController::summary). */
 interface SiteSummary {
     site: { id: string; name: string };
     range: string;
@@ -129,7 +129,7 @@ export default function SiteObservability({ siteId }: SiteObservabilityProps) {
                 <EmptyState
                     size="sm"
                     title="No application data from this site yet"
-                    description="Install the Kiln Insights package in the app and deploy: requests, jobs, queries, exceptions and scheduled tasks are reported through the Kiln agent."
+                    description="Install the Falak Insights package in the app and deploy: requests, jobs, queries, exceptions and scheduled tasks are reported through the Falak agent."
                 />
             ) : (
                 <>

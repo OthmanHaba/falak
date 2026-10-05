@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Edge\Application;
+namespace Falak\Edge\Application;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Domain\Models\Mount;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Edge\Domain\Models\Mount;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
 
 /**
  * Functions served on a path of another site (`app.example.com/api/*`). The host site's Caddy routes the path: to the

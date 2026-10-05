@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 
-class KilnTestJob implements ShouldQueue
+class FalakTestJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable;
 
@@ -29,7 +29,7 @@ class KilnTestJob implements ShouldQueue
     }
 }
 
-class KilnRetryJob extends KilnTestJob
+class FalakRetryJob extends FalakTestJob
 {
     public $tries = 3;
 }
@@ -50,7 +50,7 @@ beforeEach(function () {
     });
 
     Route::get('/dispatch/{mode}', function ($mode) {
-        $mode === 'retry' ? KilnRetryJob::dispatch('fail') : KilnTestJob::dispatch($mode);
+        $mode === 'retry' ? FalakRetryJob::dispatch('fail') : FalakTestJob::dispatch($mode);
 
         return 'queued';
     });
@@ -61,7 +61,7 @@ it('propagates trace context in the job payload and links the job trace to the d
     $request = $this->transport->spansOfType('request')[0];
 
     $payload = json_decode(DB::table('jobs')->value('payload'), true);
-    expect($payload['kiln']['traceparent'])->toStartWith('00-'.$request['traceId'].'-');
+    expect($payload['falak']['traceparent'])->toStartWith('00-'.$request['traceId'].'-');
 
     Artisan::call('queue:work', ['--once' => true, '--stop-when-empty' => true]);
 
@@ -74,17 +74,17 @@ it('propagates trace context in the job payload and links the job trace to the d
         ->and($job)->not->toHaveKey('parentSpanId')
         ->and($job['links'][0]['traceId'])->toBe($request['traceId'])
         ->and($job['attrs'])->toMatchArray([
-            'kiln.event.type' => 'job',
+            'falak.event.type' => 'job',
             'messaging.destination.name' => 'default',
-            'kiln.job.class' => KilnTestJob::class,
-            'kiln.job.attempt' => 1,
-            'kiln.job.status' => 'processed',
+            'falak.job.class' => FalakTestJob::class,
+            'falak.job.attempt' => 1,
+            'falak.job.status' => 'processed',
         ]);
 
     // The job's query belongs to the job trace; queue:work itself is not traced.
     $jobQueries = array_filter($this->transport->spansOfType('query'), fn ($q) => $q['traceId'] === $job['traceId']);
     expect($jobQueries)->not->toBeEmpty()
-        ->and(array_filter($this->transport->spansOfType('command'), fn ($c) => $c['attrs']['kiln.command.name'] === 'queue:work'))->toBeEmpty();
+        ->and(array_filter($this->transport->spansOfType('command'), fn ($c) => $c['attrs']['falak.command.name'] === 'queue:work'))->toBeEmpty();
 });
 
 it('records failed jobs with an unhandled exception', function () {
@@ -92,12 +92,12 @@ it('records failed jobs with an unhandled exception', function () {
     Artisan::call('queue:work', ['--once' => true, '--stop-when-empty' => true]);
 
     $job = $this->transport->spansOfType('job')[0];
-    expect($job['attrs']['kiln.job.status'])->toBe('failed')
+    expect($job['attrs']['falak.job.status'])->toBe('failed')
         ->and($job['status']['code'])->toBe(2);
 
     $event = collect($job['events'])->firstWhere('name', 'exception');
     expect($event['attrs']['exception.message'])->toBe('job exploded')
-        ->and($event['attrs']['kiln.exception.handled'])->toBeFalse();
+        ->and($event['attrs']['falak.exception.handled'])->toBeFalse();
 });
 
 it('records released jobs', function () {
@@ -105,14 +105,14 @@ it('records released jobs', function () {
     Artisan::call('queue:work', ['--once' => true, '--stop-when-empty' => true]);
 
     $job = $this->transport->spansOfType('job')[0];
-    expect($job['attrs']['kiln.job.status'])->toBe('released')
-        ->and($job['attrs']['kiln.job.class'])->toBe(KilnRetryJob::class);
+    expect($job['attrs']['falak.job.status'])->toBe('released')
+        ->and($job['attrs']['falak.job.class'])->toBe(FalakRetryJob::class);
 });
 
 it('records sync jobs as child spans of the current trace', function () {
     config()->set('queue.default', 'sync');
     Route::get('/sync', function () {
-        KilnTestJob::dispatch();
+        FalakTestJob::dispatch();
 
         return 'ok';
     });
@@ -124,5 +124,5 @@ it('records sync jobs as child spans of the current trace', function () {
 
     expect($job['traceId'])->toBe($request['traceId'])
         ->and($job['parentSpanId'])->toBe($request['spanId'])
-        ->and($job['attrs']['kiln.job.status'])->toBe('processed');
+        ->and($job['attrs']['falak.job.status'])->toBe('processed');
 });

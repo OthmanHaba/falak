@@ -1,4 +1,4 @@
-import { toast } from '@/components/kiln';
+import { toast } from '@/components/falak';
 import { errorMessage, requestJson, type HttpMethod } from '@/lib/http';
 import { serviceActionsFor, type ServicePanelContext } from '@/lib/registry';
 

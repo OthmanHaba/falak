@@ -1,5 +1,5 @@
 import { domainPayload } from '@/components/domain-picker';
-import { Skeleton } from '@/components/kiln';
+import { Skeleton } from '@/components/falak';
 import { registeredComposeProject, type ComposeProjectProps, type ComposeProjectValue } from '@/lib/registry';
 import { Suspense } from 'react';
 

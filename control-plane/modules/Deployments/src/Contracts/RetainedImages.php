@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Deployments\Contracts;
+namespace Falak\Deployments\Contracts;
 
 /**
  * Images releases may still run: the image of a Docker site's release and every `image:` of a rendered compose

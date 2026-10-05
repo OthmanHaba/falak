@@ -2,7 +2,7 @@ package commands
 
 import "time"
 
-// EventStream is a Stream for producers outside the Dispatcher (e.g. kiln-builder) that need the same
+// EventStream is a Stream for producers outside the Dispatcher (e.g. falak-builder) that need the same
 // seq numbering, output coalescing/chunking and started/finished framing as agent commands.
 type EventStream struct{ *stream }
 

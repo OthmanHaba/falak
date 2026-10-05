@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\Providers;
+namespace Falak\SourceControl\Infrastructure\Providers;
 
 use DateTimeImmutable;
 use Exception;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Domain\Models\Connection;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Domain\Models\Connection;
 
 /**
  * Shared HTTP plumbing for API-backed providers.

@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Servers\Infrastructure;
+namespace Falak\Servers\Infrastructure;
 
-use Kiln\Servers\Domain\Models\PhpVersion;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Models\SshKey;
+use Falak\Servers\Domain\Models\PhpVersion;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Models\SshKey;
 
 /**
  * Payload builders for single-purpose agent commands owned by Servers.
@@ -45,7 +45,7 @@ final class CommandPayloads
             $entries[] = ['id' => $key->id, 'name' => $key->name, 'public_key' => $key->public_key];
         }
 
-        // Non-exclusive: only the "# kiln-managed" block is converged, so provider-installed keys survive.
+        // Non-exclusive: only the "# falak-managed" block is converged, so provider-installed keys survive.
         return ['user' => $unixUser, 'keys' => $entries, 'exclusive' => false];
     }
 }

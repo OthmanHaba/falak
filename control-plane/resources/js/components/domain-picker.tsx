@@ -1,4 +1,4 @@
-import { Input, Skeleton } from '@/components/kiln';
+import { Input, Skeleton } from '@/components/falak';
 import { registeredDomainPicker, type DomainPickerProps } from '@/lib/registry';
 import { Link2 } from 'lucide-react';
 import { Suspense } from 'react';

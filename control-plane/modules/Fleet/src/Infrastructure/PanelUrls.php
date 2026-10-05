@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Infrastructure;
+namespace Falak\Fleet\Infrastructure;
 
 use Illuminate\Contracts\Routing\UrlGenerator;
 

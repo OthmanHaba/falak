@@ -1,31 +1,31 @@
-# Kiln end-to-end simulation.
+# Falak end-to-end simulation.
 #
-#   make up        (= docker compose -p kiln-sim --env-file sim.env --profile victoriametrics up -d --build)
+#   make up        (= docker compose -p falak-sim --env-file sim.env --profile victoriametrics up -d --build)
 #
 #   host ──https :8443──► edge (Caddy, internal CA TLS + agent mTLS) ──► control-plane (panel, FrankenPHP worker mode)
 #                                                                      ├► agent-api (/agent/*, /install/*, /api/internal/*)
 #                                                                      └► reverb
-#   srv-app-1, srv-app-2, srv-db-1 (Ubuntu 24.04 + systemd) ── fleet network ──► edge as https://kiln.test
+#   srv-app-1, srv-app-2, srv-db-1 (Ubuntu 24.04 + systemd) ── fleet network ──► edge as https://falak.test
 #                                                          └─ observability network ──► gateway:4318 (OTLP)
 #   control-plane, agent-api, horizon, reverb ── backend network ──► postgres, valkey
 # control-plane and agent-api run the production runtime (deploy/control-plane: Caddyfile, entrypoint, php.ini):
 # agents and the builder long-poll agent-api, which has its own PHP thread pool, so they never starve the panel.
 #
 # Caches (make up creates them; they survive `make reset`, `make clean-cache` / `make reset-all` wipe them):
-#   sim-apt-cache (apt-cacher-ng)    HTTP apt proxy of the servers (Proxy-Auto-Detect)       volume kiln-sim-cache-apt
-#   sim-downloads (nginx)            runtime release mirror (KILN_*_MIRROR) + ondrej PPA      volume kiln-sim-cache-downloads
-#   sim-hub-mirror (registry proxy)  Docker Hub registry-mirror for srv-app-2 + BuildKit     volume kiln-sim-cache-hub
-#   sim-ghcr-mirror (registry proxy) ghcr.io for srv-app-2 (via the edge, servers' /etc/hosts) volume kiln-sim-cache-ghcr
+#   sim-apt-cache (apt-cacher-ng)    HTTP apt proxy of the servers (Proxy-Auto-Detect)       volume falak-sim-cache-apt
+#   sim-downloads (nginx)            runtime release mirror (FALAK_*_MIRROR) + ondrej PPA      volume falak-sim-cache-downloads
+#   sim-hub-mirror (registry proxy)  Docker Hub registry-mirror for srv-app-2 + BuildKit     volume falak-sim-cache-hub
+#   sim-ghcr-mirror (registry proxy) ghcr.io for srv-app-2 (via the edge, servers' /etc/hosts) volume falak-sim-cache-ghcr
 #   sim-prefetch (crane)             warms both registry caches with the E2E's images in the background
-#   builder-cache                    kiln-builder composer/npm/bun/BuildKit caches           volume kiln-sim-cache-builder
+#   builder-cache                    falak-builder composer/npm/bun/BuildKit caches           volume falak-sim-cache-builder
 # The product code paths are unchanged: apt, runtime downloads (sha256-verified), docker pulls and builds all
 # still run for real; only the bytes come from a local cache after the first run.
 #
-# Integration point: the Fleet module writes its CA certificate to $KILN_CA_PATH/ca.pem
-# (= /kiln/ca/ca.pem on the shared `kiln-ca` volume); the edge watches that file and uses it
+# Integration point: the Fleet module writes its CA certificate to $FALAK_CA_PATH/ca.pem
+# (= /falak/ca/ca.pem on the shared `falak-ca` volume); the edge watches that file and uses it
 # to verify agent client certificates.
 
-name: kiln-sim
+name: falak-sim
 
 include:
   - path: [../observability/compose.yml, ./observability.override.yml]
@@ -36,23 +36,23 @@ x-logging: &logging
   options: { max-size: "10m", max-file: "3" }
 
 x-control-plane: &control-plane
-  image: kiln-sim/control-plane:dev
+  image: falak-sim/control-plane:dev
   logging: *logging
   restart: unless-stopped
   environment: &cp-env
-    APP_NAME: Kiln
+    APP_NAME: Falak
     APP_ENV: local
     APP_DEBUG: "true"
     APP_KEY: ${APP_KEY}
-    APP_URL: https://kiln.test
+    APP_URL: https://falak.test
     LOG_CHANNEL: stderr
     LOG_LEVEL: info
     DB_CONNECTION: pgsql
     DB_HOST: postgres
     DB_PORT: "5432"
-    DB_DATABASE: kiln
-    DB_USERNAME: kiln
-    DB_PASSWORD: kiln
+    DB_DATABASE: falak
+    DB_USERNAME: falak
+    DB_PASSWORD: falak
     REDIS_CLIENT: phpredis
     REDIS_HOST: valkey
     REDIS_PORT: "6379"
@@ -70,43 +70,43 @@ x-control-plane: &control-plane
     REVERB_SCHEME: http
     REVERB_SERVER_PORT: "8080"
     # Fleet
-    KILN_LOCAL_BUILDER_TOKEN: ${KILN_LOCAL_BUILDER_TOKEN}
+    FALAK_LOCAL_BUILDER_TOKEN: ${FALAK_LOCAL_BUILDER_TOKEN}
     # The sim builder reaches a Docker daemon (host socket), so it also takes docker / compose builds, pushed to
     # the sim registry (plain HTTP on the fleet network; servers trust it as an insecure registry).
-    KILN_LOCAL_BUILDER_MODES: native,docker
-    KILN_REGISTRY_URL: sim-registry:5000
-    KILN_REGISTRY_NAMESPACE: kiln
-    # Hosted test domains <slug>.sites.kiln.test, with Caddy's internal CA (no public ACME in the sim).
-    KILN_TEST_DOMAIN: sites.kiln.test
-    KILN_TEST_DOMAIN_TLS: internal
-    KILN_CA_PATH: /kiln/ca
-    KILN_AGENT_TRUSTED_PROXIES: 10.77.10.0/24   # backend network: only the edge sets the fingerprint header
+    FALAK_LOCAL_BUILDER_MODES: native,docker
+    FALAK_REGISTRY_URL: sim-registry:5000
+    FALAK_REGISTRY_NAMESPACE: falak
+    # Hosted test domains <slug>.sites.falak.test, with Caddy's internal CA (no public ACME in the sim).
+    FALAK_TEST_DOMAIN: sites.falak.test
+    FALAK_TEST_DOMAIN_TLS: internal
+    FALAK_CA_PATH: /falak/ca
+    FALAK_AGENT_TRUSTED_PROXIES: 10.77.10.0/24   # backend network: only the edge sets the fingerprint header
     TRUSTED_PROXIES: 10.77.10.0/24              # trust the edge's X-Forwarded-Proto/Host (https URLs, client IPs)
-    KILN_PANEL_URL: https://kiln.test
-    KILN_AGENT_API_URL: https://agents.kiln.test/agent/v1   # mTLS API; server cert from the Kiln CA
-    KILN_EDGE_AGENT_API_HOST: agents.kiln.test              # entrypoint issues that cert into /kiln/ca
-    KILN_OTLP_ENDPOINT: http://gateway:4318
-    KILN_AGENT_BINARIES_PATH: /opt/kiln/src/agent/bin
-    KILN_AGENT_SCHEMAS_PATH: /opt/kiln/src/contracts/agent-protocol
-    KILN_TEMPLATES_PATH: /opt/kiln/src/templates
-    KILN_AGENT_WAKE_DRIVER: redis
+    FALAK_PANEL_URL: https://falak.test
+    FALAK_AGENT_API_URL: https://agents.falak.test/agent/v1   # mTLS API; server cert from the Falak CA
+    FALAK_EDGE_AGENT_API_HOST: agents.falak.test              # entrypoint issues that cert into /falak/ca
+    FALAK_OTLP_ENDPOINT: http://gateway:4318
+    FALAK_AGENT_BINARIES_PATH: /opt/falak/src/agent/bin
+    FALAK_AGENT_SCHEMAS_PATH: /opt/falak/src/contracts/agent-protocol
+    FALAK_TEMPLATES_PATH: /opt/falak/src/templates
+    FALAK_AGENT_WAKE_DRIVER: redis
     # The sim's servers are custom servers on one fleet network: Redis instances may use their private IPv4s (off in
     # production, where custom servers' private addresses can be NATed or on different networks).
-    KILN_REDIS_CUSTOM_PRIVATE_NETWORK: "true"
+    FALAK_REDIS_CUSTOM_PRIVATE_NETWORK: "true"
     # Runtime release binaries through the sim's caching mirror (product feature, see docs/INSTALL.md).
-    KILN_FRANKENPHP_MIRROR: https://downloads.kiln.test/github/php/frankenphp/releases/download
-    KILN_NODE_MIRROR: https://downloads.kiln.test/nodejs
-    KILN_BUN_MIRROR: https://downloads.kiln.test/github/oven-sh/bun/releases/download
-    KILN_DENO_MIRROR: https://downloads.kiln.test/github/denoland/deno/releases/download
+    FALAK_FRANKENPHP_MIRROR: https://downloads.falak.test/github/php/frankenphp/releases/download
+    FALAK_NODE_MIRROR: https://downloads.falak.test/nodejs
+    FALAK_BUN_MIRROR: https://downloads.falak.test/github/oven-sh/bun/releases/download
+    FALAK_DENO_MIRROR: https://downloads.falak.test/github/denoland/deno/releases/download
     # Telemetry module -> observability stack
-    KILN_GRAFANA_URL: http://grafana:3000
-    KILN_LOKI_URL: http://loki:3100
-    KILN_TEMPO_URL: http://tempo:3200
-    KILN_METRICS_QUERY_URL: http://gateway:9090/prometheus
+    FALAK_GRAFANA_URL: http://grafana:3000
+    FALAK_LOKI_URL: http://loki:3100
+    FALAK_TEMPO_URL: http://tempo:3200
+    FALAK_METRICS_QUERY_URL: http://gateway:9090/prometheus
   volumes:
-    - kiln-ca:/kiln/ca
+    - falak-ca:/falak/ca
     - cp-storage:/app/storage
-    - ..:/opt/kiln/src:ro
+    - ..:/opt/falak/src:ro
   # fleet: the control plane (web + Horizon workers running health checks) reaches servers directly,
   # as it would over their public addresses in production.
   networks: [backend, observability, fleet]
@@ -115,7 +115,7 @@ x-control-plane: &control-plane
       limits: { memory: 512m }
 
 x-server: &server
-  image: kiln-sim/server:dev
+  image: falak-sim/server:dev
   build:
     context: .
     dockerfile: server.Dockerfile
@@ -126,13 +126,13 @@ x-server: &server
   environment: &server-env
     SIM_AGENT_ARCH: ${SIM_AGENT_ARCH:-arm64}
     SIM_SSH_PUBKEY: ${SIM_SSH_PUBKEY:-}
-    SIM_PANEL_URL: https://kiln.test
+    SIM_PANEL_URL: https://falak.test
     SIM_OTLP_ENDPOINT: http://gateway:4318
     SIM_SERVER_ROLE: app
     SIM_APT_PROXY: http://sim-apt-cache:3142   # empty: apt goes direct
   volumes:
-    - ..:/opt/kiln/src:ro                   # agent binary: /opt/kiln/src/agent/bin/kiln-agent-linux-$SIM_AGENT_ARCH
-    - edge-pki:/etc/kiln/edge-pki:ro        # edge TLS root CA (trusted at boot)
+    - ..:/opt/falak/src:ro                   # agent binary: /opt/falak/src/agent/bin/falak-agent-linux-$SIM_AGENT_ARCH
+    - edge-pki:/etc/falak/edge-pki:ro        # edge TLS root CA (trusted at boot)
   networks: [fleet, observability]
   # Only on the servers: the ondrej/php PPA and GHCR resolve to the edge, which fronts pull-through caches of the
   # real upstreams (see the edge Caddyfile). Everything else (the caches themselves, BuildKit) resolves normally.
@@ -162,14 +162,14 @@ services:
     logging: *logging
     restart: unless-stopped
     environment:
-      POSTGRES_DB: kiln
-      POSTGRES_USER: kiln
-      POSTGRES_PASSWORD: kiln
+      POSTGRES_DB: falak
+      POSTGRES_USER: falak
+      POSTGRES_PASSWORD: falak
     volumes:
       - pg-data:/var/lib/postgresql/data
     networks: [backend]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kiln -d kiln"]
+      test: ["CMD-SHELL", "pg_isready -U falak -d falak"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -208,7 +208,7 @@ services:
     command: ["web"]
     environment:
       <<: *cp-env
-      KILN_MIGRATE: "1"
+      FALAK_MIGRATE: "1"
     depends_on:
       postgres: { condition: service_healthy }
       valkey: { condition: service_healthy }
@@ -261,29 +261,29 @@ services:
       start_interval: 1s
 
   edge:
-    image: kiln-sim/edge:dev
+    image: falak-sim/edge:dev
     build: ./edge
     logging: *logging
     restart: unless-stopped
     init: true
     environment:
-      KILN_EDGE_CA_FILE: /kiln/ca/ca.pem
-      KILN_AGENT_API_HOST: agents.kiln.test
-      KILN_EDGE_PKI_OUT: /kiln/edge-pki
+      FALAK_EDGE_CA_FILE: /falak/ca/ca.pem
+      FALAK_AGENT_API_HOST: agents.falak.test
+      FALAK_EDGE_PKI_OUT: /falak/edge-pki
     volumes:
-      - kiln-ca:/kiln/ca:ro
-      - edge-pki:/kiln/edge-pki
+      - falak-ca:/falak/ca:ro
+      - edge-pki:/falak/edge-pki
       - edge-data:/data
     ports:
       - "127.0.0.1:${SIM_EDGE_HTTPS_PORT:-8443}:443"
     networks:
       backend: {}
       fleet:
-        aliases: [kiln.test, agents.kiln.test, downloads.kiln.test]
+        aliases: [falak.test, agents.falak.test, downloads.falak.test]
         ipv4_address: ${SIM_EDGE_FLEET_IP:-10.77.20.250}   # static: the servers' extra_hosts point here
     healthcheck:
       # Caddy is serving TLS and has published its root CA for the servers.
-      test: ["CMD-SHELL", "test -s /kiln/edge-pki/root.crt && curl -fsS -o /dev/null http://localhost:2019/config/"]
+      test: ["CMD-SHELL", "test -s /falak/edge-pki/root.crt && curl -fsS -o /dev/null http://localhost:2019/config/"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -307,8 +307,8 @@ services:
       SIM_SERVER_ROLE: app
     # Docker Compose sites run here (nested dockerd): /var/lib/docker must not be on the container's overlayfs.
     volumes:
-      - ..:/opt/kiln/src:ro
-      - edge-pki:/etc/kiln/edge-pki:ro
+      - ..:/opt/falak/src:ro
+      - edge-pki:/etc/falak/edge-pki:ro
       - srv-app-2-docker:/var/lib/docker
       - srv-app-2-containerd:/var/lib/containerd
     deploy:
@@ -321,23 +321,23 @@ services:
       <<: *server-env
       SIM_SERVER_ROLE: db
 
-  # The control-plane host's shared builder (KILN_LOCAL_BUILDER_TOKEN), polling the internal builder API.
+  # The control-plane host's shared builder (FALAK_LOCAL_BUILDER_TOKEN), polling the internal builder API.
   # Native builds run in the container; docker/compose builds use BuildKit through the host Docker socket
   # (a buildx docker-container builder attached to the fleet network, pushing to sim-registry).
   builder:
     build: ./builder
     environment:
-      KILN_URL: https://kiln.test
-      KILN_BUILDER_TOKEN: ${KILN_LOCAL_BUILDER_TOKEN}
-      KILN_BUILDER_NAME: control-plane
-      SIM_BUILDKIT_NETWORK: kiln-sim_fleet
+      FALAK_URL: https://falak.test
+      FALAK_BUILDER_TOKEN: ${FALAK_LOCAL_BUILDER_TOKEN}
+      FALAK_BUILDER_NAME: control-plane
+      SIM_BUILDKIT_NETWORK: falak-sim_fleet
       SIM_REGISTRY: sim-registry:5000
       SIM_HUB_MIRROR: sim-hub-mirror:5000
       # composer / npm / bun / BuildKit caches on the persistent builder-cache volume (default is under /tmp).
-      KILN_BUILDER_CACHE_DIR: /root/.cache/kiln-builder
+      FALAK_BUILDER_CACHE_DIR: /root/.cache/falak-builder
     volumes:
-      - ../agent/bin/kiln-builder-linux-${SIM_AGENT_ARCH:-arm64}:/opt/kiln/kiln-builder:ro
-      - edge-pki:/kiln/edge-pki:ro
+      - ../agent/bin/falak-builder-linux-${SIM_AGENT_ARCH:-arm64}:/opt/falak/falak-builder:ro
+      - edge-pki:/falak/edge-pki:ro
       - builder-cache:/root/.cache
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
@@ -368,7 +368,7 @@ services:
 
   # ---- persistent caches (see the header) -------------------------------------------------------------
   sim-apt-cache:
-    image: kiln-sim/apt-cache:dev
+    image: falak-sim/apt-cache:dev
     build:
       context: ./caches
       dockerfile: apt-cache.Dockerfile
@@ -475,15 +475,15 @@ services:
 
 volumes:
   # Caches: external, so `docker compose down -v` (make reset) keeps them. Created by `make up`.
-  cache-apt: { name: kiln-sim-cache-apt, external: true }
-  cache-downloads: { name: kiln-sim-cache-downloads, external: true }
-  cache-hub: { name: kiln-sim-cache-hub, external: true }
-  cache-ghcr: { name: kiln-sim-cache-ghcr, external: true }
-  builder-cache: { name: kiln-sim-cache-builder, external: true }
+  cache-apt: { name: falak-sim-cache-apt, external: true }
+  cache-downloads: { name: falak-sim-cache-downloads, external: true }
+  cache-hub: { name: falak-sim-cache-hub, external: true }
+  cache-ghcr: { name: falak-sim-cache-ghcr, external: true }
+  builder-cache: { name: falak-sim-cache-builder, external: true }
   pg-data:
   valkey-data:
   cp-storage:
-  kiln-ca:
+  falak-ca:
   edge-pki:
   edge-data:
   registry-data:

@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Network\Application\Actions;
+namespace Falak\Network\Application\Actions;
 
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Network\Domain\Models\PrivateNetwork;
-use Kiln\Network\Domain\Support\Ipv4Cidr;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Network\Domain\Models\PrivateNetwork;
+use Falak\Network\Domain\Support\Ipv4Cidr;
 
 final class CreatePrivateNetwork
 {

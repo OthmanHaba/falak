@@ -1,5 +1,0 @@
-#!/bin/sh
-# The function's virtualenv (it also sees the image's uvicorn) when kiln-fn-install made one.
-py=python3
-[ -x /app/.venv/bin/python ] && py=/app/.venv/bin/python
-exec "$py" -m kiln_fn.serve "$@"

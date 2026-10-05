@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Identity\Http\Controllers\Organizations;
+namespace Falak\Identity\Http\Controllers\Organizations;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Application\Actions\CreateOrganization;
-use Kiln\Identity\Application\Actions\DeleteOrganization;
-use Kiln\Identity\Application\Actions\SwitchOrganization;
-use Kiln\Identity\Application\Actions\TransferOwnership;
-use Kiln\Identity\Application\Actions\UpdateOrganization;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Kernel\Http\Controller;
+use Falak\Identity\Application\Actions\CreateOrganization;
+use Falak\Identity\Application\Actions\DeleteOrganization;
+use Falak\Identity\Application\Actions\SwitchOrganization;
+use Falak\Identity\Application\Actions\TransferOwnership;
+use Falak\Identity\Application\Actions\UpdateOrganization;
+use Falak\Identity\Domain\Models\User;
+use Falak\Kernel\Http\Controller;
 
 final class OrganizationController extends Controller
 {

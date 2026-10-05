@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Templates\Infrastructure;
+namespace Falak\Templates\Infrastructure;
 
-use Kiln\Sites\Contracts\ComposeInspector;
-use Kiln\Sites\Contracts\Data\ComposeServiceSummary;
-use Kiln\Sites\Contracts\Data\ComposeSummary;
-use Kiln\Templates\Application\Compose\ComposeAnalyzer;
-use Kiln\Templates\Application\Compose\ComposeFacts;
+use Falak\Sites\Contracts\ComposeInspector;
+use Falak\Sites\Contracts\Data\ComposeServiceSummary;
+use Falak\Sites\Contracts\Data\ComposeSummary;
+use Falak\Templates\Application\Compose\ComposeAnalyzer;
+use Falak\Templates\Application\Compose\ComposeFacts;
 
 /**
  * {@see ComposeAnalyzer} backed by the compose runtime's `Sites\Contracts\ComposeInspector::parse()`

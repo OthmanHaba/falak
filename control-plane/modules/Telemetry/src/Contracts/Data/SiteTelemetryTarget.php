@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts\Data;
+namespace Falak\Telemetry\Contracts\Data;
 
 /**
  * One site's entry in telemetry.configure (`sites[]` plus its log files).

@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Terminal\Application\Jobs;
+namespace Falak\Terminal\Application\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Kiln\Terminal\Application\Actions\CloseSession;
-use Kiln\Terminal\Domain\Enums\SessionStatus;
-use Kiln\Terminal\Domain\Models\TerminalSession;
+use Falak\Terminal\Application\Actions\CloseSession;
+use Falak\Terminal\Domain\Enums\SessionStatus;
+use Falak\Terminal\Domain\Models\TerminalSession;
 
 /**
  * Control-plane fallback for session limits (the agent enforces them too, but may be offline):

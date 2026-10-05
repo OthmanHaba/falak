@@ -1,12 +1,12 @@
-import { Button } from '@/components/kiln/button';
-import { Callout } from '@/components/kiln/callout';
-import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Segmented } from '@/components/kiln/segmented';
-import { StatusBadge } from '@/components/kiln/status';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { Callout } from '@/components/falak/callout';
+import { ConfirmDestructive } from '@/components/falak/confirm-destructive';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Segmented } from '@/components/falak/segmented';
+import { StatusBadge } from '@/components/falak/status';
+import { Tag } from '@/components/falak/tag';
 import { errorMessage, requestJson } from '@/lib/http';
 import { useForm } from '@inertiajs/react';
 import { ExternalLink, FolderGit2, Plus, Settings2, ShieldCheck, Trash2, Unplug } from 'lucide-react';
@@ -84,7 +84,7 @@ function CreateApp({ state, returnTo }: { state: GitHubAppState; returnTo: strin
             <div className="grid content-start gap-4">
                 <div className="grid gap-1.5">
                     <p className="text-fg text-sm">
-                        Kiln creates a private GitHub App for this organization in one click. You choose the repositories on GitHub and can change
+                        Falak creates a private GitHub App for this organization in one click. You choose the repositories on GitHub and can change
                         that any time — no personal access tokens, no deploy keys, no per-repository webhooks.
                     </p>
                     <p className="text-fg-faint text-xs">Builds clone with short-lived installation tokens (valid for one hour, never stored).</p>
@@ -123,7 +123,7 @@ function CreateApp({ state, returnTo }: { state: GitHubAppState; returnTo: strin
                 </div>
             </div>
             <div className="border-border grid content-start gap-3 self-start rounded-md border p-3.5">
-                <span className="text-fg text-xs font-medium">Kiln asks for</span>
+                <span className="text-fg text-xs font-medium">Falak asks for</span>
                 <Permissions state={state} />
             </div>
         </form>
@@ -171,7 +171,7 @@ export function GitHubAppCard({
                     </span>
                     <span className="text-fg-muted truncate text-xs">
                         {!app ? (
-                            'Install a GitHub App and grant it the repositories Kiln deploys.'
+                            'Install a GitHub App and grant it the repositories Falak deploys.'
                         ) : (
                             <>
                                 {app.owner ? `Owned by ${app.owner}` : 'GitHub App'} ·{' '}
@@ -223,7 +223,7 @@ export function GitHubAppCard({
                 <div className="grid gap-2 p-5 text-sm">
                     <p className="text-fg">Not installed yet.</p>
                     <p className="text-fg-muted text-xs">
-                        Install the app on your account or organization and choose which repositories Kiln may deploy.
+                        Install the app on your account or organization and choose which repositories Falak may deploy.
                     </p>
                     {canManage && app.installable && (
                         <Button asChild variant="primary" className="w-fit">
@@ -305,7 +305,7 @@ export function GitHubAppCard({
                     open={deleting}
                     onOpenChange={setDeleting}
                     title={`Delete ${app.name}`}
-                    description="Kiln uninstalls the app from every account, disconnects its installations and forgets its credentials. Sites using them can't deploy until they point at another connection. Delete the app registration on GitHub afterwards (App settings → Advanced)."
+                    description="Falak uninstalls the app from every account, disconnects its installations and forgets its credentials. Sites using them can't deploy until they point at another connection. Delete the app registration on GitHub afterwards (App settings → Advanced)."
                     confirmText={app.name}
                     confirmLabel="Delete app"
                     onConfirm={deleteApp}

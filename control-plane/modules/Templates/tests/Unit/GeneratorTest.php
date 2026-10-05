@@ -1,6 +1,6 @@
 <?php
 
-use Kiln\Templates\Domain\Generator;
+use Falak\Templates\Domain\Generator;
 
 it('generates values of the requested shape from the CSPRNG', function () {
     expect(Generator::parse('secret(32)')->generate())->toMatch('/^[A-Za-z0-9]{32}$/')

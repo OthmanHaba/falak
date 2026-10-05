@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\SourceControl\Domain\Models;
+namespace Falak\SourceControl\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * A GitHub App registered for a Kiln organization through the manifest flow. Every credential GitHub returned
+ * A GitHub App registered for a Falak organization through the manifest flow. Every credential GitHub returned
  * is stored encrypted; the private key and secrets never leave SourceControl.
  *
  * @property string $id

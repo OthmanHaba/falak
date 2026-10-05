@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Insights\Http\Controllers;
+namespace Falak\Insights\Http\Controllers;
 
 use Carbon\CarbonImmutable;
 use Closure;
@@ -8,15 +8,15 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Insights\Application\Actions\UpdateHeartbeatMonitor;
-use Kiln\Insights\Contracts\SiteNameResolver;
-use Kiln\Insights\Domain\Models\HeartbeatMonitor;
-use Kiln\Insights\Domain\Models\HeartbeatRun;
-use Kiln\Insights\Domain\Support\CronSchedule;
-use Kiln\Kernel\Http\Controller;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Insights\Application\Actions\UpdateHeartbeatMonitor;
+use Falak\Insights\Contracts\SiteNameResolver;
+use Falak\Insights\Domain\Models\HeartbeatMonitor;
+use Falak\Insights\Domain\Models\HeartbeatRun;
+use Falak\Insights\Domain\Support\CronSchedule;
+use Falak\Kernel\Http\Controller;
 
 final class HeartbeatController extends Controller
 {

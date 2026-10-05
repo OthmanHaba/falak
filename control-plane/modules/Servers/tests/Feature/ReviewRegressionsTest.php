@@ -1,22 +1,22 @@
 <?php
 
 use Illuminate\Support\Str;
-use Kiln\Fleet\Application\Jobs\SweepFleet;
-use Kiln\Fleet\Contracts\Enrollment;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Providers\Contracts\ProviderGateway;
-use Kiln\Servers\Application\Actions\DeleteServer;
-use Kiln\Servers\Application\Jobs\CreateProviderMachine;
-use Kiln\Servers\Application\ServerStatusUpdater;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Domain\Enums\PhpVersionStatus;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Tests\Support\FakeProviderGateway;
+use Falak\Fleet\Application\Jobs\SweepFleet;
+use Falak\Fleet\Contracts\Enrollment;
+use Falak\Identity\Contracts\Role;
+use Falak\Providers\Contracts\ProviderGateway;
+use Falak\Servers\Application\Actions\DeleteServer;
+use Falak\Servers\Application\Jobs\CreateProviderMachine;
+use Falak\Servers\Application\ServerStatusUpdater;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Domain\Enums\PhpVersionStatus;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Tests\Support\FakeProviderGateway;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 beforeEach(function () {
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test']);
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test']);
     $this->providers = new FakeProviderGateway;
     app()->instance(ProviderGateway::class, $this->providers);
     [$this->user, $this->organization] = actingAsMember(Role::Admin);

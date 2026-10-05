@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/proc.restart.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/proc.restart.schema.json",
   "title": "proc.restart — gracefully restart programs (e.g. after deploy)",
   "type": "object",
   "additionalProperties": false,
@@ -16,7 +16,7 @@
     "site": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-      "description": "Site slug (directory name under /srv/kiln/sites)"
+      "description": "Site slug (directory name under /srv/falak/sites)"
     }
   },
   "$defs": {

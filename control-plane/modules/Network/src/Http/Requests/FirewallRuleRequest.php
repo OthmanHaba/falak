@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Network\Http\Requests;
+namespace Falak\Network\Http\Requests;
 
 use Closure;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
-use Kiln\Network\Domain\Enums\RuleAction;
-use Kiln\Network\Domain\Enums\RuleProtocol;
-use Kiln\Network\Domain\Support\AddressRules;
+use Falak\Network\Domain\Enums\RuleAction;
+use Falak\Network\Domain\Enums\RuleProtocol;
+use Falak\Network\Domain\Support\AddressRules;
 
 final class FirewallRuleRequest extends FormRequest
 {

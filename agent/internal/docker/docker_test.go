@@ -16,10 +16,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 // fakeEngine is an in-memory subset of the Docker Engine API.
@@ -499,22 +499,22 @@ func TestPrune(t *testing.T) {
 func TestCompose(t *testing.T) {
 	s, _, fr, _, root := newSvc(t)
 	fr.On("docker compose -p broken", runner.Result{ExitCode: 1, Stderr: []byte("no such service")})
-	fin, _ := exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "stack", Directory: "/srv/kiln/compose/stack",
+	fin, _ := exec1(t, s, "docker.compose.up", ComposeUpPayload{Project: "stack", Directory: "/srv/falak/compose/stack",
 		Files: []ComposeFile{{Name: "compose.yaml", Content: "services: {}\n"}, {Name: "compose.prod.yaml", Content: "x: 1\n"}},
 		Env:   map[string]string{"TAG": "v2"}, Pull: "always"})
 	if fin.Error != "" || fin.Result.(ComposeUpResult).ExitCode != 0 {
 		t.Fatalf("%+v", fin)
 	}
-	b, err := os.ReadFile(filepath.Join(root, "srv/kiln/compose/stack/compose.yaml"))
+	b, err := os.ReadFile(filepath.Join(root, "srv/falak/compose/stack/compose.yaml"))
 	if err != nil || string(b) != "services: {}\n" {
 		t.Fatalf("file %q %v", b, err)
 	}
 	c := fr.Calls()[0]
 	if c.Line != "docker compose -p stack -f compose.yaml -f compose.prod.yaml up -d --pull always --remove-orphans" ||
-		c.Dir != filepath.Join(root, "srv/kiln/compose/stack") || c.Env[0] != "TAG=v2" {
+		c.Dir != filepath.Join(root, "srv/falak/compose/stack") || c.Env[0] != "TAG=v2" {
 		t.Fatalf("%+v", c)
 	}
-	fin, _ = exec1(t, s, "docker.compose.down", ComposeDownPayload{Project: "stack", Directory: "/srv/kiln/compose/stack", Volumes: true})
+	fin, _ = exec1(t, s, "docker.compose.down", ComposeDownPayload{Project: "stack", Directory: "/srv/falak/compose/stack", Volumes: true})
 	if fin.Error != "" || fr.Calls()[1].Line != "docker compose -p stack down --volumes" {
 		t.Fatalf("%+v %v", fin, fr.Lines())
 	}
@@ -566,7 +566,7 @@ func TestContainerSwap(t *testing.T) {
 	if !r.Changed || r.ActiveColor != "blue" || r.Upstream != "127.0.0.1:"+strconv.Itoa(blue) || r.PreviousColor != "" {
 		t.Fatalf("%+v", r)
 	}
-	c := e.byName("kiln-shop-blue")
+	c := e.byName("falak-shop-blue")
 	if c == nil || !c.running || c.body.HostConfig.PortBindings["8080/tcp"][0].HostPort != strconv.Itoa(blue) || c.body.Labels[LabelSite] != "shop" {
 		t.Fatalf("blue container %+v", c)
 	}
@@ -584,7 +584,7 @@ func TestContainerSwap(t *testing.T) {
 	if fin.Error != "" || !r.Changed || r.ActiveColor != "green" || r.PreviousColor != "blue" {
 		t.Fatalf("%+v %s", r, fin.Error)
 	}
-	if e.byName("kiln-shop-blue") != nil || !e.byName("kiln-shop-green").running {
+	if e.byName("falak-shop-blue") != nil || !e.byName("falak-shop-green").running {
 		t.Fatal("blue not retired")
 	}
 	if last := up.calls[len(up.calls)-1]; last[0] != "shop" || last[1] != "127.0.0.1:"+strconv.Itoa(green) {
@@ -606,10 +606,10 @@ func TestContainerSwapHealthFailureKeepsOld(t *testing.T) {
 	if !strings.Contains(fin.Error, "health check") {
 		t.Fatalf("%+v", fin)
 	}
-	if e.byName("kiln-shop-green") != nil {
+	if e.byName("falak-shop-green") != nil {
 		t.Fatal("unhealthy green container left behind")
 	}
-	if b := e.byName("kiln-shop-blue"); b == nil || !b.running {
+	if b := e.byName("falak-shop-blue"); b == nil || !b.running {
 		t.Fatal("old container disturbed")
 	}
 	if len(up.calls) != nUp {
@@ -620,7 +620,7 @@ func TestContainerSwapHealthFailureKeepsOld(t *testing.T) {
 	bad = 200
 	up.err = errors.New("caddy down")
 	fin, _ = exec1(t, s, "deploy.container.swap", p)
-	if !strings.Contains(fin.Error, "caddy down") || e.byName("kiln-shop-green") != nil || !e.byName("kiln-shop-blue").running {
+	if !strings.Contains(fin.Error, "caddy down") || e.byName("falak-shop-green") != nil || !e.byName("falak-shop-blue").running {
 		t.Fatalf("%+v", fin)
 	}
 }
@@ -630,7 +630,7 @@ func TestContainerSwapHealthFailureKeepsOld(t *testing.T) {
 func TestRunJoinsExistingNetworksWithAliases(t *testing.T) {
 	s, e, _, _, _ := newSvc(t)
 	e.networks["shop_default"] = nil
-	p := RunPayload{Name: "kiln-shop-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}}}
+	p := RunPayload{Name: "falak-shop-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}}}
 	fin, _ := exec1(t, s, "docker.run", p)
 	if fin.Error != "" {
 		t.Fatalf("%+v", fin)
@@ -648,8 +648,8 @@ func TestRunJoinsExistingNetworksWithAliases(t *testing.T) {
 	old := networkWait
 	networkWait = 0
 	t.Cleanup(func() { networkWait = old })
-	fin, _ = exec1(t, s, "docker.run", RunPayload{Name: "kiln-other-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "missing_default"}}})
-	if !strings.Contains(fin.Error, "network missing_default does not exist") || e.byName("kiln-other-api-blue") != nil {
+	fin, _ = exec1(t, s, "docker.run", RunPayload{Name: "falak-other-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "missing_default"}}})
+	if !strings.Contains(fin.Error, "network missing_default does not exist") || e.byName("falak-other-api-blue") != nil {
 		t.Fatalf("%+v", fin)
 	}
 }
@@ -658,7 +658,7 @@ func TestRunJoinsExistingNetworksWithAliases(t *testing.T) {
 func TestRunKeepsCurrentContainerWhenNetworkIsMissing(t *testing.T) {
 	s, e, _, _, _ := newSvc(t)
 	e.networks["shop_default"] = nil
-	p := RunPayload{Name: "kiln-shop-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}}}
+	p := RunPayload{Name: "falak-shop-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}}}
 	fin, _ := exec1(t, s, "docker.run", p)
 	if fin.Error != "" {
 		t.Fatalf("%+v", fin)
@@ -674,14 +674,14 @@ func TestRunKeepsCurrentContainerWhenNetworkIsMissing(t *testing.T) {
 	if !strings.Contains(fin.Error, "network shop_default does not exist") {
 		t.Fatalf("%+v", fin)
 	}
-	if c := e.byName("kiln-shop-api-blue"); c == nil || c.id != id || !c.running {
+	if c := e.byName("falak-shop-api-blue"); c == nil || c.id != id || !c.running {
 		t.Fatalf("current container stopped or replaced: %+v", c)
 	}
 }
 
-// compose down first detaches Kiln's containers (split-out services) from the project's networks, which Docker
+// compose down first detaches Falak's containers (split-out services) from the project's networks, which Docker
 // refuses to remove while they have endpoints; the project's own containers and other networks are left alone.
-func TestComposeDownDetachesKilnContainersFromStackNetworks(t *testing.T) {
+func TestComposeDownDetachesFalakContainersFromStackNetworks(t *testing.T) {
 	s, e, fr, _, _ := newSvc(t)
 	e.networks["shop_default"] = nil
 	e.networks["other_default"] = nil
@@ -689,27 +689,27 @@ func TestComposeDownDetachesKilnContainersFromStackNetworks(t *testing.T) {
 		"shop_default":  {LabelComposeProject: "shop"},
 		"other_default": {LabelComposeProject: "other"},
 	}
-	fin, _ := exec1(t, s, "docker.run", RunPayload{Name: "kiln-shop-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}, {Name: "other_default"}}})
+	fin, _ := exec1(t, s, "docker.run", RunPayload{Name: "falak-shop-api-blue", Image: "api:1", Networks: []NetworkJoin{{Name: "shop_default", Aliases: []string{"api"}}, {Name: "other_default"}}})
 	if fin.Error != "" {
 		t.Fatalf("%+v", fin)
 	}
-	kiln := fin.Result.(RunResult).ContainerID
+	falak := fin.Result.(RunResult).ContainerID
 	e.mu.Lock()
 	e.containers["redis1"] = &fcont{id: "redis1", name: "shop-redis-1", running: true, body: CreateBody{Labels: map[string]string{LabelComposeProject: "shop"}}}
 	e.networks["shop_default"] = append(e.networks["shop_default"], "redis1:redis")
 	e.mu.Unlock()
 
-	fin, col := exec1(t, s, "docker.compose.down", ComposeDownPayload{Project: "shop", Directory: "/srv/kiln/compose/shop"})
+	fin, col := exec1(t, s, "docker.compose.down", ComposeDownPayload{Project: "shop", Directory: "/srv/falak/compose/shop"})
 	if fin.Error != "" || fr.Calls()[0].Line != "docker compose -p shop down" {
 		t.Fatalf("%+v %v", fin, fr.Lines())
 	}
 	if got := e.networks["shop_default"]; len(got) != 1 || got[0] != "redis1:redis" {
 		t.Fatalf("shop_default joins %v", got)
 	}
-	if got := e.networks["other_default"]; len(got) != 1 || !strings.HasPrefix(got[0], kiln+":") {
+	if got := e.networks["other_default"]; len(got) != 1 || !strings.HasPrefix(got[0], falak+":") {
 		t.Fatalf("other_default joins %v", got)
 	}
-	if !strings.Contains(col.Output(""), "detached kiln-shop-api-blue from network shop_default") {
+	if !strings.Contains(col.Output(""), "detached falak-shop-api-blue from network shop_default") {
 		t.Fatalf("output %q", col.Output(""))
 	}
 }
@@ -727,7 +727,7 @@ func TestContainerSwapJoinsStackNetworks(t *testing.T) {
 	if fin.Error != "" {
 		t.Fatal(fin.Error, col.Output(""))
 	}
-	c := e.byName("kiln-shop-blue")
+	c := e.byName("falak-shop-blue")
 	if c == nil || !c.running {
 		t.Fatalf("blue container missing or stopped")
 	}

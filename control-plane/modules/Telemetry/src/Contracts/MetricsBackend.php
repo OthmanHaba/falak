@@ -1,17 +1,17 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts;
+namespace Falak\Telemetry\Contracts;
 
 use DateTimeInterface;
-use Kiln\Telemetry\Contracts\Data\MetricSeries;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Falak\Telemetry\Contracts\Data\MetricSeries;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 
 /**
  * PromQL over HTTP against the configured metrics backend (VictoriaMetrics or Mimir).
  *
  * Callers are responsible for scoping queries to resources they authorized (e.g. a
- * `kiln_server_id="…"` matcher built with {@see PromQl::label()}).
+ * `falak_server_id="…"` matcher built with {@see PromQl::label()}).
  */
 interface MetricsBackend
 {

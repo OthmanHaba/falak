@@ -1,8 +1,8 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Kiln\Alerting\Contracts\Severity;
-use Kiln\Alerting\Domain\QuietHours;
+use Falak\Alerting\Contracts\Severity;
+use Falak\Alerting\Domain\QuietHours;
 
 it('handles same-day windows', function () {
     $quiet = QuietHours::fromArray(['start' => '12:00', 'end' => '13:30', 'timezone' => 'UTC']);

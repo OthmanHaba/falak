@@ -1,21 +1,21 @@
 <?php
 
-namespace Kiln\Edge\Application;
+namespace Falak\Edge\Application;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Edge\Domain\Enums\WwwRedirect;
-use Kiln\Edge\Domain\Models\DnsRecord;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\SiteSetting;
-use Kiln\Edge\Events\DomainAdded;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\Data\PublicService;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteRuntime;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Edge\Domain\Enums\WwwRedirect;
+use Falak\Edge\Domain\Models\DnsRecord;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\SiteSetting;
+use Falak\Edge\Events\DomainAdded;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\Data\PublicService;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteRuntime;
 
 /**
  * Domains of a compose site's public services (docs/plans/COMPOSE_APPS.md, phase 2). Every public service's domains
@@ -186,7 +186,7 @@ final class ComposeServiceDomains
                 ]);
             });
 
-            // Records Kiln created for the name while it belonged to the site (tag kiln:site:<id>) now belong to the
+            // Records Falak created for the name while it belonged to the site (tag falak:site:<id>) now belong to the
             // row: the next sync updates them in place (comment included) instead of re-creating them.
             DnsRecord::query()->where('site_id', $site->id)->whereNull('domain_id')->whereIn('name', $domain->hosts())
                 ->update(['domain_id' => $domain->id, 'site_id' => null, 'status' => DnsRecord::PENDING]);

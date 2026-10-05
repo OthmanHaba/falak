@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
 )
 
 // fakePlane emulates the Fleet endpoints.
@@ -326,7 +326,7 @@ func mkCert(t *testing.T, tpl *x509.Certificate, parent *x509.Certificate, paren
 
 func TestMutualTLSPinnedToCA(t *testing.T) {
 	now := time.Now()
-	caTpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Kiln CA"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	caTpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Falak CA"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
 	ca, caKey := mkCert(t, caTpl, nil, nil)
 	srvCert, srvKey := mkCert(t, &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "agents"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}, ca, caKey)
 	cliCert, cliKey := mkCert(t, &x509.Certificate{SerialNumber: big.NewInt(3), Subject: pkix.Name{CommonName: "agent"}, NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}, ca, caKey)
@@ -364,7 +364,7 @@ func TestMutualTLSPinnedToCA(t *testing.T) {
 
 // A dead HTTP/2 connection (the control plane moved to a new IP) must be detected by pings, not reused forever.
 func TestNewPingsIdleHTTP2Connections(t *testing.T) {
-	tr := New("https://agents.kiln.test/agent/v1", &tls.Config{}).hc.Transport.(*http.Transport)
+	tr := New("https://agents.falak.test/agent/v1", &tls.Config{}).hc.Transport.(*http.Transport)
 	if tr.HTTP2 == nil || tr.HTTP2.SendPingTimeout <= 0 || tr.HTTP2.PingTimeout <= 0 {
 		t.Fatalf("HTTP/2 health checks are off: %+v", tr.HTTP2)
 	}

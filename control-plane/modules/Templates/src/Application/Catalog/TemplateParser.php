@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Templates\Application\Catalog;
+namespace Falak\Templates\Application\Catalog;
 
 use InvalidArgumentException;
-use Kiln\Templates\Domain\Category;
-use Kiln\Templates\Domain\Generator;
-use Kiln\Templates\Domain\InputType;
-use Kiln\Templates\Domain\InvalidTemplate;
-use Kiln\Templates\Domain\Template;
-use Kiln\Templates\Domain\TemplateInput;
+use Falak\Templates\Domain\Category;
+use Falak\Templates\Domain\Generator;
+use Falak\Templates\Domain\InputType;
+use Falak\Templates\Domain\InvalidTemplate;
+use Falak\Templates\Domain\Template;
+use Falak\Templates\Domain\TemplateInput;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
@@ -267,8 +267,8 @@ final class TemplateParser
 
             $at = "inputs.{$key}";
 
-            if (str_starts_with($key, 'KILN_')) {
-                $this->error("{$at}.key", 'KILN_* variables are reserved');
+            if (str_starts_with($key, 'FALAK_')) {
+                $this->error("{$at}.key", 'FALAK_* variables are reserved');
             }
 
             if (isset($keys[$key])) {

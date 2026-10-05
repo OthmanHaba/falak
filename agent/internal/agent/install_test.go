@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/config"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/config"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 func TestInstall(t *testing.T) {
 	root := t.TempDir()
-	src := filepath.Join(t.TempDir(), "kiln-agent")
+	src := filepath.Join(t.TempDir(), "falak-agent")
 	os.WriteFile(src, []byte("binary"), 0o755)
 	cfg := config.Default()
 	cfg.PanelURL, cfg.Token = "https://panel.example", "tok"
@@ -24,20 +24,20 @@ func TestInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	unit, _ := fs.ReadFile(UnitPath)
-	if !strings.Contains(string(unit), "ExecStart=/usr/local/bin/kiln-agent run") {
+	if !strings.Contains(string(unit), "ExecStart=/usr/local/bin/falak-agent run") {
 		t.Fatal(string(unit))
 	}
-	env, _ := fs.ReadFile("/etc/kiln/agent.env")
-	if string(env) != "KILN_PANEL_URL=https://panel.example\nKILN_TOKEN=tok\n" {
+	env, _ := fs.ReadFile("/etc/falak/agent.env")
+	if string(env) != "FALAK_PANEL_URL=https://panel.example\nFALAK_TOKEN=tok\n" {
 		t.Fatalf("env %q", env)
 	}
-	if st, _ := os.Stat(fs.P("/etc/kiln/agent.env")); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(fs.P("/etc/falak/agent.env")); st.Mode().Perm() != 0o600 {
 		t.Fatal("env file must be 0600")
 	}
 	if b, _ := fs.ReadFile(BinaryPath); string(b) != "binary" {
 		t.Fatal("binary not copied")
 	}
-	want := []string{"systemctl daemon-reload", "systemctl enable --now kiln-agent.service", "systemctl restart kiln-agent.service"}
+	want := []string{"systemctl daemon-reload", "systemctl enable --now falak-agent.service", "systemctl restart falak-agent.service"}
 	if got := fake.Lines(); strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("got %v", got)
 	}

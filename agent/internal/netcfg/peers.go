@@ -8,9 +8,9 @@ import (
 
 // Which interface a container_ports peer (another server using a Redis instance over a private network) arrives on, so
 // its accept rule names it (iifname: it matches by name, also before the interface exists). The control plane names a
-// Kiln WireGuard peer's interface (peer_interfaces); for the others the agent looks at:
+// Falak WireGuard peer's interface (peer_interfaces); for the others the agent looks at:
 //
-//  1. a Kiln WireGuard network whose address range (/etc/wireguard/<interface>.conf, Address) contains the peer;
+//  1. a Falak WireGuard network whose address range (/etc/wireguard/<interface>.conf, Address) contains the peer;
 //  2. a local interface whose subnet contains it (the provider's private NIC, DigitalOcean's eth1 or Lightsail's eth0),
 //     container bridges and veths excluded.
 //
@@ -73,7 +73,7 @@ func (n *Net) peerInterfaces(ports []ContainerPorts) map[string]string {
 				continue
 			}
 			b, err := n.d.FS.ReadFile("/etc/wireguard/" + e.Name())
-			if err != nil || !strings.HasPrefix(string(b), "# Managed by Kiln (net.wireguard.apply)") {
+			if err != nil || !strings.HasPrefix(string(b), "# Managed by Falak (net.wireguard.apply)") {
 				continue
 			}
 			for _, a := range strings.Split(confLine(string(b), "Address"), ",") {

@@ -1,4 +1,4 @@
-import { EmptyState, Input, Skeleton, Tag } from '@/components/kiln';
+import { EmptyState, Input, Skeleton, Tag } from '@/components/falak';
 import { cn } from '@/lib/utils';
 import { Boxes, Search, Star } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Processes\Contracts\Data;
+namespace Falak\Processes\Contracts\Data;
 
 final readonly class ScheduledJobData
 {

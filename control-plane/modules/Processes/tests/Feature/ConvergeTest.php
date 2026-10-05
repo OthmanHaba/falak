@@ -2,21 +2,21 @@
 
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Processes\Application\Jobs\ConvergeServer;
-use Kiln\Processes\Application\ServerConverger;
-use Kiln\Processes\Contracts\ProcessControl;
-use Kiln\Processes\Domain\Enums\ApplyStatus;
-use Kiln\Processes\Domain\Models\Daemon;
-use Kiln\Processes\Domain\Models\Schedule;
-use Kiln\Processes\Domain\Models\ServerState;
-use Kiln\Processes\Domain\Models\Worker;
-use Kiln\Processes\Events\ProcessesRestarted;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Events\SiteDeleted;
-use Kiln\Sites\Events\SiteTargetReady;
+use Falak\Identity\Contracts\Role;
+use Falak\Processes\Application\Jobs\ConvergeServer;
+use Falak\Processes\Application\ServerConverger;
+use Falak\Processes\Contracts\ProcessControl;
+use Falak\Processes\Domain\Enums\ApplyStatus;
+use Falak\Processes\Domain\Models\Daemon;
+use Falak\Processes\Domain\Models\Schedule;
+use Falak\Processes\Domain\Models\ServerState;
+use Falak\Processes\Domain\Models\Worker;
+use Falak\Processes\Events\ProcessesRestarted;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Events\SiteDeleted;
+use Falak\Sites\Events\SiteTargetReady;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -70,21 +70,21 @@ it('compiles schema-valid proc.apply and cron.apply for mixed sites on one serve
         ->and($programs['api.app']['env'])->toMatchArray(['PORT' => '3001', 'HOST' => '127.0.0.1', 'NODE_ENV' => 'production'])
         ->and($programs['shop.horizon']['command'])->toBe(['php8.4', 'artisan', 'horizon'])
         ->and($programs['shop.horizon']['user'])->toBe('shop')
-        ->and($programs['shop.horizon']['cwd'])->toBe('/srv/kiln/sites/shop/current')
+        ->and($programs['shop.horizon']['cwd'])->toBe('/srv/falak/sites/shop/current')
         ->and($programs['shop.horizon']['site'])->toBe('shop')
         ->and($programs['shop.octane']['command'])->toContain('octane:start', '--server=frankenphp', '--host=127.0.0.1', '--port=8042', '--admin-port=18042')
         ->and($programs[$workerName]['command'])->toBe(['php8.4', 'artisan', 'queue:work', 'redis', '--queue=high,default', '--sleep=3', '--tries=5', '--timeout=90', '--memory=256', '--max-jobs=500', '--max-time=3600'])
         ->and($programs[$workerName]['numprocs'])->toBe(3)
         ->and($programs[$workerName]['stop_timeout_s'])->toBe(105)
-        ->and($programs[$workerName]['env'])->toMatchArray(['FOO' => 'bar', 'KILN_SITE_ID' => strtoupper($shop->id), 'KILN_SERVER_ID' => strtoupper($this->web1->id)])
+        ->and($programs[$workerName]['env'])->toMatchArray(['FOO' => 'bar', 'FALAK_SITE_ID' => strtoupper($shop->id), 'FALAK_SERVER_ID' => strtoupper($this->web1->id)])
         ->and($programs[$bunName]['command'])->toBe(['/bin/bash', '-c', 'bun run worker'])
-        ->and($programs[$daemonName])->toMatchArray(['command' => ['/bin/bash', '-c', 'bin/console messenger:consume async'], 'numprocs' => 2, 'restart' => 'on-failure', 'stop_signal' => 'INT', 'stop_timeout_s' => 45, 'user' => 'blog', 'cwd' => '/srv/kiln/sites/blog/current']);
+        ->and($programs[$daemonName])->toMatchArray(['command' => ['/bin/bash', '-c', 'bin/console messenger:consume async'], 'numprocs' => 2, 'restart' => 'on-failure', 'stop_signal' => 'INT', 'stop_timeout_s' => 45, 'user' => 'blog', 'cwd' => '/srv/falak/sites/blog/current']);
 
     // web1 leads shop (scheduler) but not blog (custom jobs run on the leader only).
     $jobs = processes_programs($cronApply);
     expect(array_keys($jobs))->toBe(['shop.schedule'])
         ->and($jobs['shop.schedule'])->toMatchArray(['schedule' => '* * * * *', 'command' => 'php8.4 artisan schedule:run', 'user' => 'shop', 'heartbeat' => true, 'site' => 'shop'])
-        ->and($jobs['shop.schedule']['env']['KILN_SITE_ID'])->toBe(strtoupper($shop->id));
+        ->and($jobs['shop.schedule']['env']['FALAK_SITE_ID'])->toBe(strtoupper($shop->id));
 
     $this->converger->converge($this->web2->id);
     $web2Jobs = processes_programs($this->agents->last('cron.apply', $this->web2->id));
@@ -221,7 +221,7 @@ it('restarts a site: horizon:terminate for Horizon, proc.restart for the rest', 
     expect($handles)->toHaveCount(4);
     $exec = $this->agents->last('system.exec', $this->web1->id);
     expect(processes_schema_errors($exec))->toBe([])
-        ->and($exec['payload'])->toMatchArray(['script' => 'php8.4 artisan horizon:terminate', 'user' => 'shop', 'cwd' => '/srv/kiln/sites/shop/current'])
+        ->and($exec['payload'])->toMatchArray(['script' => 'php8.4 artisan horizon:terminate', 'user' => 'shop', 'cwd' => '/srv/falak/sites/shop/current'])
         ->and($this->agents->last('proc.restart', $this->web1->id)['payload'])->toBe(['names' => ['shop.worker-'.strtolower(substr($worker->id, -8))], 'site' => 'shop']);
 
     Event::assertDispatched(ProcessesRestarted::class, fn (ProcessesRestarted $e) => $e->siteId === $site->id && count($e->commandIds) === 4 && $e->serverIds === [$this->web1->id, $this->web2->id]);

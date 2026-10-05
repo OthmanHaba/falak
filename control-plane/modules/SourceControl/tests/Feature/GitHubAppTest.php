@@ -3,19 +3,19 @@
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Kiln\Identity\Contracts\Role;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Contracts\ProviderType;
-use Kiln\SourceControl\Contracts\SourceControlGateway;
-use Kiln\SourceControl\Domain\Models\Connection;
-use Kiln\SourceControl\Domain\Models\GitHubApp;
-use Kiln\SourceControl\Domain\Models\Webhook;
-use Kiln\SourceControl\Infrastructure\Providers\GitHubClient;
+use Falak\Identity\Contracts\Role;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Contracts\ProviderType;
+use Falak\SourceControl\Contracts\SourceControlGateway;
+use Falak\SourceControl\Domain\Models\Connection;
+use Falak\SourceControl\Domain\Models\GitHubApp;
+use Falak\SourceControl\Domain\Models\Webhook;
+use Falak\SourceControl\Infrastructure\Providers\GitHubClient;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 beforeEach(function () {
-    config(['app.url' => 'https://kiln.example.com', 'source_control.github.app' => ['id' => null, 'slug' => null, 'private_key' => null, 'webhook_secret' => null]]);
+    config(['app.url' => 'https://falak.example.com', 'source_control.github.app' => ['id' => null, 'slug' => null, 'private_key' => null, 'webhook_secret' => null]]);
     [$this->user, $this->organization] = actingAsMember(Role::Admin);
 });
 
@@ -42,10 +42,10 @@ describe('manifest', function () {
         $manifest = $body['manifest'];
 
         expect($body['action'])->toStartWith('https://github.com/settings/apps/new?state=')
-            ->and($manifest['name'])->toStartWith('Kiln (kiln.example.com) ')
+            ->and($manifest['name'])->toStartWith('Falak (falak.example.com) ')
             ->and(mb_strlen($manifest['name']))->toBeLessThanOrEqual(34)
-            ->and($manifest['url'])->toBe('https://kiln.example.com')
-            ->and($manifest['hook_attributes']['url'])->toMatch('#^https://kiln\.example\.com/api/webhooks/source-control/github-app/[0-9a-z]{26}$#')
+            ->and($manifest['url'])->toBe('https://falak.example.com')
+            ->and($manifest['hook_attributes']['url'])->toMatch('#^https://falak\.example\.com/api/webhooks/source-control/github-app/[0-9a-z]{26}$#')
             ->and($manifest['hook_attributes']['active'])->toBeTrue()
             ->and($manifest['redirect_url'])->toBe(route('source-control.github-app.manifest.callback'))
             ->and($manifest['setup_url'])->toBe(route('source-control.github-app.setup'))
@@ -74,7 +74,7 @@ describe('manifest', function () {
 
         GitHubApp::query()->delete();
         config(['source_control.github.app' => ['id' => '7', 'slug' => 'ops', 'private_key' => sc_rsa_pem()]]);
-        $this->postJson('/source-control/github-app/manifest')->assertStatus(409)->assertJson(['message' => 'This Kiln instance uses the GitHub App configured by its operator.']);
+        $this->postJson('/source-control/github-app/manifest')->assertStatus(409)->assertJson(['message' => 'This Falak instance uses the GitHub App configured by its operator.']);
     });
 
     it('is only for owners and admins', function (Role $role) {
@@ -92,15 +92,15 @@ describe('manifest callback', function () {
         $key = basename($body['manifest']['hook_attributes']['url']);
 
         Http::fake(['api.github.com/app-manifests/abc123/conversions' => Http::response([
-            'id' => 4242, 'slug' => 'kiln-acme', 'name' => 'Kiln (acme)', 'owner' => ['login' => 'acme', 'type' => 'Organization'],
-            'html_url' => 'https://github.com/apps/kiln-acme', 'client_id' => 'Iv1.abc', 'client_secret' => 'cs_secret',
+            'id' => 4242, 'slug' => 'falak-acme', 'name' => 'Falak (acme)', 'owner' => ['login' => 'acme', 'type' => 'Organization'],
+            'html_url' => 'https://github.com/apps/falak-acme', 'client_id' => 'Iv1.abc', 'client_secret' => 'cs_secret',
             'webhook_secret' => 'wh_secret', 'pem' => sc_rsa_pem(),
         ], 201)]);
 
         $location = $this->get('/source-control/github-app/manifest/callback?code=abc123&state='.app_state($body['action']))
             ->assertRedirect()->headers->get('Location');
 
-        expect($location)->toStartWith('https://github.com/apps/kiln-acme/installations/new?state=');
+        expect($location)->toStartWith('https://github.com/apps/falak-acme/installations/new?state=');
 
         $app = GitHubApp::query()->sole();
         expect($app->id)->toBe($key)
@@ -196,7 +196,7 @@ describe('installation setup', function () {
 
     it('returns to a same-site page after installing', function () {
         $location = $this->get('/source-control/connect/github-app?return_to=/projects')->headers->get('Location');
-        expect($location)->toStartWith('https://github.com/apps/kiln-acme/installations/new?state=');
+        expect($location)->toStartWith('https://github.com/apps/falak-acme/installations/new?state=');
         fake_installation();
 
         $this->get('/source-control/github-app/setup?installation_id=555&state='.app_state($location))->assertRedirect('/projects');
@@ -279,7 +279,7 @@ describe('app connections', function () {
 
     it('clones over HTTPS with an installation token, never a deploy key', function () {
         fake_installation();
-        $key = $this->gateway->installDeployKey($this->connection->id, 'acme/shop', 'Kiln');
+        $key = $this->gateway->installDeployKey($this->connection->id, 'acme/shop', 'Falak');
 
         $credentials = $this->gateway->checkoutCredentials($this->connection->id, 'acme/shop', $key->id);
 
@@ -298,7 +298,7 @@ describe('app connections', function () {
         $webhook = $this->gateway->ensureWebhook($this->connection->id, 'acme/shop');
 
         expect($webhook->installed)->toBeTrue()
-            ->and($webhook->url)->toBe('https://kiln.example.com/api/webhooks/source-control/github-app/'.$this->githubApp->id)
+            ->and($webhook->url)->toBe('https://falak.example.com/api/webhooks/source-control/github-app/'.$this->githubApp->id)
             ->and(Webhook::query()->sole()->provider_hook_id)->toBeNull();
 
         $this->gateway->removeWebhook($this->connection->id, 'acme/shop');
@@ -334,7 +334,7 @@ describe('app connections', function () {
         Http::fake(['api.github.com/app/installations/555' => Http::response(null, 204)]);
 
         $this->delete('/source-control/github-app', ['name' => 'wrong'])->assertSessionHasErrors('name');
-        $this->delete('/source-control/github-app', ['name' => 'Kiln (acme)'])->assertRedirect('/settings/source-control');
+        $this->delete('/source-control/github-app', ['name' => 'Falak (acme)'])->assertRedirect('/settings/source-control');
 
         expect(GitHubApp::query()->count())->toBe(0)->and(Connection::query()->count())->toBe(0);
     });
@@ -342,8 +342,8 @@ describe('app connections', function () {
     it('shows the app and its installations on the settings page', function () {
         $this->get('/settings/source-control')->assertInertia(fn ($page) => $page
             ->where('githubApp.app.source', 'registered')
-            ->where('githubApp.app.name', 'Kiln (acme)')
-            ->where('githubApp.app.settings_url', 'https://github.com/organizations/acme/settings/apps/kiln-acme')
+            ->where('githubApp.app.name', 'Falak (acme)')
+            ->where('githubApp.app.settings_url', 'https://github.com/organizations/acme/settings/apps/falak-acme')
             ->where('githubApp.installations.0.account', 'acme')
             ->where('githubApp.installations.0.status', 'active')
             ->where('githubApp.installations.0.manage_url', 'https://github.com/organizations/acme/settings/installations/555')

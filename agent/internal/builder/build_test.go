@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 func newBuilder(t *testing.T, f runner.Runner) *Builder {
@@ -48,7 +48,7 @@ func TestNativeLaravelBuildLocalArtifact(t *testing.T) {
 	b := newBuilder(t, f)
 	var out bytes.Buffer
 	job := Job{ID: "01JBUILD0000000000000000AA", Mode: ModeNative, Repo: Repo{URL: "https://github.com/acme/app.git", Ref: "main", Token: "ghs_supersecret"},
-		Env: map[string]string{"VITE_APP_NAME": "Acme"}, Native: &NativeSpec{DownloadURL: "https://artifacts.kiln.test/01JBUILD.tar.gz"}}
+		Env: map[string]string{"VITE_APP_NAME": "Acme"}, Native: &NativeSpec{DownloadURL: "https://artifacts.falak.test/01JBUILD.tar.gz"}}
 	res, err := b.Build(context.Background(), job, NewNDJSONSink(&out))
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
@@ -88,7 +88,7 @@ func TestNativeLaravelBuildLocalArtifact(t *testing.T) {
 	m := res.Manifest
 	if m.Schema != 1 || m.Runtime != "php" || m.Provider != "laravel" || m.PHPVersion != "8.3" || m.Entrypoint != "public/index.php" ||
 		m.PackageManager != "npm" || m.DetectedBy != "builtin" || m.Commit != res.Commit || m.CommitTime != "2023-11-14T22:13:20Z" ||
-		m.Artifact.SHA256 != res.Artifact.SHA256 || len(m.Steps) != 3 || m.BuiltAt == "" || !strings.HasPrefix(m.Builder, "kiln-builder ") {
+		m.Artifact.SHA256 != res.Artifact.SHA256 || len(m.Steps) != 3 || m.BuiltAt == "" || !strings.HasPrefix(m.Builder, "falak-builder ") {
 		t.Fatalf("manifest = %+v", m)
 	}
 	mb, err := os.ReadFile(filepath.Join(b.ArtifactsDir, job.ID+".manifest.json"))

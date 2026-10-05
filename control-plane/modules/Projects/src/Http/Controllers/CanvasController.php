@@ -1,24 +1,24 @@
 <?php
 
-namespace Kiln\Projects\Http\Controllers;
+namespace Falak\Projects\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Databases\Contracts\Data\DatabaseData;
-use Kiln\Databases\Contracts\DatabaseConnections;
-use Kiln\Databases\Contracts\DatabaseDirectory;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Projects\Application\Canvas\CanvasActivity;
-use Kiln\Projects\Application\Canvas\CanvasReadModel;
-use Kiln\Projects\Application\Canvas\KilnNavigation;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Projects\Domain\Models\Environment;
-use Kiln\Projects\Domain\Models\Project;
-use Kiln\Projects\Domain\Models\Service;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Databases\Contracts\Data\DatabaseData;
+use Falak\Databases\Contracts\DatabaseConnections;
+use Falak\Databases\Contracts\DatabaseDirectory;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Projects\Application\Canvas\CanvasActivity;
+use Falak\Projects\Application\Canvas\CanvasReadModel;
+use Falak\Projects\Application\Canvas\FalakNavigation;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Projects\Domain\Models\Environment;
+use Falak\Projects\Domain\Models\Project;
+use Falak\Projects\Domain\Models\Service;
+use Falak\Sites\Contracts\SiteDirectory;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -103,7 +103,7 @@ final class CanvasController extends Controller
         $this->authorize('view', $project);
         $model = $this->resolveEnvironment($project, $environment);
 
-        KilnNavigation::remember($request, $model);
+        FalakNavigation::remember($request, $model);
 
         return Inertia::render('Projects/Canvas', [
             'project' => [

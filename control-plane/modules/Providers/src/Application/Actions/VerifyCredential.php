@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Providers\Application\Actions;
+namespace Falak\Providers\Application\Actions;
 
 use Illuminate\Support\Str;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Domain\CredentialStatus;
-use Kiln\Providers\Domain\Models\ProviderCredential;
-use Kiln\Providers\Infrastructure\AdapterFactory;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Domain\CredentialStatus;
+use Falak\Providers\Domain\Models\ProviderCredential;
+use Falak\Providers\Infrastructure\AdapterFactory;
 
 /**
  * Re-checks a stored credential and records the outcome.

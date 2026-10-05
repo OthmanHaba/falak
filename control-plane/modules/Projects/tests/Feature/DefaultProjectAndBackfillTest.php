@@ -1,15 +1,15 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
-use Kiln\Identity\Application\Actions\DeleteOrganization;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Projects\Application\Actions\BackfillProjects;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Projects\Domain\Models\Environment;
-use Kiln\Projects\Domain\Models\Project;
-use Kiln\Projects\Domain\Models\Service;
-use Kiln\Projects\Events\EnvironmentCreated;
-use Kiln\Projects\Events\ProjectCreated;
+use Falak\Identity\Application\Actions\DeleteOrganization;
+use Falak\Identity\Contracts\Role;
+use Falak\Projects\Application\Actions\BackfillProjects;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Domain\Models\Environment;
+use Falak\Projects\Domain\Models\Project;
+use Falak\Projects\Domain\Models\Service;
+use Falak\Projects\Events\EnvironmentCreated;
+use Falak\Projects\Events\ProjectCreated;
 
 require_once __DIR__.'/../Support/helpers.php';
 

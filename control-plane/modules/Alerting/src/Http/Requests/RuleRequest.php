@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Alerting\Http\Requests;
+namespace Falak\Alerting\Http\Requests;
 
 use DateTimeZone;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule as ValidationRule;
-use Kiln\Alerting\Contracts\Severity;
-use Kiln\Alerting\Domain\Models\Rule;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
+use Falak\Alerting\Contracts\Severity;
+use Falak\Alerting\Domain\Models\Rule;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
 
 final class RuleRequest extends FormRequest
 {

@@ -19,9 +19,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // Deps are the collaborators of db executors.
@@ -30,7 +30,7 @@ type Deps struct {
 	FS       hostfs.FS
 	Logger   *slog.Logger
 	HTTP     *http.Client
-	StateDir string // host path; default /var/lib/kiln
+	StateDir string // host path; default /var/lib/falak
 	TempDir  string // real path for backup staging; default os.TempDir()
 }
 
@@ -51,7 +51,7 @@ func New(d Deps) *DB {
 		d.HTTP = http.DefaultClient
 	}
 	if d.StateDir == "" {
-		d.StateDir = "/var/lib/kiln"
+		d.StateDir = "/var/lib/falak"
 	}
 	if d.TempDir == "" {
 		d.TempDir = os.TempDir()
@@ -295,7 +295,7 @@ func (db *DB) saveState(m map[string]userState) error {
 }
 
 func fingerprint(key, password string) string {
-	s := sha256.Sum256([]byte("kiln-db-user\x00" + key + "\x00" + password))
+	s := sha256.Sum256([]byte("falak-db-user\x00" + key + "\x00" + password))
 	return hex.EncodeToString(s[:])
 }
 

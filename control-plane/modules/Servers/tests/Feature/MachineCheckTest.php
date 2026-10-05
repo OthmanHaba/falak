@@ -1,26 +1,26 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
-use Kiln\Alerting\Domain\Enums\AlertOutcome;
-use Kiln\Alerting\Domain\Models\Alert;
-use Kiln\Alerting\Domain\Models\DedupState;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Identity\Application\Actions\CreateApiToken;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Domain\Models\MachineInspection;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Events\ServerNeedsAttention;
-use Kiln\Servers\Events\ServerProvisioned;
+use Falak\Alerting\Domain\Enums\AlertOutcome;
+use Falak\Alerting\Domain\Models\Alert;
+use Falak\Alerting\Domain\Models\DedupState;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Identity\Application\Actions\CreateApiToken;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Domain\Models\MachineInspection;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Events\ServerNeedsAttention;
+use Falak\Servers\Events\ServerProvisioned;
 
 require_once __DIR__.'/../Support/helpers.php';
 require_once __DIR__.'/../Support/machine_reports.php';
 require_once __DIR__.'/../../../Alerting/tests/Support/helpers.php';
 
 beforeEach(function () {
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test', 'app.url' => 'https://panel.kiln.test']);
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test', 'app.url' => 'https://panel.falak.test']);
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
 });
 
@@ -94,10 +94,10 @@ it('stops at needs_attention when something blocks, re-checks and provisions onc
 
     $server->refresh();
     expect($server->status)->toBe(ServerStatus::NeedsAttention)
-        ->and($server->status_message)->toBe("Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Kiln's edge needs.")
+        ->and($server->status_message)->toBe("Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Falak's edge needs.")
         ->and($server->provision_attempts)->toBe(0)
         ->and(servers_poll($headers))->toBe([]);
-    Event::assertDispatched(ServerNeedsAttention::class, fn (ServerNeedsAttention $e) => $e->serverId === $server->id && $e->blocks === ["Port 80 is in use by nginx, which Kiln's edge needs."]);
+    Event::assertDispatched(ServerNeedsAttention::class, fn (ServerNeedsAttention $e) => $e->serverId === $server->id && $e->blocks === ["Port 80 is in use by nginx, which Falak's edge needs."]);
 
     $this->get("/servers/{$server->id}")->assertInertia(fn ($page) => $page
         ->where('server.status', 'needs_attention')
@@ -194,7 +194,7 @@ it('refuses a database engine the stored machine check blocks', function () {
 
     $this->post("/servers/{$server->id}/database-engine", ['engine' => 'mysql'])
         ->assertSessionHasErrors(['engine' => 'MariaDB 10.11.8 is installed, but this server is set up for MySQL. '.
-            "Kiln won't run two database engines on one machine. Remove MariaDB (apt purge mariadb-server) or use a server set up for MariaDB, then re-check."]);
+            "Falak won't run two database engines on one machine. Remove MariaDB (apt purge mariadb-server) or use a server set up for MariaDB, then re-check."]);
     expect($server->refresh()->stack->database)->toBeNull()
         ->and($server->engine_command_id)->toBeNull();
 
@@ -289,7 +289,7 @@ it('keeps a provisioned server active when a re-provision finds blocks, and aler
         servers_finish($headers, servers_poll($headers)[0]['id'], result: $nginx);
         $server->refresh();
         expect($server->status)->toBe(ServerStatus::Active)
-            ->and($server->status_message)->toBe("Re-provisioning stopped. Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Kiln's edge needs.")
+            ->and($server->status_message)->toBe("Re-provisioning stopped. Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Falak's edge needs.")
             ->and($server->machineInspection->blocking)->toBeTrue()
             ->and(servers_poll($headers))->toBe([]);
     }
@@ -367,7 +367,7 @@ it('provisions and re-provisions over the API', function () {
     $this->withToken($viewer)->postJson("/api/v1/servers/{$server->id}/provision")->assertForbidden();
     $this->app['auth']->forgetGuards();
     $this->withToken($token)->postJson("/api/v1/servers/{$server->id}/provision")->assertUnprocessable()
-        ->assertJsonPath('message', "Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Kiln's edge needs.");
+        ->assertJsonPath('message', "Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Falak's edge needs.");
 
     // Re-provision runs the check again.
     $this->withToken($token)->postJson("/api/v1/servers/{$server->id}/reprovision")->assertStatus(202)

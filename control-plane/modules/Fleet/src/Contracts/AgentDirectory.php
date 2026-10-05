@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Fleet\Contracts;
+namespace Falak\Fleet\Contracts;
 
 use DateTimeInterface;
-use Kiln\Fleet\Contracts\Data\AgentInfo;
-use Kiln\Fleet\Contracts\Data\MetricSample;
+use Falak\Fleet\Contracts\Data\AgentInfo;
+use Falak\Fleet\Contracts\Data\MetricSample;
 
 /**
  * Read-only view of agents for other modules.

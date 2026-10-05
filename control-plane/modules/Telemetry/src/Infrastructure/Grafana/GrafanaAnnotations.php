@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure\Grafana;
+namespace Falak\Telemetry\Infrastructure\Grafana;
 
 use DateTimeInterface;
 use Illuminate\Support\Facades\Log;
-use Kiln\Telemetry\Contracts\Annotations;
-use Kiln\Telemetry\Domain\Models\DeploymentAnnotation;
+use Falak\Telemetry\Contracts\Annotations;
+use Falak\Telemetry\Domain\Models\DeploymentAnnotation;
 use Throwable;
 
 /**
- * Deployment annotations tagged `kiln`,`deployment` (the provisioned dashboards query these tags).
+ * Deployment annotations tagged `falak`,`deployment` (the provisioned dashboards query these tags).
  */
 final class GrafanaAnnotations implements Annotations
 {
@@ -30,7 +30,7 @@ final class GrafanaAnnotations implements Annotations
         }
 
         $allTags = array_values(array_unique([
-            'kiln', 'deployment', "site:{$siteId}", "status:{$status}", "org:{$organizationId}", "deployment:{$deploymentId}",
+            'falak', 'deployment', "site:{$siteId}", "status:{$status}", "org:{$organizationId}", "deployment:{$deploymentId}",
             ...array_map('strval', $tags),
         ]));
         $text ??= "Deployment {$deploymentId} {$status}";

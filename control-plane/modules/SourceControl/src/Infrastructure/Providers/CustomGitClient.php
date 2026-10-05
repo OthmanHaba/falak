@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\Providers;
+namespace Falak\SourceControl\Infrastructure\Providers;
 
-use Kiln\SourceControl\Contracts\Data\RepositoryData;
-use Kiln\SourceControl\Contracts\Exceptions\NoApi;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Domain\Models\Connection;
+use Falak\SourceControl\Contracts\Data\RepositoryData;
+use Falak\SourceControl\Contracts\Exceptions\NoApi;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Domain\Models\Connection;
 
 /**
  * Any git server reachable over SSH. "Repository" is the clone URL itself; there is no API, so deploy

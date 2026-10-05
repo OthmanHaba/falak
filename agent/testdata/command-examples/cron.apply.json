@@ -5,7 +5,7 @@
       "schedule": "* * * * *",
       "command": "php artisan schedule:run",
       "user": "shop",
-      "cwd": "/srv/kiln/sites/shop/current",
+      "cwd": "/srv/falak/sites/shop/current",
       "env": {
         "APP_ENV": "production"
       },

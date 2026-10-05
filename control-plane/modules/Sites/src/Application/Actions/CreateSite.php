@@ -1,30 +1,30 @@
 <?php
 
-namespace Kiln\Sites\Application\Actions;
+namespace Falak\Sites\Application\Actions;
 
 use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Sites\Application\ComposeSettings;
-use Kiln\Sites\Application\SiteRules;
-use Kiln\Sites\Application\SourceControlLinker;
-use Kiln\Sites\Application\TargetProvisioner;
-use Kiln\Sites\Contracts\BuildMode;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Data\DomainChoice;
-use Kiln\Sites\Contracts\Data\SitePlacement;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteDomains;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetRole;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Domain\Models\EnvironmentVersion;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
-use Kiln\Sites\Domain\Presets\Preset;
-use Kiln\Sites\Events\SiteCreated;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Sites\Application\ComposeSettings;
+use Falak\Sites\Application\SiteRules;
+use Falak\Sites\Application\SourceControlLinker;
+use Falak\Sites\Application\TargetProvisioner;
+use Falak\Sites\Contracts\BuildMode;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Data\DomainChoice;
+use Falak\Sites\Contracts\Data\SitePlacement;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteDomains;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetRole;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Domain\Models\EnvironmentVersion;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
+use Falak\Sites\Domain\Presets\Preset;
+use Falak\Sites\Events\SiteCreated;
 
 final class CreateSite
 {
@@ -62,12 +62,12 @@ final class CreateSite
         $project = $source === ComposeSource::Repo ? $this->composeSettings->project($data) : null;
 
         if ($source === ComposeSource::Inline && ($data['compose_services'] ?? []) !== []) {
-            // An inline stack's services can run as Kiln services too (the file is stored, so extraction reads it).
+            // An inline stack's services can run as Falak services too (the file is stored, so extraction reads it).
             $project = ['files' => [], 'profiles' => [], 'services' => [], 'adjustments' => [], 'extract' => $this->composeSettings->project($data)['extract']];
         }
 
         if (($project['extract'] ?? []) !== []) {
-            // A service that runs as a Kiln database or its own site is not public in the stack.
+            // A service that runs as a Falak database or its own site is not public in the stack.
             $leaving = array_column($project['extract'], 'service');
             $data['public_services'] = array_values(array_filter((array) ($data['public_services'] ?? []), fn ($p) => ! in_array((string) ($p['service'] ?? ''), $leaving, true)));
         }
@@ -168,7 +168,7 @@ final class CreateSite
             $appPort = $compose['public_services'][0]['host_port'] ?? null;
         } elseif ($runtime === SiteRuntime::Docker) {
             // The container listens on its own port (any value, repeated freely across sites); Caddy reaches it on a
-            // loopback host port Kiln allocates. app_port from older clients meant the container port.
+            // loopback host port Falak allocates. app_port from older clients meant the container port.
             $containerPort = (int) ($data['container_port'] ?? $data['app_port'] ?? config('sites.default_container_port', 3000));
             $appPort = $this->rules->freePort($serverIds);
         } elseif ($runtime->proxiesToPort()) {
@@ -196,7 +196,7 @@ final class CreateSite
                 'root_directory' => self::rootDirectory($data['root_directory'] ?? null),
                 'push_to_deploy' => (bool) ($data['push_to_deploy'] ?? false),
                 'web_directory' => trim((string) ($data['web_directory'] ?? $preset->webDirectory), '/'),
-                'unix_user' => $isolated ? $this->unixUser($slug) : (string) config('sites.unix_user', 'kiln'),
+                'unix_user' => $isolated ? $this->unixUser($slug) : (string) config('sites.unix_user', 'falak'),
                 'isolated' => $isolated,
                 'app_port' => $appPort,
                 'container_port' => $containerPort,
@@ -275,7 +275,7 @@ final class CreateSite
 
         SiteCreated::dispatch($site->id, $organizationId, $site->slug, $runtime->value, $serverIds, $placement);
 
-        // Services the user moved out of the stack (Kiln databases, own sites) are created once the site is placed.
+        // Services the user moved out of the stack (Falak databases, own sites) are created once the site is placed.
         if (($compose['project']['extract'] ?? []) !== []) {
             array_push($this->warnings, ...$this->composeSettings->extract($site, $compose['project']['extract'], $compose['project']['yaml'] ?? null));
         }
@@ -306,15 +306,15 @@ final class CreateSite
     }
 
     /**
-     * Linux user for an isolated site: ^[a-z_][a-z0-9_-]{0,31}$, unique among sites. Names starting with "kiln" are
-     * Kiln's own (the shared deploy user, Redis / Valkey instance users kiln-redis-* / kiln-valkey-*): such slugs get
+     * Linux user for an isolated site: ^[a-z_][a-z0-9_-]{0,31}$, unique among sites. Names starting with "falak" are
+     * Falak's own (the shared deploy user, Redis / Valkey instance users falak-redis-* / falak-valkey-*): such slugs get
      * an "s-" prefix. Existing sites keep their users.
      */
     private function unixUser(string $slug): string
     {
         $base = substr(match (true) {
             ctype_digit($slug[0]) => "s{$slug}",
-            str_starts_with($slug, 'kiln') => "s-{$slug}",
+            str_starts_with($slug, 'falak') => "s-{$slug}",
             default => $slug,
         }, 0, 28);
         $user = rtrim($base, '-');

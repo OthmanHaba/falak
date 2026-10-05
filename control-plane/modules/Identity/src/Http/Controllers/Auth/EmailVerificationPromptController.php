@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Identity\Http\Controllers\Auth;
+namespace Falak\Identity\Http\Controllers\Auth;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Kernel\Http\Controller;
+use Falak\Kernel\Http\Controller;
 
 class EmailVerificationPromptController extends Controller
 {

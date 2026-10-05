@@ -1,6 +1,6 @@
 # Compose apps from a git repository (plan)
 
-The user says a repository is a Docker Compose app, points Kiln at the compose file in the repo, and decides per
+The user says a repository is a Docker Compose app, points Falak at the compose file in the repo, and decides per
 service how it runs. Nothing is auto-detected. Builds on the compose runtime (docs/COMPOSE_TEMPLATES.md §1).
 
 ## What exists and what is missing
@@ -8,10 +8,10 @@ service how it runs. Nothing is auto-detected. Builds on the compose runtime (do
 | Exists | Missing |
 |---|---|
 | `runtime=compose`, `compose_source=repo`, `compose_file` (API, Settings → Compose) | The Git create step can't choose compose (it only sends a preset) |
-| Builds of `build:` services (kiln-builder, docker mode), digest pinning | Kiln can't read a file from a repo, so services are unknown until a deploy |
+| Builds of `build:` services (falak-builder, docker mode), digest pinning | Falak can't read a file from a repo, so services are unknown until a deploy |
 | Public services on 127.0.0.1 ports, routed by Edge; site IP rules / basic auth apply | Only the primary public service is a real domain (Domains tab, cache modes); the others carry one bare domain |
 | Policy checks, labels, Services tab, rollback, named volumes | Repo files a compose file needs (bind mounts, `env_file`, `configs`) never reach the server |
-| | A Kiln database can't be reached from containers when it runs on an app server |
+| | A Falak database can't be reached from containers when it runs on an app server |
 | | A site can't run from a repo subfolder (needed to split a service out) |
 | | `include`, `extends`, several compose files, `profiles` |
 
@@ -21,18 +21,18 @@ service how it runs. Nothing is auto-detected. Builds on the compose runtime (do
 2. **App type**: the user picks **Docker Compose app** (next to the presets). No guessing from the name.
 3. **Compose file**: the user types the path (default `compose.yaml`; a list of `*compose*.y*ml` files in the repo is
    offered as suggestions, not chosen automatically) plus optional extra files (`-f` overrides, in order) and
-   profiles. Kiln fetches the file(s) from the branch, merges them like `docker compose config`, and shows the
+   profiles. Falak fetches the file(s) from the branch, merges them like `docker compose config`, and shows the
    parse result and the policy check. The repo stays the source of truth: the file is re-read on every deploy.
-4. **Services**: one row per service with what Kiln found (image or build context, ports, volumes, depends_on,
+4. **Services**: one row per service with what Falak found (image or build context, ports, volumes, depends_on,
    `${VAR}` references). For each service the user chooses:
    - **Keep in compose** (default): runs in the stack; internal unless made public.
-   - **Public**: port (from the service's ports), domain (generated / test / custom / Cloudflare zone), and the Kiln
+   - **Public**: port (from the service's ports), domain (generated / test / custom / Cloudflare zone), and the Falak
      edge features below.
-   - **Kiln database** (postgres, mysql/mariadb, redis/valkey images only): the service is removed from the stack and
-     a Kiln-managed database is created (or an existing one picked); the stack's variables that pointed at it are
+   - **Falak database** (postgres, mysql/mariadb, redis/valkey images only): the service is removed from the stack and
+     a Falak-managed database is created (or an existing one picked); the stack's variables that pointed at it are
      rewritten to `${{ <db>.KEY }}` references; `depends_on` on it is dropped.
-   - **Own Kiln service**: a service with `build:` (or an image) is taken out of the stack and created as its own
-     Kiln site on the same canvas: Laravel / Node / Docker runtime chosen by the user, repo subfolder = the build
+   - **Own Falak service**: a service with `build:` (or an image) is taken out of the stack and created as its own
+     Falak site on the same canvas: Laravel / Node / Docker runtime chosen by the user, repo subfolder = the build
      context, its variables carried over; references from the stack to it become `${{ <site>.URL }}`-style
      variables (internal URL over the server's network).
 5. **Variables**: every `${VAR}` the stack uses and every key of its `env_file`s is listed with its default from the
@@ -42,7 +42,7 @@ service how it runs. Nothing is auto-detected. Builds on the compose runtime (do
 
 All choices stay editable in Settings → Compose (services table with the same per-service options).
 
-## Kiln-managed edge for public services (every public service, not only the first)
+## Falak-managed edge for public services (every public service, not only the first)
 
 Each public service gets the same edge features as a site:
 - Domains: several per service, managed in the Domains tab (per service), generated/test/custom/Cloudflare names,
@@ -53,15 +53,15 @@ Each public service gets the same edge features as a site:
   (`app.example.com/api/*` → a service).
 - Health checks per public service (path), shown in the Services tab; Insights/uptime per service domain.
 
-## Compatibility layer ("Kiln adjustments")
+## Compatibility layer ("Falak adjustments")
 
-Kiln never edits the repo file. At render time it applies an overlay and shows it as a diff in Settings → Compose:
+Falak never edits the repo file. At render time it applies an overlay and shows it as a diff in Settings → Compose:
 - host ports removed, public services on loopback ports (exists);
 - `container_name` removed (clashes between environments and during rollback);
 - host bind mounts of data folders (`./data:/var/lib/...`) → named volumes (the user confirms per mount); bind
   mounts of repo files (`./nginx.conf`) are kept and the files are shipped with the release (below);
 - `env_file` keys folded into the site variables (the files themselves are not shipped unless committed);
-- services replaced by Kiln databases or split into Kiln sites removed, with their references rewritten;
+- services replaced by Falak databases or split into Falak sites removed, with their references rewritten;
 - `restart: unless-stopped` when missing (inline projects too, at every deploy — fixed in v0.7.1: inline stacks got no
   policy and stayed Exited after a reboot); a warning per public service without a healthcheck;
 - policy violations stay blocking unless the org allows privileged compose.
@@ -81,7 +81,7 @@ Kiln never edits the repo file. At render time it applies an overlay and shows i
 - **SourceControl**: `file(connection, repo, ref, path)` and `tree(connection, repo, ref, glob)` on the gateway —
   GitHub/GitLab/Bitbucket APIs; plain git servers via a shallow clone by the builder (cached per commit).
 - **Databases**: engines on app servers also listen on the Docker bridge address (firewalled to the bridge
-  networks), so containers on the same server can reach a Kiln database; `DatabaseConnections` gives containers
+  networks), so containers on the same server can reach a Falak database; `DatabaseConnections` gives containers
   the bridge address instead of an error.
 - **Sites/Builds**: `root_directory` (repo subfolder) for native and Docker sites: build, deploy and hooks run there.
 - **Edge**: per-service domains as `edge_domains` rows owned by (site, service), so every Domains-tab feature applies.
@@ -92,8 +92,8 @@ Kiln never edits the repo file. At render time it applies an overlay and shows i
    services table with Keep / Public; variables from `${VAR}`; Settings → Compose services table.
 2. **Edge for every public service**: per-service domains (edge_domains), Cloudflare (DNS, cache, purge, tunnel),
    edge rules, health checks per service.
-3. **Kiln databases and split-out services**: Docker-bridge database access; replace a service with a Kiln database;
-   `root_directory`; split a service into its own Kiln site; reference rewriting.
+3. **Falak databases and split-out services**: Docker-bridge database access; replace a service with a Falak database;
+   `root_directory`; split a service into its own Falak site; reference rewriting.
 4. **Full compose**: repo files shipped with releases; several files, profiles, include/extends; the adjustments
    diff.
 
@@ -127,18 +127,18 @@ rendering (`EloquentComposeSites`), the builder/agent compose file shipping.
   edge rules (IP rules, basic auth, headers, rate limits) and path mounts apply per (site, service).
 - `PublicService` gains `healthCheckPath` (?string); the HEALTHCHECK step checks each public service.
 
-**Lane 3 — Kiln databases and split-out services (phase 3)** owns Databases, Builds/Deployments root directory, and
+**Lane 3 — Falak databases and split-out services (phase 3)** owns Databases, Builds/Deployments root directory, and
 two actions in Sites.
-- Databases: engines on app/worker servers also listen on the Docker bridge gateway (firewall: only the Kiln
+- Databases: engines on app/worker servers also listen on the Docker bridge gateway (firewall: only the Falak
   bridge networks); `DatabaseConnections::variables()` gives containers that address (`DatabaseConsumer` with
   `containerized: true` on the same server) instead of the error.
 - Sites/Builds/Deployments: `root_directory` (repo subfolder, validated like `compose_file`) for native and Docker
   sites: builds, deploy steps and hooks run there.
 - `Sites\Contracts\ComposeServiceExtraction`:
   - `toDatabase(string $siteId, string $service, ?string $databaseId, string $engine): DatabaseData` — creates (or
-    links) the Kiln database on the site's leader, records `compose_services[service] = {mode: database,
+    links) the Falak database on the site's leader, records `compose_services[service] = {mode: database,
     database_id}`, and stores the variable rewrites;
-  - `toSite(string $siteId, string $service, array $site): SiteData` — creates the Kiln site (framework/runtime the
+  - `toSite(string $siteId, string $service, array $site): SiteData` — creates the Falak site (framework/runtime the
     user picked, `root_directory` = the service's build context, same repo/branch, the service's environment as
     variables), records `{mode: site, site_id}`;
   - `rewrites(string $siteId): array<string, string>` — env var → replacement (`${{ db.DATABASE_URL }}`, internal
@@ -147,21 +147,21 @@ two actions in Sites.
 
 ### Lane 3 as built (decisions and deviations)
 - **Container access** (agent feature `db.containers`): engines on app/worker servers listen on every interface,
-  accept the Docker ranges (`KILN_DOCKER_NETWORKS`, default `172.16.0.0/12,192.168.0.0/16`; PostgreSQL host rules,
+  accept the Docker ranges (`FALAK_DOCKER_NETWORKS`, default `172.16.0.0/12,192.168.0.0/16`; PostgreSQL host rules,
   MySQL an extra account per range) and the firewall opens their port on `docker0` / `br-*` only
   (`net.firewall.apply` `container_ports`, from the new `Network\Contracts\ContainerHostPorts`). Containers dial the
   server's own address (private network → private IP → public IP), not a bridge gateway, so one address works for
-  every Docker network (compose projects, kiln-fn, Docker sites). Per engine `container_access`, turned on when the
+  every Docker network (compose projects, falak-fn, Docker sites). Per engine `container_access`, turned on when the
   agent reports the feature (AgentVersionChanged / provisioning): users are re-applied, the firewall converged.
 - `DatabaseConnections::variables()` takes an optional `DatabaseConsumer`; Projects' resolver passes the site being
   released.
-- **Redis/Valkey** stay in the stack: Kiln has no managed Redis (`toDatabase` refuses them).
+- **Redis/Valkey** stay in the stack: Falak has no managed Redis (`toDatabase` refuses them).
 - `toDatabase` / `toSite` take an optional trailing `?string $compose` (the merged YAML the caller already has);
   without it inline stacks use the stored file, repo stacks call `SourceControlGateway::file()` (lane 1) on
   `compose_files[0] ?? compose_file`.
 - `rewrites()` returns `Sites\Contracts\Data\ComposeRewrites` (per service + `.stack`, not one flat map: the same
   name in two services may point at different databases); service rewrites get their own `.env` names
-  (`KILN_SVC_<SERVICE>_<KEY>`, `ComposeRewrites::variable()`), `dotenv()` is what the release `.env` gains.
+  (`FALAK_SVC_<SERVICE>_<KEY>`, `ComposeRewrites::variable()`), `dotenv()` is what the release `.env` gains.
 - Callers check permissions (`databases.manage` / `sites.create`, in `ComposeSettings::extract`); the service is
   claimed (`mode: pending`, still kept in the stack) under the stack's row lock before creation and released on
   failure.
@@ -178,7 +178,7 @@ two actions in Sites.
 ## Status
 
 - **Lane 1 (phases 1 and 4)** on `feat/compose-apps-flow`: SourceControl `file()`/`tree()`, the Git step's
-  "Docker Compose app", the services table, variables, Settings → Compose, Kiln adjustments at render time,
-  multi-file/profile/include/extends projects in kiln-builder (shared merge cases) and repository files shipped
+  "Docker Compose app", the services table, variables, Settings → Compose, Falak adjustments at render time,
+  multi-file/profile/include/extends projects in falak-builder (shared merge cases) and repository files shipped
   with releases (agent feature `compose.v2`). `Sites\Events\ComposeServicesUnpublished` fires when a service stops
   being public (Edge removes its domains).

@@ -1,4 +1,4 @@
-import { AppShell, Button, EmptyCanvas, IconButton, PanelStack, SERVICE_CARD, toast, type PanelLayer } from '@/components/kiln';
+import { AppShell, Button, EmptyCanvas, IconButton, PanelStack, SERVICE_CARD, toast, type PanelLayer } from '@/components/falak';
 import { errorMessage, requestJson } from '@/lib/http';
 import { allServiceLayers, shellContext, type ServicePanelContext } from '@/lib/registry';
 import { cn } from '@/lib/utils';
@@ -129,7 +129,7 @@ function useRevealBehindPanel(service: CanvasService | null, groups: CanvasGroup
     useEffect(() => {
         if (!service || !open || window.innerWidth < 1024) return;
         const timer = window.setTimeout(() => {
-            const panel = document.querySelector<HTMLElement>('[data-kiln-panel][data-depth]');
+            const panel = document.querySelector<HTMLElement>('[data-falak-panel][data-depth]');
             const canvas = document.querySelector<HTMLElement>('[data-testid="project-canvas"]');
             if (!panel || !canvas) return;
             const bounds = canvas.getBoundingClientRect();
@@ -166,8 +166,8 @@ function CanvasPage({ project, environment, canvas: initial, can }: CanvasPagePr
         option?: string | null;
     } | null>(null);
     const [activity, setActivity] = useState(false);
-    const [snap, setSnap] = useState(() => readFlag('kiln:canvas-snap', true));
-    const [minimap, setMinimap] = useState(() => readFlag('kiln:canvas-minimap', false));
+    const [snap, setSnap] = useState(() => readFlag('falak:canvas-snap', true));
+    const [minimap, setMinimap] = useState(() => readFlag('falak:canvas-minimap', false));
     const [selection, setSelection] = useState<string[]>([]);
     const [selectionReset, setSelectionReset] = useState(0);
     const [renaming, setRenaming] = useState<string | null>(null);
@@ -622,7 +622,7 @@ function CanvasPage({ project, environment, canvas: initial, can }: CanvasPagePr
                     snap={snap}
                     onSnap={() =>
                         setSnap((value) => {
-                            writeFlag('kiln:canvas-snap', !value);
+                            writeFlag('falak:canvas-snap', !value);
 
                             return !value;
                         })
@@ -630,7 +630,7 @@ function CanvasPage({ project, environment, canvas: initial, can }: CanvasPagePr
                     minimap={minimap}
                     onMinimap={() =>
                         setMinimap((value) => {
-                            writeFlag('kiln:canvas-minimap', !value);
+                            writeFlag('falak:canvas-minimap', !value);
 
                             return !value;
                         })

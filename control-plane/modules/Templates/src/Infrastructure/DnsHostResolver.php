@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Templates\Infrastructure;
+namespace Falak\Templates\Infrastructure;
 
-use Kiln\Templates\Application\Import\HostResolver;
+use Falak\Templates\Application\Import\HostResolver;
 
 final class DnsHostResolver implements HostResolver
 {

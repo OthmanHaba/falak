@@ -35,13 +35,13 @@ return [
     ],
 
     // Public base URL providers post webhooks to (defaults to APP_URL).
-    'webhook_url' => env('KILN_WEBHOOK_URL'),
+    'webhook_url' => env('FALAK_WEBHOOK_URL'),
 
     // Webhook deliveries accepted per minute per webhook.
-    'webhook_rate_limit' => (int) env('KILN_WEBHOOK_RATE_LIMIT', 120),
+    'webhook_rate_limit' => (int) env('FALAK_WEBHOOK_RATE_LIMIT', 120),
 
     // Deliveries accepted per minute per GitHub App webhook (one webhook covers every installed repository).
-    'github_app_webhook_rate_limit' => (int) env('KILN_GITHUB_APP_WEBHOOK_RATE_LIMIT', 600),
+    'github_app_webhook_rate_limit' => (int) env('FALAK_GITHUB_APP_WEBHOOK_RATE_LIMIT', 600),
 
     // known_hosts lines handed to builders for well-known git hosts.
     'known_hosts' => [

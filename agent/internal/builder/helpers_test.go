@@ -12,9 +12,9 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 const fixtures = "testdata/fixtures"

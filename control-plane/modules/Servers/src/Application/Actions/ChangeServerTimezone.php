@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Servers\Application\Actions;
+namespace Falak\Servers\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Domain\Models\Server;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Domain\Models\Server;
 
 /**
  * Stores the server timezone and, for active servers, converges it through the provisioning plan.

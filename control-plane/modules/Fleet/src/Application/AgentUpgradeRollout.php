@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Fleet\Application;
+namespace Falak\Fleet\Application;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Application\Actions\QueueCommand;
-use Kiln\Fleet\Contracts\AgentStatus;
-use Kiln\Fleet\Contracts\AgentUpgradeStatus;
-use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
-use Kiln\Fleet\Contracts\Exceptions\InvalidCommandPayload;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\AgentUpgrade;
-use Kiln\Fleet\Events\AgentUpgradeFailed;
-use Kiln\Fleet\Events\AgentUpgradeSucceeded;
+use Falak\Fleet\Application\Actions\QueueCommand;
+use Falak\Fleet\Contracts\AgentStatus;
+use Falak\Fleet\Contracts\AgentUpgradeStatus;
+use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Falak\Fleet\Contracts\Exceptions\InvalidCommandPayload;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\AgentUpgrade;
+use Falak\Fleet\Events\AgentUpgradeFailed;
+use Falak\Fleet\Events\AgentUpgradeSucceeded;
 
 /**
  * Drives agent upgrades: queued → running (system.upgrade_agent sent) → installed (the agent swapped its binary and
@@ -146,7 +146,7 @@ final class AgentUpgradeRollout
 
         AgentUpgrade::query()->where('status', AgentUpgradeStatus::Running)->where('started_at', '<', now()->subSeconds($timeout))
             ->each(fn (AgentUpgrade $upgrade) => $this->fail($upgrade, $upgrade->installed
-                ? "The agent did not come back with {$upgrade->to_version} within ".intdiv($timeout, 60).' minutes (check `systemctl status kiln-agent`; the previous binary is kept as /usr/local/bin/kiln-agent.prev).'
+                ? "The agent did not come back with {$upgrade->to_version} within ".intdiv($timeout, 60).' minutes (check `systemctl status falak-agent`; the previous binary is kept as /usr/local/bin/falak-agent.prev).'
                 : 'The agent did not answer the upgrade command within '.intdiv($timeout, 60).' minutes.'));
     }
 

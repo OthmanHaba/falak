@@ -18,15 +18,15 @@ import {
   type SpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
 import type { Context } from '@opentelemetry/api';
-import { resolveOptions, type KilnOptions, type ResolvedOptions } from './config.js';
+import { resolveOptions, type FalakOptions, type ResolvedOptions } from './config.js';
 import { runtime } from './env.js';
 import { installProcessHandlers } from './exceptions.js';
 import { nodeInstrumentations } from './instrumentations.js';
-import { KilnSpanProcessor } from './mapping.js';
+import { FalakSpanProcessor } from './mapping.js';
 import { REDACTED, Redactor } from './redact.js';
-import { kilnResourceAttributes } from './resource.js';
+import { falakResourceAttributes } from './resource.js';
 
-export interface KilnHandle {
+export interface FalakHandle {
   readonly options: ResolvedOptions;
   /** Export everything buffered. Bounded in time; never rejects. */
   forceFlush(): Promise<void>;
@@ -43,7 +43,7 @@ export interface StartOverrides {
   mode?: 'node' | 'basic';
 }
 
-let active: KilnHandle | undefined;
+let active: FalakHandle | undefined;
 
 /** Per-export budget; the agent is local, so anything slower means it is down. */
 const EXPORT_TIMEOUT_MS = 2_000;
@@ -64,7 +64,7 @@ function bounded(promise: Promise<unknown>, ms: number): Promise<void> {
 }
 
 /** Redacts log attributes by the same denylist as spans. */
-class KilnLogProcessor implements LogRecordProcessor {
+class FalakLogProcessor implements LogRecordProcessor {
   constructor(
     private readonly delegate: LogRecordProcessor,
     private readonly redactor: Redactor,
@@ -90,32 +90,32 @@ class KilnLogProcessor implements LogRecordProcessor {
   }
 }
 
-const noop: KilnHandle = {
+const noop: FalakHandle = {
   options: resolveOptions({ enabled: false }),
   forceFlush: async () => {},
   shutdown: async () => {},
 };
 
 /**
- * Start Kiln APM. Idempotent: a second call returns the running handle.
+ * Start Falak APM. Idempotent: a second call returns the running handle.
  *
  * Node: NodeSDK + auto-instrumentations. Bun / Deno: a BasicTracerProvider with the same
- * exporters and processors (instrument handlers with `withKilnRequest`).
+ * exporters and processors (instrument handlers with `withFalakRequest`).
  */
-export function start(options: KilnOptions = {}, overrides: StartOverrides = {}): KilnHandle {
+export function start(options: FalakOptions = {}, overrides: StartOverrides = {}): FalakHandle {
   if (active) return active;
 
   const opts = resolveOptions(options);
   if (!opts.enabled) return noop;
 
   const redactor = new Redactor(opts.redactKeys, opts.redactQueryLiterals);
-  const resource = resourceFromAttributes(kilnResourceAttributes(opts));
+  const resource = resourceFromAttributes(falakResourceAttributes(opts));
   const sampler = new ParentBasedSampler({ root: new TraceIdRatioBasedSampler(opts.sampleRate) });
   const exporter = overrides.spanExporter ?? new OTLPTraceExporter({ url: `${opts.endpoint}/v1/traces`, timeoutMillis: EXPORT_TIMEOUT_MS });
   const inner = overrides.spanProcessorFactory?.(exporter) ?? new BatchSpanProcessor(exporter);
-  const spanProcessor = new KilnSpanProcessor(inner, redactor, opts.redact);
+  const spanProcessor = new FalakSpanProcessor(inner, redactor, opts.redact);
   const logProcessor = opts.logs
-    ? new KilnLogProcessor(new BatchLogRecordProcessor({ exporter: new OTLPLogExporter({ url: `${opts.endpoint}/v1/logs`, timeoutMillis: EXPORT_TIMEOUT_MS }) }), redactor)
+    ? new FalakLogProcessor(new BatchLogRecordProcessor({ exporter: new OTLPLogExporter({ url: `${opts.endpoint}/v1/logs`, timeoutMillis: EXPORT_TIMEOUT_MS }) }), redactor)
     : undefined;
 
   const mode = overrides.mode ?? (runtime() === 'node' ? 'node' : 'basic');
@@ -187,7 +187,7 @@ export function start(options: KilnOptions = {}, overrides: StartOverrides = {})
     });
   }
 
-  const handle: KilnHandle = {
+  const handle: FalakHandle = {
     options: opts,
     forceFlush: () => bounded(flush(), EXPORT_TIMEOUT_MS + 500),
     shutdown: async () => {
@@ -202,7 +202,7 @@ export function start(options: KilnOptions = {}, overrides: StartOverrides = {})
 }
 
 /** The running handle, if started. */
-export function current(): KilnHandle | undefined {
+export function current(): FalakHandle | undefined {
   return active;
 }
 

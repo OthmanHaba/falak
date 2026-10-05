@@ -1,9 +1,9 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Kiln\Templates\Http\Controllers\CustomTemplateController;
-use Kiln\Templates\Http\Controllers\TemplateController;
-use Kiln\Templates\Http\Controllers\TemplateDeployController;
+use Falak\Templates\Http\Controllers\CustomTemplateController;
+use Falak\Templates\Http\Controllers\TemplateController;
+use Falak\Templates\Http\Controllers\TemplateDeployController;
 
 $ulid = '[0-9A-Za-z]{26}';
 $slug = '[a-z0-9][a-z0-9-]{0,49}';

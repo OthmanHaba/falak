@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts\Data;
+namespace Falak\Telemetry\Contracts\Data;
 
 final readonly class Span
 {

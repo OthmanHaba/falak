@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Infrastructure\Dns;
+namespace Falak\Edge\Infrastructure\Dns;
 
 /**
  * Which certificate a server presents for a name (connects to one of the site's own servers only).

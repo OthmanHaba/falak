@@ -5,11 +5,11 @@
 # Also publishes Caddy's internal root (the edge's TLS server CA) for the sim servers.
 set -eu
 
-SRC="${KILN_EDGE_CA_FILE:-/kiln/ca/ca.pem}"
+SRC="${FALAK_EDGE_CA_FILE:-/falak/ca/ca.pem}"
 DST=/etc/caddy/trust/ca.pem
-PKI_OUT="${KILN_EDGE_PKI_OUT:-/kiln/edge-pki}"
+PKI_OUT="${FALAK_EDGE_PKI_OUT:-/falak/edge-pki}"
 ROOT=/data/caddy/pki/authorities/local/root.crt
-AGENT_HOST="${KILN_AGENT_API_HOST:-agents.kiln.test}"
+AGENT_HOST="${FALAK_AGENT_API_HOST:-agents.falak.test}"
 AGENT_CERT="$(dirname "$SRC")/agent-api.pem"
 AGENT_KEY="$(dirname "$SRC")/agent-api.key"
 AGENT_TLS=/etc/caddy/agent-tls
@@ -19,17 +19,17 @@ mkdir -p "$AGENT_TLS" /etc/caddy/sites
 placeholder() {
   tmp=$(mktemp -d)
   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 \
-    -subj "/CN=Kiln sim placeholder CA (no Fleet CA yet)" \
+    -subj "/CN=Falak sim placeholder CA (no Fleet CA yet)" \
     -keyout "$tmp/key.pem" -out "$DST" >/dev/null 2>&1
   rm -rf "$tmp"
-  echo "kiln-edge: Fleet CA not found at $SRC; using placeholder (agent mTLS will reject everything)"
+  echo "falak-edge: Fleet CA not found at $SRC; using placeholder (agent mTLS will reject everything)"
 }
 
 sync_ca() {
   if [ -s "$SRC" ] && openssl x509 -in "$SRC" -noout >/dev/null 2>&1; then
     if ! cmp -s "$SRC" "$DST"; then
       cp "$SRC" "$DST.tmp" && mv "$DST.tmp" "$DST"
-      echo "kiln-edge: trusting Fleet CA $(openssl x509 -in "$DST" -noout -subject -fingerprint -sha256 | tr '\n' ' ')"
+      echo "falak-edge: trusting Fleet CA $(openssl x509 -in "$DST" -noout -subject -fingerprint -sha256 | tr '\n' ' ')"
       return 0
     fi
     return 1
@@ -42,7 +42,7 @@ pem_normalise() {
   awk '{ gsub(/\r/, ""); gsub(/-----END ([A-Z ]+)-----/, "&\n"); gsub(/\n$/, ""); print }' | awk 'NF'
 }
 
-# Agent API site: served with the Fleet-issued server cert (agents pin the Kiln CA).
+# Agent API site: served with the Fleet-issued server cert (agents pin the Falak CA).
 sync_agent_site() {
   if [ -s "$AGENT_CERT" ] && [ -s "$AGENT_KEY" ]; then
     if [ ! -f "$SITE" ] || ! cmp -s "$AGENT_CERT" "$AGENT_TLS/src.pem" || ! cmp -s "$AGENT_KEY" "$AGENT_TLS/src.key"; then
@@ -56,10 +56,10 @@ $AGENT_HOST {
 	tls $AGENT_TLS/agent-api.pem $AGENT_TLS/agent-api.key {
 		import client_auth_fleet
 	}
-	import kiln_routes
+	import falak_routes
 }
 SITE
-      echo "kiln-edge: serving agent API on $AGENT_HOST with the Fleet-issued server certificate"
+      echo "falak-edge: serving agent API on $AGENT_HOST with the Fleet-issued server certificate"
       return 0
     fi
     return 1
@@ -71,7 +71,7 @@ SITE
 publish_root() {
   if [ -s "$ROOT" ] && [ -d "$PKI_OUT" ] && ! cmp -s "$ROOT" "$PKI_OUT/root.crt"; then
     cp "$ROOT" "$PKI_OUT/root.crt.tmp" && chmod 644 "$PKI_OUT/root.crt.tmp" && mv "$PKI_OUT/root.crt.tmp" "$PKI_OUT/root.crt"
-    echo "kiln-edge: published edge TLS root CA to $PKI_OUT/root.crt"
+    echo "falak-edge: published edge TLS root CA to $PKI_OUT/root.crt"
   fi
 }
 
@@ -79,15 +79,15 @@ sync_ca || true
 sync_agent_site || true
 
 (
-  while sleep "${KILN_EDGE_CA_POLL:-3}"; do
+  while sleep "${FALAK_EDGE_CA_POLL:-3}"; do
     publish_root
     changed=0
     sync_ca && changed=1
     sync_agent_site && changed=1
     if [ "$changed" = 1 ]; then
       caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force >/dev/null 2>&1 \
-        && echo "kiln-edge: reloaded (client CA / agent API certificate changed)" \
-        || echo "kiln-edge: reload failed" >&2
+        && echo "falak-edge: reloaded (client CA / agent API certificate changed)" \
+        || echo "falak-edge: reload failed" >&2
     fi
   done
 ) &

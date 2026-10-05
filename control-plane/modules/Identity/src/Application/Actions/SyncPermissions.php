@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Identity\Application\Actions;
+namespace Falak\Identity\Application\Actions;
 
-use Kiln\Identity\Contracts\PermissionRegistry;
-use Kiln\Identity\Contracts\Role as RoleEnum;
+use Falak\Identity\Contracts\PermissionRegistry;
+use Falak\Identity\Contracts\Role as RoleEnum;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;

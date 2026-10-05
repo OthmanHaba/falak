@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Fleet\Application;
+namespace Falak\Fleet\Application;
 
-use Kiln\Fleet\Events\AgentVersionChanged;
+use Falak\Fleet\Events\AgentVersionChanged;
 
 /**
  * Agents decode payloads strictly (unknown fields are rejected), so optional fields added to the protocol are

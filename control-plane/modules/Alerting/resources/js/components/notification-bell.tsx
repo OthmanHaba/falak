@@ -1,6 +1,6 @@
-import { Button } from '@/components/kiln/button';
-import { MenuContent, MenuRoot, MenuTrigger } from '@/components/kiln/menu';
-import { RelativeTime } from '@/components/kiln/relative-time';
+import { Button } from '@/components/falak/button';
+import { MenuContent, MenuRoot, MenuTrigger } from '@/components/falak/menu';
+import { RelativeTime } from '@/components/falak/relative-time';
 import { useEchoChannel } from '@/hooks/use-echo-channel';
 import { cn } from '@/lib/utils';
 import { type SharedData } from '@/types';

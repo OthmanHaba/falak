@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Templates\Application\Compose;
+namespace Falak\Templates\Application\Compose;
 
-use Kiln\Templates\Domain\InvalidTemplate;
+use Falak\Templates\Domain\InvalidTemplate;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
 /**
  * A parsed compose file with the lookups templates need: images, container ports, Compose interpolation
- * (`${VAR}`) and Kiln placeholders (`${{ kiln.url(svc) }}`). Only string *values* are scanned — comments are
+ * (`${VAR}`) and Falak placeholders (`${{ falak.url(svc) }}`). Only string *values* are scanned — comments are
  * not interpolated by Compose either.
  */
 final readonly class ComposeDocument
@@ -186,7 +186,7 @@ final readonly class ComposeDocument
 
             if ($next === '{' && ($value[$i + 2] ?? '') === '{') {
                 $end = strpos($value, '}}', $i);
-                $i = $end === false ? $length : $end + 1; // Kiln placeholder, not Compose
+                $i = $end === false ? $length : $end + 1; // Falak placeholder, not Compose
 
                 continue;
             }

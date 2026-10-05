@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Identity\Tests\Feature\Auth;
+namespace Falak\Identity\Tests\Feature\Auth;
 
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\URL;
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Domain\Models\User;
 use Tests\TestCase;
 
 class EmailVerificationTest extends TestCase

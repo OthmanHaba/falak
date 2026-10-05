@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Databases\Application\KeyValue;
+namespace Falak\Databases\Application\KeyValue;
 
-use Kiln\Databases\Contracts\Data\DatabaseConsumer;
-use Kiln\Databases\Domain\Models\Database;
-use Kiln\Databases\Domain\Models\DatabaseServer;
-use Kiln\Network\Contracts\PrivateNetwork;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Servers\Contracts\Data\ServerData;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Databases\Contracts\Data\DatabaseConsumer;
+use Falak\Databases\Domain\Models\Database;
+use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Network\Contracts\PrivateNetwork;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Sites\Contracts\SiteDirectory;
 
 /**
  * Who reaches a Redis / Valkey instance, and on which address (feature db.redis.network).
@@ -20,8 +20,8 @@ use Kiln\Sites\Contracts\SiteDirectory;
  *   address (docker0, reported by the agent as container_host). Every bridge network's containers reach it through
  *   their own gateway; the firewall accepts the port on the Docker bridges from the Docker ranges only.
  * - Other servers (native or containers, whose traffic is NATed to their server's address): the instance's server's
- *   private address on a network both share — a Kiln private network (WireGuard) first, else the provider private
- *   network, only where membership is known: both servers created by Kiln with the same credential, in the same
+ *   private address on a network both share — a Falak private network (WireGuard) first, else the provider private
+ *   network, only where membership is known: both servers created by Falak with the same credential, in the same
  *   region, of a provider that puts such servers on one private network by default (databases.key_value.
  *   provider_private_networks). A private IPv4 alone proves nothing (separate VPCs, regions, NATed custom servers: the
  *   address could be unreachable or another machine's, and the password would go there). Never the public address:
@@ -83,7 +83,7 @@ final class KeyValueNetwork
     /**
      * How $serverIds (servers other than the instance's) reach it: the instance server's address on the first network
      * all of them share with it, and each one's own address there (what the firewall lets in; containers are NATed to
-     * it). Kiln private networks first (oldest of the instance's server), then the provider private network.
+     * it). Falak private networks first (oldest of the instance's server), then the provider private network.
      *
      * @param  list<string>  $serverIds
      * @return array{host: ?string, via: ?string, interface: ?string, peers: array<string, string>, missing: list<string>} missing: servers
@@ -188,7 +188,7 @@ final class KeyValueNetwork
             $host = $network['container_host'] ?? null;
 
             if ($host === null || self::containerRanges() === []) {
-                return ['host' => null, 'reason' => "{$consumer->name} runs in a container, but {$instance} does not listen on the Docker bridge (docker0) yet: ".(self::containerRanges() === [] ? 'container access is turned off (KILN_DOCKER_NETWORKS).' : 'is Docker installed and running there? Kiln applies the instance again once it is.')];
+                return ['host' => null, 'reason' => "{$consumer->name} runs in a container, but {$instance} does not listen on the Docker bridge (docker0) yet: ".(self::containerRanges() === [] ? 'container access is turned off (FALAK_DOCKER_NETWORKS).' : 'is Docker installed and running there? Falak applies the instance again once it is.')];
             }
 
             return ['host' => $host, 'reason' => null];
@@ -203,7 +203,7 @@ final class KeyValueNetwork
         }
 
         if (! in_array($reach['host'], $bound, true)) {
-            return ['host' => null, 'reason' => "{$consumer->name} runs on ".$this->names($elsewhere).", and {$instance} does not listen on {$reach['host']} ({$reach['via']}) yet: Kiln is applying it (a restart that keeps the data); deploy again once it is done."];
+            return ['host' => null, 'reason' => "{$consumer->name} runs on ".$this->names($elsewhere).", and {$instance} does not listen on {$reach['host']} ({$reach['via']}) yet: Falak is applying it (a restart that keeps the data); deploy again once it is done."];
         }
 
         return ['host' => $reach['host'], 'reason' => null];

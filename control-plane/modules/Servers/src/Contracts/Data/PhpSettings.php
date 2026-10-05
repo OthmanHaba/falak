@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Servers\Contracts\Data;
+namespace Falak\Servers\Contracts\Data;
 
 final readonly class PhpSettings
 {

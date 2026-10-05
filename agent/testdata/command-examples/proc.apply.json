@@ -12,7 +12,7 @@
         "--max-time=3600"
       ],
       "user": "shop",
-      "cwd": "/srv/kiln/sites/shop/current",
+      "cwd": "/srv/falak/sites/shop/current",
       "env": {
         "APP_ENV": "production"
       },
@@ -27,8 +27,8 @@
       "stop_signal": "TERM",
       "stop_timeout_s": 3600,
       "log": {
-        "stdout": "/var/log/kiln/shop-queue.out.log",
-        "stderr": "/var/log/kiln/shop-queue.err.log",
+        "stdout": "/var/log/falak/shop-queue.out.log",
+        "stderr": "/var/log/falak/shop-queue.err.log",
         "max_bytes": 52428800,
         "otlp": true
       },
@@ -42,7 +42,7 @@
         "exec php artisan horizon"
       ],
       "user": "shop",
-      "cwd": "/srv/kiln/sites/shop/current",
+      "cwd": "/srv/falak/sites/shop/current",
       "stop_signal": "TERM",
       "stop_timeout_s": 60,
       "site": "shop"

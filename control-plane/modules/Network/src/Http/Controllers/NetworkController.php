@@ -1,20 +1,20 @@
 <?php
 
-namespace Kiln\Network\Http\Controllers;
+namespace Falak\Network\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Network\Domain\Models\FirewallRule;
-use Kiln\Network\Domain\Models\FirewallState;
-use Kiln\Network\Domain\Models\PrivateNetwork;
-use Kiln\Network\Domain\Models\PrivateNetworkMember;
-use Kiln\Servers\Contracts\Data\ServerData;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Servers\Contracts\ServerType;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Network\Domain\Models\FirewallRule;
+use Falak\Network\Domain\Models\FirewallState;
+use Falak\Network\Domain\Models\PrivateNetwork;
+use Falak\Network\Domain\Models\PrivateNetworkMember;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Servers\Contracts\ServerType;
 
 final class NetworkController extends Controller
 {

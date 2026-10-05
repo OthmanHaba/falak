@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Domain\Models;
+namespace Falak\Sites\Domain\Models;
 
 use Illuminate\Database\Eloquent\Model;
 

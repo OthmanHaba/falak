@@ -16,25 +16,25 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/otlp"
+	"github.com/OthmanHaba/falak/agent/internal/otlp"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
 // Telemetry of functions. Every function gets its own OTLP/HTTP socket (<state>/<site>/otlp/otlp.sock, mounted
-// read-only at /run/kiln-otlp in its containers). The gateway stamps the function's identity on everything that
+// read-only at /run/falak-otlp in its containers). The gateway stamps the function's identity on everything that
 // arrives there, so a function can only report as itself, and relays it to the agent's receiver, which feeds
 // Insights (the Observability tab) and the observability pipeline. Requests the gateway answers itself (start
 // failures, timeouts, a full queue) are reported by the gateway.
 
 const (
 	// OTLPMount is where a container sees its function's telemetry socket.
-	OTLPMount = "/run/kiln-otlp"
+	OTLPMount = "/run/falak-otlp"
 	// OTLPSocketEnv names the socket for the runtime.
-	OTLPSocketEnv = "KILN_OTLP_SOCKET"
+	OTLPSocketEnv = "FALAK_OTLP_SOCKET"
 	// ColdStartHeader marks a request that waited for an instance to start ("1").
-	ColdStartHeader = "X-Kiln-Cold-Start"
+	ColdStartHeader = "X-Falak-Cold-Start"
 
 	otlpSocketName = "otlp.sock"
 	maxOTLPBody    = 4 << 20
@@ -215,7 +215,7 @@ func decode[T any](data []byte, isJSON bool, pb, js func([]byte) ([]T, error)) (
 	return pb(data)
 }
 
-// stamp drops what a function claims about itself (service.name and every kiln.* attribute) and sets the
+// stamp drops what a function claims about itself (service.name and every falak.* attribute) and sets the
 // gateway's view; the agent adds the server, organization and host.
 func stamp(res *resourcepb.Resource, id []*commonpb.KeyValue) *resourcepb.Resource {
 	if res == nil {
@@ -223,7 +223,7 @@ func stamp(res *resourcepb.Resource, id []*commonpb.KeyValue) *resourcepb.Resour
 	}
 	kept := res.Attributes[:0]
 	for _, kv := range res.Attributes {
-		if kv.GetKey() == "service.name" || strings.HasPrefix(kv.GetKey(), "kiln.") {
+		if kv.GetKey() == "service.name" || strings.HasPrefix(kv.GetKey(), "falak.") {
 			continue
 		}
 		kept = append(kept, kv)
@@ -266,12 +266,12 @@ func (t *telemetry) requestSpan(site string, r *http.Request, status int, start 
 		StartTimeUnixNano: uint64(start.UnixNano()),
 		EndTimeUnixNano:   uint64(now.UnixNano()),
 		Attributes: []*commonpb.KeyValue{
-			otlp.Str("kiln.event.type", "request"),
+			otlp.Str("falak.event.type", "request"),
 			otlp.Str("http.request.method", r.Method),
 			otlp.Str("http.route", gatewayRoute),
 			otlp.Str("url.path", RedactPath(r.URL.Path)),
 			otlp.Any("http.response.status_code", int64(status)),
-			otlp.Str("kiln.function.gateway_error", cause),
+			otlp.Str("falak.function.gateway_error", cause),
 		},
 	}
 	if status >= 500 {
@@ -279,7 +279,7 @@ func (t *telemetry) requestSpan(site string, r *http.Request, status int, start 
 	}
 	rs := []*tracepb.ResourceSpans{{
 		Resource:   stamp(nil, id),
-		ScopeSpans: []*tracepb.ScopeSpans{{Scope: &commonpb.InstrumentationScope{Name: "kiln-fn-gateway"}, Spans: []*tracepb.Span{sp}}},
+		ScopeSpans: []*tracepb.ScopeSpans{{Scope: &commonpb.InstrumentationScope{Name: "falak-fn-gateway"}, Spans: []*tracepb.Span{sp}}},
 	}}
 	body, err := otlp.EncodeTraces(rs)
 	if err != nil {

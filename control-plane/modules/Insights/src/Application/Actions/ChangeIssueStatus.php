@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Insights\Application\Actions;
+namespace Falak\Insights\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Insights\Application\IssueTracker;
-use Kiln\Insights\Contracts\IssueStatus;
-use Kiln\Insights\Domain\Models\Issue;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Insights\Application\IssueTracker;
+use Falak\Insights\Contracts\IssueStatus;
+use Falak\Insights\Domain\Models\Issue;
 
 final class ChangeIssueStatus
 {

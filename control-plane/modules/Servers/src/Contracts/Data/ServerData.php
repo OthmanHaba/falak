@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Servers\Contracts\Data;
+namespace Falak\Servers\Contracts\Data;
 
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Contracts\ServerType;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Contracts\ServerType;
 
 final readonly class ServerData
 {
@@ -29,7 +29,7 @@ final readonly class ServerData
         public ?string $cacheEngine,
         public bool $docker,
         public string $unixUser,
-        // Provider servers: the credential (account) Kiln created it with, and its region.
+        // Provider servers: the credential (account) Falak created it with, and its region.
         public ?string $providerCredentialId = null,
         public ?string $region = null,
     ) {}

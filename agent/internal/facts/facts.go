@@ -15,9 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/version"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/version"
 )
 
 // OS identifies the distribution.
@@ -150,7 +150,7 @@ func Collect(ctx context.Context, r runner.Runner, fs hostfs.FS, agentVersion st
 	if v := dirVersions(fs, "/etc/php", func(n string) bool { _, err := strconv.ParseFloat(n, 64); return err == nil }); len(v) > 0 {
 		f.Runtimes["php"] = v
 	}
-	if v := dirVersions(fs, "/opt/kiln/node", func(n string) bool { return strings.Count(n, ".") == 2 }); len(v) > 0 {
+	if v := dirVersions(fs, "/opt/falak/node", func(n string) bool { return strings.Count(n, ".") == 2 }); len(v) > 0 {
 		f.Runtimes["node"] = v
 	}
 	return f, nil
@@ -246,7 +246,7 @@ func IsPrivate(ip net.IP) bool {
 }
 
 // virtualInterfaces are name prefixes of interfaces whose addresses are never the host's own: container bridges
-// and veths (Docker's docker0 172.17.0.1, br-*, CNI plugins), VPNs and overlays (WireGuard incl. Kiln's wg-kiln,
+// and veths (Docker's docker0 172.17.0.1, br-*, CNI plugins), VPNs and overlays (WireGuard incl. Falak's wg-falak,
 // Tailscale, ZeroTier), VM bridges and tunnels.
 var virtualInterfaces = []string{
 	"lo", "docker", "br-", "veth", "cni", "flannel", "cali", "vxlan", "tailscale", "wg", "virbr", "lxcbr", "lxdbr",

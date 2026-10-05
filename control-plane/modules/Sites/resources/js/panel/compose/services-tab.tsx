@@ -1,4 +1,4 @@
-import { Button, Callout, CopyButton, EmptyState, IconButton, RelativeTime, SkeletonRows, StatusBadge, Tag, Tooltip, toast } from '@/components/kiln';
+import { Button, Callout, CopyButton, EmptyState, IconButton, RelativeTime, SkeletonRows, StatusBadge, Tag, Tooltip, toast } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';

@@ -1,4 +1,4 @@
-// kiln-fn-serve (Node): loads /app/$KILN_ENTRYPOINT (Node strips TypeScript types itself) and serves its default
+// falak-fn-serve (Node): loads /app/$FALAK_ENTRYPOINT (Node strips TypeScript types itself) and serves its default
 // export (a Hono app, { fetch } or a fetch function) on 0.0.0.0:$PORT through a small node:http ↔ Fetch adapter.
 // It listens only once the module has loaded: the gateway treats the first accepted connection as "ready".
 // Telemetry first, so outgoing fetch calls of the function are traced.
@@ -72,7 +72,7 @@ const server = createServer(async (req, res) => {
   }
 });
 server.keepAliveTimeout = 60_000;
-server.listen(port, "0.0.0.0", () => console.log(`kiln: ${entry} listening on :${port}`));
+server.listen(port, "0.0.0.0", () => console.log(`falak: ${entry} listening on :${port}`));
 
 for (const sig of ["SIGTERM", "SIGINT"]) {
   process.on(sig, async () => {

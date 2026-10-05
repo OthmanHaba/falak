@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/obs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 func mustLoc(t *testing.T, name string) *time.Location {
@@ -239,7 +239,7 @@ func TestSchedulerLoopWithFakeClock(t *testing.T) {
 	spans.mu.Lock()
 	sp := spans.spans[0]
 	spans.mu.Unlock()
-	if sp.Attrs["kiln.event.type"] != "scheduled_task" || sp.Attrs["kiln.schedule.expression"] == nil {
+	if sp.Attrs["falak.event.type"] != "scheduled_task" || sp.Attrs["falak.schedule.expression"] == nil {
 		t.Fatalf("span %+v", sp)
 	}
 

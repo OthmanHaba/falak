@@ -1,21 +1,21 @@
 <?php
 
-namespace Kiln\Edge\Infrastructure;
+namespace Falak\Edge\Infrastructure;
 
 use DateTimeImmutable;
-use Kiln\Edge\Application\DnsInstructions;
-use Kiln\Edge\Application\DnsTargets;
-use Kiln\Edge\Application\GeneratedDomains;
-use Kiln\Edge\Contracts\Data\DnsCheckResult;
-use Kiln\Edge\Contracts\Data\DnsTarget;
-use Kiln\Edge\Contracts\DnsCheck;
-use Kiln\Edge\Contracts\DnsStatus;
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Infrastructure\Dns\CloudflareRanges;
-use Kiln\Edge\Infrastructure\Dns\DnsLookupFailed;
-use Kiln\Edge\Infrastructure\Dns\DnsResolver;
-use Kiln\Edge\Infrastructure\Dns\TlsProbe;
+use Falak\Edge\Application\DnsInstructions;
+use Falak\Edge\Application\DnsTargets;
+use Falak\Edge\Application\GeneratedDomains;
+use Falak\Edge\Contracts\Data\DnsCheckResult;
+use Falak\Edge\Contracts\Data\DnsTarget;
+use Falak\Edge\Contracts\DnsCheck;
+use Falak\Edge\Contracts\DnsStatus;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Infrastructure\Dns\CloudflareRanges;
+use Falak\Edge\Infrastructure\Dns\DnsLookupFailed;
+use Falak\Edge\Infrastructure\Dns\DnsResolver;
+use Falak\Edge\Infrastructure\Dns\TlsProbe;
 
 final class ResolverDnsCheck implements DnsCheck
 {
@@ -60,7 +60,7 @@ final class ResolverDnsCheck implements DnsCheck
         $proxied = array_values(array_filter($addresses, CloudflareRanges::contains(...)));
 
         if ($proxied !== [] && $managedZone !== null) {
-            return $result(DnsStatus::Ok, "Proxied by Cloudflare (orange cloud), with DNS managed by Kiln in {$managedZone}.", $addresses, $answer->cnames);
+            return $result(DnsStatus::Ok, "Proxied by Cloudflare (orange cloud), with DNS managed by Falak in {$managedZone}.", $addresses, $answer->cnames);
         }
 
         if ($proxied !== []) {

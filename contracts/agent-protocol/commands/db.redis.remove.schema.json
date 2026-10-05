@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/db.redis.remove.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/db.redis.remove.schema.json",
   "title": "db.redis.remove \u2014 stop and delete one Redis / Valkey instance (feature db.redis)",
-  "description": "Stops and disables <engine>-server@kiln-<name>, deletes its drop-in, configuration file, data directory, agent state and system user. Idempotent.",
-  "x-kiln-redeliverable": true,
+  "description": "Stops and disables <engine>-server@falak-<name>, deletes its drop-in, configuration file, data directory, agent state and system user. Idempotent.",
+  "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
   "required": [

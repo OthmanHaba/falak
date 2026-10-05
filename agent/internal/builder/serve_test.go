@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 func TestServePollsAndPostsEvents(t *testing.T) {

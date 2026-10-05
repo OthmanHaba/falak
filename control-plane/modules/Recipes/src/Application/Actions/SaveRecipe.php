@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Recipes\Application\Actions;
+namespace Falak\Recipes\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Recipes\Domain\Models\Recipe;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Recipes\Domain\Models\Recipe;
 
 final class SaveRecipe
 {

@@ -1,4 +1,4 @@
-import { Button, Callout, CodeBlock, Input, Select, Tag, Textarea } from '@/components/kiln';
+import { Button, Callout, CodeBlock, Input, Select, Tag, Textarea } from '@/components/falak';
 import { errorMessage, requestJson } from '@/lib/http';
 import { ChevronDown, ChevronRight, Send } from 'lucide-react';
 import { useState } from 'react';
@@ -95,7 +95,7 @@ export function TestPanel({ siteId }: { siteId: string }) {
                         <Textarea
                             rows={3}
                             className="font-mono text-xs"
-                            placeholder={'Headers, one per line\nContent-Type: application/json\nX-Kiln-Key: kfn_…'}
+                            placeholder={'Headers, one per line\nContent-Type: application/json\nX-Falak-Key: kfn_…'}
                             value={headers}
                             onChange={(e) => setHeaders(e.target.value)}
                             aria-label="Headers"

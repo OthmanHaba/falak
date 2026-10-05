@@ -1,4 +1,4 @@
-import { Button, Callout, Dialog, Skeleton, toast } from '@/components/kiln';
+import { Button, Callout, Dialog, Skeleton, toast } from '@/components/falak';
 import { requestJson } from '@/lib/http';
 import { type ServiceActionDialogProps } from '@/lib/registry';
 import { Link } from '@inertiajs/react';
@@ -7,8 +7,8 @@ import { type CustomTemplateRow } from '../types';
 import { TemplateEditor, problemsOf, type TemplateFiles } from './template-editor';
 
 /**
- * Service panel ⋯ → Save as template (compose sites): Kiln drafts template.yaml + compose.yaml from the site (secret
- * values become generated inputs, domains become Kiln placeholders); the user reviews and saves it.
+ * Service panel ⋯ → Save as template (compose sites): Falak drafts template.yaml + compose.yaml from the site (secret
+ * values become generated inputs, domains become Falak placeholders); the user reviews and saves it.
  */
 export function SaveAsTemplateDialog({ ctx, open, onOpenChange }: ServiceActionDialogProps) {
     const [files, setFiles] = useState<TemplateFiles | null>(null);

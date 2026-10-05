@@ -5,7 +5,7 @@ return [
     'timeouts' => [
         'fetch' => 900,
         'prepare' => 300,
-        'hook' => (int) env('KILN_DEPLOY_HOOK_TIMEOUT', 1800),
+        'hook' => (int) env('FALAK_DEPLOY_HOOK_TIMEOUT', 1800),
         'activate' => 120,
         // docker compose up --wait (added to compose.wait_timeout).
         'compose_up' => 600,
@@ -36,7 +36,7 @@ return [
     // A deployment triggered while some of the site's servers are still being prepared waits for them (status
     // `waiting`), and fails if they are not ready after this many minutes.
     'waiting' => [
-        'timeout_minutes' => (int) env('KILN_DEPLOY_WAIT_TIMEOUT_MINUTES', 30),
+        'timeout_minutes' => (int) env('FALAK_DEPLOY_WAIT_TIMEOUT_MINUTES', 30),
     ],
 
     // A deployment step still running after its timeout + this grace is reconciled from the agent.
@@ -44,7 +44,7 @@ return [
 
     // Docker Compose sites: `docker compose up --wait --wait-timeout` (seconds; healthchecks with long start periods need more).
     'compose' => [
-        'wait_timeout' => (int) env('KILN_COMPOSE_WAIT_TIMEOUT', 300),
+        'wait_timeout' => (int) env('FALAK_COMPOSE_WAIT_TIMEOUT', 300),
     ],
 
     // Blue/green: the "green" host port is the site's app port + this offset.

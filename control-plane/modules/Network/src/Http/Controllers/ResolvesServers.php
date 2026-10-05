@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Network\Http\Controllers;
+namespace Falak\Network\Http\Controllers;
 
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Servers\Contracts\Data\ServerData;
-use Kiln\Servers\Contracts\ServerDirectory;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\ServerDirectory;
 
 trait ResolvesServers
 {

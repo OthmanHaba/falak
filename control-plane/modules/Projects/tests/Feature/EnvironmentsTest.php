@@ -1,12 +1,12 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Projects\Domain\Models\Environment;
-use Kiln\Projects\Domain\Models\Service;
-use Kiln\Projects\Events\EnvironmentCreated;
-use Kiln\Sites\Domain\Models\EnvironmentVersion;
-use Kiln\Sites\Domain\Models\Site;
+use Falak\Identity\Contracts\Role;
+use Falak\Projects\Domain\Models\Environment;
+use Falak\Projects\Domain\Models\Service;
+use Falak\Projects\Events\EnvironmentCreated;
+use Falak\Sites\Domain\Models\EnvironmentVersion;
+use Falak\Sites\Domain\Models\Site;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -41,7 +41,7 @@ it('duplicates site configs and variables into a new environment, without server
     $server = sites_server($this->organization->id);
     projects_database($this->organization, 'db', $this->production);
     $shop = projects_site($this->organization, 'Shop', ['APP_KEY' => 'base64:abc', 'DATABASE_URL' => '${{ db.DATABASE_URL }}'], $this->production, [$server], [
-        'deploy_script' => "echo custom\n\$KILN_FETCH\n\$KILN_ACTIVATE\n",
+        'deploy_script' => "echo custom\n\$FALAK_FETCH\n\$FALAK_ACTIVATE\n",
         'branch' => 'main',
         'push_to_deploy' => true,
     ]);
@@ -65,7 +65,7 @@ it('duplicates site configs and variables into a new environment, without server
         ->and($copy->targets)->toHaveCount(0)
         ->and($copy->push_to_deploy)->toBeFalse()
         ->and($copy->branch)->toBe('main')
-        ->and($copy->deploy_script)->toBe("echo custom\n\$KILN_FETCH\n\$KILN_ACTIVATE\n")
+        ->and($copy->deploy_script)->toBe("echo custom\n\$FALAK_FETCH\n\$FALAK_ACTIVATE\n")
         ->and($copy->latestEnvironment->version)->toBe(1)
         ->and($copy->latestEnvironment->variables)->toBe(['APP_KEY' => 'base64:abc', 'DATABASE_URL' => '${{ db.DATABASE_URL }}'])
         ->and($copy->latestEnvironment->exposed)->toBe(['APP_KEY'])

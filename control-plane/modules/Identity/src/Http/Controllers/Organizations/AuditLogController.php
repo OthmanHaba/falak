@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Identity\Http\Controllers\Organizations;
+namespace Falak\Identity\Http\Controllers\Organizations;
 
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\Kernel\Http\Controller;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Kernel\Http\Controller;
 
 final class AuditLogController extends Controller
 {

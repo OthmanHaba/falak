@@ -1,4 +1,4 @@
-// Package config holds agent configuration from flags and KILN_* environment variables.
+// Package config holds agent configuration from flags and FALAK_* environment variables.
 package config
 
 import (
@@ -9,18 +9,18 @@ import (
 	"time"
 )
 
-// Config is the runtime configuration of kiln-agent.
+// Config is the runtime configuration of falak-agent.
 type Config struct {
 	PanelURL   string // https://panel.example — used for enrollment only
 	Token      string // one-time enrollment token
-	EtcDir     string // /etc/kiln: agent.key, agent.crt, ca.crt, agent.json, telemetry.json, certs/
-	StateDir   string // /var/lib/kiln: proc/cron state, otlp disk buffer
-	RunDir     string // /run/kiln: otlp.sock
-	LogDir     string // /var/log/kiln: supervised program logs
-	SitesRoot  string // /srv/kiln/sites
+	EtcDir     string // /etc/falak: agent.key, agent.crt, ca.crt, agent.json, telemetry.json, certs/
+	StateDir   string // /var/lib/falak: proc/cron state, otlp disk buffer
+	RunDir     string // /run/falak: otlp.sock
+	LogDir     string // /var/log/falak: supervised program logs
+	SitesRoot  string // /srv/falak/sites
 	HostRoot   string // "/" in production; tests re-root the host fs
 	OTLPHTTP   string // 127.0.0.1:4318 ("" disables)
-	OTLPSocket string // /run/kiln/otlp.sock ("" disables)
+	OTLPSocket string // /run/falak/otlp.sock ("" disables)
 	Heartbeat  time.Duration
 	PollWait   int // seconds for GET /commands?wait=
 	CaddyAdmin string
@@ -31,14 +31,14 @@ type Config struct {
 // Default returns production defaults.
 func Default() Config {
 	return Config{
-		EtcDir:     "/etc/kiln",
-		StateDir:   "/var/lib/kiln",
-		RunDir:     "/run/kiln",
-		LogDir:     "/var/log/kiln",
-		SitesRoot:  "/srv/kiln/sites",
+		EtcDir:     "/etc/falak",
+		StateDir:   "/var/lib/falak",
+		RunDir:     "/run/falak",
+		LogDir:     "/var/log/falak",
+		SitesRoot:  "/srv/falak/sites",
 		HostRoot:   "/",
 		OTLPHTTP:   "127.0.0.1:4318",
-		OTLPSocket: "/run/kiln/otlp.sock",
+		OTLPSocket: "/run/falak/otlp.sock",
 		Heartbeat:  15 * time.Second,
 		PollWait:   30,
 		CaddyAdmin: "http://127.0.0.1:2019",
@@ -46,27 +46,27 @@ func Default() Config {
 	}
 }
 
-// Bind registers flags on fs; defaults come from env (KILN_*) overlaid on Default().
+// Bind registers flags on fs; defaults come from env (FALAK_*) overlaid on Default().
 func (c *Config) Bind(fs *flag.FlagSet) {
 	d := Default()
 	s := func(p *string, name, env, def, usage string) {
 		fs.StringVar(p, name, envOr(env, def), usage+" (env "+env+")")
 	}
-	s(&c.PanelURL, "panel", "KILN_PANEL_URL", "", "control-plane base URL for enrollment")
-	s(&c.Token, "token", "KILN_TOKEN", "", "one-time enrollment token")
-	s(&c.EtcDir, "etc-dir", "KILN_ETC_DIR", d.EtcDir, "config + credentials directory")
-	s(&c.StateDir, "state-dir", "KILN_STATE_DIR", d.StateDir, "state directory")
-	s(&c.RunDir, "run-dir", "KILN_RUN_DIR", d.RunDir, "runtime directory")
-	s(&c.LogDir, "log-dir", "KILN_LOG_DIR", d.LogDir, "program log directory")
-	s(&c.SitesRoot, "sites-root", "KILN_SITES_ROOT", d.SitesRoot, "sites root")
-	s(&c.HostRoot, "host-root", "KILN_HOST_ROOT", d.HostRoot, "host filesystem root (testing)")
-	s(&c.OTLPHTTP, "otlp-http", "KILN_OTLP_HTTP", d.OTLPHTTP, "OTLP/HTTP listen address (empty disables)")
-	s(&c.OTLPSocket, "otlp-socket", "KILN_OTLP_SOCKET", d.OTLPSocket, "OTLP unix socket (empty disables)")
-	s(&c.CaddyAdmin, "caddy-admin", "KILN_CADDY_ADMIN", d.CaddyAdmin, "Caddy admin API URL")
-	s(&c.DockerSock, "docker-socket", "KILN_DOCKER_SOCKET", d.DockerSock, "Docker Engine socket")
-	fs.DurationVar(&c.Heartbeat, "heartbeat", envDur("KILN_HEARTBEAT", d.Heartbeat), "heartbeat interval (env KILN_HEARTBEAT)")
-	fs.IntVar(&c.PollWait, "poll-wait", envInt("KILN_POLL_WAIT", d.PollWait), "long-poll wait seconds (env KILN_POLL_WAIT)")
-	fs.BoolVar(&c.Insecure, "insecure-enroll", os.Getenv("KILN_INSECURE_ENROLL") == "1", "skip TLS verify during enrollment (dev only)")
+	s(&c.PanelURL, "panel", "FALAK_PANEL_URL", "", "control-plane base URL for enrollment")
+	s(&c.Token, "token", "FALAK_TOKEN", "", "one-time enrollment token")
+	s(&c.EtcDir, "etc-dir", "FALAK_ETC_DIR", d.EtcDir, "config + credentials directory")
+	s(&c.StateDir, "state-dir", "FALAK_STATE_DIR", d.StateDir, "state directory")
+	s(&c.RunDir, "run-dir", "FALAK_RUN_DIR", d.RunDir, "runtime directory")
+	s(&c.LogDir, "log-dir", "FALAK_LOG_DIR", d.LogDir, "program log directory")
+	s(&c.SitesRoot, "sites-root", "FALAK_SITES_ROOT", d.SitesRoot, "sites root")
+	s(&c.HostRoot, "host-root", "FALAK_HOST_ROOT", d.HostRoot, "host filesystem root (testing)")
+	s(&c.OTLPHTTP, "otlp-http", "FALAK_OTLP_HTTP", d.OTLPHTTP, "OTLP/HTTP listen address (empty disables)")
+	s(&c.OTLPSocket, "otlp-socket", "FALAK_OTLP_SOCKET", d.OTLPSocket, "OTLP unix socket (empty disables)")
+	s(&c.CaddyAdmin, "caddy-admin", "FALAK_CADDY_ADMIN", d.CaddyAdmin, "Caddy admin API URL")
+	s(&c.DockerSock, "docker-socket", "FALAK_DOCKER_SOCKET", d.DockerSock, "Docker Engine socket")
+	fs.DurationVar(&c.Heartbeat, "heartbeat", envDur("FALAK_HEARTBEAT", d.Heartbeat), "heartbeat interval (env FALAK_HEARTBEAT)")
+	fs.IntVar(&c.PollWait, "poll-wait", envInt("FALAK_POLL_WAIT", d.PollWait), "long-poll wait seconds (env FALAK_POLL_WAIT)")
+	fs.BoolVar(&c.Insecure, "insecure-enroll", os.Getenv("FALAK_INSECURE_ENROLL") == "1", "skip TLS verify during enrollment (dev only)")
 }
 
 // Credential paths.

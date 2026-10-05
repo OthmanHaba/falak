@@ -1,6 +1,6 @@
 import { ComposeProject, composeProjectPayload, emptyComposeProject, type ComposeProjectValue } from '@/components/compose-project';
 import { domainPayload, DomainPicker, type DomainChoice } from '@/components/domain-picker';
-import { Button, Checkbox, Combobox, Field, IconButton, Input, Segmented, Select, ServiceIcon, Skeleton, Tag, toast } from '@/components/kiln';
+import { Button, Checkbox, Combobox, Field, IconButton, Input, Segmented, Select, ServiceIcon, Skeleton, Tag, toast } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, HttpError, requestJson } from '@/lib/http';
 import { createOptionsFor, shellContext, type CreateOption } from '@/lib/registry';
@@ -544,7 +544,7 @@ function GitStep({ options, submitting, errors, onSubmit }: StepProps) {
         return (
             <div className="grid gap-3 p-4 text-sm">
                 <p className="text-fg-muted">
-                    Connect GitHub to deploy its repositories: Kiln installs a GitHub App and you pick the repositories on GitHub.
+                    Connect GitHub to deploy its repositories: Falak installs a GitHub App and you pick the repositories on GitHub.
                 </p>
                 {options.can_manage_source_control ? (
                     <div className="flex flex-wrap gap-2">
@@ -728,7 +728,7 @@ function CustomRepository({ onPick }: { onPick: (item: { full_name: string; defa
 
     return (
         <div className="grid gap-2">
-            <Field label="Clone URL" hint="SSH or HTTPS; Kiln adds a deploy key you install on the git server.">
+            <Field label="Clone URL" hint="SSH or HTTPS; Falak adds a deploy key you install on the git server.">
                 <Input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="git@git.example.com:acme/shop.git" mono autoFocus />
             </Field>
             <Button className="w-fit" disabled={!url} onClick={() => onPick({ full_name: url.trim(), default_branch: 'main' })}>

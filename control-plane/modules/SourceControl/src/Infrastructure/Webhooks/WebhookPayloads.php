@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\Webhooks;
+namespace Falak\SourceControl\Infrastructure\Webhooks;
 
 use DateTimeImmutable;
 use Exception;
 use Illuminate\Http\Request;
-use Kiln\SourceControl\Contracts\Data\CommitData;
-use Kiln\SourceControl\Contracts\ProviderType;
-use Kiln\SourceControl\Infrastructure\Providers\BitbucketClient;
+use Falak\SourceControl\Contracts\Data\CommitData;
+use Falak\SourceControl\Contracts\ProviderType;
+use Falak\SourceControl\Infrastructure\Providers\BitbucketClient;
 
 /**
  * Signature verification and push parsing for inbound webhooks, per provider.
@@ -16,7 +16,7 @@ use Kiln\SourceControl\Infrastructure\Providers\BitbucketClient;
  * - GitLab: X-Gitlab-Token = secret
  * - Bitbucket Cloud: X-Hub-Signature = "sha256=" . HMAC-SHA256(body, secret)
  * - Custom (Gitea / Forgejo / generic): X-Gitea-Signature / X-Forgejo-Signature (hex HMAC),
- *   X-Hub-Signature-256 ("sha256=" HMAC) or X-Kiln-Token = secret
+ *   X-Hub-Signature-256 ("sha256=" HMAC) or X-Falak-Token = secret
  */
 class WebhookPayloads
 {
@@ -32,7 +32,7 @@ class WebhookPayloads
             ProviderType::Custom => self::equals($hmac, $request->header('X-Gitea-Signature'))
                 || self::equals($hmac, $request->header('X-Forgejo-Signature'))
                 || self::equals('sha256='.$hmac, $request->header('X-Hub-Signature-256'))
-                || self::equals($secret, $request->header('X-Kiln-Token')),
+                || self::equals($secret, $request->header('X-Falak-Token')),
         };
     }
 

@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Servers\Http\Controllers;
+namespace Falak\Servers\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Servers\Application\Queries\ServerServices;
-use Kiln\Servers\Contracts\ServerHeaders;
-use Kiln\Servers\Domain\Models\PhpVersion;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Models\SshKey;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Servers\Application\Queries\ServerServices;
+use Falak\Servers\Contracts\ServerHeaders;
+use Falak\Servers\Domain\Models\PhpVersion;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Models\SshKey;
 
 /**
  * The Servers-owned tabs of the server page (/servers/{id}/{tab}): Metrics, Processes, SSH keys, PHP and Settings.
@@ -78,7 +78,7 @@ final class ServerTabController extends Controller
                 'attached_at' => $key->getRelationValue('pivot')?->getAttribute('created_at')?->toIso8601String(),
             ])->values(),
             'availableSshKeys' => SshKey::query()->where('organization_id', $server->organization_id)->orderBy('name')->get(['id', 'name', 'fingerprint']),
-            'unixUser' => (string) config('servers.unix_user', 'kiln'),
+            'unixUser' => (string) config('servers.unix_user', 'falak'),
             'can' => [
                 'update' => $request->user()?->can('update', $server) ?? false,
                 'manageKeys' => $this->access->can($request->user(), $server->organization_id, 'ssh_keys.manage'),
@@ -120,7 +120,7 @@ final class ServerTabController extends Controller
                 'allowed' => in_array('database', $server->type->allowedComponents(), true),
                 'options' => collect((array) config('servers.databases'))->map(fn (array $db, string $key) => ['value' => $key, 'label' => $db['label']])->values()->all(),
             ],
-            // Redis / Valkey (Kiln instances run next to it, on their own ports); only what the server's OS has.
+            // Redis / Valkey (Falak instances run next to it, on their own ports); only what the server's OS has.
             'cache' => [
                 'engine' => $server->stack->cache,
                 'installing' => $server->installing('cache'),

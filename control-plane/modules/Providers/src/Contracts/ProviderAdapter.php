@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Providers\Contracts;
+namespace Falak\Providers\Contracts;
 
-use Kiln\Providers\Contracts\Data\Image;
-use Kiln\Providers\Contracts\Data\Machine;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\Data\Region;
-use Kiln\Providers\Contracts\Data\Size;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\Data\Image;
+use Falak\Providers\Contracts\Data\Machine;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\Data\Region;
+use Falak\Providers\Contracts\Data\Size;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
 
 /**
  * One cloud provider account (credentials already bound). All methods throw ProviderException
@@ -35,7 +35,7 @@ interface ProviderAdapter
     public function sizes(?string $region = null): array;
 
     /**
-     * Ubuntu LTS images suitable for kiln-agent (22.04 / 24.04, amd64 + arm64 where offered).
+     * Ubuntu LTS images suitable for falak-agent (22.04 / 24.04, amd64 + arm64 where offered).
      *
      * @return list<Image>
      */

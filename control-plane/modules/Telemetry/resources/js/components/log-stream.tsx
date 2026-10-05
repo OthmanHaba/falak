@@ -1,7 +1,7 @@
-import { Button, IconButton } from '@/components/kiln/button';
-import { CopyButton } from '@/components/kiln/copy-button';
-import { LogViewer, type LogLine } from '@/components/kiln/log-viewer';
-import { Tag } from '@/components/kiln/tag';
+import { Button, IconButton } from '@/components/falak/button';
+import { CopyButton } from '@/components/falak/copy-button';
+import { LogViewer, type LogLine } from '@/components/falak/log-viewer';
+import { Tag } from '@/components/falak/tag';
 import { cn } from '@/lib/utils';
 import { Link } from '@inertiajs/react';
 import { format } from 'date-fns';
@@ -149,7 +149,7 @@ export function useLogStream(filters: LogFilters, { enabled = true, follow = tru
     return { lines, state, live, olderCursor, loadingOlder, loadOlder, retry: () => setAttempt((value) => value + 1) };
 }
 
-/** Log stream rendered in the Kiln LogViewer with follow/pause, load older and a line details drawer (→ trace). */
+/** Log stream rendered in the Falak LogViewer with follow/pause, load older and a line details drawer (→ trace). */
 export function LogStreamView({
     lines,
     live,
@@ -237,8 +237,8 @@ export function LogStreamView({
                             </Tag>
                             <span className="text-fg-muted tabular font-mono text-xs">{format(new Date(detail.at), 'yyyy-MM-dd HH:mm:ss.SSS')}</span>
                             {detail.labels.service_name && <Tag>{detail.labels.service_name}</Tag>}
-                            {detail.labels.kiln_server_id && (
-                                <Tag>{serverNames[detail.labels.kiln_server_id.toLowerCase()] ?? detail.labels.kiln_server_id}</Tag>
+                            {detail.labels.falak_server_id && (
+                                <Tag>{serverNames[detail.labels.falak_server_id.toLowerCase()] ?? detail.labels.falak_server_id}</Tag>
                             )}
                         </div>
                         <div className="flex items-center gap-1">

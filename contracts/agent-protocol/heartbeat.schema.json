@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/heartbeat.schema.json",
+  "$id": "https://falak.sh/agent-protocol/heartbeat.schema.json",
   "title": "POST /agent/v1/heartbeat — every 15s over mTLS",
   "type": "object",
   "required": ["at", "uptime_s", "load", "memory_used_bytes", "disk_used_bytes"],

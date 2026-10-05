@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Templates\Application\Import;
+namespace Falak\Templates\Application\Import;
 
 /**
  * Fetches a template file from a user-supplied URL, server side (Settings → Templates → Import from URL).

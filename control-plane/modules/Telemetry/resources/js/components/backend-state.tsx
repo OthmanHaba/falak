@@ -1,15 +1,15 @@
-import { Button } from '@/components/kiln/button';
-import { EmptyState } from '@/components/kiln/empty-state';
+import { Button } from '@/components/falak/button';
+import { EmptyState } from '@/components/falak/empty-state';
 import { Link } from '@inertiajs/react';
 import { CloudOff, PlugZap, RotateCw, TriangleAlert } from 'lucide-react';
 import { HttpError } from '../lib';
 
 export type Backend = 'Loki' | 'Tempo' | 'metrics backend';
 
-const ENV: Record<Backend, string> = { Loki: 'KILN_LOKI_URL', Tempo: 'KILN_TEMPO_URL', 'metrics backend': 'KILN_METRICS_QUERY_URL' };
+const ENV: Record<Backend, string> = { Loki: 'FALAK_LOKI_URL', Tempo: 'FALAK_TEMPO_URL', 'metrics backend': 'FALAK_METRICS_QUERY_URL' };
 
 const WHAT: Record<Backend, string> = {
-    Loki: 'Logs from your sites, servers and the Kiln agent',
+    Loki: 'Logs from your sites, servers and the Falak agent',
     Tempo: 'Distributed traces of requests, jobs and commands',
     'metrics backend': 'CPU, memory, request rate and latency charts',
 };
@@ -62,7 +62,7 @@ export function BackendError({
             description={
                 unreachable ? (
                     <>
-                        Kiln couldn't reach {backend}. Check that it is running and reachable from the control plane.
+                        Falak couldn't reach {backend}. Check that it is running and reachable from the control plane.
                         <span className="text-fg-faint mt-1 block font-mono text-xs [overflow-wrap:anywhere]">{message}</span>
                     </>
                 ) : (

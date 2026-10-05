@@ -5,7 +5,7 @@ import pathlib
 import unittest
 from urllib.parse import urlsplit
 
-from kiln_fn.redact import redact_path, redact_text, safe_url
+from falak_fn.redact import redact_path, redact_text, safe_url
 
 CASES = json.loads((pathlib.Path(__file__).parent / "redact-cases.json").read_text())
 
@@ -25,7 +25,7 @@ class RedactTest(unittest.TestCase):
             self.assertEqual(redact_text(given), want, given)
 
     def test_requests_urls_drop_userinfo(self) -> None:
-        from kiln_fn import telemetry
+        from falak_fn import telemetry
 
         u = telemetry._Url("https://user:pass@api.example.com:8443/bot1:AAEhBP0av28X5mJBEdcJfZc3K8rT1pq0xYz/x?token=s")
         telemetry.ENABLED, token = True, telemetry.current.set(telemetry.new_span("GET /", 2, []))

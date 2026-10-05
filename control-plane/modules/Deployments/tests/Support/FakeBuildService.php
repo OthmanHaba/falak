@@ -1,20 +1,20 @@
 <?php
 
-namespace Kiln\Deployments\Tests\Support;
+namespace Falak\Deployments\Tests\Support;
 
 use DateTimeImmutable;
 use Illuminate\Support\Str;
-use Kiln\Builds\Contracts\BuildService;
-use Kiln\Builds\Contracts\BuildStatus;
-use Kiln\Builds\Contracts\Data\ArtifactData;
-use Kiln\Builds\Contracts\Data\BuildData;
-use Kiln\Builds\Contracts\Data\BuildRequest;
-use Kiln\Builds\Contracts\Data\ComposeBuildData;
-use Kiln\Builds\Contracts\Data\ImageData;
-use Kiln\Builds\Events\BuildCancelled;
-use Kiln\Builds\Events\BuildFailed;
-use Kiln\Builds\Events\BuildSucceeded;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Builds\Contracts\BuildService;
+use Falak\Builds\Contracts\BuildStatus;
+use Falak\Builds\Contracts\Data\ArtifactData;
+use Falak\Builds\Contracts\Data\BuildData;
+use Falak\Builds\Contracts\Data\BuildRequest;
+use Falak\Builds\Contracts\Data\ComposeBuildData;
+use Falak\Builds\Contracts\Data\ImageData;
+use Falak\Builds\Events\BuildCancelled;
+use Falak\Builds\Events\BuildFailed;
+use Falak\Builds\Events\BuildSucceeded;
+use Falak\Sites\Contracts\SiteDirectory;
 
 /**
  * In-memory BuildService: builds stay queued until the test succeeds / fails them (firing the real
@@ -34,7 +34,7 @@ final class FakeBuildService implements BuildService
     public ?array $composeAssets = null;
 
     /** @var array<string, string> */
-    public array $composeImages = ['app' => 'registry.kiln.local/kiln/shop/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'];
+    public array $composeImages = ['app' => 'registry.falak.local/falak/shop/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'];
 
     public string $sha256 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -74,21 +74,21 @@ final class FakeBuildService implements BuildService
     public function artifactFor(string $buildId, int $ttlSeconds = 3600): ?ArtifactData
     {
         return ($this->builds[$buildId]['status'] ?? null) === BuildStatus::Succeeded
-            ? new ArtifactData("https://kiln.test/api/internal/artifacts/{$buildId}.tar.gz?signature=x", $this->sha256, 1234)
+            ? new ArtifactData("https://falak.test/api/internal/artifacts/{$buildId}.tar.gz?signature=x", $this->sha256, 1234)
             : null;
     }
 
     public function imageFor(string $buildId): ?ImageData
     {
         return ($this->builds[$buildId]['status'] ?? null) === BuildStatus::Succeeded
-            ? new ImageData("registry.kiln.local/kiln/app@sha256:{$this->sha256}", ['server' => 'registry.kiln.local', 'username' => 'kiln', 'password' => 'secret'])
+            ? new ImageData("registry.falak.local/falak/app@sha256:{$this->sha256}", ['server' => 'registry.falak.local', 'username' => 'falak', 'password' => 'secret'])
             : null;
     }
 
     public function composeFor(string $buildId): ?ComposeBuildData
     {
         return ($this->builds[$buildId]['status'] ?? null) === BuildStatus::Succeeded
-            ? new ComposeBuildData('compose.yaml', $this->composeContent, $this->composeImages, ['server' => 'registry.kiln.local', 'username' => 'kiln', 'password' => 'secret'], $this->composeAssets)
+            ? new ComposeBuildData('compose.yaml', $this->composeContent, $this->composeImages, ['server' => 'registry.falak.local', 'username' => 'falak', 'password' => 'secret'], $this->composeAssets)
             : null;
     }
 
@@ -138,6 +138,6 @@ final class FakeBuildService implements BuildService
 
         return new BuildData($id, $b['org'], $b['request']->siteId, 'native', $b['status'], $b['request']->branch, $b['commit'], $b['request']->deploymentId,
             false, $b['error'], 'local', new DateTimeImmutable, null, null,
-            $b['status'] === BuildStatus::Succeeded ? "registry.kiln.local/kiln/app@sha256:{$this->sha256}" : null);
+            $b['status'] === BuildStatus::Succeeded ? "registry.falak.local/falak/app@sha256:{$this->sha256}" : null);
     }
 }

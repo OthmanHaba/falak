@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Fleet\Application\Actions;
+namespace Falak\Fleet\Application\Actions;
 
 use Illuminate\Support\Facades\DB;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\Certificate;
-use Kiln\Fleet\Infrastructure\Pki\CertificateAuthorityService;
-use Kiln\Fleet\Infrastructure\Pki\IssuedCertificate;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\Certificate;
+use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
+use Falak\Fleet\Infrastructure\Pki\IssuedCertificate;
 
 /**
  * Issues a fresh certificate for an authenticated agent. The presenting certificate stays valid until the

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Providers\Domain\Models;
+namespace Falak\Providers\Domain\Models;
 
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -8,10 +8,10 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Kiln\Providers\Contracts\Data\CredentialSummary;
-use Kiln\Providers\Contracts\ProviderType;
-use Kiln\Providers\Database\Factories\ProviderCredentialFactory;
-use Kiln\Providers\Domain\CredentialStatus;
+use Falak\Providers\Contracts\Data\CredentialSummary;
+use Falak\Providers\Contracts\ProviderType;
+use Falak\Providers\Database\Factories\ProviderCredentialFactory;
+use Falak\Providers\Domain\CredentialStatus;
 
 /**
  * A cloud provider account for one organization. `credentials` is encrypted at rest and hidden

@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/facts"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/facts"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // Deps are the collaborators of the system executors.

@@ -4,16 +4,16 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
-use Kiln\Alerting\Application\AlertMessage;
-use Kiln\Alerting\Application\Mail\AlertMail;
-use Kiln\Alerting\Contracts\Severity;
-use Kiln\Alerting\Infrastructure\Senders\DeliveryFailed;
-use Kiln\Alerting\Infrastructure\Senders\DiscordSender;
-use Kiln\Alerting\Infrastructure\Senders\EmailSender;
-use Kiln\Alerting\Infrastructure\Senders\HttpSender;
-use Kiln\Alerting\Infrastructure\Senders\SlackSender;
-use Kiln\Alerting\Infrastructure\Senders\TelegramSender;
-use Kiln\Alerting\Infrastructure\Senders\WebhookSender;
+use Falak\Alerting\Application\AlertMessage;
+use Falak\Alerting\Application\Mail\AlertMail;
+use Falak\Alerting\Contracts\Severity;
+use Falak\Alerting\Infrastructure\Senders\DeliveryFailed;
+use Falak\Alerting\Infrastructure\Senders\DiscordSender;
+use Falak\Alerting\Infrastructure\Senders\EmailSender;
+use Falak\Alerting\Infrastructure\Senders\HttpSender;
+use Falak\Alerting\Infrastructure\Senders\SlackSender;
+use Falak\Alerting\Infrastructure\Senders\TelegramSender;
+use Falak\Alerting\Infrastructure\Senders\WebhookSender;
 
 beforeEach(function () {
     Http::preventStrayRequests();
@@ -75,7 +75,7 @@ it('sends Telegram HTML messages', function () {
         && $request['disable_web_page_preview'] === true
         && str_starts_with($request['text'], '<b>[CRITICAL] Server web-1 is offline</b>')
         && str_contains($request['text'], '12:00 &lt;UTC&gt;.')
-        && str_contains($request['text'], '<a href="https://panel.test/servers/1">Open in Kiln</a>'));
+        && str_contains($request['text'], '<a href="https://panel.test/servers/1">Open in Falak</a>'));
 });
 
 it('treats Telegram ok=false as a failure and redacts the bot token', function () {
@@ -93,16 +93,16 @@ it('signs generic webhooks with HMAC-SHA256 over timestamp and body', function (
     Http::fake(['hooks.example.com/*' => Http::response(['received' => true])]);
     $this->travelTo(new DateTimeImmutable('2026-09-27T12:00:05Z'));
 
-    (new WebhookSender)->send(['url' => 'https://hooks.example.com/kiln', 'secret' => 'shhh-secret-value'], $this->message);
+    (new WebhookSender)->send(['url' => 'https://hooks.example.com/falak', 'secret' => 'shhh-secret-value'], $this->message);
 
     Http::assertSent(function (Request $request) {
-        $timestamp = $request->header('X-Kiln-Timestamp')[0];
+        $timestamp = $request->header('X-Falak-Timestamp')[0];
         $expected = 'sha256='.hash_hmac('sha256', $timestamp.'.'.$request->body(), 'shhh-secret-value');
         $payload = json_decode($request->body(), true);
 
         return $timestamp === (string) strtotime('2026-09-27T12:00:05Z')
-            && hash_equals($expected, $request->header('X-Kiln-Signature')[0])
-            && $request->header('X-Kiln-Event')[0] === 'fleet.agent_offline'
+            && hash_equals($expected, $request->header('X-Falak-Signature')[0])
+            && $request->header('X-Falak-Event')[0] === 'fleet.agent_offline'
             && $request->header('Content-Type')[0] === 'application/json'
             && $payload['type'] === 'fleet.agent_offline'
             && $payload['severity'] === 'critical'

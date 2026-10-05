@@ -1,8 +1,8 @@
-// Built-in telemetry of Kiln functions, shared by the Bun, Node and Deno runtimes: request spans (named by the Hono
-// route), exceptions, outgoing fetch calls and scheduled runs, following the Kiln telemetry contract
+// Built-in telemetry of Falak functions, shared by the Bun, Node and Deno runtimes: request spans (named by the Hono
+// route), exceptions, outgoing fetch calls and scheduled runs, following the Falak telemetry contract
 // (contracts/telemetry/README.md). No dependencies, so cold starts stay fast: Web APIs and node:async_hooks, which
 // all three runtimes have. Spans are batched and sent as OTLP/HTTP JSON to the function's socket
-// ($KILN_OTLP_SOCKET), which the gateway relays to the agent under the function's identity. Telemetry never blocks
+// ($FALAK_OTLP_SOCKET), which the gateway relays to the agent under the function's identity. Telemetry never blocks
 // or fails a request.
 import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync } from "node:fs";
@@ -36,8 +36,8 @@ const SEND_TIMEOUT_MS = 2000;
 const UNMATCHED = "(unmatched)";
 
 const env = globalThis.process?.env ?? {};
-const socket = env.KILN_OTLP_SOCKET ?? "";
-const enabled = socket !== "" && env.KILN_TELEMETRY !== "off" && safeExists(socket);
+const socket = env.FALAK_OTLP_SOCKET ?? "";
+const enabled = socket !== "" && env.FALAK_TELEMETRY !== "off" && safeExists(socket);
 const originalFetch = globalThis.fetch.bind(globalThis);
 /** @type {AsyncLocalStorage<Span>} */
 const current = new AsyncLocalStorage();
@@ -115,8 +115,8 @@ async function send() {
     const body = JSON.stringify({
       resourceSpans: [
         {
-          resource: { attributes: [str("telemetry.sdk.name", "kiln-fn"), str("telemetry.sdk.language", "js"), str("process.runtime.name", runtime)] },
-          scopeSpans: [{ scope: { name: `kiln-fn-${runtime}` }, spans: batch }],
+          resource: { attributes: [str("telemetry.sdk.name", "falak-fn"), str("telemetry.sdk.language", "js"), str("process.runtime.name", runtime)] },
+          scopeSpans: [{ scope: { name: `falak-fn-${runtime}` }, spans: batch }],
         },
       ],
     });
@@ -135,7 +135,7 @@ async function send() {
 function defaultTransport() {
   if (runtime === "bun") {
     return async (body) => {
-      const res = await originalFetch("http://kiln/v1/traces", {
+      const res = await originalFetch("http://falak/v1/traces", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
@@ -172,7 +172,7 @@ async function nodeSend(body) {
 async function denoSend(body) {
   const payload = new TextEncoder().encode(body);
   const head = new TextEncoder().encode(
-    `POST /v1/traces HTTP/1.1\r\nHost: kiln\r\nContent-Type: application/json\r\nContent-Length: ${payload.length}\r\nConnection: close\r\n\r\n`,
+    `POST /v1/traces HTTP/1.1\r\nHost: falak\r\nContent-Type: application/json\r\nContent-Length: ${payload.length}\r\nConnection: close\r\n\r\n`,
   );
   const conn = await globalThis.Deno.connect({ transport: "unix", path: socket });
   const timeout = setTimeout(() => conn.close(), SEND_TIMEOUT_MS);
@@ -204,7 +204,7 @@ function exceptionEvent(err, handled) {
       str("exception.type", e.name || "Error"),
       str("exception.message", redactText(e.message).slice(0, 4096)),
       str("exception.stacktrace", redactText(e.stack ?? "").slice(0, 16384)),
-      bool("kiln.exception.handled", handled),
+      bool("falak.exception.handled", handled),
     ],
   };
 }
@@ -276,7 +276,7 @@ export function instrument(handler, app) {
     const parent = /^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/.exec(req.headers.get("traceparent") ?? "");
     // Paths no Hono route matches (scanners, typos) share one name instead of flooding the route list.
     const route = honoRoute(hono, req.method, url.pathname) ?? (typeof hono?.router?.match === "function" ? UNMATCHED : redactPath(normalize(url.pathname)));
-    const cold = req.headers.get("x-kiln-cold-start") === "1";
+    const cold = req.headers.get("x-falak-cold-start") === "1";
     /** @type {Span} */
     const span = {
       traceId: parent?.[1] ?? hex(16),
@@ -286,7 +286,7 @@ export function instrument(handler, app) {
       kind: SERVER,
       startTimeUnixNano: nanos(),
       attributes: [
-        str("kiln.event.type", "request"),
+        str("falak.event.type", "request"),
         str("http.request.method", req.method),
         str("http.route", route),
         str("url.path", redactPath(url.pathname)),
@@ -337,7 +337,7 @@ if (enabled) {
       kind: CLIENT,
       startTimeUnixNano: nanos(),
       attributes: [
-        str("kiln.event.type", "outgoing_request"),
+        str("falak.event.type", "outgoing_request"),
         str("http.request.method", method),
         str("url.full", safeUrl(url)),
         str("server.address", url.hostname),
@@ -378,16 +378,16 @@ export async function traceScheduled(name, expression, run) {
     name: `schedule ${name}`,
     kind: INTERNAL,
     startTimeUnixNano: nanos(),
-    attributes: [str("kiln.event.type", "scheduled_task"), str("kiln.schedule.name", name), str("kiln.schedule.expression", expression)],
+    attributes: [str("falak.event.type", "scheduled_task"), str("falak.schedule.name", name), str("falak.schedule.expression", expression)],
     events: [],
   };
   return current.run(span, async () => {
     try {
       const result = await run();
-      span.attributes.push(str("kiln.schedule.status", "finished"));
+      span.attributes.push(str("falak.schedule.status", "finished"));
       return result;
     } catch (err) {
-      span.attributes.push(str("kiln.schedule.status", "failed"));
+      span.attributes.push(str("falak.schedule.status", "failed"));
       span.events.push(exceptionEvent(err, false));
       span.status = { code: ERROR, message: message(err) };
       throw err;

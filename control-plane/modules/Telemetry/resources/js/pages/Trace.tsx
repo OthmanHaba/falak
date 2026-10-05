@@ -1,5 +1,5 @@
-import { Button } from '@/components/kiln/button';
-import { CopyButton } from '@/components/kiln/copy-button';
+import { Button } from '@/components/falak/button';
+import { CopyButton } from '@/components/falak/copy-button';
 import ObservabilityLayout from '@/layouts/observability-layout';
 import { Link } from '@inertiajs/react';
 import { ArrowLeft, ExternalLink, ScrollText } from 'lucide-react';

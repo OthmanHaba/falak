@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Processes\Domain\Models;
+namespace Falak\Processes\Domain\Models;
 
 /**
  * Optional restriction of a site process to some of the site's servers (null = all of them).

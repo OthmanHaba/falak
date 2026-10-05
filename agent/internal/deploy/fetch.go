@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // Artifact to download.
@@ -47,7 +47,7 @@ type FetchResult struct {
 }
 
 // markerFile records which artifact a release was extracted from (idempotency).
-const markerFile = ".kiln-release.json"
+const markerFile = ".falak-release.json"
 
 type marker struct {
 	ReleaseID string    `json:"release_id"`

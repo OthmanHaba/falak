@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Sites\Infrastructure;
+namespace Falak\Sites\Infrastructure;
 
-use Kiln\Sites\Contracts\Data\SharedPath;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
-use Kiln\Telemetry\Contracts\Data\SiteTelemetryTarget;
-use Kiln\Telemetry\Contracts\ServerSites;
+use Falak\Sites\Contracts\Data\SharedPath;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
+use Falak\Telemetry\Contracts\Data\SiteTelemetryTarget;
+use Falak\Telemetry\Contracts\ServerSites;
 
 /**
  * Sites hosted on a server for telemetry.configure: the slug → site id mapping (the agent labels logs, spans and

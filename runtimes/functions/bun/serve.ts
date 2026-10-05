@@ -1,4 +1,4 @@
-// kiln-fn-serve (Bun): loads /app/$KILN_ENTRYPOINT and serves its default export on 0.0.0.0:$PORT.
+// falak-fn-serve (Bun): loads /app/$FALAK_ENTRYPOINT and serves its default export on 0.0.0.0:$PORT.
 //
 // The default export may be a Hono app (or anything with fetch(request)), a Bun-style { fetch, websocket }
 // object, or a plain fetch handler function. The gateway treats the first accepted connection as "ready", so the
@@ -21,7 +21,7 @@ const server = Bun.serve({
     return new Response("Internal Server Error", { status: 500 });
   },
 });
-console.log(`kiln: ${entry} listening on :${server.port}`);
+console.log(`falak: ${entry} listening on :${server.port}`);
 
 for (const sig of ["SIGTERM", "SIGINT"] as const) {
   process.on(sig, async () => {

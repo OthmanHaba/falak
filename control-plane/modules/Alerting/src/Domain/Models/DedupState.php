@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Alerting\Domain\Models;
+namespace Falak\Alerting\Domain\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;

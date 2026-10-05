@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Insights\Contracts;
+namespace Falak\Insights\Contracts;
 
 /**
  * Display names for sites (site ids are opaque ULIDs to Insights).

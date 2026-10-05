@@ -1,32 +1,32 @@
 <?php
 
-namespace Kiln\Projects;
+namespace Falak\Projects;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
-use Kiln\Databases\Events\DatabaseCreated;
-use Kiln\Databases\Events\DatabaseDeleted;
-use Kiln\Identity\Contracts\PermissionRegistry;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Events\OrganizationCreated;
-use Kiln\Identity\Events\OrganizationDeleted;
-use Kiln\Kernel\Support\ModuleServiceProvider;
-use Kiln\Kernel\Support\SharedProps;
-use Kiln\Projects\Application\Canvas\KilnNavigation;
-use Kiln\Projects\Application\Console\BackfillProjectsCommand;
-use Kiln\Projects\Application\Listeners\CreateDefaultProject;
-use Kiln\Projects\Application\Listeners\DeleteOrganizationProjects;
-use Kiln\Projects\Application\Listeners\PlaceCreatedServices;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Projects\Contracts\VariableReferences;
-use Kiln\Projects\Domain\Models\Project;
-use Kiln\Projects\Domain\Policies\ProjectPolicy;
-use Kiln\Projects\Infrastructure\EloquentProjectDirectory;
-use Kiln\Projects\Infrastructure\ReferenceResolver;
-use Kiln\Sites\Events\ComposeServiceExtracted;
-use Kiln\Sites\Events\SiteCreated;
-use Kiln\Sites\Events\SiteDeleted;
+use Falak\Databases\Events\DatabaseCreated;
+use Falak\Databases\Events\DatabaseDeleted;
+use Falak\Identity\Contracts\PermissionRegistry;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Events\OrganizationCreated;
+use Falak\Identity\Events\OrganizationDeleted;
+use Falak\Kernel\Support\ModuleServiceProvider;
+use Falak\Kernel\Support\SharedProps;
+use Falak\Projects\Application\Canvas\FalakNavigation;
+use Falak\Projects\Application\Console\BackfillProjectsCommand;
+use Falak\Projects\Application\Listeners\CreateDefaultProject;
+use Falak\Projects\Application\Listeners\DeleteOrganizationProjects;
+use Falak\Projects\Application\Listeners\PlaceCreatedServices;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\VariableReferences;
+use Falak\Projects\Domain\Models\Project;
+use Falak\Projects\Domain\Policies\ProjectPolicy;
+use Falak\Projects\Infrastructure\EloquentProjectDirectory;
+use Falak\Projects\Infrastructure\ReferenceResolver;
+use Falak\Sites\Events\ComposeServiceExtracted;
+use Falak\Sites\Events\SiteCreated;
+use Falak\Sites\Events\SiteDeleted;
 
 class ProjectsServiceProvider extends ModuleServiceProvider
 {
@@ -64,7 +64,7 @@ class ProjectsServiceProvider extends ModuleServiceProvider
         Event::listen(DatabaseDeleted::class, [PlaceCreatedServices::class, 'databaseDeleted']);
 
         // app(), not $this->app: under the FrankenPHP worker the latter is the base app, not the request sandbox.
-        $this->app->make(SharedProps::class)->register('kiln', fn (Request $request) => app(KilnNavigation::class)->for($request));
+        $this->app->make(SharedProps::class)->register('falak', fn (Request $request) => app(FalakNavigation::class)->for($request));
 
         if ($this->app->runningInConsole()) {
             $this->commands([BackfillProjectsCommand::class]);

@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Edge\Application\Actions;
+namespace Falak\Edge\Application\Actions;
 
-use Kiln\Edge\Application\EdgeChanges;
-use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Edge\Domain\Enums\WwwRedirect;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Edge\Application\EdgeChanges;
+use Falak\Edge\Application\Jobs\SyncCloudflareDns;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Edge\Domain\Enums\WwwRedirect;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Identity\Contracts\AuditLog;
 
 final class UpdateDomain
 {

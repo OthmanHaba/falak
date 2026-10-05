@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/kiln/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
 )
 
 // SSHKey is one key.
@@ -31,8 +31,8 @@ type SSHKeyResult struct {
 }
 
 const (
-	blockBegin = "# BEGIN kiln-managed"
-	blockEnd   = "# END kiln-managed"
+	blockBegin = "# BEGIN falak-managed"
+	blockEnd   = "# END falak-managed"
 )
 
 // SSHKeySync converges authorized_keys.
@@ -50,13 +50,13 @@ func (s *System) SSHKeySync(ctx context.Context, p SSHKeyPayload, _ commands.Str
 		if len(f) < 2 {
 			return nil, &commands.PayloadError{Err: fmt.Errorf("key %s: malformed public key", k.ID)}
 		}
-		lines = append(lines, fmt.Sprintf("%s %s kiln:%s", f[0], f[1], k.ID))
+		lines = append(lines, fmt.Sprintf("%s %s falak:%s", f[0], f[1], k.ID))
 	}
 	sshDir := path.Join(pw.Home, ".ssh")
 	file := path.Join(sshDir, "authorized_keys")
 	var content string
 	if p.Exclusive == nil || *p.Exclusive {
-		content = "# Managed by Kiln — manual changes will be overwritten\n" + joinLines(lines)
+		content = "# Managed by Falak — manual changes will be overwritten\n" + joinLines(lines)
 	} else {
 		cur, _ := s.d.FS.ReadFile(file)
 		content = replaceBlock(string(cur), blockBegin+"\n"+joinLines(lines)+blockEnd+"\n")

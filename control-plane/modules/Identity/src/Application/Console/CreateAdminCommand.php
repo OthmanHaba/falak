@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Identity\Application\Console;
+namespace Falak\Identity\Application\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use Kiln\Identity\Application\Actions\CreateApiToken;
-use Kiln\Identity\Application\Actions\CreateOrganization;
-use Kiln\Identity\Application\Actions\RegisterUser;
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Application\Actions\CreateApiToken;
+use Falak\Identity\Application\Actions\CreateOrganization;
+use Falak\Identity\Application\Actions\RegisterUser;
+use Falak\Identity\Domain\Models\User;
 
 /**
  * First-run bootstrap for a self-hosted install: creates (or reuses) a user, the organization they own,
@@ -15,7 +15,7 @@ use Kiln\Identity\Domain\Models\User;
  */
 final class CreateAdminCommand extends Command
 {
-    protected $signature = 'kiln:admin
+    protected $signature = 'falak:admin
         {email : Admin e-mail address}
         {--name= : Display name (default: part of the e-mail before @)}
         {--password= : Password (generated and printed when omitted for a new user)}

@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Apm\Tests;
+namespace Falak\Apm\Tests;
 
-use Kiln\Apm\Transport\Transport;
+use Falak\Apm\Transport\Transport;
 
 final class FakeTransport implements Transport
 {
@@ -52,7 +52,7 @@ final class FakeTransport implements Transport
     /** @return list<array<string, mixed>> */
     public function spansOfType(string $type): array
     {
-        return array_values(array_filter($this->spans(), fn ($s) => ($s['attrs']['kiln.event.type'] ?? null) === $type));
+        return array_values(array_filter($this->spans(), fn ($s) => ($s['attrs']['falak.event.type'] ?? null) === $type));
     }
 
     /** @return list<array<string, mixed>> */

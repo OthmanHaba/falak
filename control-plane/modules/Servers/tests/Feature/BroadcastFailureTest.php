@@ -5,7 +5,7 @@ use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Contracts\Broadcasting\Factory;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Support\Facades\Broadcast;
-use Kiln\Servers\Events\ServerUpdated;
+use Falak\Servers\Events\ServerUpdated;
 
 it('reports but never throws when the realtime server is unreachable', function () {
     config(['broadcasting.default' => 'reverb', 'broadcasting.connections.reverb' => [

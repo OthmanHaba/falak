@@ -35,14 +35,14 @@ it('records query spans with contract attributes, redacted bindings and N+1 repe
             ->and($query['attrs'])->toMatchArray([
                 'db.system.name' => 'sqlite',
                 'db.namespace' => ':memory:',
-                'kiln.query.connection' => 'testing',
-                'kiln.query.repeat_count' => 3,
+                'falak.query.connection' => 'testing',
+                'falak.query.repeat_count' => 3,
             ]);
     }
 
     $literal = array_values(array_filter($queries, fn ($q) => str_contains($q['attrs']['db.query.text'], 'title')))[0];
     expect($literal['attrs']['db.query.text'])->toBe('select * from posts where title = ?')
-        ->and($literal['attrs']['kiln.query.repeat_count'])->toBe(1);
+        ->and($literal['attrs']['falak.query.repeat_count'])->toBe(1);
 
     expect(json_encode($this->transport->sent))->not->toContain('hunter2');
 });

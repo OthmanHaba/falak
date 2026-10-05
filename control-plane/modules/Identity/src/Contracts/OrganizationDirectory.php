@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Identity\Contracts;
+namespace Falak\Identity\Contracts;
 
-use Kiln\Identity\Contracts\Data\OrganizationData;
-use Kiln\Identity\Contracts\Data\UserData;
+use Falak\Identity\Contracts\Data\OrganizationData;
+use Falak\Identity\Contracts\Data\UserData;
 
 /**
  * Read-only lookups of organizations and users for other modules.

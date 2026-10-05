@@ -1,10 +1,10 @@
-import { Button } from '@/components/kiln/button';
-import { DataTable } from '@/components/kiln/data-table';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { ServiceIcon } from '@/components/kiln/service-icon';
-import { StatusBadge } from '@/components/kiln/status';
-import { toast } from '@/components/kiln/toast';
+import { Button } from '@/components/falak/button';
+import { DataTable } from '@/components/falak/data-table';
+import { EmptyState } from '@/components/falak/empty-state';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { ServiceIcon } from '@/components/falak/service-icon';
+import { StatusBadge } from '@/components/falak/status';
+import { toast } from '@/components/falak/toast';
 import ServerLayout, { type ServerHeader } from '@/layouts/server-layout';
 import { Link, router } from '@inertiajs/react';
 import { Cpu, Lock, RefreshCw, RotateCw, WifiOff } from 'lucide-react';

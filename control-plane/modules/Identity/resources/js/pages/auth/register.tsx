@@ -1,6 +1,6 @@
-import { Button } from '@/components/kiln/button';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
+import { Button } from '@/components/falak/button';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
 import AuthLayout, { AuthLink } from '@/layouts/auth-layout';
 import { Head, useForm } from '@inertiajs/react';
 import { type FormEventHandler } from 'react';
@@ -30,9 +30,9 @@ export default function Register({ inviteOnly = false, invitation = null }: Regi
             title="Create your account"
             description={
                 invitation
-                    ? `You're joining ${invitation.organization ?? 'an organization'} on Kiln.`
+                    ? `You're joining ${invitation.organization ?? 'an organization'} on Falak.`
                     : inviteOnly
-                      ? 'Sign-up on this Kiln needs an invitation: open the link in your invitation email.'
+                      ? 'Sign-up on this Falak needs an invitation: open the link in your invitation email.'
                       : 'Deploy and observe your apps on your own servers.'
             }
             footer={

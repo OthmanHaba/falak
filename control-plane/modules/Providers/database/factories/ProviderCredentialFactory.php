@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Providers\Database\Factories;
+namespace Falak\Providers\Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
-use Kiln\Providers\Contracts\ProviderType;
-use Kiln\Providers\Domain\CredentialStatus;
-use Kiln\Providers\Domain\Models\ProviderCredential;
+use Falak\Providers\Contracts\ProviderType;
+use Falak\Providers\Domain\CredentialStatus;
+use Falak\Providers\Domain\Models\ProviderCredential;
 
 /**
  * @extends Factory<ProviderCredential>

@@ -1,18 +1,18 @@
 <?php
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Kiln\Servers\Application\MachineChecks;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Stack\Stack;
-use Kiln\Servers\Infrastructure\ProvisioningPlanBuilder;
+use Falak\Servers\Application\MachineChecks;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Stack\Stack;
+use Falak\Servers\Infrastructure\ProvisioningPlanBuilder;
 
 require_once __DIR__.'/../Support/machine_reports.php';
 
 uses(RefreshDatabase::class);
 
 /**
- * A fresh cloud image (mc_report: stock unattended-upgrades, inactive ufw, keys, no swap) gets the plan Kiln sent before
+ * A fresh cloud image (mc_report: stock unattended-upgrades, inactive ufw, keys, no swap) gets the plan Falak sent before
  * v0.6.0, apart from the documented differences: `components`, and a custom server keeps its own hostname.
  */
 it('plans a fresh machine exactly as before the machine check', function (string $provider, ServerType $type, ?Stack $stack) {

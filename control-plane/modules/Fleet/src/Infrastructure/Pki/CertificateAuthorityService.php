@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Fleet\Infrastructure\Pki;
+namespace Falak\Fleet\Infrastructure\Pki;
 
 use DateTimeImmutable;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Support\Facades\DB;
-use Kiln\Fleet\Domain\Models\CertificateAuthority;
+use Falak\Fleet\Domain\Models\CertificateAuthority;
 use phpseclib3\Crypt\Common\PrivateKey;
 use phpseclib3\Crypt\EC;
 use phpseclib3\Crypt\EC\PrivateKey as EcPrivateKey;
@@ -16,7 +16,7 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Kiln's internal CA (ECDSA P-256). The key lives only in the database, encrypted with APP_KEY;
+ * Falak's internal CA (ECDSA P-256). The key lives only in the database, encrypted with APP_KEY;
  * the CA certificate is also written to <fleet.ca_path>/ca.pem for the edge's client-cert verification.
  */
 final class CertificateAuthorityService
@@ -93,14 +93,14 @@ final class CertificateAuthorityService
         $subject = new X509;
         $subject->setPublicKey($publicKey);
         $subject->setDNProp('id-at-commonName', $agentId);
-        $subject->setDNProp('id-at-organizationName', 'Kiln Agent');
+        $subject->setDNProp('id-at-organizationName', 'Falak Agent');
         $subject->setDNProp('id-at-organizationalUnitName', $organizationId);
 
         return $this->issue($subject, fn (X509 $cert) => $this->clientExtensions($cert), $this->certValidityDays);
     }
 
     /**
-     * Issue a TLS server certificate for the agent-facing edge (agents pin the Kiln CA).
+     * Issue a TLS server certificate for the agent-facing edge (agents pin the Falak CA).
      *
      * @param  list<string>  $hostnames
      * @return array{certificate: IssuedCertificate, private_key_pem: string}
@@ -116,7 +116,7 @@ final class CertificateAuthorityService
         $subject = new X509;
         $subject->setPublicKey($key->getPublicKey());
         $subject->setDNProp('id-at-commonName', $hostnames[0]);
-        $subject->setDNProp('id-at-organizationName', 'Kiln');
+        $subject->setDNProp('id-at-organizationName', 'Falak');
 
         $certificate = $this->issue($subject, function (X509 $cert) use ($hostnames) {
             $cert->setExtensionValue('id-ce-keyUsage', ['digitalSignature'], true);
@@ -220,8 +220,8 @@ final class CertificateAuthorityService
 
         $subject = new X509;
         $subject->setPublicKey($key->getPublicKey());
-        $subject->setDNProp('id-at-commonName', 'Kiln Agent CA');
-        $subject->setDNProp('id-at-organizationName', 'Kiln');
+        $subject->setDNProp('id-at-commonName', 'Falak Agent CA');
+        $subject->setDNProp('id-at-organizationName', 'Falak');
 
         $issuer = new X509;
         $issuer->setPrivateKey($key);
@@ -245,7 +245,7 @@ final class CertificateAuthorityService
         $pem = self::normalizePem($cert->saveX509($signed));
 
         return DB::transaction(fn () => CertificateAuthority::query()->create([
-            'name' => 'Kiln Agent CA',
+            'name' => 'Falak Agent CA',
             'certificate_pem' => $pem,
             'private_key' => self::normalizePem($key->toString('PKCS8')),
             'fingerprint' => self::fingerprint($pem),

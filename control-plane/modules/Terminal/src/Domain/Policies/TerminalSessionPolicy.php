@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Terminal\Domain\Policies;
+namespace Falak\Terminal\Domain\Policies;
 
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Terminal\Domain\Models\TerminalSession;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Terminal\Domain\Models\TerminalSession;
 
 /**
  * Who may watch, type into, close, share and replay a terminal session.

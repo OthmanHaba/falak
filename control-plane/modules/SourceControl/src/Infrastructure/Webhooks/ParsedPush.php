@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\Webhooks;
+namespace Falak\SourceControl\Infrastructure\Webhooks;
 
-use Kiln\SourceControl\Contracts\Data\CommitData;
+use Falak\SourceControl\Contracts\Data\CommitData;
 
 final readonly class ParsedPush
 {

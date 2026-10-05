@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Network\Contracts;
+namespace Falak\Network\Contracts;
 
 /**
  * Who may reach a server's web ports (TCP 80 / 443), decided by another module (Edge, for servers behind Cloudflare).

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Infrastructure\Dns;
+namespace Falak\Edge\Infrastructure\Dns;
 
 /**
  * Resolves a name's A / AAAA records (following CNAMEs). A name that does not exist yields an empty answer.

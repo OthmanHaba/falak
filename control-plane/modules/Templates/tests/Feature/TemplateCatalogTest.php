@@ -1,10 +1,10 @@
 <?php
 
-use Kiln\Templates\Application\Catalog\Catalog;
-use Kiln\Templates\Application\Catalog\TemplateParser;
-use Kiln\Templates\Application\Catalog\TemplateValidator;
-use Kiln\Templates\Application\Compose\ComposeDocument;
-use Kiln\Templates\Infrastructure\FilesystemCatalog;
+use Falak\Templates\Application\Catalog\Catalog;
+use Falak\Templates\Application\Catalog\TemplateParser;
+use Falak\Templates\Application\Catalog\TemplateValidator;
+use Falak\Templates\Application\Compose\ComposeDocument;
+use Falak\Templates\Infrastructure\FilesystemCatalog;
 
 /*
  * The curated catalog (templates/ at the repository root, docs/COMPOSE_TEMPLATES.md §2.1): every template must

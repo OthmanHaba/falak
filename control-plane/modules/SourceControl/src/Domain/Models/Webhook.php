@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\SourceControl\Domain\Models;
+namespace Falak\SourceControl\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Kiln\SourceControl\Contracts\Data\WebhookData;
+use Falak\SourceControl\Contracts\Data\WebhookData;
 
 /**
  * @property string $id

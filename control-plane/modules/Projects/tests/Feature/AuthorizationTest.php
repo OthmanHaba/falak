@@ -1,6 +1,6 @@
 <?php
 
-use Kiln\Identity\Contracts\Role;
+use Falak\Identity\Contracts\Role;
 use Laravel\Sanctum\Sanctum;
 
 require_once __DIR__.'/../Support/helpers.php';

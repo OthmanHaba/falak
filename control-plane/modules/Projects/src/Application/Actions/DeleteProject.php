@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Projects\Application\Actions;
+namespace Falak\Projects\Application\Actions;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Projects\Domain\Models\Project;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Projects\Domain\Models\Project;
 
 /**
  * Delete an empty project. Services are never deleted implicitly: delete or move them first.

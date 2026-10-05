@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 )
 
 // fakeCaddy implements /load, GET /config/, PATCH /id/<id>/<field>.
@@ -97,9 +97,9 @@ func stream() commands.Stream { return commands.NewTestStream("t", &commands.Col
 var payload = Payload{
 	ACMEEmail: "ops@example.com",
 	Sites: []Site{
-		{ID: "shop", Domains: []string{"shop.example.com"}, RedirectDomains: []string{"www.shop.example.com"}, Kind: "frankenphp", Root: "/srv/kiln/sites/shop/current/public",
+		{ID: "shop", Domains: []string{"shop.example.com"}, RedirectDomains: []string{"www.shop.example.com"}, Kind: "frankenphp", Root: "/srv/falak/sites/shop/current/public",
 			Headers: map[string]string{"X-Frame-Options": "DENY"}, BasicAuth: []BasicAuth{{Username: "a", PasswordHash: "$2a$14$x"}}},
-		{ID: "legacy", Domains: []string{"legacy.example.com"}, Kind: "php_fpm", Root: "/srv/kiln/sites/legacy/current/public", PHPFPMSocket: "/run/php/kiln-legacy-8.3.sock", TLS: &TLS{Mode: "custom", CertName: "legacy"}},
+		{ID: "legacy", Domains: []string{"legacy.example.com"}, Kind: "php_fpm", Root: "/srv/falak/sites/legacy/current/public", PHPFPMSocket: "/run/php/falak-legacy-8.3.sock", TLS: &TLS{Mode: "custom", CertName: "legacy"}},
 		{ID: "api", Domains: []string{"api.example.com"}, Kind: "reverse_proxy", Upstreams: []Upstream{{Dial: "127.0.0.1:3000"}}, HealthURI: "/health", DenyIPs: []string{"10.0.0.0/8"}},
 		{ID: "intranet", Domains: []string{"intranet.lan"}, Kind: "static", Root: "/srv/static", TLS: &TLS{Mode: "off"}},
 	},
@@ -124,13 +124,13 @@ func TestApplyIdempotentAndPersisted(t *testing.T) {
 	if r1.(ApplyResult).ConfigSHA256 != r2.(ApplyResult).ConfigSHA256 {
 		t.Fatal("hash unstable")
 	}
-	b, err := fs.ReadFile("/etc/kiln/caddy/bootstrap.json")
+	b, err := fs.ReadFile("/etc/falak/caddy/bootstrap.json")
 	if err != nil || !strings.Contains(string(b), `"listen": "localhost:2019"`) {
 		t.Fatalf("bootstrap config not persisted: %v", err)
 	}
 	s := string(b)
-	for _, want := range []string{`"handler": "php"`, `"resolve_root_symlink": true`, `"dial": "unix//run/php/kiln-legacy-8.3.sock"`,
-		`"skip_certificates"`, `/etc/kiln/certs/legacy.crt`, `"kiln_http"`, `"@id": "kiln-upstreams-api"`, `"email": "ops@example.com"`,
+	for _, want := range []string{`"handler": "php"`, `"resolve_root_symlink": true`, `"dial": "unix//run/php/falak-legacy-8.3.sock"`,
+		`"skip_certificates"`, `/etc/falak/certs/legacy.crt`, `"falak_http"`, `"@id": "falak-upstreams-api"`, `"email": "ops@example.com"`,
 		`https://shop.example.com{http.request.uri}`, `"client_ip"`, `"X-Frame-Options"`, `"http_basic"`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("rendered config missing %s", want)
@@ -152,7 +152,7 @@ func TestSetUpstreamsPatchesAndPersists(t *testing.T) {
 	if err := m.SetUpstreams(context.Background(), "api", []string{"127.0.0.1:3001"}); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := fs.ReadFile("/etc/kiln/caddy/bootstrap.json")
+	b, _ := fs.ReadFile("/etc/falak/caddy/bootstrap.json")
 	if !strings.Contains(string(b), "127.0.0.1:3001") || strings.Contains(string(b), "127.0.0.1:3000") {
 		t.Fatal("patched upstream not persisted")
 	}
@@ -199,7 +199,7 @@ func TestInstallCert(t *testing.T) {
 	if !res.Changed || len(res.FingerprintSHA256) != 64 {
 		t.Fatalf("%+v", res)
 	}
-	st, _ := os.Stat(fs.P("/etc/kiln/certs/legacy.key"))
+	st, _ := os.Stat(fs.P("/etc/falak/certs/legacy.key"))
 	if st.Mode().Perm() != 0o600 {
 		t.Fatalf("key mode %v", st.Mode().Perm())
 	}
@@ -216,7 +216,7 @@ func TestInstallCert(t *testing.T) {
 		t.Fatal("expired cert must be rejected")
 	}
 	r3, _ := m.InstallCert(context.Background(), CertPayload{Name: "legacy", State: "absent"}, stream())
-	if !r3.(CertResult).Changed || fs.Exists("/etc/kiln/certs/legacy.crt") {
+	if !r3.(CertResult).Changed || fs.Exists("/etc/falak/certs/legacy.crt") {
 		t.Fatal("absent did not remove")
 	}
 }
@@ -227,7 +227,7 @@ func TestRenderPathScopedBasicAuth(t *testing.T) {
 			{Username: "admin", PasswordHash: "$2y$h1", Path: "/admin/*"},
 			{Username: "all", PasswordHash: "$2y$h2"},
 			{Username: "ops", PasswordHash: "$2y$h3", Path: "/admin/*"},
-		}}}}, "/etc/kiln/certs")
+		}}}}, "/etc/falak/certs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestRenderPathScopedBasicAuth(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatal(err)
 	}
-	sub := got.Apps.HTTP.Servers["kiln"].Routes[0].Handle[0].Routes
+	sub := got.Apps.HTTP.Servers["falak"].Routes[0].Handle[0].Routes
 	var auth []map[string]any
 	for _, r := range sub {
 		if strings.Contains(mustJSON(r), `"authentication"`) {
@@ -270,7 +270,7 @@ func TestRenderDNSChallenge(t *testing.T) {
 	cfg, err := Render(Payload{ACMEEmail: "ops@example.com", Sites: []Site{
 		{ID: "w", Domains: []string{"*.example.com"}, Kind: "static", Root: "/srv/w", TLS: &TLS{Mode: "acme", DNS: &DNS{Provider: "cloudflare", APIToken: "tok"}}},
 		{ID: "x", Domains: []string{"x.test"}, Kind: "static", Root: "/srv/x"},
-	}}, "/etc/kiln/certs")
+	}}, "/etc/falak/certs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,25 +293,25 @@ func mustJSON(v any) string {
 func TestApplyServesPlaceholderUntilFirstDeployAndKeepsRealCurrent(t *testing.T) {
 	m, fc, fs := setup(t)
 	// "legacy" was already deployed: its current link must be left alone.
-	if err := fs.MkdirAll("/srv/kiln/sites/legacy/releases/01J9ZT8K3M4N5P6Q7R8S9T0V1W/public", 0o755); err != nil {
+	if err := fs.MkdirAll("/srv/falak/sites/legacy/releases/01J9ZT8K3M4N5P6Q7R8S9T0V1W/public", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("releases/01J9ZT8K3M4N5P6Q7R8S9T0V1W", fs.P("/srv/kiln/sites/legacy/current")); err != nil {
+	if err := os.Symlink("releases/01J9ZT8K3M4N5P6Q7R8S9T0V1W", fs.P("/srv/falak/sites/legacy/current")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.Apply(context.Background(), payload, stream()); err != nil || fc.loads != 1 {
 		t.Fatalf("apply: %v loads=%d", err, fc.loads)
 	}
 
-	link, err := os.Readlink(fs.P("/srv/kiln/sites/shop/current"))
+	link, err := os.Readlink(fs.P("/srv/falak/sites/shop/current"))
 	if err != nil || link != filepath.Join("releases", PlaceholderRelease) {
 		t.Fatalf("shop current -> %q (%v)", link, err)
 	}
-	page, err := fs.ReadFile("/srv/kiln/sites/shop/current/public/index.php")
+	page, err := fs.ReadFile("/srv/falak/sites/shop/current/public/index.php")
 	if err != nil || !strings.Contains(string(page), "503") {
 		t.Fatalf("placeholder page: %v %q", err, page)
 	}
-	if link, _ := os.Readlink(fs.P("/srv/kiln/sites/legacy/current")); link != "releases/01J9ZT8K3M4N5P6Q7R8S9T0V1W" {
+	if link, _ := os.Readlink(fs.P("/srv/falak/sites/legacy/current")); link != "releases/01J9ZT8K3M4N5P6Q7R8S9T0V1W" {
 		t.Fatalf("deployed site's current was replaced: %q", link)
 	}
 	if _, err := os.Stat(fs.P("/srv/static")); !os.IsNotExist(err) {
@@ -336,12 +336,12 @@ func TestReloadFrankenPHPForceReloadsTheRunningConfig(t *testing.T) {
 // Laravel Octane: reverse_proxy with a root serves existing assets directly (never PHP sources, dotfiles or
 // directories) and proxies the rest, retrying the upstream for try_duration_s while Octane restarts.
 func TestRenderOctaneProxyWithStaticPassthrough(t *testing.T) {
-	root := "/srv/kiln/sites/shop/current/public"
+	root := "/srv/falak/sites/shop/current/public"
 	cfg, err := Render(Payload{Sites: []Site{{
 		ID: "shop", Domains: []string{"shop.test"}, Kind: "reverse_proxy", Root: root,
 		Upstreams: []Upstream{{Dial: "127.0.0.1:8123"}}, TryDurationS: 30,
 		Headers: map[string]string{"X-Frame-Options": "DENY"},
-	}}}, "/etc/kiln/certs")
+	}}}, "/etc/falak/certs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -369,7 +369,7 @@ func TestRenderOctaneProxyWithStaticPassthrough(t *testing.T) {
 	}
 
 	// Without a root (containers, Node): plain proxy with the default 5s retry window, no file server.
-	cfg, err = Render(Payload{Sites: []Site{{ID: "api", Domains: []string{"api.test"}, Kind: "reverse_proxy", Upstreams: []Upstream{{Dial: "127.0.0.1:3000"}}}}}, "/etc/kiln/certs")
+	cfg, err = Render(Payload{Sites: []Site{{ID: "api", Domains: []string{"api.test"}, Kind: "reverse_proxy", Upstreams: []Upstream{{Dial: "127.0.0.1:3000"}}}}}, "/etc/falak/certs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,8 +380,8 @@ func TestRenderOctaneProxyWithStaticPassthrough(t *testing.T) {
 }
 
 func TestRenderStaticSiteFallbacks(t *testing.T) {
-	root := "/srv/kiln/sites/web/current"
-	cfg, err := Render(Payload{Sites: []Site{{ID: "web", Domains: []string{"web.test"}, Kind: "static", Root: root}}}, "/etc/kiln/certs")
+	root := "/srv/falak/sites/web/current"
+	cfg, err := Render(Payload{Sites: []Site{{ID: "web", Domains: []string{"web.test"}, Kind: "static", Root: root}}}, "/etc/falak/certs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,8 +413,8 @@ func TestRenderStaticSiteFallbacks(t *testing.T) {
 
 func TestRenderPerSiteAccessLogs(t *testing.T) {
 	cfg, err := Render(Payload{Sites: []Site{
-		{ID: "shop", Domains: []string{"shop.test"}, RedirectDomains: []string{"www.shop.test"}, Kind: "frankenphp", Root: "/srv/kiln/sites/shop/current/public", AccessLog: "shop"},
-		{ID: "shop-1", Domains: []string{"shop.lan"}, Kind: "frankenphp", Root: "/srv/kiln/sites/shop/current/public", AccessLog: "shop", TLS: &TLS{Mode: "off"}},
+		{ID: "shop", Domains: []string{"shop.test"}, RedirectDomains: []string{"www.shop.test"}, Kind: "frankenphp", Root: "/srv/falak/sites/shop/current/public", AccessLog: "shop"},
+		{ID: "shop-1", Domains: []string{"shop.lan"}, Kind: "frankenphp", Root: "/srv/falak/sites/shop/current/public", AccessLog: "shop", TLS: &TLS{Mode: "off"}},
 		{ID: "api", Domains: []string{"api.test"}, Kind: "reverse_proxy", Upstreams: []Upstream{{Dial: "127.0.0.1:3000"}}},
 	}}, "/c")
 	if err != nil {
@@ -449,19 +449,19 @@ func TestRenderPerSiteAccessLogs(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatal(err)
 	}
-	tls := got.Apps.HTTP.Servers["kiln"].Logs
-	if !tls.SkipUnmappedHosts || len(tls.LoggerNames) != 2 || tls.LoggerNames["shop.test"][0] != "kiln-access-shop" || tls.LoggerNames["www.shop.test"][0] != "kiln-access-shop" {
+	tls := got.Apps.HTTP.Servers["falak"].Logs
+	if !tls.SkipUnmappedHosts || len(tls.LoggerNames) != 2 || tls.LoggerNames["shop.test"][0] != "falak-access-shop" || tls.LoggerNames["www.shop.test"][0] != "falak-access-shop" {
 		t.Fatalf("tls server logs = %+v", tls)
 	}
 	if _, ok := tls.LoggerNames["api.test"]; ok {
 		t.Fatal("sites without access_log are not logged")
 	}
-	if plain := got.Apps.HTTP.Servers["kiln_http"].Logs; plain.LoggerNames["shop.lan"][0] != "kiln-access-shop" {
+	if plain := got.Apps.HTTP.Servers["falak_http"].Logs; plain.LoggerNames["shop.lan"][0] != "falak-access-shop" {
 		t.Fatalf("plain server logs = %+v", plain)
 	}
-	l := got.Logging.Logs["kiln-access-shop"]
-	if l.Writer.Output != "file" || l.Writer.Filename != "/var/log/kiln/access/shop.log" || l.Encoder.Format != "json" ||
-		len(l.Include) != 1 || l.Include[0] != "http.log.access.kiln-access-shop" {
+	l := got.Logging.Logs["falak-access-shop"]
+	if l.Writer.Output != "file" || l.Writer.Filename != "/var/log/falak/access/shop.log" || l.Encoder.Format != "json" ||
+		len(l.Include) != 1 || l.Include[0] != "http.log.access.falak-access-shop" {
 		t.Fatalf("logger = %+v", l)
 	}
 	if d := got.Logging.Logs["default"]; len(d.Exclude) != 1 || d.Exclude[0] != "http.log.access" {
@@ -487,7 +487,7 @@ func TestApplyCreatesAccessLogDir(t *testing.T) {
 	if _, err := m.Apply(context.Background(), p, stream()); err != nil {
 		t.Fatal(err)
 	}
-	fi, err := os.Stat(fs.P("/var/log/kiln/access"))
+	fi, err := os.Stat(fs.P("/var/log/falak/access"))
 	if err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o750 {
 		t.Fatalf("access log dir: %v %v", fi, err)
 	}
@@ -496,7 +496,7 @@ func TestApplyCreatesAccessLogDir(t *testing.T) {
 func TestTrustedProxiesSetClientIPHeaders(t *testing.T) {
 	p := Payload{Sites: []Site{{ID: "shop", Domains: []string{"shop.example.com"}, Kind: "static", Root: "/srv/shop", DenyIPs: []string{"203.0.113.9"}}},
 		TrustedProxies: []string{"173.245.48.0/20", "2400:cb00::/32"}}
-	cfg, err := Render(p, "/etc/kiln/certs")
+	cfg, err := Render(p, "/etc/falak/certs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -508,7 +508,7 @@ func TestTrustedProxiesSetClientIPHeaders(t *testing.T) {
 		}
 	}
 	// Without trusted proxies nothing changes for the servers.
-	cfg, _ = Render(Payload{Sites: p.Sites}, "/etc/kiln/certs")
+	cfg, _ = Render(Payload{Sites: p.Sites}, "/etc/falak/certs")
 	b, _ = json.Marshal(cfg)
 	if strings.Contains(string(b), "trusted_proxies") || strings.Contains(string(b), "client_ip_headers") {
 		t.Error("trusted_proxies set without ranges")
@@ -517,7 +517,7 @@ func TestTrustedProxiesSetClientIPHeaders(t *testing.T) {
 
 func TestHTTPChallengeOnlyDisablesTLSALPN(t *testing.T) {
 	p := Payload{Sites: []Site{{ID: "shop", Domains: []string{"shop.example.com"}, Kind: "static", Root: "/srv/shop", TLS: &TLS{Mode: "acme", HTTPChallengeOnly: true}}}}
-	cfg, err := Render(p, "/etc/kiln/certs")
+	cfg, err := Render(p, "/etc/falak/certs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,12 +530,12 @@ func TestHTTPChallengeOnlyDisablesTLSALPN(t *testing.T) {
 // Functions: Caddy proxies to the function gateway and names the function in a request header.
 func TestRenderReverseProxyRequestHeaders(t *testing.T) {
 	cfg, err := Render(Payload{Sites: []Site{{ID: "fn", Domains: []string{"fn.test"}, Kind: "reverse_proxy",
-		Upstreams: []Upstream{{Dial: "127.0.0.1:7070"}}, RequestHeaders: map[string]string{"X-Kiln-Function": "hello"}}}}, "/etc/kiln/certs")
+		Upstreams: []Upstream{{Dial: "127.0.0.1:7070"}}, RequestHeaders: map[string]string{"X-Falak-Function": "hello"}}}}, "/etc/falak/certs")
 	if err != nil {
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(cfg)
-	if !strings.Contains(string(b), `"headers":{"request":{"set":{"X-Kiln-Function":["hello"]}}}`) {
+	if !strings.Contains(string(b), `"headers":{"request":{"set":{"X-Falak-Function":["hello"]}}}`) {
 		t.Fatalf("request header not set on reverse_proxy: %s", b)
 	}
 }

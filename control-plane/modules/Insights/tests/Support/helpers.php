@@ -1,7 +1,7 @@
 <?php
 
 use Illuminate\Support\Str;
-use Kiln\Insights\Application\Actions\IngestInsights;
+use Falak\Insights\Application\Actions\IngestInsights;
 
 const INSIGHTS_SITE = '01j8sxte0000000000000000aa';
 const INSIGHTS_OTHER_SITE = '01j8sxte0000000000000000bb';
@@ -22,9 +22,9 @@ function insights_exception(array $overrides = []): array
         'type' => 'App\\Exceptions\\PaymentFailed',
         'message' => 'Card declined',
         'stacktrace' => implode("\n", [
-            "#0 /srv/kiln/sites/shop/releases/01J8REL0000000000000000000/app/Services/Checkout.php({$line}): App\\Services\\Gateway->charge()",
-            '#1 /srv/kiln/sites/shop/releases/01J8REL0000000000000000000/app/Http/Controllers/CheckoutController.php(20): App\\Services\\Checkout->pay()',
-            '#2 /srv/kiln/sites/shop/releases/01J8REL0000000000000000000/vendor/laravel/framework/src/Illuminate/Routing/Controller.php(54): call_user_func_array()',
+            "#0 /srv/falak/sites/shop/releases/01J8REL0000000000000000000/app/Services/Checkout.php({$line}): App\\Services\\Gateway->charge()",
+            '#1 /srv/falak/sites/shop/releases/01J8REL0000000000000000000/app/Http/Controllers/CheckoutController.php(20): App\\Services\\Checkout->pay()',
+            '#2 /srv/falak/sites/shop/releases/01J8REL0000000000000000000/vendor/laravel/framework/src/Illuminate/Routing/Controller.php(54): call_user_func_array()',
             '#3 {main}',
         ]),
         'handled' => false,

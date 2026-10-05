@@ -2,9 +2,9 @@
 
 use Illuminate\Contracts\Redis\Factory;
 use Illuminate\Support\Facades\DB;
-use Kiln\Fleet\Infrastructure\Signals\CommandSignal;
-use Kiln\Fleet\Infrastructure\Signals\DatabaseCommandSignal;
-use Kiln\Fleet\Infrastructure\Signals\RedisCommandSignal;
+use Falak\Fleet\Infrastructure\Signals\CommandSignal;
+use Falak\Fleet\Infrastructure\Signals\DatabaseCommandSignal;
+use Falak\Fleet\Infrastructure\Signals\RedisCommandSignal;
 
 it('returns as soon as the check yields commands', function () {
     $calls = 0;
@@ -41,9 +41,9 @@ it('checks exactly once for wait=0', function () {
 
 it('wakes waiters through Redis lists (RPUSH on notify, BLPOP while waiting)', function () {
     $connection = Mockery::mock();
-    $connection->shouldReceive('command')->once()->with('rpush', ['kiln:fleet:wake:agent-1', '1']);
-    $connection->shouldReceive('command')->once()->with('expire', ['kiln:fleet:wake:agent-1', 120]);
-    $connection->shouldReceive('command')->once()->with('blpop', Mockery::on(fn ($args) => $args[0] === ['kiln:fleet:wake:agent-1'] && $args[1] >= 1 && $args[1] <= 30))->andReturn(['kiln:fleet:wake:agent-1', '1']);
+    $connection->shouldReceive('command')->once()->with('rpush', ['falak:fleet:wake:agent-1', '1']);
+    $connection->shouldReceive('command')->once()->with('expire', ['falak:fleet:wake:agent-1', 120]);
+    $connection->shouldReceive('command')->once()->with('blpop', Mockery::on(fn ($args) => $args[0] === ['falak:fleet:wake:agent-1'] && $args[1] >= 1 && $args[1] <= 30))->andReturn(['falak:fleet:wake:agent-1', '1']);
 
     $redis = Mockery::mock(Factory::class);
     $redis->shouldReceive('connection')->with('default')->andReturn($connection);

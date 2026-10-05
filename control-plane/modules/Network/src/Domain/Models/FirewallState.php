@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Network\Domain\Models;
+namespace Falak\Network\Domain\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Kiln\Network\Domain\Enums\ApplyStatus;
+use Falak\Network\Domain\Enums\ApplyStatus;
 
 /**
  * Per-server convergence state of the nftables ruleset.

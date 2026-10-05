@@ -1,9 +1,9 @@
 import { CommandLog } from '@/components/command-log';
-import { AppShell } from '@/components/kiln/app-shell';
-import { Button } from '@/components/kiln/button';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { PageHeader, Section } from '@/components/kiln/section';
-import { Tag } from '@/components/kiln/tag';
+import { AppShell } from '@/components/falak/app-shell';
+import { Button } from '@/components/falak/button';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { PageHeader, Section } from '@/components/falak/section';
+import { Tag } from '@/components/falak/tag';
 import { useEchoChannel } from '@/hooks/use-echo-channel';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem } from '@/types';

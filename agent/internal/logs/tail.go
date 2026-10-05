@@ -20,8 +20,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
 )
 
 // Source is one configured log source.
@@ -30,7 +30,7 @@ type Source struct {
 	Service string `json:"service,omitempty"`
 	Site    string `json:"site,omitempty"`
 	Format  string `json:"format,omitempty"` // plain | json
-	// Kind is the kiln.log.kind of the records: "app" (default for site sources) or "access" (edge HTTP
+	// Kind is the falak.log.kind of the records: "app" (default for site sources) or "access" (edge HTTP
 	// access log in Caddy's JSON format, flattened into http.* / url.* / client.* attributes).
 	Kind string `json:"kind,omitempty"`
 	// Multiline merges continuation lines into the record they belong to. "laravel": a record starts
@@ -40,9 +40,9 @@ type Source struct {
 	SiteFromFile bool `json:"-"`
 }
 
-// AccessLogDir holds the edge's per-site HTTP access logs (<slug>.log, Caddy JSON). kiln-edge writes
+// AccessLogDir holds the edge's per-site HTTP access logs (<slug>.log, Caddy JSON). falak-edge writes
 // them (edge.caddy.apply sites[].access_log) and the telemetry service always tails them.
-const AccessLogDir = "/var/log/kiln/access"
+const AccessLogDir = "/var/log/falak/access"
 
 // AccessSource is the built-in source for AccessLogDir.
 func AccessSource() Source {

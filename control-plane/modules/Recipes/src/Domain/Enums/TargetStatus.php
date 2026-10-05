@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Recipes\Domain\Enums;
+namespace Falak\Recipes\Domain\Enums;
 
 enum TargetStatus: string
 {

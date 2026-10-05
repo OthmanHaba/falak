@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Application\Compose;
+namespace Falak\Sites\Application\Compose;
 
 use RuntimeException;
 

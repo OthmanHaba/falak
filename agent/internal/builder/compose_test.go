@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 func TestParseComposeBuilds(t *testing.T) {
@@ -58,7 +58,7 @@ func TestComposeBuildBuildsEveryBuildService(t *testing.T) {
 	b := newBuilder(t, f)
 	var out bytes.Buffer
 	job := Job{ID: "01JCOMPOSE", Mode: ModeDocker, Repo: Repo{URL: "https://x/stack.git"}, Compose: &ComposeSpec{
-		ImagePrefix: "registry.kiln.test/kiln/shop", Registry: &RegistryAuth{Username: "robot", Password: "hunter2-pass"},
+		ImagePrefix: "registry.falak.test/falak/shop", Registry: &RegistryAuth{Username: "robot", Password: "hunter2-pass"},
 		BuildArgs: map[string]string{"VITE_URL": "https://x", "NODE_ENV": "dev"},
 	}}
 	res, err := b.Build(context.Background(), job, NewNDJSONSink(&out))
@@ -68,8 +68,8 @@ func TestComposeBuildBuildsEveryBuildService(t *testing.T) {
 	if res.Compose == nil || res.Compose.File != "compose.yaml" || !strings.Contains(res.Compose.Content, "redis-data") {
 		t.Fatalf("compose result %+v", res.Compose)
 	}
-	if len(res.Compose.Images) != 2 || res.Compose.Images["web"].Pinned != "registry.kiln.test/kiln/shop/web@"+digest ||
-		res.Compose.Images["worker"].Ref != "registry.kiln.test/kiln/shop/worker:01jcompose" {
+	if len(res.Compose.Images) != 2 || res.Compose.Images["web"].Pinned != "registry.falak.test/falak/shop/web@"+digest ||
+		res.Compose.Images["worker"].Ref != "registry.falak.test/falak/shop/worker:01jcompose" {
 		t.Fatalf("images %+v", res.Compose.Images)
 	}
 	var builds []runnertest.Call
@@ -82,7 +82,7 @@ func TestComposeBuildBuildsEveryBuildService(t *testing.T) {
 		t.Fatalf("builds %v", f.Lines())
 	}
 	web := strings.Join(builds[0].Args, " ")
-	for _, want := range []string{"--target prod", "--build-arg NODE_ENV=production", "--build-arg VITE_URL=https://x", "--tag registry.kiln.test/kiln/shop/web:01jcompose", "/app/Dockerfile", "--push"} {
+	for _, want := range []string{"--target prod", "--build-arg NODE_ENV=production", "--build-arg VITE_URL=https://x", "--tag registry.falak.test/falak/shop/web:01jcompose", "/app/Dockerfile", "--push"} {
 		if !strings.Contains(web, want) {
 			t.Errorf("web build missing %q: %s", want, web)
 		}
@@ -105,7 +105,7 @@ func TestComposeBuildMergesFilesAndShipsMountedFiles(t *testing.T) {
 	b := newBuilder(t, f)
 	var out bytes.Buffer
 	job := Job{ID: "01JPROJECT", Mode: ModeDocker, Repo: Repo{URL: "https://x/shop.git"}, Compose: &ComposeSpec{
-		ImagePrefix: "registry.kiln.test/kiln/shop", Files: []string{"deploy/compose.yml", "deploy/compose.prod.yml"}, Profiles: []string{"ops"},
+		ImagePrefix: "registry.falak.test/falak/shop", Files: []string{"deploy/compose.yml", "deploy/compose.prod.yml"}, Profiles: []string{"ops"},
 	}}
 	res, err := b.Build(context.Background(), job, NewNDJSONSink(&out))
 	if err != nil {
@@ -133,7 +133,7 @@ func TestComposeBuildMergesFilesAndShipsMountedFiles(t *testing.T) {
 	if !reflect.DeepEqual(c.Missing, []string{"deploy/data"}) {
 		t.Errorf("missing %v", c.Missing)
 	}
-	if c.Images["app"].Ref != "registry.kiln.test/kiln/shop/app:01jproject" {
+	if c.Images["app"].Ref != "registry.falak.test/falak/shop/app:01jproject" {
 		t.Errorf("images %+v", c.Images)
 	}
 	for _, call := range f.Calls() {

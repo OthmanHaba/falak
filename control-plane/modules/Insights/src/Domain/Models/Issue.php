@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Insights\Domain\Models;
+namespace Falak\Insights\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Kiln\Insights\Contracts\Data\IssueData;
-use Kiln\Insights\Contracts\IssueKind;
-use Kiln\Insights\Contracts\IssuePriority;
-use Kiln\Insights\Contracts\IssueStatus;
+use Falak\Insights\Contracts\Data\IssueData;
+use Falak\Insights\Contracts\IssueKind;
+use Falak\Insights\Contracts\IssuePriority;
+use Falak\Insights\Contracts\IssueStatus;
 
 /**
  * @property string $id

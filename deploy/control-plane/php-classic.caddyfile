@@ -1,2 +1,2 @@
-# Classic mode: every request boots Laravel in a free PHP thread (agent-api; panel with KILN_WORKER_MODE=0).
+# Classic mode: every request boots Laravel in a free PHP thread (agent-api; panel with FALAK_WORKER_MODE=0).
 php_server

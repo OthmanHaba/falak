@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Providers\Contracts;
+namespace Falak\Providers\Contracts;
 
-use Kiln\Providers\Contracts\Data\CredentialSummary;
-use Kiln\Providers\Contracts\Data\Image;
-use Kiln\Providers\Contracts\Data\Region;
-use Kiln\Providers\Contracts\Data\Size;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\Data\CredentialSummary;
+use Falak\Providers\Contracts\Data\Image;
+use Falak\Providers\Contracts\Data\Region;
+use Falak\Providers\Contracts\Data\Size;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
 
 /**
  * Entry point for other modules (Servers): resolves an organization's stored credential into a ready adapter.

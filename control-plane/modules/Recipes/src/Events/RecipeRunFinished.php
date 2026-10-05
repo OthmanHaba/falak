@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Recipes\Events;
+namespace Falak\Recipes\Events;
 
 use Illuminate\Foundation\Events\Dispatchable;
 

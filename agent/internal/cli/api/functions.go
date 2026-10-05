@@ -8,7 +8,7 @@ import (
 	"strconv"
 )
 
-// Cloud Functions endpoints (`kiln fn …`). {site} is the function's site id or slug.
+// Cloud Functions endpoints (`falak fn …`). {site} is the function's site id or slug.
 const (
 	PathFunctions             = "/api/v1/functions"                                 // GET → {data:[FunctionSummary]}
 	PathFunction              = "/api/v1/functions/{site}"                          // GET → {data:Function}

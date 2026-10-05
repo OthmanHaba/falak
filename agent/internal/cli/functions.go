@@ -21,14 +21,14 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/kiln/agent/internal/cli/api"
+	"github.com/OthmanHaba/falak/agent/internal/cli/api"
 )
 
-// ExitConflict: `kiln fn deploy` found a newer version than its base (pull, or deploy with --force).
+// ExitConflict: `falak fn deploy` found a newer version than its base (pull, or deploy with --force).
 const ExitConflict = 4
 
-// functionMetaFile links a local directory to a function (written by `kiln fn pull`, updated by deploys).
-const functionMetaFile = ".kiln-function.json"
+// functionMetaFile links a local directory to a function (written by `falak fn pull`, updated by deploys).
+const functionMetaFile = ".falak-function.json"
 
 type functionMeta struct {
 	SiteID        string   `json:"site_id"`
@@ -36,7 +36,7 @@ type functionMeta struct {
 	BaseVersionID string   `json:"base_version_id"`
 	Entrypoint    string   `json:"entrypoint"`
 	Files         []string `json:"files"`
-	// Hashes are the sha256 of each file as Kiln wrote or sent it: a later pull deletes a file the new version no
+	// Hashes are the sha256 of each file as Falak wrote or sent it: a later pull deletes a file the new version no
 	// longer has only when it is unchanged locally.
 	Hashes map[string]string `json:"hashes,omitempty"`
 }
@@ -137,11 +137,11 @@ func cmdFnPull(ctx context.Context, a *App, args []string) error {
 				continue
 			}
 			if want, known := old.Hashes[p]; !known || want != contentHash(b) {
-				fmt.Fprintf(a.Stderr, "kiln: kept %s: v%d no longer has it, but it changed locally\n", p, fn.Head.Number)
+				fmt.Fprintf(a.Stderr, "falak: kept %s: v%d no longer has it, but it changed locally\n", p, fn.Head.Number)
 				continue
 			}
 			if err := os.Remove(target); err == nil {
-				fmt.Fprintf(a.Stderr, "kiln: removed %s (not in v%d)\n", p, fn.Head.Number)
+				fmt.Fprintf(a.Stderr, "falak: removed %s (not in v%d)\n", p, fn.Head.Number)
 			}
 		}
 	}
@@ -207,10 +207,10 @@ func cmdFnDeploy(ctx context.Context, a *App, args []string) error {
 		if sk.path == fn.Entrypoint {
 			return fmt.Errorf("the entrypoint %s can't be deployed: %s", sk.path, sk.reason)
 		}
-		fmt.Fprintf(a.Stderr, "kiln: skipping %s (%s)\n", sk.path, sk.reason)
+		fmt.Fprintf(a.Stderr, "falak: skipping %s (%s)\n", sk.path, sk.reason)
 	}
 	if _, ok := files[fn.Entrypoint]; !ok {
-		return fmt.Errorf("%s not found in %s (run `kiln fn pull %s %s` first)", fn.Entrypoint, dir, fn.Site.Slug, dir)
+		return fmt.Errorf("%s not found in %s (run `falak fn pull %s %s` first)", fn.Entrypoint, dir, fn.Site.Slug, dir)
 	}
 
 	// Files the function doesn't have yet: shown, and deployed only once confirmed (a stray file in the folder
@@ -223,12 +223,12 @@ func cmdFnDeploy(ctx context.Context, a *App, args []string) error {
 	}
 	sort.Strings(added)
 	if len(added) > 0 && fn.Head != nil && !*yes {
-		fmt.Fprintf(a.Stderr, "kiln: %d new file(s) for %s:\n", len(added), fn.Site.Slug)
+		fmt.Fprintf(a.Stderr, "falak: %d new file(s) for %s:\n", len(added), fn.Site.Slug)
 		for _, p := range added {
 			fmt.Fprintf(a.Stderr, "  + %s\n", p)
 		}
 		if !a.Interactive {
-			return usagef("new files need confirmation: rerun with --yes to deploy them (or list unwanted ones in .kilnignore)")
+			return usagef("new files need confirmation: rerun with --yes to deploy them (or list unwanted ones in .falakignore)")
 		}
 		fmt.Fprint(a.Stderr, "Deploy them? [y/N] ")
 		line, _ := bufio.NewReader(a.Stdin).ReadString('\n')
@@ -245,7 +245,7 @@ func cmdFnDeploy(ctx context.Context, a *App, args []string) error {
 		if conflict.Head.Author != "" {
 			by = " by " + conflict.Head.Author
 		}
-		return exitError{ExitConflict, fmt.Errorf("v%d was deployed%s after your base; run `kiln fn pull %s` and merge, or deploy with --force", conflict.Head.Number, by, fn.Site.Slug)}
+		return exitError{ExitConflict, fmt.Errorf("v%d was deployed%s after your base; run `falak fn pull %s` and merge, or deploy with --force", conflict.Head.Number, by, fn.Site.Slug)}
 	}
 	if err != nil {
 		return err
@@ -260,7 +260,7 @@ func cmdFnDeploy(ctx context.Context, a *App, args []string) error {
 		return err
 	}
 	for _, w := range res.Warnings {
-		fmt.Fprintln(a.Stderr, "kiln: "+w)
+		fmt.Fprintln(a.Stderr, "falak: "+w)
 	}
 
 	if !*wait {
@@ -374,7 +374,7 @@ func cmdFnRun(ctx context.Context, a *App, args []string) error {
 			if errs++; errs > 5 {
 				return err
 			}
-			fmt.Fprintf(a.Stderr, "kiln: %v (retrying)\n", err)
+			fmt.Fprintf(a.Stderr, "falak: %v (retrying)\n", err)
 		} else {
 			errs = 0
 			if len(st.Output) > printed {
@@ -562,12 +562,12 @@ var functionPath = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_
 type skippedFile struct{ path, reason string }
 
 // readFunctionDir reads a function directory as {path: content}: every regular file, except dot-files and
-// dot-folders (.kiln-function.json, .git, .env …), the folders in ignoredDirs and the patterns of an optional
-// .kilnignore (one per line: a name like "dist" or a glob like "*.log" or "tests/*"). Files that look like secrets
+// dot-folders (.falak-function.json, .git, .env …), the folders in ignoredDirs and the patterns of an optional
+// .falakignore (one per line: a name like "dist" or a glob like "*.log" or "tests/*"). Files that look like secrets
 // (secretFiles), symlinks (a link could pull in files from outside the directory), names the control plane refuses
 // and non-text files (a built binary) are skipped and reported; too many files or bytes is an error.
 func readFunctionDir(dir string) (map[string]string, []skippedFile, error) {
-	ignore, err := readKilnIgnore(dir)
+	ignore, err := readFalakIgnore(dir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -614,7 +614,7 @@ func readFunctionDir(dir string) (map[string]string, []skippedFile, error) {
 		}
 		total += len(rel) + len(b)
 		if len(files) >= maxFunctionFiles || total > maxFunctionBytes {
-			return fmt.Errorf("%s holds more than %d files or %d KB: a function is source code only (add the rest to .kilnignore)", dir, maxFunctionFiles, maxFunctionBytes>>10)
+			return fmt.Errorf("%s holds more than %d files or %d KB: a function is source code only (add the rest to .falakignore)", dir, maxFunctionFiles, maxFunctionBytes>>10)
 		}
 		files[rel] = string(b)
 		return nil
@@ -627,8 +627,8 @@ func hasFile(files map[string]string, p string) bool {
 	return ok
 }
 
-func readKilnIgnore(dir string) ([]string, error) {
-	b, err := os.ReadFile(filepath.Join(dir, ".kilnignore"))
+func readFalakIgnore(dir string) ([]string, error) {
+	b, err := os.ReadFile(filepath.Join(dir, ".falakignore"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}

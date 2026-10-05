@@ -15,8 +15,8 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
-    // Injected by Kiln into each release's .env (read through config so `artisan optimize` keeps it).
-    'release' => env('KILN_RELEASE_ID'),
+    // Injected by Falak into each release's .env (read through config so `artisan optimize` keeps it).
+    'release' => env('FALAK_RELEASE_ID'),
 
     /*
     |--------------------------------------------------------------------------

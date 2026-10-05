@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Fleet\Application;
+namespace Falak\Fleet\Application;
 
-use Kiln\Fleet\Infrastructure\AgentBinaries;
-use Kiln\Fleet\Infrastructure\PanelUrls;
+use Falak\Fleet\Infrastructure\AgentBinaries;
+use Falak\Fleet\Infrastructure\PanelUrls;
 
 /**
- * The kiln-agent build this control plane hands out (installer and upgrades), per architecture, and how a running
+ * The falak-agent build this control plane hands out (installer and upgrades), per architecture, and how a running
  * agent compares to it.
  */
 final class ShippedAgent

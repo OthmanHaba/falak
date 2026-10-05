@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Edge\Tests\Support;
+namespace Falak\Edge\Tests\Support;
 
-use Kiln\Sites\Contracts\Data\EnvironmentData;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\Data\SiteTargetData;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteHeaders;
+use Falak\Sites\Contracts\Data\EnvironmentData;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\Data\SiteTargetData;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteHeaders;
 
 /**
  * In-memory SiteDirectory + SiteHeaders implementing only the public Sites contracts.

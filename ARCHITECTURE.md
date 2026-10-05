@@ -1,9 +1,9 @@
-# Kiln — Architecture
+# Falak — Architecture
 
 Self-hosted server management, deployment and observability platform.
 Scope = Laravel Forge + Envoyer (multi-server) + Coolify (Docker/native builds) + Nightwatch (APM) + LGTM observability.
 
-> Working name **Kiln**. Rename via `KILN_*` env prefix + namespace `Kiln\`.
+> Working name **Falak**. Rename via `FALAK_*` env prefix + namespace `Falak\`.
 
 ---
 
@@ -18,10 +18,10 @@ infra-deployment/
 │   ├── app/                     ← framework glue only (no business logic)
 │   ├── modules/<Module>/        ← ALL business logic lives here
 │   └── tests/Architecture/      ← Pest arch tests enforcing module boundaries
-├── agent/                       ← Go: `kiln-agent` (servers) + `kiln` (CLI) + `kiln-builder`
+├── agent/                       ← Go: `falak-agent` (servers) + `falak` (CLI) + `falak-builder`
 ├── packages/
-│   ├── apm-laravel/             ← `kiln/apm-laravel` Composer package (Nightwatch-equivalent)
-│   └── apm-node/                ← `@kiln/apm-node` TS package (OTel preset for Node/Bun/Deno)
+│   ├── apm-laravel/             ← `falak/apm-laravel` Composer package (Nightwatch-equivalent)
+│   └── apm-node/                ← `@falak/apm-node` TS package (OTel preset for Node/Bun/Deno)
 ├── observability/               ← Loki, Tempo, Grafana, VictoriaMetrics|Mimir configs, dashboards, alert rules
 └── sim/                         ← docker compose E2E simulation (control plane + fake Ubuntu servers + LGTM)
 ```
@@ -89,12 +89,12 @@ modules/Sites/
 Agent **dials out** (no inbound SSH required; SSH stays as bootstrap fallback).
 
 - **Transport:** HTTPS with mTLS. Control plane runs an internal CA (Fleet module).
-- **Enrollment:** `curl -fsSL https://<panel>/install/<one-time-token> | sh` → installs agent → `POST /agent/v1/enroll {token, csr, facts}` → receives signed cert + agent id. A new install command on an enrolled machine replaces its identity (backup in `/etc/kiln/previous/`); the script ends with `kiln-agent check` (`GET /agent/v1/ping`).
+- **Enrollment:** `curl -fsSL https://<panel>/install/<one-time-token> | sh` → installs agent → `POST /agent/v1/enroll {token, csr, facts}` → receives signed cert + agent id. A new install command on an enrolled machine replaces its identity (backup in `/etc/falak/previous/`); the script ends with `falak-agent check` (`GET /agent/v1/ping`).
 - **Command channel:** agent long-polls `GET /agent/v1/commands?wait=30`. Returns 0..N commands.
 - **Results/streams:** `POST /agent/v1/commands/{id}/events` (batched NDJSON: `started`, `output`, `progress`, `finished`).
 - **Heartbeat:** `POST /agent/v1/heartbeat` every 15s with facts + lightweight metrics summary.
-- **Sessions:** each agent process sends `X-Kiln-Agent-Session`; commands lost to a restart (or unacknowledged past
-  a 90 s lease) are redelivered when their schema is `x-kiln-redeliverable`, else failed (`contracts/agent-protocol/README.md`).
+- **Sessions:** each agent process sends `X-Falak-Agent-Session`; commands lost to a restart (or unacknowledged past
+  a 90 s lease) are redelivered when their schema is `x-falak-redeliverable`, else failed (`contracts/agent-protocol/README.md`).
 - **Telemetry** does **not** go to the control plane — agent relays OTLP straight to the observability box. Only Insights-relevant summaries (exceptions, threshold breaches) are teed to `POST /agent/v1/insights`.
 
 Schemas live in `contracts/agent-protocol/*.schema.json`. Command envelope:
@@ -118,7 +118,7 @@ Every command type is **idempotent** (safe to re-run) and declares a JSON Schema
 | `cron` | `apply` (desired schedule set with heartbeat wrapper) |
 | `db` | `create`, `drop`, `user.apply`, `backup`, `restore` |
 | `net` | `firewall.apply` (nftables), `wireguard.apply`, `tunnel.apply` (Cloudflare Tunnel) |
-| `fn` | `release.apply` (write + install a function release, make it live behind `kiln-fn-gateway`), `release.remove`, `status` |
+| `fn` | `release.apply` (write + install a function release, make it live behind `falak-fn-gateway`), `release.remove`, `status` |
 | `docker` | `pull`, `run`, `stop`, `compose.up`, `compose.down`, `compose.pull`, `compose.ps`, `compose.restart`, `prune` |
 | `telemetry` | `configure` (OTLP endpoints, sampling, log sources) |
 | `terminal` | `open`, `input`, `resize`, `close` |
@@ -131,9 +131,9 @@ State-style commands (`*.apply`) send the **full desired state**; the agent conv
 
 ```
 agent/
-├── cmd/kiln-agent/      ← server daemon
-├── cmd/kiln/            ← CLI (talks to control-plane public API)
-├── cmd/kiln-builder/    ← build worker (Railpack/BuildKit), runs on builder nodes
+├── cmd/falak-agent/      ← server daemon
+├── cmd/falak/            ← CLI (talks to control-plane public API)
+├── cmd/falak-builder/    ← build worker (Railpack/BuildKit), runs on builder nodes
 └── internal/
     ├── enroll/  transport/  commands/ (registry + executors)
     ├── deploy/  docker/  runtime/  edge/ (Caddy admin API)
@@ -178,21 +178,21 @@ BUILD once → FETCH (all, parallel) → PREPARE (all) → MIGRATE (leader only)
 
 Release layout (native):
 ```
-/srv/kiln/sites/<site>/
+/srv/falak/sites/<site>/
 ├── releases/<release-ulid>/
 ├── shared/          (.env, storage/, custom shared paths)
 └── current -> releases/<release-ulid>
 ```
 
-Deploy script macros: `$KILN_FETCH`, `$KILN_ACTIVATE`, `$KILN_RESTART_PROCS`; variables `KILN_*` (commit, author, branch, release dir, site root, php binary, deployment id, trigger).
+Deploy script macros: `$FALAK_FETCH`, `$FALAK_ACTIVATE`, `$FALAK_RESTART_PROCS`; variables `FALAK_*` (commit, author, branch, release dir, site root, php binary, deployment id, trigger).
 
 ---
 
 ## 6. Observability
 
 ```
-app ──(kiln/apm-laravel | @kiln/apm-node)──► unix:/run/kiln/otlp.sock ─┐
-host metrics / logs / container logs ──────────────────────────────────┤ kiln-agent (batch, retry, disk buffer)
+app ──(falak/apm-laravel | @falak/apm-node)──► unix:/run/falak/otlp.sock ─┐
+host metrics / logs / container logs ──────────────────────────────────┤ falak-agent (batch, retry, disk buffer)
                                                                         └─► OTLP/HTTP ─► Loki · Tempo · VictoriaMetrics|Mimir ─► Grafana
                                                      exceptions/breaches ─► control plane Insights
 ```

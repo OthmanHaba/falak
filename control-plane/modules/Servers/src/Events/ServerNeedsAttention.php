@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Servers\Events;
+namespace Falak\Servers\Events;
 
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
- * The machine check before provisioning found conflicts Kiln won't resolve on its own; nothing was applied.
+ * The machine check before provisioning found conflicts Falak won't resolve on its own; nothing was applied.
  */
 final class ServerNeedsAttention
 {

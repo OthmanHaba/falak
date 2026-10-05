@@ -1,6 +1,6 @@
-import { useFlashToasts } from '@/components/kiln/flash';
-import { KilnMark } from '@/components/kiln/logo';
-import { Toaster } from '@/components/kiln/toast';
+import { useFlashToasts } from '@/components/falak/flash';
+import { FalakMark } from '@/components/falak/logo';
+import { Toaster } from '@/components/falak/toast';
 import { initializeTheme } from '@/hooks/use-appearance';
 import { Link } from '@inertiajs/react';
 import { useEffect, type ReactNode } from 'react';
@@ -28,10 +28,10 @@ export default function AuthLayout({ title, description, footer, children }: Aut
                 <Link
                     href={route('home')}
                     className="text-fg mx-auto flex items-center gap-2 rounded-md text-base font-semibold tracking-tight"
-                    aria-label="Kiln home"
+                    aria-label="Falak home"
                 >
-                    <KilnMark size={24} />
-                    Kiln
+                    <FalakMark size={24} />
+                    Falak
                 </Link>
                 <div className="border-border bg-surface-1 shadow-panel grid gap-5 rounded-xl border p-6">
                     <div className="grid gap-1 text-center">

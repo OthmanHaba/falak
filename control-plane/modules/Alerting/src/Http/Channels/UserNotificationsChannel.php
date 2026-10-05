@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Alerting\Http\Channels;
+namespace Falak\Alerting\Http\Channels;
 
 use Illuminate\Contracts\Auth\Authenticatable;
 

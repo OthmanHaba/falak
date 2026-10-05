@@ -9,7 +9,7 @@ services:
       APPSMITH_ENCRYPTION_PASSWORD: ${APPSMITH_ENCRYPTION_PASSWORD}
       APPSMITH_ENCRYPTION_SALT: ${APPSMITH_ENCRYPTION_SALT}
       APPSMITH_DISABLE_TELEMETRY: "true"
-      APPSMITH_BASE_URL: ${{ kiln.url(appsmith) }}
+      APPSMITH_BASE_URL: ${{ falak.url(appsmith) }}
     volumes:
       - appsmith-stacks:/appsmith-stacks
     healthcheck:

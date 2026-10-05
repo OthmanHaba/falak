@@ -1,10 +1,10 @@
 <?php
 
-use Kiln\Deployments\Contracts\DeploymentDirectory;
-use Kiln\Projects\Domain\Models\Project;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteRuntime;
+use Falak\Deployments\Contracts\DeploymentDirectory;
+use Falak\Projects\Domain\Models\Project;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteRuntime;
 
 require_once __DIR__.'/../Support/helpers.php';
 require_once __DIR__.'/../../../Deployments/tests/Support/helpers.php';
@@ -15,7 +15,7 @@ require_once __DIR__.'/../../../Deployments/tests/Support/helpers.php';
  */
 it('deploys a catalog template through the real compose runtime', function () {
     templates_fixture_catalog();
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
     $world = deploy_world(servers: 1);
     $project = Project::query()->where('organization_id', $world->organization->id)->where('is_default', true)->firstOrFail();
 
@@ -32,7 +32,7 @@ it('deploys a catalog template through the real compose runtime', function () {
     expect($site->runtime)->toBe(SiteRuntime::Compose)
         ->and($variables['ADMIN_EMAIL'])->toBe('ops@example.com')
         ->and($variables['APP_SECRET'])->toMatch('/^[A-Za-z0-9]{32}$/')
-        ->and($variables['PUBLIC_URL'])->toBe('https://hello-stack.kiln.test')
+        ->and($variables['PUBLIC_URL'])->toBe('https://hello-stack.falak.test')
         ->and($site->compose->source->value)->toBe('inline')
         ->and($site->compose->version)->toBe(1)
         ->and($site->compose->template)->toBe(['slug' => 'hello', 'version' => '1.2.0', 'source' => 'catalog'])

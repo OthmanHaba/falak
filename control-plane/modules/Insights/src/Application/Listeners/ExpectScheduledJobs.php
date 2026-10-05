@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Insights\Application\Listeners;
+namespace Falak\Insights\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Kiln\Insights\Application\HeartbeatTracker;
-use Kiln\Processes\Events\SchedulesApplied;
+use Falak\Insights\Application\HeartbeatTracker;
+use Falak\Processes\Events\SchedulesApplied;
 
 /**
  * Keeps heartbeat monitors in step with the schedule sets Processes applies to servers.

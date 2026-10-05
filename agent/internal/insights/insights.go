@@ -20,8 +20,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kiln/agent/internal/otlp"
-	"github.com/kiln/agent/internal/transport"
+	"github.com/OthmanHaba/falak/agent/internal/otlp"
+	"github.com/OthmanHaba/falak/agent/internal/transport"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
@@ -132,7 +132,7 @@ func (t *Tee) ObserveSpans(rs []*tracepb.ResourceSpans) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	for _, r := range rs {
-		site, _ := otlp.Lookup(r.GetResource().GetAttributes(), "kiln.site.id")
+		site, _ := otlp.Lookup(r.GetResource().GetAttributes(), "falak.site.id")
 		for _, ss := range r.GetScopeSpans() {
 			for _, sp := range ss.GetSpans() {
 				t.observeLocked(site, sp, users[string(sp.TraceId)])
@@ -142,7 +142,7 @@ func (t *Tee) ObserveSpans(rs []*tracepb.ResourceSpans) {
 }
 
 func (t *Tee) observeLocked(site string, sp *tracepb.Span, user string) {
-	typ, _ := otlp.Lookup(sp.Attributes, "kiln.event.type")
+	typ, _ := otlp.Lookup(sp.Attributes, "falak.event.type")
 	name := NameFor(typ, sp)
 	isErr := sp.GetStatus().GetCode() == tracepb.Status_STATUS_CODE_ERROR
 	for _, ev := range sp.GetEvents() {
@@ -151,9 +151,9 @@ func (t *Tee) observeLocked(site string, sp *tracepb.Span, user string) {
 		}
 		isErr = true
 		handled := sp.GetStatus().GetCode() != tracepb.Status_STATUS_CODE_ERROR
-		if v := otlp.LookupValue(ev.Attributes, "kiln.exception.handled"); v != nil {
+		if v := otlp.LookupValue(ev.Attributes, "falak.exception.handled"); v != nil {
 			handled = otlp.AttrString(v) == "true"
-		} else if v := otlp.LookupValue(sp.Attributes, "kiln.exception.handled"); v != nil {
+		} else if v := otlp.LookupValue(sp.Attributes, "falak.exception.handled"); v != nil {
 			handled = otlp.AttrString(v) == "true"
 		}
 		get := func(k string) string { s, _ := otlp.Lookup(ev.Attributes, k); return s }
@@ -181,11 +181,11 @@ func (t *Tee) observeLocked(site string, sp *tracepb.Span, user string) {
 			isErr = true
 		}
 	case "job":
-		if s, _ := otlp.Lookup(sp.Attributes, "kiln.job.status"); s == "failed" {
+		if s, _ := otlp.Lookup(sp.Attributes, "falak.job.status"); s == "failed" {
 			isErr = true
 		}
 	case "scheduled_task":
-		if s, _ := otlp.Lookup(sp.Attributes, "kiln.schedule.status"); s == "failed" {
+		if s, _ := otlp.Lookup(sp.Attributes, "falak.schedule.status"); s == "failed" {
 			isErr = true
 		}
 	}
@@ -359,7 +359,7 @@ func NameFor(typ string, sp *tracepb.Span) string {
 		}
 		return n
 	case "job":
-		return pick("kiln.job.class")
+		return pick("falak.job.class")
 	case "query":
 		if q := get("db.query.text"); q != "" {
 			return QueryShape(q)
@@ -371,15 +371,15 @@ func NameFor(typ string, sp *tracepb.Span) string {
 		}
 		return sp.GetName()
 	case "command":
-		return pick("kiln.command.name")
+		return pick("falak.command.name")
 	case "scheduled_task":
-		return pick("kiln.schedule.name")
+		return pick("falak.schedule.name")
 	case "mail":
-		return pick("kiln.mail.class")
+		return pick("falak.mail.class")
 	case "notification":
-		return pick("kiln.notification.class")
+		return pick("falak.notification.class")
 	case "cache":
-		return strings.TrimSpace(get("kiln.cache.store") + " " + get("kiln.cache.op"))
+		return strings.TrimSpace(get("falak.cache.store") + " " + get("falak.cache.op"))
 	}
 	return sp.GetName()
 }

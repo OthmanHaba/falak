@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Builds\Application;
+namespace Falak\Builds\Application;
 
-use Kiln\Projects\Contracts\VariableReferences;
-use Kiln\Sites\Contracts\BuildMode;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Projects\Contracts\VariableReferences;
+use Falak\Sites\Contracts\BuildMode;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
 
 /**
  * What a site's build depends on: mode, build-time environment and the cache key that identifies
@@ -66,8 +66,8 @@ final class BuildConfiguration
     }
 
     /**
-     * Native build command overrides from the site's variables (as Railway's RAILPACK_*_CMD): KILN_INSTALL_COMMAND
-     * replaces the detected dependency install, KILN_BUILD_COMMAND the build step (both run with `sh -c`).
+     * Native build command overrides from the site's variables (as Railway's RAILPACK_*_CMD): FALAK_INSTALL_COMMAND
+     * replaces the detected dependency install, FALAK_BUILD_COMMAND the build step (both run with `sh -c`).
      *
      * @return array{install_command?: string, build_command?: string}
      */
@@ -76,8 +76,8 @@ final class BuildConfiguration
         $variables = $this->sites->environment($site->id)->variables ?? [];
 
         return array_filter([
-            'install_command' => trim((string) ($variables['KILN_INSTALL_COMMAND'] ?? '')),
-            'build_command' => trim((string) ($variables['KILN_BUILD_COMMAND'] ?? '')),
+            'install_command' => trim((string) ($variables['FALAK_INSTALL_COMMAND'] ?? '')),
+            'build_command' => trim((string) ($variables['FALAK_BUILD_COMMAND'] ?? '')),
         ], fn (string $command) => $command !== '');
     }
 
@@ -106,7 +106,7 @@ final class BuildConfiguration
         ] + ($commands === [] ? [] : ['commands' => $commands])));
     }
 
-    /** Runtime hint for kiln-builder (php|node|bun|deno|static). */
+    /** Runtime hint for falak-builder (php|node|bun|deno|static). */
     public static function runtimeHint(SiteData $site): ?string
     {
         return match (true) {

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Domain\Models;
+namespace Falak\Identity\Domain\Models;
 
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
-use Kiln\Identity\Database\Factories\UserFactory;
+use Falak\Identity\Database\Factories\UserFactory;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;

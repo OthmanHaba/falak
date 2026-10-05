@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
 /**
  * Extra fields other modules contribute to the public site API resource (GET /api/v1/sites[/…]),

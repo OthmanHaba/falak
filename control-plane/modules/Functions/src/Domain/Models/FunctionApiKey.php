@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Functions\Domain\Models;
+namespace Falak\Functions\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -8,7 +8,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * An API key of a function: only its sha256 is stored; callers send it as `Authorization: Bearer <key>` or
- * `X-Kiln-Key: <key>`.
+ * `X-Falak-Key: <key>`.
  *
  * @property string $id
  * @property string $function_id

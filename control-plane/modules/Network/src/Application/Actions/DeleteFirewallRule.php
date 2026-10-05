@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Network\Application\Actions;
+namespace Falak\Network\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Network\Application\ApplyFirewall;
-use Kiln\Network\Domain\Models\FirewallRule;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Network\Application\ApplyFirewall;
+use Falak\Network\Domain\Models\FirewallRule;
 
 final class DeleteFirewallRule
 {

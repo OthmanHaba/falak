@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Functions\Domain\Models;
+namespace Falak\Functions\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -30,7 +30,7 @@ class FunctionSchedule extends Model
         return ['enabled' => 'boolean', 'timeout_s' => 'integer'];
     }
 
-    /** Short, stable key: the cron job is `<slug>.function-<key>` and the runtime sees it as KILN_SCHEDULE. */
+    /** Short, stable key: the cron job is `<slug>.function-<key>` and the runtime sees it as FALAK_SCHEDULE. */
     public function key(): string
     {
         return strtolower(substr($this->id, -8));

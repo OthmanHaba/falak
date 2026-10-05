@@ -10,7 +10,7 @@ app = FastAPI()
 
 @app.get("/")
 def index():
-    return {"message": "Hello from Kiln!", "time": datetime.now(timezone.utc).isoformat()}
+    return {"message": "Hello from Falak!", "time": datetime.now(timezone.utc).isoformat()}
 
 
 @app.get("/hello/{name}")

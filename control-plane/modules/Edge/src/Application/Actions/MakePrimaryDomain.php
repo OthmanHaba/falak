@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Edge\Application\Actions;
+namespace Falak\Edge\Application\Actions;
 
 use Illuminate\Support\Facades\DB;
-use Kiln\Edge\Application\ComposeServiceDomains;
-use Kiln\Edge\Application\EdgeChanges;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Edge\Application\ComposeServiceDomains;
+use Falak\Edge\Application\EdgeChanges;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Sites\Contracts\SiteDirectory;
 
 final class MakePrimaryDomain
 {

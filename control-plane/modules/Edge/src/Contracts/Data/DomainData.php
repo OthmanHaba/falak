@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Edge\Contracts\Data;
+namespace Falak\Edge\Contracts\Data;
 
-use Kiln\Edge\Contracts\TlsMode;
+use Falak\Edge\Contracts\TlsMode;
 
 final readonly class DomainData
 {

@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Servers\Http\Channels;
+namespace Falak\Servers\Http\Channels;
 
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Servers\Domain\Models\Server;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Servers\Domain\Models\Server;
 
 /**
  * private-servers.{serverId}: members of the server's organization with servers.view.

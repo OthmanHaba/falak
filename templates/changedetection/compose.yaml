@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     expose: ["5000"]
     environment:
-      BASE_URL: ${{ kiln.url(changedetection) }}
+      BASE_URL: ${{ falak.url(changedetection) }}
       TZ: ${TIMEZONE}
       HIDE_REFERER: "true"
     volumes:

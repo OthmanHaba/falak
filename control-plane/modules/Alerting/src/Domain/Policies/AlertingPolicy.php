@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Alerting\Domain\Policies;
+namespace Falak\Alerting\Domain\Policies;
 
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
-use Kiln\Identity\Contracts\OrganizationAccess;
+use Falak\Identity\Contracts\OrganizationAccess;
 
 /**
  * Organization-scoped policy for channels and rules: viewing needs alerting.view, changes need

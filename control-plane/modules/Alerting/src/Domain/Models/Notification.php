@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Alerting\Domain\Models;
+namespace Falak\Alerting\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Kiln\Alerting\Contracts\Severity;
+use Falak\Alerting\Contracts\Severity;
 
 /**
  * In-app notification (notification center).

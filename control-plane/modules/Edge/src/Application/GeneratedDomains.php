@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Edge\Application;
+namespace Falak\Edge\Application;
 
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Domain\Models\OrganizationSetting;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Domain\Models\OrganizationSetting;
 
 /**
  * Generated names: `<label>.<ip-with-dashes>.<suffix>` (e.g. `minio-files.63-182-218-247.sslip.io`), or
- * `<label>.<zone>` under a Cloudflare zone Kiln manages (the record is created for it). Wildcard DNS
+ * `<label>.<zone>` under a Cloudflare zone Falak manages (the record is created for it). Wildcard DNS
  * services such as sslip.io and nip.io answer with the IP embedded in the name, so the name works without any DNS
  * setup and Let's Encrypt can issue a certificate over HTTP-01.
  */
@@ -18,12 +18,12 @@ final class GeneratedDomains
 
     public const OFF = 'off';
 
-    /** Setting value prefix for names under a Cloudflare zone Kiln manages (`cloudflare:example.com`). */
+    /** Setting value prefix for names under a Cloudflare zone Falak manages (`cloudflare:example.com`). */
     public const CLOUDFLARE = 'cloudflare:';
 
     private const SUFFIX = '/^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/';
 
-    /** The server default (KILN_GENERATED_DOMAIN_SUFFIX); null when off or invalid. */
+    /** The server default (FALAK_GENERATED_DOMAIN_SUFFIX); null when off or invalid. */
     public function defaultSuffix(): ?string
     {
         return self::normalizeSuffix(config('edge.generated_domain_suffix'));

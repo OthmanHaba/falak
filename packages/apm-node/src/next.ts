@@ -2,25 +2,25 @@
  * Next.js helper. In `instrumentation.ts` at the project root:
  *
  *   export async function register() {
- *     const { registerKiln } = await import('@kiln/apm-node/next');
- *     await registerKiln();
+ *     const { registerFalak } = await import('@falak/apm-node/next');
+ *     await registerFalak();
  *   }
  *
  * Only the Node.js runtime is instrumented; the Edge runtime is skipped. Next.js emits its own
- * OpenTelemetry spans (route handlers, rendering, fetch) which Kiln maps and exports.
+ * OpenTelemetry spans (route handlers, rendering, fetch) which Falak maps and exports.
  */
-import type { KilnOptions } from './config.js';
+import type { FalakOptions } from './config.js';
 import { env } from './env.js';
-import type { KilnHandle } from './sdk.js';
+import type { FalakHandle } from './sdk.js';
 
-export async function registerKiln(options: KilnOptions = {}): Promise<KilnHandle | undefined> {
+export async function registerFalak(options: FalakOptions = {}): Promise<FalakHandle | undefined> {
   if (env().NEXT_RUNTIME !== 'nodejs') return undefined;
 
   const { start } = await import('./sdk.js');
 
   // Next bundles its own http server; keep auto-instrumentation for outgoing calls and databases.
-  return start({ serviceName: env().KILN_SERVICE_NAME ?? env().npm_package_name, ...options });
+  return start({ serviceName: env().FALAK_SERVICE_NAME ?? env().npm_package_name, ...options });
 }
 
-export { withKilnRequest, setUser } from './fetch.js';
+export { withFalakRequest, setUser } from './fetch.js';
 export { recordException } from './exceptions.js';

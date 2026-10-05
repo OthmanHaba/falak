@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Edge\Http\Controllers;
+namespace Falak\Edge\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Kiln\Edge\Application\Actions\ConfigureLoadBalancer;
-use Kiln\Edge\Application\Actions\RemoveLoadBalancer;
-use Kiln\Edge\Domain\Enums\LbPolicy;
-use Kiln\Edge\Domain\Models\LoadBalancer;
-use Kiln\Kernel\Http\Controller;
+use Falak\Edge\Application\Actions\ConfigureLoadBalancer;
+use Falak\Edge\Application\Actions\RemoveLoadBalancer;
+use Falak\Edge\Domain\Enums\LbPolicy;
+use Falak\Edge\Domain\Models\LoadBalancer;
+use Falak\Kernel\Http\Controller;
 
 final class LoadBalancerController extends Controller
 {

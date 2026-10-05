@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/terminal.open.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/terminal.open.schema.json",
   "title": "terminal.open — open a PTY session; this command stays running and streams `output` events (data = base64 of raw PTY bytes, stream=stdout) until closed/idle/timeout",
   "type": "object",
   "additionalProperties": false,

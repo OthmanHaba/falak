@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Terminal\Application;
+namespace Falak\Terminal\Application;
 
 use Illuminate\Support\Carbon;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Terminal\Domain\Enums\SessionStatus;
-use Kiln\Terminal\Domain\Models\TerminalSession;
-use Kiln\Terminal\Events\TerminalSessionClosed;
-use Kiln\Terminal\Events\TerminalSessionUpdated;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Terminal\Domain\Enums\SessionStatus;
+use Falak\Terminal\Domain\Models\TerminalSession;
+use Falak\Terminal\Events\TerminalSessionClosed;
+use Falak\Terminal\Events\TerminalSessionUpdated;
 
 /**
  * State changes of a session; every change is broadcast to live viewers, closing announces

@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
-use Kiln\Sites\Contracts\TargetRole;
-use Kiln\Sites\Contracts\TargetStatus;
+use Falak\Sites\Contracts\TargetRole;
+use Falak\Sites\Contracts\TargetStatus;
 
 final readonly class SiteTargetData
 {

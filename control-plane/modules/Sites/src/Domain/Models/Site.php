@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Domain\Models;
+namespace Falak\Sites\Domain\Models;
 
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -8,16 +8,16 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
-use Kiln\Sites\Contracts\BuildMode;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Data\ComposeConfig;
-use Kiln\Sites\Contracts\Data\LaravelSettings;
-use Kiln\Sites\Contracts\Data\PublicService;
-use Kiln\Sites\Contracts\Data\SharedPath;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetRole;
+use Falak\Sites\Contracts\BuildMode;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Data\ComposeConfig;
+use Falak\Sites\Contracts\Data\LaravelSettings;
+use Falak\Sites\Contracts\Data\PublicService;
+use Falak\Sites\Contracts\Data\SharedPath;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetRole;
 
 /**
  * @property string $id
@@ -37,7 +37,7 @@ use Kiln\Sites\Contracts\TargetRole;
  * @property string $web_directory
  * @property string $unix_user
  * @property bool $isolated
- * @property ?int $app_port loopback host port Caddy proxies to (Kiln-allocated for Docker sites)
+ * @property ?int $app_port loopback host port Caddy proxies to (Falak-allocated for Docker sites)
  * @property ?int $container_port Docker sites: the port the app listens on inside its container
  * @property ?string $docker_image
  * @property ?string $dockerfile
@@ -155,7 +155,7 @@ class Site extends Model
 
     public function rootPath(): string
     {
-        return rtrim((string) config('sites.root', '/srv/kiln/sites'), '/').'/'.$this->slug;
+        return rtrim((string) config('sites.root', '/srv/falak/sites'), '/').'/'.$this->slug;
     }
 
     public function currentPath(): string

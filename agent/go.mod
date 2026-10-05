@@ -1,4 +1,4 @@
-module github.com/kiln/agent
+module github.com/OthmanHaba/falak/agent
 
 go 1.25.0
 

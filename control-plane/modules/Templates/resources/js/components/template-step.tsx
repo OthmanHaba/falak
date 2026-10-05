@@ -1,4 +1,4 @@
-import { toast } from '@/components/kiln';
+import { toast } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, requestJson } from '@/lib/http';
 import { type CreateOptionProps } from '@/lib/registry';

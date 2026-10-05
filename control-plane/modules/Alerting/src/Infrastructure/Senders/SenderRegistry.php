@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Alerting\Infrastructure\Senders;
+namespace Falak\Alerting\Infrastructure\Senders;
 
-use Kiln\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Domain\Enums\ChannelType;
 
 final class SenderRegistry
 {

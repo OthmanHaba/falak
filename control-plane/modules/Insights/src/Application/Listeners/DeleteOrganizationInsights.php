@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Insights\Application\Listeners;
+namespace Falak\Insights\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\DB;
-use Kiln\Identity\Events\OrganizationDeleted;
+use Falak\Identity\Events\OrganizationDeleted;
 
 final class DeleteOrganizationInsights implements ShouldQueue
 {

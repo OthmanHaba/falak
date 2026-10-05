@@ -1,23 +1,23 @@
 <?php
 
-namespace Kiln\Edge\Application;
+namespace Falak\Edge\Application;
 
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareApi;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareApi;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
+use Falak\Identity\Contracts\AuditLog;
 
 /**
- * Rate limits per domain through Cloudflare (docs/CLOUDFLARE.md → Rate limits). Kiln's edge is stock Caddy, which has
+ * Rate limits per domain through Cloudflare (docs/CLOUDFLARE.md → Rate limits). Falak's edge is stock Caddy, which has
  * no rate limiting, so a rule only applies to names Cloudflare proxies. An organization's rules (description
- * "kiln:ratelimit:<organization id>:<domain id> <name>") are rebuilt from its domains in the zone's http_ratelimit
- * entry point; every other rule (the zone's own, another organization's or another Kiln install's) stays as it is, in
- * its place. Rules of the first format ("kiln:ratelimit:<domain id> <name>") are recognised by their domain.
+ * "falak:ratelimit:<organization id>:<domain id> <name>") are rebuilt from its domains in the zone's http_ratelimit
+ * entry point; every other rule (the zone's own, another organization's or another Falak install's) stays as it is, in
+ * its place. Rules of the first format ("falak:ratelimit:<domain id> <name>") are recognised by their domain.
  *
  * What a plan allows (Cloudflare's rate limiting rules): Free one rule per zone, matching the path only (no host), a
  * 10-second window and a 10-second block; Pro 2 rules, host + path, windows up to a minute, blocks up to an hour;
@@ -42,7 +42,7 @@ final class CloudflareRateLimits
         'enterprise' => ['rules' => 100, 'host' => true, 'period' => 65535, 'timeout' => 86400],
     ];
 
-    private const PREFIX = 'kiln:ratelimit:';
+    private const PREFIX = 'falak:ratelimit:';
 
     /** Rule fields Cloudflare sets itself (not sent back when re-writing the entry point). */
     private const READ_ONLY = ['version', 'last_updated'];
@@ -104,14 +104,14 @@ final class CloudflareRateLimits
     public function set(Domain $domain, ?array $rule, ?string $actorId = null): void
     {
         $zone = CloudflareZone::forHost($domain->organization_id, $domain->name)
-            ?? throw ValidationException::withMessages(['rate_limit' => 'This domain is not in a Cloudflare zone Kiln manages.']);
+            ?? throw ValidationException::withMessages(['rate_limit' => 'This domain is not in a Cloudflare zone Falak manages.']);
 
         if ($rule !== null) {
             if ($domain->isWildcard()) {
                 throw ValidationException::withMessages(['rate_limit' => 'Wildcard domains can’t have a rate limit.']);
             }
             if (! $this->proxied($domain, $zone)) {
-                throw ValidationException::withMessages(['rate_limit' => 'Rate limits need the Cloudflare proxy (orange cloud): Kiln’s edge (Caddy) has no rate limiting.']);
+                throw ValidationException::withMessages(['rate_limit' => 'Rate limits need the Cloudflare proxy (orange cloud): Falak’s edge (Caddy) has no rate limiting.']);
             }
             $rule = $this->validate($rule, self::limits($this->plan($zone)), $zone);
         }
@@ -131,7 +131,7 @@ final class CloudflareRateLimits
     }
 
     /**
-     * Rebuilds Kiln's rules of a zone (domains with a rule that are proxied and still exist); the zone's other rules
+     * Rebuilds Falak's rules of a zone (domains with a rule that are proxied and still exist); the zone's other rules
      * stay. Throws when the plan has no room (Free: one rule, and the zone may already have its own).
      *
      * @throws CloudflareError|ValidationException
@@ -162,7 +162,7 @@ final class CloudflareRateLimits
             ->filter(fn (Domain $d) => $zone->covers($d->name) && ! $d->isWildcard() && $this->proxied($d, $zone))->values();
 
         if ($domains->isEmpty() && ! $hadOurs) {
-            return; // nothing of Kiln's to write or remove: no call (and no permission needed)
+            return; // nothing of Falak's to write or remove: no call (and no permission needed)
         }
 
         if (count($theirs) + $domains->count() > $limits['rules']) {
@@ -179,7 +179,7 @@ final class CloudflareRateLimits
     }
 
     /**
-     * Re-syncs the zone covering $host after a domain was removed or its proxy switched, when Kiln has rules there (or
+     * Re-syncs the zone covering $host after a domain was removed or its proxy switched, when Falak has rules there (or
      * with $force); failures are logged, not thrown.
      */
     public function resyncFor(string $organizationId, string $host, bool $force = false): void
@@ -285,7 +285,7 @@ final class CloudflareRateLimits
     }
 
     /**
-     * The Kiln rule of the zone that applies to $domain although it is another domain's: rules on plans without a host
+     * The Falak rule of the zone that applies to $domain although it is another domain's: rules on plans without a host
      * condition (Free) match every proxied name of the zone. Null when there is none or $domain isn't proxied.
      *
      * @return ?array{domain: string, path: ?string}
@@ -313,8 +313,8 @@ final class CloudflareRateLimits
     }
 
     /**
-     * Whether a rule description is this organization's: "kiln:ratelimit:<organization id>:…", or the first format
-     * "kiln:ratelimit:<domain id> …" for one of its domains ($legacy).
+     * Whether a rule description is this organization's: "falak:ratelimit:<organization id>:…", or the first format
+     * "falak:ratelimit:<domain id> …" for one of its domains ($legacy).
      *
      * @param  array<string, true>  $legacy
      */

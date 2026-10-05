@@ -7,7 +7,7 @@
 */
 
 use Inertia\Testing\AssertableInertia as Assert;
-use Kiln\Identity\Contracts\Role;
+use Falak\Identity\Contracts\Role;
 
 dataset('settings sections', [
     'source control' => ['/source-control', '/settings/source-control', 'SourceControl/Index'],

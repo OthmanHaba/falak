@@ -1,8 +1,8 @@
 <?php
 
-use Kiln\Identity\Contracts\Role;
-use Kiln\Network\Domain\Models\PrivateNetwork;
-use Kiln\Network\Domain\Models\PrivateNetworkMember;
+use Falak\Identity\Contracts\Role;
+use Falak\Network\Domain\Models\PrivateNetwork;
+use Falak\Network\Domain\Models\PrivateNetworkMember;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';

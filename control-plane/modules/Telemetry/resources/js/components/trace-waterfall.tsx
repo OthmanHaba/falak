@@ -1,10 +1,10 @@
-import { Button, IconButton } from '@/components/kiln/button';
-import { CodeBlock } from '@/components/kiln/code-block';
-import { CopyButton } from '@/components/kiln/copy-button';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { SkeletonRows } from '@/components/kiln/skeleton';
-import { StatusBadge } from '@/components/kiln/status';
-import { Tag } from '@/components/kiln/tag';
+import { Button, IconButton } from '@/components/falak/button';
+import { CodeBlock } from '@/components/falak/code-block';
+import { CopyButton } from '@/components/falak/copy-button';
+import { EmptyState } from '@/components/falak/empty-state';
+import { SkeletonRows } from '@/components/falak/skeleton';
+import { StatusBadge } from '@/components/falak/status';
+import { Tag } from '@/components/falak/tag';
 import { cn } from '@/lib/utils';
 import { Link } from '@inertiajs/react';
 import { ChevronDown, ChevronRight, SearchX, SquareArrowOutUpRight, X } from 'lucide-react';
@@ -80,7 +80,7 @@ export function buildRows(spans: SpanDto[]): { rows: WaterfallRow[]; totalMs: nu
 }
 
 export function spanCategory(span: SpanDto): string {
-    const type = span.attributes['kiln.event.type'] ?? span.attributes['kiln.timeline.phase'];
+    const type = span.attributes['falak.event.type'] ?? span.attributes['falak.timeline.phase'];
 
     return typeof type === 'string' ? type : span.kind.toLowerCase();
 }

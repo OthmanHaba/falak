@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Templates\Application\Compose;
+namespace Falak\Templates\Application\Compose;
 
 /**
  * What the compose runtime says about a compose file: its services, their exposed ports, named volumes and

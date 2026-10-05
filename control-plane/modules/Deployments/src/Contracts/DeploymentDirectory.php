@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Deployments\Contracts;
+namespace Falak\Deployments\Contracts;
 
-use Kiln\Deployments\Contracts\Data\DeploymentSummary;
+use Falak\Deployments\Contracts\Data\DeploymentSummary;
 
 /**
  * Read-only deployment lookups for other modules (e.g. the Projects canvas status).

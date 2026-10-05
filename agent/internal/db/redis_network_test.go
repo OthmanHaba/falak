@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/facts"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/facts"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 // fakeInterfaces replaces the host's interfaces for one test.
@@ -35,7 +35,7 @@ func hostInterfaces(t *testing.T, root string, docker bool) {
 		iface("lo", "127.0.0.1", "::1"),
 		iface("eth0", "203.0.113.5", "2001:db8::5"),
 		iface("ens10", "10.0.1.5", "fd00:1::5"),
-		iface("wg-kiln", "10.90.0.3"),
+		iface("wg-falak", "10.90.0.3"),
 		// A private network whose range is not a private one: only its WireGuard type makes it acceptable.
 		iface("wg-pub", "198.51.100.7"),
 		iface("tun0", "198.51.100.9"),
@@ -124,12 +124,12 @@ func TestRedisBindChangesRestartAndKeepTheData(t *testing.T) {
 	if r := applyOK(t, db, p); !slices.Equal(r.Bind, []string{"127.0.0.1"}) || r.ContainerHost != "" {
 		t.Fatalf("%+v", r)
 	}
-	proc := func() *fakeProc { return h.procs["redis-server@kiln-cache.service"] }
+	proc := func() *fakeProc { return h.procs["redis-server@falak-cache.service"] }
 	conf := func() string {
-		b, _ := os.ReadFile(filepath.Join(root, "/etc/kiln-redis/cache.conf"))
+		b, _ := os.ReadFile(filepath.Join(root, "/etc/falak-redis/cache.conf"))
 		return string(b)
 	}
-	dump := filepath.Join(root, "/var/lib/kiln-redis/cache/dump.rdb")
+	dump := filepath.Join(root, "/var/lib/falak-redis/cache/dump.rdb")
 
 	h.redisCmds = nil
 	p.Containers = true

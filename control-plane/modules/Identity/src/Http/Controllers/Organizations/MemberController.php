@@ -1,19 +1,19 @@
 <?php
 
-namespace Kiln\Identity\Http\Controllers\Organizations;
+namespace Falak\Identity\Http\Controllers\Organizations;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Application\Actions\ChangeMemberRole;
-use Kiln\Identity\Application\Actions\RemoveMember;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\Invitation;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Kernel\Http\Controller;
+use Falak\Identity\Application\Actions\ChangeMemberRole;
+use Falak\Identity\Application\Actions\RemoveMember;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\Invitation;
+use Falak\Identity\Domain\Models\User;
+use Falak\Kernel\Http\Controller;
 
 final class MemberController extends Controller
 {

@@ -4,24 +4,24 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\CommandStatus;
-use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
-use Kiln\Fleet\Contracts\Exceptions\CommandTimedOut;
-use Kiln\Fleet\Contracts\Exceptions\InvalidCommandPayload;
-use Kiln\Fleet\Contracts\Exceptions\UnknownCommandType;
-use Kiln\Fleet\Domain\Models\Command;
-use Kiln\Fleet\Domain\Models\CommandEvent;
-use Kiln\Fleet\Events\CommandFailed;
-use Kiln\Fleet\Events\CommandFinished;
-use Kiln\Fleet\Events\CommandOutputReceived;
-use Kiln\Fleet\Events\InsightsReceived;
-use Kiln\Fleet\Infrastructure\Signals\CommandSignal;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\CommandStatus;
+use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Falak\Fleet\Contracts\Exceptions\CommandTimedOut;
+use Falak\Fleet\Contracts\Exceptions\InvalidCommandPayload;
+use Falak\Fleet\Contracts\Exceptions\UnknownCommandType;
+use Falak\Fleet\Domain\Models\Command;
+use Falak\Fleet\Domain\Models\CommandEvent;
+use Falak\Fleet\Events\CommandFailed;
+use Falak\Fleet\Events\CommandFinished;
+use Falak\Fleet\Events\CommandOutputReceived;
+use Falak\Fleet\Events\InsightsReceived;
+use Falak\Fleet\Infrastructure\Signals\CommandSignal;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 beforeEach(function () {
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test']);
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test']);
     [, $this->organization] = memberOf();
     $this->serverId = (string) Str::ulid();
     $this->enrolled = fleet_enroll($this->organization->id, $this->serverId);
@@ -240,7 +240,7 @@ it('checks finished results against the command result schema on raw JSON (empty
     $this->call('POST', "/agent/v1/commands/{$handle->id}/events", [], [], [], $this->transformHeadersToServerVars($this->headers), $body)->assertNoContent();
     Log::shouldNotHaveReceived('warning');
 
-    $bad = $this->gateway->dispatch($this->serverId, 'system.ssh_key.sync', ['user' => 'kiln', 'keys' => []]);
+    $bad = $this->gateway->dispatch($this->serverId, 'system.ssh_key.sync', ['user' => 'falak', 'keys' => []]);
     $this->call('POST', "/agent/v1/commands/{$bad->id}/events", [], [], [], $this->transformHeadersToServerVars($this->headers), fleet_ndjson([
         ['command_id' => $bad->id, 'seq' => 0, 'kind' => 'finished', 'exit_code' => 0, 'result' => ['changed' => true], 'at' => now()->toIso8601ZuluString()],
     ]))->assertNoContent();

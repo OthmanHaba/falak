@@ -1,4 +1,4 @@
-import { type LogLine, type PhaseRow } from '@/components/kiln';
+import { type LogLine, type PhaseRow } from '@/components/falak';
 import { useEchoChannel } from '@/hooks/use-echo-channel';
 import { errorMessage, requestJson } from '@/lib/http';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -44,7 +44,7 @@ export function toLogLine(line: OutputLine): LogLine {
     return {
         text: line.data.replace(/\n$/, ''),
         time: line.at,
-        phase: [line.server ?? 'kiln', line.phase].filter(Boolean).join(' · '),
+        phase: [line.server ?? 'falak', line.phase].filter(Boolean).join(' · '),
         stream: line.stream,
     };
 }

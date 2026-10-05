@@ -1,4 +1,4 @@
-import { Button, Callout, Field, Tag, Textarea } from '@/components/kiln';
+import { Button, Callout, Field, Tag, Textarea } from '@/components/falak';
 import { errorMessage, HttpError, requestJson } from '@/lib/http';
 import { CircleCheck } from 'lucide-react';
 import { useState } from 'react';
@@ -73,7 +73,7 @@ export function TemplateEditor({
                     }
                 />
             </Field>
-            <Field label="compose.yaml" hint="Leave empty for a bundle. Use ${VAR} for inputs and ${{ kiln.url(service) }} for public URLs.">
+            <Field label="compose.yaml" hint="Leave empty for a bundle. Use ${VAR} for inputs and ${{ falak.url(service) }} for public URLs.">
                 <Textarea
                     value={files.compose_yaml}
                     onChange={(event) => update({ ...files, compose_yaml: event.target.value })}

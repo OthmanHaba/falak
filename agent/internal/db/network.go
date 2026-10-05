@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // Remote access for dedicated database servers (db.user.apply `remote`).
@@ -18,13 +18,13 @@ import (
 // is still decided by the server firewall, which only allows SSH until a rule opens the database port.
 
 const (
-	hbaBegin = "# BEGIN kiln remote users (managed by the Kiln agent; do not edit)"
-	hbaEnd   = "# END kiln remote users"
+	hbaBegin = "# BEGIN falak remote users (managed by the Falak agent; do not edit)"
+	hbaEnd   = "# END falak remote users"
 
-	pgListenFile = "conf.d/90-kiln-network.conf"
-	pgListenConf = "# Managed by the Kiln agent: accept connections from other servers (the firewall decides who).\nlisten_addresses = '*'\n"
+	pgListenFile = "conf.d/90-falak-network.conf"
+	pgListenConf = "# Managed by the Falak agent: accept connections from other servers (the firewall decides who).\nlisten_addresses = '*'\n"
 
-	myNetworkConf = "# Managed by the Kiln agent: accept connections from other servers (the firewall decides who).\n[mysqld]\nbind-address = 0.0.0.0\n"
+	myNetworkConf = "# Managed by the Falak agent: accept connections from other servers (the firewall decides who).\n[mysqld]\nbind-address = 0.0.0.0\n"
 )
 
 // pgClusterDir is the configuration directory of the newest Debian/Ubuntu PostgreSQL cluster
@@ -171,12 +171,12 @@ func withHBABlock(content string, users []hbaEntry) string {
 // mysqlListen makes MySQL/MariaDB listen on every interface (Ubuntu binds 127.0.0.1 by default).
 // The drop-in sorts after the distribution's mysqld.cnf / 50-server.cnf so its bind-address wins.
 func (db *DB) mysqlListen(ctx context.Context) error {
-	path, service := "/etc/mysql/mysql.conf.d/zz-kiln-network.cnf", "mysql"
+	path, service := "/etc/mysql/mysql.conf.d/zz-falak-network.cnf", "mysql"
 	switch {
 	case db.d.FS.Exists("/etc/mysql/mariadb.conf.d"):
-		path, service = "/etc/mysql/mariadb.conf.d/zz-kiln-network.cnf", "mariadb"
+		path, service = "/etc/mysql/mariadb.conf.d/zz-falak-network.cnf", "mariadb"
 	case !db.d.FS.Exists("/etc/mysql/mysql.conf.d"):
-		path = "/etc/mysql/conf.d/zz-kiln-network.cnf"
+		path = "/etc/mysql/conf.d/zz-falak-network.cnf"
 	}
 	changed, err := db.d.FS.WriteFile(path, []byte(myNetworkConf), 0o644)
 	if err != nil {

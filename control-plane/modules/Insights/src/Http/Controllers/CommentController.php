@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Insights\Http\Controllers;
+namespace Falak\Insights\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Kiln\Insights\Application\Actions\CommentOnIssue;
-use Kiln\Insights\Domain\Models\Issue;
-use Kiln\Insights\Domain\Models\IssueComment;
-use Kiln\Kernel\Http\Controller;
+use Falak\Insights\Application\Actions\CommentOnIssue;
+use Falak\Insights\Domain\Models\Issue;
+use Falak\Insights\Domain\Models\IssueComment;
+use Falak\Kernel\Http\Controller;
 
 final class CommentController extends Controller
 {

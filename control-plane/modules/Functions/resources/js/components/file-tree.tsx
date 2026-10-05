@@ -1,4 +1,4 @@
-import { Button, Dialog, Field, IconButton, Input } from '@/components/kiln';
+import { Button, Dialog, Field, IconButton, Input } from '@/components/falak';
 import { cn } from '@/lib/utils';
 import { FilePlus2, FileText, Folder, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';

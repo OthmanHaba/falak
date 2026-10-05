@@ -1,6 +1,6 @@
 # Cloud Functions
 
-A **Function** is a service whose code you write in Kiln itself: no repository, no Dockerfile. Deploying takes a few
+A **Function** is a service whose code you write in Falak itself: no repository, no Dockerfile. Deploying takes a few
 seconds, the function gets a URL like any other service, and it **scales to zero** when nobody calls it. On
 traffic, it starts again and scales out.
 
@@ -29,7 +29,7 @@ On the canvas: **Create → Function**.
 3. Pick a **server** and a **domain**, then **Create and deploy**. The starter becomes version 1 and is live a few
    seconds later.
 
-The server needs Docker and a Kiln agent 0.4 or newer (it runs the *function gateway*).
+The server needs Docker and a Falak agent 0.4 or newer (it runs the *function gateway*).
 
 ### TypeScript (Bun, Node.js, Deno)
 
@@ -107,10 +107,10 @@ func routes() *http.ServeMux {
 func Scheduled(ctx context.Context, event Event) error { return nil }
 ```
 
-- The entry file is `main.go`, in `package main`, **without** a `main()`: Kiln adds it, with the server, the
-  `Event` type (`Name`, `Schedule`, `Cron`, `Trigger`, `ScheduledTime`) and telemetry. Names starting with `kiln`
+- The entry file is `main.go`, in `package main`, **without** a `main()`: Falak adds it, with the server, the
+  `Event` type (`Name`, `Schedule`, `Cron`, `Trigger`, `ScheduledTime`) and telemetry. Names starting with `falak`
   are reserved.
-- Go 1.27. When you deploy, Kiln runs `go mod tidy` and builds one static binary; modules you import are resolved
+- Go 1.27. When you deploy, Falak runs `go mod tidy` and builds one static binary; modules you import are resolved
   then, and `go.mod` / `go.sum` are kept per code version. Without a `go.mod`, the module is called `function`, so a
   folder `lib/` is imported as `"function/lib"`. Add your own `go.mod` to choose versions.
 - Observability names requests by the `ServeMux` pattern (`GET /hello/{name}`). Outgoing calls are recorded when
@@ -126,7 +126,7 @@ The **Code** tab is a full editor, with TypeScript autocomplete for Hono and Bun
 - **Deploy history:** the deploy appears in the Deployments tab like any other service's deploy.
 - **When the new version fails:** if it doesn't install or start, the deploy fails and the previous version keeps
   serving.
-- **If a teammate deployed while you were editing:** Kiln shows their version next to yours, file by file. You can
+- **If a teammate deployed while you were editing:** Falak shows their version next to yours, file by file. You can
   take theirs, keep editing, or deploy yours on top.
 
 ### Several files
@@ -146,7 +146,7 @@ from lib.db import connect                  # main.py's folder is on the import 
 - A version holds all its files; rollback brings all of them back.
 - Paths use letters, digits, `.`, `_`, `-` and `/`, up to 8 levels deep. No dot-files, and no `node_modules` or
   `__pycache__` (the server creates those).
-- Functions with more than one file need Kiln agent 0.4.4 or newer on the function's server.
+- Functions with more than one file need Falak agent 0.4.4 or newer on the function's server.
 
 ## Versions and rollback
 
@@ -205,10 +205,10 @@ The **Scheduled job** starter comes with an hourly schedule.
 rejected request costs nothing.
 
 - **API keys:** with at least one key, every request must send `Authorization: Bearer <key>` or
-  `X-Kiln-Key: <key>`.
+  `X-Falak-Key: <key>`.
   - Without a valid key, the caller gets `401`.
-  - A key is shown once; Kiln stores only its hash.
-  - The key header never reaches your code. Use `X-Kiln-Key` when your code reads `Authorization` for its own
+  - A key is shown once; Falak stores only its hash.
+  - The key header never reaches your code. Use `X-Falak-Key` when your code reads `Authorization` for its own
     scheme.
 - **IP allowlist:** IPs or CIDR ranges (IPv4 or IPv6). Anyone else gets `403`. Behind Cloudflare, the visitor's
   address is checked.
@@ -233,40 +233,40 @@ body.
 
 ## CLI and API
 
-`kiln fn` (see the CLI section in the README) works on functions from your terminal or CI:
+`falak fn` (see the CLI section in the README) works on functions from your terminal or CI:
 
 ```bash
-kiln fn list
-kiln fn pull hooks ./hooks          # the code + .kiln-function.json (your base version)
-kiln fn deploy hooks ./hooks -m "Handle refunds" --wait
-kiln fn versions hooks
-kiln fn rollback hooks 3 --wait
-kiln fn run hooks "Nightly cleanup" # streams the run; exits with its code
-kiln fn invoke hooks /status -H 'X-Kiln-Key: kfn_…'
-kiln fn logs hooks --follow
+falak fn list
+falak fn pull hooks ./hooks          # the code + .falak-function.json (your base version)
+falak fn deploy hooks ./hooks -m "Handle refunds" --wait
+falak fn versions hooks
+falak fn rollback hooks 3 --wait
+falak fn run hooks "Nightly cleanup" # streams the run; exits with its code
+falak fn invoke hooks /status -H 'X-Falak-Key: kfn_…'
+falak fn logs hooks --follow
 ```
 
-`kiln fn deploy` sends the **whole directory** as the function's files, so files you add are deployed and files you
+`falak fn deploy` sends the **whole directory** as the function's files, so files you add are deployed and files you
 delete are removed from the new version.
 
-- It leaves out dot-files and dot-folders (`.git`, `.env`, `.kiln-function.json`), `node_modules`, `__pycache__`,
-  `.venv` and `venv`, and whatever a `.kilnignore` lists (one name or glob per line, e.g. `dist` or `*.log`).
+- It leaves out dot-files and dot-folders (`.git`, `.env`, `.falak-function.json`), `node_modules`, `__pycache__`,
+  `.venv` and `venv`, and whatever a `.falakignore` lists (one name or glob per line, e.g. `dist` or `*.log`).
 - It skips, with a note: files that look like secrets (`id_rsa`, `*.pem`, `*.key`, `*.p12`, `credentials*.json`,
   `service-account*.json`, `*.tfvars`, `*.tfstate`, `secrets.yml`…; rename one that really is code), symlinks,
-  names Kiln doesn't accept, and binary files. An entrypoint it can't send is an error.
+  names Falak doesn't accept, and binary files. An entrypoint it can't send is an error.
 - Files the function doesn't have yet are listed and need a yes: an interactive prompt, or `--yes` (required in
   scripts and CI).
 
-`kiln fn pull` writes every file of the newest version. Files an earlier pull or deploy wrote that the version no
+`falak fn pull` writes every file of the newest version. Files an earlier pull or deploy wrote that the version no
 longer has are removed, unless you changed them locally (they are kept, with a warning).
 
-If someone deployed after your `pull`, `kiln fn deploy` stops with exit code 4 (pull, or `--force`). The same
+If someone deployed after your `pull`, `falak fn deploy` stops with exit code 4 (pull, or `--force`). The same
 operations are in the API (`/api/v1/functions…`, see `docs/API.md`).
 
 ## Variables and databases
 
 Functions use the **Variables** tab like every service, including references such as
-`DATABASE_URL=${{ postgres.DATABASE_URL }}`. Bun's built-in `sql` client reads `DATABASE_URL`. Kiln sets `PORT`
+`DATABASE_URL=${{ postgres.DATABASE_URL }}`. Bun's built-in `sql` client reads `DATABASE_URL`. Falak sets `PORT`
 itself, so don't define it.
 
 ## Scaling
@@ -282,7 +282,7 @@ itself, so don't define it.
 | Memory / CPU | 256 MB / 0.5 | Per instance |
 | Request timeout | 30 s | Longer requests get a 504 |
 
-**How it works:** Caddy sends the function's traffic to `kiln-fn-gateway` on the server.
+**How it works:** Caddy sends the function's traffic to `falak-fn-gateway` on the server.
 
 - **Nothing running:** the gateway holds the first request, starts an instance (its container already exists, so this
   is a `docker start`) and forwards the request when the runtime is ready. A Bun cold start takes about 0.2 s.
@@ -293,7 +293,7 @@ The gateway runs as its own systemd service, so agent upgrades don't interrupt f
 
 ## Observability
 
-Functions report to Kiln without any package.
+Functions report to Falak without any package.
 
 **Observability tab** (every runtime)
 - Requests, error rate and p95, with the slow routes listed by their route (`GET /users/:id` in Hono,
@@ -316,7 +316,7 @@ the time of the last request.
 **How it works:** each function reports on its own socket. The gateway stamps the function's identity on what
 arrives there, so a function can't report as another one, and hands it to the agent.
 
-Set `KILN_TELEMETRY=off` in Variables to turn the built-in tracing off.
+Set `FALAK_TELEMETRY=off` in Variables to turn the built-in tracing off.
 
 ## Isolation
 
@@ -328,7 +328,7 @@ Every instance runs with:
 - memory, CPU and process limits
 - no Docker socket
 
-Instances live on their own Docker network (`kiln-fn`). They reach the internet and your databases' private
+Instances live on their own Docker network (`falak-fn`). They reach the internet and your databases' private
 addresses.
 
 ## Limits

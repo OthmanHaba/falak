@@ -3,15 +3,15 @@
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use Kiln\Builds\Application\RegistryPruner;
-use Kiln\Builds\Contracts\BuildStatus;
-use Kiln\Builds\Domain\Models\Build;
-use Kiln\Deployments\Contracts\RetainedImages;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Sites\Contracts\SiteFactory;
+use Falak\Builds\Application\RegistryPruner;
+use Falak\Builds\Contracts\BuildStatus;
+use Falak\Builds\Domain\Models\Build;
+use Falak\Deployments\Contracts\RetainedImages;
+use Falak\Identity\Contracts\Role;
+use Falak\Sites\Contracts\SiteFactory;
 
 /*
- * The built-in registry cleanup (kiln:registry-prune, daily): images of builds whose artifact was pruned go, unless a
+ * The built-in registry cleanup (falak:registry-prune, daily): images of builds whose artifact was pruned go, unless a
  * release may still run them; deleted sites' images go after the grace period. Against a fake registry API.
  */
 
@@ -21,8 +21,8 @@ beforeEach(function () {
     [$this->user, $this->organization] = actingAsMember(Role::Admin);
     sites_fake_agents();
     config([
-        'builds.registry.url' => 'registry.test', 'builds.registry.namespace' => 'kiln',
-        'builds.registry.username' => 'kiln', 'builds.registry.password' => 'secret',
+        'builds.registry.url' => 'registry.test', 'builds.registry.namespace' => 'falak',
+        'builds.registry.username' => 'falak', 'builds.registry.password' => 'secret',
         'builds.registry.deleted_site_grace_days' => 7,
     ]);
     $server = sites_server($this->organization->id, ['name' => 'app-1'], docker: true);
@@ -103,16 +103,16 @@ it('deletes images of pruned builds and keeps kept, recent, running and released
     $recent = registry_build($this, $this->site->id, ['artifact_pruned_at' => now(), 'created_at' => now()->subHours(2)]);
     $running = registry_build($this, $this->site->id, ['status' => BuildStatus::Running, 'created_at' => now()->subDays(2)]);
     $this->repos = [
-        'kiln/shop' => [$kept->id => registry_digest('a'), $pruned->id => registry_digest('b'), $recent->id => registry_digest('c'), $running->id => registry_digest('d'), 'latest' => registry_digest('e')],
-        'kiln/shop/api' => [$released->id => registry_digest('f')],
+        'falak/shop' => [$kept->id => registry_digest('a'), $pruned->id => registry_digest('b'), $recent->id => registry_digest('c'), $running->id => registry_digest('d'), 'latest' => registry_digest('e')],
+        'falak/shop/api' => [$released->id => registry_digest('f')],
         'other/thing' => ['01j9zq4n8v2m6r0t3w5y7b9d1f' => registry_digest('g')],
     ];
     // A rollback release still runs the compose service image, pinned by digest.
-    $this->retained = ['registry.test/kiln/shop/api:'.$released->id.'@'.registry_digest('f')];
+    $this->retained = ['registry.test/falak/shop/api:'.$released->id.'@'.registry_digest('f')];
 
     $result = app(RegistryPruner::class)->prune();
 
-    expect($this->deleted)->toBe(['kiln/shop@'.registry_digest('b')])
+    expect($this->deleted)->toBe(['falak/shop@'.registry_digest('b')])
         ->and($result['kept'])->toBe(5)
         ->and($result['skipped'])->toBeNull();
 });
@@ -121,7 +121,7 @@ it('never deletes a digest a kept tag also points at', function () {
     $kept = registry_build($this, $this->site->id);
     $pruned = registry_build($this, $this->site->id, ['artifact_pruned_at' => now()]);
     // A reused build: same image pushed under two tags.
-    $this->repos = ['kiln/shop' => [$kept->id => registry_digest('same'), $pruned->id => registry_digest('same')]];
+    $this->repos = ['falak/shop' => [$kept->id => registry_digest('same'), $pruned->id => registry_digest('same')]];
 
     app(RegistryPruner::class)->prune();
 
@@ -130,29 +130,29 @@ it('never deletes a digest a kept tag also points at', function () {
 
 it('deletes nothing on a dry run', function () {
     $pruned = registry_build($this, $this->site->id, ['artifact_pruned_at' => now()]);
-    $this->repos = ['kiln/shop' => [$pruned->id => registry_digest('b')]];
+    $this->repos = ['falak/shop' => [$pruned->id => registry_digest('b')]];
 
     $result = app(RegistryPruner::class)->prune(dryRun: true);
 
     expect($this->deleted)->toBe([])
         ->and($result['deleted'])->toHaveCount(1);
-    $this->artisan('kiln:registry-prune', ['--dry-run' => true])->expectsOutputToContain('would delete kiln/shop@')->assertSuccessful();
+    $this->artisan('falak:registry-prune', ['--dry-run' => true])->expectsOutputToContain('would delete falak/shop@')->assertSuccessful();
     expect($this->deleted)->toBe([]);
 });
 
 it('deletes images of deleted sites after the grace period only', function () {
     $old = registry_build($this, null, ['created_at' => now()->subDays(10)]);
     $young = registry_build($this, null, ['created_at' => now()->subDays(3)]);
-    $this->repos = ['kiln/gone' => [$old->id => registry_digest('old'), $young->id => registry_digest('young')]];
+    $this->repos = ['falak/gone' => [$old->id => registry_digest('old'), $young->id => registry_digest('young')]];
 
     app(RegistryPruner::class)->prune();
 
-    expect($this->deleted)->toBe(['kiln/gone@'.registry_digest('old')]);
+    expect($this->deleted)->toBe(['falak/gone@'.registry_digest('old')]);
 });
 
 it('stops when the registry does not allow deletes, and does nothing without credentials', function () {
     $pruned = registry_build($this, $this->site->id, ['artifact_pruned_at' => now()]);
-    $this->repos = ['kiln/shop' => [$pruned->id => registry_digest('b')]];
+    $this->repos = ['falak/shop' => [$pruned->id => registry_digest('b')]];
     $this->deleteStatus = 405;
 
     expect(app(RegistryPruner::class)->prune()['skipped'])->toContain('does not allow deletes');
@@ -167,14 +167,14 @@ it('leaves a repository alone when a digest can’t be read', function () {
     $other = registry_build($this, $this->site->id, ['artifact_pruned_at' => now()]);
     // The kept tag's HEAD fails; it shares the pruned tag's digest, so deleting that would take the kept image too.
     $this->repos = [
-        'kiln/shop' => [$kept->id => registry_digest('same'), $pruned->id => registry_digest('same')],
-        'kiln/shop/api' => [$other->id => registry_digest('x')],
+        'falak/shop' => [$kept->id => registry_digest('same'), $pruned->id => registry_digest('same')],
+        'falak/shop/api' => [$other->id => registry_digest('x')],
     ];
     $this->headStatus = [$kept->id => 500];
 
     $result = app(RegistryPruner::class)->prune();
 
-    expect($this->deleted)->toBe(['kiln/shop/api@'.registry_digest('x')])
+    expect($this->deleted)->toBe(['falak/shop/api@'.registry_digest('x')])
         ->and($result['kept'])->toBe(2);
 });
 
@@ -182,14 +182,14 @@ it('re-reads digests right before deleting: tags pushed or moved since the scan 
     $pruned = registry_build($this, $this->site->id, ['artifact_pruned_at' => now()]);
     $moved = registry_build($this, $this->site->id, ['artifact_pruned_at' => now()]);
     $kept = registry_build($this, $this->site->id);
-    $this->repos = ['kiln/shop' => [$pruned->id => registry_digest('reused'), $moved->id => registry_digest('moved')]];
+    $this->repos = ['falak/shop' => [$pruned->id => registry_digest('reused'), $moved->id => registry_digest('moved')]];
 
     // After the scan (first tag list) a kept build is pushed with the pruned tag's image, and the other tag moves.
     $lists = 0;
     $this->onRequest = function (string $method, string $path) use (&$lists, $kept, $moved) {
-        if ($path === '/v2/kiln/shop/tags/list' && ++$lists === 2) {
-            $this->repos['kiln/shop'][$kept->id] = registry_digest('reused');
-            $this->repos['kiln/shop'][$moved->id] = registry_digest('elsewhere');
+        if ($path === '/v2/falak/shop/tags/list' && ++$lists === 2) {
+            $this->repos['falak/shop'][$kept->id] = registry_digest('reused');
+            $this->repos['falak/shop'][$moved->id] = registry_digest('elsewhere');
         }
     };
 
@@ -198,11 +198,11 @@ it('re-reads digests right before deleting: tags pushed or moved since the scan 
     expect($this->deleted)->toBe([]);
 });
 
-it('tells kiln-ctl whether the registry can stop for garbage collection', function () {
+it('tells falak-ctl whether the registry can stop for garbage collection', function () {
     registry_build($this, $this->site->id, ['mode' => 'native', 'status' => BuildStatus::Running]);
     registry_build($this, $this->site->id, ['status' => BuildStatus::Failed]);
-    $this->artisan('kiln:registry-idle')->expectsOutputToContain('No image build')->assertExitCode(0);
+    $this->artisan('falak:registry-idle')->expectsOutputToContain('No image build')->assertExitCode(0);
 
     registry_build($this, $this->site->id, ['status' => BuildStatus::Queued]);
-    $this->artisan('kiln:registry-idle')->expectsOutputToContain('1 image build(s) queued or running.')->assertExitCode(1);
+    $this->artisan('falak:registry-idle')->expectsOutputToContain('1 image build(s) queued or running.')->assertExitCode(1);
 });

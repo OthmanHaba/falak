@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Infrastructure\Cloudflare;
+namespace Falak\Edge\Infrastructure\Cloudflare;
 
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;

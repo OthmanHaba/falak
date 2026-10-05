@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Apm;
+namespace Falak\Apm;
 
 use Illuminate\Support\Str;
 use Throwable;
@@ -68,7 +68,7 @@ final class Redactor
             }
 
             $span->attributes[$key] = match ($key) {
-                'kiln.event.type', 'db.query.text', 'kiln.cache.key' => $value,
+                'falak.event.type', 'db.query.text', 'falak.cache.key' => $value,
                 'url.full' => $this->url($value),
                 'url.query' => $this->queryString($value),
                 default => $this->isSensitive($key) ? $this->replacement : $value,
@@ -79,8 +79,8 @@ final class Redactor
             $span->attributes['db.query.text'] = $this->sql($span->attributes['db.query.text']);
         }
 
-        if (isset($span->attributes['kiln.cache.key']) && is_string($span->attributes['kiln.cache.key'])) {
-            $span->attributes['kiln.cache.key'] = $this->cacheKey($span->attributes['kiln.cache.key']);
+        if (isset($span->attributes['falak.cache.key']) && is_string($span->attributes['falak.cache.key'])) {
+            $span->attributes['falak.cache.key'] = $this->cacheKey($span->attributes['falak.cache.key']);
         }
 
         foreach ($this->callbacks as $callback) {

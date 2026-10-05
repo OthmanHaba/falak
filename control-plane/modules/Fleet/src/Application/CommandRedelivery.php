@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Fleet\Application;
+namespace Falak\Fleet\Application;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
-use Kiln\Fleet\Contracts\CommandStatus;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\Command;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Fleet\Infrastructure\Signals\CommandSignal;
+use Falak\Fleet\Contracts\CommandStatus;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\Command;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Fleet\Infrastructure\Signals\CommandSignal;
 
 /**
- * Commands whose delivery was lost. Every kiln-agent process identifies itself with a session id
- * (X-Kiln-Agent-Session); a command remembers the session it was delivered to. A delivery is lost when
+ * Commands whose delivery was lost. Every falak-agent process identifies itself with a session id
+ * (X-Falak-Agent-Session); a command remembers the session it was delivered to. A delivery is lost when
  *
  *  - the agent comes back with a new session (it restarted: upgrade, crash, reboot) while the command is still
  *    delivered or running under an older one — including a long-poll the old process abandoned, which the server
@@ -20,7 +20,7 @@ use Kiln\Fleet\Infrastructure\Signals\CommandSignal;
  *  - the command stays delivered for longer than the lease (`fleet.commands.lease_seconds`) without the agent
  *    reporting it as started, running (heartbeat) or finished.
  *
- * Redeliverable types (`x-kiln-redeliverable` in the command schema: `*.apply` state, read-only commands) are
+ * Redeliverable types (`x-falak-redeliverable` in the command schema: `*.apply` state, read-only commands) are
  * queued again; the agent answers a command it already finished from its journal, so nothing runs twice. Any
  * other type fails with a clear error, so the deployment (or other operation) waiting on it fails fast instead
  * of hanging.

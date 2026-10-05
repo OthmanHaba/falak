@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Alerting\Application\Actions;
+namespace Falak\Alerting\Application\Actions;
 
-use Kiln\Alerting\Domain\Models\Channel;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Identity\Contracts\AuditLog;
 
 final class DeleteChannel
 {

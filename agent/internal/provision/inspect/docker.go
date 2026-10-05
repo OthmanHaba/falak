@@ -33,7 +33,7 @@ type Plugin struct {
 	Path    string `json:"path,omitempty"`
 }
 
-// DaemonConfig holds the /etc/docker/daemon.json settings that matter to Kiln.
+// DaemonConfig holds the /etc/docker/daemon.json settings that matter to Falak.
 type DaemonConfig struct {
 	BIP                 string            `json:"bip,omitempty"`
 	DefaultAddressPools []json.RawMessage `json:"default_address_pools,omitempty"`
@@ -167,7 +167,7 @@ func (in *Inspector) rootless() bool {
 	return false
 }
 
-// ParseDaemonJSON reads the settings Kiln cares about from /etc/docker/daemon.json.
+// ParseDaemonJSON reads the settings Falak cares about from /etc/docker/daemon.json.
 func ParseDaemonJSON(b []byte) *DaemonConfig {
 	var raw struct {
 		BIP                 string            `json:"bip"`

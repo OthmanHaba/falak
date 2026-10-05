@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Deployments\Domain\Models;
+namespace Falak\Deployments\Domain\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
-use Kiln\Deployments\Domain\Enums\Strategy;
-use Kiln\Sites\Contracts\Data\SiteData;
+use Falak\Deployments\Domain\Enums\Strategy;
+use Falak\Sites\Contracts\Data\SiteData;
 
 /**
  * Per-site deployment settings (created with defaults on first use).

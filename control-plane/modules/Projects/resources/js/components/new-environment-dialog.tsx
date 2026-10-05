@@ -1,4 +1,4 @@
-import { Button, Dialog, Field, Input, Select } from '@/components/kiln';
+import { Button, Dialog, Field, Input, Select } from '@/components/falak';
 import { useForm } from '@inertiajs/react';
 import { useEffect, type FormEvent } from 'react';
 import { type ProjectEnvironment } from '../types';

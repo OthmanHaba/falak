@@ -1,6 +1,6 @@
 // Package runtime implements runtime.* commands: PHP (ondrej PPA, or the distribution's archive where the PPA
 // does not publish the release), php.ini overrides, Node.js from
-// official tarballs, the static FrankenPHP binary (+ kiln-edge.service) and PHP-FPM pools.
+// official tarballs, the static FrankenPHP binary (+ falak-edge.service) and PHP-FPM pools.
 package runtime
 
 import (
@@ -20,11 +20,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/facts"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/system"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/facts"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/system"
 )
 
 // Download is the shared HTTPS download + sha256 verify helper.
@@ -38,7 +38,7 @@ type Deps struct {
 	HTTP           *http.Client
 	Arch           string // default runtime.GOARCH
 	FrankenPHPBase string // default https://github.com/php/frankenphp/releases/download
-	EdgeUser       string // user running kiln-edge.service and owning FPM socket group; default "caddy"
+	EdgeUser       string // user running falak-edge.service and owning FPM socket group; default "caddy"
 	OndrejPPAURL   string // default https://ppa.launchpadcontent.net/ondrej/php/ubuntu (probed for the release)
 }
 
@@ -143,7 +143,7 @@ func OndrejPPAPresent(fs hostfs.FS) bool {
 	for _, e := range ents {
 		n := e.Name()
 		if !strings.HasSuffix(n, ".list") && !strings.HasSuffix(n, ".sources") {
-			continue // e.g. <file>.disabled-by-kiln
+			continue // e.g. <file>.disabled-by-falak
 		}
 		if b, err := fs.ReadFile(system.AptSourcesDir + "/" + n); err == nil && strings.Contains(string(b), "ondrej/php") {
 			return true
@@ -331,7 +331,7 @@ func RenderINI(ini map[string]any) []byte {
 	}
 	sort.Strings(keys)
 	var b strings.Builder
-	b.WriteString("; Managed by Kiln — do not edit\n")
+	b.WriteString("; Managed by Falak — do not edit\n")
 	for _, k := range keys {
 		b.WriteString(k + " = " + iniValue(ini[k]) + "\n")
 	}
@@ -366,7 +366,7 @@ func iniValue(v any) string {
 	}
 }
 
-// PHPConfigure writes conf.d/99-kiln.ini for the selected SAPIs.
+// PHPConfigure writes conf.d/99-falak.ini for the selected SAPIs.
 func (rt *Runtime) PHPConfigure(ctx context.Context, p PHPConfigurePayload, st commands.Stream) (any, error) {
 	sapis := []string{"fpm", "cli"}
 	if p.SAPI != "" && p.SAPI != "all" {
@@ -382,7 +382,7 @@ func (rt *Runtime) PHPConfigure(ctx context.Context, p PHPConfigurePayload, st c
 			}
 			continue
 		}
-		file := dir + "/conf.d/99-kiln.ini"
+		file := dir + "/conf.d/99-falak.ini"
 		old, oldErr := rt.d.FS.ReadFile(file)
 		changed, err := rt.d.FS.WriteFile(file, content, 0o644)
 		if err != nil {

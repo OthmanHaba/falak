@@ -1,17 +1,17 @@
 <?php
 
-namespace Kiln\Deployments\Domain\Models;
+namespace Falak\Deployments\Domain\Models;
 
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Kiln\Deployments\Domain\Enums\DeploymentStatus;
-use Kiln\Deployments\Domain\Enums\Strategy;
-use Kiln\Deployments\Domain\Enums\Trigger;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Projects\Contracts\ServiceKind;
+use Falak\Deployments\Domain\Enums\DeploymentStatus;
+use Falak\Deployments\Domain\Enums\Strategy;
+use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\ServiceKind;
 
 /**
  * One deployment of a site: a persisted state machine driven by its steps.
@@ -73,7 +73,7 @@ class Deployment extends Model
             'rolling_back' => 'boolean',
             'rolled_back' => 'boolean',
             'cancel_requested' => 'boolean',
-            // Deploy hook KILN_VAR_* values may carry secrets.
+            // Deploy hook FALAK_VAR_* values may carry secrets.
             'variables' => 'encrypted:array',
             'settings' => 'array',
             'started_at' => 'datetime',

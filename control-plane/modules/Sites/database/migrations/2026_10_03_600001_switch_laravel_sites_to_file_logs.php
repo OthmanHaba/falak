@@ -3,9 +3,9 @@
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\Log;
-use Kiln\Sites\Application\Actions\SaveEnvironment;
-use Kiln\Sites\Domain\Models\EnvironmentVersion;
-use Kiln\Sites\Domain\Models\Site;
+use Falak\Sites\Application\Actions\SaveEnvironment;
+use Falak\Sites\Domain\Models\EnvironmentVersion;
+use Falak\Sites\Domain\Models\Site;
 
 /**
  * Laravel sites were created with LOG_CHANNEL=stderr. Under FrankenPHP / PHP-FPM the web requests' stderr goes to

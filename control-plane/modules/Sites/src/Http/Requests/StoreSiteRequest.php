@@ -1,21 +1,21 @@
 <?php
 
-namespace Kiln\Sites\Http\Requests;
+namespace Falak\Sites\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Sites\Application\Actions\CreateSite;
-use Kiln\Sites\Contracts\BuildMode;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Data\ComposeConfig;
-use Kiln\Sites\Contracts\Data\DomainChoice;
-use Kiln\Sites\Contracts\Data\SitePlacement;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteFactory;
-use Kiln\Sites\Contracts\SiteRuntime;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Sites\Application\Actions\CreateSite;
+use Falak\Sites\Contracts\BuildMode;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Data\ComposeConfig;
+use Falak\Sites\Contracts\Data\DomainChoice;
+use Falak\Sites\Contracts\Data\SitePlacement;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteFactory;
+use Falak\Sites\Contracts\SiteRuntime;
 
 final class StoreSiteRequest extends FormRequest
 {
@@ -80,7 +80,7 @@ final class StoreSiteRequest extends FormRequest
             'public_services.*.port' => ['required', 'integer', 'between:1,65535'],
             'public_services.*.domain' => ['nullable', DomainChoice::rule()],
             // Repository sources (docs/plans/COMPOSE_APPS.md): compose files in -f order, active profiles, a
-            // decision per service and the user's choices about Kiln's adjustments.
+            // decision per service and the user's choices about Falak's adjustments.
             'compose_files' => ['nullable', 'array', 'max:10'],
             'compose_files.*' => ['string', 'max:255', 'distinct', 'regex:#^[A-Za-z0-9_.\-/]+$#', 'not_regex:#(^/|(^|/)\.\.(/|$))#'],
             'compose_profiles' => ['nullable', 'array', 'max:20'],

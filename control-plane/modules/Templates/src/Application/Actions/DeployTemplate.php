@@ -1,26 +1,26 @@
 <?php
 
-namespace Kiln\Templates\Application\Actions;
+namespace Falak\Templates\Application\Actions;
 
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Deployments\Contracts\DeploymentTrigger;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Projects\Contracts\Data\EnvironmentData;
-use Kiln\Sites\Contracts\Data\CreatedSite;
-use Kiln\Sites\Contracts\Data\DomainChoice;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\Data\SitePlacement;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteDomains;
-use Kiln\Sites\Contracts\SiteFactory;
-use Kiln\Templates\Application\Compose\KilnPlaceholders;
-use Kiln\Templates\Application\Inputs\InputResolver;
-use Kiln\Templates\Domain\Template;
+use Falak\Deployments\Contracts\DeploymentTrigger;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Projects\Contracts\Data\EnvironmentData;
+use Falak\Sites\Contracts\Data\CreatedSite;
+use Falak\Sites\Contracts\Data\DomainChoice;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\Data\SitePlacement;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteDomains;
+use Falak\Sites\Contracts\SiteFactory;
+use Falak\Templates\Application\Compose\FalakPlaceholders;
+use Falak\Templates\Application\Inputs\InputResolver;
+use Falak\Templates\Domain\Template;
 
 /**
  * Create a compose site from a template and start its first deployment (docs/COMPOSE_TEMPLATES.md §3, §5):
- * resolve inputs (generated once), pick domains (generated, test or the user's), render the Kiln placeholders,
+ * resolve inputs (generated once), pick domains (generated, test or the user's), render the Falak placeholders,
  * then SiteFactory::create with the §5 compose fields, placed in the environment at the given position.
  */
 final class DeployTemplate
@@ -109,7 +109,7 @@ final class DeployTemplate
      */
     private function create(EnvironmentData $environment, ?string $userId, Template $template, string $name, string $slug, array $values, array $customDomains, array $effective, array $serverIds, ?int $x, ?int $y): CreatedSite
     {
-        $render = fn (string $text) => KilnPlaceholders::render($text, $effective, $slug);
+        $render = fn (string $text) => FalakPlaceholders::render($text, $effective, $slug);
 
         return $this->sites->create($environment->organizationId, $userId, [
             'name' => $name,
@@ -211,7 +211,7 @@ final class DeployTemplate
     }
 
     /**
-     * Domains Kiln placeholders render to: the custom domain, else the test domain (`<slug>.<base>` for the first
+     * Domains Falak placeholders render to: the custom domain, else the test domain (`<slug>.<base>` for the first
      * public service, `<service>-<slug>.<base>` for the others — docs/COMPOSE_TEMPLATES.md §1.3).
      *
      * @param  array<string, ?string>  $custom

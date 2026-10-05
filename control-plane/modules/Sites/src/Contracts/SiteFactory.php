@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Sites\Contracts\Data\CreatedSite;
-use Kiln\Sites\Contracts\Data\SitePlacement;
+use Falak\Sites\Contracts\Data\CreatedSite;
+use Falak\Sites\Contracts\Data\SitePlacement;
 
 /**
  * Site creation for other modules (Projects' canvas and environment duplication). Same rules, side effects

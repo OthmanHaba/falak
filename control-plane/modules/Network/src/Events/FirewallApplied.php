@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Network\Events;
+namespace Falak\Network\Events;
 
 use Illuminate\Foundation\Events\Dispatchable;
-use Kiln\Alerting\Contracts\Alertable;
-use Kiln\Alerting\Contracts\Data\AlertData;
-use Kiln\Alerting\Contracts\Severity;
+use Falak\Alerting\Contracts\Alertable;
+use Falak\Alerting\Contracts\Data\AlertData;
+use Falak\Alerting\Contracts\Severity;
 
 /**
  * A server's firewall applies again after failing (dispatched on that transition only).

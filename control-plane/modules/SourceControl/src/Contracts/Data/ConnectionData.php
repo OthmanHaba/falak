@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\SourceControl\Contracts\Data;
+namespace Falak\SourceControl\Contracts\Data;
 
-use Kiln\SourceControl\Contracts\ProviderType;
+use Falak\SourceControl\Contracts\ProviderType;
 
 /**
  * A source control connection (never carries secrets).

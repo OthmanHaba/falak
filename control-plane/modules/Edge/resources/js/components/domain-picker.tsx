@@ -1,4 +1,4 @@
-import { Button, CopyButton, Input, RelativeTime, Skeleton, StatusDot, Tooltip } from '@/components/kiln';
+import { Button, CopyButton, Input, RelativeTime, Skeleton, StatusDot, Tooltip } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, requestJson } from '@/lib/http';
 import { type DomainChoiceType, type DomainPickerProps } from '@/lib/registry';
@@ -129,7 +129,7 @@ export function DnsInstructions({ name, serverIds, siteId, label }: { name: stri
                 <div className="grid gap-0.5">
                     <span className="text-fg text-xs font-medium">
                         {instructions.managed_by
-                            ? `Kiln creates ${instructions.records.length === 1 ? 'this record' : 'these records'} in Cloudflare`
+                            ? `Falak creates ${instructions.records.length === 1 ? 'this record' : 'these records'} in Cloudflare`
                             : `Add ${instructions.records.length === 1 ? 'this record' : 'these records'} at your DNS provider`}
                     </span>
                     <span className="text-fg-faint text-[11px]">
@@ -281,7 +281,7 @@ interface ChoiceButton {
 }
 
 /**
- * Domain picker (registered through registerDomainPicker): generate `<label>.<ip>.sslip.io`, use the Kiln test domain,
+ * Domain picker (registered through registerDomainPicker): generate `<label>.<ip>.sslip.io`, use the Falak test domain,
  * or bring your own with DNS instructions and a live DNS check.
  */
 export function DomainPicker({
@@ -396,7 +396,7 @@ export function DomainPicker({
             )}
 
             {shown === 'test' && testDomain && (
-                <ReadOnlyName name={testDomain} icon={<Globe />} hint="Kiln’s wildcard test domain. Add your own domain any time in Networking." />
+                <ReadOnlyName name={testDomain} icon={<Globe />} hint="Falak’s wildcard test domain. Add your own domain any time in Networking." />
             )}
 
             {shown === 'custom' && (
@@ -420,7 +420,7 @@ export function DomainPicker({
                     ) : (
                         <p className="text-fg-muted text-xs">
                             {draft.trim() === ''
-                                ? 'Enter the domain you own; Kiln shows the DNS record to add and checks it for you.'
+                                ? 'Enter the domain you own; Falak shows the DNS record to add and checks it for you.'
                                 : 'Enter a domain name like app.example.com.'}
                         </p>
                     )}

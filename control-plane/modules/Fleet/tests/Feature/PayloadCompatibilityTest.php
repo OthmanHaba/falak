@@ -1,13 +1,13 @@
 <?php
 
 use Illuminate\Support\Str;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Domain\Models\Command;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Domain\Models\Command;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 beforeEach(function () {
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test']);
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test']);
     [, $this->organization] = memberOf();
 });
 

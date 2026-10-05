@@ -1,7 +1,7 @@
 <?php
 
-use Kiln\Alerting\Contracts\Severity;
-use Kiln\Alerting\Domain\Models\Rule;
+use Falak\Alerting\Contracts\Severity;
+use Falak\Alerting\Domain\Models\Rule;
 
 function rule_with(array $types, Severity $min = Severity::Info): Rule
 {

@@ -12,21 +12,21 @@ import (
 	"sort"
 	"time"
 
-	"github.com/kiln/agent/internal/config"
-	"github.com/kiln/agent/internal/enroll"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/config"
+	"github.com/OthmanHaba/falak/agent/internal/enroll"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // PreviousDir (under the etc dir) keeps replaced identities, one directory per re-enrollment.
 const PreviousDir = "previous"
 
-// EnrollOnly is `kiln-agent enroll`. With a token it always enrolls: on a machine that still has an identity
-// (its server was deleted in Kiln and a new install command runs here) the new identity replaces the old one only
+// EnrollOnly is `falak-agent enroll`. With a token it always enrolls: on a machine that still has an identity
+// (its server was deleted in Falak and a new install command runs here) the new identity replaces the old one only
 // once it has been issued; the old files move to <etc>/previous/<UTC time>/. Without a token it enrolls only when
 // there is no identity yet.
 //
-// A running kiln-agent.service is stopped first (it could write a renewed certificate or telemetry.json over the
+// A running falak-agent.service is stopped first (it could write a renewed certificate or telemetry.json over the
 // new identity) and started again afterwards, whether enrollment succeeded or not.
 func EnrollOnly(ctx context.Context, cfg config.Config, log *slog.Logger, out io.Writer, r runner.Runner) (err error) {
 	if out == nil {
@@ -45,22 +45,22 @@ func EnrollOnly(ctx context.Context, cfg config.Config, log *slog.Logger, out io
 		return nil
 	}
 	if cfg.PanelURL == "" {
-		return errors.New("enroll: set KILN_PANEL_URL (or --panel)")
+		return errors.New("enroll: set FALAK_PANEL_URL (or --panel)")
 	}
 	if r == nil {
 		r = runner.Exec{}
 	}
-	if res, rerr := r.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"is-active", "--quiet", "kiln-agent.service"}}); rerr == nil && res.ExitCode == 0 {
-		fmt.Fprintln(out, "stopping kiln-agent while its identity is replaced")
-		if _, err := runner.Check(ctx, r, runner.Cmd{Name: "systemctl", Args: []string{"stop", "kiln-agent.service"}}); err != nil {
-			return fmt.Errorf("stop kiln-agent: %w", err)
+	if res, rerr := r.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"is-active", "--quiet", "falak-agent.service"}}); rerr == nil && res.ExitCode == 0 {
+		fmt.Fprintln(out, "stopping falak-agent while its identity is replaced")
+		if _, err := runner.Check(ctx, r, runner.Cmd{Name: "systemctl", Args: []string{"stop", "falak-agent.service"}}); err != nil {
+			return fmt.Errorf("stop falak-agent: %w", err)
 		}
 		defer func() {
-			if _, serr := runner.Check(context.WithoutCancel(ctx), r, runner.Cmd{Name: "systemctl", Args: []string{"start", "kiln-agent.service"}}); serr != nil {
-				err = errors.Join(err, fmt.Errorf("start kiln-agent again: %w", serr))
+			if _, serr := runner.Check(context.WithoutCancel(ctx), r, runner.Cmd{Name: "systemctl", Args: []string{"start", "falak-agent.service"}}); serr != nil {
+				err = errors.Join(err, fmt.Errorf("start falak-agent again: %w", serr))
 				return
 			}
-			fmt.Fprintln(out, "started kiln-agent again")
+			fmt.Fprintln(out, "started falak-agent again")
 		}()
 	}
 	old, _ := enroll.LoadState(paths)

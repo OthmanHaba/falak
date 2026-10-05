@@ -1,8 +1,8 @@
 <?php
 
-use Kiln\Identity\Contracts\Role;
-use Kiln\Recipes\Domain\Models\Recipe;
-use Kiln\Servers\Domain\Models\Server;
+use Falak\Identity\Contracts\Role;
+use Falak\Recipes\Domain\Models\Recipe;
+use Falak\Servers\Domain\Models\Server;
 use Tests\Support\FakeAgentGateway;
 
 beforeEach(function () {
@@ -10,7 +10,7 @@ beforeEach(function () {
     [$this->user, $this->organization] = actingAsMember(Role::Admin);
     $this->server = Server::factory()->create(['organization_id' => $this->organization->id, 'name' => 'web-1']);
     $this->other = Server::factory()->create(['organization_id' => $this->organization->id, 'name' => 'web-2']);
-    $this->recipe = Recipe::query()->create(['organization_id' => $this->organization->id, 'name' => 'Uptime', 'script' => 'uptime', 'user' => 'kiln']);
+    $this->recipe = Recipe::query()->create(['organization_id' => $this->organization->id, 'name' => 'Uptime', 'script' => 'uptime', 'user' => 'falak']);
 });
 
 it('renders the recipes tab with runnable recipes and the history on that server', function () {

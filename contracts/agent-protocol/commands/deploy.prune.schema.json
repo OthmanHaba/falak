@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/deploy.prune.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/deploy.prune.schema.json",
   "title": "deploy.prune — delete old releases, keeping the newest N (never current)",
   "type": "object",
   "additionalProperties": false,
@@ -11,7 +11,7 @@
     "site": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
-      "description": "Site slug (directory name under /srv/kiln/sites)"
+      "description": "Site slug (directory name under /srv/falak/sites)"
     },
     "sites_root": {
       "allOf": [
@@ -20,7 +20,7 @@
           "pattern": "^/"
         }
       ],
-      "default": "/srv/kiln/sites"
+      "default": "/srv/falak/sites"
     },
     "keep": {
       "type": "integer",

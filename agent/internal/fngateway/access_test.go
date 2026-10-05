@@ -53,7 +53,7 @@ func TestAccessAPIKeysAndAllowlist(t *testing.T) {
 		t.Fatalf("a rejected request woke the function (%d starts)", starts-startsBefore)
 	}
 
-	// Bearer and X-Kiln-Key work; the key and the client IP header never reach the function.
+	// Bearer and X-Falak-Key work; the key and the client IP header never reach the function.
 	e.mu.Lock()
 	e.echoHeaders = true
 	e.mu.Unlock()
@@ -61,7 +61,7 @@ func TestAccessAPIKeysAndAllowlist(t *testing.T) {
 		t.Fatalf("bearer: %d %s", code, body)
 	}
 	if code, body := do(t, srv, "hello", map[string]string{KeyHeader: "k-two", "Authorization": "Basic app-own"}); code != 200 || strings.Contains(body, "k-two") || !strings.Contains(body, "Basic app-own") {
-		t.Fatalf("x-kiln-key: %d %s", code, body)
+		t.Fatalf("x-falak-key: %d %s", code, body)
 	}
 
 	// Allowlist (IPv4 + IPv6) combined with the key; changing access keeps the instance.

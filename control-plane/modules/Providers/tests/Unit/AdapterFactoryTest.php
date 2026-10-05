@@ -1,16 +1,16 @@
 <?php
 
 use Illuminate\Support\Facades\Http;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Contracts\ProviderType;
-use Kiln\Providers\Infrastructure\AdapterFactory;
-use Kiln\Providers\Infrastructure\Adapters\CustomAdapter;
-use Kiln\Providers\Infrastructure\Adapters\DigitalOceanAdapter;
-use Kiln\Providers\Infrastructure\Adapters\HetznerAdapter;
-use Kiln\Providers\Infrastructure\Adapters\LightsailAdapter;
-use Kiln\Providers\Infrastructure\Adapters\LinodeAdapter;
-use Kiln\Providers\Infrastructure\Adapters\VultrAdapter;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\ProviderType;
+use Falak\Providers\Infrastructure\AdapterFactory;
+use Falak\Providers\Infrastructure\Adapters\CustomAdapter;
+use Falak\Providers\Infrastructure\Adapters\DigitalOceanAdapter;
+use Falak\Providers\Infrastructure\Adapters\HetznerAdapter;
+use Falak\Providers\Infrastructure\Adapters\LightsailAdapter;
+use Falak\Providers\Infrastructure\Adapters\LinodeAdapter;
+use Falak\Providers\Infrastructure\Adapters\VultrAdapter;
 
 it('builds the adapter for each provider type', function (ProviderType $type, array $credentials, string $class) {
     $adapter = app(AdapterFactory::class)->make($type, $credentials);

@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // instance is one supervised OS process slot (<name>:<idx>) with its restart loop.
@@ -153,14 +153,14 @@ func (in *instance) runOnce(stopCh chan struct{}) (code int, stopped bool) {
 	env := []string{
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"LANG=C.UTF-8",
-		"KILN_PROCESS_NAME=" + spec.Name,
-		"KILN_PROCESS_INSTANCE=" + itoa(in.idx),
+		"FALAK_PROCESS_NAME=" + spec.Name,
+		"FALAK_PROCESS_INSTANCE=" + itoa(in.idx),
 	}
 	if spec.User != "" {
 		cred, home, err := runner.Credential(spec.User)
 		if err != nil {
 			in.log.Error("resolve user", "err", err)
-			_, _ = errW.Write([]byte("kiln: " + err.Error() + "\n"))
+			_, _ = errW.Write([]byte("falak: " + err.Error() + "\n"))
 			return 127, false
 		}
 		cmd.SysProcAttr.Credential = cred
@@ -180,7 +180,7 @@ func (in *instance) runOnce(stopCh chan struct{}) (code int, stopped bool) {
 
 	if err := cmd.Start(); err != nil {
 		in.log.Error("start failed", "err", err)
-		_, _ = errW.Write([]byte("kiln: start failed: " + err.Error() + "\n"))
+		_, _ = errW.Write([]byte("falak: start failed: " + err.Error() + "\n"))
 		return 127, false
 	}
 	pid := cmd.Process.Pid

@@ -1,30 +1,30 @@
 <?php
 
-namespace Kiln\Edge\Http\Controllers;
+namespace Falak\Edge\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Edge\Application\CloudflareConnections;
-use Kiln\Edge\Application\CloudflareEdgeControls;
-use Kiln\Edge\Application\CloudflareTunnels;
-use Kiln\Edge\Application\GeneratedDomains;
-use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
-use Kiln\Edge\Domain\Models\CloudflareTunnel;
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Domain\Models\DnsCredential;
-use Kiln\Edge\Domain\Models\DnsRecord;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\OrganizationSetting;
-use Kiln\Edge\Domain\Models\OriginLock;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Servers\Contracts\Data\ServerData;
-use Kiln\Servers\Contracts\ServerDirectory;
+use Falak\Edge\Application\CloudflareConnections;
+use Falak\Edge\Application\CloudflareEdgeControls;
+use Falak\Edge\Application\CloudflareTunnels;
+use Falak\Edge\Application\GeneratedDomains;
+use Falak\Edge\Application\Jobs\SyncCloudflareDns;
+use Falak\Edge\Domain\Models\CloudflareTunnel;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Domain\Models\DnsCredential;
+use Falak\Edge\Domain\Models\DnsRecord;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\OrganizationSetting;
+use Falak\Edge\Domain\Models\OriginLock;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\ServerDirectory;
 
 /**
  * Settings → Integrations → Cloudflare.
@@ -112,7 +112,7 @@ final class CloudflareController extends Controller
 
         $this->connections->connect($organizationId, $data['name'], $data['api_token'], $request->user()?->getAuthIdentifier());
 
-        return back()->with('success', 'Cloudflare connected. Pick the zones Kiln should manage.');
+        return back()->with('success', 'Cloudflare connected. Pick the zones Falak should manage.');
     }
 
     public function disconnect(Request $request, string $credential): RedirectResponse
@@ -120,7 +120,7 @@ final class CloudflareController extends Controller
         $organizationId = $this->manage($request);
         $this->connections->disconnect(DnsCredential::query()->where('organization_id', $organizationId)->where('provider', 'cloudflare')->findOrFail($credential));
 
-        return back()->with('success', 'Cloudflare disconnected. DNS records stay in Cloudflare; Kiln no longer changes them.');
+        return back()->with('success', 'Cloudflare disconnected. DNS records stay in Cloudflare; Falak no longer changes them.');
     }
 
     public function enable(Request $request, string $credential): RedirectResponse
@@ -139,7 +139,7 @@ final class CloudflareController extends Controller
             OrganizationSetting::for($organizationId)->forceFill(['generated_domain_provider' => GeneratedDomains::CLOUDFLARE.$zone->name])->save();
         }
 
-        return back()->with('success', "Kiln now manages DNS for {$zone->name}.");
+        return back()->with('success', "Falak now manages DNS for {$zone->name}.");
     }
 
     public function update(Request $request, string $zone): RedirectResponse
@@ -169,7 +169,7 @@ final class CloudflareController extends Controller
         $data = $request->validate(['delete_records' => ['sometimes', 'boolean']]);
         $this->connections->disable($this->zone($organizationId, $zone), (bool) ($data['delete_records'] ?? false));
 
-        return back()->with('success', ($data['delete_records'] ?? false) ? 'Zone released and Kiln’s records deleted.' : 'Zone released. Its DNS records stay in Cloudflare.');
+        return back()->with('success', ($data['delete_records'] ?? false) ? 'Zone released and Falak’s records deleted.' : 'Zone released. Its DNS records stay in Cloudflare.');
     }
 
     public function setting(Request $request, string $zone): RedirectResponse

@@ -1,5 +1,5 @@
 # Sim apt cache (apt-cacher-ng): the sim servers use it as their HTTP apt proxy when it is reachable
-# (Proxy-Auto-Detect, see server/bin/kiln-sim-apt-proxy). apt still resolves and installs every package on
+# (Proxy-Auto-Detect, see server/bin/falak-sim-apt-proxy). apt still resolves and installs every package on
 # the server; only the .deb / index downloads are served from the cache after the first run.
 FROM ubuntu:noble-20260911
 RUN apt-get update \

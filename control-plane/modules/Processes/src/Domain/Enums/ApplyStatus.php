@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Processes\Domain\Enums;
+namespace Falak\Processes\Domain\Enums;
 
 /**
  * State of the last proc.apply / cron.apply sent to a server.

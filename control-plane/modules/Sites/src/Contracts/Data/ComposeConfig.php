@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
-use Kiln\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\ComposeSource;
 
 /**
  * Compose settings of a `compose` runtime site (SiteData::$compose).
@@ -12,10 +12,10 @@ final readonly class ComposeConfig
     /** A service runs in the stack (default). */
     public const MODE_KEEP = 'keep';
 
-    /** A service replaced by a Kiln-managed database. */
+    /** A service replaced by a Falak-managed database. */
     public const MODE_DATABASE = 'database';
 
-    /** A service taken out of the stack and run as its own Kiln site. */
+    /** A service taken out of the stack and run as its own Falak site. */
     public const MODE_SITE = 'site';
 
     /**
@@ -26,7 +26,7 @@ final readonly class ComposeConfig
      * @param  list<string>  $files  repo source: compose files in `-f` order (empty = the default file)
      * @param  list<string>  $profiles  active compose profiles
      * @param  array<string, array{mode: string, database_id?: string, site_id?: string}>  $services  per-service decisions (absent = keep)
-     * @param  array{keep_binds?: list<string>}  $adjustments  the user's choices about Kiln's adjustments ("service:./path" binds kept as folders)
+     * @param  array{keep_binds?: list<string>}  $adjustments  the user's choices about Falak's adjustments ("service:./path" binds kept as folders)
      */
     public function __construct(
         public ComposeSource $source,
@@ -65,7 +65,7 @@ final readonly class ComposeConfig
     }
 
     /**
-     * Services that no longer run in the stack (replaced by a Kiln database or split into their own site).
+     * Services that no longer run in the stack (replaced by a Falak database or split into their own site).
      *
      * @return list<string>
      */

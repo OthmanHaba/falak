@@ -1,4 +1,4 @@
-import { SERVICE_CARD } from '@/components/kiln';
+import { SERVICE_CARD } from '@/components/falak';
 import { type CanvasGroup, type CanvasService, type ComposeChild } from '@/types';
 
 /**

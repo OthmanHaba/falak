@@ -1,17 +1,17 @@
-# Kiln local end-to-end simulation
+# Falak local end-to-end simulation
 
-This is a laptop-sized version of a real Kiln install: the control plane (FrankenPHP +
+This is a laptop-sized version of a real Falak install: the control plane (FrankenPHP +
 Horizon + Reverb + Postgres 17 + Valkey), an edge that terminates TLS and checks agent
 mTLS, the full observability stack, and three managed Ubuntu 24.04 servers. Each server
 runs systemd as PID 1 and sshd.
 
 ```
 host ──https://localhost:8443──► edge (Caddy)
-                                  ├─ kiln.test / localhost   TLS: Caddy internal CA ─► control-plane :8080 (panel, FrankenPHP worker mode)
+                                  ├─ falak.test / localhost   TLS: Caddy internal CA ─► control-plane :8080 (panel, FrankenPHP worker mode)
                                   │                                                ├► agent-api :8080 (/agent/*, /install/*, /api/internal/*)
                                   │                                                └► reverb :8080 (/app, /apps)
-                                  └─ agents.kiln.test        TLS: Fleet-issued cert + agent mTLS ─► agent-api
-srv-app-1 · srv-app-2 · srv-db-1  ── fleet network (10.77.20.0/24) ──► edge as kiln.test / agents.kiln.test
+                                  └─ agents.falak.test        TLS: Fleet-issued cert + agent mTLS ─► agent-api
+srv-app-1 · srv-app-2 · srv-db-1  ── fleet network (10.77.20.0/24) ──► edge as falak.test / agents.falak.test
   (Ubuntu 24.04, systemd, sshd)   └─ observability network ─────────► gateway:4318 (OTLP)
 control-plane · agent-api · horizon · reverb ── backend network (10.77.10.0/24) ► postgres · valkey
 ```
@@ -42,7 +42,7 @@ Endpoints on the host:
 | What | URL |
 |---|---|
 | Control plane | `https://localhost:8443` (trust `.data/edge-root.crt`, or `curl -k`) |
-| Agent API | `https://agents.kiln.test:8443` (`--resolve agents.kiln.test:8443:127.0.0.1`, trust the Fleet CA) |
+| Agent API | `https://agents.falak.test:8443` (`--resolve agents.falak.test:8443:127.0.0.1`, trust the Fleet CA) |
 | Grafana | `http://localhost:13000` (admin / admin) |
 | OTLP ingress | `http://localhost:14318` |
 
@@ -54,7 +54,7 @@ use `SIM_AGENT_ARCH=amd64 make up`. Emulation is required on arm64 hosts.
 
 | Service | Built from / image |
 |---|---|
-| control-plane / agent-api / horizon / reverb | `control-plane.Dockerfile` (context `../control-plane`, plus `../deploy/control-plane` for the production Caddyfile, php.ini and entrypoint): `dunglas/frankenphp:1.12.7-php8.4-trixie` + pdo_pgsql, redis, pcntl, intl, zip, bcmath, gmp, sockets. Composer deps come from `composer:2.10.3`, the frontend is built with `oven/bun:1.4.2`. Entrypoint roles `web` (runs migrations with `KILN_MIGRATE=1`, then the panel in worker mode), `agent-api`, `horizon`, `reverb`. |
+| control-plane / agent-api / horizon / reverb | `control-plane.Dockerfile` (context `../control-plane`, plus `../deploy/control-plane` for the production Caddyfile, php.ini and entrypoint): `dunglas/frankenphp:1.12.7-php8.4-trixie` + pdo_pgsql, redis, pcntl, intl, zip, bcmath, gmp, sockets. Composer deps come from `composer:2.10.3`, the frontend is built with `oven/bun:1.4.2`. Entrypoint roles `web` (runs migrations with `FALAK_MIGRATE=1`, then the panel in worker mode), `agent-api`, `horizon`, `reverb`. |
 | postgres | `postgres:17.11` |
 | valkey | `valkey/valkey:9.1.2-alpine` |
 | edge | `edge/Dockerfile` (`caddy:2.11.4-alpine` + openssl, curl) |
@@ -70,27 +70,27 @@ Ubuntu's stock `ssh.socket` activation. Each container generates its own SSH hos
 first boot. `SIM_SSH_PUBKEY` in `sim.env` authorises a key for `root`.
 
 The agent binary is mounted, not baked in. The repository is mounted read-only at
-`/opt/kiln/src`, and at boot `kiln-sim-agent-link.service` links
-`agent/bin/kiln-agent-linux-$SIM_AGENT_ARCH` to `/usr/local/bin/kiln-agent` if the file
+`/opt/falak/src`, and at boot `falak-sim-agent-link.service` links
+`agent/bin/falak-agent-linux-$SIM_AGENT_ARCH` to `/usr/local/bin/falak-agent` if the file
 exists. If the agent hasn't been built, the servers still boot. The control plane serves the
-same binaries to the installer (`KILN_AGENT_BINARIES_PATH=/opt/kiln/src/agent/bin`).
+same binaries to the installer (`FALAK_AGENT_BINARIES_PATH=/opt/falak/src/agent/bin`).
 
 ## Caches and speed
 
 A full `make reset && make up && ./e2e-deploy.sh` provisions three servers for real, builds and deploys a
 dozen releases and pulls third-party images. Everything the servers and the builder download goes through
-local caches that **survive `make reset`** (external volumes `kiln-sim-cache-*`, created by `make up`), so only
+local caches that **survive `make reset`** (external volumes `falak-sim-cache-*`, created by `make up`), so only
 the first run after `make reset-all` / `make clean-cache` fetches from the internet. The product code paths do
 not change: apt still resolves and installs packages, the agent still downloads and sha256-verifies runtime
 binaries, dockerd still pulls, the builder still runs composer/npm/bun and BuildKit. Only the bytes are local.
 
 | Cache | What it serves | How the sim uses it |
 |---|---|---|
-| `sim-apt-cache` (apt-cacher-ng, `kiln-sim-cache-apt`) | Ubuntu archive (HTTP) | the server image sets `Acquire::http::Proxy-Auto-Detect` to `server/bin/kiln-sim-apt-proxy`: the cache when it answers, `DIRECT` otherwise (`SIM_APT_PROXY`, empty = off) |
-| `sim-downloads` (caching nginx, `kiln-sim-cache-downloads`) | FrankenPHP / Bun / Deno GitHub releases, Node.js dist, the ondrej/php PPA | the control plane's **product** mirror settings `KILN_{FRANKENPHP,NODE,BUN,DENO}_MIRROR` point at `https://downloads.kiln.test/{github,nodejs}/…` (the edge terminates TLS). The PPA is HTTPS, so the servers resolve `ppa.launchpadcontent.net` to the edge (`extra_hosts`, the edge has a static fleet address), which proxies to this cache (package files cached for a year, `dists/` indexes revalidated every 5 min) |
-| `sim-hub-mirror` (registry proxy, `kiln-sim-cache-hub`) | Docker Hub | `registry-mirrors` in the servers' `/etc/docker/daemon.json` and a `docker.io` mirror in the builder's BuildKit config |
-| `sim-ghcr-mirror` (registry proxy, `kiln-sim-cache-ghcr`) | ghcr.io | the servers resolve `ghcr.io` to the edge (`extra_hosts`; dockerd only mirrors Docker Hub) |
-| builder (`kiln-sim-cache-builder`) | composer / npm / bun caches, BuildKit export cache | `KILN_BUILDER_CACHE_DIR=/root/.cache/kiln-builder`; the buildx builder keeps its state volume (`buildx_buildkit_kiln0_state`) across restarts |
+| `sim-apt-cache` (apt-cacher-ng, `falak-sim-cache-apt`) | Ubuntu archive (HTTP) | the server image sets `Acquire::http::Proxy-Auto-Detect` to `server/bin/falak-sim-apt-proxy`: the cache when it answers, `DIRECT` otherwise (`SIM_APT_PROXY`, empty = off) |
+| `sim-downloads` (caching nginx, `falak-sim-cache-downloads`) | FrankenPHP / Bun / Deno GitHub releases, Node.js dist, the ondrej/php PPA | the control plane's **product** mirror settings `FALAK_{FRANKENPHP,NODE,BUN,DENO}_MIRROR` point at `https://downloads.falak.test/{github,nodejs}/…` (the edge terminates TLS). The PPA is HTTPS, so the servers resolve `ppa.launchpadcontent.net` to the edge (`extra_hosts`, the edge has a static fleet address), which proxies to this cache (package files cached for a year, `dists/` indexes revalidated every 5 min) |
+| `sim-hub-mirror` (registry proxy, `falak-sim-cache-hub`) | Docker Hub | `registry-mirrors` in the servers' `/etc/docker/daemon.json` and a `docker.io` mirror in the builder's BuildKit config |
+| `sim-ghcr-mirror` (registry proxy, `falak-sim-cache-ghcr`) | ghcr.io | the servers resolve `ghcr.io` to the edge (`extra_hosts`; dockerd only mirrors Docker Hub) |
+| builder (`falak-sim-cache-builder`) | composer / npm / bun caches, BuildKit export cache | `FALAK_BUILDER_CACHE_DIR=/root/.cache/falak-builder`; the buildx builder keeps its state volume (`buildx_buildkit_falak0_state`) across restarts |
 
 The host overrides exist only on the three servers, so the caches themselves and BuildKit resolve the real
 upstreams. (A separate network for this was tried and dropped: Docker assigns interface names in no stable order,
@@ -112,32 +112,32 @@ healthy; healthchecks poll every 1–2 s while containers start.
 ## Integration points
 
 1. **Fleet CA → edge client verification.** The control plane runs with
-   `KILN_CA_PATH=/kiln/ca` on the shared `kiln-ca` volume, and Fleet writes the CA
-   certificate (never the key) to `/kiln/ca/ca.pem`. The edge mounts the volume read-only,
+   `FALAK_CA_PATH=/falak/ca` on the shared `falak-ca` volume, and Fleet writes the CA
+   certificate (never the key) to `/falak/ca/ca.pem`. The edge mounts the volume read-only,
    checks the file every 3 s, copies it to `/etc/caddy/trust/ca.pem` and hot-reloads Caddy.
    Until the file exists, the edge trusts a throwaway placeholder CA whose key has been
    discarded, so every non-enroll agent call fails closed.
-2. **Agent API server certificate.** Agents pin the Kiln CA on the mTLS API, so that API has
-   its own host, `agents.kiln.test` (`KILN_AGENT_API_URL=https://agents.kiln.test/agent/v1`).
-   The panel stays on `kiln.test`, which uses a browser/installer-trusted cert. The
-   control-plane entrypoint runs `php artisan fleet:ca:server-cert agents.kiln.test --out /kiln/ca`
+2. **Agent API server certificate.** Agents pin the Falak CA on the mTLS API, so that API has
+   its own host, `agents.falak.test` (`FALAK_AGENT_API_URL=https://agents.falak.test/agent/v1`).
+   The panel stays on `falak.test`, which uses a browser/installer-trusted cert. The
+   control-plane entrypoint runs `php artisan fleet:ca:server-cert agents.falak.test --out /falak/ca`
    when `agent-api.{pem,key}` are missing, expiring or not signed by the current CA. The
-   edge adds the `agents.kiln.test` site as soon as they appear.
+   edge adds the `agents.falak.test` site as soon as they appear.
 3. **Agent mTLS contract** (`contracts/agent-protocol`). `client_auth verify_if_given` runs
    against the Fleet CA. `/agent/v1/*` except `/agent/v1/enroll` without a client cert gets
    `401` at the edge. A cert from any other CA fails the TLS handshake. With a valid cert the
-   edge sets `X-Kiln-Client-Cert-Fingerprint` to the lowercase-hex SHA-256 of the client DER
+   edge sets `X-Falak-Client-Cert-Fingerprint` to the lowercase-hex SHA-256 of the client DER
    cert. The edge always strips any client-supplied value of that header. The control plane
-   trusts the header only from `KILN_AGENT_TRUSTED_PROXIES=10.77.10.0/24` (the backend
+   trusts the header only from `FALAK_AGENT_TRUSTED_PROXIES=10.77.10.0/24` (the backend
    network). `GET /_edge/whoami` shows what the edge would forward, which helps when
    debugging.
 4. **Edge TLS root → servers.** The edge publishes Caddy's internal root to the `edge-pki`
    volume. At boot, each server installs it into the system trust store
-   (`kiln-sim-trust.service`), so `curl https://kiln.test/install/<token> | sh` works
+   (`falak-sim-trust.service`), so `curl https://falak.test/install/<token> | sh` works
    unchanged.
 5. **Telemetry.** Servers reach the OTLP gateway at `http://gateway:4318`
-   (`KILN_OTLP_ENDPOINT`), and the control plane reaches Grafana, Loki, Tempo and the metrics
-   API by service name (`KILN_GRAFANA_URL`, …).
+   (`FALAK_OTLP_ENDPOINT`), and the control plane reaches Grafana, Loki, Tempo and the metrics
+   API by service name (`FALAK_GRAFANA_URL`, …).
 
 ## e2e (`make e2e` → `e2e.sh`)
 
@@ -152,6 +152,6 @@ healthy; healthchecks poll every 1–2 s while containers start.
 | 7 | site provisioning and deploy, app APM data on the Laravel/Node/Queues dashboards, agent deployment log events → *Deployment failed* alert | **PENDING**: needs the Sites/Deployments modules, the agent `deploy.*` executors and the APM packages running in a deployed site |
 
 `make token` and `make enroll-all` are dev shortcuts. They call
-`Kiln\Fleet\Contracts\Enrollment::issueInstallToken()` through `artisan tinker` with a fixed
+`Falak\Fleet\Contracts\Enrollment::issueInstallToken()` through `artisan tinker` with a fixed
 sim organisation id (`SIM_ORG_ID`). Once the Servers module has a real "add server" flow,
 use a token from that flow with `make enroll TOKEN=…`.

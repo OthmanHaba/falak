@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Alerting\Domain;
+namespace Falak\Alerting\Domain;
 
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use DateTimeZone;
-use Kiln\Alerting\Contracts\Severity;
+use Falak\Alerting\Contracts\Severity;
 
 /**
  * A daily quiet window (e.g. 22:00–07:00 Europe/Berlin), optionally only on some ISO weekdays

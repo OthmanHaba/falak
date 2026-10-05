@@ -1,2 +1,0 @@
-#!/bin/sh
-exec node --disable-warning=ExperimentalWarning /opt/kiln-fn/shared/run.mjs "$@"

@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/kiln/agent/internal/docker"
+	"github.com/OthmanHaba/falak/agent/internal/docker"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
@@ -21,8 +21,8 @@ type ContainerEngine interface {
 	ContainerStats(ctx context.Context, id string, oneShot bool) (docker.Stats, error)
 }
 
-// ContainerCollector samples `docker stats` of site containers (label kiln.site) into OTLP metrics
-// kiln.container.*: one ResourceMetrics per site (service.name = site slug, enriched to kiln.site.id by
+// ContainerCollector samples `docker stats` of site containers (label falak.site) into OTLP metrics
+// falak.container.*: one ResourceMetrics per site (service.name = site slug, enriched to falak.site.id by
 // the relay), data points labelled with the compose service and container.
 type ContainerCollector struct {
 	// Socket, when set, is checked before each collection (Docker may be installed after the agent started).
@@ -95,7 +95,7 @@ func (c *ContainerCollector) Collect(ctx context.Context) []*metricspb.ResourceM
 			return nil
 		}
 	}
-	list, err := c.engine.ContainerList(ctx, false, []string{"kiln.site"})
+	list, err := c.engine.ContainerList(ctx, false, []string{"falak.site"})
 	if err != nil {
 		return nil
 	}
@@ -104,7 +104,7 @@ func (c *ContainerCollector) Collect(ctx context.Context) []*metricspb.ResourceM
 	hasCPU := map[string]bool{}
 	seen := map[string]bool{}
 	for _, ct := range list {
-		site := ct.Labels["kiln.site"]
+		site := ct.Labels["falak.site"]
 		if site == "" {
 			continue
 		}
@@ -119,7 +119,7 @@ func (c *ContainerCollector) Collect(ctx context.Context) []*metricspb.ResourceM
 		prev, ok := c.prev[ct.ID]
 		c.prev[ct.ID] = st.CPUStats
 		c.mu.Unlock()
-		service := ct.Labels["kiln.service"]
+		service := ct.Labels["falak.service"]
 		if service == "" {
 			service = ct.Labels[docker.LabelComposeService]
 		}
@@ -129,7 +129,7 @@ func (c *ContainerCollector) Collect(ctx context.Context) []*metricspb.ResourceM
 		}
 		attrs := []*commonpb.KeyValue{str("container.id", ct.ID), str("container.name", name)}
 		if service != "" {
-			attrs = append(attrs, str("kiln.compose.service", service))
+			attrs = append(attrs, str("falak.compose.service", service))
 		}
 		p := containerPoint{attrs: attrs, cpu: -1, mem: int64(st.MemoryUsed()), limit: int64(st.MemoryStats.Limit)}
 		if ok {
@@ -177,16 +177,16 @@ func (c *ContainerCollector) Collect(ctx context.Context) []*metricspb.ResourceM
 		}
 		var ms []*metricspb.Metric
 		if hasCPU[site] {
-			ms = append(ms, gauge("kiln.container.cpu.utilization", "1", cpu...))
+			ms = append(ms, gauge("falak.container.cpu.utilization", "1", cpu...))
 		}
-		ms = append(ms, gauge("kiln.container.memory.usage", "By", mem...))
+		ms = append(ms, gauge("falak.container.memory.usage", "By", mem...))
 		if len(limit) > 0 {
-			ms = append(ms, gauge("kiln.container.memory.limit", "By", limit...))
+			ms = append(ms, gauge("falak.container.memory.limit", "By", limit...))
 		}
-		ms = append(ms, counter("kiln.container.network.io", "By", netio...))
+		ms = append(ms, counter("falak.container.network.io", "By", netio...))
 		out = append(out, &metricspb.ResourceMetrics{
 			Resource:     &resourcepb.Resource{Attributes: []*commonpb.KeyValue{str("service.name", site)}},
-			ScopeMetrics: []*metricspb.ScopeMetrics{{Scope: &commonpb.InstrumentationScope{Name: "kiln-agent/containers"}, Metrics: ms}},
+			ScopeMetrics: []*metricspb.ScopeMetrics{{Scope: &commonpb.InstrumentationScope{Name: "falak-agent/containers"}, Metrics: ms}},
 		})
 	}
 	return out

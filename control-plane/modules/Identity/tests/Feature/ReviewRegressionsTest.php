@@ -2,9 +2,9 @@
 
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
-use Kiln\Identity\Application\Actions\CreateApiToken;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Domain\Models\AuditEntry;
+use Falak\Identity\Application\Actions\CreateApiToken;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Domain\Models\AuditEntry;
 
 it('keeps the via_token name in audit context while redacting secrets', function () {
     [$user, $organization] = memberOf();

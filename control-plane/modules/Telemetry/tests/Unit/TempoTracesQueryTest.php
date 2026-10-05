@@ -3,9 +3,9 @@
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Kiln\Telemetry\Application\Queries\TraceQueryBuilder;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
-use Kiln\Telemetry\Contracts\TracesQuery;
+use Falak\Telemetry\Application\Queries\TraceQueryBuilder;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Falak\Telemetry\Contracts\TracesQuery;
 
 beforeEach(function () {
     Http::preventStrayRequests();
@@ -21,7 +21,7 @@ function tempo_resource_spans(bool $base64 = true): array
     return [[
         'resource' => ['attributes' => [
             ['key' => 'service.name', 'value' => ['stringValue' => 'shop']],
-            ['key' => 'kiln.org.id', 'value' => ['stringValue' => '01JORG0000000000000000000A']],
+            ['key' => 'falak.org.id', 'value' => ['stringValue' => '01JORG0000000000000000000A']],
         ]],
         'scopeSpans' => [['spans' => [
             [
@@ -29,7 +29,7 @@ function tempo_resource_spans(bool $base64 = true): array
                 'name' => 'select orders', 'kind' => 'SPAN_KIND_CLIENT',
                 'startTimeUnixNano' => '1700000000050000000', 'endTimeUnixNano' => '1700000000070000000',
                 'attributes' => [
-                    ['key' => 'kiln.event.type', 'value' => ['stringValue' => 'query']],
+                    ['key' => 'falak.event.type', 'value' => ['stringValue' => 'query']],
                     ['key' => 'db.rows', 'value' => ['intValue' => '12']],
                     ['key' => 'ratio', 'value' => ['doubleValue' => 0.5]],
                     ['key' => 'cached', 'value' => ['boolValue' => false]],
@@ -70,7 +70,7 @@ it('fetches a trace from the v2 API and decodes base64 ids, attributes, kinds an
         ->and($query->status)->toBe('error')
         ->and($query->statusMessage)->toBe('deadlock')
         ->and($query->service)->toBe('shop')
-        ->and($query->attributes)->toBe(['kiln.event.type' => 'query', 'db.rows' => 12, 'ratio' => 0.5, 'cached' => false, 'tags' => '["a",2]'])
+        ->and($query->attributes)->toBe(['falak.event.type' => 'query', 'db.rows' => 12, 'ratio' => 0.5, 'cached' => false, 'tags' => '["a",2]'])
         ->and($query->events[0]['attributes'])->toBe(['exception.type' => 'PDOException'])
         ->and($query->toArray()['duration_ms'])->toBe(20.0);
 
@@ -130,6 +130,6 @@ it('builds org-scoped TraceQL from filters', function () {
         'name' => 'GET "x"',
         'min_duration_ms' => '500',
         'status' => 'error',
-    ]))->toBe('{ resource.kiln.org.id = "01JORG0000000000000000000A" && resource.kiln.site.id = "01JSITE000000000000000000A" && resource.service.name = "shop" && name = "GET \"x\"" && duration >= 500ms && status = error }')
-        ->and(TraceQueryBuilder::build('o', []))->toBe('{ resource.kiln.org.id = "O" }');
+    ]))->toBe('{ resource.falak.org.id = "01JORG0000000000000000000A" && resource.falak.site.id = "01JSITE000000000000000000A" && resource.service.name = "shop" && name = "GET \"x\"" && duration >= 500ms && status = error }')
+        ->and(TraceQueryBuilder::build('o', []))->toBe('{ resource.falak.org.id = "O" }');
 });

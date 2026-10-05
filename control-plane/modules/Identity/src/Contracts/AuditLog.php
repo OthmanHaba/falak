@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Contracts;
+namespace Falak\Identity\Contracts;
 
 /**
  * Append-only audit trail. Other modules call this for every security-relevant change, e.g.

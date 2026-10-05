@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Builds\Application;
+namespace Falak\Builds\Application;
 
 /**
  * The built-in image registry (docker build mode). Images are pushed as
@@ -15,7 +15,7 @@ final class Registry
 
     public function repository(string $siteSlug): string
     {
-        $namespace = trim((string) config('builds.registry.namespace', 'kiln'), '/');
+        $namespace = trim((string) config('builds.registry.namespace', 'falak'), '/');
 
         return $this->url().($namespace !== '' ? '/'.$namespace : '').'/'.$siteSlug;
     }

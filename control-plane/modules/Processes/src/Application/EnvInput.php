@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Processes\Application;
+namespace Falak\Processes\Application;
 
 /**
  * Environment variables edited as a list of {key, value} rows. Values are never sent back to the UI,

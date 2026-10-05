@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Templates\Application\Catalog;
+namespace Falak\Templates\Application\Catalog;
 
 use Illuminate\Support\Facades\Log;
-use Kiln\Templates\Domain\InvalidTemplate;
-use Kiln\Templates\Domain\Models\CustomTemplate;
-use Kiln\Templates\Domain\Template;
-use Kiln\Templates\Domain\TemplateSource;
+use Falak\Templates\Domain\InvalidTemplate;
+use Falak\Templates\Domain\Models\CustomTemplate;
+use Falak\Templates\Domain\Template;
+use Falak\Templates\Domain\TemplateSource;
 
 /**
  * Templates an organization can deploy: the curated catalog plus its own custom templates.

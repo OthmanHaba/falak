@@ -1,9 +1,9 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Kiln\Network\Http\Controllers\FirewallController;
-use Kiln\Network\Http\Controllers\NetworkController;
-use Kiln\Network\Http\Controllers\PrivateNetworkController;
+use Falak\Network\Http\Controllers\FirewallController;
+use Falak\Network\Http\Controllers\NetworkController;
+use Falak\Network\Http\Controllers\PrivateNetworkController;
 
 // Server page tabs (/servers/{id}/{tab}) owned by Network.
 Route::middleware(['auth', 'org'])->group(function () {

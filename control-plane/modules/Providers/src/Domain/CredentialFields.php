@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Providers\Domain;
+namespace Falak\Providers\Domain;
 
-use Kiln\Providers\Contracts\ProviderType;
+use Falak\Providers\Contracts\ProviderType;
 
 /**
  * Provider-specific credential fields (used for validation and to render the "add credential" form).

@@ -42,7 +42,7 @@ function configure() {
         noSyntaxValidation: false,
         diagnosticCodesToIgnore: [2307, 2792, 7016, 1375, 1378, 2580],
     });
-    ts.typescriptDefaults.addExtraLib(BUN_HONO_TYPES, 'file:///node_modules/@types/kiln-function/index.d.ts');
+    ts.typescriptDefaults.addExtraLib(BUN_HONO_TYPES, 'file:///node_modules/@types/falak-function/index.d.ts');
 }
 
 const OPTIONS: monaco.editor.IStandaloneEditorConstructionOptions = {

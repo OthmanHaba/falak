@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Infrastructure\Dns;
+namespace Falak\Edge\Infrastructure\Dns;
 
 /**
  * The control plane host's resolver (dns_get_record). Answers can be cached by the host (including "not found").

@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Identity\Application\Console;
+namespace Falak\Identity\Application\Console;
 
 use Illuminate\Console\Command;
-use Kiln\Identity\Application\Actions\SyncPermissions;
+use Falak\Identity\Application\Actions\SyncPermissions;
 
 final class SyncPermissionsCommand extends Command
 {

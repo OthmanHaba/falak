@@ -1,18 +1,18 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Processes\Application\Jobs\PollProcessStatus;
-use Kiln\Processes\Application\OctaneRoutes;
-use Kiln\Processes\Application\ServerConverger;
-use Kiln\Processes\Contracts\OctaneRouting;
-use Kiln\Processes\Contracts\ProcessControl;
-use Kiln\Processes\Domain\Enums\OctaneRouteStatus;
-use Kiln\Processes\Domain\Models\OctaneRoute;
-use Kiln\Processes\Events\OctaneRoutingChanged;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Domain\Models\Site;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Identity\Contracts\Role;
+use Falak\Processes\Application\Jobs\PollProcessStatus;
+use Falak\Processes\Application\OctaneRoutes;
+use Falak\Processes\Application\ServerConverger;
+use Falak\Processes\Contracts\OctaneRouting;
+use Falak\Processes\Contracts\ProcessControl;
+use Falak\Processes\Domain\Enums\OctaneRouteStatus;
+use Falak\Processes\Domain\Models\OctaneRoute;
+use Falak\Processes\Events\OctaneRoutingChanged;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Domain\Models\Site;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -22,7 +22,7 @@ beforeEach(function () {
     $this->web = processes_server($this->organization->id, 'web1');
     $this->converger = app(ServerConverger::class);
     $this->routing = app(OctaneRouting::class);
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
 });
 
 /** Settle the last proc.apply / edge.caddy.apply sent to the server. */
@@ -81,7 +81,7 @@ it('enables Octane in order: program started, probe answered, then the edge prox
         ->and($this->routing->listeningPort($site->id, $this->web->id))->toBe($port)
         ->and(octane_edge_kind($this, $site->id))->toBe('reverse_proxy:octane')
         ->and(collect($this->agents->last('edge.caddy.apply', $this->web->id)['payload']['sites'])->firstWhere('id', strtolower($site->id)))
-        ->toMatchArray(['kind' => 'reverse_proxy', 'upstreams' => [['dial' => "127.0.0.1:{$port}"]], 'root' => '/srv/kiln/sites/shop/current/public']);
+        ->toMatchArray(['kind' => 'reverse_proxy', 'upstreams' => [['dial' => "127.0.0.1:{$port}"]], 'root' => '/srv/falak/sites/shop/current/public']);
 });
 
 it('stops Octane with a short timeout, well inside the window the edge holds requests for', function () {
@@ -145,7 +145,7 @@ it('restarts Octane on a new release through the converge (never octane:reload) 
 
     expect($handles)->toHaveCount(1)
         ->and($handles[0]->type)->toBe('proc.apply')
-        ->and($after['env']['KILN_RELEASE_ID'])->toBe(strtoupper($release->id))->not->toBe($before['env']['KILN_RELEASE_ID'])
+        ->and($after['env']['FALAK_RELEASE_ID'])->toBe(strtoupper($release->id))->not->toBe($before['env']['FALAK_RELEASE_ID'])
         ->and(collect($this->agents->dispatched('system.exec'))->pluck('payload.script')->filter(fn ($s) => str_contains($s, 'octane:reload')))->toBeEmpty()
         // Still verified: the edge keeps proxying (it retries while Octane restarts).
         ->and($this->routing->listeningPort($site->id, $this->web->id))->toBe($site->refresh()->laravel->octanePort);
@@ -205,7 +205,7 @@ it('reloads Octane gracefully when restarted from the UI, restarts it on deploys
     $this->post("/sites/{$site->id}/processes/restart", [], ['Accept' => 'application/json'])->assertOk()->assertJson(['data' => ['commands' => 1]]);
     $reload = $this->agents->last('system.exec');
 
-    expect($reload['payload'])->toMatchArray(['script' => 'php8.4 artisan octane:reload --server=frankenphp', 'user' => 'shop', 'cwd' => '/srv/kiln/sites/shop/current'])
+    expect($reload['payload'])->toMatchArray(['script' => 'php8.4 artisan octane:reload --server=frankenphp', 'user' => 'shop', 'cwd' => '/srv/falak/sites/shop/current'])
         ->and(count($this->agents->dispatched('proc.restart')))->toBe($restarts);
 
     // octane:reload failed (e.g. no server state file): restart the program instead.

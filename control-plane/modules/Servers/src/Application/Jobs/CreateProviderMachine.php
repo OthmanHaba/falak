@@ -1,23 +1,23 @@
 <?php
 
-namespace Kiln\Servers\Application\Jobs;
+namespace Falak\Servers\Application\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Contracts\ProviderGateway;
-use Kiln\Servers\Application\ServerStatusUpdater;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Models\SshKey;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\ProviderGateway;
+use Falak\Servers\Application\ServerStatusUpdater;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Models\SshKey;
 use Throwable;
 
 /**
- * Creates the machine at the cloud provider. The cloud-init user data runs the kiln-agent installer,
+ * Creates the machine at the cloud provider. The cloud-init user data runs the falak-agent installer,
  * after which enrollment (AgentEnrolled) moves the server on to provisioning.
  */
 final class CreateProviderMachine implements ShouldQueue
@@ -45,7 +45,7 @@ final class CreateProviderMachine implements ShouldQueue
         try {
             $adapter = $providers->adapter($server->organization_id, (string) $server->provider_credential_id);
 
-            $keyIds = $server->sshKeys->map(fn (SshKey $key) => $adapter->uploadSshKey("kiln-{$key->name}", $key->public_key))->values()->all();
+            $keyIds = $server->sshKeys->map(fn (SshKey $key) => $adapter->uploadSshKey("falak-{$key->name}", $key->public_key))->values()->all();
 
             $machine = $adapter->createServer(new MachineSpec(
                 name: $this->machineName($server),
@@ -54,7 +54,7 @@ final class CreateProviderMachine implements ShouldQueue
                 image: (string) $server->image,
                 sshKeyIds: $keyIds,
                 userData: $this->userData((string) $server->install_command),
-                labels: ['kiln-server' => $server->id, 'kiln-org' => $server->organization_id, 'kiln-type' => $server->type->value],
+                labels: ['falak-server' => $server->id, 'falak-org' => $server->organization_id, 'falak-type' => $server->type->value],
             ));
         } catch (ProviderException $e) {
             $status->set($server, ServerStatus::Error, "Provider error: {$e->getMessage()}");
@@ -101,11 +101,11 @@ final class CreateProviderMachine implements ShouldQueue
 
     private function machineName(Server $server): string
     {
-        return substr(trim((string) preg_replace('/[^a-z0-9-]+/', '-', strtolower($server->name)), '-'), 0, 50) ?: 'kiln-'.strtolower(substr($server->id, -8));
+        return substr(trim((string) preg_replace('/[^a-z0-9-]+/', '-', strtolower($server->name)), '-'), 0, 50) ?: 'falak-'.strtolower(substr($server->id, -8));
     }
 
     private function userData(string $installCommand): string
     {
-        return "#!/bin/sh\n# kiln: install and enroll kiln-agent\nset -e\n{$installCommand}\n";
+        return "#!/bin/sh\n# falak: install and enroll falak-agent\nset -e\n{$installCommand}\n";
     }
 }

@@ -1,6 +1,6 @@
 <?php
 
-use Kiln\Servers\Domain\Models\SshKey;
+use Falak\Servers\Domain\Models\SshKey;
 use phpseclib3\Crypt\EC;
 use phpseclib3\Crypt\RSA;
 

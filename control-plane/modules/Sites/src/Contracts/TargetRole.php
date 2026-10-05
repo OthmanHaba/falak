@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
 enum TargetRole: string
 {

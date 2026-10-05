@@ -1,5 +1,5 @@
-// Secrets in URL paths never reach telemetry. The same rules are in the Python runtime (kiln_fn/redact.py), the Go
-// runtime (go/runtime/kiln_runtime.go) and the function gateway (agent/internal/fngateway/redact.go), which applies
+// Secrets in URL paths never reach telemetry. The same rules are in the Python runtime (falak_fn/redact.py), the Go
+// runtime (go/runtime/falak_runtime.go) and the function gateway (agent/internal/fngateway/redact.go), which applies
 // them again to every span it relays. Query strings and userinfo are never recorded at all.
 
 export const REDACTED = "{redacted}";

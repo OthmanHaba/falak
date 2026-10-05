@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
 /**
- * A compose service Kiln publishes on 127.0.0.1:<hostPort> and routes through the edge.
+ * A compose service Falak publishes on 127.0.0.1:<hostPort> and routes through the edge.
  */
 final readonly class PublicService
 {
@@ -11,8 +11,8 @@ final readonly class PublicService
      * @param  string  $service  compose service name
      * @param  int  $port  container port
      * @param  ?string  $domain  custom domain routed to this service (null = test domain only)
-     * @param  ?int  $hostPort  loopback port allocated by Kiln (unique per server)
-     * @param  ?string  $testDomain  <slug>.<KILN_TEST_DOMAIN> for the first service, <service>-<slug>.<KILN_TEST_DOMAIN> for the others
+     * @param  ?int  $hostPort  loopback port allocated by Falak (unique per server)
+     * @param  ?string  $testDomain  <slug>.<FALAK_TEST_DOMAIN> for the first service, <service>-<slug>.<FALAK_TEST_DOMAIN> for the others
      * @param  ?string  $healthCheckPath  path the deploy health check requests through the edge (null: the site's
      *                                    check path for the first service, `/` accepting any answer below 500 for the others)
      */

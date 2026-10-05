@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Http\Controllers\Settings;
+namespace Falak\Identity\Http\Controllers\Settings;
 
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
@@ -8,10 +8,10 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Application\Actions\DeleteAccount;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Identity\Http\Requests\Settings\ProfileUpdateRequest;
-use Kiln\Kernel\Http\Controller;
+use Falak\Identity\Application\Actions\DeleteAccount;
+use Falak\Identity\Domain\Models\User;
+use Falak\Identity\Http\Requests\Settings\ProfileUpdateRequest;
+use Falak\Kernel\Http\Controller;
 
 class ProfileController extends Controller
 {

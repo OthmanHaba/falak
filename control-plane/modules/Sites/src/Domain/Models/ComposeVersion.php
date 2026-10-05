@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Sites\Domain\Models;
+namespace Falak\Sites\Domain\Models;
 
 use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Kiln\Sites\Contracts\Data\ComposeVersionData;
+use Falak\Sites\Contracts\Data\ComposeVersionData;
 
 /**
  * An immutable version of an inline compose file (encrypted at rest: pasted stacks often carry secrets).

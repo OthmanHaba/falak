@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getJson } from '../lib';
 
-/** GET /telemetry/sites/{siteId} (Kiln\Telemetry\Http\Controllers\SiteTelemetryController::context). */
+/** GET /telemetry/sites/{siteId} (Falak\Telemetry\Http\Controllers\SiteTelemetryController::context). */
 export interface SiteTelemetryContext {
     site: { id: string; name: string };
     servers: { id: string; name: string }[];

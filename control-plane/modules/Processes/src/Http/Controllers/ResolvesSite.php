@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Processes\Http\Controllers;
+namespace Falak\Processes\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
 
 trait ResolvesSite
 {

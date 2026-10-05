@@ -1,8 +1,8 @@
 # Release: push a tag vX.Y.Z (vX.Y.Z-rc.N = pre-release, not tagged `latest`).
 #   1. multi-arch images (native amd64 + arm64 runners, merged manifests) -> GHCR:
-#        ghcr.io/<owner>/kiln-control-plane, kiln-builder, kiln-edge, kiln-fn-bun, kiln-fn-node,
-#        kiln-fn-deno, kiln-fn-python, kiln-fn-go  :<tag> and :latest
-#   2. kiln-agent / kiln / kiln-builder binaries (make build), kiln-deploy.tar.gz, install.sh, kiln-ctl,
+#        ghcr.io/<owner>/falak-control-plane, falak-builder, falak-edge, falak-fn-bun, falak-fn-node,
+#        falak-fn-deno, falak-fn-python, falak-fn-go  :<tag> and :latest
+#   2. falak-agent / falak / falak-builder binaries (make build), falak-deploy.tar.gz, install.sh, falak-ctl,
 #      SHA256SUMS -> GitHub release assets.
 # Only GITHUB_TOKEN is used. After the first release, make the GHCR packages public
 # (Package settings -> Change visibility) so servers can pull without logging in.
@@ -67,7 +67,7 @@ jobs:
 
       - name: Image name
         id: name
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/kiln-${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/falak-${{ matrix.image }}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -84,7 +84,7 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.arch }}
-          build-args: KILN_VERSION=${{ github.ref_name }}
+          build-args: FALAK_VERSION=${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -133,7 +133,7 @@ jobs:
       - name: Create multi-arch manifest (<tag>, and latest for final releases)
         working-directory: /tmp/digests
         run: |
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/kiln-${{ matrix.image }}"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/falak-${{ matrix.image }}"
           tags=(-t "$image:${GITHUB_REF_NAME}")
           case "$GITHUB_REF_NAME" in *-*) ;; *) tags+=(-t "$image:latest") ;; esac
           docker buildx imagetools create "${tags[@]}" $(printf "$image@sha256:%s " *)
@@ -166,4 +166,4 @@ jobs:
         run: |
           prerelease=()
           case "$GITHUB_REF_NAME" in *-*) prerelease=(--prerelease) ;; esac
-          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "Kiln $GITHUB_REF_NAME" "${prerelease[@]}"
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "Falak $GITHUB_REF_NAME" "${prerelease[@]}"

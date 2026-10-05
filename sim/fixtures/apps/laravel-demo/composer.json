@@ -10,7 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
-        "kiln/apm-laravel": "^1.0",
+        "falak/apm-laravel": "^1.0",
         "laravel/framework": "^13.17",
         "laravel/octane": "^2.20",
         "laravel/tinker": "^3.0"
@@ -91,11 +91,11 @@
     "repositories": [
         {
             "type": "path",
-            "url": "packages/kiln-apm-laravel",
+            "url": "packages/falak-apm-laravel",
             "options": {
                 "symlink": false,
                 "versions": {
-                    "kiln/apm-laravel": "1.0.0"
+                    "falak/apm-laravel": "1.0.0"
                 }
             }
         }

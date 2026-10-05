@@ -13,20 +13,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/enroll"
-	"github.com/kiln/agent/internal/runner/runnertest"
-	"github.com/kiln/agent/internal/transport"
+	"github.com/OthmanHaba/falak/agent/internal/enroll"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/transport"
 )
 
 func TestCheckReasonsFor401(t *testing.T) {
-	const id, host = "01J9Z8Y7X6W5V4T3S2R1Q0P9AG", "agents.kiln.test"
+	const id, host = "01J9Z8Y7X6W5V4T3S2R1Q0P9AG", "agents.falak.test"
 	reinstall := "run a new install command"
 	cases := []struct {
 		reason, body   string
 		want           string
 		sendsReinstall bool
 	}{
-		{"agent_revoked", "", "revoked: this agent was revoked or its server was removed from Kiln (agent " + id + ")", true},
+		{"agent_revoked", "", "revoked: this agent was revoked or its server was removed from Falak (agent " + id + ")", true},
 		{"unknown_certificate", "", "does not know this agent's certificate", true},
 		{"certificate_revoked", "", "this agent's certificate was revoked", true},
 		{"certificate_expired", "", "check this machine's clock", true},
@@ -59,7 +59,7 @@ func TestCheckReasonsForTLSAndNetworkFailures(t *testing.T) {
 		_, err := transport.New(url, tc).Ping(context.Background())
 		return err
 	}
-	other := newFakeFleet(t) // another Kiln install: another CA
+	other := newFakeFleet(t) // another Falak install: another CA
 
 	// The agents host refuses the client certificate (issued by another CA) with a TLS alert.
 	strict := httptest.NewUnstartedServer(http.NotFoundHandler())
@@ -97,14 +97,14 @@ func TestCheckReasonsForTLSAndNetworkFailures(t *testing.T) {
 	}{
 		{"client certificate refused", "refused this agent's client certificate", err, true},
 		{"other TLS alert", "ended the handshake", versionErr, true},
-		{"server certificate from another CA", "must serve a certificate issued by the Kiln Fleet CA", ping(fleet.srv.URL, unknownCA), true},
+		{"server certificate from another CA", "must serve a certificate issued by the Falak Fleet CA", ping(fleet.srv.URL, unknownCA), true},
 		{"not TLS", "does not speak TLS", &url.Error{Op: "Get", URL: "https://x", Err: tls.RecordHeaderError{Msg: "first record does not look like a TLS handshake"}}, true},
 		{"expired server certificate", "check this machine's clock", &url.Error{Op: "Get", URL: "https://x", Err: x509.CertificateInvalidError{Reason: x509.Expired}}, true},
 		{"connection refused", "cannot reach the agents host", ping(closedURL, id.TLSConfig()), false},
 		{"DNS", "cannot reach the agents host", ping("https://agents.invalid", id.TLSConfig()), false},
 	}
 	for _, c := range cases {
-		got, final := checkReason(c.err, fleetAgentIDs[0], "agents.kiln.test")
+		got, final := checkReason(c.err, fleetAgentIDs[0], "agents.falak.test")
 		if !strings.Contains(got, c.want) || final != c.final {
 			t.Errorf("%s: final=%v %q (err %T %v)", c.name, final, got, c.err, c.err)
 		}

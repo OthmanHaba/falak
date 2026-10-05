@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Queries;
+namespace Falak\Telemetry\Application\Queries;
 
-use Kiln\Telemetry\Contracts\PromQl;
+use Falak\Telemetry\Contracts\PromQl;
 
 /**
  * Builds TraceQL from structured filters, always scoped to the organization's resource attribute.
@@ -14,10 +14,10 @@ final class TraceQueryBuilder
      */
     public static function build(string $organizationId, array $filters): string
     {
-        $conditions = ['resource.kiln.org.id = '.PromQl::quote(strtoupper($organizationId))];
+        $conditions = ['resource.falak.org.id = '.PromQl::quote(strtoupper($organizationId))];
 
         if (! empty($filters['site_id'])) {
-            $conditions[] = 'resource.kiln.site.id = '.PromQl::quote(strtoupper((string) $filters['site_id']));
+            $conditions[] = 'resource.falak.site.id = '.PromQl::quote(strtoupper((string) $filters['site_id']));
         }
 
         if (! empty($filters['service'])) {

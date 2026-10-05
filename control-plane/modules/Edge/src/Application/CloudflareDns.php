@@ -1,28 +1,28 @@
 <?php
 
-namespace Kiln\Edge\Application;
+namespace Falak\Edge\Application;
 
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use Kiln\Edge\Domain\Models\CloudflareTunnel;
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Domain\Models\DnsRecord;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareApi;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\TargetRole;
+use Falak\Edge\Domain\Models\CloudflareTunnel;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Domain\Models\DnsRecord;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareApi;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\TargetRole;
 
 /**
  * Keeps Cloudflare DNS in line with a site's names: one A / AAAA record per server the name points at (the load
  * balancer of a load-balanced site), for each domain and its www redirect host, and for the domains of a compose
  * site's public services; proxied per the domain or its zone.
  *
- * Kiln only changes records it created (edge_dns_records, tagged `kiln:<domain id>` or `kiln:site:<site id>` in
- * Cloudflare). A record of the same name that Kiln did not create is a conflict: it is reported, never overwritten.
+ * Falak only changes records it created (edge_dns_records, tagged `falak:<domain id>` or `falak:site:<site id>` in
+ * Cloudflare). A record of the same name that Falak did not create is a conflict: it is reported, never overwritten.
  * The panel and agent API hosts are never managed (agents authenticate with mTLS, which the proxy would terminate).
  */
 final class CloudflareDns
@@ -50,7 +50,7 @@ final class CloudflareDns
         $this->reconcile(
             $site?->organizationId,
             ['site_id' => $siteId, 'domain_id' => null],
-            'kiln:site:'.$siteId,
+            'falak:site:'.$siteId,
             $site !== null ? $this->desired($site->organizationId, $site, $hosts, null) : [],
         );
     }
@@ -81,21 +81,21 @@ final class CloudflareDns
         $this->reconcile(
             $domain->organization_id,
             ['domain_id' => $domain->id],
-            'kiln:'.$domain->id,
+            'falak:'.$domain->id,
             $site !== null ? $this->desired($domain->organization_id, $site, $domain->hosts(), $domain->cloudflare_proxied) : [],
         );
     }
 
-    /** A domain was removed: delete the records Kiln created for it. */
+    /** A domain was removed: delete the records Falak created for it. */
     public function forget(string $domainId): void
     {
-        $this->reconcile(null, ['domain_id' => $domainId], 'kiln:'.$domainId, []);
+        $this->reconcile(null, ['domain_id' => $domainId], 'falak:'.$domainId, []);
     }
 
     /** A site was deleted: delete the records of its compose public services. */
     public function forgetSite(string $siteId): void
     {
-        $this->reconcile(null, ['site_id' => $siteId, 'domain_id' => null], 'kiln:site:'.$siteId, []);
+        $this->reconcile(null, ['site_id' => $siteId, 'domain_id' => null], 'falak:site:'.$siteId, []);
     }
 
     /**
@@ -135,7 +135,7 @@ final class CloudflareDns
         }
 
         $remoteByName = [];
-        $comment = $tag.' (managed by Kiln; edits are overwritten)';
+        $comment = $tag.' (managed by Falak; edits are overwritten)';
 
         foreach ($desired as $key => $want) {
             $zone = $want['zone'];
@@ -165,7 +165,7 @@ final class CloudflareDns
                         $api->updateRecord($zone->zone_id, (string) $ours['id'], ['proxied' => $want['proxied']]);
                     }
                 } elseif ($foreign !== null) {
-                    $record->forceFill(['status' => DnsRecord::CONFLICT, 'error' => "{$want['name']} already has a {$foreign['type']} record ({$foreign['content']}) that Kiln did not create. Delete it in Cloudflare, then click Sync.", 'synced_at' => now()])->save();
+                    $record->forceFill(['status' => DnsRecord::CONFLICT, 'error' => "{$want['name']} already has a {$foreign['type']} record ({$foreign['content']}) that Falak did not create. Delete it in Cloudflare, then click Sync.", 'synced_at' => now()])->save();
 
                     continue;
                 } else {
@@ -259,7 +259,7 @@ final class CloudflareDns
         }
     }
 
-    /** The panel and agent API hosts stay out of Kiln's hands. */
+    /** The panel and agent API hosts stay out of Falak's hands. */
     public static function reserved(string $host): bool
     {
         $hosts = array_filter(array_map(fn ($url) => is_string($url) ? parse_url($url, PHP_URL_HOST) : null, [config('app.url'), config('fleet.panel_url'), config('fleet.api_url')]));

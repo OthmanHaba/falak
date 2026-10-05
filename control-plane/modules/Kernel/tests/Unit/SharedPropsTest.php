@@ -1,8 +1,8 @@
 <?php
 
 use Illuminate\Http\Request;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Kernel\Support\SharedProps;
+use Falak\Identity\Domain\Models\User;
+use Falak\Kernel\Support\SharedProps;
 
 it('resolves registered props lazily and only for signed-in users unless marked public', function () {
     $props = new SharedProps;

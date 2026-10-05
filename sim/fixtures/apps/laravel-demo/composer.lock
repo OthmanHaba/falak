@@ -1059,11 +1059,11 @@
             "time": "2026-08-24T17:13:02+00:00"
         },
         {
-            "name": "kiln/apm-laravel",
+            "name": "falak/apm-laravel",
             "version": "1.0.0",
             "dist": {
                 "type": "path",
-                "url": "packages/kiln-apm-laravel",
+                "url": "packages/falak-apm-laravel",
                 "reference": "f524f86301ac50a72abb344eca05f9a2cf4ce6f3"
             },
             "require": {
@@ -1080,18 +1080,18 @@
             "extra": {
                 "laravel": {
                     "providers": [
-                        "Kiln\\Apm\\ApmServiceProvider"
+                        "Falak\\Apm\\ApmServiceProvider"
                     ]
                 }
             },
             "autoload": {
                 "psr-4": {
-                    "Kiln\\Apm\\": "src/"
+                    "Falak\\Apm\\": "src/"
                 }
             },
             "autoload-dev": {
                 "psr-4": {
-                    "Kiln\\Apm\\Tests\\": "tests/"
+                    "Falak\\Apm\\Tests\\": "tests/"
                 }
             },
             "scripts": {
@@ -1102,10 +1102,10 @@
             "license": [
                 "MIT"
             ],
-            "description": "Kiln APM for Laravel: Nightwatch-style request, query, job, cache, mail, notification, command, schedule, exception and log telemetry exported as OTLP/HTTP JSON to the local kiln-agent.",
+            "description": "Falak APM for Laravel: Nightwatch-style request, query, job, cache, mail, notification, command, schedule, exception and log telemetry exported as OTLP/HTTP JSON to the local falak-agent.",
             "keywords": [
                 "apm",
-                "kiln",
+                "falak",
                 "laravel",
                 "observability",
                 "opentelemetry",

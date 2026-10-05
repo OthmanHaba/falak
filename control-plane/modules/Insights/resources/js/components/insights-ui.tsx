@@ -1,8 +1,8 @@
-import { Button } from '@/components/kiln/button';
-import { CodeBlock } from '@/components/kiln/code-block';
-import { Segmented } from '@/components/kiln/segmented';
-import { StatusBadge } from '@/components/kiln/status';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { CodeBlock } from '@/components/falak/code-block';
+import { Segmented } from '@/components/falak/segmented';
+import { StatusBadge } from '@/components/falak/status';
+import { Tag } from '@/components/falak/tag';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { ChevronDown, ChevronRight, Gauge, HeartPulse, OctagonAlert, SignalHigh, SignalLow, SignalMedium, Zap } from 'lucide-react';

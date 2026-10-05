@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Providers\Application\Actions;
+namespace Falak\Providers\Application\Actions;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Contracts\ProviderType;
-use Kiln\Providers\Domain\CredentialFields;
-use Kiln\Providers\Domain\CredentialStatus;
-use Kiln\Providers\Domain\Models\ProviderCredential;
-use Kiln\Providers\Events\ProviderCredentialAdded;
-use Kiln\Providers\Infrastructure\AdapterFactory;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\ProviderType;
+use Falak\Providers\Domain\CredentialFields;
+use Falak\Providers\Domain\CredentialStatus;
+use Falak\Providers\Domain\Models\ProviderCredential;
+use Falak\Providers\Events\ProviderCredentialAdded;
+use Falak\Providers\Infrastructure\AdapterFactory;
 
 /**
  * Stores a provider credential after verifying it against the provider API.

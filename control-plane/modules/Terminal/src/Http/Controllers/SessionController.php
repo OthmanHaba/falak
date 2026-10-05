@@ -1,25 +1,25 @@
 <?php
 
-namespace Kiln\Terminal\Http\Controllers;
+namespace Falak\Terminal\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Identity\Contracts\OrganizationDirectory;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Servers\Contracts\Data\ServerData;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Servers\Contracts\ServerHeaders;
-use Kiln\Terminal\Application\Actions\CloseSession;
-use Kiln\Terminal\Application\Actions\OpenSession;
-use Kiln\Terminal\Application\Actions\ShareSession;
-use Kiln\Terminal\Domain\Enums\SessionStatus;
-use Kiln\Terminal\Domain\Models\TerminalSession;
-use Kiln\Terminal\Domain\Policies\TerminalSessionPolicy;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Identity\Contracts\OrganizationDirectory;
+use Falak\Kernel\Http\Controller;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Servers\Contracts\ServerHeaders;
+use Falak\Terminal\Application\Actions\CloseSession;
+use Falak\Terminal\Application\Actions\OpenSession;
+use Falak\Terminal\Application\Actions\ShareSession;
+use Falak\Terminal\Domain\Enums\SessionStatus;
+use Falak\Terminal\Domain\Models\TerminalSession;
+use Falak\Terminal\Domain\Policies\TerminalSessionPolicy;
 
 final class SessionController extends Controller
 {

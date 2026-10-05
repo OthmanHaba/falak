@@ -1,10 +1,10 @@
 <?php
 
-use Kiln\Servers\Domain\MachineCheck\DecisionEngine;
-use Kiln\Servers\Domain\MachineCheck\MachineCheck;
-use Kiln\Servers\Domain\MachineCheck\MachineReport;
-use Kiln\Servers\Domain\MachineCheck\Wanted;
-use Kiln\Servers\Domain\Stack\Stack;
+use Falak\Servers\Domain\MachineCheck\DecisionEngine;
+use Falak\Servers\Domain\MachineCheck\MachineCheck;
+use Falak\Servers\Domain\MachineCheck\MachineReport;
+use Falak\Servers\Domain\MachineCheck\Wanted;
+use Falak\Servers\Domain\Stack\Stack;
 
 /**
  * provision.inspect reports for tests: a fresh Ubuntu 24.04 cloud image as it really looks (openssh-server, curl, git,
@@ -53,7 +53,7 @@ function mc_report(array $overrides = []): array
         'node' => [],
         'php' => [],
         'frankenphp' => [],
-        'unattended_upgrades' => ['installed' => true, 'periodic' => ['Update-Package-Lists' => '1', 'Unattended-Upgrade' => '1'], 'managed_by_kiln' => false],
+        'unattended_upgrades' => ['installed' => true, 'periodic' => ['Update-Package-Lists' => '1', 'Unattended-Upgrade' => '1'], 'managed_by_falak' => false],
         'fail2ban' => ['installed' => false, 'active' => false, 'jails' => []],
         'errors' => [],
     ], $overrides);

@@ -3,41 +3,41 @@
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use Kiln\Builds\Application\Actions\CreateExternalBuilder;
-use Kiln\Builds\Application\Artifacts\ArtifactStorage;
-use Kiln\Builds\Application\BuildConfiguration;
-use Kiln\Builds\Application\BuildProgress;
-use Kiln\Builds\Application\JobPayload;
-use Kiln\Builds\Application\Jobs\ExpireBuilds;
-use Kiln\Builds\Application\Jobs\PruneArtifacts;
-use Kiln\Builds\Contracts\BuildService;
-use Kiln\Builds\Contracts\BuildStatus;
-use Kiln\Builds\Contracts\Data\BuildRequest;
-use Kiln\Builds\Domain\Models\Build;
-use Kiln\Builds\Domain\Models\Builder;
-use Kiln\Builds\Events\BuildCancelled;
-use Kiln\Builds\Events\BuildFailed;
-use Kiln\Builds\Events\BuildSucceeded;
-use Kiln\Builds\Infrastructure\EloquentBuildService;
-use Kiln\Deployments\Application\Actions\TriggerDeployment;
-use Kiln\Deployments\Domain\Enums\DeploymentStatus;
-use Kiln\Deployments\Domain\Enums\Trigger;
-use Kiln\Deployments\Domain\Models\OutputLine;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Events\ServerProvisioned;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Builds\Application\Actions\CreateExternalBuilder;
+use Falak\Builds\Application\Artifacts\ArtifactStorage;
+use Falak\Builds\Application\BuildConfiguration;
+use Falak\Builds\Application\BuildProgress;
+use Falak\Builds\Application\JobPayload;
+use Falak\Builds\Application\Jobs\ExpireBuilds;
+use Falak\Builds\Application\Jobs\PruneArtifacts;
+use Falak\Builds\Contracts\BuildService;
+use Falak\Builds\Contracts\BuildStatus;
+use Falak\Builds\Contracts\Data\BuildRequest;
+use Falak\Builds\Domain\Models\Build;
+use Falak\Builds\Domain\Models\Builder;
+use Falak\Builds\Events\BuildCancelled;
+use Falak\Builds\Events\BuildFailed;
+use Falak\Builds\Events\BuildSucceeded;
+use Falak\Builds\Infrastructure\EloquentBuildService;
+use Falak\Deployments\Application\Actions\TriggerDeployment;
+use Falak\Deployments\Domain\Enums\DeploymentStatus;
+use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Deployments\Domain\Models\OutputLine;
+use Falak\Identity\Contracts\Role;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Events\ServerProvisioned;
+use Falak\Sites\Contracts\SiteDirectory;
 
 require_once __DIR__.'/../../../Deployments/tests/Support/helpers.php';
 
 beforeEach(function () {
-    $this->artifacts = sys_get_temp_dir().'/kiln-artifacts-'.Str::random(8);
+    $this->artifacts = sys_get_temp_dir().'/falak-artifacts-'.Str::random(8);
     config([
         'builds.artifacts.driver' => 'local',
         'builds.artifacts.local.root' => $this->artifacts,
-        'builds.artifacts.local.url' => 'http://kiln.test',
+        'builds.artifacts.local.url' => 'http://falak.test',
         'builds.local_builder.token' => 'local-builder-token-123',
-        'builds.registry.username' => 'kiln',
+        'builds.registry.username' => 'falak',
         'builds.registry.password' => 'registry-secret',
     ]);
     app()->forgetInstance(ArtifactStorage::class);
@@ -105,7 +105,7 @@ it('hands out a native job with short-lived clone credentials and a presigned up
         ->and($job['runtime'])->toBe('php')
         ->and($job['env'])->toBe(['VITE_APP_NAME' => 'Shop'])
         ->and($job['timeout_s'])->toBe(1800)
-        ->and($job['native']['upload']['url'])->toStartWith('https://kiln.test/api/internal/artifacts/')
+        ->and($job['native']['upload']['url'])->toStartWith('https://falak.test/api/internal/artifacts/')
         ->and($build->refresh()->status)->toBe(BuildStatus::Assigned);
 
     // Credentials are never persisted.
@@ -134,11 +134,11 @@ it('passes variables exposed to the deploy script to the build as well (non-pref
     expect(next_job()->assertOk()->json('env'))->toBe(['VITE_APP_NAME' => 'Shop', 'SITE_URL' => 'https://shop.example.com']);
 });
 
-it('hands native jobs the build and install command overrides from KILN_BUILD_COMMAND / KILN_INSTALL_COMMAND', function () {
+it('hands native jobs the build and install command overrides from FALAK_BUILD_COMMAND / FALAK_INSTALL_COMMAND', function () {
     $world = builds_world();
     $version = $world->site->environmentVersions()->first();
     $plain = app(BuildConfiguration::class)->cacheKey(app(SiteDirectory::class)->find($world->site->id), 'native', str_repeat('a', 40));
-    $version->forceFill(['variables' => ['KILN_BUILD_COMMAND' => 'pnpm exec playwright install chromium && pnpm run build', 'KILN_INSTALL_COMMAND' => ' ']])->save();
+    $version->forceFill(['variables' => ['FALAK_BUILD_COMMAND' => 'pnpm exec playwright install chromium && pnpm run build', 'FALAK_INSTALL_COMMAND' => ' ']])->save();
     request_build($world);
 
     $native = next_job()->assertOk()->json('native');
@@ -202,7 +202,7 @@ it('runs the build lifecycle from builder events and verifies the uploaded artif
 
     // Agents download through a presigned https URL (deploy.fetch).
     $artifact = app(BuildService::class)->artifactFor($build->id, 600);
-    expect($artifact->url)->toStartWith('https://kiln.test/api/internal/artifacts/')->and($artifact->sha256)->toBe($sha);
+    expect($artifact->url)->toStartWith('https://falak.test/api/internal/artifacts/')->and($artifact->sha256)->toBe($sha);
     expect($this->get($artifact->url)->assertOk()->streamedContent())->toBe($tarball);
     $this->get(preg_replace('/signature=[^&]+/', 'signature=forged', $artifact->url))->assertForbidden();
 });
@@ -261,17 +261,17 @@ it('hands docker jobs the registry image and credentials', function () {
     $job = next_job()->json();
 
     expect($job['docker'])->toBe([
-        'image' => "registry.kiln.local/kiln/{$world->site->slug}:{$build->id}",
+        'image' => "registry.falak.local/falak/{$world->site->slug}:{$build->id}",
         'dockerfile' => 'docker/Dockerfile',
         'build_args' => ['APP_ENV' => 'production'], // exposed to the deploy script by the fixture
-        'registry' => ['server' => 'registry.kiln.local', 'username' => 'kiln', 'password' => 'registry-secret'],
+        'registry' => ['server' => 'registry.falak.local', 'username' => 'falak', 'password' => 'registry-secret'],
         'push' => true,
     ])->and($job)->not->toHaveKey('native');
 
     post_events($build->id, [['command_id' => $build->id, 'seq' => 0, 'kind' => 'finished', 'exit_code' => 0, 'at' => now()->toIso8601ZuluString(),
         'result' => ['image' => ['ref' => $job['docker']['image'], 'digest' => 'sha256:'.str_repeat('b', 64)]]]]);
 
-    expect(app(BuildService::class)->imageFor($build->id)->ref)->toBe("registry.kiln.local/kiln/{$world->site->slug}@sha256:".str_repeat('b', 64));
+    expect(app(BuildService::class)->imageFor($build->id)->ref)->toBe("registry.falak.local/falak/{$world->site->slug}@sha256:".str_repeat('b', 64));
 });
 
 it('hands compose sites a compose build job and stores the built images', function () {
@@ -279,7 +279,7 @@ it('hands compose sites a compose build job and stores the built images', functi
     $world = builds_world(site: ['runtime' => 'compose', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'compose_source' => 'repo', 'compose_file' => 'deploy/compose.yaml']);
     $build = request_build($world);
     $job = next_job()->json();
-    $prefix = "registry.kiln.local/kiln/{$world->site->slug}";
+    $prefix = "registry.falak.local/falak/{$world->site->slug}";
 
     expect($job['mode'])->toBe('docker')
         ->and($job)->not->toHaveKey('docker')
@@ -288,7 +288,7 @@ it('hands compose sites a compose build job and stores the built images', functi
             'image_prefix' => $prefix,
             'tag' => $build->id,
             'build_args' => ['APP_ENV' => 'production'], // exposed to the deploy script by the fixture
-            'registry' => ['server' => 'registry.kiln.local', 'username' => 'kiln', 'password' => 'registry-secret'],
+            'registry' => ['server' => 'registry.falak.local', 'username' => 'falak', 'password' => 'registry-secret'],
         ]);
 
     post_events($build->id, [['command_id' => $build->id, 'seq' => 0, 'kind' => 'finished', 'exit_code' => 0, 'at' => now()->toIso8601ZuluString(),
@@ -302,7 +302,7 @@ it('hands compose sites a compose build job and stores the built images', functi
     expect($build->refresh()->status)->toBe(BuildStatus::Succeeded)
         ->and($compose->file)->toBe('deploy/compose.yaml')
         ->and($compose->images)->toBe(['app' => "{$prefix}/app@sha256:".str_repeat('c', 64)])
-        ->and($compose->registryAuth['username'])->toBe('kiln')
+        ->and($compose->registryAuth['username'])->toBe('falak')
         ->and(app(BuildService::class)->imageFor($build->id)?->ref)->toBeNull();
 
     // Identical rebuild requests reuse the compose result.
@@ -404,7 +404,7 @@ it('prunes artifacts beyond the per-site retention', function () {
         ->and(app(BuildService::class)->artifactFor($builds[0]->id))->toBeNull();
 });
 
-it('installs kiln-builder on builder servers when they finish provisioning', function () {
+it('installs falak-builder on builder servers when they finish provisioning', function () {
     $world = builds_world();
     $server = sites_server($world->organization->id, ['type' => ServerType::Builder, 'name' => 'builder-1']);
 
@@ -415,12 +415,12 @@ it('installs kiln-builder on builder servers when they finish provisioning', fun
 
     expect($builder->kind)->toBe('server')
         ->and($builder->organization_id)->toBe($world->organization->id)
-        ->and($env['path'])->toBe('/etc/kiln/builder.env')
+        ->and($env['path'])->toBe('/etc/falak/builder.env')
         ->and($env['mode'])->toBe('0600')
-        ->and($env['content'])->toContain('KILN_BUILDER_TOKEN=kbt_')
-        ->and($world->agents->last('system.exec')['payload']['script'])->toContain('systemctl restart kiln-builder');
+        ->and($env['content'])->toContain('FALAK_BUILDER_TOKEN=kbt_')
+        ->and($world->agents->last('system.exec')['payload']['script'])->toContain('systemctl restart falak-builder');
 
-    preg_match('/KILN_BUILDER_TOKEN=(\S+)/', $env['content'], $m);
+    preg_match('/FALAK_BUILDER_TOKEN=(\S+)/', $env['content'], $m);
     next_job($m[1])->assertNoContent();
 });
 
@@ -456,7 +456,7 @@ it('deploys end to end with the real build pipeline', function () {
 
     $fetch = $world->agents->dispatched('deploy.hook') ? (deploy_complete($world->agents, 'deploy.hook') ? $world->agents->last('deploy.fetch') : null) : null;
     expect($fetch['payload']['artifact'])->toMatchArray(['sha256' => hash('sha256', $tarball), 'size_bytes' => strlen($tarball), 'format' => 'tar.gz'])
-        ->and($fetch['payload']['artifact']['url'])->toStartWith('https://kiln.test/api/internal/artifacts/');
+        ->and($fetch['payload']['artifact']['url'])->toStartWith('https://falak.test/api/internal/artifacts/');
 
     deploy_run_all($world->agents);
 
@@ -512,7 +512,7 @@ it('fails a running build whose builder stops heartbeating, and answers heartbea
     // The builder learns it on its next heartbeat and aborts.
     test()->withToken('local-builder-token-123')->postJson("/api/internal/builds/{$build->id}/heartbeat")->assertStatus(410);
 
-    // Builders without run ids (older kiln-builder) are left to the build timeout.
+    // Builders without run ids (older falak-builder) are left to the build timeout.
     $legacy = request_build($world, str_repeat('d', 40));
     next_job();
     $legacy->refresh()->forceFill(['status' => BuildStatus::Running, 'started_at' => now()->subMinutes(5), 'heartbeat_at' => now()->subMinutes(5)])->save();

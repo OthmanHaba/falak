@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Alerting\Contracts;
+namespace Falak\Alerting\Contracts;
 
 /**
  * Registry of alert types offered in the rule editor. Modules register their types in their

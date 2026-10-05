@@ -2,24 +2,24 @@
 
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Contracts\Data\DatabaseData;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Sites\Application\Compose\RepoComposeInspection;
-use Kiln\Sites\Contracts\ComposeServiceExtraction;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\Data\ComposeRewrites;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\Exceptions\ComposeRenderException;
-use Kiln\Sites\Contracts\SiteFactory;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Events\ComposeServicesUnpublished;
-use Kiln\SourceControl\Contracts\ProviderType;
+use Falak\Databases\Contracts\Data\DatabaseData;
+use Falak\Identity\Contracts\Role;
+use Falak\Sites\Application\Compose\RepoComposeInspection;
+use Falak\Sites\Contracts\ComposeServiceExtraction;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\Data\ComposeRewrites;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\Exceptions\ComposeRenderException;
+use Falak\Sites\Contracts\SiteFactory;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Events\ComposeServicesUnpublished;
+use Falak\SourceControl\Contracts\ProviderType;
 use Symfony\Component\Yaml\Yaml;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 /**
- * Compose apps from a repository (docs/plans/COMPOSE_APPS.md): the user names the compose files, Kiln reads them
+ * Compose apps from a repository (docs/plans/COMPOSE_APPS.md): the user names the compose files, Falak reads them
  * through the provider API, lists services and variables, and adjusts the project at render time.
  */
 const SHOP_COMPOSE = <<<'YAML'
@@ -63,7 +63,7 @@ beforeEach(function () {
         'docker/compose.override.yml' => "services:\n  web:\n    image: nginx:1.28-alpine\n",
         'compose.yaml' => "services: {x: {image: busybox}}\n",
     ];
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
     $this->server = sites_server($this->organization->id, ['name' => 'app-1'], docker: true);
 });
 
@@ -118,7 +118,7 @@ it('inspects a repository compose project: services, variables and adjustments',
     expect($kinds)->toContain('container_name', 'bind_to_volume', 'env_file_missing', 'restart', 'repo_files')
         ->and(Yaml::parse($data['adjusted'])['services']['web']['volumes'])->toBe(['./repo/docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro'])
         ->and(Yaml::parse($data['adjusted'])['services']['app']['volumes'])->toBe(['app-docker-storage:/var/www/storage'])
-        ->and($data['warnings'])->toContain('Public service web has no healthcheck: Kiln can only check it through its domain.');
+        ->and($data['warnings'])->toContain('Public service web has no healthcheck: Falak can only check it through its domain.');
 });
 
 it('reports plain git servers and unknown connections', function () {
@@ -214,11 +214,11 @@ it('extracts services through the extraction contract and drops them from the pu
         ->and(array_map(fn ($p) => $p->service, $created->site->compose->publicServices))->toBe(['web']);
 
     $project = Yaml::dump(Yaml::parse(SHOP_COMPOSE));
-    $rendered = Yaml::parse(app(ComposeSites::class)->render($created->site->id, $project, ['app' => 'registry.kiln.test/kiln/shop/app@sha256:'.str_repeat('a', 64)], '01j9zq4n8v2m6r0t3w5y7b9d1f')->yaml);
+    $rendered = Yaml::parse(app(ComposeSites::class)->render($created->site->id, $project, ['app' => 'registry.falak.test/falak/shop/app@sha256:'.str_repeat('a', 64)], '01j9zq4n8v2m6r0t3w5y7b9d1f')->yaml);
 
     expect($rendered['services'])->not->toHaveKey('db')
         ->and($rendered['services']['app']['depends_on'] ?? [])->toBe([])
-        ->and($rendered['services']['app']['environment']['DATABASE_URL'])->toBe('${KILN_SVC_APP_DATABASE_URL}');
+        ->and($rendered['services']['app']['environment']['DATABASE_URL'])->toBe('${FALAK_SVC_APP_DATABASE_URL}');
 });
 
 it('renders repository projects against the files shipped with the release', function () {
@@ -312,7 +312,7 @@ it('reads the project under the site root directory, like the builder', function
         ->and($this->git->existsCalls)->toContain('apps/shop/conf');
 });
 
-it('keeps Kiln release files bound by existing stacks and adds Kiln variables only where an env file is missing', function () {
+it('keeps Falak release files bound by existing stacks and adds Falak variables only where an env file is missing', function () {
     $site = app(SiteFactory::class)->create($this->organization->id, $this->user->id, compose_app_input($this))->site;
     $project = <<<'YAML'
 services:
@@ -418,7 +418,7 @@ it('keeps the project read at creation for the canvas, before the first deploy',
         ->and(array_keys(Yaml::parse((string) $project)['services']))->toContain('web');
 });
 
-it('offers official Redis and Valkey images as Kiln databases, not redis-stack, bitnami or built images', function () {
+it('offers official Redis and Valkey images as Falak databases, not redis-stack, bitnami or built images', function () {
     $this->git->files['caches/compose.yml'] = <<<'YAML'
 services:
   app: {image: nginx}

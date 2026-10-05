@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Network\Infrastructure;
+namespace Falak\Network\Infrastructure;
 
-use Kiln\Network\Contracts\Data\PrivateNetworkMembership;
-use Kiln\Network\Contracts\PrivateNetwork;
-use Kiln\Network\Domain\Enums\ApplyStatus;
-use Kiln\Network\Domain\Models\PrivateNetworkMember;
+use Falak\Network\Contracts\Data\PrivateNetworkMembership;
+use Falak\Network\Contracts\PrivateNetwork;
+use Falak\Network\Domain\Enums\ApplyStatus;
+use Falak\Network\Domain\Models\PrivateNetworkMember;
 
 final class EloquentPrivateNetwork implements PrivateNetwork
 {

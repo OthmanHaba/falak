@@ -13,9 +13,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // UpstreamSetter repoints a Caddy route's reverse_proxy upstreams (implemented by internal/edge).
@@ -160,7 +160,7 @@ type RunPayload struct {
 }
 
 // NetworkJoin is an existing network the container joins besides its own, under extra DNS names (a compose service
-// run as its own Kiln site joins its stack's network as the service it was, so both sides keep resolving each other).
+// run as its own Falak site joins its stack's network as the service it was, so both sides keep resolving each other).
 type NetworkJoin struct {
 	Name    string   `json:"name"`
 	Aliases []string `json:"aliases,omitempty"`
@@ -195,10 +195,10 @@ var containerNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]+$`)
 
 // Labels set on every managed container.
 const (
-	LabelManaged  = "kiln.managed"
-	LabelSpecHash = "kiln.spec-hash"
-	LabelSite     = "kiln.site"
-	LabelColor    = "kiln.color"
+	LabelManaged  = "falak.managed"
+	LabelSpecHash = "falak.spec-hash"
+	LabelSite     = "falak.site"
+	LabelColor    = "falak.color"
 )
 
 // specHash hashes everything that defines the container (not pull policy or credentials).

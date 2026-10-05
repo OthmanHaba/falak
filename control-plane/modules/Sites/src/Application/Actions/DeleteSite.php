@@ -1,17 +1,17 @@
 <?php
 
-namespace Kiln\Sites\Application\Actions;
+namespace Falak\Sites\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Sites\Application\SourceControlLinker;
-use Kiln\Sites\Application\TargetProvisioner;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Events\SiteDeleted;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Sites\Application\SourceControlLinker;
+use Falak\Sites\Application\TargetProvisioner;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Events\SiteDeleted;
 
 /**
  * Delete a site: remove PHP-FPM pools, containers / compose projects and provider hooks; Edge drops its routes and
- * Processes its programs on SiteDeleted. Files under /srv/kiln/sites/<slug> are left on the servers, and compose
+ * Processes its programs on SiteDeleted. Files under /srv/falak/sites/<slug> are left on the servers, and compose
  * named volumes too unless $deleteVolumes.
  */
 final class DeleteSite

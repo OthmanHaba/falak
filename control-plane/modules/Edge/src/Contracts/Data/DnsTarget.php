@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Contracts\Data;
+namespace Falak\Edge\Contracts\Data;
 
 /**
  * Where a domain's DNS must point: a server that serves the site, or the load balancer in front of it.

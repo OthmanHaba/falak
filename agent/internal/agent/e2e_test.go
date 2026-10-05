@@ -24,8 +24,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/config"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/config"
 )
 
 // fakeFleet is a minimal Fleet module: CA, enrollment, mTLS fingerprint auth, command queue, events.
@@ -52,7 +52,7 @@ var fleetAgentIDs = []string{"01J9Z8Y7X6W5V4T3S2R1Q0P9AG", "01J9Z8Y7X6W5V4T3S2R1
 func newFakeFleet(t *testing.T) *fakeFleet {
 	f := &fakeFleet{t: t, fps: map[string]bool{}, events: map[string][]commands.Event{}, revoked: map[string]bool{}, byFP: map[string]string{}}
 	f.caKey, _ = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	tpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Kiln CA"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	tpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Falak CA"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
 	der, _ := x509.CreateCertificate(rand.Reader, tpl, tpl, &f.caKey.PublicKey, f.caKey)
 	f.ca, _ = x509.ParseCertificate(der)
 	sk, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -115,7 +115,7 @@ func (f *fakeFleet) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Unlock()
 	if revoked {
 		w.WriteHeader(401)
-		_, _ = w.Write([]byte(`{"message":"This server was removed from Kiln.","error":"agent_revoked"}`))
+		_, _ = w.Write([]byte(`{"message":"This server was removed from Falak.","error":"agent_revoked"}`))
 		return
 	}
 	if !ok {
@@ -170,7 +170,7 @@ func TestEndToEndRun(t *testing.T) {
 	cfg := config.Default()
 	cfg.PanelURL, cfg.Token, cfg.Insecure = fleet.srv.URL, "one-time", true
 	cfg.HostRoot = root
-	cfg.EtcDir = root + "/etc/kiln"
+	cfg.EtcDir = root + "/etc/falak"
 	cfg.OTLPSocket = ""
 	cfg.OTLPHTTP = "127.0.0.1:0"
 	cfg.DockerSock = root + "/nope.sock"
@@ -184,7 +184,7 @@ func TestEndToEndRun(t *testing.T) {
 	const id = "01J9Z8Y7X6W5V4T3S2R1Q0P9E2"
 	fleet.mu.Lock()
 	fleet.queue = append(fleet.queue, commands.Envelope{ID: id, Type: "system.exec", TimeoutS: 30, IdempotencyKey: "e2e",
-		Payload: json.RawMessage(`{"script":"echo hello from kiln","shell":"/bin/sh"}`)})
+		Payload: json.RawMessage(`{"script":"echo hello from falak","shell":"/bin/sh"}`)})
 	fleet.mu.Unlock()
 
 	deadline := time.Now().Add(15 * time.Second)
@@ -204,7 +204,7 @@ func TestEndToEndRun(t *testing.T) {
 			}
 		}
 		if fin != nil && beats > 0 {
-			if *fin.ExitCode != 0 || !strings.Contains(out, "hello from kiln") {
+			if *fin.ExitCode != 0 || !strings.Contains(out, "hello from falak") {
 				t.Fatalf("finished=%+v output=%q", fin, out)
 			}
 			break

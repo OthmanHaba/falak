@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
 /**
  * How a site runs on its servers (ARCHITECTURE §5).
@@ -15,7 +15,7 @@ enum SiteRuntime: string
     case Static = 'static';
     case Docker = 'docker';
     case Compose = 'compose';
-    /** Code written in Kiln (no repository), run by the server's function gateway and scaled to zero when idle. */
+    /** Code written in Falak (no repository), run by the server's function gateway and scaled to zero when idle. */
     case Function = 'function';
 
     public function label(): string

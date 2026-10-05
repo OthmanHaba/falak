@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
 )
 
 // Docker follows container logs via the Engine API over its unix socket (no SDK).
@@ -180,9 +180,9 @@ func (d *Docker) follow(ctx context.Context, c containerSummary) {
 	if len(c.Names) > 0 {
 		name = strings.TrimPrefix(c.Names[0], "/")
 	}
-	site := c.Labels["kiln.site"]
-	service := c.Labels["kiln.service"]
-	// Compose sites label every service with kiln.site=<slug> and kiln.service=<compose service>: the
+	site := c.Labels["falak.site"]
+	service := c.Labels["falak.service"]
+	// Compose sites label every service with falak.site=<slug> and falak.service=<compose service>: the
 	// records belong to the site (service.name=<slug>) and carry the compose service as an attribute.
 	composeService := ""
 	if site != "" && service != "" {
@@ -216,9 +216,9 @@ func (d *Docker) follow(ctx context.Context, c containerSummary) {
 			rec.Attrs["container.name"] = name
 			rec.Attrs["log.iostream"] = stream
 			if composeService != "" {
-				rec.Attrs["kiln.compose.service"] = composeService
-				if r := c.Labels["kiln.release"]; r != "" {
-					rec.Attrs["kiln.release.id"] = r
+				rec.Attrs["falak.compose.service"] = composeService
+				if r := c.Labels["falak.release"]; r != "" {
+					rec.Attrs["falak.release.id"] = r
 				}
 			}
 			d.sink.EmitLog(rec)

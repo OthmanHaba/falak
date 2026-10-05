@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Apm\Tests;
+namespace Falak\Apm\Tests;
 
-use Kiln\Apm\ApmServiceProvider;
-use Kiln\Apm\Recorder;
-use Kiln\Apm\Transport\Transport;
+use Falak\Apm\ApmServiceProvider;
+use Falak\Apm\Recorder;
+use Falak\Apm\Transport\Transport;
 use Orchestra\Testbench\TestCase as Orchestra;
 
 abstract class TestCase extends Orchestra
@@ -23,8 +23,8 @@ abstract class TestCase extends Orchestra
         $app['config']->set('database.connections.testing', ['driver' => 'sqlite', 'database' => ':memory:', 'prefix' => '']);
         $app['config']->set('cache.default', 'array');
         $app['config']->set('mail.default', 'array');
-        $app['config']->set('kiln-apm.socket', 'unix:/nonexistent/kiln-test.sock');
-        $app['config']->set('kiln-apm.fallback_endpoint', null);
+        $app['config']->set('falak-apm.socket', 'unix:/nonexistent/falak-test.sock');
+        $app['config']->set('falak-apm.fallback_endpoint', null);
 
         $this->transport = new FakeTransport;
         $app->instance(Transport::class, $this->transport);

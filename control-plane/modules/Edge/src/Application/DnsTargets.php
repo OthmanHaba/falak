@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Edge\Application;
+namespace Falak\Edge\Application;
 
-use Kiln\Edge\Contracts\Data\DnsTarget;
-use Kiln\Edge\Domain\Models\LoadBalancer;
-use Kiln\Servers\Contracts\ServerDirectory;
+use Falak\Edge\Contracts\Data\DnsTarget;
+use Falak\Edge\Domain\Models\LoadBalancer;
+use Falak\Servers\Contracts\ServerDirectory;
 
 /**
  * Where a site's domains must point. A load-balanced site: its `lb` server only. Otherwise every server the site

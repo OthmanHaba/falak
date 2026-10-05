@@ -10,7 +10,7 @@ declare global {
     const route: typeof routeFn;
 }
 
-const appName = import.meta.env.VITE_APP_NAME || 'Kiln';
+const appName = import.meta.env.VITE_APP_NAME || 'Falak';
 
 // Module extension points (navigation + ⌘K commands). See resources/js/lib/registry.ts.
 import.meta.glob(['./register.ts', '../../modules/*/resources/js/register.ts'], { eager: true });

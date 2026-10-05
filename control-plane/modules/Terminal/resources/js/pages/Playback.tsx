@@ -1,7 +1,7 @@
-import { AppShell } from '@/components/kiln/app-shell';
-import { Button } from '@/components/kiln/button';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Skeleton } from '@/components/kiln/skeleton';
+import { AppShell } from '@/components/falak/app-shell';
+import { Button } from '@/components/falak/button';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Skeleton } from '@/components/falak/skeleton';
 import { type BreadcrumbItem } from '@/types';
 import { Head } from '@inertiajs/react';
 import { Terminal } from '@xterm/xterm';

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Terminal\Domain\Enums;
+namespace Falak\Terminal\Domain\Enums;
 
 enum SessionStatus: string
 {

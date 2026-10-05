@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Builds\Http\Controllers;
+namespace Falak\Builds\Http\Controllers;
 
-use Kiln\Builds\Domain\Models\Build;
-use Kiln\Builds\Domain\Models\Builder;
+use Falak\Builds\Domain\Models\Build;
+use Falak\Builds\Domain\Models\Builder;
 
 trait PresentsBuilds
 {

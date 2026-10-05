@@ -1,7 +1,7 @@
 {
   "site": "hello",
   "release": "01j9z8y7x6w5v4t3s2r1q0p9na",
-  "image": "ghcr.io/kiln/kiln-fn-bun:0.4.0",
+  "image": "ghcr.io/falak/falak-fn-bun:0.4.0",
   "pull": "missing",
   "entrypoint": "index.ts",
   "files": [
@@ -12,7 +12,7 @@
   ],
   "env": {
     "GREETING": "hello",
-    "KILN_SITE_ID": "01j9z8y7x6w5v4t3s2r1q0p9nb"
+    "FALAK_SITE_ID": "01j9z8y7x6w5v4t3s2r1q0p9nb"
   },
   "scaling": {
     "min_instances": 0,
@@ -39,6 +39,6 @@
   "install_timeout_s": 180,
   "keep_releases": 5,
   "labels": {
-    "kiln.deployment": "01j9z8y7x6w5v4t3s2r1q0p9nc"
+    "falak.deployment": "01j9z8y7x6w5v4t3s2r1q0p9nc"
   }
 }

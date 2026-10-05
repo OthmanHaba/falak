@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Insights\Application\Actions;
+namespace Falak\Insights\Application\Actions;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Kiln\Insights\Application\HeartbeatTracker;
-use Kiln\Insights\Application\IssueTracker;
-use Kiln\Insights\Contracts\IssueKind;
-use Kiln\Insights\Domain\Support\Fingerprinter;
+use Falak\Insights\Application\HeartbeatTracker;
+use Falak\Insights\Application\IssueTracker;
+use Falak\Insights\Contracts\IssueKind;
+use Falak\Insights\Domain\Support\Fingerprinter;
 use Throwable;
 
 /**

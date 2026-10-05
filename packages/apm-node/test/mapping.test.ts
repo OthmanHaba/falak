@@ -3,7 +3,7 @@ import { SpanKind, SpanStatusCode } from '@opentelemetry/api';
 import { redisCacheHook } from '../src/instrumentations.js';
 import { localProvider } from './helpers.js';
 
-describe('span mapping to kiln.event.type', () => {
+describe('span mapping to falak.event.type', () => {
   test('SERVER http spans become request (old semconv normalised)', () => {
     const p = localProvider();
     const span = p.span('GET', SpanKind.SERVER, {
@@ -14,7 +14,7 @@ describe('span mapping to kiln.event.type', () => {
     });
 
     expect(span.attributes).toMatchObject({
-      'kiln.event.type': 'request',
+      'falak.event.type': 'request',
       'http.request.method': 'GET',
       'http.route': '/users/:id',
       'http.response.status_code': 200,
@@ -40,7 +40,7 @@ describe('span mapping to kiln.event.type', () => {
     });
 
     expect(span.attributes).toMatchObject({
-      'kiln.event.type': 'outgoing_request',
+      'falak.event.type': 'outgoing_request',
       'url.full': 'https://api.example.com/v1?api_key=%5Bredacted%5D&page=2',
       'http.response.status_code': 201,
     });
@@ -57,18 +57,18 @@ describe('span mapping to kiln.event.type', () => {
     });
 
     expect(span.attributes).toMatchObject({
-      'kiln.event.type': 'query',
+      'falak.event.type': 'query',
       'db.system.name': 'postgresql',
       'db.query.text': 'SELECT * FROM users WHERE email = ? AND id = $1',
       'db.namespace': 'shop',
-      'kiln.query.connection': 'db.internal:5432',
+      'falak.query.connection': 'db.internal:5432',
     });
   });
 
   test('mysql2 stable semconv spans map too', () => {
     const p = localProvider();
     const span = p.span('select', SpanKind.CLIENT, { 'db.system.name': 'mysql', 'db.query.text': 'select 1', 'db.namespace': 'app', 'server.address': 'localhost' });
-    expect(span.attributes).toMatchObject({ 'kiln.event.type': 'query', 'db.system.name': 'mysql', 'kiln.query.connection': 'localhost' });
+    expect(span.attributes).toMatchObject({ 'falak.event.type': 'query', 'db.system.name': 'mysql', 'falak.query.connection': 'localhost' });
   });
 
   test('redis key/value commands become cache ops via the ioredis response hook', () => {
@@ -79,19 +79,19 @@ describe('span mapping to kiln.event.type', () => {
     const forget = p.span('del', SpanKind.CLIENT, { 'db.system': 'redis' }, (s) => redisCacheHook(s, 'del', ['password_reset:3'], 1));
     const other = p.span('publish', SpanKind.CLIENT, { 'db.system': 'redis' }, (s) => redisCacheHook(s, 'publish', ['ch', 'm'], 1));
 
-    expect([hit, miss, write].map((s) => [s.attributes['kiln.event.type'], s.attributes['kiln.cache.op'], s.attributes['kiln.cache.key'], s.attributes['kiln.cache.store']])).toEqual([
+    expect([hit, miss, write].map((s) => [s.attributes['falak.event.type'], s.attributes['falak.cache.op'], s.attributes['falak.cache.key'], s.attributes['falak.cache.store']])).toEqual([
       ['cache', 'hit', 'users:1', 'redis'],
       ['cache', 'miss', 'users:2', 'redis'],
       ['cache', 'write', 'users:3', 'redis'],
     ]);
-    expect(forget.attributes['kiln.cache.op']).toBe('forget');
-    expect(forget.attributes['kiln.cache.key']).toBe('[redacted]');
-    expect(other.attributes['kiln.event.type']).toBe('query');
+    expect(forget.attributes['falak.cache.op']).toBe('forget');
+    expect(forget.attributes['falak.cache.key']).toBe('[redacted]');
+    expect(other.attributes['falak.event.type']).toBe('query');
   });
 
   test('unrelated spans are left untyped', () => {
     const p = localProvider();
     const span = p.span('middleware - cors', SpanKind.INTERNAL, { 'express.type': 'middleware' });
-    expect(span.attributes['kiln.event.type']).toBeUndefined();
+    expect(span.attributes['falak.event.type']).toBeUndefined();
   });
 });

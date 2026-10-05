@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts;
+namespace Falak\Telemetry\Contracts;
 
-use Kiln\Telemetry\Contracts\Data\SiteTelemetryTarget;
+use Falak\Telemetry\Contracts\Data\SiteTelemetryTarget;
 
 /**
  * Sites hosted on a server, for the `sites` / `log_sources` part of telemetry.configure.

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // UpgradePayload is system.upgrade_agent.
@@ -58,17 +58,17 @@ func (s *System) UpgradeAgent(ctx context.Context, p UpgradePayload, st commands
 			running = s.d.RunningSHA256()
 		}
 		if running == "" || strings.EqualFold(running, p.SHA256) {
-			fmt.Fprintf(st.Stdout(), "kiln-agent %s is already installed and running\n", s.d.AgentVersion)
+			fmt.Fprintf(st.Stdout(), "falak-agent %s is already installed and running\n", s.d.AgentVersion)
 			res.Version = s.d.AgentVersion
 			return res, nil
 		}
-		fmt.Fprintf(st.Stdout(), "kiln-agent %s is installed but not running yet\n", p.Version)
+		fmt.Fprintf(st.Stdout(), "falak-agent %s is installed but not running yet\n", p.Version)
 		res.Changed = true
 		s.scheduleRestart(restart)
 		return res, nil
 	}
 	tmp := bin + ".new"
-	fmt.Fprintf(st.Stdout(), "downloading kiln-agent %s from %s\n", p.Version, p.URL)
+	fmt.Fprintf(st.Stdout(), "downloading falak-agent %s from %s\n", p.Version, p.URL)
 	if _, _, err := Download(ctx, s.d.HTTP, p.URL, strings.ToLower(p.SHA256), tmp, 0o755, nil); err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (s *System) UpgradeAgent(ctx context.Context, p UpgradePayload, st commands
 	reported, err := s.preflight(ctx, tmp)
 	if err != nil {
 		_ = os.Remove(tmp)
-		return nil, fmt.Errorf("the downloaded kiln-agent does not run on this host, keeping %s: %w", s.d.AgentVersion, err)
+		return nil, fmt.Errorf("the downloaded falak-agent does not run on this host, keeping %s: %w", s.d.AgentVersion, err)
 	}
 	if reported != "" {
 		res.Version = reported
@@ -92,7 +92,7 @@ func (s *System) UpgradeAgent(ctx context.Context, p UpgradePayload, st commands
 		return nil, err
 	}
 	res.Changed = true
-	fmt.Fprintf(st.Stdout(), "installed kiln-agent %s at %s (previous binary kept as %s)\n", res.Version, bin, prev)
+	fmt.Fprintf(st.Stdout(), "installed falak-agent %s at %s (previous binary kept as %s)\n", res.Version, bin, prev)
 	s.scheduleRestart(restart)
 	return res, nil
 }

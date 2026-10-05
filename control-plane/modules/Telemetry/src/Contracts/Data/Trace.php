@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts\Data;
+namespace Falak\Telemetry\Contracts\Data;
 
 final readonly class Trace
 {
@@ -12,11 +12,11 @@ final readonly class Trace
         public array $spans,
     ) {}
 
-    /** Organization id from the spans' `kiln.org.id` resource attribute (null if absent). */
+    /** Organization id from the spans' `falak.org.id` resource attribute (null if absent). */
     public function organizationId(): ?string
     {
         foreach ($this->spans as $span) {
-            $org = $span->resource['kiln.org.id'] ?? null;
+            $org = $span->resource['falak.org.id'] ?? null;
 
             if (is_string($org) && $org !== '') {
                 return $org;

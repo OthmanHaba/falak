@@ -1,4 +1,4 @@
-import { Select, SkeletonRows } from '@/components/kiln';
+import { Select, SkeletonRows } from '@/components/falak';
 import { serviceSettingsSectionsFor, type ServiceSettingsSection, type ServiceTabProps } from '@/lib/registry';
 import { cn } from '@/lib/utils';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';

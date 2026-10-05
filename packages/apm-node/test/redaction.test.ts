@@ -48,15 +48,15 @@ describe('redaction', () => {
       throw new Error('bad');
     });
     const ok = broken.span('GET', SpanKind.SERVER, { 'http.request.method': 'GET' });
-    expect(ok.attributes['kiln.event.type']).toBe('request');
+    expect(ok.attributes['falak.event.type']).toBe('request');
 
     const custom = new Redactor(['ssn']);
     expect(custom.attributes({ 'user.ssn': '1', 'user.password': 'p' })).toEqual({ 'user.ssn': '[redacted]', 'user.password': 'p' });
   });
 
   test('callback may return a replacement attribute map', () => {
-    const p = localProvider(() => ({ 'kiln.event.type': 'request', only: true }));
+    const p = localProvider(() => ({ 'falak.event.type': 'request', only: true }));
     const span = p.span('GET', SpanKind.SERVER, { 'http.request.method': 'GET', extra: 1 });
-    expect(span.attributes).toEqual({ 'kiln.event.type': 'request', only: true });
+    expect(span.attributes).toEqual({ 'falak.event.type': 'request', only: true });
   });
 });

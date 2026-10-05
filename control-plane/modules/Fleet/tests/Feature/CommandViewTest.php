@@ -4,14 +4,14 @@ use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Contracts\Broadcasting\Factory;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Http\Channels\CommandChannel;
-use Kiln\Identity\Contracts\Role;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Http\Channels\CommandChannel;
+use Falak\Identity\Contracts\Role;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 beforeEach(function () {
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test']);
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test']);
     [$this->user, $this->organization] = memberOf(null, Role::Viewer);
     $this->serverId = (string) Str::ulid();
     $this->enrolled = fleet_enroll($this->organization->id, $this->serverId);

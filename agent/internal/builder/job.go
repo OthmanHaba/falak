@@ -1,4 +1,4 @@
-// Package builder implements kiln-builder: clone a repository, build it natively (release tarball) or
+// Package builder implements falak-builder: clone a repository, build it natively (release tarball) or
 // as an OCI image (BuildKit), and stream progress as agent-protocol events (event.schema.json).
 package builder
 
@@ -65,7 +65,7 @@ type Upload struct {
 
 // DockerSpec configures image builds.
 type DockerSpec struct {
-	Image      string            `json:"image"`                // repo[:tag] to push, e.g. registry.kiln.local/acme/app:01J...
+	Image      string            `json:"image"`                // repo[:tag] to push, e.g. registry.falak.local/acme/app:01J...
 	Tags       []string          `json:"tags,omitempty"`       // additional tags
 	Dockerfile string            `json:"dockerfile,omitempty"` // path relative to the app root; "" = Dockerfile if present, else generated
 	Context    string            `json:"context,omitempty"`    // relative to the app root; default "."

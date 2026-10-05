@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Identity\Database\Factories;
+namespace Falak\Identity\Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
-use Kiln\Identity\Domain\Models\Organization;
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Domain\Models\Organization;
+use Falak\Identity\Domain\Models\User;
 
 /**
  * Raw organization rows. Prefer the CreateOrganization action in tests that need membership and roles.

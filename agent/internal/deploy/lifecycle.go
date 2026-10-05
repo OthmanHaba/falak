@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // SharedPath is a path linked from the release into shared/.
@@ -181,7 +181,7 @@ func (d *Deployer) Prepare(ctx context.Context, p PreparePayload, s commands.Str
 	return res, nil
 }
 
-// Context of a deployment exposed as KILN_* variables.
+// Context of a deployment exposed as FALAK_* variables.
 type Context struct {
 	SiteID       string `json:"site_id,omitempty"`
 	DeploymentID string `json:"deployment_id,omitempty"`
@@ -212,7 +212,7 @@ type HookResult struct {
 	DurationMS int64 `json:"duration_ms"`
 }
 
-// HookEnv builds the KILN_* environment for a hook.
+// HookEnv builds the FALAK_* environment for a hook.
 func HookEnv(site, siteRoot, releaseDir, releaseID string, c *Context, extra map[string]string) []string {
 	if c == nil {
 		c = &Context{}
@@ -222,21 +222,21 @@ func HookEnv(site, siteRoot, releaseDir, releaseID string, c *Context, extra map
 		php = "php"
 	}
 	env := []string{
-		"KILN_SITE=" + site,
-		"KILN_SITE_ROOT=" + siteRoot,
-		"KILN_SHARED_DIR=" + filepath.Join(siteRoot, "shared"),
-		"KILN_RELEASE_DIR=" + releaseDir,
-		"KILN_RELEASE_ID=" + releaseID,
-		"KILN_CURRENT_DIR=" + filepath.Join(siteRoot, "current"),
-		"KILN_SITE_ID=" + c.SiteID,
-		"KILN_DEPLOYMENT_ID=" + c.DeploymentID,
-		"KILN_COMMIT=" + c.Commit,
-		"KILN_AUTHOR=" + c.Author,
-		"KILN_BRANCH=" + c.Branch,
-		"KILN_TRIGGER=" + c.Trigger,
-		"KILN_PHP_BINARY=" + php,
+		"FALAK_SITE=" + site,
+		"FALAK_SITE_ROOT=" + siteRoot,
+		"FALAK_SHARED_DIR=" + filepath.Join(siteRoot, "shared"),
+		"FALAK_RELEASE_DIR=" + releaseDir,
+		"FALAK_RELEASE_ID=" + releaseID,
+		"FALAK_CURRENT_DIR=" + filepath.Join(siteRoot, "current"),
+		"FALAK_SITE_ID=" + c.SiteID,
+		"FALAK_DEPLOYMENT_ID=" + c.DeploymentID,
+		"FALAK_COMMIT=" + c.Commit,
+		"FALAK_AUTHOR=" + c.Author,
+		"FALAK_BRANCH=" + c.Branch,
+		"FALAK_TRIGGER=" + c.Trigger,
+		"FALAK_PHP_BINARY=" + php,
 		// Macros are split out by the control plane into separate commands; inside a hook they are no-ops.
-		"KILN_FETCH=:", "KILN_ACTIVATE=:", "KILN_RESTART_PROCS=:",
+		"FALAK_FETCH=:", "FALAK_ACTIVATE=:", "FALAK_RESTART_PROCS=:",
 	}
 	keys := make([]string, 0, len(extra))
 	for k := range extra {
@@ -283,7 +283,7 @@ func (d *Deployer) Hook(ctx context.Context, p HookPayload, s commands.Stream) (
 		args = []string{"-eo", "pipefail", "-c", p.Script}
 	}
 	env := HookEnv(p.Site, st.host, releaseHost, p.ReleaseID, p.Context, p.Env)
-	env = append(env, "KILN_HOOK="+p.Name)
+	env = append(env, "FALAK_HOOK="+p.Name)
 	start := time.Now()
 	fmt.Fprintf(s.Stdout(), "$ [%s] running as %s in %s\n", p.Name, orDefault(p.User, "agent user"), p.Cwd)
 	r, err := d.o.Runner.Run(ctx, runner.Cmd{Name: shell, Args: args, Dir: cwd, Env: env, User: p.User, Stdout: s.Stdout(), Stderr: s.Stderr()})

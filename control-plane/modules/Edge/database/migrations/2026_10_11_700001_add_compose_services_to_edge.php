@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Kiln\Edge\Application\ComposeServiceDomains;
+use Falak\Edge\Application\ComposeServiceDomains;
 
 /**
  * Edge for every public service of a compose site (docs/plans/COMPOSE_APPS.md, phase 2): domains, redirects, basic

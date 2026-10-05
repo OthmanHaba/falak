@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Contracts;
+namespace Falak\Identity\Contracts;
 
 /**
  * A registered permission. Modules register their own through {@see PermissionRegistry}.

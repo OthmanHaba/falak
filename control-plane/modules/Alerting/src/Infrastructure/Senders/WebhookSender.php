@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Alerting\Infrastructure\Senders;
+namespace Falak\Alerting\Infrastructure\Senders;
 
 use Closure;
-use Kiln\Alerting\Application\AlertMessage;
-use Kiln\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Application\AlertMessage;
+use Falak\Alerting\Domain\Enums\ChannelType;
 
 /**
  * Generic JSON webhook signed with HMAC-SHA256. Config: {url, secret}.
  *
- * Receivers verify: `X-Kiln-Signature == "sha256=" . hmac_sha256(secret, X-Kiln-Timestamp . "." . raw_body)`
+ * Receivers verify: `X-Falak-Signature == "sha256=" . hmac_sha256(secret, X-Falak-Timestamp . "." . raw_body)`
  * and reject stale timestamps.
  */
 final class WebhookSender extends HttpSender
@@ -45,10 +45,10 @@ final class WebhookSender extends HttpSender
         $timestamp = (string) now()->getTimestamp();
 
         $this->post($url, $body, [
-            'X-Kiln-Event' => $message->type,
-            'X-Kiln-Delivery' => $message->id,
-            'X-Kiln-Timestamp' => $timestamp,
-            'X-Kiln-Signature' => self::signature($secret, $timestamp, $body),
+            'X-Falak-Event' => $message->type,
+            'X-Falak-Delivery' => $message->id,
+            'X-Falak-Timestamp' => $timestamp,
+            'X-Falak-Signature' => self::signature($secret, $timestamp, $body),
         ], [$secret]);
     }
 

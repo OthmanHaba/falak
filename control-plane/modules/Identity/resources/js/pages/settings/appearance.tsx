@@ -1,11 +1,11 @@
-import { Section } from '@/components/kiln/section';
+import { Section } from '@/components/falak/section';
 import { useAppearance, type Appearance } from '@/hooks/use-appearance';
 import SettingsLayout from '@/layouts/settings/layout';
 import { cn } from '@/lib/utils';
 import { Monitor, Moon, Sun, type LucideIcon } from 'lucide-react';
 
 const OPTIONS: { value: Appearance; label: string; description: string; icon: LucideIcon }[] = [
-    { value: 'dark', label: 'Dark', description: 'The default Kiln theme.', icon: Moon },
+    { value: 'dark', label: 'Dark', description: 'The default Falak theme.', icon: Moon },
     { value: 'light', label: 'Light', description: 'High-key surfaces for bright rooms.', icon: Sun },
     { value: 'system', label: 'System', description: 'Follow your operating system.', icon: Monitor },
 ];
@@ -32,7 +32,7 @@ export default function AppearancePage() {
     const { appearance, updateAppearance } = useAppearance();
 
     return (
-        <SettingsLayout title="Appearance" description="Choose how Kiln looks on this device. Saved in a cookie so the first paint is correct.">
+        <SettingsLayout title="Appearance" description="Choose how Falak looks on this device. Saved in a cookie so the first paint is correct.">
             <Section title="Theme" bare>
                 <div role="radiogroup" aria-label="Theme" className="grid gap-3 sm:grid-cols-3">
                     {OPTIONS.map((option) => {

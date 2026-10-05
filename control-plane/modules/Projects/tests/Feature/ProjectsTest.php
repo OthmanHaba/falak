@@ -1,10 +1,10 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\Projects\Domain\Models\Project;
-use Kiln\Projects\Events\ProjectCreated;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Projects\Domain\Models\Project;
+use Falak\Projects\Events\ProjectCreated;
 
 require_once __DIR__.'/../Support/helpers.php';
 

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Application\Jobs;
+namespace Falak\Edge\Application\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -9,8 +9,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Kiln\Edge\Application\CloudflareTunnels;
-use Kiln\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Application\CloudflareTunnels;
+use Falak\Edge\Contracts\EdgeRoutes;
 
 /**
  * Debounced edge apply for one server. Unique per server until it starts processing, so a burst of

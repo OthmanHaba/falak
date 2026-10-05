@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Agent sessions: every kiln-agent process sends a random session id (X-Kiln-Agent-Session). A command remembers
+ * Agent sessions: every falak-agent process sends a random session id (X-Falak-Agent-Session). A command remembers
  * the session it was delivered to, so commands delivered to a process that has since restarted are redelivered
  * (or failed) instead of staying "delivered" forever.
  */

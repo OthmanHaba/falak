@@ -5,10 +5,10 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
-use Kiln\Identity\Application\Notifications\OrganizationInvitation;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\Invitation;
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Application\Notifications\OrganizationInvitation;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\Invitation;
+use Falak\Identity\Domain\Models\User;
 
 function signUp(string $email): TestResponse
 {
@@ -86,7 +86,7 @@ function signUpWith(string $email, ?string $invitation): TestResponse
 it('needs the invitation link in invite mode, not just an invited address', function () {
     config(['identity.registration' => 'invite']);
     $token = inviteForSignUp('invited@example.com');
-    $refusal = 'Sign-up on this Kiln needs an invitation: open the link in your invitation email and use the address it was sent to.';
+    $refusal = 'Sign-up on this Falak needs an invitation: open the link in your invitation email and use the address it was sent to.';
 
     // Knowing an invited address is not enough, and the message is the same for invited and other addresses.
     signUpWith('invited@example.com', null)->assertSessionHasErrors(['email' => $refusal]);

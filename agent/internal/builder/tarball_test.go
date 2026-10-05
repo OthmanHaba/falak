@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/deploy"
+	"github.com/OthmanHaba/falak/agent/internal/deploy"
 )
 
 func tarEntries(t *testing.T, b []byte) []*tar.Header {

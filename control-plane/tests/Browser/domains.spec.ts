@@ -7,7 +7,7 @@ import { globalAllowedConsole } from './routes';
 /**
  * Domain choices: the template Configure form (generated sslip.io name / custom domain with DNS instructions and the
  * live check), the canvas Create picker (Docker image), Settings → Networking → Add domain, Settings → Compose and
- * Settings → Domains, in both themes. Needs the demo seeders (app-1 = 49.12.40.11) and no KILN_TEST_DOMAIN. Creates
+ * Settings → Domains, in both themes. Needs the demo seeders (app-1 = 49.12.40.11) and no FALAK_TEST_DOMAIN. Creates
  * nothing. The live DNS check runs against the configured resolver; example.com names do not resolve.
  */
 const SCREENSHOTS = join(import.meta.dirname, 'screenshots');

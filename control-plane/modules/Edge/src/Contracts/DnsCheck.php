@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Edge\Contracts;
+namespace Falak\Edge\Contracts;
 
-use Kiln\Edge\Contracts\Data\DnsCheckResult;
+use Falak\Edge\Contracts\Data\DnsCheckResult;
 
 /**
  * Live DNS check for a domain the user wants to route (resolved from the control plane with a short timeout).

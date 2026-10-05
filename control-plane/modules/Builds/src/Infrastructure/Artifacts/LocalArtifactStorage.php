@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Builds\Infrastructure\Artifacts;
+namespace Falak\Builds\Infrastructure\Artifacts;
 
 use Illuminate\Support\Facades\URL;
 use InvalidArgumentException;
-use Kiln\Builds\Application\Artifacts\ArtifactStorage;
+use Falak\Builds\Application\Artifacts\ArtifactStorage;
 
 /**
  * Artifacts on the control-plane disk, uploaded and downloaded through signed, expiring URLs

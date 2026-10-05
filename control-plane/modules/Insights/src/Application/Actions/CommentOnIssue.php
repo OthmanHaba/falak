@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Insights\Application\Actions;
+namespace Falak\Insights\Application\Actions;
 
-use Kiln\Insights\Domain\Models\Issue;
-use Kiln\Insights\Domain\Models\IssueComment;
+use Falak\Insights\Domain\Models\Issue;
+use Falak\Insights\Domain\Models\IssueComment;
 
 final class CommentOnIssue
 {

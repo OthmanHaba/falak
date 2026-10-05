@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Apm;
+namespace Falak\Apm;
 
 use Closure;
 use Illuminate\Support\Str;
-use Kiln\Apm\Otlp\Encoder;
-use Kiln\Apm\Transport\Transport;
+use Falak\Apm\Otlp\Encoder;
+use Falak\Apm\Transport\Transport;
 use Throwable;
 
 /**
@@ -180,7 +180,7 @@ class Recorder
         $rate = $this->rates[$type] ?? 1.0;
         $sampled = $this->typeEnabled($type) && ($rate >= 1.0 || ($rate > 0.0 && mt_rand() / mt_getrandmax() < $rate));
 
-        $root = new Span($traceId, self::spanId(), $parent['spanId'] ?? null, $name, $kind, $startNs ?? $this->now(), ['kiln.event.type' => $type] + $attributes);
+        $root = new Span($traceId, self::spanId(), $parent['spanId'] ?? null, $name, $kind, $startNs ?? $this->now(), ['falak.event.type' => $type] + $attributes);
         $root->links = $links;
 
         $this->ctx = new TraceContext($traceId, $sampled, $root);
@@ -222,7 +222,7 @@ class Recorder
         $root->endNs = $endNs;
 
         if ($ctx->dropped > 0) {
-            $root->attributes['kiln.trace.dropped_spans'] = $ctx->dropped;
+            $root->attributes['falak.trace.dropped_spans'] = $ctx->dropped;
         }
 
         if ($ctx->sampled) {
@@ -256,7 +256,7 @@ class Recorder
         }
 
         $parent = $ctx->stack[count($ctx->stack) - 1];
-        $span = new Span($ctx->traceId, self::spanId(), $parent->spanId, $name, $kind, $this->now(), ['kiln.event.type' => $type] + $attributes);
+        $span = new Span($ctx->traceId, self::spanId(), $parent->spanId, $name, $kind, $this->now(), ['falak.event.type' => $type] + $attributes);
         $ctx->stack[] = $span;
 
         return $span;
@@ -304,7 +304,7 @@ class Recorder
         $ctx = $this->ctx;
         $parent = $ctx !== null ? $ctx->stack[count($ctx->stack) - 1] : null;
 
-        $span = new Span($ctx->traceId ?? '', $spanId ?? self::spanId(), $parent?->spanId, $name, $kind, $startNs, ['kiln.event.type' => $type] + $attributes);
+        $span = new Span($ctx->traceId ?? '', $spanId ?? self::spanId(), $parent?->spanId, $name, $kind, $startNs, ['falak.event.type' => $type] + $attributes);
         $span->endNs = $endNs;
         $span->status = $status;
         $span->statusMessage = $statusMessage;
@@ -456,8 +456,8 @@ class Recorder
         foreach ($spans as $span) {
             $this->redactor->span($span);
 
-            if (($span->attributes['kiln.event.type'] ?? null) === 'query') {
-                $key = $span->traceId."\0".($span->attributes['kiln.query.connection'] ?? '')."\0".($span->attributes['db.query.text'] ?? '');
+            if (($span->attributes['falak.event.type'] ?? null) === 'query') {
+                $key = $span->traceId."\0".($span->attributes['falak.query.connection'] ?? '')."\0".($span->attributes['db.query.text'] ?? '');
                 $counts[$key] = ($counts[$key] ?? 0) + 1;
             }
         }
@@ -467,9 +467,9 @@ class Recorder
         }
 
         foreach ($spans as $span) {
-            if (($span->attributes['kiln.event.type'] ?? null) === 'query') {
-                $key = $span->traceId."\0".($span->attributes['kiln.query.connection'] ?? '')."\0".($span->attributes['db.query.text'] ?? '');
-                $span->attributes['kiln.query.repeat_count'] = $counts[$key];
+            if (($span->attributes['falak.event.type'] ?? null) === 'query') {
+                $key = $span->traceId."\0".($span->attributes['falak.query.connection'] ?? '')."\0".($span->attributes['db.query.text'] ?? '');
+                $span->attributes['falak.query.repeat_count'] = $counts[$key];
             }
         }
     }
@@ -485,11 +485,11 @@ class Recorder
         if (($e = $context['exception'] ?? null) instanceof Throwable) {
             unset($context['exception']);
             $attributes = Encoder::exceptionAttributes($e, true);
-            unset($attributes['kiln.exception.handled'], $attributes['exception.escaped']);
+            unset($attributes['falak.exception.handled'], $attributes['exception.escaped']);
         }
 
         foreach ($this->redactor->context($context) as $key => $value) {
-            $attributes['kiln.context.'.$key] = $value;
+            $attributes['falak.context.'.$key] = $value;
         }
 
         return $attributes;

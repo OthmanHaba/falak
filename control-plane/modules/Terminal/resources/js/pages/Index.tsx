@@ -1,5 +1,5 @@
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Section } from '@/components/kiln/section';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Section } from '@/components/falak/section';
 import InfrastructureLayout from '@/layouts/infrastructure-layout';
 import { usePoll } from '@inertiajs/react';
 import { Film, SquareTerminal } from 'lucide-react';
@@ -28,7 +28,7 @@ export default function Index({ servers, sessions, recordings, defaultUser, idle
     usePoll(sessions.length > 0 ? 10_000 : 60_000, { only: ['sessions', 'recordings'] });
 
     return (
-        <InfrastructureLayout section="terminal" description="Browser shells on your servers through the Kiln agent. Every session is recorded.">
+        <InfrastructureLayout section="terminal" description="Browser shells on your servers through the Falak agent. Every session is recorded.">
             {can.open && (
                 <Section title="Open a shell" description={`Sessions close after ${formatDuration(idleTimeout)} without activity.`}>
                     {servers.length === 0 ? (
@@ -39,7 +39,7 @@ export default function Index({ servers, sessions, recordings, defaultUser, idle
                             description="Terminals open on servers whose agent is connected."
                         />
                     ) : (
-                        <OpenSessionForm servers={servers} defaultUser={defaultUser} unixUser={servers[0]?.unix_user ?? 'kiln'} />
+                        <OpenSessionForm servers={servers} defaultUser={defaultUser} unixUser={servers[0]?.unix_user ?? 'falak'} />
                     )}
                 </Section>
             )}

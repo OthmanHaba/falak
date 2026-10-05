@@ -4,21 +4,21 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
-use Kiln\Databases\Application\Actions\RunBackupSchedule;
-use Kiln\Databases\Application\Jobs\RunDueBackups;
-use Kiln\Databases\Domain\Enums\BackupStatus;
-use Kiln\Databases\Domain\Enums\ResourceStatus;
-use Kiln\Databases\Domain\Enums\RestoreStatus;
-use Kiln\Databases\Domain\Models\Backup;
-use Kiln\Databases\Domain\Models\BackupSchedule;
-use Kiln\Databases\Domain\Models\Database;
-use Kiln\Databases\Domain\Models\Restore;
-use Kiln\Databases\Events\BackupFailed;
-use Kiln\Databases\Events\BackupSucceeded;
-use Kiln\Databases\Events\RestoreFinished;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Servers\Contracts\ServerType;
+use Falak\Databases\Application\Actions\RunBackupSchedule;
+use Falak\Databases\Application\Jobs\RunDueBackups;
+use Falak\Databases\Domain\Enums\BackupStatus;
+use Falak\Databases\Domain\Enums\ResourceStatus;
+use Falak\Databases\Domain\Enums\RestoreStatus;
+use Falak\Databases\Domain\Models\Backup;
+use Falak\Databases\Domain\Models\BackupSchedule;
+use Falak\Databases\Domain\Models\Database;
+use Falak\Databases\Domain\Models\Restore;
+use Falak\Databases\Events\BackupFailed;
+use Falak\Databases\Events\BackupSucceeded;
+use Falak\Databases\Events\RestoreFinished;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\Role;
+use Falak\Servers\Contracts\ServerType;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -37,7 +37,7 @@ afterEach(fn () => Carbon::setTestNow());
 
 function backups_result(string $content = 'dump'): array
 {
-    return ['size_bytes' => strlen($content) * 1000, 'sha256' => hash('sha256', $content), 'location' => 's3://kiln-backups/x', 'duration_ms' => 4200];
+    return ['size_bytes' => strlen($content) * 1000, 'sha256' => hash('sha256', $content), 'location' => 's3://falak-backups/x', 'duration_ms' => 4200];
 }
 
 it('dispatches db.backup with a presigned PUT URL and never the credentials', function () {
@@ -53,7 +53,7 @@ it('dispatches db.backup with a presigned PUT URL and never the credentials', fu
         ->and($command['payload']['destination']['kind'])->toBe('presigned_url')
         ->and($command['handle']->idempotencyKey)->toBe("db.backup:{$backup->id}")
         ->and($backup->object_key)->toMatch('#^acme/'.preg_quote(Str::slug($this->engine->server_name), '#').'-[a-z0-9]{6}/shop/2026/09/20260927T025930Z-'.$backup->id.'\.sql\.gz$#')
-        ->and($url)->toStartWith('https://kiln-backups.s3.eu-central-1.amazonaws.com/'.$backup->object_key.'?')
+        ->and($url)->toStartWith('https://falak-backups.s3.eu-central-1.amazonaws.com/'.$backup->object_key.'?')
         ->and($query)->toMatchArray(['X-Amz-Algorithm' => 'AWS4-HMAC-SHA256', 'X-Amz-Expires' => '43200', 'X-Amz-SignedHeaders' => 'host'])
         ->and($query['X-Amz-Signature'])->toMatch('/^[a-f0-9]{64}$/')
         ->and(json_encode($command['payload']))->not->toContain('super-secret-access-key-value')
@@ -190,7 +190,7 @@ it('prunes by retention count and age with signed DELETEs, always keeping the ne
         ->and(Backup::query()->where('status', BackupStatus::Succeeded)->count())->toBe(2);
 
     Http::assertSentCount(3);
-    Http::assertSent(fn (Request $r) => $r->method() === 'DELETE' && $r->url() === 'https://kiln-backups.s3.eu-central-1.amazonaws.com/acme/k1.sql.gz'
+    Http::assertSent(fn (Request $r) => $r->method() === 'DELETE' && $r->url() === 'https://falak-backups.s3.eu-central-1.amazonaws.com/acme/k1.sql.gz'
         && str_starts_with($r->header('Authorization')[0], 'AWS4-HMAC-SHA256'));
 });
 
@@ -227,7 +227,7 @@ it('restores with confirmation through a presigned GET and checksum', function (
     expect(databases_schema_errors($command))->toBe([])
         ->and($command['payload'])->toMatchArray(['engine' => 'mysql', 'database' => 'shop_restored', 'compression' => 'gzip', 'sha256' => hash('sha256', 'dump')])
         ->and($command['payload']['source']['kind'])->toBe('url')
-        ->and($command['payload']['source']['url'])->toStartWith("https://kiln-backups.s3.eu-central-1.amazonaws.com/{$backup->object_key}?")
+        ->and($command['payload']['source']['url'])->toStartWith("https://falak-backups.s3.eu-central-1.amazonaws.com/{$backup->object_key}?")
         ->and($command['payload']['source']['url'])->toContain('X-Amz-Expires=21600')
         ->and($command['handle']->idempotencyKey)->toBe("db.restore:{$restore->id}");
 

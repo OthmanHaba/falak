@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Databases\Application\Actions;
+namespace Falak\Databases\Application\Actions;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Application\AgentCommands;
-use Kiln\Databases\Domain\Enums\ResourceStatus;
-use Kiln\Databases\Domain\Models\DatabaseUser;
-use Kiln\Databases\Infrastructure\CommandPayloads;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Databases\Application\AgentCommands;
+use Falak\Databases\Domain\Enums\ResourceStatus;
+use Falak\Databases\Domain\Models\DatabaseUser;
+use Falak\Databases\Infrastructure\CommandPayloads;
+use Falak\Identity\Contracts\AuditLog;
 
 /**
  * Drops the account (db.user.apply state=absent); the row goes once the agent confirms.

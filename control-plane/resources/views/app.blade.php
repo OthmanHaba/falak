@@ -12,7 +12,7 @@
         <meta name="color-scheme" content="dark light">
         @if (config('broadcasting.default') === 'reverb' && filled(config('broadcasting.connections.reverb.key')))
             {{-- Runtime Reverb key for prebuilt images (VITE_REVERB_* are build-time); the key is public. --}}
-            <meta name="kiln-reverb-key" content="{{ config('broadcasting.connections.reverb.key') }}">
+            <meta name="falak-reverb-key" content="{{ config('broadcasting.connections.reverb.key') }}">
         @endif
 
         @if ($appearance === 'system')
@@ -25,7 +25,7 @@
             </script>
         @endif
 
-        <title inertia>{{ config('app.name', 'Kiln') }}</title>
+        <title inertia>{{ config('app.name', 'Falak') }}</title>
 
         @routes
         @viteReactRefresh

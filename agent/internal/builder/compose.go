@@ -19,7 +19,7 @@ type ComposeSpec struct {
 	File        string            `json:"file,omitempty"`       // relative to the app root; "" = compose.yaml|compose.yml|docker-compose.yml|docker-compose.yaml
 	Files       []string          `json:"files,omitempty"`      // several files merged in -f order (wins over File)
 	Profiles    []string          `json:"profiles,omitempty"`   // active profiles; services of other profiles are dropped
-	ImagePrefix string            `json:"image_prefix"`         // e.g. registry.kiln.local/kiln/shop
+	ImagePrefix string            `json:"image_prefix"`         // e.g. registry.falak.local/falak/shop
 	Tag         string            `json:"tag,omitempty"`        // default: the build id (lowercase)
 	BuildArgs   map[string]string `json:"build_args,omitempty"` // merged under each service's build.args
 	Platforms   []string          `json:"platforms,omitempty"`

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Servers\Domain\MachineCheck;
+namespace Falak\Servers\Domain\MachineCheck;
 
 /**
  * Read access to a provision.inspect report (contracts/agent-protocol/commands/provision.inspect.schema.json

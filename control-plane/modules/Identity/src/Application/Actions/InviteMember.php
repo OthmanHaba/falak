@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Identity\Application\Actions;
+namespace Falak\Identity\Application\Actions;
 
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Application\Notifications\OrganizationInvitation;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\Invitation;
-use Kiln\Identity\Domain\Models\Organization;
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Application\Notifications\OrganizationInvitation;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\Invitation;
+use Falak\Identity\Domain\Models\Organization;
+use Falak\Identity\Domain\Models\User;
 
 final class InviteMember
 {

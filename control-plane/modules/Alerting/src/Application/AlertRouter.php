@@ -1,21 +1,21 @@
 <?php
 
-namespace Kiln\Alerting\Application;
+namespace Falak\Alerting\Application;
 
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Kiln\Alerting\Application\Jobs\DeliverAlert;
-use Kiln\Alerting\Contracts\Data\AlertData;
-use Kiln\Alerting\Domain\Enums\AlertOutcome;
-use Kiln\Alerting\Domain\Enums\DeliveryStatus;
-use Kiln\Alerting\Domain\Models\Alert;
-use Kiln\Alerting\Domain\Models\Channel;
-use Kiln\Alerting\Domain\Models\DedupState;
-use Kiln\Alerting\Domain\Models\Delivery;
-use Kiln\Alerting\Domain\Models\Rule;
+use Falak\Alerting\Application\Jobs\DeliverAlert;
+use Falak\Alerting\Contracts\Data\AlertData;
+use Falak\Alerting\Domain\Enums\AlertOutcome;
+use Falak\Alerting\Domain\Enums\DeliveryStatus;
+use Falak\Alerting\Domain\Models\Alert;
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Alerting\Domain\Models\DedupState;
+use Falak\Alerting\Domain\Models\Delivery;
+use Falak\Alerting\Domain\Models\Rule;
 
 /**
  * Routes one alert: dedup → matching rules → quiet hours / rate limits → channel deliveries +

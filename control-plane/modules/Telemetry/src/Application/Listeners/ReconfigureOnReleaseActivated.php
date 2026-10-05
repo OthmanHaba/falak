@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Listeners;
+namespace Falak\Telemetry\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Kiln\Deployments\Events\ReleaseActivated;
-use Kiln\Telemetry\Contracts\TelemetryConfigurator;
+use Falak\Deployments\Events\ReleaseActivated;
+use Falak\Telemetry\Contracts\TelemetryConfigurator;
 
 /**
  * telemetry.configure carries the release each site runs (its records are labelled with the deployment and release

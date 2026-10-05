@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Listeners;
+namespace Falak\Telemetry\Application\Listeners;
 
-use Kiln\Fleet\Events\AgentEnrolled;
-use Kiln\Telemetry\Application\Jobs\DispatchPendingTelemetry;
-use Kiln\Telemetry\Domain\Models\PendingConfiguration;
+use Falak\Fleet\Events\AgentEnrolled;
+use Falak\Telemetry\Application\Jobs\DispatchPendingTelemetry;
+use Falak\Telemetry\Domain\Models\PendingConfiguration;
 
 /**
  * A (re-)enrolled agent receives the organization's telemetry configuration shortly after

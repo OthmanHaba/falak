@@ -2,11 +2,11 @@
 
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Sites\Contracts\Data\SitePlacement;
-use Kiln\Sites\Contracts\SiteFactory;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Events\SiteCreated;
+use Falak\Identity\Contracts\Role;
+use Falak\Sites\Contracts\Data\SitePlacement;
+use Falak\Sites\Contracts\SiteFactory;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Events\SiteCreated;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -14,7 +14,7 @@ beforeEach(function () {
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
     $this->agents = sites_fake_agents();
     sites_fake_source_control();
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
     $this->server = sites_server($this->organization->id, ['name' => 'web-1']);
 });
 
@@ -47,7 +47,7 @@ it('duplicates a site without servers, copying configuration and variables', fun
         ->and($copy->deployScript)->toBe("echo hi\n")
         ->and($copy->laravel->horizon)->toBeTrue()
         ->and($copyModel->latestEnvironment->variables['APP_KEY'])->toBe($variables['APP_KEY'])
-        ->and($copyModel->latestEnvironment->variables['APP_URL'])->toBe("https://{$copy->slug}.kiln.test");
+        ->and($copyModel->latestEnvironment->variables['APP_URL'])->toBe("https://{$copy->slug}.falak.test");
 
     expect(app(SiteFactory::class)->duplicate($source->id, ['name_suffix' => 'staging'])->site->name)->toBe('Shop-staging-2');
     expect(fn () => app(SiteFactory::class)->duplicate($source->id, ['name' => 'Shop']))->toThrow(ValidationException::class);

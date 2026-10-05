@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Contracts\Data\DatabaseData;
-use Kiln\Sites\Contracts\Data\ComposeRewrites;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\Databases\Contracts\Data\DatabaseData;
+use Falak\Sites\Contracts\Data\ComposeRewrites;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 
 /**
- * Takes a service out of a compose stack and runs it as a Kiln service instead (docs/plans/COMPOSE_APPS.md, phase 3):
- * a database engine service becomes a Kiln-managed database, an app service its own Kiln site. The decision is recorded
+ * Takes a service out of a compose stack and runs it as a Falak service instead (docs/plans/COMPOSE_APPS.md, phase 3):
+ * a database engine service becomes a Falak-managed database, an app service its own Falak site. The decision is recorded
  * in the stack's `compose_services`; rendering drops the service and applies {@see rewrites()} to the stack's
- * variables so the rest of the stack points at the Kiln service.
+ * variables so the rest of the stack points at the Falak service.
  *
  * Callers check the actor's permissions (database creation for a database, site creation for a site). The service is
  * claimed under the stack's row lock before anything is created, so concurrent requests can't extract it twice, and a
@@ -26,7 +26,7 @@ use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
 interface ComposeServiceExtraction
 {
     /**
-     * Replace $service with a Kiln database on the stack's leader server: a new database (named after the service's
+     * Replace $service with a Falak database on the stack's leader server: a new database (named after the service's
      * POSTGRES_DB / MYSQL_DATABASE / MARIADB_DATABASE, else <slug>_<service>) with its own user, or the existing
      * $databaseId of the same engine. Placed next to the stack in its environment.
      *
@@ -44,7 +44,7 @@ interface ComposeServiceExtraction
     public function toDatabase(string $siteId, string $service, ?string $databaseId, string $engine, ?string $compose = null): DatabaseData;
 
     /**
-     * Run $service as its own Kiln site, created in the stack's environment from the same repository and branch:
+     * Run $service as its own Falak site, created in the stack's environment from the same repository and branch:
      * `root_directory` = the service's build context (relative to the stack's root directory in the merged project), its `environment:` as the site's
      * variables, the stack's servers. $site are SiteFactory fields chosen by the user (framework, runtime, name,
      * domain, server_ids, …; they win over the derived ones).

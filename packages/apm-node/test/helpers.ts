@@ -2,15 +2,15 @@ import { SpanKind, type Attributes } from '@opentelemetry/api';
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor, type ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { KilnSpanProcessor } from '../src/mapping.js';
+import { FalakSpanProcessor } from '../src/mapping.js';
 import { Redactor } from '../src/redact.js';
 import { DEFAULT_REDACT_KEYS, type RedactCallback } from '../src/config.js';
 
-/** A local (non-global) provider whose spans go through the Kiln processor into memory. */
+/** A local (non-global) provider whose spans go through the Falak processor into memory. */
 export function localProvider(redact?: RedactCallback) {
   const exporter = new InMemorySpanExporter();
   const provider = new BasicTracerProvider({
-    spanProcessors: [new KilnSpanProcessor(new SimpleSpanProcessor(exporter), new Redactor(DEFAULT_REDACT_KEYS), redact)],
+    spanProcessors: [new FalakSpanProcessor(new SimpleSpanProcessor(exporter), new Redactor(DEFAULT_REDACT_KEYS), redact)],
   });
   const tracer = provider.getTracer('test');
 

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Servers\Domain\MachineCheck;
+namespace Falak\Servers\Domain\MachineCheck;
 
 /**
  * The decision for one component of the machine, with what was found and why.

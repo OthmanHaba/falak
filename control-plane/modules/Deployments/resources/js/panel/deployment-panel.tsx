@@ -18,8 +18,8 @@ import {
     TabsTrigger,
     toast,
     type MenuAction,
-} from '@/components/kiln';
-import { timeZoneLabel } from '@/components/kiln/log-viewer';
+} from '@/components/falak';
+import { timeZoneLabel } from '@/components/falak/log-viewer';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, requestJson } from '@/lib/http';
 import { type ServiceLayerProps } from '@/lib/registry';

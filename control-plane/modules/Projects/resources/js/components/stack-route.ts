@@ -33,7 +33,7 @@ const KINDS: ServiceKind[] = ['site', 'database'];
 export const EMPTY_STACK: StackRoute = { base: null, peek: null, layer: null, focus: false };
 
 export function parseStack(url: string, home: string, layers: ServiceLayer[]): StackRoute {
-    const parsed = new URL(url, 'http://kiln.local');
+    const parsed = new URL(url, 'http://falak.local');
     const query = parsed.searchParams;
     const rest = parsed.pathname.startsWith(`${home}/service/`) ? parsed.pathname.slice(`${home}/service/`.length).split('/') : [];
     const [kind, id, tab = null, item = null] = rest;
@@ -76,7 +76,7 @@ export function buildStack(route: StackRoute, home: string, layers: ServiceLayer
     if (base.tab) path += `/${base.tab}${base.item ? `/${base.item}` : ''}`;
 
     // Keep unrelated query parameters (none today, but other features may add some).
-    const query = new URLSearchParams(current ? new URL(current, 'http://kiln.local').search : '');
+    const query = new URLSearchParams(current ? new URL(current, 'http://falak.local').search : '');
     for (const key of ['peek', 'peek_tab', 'focus', ...layers.flatMap((registered) => [registered.param, `${registered.param}_tab`])])
         query.delete(key);
     if (peek) {

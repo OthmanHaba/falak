@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Fleet\Infrastructure;
+namespace Falak\Fleet\Infrastructure;
 
 /**
- * kiln-agent release binaries served by the control plane (binaries_path/kiln-agent-linux-<arch>).
+ * falak-agent release binaries served by the control plane (binaries_path/falak-agent-linux-<arch>).
  */
 final class AgentBinaries
 {
@@ -13,8 +13,8 @@ final class AgentBinaries
     ) {}
 
     /**
-     * Version of the shipped build: the `kiln-agent-linux-<arch>.version` sidecar written by `make agent`, else the
-     * configured version (KILN_AGENT_VERSION / KILN_VERSION). Null when no build is published for the arch.
+     * Version of the shipped build: the `falak-agent-linux-<arch>.version` sidecar written by `make agent`, else the
+     * configured version (FALAK_AGENT_VERSION / FALAK_VERSION). Null when no build is published for the arch.
      */
     public function version(string $arch): ?string
     {
@@ -37,7 +37,7 @@ final class AgentBinaries
             return null;
         }
 
-        $file = rtrim($this->path, '/')."/kiln-agent-linux-{$arch}";
+        $file = rtrim($this->path, '/')."/falak-agent-linux-{$arch}";
 
         return is_file($file) ? $file : null;
     }

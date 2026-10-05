@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Application\Jobs;
+namespace Falak\Edge\Application\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -8,8 +8,8 @@ use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Kiln\Edge\Application\CloudflareDns;
-use Kiln\Edge\Domain\Models\Domain;
+use Falak\Edge\Application\CloudflareDns;
+use Falak\Edge\Domain\Models\Domain;
 
 /**
  * Brings the Cloudflare DNS records of a domain, a site (all its names) or a removed domain / site in line. Unique per

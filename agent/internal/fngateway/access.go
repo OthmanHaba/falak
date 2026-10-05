@@ -20,9 +20,9 @@ import (
 
 const (
 	// KeyHeader carries a function API key (alternative to Authorization: Bearer).
-	KeyHeader = "X-Kiln-Key"
+	KeyHeader = "X-Falak-Key"
 	// ClientIPHeader is the client IP Caddy resolved ({http.vars.client_ip}, Cloudflare-aware).
-	ClientIPHeader = "X-Kiln-Client-IP"
+	ClientIPHeader = "X-Falak-Client-IP"
 
 	maxAccessEntries = 50
 )
@@ -107,7 +107,7 @@ func (a Access) check(r *http.Request) (status int, reason string, strip func())
 	return 0, "", strip
 }
 
-// clientIP is X-Kiln-Client-IP (set by Caddy), else the TCP peer.
+// clientIP is X-Falak-Client-IP (set by Caddy), else the TCP peer.
 func clientIP(r *http.Request) (netip.Addr, bool) {
 	if v := strings.TrimSpace(r.Header.Get(ClientIPHeader)); v != "" {
 		if ip, err := netip.ParseAddr(v); err == nil {

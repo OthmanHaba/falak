@@ -35,7 +35,7 @@ var (
 )
 
 // upstream calls never follow redirects (the proxy only ever talks to UPSTREAM_URL's host). Built per call with
-// Kiln's traced transport, so the calls show up in Observability.
+// Falak's traced transport, so the calls show up in Observability.
 func client() *http.Client {
 	return &http.Client{Transport: http.DefaultClient.Transport, Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }

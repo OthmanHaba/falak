@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
 /**
  * Site preparation on a server: unix user (+ PHP-FPM pool). pending → provisioning → ready | failed.

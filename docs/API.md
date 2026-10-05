@@ -1,12 +1,12 @@
-# Kiln HTTP API
+# Falak HTTP API
 
 Three surfaces:
 
 | Surface | Base | Auth | Consumers |
 |---|---|---|---|
-| Public REST API v1 | `/api/v1` | Sanctum bearer token (`Authorization: Bearer <token>`) | `kiln` CLI (`agent/internal/cli/api`), CI, scripts |
+| Public REST API v1 | `/api/v1` | Sanctum bearer token (`Authorization: Bearer <token>`) | `falak` CLI (`agent/internal/cli/api`), CI, scripts |
 | Deploy hooks | `/api/deploy/{token}` | the unguessable token in the URL | CI / chat ops |
-| Internal builder API | `/api/internal` | builder token (`Authorization: Bearer kbt_…`) or signed URLs | `kiln-builder serve` (`agent/internal/builder`) |
+| Internal builder API | `/api/internal` | builder token (`Authorization: Bearer kbt_…`) or signed URLs | `falak-builder serve` (`agent/internal/builder`) |
 
 The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protocol/README.md`.
 
@@ -64,7 +64,7 @@ Token requests return the token's organization only; session requests every memb
 `status`: `creating`, `provisioning` (machine check and plan), `needs_attention` (the machine check found a conflict;
 nothing was applied; `status_message` lists the conflicts), `active`, `error`, `deleting`. Only `active` servers are
 deploy targets.
-Addresses: `ipv4`, `private_ipv4` (the server's address on its private network, `null` when it has none; `kiln ssh
+Addresses: `ipv4`, `private_ipv4` (the server's address on its private network, `null` when it has none; `falak ssh
 --private` uses it) and `ssh_port`.
 `agent` (null until an agent enrolled) carries `status`, `last_heartbeat_at`, `version`, `available_version` (the
 build this control plane ships), `update_available` and `upgrade` (the latest upgrade: `status`
@@ -74,7 +74,7 @@ build this control plane ships), `update_available` and `upgrade` (the latest up
 Upgrades the server's agent to the shipped build (`system.upgrade_agent` with the panel download URL and its
 SHA-256). `202` with the upgrade (`status: running`; the same upgrade when one is already in progress); it succeeds
 once the restarted agent reports the new build, fails on a download/checksum/pre-flight error or after
-`KILN_AGENT_UPGRADE_TIMEOUT`. `409` with `message` when it cannot run: no agent, agent offline, no verifiable build
+`FALAK_AGENT_UPGRADE_TIMEOUT`. `409` with `message` when it cannot run: no agent, agent offline, no verifiable build
 for the server's architecture, or the agent already runs it.
 ```json
 {"data": {"id": "01k…", "server_id": "01k…", "status": "running", "from_version": "v0.3.0", "to_version": "v0.4.0",
@@ -100,7 +100,7 @@ Before provisioning (after enrollment, on Re-provision), servers whose agent has
 read-only machine check (`provision.inspect`): what is already installed and where it came from. Each component
 (`base`, `docker`, `database`, `cache`, `edge`, `php`, `node`, `ssh`, `firewall`, `swap`, `hostname`,
 `unattended_upgrades`, `fail2ban`) gets a decision: `install`, `adopt` (use what is there), `complete` (install only
-the missing pieces from the same source), `block` (a conflict Kiln won't resolve) or `skip` (found, not part of the
+the missing pieces from the same source), `block` (a conflict Falak won't resolve) or `skip` (found, not part of the
 stack). When something blocks, the server's `status` is `needs_attention` and nothing is applied. Rules:
 `docs/plans/MACHINE_CHECK.md`.
 
@@ -110,9 +110,9 @@ without `provision.v2`, or not enrolled yet).
 ```json
 {"data": {"supported": true, "status": "finished", "purpose": "provision", "checked_at": "2026-10-13T09:12:00+00:00",
   "agent_version": "v0.6.0", "error": null, "command_id": "01k…", "blocking": true,
-  "summary": "Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Kiln's edge needs.",
+  "summary": "Machine check: 1 conflict to fix before provisioning. Port 80 is in use by nginx, which Falak's edge needs.",
   "components": [{"component": "edge", "label": "Web server", "decision": "block", "decision_label": "Blocked",
-    "severity": "block", "reason": "Port 80 is in use by nginx, which Kiln's edge needs.",
+    "severity": "block", "reason": "Port 80 is in use by nginx, which Falak's edge needs.",
     "hint": "Stop and disable it (systemctl disable --now nginx.service) or move it to another port, then re-check.",
     "found": [{"name": "nginx", "version": "1.24.0", "source": "Ubuntu archive"}], "install": [], "keep": [],
     "service": null, "notes": [{"severity": "block", "message": "…", "hint": "…"}]}, …],
@@ -152,7 +152,7 @@ being deleted. Rate limited to 10/min.
   "php_version": "8.4", "node_version": null,
   "repository": "acme/shop", "branch": "main", "push_to_deploy": true,
   "domain": "shop.example.com", "url": "https://shop.example.com",
-  "web_directory": "public", "root_path": "/srv/kiln/sites/shop", "app_port": null, "container_port": null, "test_domain": null,
+  "web_directory": "public", "root_path": "/srv/falak/sites/shop", "app_port": null, "container_port": null, "test_domain": null,
   "server_ids": ["01k…"],
   "targets": [{"id": "…", "server_id": "…", "server_name": "web-1", "server_ip": "203.0.113.1", "role": "leader", "status": "ready", "status_message": null, "command_id": null}],
   "strategy": "zero-downtime",
@@ -168,7 +168,7 @@ Same body and validation as the web form (`name`, `framework`, `server_ids[]`, o
 `build_mode`, `source_connection_id` + `repository` + `branch`, `push_to_deploy`, `php_version`, `web_directory`,
 `app_port`, `container_port`, `health_check_path`, …). `201` with the site resource plus `warnings[]` from the git provider;
 `422` on errors. Docker sites take `container_port` (the port the app listens on inside its container, default 3000, may
-repeat across sites; an `app_port` sent for a docker site is read as it); their `app_port` is the loopback host port Kiln
+repeat across sites; an `app_port` sent for a docker site is read as it); their `app_port` is the loopback host port Falak
 allocates. Changing a docker site's `container_port` (`PATCH /sites/{id}`) redeploys it. `DELETE /sites/{id}` stops the
 site's containers (compose: `docker compose down`; `delete_volumes: true` also removes named volumes).
 Optional `root_directory` (git sites, also `PATCH`): the repository subfolder the app lives in (monorepos), e.g.
@@ -185,9 +185,9 @@ as the site's primary domain with automatic TLS, and `APP_URL` in the initial en
 site only gets its test domain (as before). A name used by another site is a `422`.
 
 Docker Compose sites (`runtime: compose`, `framework` optional — defaults to `docker`; docs/COMPOSE_TEMPLATES.md §5):
-`compose_source` `repo` (`compose_file`, default `compose.yaml` then `docker-compose.yml`, built by kiln-builder) or
+`compose_source` `repo` (`compose_file`, default `compose.yaml` then `docker-compose.yml`, built by falak-builder) or
 `inline` (`compose_content`, versioned; no `build:`), `public_services` `[{service, port, domain?, health_check_path?}]`
-(Kiln allocates a loopback host port per service; `domain` is a name or a domain choice — generated names are
+(Falak allocates a loopback host port per service; `domain` is a name or a domain choice — generated names are
 `<service>-<slug>.<ip-with-dashes>.<suffix>`, `null` / `{"type": "test"}` means the test domain; `health_check_path`
 is the path the deploy health check requests through the service's domain — without it the first service uses the
 site's check path and the others accept any answer below 500), `variables` `{KEY: value}` (initial environment; `${{ service.KEY }}` allowed) and
@@ -206,7 +206,7 @@ repository, branch, compose_files, …}` → services, variables, adjustments, t
 for plain git servers), and `POST /sites/{site}/compose/inspect` for existing sites.
 
 A service running the official `redis` or `valkey/valkey` image (any tag; not `redis/redis-stack`, `bitnami/redis` or
-other registries) has `database_engine: redis|valkey` and can become a Kiln Redis / Valkey instance (`mode: database`,
+other registries) has `database_engine: redis|valkey` and can become a Falak Redis / Valkey instance (`mode: database`,
 `engine` = the image's): `<slug>-<service>` on the stack's leader, which must run that engine (else the service stays
 in the stack with a warning: the other cache engine runs there, it isn't installed yet, or Valkey isn't offered for
 its OS). `--maxmemory`, `--maxmemory-policy` and `--appendonly yes` in its `command` carry over. The other services'
@@ -240,7 +240,7 @@ Body `{"content": "<dotenv>"}` replaces all variables (deploy-script exposure of
 ### `PUT /api/v1/sites/{site}/laravel` — `sites.manage`
 Laravel toggles, each optional (unchanged when omitted): `scheduler`, `horizon`, `octane`, `maintenance`, and
 `octane_server` (`frankenphp` — FrankenPHP runtime only, the default there — `swoole` (default on PHP-FPM) or
-`roadrunner`). The Octane port is allocated by Kiln (unique on every server of the site, persisted) and returned; it
+`roadrunner`). The Octane port is allocated by Falak (unique on every server of the site, persisted) and returned; it
 cannot be set. `422` for a Laravel toggle on a non-Laravel site, an unavailable server, or no free port.
 ```json
 {"data": {"scheduler": true, "horizon": false, "octane": true, "maintenance": false, "octane_server": "frankenphp", "octane_port": 8412}}
@@ -275,15 +275,15 @@ the load balancer in front of them. Query: `since`, `limit`, `cursor` as above; 
 A **domain choice** is `{"type": "generated" | "test" | "custom", "name"?: string}` (a plain string is a custom
 domain). It is accepted by `POST /api/v1/sites` (`domain`), compose `public_services[].domain` and template deploys
 (`domains.<service>`; a service without a choice gets the organization default: the test domain when
-`KILN_TEST_DOMAIN` is set, else a generated name, else a domain is required).
+`FALAK_TEST_DOMAIN` is set, else a generated name, else a domain is required).
 
 - **generated** — `<label>.<ipv4-with-dashes>.<suffix>`, e.g. `minio-files.63-182-218-247.sslip.io`. The label is the
   site slug (compose: `<service>-<slug>`); the IP is the leader server's public IPv4 (a site behind a load balancer: the
   `lb` server's). Wildcard DNS services (`sslip.io` by default, `nip.io`, or a self-hosted one via
-  `KILN_GENERATED_DOMAIN_SUFFIX`; per organization in Settings → Domains) resolve it to that IP, so it works without DNS
+  `FALAK_GENERATED_DOMAIN_SUFFIX`; per organization in Settings → Domains) resolve it to that IP, so it works without DNS
   setup and Let's Encrypt issues its certificate over HTTP-01. `422` when generated names are off or the server has no
   public IPv4 yet. One name per endpoint: sites on several servers without a load balancer are reached on the leader.
-- **test** — `<slug>.<KILN_TEST_DOMAIN>` (compose: `<service>-<slug>.…` after the first service).
+- **test** — `<slug>.<FALAK_TEST_DOMAIN>` (compose: `<service>-<slug>.…` after the first service).
 - **custom** — your domain, routed with automatic TLS once DNS points at the server (see the check below).
 
 ### `GET|PUT|DELETE /api/v1/sites/{site}/domains/{domain}/rate-limit` — `edge.view` / `edge.manage`
@@ -301,7 +301,7 @@ What a create form offers: `{test_domain, generated: {suffix, ipv4, target, avai
 server, leader first). `server` may repeat (`server[]=`) or be comma-separated; `site` uses the site's servers.
 
 ### `GET /api/v1/dns/check?name=<domain>&server=<id>…` · `&site=<site>` — `edge.view` (60/min)
-Resolves `name` from the control plane (DNS-over-HTTPS, `KILN_DNS_RESOLVER=doh|system`, 3 s timeout) and compares it
+Resolves `name` from the control plane (DNS-over-HTTPS, `FALAK_DNS_RESOLVER=doh|system`, 3 s timeout) and compares it
 with the targets:
 
 ```json
@@ -371,8 +371,8 @@ everyone else gets a resolution error saying to update the agent):
   the box), which the instance listens on; the firewall opens the instance's port to the Docker ranges on the bridges
   only;
 - a site on another server of the environment (native or containers, also a site spanning both): the instance server's
-  address on a private network they share — a Kiln private network (WireGuard) first, else the provider private network
-  only where both servers are on it for sure (created by Kiln with the same provider credential, in the same region, on
+  address on a private network they share — a Falak private network (WireGuard) first, else the provider private network
+  only where both servers are on it for sure (created by Falak with the same provider credential, in the same region, on
   DigitalOcean or Lightsail, whose servers of one account and region share a private network by default; never Hetzner,
   Vultr, Linode, whose private networks are opt-in, nor custom servers). The instance listens there while a site of its
   environment runs on another server; the firewall opens its port to those servers' addresses only. **Never a public
@@ -386,7 +386,7 @@ consumer running on that server alone:
 - a native site gets `127.0.0.1`;
 - a container on it (Docker site, compose stack, function) gets the server's own address (private network → provider
   private IP → public IP), which containers reach through the Docker bridge. The engine accepts the Docker address
-  ranges (`KILN_DOCKER_NETWORKS`, default `172.16.0.0/12,192.168.0.0/16`: PostgreSQL host rules, an extra MySQL account
+  ranges (`FALAK_DOCKER_NETWORKS`, default `172.16.0.0/12,192.168.0.0/16`: PostgreSQL host rules, an extra MySQL account
   per range) and the firewall opens its port on the Docker bridges only (`docker0`, `br-*`). This needs agent 0.4.5 or
   newer (feature `db.containers`); it turns on per engine once the agent reports it. Before that, the reference fails
   and says to update the agent.
@@ -415,7 +415,7 @@ other connection and can be used as `source_connection_id` for sites.
  "trigger": "manual|push|api|hook|rollback", "strategy": "zero-downtime",
  "branch": "main", "commit": "a1b2c3…", "message": "Fix checkout", "author": "Ada",
  "release_id": "01k…", "build_id": "01k…", "rolled_back": false,
- "url": "https://kiln.example.com/sites/01k…/deployments/01k…", "error": null,
+ "url": "https://falak.example.com/sites/01k…/deployments/01k…", "error": null,
  "waiting_reason": null, "waiting_since": null,
  "created_at": "…", "started_at": "…", "finished_at": "…"}
 ```
@@ -426,7 +426,7 @@ PHP-FPM pool, Bun/Deno runtime). It holds the site's queue, `waiting_reason` say
 (`"Waiting for 2 servers to finish preparing: web-1, web-2"`) and `waiting_since` when it began; it starts on its
 own once every preparing server is ready (`started_at` is set then). Servers whose preparation failed are skipped
 with a warning in the output as long as another server is ready; it fails (`error` says why) when the leader's
-preparation fails, when no server can be prepared, or after `KILN_DEPLOY_WAIT_TIMEOUT_MINUTES` (default 30).
+preparation fails, when no server can be prepared, or after `FALAK_DEPLOY_WAIT_TIMEOUT_MINUTES` (default 30).
 
 ### `POST /api/v1/sites/{site}/deployments` — `deployments.create`
 Body (all optional): `{"branch": "main", "commit": "<sha>"}`. Without a commit the branch head is resolved
@@ -479,7 +479,7 @@ Retained releases, current first.
 ## Functions
 
 Cloud Functions are sites with the `function` runtime (docs/FUNCTIONS.md); `{site}` is the function's id or slug.
-The `kiln fn` commands use these endpoints.
+The `falak fn` commands use these endpoints.
 
 ### `GET /api/v1/functions` — `functions.view`
 ```json
@@ -523,27 +523,27 @@ The URL is shown (and regenerated) under *Site → Deploy settings*. Reserved qu
 
 | Parameter | Meaning |
 |---|---|
-| `kiln_deploy_branch` | branch to deploy (default: the site branch) |
-| `kiln_deploy_commit` | exact commit SHA (7–64 hex) |
-| `kiln_deploy_author` | author shown in the UI / `KILN_COMMIT_AUTHOR` |
-| `kiln_deploy_message` | message shown in the UI / `KILN_COMMIT_MESSAGE` |
+| `falak_deploy_branch` | branch to deploy (default: the site branch) |
+| `falak_deploy_commit` | exact commit SHA (7–64 hex) |
+| `falak_deploy_author` | author shown in the UI / `FALAK_COMMIT_AUTHOR` |
+| `falak_deploy_message` | message shown in the UI / `FALAK_COMMIT_MESSAGE` |
 
-Every other parameter becomes `KILN_VAR_<NAME>` in the deploy script environment (name upper-cased,
+Every other parameter becomes `FALAK_VAR_<NAME>` in the deploy script environment (name upper-cased,
 non-alphanumerics → `_`; ≤ 50 variables, ≤ 4 KiB each; stored encrypted). → `202`
 `{"data": {"id", "status", "number", "url"}}`; `404` for unknown/rotated tokens; `422` for an invalid commit.
 Rate limited to 30/min.
 
 ## Internal builder API
 
-`kiln-builder serve --url https://kiln.example.com --token kbt_…` (env `KILN_URL`, `KILN_BUILDER_TOKEN`,
-`KILN_BUILDER_NAME`). Tokens: the control-plane host builder uses `KILN_LOCAL_BUILDER_TOKEN` (serves every
+`falak-builder serve --url https://falak.example.com --token kbt_…` (env `FALAK_URL`, `FALAK_BUILDER_TOKEN`,
+`FALAK_BUILDER_NAME`). Tokens: the control-plane host builder uses `FALAK_LOCAL_BUILDER_TOKEN` (serves every
 organization); builder servers get one installed automatically when they finish provisioning; external
 builders are created under *Builds → Builders* (organization-scoped). `401` for unknown/disabled tokens.
 
 ### `GET /api/internal/builds/next?wait=<s>&builder=<name>&run=<run id>`
-`run` identifies the kiln-builder process (random, new at every start). A poll with a new run id first fails the
+`run` identifies the falak-builder process (random, new at every start). A poll with a new run id first fails the
 builds that an earlier run with the same `builder` name had claimed (`Builder <name> restarted during the build.`),
-so a restarted builder (e.g. `kiln-ctl update` recreating the container) does not leave them running until the
+so a restarted builder (e.g. `falak-ctl update` recreating the container) does not leave them running until the
 build timeout. Long-poll (≤ 25 s). `204` when nothing is queued for the builder (organization + mode eligibility), else
 `200` with a job (`agent/internal/builder/job.go` `Job`):
 ```json
@@ -551,7 +551,7 @@ build timeout. Long-poll (≤ 25 s). `204` when nothing is queued for the builde
  "repo": {"url": "git@github.com:acme/shop.git", "ref": "main", "commit": "a1b2…",
           "deploy_key": "-----BEGIN OPENSSH PRIVATE KEY-----…", "known_hosts": "…"},
  "env": {"VITE_APP_NAME": "Shop"},
- "native": {"upload": {"url": "https://kiln.example.com/api/internal/artifacts/…?expires=…&signature=…",
+ "native": {"upload": {"url": "https://falak.example.com/api/internal/artifacts/…?expires=…&signature=…",
                        "headers": {"Content-Type": "application/octet-stream"}}}}
 ```
 Jobs of a site with a `root_directory` carry it as `"subdir"`: the app root inside the checkout (a subdir resolving
@@ -562,7 +562,7 @@ Clone credentials come from SourceControl at hand-out time and are never stored.
 `token`/`username` instead of `deploy_key`. `env` holds site variables with public front-end prefixes
 (`builds.env_prefixes`) plus the variables exposed to the deploy script (the per-variable opt-in for other
 build-time settings, e.g. Astro's `SITE_URL`). Native jobs carry `native.install_command` / `native.build_command`
-when the site defines the variables `KILN_INSTALL_COMMAND` / `KILN_BUILD_COMMAND` (run with `sh -c`, replacing the
+when the site defines the variables `FALAK_INSTALL_COMMAND` / `FALAK_BUILD_COMMAND` (run with `sh -c`, replacing the
 detected install / build step).
 
 ### `POST /api/internal/builds/{build}/events`
@@ -577,13 +577,13 @@ Responses: `204`; `404` build unknown or assigned to another builder; `413` batc
 ### `POST /api/internal/builds/{build}/heartbeat`
 Sent every 20 s while a build runs. `204`; `404` unknown build or another builder's; `410` the build is over on the
 control plane (cancelled, failed by the watchdog, reaped) — the builder aborts it. A running build of a builder that
-reports run ids fails after `KILN_BUILD_HEARTBEAT_TIMEOUT` seconds (default 90) without a heartbeat or event.
+reports run ids fails after `FALAK_BUILD_HEARTBEAT_TIMEOUT` seconds (default 90) without a heartbeat or event.
 
 ### Artifacts (local driver)
 `PUT /api/internal/artifacts/{key}` (builder upload) and `GET /api/internal/artifacts/{key}` (agent
 `deploy.fetch`) are authorized by the signed, expiring URL alone (`403` otherwise). URLs are always `https`
-(`KILN_ARTIFACTS_URL`, default `APP_URL`). With `KILN_ARTIFACTS_DRIVER=s3` the builder and agents talk to the
+(`FALAK_ARTIFACTS_URL`, default `APP_URL`). With `FALAK_ARTIFACTS_DRIVER=s3` the builder and agents talk to the
 bucket directly through SigV4-presigned URLs instead.
 
 ### `GET /install/builder/linux-{amd64|arm64}`
-kiln-builder binary for builder servers (from `KILN_BUILDER_BINARIES_PATH`, or `KILN_BUILDER_DOWNLOAD_URL`).
+falak-builder binary for builder servers (from `FALAK_BUILDER_BINARIES_PATH`, or `FALAK_BUILDER_DOWNLOAD_URL`).

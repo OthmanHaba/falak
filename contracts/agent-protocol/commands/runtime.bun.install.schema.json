@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/runtime.bun.install.schema.json",
-  "title": "runtime.bun.install \u2014 install the official Bun binary into /opt/kiln/bun/<version>",
+  "$id": "https://falak.sh/agent-protocol/commands/runtime.bun.install.schema.json",
+  "title": "runtime.bun.install \u2014 install the official Bun binary into /opt/falak/bun/<version>",
   "type": "object",
   "additionalProperties": false,
   "required": [

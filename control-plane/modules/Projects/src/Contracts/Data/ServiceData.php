@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Projects\Contracts\Data;
+namespace Falak\Projects\Contracts\Data;
 
-use Kiln\Projects\Contracts\ServiceKind;
+use Falak\Projects\Contracts\ServiceKind;
 
 /**
  * A site or database placed in a project environment (one environment per site/database).

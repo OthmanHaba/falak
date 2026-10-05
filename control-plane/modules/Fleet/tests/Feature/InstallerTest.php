@@ -3,15 +3,15 @@
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Contracts\Enrollment;
+use Falak\Fleet\Contracts\Enrollment;
 use Symfony\Component\Process\Process;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 beforeEach(function () {
-    config(['app.url' => 'https://panel.kiln.test']);
+    config(['app.url' => 'https://panel.falak.test']);
     [, $this->organization] = memberOf();
-    $this->binaries = sys_get_temp_dir().'/kiln-bin-'.bin2hex(random_bytes(4));
+    $this->binaries = sys_get_temp_dir().'/falak-bin-'.bin2hex(random_bytes(4));
     mkdir($this->binaries);
     config(['fleet.agent.binaries_path' => $this->binaries]);
 });
@@ -22,30 +22,30 @@ afterEach(function () {
 });
 
 it('serves a valid POSIX sh installer for a usable token', function () {
-    file_put_contents($this->binaries.'/kiln-agent-linux-amd64', 'fake-amd64-binary');
+    file_put_contents($this->binaries.'/falak-agent-linux-amd64', 'fake-amd64-binary');
     $install = app(Enrollment::class)->issueInstallToken($this->organization->id, (string) Str::ulid());
 
     $response = $this->get("/install/{$install->token}")->assertOk()->assertHeader('Content-Type', 'text/x-shellscript; charset=utf-8');
     $script = $response->getContent();
 
     expect($script)->toStartWith("#!/bin/sh\n")
-        ->toContain("KILN_PANEL_URL='https://panel.kiln.test'")
-        ->toContain("KILN_TOKEN='{$install->token}'")
-        ->toContain('URL="https://panel.kiln.test/install/agent/linux-${ARCH}"')
+        ->toContain("FALAK_PANEL_URL='https://panel.falak.test'")
+        ->toContain("FALAK_TOKEN='{$install->token}'")
+        ->toContain('URL="https://panel.falak.test/install/agent/linux-${ARCH}"')
         ->toContain("amd64) SHA256='".hash('sha256', 'fake-amd64-binary')."'")
         ->toContain("arm64) SHA256=''")
-        ->toContain('"$BIN" enroll --panel "$KILN_PANEL_URL" --token "$KILN_TOKEN"')
+        ->toContain('"$BIN" enroll --panel "$FALAK_PANEL_URL" --token "$FALAK_TOKEN"')
         ->toContain('"$BIN" install')
         ->not->toContain('ExecStart');
 
     // Preflight, a previous install, stopping the old agent before enrolling, and the connection check.
-    expect($script)->toContain("KILN_AGENT_API='https://panel.kiln.test/agent/v1'")
-        ->toContain('"$KILN_AGENT_API/ping"')
+    expect($script)->toContain("FALAK_AGENT_API='https://panel.falak.test/agent/v1'")
+        ->toContain('"$FALAK_AGENT_API/ping"')
         ->toContain('ubuntu:26.04) say "note: on Ubuntu 26.04 PHP comes from Ubuntu\'s own archive, which has only PHP 8.5"')
-        ->toContain('if [ -f /etc/kiln/agent.json ]; then')
+        ->toContain('if [ -f /etc/falak/agent.json ]; then')
         ->toContain('"$BIN" check --wait 60s')
-        ->toContain('journalctl -u kiln-agent');
-    expect(strpos($script, 'systemctl stop kiln-agent'))->toBeLessThan(strpos($script, '"$BIN" enroll'));
+        ->toContain('journalctl -u falak-agent');
+    expect(strpos($script, 'systemctl stop falak-agent'))->toBeLessThan(strpos($script, '"$BIN" enroll'));
     expect(strpos($script, '"$BIN" install'))->toBeLessThan(strpos($script, '"$BIN" check'));
     expect($script)->not->toContain("\r")->not->toContain(chr(1));
 
@@ -59,14 +59,14 @@ it('serves a valid POSIX sh installer for a usable token', function () {
 
 it('uses an external download URL and pinned checksums when configured', function () {
     config([
-        'fleet.agent.download_url' => 'https://releases.kiln.test/v1.2.3/kiln-agent-linux-{arch}',
+        'fleet.agent.download_url' => 'https://releases.falak.test/v1.2.3/falak-agent-linux-{arch}',
         'fleet.agent.checksums' => ['arm64' => str_repeat('b', 64)],
     ]);
     $install = app(Enrollment::class)->issueInstallToken($this->organization->id, null);
 
     $script = $this->get("/install/{$install->token}")->assertOk()->getContent();
 
-    expect($script)->toContain('URL="https://releases.kiln.test/v1.2.3/kiln-agent-linux-${ARCH}"')
+    expect($script)->toContain('URL="https://releases.falak.test/v1.2.3/falak-agent-linux-${ARCH}"')
         ->toContain("arm64) SHA256='".str_repeat('b', 64)."'");
 });
 
@@ -86,7 +86,7 @@ it('quotes hostile values safely', function () {
 
     $script = $this->get("/install/{$install->token}")->getContent();
 
-    expect($script)->toContain("KILN_PANEL_URL='https://evil.test/'\\''; rm -rf / #'");
+    expect($script)->toContain("FALAK_PANEL_URL='https://evil.test/'\\''; rm -rf / #'");
     $process = new Process(['sh', '-n']);
     $process->setInput($script);
     $process->run();
@@ -94,15 +94,15 @@ it('quotes hostile values safely', function () {
 });
 
 it('uses a separate agents host for the agent API check', function () {
-    config(['fleet.api_url' => 'https://agents.kiln.test/agent/v1']);
+    config(['fleet.api_url' => 'https://agents.falak.test/agent/v1']);
     $install = app(Enrollment::class)->issueInstallToken($this->organization->id, null);
 
-    expect($this->get("/install/{$install->token}")->getContent())->toContain("KILN_AGENT_API='https://agents.kiln.test/agent/v1'");
+    expect($this->get("/install/{$install->token}")->getContent())->toContain("FALAK_AGENT_API='https://agents.falak.test/agent/v1'");
 });
 
 /**
  * Runs the installer with stubbed system tools in a sandbox. Without DOWNLOAD the stubbed download fails after
- * preflight; with DOWNLOAD=1 it delivers a fake kiln-agent and the script runs to the end, with $BIN pointed into
+ * preflight; with DOWNLOAD=1 it delivers a fake falak-agent and the script runs to the end, with $BIN pointed into
  * the sandbox. OLD_AGENT=1 makes the fake agent a build without `check`; INACTIVE=1 makes the service never run.
  *
  * @param  array<string, string>  $env
@@ -110,7 +110,7 @@ it('uses a separate agents host for the agent API check', function () {
  */
 function run_installer(string $script, array $env): array
 {
-    $dir = sys_get_temp_dir().'/kiln-installer-'.bin2hex(random_bytes(4));
+    $dir = sys_get_temp_dir().'/falak-installer-'.bin2hex(random_bytes(4));
     mkdir($dir.'/bin', 0o755, true);
     $stubs = [
         'id' => 'echo 0',
@@ -127,7 +127,7 @@ STUB,
 echo "curl $*" >> "$STUB_LOG"
 case "$*" in
     *" -I "*) printf 'HTTP/2 302\r\ndate: Fri, 02 Oct 2026 12:00:00 GMT\r\nlocation: /login\r\n\r\n' ;;
-    */ping*) if [ -n "${API_DOWN:-}" ]; then echo "curl: (7) Failed to connect to agents.kiln.test port 443" >&2; exit 7; fi; printf 401 ;;
+    */ping*) if [ -n "${API_DOWN:-}" ]; then echo "curl: (7) Failed to connect to agents.falak.test port 443" >&2; exit 7; fi; printf 401 ;;
     *)
         [ -n "${DOWNLOAD:-}" ] || exit 22
         while [ "$#" -gt 0 ]; do [ "$1" = -o ] && cp "$SANDBOX/fake-agent" "$2"; shift; done ;;
@@ -142,23 +142,23 @@ STUB,
     }
     file_put_contents("{$dir}/fake-agent", <<<'AGENT'
 #!/bin/sh
-echo "kiln-agent $*" >> "$STUB_LOG"
+echo "falak-agent $*" >> "$STUB_LOG"
 case "$1 ${2:-}" in
     "check --help")
         echo "Usage of check:" >&2
         [ -n "${OLD_AGENT:-}" ] || echo "  -wait duration" >&2 ;;
     check*)
-        [ -z "${OLD_AGENT:-}" ] || { echo "usage: kiln-agent <run|enroll|install|version> [flags]" >&2; exit 2; }
-        echo "kiln-agent connected as 01JTESTAGENT0000000000000" ;;
+        [ -z "${OLD_AGENT:-}" ] || { echo "usage: falak-agent <run|enroll|install|version> [flags]" >&2; exit 2; }
+        echo "falak-agent connected as 01JTESTAGENT0000000000000" ;;
     "features "*)
-        [ -z "${OLD_AGENT:-}" ] || { echo "usage: kiln-agent <run|enroll|install|check|version> [flags]" >&2; exit 2; }
+        [ -z "${OLD_AGENT:-}" ] || { echo "usage: falak-agent <run|enroll|install|check|version> [flags]" >&2; exit 2; }
         echo "edge.access_log"
         [ -n "${NO_V2:-}" ] || echo "provision.v2" ;;
 esac
 exit 0
 AGENT);
 
-    $script = str_replace('BIN=/usr/local/bin/kiln-agent', 'BIN="$SANDBOX/kiln-agent"', $script);
+    $script = str_replace('BIN=/usr/local/bin/falak-agent', 'BIN="$SANDBOX/falak-agent"', $script);
     $process = new Process(['sh', '-s'], $dir, ['PATH' => "{$dir}/bin:/usr/bin:/bin", 'STUB_LOG' => "{$dir}/calls", 'SANDBOX' => $dir, ...$env]);
     $process->setInput($script);
     $process->run();
@@ -175,9 +175,9 @@ it('stops an earlier agent, enrolls, installs and waits until the agent and the 
     [$code, $stdout, $stderr, $calls] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000000', 'DOWNLOAD' => '1']);
 
     expect($code)->toBe(0, $stderr)
-        ->and($stdout)->toContain("kiln: kiln-agent connected as 01JTESTAGENT0000000000000\n")
-        ->and($stdout)->toEndWith("kiln: Kiln now checks the software already on this machine, then provisions it. Results: the server's page at https://panel.kiln.test/servers (Machine check).\n");
-    $order = array_map(fn (string $call) => strpos($calls, $call), ['systemctl stop kiln-agent', 'kiln-agent enroll', 'kiln-agent install', 'kiln-agent check --wait 60s', 'systemctl is-active --quiet kiln-agent']);
+        ->and($stdout)->toContain("falak: falak-agent connected as 01JTESTAGENT0000000000000\n")
+        ->and($stdout)->toEndWith("falak: Falak now checks the software already on this machine, then provisions it. Results: the server's page at https://panel.falak.test/servers (Machine check).\n");
+    $order = array_map(fn (string $call) => strpos($calls, $call), ['systemctl stop falak-agent', 'falak-agent enroll', 'falak-agent install', 'falak-agent check --wait 60s', 'systemctl is-active --quiet falak-agent']);
     expect($order)->not->toContain(false)->and($order)->toBe(array_values(Arr::sort($order)));
 })->skip(PHP_OS_FAMILY === 'Windows');
 
@@ -188,9 +188,9 @@ it('skips the connection check for an agent build without it', function () {
     [$code, $stdout, $stderr, $calls] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000000', 'DOWNLOAD' => '1', 'OLD_AGENT' => '1']);
 
     expect($code)->toBe(0, $stderr)
-        ->and($stderr)->toContain('this kiln-agent build has no check command; not verifying the connection')
-        ->and($stdout)->toContain("kiln: kiln-agent installed\n")
-        ->and($calls)->not->toContain('kiln-agent check --wait')
+        ->and($stderr)->toContain('this falak-agent build has no check command; not verifying the connection')
+        ->and($stdout)->toContain("falak: falak-agent installed\n")
+        ->and($calls)->not->toContain('falak-agent check --wait')
         ->and($stdout)->not->toContain('Machine check');
 })->skip(PHP_OS_FAMILY === 'Windows');
 
@@ -201,8 +201,8 @@ it('points at the machine check only when the agent build has it', function () {
     [$code, $stdout, $stderr, $calls] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000000', 'DOWNLOAD' => '1', 'NO_V2' => '1']);
 
     expect($code)->toBe(0, $stderr)
-        ->and($calls)->toContain('kiln-agent features')
-        ->and($stdout)->toEndWith("kiln: kiln-agent connected as 01JTESTAGENT0000000000000\n");
+        ->and($calls)->toContain('falak-agent features')
+        ->and($stdout)->toEndWith("falak: falak-agent connected as 01JTESTAGENT0000000000000\n");
 })->skip(PHP_OS_FAMILY === 'Windows');
 
 it('fails when the service does not stay up after the check', function () {
@@ -212,9 +212,9 @@ it('fails when the service does not stay up after the check', function () {
     [$code, $stdout, $stderr, $calls] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000000', 'DOWNLOAD' => '1', 'INACTIVE' => '1']);
 
     expect($code)->toBe(1)
-        ->and($stderr)->toContain('kiln-agent.service is not running; logs: journalctl -u kiln-agent')
+        ->and($stderr)->toContain('falak-agent.service is not running; logs: journalctl -u falak-agent')
         ->and($stdout)->not->toContain('connected as')
-        ->and(substr_count($calls, 'systemctl is-active --quiet kiln-agent'))->toBe(10);
+        ->and(substr_count($calls, 'systemctl is-active --quiet falak-agent'))->toBe(10);
 })->skip(PHP_OS_FAMILY === 'Windows');
 
 it('stops before changing anything when the clock is more than five minutes off', function () {
@@ -229,13 +229,13 @@ it('stops before changing anything when the clock is more than five minutes off'
 })->skip(PHP_OS_FAMILY === 'Windows');
 
 it('fails clearly when the agent API cannot be reached', function () {
-    config(['fleet.api_url' => 'https://agents.kiln.test/agent/v1']);
+    config(['fleet.api_url' => 'https://agents.falak.test/agent/v1']);
     $install = app(Enrollment::class)->issueInstallToken($this->organization->id, null);
     $script = $this->get("/install/{$install->token}")->getContent();
 
     [$code, , $stderr] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000000', 'API_DOWN' => '1']);
 
-    expect($code)->toBe(1)->and($stderr)->toContain('cannot reach the agent API at https://agents.kiln.test/agent/v1: curl: (7) Failed to connect');
+    expect($code)->toBe(1)->and($stderr)->toContain('cannot reach the agent API at https://agents.falak.test/agent/v1: curl: (7) Failed to connect');
 })->skip(PHP_OS_FAMILY === 'Windows');
 
 it('passes preflight with a small clock difference and goes on to the download', function () {
@@ -245,13 +245,13 @@ it('passes preflight with a small clock difference and goes on to the download',
     [$code, $stdout, $stderr, $calls] = run_installer($script, ['PANEL_TS' => '1790000000', 'LOCAL_TS' => '1790000090']);
 
     expect($code)->toBe(1)
-        ->and($stdout)->toContain('kiln: OS: ')->toContain('downloading kiln-agent (amd64)')
+        ->and($stdout)->toContain('falak: OS: ')->toContain('downloading falak-agent (amd64)')
         ->and($stderr)->toContain("clock is 90s off the panel's; enable time sync")->toContain('download failed')
-        ->and($calls)->toContain('https://panel.kiln.test/agent/v1/ping')->not->toContain('systemctl stop');
+        ->and($calls)->toContain('https://panel.falak.test/agent/v1/ping')->not->toContain('systemctl stop');
 })->skip(PHP_OS_FAMILY === 'Windows');
 
 it('serves published agent binaries by architecture', function () {
-    file_put_contents($this->binaries.'/kiln-agent-linux-arm64', 'arm-bits');
+    file_put_contents($this->binaries.'/falak-agent-linux-arm64', 'arm-bits');
 
     $this->get('/install/agent/linux-arm64')->assertOk()->assertHeader('X-Checksum-Sha256', hash('sha256', 'arm-bits'));
     $this->get('/install/agent/linux-amd64')->assertNotFound();

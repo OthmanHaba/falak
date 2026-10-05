@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Fleet\Http\Controllers\Agent;
+namespace Falak\Fleet\Http\Controllers\Agent;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Validation\ValidationException;
-use Kiln\Fleet\Events\InsightsReceived;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Kernel\Http\Controller;
+use Falak\Fleet\Events\InsightsReceived;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Kernel\Http\Controller;
 
 /**
  * POST /agent/v1/insights — NDJSON insight summaries (contracts/telemetry) → 204.

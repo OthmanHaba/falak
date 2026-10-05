@@ -1,10 +1,10 @@
-import { Button } from '@/components/kiln/button';
-import { DataTable, type DataTableColumn } from '@/components/kiln/data-table';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Segmented } from '@/components/kiln/segmented';
-import { Select } from '@/components/kiln/select';
+import { Button } from '@/components/falak/button';
+import { DataTable, type DataTableColumn } from '@/components/falak/data-table';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Segmented } from '@/components/falak/segmented';
+import { Select } from '@/components/falak/select';
 import ObservabilityLayout from '@/layouts/observability-layout';
 import { Link, router } from '@inertiajs/react';
 import { Activity, Search } from 'lucide-react';

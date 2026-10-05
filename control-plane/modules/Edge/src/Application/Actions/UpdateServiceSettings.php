@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Edge\Application\Actions;
+namespace Falak\Edge\Application\Actions;
 
-use Kiln\Edge\Application\EdgeChanges;
-use Kiln\Edge\Domain\Models\ServiceSetting;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Sites\Contracts\Data\SiteData;
+use Falak\Edge\Application\EdgeChanges;
+use Falak\Edge\Domain\Models\ServiceSetting;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Sites\Contracts\Data\SiteData;
 
 /**
  * IP lists of one public service of a compose site (on top of the site's: the allow list replaces the site's when set,

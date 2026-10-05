@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Recipes\Domain\Policies;
+namespace Falak\Recipes\Domain\Policies;
 
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Recipes\Domain\Models\Recipe;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Recipes\Domain\Models\Recipe;
 
 final class RecipePolicy
 {

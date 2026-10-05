@@ -1,21 +1,21 @@
-# Sim edge for the Kiln control plane.
+# Sim edge for the Falak control plane.
 #
-#   kiln.test (+ localhost)   panel, installer, enrollment. TLS from Caddy's internal CA
-#                             (published to /kiln/edge-pki/root.crt and trusted by the sim servers).
-#   agents.kiln.test          agent mTLS API. TLS server cert issued by the Kiln Fleet CA
+#   falak.test (+ localhost)   panel, installer, enrollment. TLS from Caddy's internal CA
+#                             (published to /falak/edge-pki/root.crt and trusted by the sim servers).
+#   agents.falak.test          agent mTLS API. TLS server cert issued by the Falak Fleet CA
 #                             (agents pin it); site added by the entrypoint once
-#                             /kiln/ca/agent-api.{pem,key} exist (see sites/ below).
+#                             /falak/ca/agent-api.{pem,key} exist (see sites/ below).
 #
 # Agent auth per contracts/agent-protocol: client certs are verified against the Fleet CA
-# (/kiln/ca/ca.pem -> /etc/caddy/trust/ca.pem). /agent/v1/* except /agent/v1/enroll requires a
+# (/falak/ca/ca.pem -> /etc/caddy/trust/ca.pem). /agent/v1/* except /agent/v1/enroll requires a
 # cert. The SHA-256 (lowercase hex) of the client DER cert is forwarded as
-# X-Kiln-Client-Cert-Fingerprint. Any client-supplied value of that header is always stripped.
+# X-Falak-Client-Cert-Fingerprint. Any client-supplied value of that header is always stripped.
 {
 	admin localhost:2019
 	skip_install_trust
 	pki {
 		ca local {
-			name "Kiln Sim Edge CA"
+			name "Falak Sim Edge CA"
 		}
 	}
 }
@@ -29,7 +29,7 @@
 	}
 }
 
-(kiln_routes) {
+(falak_routes) {
 	@agent_without_cert {
 		path /agent/v1/*
 		not path /agent/v1/enroll
@@ -58,39 +58,39 @@
 		}
 		handle @machine_with_cert {
 			reverse_proxy agent-api:8080 {
-				header_up X-Kiln-Client-Cert-Fingerprint {http.request.tls.client.fingerprint}
+				header_up X-Falak-Client-Cert-Fingerprint {http.request.tls.client.fingerprint}
 			}
 		}
 		handle @machine {
 			reverse_proxy agent-api:8080 {
-				header_up -X-Kiln-Client-Cert-Fingerprint
+				header_up -X-Falak-Client-Cert-Fingerprint
 			}
 		}
 		handle @with_cert {
 			reverse_proxy control-plane:8080 {
-				header_up X-Kiln-Client-Cert-Fingerprint {http.request.tls.client.fingerprint}
+				header_up X-Falak-Client-Cert-Fingerprint {http.request.tls.client.fingerprint}
 			}
 		}
 		handle {
 			reverse_proxy control-plane:8080 {
-				header_up -X-Kiln-Client-Cert-Fingerprint
+				header_up -X-Falak-Client-Cert-Fingerprint
 			}
 		}
 	}
 }
 
-kiln.test, localhost, edge {
+falak.test, localhost, edge {
 	tls internal {
 		import client_auth_fleet
 	}
-	import kiln_routes
+	import falak_routes
 }
 
 # Sim caches (compose.yml, `make clean-cache`), TLS from the same internal CA the servers trust:
-#   downloads.kiln.test         runtime release mirror (KILN_*_MIRROR) -> sim-downloads (caching nginx)
+#   downloads.falak.test         runtime release mirror (FALAK_*_MIRROR) -> sim-downloads (caching nginx)
 #   ppa.launchpadcontent.net    resolve to the edge only on the servers (compose extra_hosts): the ondrej/php
 #   ghcr.io                     PPA and GHCR, served through pull-through caches of the real upstreams.
-downloads.kiln.test, ppa.launchpadcontent.net {
+downloads.falak.test, ppa.launchpadcontent.net {
 	tls internal
 	reverse_proxy sim-downloads:80
 }

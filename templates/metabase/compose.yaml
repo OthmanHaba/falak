@@ -8,7 +8,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      MB_SITE_URL: ${{ kiln.url(metabase) }}
+      MB_SITE_URL: ${{ falak.url(metabase) }}
       MB_DB_TYPE: postgres
       MB_DB_HOST: db
       MB_DB_PORT: "5432"

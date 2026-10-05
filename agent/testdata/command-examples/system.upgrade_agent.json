@@ -1,1 +1,1 @@
-{"version": "v1.2.0", "url": "https://panel.kiln.example/downloads/kiln-agent/v1.2.0/kiln-agent-linux-amd64", "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "restart": true}
+{"version": "v1.2.0", "url": "https://panel.falak.example/downloads/falak-agent/v1.2.0/falak-agent-linux-amd64", "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "restart": true}

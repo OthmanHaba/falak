@@ -1,7 +1,7 @@
 <?php
 
-use Kiln\Sites\Application\Compose\ServiceReferences;
-use Kiln\Sites\Contracts\Data\ComposeRewrites;
+use Falak\Sites\Application\Compose\ServiceReferences;
+use Falak\Sites\Contracts\Data\ComposeRewrites;
 
 it('finds the variables of a stack that point at a database service, with their companions', function () {
     $document = ['services' => [

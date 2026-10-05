@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Templates\Infrastructure;
+namespace Falak\Templates\Infrastructure;
 
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Support\Facades\Log;
-use Kiln\Templates\Application\Catalog\Catalog;
-use Kiln\Templates\Application\Catalog\TemplateParser;
-use Kiln\Templates\Domain\InvalidTemplate;
-use Kiln\Templates\Domain\Template;
-use Kiln\Templates\Domain\TemplateSource;
+use Falak\Templates\Application\Catalog\Catalog;
+use Falak\Templates\Application\Catalog\TemplateParser;
+use Falak\Templates\Domain\InvalidTemplate;
+use Falak\Templates\Domain\Template;
+use Falak\Templates\Domain\TemplateSource;
 
 /**
  * Reads templates/<slug>/{template.yaml, compose.yaml, icon.svg?}. File contents are cached under a key derived

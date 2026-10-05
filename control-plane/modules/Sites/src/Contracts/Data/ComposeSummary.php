@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
-use Kiln\Sites\Contracts\ComposeInspector;
+use Falak\Sites\Contracts\ComposeInspector;
 
 /**
  * What {@see ComposeInspector::parse()} found in a compose file.
@@ -14,7 +14,7 @@ final readonly class ComposeSummary
      * @param  list<string>  $volumes  top-level named volumes
      * @param  list<string>  $violations  policy violations (§1.3); allowed only with the organization's "Allow privileged compose"
      * @param  list<string>  $errors  the file cannot be used (YAML/structure errors)
-     * @param  list<string>  $warnings  usable, but Kiln changes or ignores something (e.g. host ports)
+     * @param  list<string>  $warnings  usable, but Falak changes or ignores something (e.g. host ports)
      */
     public function __construct(
         public array $services,

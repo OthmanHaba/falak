@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Templates\Tests\Support;
+namespace Falak\Templates\Tests\Support;
 
-use Kiln\Sites\Contracts\ComposeInspector;
-use Kiln\Sites\Contracts\Data\ComposeServiceSummary;
-use Kiln\Sites\Contracts\Data\ComposeSummary;
-use Kiln\Templates\Application\Compose\ComposeDocument;
+use Falak\Sites\Contracts\ComposeInspector;
+use Falak\Sites\Contracts\Data\ComposeServiceSummary;
+use Falak\Sites\Contracts\Data\ComposeSummary;
+use Falak\Templates\Application\Compose\ComposeDocument;
 
 /**
  * `Sites\Contracts\ComposeInspector` double: services and ports from the parsed document, configurable policy

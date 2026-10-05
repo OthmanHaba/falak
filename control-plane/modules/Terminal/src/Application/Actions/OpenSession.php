@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Terminal\Application\Actions;
+namespace Falak\Terminal\Application\Actions;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Terminal\Domain\Enums\SessionStatus;
-use Kiln\Terminal\Domain\Models\TerminalSession;
-use Kiln\Terminal\Events\TerminalSessionOpened;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Terminal\Domain\Enums\SessionStatus;
+use Falak\Terminal\Domain\Models\TerminalSession;
+use Falak\Terminal\Events\TerminalSessionOpened;
 
 final class OpenSession
 {

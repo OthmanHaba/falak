@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Servers\Domain\MachineCheck;
+namespace Falak\Servers\Domain\MachineCheck;
 
 /**
  * Decides per component what provisioning does on a machine that already runs software: install, adopt (use what is
@@ -14,11 +14,11 @@ final class DecisionEngine
     /** Components in display order (also the provision.apply `components` names). */
     public const COMPONENTS = ['base', 'docker', 'database', 'cache', 'edge', 'php', 'node', 'ssh', 'firewall', 'swap', 'hostname', 'unattended_upgrades', 'fail2ban'];
 
-    /** Kiln's edge (FrankenPHP or Caddy) runs as this unit. */
-    private const EDGE_UNIT = 'kiln-edge.service';
+    /** Falak's edge (FrankenPHP or Caddy) runs as this unit. */
+    private const EDGE_UNIT = 'falak-edge.service';
 
-    /** Kiln's sshd drop-in; sshd keeps the first value of a keyword, so files sorting before it win. */
-    private const SSH_DROP_IN = '/etc/ssh/sshd_config.d/50-kiln.conf';
+    /** Falak's sshd drop-in; sshd keeps the first value of a keyword, so files sorting before it win. */
+    private const SSH_DROP_IN = '/etc/ssh/sshd_config.d/50-falak.conf';
 
     /** nftables tables iptables-nft creates (Docker, ufw): not separate firewalls. */
     private const IPTABLES_TABLES = ['ip filter', 'ip nat', 'ip mangle', 'ip raw', 'ip security', 'ip6 filter', 'ip6 nat', 'ip6 mangle', 'ip6 raw', 'ip6 security'];
@@ -114,7 +114,7 @@ final class DecisionEngine
         $block = fn (string $message, string $hint) => new ComponentDecision('docker', 'Docker', Decision::Block, $message, $found, notes: [Note::block($message, $hint), ...$notes]);
 
         if ($docker['snap'] ?? false) {
-            return $block('Docker is installed as a snap.', 'Kiln runs Docker from apt packages; the snap cannot reach site directories outside /home. Remove it (snap remove docker), then re-check: Kiln installs Docker, or install it from Docker\'s repository first.');
+            return $block('Docker is installed as a snap.', 'Falak runs Docker from apt packages; the snap cannot reach site directories outside /home. Remove it (snap remove docker), then re-check: Falak installs Docker, or install it from Docker\'s repository first.');
         }
 
         if ($engine === 'podman-docker') {
@@ -122,7 +122,7 @@ final class DecisionEngine
         }
 
         if (! ($docker['system_daemon'] ?? false) && ($docker['rootless'] ?? false)) {
-            return $block('Only a rootless Docker is set up.', 'Kiln needs the system Docker daemon (docker.service). Install Docker for the whole machine, then re-check.');
+            return $block('Only a rootless Docker is set up.', 'Falak needs the system Docker daemon (docker.service). Install Docker for the whole machine, then re-check.');
         }
 
         if (($report->service('docker.service')['enabled'] ?? null) === 'masked') {
@@ -130,11 +130,11 @@ final class DecisionEngine
         }
 
         if (! ($docker['system_daemon'] ?? false) && ($docker['server_version'] ?? '') === '') {
-            return $block('Only the Docker CLI is installed: there is no Docker engine (no docker.service).', "Install the engine from the CLI's source (docker-ce from Docker's repository), or remove the CLI so Kiln installs Ubuntu's Docker, then re-check.");
+            return $block('Only the Docker CLI is installed: there is no Docker engine (no docker.service).', "Install the engine from the CLI's source (docker-ce from Docker's repository), or remove the CLI so Falak installs Ubuntu's Docker, then re-check.");
         }
 
         if ($docker['rootless'] ?? false) {
-            $notes[] = Note::warning('A rootless Docker is also set up for a user; Kiln only uses the system daemon.');
+            $notes[] = Note::warning('A rootless Docker is also set up for a user; Falak only uses the system daemon.');
         }
 
         foreach (['compose', 'buildx'] as $plugin) {
@@ -146,7 +146,7 @@ final class DecisionEngine
         $minimum = (string) ($this->rules['minimum_versions']['docker'] ?? '0');
 
         if ($version !== null && $version !== '' && version_compare($version, $minimum, '<')) {
-            return $block("Docker {$version} is older than {$minimum}, the oldest Kiln supports.", "Upgrade Docker to {$minimum} or newer from the same source, then re-check.");
+            return $block("Docker {$version} is older than {$minimum}, the oldest Falak supports.", "Upgrade Docker to {$minimum} or newer from the same source, then re-check.");
         }
 
         if (($docker['server_version'] ?? '') === '' && ($docker['server_error'] ?? '') !== '') {
@@ -165,7 +165,7 @@ final class DecisionEngine
         $pieces = implode(' and ', $missing);
 
         if ($family === []) {
-            return $block("{$installed} has no {$pieces}, and Kiln does not know where this Docker came from.", "Install the docker {$pieces} plugin from the same place as the engine, then re-check.");
+            return $block("{$installed} has no {$pieces}, and Falak does not know where this Docker came from.", "Install the docker {$pieces} plugin from the same place as the engine, then re-check.");
         }
 
         $add = array_map(fn (string $plugin) => (string) $family[$plugin], $missing);
@@ -186,7 +186,7 @@ final class DecisionEngine
         $notes = [];
 
         if (($daemon['iptables'] ?? null) === false) {
-            $notes[] = Note::warning('daemon.json sets "iptables": false: published container ports and Kiln\'s container firewall rules do not work.', 'Remove "iptables": false from /etc/docker/daemon.json and restart Docker.');
+            $notes[] = Note::warning('daemon.json sets "iptables": false: published container ports and Falak\'s container firewall rules do not work.', 'Remove "iptables": false from /etc/docker/daemon.json and restart Docker.');
         }
 
         if (($daemon['userns_remap'] ?? '') !== '') {
@@ -194,7 +194,7 @@ final class DecisionEngine
         }
 
         if (($daemon['bip'] ?? '') !== '' || ($daemon['default_address_pools'] ?? []) !== []) {
-            $notes[] = Note::info('daemon.json sets custom address ranges (bip / default-address-pools); Kiln keeps them.');
+            $notes[] = Note::info('daemon.json sets custom address ranges (bip / default-address-pools); Falak keeps them.');
         }
 
         if (($daemon['error'] ?? '') !== '') {
@@ -251,7 +251,7 @@ final class DecisionEngine
 
             $other = trim("{$engines[$key]['label']} {$p['version']}");
             $notes[] = Note::block("{$other} is installed, but this server is set up for {$wantedLabel}.",
-                "Kiln won't run two {$component} engines on one machine. Remove {$engines[$key]['label']} (apt purge ".($p['packages'][0]['name'] ?? $key).") or use a server set up for {$engines[$key]['label']}, then re-check.");
+                "Falak won't run two {$component} engines on one machine. Remove {$engines[$key]['label']} (apt purge ".($p['packages'][0]['name'] ?? $key).") or use a server set up for {$engines[$key]['label']}, then re-check.");
         }
 
         $mine = $present[$wanted] ?? null;
@@ -260,7 +260,7 @@ final class DecisionEngine
             $minimum = (string) ($this->rules['minimum_versions'][$wanted] ?? '0');
 
             if ($mine['version'] !== null && version_compare($mine['version'], $minimum, '<')) {
-                $notes[] = Note::block("{$wantedLabel} {$mine['version']} is older than {$minimum}, the oldest Kiln supports.", "Upgrade {$wantedLabel} to {$minimum} or newer, then re-check.");
+                $notes[] = Note::block("{$wantedLabel} {$mine['version']} is older than {$minimum}, the oldest Falak supports.", "Upgrade {$wantedLabel} to {$minimum} or newer, then re-check.");
             }
         }
 
@@ -318,7 +318,7 @@ final class DecisionEngine
 
         foreach ($containers as $container) {
             $notes[] = Note::block('A container ('.($container['name'] ?? '?').', '.($container['image'] ?? 'unknown image').") publishes port {$port}, which {$for} needs.",
-                'Stop the container (docker stop '.($container['name'] ?? '<name>').') or publish it on another port, then re-check. To keep a database in Docker, add it to Kiln as a compose service instead.');
+                'Stop the container (docker stop '.($container['name'] ?? '<name>').') or publish it on another port, then re-check. To keep a database in Docker, add it to Falak as a compose service instead.');
         }
 
         foreach ($report->listenersOn($port) as $listener) {
@@ -367,12 +367,12 @@ final class DecisionEngine
         $notes = [];
 
         foreach ((array) ($this->rules['edge_ports'] ?? [80, 443]) as $port) {
-            $notes = [...$notes, ...$this->portNotes($report, (int) $port, "Kiln's edge", [], self::EDGE_UNIT)];
+            $notes = [...$notes, ...$this->portNotes($report, (int) $port, "Falak's edge", [], self::EDGE_UNIT)];
         }
 
         if ($report->serviceActive('caddy.service') && ! $this->mentions($notes, 'caddy')) {
-            $notes[] = Note::block('caddy.service is running; Kiln would stop and disable it for its own edge (kiln-edge).',
-                'Move the sites it serves into Kiln, then stop it (systemctl disable --now caddy) and re-check.');
+            $notes[] = Note::block('caddy.service is running; Falak would stop and disable it for its own edge (falak-edge).',
+                'Move the sites it serves into Falak, then stop it (systemctl disable --now caddy) and re-check.');
         }
 
         foreach ($webServers as $name => $label) {
@@ -388,16 +388,16 @@ final class DecisionEngine
         }
 
         if ($report->service(self::EDGE_UNIT) !== null) {
-            return new ComponentDecision('edge', 'Web server', Decision::Adopt, "Kiln's edge (kiln-edge) is already set up.", $found, notes: $notes);
+            return new ComponentDecision('edge', 'Web server', Decision::Adopt, "Falak's edge (falak-edge) is already set up.", $found, notes: $notes);
         }
 
         if (! $frankenphp && ($caddy = $report->package('caddy')) !== null) {
-            return new ComponentDecision('edge', 'Web server', Decision::Adopt, 'Uses the installed Caddy '.MachineReport::upstream($caddy['version'] ?? null).' as kiln-edge (its caddy.service is not running).', $found, notes: $notes);
+            return new ComponentDecision('edge', 'Web server', Decision::Adopt, 'Uses the installed Caddy '.MachineReport::upstream($caddy['version'] ?? null).' as falak-edge (its caddy.service is not running).', $found, notes: $notes);
         }
 
         return new ComponentDecision('edge', 'Web server', Decision::Install, $frankenphp
-            ? 'FrankenPHP serves ports 80 and 443 as kiln-edge.'
-            : "Installs Caddy from Caddy's repository and runs it as kiln-edge on ports 80 and 443.", $found, notes: $notes);
+            ? 'FrankenPHP serves ports 80 and 443 as falak-edge.'
+            : "Installs Caddy from Caddy's repository and runs it as falak-edge on ports 80 and 443.", $found, notes: $notes);
     }
 
     private function php(MachineReport $report, Wanted $wanted): ?ComponentDecision
@@ -414,13 +414,13 @@ final class DecisionEngine
 
         foreach ($binaries as $binary) {
             if (($binary['path'] ?? '') === '/usr/local/bin/php') {
-                $notes[] = Note::warning('A php binary in /usr/local/bin'.(isset($binary['version']) ? " (PHP {$binary['version']})" : '').' comes before Kiln\'s PHP on PATH.', 'Remove or rename /usr/local/bin/php if deploy hooks and the CLI should use Kiln\'s PHP.');
+                $notes[] = Note::warning('A php binary in /usr/local/bin'.(isset($binary['version']) ? " (PHP {$binary['version']})" : '').' comes before Falak\'s PHP on PATH.', 'Remove or rename /usr/local/bin/php if deploy hooks and the CLI should use Falak\'s PHP.');
             }
         }
 
         foreach ($report->list('frankenphp') as $binary) {
-            if ($runtime === 'frankenphp' && ($binary['source'] ?? '') !== 'kiln') {
-                $notes[] = Note::warning('A FrankenPHP binary at '.($binary['path'] ?? '?').' was not installed by Kiln; Kiln installs its pinned build at /usr/local/bin/frankenphp.');
+            if ($runtime === 'frankenphp' && ($binary['source'] ?? '') !== 'falak') {
+                $notes[] = Note::warning('A FrankenPHP binary at '.($binary['path'] ?? '?').' was not installed by Falak; Falak installs its pinned build at /usr/local/bin/frankenphp.');
             }
         }
 
@@ -429,7 +429,7 @@ final class DecisionEngine
         $versions = implode(', ', $wanted->phpVersions);
 
         if ($present === []) {
-            return new ComponentDecision('php', 'PHP', Decision::Install, "Installs PHP {$versions} with Kiln's extensions".($runtime === 'frankenphp' ? ' and FrankenPHP.' : ' and PHP-FPM.'), $found, notes: $notes);
+            return new ComponentDecision('php', 'PHP', Decision::Install, "Installs PHP {$versions} with Falak's extensions".($runtime === 'frankenphp' ? ' and FrankenPHP.' : ' and PHP-FPM.'), $found, notes: $notes);
         }
 
         $sources = array_values(array_unique(array_map(fn (array $b) => $this->binarySource($b), array_filter($packaged, fn (array $b) => in_array($b['version'] ?? '', $present, true)))));
@@ -448,27 +448,27 @@ final class DecisionEngine
         }
 
         $notes = [];
-        $kiln = false;
+        $falak = false;
 
         foreach ($binaries as $binary) {
             $source = (string) ($binary['source'] ?? '');
 
-            if ($source === 'kiln') {
-                $kiln = $kiln || ($binary['version'] ?? null) === $wanted->nodeVersion;
+            if ($source === 'falak') {
+                $falak = $falak || ($binary['version'] ?? null) === $wanted->nodeVersion;
 
                 continue;
             }
 
             if (($binary['path'] ?? '') === '/usr/local/bin/node') {
-                $notes[] = Note::warning('/usr/local/bin/node was not installed by Kiln; Kiln\'s default Node replaces it with a link to /opt/kiln/node.');
+                $notes[] = Note::warning('/usr/local/bin/node was not installed by Falak; Falak\'s default Node replaces it with a link to /opt/falak/node.');
             } else {
-                $notes[] = Note::info(trim('Node '.($binary['version'] ?? '')).' at '.($binary['path'] ?? 'an unknown path')." ({$this->binarySource($binary)}) stays as it is; sites run Kiln's Node.");
+                $notes[] = Note::info(trim('Node '.($binary['version'] ?? '')).' at '.($binary['path'] ?? 'an unknown path')." ({$this->binarySource($binary)}) stays as it is; sites run Falak's Node.");
             }
         }
 
-        return $kiln
-            ? new ComponentDecision('node', 'Node', Decision::Adopt, "Kiln's Node {$wanted->nodeVersion} is already installed.", $found, notes: $notes)
-            : new ComponentDecision('node', 'Node', Decision::Install, "Installs Node {$wanted->nodeVersion} in /opt/kiln/node.", $found, notes: $notes);
+        return $falak
+            ? new ComponentDecision('node', 'Node', Decision::Adopt, "Falak's Node {$wanted->nodeVersion} is already installed.", $found, notes: $notes)
+            : new ComponentDecision('node', 'Node', Decision::Install, "Installs Node {$wanted->nodeVersion} in /opt/falak/node.", $found, notes: $notes);
     }
 
     private function ssh(MachineReport $report, Wanted $wanted): ComponentDecision
@@ -477,7 +477,7 @@ final class DecisionEngine
         $effective = (array) ($ssh['effective'] ?? []);
         $users = array_values(array_filter((array) ($ssh['users'] ?? []), 'is_array'));
         $withKeys = array_values(array_filter($users, fn (array $u) => (int) ($u['authorized_keys'] ?? 0) > 0));
-        // Users whose keys still let them in once Kiln turns off passwords: root only when no earlier drop-in or the
+        // Users whose keys still let them in once Falak turns off passwords: root only when no earlier drop-in or the
         // current config keeps root out, and only users sshd's Allow/Deny lists let in.
         $canLogIn = array_values(array_filter($withKeys, fn (array $u) => $this->sshAllowed($u, $ssh)));
         // Keyboard-interactive is password login too (PAM asks for the password).
@@ -490,7 +490,7 @@ final class DecisionEngine
             $excluded = array_values(array_diff(array_map(fn (array $u) => (string) ($u['name'] ?? '?'), $withKeys), array_map(fn (array $u) => (string) ($u['name'] ?? '?'), $canLogIn)));
             $notes[] = Note::block('Password login would be turned off, but no user who may log in over SSH has a key in authorized_keys'
                 .($excluded !== [] ? ' ('.implode(', ', $excluded).' has keys but is not allowed to log in: PermitRootLogin, AllowUsers/DenyUsers or AllowGroups/DenyGroups).' : '.'),
-                'Add your public key to ~/.ssh/authorized_keys of a sudo user sshd lets in (or root when root login is allowed), then re-check. Kiln turns off password login.');
+                'Add your public key to ~/.ssh/authorized_keys of a sudo user sshd lets in (or root when root login is allowed), then re-check. Falak turns off password login.');
         }
 
         foreach ((array) ($ssh['drop_ins'] ?? []) as $dropIn) {
@@ -502,8 +502,8 @@ final class DecisionEngine
 
             foreach (['passwordauthentication' => 'PasswordAuthentication', 'permitrootlogin' => 'PermitRootLogin', 'port' => 'Port'] as $key => $keyword) {
                 if (isset($dropIn['settings'][$key])) {
-                    $notes[] = Note::warning("{$file} sets {$keyword} {$dropIn['settings'][$key]} and is read before Kiln's 50-kiln.conf, so it wins.",
-                        "Remove the {$keyword} line from {$file} if Kiln's SSH settings should apply.");
+                    $notes[] = Note::warning("{$file} sets {$keyword} {$dropIn['settings'][$key]} and is read before Falak's 50-falak.conf, so it wins.",
+                        "Remove the {$keyword} line from {$file} if Falak's SSH settings should apply.");
                 }
             }
         }
@@ -511,7 +511,7 @@ final class DecisionEngine
         $ports = array_filter(explode(' ', (string) ($effective['port'] ?? '')));
 
         if ($ports !== [] && ! in_array((string) $wanted->sshPort, $ports, true)) {
-            $notes[] = Note::warning('sshd listens on port '.implode(', ', $ports)." today; Kiln moves SSH to port {$wanted->sshPort}.",
+            $notes[] = Note::warning('sshd listens on port '.implode(', ', $ports)." today; Falak moves SSH to port {$wanted->sshPort}.",
                 "Make sure port {$wanted->sshPort} is open in your provider's firewall before provisioning.");
         }
 
@@ -535,7 +535,7 @@ final class DecisionEngine
 
     /**
      * Whether sshd lets a user with keys in: root needs PermitRootLogin other than no / forced-commands-only (the current
-     * value and any drop-in read before Kiln's), everyone must pass AllowUsers/DenyUsers/AllowGroups/DenyGroups.
+     * value and any drop-in read before Falak's), everyone must pass AllowUsers/DenyUsers/AllowGroups/DenyGroups.
      *
      * @param  array<string, mixed>  $user
      * @param  array<string, mixed>  $ssh
@@ -594,18 +594,18 @@ final class DecisionEngine
             $found[] = ['name' => $label, 'version' => null, 'source' => $state];
 
             if ($state === 'active') {
-                $notes[] = Note::warning("{$label} is active next to Kiln's firewall: a port must be allowed by both, or sites are not reachable.",
-                    $key === 'ufw' ? 'Allow the ports Kiln opens (ufw allow 80,443/tcp) or turn ufw off (ufw disable).' : 'Allow the ports Kiln opens (firewall-cmd --permanent --add-service={http,https}) or stop firewalld.');
+                $notes[] = Note::warning("{$label} is active next to Falak's firewall: a port must be allowed by both, or sites are not reachable.",
+                    $key === 'ufw' ? 'Allow the ports Falak opens (ufw allow 80,443/tcp) or turn ufw off (ufw disable).' : 'Allow the ports Falak opens (firewall-cmd --permanent --add-service={http,https}) or stop firewalld.');
             }
         }
 
-        $others = array_values(array_diff(array_map('strval', (array) ($fw['nft_tables'] ?? [])), ['inet kiln', ...self::IPTABLES_TABLES]));
+        $others = array_values(array_diff(array_map('strval', (array) ($fw['nft_tables'] ?? [])), ['inet falak', ...self::IPTABLES_TABLES]));
 
         if ($others !== []) {
             $notes[] = Note::info('Other nftables tables stay as they are: '.implode(', ', $others).'.');
         }
 
-        return new ComponentDecision('firewall', 'Firewall', Decision::Install, "Kiln's nftables firewall (table inet kiln) is applied once provisioning finishes.", $found, notes: $notes);
+        return new ComponentDecision('firewall', 'Firewall', Decision::Install, "Falak's nftables firewall (table inet falak) is applied once provisioning finishes.", $found, notes: $notes);
     }
 
     private function swap(MachineReport $report, Wanted $wanted): ComponentDecision
@@ -650,24 +650,24 @@ final class DecisionEngine
         $u = $report->section('unattended_upgrades');
         $periodic = is_array($u['periodic'] ?? null) ? $u['periodic'] : null;
         $installed = (bool) ($u['installed'] ?? false);
-        // Ubuntu's own 20auto-upgrades (both settings "1", nothing else) is no customisation: Kiln writes its config as on
+        // Ubuntu's own 20auto-upgrades (both settings "1", nothing else) is no customisation: Falak writes its config as on
         // any fresh machine.
         $stock = $periodic !== null && array_diff_key($periodic, ['Update-Package-Lists' => 1, 'Unattended-Upgrade' => 1]) === []
             && array_unique(array_values($periodic)) === ['1'];
-        $source = ($u['managed_by_kiln'] ?? false) ? "Kiln's config" : ($periodic === null || $stock ? 'default config' : 'own config');
+        $source = ($u['managed_by_falak'] ?? false) ? "Falak's config" : ($periodic === null || $stock ? 'default config' : 'own config');
         $found = $installed || $periodic !== null ? [['name' => 'unattended-upgrades', 'version' => null, 'source' => $source]] : [];
 
-        if ($periodic === null || $stock || ($u['managed_by_kiln'] ?? false)) {
+        if ($periodic === null || $stock || ($u['managed_by_falak'] ?? false)) {
             return new ComponentDecision('unattended_upgrades', 'Automatic updates', Decision::Install, 'Turns on automatic security updates (no automatic reboot).', $found);
         }
 
         $notes = [];
 
         if (($periodic['Unattended-Upgrade'] ?? '1') === '0') {
-            $notes[] = Note::warning('Automatic upgrades are turned off in 20auto-upgrades; Kiln keeps it that way.', 'Set APT::Periodic::Unattended-Upgrade "1" in /etc/apt/apt.conf.d/20auto-upgrades to get security updates.');
+            $notes[] = Note::warning('Automatic upgrades are turned off in 20auto-upgrades; Falak keeps it that way.', 'Set APT::Periodic::Unattended-Upgrade "1" in /etc/apt/apt.conf.d/20auto-upgrades to get security updates.');
         }
 
-        return new ComponentDecision('unattended_upgrades', 'Automatic updates', Decision::Adopt, 'Keeps the existing automatic-update config; Kiln writes none.', $found, notes: $notes);
+        return new ComponentDecision('unattended_upgrades', 'Automatic updates', Decision::Adopt, 'Keeps the existing automatic-update config; Falak writes none.', $found, notes: $notes);
     }
 
     private function fail2ban(MachineReport $report): ComponentDecision
@@ -681,7 +681,7 @@ final class DecisionEngine
 
         $package = $report->package('fail2ban');
         $found = [$package !== null ? $this->found('fail2ban', $package) : ['name' => 'fail2ban', 'version' => null, 'source' => null]];
-        $notes = $jails > 0 ? [Note::info("{$jails} custom jail ".($jails === 1 ? 'file stays' : 'files stay').'; Kiln writes no jails.')] : [];
+        $notes = $jails > 0 ? [Note::info("{$jails} custom jail ".($jails === 1 ? 'file stays' : 'files stay').'; Falak writes no jails.')] : [];
 
         return new ComponentDecision('fail2ban', 'fail2ban', Decision::Adopt, 'Uses the installed fail2ban and makes sure it runs.', $found, keep: ['fail2ban'], service: 'fail2ban', notes: $notes);
     }
@@ -701,7 +701,7 @@ final class DecisionEngine
     private function binarySource(array $binary): string
     {
         return match ($binary['source'] ?? '') {
-            'kiln' => 'Kiln',
+            'falak' => 'Falak',
             'archive' => 'Ubuntu archive',
             'nodesource' => 'NodeSource',
             'nvm' => 'nvm',

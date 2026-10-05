@@ -2,14 +2,14 @@
 
 use Illuminate\Support\Facades\Event;
 use Inertia\Testing\AssertableInertia as Assert;
-use Kiln\Identity\Application\Actions\ConfirmTwoFactor;
-use Kiln\Identity\Application\Actions\EnableTwoFactor;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Identity\Events\OrganizationCreated;
-use Kiln\Identity\Events\UserRegistered;
+use Falak\Identity\Application\Actions\ConfirmTwoFactor;
+use Falak\Identity\Application\Actions\EnableTwoFactor;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Identity\Domain\Models\User;
+use Falak\Identity\Events\OrganizationCreated;
+use Falak\Identity\Events\UserRegistered;
 use Laravel\Fortify\Fortify;
 use PragmaRX\Google2FA\Google2FA;
 

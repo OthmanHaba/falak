@@ -1,4 +1,4 @@
-import { Button, Checkbox, Field, IconButton, Input, Select, Switch } from '@/components/kiln';
+import { Button, Checkbox, Field, IconButton, Input, Select, Switch } from '@/components/falak';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/fn.run.schema.json",
-  "title": "fn.run — run a function's schedule once now (\"Run now\"): its live release in a one-shot kiln-fn-run container, output streamed",
+  "$id": "https://falak.sh/agent-protocol/commands/fn.run.schema.json",
+  "title": "fn.run — run a function's schedule once now (\"Run now\"): its live release in a one-shot falak-fn-run container, output streamed",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,17 +17,17 @@
     "schedule": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]{0,40}$",
-      "description": "Schedule key (KILN_SCHEDULE)"
+      "description": "Schedule key (FALAK_SCHEDULE)"
     },
     "name": {
       "type": "string",
       "maxLength": 128,
-      "description": "Schedule name shown to the function (KILN_SCHEDULE_NAME)"
+      "description": "Schedule name shown to the function (FALAK_SCHEDULE_NAME)"
     },
     "cron": {
       "type": "string",
       "maxLength": 64,
-      "description": "Schedule expression shown to the function (KILN_SCHEDULE_CRON)"
+      "description": "Schedule expression shown to the function (FALAK_SCHEDULE_CRON)"
     },
     "timeout_s": {
       "type": "integer",

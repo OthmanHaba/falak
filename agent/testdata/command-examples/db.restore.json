@@ -1,1 +1,1 @@
-{"engine": "mysql", "database": "shop", "compression": "gzip", "source": {"kind": "local", "path": "/var/backups/kiln/shop-2026-09-26.sql.gz"}, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+{"engine": "mysql", "database": "shop", "compression": "gzip", "source": {"kind": "local", "path": "/var/backups/falak/shop-2026-09-26.sql.gz"}, "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}

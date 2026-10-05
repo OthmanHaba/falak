@@ -1,6 +1,6 @@
 <?php
 
-use Kiln\Fleet\Application\PayloadCompatibility;
+use Falak\Fleet\Application\PayloadCompatibility;
 
 /*
  * Optional protocol fields are removed for agents that don't report the feature that introduced them.

@@ -15,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 func setup(t *testing.T, f *runnertest.Fake, client *http.Client) (*Runtime, string, commands.Stream) {
@@ -213,12 +213,12 @@ func TestPHPInstallOnTheIncidentMachine(t *testing.T) {
 	if _, err := rt.PHPInstall(context.Background(), PHPInstallPayload{Version: "8.5"}, st); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(src + ".disabled-by-kiln"); err != nil || !installed["php8.5-fpm"] || f.Ran("add-apt-repository") {
+	if _, err := os.Stat(src + ".disabled-by-falak"); err != nil || !installed["php8.5-fpm"] || f.Ran("add-apt-repository") {
 		t.Fatalf("%v %v", err, f.Lines())
 	}
 	// Next time the disabled file does not count as the PPA: the release is probed and the PPA not re-added.
 	if OndrejPPAPresent(hostfs.FS{Root: root}) {
-		t.Fatal("a .disabled-by-kiln file is not a source")
+		t.Fatal("a .disabled-by-falak file is not a source")
 	}
 	f.Reset()
 	if _, err := rt.PHPInstall(context.Background(), PHPInstallPayload{Version: "8.5", Extensions: []string{"intl"}}, st); err != nil {
@@ -253,8 +253,8 @@ func TestPHPConfigure(t *testing.T) {
 	if err != nil || !r.(FilesResult).Changed || len(r.(FilesResult).Files) != 2 {
 		t.Fatal(r, err)
 	}
-	b, _ := os.ReadFile(filepath.Join(root, "etc/php/8.4/fpm/conf.d/99-kiln.ini"))
-	want := "; Managed by Kiln — do not edit\ndate.timezone = Europe/Amsterdam\nerror_log = \"a b\"\nmax_execution_time = 60\nmemory_limit = 512M\nopcache.enable = On\n"
+	b, _ := os.ReadFile(filepath.Join(root, "etc/php/8.4/fpm/conf.d/99-falak.ini"))
+	want := "; Managed by Falak — do not edit\ndate.timezone = Europe/Amsterdam\nerror_log = \"a b\"\nmax_execution_time = 60\nmemory_limit = 512M\nopcache.enable = On\n"
 	if string(b) != want {
 		t.Fatalf("%q", b)
 	}
@@ -272,7 +272,7 @@ func TestPHPConfigure(t *testing.T) {
 	if _, err := rt.PHPConfigure(context.Background(), PHPConfigurePayload{Version: "8.4", SAPI: "fpm", INI: p.INI}, st); err == nil {
 		t.Fatal("expected failure")
 	}
-	b, _ = os.ReadFile(filepath.Join(root, "etc/php/8.4/fpm/conf.d/99-kiln.ini"))
+	b, _ = os.ReadFile(filepath.Join(root, "etc/php/8.4/fpm/conf.d/99-falak.ini"))
 	if string(b) != want {
 		t.Fatal("not reverted")
 	}
@@ -331,13 +331,13 @@ func TestNodeInstall(t *testing.T) {
 	if err != nil || !r.(NodeResult).Changed {
 		t.Fatal(r, err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(root, "opt/kiln/node/22.11.0/bin/node")); string(b) != "ELF" {
+	if b, _ := os.ReadFile(filepath.Join(root, "opt/falak/node/22.11.0/bin/node")); string(b) != "ELF" {
 		t.Fatal("not extracted")
 	}
-	if l, _ := os.Readlink(filepath.Join(root, "usr/local/bin/node")); l != "/opt/kiln/node/22.11.0/bin/node" {
+	if l, _ := os.Readlink(filepath.Join(root, "usr/local/bin/node")); l != "/opt/falak/node/22.11.0/bin/node" {
 		t.Fatal(l)
 	}
-	if b, err := os.ReadFile(filepath.Join(root, "opt/kiln/node/22.11.0/bin/npm")); err != nil || string(b) != "js" {
+	if b, err := os.ReadFile(filepath.Join(root, "opt/falak/node/22.11.0/bin/npm")); err != nil || string(b) != "js" {
 		t.Fatal("npm symlink", err)
 	}
 	h := hits
@@ -351,7 +351,7 @@ func TestNodeInstall(t *testing.T) {
 	if _, err := rt2.NodeInstall(context.Background(), p2, st); err == nil || !strings.Contains(err.Error(), "sha256 mismatch") {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(root2, "opt/kiln/node/22.11.0")); err == nil {
+	if _, err := os.Stat(filepath.Join(root2, "opt/falak/node/22.11.0")); err == nil {
 		t.Fatal("partial install left behind")
 	}
 }
@@ -396,28 +396,28 @@ func TestFrankenPHP(t *testing.T) {
 	if fi == nil || fi.Mode().Perm() != 0o755 {
 		t.Fatal("binary")
 	}
-	unit, _ := os.ReadFile(filepath.Join(root, "etc/systemd/system/kiln-edge.service"))
-	if !strings.Contains(string(unit), "ExecStart=/usr/local/bin/frankenphp run --environ --config /etc/kiln/caddy/bootstrap.json") ||
-		!strings.Contains(string(unit), "ExecReload=/usr/local/bin/frankenphp reload --config /etc/kiln/caddy/bootstrap.json --force") ||
+	unit, _ := os.ReadFile(filepath.Join(root, "etc/systemd/system/falak-edge.service"))
+	if !strings.Contains(string(unit), "ExecStart=/usr/local/bin/frankenphp run --environ --config /etc/falak/caddy/bootstrap.json") ||
+		!strings.Contains(string(unit), "ExecReload=/usr/local/bin/frankenphp reload --config /etc/falak/caddy/bootstrap.json --force") ||
 		!strings.Contains(string(unit), "PHPRC=/etc/frankenphp") {
 		t.Fatal(string(unit))
 	}
-	if b, _ := os.ReadFile(filepath.Join(root, "etc/kiln/caddy/bootstrap.json")); !strings.Contains(string(b), `"localhost:2019"`) {
+	if b, _ := os.ReadFile(filepath.Join(root, "etc/falak/caddy/bootstrap.json")); !strings.Contains(string(b), `"localhost:2019"`) {
 		t.Fatal(string(b))
 	}
-	for _, w := range []string{"systemctl daemon-reload", "systemctl enable kiln-edge.service", "systemctl restart kiln-edge.service"} {
+	for _, w := range []string{"systemctl daemon-reload", "systemctl enable falak-edge.service", "systemctl restart falak-edge.service"} {
 		if !f.Ran(w) {
 			t.Fatal(w, f.Lines())
 		}
 	}
 	// existing bootstrap (full config from edge) is never overwritten
-	os.WriteFile(filepath.Join(root, "etc/kiln/caddy/bootstrap.json"), []byte(`{"full":true}`), 0o644)
+	os.WriteFile(filepath.Join(root, "etc/falak/caddy/bootstrap.json"), []byte(`{"full":true}`), 0o644)
 	f.Reset()
 	r, err = rt.FrankenPHPConfigure(context.Background(), p, st)
 	if err != nil || r.(BinaryResult).Changed || f.Ran("systemctl restart") || f.Ran("systemctl daemon-reload") {
 		t.Fatal(r, err, f.Lines())
 	}
-	if b, _ := os.ReadFile(filepath.Join(root, "etc/kiln/caddy/bootstrap.json")); string(b) != `{"full":true}` {
+	if b, _ := os.ReadFile(filepath.Join(root, "etc/falak/caddy/bootstrap.json")); string(b) != `{"full":true}` {
 		t.Fatal("bootstrap overwritten")
 	}
 	// sha mismatch
@@ -465,13 +465,13 @@ func TestFPMPool(t *testing.T) {
 	rt, root, st := setup(t, f, nil)
 	mk(t, root, "/etc/php/8.4/fpm/pool.d")
 	mr := 0
-	p := FPMPoolPayload{PHPVersion: "8.4", Pool: "shop", User: "shop", MaxRequests: &mr, PHPAdminValues: map[string]string{"open_basedir": "/srv/kiln/sites/shop"}, Env: map[string]string{"APP_ENV": "production"}}
+	p := FPMPoolPayload{PHPVersion: "8.4", Pool: "shop", User: "shop", MaxRequests: &mr, PHPAdminValues: map[string]string{"open_basedir": "/srv/falak/sites/shop"}, Env: map[string]string{"APP_ENV": "production"}}
 	r, err := rt.FPMPool(context.Background(), p, st)
-	if err != nil || !r.(ListenResult).Changed || r.(ListenResult).Listen != "/run/php/kiln-shop-8.4.sock" {
+	if err != nil || !r.(ListenResult).Changed || r.(ListenResult).Listen != "/run/php/falak-shop-8.4.sock" {
 		t.Fatal(r, err)
 	}
-	b, _ := os.ReadFile(filepath.Join(root, "etc/php/8.4/fpm/pool.d/kiln-shop.conf"))
-	for _, w := range []string{"[kiln-shop]", "listen = /run/php/kiln-shop-8.4.sock", "listen.group = caddy", "pm.max_requests = 0", "php_admin_value[open_basedir] = /srv/kiln/sites/shop", `env[APP_ENV] = "production"`} {
+	b, _ := os.ReadFile(filepath.Join(root, "etc/php/8.4/fpm/pool.d/falak-shop.conf"))
+	for _, w := range []string{"[falak-shop]", "listen = /run/php/falak-shop-8.4.sock", "listen.group = caddy", "pm.max_requests = 0", "php_admin_value[open_basedir] = /srv/falak/sites/shop", `env[APP_ENV] = "production"`} {
 		if !strings.Contains(string(b), w) {
 			t.Fatalf("missing %q in\n%s", w, b)
 		}
@@ -496,7 +496,7 @@ func TestEdgeUnitJoinsSiteGroupsAndNeverDropsThem(t *testing.T) {
 	fs := hostfs.FS{Root: t.TempDir()}
 	f := (&runnertest.Fake{}).On("getent passwd caddy", runner.Result{Stdout: []byte("caddy:x:998:998::/var/lib/caddy:/usr/sbin/nologin\n")})
 	st := commands.NewTestStream("x", &commands.Collector{})
-	if _, err := EnsureEdgeUnit(context.Background(), f, fs, st, EdgeUnit{Binary: FrankenPHPBinary, FrankenPHP: true, Groups: []string{"kiln"}}, false); err != nil {
+	if _, err := EnsureEdgeUnit(context.Background(), f, fs, st, EdgeUnit{Binary: FrankenPHPBinary, FrankenPHP: true, Groups: []string{"falak"}}, false); err != nil {
 		t.Fatal(err)
 	}
 	// A later call that doesn't know the site groups (standalone runtime.frankenphp.configure).
@@ -504,7 +504,7 @@ func TestEdgeUnitJoinsSiteGroupsAndNeverDropsThem(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := fs.ReadFile(EdgeUnitPath)
-	if !strings.Contains(string(b), "SupplementaryGroups=kiln shop\n") {
+	if !strings.Contains(string(b), "SupplementaryGroups=falak shop\n") {
 		t.Fatalf("unit:\n%s", b)
 	}
 }

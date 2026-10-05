@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Processes\Contracts\Data;
+namespace Falak\Processes\Contracts\Data;
 
-use Kiln\Processes\Contracts\CronExpressions;
-use Kiln\Processes\Contracts\ScheduleSources;
+use Falak\Processes\Contracts\CronExpressions;
+use Falak\Processes\Contracts\ScheduleSources;
 
 /**
  * One scheduled job a module adds to a server's cron.apply ({@see ScheduleSources}).

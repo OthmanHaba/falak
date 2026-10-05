@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Insights\Contracts;
+namespace Falak\Insights\Contracts;
 
-use Kiln\Insights\Contracts\Data\IssueData;
+use Falak\Insights\Contracts\Data\IssueData;
 
 /**
  * Read-only issue lookups for other modules.

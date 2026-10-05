@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Servers\Domain\MachineCheck;
+namespace Falak\Servers\Domain\MachineCheck;
 
-use Kiln\Servers\Domain\Stack\Stack;
+use Falak\Servers\Domain\Stack\Stack;
 
 /**
  * What provisioning wants on the machine: the server's stack plus the host settings the plan applies.

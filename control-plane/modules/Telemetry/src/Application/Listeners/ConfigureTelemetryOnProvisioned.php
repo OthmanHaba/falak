@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Listeners;
+namespace Falak\Telemetry\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Kiln\Servers\Events\ServerProvisioned;
-use Kiln\Telemetry\Contracts\TelemetryConfigurator;
-use Kiln\Telemetry\Domain\Models\PendingConfiguration;
+use Falak\Servers\Events\ServerProvisioned;
+use Falak\Telemetry\Contracts\TelemetryConfigurator;
+use Falak\Telemetry\Domain\Models\PendingConfiguration;
 
 final class ConfigureTelemetryOnProvisioned implements ShouldQueue
 {

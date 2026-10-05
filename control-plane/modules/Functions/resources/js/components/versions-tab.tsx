@@ -1,4 +1,4 @@
-import { Button, Callout, Dialog, EmptyState, RelativeTime, Segmented, Skeleton, SkeletonRows, Tag, toast } from '@/components/kiln';
+import { Button, Callout, Dialog, EmptyState, RelativeTime, Segmented, Skeleton, SkeletonRows, Tag, toast } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
@@ -98,7 +98,7 @@ export function VersionsTab({ ctx }: ServiceTabProps) {
                             </span>
                             <span className="text-fg-muted truncate text-xs">{version.message ?? 'No message'}</span>
                             <span className="text-fg-faint text-[11px]">
-                                {version.author ?? 'Kiln'} · <RelativeTime value={version.created_at} />
+                                {version.author ?? 'Falak'} · <RelativeTime value={version.created_at} />
                             </span>
                         </button>
                     </li>

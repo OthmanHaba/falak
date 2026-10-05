@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts\Exceptions;
+namespace Falak\Telemetry\Contracts\Exceptions;
 
 use RuntimeException;
 

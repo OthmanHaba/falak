@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Projects\Domain\Models;
+namespace Falak\Projects\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
-use Kiln\Projects\Contracts\Data\ServiceData;
-use Kiln\Projects\Contracts\ServiceKind;
+use Falak\Projects\Contracts\Data\ServiceData;
+use Falak\Projects\Contracts\ServiceKind;
 
 /**
  * A site / database placed on an environment's canvas. `ref_id` is the owning module's opaque ULID.

@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Alerting\Infrastructure\Senders;
+namespace Falak\Alerting\Infrastructure\Senders;
 
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use Kiln\Alerting\Application\AlertMessage;
-use Kiln\Alerting\Contracts\Severity;
+use Falak\Alerting\Application\AlertMessage;
+use Falak\Alerting\Contracts\Severity;
 
 abstract class HttpSender implements ChannelSender
 {
@@ -47,7 +47,7 @@ abstract class HttpSender implements ChannelSender
         $request = Http::timeout((int) config('alerting.http_timeout', 10))
             ->connectTimeout(5)
             ->acceptJson()
-            ->withHeaders(['User-Agent' => 'Kiln-Alerting/1.0', ...$headers]);
+            ->withHeaders(['User-Agent' => 'Falak-Alerting/1.0', ...$headers]);
 
         try {
             $response = is_string($body)

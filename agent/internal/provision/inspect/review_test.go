@@ -7,8 +7,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 // The checked path is the one executed: a symlink is resolved once and its target runs, so swapping the link after

@@ -1,6 +1,6 @@
-import { EmptyState } from '@/components/kiln/empty-state';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Tag } from '@/components/kiln/tag';
+import { EmptyState } from '@/components/falak/empty-state';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Tag } from '@/components/falak/tag';
 import { cn } from '@/lib/utils';
 import { Link } from '@inertiajs/react';
 import { format } from 'date-fns';

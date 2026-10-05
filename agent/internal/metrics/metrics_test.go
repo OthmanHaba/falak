@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/kiln/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
 

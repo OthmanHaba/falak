@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Alerting\Domain\Models;
+namespace Falak\Alerting\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Carbon;
-use Kiln\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Domain\Enums\ChannelType;
 
 /**
  * @property string $id

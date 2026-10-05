@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Servers\Domain\Policies;
+namespace Falak\Servers\Domain\Policies;
 
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Servers\Domain\Models\SshKey;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Servers\Domain\Models\SshKey;
 
 final class SshKeyPolicy
 {

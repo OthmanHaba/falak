@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Contracts\Data;
+namespace Falak\Fleet\Contracts\Data;
 
 /**
  * The agent build a server runs versus the one this control plane ships (`/install/agent/linux-<arch>`).

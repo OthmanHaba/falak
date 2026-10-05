@@ -3,18 +3,18 @@
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Application\Actions\AddDomain;
-use Kiln\Edge\Application\Actions\RemoveDomain;
-use Kiln\Edge\Application\CloudflareConnections;
-use Kiln\Edge\Application\CloudflareRateLimits;
-use Kiln\Edge\Domain\Enums\WwwRedirect;
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
-use Kiln\Edge\Tests\Support\FakeCloudflare;
-use Kiln\Identity\Contracts\Role;
+use Falak\Edge\Application\Actions\AddDomain;
+use Falak\Edge\Application\Actions\RemoveDomain;
+use Falak\Edge\Application\CloudflareConnections;
+use Falak\Edge\Application\CloudflareRateLimits;
+use Falak\Edge\Domain\Enums\WwwRedirect;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
+use Falak\Edge\Tests\Support\FakeCloudflare;
+use Falak\Identity\Contracts\Role;
 
 /*
- * Rate limits through Cloudflare (Kiln's edge has none): Kiln's rules in the zone's http_ratelimit entry point,
+ * Rate limits through Cloudflare (Falak's edge has none): Falak's rules in the zone's http_ratelimit entry point,
  * merged with the zone's own, within what the plan allows. Cloudflare is faked.
  */
 
@@ -43,7 +43,7 @@ it('adds a host + path rule on paid plans and keeps the zone’s own rules', fun
     $this->limits->set($domain, [...RL_RULE, 'period' => 60, 'timeout' => 600]);
 
     $rules = $this->cf->rateLimits[$this->zoneId];
-    expect(array_column($rules, 'description'))->toBe(['their rule', "kiln:ratelimit:{$this->org}:{$domain->id} shop.example.com"])
+    expect(array_column($rules, 'description'))->toBe(['their rule', "falak:ratelimit:{$this->org}:{$domain->id} shop.example.com"])
         ->and($rules[1]['expression'])->toBe('(http.host in {"shop.example.com" "www.shop.example.com"} and starts_with(http.request.uri.path, "/login"))')
         ->and($rules[1]['action'])->toBe('block')
         ->and($rules[1]['ratelimit'])->toBe(['characteristics' => ['cf.colo.id', 'ip.src'], 'period' => 60, 'requests_per_period' => 20, 'mitigation_timeout' => 600])
@@ -104,7 +104,7 @@ it('needs the Cloudflare proxy, and the rule follows the proxy switch', function
     $domain = app(AddDomain::class)($this->site, 'shop.example.com');
     $domain->forceFill(['cloudflare_proxied' => false])->save();
 
-    expect(fn () => $this->limits->set($domain, RL_RULE))->toThrow(ValidationException::class, 'Kiln’s edge (Caddy) has no rate limiting');
+    expect(fn () => $this->limits->set($domain, RL_RULE))->toThrow(ValidationException::class, 'Falak’s edge (Caddy) has no rate limiting');
 
     $domain->forceFill(['cloudflare_proxied' => true])->save();
     $this->limits->set($domain, RL_RULE);
@@ -116,7 +116,7 @@ it('needs the Cloudflare proxy, and the rule follows the proxy switch', function
     expect($this->cf->rateLimits[$this->zoneId])->toBe([])
         ->and($domain->refresh()->cloudflare_rate_limit)->not->toBeNull();
 
-    // Orange again: the zone has no Kiln rule any more (rate_limited false), the domain's stored rule forces a sync.
+    // Orange again: the zone has no Falak rule any more (rate_limited false), the domain's stored rule forces a sync.
     $domain->forceFill(['cloudflare_proxied' => true])->save();
     expect($this->zone->refresh()->rate_limited)->toBeFalse();
     $this->limits->resyncFor($this->org, 'shop.example.com');
@@ -140,13 +140,13 @@ it('restores a domain’s rule when its proxy is switched back on over HTTP', fu
     expect($this->cf->rateLimits[$this->zoneId])->toBe([])->and($zone->refresh()->rate_limited)->toBeFalse();
 
     $this->put($url, ['proxied' => true])->assertSessionHasNoErrors();
-    expect(array_column($this->cf->rateLimits[$this->zoneId], 'description'))->toBe(["kiln:ratelimit:{$organization->id}:{$domain->id} store.example.com"]);
+    expect(array_column($this->cf->rateLimits[$this->zoneId], 'description'))->toBe(["falak:ratelimit:{$organization->id}:{$domain->id} store.example.com"]);
 });
 
-it('leaves the rules of other organizations and other Kiln installs in a shared zone alone', function () {
+it('leaves the rules of other organizations and other Falak installs in a shared zone alone', function () {
     $this->cf->plans[$this->zoneId] = 'business';
-    $otherInstall = ['description' => 'kiln:ratelimit:'.strtolower((string) Str::ulid()).':'.strtolower((string) Str::ulid()).' api.example.com', 'expression' => '(starts_with(http.request.uri.path, "/"))', 'action' => 'block', 'enabled' => true];
-    $unknownLegacy = ['description' => 'kiln:ratelimit:'.strtolower((string) Str::ulid()).' old.example.com', 'expression' => '(starts_with(http.request.uri.path, "/old"))', 'action' => 'block', 'enabled' => true];
+    $otherInstall = ['description' => 'falak:ratelimit:'.strtolower((string) Str::ulid()).':'.strtolower((string) Str::ulid()).' api.example.com', 'expression' => '(starts_with(http.request.uri.path, "/"))', 'action' => 'block', 'enabled' => true];
+    $unknownLegacy = ['description' => 'falak:ratelimit:'.strtolower((string) Str::ulid()).' old.example.com', 'expression' => '(starts_with(http.request.uri.path, "/old"))', 'action' => 'block', 'enabled' => true];
     $this->cf->rateLimits[$this->zoneId] = [$otherInstall, $unknownLegacy];
 
     // A second organization of this install, same Cloudflare zone.
@@ -161,24 +161,24 @@ it('leaves the rules of other organizations and other Kiln installs in a shared 
     $shop = app(AddDomain::class)($this->site, 'shop.example.com');
     $this->limits->set($shop, RL_RULE);
     expect(array_column($this->cf->rateLimits[$this->zoneId], 'description'))->toBe([
-        $otherInstall['description'], $unknownLegacy['description'], "kiln:ratelimit:{$otherOrg}:{$blog->id} blog.example.com", "kiln:ratelimit:{$this->org}:{$shop->id} shop.example.com",
+        $otherInstall['description'], $unknownLegacy['description'], "falak:ratelimit:{$otherOrg}:{$blog->id} blog.example.com", "falak:ratelimit:{$this->org}:{$shop->id} shop.example.com",
     ]);
 
     // Removing this organization's rule keeps the other organization's.
     $this->limits->set($shop->refresh(), null);
     expect(array_column($this->cf->rateLimits[$this->zoneId], 'description'))->toBe([
-        $otherInstall['description'], $unknownLegacy['description'], "kiln:ratelimit:{$otherOrg}:{$blog->id} blog.example.com",
+        $otherInstall['description'], $unknownLegacy['description'], "falak:ratelimit:{$otherOrg}:{$blog->id} blog.example.com",
     ]);
 });
 
 it('takes over this organization’s rules in the first tag format', function () {
     $this->cf->plans[$this->zoneId] = 'pro';
     $shop = app(AddDomain::class)($this->site, 'shop.example.com');
-    $this->cf->rateLimits[$this->zoneId] = [['description' => "kiln:ratelimit:{$shop->id} shop.example.com", 'expression' => '(starts_with(http.request.uri.path, "/"))', 'action' => 'block', 'enabled' => true]];
+    $this->cf->rateLimits[$this->zoneId] = [['description' => "falak:ratelimit:{$shop->id} shop.example.com", 'expression' => '(starts_with(http.request.uri.path, "/"))', 'action' => 'block', 'enabled' => true]];
 
     $this->limits->set($shop, [...RL_RULE, 'period' => 60, 'timeout' => 60]);
 
-    expect(array_column($this->cf->rateLimits[$this->zoneId], 'description'))->toBe(["kiln:ratelimit:{$this->org}:{$shop->id} shop.example.com"]);
+    expect(array_column($this->cf->rateLimits[$this->zoneId], 'description'))->toBe(["falak:ratelimit:{$this->org}:{$shop->id} shop.example.com"]);
 });
 
 it('sends the zone’s own rules back whole, without the fields Cloudflare sets', function () {
@@ -217,9 +217,9 @@ it('refuses a path-less Free rule when the panel is in the zone, and flags zone-
     $store = app(AddDomain::class)($site, 'store.example.com');
     $api = app(AddDomain::class)($site, 'api.example.com');
 
-    config(['app.url' => 'https://kiln.example.com']);
-    expect(fn () => $this->limits->set($store, [...RL_RULE, 'path' => null]))->toThrow(ValidationException::class, 'this panel (kiln.example.com) included');
-    config(['app.url' => 'https://kiln.example.org']);
+    config(['app.url' => 'https://falak.example.com']);
+    expect(fn () => $this->limits->set($store, [...RL_RULE, 'path' => null]))->toThrow(ValidationException::class, 'this panel (falak.example.com) included');
+    config(['app.url' => 'https://falak.example.org']);
     $this->limits->set($store, [...RL_RULE, 'path' => null]);
     expect($this->cf->rateLimits[$this->zoneId][0]['expression'])->toBe('(starts_with(http.request.uri.path, "/"))');
 
@@ -234,7 +234,7 @@ it('refuses a path-less Free rule when the panel is in the zone, and flags zone-
     $this->getJson("/sites/{$site->id}/domains/{$api->id}/rate-limit")->assertOk()->assertJsonPath('data.zone_rule', null);
 });
 
-it('removes a domain’s rule with the domain, and leaves zones without Kiln rules alone', function () {
+it('removes a domain’s rule with the domain, and leaves zones without Falak rules alone', function () {
     $other = app(AddDomain::class)($this->site, 'blog.example.com');
     app(RemoveDomain::class)($other);
     expect(array_filter($this->cf->calls, fn (string $call) => str_contains($call, 'http_ratelimit')))->toBe([]);

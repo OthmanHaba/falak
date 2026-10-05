@@ -1,21 +1,21 @@
 <?php
 
-namespace Kiln\Edge\Application;
+namespace Falak\Edge\Application;
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Domain\Models\CloudflareTunnel;
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\OriginLock;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareApi;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Network\Contracts\Firewalls;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Edge\Domain\Models\CloudflareTunnel;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\OriginLock;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareApi;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Network\Contracts\Firewalls;
+use Falak\Sites\Contracts\SiteDirectory;
 
 /**
- * Cloudflare edge controls: cache mode per domain (Kiln-managed Cache Rules, merged with the zone's other rules),
+ * Cloudflare edge controls: cache mode per domain (Falak-managed Cache Rules, merged with the zone's other rules),
  * purge of a site's names (after every deploy and on demand), Under Attack mode per zone, origin lock-down per server.
  */
 final class CloudflareEdgeControls
@@ -37,7 +37,7 @@ final class CloudflareEdgeControls
         }
 
         $zone = CloudflareZone::forHost($domain->organization_id, $domain->name)
-            ?? throw ValidationException::withMessages(['mode' => 'This domain is not in a Cloudflare zone Kiln manages.']);
+            ?? throw ValidationException::withMessages(['mode' => 'This domain is not in a Cloudflare zone Falak manages.']);
 
         // Saved only once Cloudflare accepted the rules.
         $previous = $domain->cloudflare_cache;
@@ -54,14 +54,14 @@ final class CloudflareEdgeControls
     }
 
     /**
-     * The zone's Cache Rules: Kiln's (description "kiln:cache:<domain id>") are rebuilt from its domains; every other
+     * The zone's Cache Rules: Falak's (description "falak:cache:<domain id>") are rebuilt from its domains; every other
      * rule stays as it is, in its place.
      */
     public function syncCacheRules(CloudflareZone $zone): void
     {
         $api = CloudflareApi::with($zone->credential->api_token);
         $entrypoint = $api->ruleset($zone->zone_id, self::CACHE_PHASE);
-        $theirs = array_values(array_filter((array) ($entrypoint['rules'] ?? []), fn (array $rule) => ! str_starts_with((string) ($rule['description'] ?? ''), 'kiln:cache:')));
+        $theirs = array_values(array_filter((array) ($entrypoint['rules'] ?? []), fn (array $rule) => ! str_starts_with((string) ($rule['description'] ?? ''), 'falak:cache:')));
         $ours = [];
 
         $domains = Domain::query()->where('organization_id', $zone->organization_id)->whereNotNull('cloudflare_cache')->orderBy('name')->get()
@@ -70,12 +70,12 @@ final class CloudflareEdgeControls
         foreach ($domains as $domain) {
             $hosts = implode(' ', array_map(fn (string $h) => '"'.$h.'"', $domain->hosts()));
             $ours[] = [
-                'description' => 'kiln:cache:'.$domain->id.' '.$domain->name,
+                'description' => 'falak:cache:'.$domain->id.' '.$domain->name,
                 'expression' => "(http.host in {{$hosts}})",
                 'action' => 'set_cache_settings',
                 'action_parameters' => $domain->cloudflare_cache === 'bypass'
                     ? ['cache' => false]
-                    // Everything, HTML included, for a day at the edge: Kiln purges the site after every deploy.
+                    // Everything, HTML included, for a day at the edge: Falak purges the site after every deploy.
                     : ['cache' => true, 'edge_ttl' => ['mode' => 'override_origin', 'default' => 86400], 'browser_ttl' => ['mode' => 'respect_origin']],
                 'enabled' => true,
             ];

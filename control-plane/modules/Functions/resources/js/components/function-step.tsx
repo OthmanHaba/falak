@@ -1,5 +1,5 @@
 import { domainPayload, DomainPicker, type DomainChoice } from '@/components/domain-picker';
-import { Button, Callout, Field, Input, Select, ServiceIcon, Skeleton, Tag, toast } from '@/components/kiln';
+import { Button, Callout, Field, Input, Select, ServiceIcon, Skeleton, Tag, toast } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { errorMessage, HttpError, requestJson } from '@/lib/http';
 import { type CreateOptionProps } from '@/lib/registry';
@@ -167,7 +167,7 @@ export function FunctionStep({ projectId, environmentSlug, position, onCreated }
             <Field label="Server" error={errors.server_id ?? errors.server_ids} hint="The function sleeps when idle and wakes on the first request.">
                 {capable.length === 0 ? (
                     <Callout tone="warning" title="No server can run functions yet">
-                        Functions need Docker and a Kiln agent with the function gateway (0.4 or newer).{' '}
+                        Functions need Docker and a Falak agent with the function gateway (0.4 or newer).{' '}
                         {servers.length > 0 ? 'Update the agent on a Docker server.' : <Link href="/servers/create">Add a server</Link>}
                     </Callout>
                 ) : (

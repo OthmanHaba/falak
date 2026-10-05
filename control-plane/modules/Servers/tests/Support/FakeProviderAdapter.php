@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Servers\Tests\Support;
+namespace Falak\Servers\Tests\Support;
 
-use Kiln\Providers\Contracts\Data\Machine;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\ProviderAdapter;
-use Kiln\Providers\Contracts\ProviderType;
+use Falak\Providers\Contracts\Data\Machine;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\ProviderAdapter;
+use Falak\Providers\Contracts\ProviderType;
 
 final class FakeProviderAdapter implements ProviderAdapter
 {

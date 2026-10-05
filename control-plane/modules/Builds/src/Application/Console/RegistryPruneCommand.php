@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Builds\Application\Console;
+namespace Falak\Builds\Application\Console;
 
 use Illuminate\Console\Command;
-use Kiln\Builds\Application\RegistryPruner;
+use Falak\Builds\Application\RegistryPruner;
 
 final class RegistryPruneCommand extends Command
 {
-    protected $signature = 'kiln:registry-prune {--dry-run : list what would be deleted, delete nothing}';
+    protected $signature = 'falak:registry-prune {--dry-run : list what would be deleted, delete nothing}';
 
     protected $description = 'Delete built-in registry images no build or release needs any more';
 
@@ -26,7 +26,7 @@ final class RegistryPruneCommand extends Command
             return $result['deleted'] === [] ? self::FAILURE : self::SUCCESS;
         }
 
-        $this->info(sprintf('%d image(s) %s, %d kept. Run `kiln-ctl registry gc` to reclaim the space.', count($result['deleted']), $dryRun ? 'would be deleted' : 'deleted', $result['kept']));
+        $this->info(sprintf('%d image(s) %s, %d kept. Run `falak-ctl registry gc` to reclaim the space.', count($result['deleted']), $dryRun ? 'would be deleted' : 'deleted', $result['kept']));
 
         return self::SUCCESS;
     }

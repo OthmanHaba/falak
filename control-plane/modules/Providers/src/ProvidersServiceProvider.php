@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Providers;
+namespace Falak\Providers;
 
 use Illuminate\Support\Facades\Gate;
-use Kiln\Identity\Contracts\PermissionRegistry;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Kernel\Support\ModuleServiceProvider;
-use Kiln\Providers\Contracts\ProviderGateway;
-use Kiln\Providers\Domain\Models\ProviderCredential;
-use Kiln\Providers\Domain\Policies\ProviderCredentialPolicy;
-use Kiln\Providers\Infrastructure\AdapterFactory;
-use Kiln\Providers\Infrastructure\EloquentProviderGateway;
+use Falak\Identity\Contracts\PermissionRegistry;
+use Falak\Identity\Contracts\Role;
+use Falak\Kernel\Support\ModuleServiceProvider;
+use Falak\Providers\Contracts\ProviderGateway;
+use Falak\Providers\Domain\Models\ProviderCredential;
+use Falak\Providers\Domain\Policies\ProviderCredentialPolicy;
+use Falak\Providers\Infrastructure\AdapterFactory;
+use Falak\Providers\Infrastructure\EloquentProviderGateway;
 
 class ProvidersServiceProvider extends ModuleServiceProvider
 {

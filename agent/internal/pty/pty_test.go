@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
 )
 
 func decoded(col *commands.Collector, id string) string {

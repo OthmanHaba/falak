@@ -1,4 +1,4 @@
-import { toast } from '@/components/kiln';
+import { toast } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { HttpError, errorMessage, requestJson, type HttpMethod } from '@/lib/http';
 import { type ServicePanelContext } from '@/lib/registry';
@@ -23,7 +23,7 @@ export interface SiteSettingsData {
         push_to_deploy: boolean;
         web_directory: string | null;
         app_port: number | null;
-        /** Docker sites: the port the app listens on inside its container (app_port is then Kiln's loopback host port). */
+        /** Docker sites: the port the app listens on inside its container (app_port is then Falak's loopback host port). */
         container_port: number | null;
         docker_image: string | null;
         dockerfile: string | null;

@@ -1,4 +1,4 @@
-// kiln-fn-install: resolves a function's npm dependencies into /app (node_modules + bun.lock).
+// falak-fn-install: resolves a function's npm dependencies into /app (node_modules + bun.lock).
 //
 // Without a package.json, the packages are read from the imports of the source files: every bare specifier that
 // is not a Node/Bun builtin becomes a dependency on its latest version, pinned by the lockfile written into the
@@ -9,7 +9,7 @@ import { builtinModules } from "node:module";
 import { join, relative } from "node:path";
 
 const app = process.cwd();
-const entry = process.env.KILN_ENTRYPOINT ?? "index.ts";
+const entry = process.env.FALAK_ENTRYPOINT ?? "index.ts";
 const builtins = new Set(builtinModules);
 const sources = /\.(m|c)?(t|j)sx?$/;
 
@@ -35,7 +35,7 @@ export function packageOf(spec: string): string | undefined {
 }
 
 if (!existsSync(join(app, entry))) {
-  console.error(`kiln: entrypoint ${entry} not found`);
+  console.error(`falak: entrypoint ${entry} not found`);
   process.exit(1);
 }
 
@@ -47,7 +47,7 @@ if (!existsSync(join(app, "package.json"))) {
     try {
       imports = transpiler.scanImports(readFileSync(file, "utf8"));
     } catch (err) {
-      console.error(`kiln: ${relative(app, file)}: ${(err as Error).message}`);
+      console.error(`falak: ${relative(app, file)}: ${(err as Error).message}`);
       process.exit(1);
     }
     for (const imp of imports) {
@@ -58,9 +58,9 @@ if (!existsSync(join(app, "package.json"))) {
   const dependencies = Object.fromEntries([...deps].sort().map((d) => [d, "latest"]));
   writeFileSync(
     join(app, "package.json"),
-    JSON.stringify({ name: "kiln-function", private: true, type: "module", dependencies }, null, 2) + "\n",
+    JSON.stringify({ name: "falak-function", private: true, type: "module", dependencies }, null, 2) + "\n",
   );
-  console.log(deps.size ? `kiln: dependencies ${[...deps].sort().join(", ")}` : "kiln: no dependencies");
+  console.log(deps.size ? `falak: dependencies ${[...deps].sort().join(", ")}` : "falak: no dependencies");
 }
 
 const proc = Bun.spawnSync(["bun", "install", "--no-progress"], {

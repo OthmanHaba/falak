@@ -1,4 +1,4 @@
-import { IconButton, ServiceIcon } from '@/components/kiln';
+import { IconButton, ServiceIcon } from '@/components/falak';
 import * as Popover from '@radix-ui/react-popover';
 import { Command } from 'cmdk';
 import { Braces, Search } from 'lucide-react';

@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Alerting\Infrastructure;
+namespace Falak\Alerting\Infrastructure;
 
-use Kiln\Alerting\Contracts\AlertTypes;
-use Kiln\Alerting\Contracts\Severity;
+use Falak\Alerting\Contracts\AlertTypes;
+use Falak\Alerting\Contracts\Severity;
 
 final class InMemoryAlertTypes implements AlertTypes
 {

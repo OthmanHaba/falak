@@ -14,7 +14,7 @@ import {
     Switch,
     Tag,
     toast,
-} from '@/components/kiln';
+} from '@/components/falak';
 import { errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
 import { KeyRound, RotateCw, Trash2 } from 'lucide-react';
@@ -171,7 +171,7 @@ export function SourceSettings({ ctx }: ServiceTabProps) {
                     <p className="text-fg-muted flex items-center gap-2 text-sm">
                         <KeyRound className="size-4" aria-hidden />{' '}
                         {data.settings.repository
-                            ? 'No deploy key managed by Kiln — link a git connection to create one.'
+                            ? 'No deploy key managed by Falak — link a git connection to create one.'
                             : 'No deploy key — this site has no repository.'}
                     </p>
                 )}
@@ -348,7 +348,7 @@ export function BuildSettings({ ctx }: ServiceTabProps) {
                     <Field
                         label="Container port"
                         error={errors.container_port}
-                        hint={`The port the app listens on inside its container (also passed as PORT). Kiln publishes it on 127.0.0.1:${settings.app_port ?? 'auto'}. Changing it redeploys the service.`}
+                        hint={`The port the app listens on inside its container (also passed as PORT). Falak publishes it on 127.0.0.1:${settings.app_port ?? 'auto'}. Changing it redeploys the service.`}
                     >
                         <Input
                             mono
@@ -681,7 +681,7 @@ const LARAVEL: { key: LaravelToggleKey; label: string; hint: string }[] = [
 ];
 
 const OCTANE_HINTS: Record<string, string> = {
-    frankenphp: 'Worker mode on the FrankenPHP binary Kiln installs.',
+    frankenphp: 'Worker mode on the FrankenPHP binary Falak installs.',
     swoole: 'Needs the swoole (or openswoole) extension for this PHP version.',
     roadrunner: 'Needs the rr binary and spiral/roadrunner-http in the app.',
 };
@@ -697,7 +697,7 @@ export function LaravelSettings({ ctx }: ServiceTabProps) {
     return (
         <Section
             title="Laravel features"
-            description="Processes and switches Kiln manages for Laravel apps. Changes apply to the servers right away."
+            description="Processes and switches Falak manages for Laravel apps. Changes apply to the servers right away."
         >
             <ul className="divide-border -my-2 divide-y">
                 {LARAVEL.map((item) => (

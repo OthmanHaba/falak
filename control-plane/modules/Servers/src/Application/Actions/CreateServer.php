@@ -1,22 +1,22 @@
 <?php
 
-namespace Kiln\Servers\Application\Actions;
+namespace Falak\Servers\Application\Actions;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Kiln\Fleet\Contracts\Enrollment;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Providers\Contracts\ProviderGateway;
-use Kiln\Providers\Contracts\ProviderType;
-use Kiln\Servers\Application\Jobs\CreateProviderMachine;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Enums\PhpVersionStatus;
-use Kiln\Servers\Domain\Models\PhpVersion;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Models\SshKey;
-use Kiln\Servers\Domain\Stack\Stack;
-use Kiln\Servers\Events\ServerCreated;
+use Falak\Fleet\Contracts\Enrollment;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Providers\Contracts\ProviderGateway;
+use Falak\Providers\Contracts\ProviderType;
+use Falak\Servers\Application\Jobs\CreateProviderMachine;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Enums\PhpVersionStatus;
+use Falak\Servers\Domain\Models\PhpVersion;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Models\SshKey;
+use Falak\Servers\Domain\Stack\Stack;
+use Falak\Servers\Events\ServerCreated;
 
 /**
  * Registers a server. Provider servers are created asynchronously at the provider with a cloud-init
@@ -93,7 +93,7 @@ final class CreateServer
                 ]);
             }
 
-            $server->sshKeys()->attach(array_fill_keys($sshKeyIds, ['unix_user' => (string) config('servers.unix_user', 'kiln')]));
+            $server->sshKeys()->attach(array_fill_keys($sshKeyIds, ['unix_user' => (string) config('servers.unix_user', 'falak')]));
 
             $install = $this->enrollment->issueInstallToken($organizationId, $server->id, $provider->hasApi() ? 60 * 24 : 60 * 24 * 7);
             $server->forceFill(['install_command' => $install->command])->save();

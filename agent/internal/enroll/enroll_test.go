@@ -28,7 +28,7 @@ func newTestCA(t *testing.T) *testCA {
 	t.Helper()
 	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	tpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Kiln Test CA"},
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Falak Test CA"},
 		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
 		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
 	}

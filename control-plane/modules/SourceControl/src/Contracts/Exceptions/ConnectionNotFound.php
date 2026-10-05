@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\SourceControl\Contracts\Exceptions;
+namespace Falak\SourceControl\Contracts\Exceptions;
 
 final class ConnectionNotFound extends SourceControlException
 {

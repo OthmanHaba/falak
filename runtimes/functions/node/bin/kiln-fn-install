@@ -1,2 +1,0 @@
-#!/bin/sh
-exec node /opt/kiln-fn/node/install.mjs "$@"

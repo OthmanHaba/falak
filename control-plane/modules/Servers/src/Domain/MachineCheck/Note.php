@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Servers\Domain\MachineCheck;
+namespace Falak\Servers\Domain\MachineCheck;
 
 /**
  * One finding about a component: a conflict (block), something to watch (warning) or context (info).

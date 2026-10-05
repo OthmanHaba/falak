@@ -1,4 +1,4 @@
-// Package edge renders the Kiln edge model into Caddy JSON and applies it atomically through the
+// Package edge renders the Falak edge model into Caddy JSON and applies it atomically through the
 // Caddy (or FrankenPHP) admin API.
 package edge
 
@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/kiln/agent/internal/logs"
+	"github.com/OthmanHaba/falak/agent/internal/logs"
 )
 
 // Payload is edge.caddy.apply.
@@ -37,7 +37,7 @@ type Site struct {
 	TryDurationS    int               `json:"try_duration_s,omitempty"`
 	RedirectTo      string            `json:"redirect_to,omitempty"`
 	Headers         map[string]string `json:"headers,omitempty"`
-	// RequestHeaders are set on the request sent upstream (kind=reverse_proxy), e.g. X-Kiln-Function.
+	// RequestHeaders are set on the request sent upstream (kind=reverse_proxy), e.g. X-Falak-Function.
 	RequestHeaders map[string]string `json:"request_headers,omitempty"`
 	BasicAuth      []BasicAuth       `json:"basic_auth,omitempty"`
 	Redirects      []Redirect        `json:"redirects,omitempty"`
@@ -55,7 +55,7 @@ type Site struct {
 var accessLogName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 // AccessLogger is the Caddy logger of a site's access log (http.log.access.<AccessLogger>).
-func AccessLogger(name string) string { return "kiln-access-" + name }
+func AccessLogger(name string) string { return "falak-access-" + name }
 
 // AccessLogPath is the file a site's access log is written to.
 func AccessLogPath(name string) string { return path.Join(logs.AccessLogDir, name+".log") }
@@ -99,8 +99,8 @@ type Redirect struct {
 const AdminListen = "localhost:2019"
 
 // RouteID / UpstreamsID are stable @id values addressable through /id/<id>.
-func RouteID(site string) string     { return "kiln-site-" + site }
-func UpstreamsID(site string) string { return "kiln-upstreams-" + site }
+func RouteID(site string) string     { return "falak-site-" + site }
+func UpstreamsID(site string) string { return "falak-upstreams-" + site }
 
 type obj = map[string]any
 
@@ -171,7 +171,7 @@ func Render(p Payload, certDir string) (obj, error) {
 			loadFiles = append(loadFiles, obj{
 				"certificate": path.Join(certDir, s.TLS.CertName+".crt"),
 				"key":         path.Join(certDir, s.TLS.CertName+".key"),
-				"tags":        []any{"kiln-" + s.TLS.CertName},
+				"tags":        []any{"falak-" + s.TLS.CertName},
 			})
 			tlsRoutes = append(tlsRoutes, routes...)
 		case "acme":
@@ -204,7 +204,7 @@ func Render(p Payload, certDir string) (obj, error) {
 		if len(tlsLoggers) > 0 {
 			srv["logs"] = serverLogs(tlsLoggers)
 		}
-		servers["kiln"] = srv
+		servers["falak"] = srv
 	}
 	if len(plainRoutes) > 0 {
 		// Caddy adds its HTTP→HTTPS redirects for TLS sites to this existing :80 server.
@@ -213,7 +213,7 @@ func Render(p Payload, certDir string) (obj, error) {
 		if len(plainLoggers) > 0 {
 			srv["logs"] = serverLogs(plainLoggers)
 		}
-		servers["kiln_http"] = srv
+		servers["falak_http"] = srv
 	}
 	cfg := obj{
 		"admin": obj{"listen": AdminListen},
@@ -447,7 +447,7 @@ func serverLogs(loggers obj) obj {
 }
 
 // accessLogging writes every site's access log to its own JSON file (rotated by Caddy at 10 MB, 3 kept) and
-// keeps access entries out of the default log (the kiln-edge journal).
+// keeps access entries out of the default log (the falak-edge journal).
 func accessLogging(names map[string]bool) obj {
 	keys := make([]string, 0, len(names))
 	for n := range names {

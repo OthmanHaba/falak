@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Providers\Domain;
+namespace Falak\Providers\Domain;
 
 enum CredentialStatus: string
 {

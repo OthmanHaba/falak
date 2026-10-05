@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Listeners;
+namespace Falak\Telemetry\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Log;
-use Kiln\Identity\Events\OrganizationCreated;
-use Kiln\Telemetry\Application\Actions\ProvisionGrafana;
-use Kiln\Telemetry\Infrastructure\Grafana\GrafanaClient;
+use Falak\Identity\Events\OrganizationCreated;
+use Falak\Telemetry\Application\Actions\ProvisionGrafana;
+use Falak\Telemetry\Infrastructure\Grafana\GrafanaClient;
 use Throwable;
 
 final class ProvisionGrafanaForOrganization implements ShouldQueue

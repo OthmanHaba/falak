@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure\Grafana;
+namespace Falak\Telemetry\Infrastructure\Grafana;
 
 /**
- * The three Kiln datasources, mirroring observability/grafana/provisioning/datasources/kiln.yaml
+ * The three Falak datasources, mirroring observability/grafana/provisioning/datasources/falak.yaml
  * (uids are stable so dashboards and alert rules resolve them unchanged).
  */
 final class DatasourceDefinitions
@@ -18,7 +18,7 @@ final class DatasourceDefinitions
 
         return [
             [
-                'uid' => 'kiln-metrics',
+                'uid' => 'falak-metrics',
                 'name' => 'Metrics',
                 'type' => 'prometheus',
                 'access' => 'proxy',
@@ -29,13 +29,13 @@ final class DatasourceDefinitions
                     'timeInterval' => '15s',
                     'httpMethod' => 'POST',
                     'exemplarTraceIdDestinations' => [
-                        ['name' => 'trace_id', 'datasourceUid' => 'kiln-tempo'],
-                        ['name' => 'traceID', 'datasourceUid' => 'kiln-tempo'],
+                        ['name' => 'trace_id', 'datasourceUid' => 'falak-tempo'],
+                        ['name' => 'traceID', 'datasourceUid' => 'falak-tempo'],
                     ],
                 ],
             ],
             [
-                'uid' => 'kiln-loki',
+                'uid' => 'falak-loki',
                 'name' => 'Loki',
                 'type' => 'loki',
                 'access' => 'proxy',
@@ -46,14 +46,14 @@ final class DatasourceDefinitions
                         'name' => 'TraceID',
                         'matcherType' => 'label',
                         'matcherRegex' => 'trace_id',
-                        'datasourceUid' => 'kiln-tempo',
+                        'datasourceUid' => 'falak-tempo',
                         'url' => '${__value.raw}',
                         'urlDisplayLabel' => 'View trace',
                     ]],
                 ],
             ],
             [
-                'uid' => 'kiln-tempo',
+                'uid' => 'falak-tempo',
                 'name' => 'Tempo',
                 'type' => 'tempo',
                 'access' => 'proxy',
@@ -63,7 +63,7 @@ final class DatasourceDefinitions
                     'search' => ['hide' => false],
                     'traceQuery' => ['timeShiftEnabled' => true, 'spanStartTimeShift' => '-30m', 'spanEndTimeShift' => '30m'],
                     'tracesToLogsV2' => [
-                        'datasourceUid' => 'kiln-loki',
+                        'datasourceUid' => 'falak-loki',
                         'spanStartTimeShift' => '-5m',
                         'spanEndTimeShift' => '5m',
                         'filterByTraceID' => true,
@@ -72,12 +72,12 @@ final class DatasourceDefinitions
                         'tags' => [['key' => 'service.name', 'value' => 'service_name']],
                     ],
                     'tracesToMetrics' => [
-                        'datasourceUid' => 'kiln-metrics',
+                        'datasourceUid' => 'falak-metrics',
                         'spanStartTimeShift' => '-15m',
                         'spanEndTimeShift' => '15m',
                         'tags' => [
                             ['key' => 'service.name', 'value' => 'service'],
-                            ['key' => 'kiln.site.id', 'value' => 'kiln_site_id'],
+                            ['key' => 'falak.site.id', 'value' => 'falak_site_id'],
                         ],
                         'queries' => [
                             ['name' => 'Request rate', 'query' => 'sum(rate(traces_spanmetrics_calls_total{$__tags}[5m]))'],
@@ -85,8 +85,8 @@ final class DatasourceDefinitions
                             ['name' => 'p95 latency', 'query' => 'histogram_quantile(0.95, sum by (le) (rate(traces_spanmetrics_latency_bucket{$__tags}[5m])))'],
                         ],
                     ],
-                    'serviceMap' => ['datasourceUid' => 'kiln-metrics'],
-                    'lokiSearch' => ['datasourceUid' => 'kiln-loki'],
+                    'serviceMap' => ['datasourceUid' => 'falak-metrics'],
+                    'lokiSearch' => ['datasourceUid' => 'falak-loki'],
                 ],
             ],
         ];

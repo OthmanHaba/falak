@@ -1,12 +1,12 @@
 <?php
 
 use Illuminate\Auth\Access\AuthorizationException;
-use Kiln\Identity\Application\Actions\AssignRole;
-use Kiln\Identity\Application\Actions\SyncPermissions;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Identity\Contracts\OrganizationDirectory;
-use Kiln\Identity\Contracts\PermissionRegistry;
-use Kiln\Identity\Contracts\Role as RoleEnum;
+use Falak\Identity\Application\Actions\AssignRole;
+use Falak\Identity\Application\Actions\SyncPermissions;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Identity\Contracts\OrganizationDirectory;
+use Falak\Identity\Contracts\PermissionRegistry;
+use Falak\Identity\Contracts\Role as RoleEnum;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 

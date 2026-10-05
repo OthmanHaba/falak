@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Domain\Certificates;
+namespace Falak\Edge\Domain\Certificates;
 
 use DateTimeImmutable;
 use InvalidArgumentException;

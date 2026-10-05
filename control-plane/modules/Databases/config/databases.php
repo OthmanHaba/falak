@@ -1,8 +1,8 @@
 <?php
 
-use Kiln\Databases\Application\ContainerNetworks;
+use Falak\Databases\Application\ContainerNetworks;
 
-$dockerNetworks = ContainerNetworks::parse(env('KILN_DOCKER_NETWORKS', implode(',', ContainerNetworks::DEFAULT)));
+$dockerNetworks = ContainerNetworks::parse(env('FALAK_DOCKER_NETWORKS', implode(',', ContainerNetworks::DEFAULT)));
 
 return [
     // Supported engine versions (shown in the UI; detected versions outside this list are kept but flagged).
@@ -26,7 +26,7 @@ return [
         'debian 13' => ['redis' => '8.0', 'valkey' => '8.1'],
     ],
 
-    // Redis / Valkey instances (one process each, redis-server@kiln-<name>): ports Kiln allocates (the stock
+    // Redis / Valkey instances (one process each, redis-server@falak-<name>): ports Falak allocates (the stock
     // instance keeps 6379), and the defaults of a new instance.
     'key_value' => [
         'ports' => [6380, 6479],
@@ -35,15 +35,15 @@ return [
         'persistence' => 'rdb',
         'evictions' => ['noeviction', 'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru', 'volatile-lfu', 'volatile-random', 'volatile-ttl'],
         'persistences' => ['rdb', 'aof', 'none'],
-        // Providers whose servers of one account and region share a private network by default, used when no Kiln
+        // Providers whose servers of one account and region share a private network by default, used when no Falak
         // private network connects an instance's server with a site's: DigitalOcean (each region's default VPC) and
         // Lightsail (instances of a region reach each other's private IP). Not Hetzner, Vultr, Linode: their private
         // networks are opt-in and can differ per server, so a private IPv4 says nothing about who shares it. Servers
-        // must be created by Kiln with the same provider credential, in the same region.
+        // must be created by Falak with the same provider credential, in the same region.
         'provider_private_networks' => ['digitalocean', 'lightsail'],
         // Custom servers: their private IPv4s are taken as one network (never in production — they may be NATed or
         // in different networks). The sim's fleet network uses it.
-        'custom_private_network' => (bool) env('KILN_REDIS_CUSTOM_PRIVATE_NETWORK', false),
+        'custom_private_network' => (bool) env('FALAK_REDIS_CUSTOM_PRIVATE_NETWORK', false),
     ],
 
     'password_length' => 32,
@@ -60,19 +60,19 @@ return [
         'ddl' => 300,
         // db.redis.apply: longer than the agent's own waits (a start loading a big dataset up to 20 min, an AOF
         // rewrite up to 15 min); the agent ends its waits before this deadline.
-        'redis_apply' => (int) env('KILN_REDIS_APPLY_TIMEOUT', 3600),
+        'redis_apply' => (int) env('FALAK_REDIS_APPLY_TIMEOUT', 3600),
         'backup' => 3600,
         'restore' => 3600,
     ],
 
     // Presigned URL lifetimes (seconds). The upload URL must outlive queueing + the dump itself.
-    'upload_url_ttl' => (int) env('KILN_BACKUP_UPLOAD_URL_TTL', 12 * 3600),
-    'download_url_ttl' => (int) env('KILN_BACKUP_DOWNLOAD_URL_TTL', 6 * 3600),
+    'upload_url_ttl' => (int) env('FALAK_BACKUP_UPLOAD_URL_TTL', 12 * 3600),
+    'download_url_ttl' => (int) env('FALAK_BACKUP_DOWNLOAD_URL_TTL', 6 * 3600),
 
     // Control-plane → object storage requests (verification, pruning).
     'storage_timeout' => 30,
 
     // Allow storage endpoints on private / loopback / link-local addresses (self-hosted MinIO on a LAN).
     // Off by default: otherwise any storage admin could make the control plane probe internal services.
-    'allow_private_endpoints' => (bool) env('KILN_STORAGE_ALLOW_PRIVATE_ENDPOINTS', false),
+    'allow_private_endpoints' => (bool) env('FALAK_STORAGE_ALLOW_PRIVATE_ENDPOINTS', false),
 ];

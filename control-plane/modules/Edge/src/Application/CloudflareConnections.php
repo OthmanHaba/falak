@@ -1,36 +1,36 @@
 <?php
 
-namespace Kiln\Edge\Application;
+namespace Falak\Edge\Application;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Application\Jobs\SyncCloudflareDns;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Domain\Models\DnsCredential;
-use Kiln\Edge\Domain\Models\DnsRecord;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\OrganizationSetting;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareApi;
-use Kiln\Edge\Infrastructure\Cloudflare\CloudflareError;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Servers\Contracts\ServerDirectory;
+use Falak\Edge\Application\Jobs\SyncCloudflareDns;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Domain\Models\DnsCredential;
+use Falak\Edge\Domain\Models\DnsRecord;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\OrganizationSetting;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareApi;
+use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Servers\Contracts\ServerDirectory;
 use SensitiveParameter;
 
 /**
- * Settings → Cloudflare: connect an API token, choose the zones Kiln manages, check and fix their TLS settings.
+ * Settings → Cloudflare: connect an API token, choose the zones Falak manages, check and fix their TLS settings.
  *
- * A managed zone means: DNS records for its domains are created / updated / removed by Kiln (its own records only),
+ * A managed zone means: DNS records for its domains are created / updated / removed by Falak (its own records only),
  * generated names may live under it, and every server of the
  * organization trusts Cloudflare's IP ranges for the visitor's address.
  */
 final class CloudflareConnections
 {
     /**
-     * Zone settings Kiln checks, with the value it recommends. Always Use HTTPS stays off: Caddy redirects to HTTPS
+     * Zone settings Falak checks, with the value it recommends. Always Use HTTPS stays off: Caddy redirects to HTTPS
      * itself, and Cloudflare's redirect would stop Let's Encrypt's HTTP-01 check from reaching the server.
      */
     public const RECOMMENDED = ['ssl' => 'strict', 'min_tls_version' => '1.2', 'always_use_https' => 'off'];
@@ -64,7 +64,7 @@ final class CloudflareConnections
         }
 
         if ($zones === []) {
-            throw ValidationException::withMessages(['api_token' => 'The token works but sees no zone. Give it Zone → DNS → Edit on the zones Kiln should manage.']);
+            throw ValidationException::withMessages(['api_token' => 'The token works but sees no zone. Give it Zone → DNS → Edit on the zones Falak should manage.']);
         }
 
         $credential = DnsCredential::query()->create([
@@ -83,7 +83,7 @@ final class CloudflareConnections
     }
 
     /**
-     * Zones the connection can see, with whether Kiln manages them.
+     * Zones the connection can see, with whether Falak manages them.
      *
      * @return list<array{id: string, name: string, status: string, plan: string, managed: ?array{id: string, proxied: bool}}>
      */
@@ -135,7 +135,7 @@ final class CloudflareConnections
         $this->audit->record('edge.cloudflare_zone_updated', 'dns_credential', $zone->dns_credential_id, ['zone' => $zone->name, 'proxied' => $proxied], $zone->organization_id);
     }
 
-    /** Stop managing a zone. Kiln's records stay in Cloudflare unless $deleteRecords. */
+    /** Stop managing a zone. Falak's records stay in Cloudflare unless $deleteRecords. */
     public function disable(CloudflareZone $zone, bool $deleteRecords): void
     {
         if ($deleteRecords) {
@@ -174,7 +174,7 @@ final class CloudflareConnections
     }
 
     /**
-     * The zone's TLS settings Kiln checks, with the recommended value (null when Cloudflare did not answer).
+     * The zone's TLS settings Falak checks, with the recommended value (null when Cloudflare did not answer).
      *
      * @return array<string, array{value: mixed, recommended: string, ok: bool}>|null
      */

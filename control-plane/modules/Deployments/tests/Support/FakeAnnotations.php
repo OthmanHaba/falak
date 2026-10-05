@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Deployments\Tests\Support;
+namespace Falak\Deployments\Tests\Support;
 
 use DateTimeInterface;
-use Kiln\Telemetry\Contracts\Annotations;
+use Falak\Telemetry\Contracts\Annotations;
 
 final class FakeAnnotations implements Annotations
 {

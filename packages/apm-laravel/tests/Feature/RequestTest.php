@@ -24,18 +24,18 @@ it('records a request span with contract attributes, user and timeline phases', 
     expect($root['kind'])->toBe(2)
         ->and($root['name'])->toBe('GET /users/{id}')
         ->and($root['attrs'])->toMatchArray([
-            'kiln.event.type' => 'request',
+            'falak.event.type' => 'request',
             'http.request.method' => 'GET',
             'http.route' => '/users/{id}',
             'http.response.status_code' => 200,
             'url.path' => '/users/7',
             'enduser.id' => '42',
-            'kiln.route.name' => 'users.show',
+            'falak.route.name' => 'users.show',
         ])
         ->and($root)->not->toHaveKey('parentSpanId');
 
     $phases = collect($this->transport->spans())
-        ->filter(fn ($s) => isset($s['attrs']['kiln.timeline.phase']))
+        ->filter(fn ($s) => isset($s['attrs']['falak.timeline.phase']))
         ->each(fn ($s) => expect($s['parentSpanId'])->toBe($root['spanId']) && expect($s['traceId'])->toBe($root['traceId']))
         ->pluck('name')->all();
 
@@ -53,7 +53,7 @@ it('marks unhandled exceptions as ERROR with an exception event handled=false', 
     expect($event['attrs'])->toMatchArray([
         'exception.type' => RuntimeException::class,
         'exception.message' => 'kaboom',
-        'kiln.exception.handled' => false,
+        'falak.exception.handled' => false,
     ])->and($event['attrs']['exception.stacktrace'])->toContain('RuntimeException: kaboom');
 });
 
@@ -65,7 +65,7 @@ it('records reported exceptions as handled without failing the span', function (
 
     $event = collect($root['events'])->firstWhere('name', 'exception');
     expect($event['attrs']['exception.type'])->toBe(LogicException::class)
-        ->and($event['attrs']['kiln.exception.handled'])->toBeTrue();
+        ->and($event['attrs']['falak.exception.handled'])->toBeTrue();
 });
 
 it('continues an incoming W3C trace context', function () {
@@ -87,6 +87,6 @@ it('does not add the controller marker twice on repeated requests', function () 
     $this->get('/users/2');
 
     $route = Route::getRoutes()->getByName('users.show');
-    expect(array_count_values($route->middleware())[\Kiln\Apm\Http\ControllerMarker::class])->toBe(1)
+    expect(array_count_values($route->middleware())[\Falak\Apm\Http\ControllerMarker::class])->toBe(1)
         ->and($this->transport->spansOfType('request'))->toHaveCount(2);
 });

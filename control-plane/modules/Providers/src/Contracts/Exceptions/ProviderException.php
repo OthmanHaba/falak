@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Providers\Contracts\Exceptions;
+namespace Falak\Providers\Contracts\Exceptions;
 
 use RuntimeException;
 use Throwable;

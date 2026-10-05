@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@kiln/apm-node",
+      "name": "@falak/apm-node",
       "dependencies": {
         "@opentelemetry/api": "^1.9.1",
         "@opentelemetry/api-logs": "^0.222.0",

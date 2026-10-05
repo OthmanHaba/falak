@@ -12,11 +12,11 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/facts"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/system"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/facts"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/system"
 )
 
 // ReportVersion is the shape version of Report (bumped on incompatible changes).
@@ -151,7 +151,7 @@ type PublishedPort struct {
 type Binary struct {
 	Path    string `json:"path"`
 	Version string `json:"version,omitempty"`
-	// Source: kiln, archive, vendor, nodesource, nvm, snap, manual.
+	// Source: falak, archive, vendor, nodesource, nvm, snap, manual.
 	Source  string `json:"source"`
 	Package string `json:"package,omitempty"`
 	Repo    string `json:"repo,omitempty"`

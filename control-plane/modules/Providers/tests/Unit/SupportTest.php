@@ -1,8 +1,8 @@
 <?php
 
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Infrastructure\Adapters\SshKey;
-use Kiln\Providers\Infrastructure\Aws\SigV4Signer;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Infrastructure\Adapters\SshKey;
+use Falak\Providers\Infrastructure\Aws\SigV4Signer;
 
 require_once __DIR__.'/../fixtures.php';
 

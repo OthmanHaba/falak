@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Queries;
+namespace Falak\Telemetry\Application\Queries;
 
-use Kiln\Telemetry\Contracts\PromQl;
+use Falak\Telemetry\Contracts\PromQl;
 
 /**
  * PromQL for a site's Metrics tab: host CPU/memory of the servers it runs on (per server) and request rate,
- * errors and p95 latency from Tempo span metrics (`kiln_site_id`), matching the kiln-laravel-site dashboard.
+ * errors and p95 latency from Tempo span metrics (`falak_site_id`), matching the falak-laravel-site dashboard.
  */
 final class SiteMetricQueries
 {
@@ -16,7 +16,7 @@ final class SiteMetricQueries
      */
     public static function for(string $siteId, array $serverIds): array
     {
-        $site = PromQl::label('kiln_site_id', strtoupper($siteId)).',kiln_event_type="request"';
+        $site = PromQl::label('falak_site_id', strtoupper($siteId)).',falak_event_type="request"';
         $queries = [
             'requests' => "sum(rate(traces_spanmetrics_calls_total{{$site}}[5m]))",
             'errors' => "sum(rate(traces_spanmetrics_calls_total{{$site},http_response_status_code=~\"5..\"}[5m]))",
@@ -25,9 +25,9 @@ final class SiteMetricQueries
 
         if ($serverIds !== []) {
             $pattern = implode('|', array_map(fn (string $id) => preg_quote(strtoupper($id), '/'), $serverIds));
-            $servers = 'kiln_server_id=~'.PromQl::quote($pattern);
-            $queries['cpu'] = "avg by (kiln_server_id) (system_cpu_utilization_ratio{{$servers}}) * 100";
-            $queries['memory'] = "avg by (kiln_server_id) (system_memory_utilization_ratio{{$servers}}) * 100";
+            $servers = 'falak_server_id=~'.PromQl::quote($pattern);
+            $queries['cpu'] = "avg by (falak_server_id) (system_cpu_utilization_ratio{{$servers}}) * 100";
+            $queries['memory'] = "avg by (falak_server_id) (system_memory_utilization_ratio{{$servers}}) * 100";
         }
 
         return $queries;

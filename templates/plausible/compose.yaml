@@ -11,7 +11,7 @@ services:
       plausible_events_db:
         condition: service_healthy
     environment:
-      BASE_URL: ${{ kiln.url(plausible) }}
+      BASE_URL: ${{ falak.url(plausible) }}
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       HTTP_PORT: "8000"
       TMPDIR: /var/lib/plausible/tmp

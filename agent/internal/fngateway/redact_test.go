@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/otlp"
+	"github.com/OthmanHaba/falak/agent/internal/otlp"
 )
 
 // The same cases as the runtimes' tests (runtimes/functions/tests/redact-cases.json).

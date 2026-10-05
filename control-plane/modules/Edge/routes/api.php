@@ -1,8 +1,8 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Kiln\Edge\Http\Controllers\DnsController;
-use Kiln\Edge\Http\Controllers\RateLimitController;
+use Falak\Edge\Http\Controllers\DnsController;
+use Falak\Edge\Http\Controllers\RateLimitController;
 
 Route::middleware(['auth:sanctum', 'org'])->prefix('v1')->name('api.v1.')->group(function () {
     Route::get('domains/options', [DnsController::class, 'options'])->name('domains.options');

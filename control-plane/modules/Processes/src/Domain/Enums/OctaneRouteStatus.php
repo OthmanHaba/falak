@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Processes\Domain\Enums;
+namespace Falak\Processes\Domain\Enums;
 
 /**
  * Octane of a site on one server, as far as routing is concerned.

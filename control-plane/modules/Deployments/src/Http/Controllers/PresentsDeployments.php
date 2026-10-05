@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Deployments\Http\Controllers;
+namespace Falak\Deployments\Http\Controllers;
 
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\DeploymentStep;
-use Kiln\Deployments\Domain\Models\DeploymentTarget;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\DeploymentStep;
+use Falak\Deployments\Domain\Models\DeploymentTarget;
 
 trait PresentsDeployments
 {

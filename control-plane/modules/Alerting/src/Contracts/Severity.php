@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Alerting\Contracts;
+namespace Falak\Alerting\Contracts;
 
 enum Severity: string
 {

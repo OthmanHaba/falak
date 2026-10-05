@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Fleet\Contracts;
+namespace Falak\Fleet\Contracts;
 
-use Kiln\Fleet\Contracts\Data\InstallToken;
+use Falak\Fleet\Contracts\Data\InstallToken;
 
 /**
  * Agent enrollment for other modules (Servers creates install commands and revokes agents).
@@ -11,7 +11,7 @@ interface Enrollment
 {
     /**
      * Issue a one-time install token. The returned command (`curl -fsSL <url> | sh`) installs and enrolls
-     * kiln-agent; AgentEnrolled is dispatched once it enrolls.
+     * falak-agent; AgentEnrolled is dispatched once it enrolls.
      */
     public function issueInstallToken(string $organizationId, ?string $serverId = null, ?int $ttlMinutes = null): InstallToken;
 

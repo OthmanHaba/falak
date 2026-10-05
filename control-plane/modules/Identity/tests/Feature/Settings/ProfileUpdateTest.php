@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Identity\Tests\Feature\Settings;
+namespace Falak\Identity\Tests\Feature\Settings;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Domain\Models\User;
 use Tests\TestCase;
 
 class ProfileUpdateTest extends TestCase

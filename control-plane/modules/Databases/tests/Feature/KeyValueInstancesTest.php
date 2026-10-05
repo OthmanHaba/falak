@@ -3,28 +3,28 @@
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Application\EngineInventory;
-use Kiln\Databases\Contracts\Data\DatabaseConsumer;
-use Kiln\Databases\Contracts\DatabaseConnections;
-use Kiln\Databases\Contracts\DatabaseDirectory;
-use Kiln\Databases\Contracts\DatabaseProvisioner;
-use Kiln\Databases\Domain\Enums\Engine;
-use Kiln\Databases\Domain\Enums\EngineKind;
-use Kiln\Databases\Domain\Models\Database;
-use Kiln\Databases\Domain\Models\DatabaseServer;
-use Kiln\Databases\Domain\Models\DatabaseUser;
-use Kiln\Databases\Events\DatabaseCreated;
-use Kiln\Databases\Events\DatabaseDeleted;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Models\MachineInspection;
+use Falak\Databases\Application\EngineInventory;
+use Falak\Databases\Contracts\Data\DatabaseConsumer;
+use Falak\Databases\Contracts\DatabaseConnections;
+use Falak\Databases\Contracts\DatabaseDirectory;
+use Falak\Databases\Contracts\DatabaseProvisioner;
+use Falak\Databases\Domain\Enums\Engine;
+use Falak\Databases\Domain\Enums\EngineKind;
+use Falak\Databases\Domain\Models\Database;
+use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Domain\Models\DatabaseUser;
+use Falak\Databases\Events\DatabaseCreated;
+use Falak\Databases\Events\DatabaseDeleted;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Identity\Contracts\Role;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Models\MachineInspection;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 /*
- * Redis and Valkey as Databases engines (v0.7.0 phase 1): one instance per service, redis-server@kiln-<name>, ports
+ * Redis and Valkey as Databases engines (v0.7.0 phase 1): one instance per service, redis-server@falak-<name>, ports
  * 6380–6479, a single `default` user holding requirepass.
  */
 
@@ -50,7 +50,7 @@ it('knows the key-value engines and their kind', function () {
         ->and(Engine::Valkey->protocol())->toBe('valkey')
         ->and(Engine::Redis->defaultPort())->toBe(6379)
         ->and(Engine::Redis->driver())->toBe('redis')
-        ->and(Engine::Redis->reservedNames())->toBe(['default', 'kiln'])
+        ->and(Engine::Redis->reservedNames())->toBe(['default', 'falak'])
         ->and(Engine::Redis->privileges())->toBe([])
         ->and(EngineKind::KeyValue->values())->toBe(['redis', 'valkey']);
 });

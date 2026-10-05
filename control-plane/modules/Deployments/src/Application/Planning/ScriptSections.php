@@ -1,21 +1,21 @@
 <?php
 
-namespace Kiln\Deployments\Application\Planning;
+namespace Falak\Deployments\Application\Planning;
 
 use InvalidArgumentException;
 
 /**
- * Splits a deploy script at its macro lines ($KILN_FETCH, $KILN_ACTIVATE, $KILN_RESTART_PROCS):
+ * Splits a deploy script at its macro lines ($FALAK_FETCH, $FALAK_ACTIVATE, $FALAK_RESTART_PROCS):
  *
- *     <before_fetch>  $KILN_FETCH  <before_activate>  $KILN_ACTIVATE  <after_activate>  $KILN_RESTART_PROCS  <after_restart>
+ *     <before_fetch>  $FALAK_FETCH  <before_activate>  $FALAK_ACTIVATE  <after_activate>  $FALAK_RESTART_PROCS  <after_restart>
  *
- * A missing $KILN_FETCH means the release is fetched first; a missing $KILN_ACTIVATE means it is
- * activated after the script; a missing $KILN_RESTART_PROCS means processes restart right after
+ * A missing $FALAK_FETCH means the release is fetched first; a missing $FALAK_ACTIVATE means it is
+ * activated after the script; a missing $FALAK_RESTART_PROCS means processes restart right after
  * activation. Macros used inside other lines stay no-ops (the agent defines them as ':').
  */
 final readonly class ScriptSections
 {
-    public const MACROS = ['KILN_FETCH', 'KILN_ACTIVATE', 'KILN_RESTART_PROCS'];
+    public const MACROS = ['FALAK_FETCH', 'FALAK_ACTIVATE', 'FALAK_RESTART_PROCS'];
 
     public function __construct(
         public string $beforeFetch,
@@ -29,13 +29,13 @@ final readonly class ScriptSections
      */
     public static function parse(string $script): self
     {
-        $buckets = ['KILN_FETCH' => [], 'KILN_ACTIVATE' => [], 'KILN_RESTART_PROCS' => [], 'end' => []];
+        $buckets = ['FALAK_FETCH' => [], 'FALAK_ACTIVATE' => [], 'FALAK_RESTART_PROCS' => [], 'end' => []];
         $seen = [];
         $current = [];
         $lines = preg_split('/\r?\n/', $script) ?: [];
 
         foreach ($lines as $line) {
-            if (preg_match('/^\s*\$\{?(KILN_FETCH|KILN_ACTIVATE|KILN_RESTART_PROCS)\}?\s*(;\s*)?(#.*)?$/', $line, $m) === 1) {
+            if (preg_match('/^\s*\$\{?(FALAK_FETCH|FALAK_ACTIVATE|FALAK_RESTART_PROCS)\}?\s*(;\s*)?(#.*)?$/', $line, $m) === 1) {
                 $macro = $m[1];
 
                 if (isset($seen[$macro])) {
@@ -64,18 +64,18 @@ final readonly class ScriptSections
 
         // Lines before a macro belong to the section preceding it; the tail belongs after the last one.
         $sections = ['before_fetch' => [], 'before_activate' => [], 'after_activate' => [], 'after_restart' => []];
-        $sections['before_fetch'] = isset($seen['KILN_FETCH']) ? $buckets['KILN_FETCH'] : [];
-        $preFetchCarry = isset($seen['KILN_FETCH']) ? [] : $buckets['KILN_FETCH'];
+        $sections['before_fetch'] = isset($seen['FALAK_FETCH']) ? $buckets['FALAK_FETCH'] : [];
+        $preFetchCarry = isset($seen['FALAK_FETCH']) ? [] : $buckets['FALAK_FETCH'];
 
-        $sections['before_activate'] = array_merge($preFetchCarry, $buckets['KILN_ACTIVATE']);
-        $sections['after_activate'] = $buckets['KILN_RESTART_PROCS'];
+        $sections['before_activate'] = array_merge($preFetchCarry, $buckets['FALAK_ACTIVATE']);
+        $sections['after_activate'] = $buckets['FALAK_RESTART_PROCS'];
 
-        if (! isset($seen['KILN_ACTIVATE'])) {
+        if (! isset($seen['FALAK_ACTIVATE'])) {
             // Everything runs before activation.
             $sections['before_activate'] = array_merge($sections['before_activate'], $sections['after_activate'], $buckets['end']);
             $sections['after_activate'] = [];
             $sections['after_restart'] = [];
-        } elseif (! isset($seen['KILN_RESTART_PROCS'])) {
+        } elseif (! isset($seen['FALAK_RESTART_PROCS'])) {
             $sections['after_activate'] = array_merge($sections['after_activate'], $buckets['end']);
         } else {
             $sections['after_restart'] = $buckets['end'];

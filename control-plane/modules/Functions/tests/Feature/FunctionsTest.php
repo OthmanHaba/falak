@@ -2,26 +2,26 @@
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
-use Kiln\Deployments\Contracts\DeploymentTrigger;
-use Kiln\Deployments\Domain\Enums\DeploymentStatus;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\Release;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Functions\Application\Code;
-use Kiln\Functions\Application\FunctionStore;
-use Kiln\Functions\Domain\Models\CloudFunction;
-use Kiln\Functions\Domain\Models\FunctionApiKey;
-use Kiln\Functions\Domain\Models\FunctionDraft;
-use Kiln\Functions\Domain\Models\FunctionSchedule;
-use Kiln\Functions\Domain\Models\FunctionVersion;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Processes\Contracts\ScheduleDirectory;
-use Kiln\Processes\Infrastructure\StateCompiler;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteDomains;
-use Kiln\Sites\Contracts\SiteFactory;
-use Kiln\Sites\Domain\Models\EnvironmentVersion;
-use Kiln\Sites\Domain\Models\Site;
+use Falak\Deployments\Contracts\DeploymentTrigger;
+use Falak\Deployments\Domain\Enums\DeploymentStatus;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\Release;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Functions\Application\Code;
+use Falak\Functions\Application\FunctionStore;
+use Falak\Functions\Domain\Models\CloudFunction;
+use Falak\Functions\Domain\Models\FunctionApiKey;
+use Falak\Functions\Domain\Models\FunctionDraft;
+use Falak\Functions\Domain\Models\FunctionSchedule;
+use Falak\Functions\Domain\Models\FunctionVersion;
+use Falak\Identity\Contracts\Role;
+use Falak\Processes\Contracts\ScheduleDirectory;
+use Falak\Processes\Infrastructure\StateCompiler;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteDomains;
+use Falak\Sites\Contracts\SiteFactory;
+use Falak\Sites\Domain\Models\EnvironmentVersion;
+use Falak\Sites\Domain\Models\Site;
 
 require_once __DIR__.'/../../../Deployments/tests/Support/helpers.php';
 require_once __DIR__.'/../../../Projects/tests/Support/helpers.php';
@@ -82,11 +82,11 @@ it('creates a function from the canvas and deploys its starter through the gatew
         ->and($apply['payload']['site'])->toBe($site->slug)
         ->and($apply['payload']['entrypoint'])->toBe('index.ts')
         ->and($apply['payload']['files'])->toBe([['path' => 'index.ts', 'content' => $version->files['index.ts']]])
-        ->and($apply['payload']['image'])->toContain('/kiln-fn-bun:')
+        ->and($apply['payload']['image'])->toContain('/falak-fn-bun:')
         ->and($apply['payload']['scaling'])->toBe(['min_instances' => 0, 'max_instances' => 5, 'concurrency' => 50, 'idle_timeout_s' => 300])
         ->and($apply['payload']['limits']['memory_bytes'])->toBe(256 * 1024 * 1024)
         ->and($apply['payload']['env'])->not->toHaveKey('PORT')
-        ->and($apply['payload']['env']['KILN_SITE_ID'])->toBe(strtoupper($site->id));
+        ->and($apply['payload']['env']['FALAK_SITE_ID'])->toBe(strtoupper($site->id));
 
     $world->agents->succeed($apply['handle'], ['release' => $apply['payload']['release'], 'installed' => true, 'boot_ms' => 180]);
     $deployment = Deployment::query()->findOrFail($response->json('data.deployment_id'));
@@ -215,7 +215,7 @@ it('keeps several files off a server whose agent is gone', function () {
     $response = $this->postJson(fn_url($world->site, '/deploy'), ['files' => $files, 'base_version_id' => $function->head()->id])->assertCreated();
 
     expect($response->json('data.deployment_id'))->toBeNull()
-        ->and($response->json('warnings.0'))->toContain('no connected Kiln agent')
+        ->and($response->json('warnings.0'))->toContain('no connected Falak agent')
         ->and($world->agents->dispatched('fn.release.apply'))->toBeEmpty();
 });
 
@@ -333,7 +333,7 @@ it('turns schedules into cron jobs of the leader that run the function through t
         ->and($job['user'])->toBe('root')
         ->and($job['overlap'])->toBe('skip')
         ->and($job['timeout_s'])->toBe(150)
-        ->and($job['command'])->toBe("/usr/local/bin/kiln-agent fn-run --site '{$world->site->slug}' --schedule '{$created['key']}' --name 'Nightly '\''cleanup'\''' --cron '0 3 * * *' --timeout 120")
+        ->and($job['command'])->toBe("/usr/local/bin/falak-agent fn-run --site '{$world->site->slug}' --schedule '{$created['key']}' --name 'Nightly '\''cleanup'\''' --cron '0 3 * * *' --timeout 120")
         // Insights attributes the heartbeats to the function.
         ->and(app(ScheduleDirectory::class)->forServer($world->servers[0]->id))->toBeArray();
 
@@ -403,7 +403,7 @@ it('creates a Python function with the starter’s variables and schedule', func
         ->and($function->entrypoint)->toBe('main.py')
         ->and(array_keys($function->head()->files))->toBe(['main.py'])
         ->and($function->head()->files['main.py'])->toContain('async def scheduled(event: dict)')
-        ->and($apply['image'])->toContain('/kiln-fn-python:')
+        ->and($apply['image'])->toContain('/falak-fn-python:')
         ->and($apply['entrypoint'])->toBe('main.py')
         ->and($variables)->toMatchArray(['URLS' => '', 'ALERT_WEBHOOK_URL' => ''])
         ->and(FunctionSchedule::query()->where('function_id', $function->id)->pluck('expression')->all())->toBe(['*/5 * * * *']);
@@ -424,7 +424,7 @@ it('creates a Go function from a starter', function () {
     expect($function->runtime)->toBe('go')
         ->and($function->entrypoint)->toBe('main.go')
         ->and($function->head()->files['main.go'])->toContain('github.com/jackc/pgx/v5/pgxpool')
-        ->and($apply['image'])->toContain('/kiln-fn-go:')
+        ->and($apply['image'])->toContain('/falak-fn-go:')
         ->and($apply['entrypoint'])->toBe('main.go');
     $this->getJson(fn_url(Site::query()->findOrFail($response->json('data.site_id'))))->assertJsonPath('data.runtime.language', 'go');
 });
@@ -486,13 +486,13 @@ it('sends test requests to the function’s own URL only', function () {
     app(SiteDomains::class)->attach($world->site->id, 'hooks.example.com');
     deploy_http(['https://hooks.example.com' => 201]); // deploy_world's HTTP fake answers "status <code>"
 
-    $this->postJson(fn_url($world->site, '/invoke'), ['method' => 'POST', 'path' => '/notes?x=1', 'headers' => ['X-Kiln-Key' => 'k', 'Host' => 'evil.example'], 'body' => '{"a":1}'])
+    $this->postJson(fn_url($world->site, '/invoke'), ['method' => 'POST', 'path' => '/notes?x=1', 'headers' => ['X-Falak-Key' => 'k', 'Host' => 'evil.example'], 'body' => '{"a":1}'])
         ->assertOk()
         ->assertJsonPath('data.status', 201)
         ->assertJsonPath('data.url', 'https://hooks.example.com/notes?x=1')
         ->assertJsonPath('data.body', 'status 201');
 
-    Http::assertSent(fn ($request) => $request->url() === 'https://hooks.example.com/notes?x=1' && $request->hasHeader('X-Kiln-Key', 'k') && $request->header('Host') !== ['evil.example'] && $request->body() === '{"a":1}');
+    Http::assertSent(fn ($request) => $request->url() === 'https://hooks.example.com/notes?x=1' && $request->hasHeader('X-Falak-Key', 'k') && $request->header('Host') !== ['evil.example'] && $request->body() === '{"a":1}');
 
     // Absolute URLs or other hosts cannot be requested.
     $this->postJson(fn_url($world->site, '/invoke'), ['method' => 'GET', 'path' => 'https://internal.example/'])->assertUnprocessable();

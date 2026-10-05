@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/system"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/system"
 )
 
 // Peer is a WireGuard peer.
@@ -68,7 +68,7 @@ func PublicKey(priv []byte) (string, error) {
 
 // loadOrCreateKey keeps the private key on the host; it never leaves it.
 func (n *Net) loadOrCreateKey(iface string) ([]byte, bool, error) {
-	path := "/etc/kiln/wireguard/" + iface + ".key"
+	path := "/etc/falak/wireguard/" + iface + ".key"
 	if b, err := n.d.FS.ReadFile(path); err == nil {
 		k, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(b)))
 		if err == nil && len(k) == 32 {
@@ -80,7 +80,7 @@ func (n *Net) loadOrCreateKey(iface string) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	if err := n.d.FS.MkdirAll("/etc/kiln/wireguard", 0o700); err != nil {
+	if err := n.d.FS.MkdirAll("/etc/falak/wireguard", 0o700); err != nil {
 		return nil, false, err
 	}
 	_, err = n.d.FS.WriteFile(path, []byte(base64.StdEncoding.EncodeToString(k)+"\n"), 0o600)
@@ -97,7 +97,7 @@ func RenderWireGuard(p WireGuardPayload, priv []byte) (string, error) {
 		port = 51820
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Managed by Kiln (net.wireguard.apply) — do not edit\n[Interface]\nPrivateKey = %s\nAddress = %s\nListenPort = %d\n",
+	fmt.Fprintf(&b, "# Managed by Falak (net.wireguard.apply) — do not edit\n[Interface]\nPrivateKey = %s\nAddress = %s\nListenPort = %d\n",
 		base64.StdEncoding.EncodeToString(priv), p.Address, port)
 	for _, peer := range p.Peers {
 		if !wgKeyRe.MatchString(peer.PublicKey) {
@@ -175,7 +175,7 @@ func (n *Net) ensureWireGuardTools(ctx context.Context, st commands.Stream) erro
 func (n *Net) WireGuardApply(ctx context.Context, p WireGuardPayload, st commands.Stream) (any, error) {
 	iface := p.Interface
 	if iface == "" {
-		iface = "wg-kiln"
+		iface = "wg-falak"
 	}
 	if !wgIfRe.MatchString(iface) {
 		return nil, perr("invalid interface %q", iface)

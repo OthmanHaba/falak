@@ -1,20 +1,20 @@
 <?php
 
-namespace Kiln\Identity\Http\Controllers\Settings;
+namespace Falak\Identity\Http\Controllers\Settings;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Application\Actions\CreateApiToken;
-use Kiln\Identity\Application\Actions\RevokeApiToken;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\PermissionRegistry;
-use Kiln\Identity\Domain\Models\PersonalAccessToken;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Identity\Infrastructure\SpatieOrganizationAccess;
-use Kiln\Kernel\Http\Controller;
+use Falak\Identity\Application\Actions\CreateApiToken;
+use Falak\Identity\Application\Actions\RevokeApiToken;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\PermissionRegistry;
+use Falak\Identity\Domain\Models\PersonalAccessToken;
+use Falak\Identity\Domain\Models\User;
+use Falak\Identity\Infrastructure\SpatieOrganizationAccess;
+use Falak\Kernel\Http\Controller;
 
 final class ApiTokenController extends Controller
 {

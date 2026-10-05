@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Events;
+namespace Falak\Identity\Events;
 
 use Illuminate\Foundation\Events\Dispatchable;
 

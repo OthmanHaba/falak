@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Contracts;
+namespace Falak\Fleet\Contracts;
 
 enum AgentUpgradeStatus: string
 {

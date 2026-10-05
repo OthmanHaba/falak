@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Edge\Application\Actions;
+namespace Falak\Edge\Application\Actions;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Edge\Domain\Enums\WwwRedirect;
-use Kiln\Edge\Domain\Models\Certificate;
-use Kiln\Edge\Domain\Models\DnsCredential;
-use Kiln\Edge\Domain\Models\Domain;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Edge\Domain\Enums\WwwRedirect;
+use Falak\Edge\Domain\Models\Certificate;
+use Falak\Edge\Domain\Models\DnsCredential;
+use Falak\Edge\Domain\Models\Domain;
 
 trait ValidatesDomainTls
 {

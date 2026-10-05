@@ -1,9 +1,9 @@
 <?php
 
 use Inertia\Testing\AssertableInertia as Assert;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\Identity\Domain\Models\Team;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Identity\Domain\Models\Team;
 
 it('creates, updates, syncs members of and deletes teams', function () {
     [$owner, $organization] = actingAsMember(Role::Admin);

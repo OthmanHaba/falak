@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Edge\Application;
+namespace Falak\Edge\Application;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Contracts\Data\DnsTarget;
-use Kiln\Edge\Infrastructure\EloquentSiteDomains;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\TargetRole;
+use Falak\Edge\Contracts\Data\DnsTarget;
+use Falak\Edge\Infrastructure\EloquentSiteDomains;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\TargetRole;
 
 /**
  * What the domain picker offers for a new or existing site: the test domain, a generated name (pointing at the
@@ -38,7 +38,7 @@ final class DomainOptions
             'generated' => [
                 'suffix' => $suffix,
                 'provider' => $zone !== null ? 'cloudflare' : $suffix,
-                // A Cloudflare zone: <name>.<zone>, with its DNS record created by Kiln (proxied per the zone).
+                // A Cloudflare zone: <name>.<zone>, with its DNS record created by Falak (proxied per the zone).
                 'zone' => $zone !== null ? ['name' => $zone->name, 'proxied' => $zone->proxied] : null,
                 'ipv4' => $pointsAt?->ipv4,
                 'target' => $pointsAt?->toArray(),

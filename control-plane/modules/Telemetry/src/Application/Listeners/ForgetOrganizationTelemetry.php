@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Listeners;
+namespace Falak\Telemetry\Application\Listeners;
 
-use Kiln\Identity\Events\OrganizationDeleted;
-use Kiln\Telemetry\Domain\Models\DeploymentAnnotation;
-use Kiln\Telemetry\Domain\Models\GrafanaState;
-use Kiln\Telemetry\Domain\Models\TelemetrySettings;
+use Falak\Identity\Events\OrganizationDeleted;
+use Falak\Telemetry\Domain\Models\DeploymentAnnotation;
+use Falak\Telemetry\Domain\Models\GrafanaState;
+use Falak\Telemetry\Domain\Models\TelemetrySettings;
 
 final class ForgetOrganizationTelemetry
 {

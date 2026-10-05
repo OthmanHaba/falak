@@ -11,8 +11,8 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     const page = await browser.newPage({ baseURL, ignoreHTTPSErrors: true });
 
     await page.goto('/login');
-    await page.getByLabel('Email address').fill(process.env.KILN_E2E_EMAIL ?? 'admin@kiln.test');
-    await page.getByLabel('Password', { exact: true }).fill(process.env.KILN_E2E_PASSWORD ?? 'kiln-demo-2026');
+    await page.getByLabel('Email address').fill(process.env.FALAK_E2E_EMAIL ?? 'admin@falak.test');
+    await page.getByLabel('Password', { exact: true }).fill(process.env.FALAK_E2E_PASSWORD ?? 'falak-demo-2026');
     await page.getByRole('button', { name: /log in/i }).click();
     await page.waitForURL((url) => !url.pathname.startsWith('/login'), { timeout: 30_000 });
 

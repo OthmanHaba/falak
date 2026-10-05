@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 const (
@@ -66,7 +66,7 @@ func TestAptUpdateDisablesAnOndrejSourceWithoutARelease(t *testing.T) {
 	if runs != 2 {
 		t.Fatalf("apt-get update ran %d times, want 2", runs)
 	}
-	if !fs.Exists("/etc/apt/sources.list.d/ondrej-ubuntu-php-resolute.sources.disabled-by-kiln") || !fs.Exists("/etc/apt/sources.list.d/ubuntu.sources") {
+	if !fs.Exists("/etc/apt/sources.list.d/ondrej-ubuntu-php-resolute.sources.disabled-by-falak") || !fs.Exists("/etc/apt/sources.list.d/ubuntu.sources") {
 		t.Fatal("ondrej source not disabled (or another one touched)")
 	}
 	if !strings.Contains(stderr.String(), "warning: https://ppa.launchpadcontent.net/ondrej/php/ubuntu has no release for this distribution; disabled /etc/apt/sources.list.d/ondrej-ubuntu-php-resolute.sources") {

@@ -2,8 +2,8 @@
 
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Servers\Domain\Models\Server;
+use Falak\Identity\Contracts\Role;
+use Falak\Servers\Domain\Models\Server;
 
 beforeEach(function () {
     Http::preventStrayRequests();
@@ -21,7 +21,7 @@ function explorer_trace(string $orgId): array
     return ['trace' => ['resourceSpans' => [[
         'resource' => ['attributes' => [
             ['key' => 'service.name', 'value' => ['stringValue' => 'shop']],
-            ['key' => 'kiln.org.id', 'value' => ['stringValue' => strtoupper($orgId)]],
+            ['key' => 'falak.org.id', 'value' => ['stringValue' => strtoupper($orgId)]],
         ]],
         'scopeSpans' => [['spans' => [[
             'traceId' => '0af7651916cd43dd8448eb211c80319c', 'spanId' => '00f067aa0ba902b7', 'name' => 'GET /',
@@ -61,8 +61,8 @@ it('serves server metrics scoped to the server and hides other organizations\' s
         ->assertJsonPath('charts.cpu.0.points.0', [1_700_000_000, 12.5]);
     expect(array_keys($response->json('charts')))->toBe(['cpu', 'memory', 'disk', 'load1', 'load5', 'load15', 'network', 'disk_io']);
 
-    Http::assertSent(fn (Request $r) => str_contains($r['query'], 'kiln_server_id="'.strtoupper($server->id).'"'));
-    Http::assertNotSent(fn (Request $r) => ! str_contains($r['query'], 'kiln_server_id="'.strtoupper($server->id).'"'));
+    Http::assertSent(fn (Request $r) => str_contains($r['query'], 'falak_server_id="'.strtoupper($server->id).'"'));
+    Http::assertNotSent(fn (Request $r) => ! str_contains($r['query'], 'falak_server_id="'.strtoupper($server->id).'"'));
 
     $this->getJson("/telemetry/servers/{$foreign->id}/metrics/data")->assertNotFound();
     $this->getJson("/telemetry/servers/{$foreign->id}/metrics")->assertNotFound();
@@ -90,15 +90,15 @@ it('queries logs with the organization matcher and paginates with a cursor', fun
         ->assertJsonPath('lines.0.line', 'b')
         ->assertJsonPath('lines.0.trace_id', 'abc')
         ->assertJsonPath('next_before', '1700000000000000001')
-        ->assertJsonPath('query', '{kiln_org_id="'.strtoupper($this->organization->id).'", service_name="shop"} |= "boom"');
+        ->assertJsonPath('query', '{falak_org_id="'.strtoupper($this->organization->id).'", service_name="shop"} |= "boom"');
 
     $this->getJson('/telemetry/logs/data?limit=2&before=1700000000000000002&from=2023-11-14T00:00:00Z&to=2023-11-15T00:00:00Z')->assertOk()
         ->assertJsonCount(1, 'lines')
         ->assertJsonPath('lines.0.line', 'a')
         ->assertJsonPath('next_before', null);
 
-    Http::assertSent(fn (Request $r) => str_starts_with($r['query'], '{kiln_org_id="'.strtoupper($this->organization->id).'"'));
-    Http::assertNotSent(fn (Request $r) => ! str_starts_with($r['query'], '{kiln_org_id="'.strtoupper($this->organization->id).'"'));
+    Http::assertSent(fn (Request $r) => str_starts_with($r['query'], '{falak_org_id="'.strtoupper($this->organization->id).'"'));
+    Http::assertNotSent(fn (Request $r) => ! str_starts_with($r['query'], '{falak_org_id="'.strtoupper($this->organization->id).'"'));
 });
 
 it('rejects raw LogQL, bad filters and invalid regexes', function () {
@@ -108,7 +108,7 @@ it('rejects raw LogQL, bad filters and invalid regexes', function () {
     $this->getJson('/telemetry/logs/data?level=verbose')->assertUnprocessable();
     $this->getJson('/telemetry/logs/data?search=(oops&regex=1')->assertUnprocessable()->assertJsonValidationErrors('search');
     $this->getJson('/telemetry/logs/data?from=2026-01-01&to=2025-01-01')->assertUnprocessable();
-    $this->getJson('/telemetry/logs/data?query={kiln_org_id=~".%2B"}')->assertOk()->assertJsonPath('query', '{kiln_org_id="'.strtoupper($this->organization->id).'"}');
+    $this->getJson('/telemetry/logs/data?query={falak_org_id=~".%2B"}')->assertOk()->assertJsonPath('query', '{falak_org_id="'.strtoupper($this->organization->id).'"}');
 
     Http::assertNotSent(fn (Request $r) => str_contains((string) $r['query'], '=~".+"'));
 });
@@ -118,7 +118,7 @@ it('searches traces within the organization', function () {
 
     $this->getJson('/telemetry/traces/search?status=error&min_duration_ms=250&service=shop')->assertOk()
         ->assertJsonPath('traces.0.trace_id', '0af7651916cd43dd8448eb211c80319c')
-        ->assertJsonPath('query', '{ resource.kiln.org.id = "'.strtoupper($this->organization->id).'" && resource.service.name = "shop" && duration >= 250ms && status = error }');
+        ->assertJsonPath('query', '{ resource.falak.org.id = "'.strtoupper($this->organization->id).'" && resource.service.name = "shop" && duration >= 250ms && status = error }');
 });
 
 it('returns traces of the current organization only', function () {

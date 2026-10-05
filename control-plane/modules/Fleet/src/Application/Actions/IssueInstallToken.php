@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Fleet\Application\Actions;
+namespace Falak\Fleet\Application\Actions;
 
 use DateTimeImmutable;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Contracts\Data\InstallToken as InstallTokenData;
-use Kiln\Fleet\Domain\Models\InstallToken;
-use Kiln\Fleet\Infrastructure\PanelUrls;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Fleet\Contracts\Data\InstallToken as InstallTokenData;
+use Falak\Fleet\Domain\Models\InstallToken;
+use Falak\Fleet\Infrastructure\PanelUrls;
+use Falak\Identity\Contracts\AuditLog;
 
 final class IssueInstallToken
 {

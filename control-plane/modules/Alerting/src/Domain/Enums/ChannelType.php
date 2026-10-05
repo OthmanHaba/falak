@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Alerting\Domain\Enums;
+namespace Falak\Alerting\Domain\Enums;
 
 enum ChannelType: string
 {

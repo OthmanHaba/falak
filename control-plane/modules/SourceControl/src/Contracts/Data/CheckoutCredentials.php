@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\SourceControl\Contracts\Data;
+namespace Falak\SourceControl\Contracts\Data;
 
 use SensitiveParameter;
 

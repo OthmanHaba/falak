@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Deployments\Http\Controllers;
+namespace Falak\Deployments\Http\Controllers;
 
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\Request;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Policies\DeploymentPermissions;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
 
 /**
  * Sites (by id or slug) and deployments of the current organization; anything else is a 404.

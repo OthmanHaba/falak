@@ -1,13 +1,13 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Kiln\Builds\Http\Controllers\Internal\ArtifactController;
-use Kiln\Builds\Http\Controllers\Internal\BuildEventsController;
-use Kiln\Builds\Http\Controllers\Internal\BuildHeartbeatController;
-use Kiln\Builds\Http\Controllers\Internal\NextBuildController;
-use Kiln\Builds\Http\Middleware\AuthenticateBuilder;
+use Falak\Builds\Http\Controllers\Internal\ArtifactController;
+use Falak\Builds\Http\Controllers\Internal\BuildEventsController;
+use Falak\Builds\Http\Controllers\Internal\BuildHeartbeatController;
+use Falak\Builds\Http\Controllers\Internal\NextBuildController;
+use Falak\Builds\Http\Middleware\AuthenticateBuilder;
 
-// Internal API for kiln-builder (agent/internal/builder/endpoints.go). Mounted under /api.
+// Internal API for falak-builder (agent/internal/builder/endpoints.go). Mounted under /api.
 Route::prefix('internal')->group(function () {
     Route::middleware(AuthenticateBuilder::class)->group(function () {
         Route::get('builds/next', NextBuildController::class)->name('builds.internal.next');

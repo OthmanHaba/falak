@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\Providers;
+namespace Falak\SourceControl\Infrastructure\Providers;
 
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Domain\Models\Connection;
-use Kiln\SourceControl\Infrastructure\GitHubApp\GitHubAppResolver;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Domain\Models\Connection;
+use Falak\SourceControl\Infrastructure\GitHubApp\GitHubAppResolver;
 
 /**
  * Resolves a usable API token for a connection: refreshes expiring OAuth tokens and mints

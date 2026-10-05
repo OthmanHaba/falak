@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Domain\Models;
+namespace Falak\Fleet\Domain\Models;
 
 use DateTimeImmutable;
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
@@ -9,12 +9,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Kiln\Fleet\Contracts\AgentStatus;
-use Kiln\Fleet\Contracts\Data\AgentInfo;
-use Kiln\Fleet\Database\Factories\AgentFactory;
+use Falak\Fleet\Contracts\AgentStatus;
+use Falak\Fleet\Contracts\Data\AgentInfo;
+use Falak\Fleet\Database\Factories\AgentFactory;
 
 /**
- * An enrolled kiln-agent. Its id is the CN of its client certificates.
+ * An enrolled falak-agent. Its id is the CN of its client certificates.
  *
  * @property string $id
  * @property string $organization_id

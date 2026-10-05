@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Insights\Domain\Support;
+namespace Falak\Insights\Domain\Support;
 
 /**
  * Groups exceptions: normalized type + the top N in-app frames (file + function, no line numbers,

@@ -2,10 +2,10 @@
 
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Kiln\Providers\Contracts\Data\Machine;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Infrastructure\Adapters\VultrAdapter;
+use Falak\Providers\Contracts\Data\Machine;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Infrastructure\Adapters\VultrAdapter;
 
 require_once __DIR__.'/../fixtures.php';
 
@@ -98,7 +98,7 @@ it('lists Ubuntu LTS operating systems', function () {
 it('creates instances with base64 user data', function () {
     Http::fake(['api.vultr.com/v2/instances' => Http::response(['instance' => vultrInstance()], 202)]);
 
-    $machine = vultr()->createServer(new MachineSpec('Web 1', 'ewr', 'vc2-1c-1gb', '2284', ['key-uuid'], 'echo hi', ['kiln-server' => '01J']));
+    $machine = vultr()->createServer(new MachineSpec('Web 1', 'ewr', 'vc2-1c-1gb', '2284', ['key-uuid'], 'echo hi', ['falak-server' => '01J']));
 
     expect($machine->id)->toBe('cb676a46-66fd-4dfb-b839-443f2e6c0b60')
         ->and($machine->status)->toBe(Machine::STATUS_PROVISIONING)
@@ -112,7 +112,7 @@ it('creates instances with base64 user data', function () {
         && $r['label'] === 'Web 1'
         && $r['sshkey_id'] === ['key-uuid']
         && $r['user_data'] === base64_encode('echo hi')
-        && $r['tags'] === ['kiln-server:01J']);
+        && $r['tags'] === ['falak-server:01J']);
 });
 
 it('maps instance state and handles missing instances', function () {

@@ -3,11 +3,11 @@
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Kiln\Alerting\Domain\Enums\ChannelType;
-use Kiln\Alerting\Domain\Models\Channel;
-use Kiln\Alerting\Domain\Models\Rule;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\AuditEntry;
+use Falak\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Alerting\Domain\Models\Rule;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\AuditEntry;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -65,7 +65,7 @@ it('never sends channel secrets to the UI', function () {
     expect($props)->not->toContain('SECRETSECRET')
         ->not->toContain('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
         ->not->toContain('a-very-long-signing-secret')
-        ->not->toContain('hooks.example.com/kiln')
+        ->not->toContain('hooks.example.com/falak')
         ->toContain('https:\\/\\/hooks.slack.com\\/…\\/CRET');
 });
 
@@ -77,7 +77,7 @@ it('keeps stored secrets when updating with blank secret fields', function () {
 
     $channel->refresh();
     expect($channel->name)->toBe('Renamed')->and($channel->enabled)->toBeFalse()
-        ->and($channel->config)->toBe(['url' => 'https://hooks.example.com/kiln', 'secret' => 'a-very-long-signing-secret']);
+        ->and($channel->config)->toBe(['url' => 'https://hooks.example.com/falak', 'secret' => 'a-very-long-signing-secret']);
 
     $this->put("/alerting/channels/{$channel->id}", ['name' => 'Renamed', 'config' => ['url' => 'https://other.example.com/x', 'secret' => '']])->assertSessionHasNoErrors();
     expect($channel->refresh()->config['url'])->toBe('https://other.example.com/x');
@@ -88,7 +88,7 @@ it('sends a test message synchronously and reports the result', function () {
     Http::fake(['hooks.slack.com/*' => Http::sequence()->push('ok')->push('channel_not_found', 404)]);
 
     $this->postJson("/alerting/channels/{$channel->id}/test")->assertOk()->assertJson(['ok' => true, 'error' => null]);
-    Http::assertSent(fn (Request $request) => $request['text'] === '[INFO] Kiln test alert');
+    Http::assertSent(fn (Request $request) => $request['text'] === '[INFO] Falak test alert');
     expect($channel->refresh()->last_sent_at)->not->toBeNull();
 
     $this->postJson("/alerting/channels/{$channel->id}/test")->assertStatus(422)->assertJson(['ok' => false, 'error' => 'HTTP 404: channel_not_found']);

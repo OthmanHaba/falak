@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Kernel\Support;
+namespace Falak\Kernel\Support;
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;

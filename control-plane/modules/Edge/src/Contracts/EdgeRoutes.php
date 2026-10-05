@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Edge\Contracts;
+namespace Falak\Edge\Contracts;
 
-use Kiln\Edge\Contracts\Data\DomainData;
-use Kiln\Fleet\Contracts\Data\CommandHandle;
+use Falak\Edge\Contracts\Data\DomainData;
+use Falak\Fleet\Contracts\Data\CommandHandle;
 
 /**
  * Edge (Caddy / FrankenPHP) routing for other modules.
@@ -47,7 +47,7 @@ interface EdgeRoutes
     public function domainsFor(string $siteId, ?string $service = null): array;
 
     /**
-     * TLS used for hosted test domains (<slug>.<KILN_TEST_DOMAIN>): Auto (ACME) or Internal.
+     * TLS used for hosted test domains (<slug>.<FALAK_TEST_DOMAIN>): Auto (ACME) or Internal.
      */
     public function testDomainTls(): TlsMode;
 

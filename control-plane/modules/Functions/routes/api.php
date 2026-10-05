@@ -1,9 +1,9 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Kiln\Functions\Http\Controllers\Api\FunctionApiController;
+use Falak\Functions\Http\Controllers\Api\FunctionApiController;
 
-// Mounted under /api; used by `kiln fn …`.
+// Mounted under /api; used by `falak fn …`.
 Route::middleware(['auth:sanctum', 'org'])->prefix('v1')->name('api.v1.')->group(function () {
     Route::get('functions', [FunctionApiController::class, 'index'])->name('functions.index');
     Route::get('functions/{site}', [FunctionApiController::class, 'show'])->name('functions.show');

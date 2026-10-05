@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Databases\Application\KeyValue;
+namespace Falak\Databases\Application\KeyValue;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Domain\Models\Database;
-use Kiln\Fleet\Contracts\AgentDirectory;
+use Falak\Databases\Domain\Models\Database;
+use Falak\Fleet\Contracts\AgentDirectory;
 
 /**
  * Settings of a Redis / Valkey instance (maxmemory_mb, eviction, persistence): defaults, validation, and the memory

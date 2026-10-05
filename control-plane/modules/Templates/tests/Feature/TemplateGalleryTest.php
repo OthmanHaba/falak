@@ -1,9 +1,9 @@
 <?php
 
 use Inertia\Testing\AssertableInertia as Assert;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Templates\Application\Catalog\Catalog;
-use Kiln\Templates\Domain\Models\CustomTemplate;
+use Falak\Identity\Contracts\Role;
+use Falak\Templates\Application\Catalog\Catalog;
+use Falak\Templates\Domain\Models\CustomTemplate;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -48,10 +48,10 @@ it('lists templates as JSON for the Create picker', function () {
 
 it('shows template details with freshly generated secrets', function () {
     actingAsMember(Role::Developer);
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
 
     $first = $this->getJson('/templates/catalog/hello')->assertOk()
-        ->assertJsonPath('data.test_domain', 'kiln.test')
+        ->assertJsonPath('data.test_domain', 'falak.test')
         ->assertJsonPath('data.inputs.0', ['key' => 'APP_SECRET', 'type' => 'secret', 'label' => 'App secret', 'generate' => 'secret(32)', 'required' => false, 'secret' => true, 'generated' => true])
         ->assertJsonPath('data.inputs.3.options', ['UTC', 'Europe/Berlin'])
         ->json('data.generated');

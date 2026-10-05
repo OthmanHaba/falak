@@ -1,8 +1,8 @@
-import { IconButton } from '@/components/kiln/button';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { MetricChart, type MetricPoint } from '@/components/kiln/metric-chart';
-import { Segmented } from '@/components/kiln/segmented';
-import { Skeleton } from '@/components/kiln/skeleton';
+import { IconButton } from '@/components/falak/button';
+import { EmptyState } from '@/components/falak/empty-state';
+import { MetricChart, type MetricPoint } from '@/components/falak/metric-chart';
+import { Segmented } from '@/components/falak/segmented';
+import { Skeleton } from '@/components/falak/skeleton';
 import { format } from 'date-fns';
 import { RotateCw, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -34,7 +34,7 @@ function perServer(series: MetricSeriesDto[] | undefined): MetricPoint[] {
     const byTime = new Map<number, MetricPoint>();
 
     (series ?? []).forEach((item) => {
-        const key = (item.labels.kiln_server_id ?? 'all').toLowerCase();
+        const key = (item.labels.falak_server_id ?? 'all').toLowerCase();
         item.points.forEach(([t, value]) => {
             const point = byTime.get(t) ?? { t };
             point[key] = value;

@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Edge\Tests\Support;
+namespace Falak\Edge\Tests\Support;
 
-use Kiln\Servers\Contracts\Data\PhpSettings;
-use Kiln\Servers\Contracts\Data\ServerData;
-use Kiln\Servers\Contracts\ServerDirectory;
+use Falak\Servers\Contracts\Data\PhpSettings;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\ServerDirectory;
 
 final class FakeServerDirectory implements ServerDirectory
 {

@@ -1,4 +1,4 @@
-// Package api is the typed client for the Kiln control-plane public REST API.
+// Package api is the typed client for the Falak control-plane public REST API.
 package api
 
 import (
@@ -70,7 +70,7 @@ func (e *Error) Error() string {
 	s := fmt.Sprintf("%s %s: HTTP %d: %s", e.Method, e.Path, e.Status, msg)
 	switch e.Status {
 	case http.StatusUnauthorized:
-		s += " — run `kiln login` or set KILN_TOKEN"
+		s += " — run `falak login` or set FALAK_TOKEN"
 	case http.StatusForbidden:
 		s += " — the token lacks the required ability"
 	}

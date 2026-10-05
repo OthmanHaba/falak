@@ -1,26 +1,26 @@
 <?php
 
 use Illuminate\Support\Str;
-use Kiln\Databases\Domain\Enums\ResourceStatus;
-use Kiln\Databases\Domain\Models\Database;
-use Kiln\Databases\Domain\Models\DatabaseServer;
-use Kiln\Databases\Domain\Models\DatabaseUser;
-use Kiln\Databases\Domain\Models\Grant;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\DeploymentStep;
-use Kiln\Identity\Domain\Models\Organization;
-use Kiln\Projects\Application\Actions\CreateEnvironment;
-use Kiln\Projects\Application\Actions\LinkService;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Projects\Domain\Models\Environment;
-use Kiln\Projects\Domain\Models\Project;
-use Kiln\Projects\Domain\Models\Service;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Sites\Contracts\TargetRole;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Domain\Models\EnvironmentVersion;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
+use Falak\Databases\Domain\Enums\ResourceStatus;
+use Falak\Databases\Domain\Models\Database;
+use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Domain\Models\DatabaseUser;
+use Falak\Databases\Domain\Models\Grant;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\DeploymentStep;
+use Falak\Identity\Domain\Models\Organization;
+use Falak\Projects\Application\Actions\CreateEnvironment;
+use Falak\Projects\Application\Actions\LinkService;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Projects\Domain\Models\Environment;
+use Falak\Projects\Domain\Models\Project;
+use Falak\Projects\Domain\Models\Service;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Sites\Contracts\TargetRole;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Domain\Models\EnvironmentVersion;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
 
 require_once __DIR__.'/../../../Sites/tests/Support/helpers.php';
 require_once __DIR__.'/../../../Databases/tests/Support/helpers.php';
@@ -58,8 +58,8 @@ function projects_site(Organization $organization, string $name, array $variable
         'framework' => 'laravel',
         'php_version' => '8.4',
         'web_directory' => 'public',
-        'unix_user' => 'kiln',
-        'deploy_script' => "\$KILN_FETCH\n\$KILN_ACTIVATE\n",
+        'unix_user' => 'falak',
+        'deploy_script' => "\$FALAK_FETCH\n\$FALAK_ACTIVATE\n",
         'laravel' => ['scheduler' => true],
         'shared_paths' => [['path' => 'storage', 'type' => 'directory']],
         'test_domain_enabled' => false,

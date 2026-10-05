@@ -1,9 +1,9 @@
 <?php
 
-use Kiln\Fleet\Contracts\Data\CommandHandle;
-use Kiln\Identity\Domain\Models\Organization;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Terminal\Domain\Models\TerminalSession;
+use Falak\Fleet\Contracts\Data\CommandHandle;
+use Falak\Identity\Domain\Models\Organization;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Terminal\Domain\Models\TerminalSession;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../../../../tests/Support/FakeAgentGateway.php';

@@ -8,39 +8,39 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kiln/agent/internal/config"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/config"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // UnitPath is where the systemd unit is installed.
-const UnitPath = "/etc/systemd/system/kiln-agent.service"
+const UnitPath = "/etc/systemd/system/falak-agent.service"
 
 // BinaryPath is the installed binary location.
-const BinaryPath = "/usr/local/bin/kiln-agent"
+const BinaryPath = "/usr/local/bin/falak-agent"
 
 // Unit renders the systemd unit. KillMode=mixed sends SIGTERM to the agent only, letting the built-in
 // supervisor stop its programs gracefully (stop signals + timeouts) before systemd kills leftovers.
 func Unit(binary string) string {
 	return fmt.Sprintf(`[Unit]
-Description=Kiln agent
-Documentation=https://kiln.dev
+Description=Falak agent
+Documentation=https://falak.sh
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 ExecStart=%s run
-EnvironmentFile=-/etc/kiln/agent.env
+EnvironmentFile=-/etc/falak/agent.env
 Restart=always
 RestartSec=5
 KillMode=mixed
 TimeoutStopSec=90
 LimitNOFILE=65536
-RuntimeDirectory=kiln
+RuntimeDirectory=falak
 RuntimeDirectoryPreserve=yes
-StateDirectory=kiln
-LogsDirectory=kiln
+StateDirectory=falak
+LogsDirectory=falak
 Environment=GOMEMLIMIT=24MiB
 
 [Install]
@@ -48,7 +48,7 @@ WantedBy=multi-user.target
 `, binary)
 }
 
-// InstallOptions for `kiln-agent install`.
+// InstallOptions for `falak-agent install`.
 type InstallOptions struct {
 	Config  config.Config
 	Source  string // path of the running binary (copied to BinaryPath)
@@ -79,10 +79,10 @@ func Install(ctx context.Context, o InstallOptions) error {
 			fmt.Fprintf(&env, "%s=%s\n", k, v)
 		}
 	}
-	add("KILN_PANEL_URL", o.Config.PanelURL)
-	add("KILN_TOKEN", o.Config.Token)
+	add("FALAK_PANEL_URL", o.Config.PanelURL)
+	add("FALAK_TOKEN", o.Config.Token)
 	if o.Config.Insecure {
-		add("KILN_INSECURE_ENROLL", "1")
+		add("FALAK_INSECURE_ENROLL", "1")
 	}
 	envPath := filepath.Join(o.Config.EtcDir, "agent.env")
 	if env.Len() > 0 {
@@ -105,15 +105,15 @@ func Install(ctx context.Context, o InstallOptions) error {
 		}
 	}
 	if o.NoStart {
-		_, err = runner.Check(ctx, o.Runner, runner.Cmd{Name: "systemctl", Args: []string{"enable", "kiln-agent.service"}})
+		_, err = runner.Check(ctx, o.Runner, runner.Cmd{Name: "systemctl", Args: []string{"enable", "falak-agent.service"}})
 	} else {
-		_, err = runner.Check(ctx, o.Runner, runner.Cmd{Name: "systemctl", Args: []string{"enable", "--now", "kiln-agent.service"}})
+		_, err = runner.Check(ctx, o.Runner, runner.Cmd{Name: "systemctl", Args: []string{"enable", "--now", "falak-agent.service"}})
 		if err == nil {
-			_, err = runner.Check(ctx, o.Runner, runner.Cmd{Name: "systemctl", Args: []string{"restart", "kiln-agent.service"}})
+			_, err = runner.Check(ctx, o.Runner, runner.Cmd{Name: "systemctl", Args: []string{"restart", "falak-agent.service"}})
 		}
 	}
 	if err == nil && o.Out != nil {
-		fmt.Fprintf(o.Out, "kiln-agent installed (%s)\n", UnitPath)
+		fmt.Fprintf(o.Out, "falak-agent installed (%s)\n", UnitPath)
 	}
 	return err
 }

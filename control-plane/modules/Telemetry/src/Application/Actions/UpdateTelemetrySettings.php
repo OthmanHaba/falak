@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Actions;
+namespace Falak\Telemetry\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Telemetry\Contracts\TelemetryConfigurator;
-use Kiln\Telemetry\Domain\Models\TelemetrySettings;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Telemetry\Contracts\TelemetryConfigurator;
+use Falak\Telemetry\Domain\Models\TelemetrySettings;
 
 /**
  * Save an organization's telemetry overrides and push telemetry.configure to its servers.

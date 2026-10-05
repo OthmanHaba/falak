@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Insights\Infrastructure;
+namespace Falak\Insights\Infrastructure;
 
-use Kiln\Insights\Contracts\Data\IssueData;
-use Kiln\Insights\Contracts\IssueDirectory;
-use Kiln\Insights\Contracts\IssueStatus;
-use Kiln\Insights\Domain\Models\Issue;
+use Falak\Insights\Contracts\Data\IssueData;
+use Falak\Insights\Contracts\IssueDirectory;
+use Falak\Insights\Contracts\IssueStatus;
+use Falak\Insights\Domain\Models\Issue;
 
 final class EloquentIssueDirectory implements IssueDirectory
 {

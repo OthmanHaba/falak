@@ -1,4 +1,4 @@
-import { IntegrationIcon } from '@/components/kiln/integration-icon';
+import { IntegrationIcon } from '@/components/falak/integration-icon';
 import { type ProviderValue } from '../types';
 
 export function ProviderIcon({ provider, className, size = 16 }: { provider: ProviderValue; className?: string; size?: number }) {

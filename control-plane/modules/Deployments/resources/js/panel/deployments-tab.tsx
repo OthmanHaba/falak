@@ -1,4 +1,4 @@
-import { Button, EmptyState, SkeletonRows, type MenuAction } from '@/components/kiln';
+import { Button, EmptyState, SkeletonRows, type MenuAction } from '@/components/falak';
 import { useEchoChannel } from '@/hooks/use-echo-channel';
 import { useJson } from '@/hooks/use-json';
 import { requestJson } from '@/lib/http';

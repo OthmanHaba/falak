@@ -1,14 +1,14 @@
 <?php
 
-use Kiln\Deployments\Application\Actions\TriggerDeployment;
-use Kiln\Deployments\Contracts\LiveReleases;
-use Kiln\Deployments\Domain\Enums\DeploymentStatus;
-use Kiln\Deployments\Domain\Enums\Trigger;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\Release;
-use Kiln\Processes\Contracts\ProcessControl;
-use Kiln\Processes\Infrastructure\AgentProcessControl;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Deployments\Application\Actions\TriggerDeployment;
+use Falak\Deployments\Contracts\LiveReleases;
+use Falak\Deployments\Domain\Enums\DeploymentStatus;
+use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\Release;
+use Falak\Processes\Contracts\ProcessControl;
+use Falak\Processes\Infrastructure\AgentProcessControl;
+use Falak\Sites\Contracts\SiteDirectory;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -16,7 +16,7 @@ require_once __DIR__.'/../Support/helpers.php';
 function live_world(int $servers = 1): DeployWorld
 {
     $world = deploy_world(servers: $servers, site: ['runtime' => 'node', 'framework' => 'node', 'php_version' => null, 'app_port' => 3001, 'laravel' => [],
-        'deploy_script' => "\$KILN_FETCH\n\$KILN_ACTIVATE\n\$KILN_RESTART_PROCS\n"]);
+        'deploy_script' => "\$FALAK_FETCH\n\$FALAK_ACTIVATE\n\$FALAK_RESTART_PROCS\n"]);
     app()->instance(ProcessControl::class, app(AgentProcessControl::class));
 
     return $world;
@@ -47,8 +47,8 @@ it('starts a never-deployed site\'s app on its first activation with the release
 
     $app = collect($world->agents->last('proc.apply', $server)['payload']['programs'])->keyBy('name')->get("{$world->site->slug}.app");
     expect($app['env'])->toMatchArray([
-        'KILN_RELEASE_ID' => strtoupper((string) $deployment->release_id),
-        'KILN_DEPLOYMENT_ID' => strtoupper($deployment->id),
+        'FALAK_RELEASE_ID' => strtoupper((string) $deployment->release_id),
+        'FALAK_DEPLOYMENT_ID' => strtoupper($deployment->id),
         'APP_KEY' => 'base64:secret',
         'PORT' => '3001',
     ]);
@@ -66,7 +66,7 @@ it('moves the program env with every deploy and back on rollback', function () {
 
     foreach ($world->servers as $server) {
         $app = collect($world->agents->last('proc.apply', $server->id)['payload']['programs'])->keyBy('name')->get("{$world->site->slug}.app");
-        expect($app['env']['KILN_RELEASE_ID'])->toBe(strtoupper((string) $second->release_id));
+        expect($app['env']['FALAK_RELEASE_ID'])->toBe(strtoupper((string) $second->release_id));
     }
 
     $rollback = live_deploy($world, Trigger::Rollback, $first->release_id);
@@ -75,7 +75,7 @@ it('moves the program env with every deploy and back on rollback', function () {
     foreach ($world->servers as $server) {
         $app = collect($world->agents->last('proc.apply', $server->id)['payload']['programs'])->keyBy('name')->get("{$world->site->slug}.app");
         // The rolled-back-to release's own ids, like its .env.
-        expect($app['env'])->toMatchArray(['KILN_RELEASE_ID' => strtoupper((string) $first->release_id), 'KILN_DEPLOYMENT_ID' => strtoupper($first->id)])
+        expect($app['env'])->toMatchArray(['FALAK_RELEASE_ID' => strtoupper((string) $first->release_id), 'FALAK_DEPLOYMENT_ID' => strtoupper($first->id)])
             ->and(app(LiveReleases::class)->onServer($server->id)[$world->site->id]->releaseId)->toBe($first->release_id);
     }
 });

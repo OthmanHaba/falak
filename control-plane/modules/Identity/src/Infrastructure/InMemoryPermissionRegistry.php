@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Identity\Infrastructure;
+namespace Falak\Identity\Infrastructure;
 
 use InvalidArgumentException;
-use Kiln\Identity\Contracts\Permission;
-use Kiln\Identity\Contracts\PermissionRegistry;
-use Kiln\Identity\Contracts\Role;
+use Falak\Identity\Contracts\Permission;
+use Falak\Identity\Contracts\PermissionRegistry;
+use Falak\Identity\Contracts\Role;
 
 final class InMemoryPermissionRegistry implements PermissionRegistry
 {

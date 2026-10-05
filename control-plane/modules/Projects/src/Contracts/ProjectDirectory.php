@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Projects\Contracts;
+namespace Falak\Projects\Contracts;
 
-use Kiln\Projects\Contracts\Data\EnvironmentData;
-use Kiln\Projects\Contracts\Data\ProjectData;
-use Kiln\Projects\Contracts\Data\ServiceData;
+use Falak\Projects\Contracts\Data\EnvironmentData;
+use Falak\Projects\Contracts\Data\ProjectData;
+use Falak\Projects\Contracts\Data\ServiceData;
 
 /**
  * Read-only lookups of projects, environments and the services placed in them.

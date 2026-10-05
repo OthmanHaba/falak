@@ -1,15 +1,15 @@
-import { Button } from '@/components/kiln/button';
-import { Callout } from '@/components/kiln/callout';
-import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
-import { DataTable } from '@/components/kiln/data-table';
-import { Dialog } from '@/components/kiln/dialog';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { SecretInput } from '@/components/kiln/secret-input';
-import { Section } from '@/components/kiln/section';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { Callout } from '@/components/falak/callout';
+import { ConfirmDestructive } from '@/components/falak/confirm-destructive';
+import { DataTable } from '@/components/falak/data-table';
+import { Dialog } from '@/components/falak/dialog';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { SecretInput } from '@/components/falak/secret-input';
+import { Section } from '@/components/falak/section';
+import { Tag } from '@/components/falak/tag';
 import SettingsLayout from '@/layouts/settings/layout';
 import { cn } from '@/lib/utils';
 import { type SharedData } from '@/types';
@@ -181,7 +181,7 @@ export default function Index({ connections, pushes, providers, githubApp, canMa
     return (
         <SettingsLayout
             title="Source control"
-            description="Git providers Kiln deploys from. GitHub connects through a GitHub App; other providers get a deploy key and a push webhook per site."
+            description="Git providers Falak deploys from. GitHub connects through a GitHub App; other providers get a deploy key and a push webhook per site."
             wide
         >
             {(errors.oauth ?? errors.github_app) && (
@@ -376,7 +376,7 @@ export default function Index({ connections, pushes, providers, githubApp, canMa
                 title={`Connect ${connecting?.label ?? ''}`}
                 description={
                     provider === 'custom'
-                        ? 'Kiln generates a deploy key per site; add it to your git server and point its push webhook at the URL shown on the site.'
+                        ? 'Falak generates a deploy key per site; add it to your git server and point its push webhook at the URL shown on the site.'
                         : 'The credentials are checked with the provider before anything is saved.'
                 }
                 footer={
@@ -459,7 +459,7 @@ export default function Index({ connections, pushes, providers, githubApp, canMa
                 title={`Disconnect ${deleting?.name ?? ''}`}
                 description={
                     deleting?.auth_type === 'app'
-                        ? "Kiln uninstalls the GitHub App from this account. Sites using it can't deploy until they point at another connection."
+                        ? "Falak uninstalls the GitHub App from this account. Sites using it can't deploy until they point at another connection."
                         : `Its ${deleting?.deploy_keys_count ?? 0} deploy key(s) and ${deleting?.webhooks_count ?? 0} webhook(s) are removed from the provider. Sites using it can't deploy until they point at another connection.`
                 }
                 confirmText={deleting?.name ?? ''}

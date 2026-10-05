@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Servers\Tests\Support;
+namespace Falak\Servers\Tests\Support;
 
-use Kiln\Providers\Contracts\Data\CredentialSummary;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Contracts\ProviderAdapter;
-use Kiln\Providers\Contracts\ProviderGateway;
-use Kiln\Providers\Contracts\ProviderType;
+use Falak\Providers\Contracts\Data\CredentialSummary;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\ProviderAdapter;
+use Falak\Providers\Contracts\ProviderGateway;
+use Falak\Providers\Contracts\ProviderType;
 
 /**
  * In-memory ProviderGateway + adapter implementing only the public Providers contracts.

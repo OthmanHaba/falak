@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure\Metrics;
+namespace Falak\Telemetry\Infrastructure\Metrics;
 
 use DateTimeInterface;
 use Illuminate\Http\Client\PendingRequest;
-use Kiln\Telemetry\Contracts\Data\MetricSeries;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
-use Kiln\Telemetry\Contracts\MetricsBackend;
-use Kiln\Telemetry\Infrastructure\HttpClient;
+use Falak\Telemetry\Contracts\Data\MetricSeries;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\MetricsBackend;
+use Falak\Telemetry\Infrastructure\HttpClient;
 
 /**
  * Prometheus HTTP API (/api/v1/query, /api/v1/query_range), spoken by both VictoriaMetrics and Mimir.

@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Listeners;
+namespace Falak\Telemetry\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Kiln\Sites\Events\SiteCreated;
-use Kiln\Sites\Events\SiteDeleted;
-use Kiln\Sites\Events\SiteTargetsChanged;
-use Kiln\Telemetry\Contracts\TelemetryConfigurator;
+use Falak\Sites\Events\SiteCreated;
+use Falak\Sites\Events\SiteDeleted;
+use Falak\Sites\Events\SiteTargetsChanged;
+use Falak\Telemetry\Contracts\TelemetryConfigurator;
 
 /**
  * telemetry.configure carries each server's site list (slug → site id); resend it when that list changes.

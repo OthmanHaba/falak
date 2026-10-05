@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiln/agent/internal/cli/api"
+	"github.com/OthmanHaba/falak/agent/internal/cli/api"
 )
 
 func cmdLogin(ctx context.Context, a *App, args []string) error {
@@ -28,7 +28,7 @@ func cmdLogin(ctx context.Context, a *App, args []string) error {
 	in := bufio.NewReader(a.Stdin)
 	if creds.URL == "" {
 		if !a.Interactive {
-			return usagef("--url (or KILN_URL) is required")
+			return usagef("--url (or FALAK_URL) is required")
 		}
 		fmt.Fprint(a.Stderr, "Control-plane URL: ")
 		line, _ := in.ReadString('\n')
@@ -37,7 +37,7 @@ func cmdLogin(ctx context.Context, a *App, args []string) error {
 	if !strings.HasPrefix(creds.URL, "https://") && !strings.HasPrefix(creds.URL, "http://") {
 		return usagef("url must start with https:// (got %q)", creds.URL)
 	}
-	if *fromStdin || (a.token == "" && a.Getenv("KILN_TOKEN") == "") {
+	if *fromStdin || (a.token == "" && a.Getenv("FALAK_TOKEN") == "") {
 		if !*fromStdin && a.Interactive {
 			fmt.Fprintf(a.Stderr, "Create a token at %s/settings/api-tokens\nAPI token: ", creds.URL)
 		}
@@ -377,7 +377,7 @@ func (a *App) follow(ctx context.Context, c api.API, d api.Deployment, out io.Wr
 			if errs++; errs > 5 {
 				return d, err
 			}
-			fmt.Fprintf(a.Stderr, "kiln: %v (retrying)\n", err)
+			fmt.Fprintf(a.Stderr, "falak: %v (retrying)\n", err)
 		} else {
 			errs = 0
 			if d.Done() {
@@ -582,7 +582,7 @@ func printLogEntry(w io.Writer, e api.LogEntry) {
 
 func cmdSSH(ctx context.Context, a *App, args []string) error {
 	fs := a.flagSet("ssh")
-	user := fs.String("user", "", "remote user (default: the server's ssh_user, else kiln)")
+	user := fs.String("user", "", "remote user (default: the server's ssh_user, else falak)")
 	private := fs.Bool("private", false, "connect to the private IPv4")
 	var extra []string
 	for i, x := range args {
@@ -610,7 +610,7 @@ func cmdSSH(ctx context.Context, a *App, args []string) error {
 	if host == "" {
 		return fmt.Errorf("server %s has no address yet (status %s)", s.Name, s.Status)
 	}
-	u := firstNonEmpty(*user, s.SSHUser, "kiln")
+	u := firstNonEmpty(*user, s.SSHUser, "falak")
 	argv := []string{"ssh"}
 	if s.SSHPort != 0 && s.SSHPort != 22 {
 		argv = append(argv, "-p", strconv.Itoa(s.SSHPort))

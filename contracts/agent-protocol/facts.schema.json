@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/facts.schema.json",
+  "$id": "https://falak.sh/agent-protocol/facts.schema.json",
   "title": "Host facts reported at enrollment and in every heartbeat",
   "type": "object",
   "required": ["hostname", "os", "arch", "cpus", "memory_bytes", "disk_bytes", "agent_version"],

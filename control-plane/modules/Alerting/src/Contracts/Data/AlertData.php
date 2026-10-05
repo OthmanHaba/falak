@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Alerting\Contracts\Data;
+namespace Falak\Alerting\Contracts\Data;
 
-use Kiln\Alerting\Contracts\Severity;
+use Falak\Alerting\Contracts\Severity;
 
 /**
  * A notification-worthy occurrence, routed by the organization's alert rules.

@@ -3,8 +3,8 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use Kiln\Identity\Application\Actions\RegisterUser;
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Application\Actions\RegisterUser;
+use Falak\Identity\Domain\Models\User;
 
 class DatabaseSeeder extends Seeder
 {

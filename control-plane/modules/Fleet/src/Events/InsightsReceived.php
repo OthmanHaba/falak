@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Events;
+namespace Falak\Fleet\Events;
 
 use Illuminate\Foundation\Events\Dispatchable;
 

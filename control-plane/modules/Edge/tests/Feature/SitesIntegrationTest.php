@@ -1,16 +1,16 @@
 <?php
 
 use Illuminate\Support\Facades\Http;
-use Kiln\Edge\Contracts\EdgeRoutes;
-use Kiln\Edge\Domain\Models\ServerState;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\SourceControl\Contracts\ProviderType;
-use Kiln\SourceControl\Contracts\SourceControlGateway;
-use Kiln\SourceControl\Domain\Models\Connection;
+use Falak\Edge\Contracts\EdgeRoutes;
+use Falak\Edge\Domain\Models\ServerState;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Identity\Contracts\Role;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Domain\Models\Site;
+use Falak\SourceControl\Contracts\ProviderType;
+use Falak\SourceControl\Contracts\SourceControlGateway;
+use Falak\SourceControl\Domain\Models\Connection;
 
 /*
  * Real Sites + Edge (+ SourceControl) wiring; only the agent is faked (every payload schema-validated).
@@ -21,7 +21,7 @@ require_once __DIR__.'/../../../Sites/tests/Support/helpers.php';
 beforeEach(function () {
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
     $this->agents = sites_fake_agents();
-    config(['sites.test_domain' => 'kiln.test', 'edge.acme_email' => 'ops@example.com']);
+    config(['sites.test_domain' => 'falak.test', 'edge.acme_email' => 'ops@example.com']);
 });
 
 function integration_compile_valid(string $serverId): array
@@ -54,9 +54,9 @@ it('routes a php-fpm site on two servers and applies the edge on creation', func
 
         expect($payload['acme_email'])->toBe('ops@example.com')
             ->and($entry['kind'])->toBe('php_fpm')
-            ->and($entry['root'])->toBe('/srv/kiln/sites/shop/current/public')
-            ->and($entry['php_fpm_socket'])->toBe('/run/php/kiln-shop-8.4.sock')
-            ->and($entry['domains'])->toContain('www.shop.example.com')->toContain('shop.kiln.test')
+            ->and($entry['root'])->toBe('/srv/falak/sites/shop/current/public')
+            ->and($entry['php_fpm_socket'])->toBe('/run/php/falak-shop-8.4.sock')
+            ->and($entry['domains'])->toContain('www.shop.example.com')->toContain('shop.falak.test')
             ->and($entry['redirect_domains'])->toBe(['shop.example.com']);
     }
 
@@ -81,7 +81,7 @@ it('re-applies after a PHP version change and not for unrelated changes', functi
 
     $apply = $this->agents->last('edge.caddy.apply');
     expect($this->agents->ofType('edge.caddy.apply'))->toHaveCount($before + 1)
-        ->and($apply['payload']['sites'][0]['php_fpm_socket'])->toBe('/run/php/kiln-shop-8.3.sock');
+        ->and($apply['payload']['sites'][0]['php_fpm_socket'])->toBe('/run/php/falak-shop-8.3.sock');
 });
 
 it('proxies node sites to their port and container sites to the recorded upstream', function () {

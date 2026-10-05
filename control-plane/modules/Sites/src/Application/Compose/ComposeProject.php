@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Sites\Application\Compose;
+namespace Falak\Sites\Application\Compose;
 
-use Kiln\Sites\Infrastructure\Compose\YamlComposeInspector;
+use Falak\Sites\Infrastructure\Compose\YamlComposeInspector;
 use Symfony\Component\Yaml\Exception\ParseException;
 
 /**
  * A compose project as `docker compose -f a.yml -f b.yml --profile p config` sees it: include and extends
  * resolved, files merged in order, services of inactive profiles dropped, relative paths rebased to the repository
- * root ("./docker/nginx.conf"). kiln-builder applies the same rules at deploy time
+ * root ("./docker/nginx.conf"). falak-builder applies the same rules at deploy time
  * (agent/internal/builder/composeproject.go); both are tested against contracts/compose/merge-cases.json.
  */
 final class ComposeProject

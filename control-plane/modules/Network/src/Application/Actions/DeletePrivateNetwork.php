@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Network\Application\Actions;
+namespace Falak\Network\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Network\Application\ApplyFirewalls;
-use Kiln\Network\Domain\Models\PrivateNetwork;
-use Kiln\Network\Domain\Models\PrivateNetworkMember;
-use Kiln\Network\Events\PrivateNetworkChanged;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Network\Application\ApplyFirewalls;
+use Falak\Network\Domain\Models\PrivateNetwork;
+use Falak\Network\Domain\Models\PrivateNetworkMember;
+use Falak\Network\Events\PrivateNetworkChanged;
 
 final class DeletePrivateNetwork
 {

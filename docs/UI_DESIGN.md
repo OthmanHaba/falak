@@ -1,4 +1,4 @@
-# Kiln UI — Railway-style redesign (binding spec)
+# Falak UI — Railway-style redesign (binding spec)
 
 Goal: replace the stock shadcn look with a Railway-grade product. Dark-first (plus a matching light theme and
 "system"), canvas-centric, calm, fast, keyboard-friendly. Every page in every module moves into the model below.
@@ -95,7 +95,7 @@ in components.**
 ## 3. Information architecture
 
 ```
-Top bar:  [Kiln ◆] [Org ▾] / [Project ▾] / [Environment ▾]      [⌘K Search]   [🔔] [Help] [Avatar ▾]
+Top bar:  [Falak ◆] [Org ▾] / [Project ▾] / [Environment ▾]      [⌘K Search]   [🔔] [Help] [Avatar ▾]
 ```
 No permanent sidebar. Top-level destinations (also in ⌘K and the org menu):
 
@@ -213,7 +213,7 @@ status badge (`Active` for the live release, `Removed` for superseded ones, else
   new tab, `&focus=1`); columns **Time (GMT+2)** · **Data**, a 3px bar per line (blue output, amber warning, red +
   faint red row for stderr/errors), wrapped lines, sticky header, group rows per `server · phase`, settings ⚙ (wrap,
   timestamps, line numbers, copy), live tail with a floating ↓ / ↑ button.
-- **Network Logs**: HTTP request logs from the edge. Kiln's edge does not ship per-request access logs to Loki yet,
+- **Network Logs**: HTTP request logs from the edge. Falak's edge does not ship per-request access logs to Loki yet,
   so the tab says so plainly (with a link to the service's Logs tab) instead of showing anything made up.
 
 ### 5.3 Variable references
@@ -230,7 +230,7 @@ References in the Variables tab link to their service: clicking it stacks that s
 users** · **Backups** (schedules, history, restore) · **Metrics** · **Settings**.
 
 ### 5.5 Panel stack
-Panels are layers of one **PanelStack** (`components/kiln/panel-stack.tsx`): base service panel → optionally another
+Panels are layers of one **PanelStack** (`components/falak/panel-stack.tsx`): base service panel → optionally another
 service stacked on it (a referenced service) → optionally a **detail layer** contributed by a module (e.g. the
 deployment panel). Depth ≥ 2 is supported; only the top layer is interactive (the ones below are `inert`, veiled and
 receded so their left edge peeks out; clicking a receded layer closes what covers it).
@@ -247,7 +247,7 @@ receded so their left edge peeks out; clicking a receded layer closes what cover
 
 ---
 
-## 6. Components (`resources/js/components/kiln/`)
+## 6. Components (`resources/js/components/falak/`)
 
 Build a small, owned component set (Radix primitives underneath are fine; **no stock shadcn styling**):
 `AppShell`, `TopBar`, `OrgSwitcher`, `ProjectSwitcher`, `EnvironmentSwitcher`, `CommandPalette` (restyled,
@@ -297,10 +297,10 @@ toast on completion/failure; every form validates inline (server 422 errors mapp
 
 ## 9. Shared contracts between the UI foundation and the Projects backend (fixed; build against these)
 
-**Inertia shared prop `kiln`** (added by the Projects module to every authenticated page, via a
+**Inertia shared prop `falak`** (added by the Projects module to every authenticated page, via a
 `Kernel`-level shared-props registry so app glue doesn't import modules):
 ```ts
-type KilnShared = {
+type FalakShared = {
   projects: { id: string; name: string; icon: string | null; environments: { id: string; name: string; slug: string; is_production: boolean }[] }[];
   current: { project_id: string | null; environment_id: string | null }; // from the URL or last visited
 };

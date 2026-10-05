@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Alerting\Application\Actions;
+namespace Falak\Alerting\Application\Actions;
 
-use Kiln\Alerting\Domain\Enums\ChannelType;
-use Kiln\Alerting\Domain\Models\Channel;
-use Kiln\Alerting\Infrastructure\Senders\SenderRegistry;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Alerting\Infrastructure\Senders\SenderRegistry;
+use Falak\Identity\Contracts\AuditLog;
 
 final class SaveChannel
 {

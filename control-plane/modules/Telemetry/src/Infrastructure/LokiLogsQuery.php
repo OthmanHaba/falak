@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure;
+namespace Falak\Telemetry\Infrastructure;
 
 use DateTimeInterface;
-use Kiln\Telemetry\Contracts\Data\LogLine;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
-use Kiln\Telemetry\Contracts\LogsQuery;
+use Falak\Telemetry\Contracts\Data\LogLine;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\LogsQuery;
 
 /**
  * Loki query_range client. Structured metadata (OTLP attributes such as trace_id) arrives as the

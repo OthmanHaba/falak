@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Deployments\Domain\Enums;
+namespace Falak\Deployments\Domain\Enums;
 
-use Kiln\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\SiteRuntime;
 
 /**
  * Deployment strategies (ARCHITECTURE §5).

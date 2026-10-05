@@ -5,11 +5,11 @@ All three build waves are merged; the sections below record the resulting contra
 
 ## Identifiers
 - The control plane stores ULIDs **lowercase** (Laravel default). Agent schemas require **uppercase** Crockford ULIDs.
-  **Rule:** convert to uppercase only at the agent boundary (payloads, `KILN_*` env injected into releases);
+  **Rule:** convert to uppercase only at the agent boundary (payloads, `FALAK_*` env injected into releases);
   normalise to lowercase on ingest (Fleet, Insights already do). Telemetry query filters use the uppercase form
   because agents label signals with what they were given.
-  **Audited (wave 3, outside Builds/Deployments):** `telemetry.configure` ids, `KILN_SITE_ID`/`KILN_SERVER_ID` from
-  `SiteDirectory::deployVariables()` and site commands (Deployments-supplied `KILN_*_ID` context values are upper-cased
+  **Audited (wave 3, outside Builds/Deployments):** `telemetry.configure` ids, `FALAK_SITE_ID`/`FALAK_SERVER_ID` from
+  `SiteDirectory::deployVariables()` and site commands (Deployments-supplied `FALAK_*_ID` context values are upper-cased
   there too), Processes program/cron env — all upper-case. Ingest: Insights lower-cases `site_id`; Processes'
   `ScheduleDirectory` / `ProcessControl` accept either case. Fleet command and agent ids are minted upper-case
   (`Str::ulid()`) and stored that way, so envelopes/events/heartbeats round-trip unchanged.
@@ -28,24 +28,24 @@ All three build waves are merged; the sections below record the resulting contra
 - `telemetry.configure` is sent on provisioning completion (or ~30s after enroll), not synchronously at enroll.
 
 ## Public API expected by the Go tools
-`agent/internal/cli/api/endpoints.go` and `agent/internal/builder/endpoints.go` define the paths the `kiln` CLI and
-`kiln-builder` call. Existing: `/api/v1/me`, `/api/v1/servers`. Wave 3 implements the rest to match (or updates the
+`agent/internal/cli/api/endpoints.go` and `agent/internal/builder/endpoints.go` define the paths the `falak` CLI and
+`falak-builder` call. Existing: `/api/v1/me`, `/api/v1/servers`. Wave 3 implements the rest to match (or updates the
 Go endpoint files in the same change): sites, deployments (+ output `?after=seq`), rollback, releases, env
 (`{content}`), logs (`meta.cursor`), `GET /api/internal/builds/next` (200 job | 204), `POST /api/internal/builds/{id}/events` (NDJSON).
 ✅ Implemented; see `docs/API.md`. Additions on the Go side: `HTTPSink.OnGone` — a `410` from the events endpoint
-means the build was cancelled and `kiln-builder` aborts it.
+means the build was cancelled and `falak-builder` aborts it.
 
 ## Builds / Deployments (wave 3)
 - `Builds\Contracts\BuildService` (request / find / status / artifactFor / imageFor / cancel / output); events
   `BuildSucceeded`, `BuildFailed` (Alertable), `BuildCancelled`, `BuildOutputReceived`, `BuildUpdated`.
 - Deployments events: `DeploymentStarted`, `DeploymentSucceeded`, `DeploymentFailed` (Alertable),
-  `DeploymentRolledBack` (Alertable), `ReleaseActivated`. The release directory / `KILN_RELEASE_ID` is the release
-  ULID upper-cased; `.env` of every release gets `KILN_SITE_ID`, `KILN_SERVER_ID`, `KILN_DEPLOYMENT_ID`, `KILN_RELEASE_ID`.
+  `DeploymentRolledBack` (Alertable), `ReleaseActivated`. The release directory / `FALAK_RELEASE_ID` is the release
+  ULID upper-cased; `.env` of every release gets `FALAK_SITE_ID`, `FALAK_SERVER_ID`, `FALAK_DEPLOYMENT_ID`, `FALAK_RELEASE_ID`.
 - Sites gained `SiteResourceExtension` (tagged; Deployments adds `strategy` + `current_release` to the site API)
   and `SiteDeploySettings` (push-to-deploy toggle from the Deploy settings tab), plus `GET|PUT /api/v1/sites/{site}/env`.
 - Restart phase uses `ProcessControl::restartForSite()`; a restart step completes when all returned commands finish.
 - Not supported yet (deployments fail fast with a clear error): **on-server** builds. (Compose: see below.)
-- Registry images are not garbage-collected by Kiln (run the registry's GC); artifacts are pruned per site.
+- Registry images are not garbage-collected by Falak (run the registry's GC); artifacts are pruned per site.
 
 ## Bindings to wire once providers exist
 - ✅ `Insights\Contracts\SiteNameResolver` and `Telemetry\Contracts\ServerSites` are bound by Sites
@@ -70,7 +70,7 @@ means the build was cancelled and `kiln-builder` aborts it.
   Triggers: Processes changes, `SiteCreated/Updated/Deleted/TargetsChanged` and the new `Sites\Events\SiteTargetReady`.
 - Names: `<slug>.horizon|octane|schedule`, `<slug>.worker-<id8>`, `<slug>.daemon-<id8>`, `<slug>.cron-<id8>` (unique per server).
 - **Deployments:** call `Processes\Contracts\ProcessControl::restartForSite($siteId, $serverId)` after activation
-  (`$KILN_RESTART_PROCS`). It converges the server first (the new release's env changes every program of the site,
+  (`$FALAK_RESTART_PROCS`). It converges the server first (the new release's env changes every program of the site,
   so that `proc.apply` restarts them — and starts them on the first deploy); running programs it left unchanged get
   `horizon:terminate` (Horizon, system.exec) or `proc.restart`; emits `ProcessesRestarted`.
 - Heartbeats: cron jobs carry `site` (slug); the agent maps it to the upper-case site id from `telemetry.configure`.
@@ -103,7 +103,7 @@ means the build was cancelled and `kiln-builder` aborts it.
 - `Deployments\StepPayloads` resolves references for `deploy.prepare` env files, container env and deploy-script env
   (unresolved → the deployment fails with the reason); `Builds\BuildConfiguration` resolves public build variables.
 - Shared Inertia props: `Kernel\Support\SharedProps` registry merged by `HandleInertiaRequests`; Projects registers
-  `kiln` (UI_DESIGN §9). Pages `Projects/Index`, `Projects/Canvas`, `Projects/Settings` are rendered with their props;
+  `falak` (UI_DESIGN §9). Pages `Projects/Index`, `Projects/Canvas`, `Projects/Settings` are rendered with their props;
   the TSX pages come with the UI wave.
 - Limits: Redis / Valkey became Databases engines in v0.7.0 (see *Redis and Valkey* below); duplicated environments
   get sites without servers (pick servers per service); canvas status has no "crashed" state yet (no process
@@ -116,28 +116,28 @@ means the build was cancelled and `kiln-builder` aborts it.
   the Services tab / canvas). `SiteData::$compose` (`ComposeConfig`: source, file, public services with host ports and
   test domains, template, inline version).
 - Rendering: `build:` services → built image (digest), `ports` removed everywhere and `127.0.0.1:<host port>:<port>` on
-  public services, labels `kiln.site|release|service`; `${VAR}` stays Compose-native — the release `.env` (site variables
-  with references resolved + `KILN_SITE_ID|SERVER_ID|DEPLOYMENT_ID|RELEASE_ID`) is written next to `compose.yaml` and
+  public services, labels `falak.site|release|service`; `${VAR}` stays Compose-native — the release `.env` (site variables
+  with references resolved + `FALAK_SITE_ID|SERVER_ID|DEPLOYMENT_ID|RELEASE_ID`) is written next to `compose.yaml` and
   also passed as the compose process env. Policy toggle: org setting `sites_organization_settings.allow_privileged_compose`
   (Settings → Compose, permission `sites.compose.policy`, admins).
-- Builds: compose sites build in docker mode with a `compose` job spec; kiln-builder builds every `build:` service to
+- Builds: compose sites build in docker mode with a `compose` job spec; falak-builder builds every `build:` service to
   `<registry>/<ns>/<slug>/<service>:<build id>` and returns the unmodified compose file + pinned images
   (`BuildService::composeFor`). Repo compose sites therefore need a docker-capable builder even without `build:` services.
 - Deployments (`compose` strategy; rolling/canary batch the activations): `docker.compose.pull` (FETCH, writes
   `releases/<ID>/compose.yaml` + `.env`) → leader `system.exec` running `docker compose run --rm <svc> <argv>` for every
-  `kiln.deploy.leader_command` label (settles instantly when there is none) → `docker.compose.up --wait` → health check of
+  `falak.deploy.leader_command` label (settles instantly when there is none) → `docker.compose.up --wait` → health check of
   every public service through the edge (primary: configured path/status; others: `/` and `< 500`). The rendered files are
   stored encrypted on the release (`deployments_releases.compose`) and pulled images are re-pinned to the digests the
   server resolved; rollback (failure or manual) = `up --wait` with that release's files. Project name = site slug, so
   named volumes survive releases. `deploy.prune` keeps N release directories like native sites.
 - Edge: the primary public service is the site route (site domains + `<slug>` test domain → app port = its host port);
   each other public service gets `<route>-svc-<service>[-test]` routes for its custom domain / `<service>-<slug>` test domain.
-- Telemetry: compose containers log with `service.name=<slug>` and `kiln.compose.service` (Loki structured metadata
-  `kiln_compose_service`, filter `compose_service` on the logs endpoints); `docker stats` → `kiln.container.cpu.utilization`,
-  `kiln.container.memory.usage|limit`, `kiln.container.network.io` per site resource.
+- Telemetry: compose containers log with `service.name=<slug>` and `falak.compose.service` (Loki structured metadata
+  `falak_compose_service`, filter `compose_service` on the logs endpoints); `docker stats` → `falak.container.cpu.utilization`,
+  `falak.container.memory.usage|limit`, `falak.container.network.io` per site resource.
 - Limits: only `compose.yaml` + `.env` reach the servers — repository files referenced by relative bind mounts or extra
   `env_file`s are not shipped; `include`/`extends` are rejected; a failed first deploy has nothing to roll back to
-  (containers stay as `up` left them); kiln-builder with registry credentials looks up the buildx builder in its
+  (containers stay as `up` left them); falak-builder with registry credentials looks up the buildx builder in its
   temporary DOCKER_CONFIG (the sim registry has no auth).
 
 ## Deploy gaps (roadmap step 6)
@@ -148,7 +148,7 @@ means the build was cancelled and `kiln-builder` aborts it.
   reconciler. Decisions: it waits for **every** preparing server (rather than deploying the ready ones and leaving late
   servers without a release); servers whose preparation failed are skipped with a warning (in the output) while
   another server is ready; a failed **leader** or no preparable server fails it with the reason (`DeploymentFailed`,
-  so it alerts); `deployments.waiting.timeout_minutes` (`KILN_DEPLOY_WAIT_TIMEOUT_MINUTES`, default 30) fails it
+  so it alerts); `deployments.waiting.timeout_minutes` (`FALAK_DEPLOY_WAIT_TIMEOUT_MINUTES`, default 30) fails it
   too. Non-rollback triggers (panel, API/CLI, push, deploy hook, `DeploymentTrigger`) coalesce into the site's
   waiting deployment — latest branch/commit/trigger wins, same number; rollbacks queue behind it. Cancel works on it
   (panel, and the new `POST /api/v1/deployments/{id}/cancel`). `SiteTargetData` gained `statusMessage`.
@@ -159,8 +159,8 @@ means the build was cancelled and `kiln-builder` aborts it.
   releases) and the resolved variables each release's `.env` was written with (`deployments_releases.environment`,
   encrypted; set at the first `deploy.prepare`). Contract `Deployments\Contracts\LiveReleases::onServer()`. Processes
   builds every program and cron job env as: release variables → program env (worker/daemon env; `<slug>.app`'s
-  `PORT`/`HOST`/`PATH`, `NODE_ENV` defaulting to `production` unless the site sets it) → `KILN_SITE`,
-  `KILN_SITE_ID`, `KILN_SERVER_ID`, `KILN_RELEASE_ID`, `KILN_DEPLOYMENT_ID` (upper-case; the deployment that built
+  `PORT`/`HOST`/`PATH`, `NODE_ENV` defaulting to `production` unless the site sets it) → `FALAK_SITE`,
+  `FALAK_SITE_ID`, `FALAK_SERVER_ID`, `FALAK_RELEASE_ID`, `FALAK_DEPLOYMENT_ID` (upper-case; the deployment that built
   the release, like its `.env`, also after a rollback). Env edits still take effect on the next deploy (the release
   snapshot, not the latest version). The agent's supervisor already restarts a program whose definition (env
   included) changed; Deployments now settles restart steps on `proc.apply` outcomes and converges its servers when a
@@ -170,7 +170,7 @@ means the build was cancelled and `kiln-builder` aborts it.
   (programs, Horizon, Octane, scheduler, cron), so never-deployed sites no longer crash-loop or alert; they start on
   the first activation (the restart step's `proc.apply`). Consequence: a site's daemons/cron only run once it has
   been deployed, also on a server newly added to a deployed site (until the next deploy).
-- **CLI:** `kiln deploy` prints the waiting reason; `api.Deployment.WaitingReason`.
+- **CLI:** `falak deploy` prints the waiting reason; `api.Deployment.WaitingReason`.
 - Still open from *Known limits* (not small or not safe to change here): a failed **first** compose deploy leaves containers as `up` left them (stopping them would also discard their logs
   for debugging); on-server builds; registry GC; the compose file-shipping limits.
 
@@ -203,7 +203,7 @@ means the build was cancelled and `kiln-builder` aborts it.
   new process answers).
 - **Deploys restart, UI restarts reload.** Octane resolves `current` once at start (PHP resolves `__DIR__`/`base_path()`
   through the symlink), so `octane:reload` after a release swap would re-boot the workers on the **old** release. After an
-  activation the program is restarted — its definition carries the new `KILN_RELEASE_ID`, so the restart step's
+  activation the program is restarted — its definition carries the new `FALAK_RELEASE_ID`, so the restart step's
   `proc.apply` does it — while the edge holds requests (`try_duration`) until the new server listens: no failed requests,
   a short latency spike. `ProcessControl::restartForSite(..., newRelease: false)` (Restart processes in the UI, same
   release) sends `php artisan octane:reload --server=<s>` to a verified Octane instead (graceful worker reload behind the
@@ -232,20 +232,20 @@ Real provisioning and deploys on Ubuntu 24.04 (`sim/e2e-deploy.sh`) surfaced the
    (`SupplementaryGroups=`), writable dirs are recursively group-writable (setgid), confined to the site root.
 10. Node/Bun/Deno sites were never started and servers had no Bun/Deno → `runtime.bun|deno.install` on target
     preparation; Processes supervises `<slug>.app` (`npm|bun run start` / `deno task start`) on `app_port`.
-Also added for automation: `POST /api/v1/sites`, `POST|GET /api/v1/source-control/connections`, `kiln:admin`.
+Also added for automation: `POST /api/v1/sites`, `POST|GET /api/v1/source-control/connections`, `falak:admin`.
 
 ## Sim speed (feat/sim-speed)
 Measuring the E2E per stage (`sim/e2e-deploy.sh` now prints durations and a summary) surfaced two product bugs and
 one broken E2E check. The rest is sim-side caching; see `sim/README.md` → *Caches and speed*.
-- **Agent wake-up raced the transaction (product bug, fixed).** With `KILN_AGENT_WAKE_DRIVER=redis`, `QueueCommand`
+- **Agent wake-up raced the transaction (product bug, fixed).** With `FALAK_AGENT_WAKE_DRIVER=redis`, `QueueCommand`
   RPUSHed the wake-up token while its command row was still uncommitted. The deployment orchestrator queues every
   step inside its `lockForUpdate` transaction, so the woken long-poll re-checked, saw nothing, consumed the token
   and slept out the rest of its 30 s window: **~29 s of dead time per deployment step**, 1.5–2 min per deploy.
   `QueueCommand` now notifies through the connection's `afterCommit` (immediate outside a transaction, dropped on
   rollback). Covered in `Fleet/tests/Feature/CommandChannelTest.php`. The database driver (the default) polls
   every 500 ms and was not affected.
-- **Runtime download mirrors (product feature).** `KILN_FRANKENPHP_MIRROR`, `KILN_NODE_MIRROR`, `KILN_BUN_MIRROR`,
-  `KILN_DENO_MIRROR` (unset by default) replace the GitHub / nodejs.org release bases in `provision.apply`
+- **Runtime download mirrors (product feature).** `FALAK_FRANKENPHP_MIRROR`, `FALAK_NODE_MIRROR`, `FALAK_BUN_MIRROR`,
+  `FALAK_DENO_MIRROR` (unset by default) replace the GitHub / nodejs.org release bases in `provision.apply`
   (`runtimes.frankenphp|node.mirror`, new optional schema fields), `runtime.frankenphp.configure` (`mirror`, new)
   and `runtime.bun|deno.install` (`mirror`, which existed but was never set). Documented in `docs/INSTALL.md`.
   The sim points them at its caching proxy.
@@ -263,8 +263,8 @@ one broken E2E check. The rest is sim-side caching; see `sim/README.md` → *Cac
 
 ## GitHub App (feat/github-app)
 "Connect GitHub" registers a GitHub App through the manifest flow instead of asking for a personal access token.
-- **Scoping decision: one registered app per Kiln organization** (`source_control_github_apps.organization_id` is
-  unique), created by its owners/admins (`source_control.manage`). Not instance-wide, because Kiln has open
+- **Scoping decision: one registered app per Falak organization** (`source_control_github_apps.organization_id` is
+  unique), created by its owners/admins (`source_control.manage`). Not instance-wide, because Falak has open
   registration and multiple organizations: an instance-wide app would hand its private key and every installation's
   pushes to whichever tenant created it, and GitHub only lets a private (`public: false`) app be installed on its
   owning account anyway. An operator who wants one shared app sets `GITHUB_APP_*` (instance-wide, overrides registered
@@ -275,13 +275,13 @@ one broken E2E check. The rest is sim-side caching; see `sim/README.md` → *Cac
   converts the code (`POST /app-manifests/{code}/conversions`), stores pem/webhook secret/client secret encrypted, and
   redirects to `github.com/apps/<slug>/installations/new?state=` → the existing setup URL creates the connection after
   verifying the installation with the app's JWT. `setup_on_update` redirects (no state) only refresh a connection the
-  organization already has; a new installation needs a state. An installation already connected to another Kiln
+  organization already has; a new installation needs a state. An installation already connected to another Falak
   organization is refused; reinstalling on the same account revives the organization's `disconnected` connection.
 - Manifest: permissions `contents: read`, `metadata: read`; events `push` (`installation` and
-  `installation_repositories` are always delivered to apps). No `statuses`/`checks` (Kiln reports no commit status)
+  `installation_repositories` are always delivered to apps). No `statuses`/`checks` (Falak reports no commit status)
   and no `pull_requests` (no previews yet): add them to `AppManifest::PERMISSIONS` when those features land.
 - One webhook per app: `POST /api/webhooks/source-control/github-app/{app|env}`, `X-Hub-Signature-256` with the app's
-  secret, throttled per app (`KILN_GITHUB_APP_WEBHOOK_RATE_LIMIT`, 600/min). `push` → push log + `PushReceived` for
+  secret, throttled per app (`FALAK_GITHUB_APP_WEBHOOK_RATE_LIMIT`, 600/min). `push` → push log + `PushReceived` for
   repositories a push-to-deploy site uses (the `source_control_webhooks` row `ensureWebhook()` keeps, with no provider
   hook); `installation` deleted/suspend/unsuspend → connection `status` disconnected/suspended/active (tokens refused
   while not active); `installation_repositories` → repository list re-fetched (queued `RefreshInstallationRepositories`).
@@ -299,10 +299,10 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
 
 ### Site web logs reach Loki
 - **Problem.** Laravel sites defaulted to `LOG_CHANNEL=stderr`. PHP under FrankenPHP runs inside the edge process and
-  PHP-FPM pools share the FPM master's stderr, so web request logs landed in the kiln-edge journal with no site
+  PHP-FPM pools share the FPM master's stderr, so web request logs landed in the falak-edge journal with no site
   attribution; only supervised programs (workers, scheduler) reached Loki.
 - **App logs = files.** New Laravel sites get `LOG_CHANNEL=daily`; the data migration
-  `switch_laravel_sites_to_file_logs` moves Laravel sites on `stderr` (Kiln's old default) to `daily` (PHP runtimes
+  `switch_laravel_sites_to_file_logs` moves Laravel sites on `stderr` (Falak's old default) to `daily` (PHP runtimes
   only; a new env version, effective on the next deploy; other values untouched). `Sites\Infrastructure\EloquentServerSites` sends
   each PHP site's shared log directory as a `telemetry.configure` log source (`<root>/shared/storage/logs/*.log`, or
   Symfony's `var/log`), `kind: app`, `multiline: laravel` for Laravel/Statamic. The agent tailer merges continuation
@@ -314,20 +314,20 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
   filesystem has no ACLs), so new files are group-writable whatever the creator's umask, and not world-readable.
 - **Access logs.** `edge.caddy.apply` `sites[].access_log` (= site slug; Edge sets it on direct and load-balancer
   routes, not on backends behind an LB, which only see the LB) makes Caddy write that route's requests as JSON to
-  `/var/log/kiln/access/<slug>.log` (10 MB × 3 rotation; excluded from the edge journal). The agent always tails that
+  `/var/log/falak/access/<slug>.log` (10 MB × 3 rotation; excluded from the edge journal). The agent always tails that
   directory, attributes by file name, and flattens Caddy's entry into OTel HTTP attributes (headers other than
   `User-Agent` are dropped). 5xx → ERROR, 4xx → WARN.
-- **Labels.** Every site record carries `service_name=<slug>`, `kiln_server_id`, `kiln_site_id` (when the agent knows
-  the site) and the new index label **`kiln_log_kind`** (`app` | `access`; resource attribute `kiln.log.kind`,
+- **Labels.** Every site record carries `service_name=<slug>`, `falak_server_id`, `falak_site_id` (when the agent knows
+  the site) and the new index label **`falak_log_kind`** (`app` | `access`; resource attribute `falak.log.kind`,
   records attributed to a site default to `app`). Deployment/release ids: Telemetry now fills `sites[].deployment_id|
   release_id` from `Deployments\Contracts\LiveReleases` and re-sends `telemetry.configure` on `ReleaseActivated`,
-  so records carry `kiln_deployment_id` / `kiln_release_id` structured metadata.
+  so records carry `falak_deployment_id` / `falak_release_id` structured metadata.
 - **Contract for the UI (Logs / Network Logs tabs).** `Telemetry\Contracts\AccessLogs::forSite($organizationId,
   $siteId, $from, $to, $filters, $limit)` → `list<Data\AccessLogEntry>` (method, path, query, status, durationMs,
   bytes, requestBytes, clientIp, userAgent, host, serverId, deploymentId, releaseId, `toArray()`), newest first;
   filters `server_id`, `deployment_id`, `release_id`, `method`, `status` (code or `5xx`), `path`, `client_ip`. Access logs are
   selected by slug (`service_name`), because an LB's agent may not know the site id. App logs: the existing
-  `LogQueryBuilder` filters gained `kind` (`app` = `kiln_log_kind!="access"`, so records of agents that predate the
+  `LogQueryBuilder` filters gained `kind` (`app` = `falak_log_kind!="access"`, so records of agents that predate the
   label still match). HTTP: `GET /api/v1/sites/{site}/access-logs`, `…/logs?kind=` (docs/API.md).
 - **UI.** The deployment panel's *Network Logs* tab (Deployments `panel/network-logs.tsx`) lists the requests served by
   the deployment's release (`release_id` filter, since the deployment started, status filter, 10 s refresh while live)
@@ -343,15 +343,15 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
 - Smaller: the agent refreshes OTLP `host.name` whenever facts are re-collected (every 5 min), so a renamed host (EC2)
   no longer keeps its old name until the agent restarts.
 - Verified by the sim E2E (FrankenPHP 1.9.1): access records and merged Laravel error records reach Loki with
-  `kiln_log_kind`, and `/api/v1/sites/{id}/access-logs` returns them. Not verified: the PHP-FPM + Caddy edge path,
+  `falak_log_kind`, and `/api/v1/sites/{id}/access-logs` returns them. Not verified: the PHP-FPM + Caddy edge path,
   and Caddy < 2.9 (`logger_names` array form). The migration cannot tell a deliberate `stderr` from the old default and switches both (a user can set it
   back; web logs of such a site then only reach the edge journal).
 
 ### Fleet agent upgrades
 - **Versions.** Agents report `facts.agent_version`, `features` and `agent_sha256` (checksum of the running binary).
-  The shipped build per arch is `Fleet\Application\ShippedAgent` (sha256 from `KILN_AGENT_SHA256_*` or the served file;
-  version from the `kiln-agent-linux-<arch>.version` sidecar that `make agent` now writes and the image copies, else
-  `KILN_AGENT_VERSION` / `KILN_VERSION`). *Outdated* = checksums differ (dev/CI builds share version strings), except
+  The shipped build per arch is `Fleet\Application\ShippedAgent` (sha256 from `FALAK_AGENT_SHA256_*` or the served file;
+  version from the `falak-agent-linux-<arch>.version` sidecar that `make agent` now writes and the image copies, else
+  `FALAK_AGENT_VERSION` / `FALAK_VERSION`). *Outdated* = checksums differ (dev/CI builds share version strings), except
   that a newer release than the shipped one never is; without a checksum, semver or string comparison.
 - **Contract** `Fleet\Contracts\AgentUpgrades`: `versionsFor()` (→ `AgentVersionInfo`: version, availableVersion,
   updateAvailable, latest `AgentUpgradeData`), `upgrade()`, `upgradeOrganization()`, `outdatedCount()`; exception
@@ -361,13 +361,13 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
   (SweepFleet). Rollouts share a `rollout_id`, run `batch_size` at a time, and cancel their queued rest after a
   failure. Events `AgentUpgradeSucceeded` (recovery) / `AgentUpgradeFailed` (Alertable `fleet.agent_upgrade_failed`).
 - **Agent.** `system.upgrade_agent` now also pre-flights the download (`<bin>.new version` must run, so a
-  wrong-arch or truncated build never replaces a working agent), replaces the installed `/usr/local/bin/kiln-agent`
+  wrong-arch or truncated build never replaces a working agent), replaces the installed `/usr/local/bin/falak-agent`
   (not the resolved executable, so symlinked installs such as the sim work), keeps `.prev` (copy when a hard link is
   impossible), and restarts again when the binary is current but the running process is not. Schema `version` is any
   string now (dev/CI builds).
 - **UI/API.** Servers list: *Agent* column (version, *update available*, upgrade state) and *Upgrade all agents*;
   server page: *Upgrade agent* in the Agent section (`fleet.agents.manage`). `POST /api/v1/servers/{server}/agent/upgrade`;
-  `GET /api/v1/servers[/{id}]` `agent.*` fields; `php artisan kiln:agents [--outdated --count]`; `kiln-ctl update`
+  `GET /api/v1/servers[/{id}]` `agent.*` fields; `php artisan falak:agents [--outdated --count]`; `falak-ctl update`
   prints a hint when agents are outdated.
 - Verified by hand in the sim (not part of the E2E, whose agents run the served build): publishing a newer build and
   `POST …/agent/upgrade` downloaded it over HTTPS from the panel, swapped it (`.prev` kept), restarted in ~3 s and
@@ -375,13 +375,13 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
   fleet or with "Upgrade all agents" across several servers.
 
 ### Builder restarts no longer orphan builds
-- kiln-builder generates a run id per process and sends it on every poll (`run=`), and heartbeats
+- falak-builder generates a run id per process and sends it on every poll (`run=`), and heartbeats
   (`POST /api/internal/builds/{id}/heartbeat`, every 20 s) while building. Builds record `builder_name`,
   `builder_run_id` and `heartbeat_at` (events count as heartbeats).
 - A poll with a new run id fails the builds (assigned or running) that the same builder name claimed under another run
   (`ReapOrphanedBuilds`: "Builder <name> restarted during the build."); `BuildFailed` fails the deployment as before.
   `ExpireBuilds` fails running builds of run-id builders after `builds.heartbeat_timeout_seconds` (90) of silence;
-  a `410` heartbeat answer makes the builder abort. Builders without run ids (older kiln-builder) keep the old
+  a `410` heartbeat answer makes the builder abort. Builders without run ids (older falak-builder) keep the old
   behaviour (build timeout + grace). Assigned-but-never-started builds are still re-queued (`assign_timeout_seconds`).
 - Two builder processes sharing one token must use different `--name`s (a poll by one would otherwise fail the
   other's build).
@@ -398,7 +398,7 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
   others out; `other` read keeps public uploads servable by a Caddy edge outside the site group).
 - Hooks keep the user's umask (a `umask 027` in hooks would hide generated public assets from a Caddy edge outside
   the site group); the closed release directory is what protects the files.
-- kiln-builder no longer ships the build's own logs: `storage/logs/*` is excluded from artifacts except
+- falak-builder no longer ships the build's own logs: `storage/logs/*` is excluded from artifacts except
   `storage/logs/.gitignore` (the first deploy used to move the build's `laravel.log` into shared storage).
 - Verified in the sim (FrankenPHP): releases/shared are `drwxr-x---` with `user:caddy:r-x`, `nobody` cannot read
   `bootstrap/cache/config.php`, the site still serves, and FrankenPHP (caddy) and the site user share the daily log
@@ -428,26 +428,26 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   `ServerDirectory::takenPorts()`, the latest machine check's listeners and published container ports) and `settings`
   (`maxmemory_mb` 128, capped at ¾ of the agent-reported RAM when not given; `eviction` noeviction; `persistence` rdb |
   aof | none). Creation locks the server's engine rows, so two creations never share a port. Name pattern
-  `^[a-z][a-z0-9_-]{0,40}$`, reserved `default`, `kiln`. Each instance has exactly one `DatabaseUser` (granted on it)
+  `^[a-z][a-z0-9_-]{0,40}$`, reserved `default`, `falak`. Each instance has exactly one `DatabaseUser` (granted on it)
   holding the requirepass password; its row is named after the instance because usernames are unique per engine row,
   and it is presented and used as `default`. Extra users, grant edits, user deletion, backups, schedules and restores
   are refused for key-value engines with a message (backups: phase 3).
 - **Agent** (`db.redis`, details in `contracts/agent-protocol/README.md`): `db.redis.apply` / `db.redis.remove`, both
-  redeliverable. One process per instance through the distribution's template unit `redis-server@kiln-<name>` /
-  `valkey-server@kiln-<name>` (Debian's packaging generates both: `Type=notify`, `--supervised systemd --daemonize no`,
-  `ProtectSystem=strict`). The drop-in points `ExecStart` at Kiln's config `/etc/kiln-<engine>/<name>.conf`: the
+  redeliverable. One process per instance through the distribution's template unit `redis-server@falak-<name>` /
+  `valkey-server@falak-<name>` (Debian's packaging generates both: `Type=notify`, `--supervised systemd --daemonize no`,
+  `ProtectSystem=strict`). The drop-in points `ExecStart` at Falak's config `/etc/falak-<engine>/<name>.conf`: the
   template's own path is under `/etc/redis`, which Debian makes 0770 `redis:redis` (found on a real systemd: the
   instance user could not open it).
-  **Isolation:** every instance runs as its own system user `kiln-<engine>-<name>` (nologin, no home; past 32
-  characters `kiln-rh-` / `kiln-vh-` + a hash no plain name can produce; the agent only adopts or deletes a user with
-  its GECOS, home `/nonexistent` and a nologin shell; isolated sites created from v0.7.0 on get `s-kiln…` instead of a
-  `kiln…` unix user, existing sites keep theirs — the GECOS check is what protects them) set by a drop-in
-  `/etc/systemd/system/<unit>.d/50-kiln.conf` that also resets `ReadWritePaths=` to the instance's data directory
-  `/var/lib/kiln-<engine>/<name>` (0700, that user) and its runtime directory. The config (password) is 0640
+  **Isolation:** every instance runs as its own system user `falak-<engine>-<name>` (nologin, no home; past 32
+  characters `falak-rh-` / `falak-vh-` + a hash no plain name can produce; the agent only adopts or deletes a user with
+  its GECOS, home `/nonexistent` and a nologin shell; isolated sites created from v0.7.0 on get `s-falak…` instead of a
+  `falak…` unix user, existing sites keep theirs — the GECOS check is what protects them) set by a drop-in
+  `/etc/systemd/system/<unit>.d/50-falak.conf` that also resets `ReadWritePaths=` to the instance's data directory
+  `/var/lib/falak-<engine>/<name>` (0700, that user) and its runtime directory. The config (password) is 0640
   `root:<instance group>`. So the stock instance on 6379 (no password, `CONFIG`/`DEBUG` enabled, user `redis`, writable
   `/var/lib/redis` only) can neither read, reload nor overwrite an instance's data, and instances can't reach each
-  other's. Kiln never changes the stock instance. **Commands:** `CONFIG` is renamed to a random per-instance name only
-  the agent knows (root-only state `/var/lib/kiln/db/redis/<engine>-<name>.json`, plus the config file);
+  other's. Falak never changes the stock instance. **Commands:** `CONFIG` is renamed to a random per-instance name only
+  the agent knows (root-only state `/var/lib/falak/db/redis/<engine>-<name>.json`, plus the config file);
   `DEBUG`, `MODULE`, `SHUTDOWN`, `REPLICAOF`, `SLAVEOF`, `MIGRATE`, `ACL`, `MONITOR`, `SLOWLOG` and (Valkey 8.1+)
   `COMMANDLOG` are disabled (the last three would show the agent's commands: the secret name, on 6.0 passwords);
   errors carry neither the name nor any value; `SYNC`/`PSYNC`/`REPLCONF` stay for phase 3's `redis-cli --rdb`,
@@ -465,14 +465,14 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   instance are serialized (the wait ends with the command; `db.redis.remove` has the same 1 h timeout), and every
   local account change (site users and instance users) shares one lock; `db.redis.apply` has its own 1 h timeout
   (`databases.timeouts.redis_apply`) and the agent ends its waits before it; `TimeoutStartSec=20min` covers big loads. Persistence switches keep the data: AOF on = stale
-  `appendonlydir`/`appendonly.aof` moved aside (`.kiln-<UTC time>`), `CONFIG SET appendonly yes`, wait for the
+  `appendonlydir`/`appendonly.aof` moved aside (`.falak-<UTC time>`), `CONFIG SET appendonly yes`, wait for the
   rewrite (`INFO persistence`); AOF off = `SAVE` first; a restart into AOF starts without it from `dump.rdb` and
   switches it on live; that first start keeps the rdb save points (Redis 6–8 / Valkey start empty otherwise). `none` keeps nothing on disk: files of the earlier
   mode are moved aside and every restart (reboot, port change, upgrade) starts empty; the UI says so. The agent
   records what runs (config hash, port, bind, persistence, password) only after a successful start / live change and
   `PING`, so a redelivered apply after a failure converges instead of seeing "unchanged". `LOADING` extends the wait
   for `PING` to 15 minutes. Paths are `Lstat`-checked (no chmod / chown / write through symlinks).
-  `KILN_REDIS_INTEGRATION=1 go test ./internal/db -run TestRedisIntegration` runs apply / remove against Redis 6.0,
+  `FALAK_REDIS_INTEGRATION=1 go test ./internal/db -run TestRedisIntegration` runs apply / remove against Redis 6.0,
   7.0, 8.0 and Valkey 7.2, 8.1, 9.0 in Docker (config accepted, renamed / disabled commands unknown to clients,
   redacted errors, live and restart persistence switches keep every key, none through a restart starts empty, and a
   restart during a throttled first AOF rewrite keeps every key — without the fix Redis 6.0 / 7.0 came back empty).
@@ -512,13 +512,13 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   through the API, an instance created through the services API, `${{ cache.REDIS_* }}` deployed with the Bun site,
   instance user, file modes, the stock 6379's lack of access and the disabled `CONFIG` checked on the server.
 - **Verified by hand under systemd:** in the sim's server image (Ubuntu 24.04, Redis 7.0.15, systemd as PID 1) the real
-  agent code created an instance (runs as `kiln-redis-cache`, `ProtectSystem=strict`, `ReadWritePaths` = its data and
+  agent code created an instance (runs as `falak-redis-cache`, `ProtectSystem=strict`, `ReadWritePaths` = its data and
   runtime dirs), the stock 6379 and its `redis` user could neither change `dir` nor read the config or data, clients
   got "unknown command" for `CONFIG` / `DEBUG` / `ACL`, live password / memory / rdb→aof changes did not restart
   (`NRestarts=0`), restarts into rdb and aof and a plain restart kept every key, and remove deleted unit, files and
   user while the stock instance kept answering.
   The same image with Ubuntu's valkey-server 7.2.13 (noble-updates) ran a Valkey instance with AOF as
-  `kiln-valkey-sessions` (and showed Valkey 7.2's `--version` banner is just "Server v=…", now parsed).
+  `falak-valkey-sessions` (and showed Valkey 7.2's `--version` banner is just "Server v=…", now parsed).
 - **Not verified:** the sim E2E stage has not been run yet; Playwright (needs the sim); Ubuntu 22.04's Redis 6.0 and
   26.04 under systemd (Redis 6.0 and Valkey 9.0 only in the Docker integration test). A real Ubuntu 24.04 (Redis, Valkey 7.2) and 26.04 (Valkey 9.0) VM is needed before
   the rc.
@@ -537,7 +537,7 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   were accepted on any interface): a WireGuard peer's interface comes from the control plane
   (`peer_interfaces`, the network's interface name; `iifname` matches by name, so the rule is right before the
   network's config reaches the server — the firewall often converges first, e.g. right after a member is added);
-  other peers: a Kiln WireGuard network whose config `Address` range holds it, else a local interface whose subnet
+  other peers: a Falak WireGuard network whose config `Address` range holds it, else a local interface whose subnet
   holds it (not lo / docker / br- / veth; DigitalOcean's eth1, Lightsail's eth0); none: any interface. The route is
   not asked (rc.2 did: `ip route get` answers the default route for any private address, pinning a WireGuard peer to
   eth0 when its config wasn't there yet, and nothing re-applied). Both fields are stripped for older
@@ -545,15 +545,15 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   (`PayloadCompatibility::VALUES`; review: an agent downgraded after its engine's container access was on still got
   private binds). A downgrade (`AgentVersionChanged` without the feature) also turns the key-value engines' container
   access off, converges the firewall (no instance ports / peers) and re-applies the instances on loopback.
-- **After a reboot** (found in review): docker0 appears after `docker.service`, a Kiln private network's address after
+- **After a reboot** (found in review): docker0 appears after `docker.service`, a Falak private network's address after
   `wg-quick@<interface>.service`, but the template unit is only `After=network.target` — Redis 6.2+ / Valkey refused to
   start ("Failed listening on port") and systemd gave up after 5 starts in 10 s; Redis 6.0 started without the address
-  and never picked it up. A second drop-in `40-kiln-boot.conf` (only a daemon-reload, never a restart; kept apart from
-  `50-kiln.conf`, whose changes restart) adds `Wants=network-online.target`, `After=network-online.target docker.service
-  wg-quick@<each Kiln interface in /etc/wireguard>.service` (ordering only), `StartLimitIntervalSec=10min`,
+  and never picked it up. A second drop-in `40-falak-boot.conf` (only a daemon-reload, never a restart; kept apart from
+  `50-falak.conf`, whose changes restart) adds `Wants=network-online.target`, `After=network-online.target docker.service
+  wg-quick@<each Falak interface in /etc/wireguard>.service` (ordering only), `StartLimitIntervalSec=10min`,
   `StartLimitBurst=150`, `RestartSec=2s` (rc.2 had no limit: a broken instance restarted every 2 s forever).
   The agent's `RedisWatch` (30 s after start, then every minute; skips an instance a command holds, and one whose
-  `50-kiln.conf` is gone — a remove half way) refreshes that drop-in, restarts a running instance that does not listen
+  `50-falak.conf` is gone — a remove half way) refreshes that drop-in, restarts a running instance that does not listen
   (`ss -ltn`) on every configured address that exists (SAVE first, as the apply's restart; only when the process runs
   the file on disk) and starts a failed / inactive enabled one. Attempts that don't help back off 1, 2, 5, then every
   10 min; the backoff starts over when the instance is healthy or one of its own addresses was gone (rc.2 keyed one
@@ -563,7 +563,7 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   is removed before a restart comes up on it once it is back — 6.0 through the restart, 7.0 / 8.0 / Valkey 7.2–9.0
   through the start — with its data, on all six images.
 - **WireGuard tools (pre-existing bug, found in the live test):** nothing installed `wireguard-tools`, so on a fresh
-  Ubuntu server `net.wireguard.apply` failed ("Unit wg-quick@wg-… .service does not exist") and Kiln private networks
+  Ubuntu server `net.wireguard.apply` failed ("Unit wg-quick@wg-… .service does not exist") and Falak private networks
   never came up. The agent now installs it on demand (`system.Apt.Ensure`, apt-get update with its repository recovery
   first) before it writes the config, when `wg-quick` is missing; servers outside private networks don't get it. Keys
   never needed it (the agent generates them itself). `net.wireguard.apply`'s timeout is 900 s
@@ -575,23 +575,23 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   dedicated cache servers too), which re-applies the instances (one restart each). Desired state per instance:
   `bind` = 127.0.0.1 + the instance server's address on a private network shared with each other server running a site
   of the instance's **environment** (references only resolve there; the SQL "remote" rule is "dedicated server listens
-  everywhere", which Redis must never do): a Kiln private network first (oldest of the instance's server that all of
+  everywhere", which Redis must never do): a Falak private network first (oldest of the instance's server that all of
   the site's servers share), else the provider private network, only where membership is known (fixed in review: "same
   provider and both have a private IPv4" resolved separate VPCs / regions / NATed custom servers to an address that was
-  unreachable or another machine's, with the password sent there): both created by Kiln with the same provider
+  unreachable or another machine's, with the password sent there): both created by Falak with the same provider
   credential, in the same region, of a provider in `databases.key_value.provider_private_networks` (DigitalOcean's
-  default VPC per region, Lightsail; not Hetzner / Vultr / Linode, opt-in networks — Kiln stores no network id).
-  `custom` servers only with `KILN_REDIS_CUSTOM_PRIVATE_NETWORK=true` (off by default; the sim sets it for its fleet
+  default VPC per region, Lightsail; not Hetzner / Vultr / Linode, opt-in networks — Falak stores no network id).
+  `custom` servers only with `FALAK_REDIS_CUSTOM_PRIVATE_NETWORK=true` (off by default; the sim sets it for its fleet
   network). `ServerData` gained `providerCredentialId` and `region`. The SQL `DB_HOST` (`EloquentDatabaseConnections::
   host()`) still takes the database server's WireGuard address, else its private IPv4, else its public one, whoever
   the consumer is (by design it falls back to public; unchanged). `containers` = container access on and
-  `KILN_DOCKER_NETWORKS` not empty. `peers` = those servers' addresses on that network (their containers are NATed to
+  `FALAK_DOCKER_NETWORKS` not empty. `peers` = those servers' addresses on that network (their containers are NATed to
   them). `DatabaseContainerPorts` reports each instance's own port (`<engine>-<name>`, Docker ranges + peers); the SQL
   entries are unchanged. `databases_databases.network` keeps `wanted` (last sent), `bind` / `container_host` / `skipped`
   (last reported) and `applied_command`.
 - **Convergence** (`ConvergeKeyValueNetwork`, queued listener): `ServiceLinked` / `ServiceUnlinked` (Projects),
   `SiteTargetsChanged` (Sites), `PrivateNetworkChanged` (Network), `ServerProvisioned` (Servers), and `AgentFactsReported`
-  (Fleet) with a Docker version — Kiln installs Docker only with a server's provisioning, so this covers Docker
+  (Fleet) with a Docker version — Falak installs Docker only with a server's provisioning, so this covers Docker
   installed by hand on an active server (review finding; facts are sent only when they change). Firewalls of the
   organization's instance servers converge (a no-op when the hash is unchanged); an instance is re-applied only when its
   desired bind / containers differ from `wanted`, or once its last apply settled with a wanted address skipped (a
@@ -627,12 +627,12 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   own — `REDIS_PORT` next to `QUEUE_HOST: cache` — follows the service when nothing else in the group points at another
   service of the stack, else it stays and the extraction warns, `compose_services.<service>.unclear_companions`);
   `rediss://` / `valkeys://` values
-  of the service are left alone (no TLS on Kiln instances), as are their group's companions, and the extraction warns
+  of the service are left alone (no TLS on Falak instances), as are their group's companions, and the extraction warns
   ("… connects over TLS (rediss:// / valkeys://) … left pointing at <service>"; `compose_services.<service>.tls_references`);
   healthchecks of the remaining services that name the extracted service as a host (`redis-cli -h cache ping`; Redis
   and SQL extractions) are not rewritten — host, port and password flags differ per tool — and the extraction warns
   (`compose_services.<service>.healthchecks`; review finding); a `REDIS_HOST` without
-  `REDIS_PORT` / `REDIS_PASSWORD` gains them (`KilnAdjustments` adds only those two keys to a service's environment;
+  `REDIS_PORT` / `REDIS_PASSWORD` gains them (`FalakAdjustments` adds only those two keys to a service's environment;
   split-out sites too) — clients default to 6379 and no password. Inline stacks take `compose_services` at creation too
   (they were repository-only; the sim needs it: its git server has no API). The UI says the container's data is not
   copied (SQL too).
@@ -640,7 +640,7 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   fleet address and docker0 (shop and early run on app-1); the early site on app-1 gets `REDIS_HOST` = app-2's private
   address, writes over it, NOAUTH without the password, db-1 gets no answer, app-2's nftables accept the port from
   app-1 and drop it otherwise; an inline stack whose `cache` (redis:7.4.1-alpine, `--appendonly yes --maxmemory 64mb`)
-  becomes a Kiln Redis deploys only if its probe's healthcheck reaches the instance through docker0 with the password,
+  becomes a Falak Redis deploys only if its probe's healthcheck reaches the instance through docker0 with the password,
   and its key lands in the instance, not in `cache`. The sim has no WireGuard network: the WireGuard path is Pest-tested
   only.
 
@@ -651,7 +651,7 @@ certificates, alert delivery to real Slack/Discord/Telegram, the Grafana provisi
 
 ## Known limits (accepted for now)
 - Octane: Swoole needs the `swoole`/`openswoole` extension and RoadRunner the `rr` binary + `spiral/roadrunner-http` in
-  the app (Kiln installs neither; the probe keeps the site served directly until they work). Octane's FrankenPHP
+  the app (Falak installs neither; the probe keeps the site served directly until they work). Octane's FrankenPHP
   server binds `:<port>` on all interfaces (Octane gives no bind option; the nftables default policy drops it) and
   uses the FrankenPHP binary's embedded PHP, not the site's `phpX.Y` CLI. A verified Octane that crashes later is not
   un-routed automatically (502 after the 30s retry window; the crash-loop alert fires) — the next restart/poll re-probes

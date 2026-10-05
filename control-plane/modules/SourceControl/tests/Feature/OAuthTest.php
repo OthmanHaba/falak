@@ -2,8 +2,8 @@
 
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Kiln\Identity\Contracts\Role;
-use Kiln\SourceControl\Domain\Models\Connection;
+use Falak\Identity\Contracts\Role;
+use Falak\SourceControl\Domain\Models\Connection;
 
 require_once __DIR__.'/../Support/helpers.php';
 

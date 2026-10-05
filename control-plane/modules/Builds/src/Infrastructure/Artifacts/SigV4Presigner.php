@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Builds\Infrastructure\Artifacts;
+namespace Falak\Builds\Infrastructure\Artifacts;
 
 use DateTimeImmutable;
 use DateTimeInterface;

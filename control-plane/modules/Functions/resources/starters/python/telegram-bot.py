@@ -24,7 +24,7 @@ async def telegram(method: str, payload: dict):
 
 def reply(text: str) -> str:
     if text == "/start":
-        return "Hi! I run on a Kiln function. Send me anything and I will echo it."
+        return "Hi! I run on a Falak function. Send me anything and I will echo it."
     if text == "/help":
         return "Commands: /start, /help, /time. Anything else is echoed back."
     if text == "/time":

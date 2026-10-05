@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Projects\Application\Console;
+namespace Falak\Projects\Application\Console;
 
 use Illuminate\Console\Command;
-use Kiln\Projects\Application\Actions\BackfillProjects;
+use Falak\Projects\Application\Actions\BackfillProjects;
 
 final class BackfillProjectsCommand extends Command
 {

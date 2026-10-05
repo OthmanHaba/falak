@@ -1,9 +1,9 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Kiln\Terminal\Http\Controllers\RecordingController;
-use Kiln\Terminal\Http\Controllers\SessionController;
-use Kiln\Terminal\Http\Controllers\StreamController;
+use Falak\Terminal\Http\Controllers\RecordingController;
+use Falak\Terminal\Http\Controllers\SessionController;
+use Falak\Terminal\Http\Controllers\StreamController;
 
 Route::middleware(['auth', 'org'])->group(function () {
     Route::get('terminal', [SessionController::class, 'index'])->name('terminal.index');

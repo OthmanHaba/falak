@@ -3,11 +3,11 @@
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Testing\AssertableInertia as Assert;
-use Kiln\Identity\Application\Notifications\OrganizationInvitation;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\Invitation;
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Application\Notifications\OrganizationInvitation;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\Invitation;
+use Falak\Identity\Domain\Models\User;
 
 function invitationUrl(string $email): string
 {

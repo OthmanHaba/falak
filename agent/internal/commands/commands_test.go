@@ -55,7 +55,7 @@ func TestDispatcherOutcomes(t *testing.T) {
 		errPart  string
 		resultOK bool
 	}{
-		{Envelope{ID: "1", Type: "t.ok", Payload: json.RawMessage(`{"name":"kiln"}`)}, 0, "", true},
+		{Envelope{ID: "1", Type: "t.ok", Payload: json.RawMessage(`{"name":"falak"}`)}, 0, "", true},
 		{Envelope{ID: "2", Type: "t.ok", Payload: json.RawMessage(`{"nope":1}`)}, 2, "unknown field", false},
 		{Envelope{ID: "3", Type: "t.slow", TimeoutS: 1}, ExitTimeout, "timed out", false},
 		{Envelope{ID: "4", Type: "t.panic"}, 1, "panic: boom", false},

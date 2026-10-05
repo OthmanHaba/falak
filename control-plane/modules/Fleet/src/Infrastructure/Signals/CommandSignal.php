@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Fleet\Infrastructure\Signals;
+namespace Falak\Fleet\Infrastructure\Signals;
 
 /**
  * Wakes long-polling agents as soon as a command is queued for them.

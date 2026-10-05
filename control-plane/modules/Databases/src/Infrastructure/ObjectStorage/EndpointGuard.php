@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Databases\Infrastructure\ObjectStorage;
+namespace Falak\Databases\Infrastructure\ObjectStorage;
 
 /**
  * Keeps control-plane storage requests (verification probe, pruning) away from internal services:

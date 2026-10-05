@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\SourceControl\Domain\Policies;
+namespace Falak\SourceControl\Domain\Policies;
 
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\SourceControl\Domain\Models\Connection;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\SourceControl\Domain\Models\Connection;
 
 final class ConnectionPolicy
 {

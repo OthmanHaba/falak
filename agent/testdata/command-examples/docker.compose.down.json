@@ -1,5 +1,5 @@
 {
   "project": "analytics",
-  "directory": "/srv/kiln/compose/analytics",
+  "directory": "/srv/falak/compose/analytics",
   "volumes": false
 }

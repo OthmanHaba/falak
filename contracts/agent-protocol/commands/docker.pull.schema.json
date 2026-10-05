@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/docker.pull.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/docker.pull.schema.json",
   "title": "docker.pull — pull an image via the Engine API",
   "type": "object",
   "additionalProperties": false,

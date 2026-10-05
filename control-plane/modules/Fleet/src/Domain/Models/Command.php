@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Fleet\Domain\Models;
+namespace Falak\Fleet\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Kiln\Fleet\Contracts\CommandStatus;
-use Kiln\Fleet\Contracts\Data\CommandHandle;
-use Kiln\Fleet\Contracts\Data\CommandResult;
+use Falak\Fleet\Contracts\CommandStatus;
+use Falak\Fleet\Contracts\Data\CommandHandle;
+use Falak\Fleet\Contracts\Data\CommandResult;
 
 /**
  * A command queued for an agent. The payload is stored as canonical JSON, encrypted at rest

@@ -1,0 +1,7 @@
+#!/bin/sh
+# One scheduled run: the binary calls the function's Scheduled(ctx, event).
+if [ ! -x /app/.falak/fn ]; then
+  echo "falak: /app/.falak/fn is missing: the release was not built" >&2
+  exit 1
+fi
+exec /app/.falak/fn run

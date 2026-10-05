@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Edge\Http\Controllers;
+namespace Falak\Edge\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Kiln\Edge\Application\Actions\DeleteCertificate;
-use Kiln\Edge\Application\Actions\UploadCertificate;
-use Kiln\Edge\Domain\Models\Certificate;
-use Kiln\Kernel\Http\Controller;
+use Falak\Edge\Application\Actions\DeleteCertificate;
+use Falak\Edge\Application\Actions\UploadCertificate;
+use Falak\Edge\Domain\Models\Certificate;
+use Falak\Kernel\Http\Controller;
 
 final class CertificateController extends Controller
 {

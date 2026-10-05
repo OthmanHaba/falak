@@ -1,6 +1,6 @@
 // Package deploy implements the native release lifecycle:
 //
-//	/srv/kiln/sites/<site>/
+//	/srv/falak/sites/<site>/
 //	├── releases/<release-ulid>/
 //	├── shared/          (.env, storage/, custom shared paths)
 //	└── current -> releases/<release-ulid>
@@ -25,10 +25,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/obs"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // ProcRestarter restarts supervised programs (implemented by the supervisor).
@@ -46,10 +46,10 @@ type Options struct {
 	FS        hostfs.FS
 	Runner    runner.Runner
 	HTTP      *http.Client
-	SitesRoot string // default /srv/kiln/sites
+	SitesRoot string // default /srv/falak/sites
 	Procs     ProcRestarter
 	Workers   WorkerRestarter
-	Events    obs.Sink // deployment lifecycle log records (kiln.event.type=deployment); nil disables
+	Events    obs.Sink // deployment lifecycle log records (falak.event.type=deployment); nil disables
 	Logger    *slog.Logger
 }
 
@@ -62,7 +62,7 @@ type Deployer struct {
 // New creates a Deployer.
 func New(o Options) *Deployer {
 	if o.SitesRoot == "" {
-		o.SitesRoot = "/srv/kiln/sites"
+		o.SitesRoot = "/srv/falak/sites"
 	}
 	if o.HTTP == nil {
 		o.HTTP = &http.Client{Timeout: 30 * time.Minute}
@@ -96,7 +96,7 @@ type Owner struct {
 
 // site holds resolved (real) paths of one site.
 type site struct {
-	host string // host path, e.g. /srv/kiln/sites/shop
+	host string // host path, e.g. /srv/falak/sites/shop
 	real string // real path (under the fs root)
 }
 

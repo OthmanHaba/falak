@@ -1,6 +1,6 @@
-import { Button } from '@/components/kiln/button';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { MetricChart, type MetricPoint } from '@/components/kiln/metric-chart';
+import { Button } from '@/components/falak/button';
+import { EmptyState } from '@/components/falak/empty-state';
+import { MetricChart, type MetricPoint } from '@/components/falak/metric-chart';
 import ServerLayout, { type ServerHeader } from '@/layouts/server-layout';
 import { cn } from '@/lib/utils';
 import { Link } from '@inertiajs/react';

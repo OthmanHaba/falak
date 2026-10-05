@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Fleet\Events;
+namespace Falak\Fleet\Events;
 
 use Illuminate\Foundation\Events\Dispatchable;
-use Kiln\Alerting\Contracts\Alertable;
-use Kiln\Alerting\Contracts\Data\AlertData;
-use Kiln\Alerting\Contracts\Severity;
+use Falak\Alerting\Contracts\Alertable;
+use Falak\Alerting\Contracts\Data\AlertData;
+use Falak\Alerting\Contracts\Severity;
 
 /**
  * A server's agent could not be upgraded (download / checksum / pre-flight failed, or it did not come back with the

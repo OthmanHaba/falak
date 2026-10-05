@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Providers\Infrastructure\Adapters;
+namespace Falak\Providers\Infrastructure\Adapters;
 
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Contracts\ProviderAdapter;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\ProviderAdapter;
 use Throwable;
 
 /**
@@ -105,6 +105,6 @@ abstract class HttpProviderAdapter implements ProviderAdapter
     {
         $host = trim((string) preg_replace('/[^a-z0-9-]+/', '-', strtolower($name)), '-');
 
-        return substr($host !== '' ? $host : 'kiln-server', 0, 63);
+        return substr($host !== '' ? $host : 'falak-server', 0, 63);
     }
 }

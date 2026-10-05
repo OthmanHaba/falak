@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
 /**
  * A path linked from every release into shared/ (e.g. storage, .env, public/uploads).

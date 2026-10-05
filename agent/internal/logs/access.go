@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/kiln/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
 )
 
-// caddyAccess is the part of Caddy's JSON access log entry ("handled request") that Kiln keeps. Request and
+// caddyAccess is the part of Caddy's JSON access log entry ("handled request") that Falak keeps. Request and
 // response headers other than the user agent are dropped (they may carry cookies or tokens).
 type caddyAccess struct {
 	TS      float64 `json:"ts"`

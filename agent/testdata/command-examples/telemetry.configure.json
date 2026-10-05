@@ -1,5 +1,5 @@
 {
-  "endpoint": "https://otel.kiln.example:4318",
+  "endpoint": "https://otel.falak.example:4318",
   "headers": { "Authorization": "Bearer otlp-secret" },
   "resource": { "org_id": "01J9ZQ4C5M8W3X2Y1V0T9S8R7Q", "server_id": "01J9ZQ4C5M8W3X2Y1V0T9S8R7P", "environment": "production" },
   "sampling": { "traces_ratio": 0.25 },
@@ -8,10 +8,10 @@
       "deployment_id": "01J9ZQ4C5M8W3X2Y1V0T9S8R7M", "release_id": "01J9ZQ4C5M8W3X2Y1V0T9S8R7K" }
   ],
   "log_sources": [
-    { "path": "/srv/kiln/sites/shop-example-com/shared/storage/logs/*.log", "site": "shop-example-com", "format": "plain" },
+    { "path": "/srv/falak/sites/shop-example-com/shared/storage/logs/*.log", "site": "shop-example-com", "format": "plain" },
     { "path": "/var/log/caddy/access.log", "service": "caddy", "format": "json" }
   ],
-  "docker_logs": { "enabled": true, "label_selector": { "kiln.managed": "true" } },
+  "docker_logs": { "enabled": true, "label_selector": { "falak.managed": "true" } },
   "metrics": { "enabled": true, "interval_s": 15 },
   "insights": { "enabled": true },
   "buffer_max_bytes": 67108864

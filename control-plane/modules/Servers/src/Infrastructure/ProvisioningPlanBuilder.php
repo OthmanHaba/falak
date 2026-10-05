@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Servers\Infrastructure;
+namespace Falak\Servers\Infrastructure;
 
 use Illuminate\Support\Str;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Enums\PhpVersionStatus;
-use Kiln\Servers\Domain\MachineCheck\ComponentDecision;
-use Kiln\Servers\Domain\MachineCheck\Decision;
-use Kiln\Servers\Domain\MachineCheck\MachineCheck;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Stack\Stack;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Enums\PhpVersionStatus;
+use Falak\Servers\Domain\MachineCheck\ComponentDecision;
+use Falak\Servers\Domain\MachineCheck\Decision;
+use Falak\Servers\Domain\MachineCheck\MachineCheck;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Stack\Stack;
 
 /**
  * Builds the full desired state for `provision.apply`
@@ -88,7 +88,7 @@ final class ProvisioningPlanBuilder
         $hostname = trim((string) preg_replace('/-+/', '-', (string) preg_replace('/[^a-z0-9-]/', '-', Str::lower(Str::ascii($name)))), '-');
         $hostname = substr($hostname, 0, 63);
 
-        return trim($hostname, '-') ?: 'kiln-server';
+        return trim($hostname, '-') ?: 'falak-server';
     }
 
     public function swapMb(?int $memoryBytes): int
@@ -201,7 +201,7 @@ final class ProvisioningPlanBuilder
      */
     private function unixUser(Stack $stack): array
     {
-        $user = (string) ($this->config['unix_user'] ?? 'kiln');
+        $user = (string) ($this->config['unix_user'] ?? 'falak');
         $groups = ['www-data'];
 
         if ($stack->docker) {

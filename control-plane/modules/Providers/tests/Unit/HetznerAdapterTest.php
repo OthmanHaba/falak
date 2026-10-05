@@ -3,10 +3,10 @@
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Kiln\Providers\Contracts\Data\Machine;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Infrastructure\Adapters\HetznerAdapter;
+use Falak\Providers\Contracts\Data\Machine;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Infrastructure\Adapters\HetznerAdapter;
 
 require_once __DIR__.'/../fixtures.php';
 
@@ -128,8 +128,8 @@ it('creates a server with user data, labels and ssh keys', function () {
         size: 'cx22',
         image: '161547269',
         sshKeyIds: ['7'],
-        userData: "#!/bin/sh\ncurl -fsSL https://kiln.test/install/abc | sh",
-        labels: ['kiln-server' => '01JABC', 'kiln/org' => 'x y'],
+        userData: "#!/bin/sh\ncurl -fsSL https://falak.test/install/abc | sh",
+        labels: ['falak-server' => '01JABC', 'falak/org' => 'x y'],
     ));
 
     expect($machine->id)->toBe('42')
@@ -146,7 +146,7 @@ it('creates a server with user data, labels and ssh keys', function () {
         && $r['image'] === 161547269
         && $r['ssh_keys'] === [7]
         && str_contains($r['user_data'], '/install/abc')
-        && $r['labels'] === ['kiln-server' => '01JABC', 'kiln-org' => 'x-y']
+        && $r['labels'] === ['falak-server' => '01JABC', 'falak-org' => 'x-y']
         && $r['public_net'] === ['enable_ipv4' => true, 'enable_ipv6' => true]);
 });
 

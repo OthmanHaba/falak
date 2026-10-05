@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\Providers;
+namespace Falak\SourceControl\Infrastructure\Providers;
 
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
-use Kiln\SourceControl\Contracts\Data\BranchData;
-use Kiln\SourceControl\Contracts\Data\CommitData;
-use Kiln\SourceControl\Contracts\Data\RepositoryData;
-use Kiln\SourceControl\Domain\Models\Connection;
+use Falak\SourceControl\Contracts\Data\BranchData;
+use Falak\SourceControl\Contracts\Data\CommitData;
+use Falak\SourceControl\Contracts\Data\RepositoryData;
+use Falak\SourceControl\Domain\Models\Connection;
 
 /**
  * GitLab REST v4 (gitlab.com or self-hosted through the connection's base URL).

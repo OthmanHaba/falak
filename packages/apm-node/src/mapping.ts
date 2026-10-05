@@ -3,7 +3,7 @@ import type { ReadableSpan, Span, SpanProcessor } from '@opentelemetry/sdk-trace
 import type { RedactCallback } from './config.js';
 import { Redactor } from './redact.js';
 
-export type KilnEventType = 'request' | 'outgoing_request' | 'query' | 'cache';
+export type FalakEventType = 'request' | 'outgoing_request' | 'query' | 'cache';
 
 const CACHE_SYSTEMS = new Set(['redis', 'memcached', 'valkey']);
 
@@ -33,15 +33,15 @@ function setIfMissing(attrs: Attributes, key: string, value: string | number | b
   if (attrs[key] === undefined && value !== undefined) attrs[key] = value;
 }
 
-/** Classify a span into a Kiln event type (or undefined for spans we leave untouched). */
-export function classify(span: Pick<ReadableSpan, 'kind' | 'attributes'>): KilnEventType | undefined {
+/** Classify a span into a Falak event type (or undefined for spans we leave untouched). */
+export function classify(span: Pick<ReadableSpan, 'kind' | 'attributes'>): FalakEventType | undefined {
   const a = span.attributes;
-  const existing = str(a['kiln.event.type']);
-  if (existing) return existing as KilnEventType;
+  const existing = str(a['falak.event.type']);
+  if (existing) return existing as FalakEventType;
 
   const dbSystem = str(a['db.system.name']) ?? str(a['db.system']);
   if (dbSystem) {
-    return CACHE_SYSTEMS.has(dbSystem) && a['kiln.cache.op'] !== undefined ? 'cache' : 'query';
+    return CACHE_SYSTEMS.has(dbSystem) && a['falak.cache.op'] !== undefined ? 'cache' : 'query';
   }
 
   const isHttp = a['http.request.method'] !== undefined || a['http.method'] !== undefined;
@@ -52,15 +52,15 @@ export function classify(span: Pick<ReadableSpan, 'kind' | 'attributes'>): KilnE
 }
 
 /**
- * Normalise a finished span to the Kiln telemetry contract: kiln.event.type, stable semconv
+ * Normalise a finished span to the Falak telemetry contract: falak.event.type, stable semconv
  * attribute names, exception handling flags, status, and redaction. Mutates in place.
  */
-export function mapSpan(span: ReadableSpan, redactor: Redactor, redact?: RedactCallback): KilnEventType | undefined {
+export function mapSpan(span: ReadableSpan, redactor: Redactor, redact?: RedactCallback): FalakEventType | undefined {
   const m = span as unknown as Mutable;
   const a = m.attributes;
   const type = classify(span);
 
-  if (type) a['kiln.event.type'] = type;
+  if (type) a['falak.event.type'] = type;
 
   switch (type) {
     case 'request': {
@@ -91,26 +91,26 @@ export function mapSpan(span: ReadableSpan, redactor: Redactor, redact?: RedactC
       setIfMissing(a, 'db.namespace', str(a['db.name']));
       const host = str(a['server.address']) ?? str(a['net.peer.name']);
       const port = str(a['server.port']) ?? str(a['net.peer.port']);
-      setIfMissing(a, 'kiln.query.connection', host ? (port ? `${host}:${port}` : host) : 'default');
+      setIfMissing(a, 'falak.query.connection', host ? (port ? `${host}:${port}` : host) : 'default');
       setIfMissing(a, 'db.namespace', '');
       break;
     }
     case 'cache': {
-      a['kiln.cache.store'] ??= str(a['db.system.name']) ?? str(a['db.system']) ?? 'redis';
-      setIfMissing(a, 'kiln.cache.key', '');
+      a['falak.cache.store'] ??= str(a['db.system.name']) ?? str(a['db.system']) ?? 'redis';
+      setIfMissing(a, 'falak.cache.key', '');
       break;
     }
   }
 
-  // Exceptions: every `exception` event carries kiln.exception.handled.
+  // Exceptions: every `exception` event carries falak.exception.handled.
   for (const event of span.events) {
     if (event.name !== 'exception') continue;
     const attrs = ((event as { attributes?: Attributes }).attributes ??= {});
-    if (attrs['kiln.exception.handled'] === undefined) {
+    if (attrs['falak.exception.handled'] === undefined) {
       // Instrumentations record escaping errors together with an ERROR status.
-      attrs['kiln.exception.handled'] = m.status.code !== SpanStatusCode.ERROR && attrs['exception.escaped'] !== true;
+      attrs['falak.exception.handled'] = m.status.code !== SpanStatusCode.ERROR && attrs['exception.escaped'] !== true;
     }
-    if (attrs['kiln.exception.handled'] === false && m.status.code !== SpanStatusCode.ERROR) {
+    if (attrs['falak.exception.handled'] === false && m.status.code !== SpanStatusCode.ERROR) {
       m.status = { code: SpanStatusCode.ERROR, message: str(attrs['exception.message']) ?? '' };
     }
   }
@@ -135,7 +135,7 @@ export function mapSpan(span: ReadableSpan, redactor: Redactor, redact?: RedactC
 /**
  * Wraps the exporting processor: maps + redacts each span right before it is queued for export.
  */
-export class KilnSpanProcessor implements SpanProcessor {
+export class FalakSpanProcessor implements SpanProcessor {
   constructor(
     private readonly delegate: SpanProcessor,
     private readonly redactor: Redactor,

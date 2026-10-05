@@ -2,49 +2,49 @@
 
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Deployments\Events\DeploymentSucceeded;
-use Kiln\Edge\Application\Actions\AddDomain;
-use Kiln\Edge\Application\Actions\RemoveDomain;
-use Kiln\Edge\Application\CloudflareConnections;
-use Kiln\Edge\Application\CloudflareDns;
-use Kiln\Edge\Application\CloudflareEdgeControls;
-use Kiln\Edge\Application\CloudflareTunnels;
-use Kiln\Edge\Application\ComposeServiceDomains;
-use Kiln\Edge\Application\DnsInstructions;
-use Kiln\Edge\Application\GeneratedDomains;
-use Kiln\Edge\Application\Jobs\ReconcileCloudflareTunnels;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Edge\Domain\Enums\WwwRedirect;
-use Kiln\Edge\Domain\Models\CloudflareTunnel;
-use Kiln\Edge\Domain\Models\CloudflareZone;
-use Kiln\Edge\Domain\Models\DnsRecord;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\OrganizationSetting;
-use Kiln\Edge\Infrastructure\Dns\CloudflareRanges;
-use Kiln\Edge\Tests\Support\FakeCloudflare;
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\AgentUpgrades;
-use Kiln\Fleet\Contracts\Data\AgentUpgradeData;
-use Kiln\Fleet\Contracts\Data\AgentVersionInfo;
-use Kiln\Fleet\Events\CommandFinished;
-use Kiln\Network\Contracts\Firewalls;
-use Kiln\Network\Contracts\WebOriginPolicy;
-use Kiln\Network\Domain\Models\FirewallRule;
-use Kiln\Network\Infrastructure\FirewallCompiler;
-use Kiln\Servers\Contracts\Data\ServerData;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Data\ComposeConfig;
-use Kiln\Sites\Contracts\Data\DomainChoice;
-use Kiln\Sites\Contracts\Data\PublicService;
-use Kiln\Sites\Contracts\DomainType;
-use Kiln\Sites\Contracts\SiteDomains;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Events\SiteCreated;
-use Kiln\Sites\Events\SiteDeleted;
-use Kiln\Sites\Events\SiteTargetsChanged;
+use Falak\Deployments\Events\DeploymentSucceeded;
+use Falak\Edge\Application\Actions\AddDomain;
+use Falak\Edge\Application\Actions\RemoveDomain;
+use Falak\Edge\Application\CloudflareConnections;
+use Falak\Edge\Application\CloudflareDns;
+use Falak\Edge\Application\CloudflareEdgeControls;
+use Falak\Edge\Application\CloudflareTunnels;
+use Falak\Edge\Application\ComposeServiceDomains;
+use Falak\Edge\Application\DnsInstructions;
+use Falak\Edge\Application\GeneratedDomains;
+use Falak\Edge\Application\Jobs\ReconcileCloudflareTunnels;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Edge\Domain\Enums\WwwRedirect;
+use Falak\Edge\Domain\Models\CloudflareTunnel;
+use Falak\Edge\Domain\Models\CloudflareZone;
+use Falak\Edge\Domain\Models\DnsRecord;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\OrganizationSetting;
+use Falak\Edge\Infrastructure\Dns\CloudflareRanges;
+use Falak\Edge\Tests\Support\FakeCloudflare;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\AgentUpgrades;
+use Falak\Fleet\Contracts\Data\AgentUpgradeData;
+use Falak\Fleet\Contracts\Data\AgentVersionInfo;
+use Falak\Fleet\Events\CommandFinished;
+use Falak\Network\Contracts\Firewalls;
+use Falak\Network\Contracts\WebOriginPolicy;
+use Falak\Network\Domain\Models\FirewallRule;
+use Falak\Network\Infrastructure\FirewallCompiler;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Data\ComposeConfig;
+use Falak\Sites\Contracts\Data\DomainChoice;
+use Falak\Sites\Contracts\Data\PublicService;
+use Falak\Sites\Contracts\DomainType;
+use Falak\Sites\Contracts\SiteDomains;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Events\SiteCreated;
+use Falak\Sites\Events\SiteDeleted;
+use Falak\Sites\Events\SiteTargetsChanged;
 
 /*
- * Cloudflare integration: connection, managed zones, DNS records Kiln creates / updates / removes (its own only),
+ * Cloudflare integration: connection, managed zones, DNS records Falak creates / updates / removes (its own only),
  * DNS-01 certificates in managed zones, generated names under a zone and trusted proxies. Cloudflare is faked.
  */
 
@@ -92,7 +92,7 @@ it('creates tagged A and AAAA records for a domain in a managed zone', function 
         'AAAA shop.example.com 2001:db8::10',
         'AAAA www.shop.example.com 2001:db8::10',
     ])
-        ->and($records->every(fn ($r) => $r['proxied'] === true && str_starts_with($r['comment'], "kiln:{$domain->id}")))->toBeTrue()
+        ->and($records->every(fn ($r) => $r['proxied'] === true && str_starts_with($r['comment'], "falak:{$domain->id}")))->toBeTrue()
         ->and(DnsRecord::query()->where('status', DnsRecord::SYNCED)->count())->toBe(4)
         // Let's Encrypt HTTP-01 goes through Cloudflare's proxy; no DNS plugin needed on the servers.
         ->and($domain->refresh()->tls_mode)->toBe(TlsMode::Auto);
@@ -167,7 +167,7 @@ it('generates names under the zone and never manages the panel or agent hosts', 
     expect(collect($this->cf->recordsOf($this->zoneId))->pluck('name')->all())->not->toContain('agents.example.com');
 });
 
-it('says Kiln manages the records in the DNS instructions', function () {
+it('says Falak manages the records in the DNS instructions', function () {
     $instructions = DnsInstructions::for('shop.example.com', [], managedZone: 'example.com');
 
     expect($instructions['managed_by'])->toBe(['provider' => 'cloudflare', 'zone' => 'example.com'])
@@ -260,23 +260,23 @@ it('makes a compose site’s public service domains domain rows with records, an
     ]);
     $records = collect($this->cf->recordsOf($this->zoneId));
     expect($records->map(fn ($r) => "{$r['type']} {$r['name']}")->sort()->values()->all())->toBe(['A api.example.com', 'A draw.example.com', 'AAAA api.example.com', 'AAAA draw.example.com'])
-        ->and($records->every(fn ($r) => ! str_starts_with($r['comment'], 'kiln:site:')))->toBeTrue();
+        ->and($records->every(fn ($r) => ! str_starts_with($r['comment'], 'falak:site:')))->toBeTrue();
 
     SiteDeleted::dispatch($site->id, $this->org, $site->slug, [$this->web1->id]);
 
     expect($this->cf->recordsOf($this->zoneId))->toBe([]);
 });
 
-it('moves the records Kiln created for a compose site to the imported domain row in place', function () {
+it('moves the records Falak created for a compose site to the imported domain row in place', function () {
     cf_connect($this);
     $site = edge_site($this->sites, $this->org, [$this->web1->id], [
         'id' => strtolower((string) Str::ulid()), 'slug' => 'draw', 'runtime' => SiteRuntime::Compose,
         'compose' => new ComposeConfig(ComposeSource::Inline, null, [new PublicService('web', 80, null, 3000), new PublicService('api', 9000, 'api.example.com', 3001)]),
     ]);
-    // Before per-service domains: the name was the site's (records tagged kiln:site:<id>).
+    // Before per-service domains: the name was the site's (records tagged falak:site:<id>).
     app(CloudflareDns::class)->syncSite($site->id);
     $before = collect($this->cf->recordsOf($this->zoneId));
-    expect($before)->toHaveCount(2)->and($before->every(fn ($r) => str_starts_with($r['comment'], "kiln:site:{$site->id}")))->toBeTrue();
+    expect($before)->toHaveCount(2)->and($before->every(fn ($r) => str_starts_with($r['comment'], "falak:site:{$site->id}")))->toBeTrue();
 
     app(ComposeServiceDomains::class)->import($site->id);
     app(CloudflareDns::class)->syncSite($site->id);
@@ -286,7 +286,7 @@ it('moves the records Kiln created for a compose site to the imported domain row
     expect($domain->compose_service)->toBe('api')
         // Same Cloudflare records (ids kept), now tagged with the domain row.
         ->and($after->pluck('id')->sort()->values()->all())->toBe($before->pluck('id')->sort()->values()->all())
-        ->and($after->every(fn ($r) => str_starts_with($r['comment'], "kiln:{$domain->id}")))->toBeTrue()
+        ->and($after->every(fn ($r) => str_starts_with($r['comment'], "falak:{$domain->id}")))->toBeTrue()
         ->and(DnsRecord::query()->where('site_id', $site->id)->count())->toBe(0);
 });
 
@@ -349,7 +349,7 @@ it('sets a domain’s cache mode with Cache Rules, keeping the zone’s other ru
 
     $controls->setCacheMode($domain, 'everything');
     $rules = $this->cf->cacheRules[$this->zoneId];
-    expect(array_column($rules, 'description'))->toBe(['their rule', "kiln:cache:{$domain->id} shop.example.com"])
+    expect(array_column($rules, 'description'))->toBe(['their rule', "falak:cache:{$domain->id} shop.example.com"])
         ->and($rules[1]['expression'])->toBe('(http.host in {"shop.example.com" "www.shop.example.com"})')
         ->and($rules[1]['action_parameters']['cache'])->toBeTrue()
         ->and($rules[1]['action_parameters']['edge_ttl']['mode'])->toBe('override_origin');

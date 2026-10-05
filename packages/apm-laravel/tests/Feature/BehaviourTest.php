@@ -3,9 +3,9 @@
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
-use Kiln\Apm\Recorder;
-use Kiln\Apm\Span;
-use Kiln\Apm\Transport\SocketTransport;
+use Falak\Apm\Recorder;
+use Falak\Apm\Span;
+use Falak\Apm\Transport\SocketTransport;
 
 beforeEach(function () {
     Route::get('/work', function () {
@@ -28,13 +28,13 @@ it('redacts cache keys, sensitive attributes and applies custom callbacks', func
 
     $this->get('/work', ['X-Api-Token' => 'secret-value']);
 
-    $keys = collect($this->transport->spansOfType('cache'))->map(fn ($s) => $s['attrs']['kiln.cache.key'])->all();
+    $keys = collect($this->transport->spansOfType('cache'))->map(fn ($s) => $s['attrs']['falak.cache.key'])->all();
     expect($keys)->toBe(['[redacted]', 'users:42'])
         ->and($this->transport->spansOfType('request')[0]['attrs']['client.address'])->toBe('0.0.0.0');
 });
 
 it('samples whole traces by root type rate', function () {
-    config()->set('kiln-apm.sample_rates.request', 0.0);
+    config()->set('falak-apm.sample_rates.request', 0.0);
     $this->app->forgetInstance(Recorder::class);
     $recorder = $this->app->make(Recorder::class);
     $recorder->beginTrace('request', 'GET /', Span::KIND_SERVER);
@@ -49,13 +49,13 @@ it('samples child spans by event type rate', function () {
     $recorder = new Recorder(
         ['sample_rates' => ['query' => 0.0]] ,
         $this->transport,
-        new \Kiln\Apm\Otlp\Encoder([]),
-        new \Kiln\Apm\Redactor,
+        new \Falak\Apm\Otlp\Encoder([]),
+        new \Falak\Apm\Redactor,
     );
 
     $recorder->beginTrace('request', 'GET /', Span::KIND_SERVER);
     $recorder->record('query', 'sqlite', Span::KIND_CLIENT, 1, 2, ['db.query.text' => 'select 1']);
-    $recorder->record('cache', 'cache hit', Span::KIND_INTERNAL, 1, 2, ['kiln.cache.op' => 'hit']);
+    $recorder->record('cache', 'cache hit', Span::KIND_INTERNAL, 1, 2, ['falak.cache.op' => 'hit']);
     $recorder->endTrace();
     $recorder->flush();
 
@@ -68,8 +68,8 @@ it('respects per-type toggles and max spans per trace', function () {
     $recorder = new Recorder(
         ['events' => ['cache' => false], 'max_spans_per_trace' => 3],
         $this->transport,
-        new \Kiln\Apm\Otlp\Encoder([]),
-        new \Kiln\Apm\Redactor,
+        new \Falak\Apm\Otlp\Encoder([]),
+        new \Falak\Apm\Redactor,
     );
 
     $recorder->beginTrace('request', 'GET /', Span::KIND_SERVER);
@@ -85,12 +85,12 @@ it('respects per-type toggles and max spans per trace', function () {
     $root = $this->transport->spansOfType('request')[0];
     expect($this->transport->spansOfType('cache'))->toBe([])
         ->and($this->transport->spansOfType('query'))->toHaveCount(3)
-        ->and($root['attrs']['kiln.trace.dropped_spans'])->toBe(7);
+        ->and($root['attrs']['falak.trace.dropped_spans'])->toBe(7);
 });
 
 it('never throws when the agent is unreachable', function () {
-    $this->app->instance(\Kiln\Apm\Transport\Transport::class, $transport = new SocketTransport(['unix:/nonexistent/kiln.sock', 'http://127.0.0.1:1'], 0.25));
-    $recorder = new Recorder([], $transport, new \Kiln\Apm\Otlp\Encoder([]), new \Kiln\Apm\Redactor);
+    $this->app->instance(\Falak\Apm\Transport\Transport::class, $transport = new SocketTransport(['unix:/nonexistent/falak.sock', 'http://127.0.0.1:1'], 0.25));
+    $recorder = new Recorder([], $transport, new \Falak\Apm\Otlp\Encoder([]), new \Falak\Apm\Redactor);
 
     $recorder->beginTrace('request', 'GET /', Span::KIND_SERVER);
     $recorder->recordLog('info', 'hello');
@@ -109,7 +109,7 @@ it('keeps serving requests when the transport is unreachable', function () {
     // The default test env points at a missing socket with no fallback; swap in the real transport.
     $recorder = $this->recorder();
     $prop = new ReflectionProperty($recorder, 'transport');
-    $prop->setValue($recorder, new SocketTransport(['unix:/nonexistent/kiln.sock'], 0.25));
+    $prop->setValue($recorder, new SocketTransport(['unix:/nonexistent/falak.sock'], 0.25));
 
     $this->get('/work')->assertOk()->assertSee('ok');
 });
@@ -141,7 +141,7 @@ it('flushes on Octane request termination', function () {
 });
 
 it('does nothing when disabled', function () {
-    $recorder = new Recorder(['enabled' => false], $this->transport, new \Kiln\Apm\Otlp\Encoder([]), new \Kiln\Apm\Redactor);
+    $recorder = new Recorder(['enabled' => false], $this->transport, new \Falak\Apm\Otlp\Encoder([]), new \Falak\Apm\Redactor);
     $recorder->beginTrace('request', 'GET /', Span::KIND_SERVER);
     $recorder->record('query', 'q', Span::KIND_CLIENT, 1, 2, []);
     $recorder->recordLog('error', 'x');

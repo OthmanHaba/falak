@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Builds\Contracts\Data;
+namespace Falak\Builds\Contracts\Data;
 
 /**
  * A release tarball, shaped like deploy.fetch `artifact`. The URL is a short-lived bearer credential.

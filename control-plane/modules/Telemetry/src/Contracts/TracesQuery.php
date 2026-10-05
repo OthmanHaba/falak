@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Telemetry\Contracts;
+namespace Falak\Telemetry\Contracts;
 
 use DateTimeInterface;
-use Kiln\Telemetry\Contracts\Data\Trace;
-use Kiln\Telemetry\Contracts\Data\TraceSummary;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
-use Kiln\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Falak\Telemetry\Contracts\Data\Trace;
+use Falak\Telemetry\Contracts\Data\TraceSummary;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 
 /**
  * Tempo client: trace by id and TraceQL search.

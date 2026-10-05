@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Templates\Tests\Support;
+namespace Falak\Templates\Tests\Support;
 
-use Kiln\Templates\Application\Import\HostResolver;
+use Falak\Templates\Application\Import\HostResolver;
 
 final class FakeHostResolver implements HostResolver
 {

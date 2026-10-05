@@ -15,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 const (
@@ -115,10 +115,10 @@ func fetch(t *testing.T, d *Deployer, srv *httptest.Server, arts map[string][]by
 
 func TestReleaseLifecycle(t *testing.T) {
 	d, fake, pr, srv, arts := newDeployer(t)
-	root := d.o.FS.P("/srv/kiln/sites/shop")
+	root := d.o.FS.P("/srv/falak/sites/shop")
 
 	res := fetch(t, d, srv, arts, r1, "v1")
-	if !res.Changed || res.ReleaseDir != "/srv/kiln/sites/shop/releases/"+r1 {
+	if !res.Changed || res.ReleaseDir != "/srv/falak/sites/shop/releases/"+r1 {
 		t.Fatalf("%+v", res)
 	}
 	if b, _ := os.ReadFile(filepath.Join(root, "releases", r1, "public/index.php")); !strings.Contains(string(b), "v1") {
@@ -160,21 +160,21 @@ func TestReleaseLifecycle(t *testing.T) {
 		t.Fatal("second prepare should be unchanged")
 	}
 
-	// Hook gets KILN_* env and runs in the release dir.
+	// Hook gets FALAK_* env and runs in the release dir.
 	fake.On("/bin/bash", runner.Result{ExitCode: 0, Stdout: []byte("migrated\n")})
 	c := &commands.Collector{}
-	if _, err := d.Hook(context.Background(), HookPayload{Site: "shop", ReleaseID: r1, Name: "migrate", Script: "$KILN_PHP_BINARY artisan migrate --force", User: "shop",
+	if _, err := d.Hook(context.Background(), HookPayload{Site: "shop", ReleaseID: r1, Name: "migrate", Script: "$FALAK_PHP_BINARY artisan migrate --force", User: "shop",
 		Env: map[string]string{"APP_ENV": "production"}, Context: &Context{DeploymentID: "D1", Commit: "abc", PHPBinary: "/usr/bin/php8.4"}}, commands.NewTestStream("h", c)); err != nil {
 		t.Fatal(err)
 	}
 	call := fake.Calls()[0]
 	env := strings.Join(call.Env, "\n")
-	for _, want := range []string{"KILN_RELEASE_DIR=/srv/kiln/sites/shop/releases/" + r1, "KILN_COMMIT=abc", "KILN_PHP_BINARY=/usr/bin/php8.4", "KILN_DEPLOYMENT_ID=D1", "APP_ENV=production", "KILN_HOOK=migrate", "KILN_FETCH=:"} {
+	for _, want := range []string{"FALAK_RELEASE_DIR=/srv/falak/sites/shop/releases/" + r1, "FALAK_COMMIT=abc", "FALAK_PHP_BINARY=/usr/bin/php8.4", "FALAK_DEPLOYMENT_ID=D1", "APP_ENV=production", "FALAK_HOOK=migrate", "FALAK_FETCH=:"} {
 		if !strings.Contains(env, want) {
 			t.Errorf("hook env missing %s", want)
 		}
 	}
-	if call.User != "shop" || call.Dir != filepath.Join(root, "releases", r1) || call.Args[len(call.Args)-1] != "$KILN_PHP_BINARY artisan migrate --force" {
+	if call.User != "shop" || call.Dir != filepath.Join(root, "releases", r1) || call.Args[len(call.Args)-1] != "$FALAK_PHP_BINARY artisan migrate --force" {
 		t.Fatalf("hook call %+v", call)
 	}
 	// Failing hook → ExitError with the script's code.
@@ -266,7 +266,7 @@ func TestFetchRejectsBadArtifacts(t *testing.T) {
 			t.Errorf("%s: expected error", name)
 		}
 	}
-	if _, err := os.Stat(d.o.FS.P("/srv/kiln/sites/shop/releases/" + r1)); err == nil {
+	if _, err := os.Stat(d.o.FS.P("/srv/falak/sites/shop/releases/" + r1)); err == nil {
 		t.Fatal("failed fetch left a release dir behind")
 	}
 }
@@ -295,7 +295,7 @@ func TestExtractRejectsTraversal(t *testing.T) {
 
 func TestPrepareMakesSharedStorageGroupWritableAllTheWayDown(t *testing.T) {
 	d, _, _, srv, arts := newDeployer(t)
-	root := d.o.FS.P("/srv/kiln/sites/shop")
+	root := d.o.FS.P("/srv/falak/sites/shop")
 	fetch(t, d, srv, arts, r1, "v1")
 	// Builder tarballs normalise modes to 0755/0644: nested storage dirs start out not group-writable.
 	nested := filepath.Join(root, "releases", r1, "storage", "framework", "views")
@@ -328,7 +328,7 @@ func TestPrepareRefusesWritableDirsThatEscapeTheSite(t *testing.T) {
 	d, _, _, srv, arts := newDeployer(t)
 	fetch(t, d, srv, arts, r1, "v1")
 	outside := t.TempDir()
-	link := filepath.Join(d.o.FS.P("/srv/kiln/sites/shop"), "releases", r1, "escape")
+	link := filepath.Join(d.o.FS.P("/srv/falak/sites/shop"), "releases", r1, "escape")
 	if err := os.Symlink(outside, link); err != nil {
 		t.Fatal(err)
 	}

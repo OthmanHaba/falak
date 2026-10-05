@@ -1,13 +1,13 @@
-import { Button } from '@/components/kiln/button';
-import { DataTable } from '@/components/kiln/data-table';
-import { Dialog } from '@/components/kiln/dialog';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Section } from '@/components/kiln/section';
-import { Select } from '@/components/kiln/select';
-import { Switch } from '@/components/kiln/switch';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { DataTable } from '@/components/falak/data-table';
+import { Dialog } from '@/components/falak/dialog';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Section } from '@/components/falak/section';
+import { Select } from '@/components/falak/select';
+import { Switch } from '@/components/falak/switch';
+import { Tag } from '@/components/falak/tag';
 import ObservabilityLayout from '@/layouts/observability-layout';
 import { Link, router, useForm } from '@inertiajs/react';
 import { ArrowLeft, Gauge, Pencil, Plus, Trash2 } from 'lucide-react';
@@ -166,7 +166,7 @@ export default function Settings({ site, thresholds, heartbeats, eventTypes, met
         >
             <Section
                 title="Performance thresholds"
-                description="When a route, job, query, command, scheduled task or outgoing request exceeds its threshold over the window, Kiln opens a performance issue and alerts through your alert rules."
+                description="When a route, job, query, command, scheduled task or outgoing request exceeds its threshold over the window, Falak opens a performance issue and alerts through your alert rules."
                 aside={
                     can.manage && (
                         <Button size="sm" variant="primary" icon={<Plus />} onClick={() => setEditing('new')}>

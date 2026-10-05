@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Identity\Http\Controllers\Auth;
+namespace Falak\Identity\Http\Controllers\Auth;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -8,10 +8,10 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Application\Registration;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Identity\Http\Requests\Auth\LoginRequest;
-use Kiln\Kernel\Http\Controller;
+use Falak\Identity\Application\Registration;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Http\Requests\Auth\LoginRequest;
+use Falak\Kernel\Http\Controller;
 
 class AuthenticatedSessionController extends Controller
 {

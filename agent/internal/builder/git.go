@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // gitEnv returns the environment for git: no prompts, deploy key via GIT_SSH_COMMAND, HTTPS token via

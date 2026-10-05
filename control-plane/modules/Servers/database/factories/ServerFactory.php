@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Servers\Database\Factories;
+namespace Falak\Servers\Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Stack\Stack;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Stack\Stack;
 
 /**
  * @extends Factory<Server>

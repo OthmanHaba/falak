@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Terminal\Application\Listeners;
+namespace Falak\Terminal\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
-use Kiln\Fleet\Events\CommandFailed;
-use Kiln\Fleet\Events\CommandFinished;
-use Kiln\Terminal\Application\SessionTransitions;
-use Kiln\Terminal\Domain\Models\TerminalSession;
+use Falak\Fleet\Events\CommandFailed;
+use Falak\Fleet\Events\CommandFinished;
+use Falak\Terminal\Application\SessionTransitions;
+use Falak\Terminal\Domain\Models\TerminalSession;
 
 /**
  * The terminal.open command ended: the shell exited, the agent closed it (idle / timeout / close request),

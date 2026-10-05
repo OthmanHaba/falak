@@ -1,22 +1,22 @@
 <?php
 
-namespace Kiln\Providers\Http\Controllers;
+namespace Falak\Providers\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Providers\Application\Actions\AddCredential;
-use Kiln\Providers\Application\Actions\RemoveCredential;
-use Kiln\Providers\Application\Actions\UpdateCredential;
-use Kiln\Providers\Application\Actions\VerifyCredential;
-use Kiln\Providers\Contracts\ProviderType;
-use Kiln\Providers\Domain\CredentialFields;
-use Kiln\Providers\Domain\Models\ProviderCredential;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\Providers\Application\Actions\AddCredential;
+use Falak\Providers\Application\Actions\RemoveCredential;
+use Falak\Providers\Application\Actions\UpdateCredential;
+use Falak\Providers\Application\Actions\VerifyCredential;
+use Falak\Providers\Contracts\ProviderType;
+use Falak\Providers\Domain\CredentialFields;
+use Falak\Providers\Domain\Models\ProviderCredential;
 
 final class ProviderCredentialController extends Controller
 {

@@ -216,7 +216,7 @@ return [
         'production' => [
             'supervisor-1' => [
                 // Sized for the single-host install (deploy/compose.yml, 4 GB VPS): each worker is ~40-60 MB.
-                'maxProcesses' => (int) env('KILN_HORIZON_MAX_PROCESSES', 4),
+                'maxProcesses' => (int) env('FALAK_HORIZON_MAX_PROCESSES', 4),
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],

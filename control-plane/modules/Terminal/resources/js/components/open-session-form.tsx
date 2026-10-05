@@ -1,7 +1,7 @@
-import { Button } from '@/components/kiln/button';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { Select } from '@/components/kiln/select';
+import { Button } from '@/components/falak/button';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { Select } from '@/components/falak/select';
 import { useForm } from '@inertiajs/react';
 import { SquareTerminal } from 'lucide-react';
 import { type FormEventHandler } from 'react';

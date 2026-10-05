@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 // watchHost adds what RedisCheck asks systemd on top of newRedisHost: ActiveState (failed once a unit has no process)
@@ -38,15 +38,15 @@ func writeWireGuardConf(t *testing.T, root, iface, header string) {
 	os.WriteFile(p, []byte(header+"\n[Interface]\n"), 0o600)
 }
 
-func TestRedisBootDropInOrdersAfterDockerAndKilnWireGuard(t *testing.T) {
+func TestRedisBootDropInOrdersAfterDockerAndFalakWireGuard(t *testing.T) {
 	f, db, root, _ := watchHost(t)
 	hostInterfaces(t, root, true)
-	writeWireGuardConf(t, root, "wg-a1b2c3d4", "# Managed by Kiln (net.wireguard.apply) — do not edit")
+	writeWireGuardConf(t, root, "wg-a1b2c3d4", "# Managed by Falak (net.wireguard.apply) — do not edit")
 	writeWireGuardConf(t, root, "wg0", "# someone else's tunnel")
 	p := redisPayload()
 	applyOK(t, db, p)
 	boot := func() string {
-		b, _ := os.ReadFile(filepath.Join(root, "/etc/systemd/system/redis-server@kiln-cache.service.d/40-kiln-boot.conf"))
+		b, _ := os.ReadFile(filepath.Join(root, "/etc/systemd/system/redis-server@falak-cache.service.d/40-falak-boot.conf"))
 		return string(b)
 	}
 	for _, want := range []string{"[Unit]\nWants=network-online.target\nAfter=network-online.target docker.service wg-quick@wg-a1b2c3d4.service\nStartLimitIntervalSec=10min\nStartLimitBurst=150\n",
@@ -58,13 +58,13 @@ func TestRedisBootDropInOrdersAfterDockerAndKilnWireGuard(t *testing.T) {
 	if strings.Contains(boot(), "wg0") {
 		t.Fatal(boot())
 	}
-	main, _ := os.ReadFile(filepath.Join(root, "/etc/systemd/system/redis-server@kiln-cache.service.d/50-kiln.conf"))
+	main, _ := os.ReadFile(filepath.Join(root, "/etc/systemd/system/redis-server@falak-cache.service.d/50-falak.conf"))
 	if strings.Contains(string(main), "After=") || strings.Contains(string(main), "RestartSec") {
 		t.Fatalf("ordering belongs in the boot drop-in only:\n%s", main)
 	}
 
 	// A private network added later: the next apply rewrites the ordering and reloads systemd, without a restart.
-	writeWireGuardConf(t, root, "wg-e5f6a7b8", "# Managed by Kiln (net.wireguard.apply) — do not edit")
+	writeWireGuardConf(t, root, "wg-e5f6a7b8", "# Managed by Falak (net.wireguard.apply) — do not edit")
 	f.Reset()
 	if r := applyOK(t, db, p); r.Changed || r.Restarted {
 		t.Fatalf("%+v %v", r, f.Lines())
@@ -86,7 +86,7 @@ func TestRedisNotListeningParsesSS(t *testing.T) {
 	db, _ := newDB(t, f, nil)
 	f.On("ss -H -ltn sport = :6380", runner.Result{Stdout: []byte(
 		"LISTEN 0 511 127.0.0.1:6380 0.0.0.0:*\n" +
-			"LISTEN 0 511 10.90.0.3%wg-kiln:6380 0.0.0.0:*\n" +
+			"LISTEN 0 511 10.90.0.3%wg-falak:6380 0.0.0.0:*\n" +
 			"LISTEN 0 511 [::1]:6380 [::]:*\n" +
 			"LISTEN 0 511 10.0.1.5:63800 0.0.0.0:*\n")})
 	missing, err := db.notListening(context.Background(), 6380, []string{"127.0.0.1", "10.90.0.3", "::1", "10.0.1.5", "172.17.0.1"})
@@ -111,7 +111,7 @@ func TestRedisApplyRestartsAnInstanceMissingAnAddress(t *testing.T) {
 	p := redisPayload()
 	p.Bind = []string{"10.90.0.3"}
 	applyOK(t, db, p)
-	proc := func() *fakeProc { return h.procs["redis-server@kiln-cache.service"] }
+	proc := func() *fakeProc { return h.procs["redis-server@falak-cache.service"] }
 	proc().bind = []string{"127.0.0.1"}
 	h.redisCmds = nil
 	if r := applyOK(t, db, p); !r.Restarted {
@@ -144,7 +144,7 @@ func TestRedisCheckRestartsAnInstanceOnceItsAddressExists(t *testing.T) {
 	p := redisPayload()
 	p.Bind, p.Containers = []string{"10.90.0.3"}, true
 	applyOK(t, db, p)
-	unit := "redis-server@kiln-cache.service"
+	unit := "redis-server@falak-cache.service"
 	proc := func() *fakeProc { return h.procs[unit] }
 	starts := func() int {
 		n := 0
@@ -168,7 +168,7 @@ func TestRedisCheckRestartsAnInstanceOnceItsAddressExists(t *testing.T) {
 
 	// After a reboot docker0 came up late and Redis 6.0 started without it. While docker0 is still missing nothing can
 	// be done; once it is there the instance is restarted, its data kept.
-	fakeInterfaces(t, iface("lo", "127.0.0.1"), iface("wg-kiln", "10.90.0.3"))
+	fakeInterfaces(t, iface("lo", "127.0.0.1"), iface("wg-falak", "10.90.0.3"))
 	proc().bind = []string{"127.0.0.1", "10.90.0.3"}
 	if check() != 0 {
 		t.Fatal(f.Lines())
@@ -196,7 +196,7 @@ func TestRedisCheckRestartsAnInstanceOnceItsAddressExists(t *testing.T) {
 	if check() != 0 {
 		t.Fatal("restarted again at once")
 	}
-	fakeInterfaces(t, iface("lo", "127.0.0.1"), iface("wg-kiln", "10.90.0.3"), iface("docker0", "172.17.0.1"), iface("veth1a2b", "169.254.1.1"))
+	fakeInterfaces(t, iface("lo", "127.0.0.1"), iface("wg-falak", "10.90.0.3"), iface("docker0", "172.17.0.1"), iface("veth1a2b", "169.254.1.1"))
 	if check() != 0 {
 		t.Fatal("a new veth is no reason to restart")
 	}
@@ -254,7 +254,7 @@ func TestRedisCheckSkipsAnInstanceWithoutItsDropIn(t *testing.T) {
 	f, db, root, _ := watchHost(t)
 	hostInterfaces(t, root, true)
 	applyOK(t, db, redisPayload())
-	dir := filepath.Join(root, "/etc/systemd/system/redis-server@kiln-cache.service.d")
+	dir := filepath.Join(root, "/etc/systemd/system/redis-server@falak-cache.service.d")
 	os.RemoveAll(dir)
 	f.Reset()
 	db.RedisCheck(context.Background())
@@ -269,7 +269,7 @@ func TestRedisCheckLeavesBusyAndHalfAppliedInstancesAlone(t *testing.T) {
 	p := redisPayload()
 	p.Bind = []string{"10.90.0.3"}
 	applyOK(t, db, p)
-	unit := "redis-server@kiln-cache.service"
+	unit := "redis-server@falak-cache.service"
 	h.procs[unit].bind = []string{"127.0.0.1"}
 	k, _ := kvEngineFor("redis")
 
@@ -286,7 +286,7 @@ func TestRedisCheckLeavesBusyAndHalfAppliedInstancesAlone(t *testing.T) {
 	}
 
 	// The running process doesn't use the file on disk (an apply stopped half way): its redelivery restarts it.
-	conf := filepath.Join(root, "/etc/kiln-redis/cache.conf")
+	conf := filepath.Join(root, "/etc/falak-redis/cache.conf")
 	b, _ := os.ReadFile(conf)
 	os.WriteFile(conf, append(b, []byte("# changed\n")...), 0o640)
 	f.Reset()

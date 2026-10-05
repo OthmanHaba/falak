@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Projects\Application\Actions;
+namespace Falak\Projects\Application\Actions;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Projects\Domain\Models\Service;
+use Falak\Projects\Domain\Models\Service;
 
 /**
  * Rename a canvas service (its display name and the handle `${{ name.KEY }}` references use). The site /

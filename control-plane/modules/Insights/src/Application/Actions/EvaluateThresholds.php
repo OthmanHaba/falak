@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Insights\Application\Actions;
+namespace Falak\Insights\Application\Actions;
 
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
-use Kiln\Insights\Application\IssueTracker;
-use Kiln\Insights\Contracts\IssueKind;
-use Kiln\Insights\Domain\Enums\ThresholdMetric;
-use Kiln\Insights\Domain\Models\Threshold;
-use Kiln\Insights\Events\ThresholdBreached;
+use Falak\Insights\Application\IssueTracker;
+use Falak\Insights\Contracts\IssueKind;
+use Falak\Insights\Domain\Enums\ThresholdMetric;
+use Falak\Insights\Domain\Models\Threshold;
+use Falak\Insights\Events\ThresholdBreached;
 
 /**
  * Evaluates every enabled threshold over its window of complete minutes. p95 over a window is the

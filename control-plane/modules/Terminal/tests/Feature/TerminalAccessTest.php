@@ -1,13 +1,13 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\Terminal\Domain\Models\TerminalFrame;
-use Kiln\Terminal\Events\TerminalOutput;
-use Kiln\Terminal\Events\TerminalSessionUpdated;
-use Kiln\Terminal\Http\Channels\TerminalSessionChannel;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Terminal\Domain\Models\TerminalFrame;
+use Falak\Terminal\Events\TerminalOutput;
+use Falak\Terminal\Events\TerminalSessionUpdated;
+use Falak\Terminal\Http\Channels\TerminalSessionChannel;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Support\FakeAgentGateway;
 

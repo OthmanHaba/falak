@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scripted test for the registry host check in the edge entrypoint: KILN_REGISTRY_HOST / _ALIASES are rendered into
+# Scripted test for the registry host check in the edge entrypoint: FALAK_REGISTRY_HOST / _ALIASES are rendered into
 # the Caddyfile, so only DNS names (comma-separated for aliases) pass. Runs valid_hosts under sh; Docker not needed.
 #   deploy/tests/edge-registry-hosts.sh
 set -euo pipefail
@@ -13,7 +13,7 @@ fn="$(sed -n '/^valid_hosts() {/,/^}/p' "$here/../edge/entrypoint.sh")"
 check() { sh -c "$fn"'
 valid_hosts "$1"' sh "$1"; }
 
-for good in registry.kiln.example.com registry-1.example.co.uk localhost 'registry.old.example.com,registry.older.example.com' 'a.example.com,b.example.com,c.example.com'; do
+for good in registry.falak.example.com registry-1.example.co.uk localhost 'registry.old.example.com,registry.older.example.com' 'a.example.com,b.example.com,c.example.com'; do
   check "$good" || fail "rejected: $good"
 done
 pass "host names and comma-separated aliases pass"
@@ -29,7 +29,7 @@ pass "Caddy syntax, spaces, wildcards, ports, IP literals and malformed names ar
 
 # The entrypoint refuses to start with such a value (before anything is rendered).
 # shellcheck disable=SC2016  # literal source text
-grep -q 'valid_hosts "$KILN_REGISTRY_HOST"' "$here/../edge/entrypoint.sh" || fail "KILN_REGISTRY_HOST is not checked"
+grep -q 'valid_hosts "$FALAK_REGISTRY_HOST"' "$here/../edge/entrypoint.sh" || fail "FALAK_REGISTRY_HOST is not checked"
 # shellcheck disable=SC2016  # literal source text
-grep -q 'valid_hosts "$KILN_REGISTRY_HOST_ALIASES"' "$here/../edge/entrypoint.sh" || fail "KILN_REGISTRY_HOST_ALIASES is not checked"
+grep -q 'valid_hosts "$FALAK_REGISTRY_HOST_ALIASES"' "$here/../edge/entrypoint.sh" || fail "FALAK_REGISTRY_HOST_ALIASES is not checked"
 pass "the entrypoint checks both values"

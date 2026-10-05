@@ -3,7 +3,7 @@
 namespace Tests\Feature;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Kiln\Identity\Domain\Models\User;
+use Falak\Identity\Domain\Models\User;
 use Tests\TestCase;
 
 class DashboardTest extends TestCase

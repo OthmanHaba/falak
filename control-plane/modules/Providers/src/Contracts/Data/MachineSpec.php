@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Providers\Contracts\Data;
+namespace Falak\Providers\Contracts\Data;
 
 final readonly class MachineSpec
 {
     /**
      * @param  list<string>  $sshKeyIds  provider-side key ids (from ProviderAdapter::uploadSshKey)
-     * @param  array<string, string>  $labels  e.g. ['kiln-server' => '<ulid>'] (sanitized per provider)
-     * @param  ?string  $userData  cloud-init user data (the kiln-agent install script)
+     * @param  array<string, string>  $labels  e.g. ['falak-server' => '<ulid>'] (sanitized per provider)
+     * @param  ?string  $userData  cloud-init user data (the falak-agent install script)
      */
     public function __construct(
         public string $name,

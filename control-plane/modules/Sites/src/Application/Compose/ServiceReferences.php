@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Sites\Application\Compose;
+namespace Falak\Sites\Application\Compose;
 
-use Kiln\Sites\Contracts\Data\ComposeRewrites;
+use Falak\Sites\Contracts\Data\ComposeRewrites;
 
 /**
  * Which variables of a compose stack point at one of its services (the service's name is its hostname on the
- * stack's network), and what they become once that service runs as a Kiln service. Templates use placeholders filled
+ * stack's network), and what they become once that service runs as a Falak service. Templates use placeholders filled
  * in at render time (EloquentComposeServiceExtraction::rewrites): `{ref:KEY}` → `${{ <database>.KEY }}`, `{url}` /
  * `{host}` → the split-out site's address.
  *
@@ -17,14 +17,14 @@ use Kiln\Sites\Contracts\Data\ComposeRewrites;
  * - database only: in a group that points at the database, its companion keys (DB_/DATABASE_/POSTGRES_/PG/MYSQL_/
  *   MARIADB_ prefixed …PORT, …USER(NAME), …PASS(WORD), …DB/DATABASE/NAME) → DB_PORT, DB_USERNAME, DB_PASSWORD,
  *   DB_DATABASE.
- * - cache (a Redis / Valkey service becoming a Kiln instance): `redis://[…@]<service>[:port]` anywhere in a value →
+ * - cache (a Redis / Valkey service becoming a Falak instance): `redis://[…@]<service>[:port]` anywhere in a value →
  *   REDIS_URL (credentials included; a database path like `/1` is kept), `<service>:<port>` → REDIS_HOST:REDIS_PORT
  *   where it is an address (after `//` or `@`, or a whole item of the value under a host-like key or with a port of
  *   1024+: `IMAGE=redis:7` is not one), the bare name under a host-like key → REDIS_HOST; REDIS_/VALKEY_ prefixed
  *   …PORT and …PASS(WORD) → REDIS_PORT, REDIS_PASSWORD when a key of their own prefix (REDIS_QUEUE_PORT:
  *   REDIS_QUEUE_HOST / _URL …) points at the service, and a REDIS_HOST without REDIS_PORT / REDIS_PASSWORD next to it
  *   gains them (instances listen on 6380+ and always have a password; clients default to 6379 and none).
- *   `rediss://` / `valkeys://` (TLS) values are left alone (Kiln instances have no TLS): tlsReferences() lists them.
+ *   `rediss://` / `valkeys://` (TLS) values are left alone (Falak instances have no TLS): tlsReferences() lists them.
  */
 final class ServiceReferences
 {
@@ -322,7 +322,7 @@ final class ServiceReferences
     }
 
     /**
-     * The variables that reach the Redis / Valkey service over TLS (`rediss://`, `valkeys://`): a Kiln instance has no
+     * The variables that reach the Redis / Valkey service over TLS (`rediss://`, `valkeys://`): a Falak instance has no
      * TLS, so they keep pointing at the service and need changing by hand.
      *
      * @param  array<string, mixed>  $document  the parsed compose file

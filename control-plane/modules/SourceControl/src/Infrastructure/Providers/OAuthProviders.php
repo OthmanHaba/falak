@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\Providers;
+namespace Falak\SourceControl\Infrastructure\Providers;
 
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Contracts\ProviderType;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Contracts\ProviderType;
 
 /**
  * OAuth 2 authorization-code flows for GitHub (OAuth app), GitLab and Bitbucket Cloud.

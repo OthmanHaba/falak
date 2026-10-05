@@ -1,5 +1,5 @@
-import { LogViewer, type LogLine } from '@/components/kiln/log-viewer';
-import { StatusBadge } from '@/components/kiln/status';
+import { LogViewer, type LogLine } from '@/components/falak/log-viewer';
+import { StatusBadge } from '@/components/falak/status';
 import { useEchoChannel } from '@/hooks/use-echo-channel';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 

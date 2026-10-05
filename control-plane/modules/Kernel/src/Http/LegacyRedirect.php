@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Kernel\Http;
+namespace Falak\Kernel\Http;
 
 use Closure;
 use Illuminate\Http\RedirectResponse;

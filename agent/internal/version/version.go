@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-// Version is overridden at build time: -X github.com/kiln/agent/internal/version.Version=v1.2.3
+// Version is overridden at build time: -X github.com/OthmanHaba/falak/agent/internal/version.Version=v1.2.3
 var Version = "dev"
 
 // Features are protocol additions this agent understands, reported in facts ("features"). Agents reject
@@ -21,7 +21,7 @@ var Features = []string{
 	"telemetry.log_kind",
 	// system.upgrade_agent verifies sha256, swaps atomically and reports the running version.
 	"system.upgrade_agent.v2",
-	// fn.release.apply / fn.release.remove / fn.status (Cloud Functions + kiln-fn-gateway), and
+	// fn.release.apply / fn.release.remove / fn.status (Cloud Functions + falak-fn-gateway), and
 	// edge.caddy.apply sites[].request_headers.
 	"fn.v1",
 	// fn.release.apply access (gateway API keys / IP allowlist) and edge.caddy.apply sites[].mounts.
@@ -44,7 +44,7 @@ var Features = []string{
 	// provision.inspect (read-only machine check) and provision.apply components (adopted components are verified,
 	// never installed).
 	"provision.v2",
-	// db.redis.apply / db.redis.remove: Redis and Valkey instances (redis-server@kiln-<name>), facts.runtimes redis /
+	// db.redis.apply / db.redis.remove: Redis and Valkey instances (redis-server@falak-<name>), facts.runtimes redis /
 	// valkey versions.
 	"db.redis",
 	// db.redis.apply containers (listen on docker0's address too; bind addresses limited to loopback, private and

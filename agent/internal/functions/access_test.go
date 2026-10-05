@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/fngateway"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/fngateway"
 )
 
 func TestApplyPassesAccessToTheGateway(t *testing.T) {

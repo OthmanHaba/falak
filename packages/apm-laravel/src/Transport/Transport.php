@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Apm\Transport;
+namespace Falak\Apm\Transport;
 
 interface Transport
 {

@@ -1,7 +1,7 @@
-import { DataTable, type DataTableColumn } from '@/components/kiln/data-table';
-import { type EmptyStateProps } from '@/components/kiln/empty-state';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { Tag } from '@/components/kiln/tag';
+import { DataTable, type DataTableColumn } from '@/components/falak/data-table';
+import { type EmptyStateProps } from '@/components/falak/empty-state';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { Tag } from '@/components/falak/tag';
 import { type SharedData } from '@/types';
 import { Link, router, usePage } from '@inertiajs/react';
 import { Download, Film, Share2, SquareTerminal } from 'lucide-react';

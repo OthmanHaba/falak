@@ -1,10 +1,10 @@
-import { Button } from '@/components/kiln/button';
-import { CodeBlock } from '@/components/kiln/code-block';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { Select } from '@/components/kiln/select';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { CodeBlock } from '@/components/falak/code-block';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { Select } from '@/components/falak/select';
+import { Tag } from '@/components/falak/tag';
 import SettingsLayout from '@/layouts/settings/layout';
 import { cn } from '@/lib/utils';
 import { type Paginated } from '@/types';

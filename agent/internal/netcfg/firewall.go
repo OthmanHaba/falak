@@ -1,4 +1,4 @@
-// Package netcfg implements net.firewall.apply (nftables table inet kiln) and net.wireguard.apply.
+// Package netcfg implements net.firewall.apply (nftables table inet falak) and net.wireguard.apply.
 package netcfg
 
 import (
@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // Deps are the collaborators of the net executors.
@@ -84,14 +84,14 @@ type ContainerPorts struct {
 	Ports    []string `json:"ports"`
 	Sources  []string `json:"sources"`
 	Peers    []string `json:"peers,omitempty"`
-	// PeerInterfaces: the interface a peer arrives on, by address (the control plane knows a Kiln WireGuard
+	// PeerInterfaces: the interface a peer arrives on, by address (the control plane knows a Falak WireGuard
 	// network's, also before the interface exists here). Peers not listed: see peerInterfaces.
 	PeerInterfaces map[string]string `json:"peer_interfaces,omitempty"`
 	Comment        string            `json:"comment"`
 }
 
 // dockerBridges are the interfaces container traffic to the host arrives on: the default bridge and the bridges of
-// user-defined networks (compose projects, kiln-fn). nft matches the trailing * as a wildcard.
+// user-defined networks (compose projects, falak-fn). nft matches the trailing * as a wildcard.
 var dockerBridges = []string{"docker0", "br-*"}
 
 // FirewallResult is its result.
@@ -102,8 +102,8 @@ type FirewallResult struct {
 
 // Paths.
 const (
-	RulesetPath = "/etc/kiln/nftables.conf"
-	UnitPath    = "/etc/systemd/system/kiln-firewall.service"
+	RulesetPath = "/etc/falak/nftables.conf"
+	UnitPath    = "/etc/systemd/system/falak-firewall.service"
 )
 
 var (
@@ -116,7 +116,7 @@ func perr(format string, a ...any) error {
 	return &commands.PayloadError{Err: fmt.Errorf(format, a...)}
 }
 
-// RenderRuleset renders the complete, deterministic nftables script for table inet kiln.
+// RenderRuleset renders the complete, deterministic nftables script for table inet falak.
 // The "declare empty, delete, redefine" preamble makes `nft -f` an atomic full replacement that works
 // whether or not the table exists, and never touches other tables (Docker's, distro defaults).
 func RenderRuleset(p FirewallPayload) (string, error) {
@@ -135,15 +135,15 @@ func RenderRuleset(p FirewallPayload) (string, error) {
 		return "", perr("invalid ssh_port %d", ssh)
 	}
 	var b strings.Builder
-	b.WriteString("#!/usr/sbin/nft -f\n# Managed by Kiln (net.firewall.apply) — do not edit\n")
-	b.WriteString("table inet kiln {}\ndelete table inet kiln\n\ntable inet kiln {\n\tchain input {\n")
+	b.WriteString("#!/usr/sbin/nft -f\n# Managed by Falak (net.firewall.apply) — do not edit\n")
+	b.WriteString("table inet falak {}\ndelete table inet falak\n\ntable inet falak {\n\tchain input {\n")
 	fmt.Fprintf(&b, "\t\ttype filter hook input priority filter; policy %s;\n", policy)
 	b.WriteString("\t\tct state established,related accept\n\t\tct state invalid drop\n\t\tiif \"lo\" accept\n")
 	b.WriteString("\t\ticmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit, nd-router-advert } accept\n")
 	if p.AllowICMP == nil || *p.AllowICMP {
 		b.WriteString("\t\tmeta l4proto { icmp, ipv6-icmp } accept\n")
 	}
-	fmt.Fprintf(&b, "\t\ttcp dport %d accept comment \"kiln:ssh\"\n", ssh)
+	fmt.Fprintf(&b, "\t\ttcp dport %d accept comment \"falak:ssh\"\n", ssh)
 	seen := map[string]bool{}
 	for _, c := range p.ContainerPorts {
 		if !idRe.MatchString(c.ID) {
@@ -285,7 +285,7 @@ func renderRule(r Rule) ([]string, error) {
 		}
 		prefix = "iifname \"" + r.Interface + "\" "
 	}
-	comment := "kiln:" + r.ID
+	comment := "falak:" + r.ID
 	if c := strings.Map(func(c rune) rune {
 		if c == '"' || c == '\\' || c < 0x20 {
 			return -1
@@ -319,9 +319,9 @@ func set(items []string) string {
 }
 
 // FirewallUnit persists the ruleset across reboots.
-const FirewallUnit = `# Managed by Kiln
+const FirewallUnit = `# Managed by Falak
 [Unit]
-Description=Kiln firewall (nftables table inet kiln)
+Description=Falak firewall (nftables table inet falak)
 DefaultDependencies=no
 Wants=network-pre.target
 Before=network-pre.target shutdown.target
@@ -331,8 +331,8 @@ Conflicts=shutdown.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/sbin/nft -f /etc/kiln/nftables.conf
-ExecReload=/usr/sbin/nft -f /etc/kiln/nftables.conf
+ExecStart=/usr/sbin/nft -f /etc/falak/nftables.conf
+ExecReload=/usr/sbin/nft -f /etc/falak/nftables.conf
 
 [Install]
 WantedBy=sysinit.target
@@ -351,7 +351,7 @@ func (n *Net) FirewallApply(ctx context.Context, p FirewallPayload, st commands.
 		return err
 	}
 	cur, _ := n.d.FS.ReadFile(RulesetPath)
-	live, err := n.d.Runner.Run(ctx, runner.Cmd{Name: "nft", Args: []string{"list", "table", "inet", "kiln"}})
+	live, err := n.d.Runner.Run(ctx, runner.Cmd{Name: "nft", Args: []string{"list", "table", "inet", "falak"}})
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +378,7 @@ func (n *Net) FirewallApply(ctx context.Context, p FirewallPayload, st commands.
 		return nil, err
 	}
 	if unitChanged {
-		for _, a := range [][]string{{"daemon-reload"}, {"enable", "kiln-firewall.service"}} {
+		for _, a := range [][]string{{"daemon-reload"}, {"enable", "falak-firewall.service"}} {
 			if _, err := runner.Check(ctx, n.d.Runner, runner.Cmd{Name: "systemctl", Args: a, Stdout: st.Stdout(), Stderr: st.Stderr()}); err != nil {
 				return nil, err
 			}

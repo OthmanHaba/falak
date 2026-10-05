@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Providers\Application\Actions;
+namespace Falak\Providers\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Providers\Domain\Models\ProviderCredential;
-use Kiln\Providers\Events\ProviderCredentialRemoved;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Providers\Domain\Models\ProviderCredential;
+use Falak\Providers\Events\ProviderCredentialRemoved;
 
 final class RemoveCredential
 {

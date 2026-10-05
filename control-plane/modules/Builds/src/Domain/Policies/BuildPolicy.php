@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Builds\Domain\Policies;
+namespace Falak\Builds\Domain\Policies;
 
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Builds\Domain\Models\Build;
-use Kiln\Identity\Contracts\OrganizationAccess;
+use Falak\Builds\Domain\Models\Build;
+use Falak\Identity\Contracts\OrganizationAccess;
 
 final class BuildPolicy
 {

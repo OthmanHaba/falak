@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Projects\Application\Actions;
+namespace Falak\Projects\Application\Actions;
 
-use Kiln\Projects\Domain\Models\Service;
+use Falak\Projects\Domain\Models\Service;
 
 /**
  * Canvas layout of a compose site's group: positions of its compose services (relative to the site card's x/y) and

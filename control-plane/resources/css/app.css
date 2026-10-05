@@ -11,7 +11,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Kiln design tokens (docs/UI_DESIGN.md §2). Raw values live ONLY here as CSS variables; components use the
+ * Falak design tokens (docs/UI_DESIGN.md §2). Raw values live ONLY here as CSS variables; components use the
  * Tailwind utilities generated from @theme below (bg-surface-1, text-fg-muted, border-border, bg-primary ...).
  *
  * Dark is the default (:root); `.light` on <html> switches to the light palette. The server renders the class from
@@ -167,7 +167,7 @@
 
     --ease-out-panel: cubic-bezier(0.2, 0.8, 0.2, 1);
 
-    /* Kiln palette */
+    /* Falak palette */
     --color-bg: var(--bg);
     --color-canvas: var(--bg-canvas);
     --color-grid: var(--grid);
@@ -184,7 +184,7 @@
     --color-group: var(--group-bg);
     --color-group-border: var(--group-border);
 
-    /* `primary` IS the Kiln accent (violet). */
+    /* `primary` IS the Falak accent (violet). */
     --color-primary: var(--accent);
     --color-primary-hover: var(--accent-hover);
     --color-primary-soft: var(--accent-soft);
@@ -207,8 +207,8 @@
     --color-chart-5: var(--chart-5);
 
     /*
-     * Legacy aliases for the pre-redesign pages (components/ui/*, module pages) so they render in the Kiln palette
-     * until each is rebuilt. New code uses the Kiln names above. Note `accent` here is the legacy *hover surface*,
+     * Legacy aliases for the pre-redesign pages (components/ui/*, module pages) so they render in the Falak palette
+     * until each is rebuilt. New code uses the Falak names above. Note `accent` here is the legacy *hover surface*,
      * not the violet accent (that is `primary`).
      */
     --color-background: var(--bg);
@@ -373,19 +373,19 @@
     background-size: 20px 20px;
 }
 
-/* Project canvas (@xyflow/react base.css) in Kiln tokens: dotted grid, dashed derived edges, invisible handles. */
-.kiln-canvas {
+/* Project canvas (@xyflow/react base.css) in Falak tokens: dotted grid, dashed derived edges, invisible handles. */
+.falak-canvas {
     --xy-background-color: var(--bg-canvas);
     --xy-background-pattern-dots-color: var(--grid);
 }
-.kiln-canvas .kiln-edge .react-flow__edge-path {
+.falak-canvas .falak-edge .react-flow__edge-path {
     stroke: var(--text-faint);
     stroke-opacity: 0.55;
     stroke-width: 1.25;
     stroke-dasharray: 4 4;
     transition: stroke 150ms ease-out;
 }
-.kiln-canvas .kiln-handle {
+.falak-canvas .falak-handle {
     width: 1px;
     min-width: 0;
     height: 1px;
@@ -394,7 +394,7 @@
     opacity: 0;
     pointer-events: none;
 }
-.kiln-canvas .react-flow__node:focus-visible {
+.falak-canvas .react-flow__node:focus-visible {
     border-radius: var(--radius-lg);
     outline: 2px solid var(--accent);
     outline-offset: 2px;
@@ -406,17 +406,17 @@
  * (translate left + scale + veil) with a transform transition. Exit animations run through the Web Animations API
  * (panel-stack.tsx). Only transform and opacity animate.
  */
-.kiln-panel {
+.falak-panel {
     --stack-depth: 0;
     transform-origin: 0% 50%;
     transition: transform var(--duration-panel) var(--ease-spring);
     animation: panel-in var(--duration-panel) var(--ease-spring) backwards;
     will-change: transform;
 }
-.kiln-panel[data-depth]:not([data-depth='0']) {
+.falak-panel[data-depth]:not([data-depth='0']) {
     transform: translateX(calc(var(--stack-depth) * -22px)) scale(calc(1 - var(--stack-depth) * 0.028));
 }
-.kiln-panel > .kiln-panel-veil {
+.falak-panel > .falak-panel-veil {
     position: absolute;
     inset: 0;
     z-index: 30;
@@ -426,21 +426,21 @@
     pointer-events: none;
     transition: opacity var(--duration-panel) var(--ease-spring);
 }
-.kiln-panel[data-depth]:not([data-depth='0']) > .kiln-panel-veil {
+.falak-panel[data-depth]:not([data-depth='0']) > .falak-panel-veil {
     opacity: 1;
     pointer-events: auto;
     cursor: pointer;
 }
 @media (prefers-reduced-motion: reduce) {
-    .kiln-panel,
-    .kiln-panel > .kiln-panel-veil {
+    .falak-panel,
+    .falak-panel > .falak-panel-veil {
         animation: none;
         transition: none;
     }
 }
 
 /* Sliding underline of tab lists (tabs.tsx): one bar, moved and scaled with transforms. */
-.kiln-tab-indicator {
+.falak-tab-indicator {
     position: absolute;
     bottom: -1px;
     left: 0;
@@ -456,45 +456,45 @@
 }
 
 /* Canvas cards lift on hover; groups fade their members in / out when expanding / collapsing. */
-.kiln-canvas .react-flow__node-service:hover .kiln-card,
-.kiln-canvas .react-flow__node-child:hover .kiln-card {
+.falak-canvas .react-flow__node-service:hover .falak-card,
+.falak-canvas .react-flow__node-child:hover .falak-card {
     transform: translateY(-1px);
 }
-.kiln-canvas .react-flow__node.dragging .kiln-card {
+.falak-canvas .react-flow__node.dragging .falak-card {
     transform: translateY(-2px) scale(1.01);
 }
-.kiln-canvas .kiln-card {
+.falak-canvas .falak-card {
     transition:
         transform 180ms var(--ease-spring),
         border-color 150ms ease-out,
         box-shadow 180ms ease-out;
 }
-.kiln-canvas .react-flow__node.kiln-leaving {
+.falak-canvas .react-flow__node.falak-leaving {
     opacity: 0;
     transition: opacity 180ms ease-out;
 }
-.kiln-canvas .react-flow__node.kiln-enter > .group\/card {
+.falak-canvas .react-flow__node.falak-enter > .group\/card {
     animation: rise-in 240ms var(--ease-spring) backwards;
 }
-.kiln-canvas .kiln-edge.kiln-edge-active .react-flow__edge-path {
+.falak-canvas .falak-edge.falak-edge-active .react-flow__edge-path {
     stroke: var(--accent);
     stroke-opacity: 0.8;
 }
-.kiln-canvas .react-flow__minimap {
+.falak-canvas .react-flow__minimap {
     background: var(--surface-1);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     overflow: hidden;
 }
-.kiln-canvas .react-flow__nodesselection-rect,
-.kiln-canvas .react-flow__selection {
+.falak-canvas .react-flow__nodesselection-rect,
+.falak-canvas .react-flow__selection {
     background: var(--accent-soft);
     border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
     border-radius: 6px;
 }
 @media (prefers-reduced-motion: reduce) {
-    .kiln-canvas .kiln-card,
-    .kiln-canvas .react-flow__node {
+    .falak-canvas .falak-card,
+    .falak-canvas .react-flow__node {
         animation: none !important;
         transition: none !important;
     }

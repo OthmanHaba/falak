@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Servers\Contracts;
+namespace Falak\Servers\Contracts;
 
-use Kiln\Servers\Contracts\Data\PhpSettings;
-use Kiln\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\Data\PhpSettings;
+use Falak\Servers\Contracts\Data\ServerData;
 
 /**
  * Read-only server lookups for other modules (Sites, Deployments, Databases, Network, ...).

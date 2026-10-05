@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Projects\Application\Canvas;
+namespace Falak\Projects\Application\Canvas;
 
-use Kiln\Projects\Domain\Models\Service;
-use Kiln\Sites\Contracts\Data\ComposeServiceState;
-use Kiln\Sites\Contracts\Data\ComposeSummary;
-use Kiln\Sites\Contracts\Data\SiteData;
+use Falak\Projects\Domain\Models\Service;
+use Falak\Sites\Contracts\Data\ComposeServiceState;
+use Falak\Sites\Contracts\Data\ComposeSummary;
+use Falak\Sites\Contracts\Data\SiteData;
 
 /**
  * A compose site drawn as a group of its compose services (UI_DESIGN §4.3): one card per compose service with its own

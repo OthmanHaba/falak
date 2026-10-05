@@ -6,20 +6,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kiln/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 )
 
 func TestLaravelMultilineMergesStackTraces(t *testing.T) {
 	root := t.TempDir()
 	fs := hostfs.FS{Root: root}
-	dir := fs.P("/srv/kiln/sites/shop/shared/storage/logs")
+	dir := fs.P("/srv/falak/sites/shop/shared/storage/logs")
 	os.MkdirAll(dir, 0o755)
 	p := filepath.Join(dir, "laravel-2026-09-28.log")
 	appendFile(t, p, "")
 
 	sink := &memSink{}
-	tl := NewTailer(fs, "/var/lib/kiln", sink, nil)
-	tl.SetSources([]Source{{Path: "/srv/kiln/sites/shop/shared/storage/logs/*.log", Site: "shop", Kind: "app", Multiline: "laravel"}})
+	tl := NewTailer(fs, "/var/lib/falak", sink, nil)
+	tl.SetSources([]Source{{Path: "/srv/falak/sites/shop/shared/storage/logs/*.log", Site: "shop", Kind: "app", Multiline: "laravel"}})
 	tl.Poll()
 
 	appendFile(t, p, "[2026-09-28 10:00:00] production.ERROR: boom {\"exception\":\"[object] (RuntimeException(code: 0): boom at /app/x.php:3)\n"+
@@ -78,10 +78,10 @@ func TestAccessLogsAttributedByFileName(t *testing.T) {
 	appendFile(t, p, "")
 
 	sink := &memSink{}
-	tl := NewTailer(fs, "/var/lib/kiln", sink, nil)
+	tl := NewTailer(fs, "/var/lib/falak", sink, nil)
 	tl.SetSources([]Source{AccessSource()})
 	tl.Poll()
-	appendFile(t, p, `{"level":"info","ts":1727517600.25,"logger":"http.log.access.kiln-access-shop","msg":"handled request",`+
+	appendFile(t, p, `{"level":"info","ts":1727517600.25,"logger":"http.log.access.falak-access-shop","msg":"handled request",`+
 		`"request":{"remote_ip":"10.0.0.2","remote_port":"5000","client_ip":"203.0.113.9","proto":"HTTP/2.0","method":"POST","host":"shop.test",`+
 		`"uri":"/checkout?step=2","headers":{"User-Agent":["curl/8.5"],"Cookie":["secret"]}},"bytes_read":12,"user_id":"","duration":0.0123,`+
 		`"size":512,"status":502,"resp_headers":{"Set-Cookie":["x"]}}`+"\n")

@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Sites\Application\Compose;
+namespace Falak\Sites\Application\Compose;
 
 /**
- * The Docker networks a compose service is on, by their real names: what a service run as its own Kiln site joins so
+ * The Docker networks a compose service is on, by their real names: what a service run as its own Falak site joins so
  * the stack's services and it keep resolving each other by name (docs/COMPOSE_TEMPLATES.md §1.7).
  *
  * Compose names a project network `<project>_<network>` (the project is the stack's slug), unless the top-level
@@ -87,10 +87,10 @@ final class ComposeNetworks
         return array_keys(array_filter(self::projectNetworks($document, $project, $service, $variables), fn (array $network) => ! $network['plain']));
     }
 
-    /** Names an agent never creates: Docker's own networks and names in Kiln's namespace. */
+    /** Names an agent never creates: Docker's own networks and names in Falak's namespace. */
     public static function reserved(string $name): bool
     {
-        return in_array(strtolower($name), ['bridge', 'host', 'none', 'default'], true) || str_starts_with(strtolower($name), 'kiln');
+        return in_array(strtolower($name), ['bridge', 'host', 'none', 'default'], true) || str_starts_with(strtolower($name), 'falak');
     }
 
     /**

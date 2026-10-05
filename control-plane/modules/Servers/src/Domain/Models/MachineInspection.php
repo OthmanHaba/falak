@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Servers\Domain\Models;
+namespace Falak\Servers\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Kiln\Servers\Domain\MachineCheck\MachineCheck;
+use Falak\Servers\Domain\MachineCheck\MachineCheck;
 
 /**
  * The latest machine check of a server (one row per server).

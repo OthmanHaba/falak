@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/docker"
+	"github.com/OthmanHaba/falak/agent/internal/docker"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
 )
 
@@ -16,7 +16,7 @@ type fakeEngine struct {
 }
 
 func (f *fakeEngine) ContainerList(_ context.Context, _ bool, labels []string) ([]docker.ContainerSummary, error) {
-	if len(labels) != 1 || labels[0] != "kiln.site" {
+	if len(labels) != 1 || labels[0] != "falak.site" {
 		panic("unexpected filter")
 	}
 	return f.list, nil
@@ -53,9 +53,9 @@ func metricByName(rm *metricspb.ResourceMetrics, name string) *metricspb.Metric 
 
 func TestContainerCollector(t *testing.T) {
 	e := &fakeEngine{calls: map[string]int{}, list: []docker.ContainerSummary{
-		{ID: "aaaaaaaaaaaaaaaa", Names: []string{"/shop-app-1"}, Labels: map[string]string{"kiln.site": "shop", "kiln.service": "app"}},
-		{ID: "bbbbbbbbbbbbbbbb", Names: []string{"/shop-redis-1"}, Labels: map[string]string{"kiln.site": "shop", "com.docker.compose.service": "redis"}},
-		{ID: "cccccccccccccccc", Names: []string{"/blog-blue"}, Labels: map[string]string{"kiln.site": "blog"}},
+		{ID: "aaaaaaaaaaaaaaaa", Names: []string{"/shop-app-1"}, Labels: map[string]string{"falak.site": "shop", "falak.service": "app"}},
+		{ID: "bbbbbbbbbbbbbbbb", Names: []string{"/shop-redis-1"}, Labels: map[string]string{"falak.site": "shop", "com.docker.compose.service": "redis"}},
+		{ID: "cccccccccccccccc", Names: []string{"/blog-blue"}, Labels: map[string]string{"falak.site": "blog"}},
 	}, stats: map[string][]docker.Stats{
 		"aaaaaaaaaaaaaaaa": {sample(1000, 10000, 100), sample(2000, 20000, 200)},
 		"bbbbbbbbbbbbbbbb": {sample(0, 10000, 50)},
@@ -68,7 +68,7 @@ func TestContainerCollector(t *testing.T) {
 	if len(first) != 2 {
 		t.Fatalf("one resource per site, got %d", len(first))
 	}
-	if metricByName(first[1], "kiln.container.cpu.utilization") != nil {
+	if metricByName(first[1], "falak.container.cpu.utilization") != nil {
 		t.Fatal("cpu needs two samples")
 	}
 	second := c.Collect(context.Background())
@@ -76,19 +76,19 @@ func TestContainerCollector(t *testing.T) {
 	if v := shop.Resource.Attributes[0]; v.Key != "service.name" || v.Value.GetStringValue() != "shop" {
 		t.Fatalf("resource %v", shop.Resource)
 	}
-	cpu := metricByName(shop, "kiln.container.cpu.utilization").GetGauge().DataPoints
+	cpu := metricByName(shop, "falak.container.cpu.utilization").GetGauge().DataPoints
 	// app: (2000-1000)/(20000-10000) * 2 cpus = 0.2
 	if len(cpu) != 2 || cpu[0].GetAsDouble() != 0.2 {
 		t.Fatalf("cpu %v", cpu)
 	}
-	mem := metricByName(shop, "kiln.container.memory.usage").GetGauge().DataPoints
+	mem := metricByName(shop, "falak.container.memory.usage").GetGauge().DataPoints
 	if mem[0].GetAsInt() != 200 || mem[1].GetAsInt() != 50 {
 		t.Fatalf("mem %v", mem)
 	}
 	svc := map[string]bool{}
 	for _, p := range mem {
 		for _, a := range p.Attributes {
-			if a.Key == "kiln.compose.service" {
+			if a.Key == "falak.compose.service" {
 				svc[a.Value.GetStringValue()] = true
 			}
 		}
@@ -96,7 +96,7 @@ func TestContainerCollector(t *testing.T) {
 	if !svc["app"] || !svc["redis"] {
 		t.Fatalf("compose service attrs %v", svc)
 	}
-	if metricByName(shop, "kiln.container.network.io").GetSum().DataPoints[0].GetAsInt() != 10 {
+	if metricByName(shop, "falak.container.network.io").GetSum().DataPoints[0].GetAsInt() != 10 {
 		t.Fatal("network rx")
 	}
 }

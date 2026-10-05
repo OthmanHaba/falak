@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Sites\Contracts\Data;
+namespace Falak\Sites\Contracts\Data;
 
-use Kiln\Sites\Events\SiteCreated;
+use Falak\Sites\Events\SiteCreated;
 
 /**
  * Where a new site should appear in the Projects model (opaque Projects ULIDs). Sites only carries it

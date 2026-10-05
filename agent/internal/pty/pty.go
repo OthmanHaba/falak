@@ -18,8 +18,8 @@ import (
 
 	cpty "github.com/creack/pty"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 // Options configures the session manager.

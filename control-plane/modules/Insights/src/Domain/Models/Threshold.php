@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Insights\Domain\Models;
+namespace Falak\Insights\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Kiln\Insights\Domain\Enums\MonitoredEventType;
-use Kiln\Insights\Domain\Enums\ThresholdMetric;
+use Falak\Insights\Domain\Enums\MonitoredEventType;
+use Falak\Insights\Domain\Enums\ThresholdMetric;
 
 /**
  * @property string $id

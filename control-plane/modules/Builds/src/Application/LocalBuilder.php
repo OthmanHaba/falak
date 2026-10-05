@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Builds\Application;
+namespace Falak\Builds\Application;
 
-use Kiln\Builds\Domain\Models\Builder;
+use Falak\Builds\Domain\Models\Builder;
 
 /**
- * The shared builder on the control-plane host, authenticated with KILN_LOCAL_BUILDER_TOKEN.
+ * The shared builder on the control-plane host, authenticated with FALAK_LOCAL_BUILDER_TOKEN.
  * Its row is created on first poll and follows the configured token.
  */
 final class LocalBuilder

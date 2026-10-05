@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Insights\Domain\Enums;
+namespace Falak\Insights\Domain\Enums;
 
 /**
- * Event types (contracts/telemetry `kiln.event.type`) that thresholds can watch.
+ * Event types (contracts/telemetry `falak.event.type`) that thresholds can watch.
  */
 enum MonitoredEventType: string
 {

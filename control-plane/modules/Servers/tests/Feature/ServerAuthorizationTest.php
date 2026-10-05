@@ -1,9 +1,9 @@
 <?php
 
-use Kiln\Identity\Application\Actions\CreateApiToken;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Http\Channels\ServerChannel;
+use Falak\Identity\Application\Actions\CreateApiToken;
+use Falak\Identity\Contracts\Role;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Http\Channels\ServerChannel;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -94,7 +94,7 @@ it('exposes servers over the token API with ability checks', function () {
     $this->deleteJson("/api/v1/servers/{$this->server->id}", [], $headers)->assertForbidden();
 });
 
-it('returns the private address and SSH port for kiln ssh --private', function () {
+it('returns the private address and SSH port for falak ssh --private', function () {
     $this->server->forceFill(['private_ipv4' => '10.0.0.5', 'ssh_port' => 2222])->save();
     $token = app(CreateApiToken::class)($this->owner, $this->organization->id, 'cli', ['servers.view'])->plainTextToken;
 

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Apm;
+namespace Falak\Apm;
 
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -8,21 +8,21 @@ use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
-use Kiln\Apm\Http\RequestMiddleware;
-use Kiln\Apm\Otlp\Encoder;
-use Kiln\Apm\Transport\SocketTransport;
-use Kiln\Apm\Transport\Transport;
-use Kiln\Apm\Watchers\CacheWatcher;
-use Kiln\Apm\Watchers\CommandWatcher;
-use Kiln\Apm\Watchers\ExceptionWatcher;
-use Kiln\Apm\Watchers\HttpClientWatcher;
-use Kiln\Apm\Watchers\JobWatcher;
-use Kiln\Apm\Watchers\LogWatcher;
-use Kiln\Apm\Watchers\MailWatcher;
-use Kiln\Apm\Watchers\NotificationWatcher;
-use Kiln\Apm\Watchers\QueryWatcher;
-use Kiln\Apm\Watchers\RequestWatcher;
-use Kiln\Apm\Watchers\ScheduleWatcher;
+use Falak\Apm\Http\RequestMiddleware;
+use Falak\Apm\Otlp\Encoder;
+use Falak\Apm\Transport\SocketTransport;
+use Falak\Apm\Transport\Transport;
+use Falak\Apm\Watchers\CacheWatcher;
+use Falak\Apm\Watchers\CommandWatcher;
+use Falak\Apm\Watchers\ExceptionWatcher;
+use Falak\Apm\Watchers\HttpClientWatcher;
+use Falak\Apm\Watchers\JobWatcher;
+use Falak\Apm\Watchers\LogWatcher;
+use Falak\Apm\Watchers\MailWatcher;
+use Falak\Apm\Watchers\NotificationWatcher;
+use Falak\Apm\Watchers\QueryWatcher;
+use Falak\Apm\Watchers\RequestWatcher;
+use Falak\Apm\Watchers\ScheduleWatcher;
 use Throwable;
 
 class ApmServiceProvider extends ServiceProvider
@@ -31,20 +31,20 @@ class ApmServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        $this->mergeConfigFrom(__DIR__.'/../config/kiln-apm.php', 'kiln-apm');
+        $this->mergeConfigFrom(__DIR__.'/../config/falak-apm.php', 'falak-apm');
 
         $this->app->singleton(Transport::class, function ($app) {
-            $config = $app['config']['kiln-apm'];
+            $config = $app['config']['falak-apm'];
 
             return new SocketTransport(
                 [$config['socket'] ?? null, $config['fallback_endpoint'] ?? null],
                 (float) ($config['timeout'] ?? 0.25),
-                'kiln-apm-laravel/'.Encoder::VERSION,
+                'falak-apm-laravel/'.Encoder::VERSION,
             );
         });
 
         $this->app->singleton(Recorder::class, function ($app) {
-            $config = $app['config']['kiln-apm'];
+            $config = $app['config']['falak-apm'];
 
             return new Recorder(
                 $config,
@@ -63,10 +63,10 @@ class ApmServiceProvider extends ServiceProvider
     public function boot(): void
     {
         if ($this->app->runningInConsole()) {
-            $this->publishes([__DIR__.'/../config/kiln-apm.php' => $this->app->configPath('kiln-apm.php')], 'kiln-apm-config');
+            $this->publishes([__DIR__.'/../config/falak-apm.php' => $this->app->configPath('falak-apm.php')], 'falak-apm-config');
         }
 
-        $config = $this->app['config']['kiln-apm'];
+        $config = $this->app['config']['falak-apm'];
 
         if (! ($config['enabled'] ?? true)) {
             return;
@@ -190,7 +190,7 @@ class ApmServiceProvider extends ServiceProvider
         try {
             $recorder = $this->app->make(Recorder::class);
 
-            if (($recorder->context()?->root->attributes['kiln.event.type'] ?? null) === 'request') {
+            if (($recorder->context()?->root->attributes['falak.event.type'] ?? null) === 'request') {
                 $this->app->make(RequestWatcher::class)->end(null);
             }
 
@@ -223,15 +223,15 @@ class ApmServiceProvider extends ServiceProvider
         return array_filter([
             'service.name' => $config['service_name'] ?: Str::slug((string) $this->app['config']['app.name']),
             'deployment.environment.name' => (string) $this->app->environment(),
-            'kiln.org.id' => $env('KILN_ORG_ID'),
-            'kiln.site.id' => $env('KILN_SITE_ID'),
-            'kiln.server.id' => $env('KILN_SERVER_ID'),
-            'kiln.deployment.id' => $env('KILN_DEPLOYMENT_ID'),
-            'kiln.release.id' => $env('KILN_RELEASE_ID'),
+            'falak.org.id' => $env('FALAK_ORG_ID'),
+            'falak.site.id' => $env('FALAK_SITE_ID'),
+            'falak.server.id' => $env('FALAK_SERVER_ID'),
+            'falak.deployment.id' => $env('FALAK_DEPLOYMENT_ID'),
+            'falak.release.id' => $env('FALAK_RELEASE_ID'),
             'host.name' => gethostname() ?: null,
             'process.runtime.name' => 'php',
             'process.runtime.version' => PHP_VERSION,
-            'telemetry.sdk.name' => 'kiln-apm-laravel',
+            'telemetry.sdk.name' => 'falak-apm-laravel',
             'telemetry.sdk.language' => 'php',
             'telemetry.sdk.version' => Encoder::VERSION,
         ], fn ($v) => $v !== null && $v !== '');

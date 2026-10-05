@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Identity\Domain\Models;
+namespace Falak\Identity\Domain\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Kiln\Identity\Contracts\Role;
+use Falak\Identity\Contracts\Role;
 
 /**
  * @property string $id

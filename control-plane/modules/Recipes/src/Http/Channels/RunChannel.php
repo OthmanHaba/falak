@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Recipes\Http\Channels;
+namespace Falak\Recipes\Http\Channels;
 
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Recipes\Domain\Models\Run;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Recipes\Domain\Models\Run;
 
 /**
  * private-recipes.runs.{runId}: members of the run's organization with recipes.view.

@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Cloudflare Tunnel per server (ingress mode "tunnel"): Kiln creates the tunnel with a Cloudflare connection, the
+ * Cloudflare Tunnel per server (ingress mode "tunnel"): Falak creates the tunnel with a Cloudflare connection, the
  * agent runs cloudflared with its token, and names served by the server point at <tunnel id>.cfargotunnel.com.
  */
 return new class extends Migration

@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Deployments\Domain\Models;
+namespace Falak\Deployments\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
-use Kiln\Deployments\Domain\Enums\TargetStatus;
+use Falak\Deployments\Domain\Enums\TargetStatus;
 
 /**
  * @property string $id

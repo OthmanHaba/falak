@@ -66,7 +66,7 @@ func (f FS) WriteFile(p string, data []byte, mode os.FileMode) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(real), 0o755); err != nil {
 		return false, err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(real), "."+filepath.Base(real)+".kiln-*")
+	tmp, err := os.CreateTemp(filepath.Dir(real), "."+filepath.Base(real)+".falak-*")
 	if err != nil {
 		return false, err
 	}

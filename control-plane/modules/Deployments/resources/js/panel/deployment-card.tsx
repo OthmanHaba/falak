@@ -9,7 +9,7 @@ import {
     formatDuration,
     type MenuAction,
     type StatusTone,
-} from '@/components/kiln';
+} from '@/components/falak';
 import { type ServicePanelContext } from '@/lib/registry';
 import { cn } from '@/lib/utils';
 import { Check, ChevronDown, GitCommitHorizontal, Hourglass, Loader2, RotateCcw, Terminal, Webhook, X, type LucideIcon } from 'lucide-react';

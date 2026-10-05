@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Infrastructure\Cloudflare;
+namespace Falak\Edge\Infrastructure\Cloudflare;
 
 use RuntimeException;
 

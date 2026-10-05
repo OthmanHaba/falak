@@ -3,31 +3,31 @@
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
-use Kiln\Deployments\Application\Actions\TriggerDeployment;
-use Kiln\Deployments\Application\Jobs\ReconcileDeployments;
-use Kiln\Deployments\Application\Listeners\RedeployOnPortChange;
-use Kiln\Deployments\Application\Orchestration\DeploymentQueue;
-use Kiln\Deployments\Application\Orchestration\Orchestrator;
-use Kiln\Deployments\Contracts\Exceptions\DeploymentTriggerBusy;
-use Kiln\Deployments\Domain\Enums\DeploymentStatus;
-use Kiln\Deployments\Domain\Enums\ReleaseStatus;
-use Kiln\Deployments\Domain\Enums\Trigger;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\DeploymentStep;
-use Kiln\Deployments\Domain\Models\OutputLine;
-use Kiln\Deployments\Domain\Models\Release;
-use Kiln\Deployments\Domain\Models\SiteSettings;
-use Kiln\Deployments\Events\DeploymentFailed;
-use Kiln\Deployments\Events\DeploymentRolledBack;
-use Kiln\Deployments\Events\DeploymentStarted;
-use Kiln\Deployments\Events\DeploymentSucceeded;
-use Kiln\Deployments\Events\ReleaseActivated;
-use Kiln\Fleet\Contracts\CommandStatus;
-use Kiln\Fleet\Events\CommandFinished;
-use Kiln\Fleet\Events\CommandOutputReceived;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Events\SiteUpdated;
+use Falak\Deployments\Application\Actions\TriggerDeployment;
+use Falak\Deployments\Application\Jobs\ReconcileDeployments;
+use Falak\Deployments\Application\Listeners\RedeployOnPortChange;
+use Falak\Deployments\Application\Orchestration\DeploymentQueue;
+use Falak\Deployments\Application\Orchestration\Orchestrator;
+use Falak\Deployments\Contracts\Exceptions\DeploymentTriggerBusy;
+use Falak\Deployments\Domain\Enums\DeploymentStatus;
+use Falak\Deployments\Domain\Enums\ReleaseStatus;
+use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\DeploymentStep;
+use Falak\Deployments\Domain\Models\OutputLine;
+use Falak\Deployments\Domain\Models\Release;
+use Falak\Deployments\Domain\Models\SiteSettings;
+use Falak\Deployments\Events\DeploymentFailed;
+use Falak\Deployments\Events\DeploymentRolledBack;
+use Falak\Deployments\Events\DeploymentStarted;
+use Falak\Deployments\Events\DeploymentSucceeded;
+use Falak\Deployments\Events\ReleaseActivated;
+use Falak\Fleet\Contracts\CommandStatus;
+use Falak\Fleet\Events\CommandFinished;
+use Falak\Fleet\Events\CommandOutputReceived;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Events\SiteUpdated;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -83,7 +83,7 @@ it('deploys a single server through every phase in order', function () {
     $hooks = array_map(fn ($c) => $c['payload'], $world->agents->dispatched('deploy.hook'));
     expect(array_column($hooks, 'name'))->toBe(['before_fetch', 'before_activate', 'after_activate', 'after_restart'])
         ->and($hooks[0]['cwd'])->toBe('site_root')
-        ->and($hooks[1]['script'])->toContain('artisan migrate --force')->not->toContain('KILN_ACTIVATE')
+        ->and($hooks[1]['script'])->toContain('artisan migrate --force')->not->toContain('FALAK_ACTIVATE')
         ->and($hooks[2]['script'])->toContain('echo "activated"')
         ->and($hooks[3]['script'])->toContain('echo "done"');
 
@@ -100,22 +100,22 @@ it('deploys a single server through every phase in order', function () {
 
     $env = $world->agents->last('deploy.prepare')['payload']['env_file']['content'];
     expect($env)->toContain('APP_KEY=base64:secret')
-        ->toContain('KILN_SITE_ID='.strtoupper($world->site->id))
-        ->toContain('KILN_SERVER_ID='.strtoupper($world->servers[0]->id))
-        ->toContain('KILN_DEPLOYMENT_ID='.strtoupper($deployment->id))
-        ->toContain("KILN_RELEASE_ID={$release}")
+        ->toContain('FALAK_SITE_ID='.strtoupper($world->site->id))
+        ->toContain('FALAK_SERVER_ID='.strtoupper($world->servers[0]->id))
+        ->toContain('FALAK_DEPLOYMENT_ID='.strtoupper($deployment->id))
+        ->toContain("FALAK_RELEASE_ID={$release}")
         ->not->toContain('stale');
 
     $hookEnv = $hooks[1]['env'];
     expect($hookEnv)->toMatchArray([
-        'KILN_RELEASE_ID' => $release,
-        'KILN_RELEASE_DIR' => "/srv/kiln/sites/{$world->site->slug}/releases/{$release}",
-        'KILN_DEPLOYMENT_ID' => strtoupper($deployment->id),
-        'KILN_SITE_ID' => strtoupper($world->site->id),
-        'KILN_SERVER_ID' => strtoupper($world->servers[0]->id),
-        'KILN_COMMIT' => str_repeat('a', 40),
-        'KILN_IS_LEADER' => '1',
-        'KILN_TRIGGER' => 'manual',
+        'FALAK_RELEASE_ID' => $release,
+        'FALAK_RELEASE_DIR' => "/srv/falak/sites/{$world->site->slug}/releases/{$release}",
+        'FALAK_DEPLOYMENT_ID' => strtoupper($deployment->id),
+        'FALAK_SITE_ID' => strtoupper($world->site->id),
+        'FALAK_SERVER_ID' => strtoupper($world->servers[0]->id),
+        'FALAK_COMMIT' => str_repeat('a', 40),
+        'FALAK_IS_LEADER' => '1',
+        'FALAK_TRIGGER' => 'manual',
         'APP_ENV' => 'production',
     ])->and($hookEnv)->not->toHaveKey('APP_KEY');
 
@@ -156,12 +156,12 @@ it('fetches and prepares all servers in parallel, migrates on the leader only, t
 
     // Members run the pre-activation section (not the leader); no migrate before every server is prepared.
     expect(array_map(fn ($c) => $c['handle']->serverId, deploy_pending($world->agents, 'deploy.hook')))->toBe([$second])
-        ->and(deploy_pending($world->agents, 'deploy.hook')[0]['payload']['env']['KILN_IS_LEADER'])->toBe('0');
+        ->and(deploy_pending($world->agents, 'deploy.hook')[0]['payload']['env']['FALAK_IS_LEADER'])->toBe('0');
 
     deploy_complete($world->agents, 'deploy.prepare', $third);
     $migrate = array_values(array_filter(deploy_pending($world->agents, 'deploy.hook'), fn ($c) => $c['handle']->serverId === $leader));
     expect($migrate)->toHaveCount(1)
-        ->and($migrate[0]['payload']['env']['KILN_IS_LEADER'])->toBe('1')
+        ->and($migrate[0]['payload']['env']['FALAK_IS_LEADER'])->toBe('1')
         ->and(DeploymentStep::query()->where('phase', 'migrate')->pluck('server_id')->all())->toBe([$leader]);
 
     // Barrier: nothing activates until the leader migrated and every member finished its hook.
@@ -426,7 +426,7 @@ it('rolls back to a retained release on all servers', function () {
 });
 
 it('swaps a container without an edge route when the site has no domain', function () {
-    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'deploy_script' => '$KILN_FETCH', 'test_domain_enabled' => false]);
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'deploy_script' => '$FALAK_FETCH', 'test_domain_enabled' => false]);
     $deployment = deploy($world);
     $world->builds->succeed();
     deploy_run_all($world->agents);
@@ -450,7 +450,7 @@ it('keeps N releases and marks older ones pruned', function () {
 });
 
 it('swaps containers blue/green and records the new upstream with Edge', function () {
-    $world = deploy_world(servers: 2, site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'deploy_script' => '$KILN_FETCH']);
+    $world = deploy_world(servers: 2, site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'deploy_script' => '$FALAK_FETCH']);
     $world->edge->domains[$world->site->id] = ['shop.example.com'];
     $deployment = deploy($world);
     $world->builds->succeed();
@@ -459,18 +459,18 @@ it('swaps containers blue/green and records the new upstream with Edge', functio
     $swap = $world->agents->last('deploy.container.swap')['payload'];
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Succeeded)
         ->and(deploy_types($world->agents))->toBe(['deploy.container.swap', 'deploy.container.swap'])
-        ->and($swap['image'])->toStartWith('registry.kiln.local/kiln/app@sha256:')
-        ->and($swap['registry_auth']['username'])->toBe('kiln')
+        ->and($swap['image'])->toStartWith('registry.falak.local/falak/app@sha256:')
+        ->and($swap['registry_auth']['username'])->toBe('falak')
         ->and($swap['ports'])->toBe(['blue' => 3100, 'green' => 4100])
         ->and($swap['edge_route_id'])->toBe("site-{$world->site->id}")
-        ->and($swap['env']['KILN_RELEASE_ID'])->toBe(strtoupper($deployment->release_id))
+        ->and($swap['env']['FALAK_RELEASE_ID'])->toBe(strtoupper($deployment->release_id))
         ->and($world->edge->upstreams)->toHaveCount(2)
         ->and($world->edge->upstreams[0])->toMatchArray(['site' => $world->site->id, 'upstream' => '127.0.0.1:4100'])
-        ->and(Release::current($world->site->id)->image)->toStartWith('registry.kiln.local/');
+        ->and(Release::current($world->site->id)->image)->toStartWith('registry.falak.local/');
 });
 
 it('joins a Docker site split out of a compose stack to the stack networks, under its service name', function () {
-    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'deploy_script' => '$KILN_FETCH']);
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'deploy_script' => '$FALAK_FETCH']);
     $stack = Site::query()->findOrFail($world->site->id)->replicate();
     $stack->forceFill(['slug' => 'shop', 'name' => 'shop', 'runtime' => 'compose', 'compose_source' => 'inline',
         'compose_services' => ['api' => ['mode' => 'site', 'site_id' => $world->site->id, 'networks' => ['shop_default', 'shop-backend']]]])->save();
@@ -491,7 +491,7 @@ it('joins a Docker site split out of a compose stack to the stack networks, unde
 });
 
 it('runs a docker site on its container port, published on its host ports', function () {
-    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 8080, 'deploy_script' => '$KILN_FETCH']);
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 8080, 'deploy_script' => '$FALAK_FETCH']);
     deploy($world);
     $world->builds->succeed();
     deploy_run_all($world->agents);
@@ -503,7 +503,7 @@ it('runs a docker site on its container port, published on its host ports', func
 });
 
 it('redeploys the live commit of a docker site when its container port changes', function () {
-    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 3000, 'deploy_script' => '$KILN_FETCH']);
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 3000, 'deploy_script' => '$FALAK_FETCH']);
     $live = str_repeat('a', 40);
     deploy($world, commit: $live);
     $world->builds->succeed();
@@ -522,7 +522,7 @@ it('redeploys the live commit of a docker site when its container port changes',
 });
 
 it('follows a docker deployment in progress after a port change and leaves a queued one alone', function () {
-    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 3000, 'deploy_script' => '$KILN_FETCH']);
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 3000, 'deploy_script' => '$FALAK_FETCH']);
     $building = deploy($world, commit: str_repeat('b', 40));
 
     SiteUpdated::dispatch($world->site->id, $world->organization->id, ['container_port'], $world->site->serverIds());
@@ -536,7 +536,7 @@ it('follows a docker deployment in progress after a port change and leaves a que
 });
 
 it('lets the queue retry a port-change redeploy when another trigger holds the site\'s lock', function () {
-    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 3000, 'deploy_script' => '$KILN_FETCH']);
+    $world = deploy_world(site: ['runtime' => 'docker', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null, 'app_port' => 3100, 'container_port' => 3000, 'deploy_script' => '$FALAK_FETCH']);
     deploy($world, commit: str_repeat('a', 40));
     $world->builds->succeed();
     deploy_run_all($world->agents);

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Apm;
+namespace Falak\Apm;
 
 use Throwable;
 
@@ -50,7 +50,7 @@ final class Span
 
     public function eventType(): ?string
     {
-        return $this->attributes['kiln.event.type'] ?? null;
+        return $this->attributes['falak.event.type'] ?? null;
     }
 
     public function recordException(Throwable $e, int $timeNs, bool $handled): void

@@ -4,20 +4,20 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
-use Kiln\Alerting\Domain\Enums\ChannelType;
-use Kiln\Alerting\Domain\Models\Channel;
-use Kiln\Alerting\Domain\Models\Rule;
-use Kiln\Builds\Application\Actions\CreateExternalBuilder;
-use Kiln\Builds\Domain\Models\Builder;
-use Kiln\Databases\Domain\Enums\StorageDriver;
-use Kiln\Databases\Domain\Models\StorageProvider;
-use Kiln\Providers\Contracts\ProviderType;
-use Kiln\Providers\Domain\CredentialStatus;
-use Kiln\Providers\Domain\Models\ProviderCredential;
-use Kiln\Recipes\Application\Actions\SaveRecipe;
-use Kiln\SourceControl\Contracts\ProviderType as GitProvider;
-use Kiln\SourceControl\Domain\Models\Connection;
-use Kiln\SourceControl\Domain\Models\Push;
+use Falak\Alerting\Domain\Enums\ChannelType;
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Alerting\Domain\Models\Rule;
+use Falak\Builds\Application\Actions\CreateExternalBuilder;
+use Falak\Builds\Domain\Models\Builder;
+use Falak\Databases\Domain\Enums\StorageDriver;
+use Falak\Databases\Domain\Models\StorageProvider;
+use Falak\Providers\Contracts\ProviderType;
+use Falak\Providers\Domain\CredentialStatus;
+use Falak\Providers\Domain\Models\ProviderCredential;
+use Falak\Recipes\Application\Actions\SaveRecipe;
+use Falak\SourceControl\Contracts\ProviderType as GitProvider;
+use Falak\SourceControl\Domain\Models\Connection;
+use Falak\SourceControl\Domain\Models\Push;
 
 /**
  * Organization settings demo data (called by UiDemoSeeder): git connections and pushes, cloud credentials, backup
@@ -84,7 +84,7 @@ class SettingsDemoSeeder extends Seeder
                 'endpoint' => $endpoint,
                 'region' => $region,
                 'bucket' => $bucket,
-                'prefix' => 'kiln',
+                'prefix' => 'falak',
                 'path_style' => $pathStyle,
                 'access_key_id' => 'AKIA'.Str::upper(Str::random(16)),
                 'secret_access_key' => Str::random(40),
@@ -115,7 +115,7 @@ class SettingsDemoSeeder extends Seeder
             'organization_id' => $organizationId,
             'type' => ChannelType::Webhook,
             'name' => 'PagerDuty bridge',
-            'config' => ['url' => 'https://events.acme.invalid/kiln', 'secret' => Str::random(32)],
+            'config' => ['url' => 'https://events.acme.invalid/falak', 'secret' => Str::random(32)],
             'enabled' => false,
             'last_error' => 'HTTP 502: bad gateway',
         ]);

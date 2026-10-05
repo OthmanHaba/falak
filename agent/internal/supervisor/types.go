@@ -1,4 +1,4 @@
-// Package supervisor is kiln-agent's built-in process supervisor (replaces supervisord). It converges
+// Package supervisor is falak-agent's built-in process supervisor (replaces supervisord). It converges
 // the desired set of long-running programs sent by proc.apply, restarts them according to their policy
 // with exponential backoff, captures stdout/stderr to size-capped log files and relays lines as OTLP logs.
 package supervisor

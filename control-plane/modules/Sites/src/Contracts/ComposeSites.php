@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Sites\Contracts;
+namespace Falak\Sites\Contracts;
 
-use Kiln\Sites\Contracts\Data\ComposeServiceState;
-use Kiln\Sites\Contracts\Data\ComposeVersionData;
-use Kiln\Sites\Contracts\Data\RenderedCompose;
-use Kiln\Sites\Contracts\Exceptions\ComposeRenderException;
+use Falak\Sites\Contracts\Data\ComposeServiceState;
+use Falak\Sites\Contracts\Data\ComposeVersionData;
+use Falak\Sites\Contracts\Data\RenderedCompose;
+use Falak\Sites\Contracts\Exceptions\ComposeRenderException;
 
 /**
  * Compose sites for other modules: Deployments renders releases and reports service state, Projects shows
@@ -32,7 +32,7 @@ interface ComposeSites
     public function project(string $siteId): ?string;
 
     /**
-     * The compose stacks that run one of their services as $siteId (split out into its own Kiln site), as
+     * The compose stacks that run one of their services as $siteId (split out into its own Falak site), as
      * service name per stack id. Deployments uses it to deploy a stack once the site it waits for is live.
      *
      * @return array<string, string> stack site id => service name
@@ -40,7 +40,7 @@ interface ComposeSites
     public function stacksUsing(string $siteId): array;
 
     /**
-     * For a site that runs a compose stack's service as its own Kiln site: the stack's Docker networks its container
+     * For a site that runs a compose stack's service as its own Falak site: the stack's Docker networks its container
      * joins on $serverId, under the service's name and the aliases it declared on each network, so the stack's
      * services and it keep resolving each other. Empty when the site isn't split out of a stack, the service was on no
      * stack network (`network_mode`), the stack doesn't run on that server, or the stack is gone.
@@ -57,10 +57,10 @@ interface ComposeSites
 
     /**
      * Render the compose file for a release: `build:` services replaced by $images (digest-pinned refs),
-     * public services published on 127.0.0.1:<host port>, other host ports removed, kiln.site / kiln.release /
-     * kiln.service labels, policy enforced.
+     * public services published on 127.0.0.1:<host port>, other host ports removed, falak.site / falak.release /
+     * falak.service labels, policy enforced.
      *
-     * Kiln's adjustments (docs/plans/COMPOSE_APPS.md) apply first: services replaced by Kiln databases or sites are
+     * Falak's adjustments (docs/plans/COMPOSE_APPS.md) apply first: services replaced by Falak databases or sites are
      * removed and, for repository projects, mounted repository files point at the release's `repo/` copies.
      *
      * @param  string  $yaml  source compose file (inline content or the project returned by the build)

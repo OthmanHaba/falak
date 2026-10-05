@@ -11,8 +11,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/system"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/system"
 )
 
 // The inspector runs as root and looks at software other users may have installed. It never executes a file a

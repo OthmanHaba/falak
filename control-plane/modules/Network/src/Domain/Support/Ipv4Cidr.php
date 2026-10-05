@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Network\Domain\Support;
+namespace Falak\Network\Domain\Support;
 
 use InvalidArgumentException;
 

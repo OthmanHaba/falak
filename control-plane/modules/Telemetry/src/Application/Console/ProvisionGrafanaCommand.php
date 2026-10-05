@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Telemetry\Application\Console;
+namespace Falak\Telemetry\Application\Console;
 
 use Illuminate\Console\Command;
-use Kiln\Telemetry\Application\Actions\ProvisionGrafana;
-use Kiln\Telemetry\Domain\Models\GrafanaState;
-use Kiln\Telemetry\Infrastructure\Grafana\GrafanaClient;
+use Falak\Telemetry\Application\Actions\ProvisionGrafana;
+use Falak\Telemetry\Domain\Models\GrafanaState;
+use Falak\Telemetry\Infrastructure\Grafana\GrafanaClient;
 use Throwable;
 
 /**
@@ -16,12 +16,12 @@ final class ProvisionGrafanaCommand extends Command
 {
     protected $signature = 'telemetry:grafana:provision {--organization=* : Organization id(s); defaults to every previously provisioned organization}';
 
-    protected $description = 'Provision Grafana datasources, organization folders and Kiln dashboards';
+    protected $description = 'Provision Grafana datasources, organization folders and Falak dashboards';
 
     public function handle(GrafanaClient $grafana, ProvisionGrafana $provision): int
     {
         if (! $grafana->configured()) {
-            $this->error('Grafana is not configured (KILN_GRAFANA_URL / KILN_GRAFANA_TOKEN).');
+            $this->error('Grafana is not configured (FALAK_GRAFANA_URL / FALAK_GRAFANA_TOKEN).');
 
             return self::FAILURE;
         }

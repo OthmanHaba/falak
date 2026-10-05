@@ -1,20 +1,20 @@
 <?php
 
-namespace Kiln\SourceControl\Infrastructure\Providers;
+namespace Falak\SourceControl\Infrastructure\Providers;
 
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Infrastructure\GitHubApp\AppCredentials;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Infrastructure\GitHubApp\AppCredentials;
 use phpseclib3\Crypt\PublicKeyLoader;
 use phpseclib3\Crypt\RSA;
 use Throwable;
 
 /**
  * GitHub App authentication: an RS256 JWT signed with the app's private key, exchanged for short-lived
- * installation access tokens. GitHub issues them for one hour; Kiln caches them for at most 50 minutes so a
+ * installation access tokens. GitHub issues them for one hour; Falak caches them for at most 50 minutes so a
  * token handed to a build always has 10+ minutes left. Tokens are never logged or persisted outside the cache.
  */
 class GitHubAppTokens

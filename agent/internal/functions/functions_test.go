@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/docker"
-	"github.com/kiln/agent/internal/fngateway"
-	"github.com/kiln/agent/internal/hostfs"
-	"github.com/kiln/agent/internal/runner/runnertest"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/docker"
+	"github.com/OthmanHaba/falak/agent/internal/fngateway"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
 )
 
 type bufStream struct {
@@ -87,7 +87,7 @@ func (d *fakeDocker) ContainerCreate(_ context.Context, name string, body docker
 		return nil
 	})
 	// Like bun install: resolve once, then keep an existing lockfile.
-	if lock := filepath.Join(app, "bun.lock"); body.Cmd[0] == "kiln-fn-install" {
+	if lock := filepath.Join(app, "bun.lock"); body.Cmd[0] == "falak-fn-install" {
 		if _, err := os.Stat(lock); err != nil {
 			_ = os.WriteFile(lock, []byte(fmt.Sprintf("resolved #%d", len(d.created))), 0o644)
 		}
@@ -197,7 +197,7 @@ func setup(t *testing.T) *env {
 }
 
 func payload(release string) ApplyPayload {
-	return ApplyPayload{Site: "hello", Release: release, Image: "ghcr.io/kiln/kiln-fn-bun:0.4.0", Entrypoint: "index.ts",
+	return ApplyPayload{Site: "hello", Release: release, Image: "ghcr.io/falak/falak-fn-bun:0.4.0", Entrypoint: "index.ts",
 		Files: []File{{Path: "index.ts", Content: "import { Hono } from 'hono'\nexport default new Hono()\n"}, {Path: "lib/util.ts", Content: "export const x = 1\n"}},
 		Env:   map[string]string{"DATABASE_URL": "postgres://db"}}
 }
@@ -220,26 +220,26 @@ func TestApplyInstallsAndRegistersTheRelease(t *testing.T) {
 	if !r.Installed || r.Release != "r1" || r.BootMS != 180 {
 		t.Fatalf("result %+v", r)
 	}
-	dir := e.fs.P("/var/lib/kiln/functions/hello/releases/r1")
+	dir := e.fs.P("/var/lib/falak/functions/hello/releases/r1")
 	for _, f := range []string{"index.ts", "lib/util.ts", markerFile} {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("missing %s: %v", f, err)
 		}
 	}
-	// The install container: runtime image, kiln-fn-install, nobody, hardened, release + cache mounted.
+	// The install container: runtime image, falak-fn-install, nobody, hardened, release + cache mounted.
 	if len(e.d.created) != 1 {
 		t.Fatalf("created %d containers", len(e.d.created))
 	}
 	b := e.d.created[0]
 	hc := b.HostConfig
-	if b.Image != "ghcr.io/kiln/kiln-fn-bun:0.4.0" || b.Cmd[0] != "kiln-fn-install" || b.User != "65534:65534" || b.WorkingDir != "/app" ||
-		!hc.ReadonlyRootfs || hc.CapDrop[0] != "ALL" || hc.NetworkMode != "kiln-fn" || !strings.HasSuffix(hc.Binds[1], "/var/lib/kiln/functions/.cache/ghcr-io-kiln-kiln-fn-bun:/cache:rw") {
+	if b.Image != "ghcr.io/falak/falak-fn-bun:0.4.0" || b.Cmd[0] != "falak-fn-install" || b.User != "65534:65534" || b.WorkingDir != "/app" ||
+		!hc.ReadonlyRootfs || hc.CapDrop[0] != "ALL" || hc.NetworkMode != "falak-fn" || !strings.HasSuffix(hc.Binds[1], "/var/lib/falak/functions/.cache/ghcr-io-falak-falak-fn-bun:/cache:rw") {
 		t.Fatalf("install container %+v", b)
 	}
 	if strings.Join(e.d.seen, ",") != "index.ts,lib/util.ts" {
 		t.Fatalf("install saw %v", e.d.seen)
 	}
-	if e.d.names[0] != "kiln-fn-install-hello-r1" || e.d.removed[len(e.d.removed)-1] != "install-1" || !e.d.networks["kiln-fn"] {
+	if e.d.names[0] != "falak-fn-install-hello-r1" || e.d.removed[len(e.d.removed)-1] != "install-1" || !e.d.networks["falak-fn"] {
 		t.Fatalf("names %v removed %v networks %v", e.d.names, e.d.removed, e.d.networks)
 	}
 	if len(e.d.pulls) != 1 {
@@ -255,10 +255,10 @@ func TestApplyInstallsAndRegistersTheRelease(t *testing.T) {
 	}
 	// Unit installed on first use, and the gateway restarted onto it.
 	unit, err := e.fs.ReadFile(GatewayUnitPath)
-	if err != nil || !strings.Contains(string(unit), "ExecStart=/usr/local/bin/kiln-agent fn-gateway") || !strings.Contains(string(unit), "RuntimeDirectory=kiln-fn") {
+	if err != nil || !strings.Contains(string(unit), "ExecStart=/usr/local/bin/falak-agent fn-gateway") || !strings.Contains(string(unit), "RuntimeDirectory=falak-fn") {
 		t.Fatalf("unit: %v\n%s", err, unit)
 	}
-	if got := e.calls(); got != "systemctl daemon-reload\nsystemctl enable kiln-fn-gateway.service\nsystemctl restart kiln-fn-gateway.service" {
+	if got := e.calls(); got != "systemctl daemon-reload\nsystemctl enable falak-fn-gateway.service\nsystemctl restart falak-fn-gateway.service" {
 		t.Fatalf("systemctl calls:\n%s", got)
 	}
 
@@ -280,7 +280,7 @@ func TestInstallFailureLeavesNoRelease(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "installing dependencies failed (exit 1)") {
 		t.Fatalf("err %v", err)
 	}
-	entries, _ := os.ReadDir(e.fs.P("/var/lib/kiln/functions/hello/releases"))
+	entries, _ := os.ReadDir(e.fs.P("/var/lib/falak/functions/hello/releases"))
 	if len(entries) != 0 {
 		t.Fatalf("left behind: %v", entries)
 	}
@@ -311,25 +311,25 @@ func TestGatewayFailureIsReported(t *testing.T) {
 
 func TestGatewayStartedWhenDownAndRestartedWhenOutdated(t *testing.T) {
 	e := setup(t)
-	if _, err := e.fs.WriteFile(GatewayUnitPath, []byte(RenderGatewayUnit("/usr/local/bin/kiln-agent")), 0o644); err != nil {
+	if _, err := e.fs.WriteFile(GatewayUnitPath, []byte(RenderGatewayUnit("/usr/local/bin/falak-agent")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	e.gw.version = "0.3.9"
 	if err := e.f.ensureGateway(context.Background(), e.st); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.calls(); got != "systemctl restart kiln-fn-gateway.service" {
+	if got := e.calls(); got != "systemctl restart falak-fn-gateway.service" {
 		t.Fatalf("outdated gateway: %s", got)
 	}
 
 	e = setup(t)
-	_, _ = e.fs.WriteFile(GatewayUnitPath, []byte(RenderGatewayUnit("/usr/local/bin/kiln-agent")), 0o644)
+	_, _ = e.fs.WriteFile(GatewayUnitPath, []byte(RenderGatewayUnit("/usr/local/bin/falak-agent")), 0o644)
 	e.gw.down = true
 	go func() { time.Sleep(50 * time.Millisecond); e.gw.mu.Lock(); e.gw.down = false; e.gw.mu.Unlock() }()
 	if err := e.f.ensureGateway(context.Background(), e.st); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.calls(); got != "systemctl start kiln-fn-gateway.service" {
+	if got := e.calls(); got != "systemctl start falak-fn-gateway.service" {
 		t.Fatalf("stopped gateway: %s", got)
 	}
 }
@@ -339,7 +339,7 @@ func TestValidation(t *testing.T) {
 	for name, mut := range map[string]func(*ApplyPayload){
 		"parent dir":    func(p *ApplyPayload) { p.Files[1].Path = "../x.ts" },
 		"absolute":      func(p *ApplyPayload) { p.Files[1].Path = "/etc/passwd" },
-		"dot file":      func(p *ApplyPayload) { p.Files[1].Path = ".kiln-release.json" },
+		"dot file":      func(p *ApplyPayload) { p.Files[1].Path = ".falak-release.json" },
 		"inner dotdot":  func(p *ApplyPayload) { p.Files[1].Path = "lib/../../x" },
 		"node_modules":  func(p *ApplyPayload) { p.Files[1].Path = "node_modules/hono/index.js" },
 		"no entrypoint": func(p *ApplyPayload) { p.Entrypoint = "main.ts" },
@@ -365,7 +365,7 @@ func TestValidation(t *testing.T) {
 
 func TestPruneKeepsNewestCurrentAndPrevious(t *testing.T) {
 	e := setup(t)
-	root := e.fs.P("/var/lib/kiln/functions/hello/releases")
+	root := e.fs.P("/var/lib/falak/functions/hello/releases")
 	now := time.Now()
 	for i := range 9 {
 		d := filepath.Join(root, fmt.Sprintf("r%d", i))
@@ -403,7 +403,7 @@ func TestRemoveAndStatus(t *testing.T) {
 	if err != nil || !out.(map[string]bool)["removed"] || e.gw.deleted[0] != "hello" {
 		t.Fatalf("remove %+v %v %v", out, err, e.gw.deleted)
 	}
-	if e.fs.Exists("/var/lib/kiln/functions/hello") {
+	if e.fs.Exists("/var/lib/falak/functions/hello") {
 		t.Fatal("function dir not removed")
 	}
 }
@@ -415,12 +415,12 @@ func TestSameCodeReinstallsWithItsSavedLockfile(t *testing.T) {
 	}
 	// A later release of the same code (redeploy, scaling change, rollback to a pruned release) with a new image.
 	p := payload("r2")
-	p.Image = "ghcr.io/kiln/kiln-fn-bun:0.4.1"
+	p.Image = "ghcr.io/falak/falak-fn-bun:0.4.1"
 	st := &bufStream{}
 	if _, err := e.f.Apply(context.Background(), p, st); err != nil {
 		t.Fatal(err)
 	}
-	lock, _ := os.ReadFile(e.fs.P("/var/lib/kiln/functions/hello/releases/r2/bun.lock"))
+	lock, _ := os.ReadFile(e.fs.P("/var/lib/falak/functions/hello/releases/r2/bun.lock"))
 	if string(lock) != "resolved #1" || !strings.Contains(st.String(), "reusing the dependency versions") {
 		t.Fatalf("lock %q\n%s", lock, st)
 	}
@@ -431,7 +431,7 @@ func TestSameCodeReinstallsWithItsSavedLockfile(t *testing.T) {
 	if _, err := e.f.Apply(context.Background(), p, &bufStream{}); err != nil {
 		t.Fatal(err)
 	}
-	if lock, _ := os.ReadFile(e.fs.P("/var/lib/kiln/functions/hello/releases/r3/bun.lock")); string(lock) != "resolved #3" {
+	if lock, _ := os.ReadFile(e.fs.P("/var/lib/falak/functions/hello/releases/r3/bun.lock")); string(lock) != "resolved #3" {
 		t.Fatalf("changed code reused a lock: %q", lock)
 	}
 }
@@ -459,12 +459,12 @@ func TestRefreshGatewayAtStartup(t *testing.T) {
 		t.Fatalf("no functions on this server, yet: %s", got)
 	}
 
-	_, _ = e.fs.WriteFile(GatewayUnitPath, []byte(RenderGatewayUnit("/usr/local/bin/kiln-agent")), 0o644)
+	_, _ = e.fs.WriteFile(GatewayUnitPath, []byte(RenderGatewayUnit("/usr/local/bin/falak-agent")), 0o644)
 	e.gw.version = "0.3.9"
 	if err := e.f.RefreshGateway(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.calls(); got != "systemctl restart kiln-fn-gateway.service" {
+	if got := e.calls(); got != "systemctl restart falak-fn-gateway.service" {
 		t.Fatalf("outdated gateway: %s", got)
 	}
 }

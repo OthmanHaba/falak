@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Edge\Application\Actions;
+namespace Falak\Edge\Application\Actions;
 
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
-use Kiln\Edge\Application\CertificateInstaller;
-use Kiln\Edge\Domain\Certificates\PemCertificate;
-use Kiln\Edge\Domain\Models\Certificate;
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Sites\Contracts\Data\SiteData;
+use Falak\Edge\Application\CertificateInstaller;
+use Falak\Edge\Domain\Certificates\PemCertificate;
+use Falak\Edge\Domain\Models\Certificate;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Sites\Contracts\Data\SiteData;
 use SensitiveParameter;
 
 final class UploadCertificate
@@ -34,7 +34,7 @@ final class UploadCertificate
         $certificate = Certificate::query()->create([
             'organization_id' => $site->organizationId,
             'site_id' => $site->id,
-            'name' => 'kiln-'.strtolower((string) Str::ulid()),
+            'name' => 'falak-'.strtolower((string) Str::ulid()),
             'domains' => $pem->domains,
             'cert_pem' => $pem->certPem,
             'key_pem' => $pem->keyPem,

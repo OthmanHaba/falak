@@ -10,7 +10,7 @@ import {
     SkeletonRows,
     StatusBadge,
     Tag,
-} from '@/components/kiln';
+} from '@/components/falak';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
 import { KeyRound, Plus, Trash2 } from 'lucide-react';

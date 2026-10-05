@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Builds\Application\Console;
+namespace Falak\Builds\Application\Console;
 
 use Illuminate\Console\Command;
-use Kiln\Builds\Contracts\BuildStatus;
-use Kiln\Builds\Domain\Models\Build;
+use Falak\Builds\Contracts\BuildStatus;
+use Falak\Builds\Domain\Models\Build;
 
 /**
- * Whether the built-in registry may be stopped for garbage collection (`kiln-ctl registry gc` asks first): exit 0 when
+ * Whether the built-in registry may be stopped for garbage collection (`falak-ctl registry gc` asks first): exit 0 when
  * no image build is queued or running, 1 when one is (a push during garbage collection could lose layers).
  */
 final class RegistryIdleCommand extends Command
 {
-    protected $signature = 'kiln:registry-idle';
+    protected $signature = 'falak:registry-idle';
 
     protected $description = 'Exit 0 when no image build (docker / compose) is queued or running, 1 otherwise';
 

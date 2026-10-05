@@ -1,9 +1,9 @@
 <?php
 
-use Kiln\Identity\Contracts\Role;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Templates\Application\Catalog\TemplateParser;
-use Kiln\Templates\Application\Compose\SiteCompose;
+use Falak\Identity\Contracts\Role;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Templates\Application\Catalog\TemplateParser;
+use Falak\Templates\Application\Compose\SiteCompose;
 
 require_once __DIR__.'/../Support/helpers.php';
 require_once __DIR__.'/../../../Projects/tests/Support/helpers.php';
@@ -31,7 +31,7 @@ YAML;
 beforeEach(function () {
     templates_fixture_catalog();
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
 
     $this->site = projects_site($this->organization, 'Shop', [
         'SECRET_KEY_BASE' => 'q8Zr2LwX0pVb7Ns4Kd9Tf1Hy6Jm3Ge5A',
@@ -61,7 +61,7 @@ it('drafts a template from a compose site without leaking secrets', function () 
     $draft = $this->postJson("/settings/templates/from-site/{$this->site->id}")->assertOk()->json('data');
 
     expect($draft['problems'])->toBe([])
-        ->and($draft['compose_yaml'])->toContain('APP_URL: ${{ kiln.url(app) }}')->toContain('HOST: ${{ kiln.domain(app) }}')
+        ->and($draft['compose_yaml'])->toContain('APP_URL: ${{ falak.url(app) }}')->toContain('HOST: ${{ falak.domain(app) }}')
         ->and($draft['template_yaml'])
         ->not->toContain('q8Zr2LwX0pVb7Ns4Kd9Tf1Hy6Jm3Ge5A')
         ->not->toContain('correct horse')
@@ -78,7 +78,7 @@ it('drafts a template from a compose site without leaking secrets', function () 
         ->and($template->input('DATABASE_URL')->default)->toBe('${{ postgres.DATABASE_URL }}')
         ->and($template->input('MODE')->default)->toBe('production')
         ->and($template->input('FEATURE_X')->type->value)->toBe('boolean')
-        ->and($template->input('CALLBACK')->default)->toBe('${{ kiln.url(app) }}/callback')
+        ->and($template->input('CALLBACK')->default)->toBe('${{ falak.url(app) }}/callback')
         ->and($template->input('NOT_IN_VARIABLES')->required)->toBeTrue();
 
     // The draft saves as-is.

@@ -1,2 +1,0 @@
-#!/bin/sh
-exec bun /opt/kiln-fn/bun/serve.ts "$@"

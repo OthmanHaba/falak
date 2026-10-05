@@ -1,16 +1,16 @@
-import { Button } from '@/components/kiln/button';
-import { Callout } from '@/components/kiln/callout';
-import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
-import { DataTable } from '@/components/kiln/data-table';
-import { Dialog } from '@/components/kiln/dialog';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { IntegrationTile } from '@/components/kiln/integration-icon';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { SecretInput } from '@/components/kiln/secret-input';
-import { Section } from '@/components/kiln/section';
-import { StatusBadge } from '@/components/kiln/status';
+import { Button } from '@/components/falak/button';
+import { Callout } from '@/components/falak/callout';
+import { ConfirmDestructive } from '@/components/falak/confirm-destructive';
+import { DataTable } from '@/components/falak/data-table';
+import { Dialog } from '@/components/falak/dialog';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { IntegrationTile } from '@/components/falak/integration-icon';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { SecretInput } from '@/components/falak/secret-input';
+import { Section } from '@/components/falak/section';
+import { StatusBadge } from '@/components/falak/status';
 import SettingsLayout from '@/layouts/settings/layout';
 import { cn } from '@/lib/utils';
 import { router, useForm } from '@inertiajs/react';
@@ -158,7 +158,7 @@ function AddCredentialDialog({
             open={provider !== null}
             onOpenChange={(open) => !open && onClose()}
             title="Add a cloud provider"
-            description="Kiln checks the credential against the provider's API before saving it, then stores it encrypted. It is never shown again."
+            description="Falak checks the credential against the provider's API before saving it, then stores it encrypted. It is never shown again."
             footer={
                 <>
                     <Button variant="ghost" onClick={onClose}>
@@ -298,7 +298,7 @@ export default function ProvidersIndex({ credentials, providers, can }: Props) {
     return (
         <SettingsLayout
             title="Cloud providers"
-            description="API credentials Kiln uses to create, resize and destroy servers. Any Ubuntu machine can also join with the install command — no credential needed."
+            description="API credentials Falak uses to create, resize and destroy servers. Any Ubuntu machine can also join with the install command — no credential needed."
             actions={
                 can.manage &&
                 credentials.length > 0 && (
@@ -313,7 +313,7 @@ export default function ProvidersIndex({ credentials, providers, can }: Props) {
                 <EmptyState
                     icon={<Cloud />}
                     title="No cloud accounts connected"
-                    description="Connect Hetzner Cloud, DigitalOcean, Vultr, Linode or AWS Lightsail to create servers from Kiln. Tokens are verified before they are saved."
+                    description="Connect Hetzner Cloud, DigitalOcean, Vultr, Linode or AWS Lightsail to create servers from Falak. Tokens are verified before they are saved."
                     action={
                         can.manage && (
                             <Button variant="primary" icon={<Plus />} onClick={() => setAdding(providers[0]?.value ?? null)}>
@@ -434,7 +434,7 @@ export default function ProvidersIndex({ credentials, providers, can }: Props) {
                 open={removing !== null}
                 onOpenChange={(open) => !open && setRemoving(null)}
                 title={`Remove ${removing?.name ?? ''}`}
-                description={`Existing servers keep running, but Kiln can no longer create, resize or destroy them through ${removing?.provider_label ?? 'this provider'}.`}
+                description={`Existing servers keep running, but Falak can no longer create, resize or destroy them through ${removing?.provider_label ?? 'this provider'}.`}
                 confirmText={removing?.name ?? ''}
                 confirmLabel="Remove credential"
                 onConfirm={remove}

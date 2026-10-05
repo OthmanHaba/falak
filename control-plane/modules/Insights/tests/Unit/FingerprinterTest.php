@@ -1,16 +1,16 @@
 <?php
 
-use Kiln\Insights\Domain\Support\Fingerprinter;
-use Kiln\Insights\Domain\Support\StackTrace;
+use Falak\Insights\Domain\Support\Fingerprinter;
+use Falak\Insights\Domain\Support\StackTrace;
 
 function php_trace(string $release, int $line = 42): string
 {
     return implode("\n", [
-        "#0 /srv/kiln/sites/shop/releases/{$release}/vendor/laravel/framework/src/Illuminate/Database/Connection.php(812): Illuminate\\Database\\Connection->runQueryCallback('select * from...', Array, Object(Closure))",
-        "#1 /srv/kiln/sites/shop/releases/{$release}/app/Services/Checkout.php({$line}): Illuminate\\Database\\Connection->select('select...')",
-        "#2 /srv/kiln/sites/shop/releases/{$release}/app/Http/Controllers/CheckoutController.php(".($line + 10).'): App\\Services\\Checkout->total(Object(App\\Models\\Cart))',
+        "#0 /srv/falak/sites/shop/releases/{$release}/vendor/laravel/framework/src/Illuminate/Database/Connection.php(812): Illuminate\\Database\\Connection->runQueryCallback('select * from...', Array, Object(Closure))",
+        "#1 /srv/falak/sites/shop/releases/{$release}/app/Services/Checkout.php({$line}): Illuminate\\Database\\Connection->select('select...')",
+        "#2 /srv/falak/sites/shop/releases/{$release}/app/Http/Controllers/CheckoutController.php(".($line + 10).'): App\\Services\\Checkout->total(Object(App\\Models\\Cart))',
         '#3 [internal function]: App\\Http\\Controllers\\CheckoutController->store()',
-        "#4 /srv/kiln/sites/shop/releases/{$release}/vendor/laravel/framework/src/Illuminate/Routing/Controller.php(54): call_user_func_array(Array, Array)",
+        "#4 /srv/falak/sites/shop/releases/{$release}/vendor/laravel/framework/src/Illuminate/Routing/Controller.php(54): call_user_func_array(Array, Array)",
         '#5 {main}',
     ]);
 }
@@ -48,10 +48,10 @@ it('ignores vendor frames when choosing the significant frames', function () {
 
 it('parses node stack traces', function () {
     $trace = "TypeError: Cannot read properties of undefined (reading 'id')\n"
-        ."    at OrderService.load (/srv/kiln/sites/api/releases/01J8CCCCCCCCCCCCCCCCCCCCCC/dist/orders.js:12:15)\n"
-        ."    at async Router.handle (/srv/kiln/sites/api/releases/01J8CCCCCCCCCCCCCCCCCCCCCC/node_modules/express/lib/router.js:5:3)\n"
+        ."    at OrderService.load (/srv/falak/sites/api/releases/01J8CCCCCCCCCCCCCCCCCCCCCC/dist/orders.js:12:15)\n"
+        ."    at async Router.handle (/srv/falak/sites/api/releases/01J8CCCCCCCCCCCCCCCCCCCCCC/node_modules/express/lib/router.js:5:3)\n"
         ."    at node:internal/process/task_queues:95:5\n"
-        .'    at /srv/kiln/sites/api/current/dist/index.js:3:1';
+        .'    at /srv/falak/sites/api/current/dist/index.js:3:1';
 
     $frames = StackTrace::parse($trace);
 

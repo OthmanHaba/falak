@@ -1,1 +1,1 @@
-{"script": "php artisan about --only=environment", "shell": "/bin/bash", "user": "shop", "cwd": "/srv/kiln/sites/shop/current", "env": {"APP_ENV": "production"}}
+{"script": "php artisan about --only=environment", "shell": "/bin/bash", "user": "shop", "cwd": "/srv/falak/sites/shop/current", "env": {"APP_ENV": "production"}}

@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Recipes\Application\Actions;
+namespace Falak\Recipes\Application\Actions;
 
-use Kiln\Recipes\Domain\BuiltinRecipe;
-use Kiln\Recipes\Domain\Models\Recipe;
+use Falak\Recipes\Domain\BuiltinRecipe;
+use Falak\Recipes\Domain\Models\Recipe;
 
 /**
  * Copies a built-in recipe into the organization so it can be customised.

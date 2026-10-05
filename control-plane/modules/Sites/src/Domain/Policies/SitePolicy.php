@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Sites\Domain\Policies;
+namespace Falak\Sites\Domain\Policies;
 
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Sites\Domain\Models\Site;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Sites\Domain\Models\Site;
 
 final class SitePolicy
 {

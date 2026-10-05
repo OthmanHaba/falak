@@ -1,4 +1,4 @@
-import { StatusBadge } from '@/components/kiln/status';
+import { StatusBadge } from '@/components/falak/status';
 import { type ApplyStatus } from '../types';
 
 const STATUS: Record<ApplyStatus, { status: string; label: string }> = {

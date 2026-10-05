@@ -2,15 +2,15 @@
 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
-use Kiln\Apm\Recorder;
-use Kiln\Apm\Transport\SocketTransport;
+use Falak\Apm\Recorder;
+use Falak\Apm\Transport\SocketTransport;
 
 /**
  * Starts tests/Fixtures/fake-otlp-server.php and returns [process, outDir, address].
  */
 function startFakeOtlpServer(string $listen): array
 {
-    $dir = sys_get_temp_dir().'/kiln-otlp-'.bin2hex(random_bytes(4));
+    $dir = sys_get_temp_dir().'/falak-otlp-'.bin2hex(random_bytes(4));
     mkdir($dir);
 
     $process = proc_open([PHP_BINARY, __DIR__.'/../Fixtures/fake-otlp-server.php', $listen, $dir], [1 => ['file', '/dev/null', 'w'], 2 => ['file', "$dir/stderr", 'w']], $pipes);
@@ -45,7 +45,7 @@ function useTransport(Recorder $recorder, SocketTransport $transport): void
 }
 
 it('sends OTLP/HTTP JSON over the agent unix socket', function () {
-    $socket = sys_get_temp_dir().'/kiln-'.bin2hex(random_bytes(4)).'.sock';
+    $socket = sys_get_temp_dir().'/falak-'.bin2hex(random_bytes(4)).'.sock';
     [$process, $dir] = startFakeOtlpServer('unix://'.$socket);
 
     try {
@@ -72,7 +72,7 @@ it('sends OTLP/HTTP JSON over the agent unix socket', function () {
         $payload = json_decode($body, true, flags: JSON_THROW_ON_ERROR);
         $span = collect($payload['resourceSpans'][0]['scopeSpans'][0]['spans'])->firstWhere('name', 'GET /hello');
         expect($span)->not->toBeNull()
-            ->and(collect($span['attributes'])->firstWhere('key', 'kiln.event.type')['value'])->toBe(['stringValue' => 'request']);
+            ->and(collect($span['attributes'])->firstWhere('key', 'falak.event.type')['value'])->toBe(['stringValue' => 'request']);
 
         expect($logs)->toStartWith("POST /v1/logs HTTP/1.1\r\n")->toContain('hi from request');
     } finally {
@@ -85,7 +85,7 @@ it('falls back to the TCP endpoint when the socket is missing', function () {
     [$process, $dir, $address] = startFakeOtlpServer('tcp://127.0.0.1:0');
 
     try {
-        $transport = new SocketTransport(['unix:/nonexistent/kiln.sock', 'http://'.$address], 0.25);
+        $transport = new SocketTransport(['unix:/nonexistent/falak.sock', 'http://'.$address], 0.25);
 
         expect($transport->send('/v1/traces', '{"resourceSpans":[]}'))->toBeTrue();
 
@@ -97,7 +97,7 @@ it('falls back to the TCP endpoint when the socket is missing', function () {
 });
 
 it('sends large payloads completely', function () {
-    $socket = sys_get_temp_dir().'/kiln-'.bin2hex(random_bytes(4)).'.sock';
+    $socket = sys_get_temp_dir().'/falak-'.bin2hex(random_bytes(4)).'.sock';
     [$process, $dir] = startFakeOtlpServer('unix://'.$socket);
 
     try {

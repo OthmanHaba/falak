@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kiln/agent/internal/commands"
-	"github.com/kiln/agent/internal/runner"
-	"github.com/kiln/agent/internal/system"
+	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/system"
 )
 
 // Location is a backup destination / restore source.
@@ -76,7 +76,7 @@ func (db *DB) Backup(ctx context.Context, p BackupPayload, st commands.Stream) (
 		if !strings.HasPrefix(p.Destination.URL, "https://") {
 			return nil, &commands.PayloadError{Err: errors.New("destination.url must be https")}
 		}
-		f, err := os.CreateTemp(db.d.TempDir, "kiln-backup-*")
+		f, err := os.CreateTemp(db.d.TempDir, "falak-backup-*")
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +229,7 @@ func (db *DB) Restore(ctx context.Context, p RestorePayload, st commands.Stream)
 			}
 		}
 	case "url":
-		tmp, err := os.CreateTemp(db.d.TempDir, "kiln-restore-*")
+		tmp, err := os.CreateTemp(db.d.TempDir, "falak-restore-*")
 		if err != nil {
 			return nil, err
 		}

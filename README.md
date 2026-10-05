@@ -1,4 +1,4 @@
-# Kiln
+# Falak
 
 Self-hosted server management, deployment and observability — a replacement for Laravel Forge + Envoyer
 (multi-server deploys) + Coolify-style Docker/native builds + Nightwatch-style APM, on an LGTM stack.
@@ -6,9 +6,9 @@ Self-hosted server management, deployment and observability — a replacement fo
 | Part | What it is |
 |---|---|
 | `control-plane/` | Laravel 12 **modular monolith** (17 modules under `modules/`) + Inertia React TypeScript UI |
-| `agent/` | Go: `kiln-agent` (servers, ~10 MB, ~17 MB RAM), `kiln` (CLI), `kiln-builder` (build worker) |
-| `packages/apm-laravel` | `kiln/apm-laravel` — Nightwatch-equivalent instrumentation (Laravel 11/12/13) |
-| `packages/apm-node` | `@kiln/apm-node` — OpenTelemetry preset for Node/Bun/Deno/TypeScript apps |
+| `agent/` | Go: `falak-agent` (servers, ~10 MB, ~17 MB RAM), `falak` (CLI), `falak-builder` (build worker) |
+| `packages/apm-laravel` | `falak/apm-laravel` — Nightwatch-equivalent instrumentation (Laravel 11/12/13) |
+| `packages/apm-node` | `@falak/apm-node` — OpenTelemetry preset for Node/Bun/Deno/TypeScript apps |
 | `observability/` | Loki + Tempo + Grafana + VictoriaMetrics **or** Mimir, dashboards, alert rules |
 | `contracts/` | Agent protocol + telemetry contract (JSON Schemas shared by PHP and Go) |
 | `sim/` | Local end-to-end simulation: control plane + 3 Ubuntu 24.04 "servers" + builder + git + LGTM |
@@ -30,7 +30,7 @@ make e2e                                  # infrastructure checks (TLS, mTLS edg
 make e2e-deploy                           # full product flow (below), ~13 min cold, less warm; ONLY=deploy,release to iterate
 ```
 
-`make e2e-deploy` drives the product **only through public surfaces** — `artisan kiln:admin`, the REST
+`make e2e-deploy` drives the product **only through public surfaces** — `artisan falak:admin`, the REST
 API, and the install command each server prints:
 
 1. creates the first admin, organization and API token;
@@ -50,7 +50,7 @@ Useful while it runs:
 
 | | |
 |---|---|
-| Control plane UI | `https://localhost:8443` (trust `sim/.data/edge-root.crt`, created by `make ca`) — log in as `admin@kiln.test` after setting a password: `cd sim && docker compose -p kiln-sim --env-file sim.env --env-file .data/secrets.env exec control-plane php artisan kiln:admin admin@kiln.test --reset-password --password='choose-one'` |
+| Control plane UI | `https://localhost:8443` (trust `sim/.data/edge-root.crt`, created by `make ca`) — log in as `admin@falak.test` after setting a password: `cd sim && docker compose -p falak-sim --env-file sim.env --env-file .data/secrets.env exec control-plane php artisan falak:admin admin@falak.test --reset-password --password='choose-one'` |
 | Grafana | `http://localhost:13000` (admin / admin) |
 | Logs | `make logs` · `make shell` |
 | Reset | `make reset` (wipes all volumes and generated secrets, keeps the package/image/download caches) · `make reset-all` (also wipes the caches) |
@@ -90,8 +90,8 @@ CI runs the same in `.github/workflows/` (control-plane, agent, packages with a 
 ### First run
 ```bash
 php artisan migrate --force
-php artisan kiln:admin you@example.com --organization="Acme" --token=cli   # prints password + API token
-php artisan kiln:admin you@example.com --reset-password                    # lost password
+php artisan falak:admin you@example.com --organization="Acme" --token=cli   # prints password + API token
+php artisan falak:admin you@example.com --reset-password                    # lost password
 ```
 Then open the UI, or use the CLI / API.
 
@@ -107,63 +107,63 @@ UI: **Sites → Create** — pick server(s) (first = leader for migrations), fra
 (FrankenPHP default, php-fpm, Node, Bun, Deno, static, Docker), repository and branch.
 Then **Deploy**, or enable push-to-deploy, or call the deploy hook URL from CI.
 Laravel sites can switch on **Octane** under Settings → Laravel (FrankenPHP worker mode on FrankenPHP servers, Swoole or
-RoadRunner on PHP-FPM): Kiln picks a free port per server, and Caddy serves `public/` files itself and proxies the rest
+RoadRunner on PHP-FPM): Falak picks a free port per server, and Caddy serves `public/` files itself and proxies the rest
 to Octane once it answers; deploys restart Octane while Caddy holds requests.
 
 ### Functions
-**Canvas → Create → Function**: write a function in Kiln's editor (Bun, Node.js, Deno, Python or Go; one file or a
+**Canvas → Create → Function**: write a function in Falak's editor (Bun, Node.js, Deno, Python or Go; one file or a
 folder tree; drafts, versions, one-click rollback) and deploy it in seconds, with no repository. It gets a URL like
 any service, reads variables and database references, and **scales to zero** when idle: the server's function
 gateway starts it on the first request and adds instances under load. Details: [`docs/FUNCTIONS.md`](docs/FUNCTIONS.md).
 
 ### CLI (on your own machine)
-`kiln` controls a Kiln install from a developer laptop or CI: deploys, rollbacks, env files, logs, SSH. Install it
+`falak` controls a Falak install from a developer laptop or CI: deploys, rollbacks, env files, logs, SSH. Install it
 on macOS or Linux (amd64/arm64) in one line. The script picks the right binary from the latest release, checks it
 against `SHA256SUMS` and puts it in `/usr/local/bin` (or `~/.local/bin`):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OthmanHaba/kiln/main/deploy/install-cli.sh | sh
+curl -fsSL https://raw.githubusercontent.com/OthmanHaba/falak/main/deploy/install-cli.sh | sh
 
 # install and log in in one go
-curl -fsSL https://raw.githubusercontent.com/OthmanHaba/kiln/main/deploy/install-cli.sh | KILN_URL=https://kiln.example.com sh
+curl -fsSL https://raw.githubusercontent.com/OthmanHaba/falak/main/deploy/install-cli.sh | FALAK_URL=https://falak.example.com sh
 ```
-`KILN_VERSION=v0.2.6` pins a version and `KILN_INSTALL_DIR` changes the target. Log in with an API token from
-**Settings → API tokens**. The token is checked, then stored in `~/Library/Application Support/kiln/credentials.json`
-(macOS) or `~/.config/kiln/credentials.json` (Linux), mode 0600. `kiln whoami` shows who you are, `kiln logout`
-forgets the token, and revoking it in the panel cuts the CLI off. `kiln-ctl` is different: it is the server admin
+`FALAK_VERSION=v0.2.6` pins a version and `FALAK_INSTALL_DIR` changes the target. Log in with an API token from
+**Settings → API tokens**. The token is checked, then stored in `~/Library/Application Support/falak/credentials.json`
+(macOS) or `~/.config/falak/credentials.json` (Linux), mode 0600. `falak whoami` shows who you are, `falak logout`
+forgets the token, and revoking it in the panel cuts the CLI off. `falak-ctl` is different: it is the server admin
 tool that `install.sh` puts on the control-plane host.
 ```bash
-kiln login --url https://kiln.example.com          # or KILN_URL / KILN_TOKEN in CI
-kiln servers list
-kiln sites list
-kiln deploy shop --wait                            # streams output; exit code 3 if the deploy fails
-kiln releases shop
-kiln rollback shop --wait
-kiln env pull shop > .env.production && kiln env push shop < .env.production
-kiln logs shop --follow
-kiln ssh app-1
+falak login --url https://falak.example.com          # or FALAK_URL / FALAK_TOKEN in CI
+falak servers list
+falak sites list
+falak deploy shop --wait                            # streams output; exit code 3 if the deploy fails
+falak releases shop
+falak rollback shop --wait
+falak env pull shop > .env.production && falak env push shop < .env.production
+falak logs shop --follow
+falak ssh app-1
 
 # Functions
-kiln fn list
-kiln fn pull hooks ./hooks                         # code + .kiln-function.json
-kiln fn deploy hooks ./hooks -m "Add /health" --wait   # exit 4 if someone deployed after your pull (--force)
-kiln fn versions hooks && kiln fn rollback hooks v3 --wait
-kiln fn run hooks "Nightly cleanup"                # run a schedule now, streams its output
-kiln fn invoke hooks /hello/ada -H 'X-Kiln-Key: …'
-kiln fn logs hooks --follow
+falak fn list
+falak fn pull hooks ./hooks                         # code + .falak-function.json
+falak fn deploy hooks ./hooks -m "Add /health" --wait   # exit 4 if someone deployed after your pull (--force)
+falak fn versions hooks && falak fn rollback hooks v3 --wait
+falak fn run hooks "Nightly cleanup"                # run a schedule now, streams its output
+falak fn invoke hooks /hello/ada -H 'X-Falak-Key: …'
+falak fn logs hooks --follow
 ```
 
 ### API
 Sanctum bearer tokens scoped to one organization. Endpoints and payloads: [`docs/API.md`](docs/API.md).
 
 ### Cloudflare
-Connect a Cloudflare token in **Settings → Integrations → Cloudflare** and Kiln manages the DNS of your zones:
+Connect a Cloudflare token in **Settings → Integrations → Cloudflare** and Falak manages the DNS of your zones:
 records follow your domains, new services get names under your zone, and services work behind the orange cloud
 (DDoS protection, edge cache, real visitor IPs). Free plan. Setup and details: [`docs/CLOUDFLARE.md`](docs/CLOUDFLARE.md).
 
 ### Instrument your apps (APM)
-- Laravel: require `kiln/apm-laravel` — auto-discovered; sends requests, queries, jobs, mail,
+- Laravel: require `falak/apm-laravel` — auto-discovered; sends requests, queries, jobs, mail,
   notifications, cache, commands, scheduled tasks, outgoing HTTP, exceptions and logs to the local agent.
-- Node/Bun/Deno: `import '@kiln/apm-node/register'` (see `packages/apm-node/README.md`).
+- Node/Bun/Deno: `import '@falak/apm-node/register'` (see `packages/apm-node/README.md`).
 
 Issues, thresholds and missed scheduled runs appear under **Insights**; traces, logs and metrics in
 Grafana (dashboards are provisioned per organization).
@@ -173,17 +173,17 @@ Grafana (dashboards are provisioned per organization).
 ## 4. Production install
 
 One command on a fresh Ubuntu 22.04/24.04 or Debian 12 host (4 GB RAM recommended). Point DNS for
-`kiln.example.com` and `agents.kiln.example.com` at the host first:
+`falak.example.com` and `agents.falak.example.com` at the host first:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OthmanHaba/kiln/main/deploy/install.sh \
-  | sudo bash -s -- --domain kiln.example.com --email you@example.com [--observability]
+curl -fsSL https://raw.githubusercontent.com/OthmanHaba/falak/main/deploy/install.sh \
+  | sudo bash -s -- --domain falak.example.com --email you@example.com [--observability]
 ```
 
-The installer runs preflight checks, installs Docker, generates `/opt/kiln/.env`, pulls the release images
+The installer runs preflight checks, installs Docker, generates `/opt/falak/.env`, pulls the release images
 from GHCR, starts the Compose stack (`deploy/compose.yml`: FrankenPHP web, Horizon, Reverb, scheduler,
 Postgres 17, Valkey, a Caddy edge with Let's Encrypt and agent mTLS, and the builder) and prints the first
-admin password. Day-2 operations use `kiln-ctl`: `status`, `logs`, `update` (backup, then automatic
+admin password. Day-2 operations use `falak-ctl`: `status`, `logs`, `update` (backup, then automatic
 rollback if the update fails), `backup`/`restore` (database, storage, **Fleet CA**, `.env`), `doctor`,
 `domain set` and `admin reset-password`.
 
@@ -194,4 +194,4 @@ Known limits and deferred items are listed in [`docs/INTEGRATION-NOTES.md`](docs
 
 ## License
 
-Kiln is licensed under the [Apache License 2.0](LICENSE).
+Falak is licensed under the [Apache License 2.0](LICENSE).

@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Network\Infrastructure;
+namespace Falak\Network\Infrastructure;
 
-use Kiln\Network\Contracts\WebOriginPolicy;
+use Falak\Network\Contracts\WebOriginPolicy;
 
 /** Default: web ports follow the server's own rules. */
 final class NoWebOriginPolicy implements WebOriginPolicy

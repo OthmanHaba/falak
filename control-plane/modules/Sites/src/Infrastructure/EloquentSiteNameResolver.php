@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Sites\Infrastructure;
+namespace Falak\Sites\Infrastructure;
 
-use Kiln\Insights\Contracts\SiteNameResolver;
-use Kiln\Sites\Domain\Models\Site;
+use Falak\Insights\Contracts\SiteNameResolver;
+use Falak\Sites\Domain\Models\Site;
 
 /**
  * Site display names for Insights (deleted sites fall back to their id).

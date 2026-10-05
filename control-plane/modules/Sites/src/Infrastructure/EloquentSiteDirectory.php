@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Sites\Infrastructure;
+namespace Falak\Sites\Infrastructure;
 
 use Illuminate\Database\Eloquent\Builder;
-use Kiln\Sites\Contracts\Data\EnvironmentData;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\Data\SiteTargetData;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Domain\Models\EnvironmentVersion;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
+use Falak\Sites\Contracts\Data\EnvironmentData;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\Data\SiteTargetData;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Domain\Models\EnvironmentVersion;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
 
 final class EloquentSiteDirectory implements SiteDirectory
 {
@@ -69,7 +69,7 @@ final class EloquentSiteDirectory implements SiteDirectory
         }
 
         $exposed = $this->environment($siteId)?->deployScriptVariables() ?? [];
-        $context = array_filter($context, fn ($value, $key) => is_string($key) && str_starts_with($key, 'KILN_'), ARRAY_FILTER_USE_BOTH);
+        $context = array_filter($context, fn ($value, $key) => is_string($key) && str_starts_with($key, 'FALAK_'), ARRAY_FILTER_USE_BOTH);
 
         return array_merge($exposed, SiteVariables::for($site, $serverId), SiteVariables::normalizeIds(array_map('strval', $context)));
     }

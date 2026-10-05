@@ -2,23 +2,23 @@
 
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
-use Kiln\Edge\Contracts\TlsMode;
-use Kiln\Edge\Domain\Enums\InstallStatus;
-use Kiln\Edge\Domain\Enums\LbPolicy;
-use Kiln\Edge\Domain\Enums\WwwRedirect;
-use Kiln\Edge\Domain\Models\Certificate;
-use Kiln\Edge\Domain\Models\CertificateInstall;
-use Kiln\Edge\Domain\Models\DnsCredential;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Edge\Domain\Models\Header;
-use Kiln\Edge\Domain\Models\LoadBalancer;
-use Kiln\Edge\Domain\Models\Redirect;
-use Kiln\Edge\Domain\Models\SecurityRule;
-use Kiln\Edge\Domain\Models\SiteSetting;
-use Kiln\Edge\Events\DomainAdded;
-use Kiln\Edge\Events\DomainRemoved;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Servers\Contracts\ServerType;
+use Falak\Edge\Contracts\TlsMode;
+use Falak\Edge\Domain\Enums\InstallStatus;
+use Falak\Edge\Domain\Enums\LbPolicy;
+use Falak\Edge\Domain\Enums\WwwRedirect;
+use Falak\Edge\Domain\Models\Certificate;
+use Falak\Edge\Domain\Models\CertificateInstall;
+use Falak\Edge\Domain\Models\DnsCredential;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Edge\Domain\Models\Header;
+use Falak\Edge\Domain\Models\LoadBalancer;
+use Falak\Edge\Domain\Models\Redirect;
+use Falak\Edge\Domain\Models\SecurityRule;
+use Falak\Edge\Domain\Models\SiteSetting;
+use Falak\Edge\Events\DomainAdded;
+use Falak\Edge\Events\DomainRemoved;
+use Falak\Identity\Contracts\Role;
+use Falak\Servers\Contracts\ServerType;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -27,7 +27,7 @@ beforeEach(function () {
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
     $this->org = $this->organization->id;
     $this->web = edge_server($this->servers, $this->org);
-    $this->site = edge_site($this->sites, $this->org, [$this->web->id], ['testDomain' => 'shop.kiln.test']);
+    $this->site = edge_site($this->sites, $this->org, [$this->web->id], ['testDomain' => 'shop.falak.test']);
     $this->base = "/sites/{$this->site->id}";
 });
 
@@ -37,7 +37,7 @@ it('renders the domains page', function () {
 
     $this->getJson("{$this->base}/domains")->assertOk()
         ->assertJsonPath('data.domains.0.hosts', ['www.shop.com', 'shop.com'])
-        ->assertJsonPath('data.testDomain', 'shop.kiln.test')
+        ->assertJsonPath('data.testDomain', 'shop.falak.test')
         ->assertJsonCount(1, 'data.lbServers')
         ->assertJsonCount(1, 'data.edgeServers')
         ->assertJsonPath('data.can.manage', true)
@@ -63,7 +63,7 @@ it('adds domains, making the first one primary, and applies the edge', function 
     Event::assertDispatched(DomainAdded::class, 2);
 
     $last = collect($this->agents->ofType('edge.caddy.apply', $this->web->id))->last();
-    expect($last['payload']['sites'][0]['domains'])->toBe(['www.shop.com', 'shop.de', 'shop.kiln.test']);
+    expect($last['payload']['sites'][0]['domains'])->toBe(['www.shop.com', 'shop.de', 'shop.falak.test']);
 
     $this->put("{$this->base}/domains/{$domains[1]->id}/primary")->assertSessionHasNoErrors();
     expect($domains[1]->refresh()->is_primary)->toBeTrue()->and($domains[0]->refresh()->is_primary)->toBeFalse();
@@ -80,7 +80,7 @@ it('validates domains', function () {
     $this->post("{$this->base}/domains", ['name' => 'not a domain'])->assertSessionHasErrors('name');
     $this->post("{$this->base}/domains", ['name' => 'taken.com'])->assertSessionHasErrors('name');
     $this->post("{$this->base}/domains", ['name' => 'www.taken.com'])->assertSessionHasErrors('name');
-    $this->post("{$this->base}/domains", ['name' => 'shop.kiln.test'])->assertSessionHasErrors('name');
+    $this->post("{$this->base}/domains", ['name' => 'shop.falak.test'])->assertSessionHasErrors('name');
     $this->post("{$this->base}/domains", ['name' => '*.wild.com'])->assertSessionHasErrors('tls_mode');
     $this->post("{$this->base}/domains", ['name' => '*.wild.com', 'tls_mode' => 'dns'])->assertSessionHasErrors('dns_credential_id');
     $this->post("{$this->base}/domains", ['name' => 'www.x.com', 'www_redirect' => 'to_apex'])->assertSessionHasErrors('www_redirect');

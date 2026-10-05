@@ -1,16 +1,16 @@
-import { Button } from '@/components/kiln/button';
-import { ConfirmDestructive } from '@/components/kiln/confirm-destructive';
-import { DataTable } from '@/components/kiln/data-table';
-import { Dialog } from '@/components/kiln/dialog';
-import { EmptyState } from '@/components/kiln/empty-state';
-import { Field } from '@/components/kiln/field';
-import { Input, Textarea } from '@/components/kiln/input';
-import { IntegrationTile } from '@/components/kiln/integration-icon';
-import { RelativeTime } from '@/components/kiln/relative-time';
-import { SecretInput } from '@/components/kiln/secret-input';
-import { StatusBadge } from '@/components/kiln/status';
-import { Switch } from '@/components/kiln/switch';
-import { Tag } from '@/components/kiln/tag';
+import { Button } from '@/components/falak/button';
+import { ConfirmDestructive } from '@/components/falak/confirm-destructive';
+import { DataTable } from '@/components/falak/data-table';
+import { Dialog } from '@/components/falak/dialog';
+import { EmptyState } from '@/components/falak/empty-state';
+import { Field } from '@/components/falak/field';
+import { Input, Textarea } from '@/components/falak/input';
+import { IntegrationTile } from '@/components/falak/integration-icon';
+import { RelativeTime } from '@/components/falak/relative-time';
+import { SecretInput } from '@/components/falak/secret-input';
+import { StatusBadge } from '@/components/falak/status';
+import { Switch } from '@/components/falak/switch';
+import { Tag } from '@/components/falak/tag';
 import SettingsLayout from '@/layouts/settings/layout';
 import { cn } from '@/lib/utils';
 import { Link, router, useForm } from '@inertiajs/react';
@@ -81,12 +81,12 @@ const FIELDS: Record<ChannelType, FieldSpec[]> = {
         { key: 'chat_id', label: 'Chat ID', placeholder: '-1001234567890 or @channel' },
     ],
     webhook: [
-        { key: 'url', label: 'URL', placeholder: 'https://example.com/kiln-alerts', secret: true, check: url('https://') },
+        { key: 'url', label: 'URL', placeholder: 'https://example.com/falak-alerts', secret: true, check: url('https://') },
         {
             key: 'secret',
             label: 'Signing secret',
             placeholder: 'at least 16 characters',
-            help: 'Requests carry X-Kiln-Signature: sha256=HMAC(secret, "<X-Kiln-Timestamp>.<body>").',
+            help: 'Requests carry X-Falak-Signature: sha256=HMAC(secret, "<X-Falak-Timestamp>.<body>").',
             secret: true,
             check: (value) => (value && value.length < 16 ? 'Use at least 16 characters.' : undefined),
         },

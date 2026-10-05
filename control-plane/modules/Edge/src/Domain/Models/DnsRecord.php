@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Edge\Domain\Models;
+namespace Falak\Edge\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * A DNS record Kiln created in a Cloudflare zone for a domain (tagged `kiln:<domain id>` there). Kiln only updates or
+ * A DNS record Falak created in a Cloudflare zone for a domain (tagged `falak:<domain id>` there). Falak only updates or
  * deletes records listed here; an existing record of the same name is reported as a conflict, never overwritten.
  *
  * @property string $id
@@ -59,12 +59,12 @@ class DnsRecord extends Model
 
     public static function comment(string $domainId): string
     {
-        return 'kiln:'.$domainId.' (managed by Kiln; edits are overwritten)';
+        return 'falak:'.$domainId.' (managed by Falak; edits are overwritten)';
     }
 
-    /** Whether a Cloudflare record carries a Kiln tag (any owner). */
-    public static function isKilns(?string $comment): bool
+    /** Whether a Cloudflare record carries a Falak tag (any owner). */
+    public static function isFalaks(?string $comment): bool
     {
-        return str_starts_with((string) $comment, 'kiln:');
+        return str_starts_with((string) $comment, 'falak:');
     }
 }

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Insights\Http\Controllers;
+namespace Falak\Insights\Http\Controllers;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -11,17 +11,17 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Insights\Application\Queries\SiteOverview;
-use Kiln\Insights\Contracts\IssueStatus;
-use Kiln\Insights\Contracts\SiteNameResolver;
-use Kiln\Insights\Domain\Models\HeartbeatMonitor;
-use Kiln\Kernel\Http\Controller;
-use Kiln\Projects\Contracts\Data\ProjectData;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Telemetry\Contracts\TelemetryLinks;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Insights\Application\Queries\SiteOverview;
+use Falak\Insights\Contracts\IssueStatus;
+use Falak\Insights\Contracts\SiteNameResolver;
+use Falak\Insights\Domain\Models\HeartbeatMonitor;
+use Falak\Kernel\Http\Controller;
+use Falak\Projects\Contracts\Data\ProjectData;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Telemetry\Contracts\TelemetryLinks;
 
 /**
  * /observability Overview tab: organization-wide (or per project / per site) application health from the
@@ -77,7 +77,7 @@ final class OverviewController extends Controller
                 'errorLogs' => $links->logs([...($site ? ['site_id' => $site] : []), 'search' => 'error'], $from, $to),
                 'traces' => $links->traceSearch($site ? ['site_id' => $site] : [], $from, $to),
                 'slowTraces' => $links->traceSearch([...($site ? ['site_id' => $site] : []), 'min_duration_ms' => 1000], $from, $to),
-                'grafana' => $site ? $links->grafanaDashboard($organizationId, 'kiln-laravel', ['site' => $site]) : null,
+                'grafana' => $site ? $links->grafanaDashboard($organizationId, 'falak-laravel', ['site' => $site]) : null,
             ],
             'can' => ['manage' => $this->access->can($request->user(), $organizationId, 'insights.manage')],
         ]);

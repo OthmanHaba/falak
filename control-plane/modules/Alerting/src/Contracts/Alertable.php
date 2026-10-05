@@ -1,8 +1,8 @@
 <?php
 
-namespace Kiln\Alerting\Contracts;
+namespace Falak\Alerting\Contracts;
 
-use Kiln\Alerting\Contracts\Data\AlertData;
+use Falak\Alerting\Contracts\Data\AlertData;
 
 /**
  * Implement on any module event to have Alerting route it through the organization's alert

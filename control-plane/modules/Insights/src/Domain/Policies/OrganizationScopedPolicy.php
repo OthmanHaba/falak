@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Insights\Domain\Policies;
+namespace Falak\Insights\Domain\Policies;
 
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
-use Kiln\Identity\Contracts\OrganizationAccess;
+use Falak\Identity\Contracts\OrganizationAccess;
 
 /**
  * Issues, thresholds and heartbeat monitors: `insights.view` to see, `insights.manage` to change.

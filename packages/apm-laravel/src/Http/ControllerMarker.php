@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Apm\Http;
+namespace Falak\Apm\Http;
 
 use Closure;
 use Illuminate\Http\Request;
-use Kiln\Apm\Watchers\RequestWatcher;
+use Falak\Apm\Watchers\RequestWatcher;
 
 /**
  * Appended to the matched route's middleware so it runs last, right before the controller.

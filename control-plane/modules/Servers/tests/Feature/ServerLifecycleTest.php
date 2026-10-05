@@ -1,34 +1,34 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
-use Kiln\Fleet\Contracts\AgentDirectory;
-use Kiln\Fleet\Contracts\AgentStatus;
-use Kiln\Fleet\Contracts\CommandStatus;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Events\AgentEnrolled;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\Identity\Events\OrganizationDeleted;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Contracts\ProviderGateway;
-use Kiln\Providers\Contracts\ProviderType;
-use Kiln\Servers\Contracts\ServerDirectory;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Enums\PhpVersionStatus;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Models\SshKey;
-use Kiln\Servers\Events\ServerCreated;
-use Kiln\Servers\Events\ServerDeleted;
-use Kiln\Servers\Events\ServerProvisioned;
-use Kiln\Servers\Tests\Support\FakeProviderGateway;
+use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Fleet\Contracts\AgentStatus;
+use Falak\Fleet\Contracts\CommandStatus;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Events\AgentEnrolled;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Identity\Events\OrganizationDeleted;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\ProviderGateway;
+use Falak\Providers\Contracts\ProviderType;
+use Falak\Servers\Contracts\ServerDirectory;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Enums\PhpVersionStatus;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Models\SshKey;
+use Falak\Servers\Events\ServerCreated;
+use Falak\Servers\Events\ServerDeleted;
+use Falak\Servers\Events\ServerProvisioned;
+use Falak\Servers\Tests\Support\FakeProviderGateway;
 use phpseclib3\Crypt\EC;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 beforeEach(function () {
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test', 'app.url' => 'https://panel.kiln.test']);
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test', 'app.url' => 'https://panel.falak.test']);
     $this->providers = new FakeProviderGateway;
     app()->instance(ProviderGateway::class, $this->providers);
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
@@ -48,7 +48,7 @@ it('creates a custom server, enrolls its agent, provisions it and syncs SSH keys
 
     $server = Server::query()->where('name', 'app-1')->firstOrFail();
     expect($server->status)->toBe(ServerStatus::Creating)
-        ->and($server->install_command)->toStartWith('curl -fsSL https://panel.kiln.test/install/')
+        ->and($server->install_command)->toStartWith('curl -fsSL https://panel.falak.test/install/')
         ->and($server->phpVersions()->pluck('version')->all())->toBe(['8.3', '8.4'])
         ->and($server->phpVersions()->where('is_default', true)->value('version'))->toBe('8.4');
     Event::assertDispatched(ServerCreated::class);
@@ -90,7 +90,7 @@ it('creates a custom server, enrolls its agent, provisions it and syncs SSH keys
 
     $syncs = collect(servers_poll($agent['headers']))->where('type', 'system.ssh_key.sync')->values();
     expect($syncs)->toHaveCount(2)
-        ->and($syncs[0]['payload'])->toBe(['user' => 'kiln', 'keys' => [['id' => $key->id, 'name' => 'laptop', 'public_key' => $key->public_key]], 'exclusive' => false])
+        ->and($syncs[0]['payload'])->toBe(['user' => 'falak', 'keys' => [['id' => $key->id, 'name' => 'laptop', 'public_key' => $key->public_key]], 'exclusive' => false])
         ->and($syncs[1]['payload'])->toBe(['user' => 'root', 'keys' => [], 'exclusive' => false]);
 
     expect(AuditEntry::query()->where('organization_id', $this->organization->id)->pluck('action')->all())
@@ -137,7 +137,7 @@ it('creates provider servers with cloud-init that installs the agent', function 
         ->and($spec->image)->toBe('ubuntu-24.04')
         ->and($spec->name)->toBe('hz-1')
         ->and($spec->sshKeyIds)->toBe(['key-1'])
-        ->and($spec->labels)->toMatchArray(['kiln-server' => $server->id, 'kiln-type' => 'web'])
+        ->and($spec->labels)->toMatchArray(['falak-server' => $server->id, 'falak-type' => 'web'])
         ->and($spec->userData)->toStartWith("#!/bin/sh\n")
         ->and($spec->userData)->toContain($server->install_command);
 

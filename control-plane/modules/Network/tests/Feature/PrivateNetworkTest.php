@@ -1,18 +1,18 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Network\Application\ConvergePrivateNetwork;
-use Kiln\Network\Contracts\PrivateNetwork as PrivateNetworkContract;
-use Kiln\Network\Domain\Enums\ApplyStatus;
-use Kiln\Network\Domain\Enums\KeyStatus;
-use Kiln\Network\Domain\Models\PrivateNetwork;
-use Kiln\Network\Domain\Models\PrivateNetworkMember;
-use Kiln\Network\Events\PrivateNetworkChanged;
-use Kiln\Network\Infrastructure\WireGuardKeys;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Events\ServerDeleted;
+use Falak\Identity\Contracts\Role;
+use Falak\Network\Application\ConvergePrivateNetwork;
+use Falak\Network\Contracts\PrivateNetwork as PrivateNetworkContract;
+use Falak\Network\Domain\Enums\ApplyStatus;
+use Falak\Network\Domain\Enums\KeyStatus;
+use Falak\Network\Domain\Models\PrivateNetwork;
+use Falak\Network\Domain\Models\PrivateNetworkMember;
+use Falak\Network\Events\PrivateNetworkChanged;
+use Falak\Network\Infrastructure\WireGuardKeys;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Events\ServerDeleted;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -75,7 +75,7 @@ it('generates a key pair per member and installs the private key on the host onl
         ->and($member->key_status)->toBe(KeyStatus::Pending)
         ->and(WireGuardKeys::isPublicKey($member->public_key))->toBeTrue()
         ->and((new WireGuardKeys)->publicKeyFor(trim($write['payload']['content'])))->toBe($member->public_key)
-        ->and($write['payload'])->toMatchArray(['path' => "/etc/kiln/wireguard/{$this->network->interface}.key", 'mode' => '0600', 'owner' => 'root'])
+        ->and($write['payload'])->toMatchArray(['path' => "/etc/falak/wireguard/{$this->network->interface}.key", 'mode' => '0600', 'owner' => 'root'])
         ->and(network_schema_errors('system.write_file', $write['payload']))->toBe([])
         ->and($member->toArray())->not->toHaveKey('private_key');
 

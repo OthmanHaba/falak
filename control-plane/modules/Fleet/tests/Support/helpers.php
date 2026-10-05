@@ -1,10 +1,10 @@
 <?php
 
 use Illuminate\Testing\TestResponse;
-use Kiln\Fleet\Contracts\Enrollment;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\Certificate;
-use Kiln\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Fleet\Contracts\Enrollment;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\Certificate;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use phpseclib3\Crypt\Common\PrivateKey;
 use phpseclib3\Crypt\EC;
 use phpseclib3\Crypt\RSA;
@@ -89,7 +89,7 @@ function fleet_enroll(string $organizationId, ?string $serverId, array $facts = 
  */
 function fleet_mtls(string $fingerprint): array
 {
-    return ['X-Kiln-Client-Cert-Fingerprint' => $fingerprint, 'Accept' => 'application/json'];
+    return ['X-Falak-Client-Cert-Fingerprint' => $fingerprint, 'Accept' => 'application/json'];
 }
 
 function fleet_ndjson(array $events): string

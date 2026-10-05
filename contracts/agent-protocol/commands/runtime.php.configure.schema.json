@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/runtime.php.configure.schema.json",
-  "title": "runtime.php.configure — php.ini overrides written to conf.d/99-kiln.ini (full desired set)",
+  "$id": "https://falak.sh/agent-protocol/commands/runtime.php.configure.schema.json",
+  "title": "runtime.php.configure — php.ini overrides written to conf.d/99-falak.ini (full desired set)",
   "type": "object",
   "additionalProperties": false,
   "required": [

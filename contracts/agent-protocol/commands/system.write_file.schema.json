@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kiln.dev/agent-protocol/commands/system.write_file.schema.json",
+  "$id": "https://falak.sh/agent-protocol/commands/system.write_file.schema.json",
   "title": "system.write_file — write a file atomically (tmp + rename)",
   "type": "object",
   "additionalProperties": false,

@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Identity\Application\Actions;
+namespace Falak\Identity\Application\Actions;
 
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Support\Facades\DB;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Identity\Events\UserRegistered;
+use Falak\Identity\Domain\Models\User;
+use Falak\Identity\Events\UserRegistered;
 
 /**
  * Creates a user together with their personal organization.

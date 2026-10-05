@@ -1,19 +1,19 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\AuditEntry;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Sites\Contracts\BuildMode;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetRole;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Events\SiteCreated;
-use Kiln\SourceControl\Contracts\ProviderType;
-use Kiln\SourceControl\Contracts\SourceControlGateway;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Sites\Contracts\BuildMode;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetRole;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Events\SiteCreated;
+use Falak\SourceControl\Contracts\ProviderType;
+use Falak\SourceControl\Contracts\SourceControlGateway;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -21,7 +21,7 @@ beforeEach(function () {
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
     $this->agents = sites_fake_agents();
     $this->git = sites_fake_source_control();
-    config(['sites.test_domain' => 'kiln.test']);
+    config(['sites.test_domain' => 'falak.test']);
 });
 
 it('creates a Laravel site on several servers with a leader, preset defaults and an initial environment', function () {
@@ -44,11 +44,11 @@ it('creates a Laravel site on several servers with a leader, preset defaults and
         ->and($site->runtime)->toBe(SiteRuntime::FrankenPhp)
         ->and($site->build_mode)->toBe(BuildMode::Native)
         ->and($site->web_directory)->toBe('public')
-        ->and($site->unix_user)->toBe('kiln')
+        ->and($site->unix_user)->toBe('falak')
         ->and($site->laravel->scheduler)->toBeTrue()
         ->and(array_map(fn ($p) => $p->path, $site->shared_paths))->toBe(['storage', '.env'])
-        ->and($site->deploy_script)->toContain('$KILN_FETCH')->toContain('$KILN_ACTIVATE')->toContain('artisan migrate --force')
-        ->and($site->testDomain())->toBe('shop.kiln.test')
+        ->and($site->deploy_script)->toContain('$FALAK_FETCH')->toContain('$FALAK_ACTIVATE')->toContain('artisan migrate --force')
+        ->and($site->testDomain())->toBe('shop.falak.test')
         ->and($site->deploy_key_id)->not->toBeNull()
         ->and($this->git->webhooks)->toHaveCount(1)
         ->and($site->targets)->toHaveCount(2)
@@ -62,16 +62,16 @@ it('creates a Laravel site on several servers with a leader, preset defaults and
     expect($env->version)->toBe(1)
         ->and($env->variables['APP_NAME'])->toBe('Shop')
         ->and($env->variables['APP_KEY'])->toStartWith('base64:')
-        ->and($env->variables['APP_URL'])->toBe('https://shop.kiln.test');
+        ->and($env->variables['APP_URL'])->toBe('https://shop.falak.test');
 
     Event::assertDispatched(SiteCreated::class, fn (SiteCreated $e) => $e->siteId === $site->id && $e->serverIds === [$a->id, $b->id]);
     expect(AuditEntry::query()->where('action', 'site.created')->exists())->toBeTrue();
 });
 
-it('never gives an isolated site a unix user in Kiln\'s kiln- namespace (Redis / Valkey instance users)', function () {
+it('never gives an isolated site a unix user in Falak\'s falak- namespace (Redis / Valkey instance users)', function () {
     $server = sites_server($this->organization->id, php: ['8.4'], phpRuntime: 'fpm');
 
-    foreach (['kiln-redis-cache' => 's-kiln-redis-cache', 'Kiln' => 's-kiln', 'kilnworks' => 's-kilnworks'] as $name => $user) {
+    foreach (['falak-redis-cache' => 's-falak-redis-cache', 'Falak' => 's-falak', 'falakworks' => 's-falakworks'] as $name => $user) {
         $this->post('/sites', sites_input([$server->id], ['runtime' => 'php-fpm', 'php_version' => '8.4', 'isolated' => true, 'name' => $name]))->assertSessionHasNoErrors();
         expect(Site::query()->where('name', $name)->value('unix_user'))->toBe($user);
     }
@@ -90,7 +90,7 @@ it('prepares isolated php-fpm sites: unix user, then the FPM pool', function () 
         ->and($target->step)->toBe('user');
 
     $user = $this->agents->last('system.user.create');
-    expect($user['payload'])->toBe(['name' => 's1-blog', 'home' => '/srv/kiln/sites/1-blog', 'shell' => '/bin/bash', 'isolated' => true]);
+    expect($user['payload'])->toBe(['name' => 's1-blog', 'home' => '/srv/falak/sites/1-blog', 'shell' => '/bin/bash', 'isolated' => true]);
 
     sites_finish($user);
 
@@ -99,15 +99,15 @@ it('prepares isolated php-fpm sites: unix user, then the FPM pool', function () 
         'php_version' => '8.3',
         'pool' => '1-blog',
         'user' => 's1-blog',
-        'listen' => '/run/php/kiln-1-blog-8.3.sock',
+        'listen' => '/run/php/falak-1-blog-8.3.sock',
         'state' => 'present',
-    ])->and($pool['payload']['php_admin_values']['open_basedir'])->toStartWith('/srv/kiln/sites/1-blog/')
+    ])->and($pool['payload']['php_admin_values']['open_basedir'])->toStartWith('/srv/falak/sites/1-blog/')
         ->and($target->refresh()->step)->toBe('pool');
 
     sites_finish($pool);
 
     expect($target->refresh()->status)->toBe(TargetStatus::Ready)
-        ->and($site->toData()->fpmSocket())->toBe('/run/php/kiln-1-blog-8.3.sock');
+        ->and($site->toData()->fpmSocket())->toBe('/run/php/falak-1-blog-8.3.sock');
 });
 
 it('marks a target failed when a preparation command fails and retries it', function () {
@@ -150,7 +150,7 @@ it('allocates distinct app ports for node sites sharing a server', function () {
         ->and(app(SiteDirectory::class)->environment($sites->first()->id)->variables['PORT'])->toBe('3000');
 });
 
-it('serves static sites from the release root, which is the build output kiln-builder packages', function () {
+it('serves static sites from the release root, which is the build output falak-builder packages', function () {
     $server = sites_server($this->organization->id);
 
     $this->post('/sites', sites_input([$server->id], ['name' => 'Shopfront', 'framework' => 'static', 'runtime' => 'static', 'php_version' => null]))->assertSessionHasNoErrors();

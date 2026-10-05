@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Deployments\Http\Controllers;
+namespace Falak\Deployments\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Kiln\Deployments\Application\Actions\TriggerDeployment;
-use Kiln\Deployments\Domain\Enums\ReleaseStatus;
-use Kiln\Deployments\Domain\Enums\Trigger;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\Release;
-use Kiln\Deployments\Domain\Models\SiteSettings;
-use Kiln\Deployments\Domain\Policies\DeploymentPermissions;
-use Kiln\Kernel\Http\Controller;
+use Falak\Deployments\Application\Actions\TriggerDeployment;
+use Falak\Deployments\Domain\Enums\ReleaseStatus;
+use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\Release;
+use Falak\Deployments\Domain\Models\SiteSettings;
+use Falak\Deployments\Domain\Policies\DeploymentPermissions;
+use Falak\Kernel\Http\Controller;
 
 final class ReleaseController extends Controller
 {

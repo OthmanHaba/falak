@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Cloudflare integration: a DNS credential (provider cloudflare) is the connection; zones enabled on it get their DNS
- * records managed by Kiln (edge_dns_records tracks only the records Kiln created, so nothing else is ever touched).
+ * records managed by Falak (edge_dns_records tracks only the records Falak created, so nothing else is ever touched).
  */
 return new class extends Migration
 {

@@ -1,10 +1,10 @@
 <?php
 
-namespace Kiln\Terminal\Application\Actions;
+namespace Falak\Terminal\Application\Actions;
 
-use Kiln\Identity\Contracts\AuditLog;
-use Kiln\Terminal\Application\SessionTransitions;
-use Kiln\Terminal\Domain\Models\TerminalSession;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Terminal\Application\SessionTransitions;
+use Falak\Terminal\Domain\Models\TerminalSession;
 
 final class ShareSession
 {

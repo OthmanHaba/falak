@@ -2,15 +2,15 @@
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Infrastructure\GitHubApp\AppCredentials;
-use Kiln\SourceControl\Infrastructure\Providers\GitHubAppTokens;
-use Kiln\SourceControl\Infrastructure\Providers\GitHubClient;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Infrastructure\GitHubApp\AppCredentials;
+use Falak\SourceControl\Infrastructure\Providers\GitHubAppTokens;
+use Falak\SourceControl\Infrastructure\Providers\GitHubClient;
 use phpseclib3\Crypt\RSA;
 
 beforeEach(function () {
     $this->key = RSA::createKey(2048);
-    $this->credentials = new AppCredentials('01jappappappappappappappapp', '12345', 'kiln-test', $this->key->toString('PKCS1'), 'hook');
+    $this->credentials = new AppCredentials('01jappappappappappappappapp', '12345', 'falak-test', $this->key->toString('PKCS1'), 'hook');
     Cache::flush();
 });
 

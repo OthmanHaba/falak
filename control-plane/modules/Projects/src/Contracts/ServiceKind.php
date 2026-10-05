@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Projects\Contracts;
+namespace Falak\Projects\Contracts;
 
 /**
  * What a project service points at: a Sites site or a Databases database (opaque ULID `ref_id`).

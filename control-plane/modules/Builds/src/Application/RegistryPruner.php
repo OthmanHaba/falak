@@ -1,26 +1,26 @@
 <?php
 
-namespace Kiln\Builds\Application;
+namespace Falak\Builds\Application;
 
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Kiln\Builds\Contracts\BuildStatus;
-use Kiln\Builds\Domain\Models\Build;
-use Kiln\Deployments\Contracts\RetainedImages;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Builds\Contracts\BuildStatus;
+use Falak\Builds\Domain\Models\Build;
+use Falak\Deployments\Contracts\RetainedImages;
+use Falak\Sites\Contracts\SiteDirectory;
 use RuntimeException;
 
 /**
  * Deletes images of the built-in registry that nothing needs any more (docs/INSTALL.md → Registry storage).
  *
  * Tags are build ids (`<ns>/<site>:<build>`, `<ns>/<site>/<service>:<build>`). A tag stays when its build still has
- * its artifact (the newest KILN_ARTIFACTS_KEEP per site, see PruneArtifacts), is not finished, is younger than a day,
+ * its artifact (the newest FALAK_ARTIFACTS_KEEP per site, see PruneArtifacts), is not finished, is younger than a day,
  * or a release may still run it (Deployments' RetainedImages: pending, live and rollback releases); a deleted site's
  * builds go after the grace period. Manifests are deleted by digest, and never a digest a kept tag points at: a
  * repository with a tag whose digest can't be read is left alone, and a digest is re-read right before its delete.
- * Space comes back with the registry's garbage collection (`kiln-ctl registry gc`, weekly).
+ * Space comes back with the registry's garbage collection (`falak-ctl registry gc`, weekly).
  */
 final class RegistryPruner
 {
@@ -39,10 +39,10 @@ final class RegistryPruner
     public function prune(bool $dryRun = false): array
     {
         if ($this->registry->auth() === null) {
-            return ['deleted' => [], 'kept' => 0, 'skipped' => 'The built-in registry has no credentials (KILN_REGISTRY_USERNAME / KILN_REGISTRY_PASSWORD).'];
+            return ['deleted' => [], 'kept' => 0, 'skipped' => 'The built-in registry has no credentials (FALAK_REGISTRY_USERNAME / FALAK_REGISTRY_PASSWORD).'];
         }
 
-        $namespace = trim((string) config('builds.registry.namespace', 'kiln'), '/');
+        $namespace = trim((string) config('builds.registry.namespace', 'falak'), '/');
         [$inUseTags, $inUseDigests] = $this->inUse();
         $deleted = [];
         $kept = 0;

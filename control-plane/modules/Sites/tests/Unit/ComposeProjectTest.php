@@ -1,10 +1,10 @@
 <?php
 
-use Kiln\Sites\Application\Compose\ComposeProject;
-use Kiln\Sites\Application\Compose\ComposeProjectException;
+use Falak\Sites\Application\Compose\ComposeProject;
+use Falak\Sites\Application\Compose\ComposeProjectException;
 
 /**
- * kiln-builder loads projects with the same rules (agent/internal/builder/composeproject.go).
+ * falak-builder loads projects with the same rules (agent/internal/builder/composeproject.go).
  */
 $cases = json_decode((string) file_get_contents(dirname(__DIR__, 5).'/contracts/compose/merge-cases.json'), true)['cases'];
 

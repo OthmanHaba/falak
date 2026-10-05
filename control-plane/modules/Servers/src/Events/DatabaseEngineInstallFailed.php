@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Servers\Events;
+namespace Falak\Servers\Events;
 
 use Illuminate\Foundation\Events\Dispatchable;
 

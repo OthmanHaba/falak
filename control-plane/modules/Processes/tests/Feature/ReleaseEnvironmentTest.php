@@ -1,13 +1,13 @@
 <?php
 
-use Kiln\Identity\Contracts\Role;
-use Kiln\Processes\Application\ServerConverger;
-use Kiln\Processes\Contracts\ProcessControl;
-use Kiln\Processes\Domain\Models\Daemon;
-use Kiln\Processes\Domain\Models\Schedule;
-use Kiln\Processes\Domain\Models\Worker;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\SiteRuntime;
+use Falak\Identity\Contracts\Role;
+use Falak\Processes\Application\ServerConverger;
+use Falak\Processes\Contracts\ProcessControl;
+use Falak\Processes\Domain\Models\Daemon;
+use Falak\Processes\Domain\Models\Schedule;
+use Falak\Processes\Domain\Models\Worker;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\SiteRuntime;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -63,7 +63,7 @@ it('puts the live release ids and its site variables into every program and job 
     $worker = Worker::query()->create(['organization_id' => $this->organization->id, 'site_id' => $site->id, 'command' => 'node worker.js', 'env' => ['QUEUE' => 'mail', 'DATABASE_URL' => 'postgres://worker']]);
     Schedule::query()->create(['organization_id' => $this->organization->id, 'site_id' => $site->id, 'name' => 'Report', 'command' => 'node report.js', 'expression' => '0 * * * *']);
     $release = processes_deploy($site, [$this->web1], [
-        'DATABASE_URL' => 'postgres://app', 'NODE_ENV' => 'staging', 'PORT' => '9999', 'KILN_RELEASE_ID' => 'stale', 'bad-key' => 'x',
+        'DATABASE_URL' => 'postgres://app', 'NODE_ENV' => 'staging', 'PORT' => '9999', 'FALAK_RELEASE_ID' => 'stale', 'bad-key' => 'x',
     ]);
 
     $this->converger->converge($this->web1->id);
@@ -72,10 +72,10 @@ it('puts the live release ids and its site variables into every program and job 
     $programs = processes_programs($proc);
 
     $ids = [
-        'KILN_SITE_ID' => strtoupper($site->id),
-        'KILN_SERVER_ID' => strtoupper($this->web1->id),
-        'KILN_RELEASE_ID' => strtoupper($release->id),
-        'KILN_DEPLOYMENT_ID' => strtoupper($release->deployment_id),
+        'FALAK_SITE_ID' => strtoupper($site->id),
+        'FALAK_SERVER_ID' => strtoupper($this->web1->id),
+        'FALAK_RELEASE_ID' => strtoupper($release->id),
+        'FALAK_DEPLOYMENT_ID' => strtoupper($release->deployment_id),
     ];
 
     expect($programs['api.app']['env'])->toMatchArray([...$ids, 'DATABASE_URL' => 'postgres://app', 'NODE_ENV' => 'staging', 'PORT' => '3001', 'HOST' => '127.0.0.1'])
@@ -105,6 +105,6 @@ it('restarts the site on a new release through proc.apply with the new env inste
 
     expect(array_map(fn ($h) => $h->type, $handles))->toBe(['proc.apply']);
     foreach (processes_programs($this->agents->last('proc.apply', $this->web1->id)) as $program) {
-        expect($program['env'])->toMatchArray(['KILN_RELEASE_ID' => strtoupper($next->id), 'APP_ENV' => 'production']);
+        expect($program['env'])->toMatchArray(['FALAK_RELEASE_ID' => strtoupper($next->id), 'APP_ENV' => 'production']);
     }
 });

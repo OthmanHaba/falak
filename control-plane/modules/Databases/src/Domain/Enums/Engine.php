@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Databases\Domain\Enums;
+namespace Falak\Databases\Domain\Enums;
 
 /**
  * Database engine flavours. The agent protocol only distinguishes the wire engine (`mysql` | `postgres`):
@@ -68,7 +68,7 @@ enum Engine: string
         return $this === self::MySql || $this === self::MariaDb;
     }
 
-    /** The engine's stock port (key-value engines: the stock instance; Kiln's instances get their own ports). */
+    /** The engine's stock port (key-value engines: the stock instance; Falak's instances get their own ports). */
     public function defaultPort(): int
     {
         return match ($this) {
@@ -125,7 +125,7 @@ enum Engine: string
         return match ($this) {
             self::MySql, self::MariaDb => ['mysql', 'information_schema', 'performance_schema', 'sys', 'root', 'debian-sys-maint', 'mariadb.sys', 'mysql.sys', 'mysql.session', 'mysql.infoschema'],
             self::PostgreSql => ['postgres', 'template0', 'template1', 'pg_signal_backend', 'pg_monitor'],
-            self::Redis, self::Valkey => ['default', 'kiln'],
+            self::Redis, self::Valkey => ['default', 'falak'],
         };
     }
 

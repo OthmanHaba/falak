@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Terminal\Http\Channels;
+namespace Falak\Terminal\Http\Channels;
 
 use Illuminate\Contracts\Auth\Authenticatable;
-use Kiln\Identity\Contracts\OrganizationDirectory;
-use Kiln\Terminal\Domain\Models\TerminalSession;
-use Kiln\Terminal\Domain\Policies\TerminalSessionPolicy;
+use Falak\Identity\Contracts\OrganizationDirectory;
+use Falak\Terminal\Domain\Models\TerminalSession;
+use Falak\Terminal\Domain\Policies\TerminalSessionPolicy;
 
 /**
  * presence-terminal.sessions.{sessionId}.{epoch}: the owner, plus members with terminal.attach while the session is shared.

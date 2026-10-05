@@ -1,9 +1,9 @@
 <?php
 
-namespace Kiln\Databases\Contracts;
+namespace Falak\Databases\Contracts;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Contracts\Data\DatabaseData;
+use Falak\Databases\Contracts\Data\DatabaseData;
 
 /**
  * Database creation for other modules (Projects' canvas "Create → Database").

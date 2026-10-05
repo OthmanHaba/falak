@@ -1,4 +1,4 @@
-import { KeyValue, RelativeTime, Section, SkeletonRows, StatusBadge } from '@/components/kiln';
+import { KeyValue, RelativeTime, Section, SkeletonRows, StatusBadge } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { type ServiceTabProps } from '@/lib/registry';
 

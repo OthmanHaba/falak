@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Recipes\Domain\Models;
+namespace Falak\Recipes\Domain\Models;
 
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Kiln\Recipes\Domain\Enums\TargetStatus;
+use Falak\Recipes\Domain\Enums\TargetStatus;
 
 /**
  * The run of a recipe on one server (one system.exec command).

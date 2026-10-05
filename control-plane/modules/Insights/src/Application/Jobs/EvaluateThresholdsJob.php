@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Insights\Application\Jobs;
+namespace Falak\Insights\Application\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Kiln\Insights\Application\Actions\EvaluateThresholds;
+use Falak\Insights\Application\Actions\EvaluateThresholds;
 
 final class EvaluateThresholdsJob implements ShouldQueue
 {

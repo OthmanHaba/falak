@@ -1,4 +1,4 @@
-# Kiln local end-to-end simulation.
+# Falak local end-to-end simulation.
 #   make up [METRICS=mimir] [SIM_AGENT_ARCH=amd64]
 #   make e2e
 #   make enroll TOKEN=<install-token> [SERVERS="srv-app-1 srv-db-1"]
@@ -7,7 +7,7 @@
 #   make clean-cache | make cache-stats
 
 METRICS ?= victoriametrics
-COMPOSE := docker compose -p kiln-sim --env-file sim.env --env-file .data/secrets.env
+COMPOSE := docker compose -p falak-sim --env-file sim.env --env-file .data/secrets.env
 ALL_PROFILES := --profile victoriametrics --profile mimir
 export SIM_METRICS_PROFILE := $(METRICS)
 ifdef SIM_AGENT_ARCH
@@ -18,20 +18,20 @@ endif
 
 # Persistent caches (apt, runtime downloads + PPA, Docker Hub, GHCR, builder). External volumes, so
 # `make reset` (down -v) keeps them; `make clean-cache` / `make reset-all` remove them.
-CACHE_VOLUMES := kiln-sim-cache-apt kiln-sim-cache-downloads kiln-sim-cache-hub kiln-sim-cache-ghcr kiln-sim-cache-builder
-# kiln-builder's buildx builder "kiln" (docker-container driver, created from inside the builder container, so
+CACHE_VOLUMES := falak-sim-cache-apt falak-sim-cache-downloads falak-sim-cache-hub falak-sim-cache-ghcr falak-sim-cache-builder
+# falak-builder's buildx builder "falak" (docker-container driver, created from inside the builder container, so
 # the host CLI does not know it by name) and its BuildKit state volume, on the host daemon.
-BUILDX_CONTAINER := buildx_buildkit_kiln0
-BUILDX_STATE := buildx_buildkit_kiln0_state
+BUILDX_CONTAINER := buildx_buildkit_falak0
+BUILDX_STATE := buildx_buildkit_falak0_state
 
 # Sim-only secrets, generated once per sim (removed by `make reset`).
 .data/secrets.env:
 	@mkdir -p .data
 	@{ echo "APP_KEY=base64:$$(openssl rand -base64 32)"; \
-	   echo "REVERB_APP_ID=kiln-sim"; \
+	   echo "REVERB_APP_ID=falak-sim"; \
 	   echo "REVERB_APP_KEY=$$(openssl rand -hex 10)"; \
 	   echo "REVERB_APP_SECRET=$$(openssl rand -hex 10)"; \
-	   echo "KILN_LOCAL_BUILDER_TOKEN=kbt_$$(openssl rand -hex 24)"; } > $@
+	   echo "FALAK_LOCAL_BUILDER_TOKEN=kbt_$$(openssl rand -hex 24)"; } > $@
 	@chmod 600 $@
 
 cache-volumes:
@@ -47,7 +47,7 @@ up: .data/secrets.env cache-volumes
 	@$(COMPOSE) --profile $(METRICS) ps --format 'table {{.Service}}\t{{.Status}}'
 	@echo
 	@echo "control plane: https://localhost:$$(grep ^SIM_EDGE_HTTPS_PORT sim.env | cut -d= -f2) (edge CA: make ca -> .data/edge-root.crt)"
-	@echo "grafana:       http://localhost:$$(grep ^KILN_GRAFANA_PORT sim.env | cut -d= -f2) (admin/admin)"
+	@echo "grafana:       http://localhost:$$(grep ^FALAK_GRAFANA_PORT sim.env | cut -d= -f2) (admin/admin)"
 
 ps:
 	$(COMPOSE) $(ALL_PROFILES) ps
@@ -76,14 +76,14 @@ define drop-caches
 endef
 
 cache-stats:
-	@docker system df -v | grep -E '^(VOLUME NAME|kiln-sim-cache-|$(BUILDX_STATE))' || true
+	@docker system df -v | grep -E '^(VOLUME NAME|falak-sim-cache-|$(BUILDX_STATE))' || true
 
 logs:
 	$(COMPOSE) $(ALL_PROFILES) logs -f --tail=200 $(S)
 
 ca:
 	@mkdir -p .data
-	$(COMPOSE) cp edge:/kiln/edge-pki/root.crt .data/edge-root.crt
+	$(COMPOSE) cp edge:/falak/edge-pki/root.crt .data/edge-root.crt
 	@echo "curl --cacert sim/.data/edge-root.crt https://localhost:$$(grep ^SIM_EDGE_HTTPS_PORT sim.env | cut -d= -f2)/up"
 
 shell:
@@ -104,7 +104,7 @@ enroll-all:
 e2e:
 	./e2e.sh
 
-# Full product E2E: kiln:admin -> REST API -> real provisioning -> build -> multi-server deploy,
+# Full product E2E: falak:admin -> REST API -> real provisioning -> build -> multi-server deploy,
 # release, rollback, auto-rollback, Bun site, APM/Insights/Loki checks. Run after `make up`.
 e2e-deploy:
 	./e2e-deploy.sh

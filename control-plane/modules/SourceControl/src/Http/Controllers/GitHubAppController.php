@@ -1,32 +1,32 @@
 <?php
 
-namespace Kiln\SourceControl\Http\Controllers;
+namespace Falak\SourceControl\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Kernel\Http\Controller;
-use Kiln\SourceControl\Application\Actions\ConnectGitHubInstallation;
-use Kiln\SourceControl\Application\Actions\DeleteGitHubApp;
-use Kiln\SourceControl\Application\Actions\RegisterGitHubApp;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Domain\Models\Connection;
-use Kiln\SourceControl\Domain\Models\GitHubApp;
-use Kiln\SourceControl\Http\Controllers\Concerns\ConnectFlowState;
-use Kiln\SourceControl\Infrastructure\GitHubApp\AppCredentials;
-use Kiln\SourceControl\Infrastructure\GitHubApp\AppManifest;
-use Kiln\SourceControl\Infrastructure\GitHubApp\GitHubAppResolver;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Kernel\Http\Controller;
+use Falak\SourceControl\Application\Actions\ConnectGitHubInstallation;
+use Falak\SourceControl\Application\Actions\DeleteGitHubApp;
+use Falak\SourceControl\Application\Actions\RegisterGitHubApp;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Domain\Models\Connection;
+use Falak\SourceControl\Domain\Models\GitHubApp;
+use Falak\SourceControl\Http\Controllers\Concerns\ConnectFlowState;
+use Falak\SourceControl\Infrastructure\GitHubApp\AppCredentials;
+use Falak\SourceControl\Infrastructure\GitHubApp\AppManifest;
+use Falak\SourceControl\Infrastructure\GitHubApp\GitHubAppResolver;
 
 /**
  * "Connect GitHub" through a GitHub App:
  *
  * 1. {@see manifest()} — builds the app manifest + a state; the browser POSTs it to GitHub (personal account or an
  *    organization), where the user confirms the new app.
- * 2. {@see manifestCallback()} — GitHub redirects back with a code; Kiln converts it into the app's credentials
+ * 2. {@see manifestCallback()} — GitHub redirects back with a code; Falak converts it into the app's credentials
  *    (stored encrypted) and sends the user straight to the app's installation page.
  * 3. {@see setup()} — GitHub's setup URL after installing (and, with `setup_on_update`, after changing repository
  *    access): the installation becomes a connection.
@@ -50,7 +50,7 @@ final class GitHubAppController extends Controller
         ], ['organization.regex' => 'Enter a GitHub organization name (letters, digits and single hyphens).']);
 
         if ($this->apps->env() !== null) {
-            return response()->json(['message' => 'This Kiln instance uses the GitHub App configured by its operator.'], 409);
+            return response()->json(['message' => 'This Falak instance uses the GitHub App configured by its operator.'], 409);
         }
 
         if (GitHubApp::query()->where('organization_id', $organizationId)->exists()) {
@@ -116,8 +116,8 @@ final class GitHubAppController extends Controller
             ->first();
 
         // Changes made on GitHub (setup_on_update) come back without a state: they may only refresh a connection
-        // this organization already has. New installations must start in Kiln.
-        abort_unless($hasState || $existing !== null, 403, 'Start the GitHub installation from Kiln (Settings → Source control).');
+        // this organization already has. New installations must start in Falak.
+        abort_unless($hasState || $existing !== null, 403, 'Start the GitHub installation from Falak (Settings → Source control).');
 
         $app = $existing ? $this->apps->forConnection($existing) : $this->apps->forOrganization($organizationId);
         abort_unless($app !== null, 404);
@@ -140,7 +140,7 @@ final class GitHubAppController extends Controller
 
         $delete($app);
 
-        return to_route('source-control.index')->with('success', 'GitHub App removed from Kiln. Delete it on GitHub too.');
+        return to_route('source-control.index')->with('success', 'GitHub App removed from Falak. Delete it on GitHub too.');
     }
 
     private function installUrl(Request $request, AppCredentials $app, string $organizationId, ?string $returnTo): string

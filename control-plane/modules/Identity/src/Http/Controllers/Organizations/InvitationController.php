@@ -1,18 +1,18 @@
 <?php
 
-namespace Kiln\Identity\Http\Controllers\Organizations;
+namespace Falak\Identity\Http\Controllers\Organizations;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
-use Kiln\Identity\Application\Actions\AcceptInvitation;
-use Kiln\Identity\Application\Actions\InviteMember;
-use Kiln\Identity\Application\Actions\RevokeInvitation;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Kernel\Http\Controller;
+use Falak\Identity\Application\Actions\AcceptInvitation;
+use Falak\Identity\Application\Actions\InviteMember;
+use Falak\Identity\Application\Actions\RevokeInvitation;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\User;
+use Falak\Kernel\Http\Controller;
 
 final class InvitationController extends Controller
 {

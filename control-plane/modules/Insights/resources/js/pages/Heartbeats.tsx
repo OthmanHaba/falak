@@ -1,4 +1,4 @@
-import { Stat } from '@/components/kiln/stat';
+import { Stat } from '@/components/falak/stat';
 import ObservabilityLayout from '@/layouts/observability-layout';
 import { HeartbeatTable, monitorState } from '../components/heartbeat-table';
 import { type HeartbeatRow } from '../types';

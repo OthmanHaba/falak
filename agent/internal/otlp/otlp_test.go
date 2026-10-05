@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kiln/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 	metricspb "go.opentelemetry.io/proto/otlp/metrics/v1"
@@ -131,13 +131,13 @@ func sampleSpans(service string) []*tracepb.ResourceSpans {
 		ScopeSpans: []*tracepb.ScopeSpans{{Spans: []*tracepb.Span{{
 			TraceId: traceID, SpanId: spanID, Name: "GET /orders", Kind: tracepb.Span_SPAN_KIND_SERVER,
 			StartTimeUnixNano: 1, EndTimeUnixNano: 2,
-			Attributes: []*commonpb.KeyValue{Str("kiln.event.type", "request")},
+			Attributes: []*commonpb.KeyValue{Str("falak.event.type", "request")},
 		}}}},
 	}}
 }
 
 const jsonTraces = `{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"shop"}}]},
- "scopeSpans":[{"scope":{"name":"kiln/apm-laravel"},"spans":[{"traceId":"5b8efff798038103d269b633813fc60c","spanId":"eee19b7ec3c1b174",
+ "scopeSpans":[{"scope":{"name":"falak/apm-laravel"},"spans":[{"traceId":"5b8efff798038103d269b633813fc60c","spanId":"eee19b7ec3c1b174",
  "parentSpanId":"","name":"GET /orders","kind":2,"startTimeUnixNano":"1700000000000000000","endTimeUnixNano":"1700000000100000000",
  "attributes":[{"key":"http.response.status_code","value":{"intValue":"200"}}],"status":{"code":"STATUS_CODE_OK"}}]}]}]}`
 
@@ -162,7 +162,7 @@ func TestReceiverExportRoundtrip(t *testing.T) {
 		Environment: "production", TracesRatio: 1,
 		Sites: []Site{{Slug: "shop", SiteID: "01SITE", DeploymentID: "01DEP", ReleaseID: "01REL"}}})
 
-	sock := filepath.Join(os.TempDir(), fmt.Sprintf("kiln-otlp-%d.sock", time.Now().UnixNano()))
+	sock := filepath.Join(os.TempDir(), fmt.Sprintf("falak-otlp-%d.sock", time.Now().UnixNano()))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ls, err := r.Serve(ctx, sock, "127.0.0.1:0")
@@ -224,8 +224,8 @@ func TestReceiverExportRoundtrip(t *testing.T) {
 		if !bytes.Equal(sp.TraceId, traceID) || !bytes.Equal(sp.SpanId, spanID) {
 			t.Fatalf("ids not preserved: %x %x", sp.TraceId, sp.SpanId)
 		}
-		want := map[string]string{"service.name": "shop", "kiln.site.id": "01SITE", "kiln.server.id": "01SERVER", "host.name": "web-1",
-			"kiln.deployment.id": "01DEP", "kiln.release.id": "01REL", "deployment.environment.name": "production"}
+		want := map[string]string{"service.name": "shop", "falak.site.id": "01SITE", "falak.server.id": "01SERVER", "host.name": "web-1",
+			"falak.deployment.id": "01DEP", "falak.release.id": "01REL", "deployment.environment.name": "production"}
 		for k, v := range want {
 			if got, _ := Lookup(rs.Resource.Attributes, k); got != v {
 				t.Errorf("resource %s = %q want %q", k, got, v)
@@ -270,15 +270,15 @@ func TestReceiverRejects(t *testing.T) {
 func TestEnrichNeverOverwrites(t *testing.T) {
 	cfg := &Config{ServerID: "S", HostName: "h", Environment: "production", OrgID: "O",
 		Sites: []Site{{Slug: "shop", SiteID: "SITE1", Environment: "staging"}}}
-	res := &resourcepb.Resource{Attributes: []*commonpb.KeyValue{Str("kiln.site.id", "SITE1"), Str("host.name", "custom")}}
+	res := &resourcepb.Resource{Attributes: []*commonpb.KeyValue{Str("falak.site.id", "SITE1"), Str("host.name", "custom")}}
 	Enrich(res, cfg)
 	get := func(k string) string { v, _ := Lookup(res.Attributes, k); return v }
-	if get("service.name") != "shop" || get("host.name") != "custom" || get("deployment.environment.name") != "staging" || get("kiln.org.id") != "O" {
+	if get("service.name") != "shop" || get("host.name") != "custom" || get("deployment.environment.name") != "staging" || get("falak.org.id") != "O" {
 		t.Fatalf("bad enrichment: %v", res.Attributes)
 	}
 	// Unknown site: only host-level attributes are added.
 	res2 := Enrich(nil, cfg)
-	if v, _ := Lookup(res2.Attributes, "kiln.site.id"); v != "" {
+	if v, _ := Lookup(res2.Attributes, "falak.site.id"); v != "" {
 		t.Fatal("site id invented")
 	}
 }
@@ -363,14 +363,14 @@ func TestSinkEmitsAgentRecords(t *testing.T) {
 	var sink obs.Sink = r
 	sink.EmitLog(obs.LogRecord{Body: "worker started", Site: "shop", Severity: "warn", Attrs: map[string]string{"process.name": "queue"}})
 	sink.EmitSpan(obs.Span{Name: "schedule:run", Site: "shop", Start: time.Now().Add(-time.Second), End: time.Now(),
-		Attrs: map[string]any{"kiln.event.type": "scheduled_task", "kiln.schedule.status": "failed"}, Error: true})
+		Attrs: map[string]any{"falak.event.type": "scheduled_task", "falak.schedule.status": "failed"}, Error: true})
 	waitFor(t, "records", func() bool { s, l, _ := col.counts(); return s == 1 && l == 1 })
 	if seen.Load() != 1 {
 		t.Fatal("observer not called")
 	}
 	col.mu.Lock()
 	defer col.mu.Unlock()
-	if v, _ := Lookup(col.logs[0].Resource.Attributes, "kiln.site.id"); v != "01SITE" {
+	if v, _ := Lookup(col.logs[0].Resource.Attributes, "falak.site.id"); v != "01SITE" {
 		t.Fatalf("site not resolved for agent log: %v", col.logs[0].Resource.Attributes)
 	}
 	if col.logs[0].ScopeLogs[0].LogRecords[0].SeverityText != "WARN" {
@@ -401,7 +401,7 @@ func TestAgentRecordsGetExplicitSiteIDAndNoStaleDeployment(t *testing.T) {
 	r.Configure(Config{Endpoint: col.srv.URL, TracesRatio: 1, HostName: "web-1",
 		Sites: []Site{{Slug: "shop", SiteID: "01SITE", DeploymentID: "01OLDDEPLOY", ReleaseID: "01OLDRELEASE"}}})
 	r.EmitLog(obs.LogRecord{Body: "deployment started", Service: AgentService, Site: "shop", SiteID: "01EXPLICIT",
-		Attrs: map[string]string{"kiln.deployment.id": "01NEWDEPLOY"}})
+		Attrs: map[string]string{"falak.deployment.id": "01NEWDEPLOY"}})
 	r.EmitLog(obs.LogRecord{Body: "worker log", Site: "shop"})
 	r.EmitLog(obs.LogRecord{Body: "GET / 200", Site: "shop", Kind: LogKindAccess})
 	waitFor(t, "logs", func() bool { _, l, _ := col.counts(); return l == 3 })
@@ -412,27 +412,27 @@ func TestAgentRecordsGetExplicitSiteIDAndNoStaleDeployment(t *testing.T) {
 		byBody[rl.ScopeLogs[0].LogRecords[0].Body.GetStringValue()] = rl
 	}
 	agent := byBody["deployment started"].Resource.Attributes
-	if v, _ := Lookup(agent, "kiln.site.id"); v != "01EXPLICIT" {
+	if v, _ := Lookup(agent, "falak.site.id"); v != "01EXPLICIT" {
 		t.Fatalf("explicit site id not used: %v", agent)
 	}
 	if v, _ := Lookup(agent, "service.name"); v != AgentService {
 		t.Fatalf("service.name %q", v)
 	}
-	if _, ok := Lookup(agent, "kiln.deployment.id"); ok {
+	if _, ok := Lookup(agent, "falak.deployment.id"); ok {
 		t.Fatal("agent record must not get the site's active deployment id on its resource")
 	}
 	app := byBody["worker log"].Resource.Attributes
-	if v, _ := Lookup(app, "kiln.deployment.id"); v != "01OLDDEPLOY" {
+	if v, _ := Lookup(app, "falak.deployment.id"); v != "01OLDDEPLOY" {
 		t.Fatalf("site workload logs should still carry the active deployment id: %v", app)
 	}
-	if v, _ := Lookup(app, "kiln.log.kind"); v != LogKindApp {
+	if v, _ := Lookup(app, "falak.log.kind"); v != LogKindApp {
 		t.Fatalf("site records default to kind app: %v", app)
 	}
-	if _, ok := Lookup(agent, "kiln.log.kind"); ok {
+	if _, ok := Lookup(agent, "falak.log.kind"); ok {
 		t.Fatal("agent records have no log kind")
 	}
 	access := byBody["GET / 200"].Resource.Attributes
-	if v, _ := Lookup(access, "kiln.log.kind"); v != LogKindAccess {
+	if v, _ := Lookup(access, "falak.log.kind"); v != LogKindAccess {
 		t.Fatalf("kind = %v", access)
 	}
 	if v, _ := Lookup(access, "service.name"); v != "shop" {

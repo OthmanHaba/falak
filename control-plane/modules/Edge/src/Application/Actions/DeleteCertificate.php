@@ -1,12 +1,12 @@
 <?php
 
-namespace Kiln\Edge\Application\Actions;
+namespace Falak\Edge\Application\Actions;
 
 use Illuminate\Validation\ValidationException;
-use Kiln\Edge\Application\CertificateInstaller;
-use Kiln\Edge\Domain\Models\Certificate;
-use Kiln\Edge\Domain\Models\Domain;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Edge\Application\CertificateInstaller;
+use Falak\Edge\Domain\Models\Certificate;
+use Falak\Edge\Domain\Models\Domain;
+use Falak\Identity\Contracts\AuditLog;
 
 final class DeleteCertificate
 {

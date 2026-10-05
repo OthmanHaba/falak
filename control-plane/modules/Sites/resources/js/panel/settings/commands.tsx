@@ -1,5 +1,5 @@
 import { CommandLog, CommandStatusBadge, TERMINAL_COMMAND_STATUSES, type CommandStatus } from '@/components/command-log';
-import { Button, Callout, EmptyState, Input, RelativeTime, Section, Select, SkeletonRows, toast } from '@/components/kiln';
+import { Button, Callout, EmptyState, Input, RelativeTime, Section, Select, SkeletonRows, toast } from '@/components/falak';
 import { useJson } from '@/hooks/use-json';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';

@@ -1,5 +1,5 @@
 {
-  "$comment": "Compose project loading shared by kiln-builder (agent/internal/builder/composeproject.go) and the control plane's preview (Sites ComposeProject). Each case: repository files, the compose files (-f order) and profiles, and either the merged document or an error substring. Relative paths come out rebased to the repository root.",
+  "$comment": "Compose project loading shared by falak-builder (agent/internal/builder/composeproject.go) and the control plane's preview (Sites ComposeProject). Each case: repository files, the compose files (-f order) and profiles, and either the merged document or an error substring. Relative paths come out rebased to the repository root.",
   "cases": [
     {
       "name": "single file at the root",

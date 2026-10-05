@@ -2,13 +2,13 @@
 
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
-use Kiln\Identity\Contracts\Role;
-use Kiln\SourceControl\Contracts\Exceptions\SourceControlException;
-use Kiln\SourceControl\Contracts\ProviderType;
-use Kiln\SourceControl\Infrastructure\Providers\BitbucketClient;
-use Kiln\SourceControl\Infrastructure\Providers\CustomGitClient;
-use Kiln\SourceControl\Infrastructure\Providers\GitHubClient;
-use Kiln\SourceControl\Infrastructure\Providers\GitLabClient;
+use Falak\Identity\Contracts\Role;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Contracts\ProviderType;
+use Falak\SourceControl\Infrastructure\Providers\BitbucketClient;
+use Falak\SourceControl\Infrastructure\Providers\CustomGitClient;
+use Falak\SourceControl\Infrastructure\Providers\GitHubClient;
+use Falak\SourceControl\Infrastructure\Providers\GitLabClient;
 use phpseclib3\Crypt\RSA;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -69,8 +69,8 @@ describe('GitHub', function () {
         $connection = sc_connection($this->organization->id);
         $client = app(GitHubClient::class);
 
-        expect($client->addDeployKey($connection, 'acme/shop', 'kiln', 'ssh-ed25519 AAAA'))->toBe('77')
-            ->and($client->createWebhook($connection, 'acme/shop', 'https://kiln.test/hook', 's3cret'))->toBe('88');
+        expect($client->addDeployKey($connection, 'acme/shop', 'falak', 'ssh-ed25519 AAAA'))->toBe('77')
+            ->and($client->createWebhook($connection, 'acme/shop', 'https://falak.test/hook', 's3cret'))->toBe('88');
 
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/keys') && $r['read_only'] === true && $r['key'] === 'ssh-ed25519 AAAA');
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/hooks') && $r['events'] === ['push'] && $r['config']['secret'] === 's3cret' && $r['config']['content_type'] === 'json');
@@ -150,8 +150,8 @@ describe('GitLab', function () {
 
         expect($client->latestCommit($connection, 'acme/platform/api', 'main')->sha)->toBe('abc123')
             ->and($client->branches($connection, 'acme/platform/api')[0]->protected)->toBeTrue()
-            ->and($client->addDeployKey($connection, 'acme/platform/api', 'kiln', 'ssh-ed25519 AAAA'))->toBe('5')
-            ->and($client->createWebhook($connection, 'acme/platform/api', 'https://kiln.test/h', 'tok'))->toBe('6');
+            ->and($client->addDeployKey($connection, 'acme/platform/api', 'falak', 'ssh-ed25519 AAAA'))->toBe('5')
+            ->and($client->createWebhook($connection, 'acme/platform/api', 'https://falak.test/h', 'tok'))->toBe('6');
 
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/deploy_keys') && $r['can_push'] === false);
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/hooks') && $r['token'] === 'tok' && $r['push_events'] === true);
@@ -214,8 +214,8 @@ describe('Bitbucket', function () {
 
         expect($commit->authorName)->toBe('Ada Lovelace')
             ->and($commit->authorEmail)->toBe('ada@example.com')
-            ->and($client->addDeployKey($connection, 'acme/shop', 'kiln', 'ssh-ed25519 A'))->toBe('12')
-            ->and($client->createWebhook($connection, 'acme/shop', 'https://kiln.test/h', 's'))->toBe('{abc}')
+            ->and($client->addDeployKey($connection, 'acme/shop', 'falak', 'ssh-ed25519 A'))->toBe('12')
+            ->and($client->createWebhook($connection, 'acme/shop', 'https://falak.test/h', 's'))->toBe('{abc}')
             ->and($client->httpsCredentials($connection))->toBe(['x-token-auth', 'bb']);
 
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/hooks') && $r['events'] === ['repo:push'] && $r['secret'] === 's');

@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kiln/agent/internal/otlp"
+	"github.com/OthmanHaba/falak/agent/internal/otlp"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 )
 
@@ -287,7 +287,7 @@ func (g *Gateway) identity(site string) ([]*commonpb.KeyValue, bool) {
 		return nil, false
 	}
 	id := []*commonpb.KeyValue{otlp.Str("service.name", site)}
-	for _, k := range []string{"kiln.site.id", "kiln.release.id", "kiln.deployment.id"} {
+	for _, k := range []string{"falak.site.id", "falak.release.id", "falak.deployment.id"} {
 		if v := f.spec.Labels[k]; v != "" {
 			id = append(id, otlp.Str(k, v))
 		}

@@ -2,29 +2,29 @@
 
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
-use Kiln\Fleet\Application\Jobs\SweepFleet;
-use Kiln\Fleet\Application\ShippedAgent;
-use Kiln\Fleet\Contracts\AgentUpgrades;
-use Kiln\Fleet\Contracts\AgentUpgradeStatus;
-use Kiln\Fleet\Contracts\Exceptions\AgentUpgradeUnavailable;
-use Kiln\Fleet\Domain\Models\Agent;
-use Kiln\Fleet\Domain\Models\AgentUpgrade;
-use Kiln\Fleet\Domain\Models\Command;
-use Kiln\Fleet\Events\AgentUpgradeFailed;
-use Kiln\Fleet\Events\AgentUpgradeSucceeded;
-use Kiln\Fleet\Infrastructure\AgentBinaries;
+use Falak\Fleet\Application\Jobs\SweepFleet;
+use Falak\Fleet\Application\ShippedAgent;
+use Falak\Fleet\Contracts\AgentUpgrades;
+use Falak\Fleet\Contracts\AgentUpgradeStatus;
+use Falak\Fleet\Contracts\Exceptions\AgentUpgradeUnavailable;
+use Falak\Fleet\Domain\Models\Agent;
+use Falak\Fleet\Domain\Models\AgentUpgrade;
+use Falak\Fleet\Domain\Models\Command;
+use Falak\Fleet\Events\AgentUpgradeFailed;
+use Falak\Fleet\Events\AgentUpgradeSucceeded;
+use Falak\Fleet\Infrastructure\AgentBinaries;
 
 require_once __DIR__.'/../Support/helpers.php';
 
 const UPGRADE_OLD_SHA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
 beforeEach(function () {
-    $dir = sys_get_temp_dir().'/kiln-agent-bin-'.Str::random(8);
+    $dir = sys_get_temp_dir().'/falak-agent-bin-'.Str::random(8);
     mkdir($dir);
-    file_put_contents("{$dir}/kiln-agent-linux-amd64", 'new agent build');
-    file_put_contents("{$dir}/kiln-agent-linux-amd64.version", "v1.1.0\n");
+    file_put_contents("{$dir}/falak-agent-linux-amd64", 'new agent build');
+    file_put_contents("{$dir}/falak-agent-linux-amd64.version", "v1.1.0\n");
     $this->shippedSha = hash('sha256', 'new agent build');
-    config(['fleet.ca_path' => sys_get_temp_dir().'/kiln-ca-test', 'fleet.agent.binaries_path' => $dir, 'fleet.panel_url' => 'https://kiln.example.com',
+    config(['fleet.ca_path' => sys_get_temp_dir().'/falak-ca-test', 'fleet.agent.binaries_path' => $dir, 'fleet.panel_url' => 'https://falak.example.com',
         'fleet.agent.upgrade.batch_size' => 1]);
     app()->forgetInstance(AgentBinaries::class);
     [, $this->organization] = memberOf();
@@ -99,7 +99,7 @@ it('upgrades one agent: verified download command, then success once the agent r
     $payload = json_decode($command->payload, true);
 
     expect($upgrade->status)->toBe(AgentUpgradeStatus::Running)
-        ->and($payload)->toBe(['version' => 'v1.1.0', 'url' => 'https://kiln.example.com/install/agent/linux-amd64', 'sha256' => $this->shippedSha])
+        ->and($payload)->toBe(['version' => 'v1.1.0', 'url' => 'https://falak.example.com/install/agent/linux-amd64', 'sha256' => $this->shippedSha])
         ->and(fleet_schema_errors('commands/system.upgrade_agent.schema.json', $payload))->toBe([])
         // Asking again while it runs returns the same upgrade.
         ->and(app(AgentUpgrades::class)->upgrade($agent['serverId'])->id)->toBe($upgrade->id);
@@ -125,7 +125,7 @@ it('fails and alerts when the agent rejects the build (e.g. checksum mismatch)',
     $agent = upgrade_agent($this->organization->id);
     $upgrade = app(AgentUpgrades::class)->upgrade($agent['serverId']);
 
-    upgrade_finish($agent, upgrade_command($agent['serverId']), exit: 1, error: 'GET https://kiln.example.com/install/agent/linux-amd64: sha256 mismatch');
+    upgrade_finish($agent, upgrade_command($agent['serverId']), exit: 1, error: 'GET https://falak.example.com/install/agent/linux-amd64: sha256 mismatch');
 
     $failed = AgentUpgrade::query()->find($upgrade->id);
     expect($failed->status)->toBe(AgentUpgradeStatus::Failed)
@@ -168,7 +168,7 @@ it('rolls out to every outdated online agent one at a time and stops at the firs
     upgrade_report($a, 'v1.1.0', $this->shippedSha);
     expect(collect([$a, $b, $c])->map($status)->all())->toBe(['succeeded', 'running', 'queued']);
 
-    upgrade_finish($b, upgrade_command($b['serverId']), exit: 1, error: 'the downloaded kiln-agent does not run on this host');
+    upgrade_finish($b, upgrade_command($b['serverId']), exit: 1, error: 'the downloaded falak-agent does not run on this host');
     expect(collect([$a, $b, $c])->map($status)->all())->toBe(['succeeded', 'failed', 'cancelled'])
         ->and(AgentUpgrade::query()->where('server_id', $c['serverId'])->value('error'))->toContain('Rollout stopped')
         ->and(upgrade_command($c['serverId']))->toBeNull();
@@ -177,13 +177,13 @@ it('rolls out to every outdated online agent one at a time and stops at the firs
 it('refuses offline agents and missing builds', function () {
     $agent = upgrade_agent($this->organization->id, ['arch' => 'arm64']);
 
-    expect(fn () => app(AgentUpgrades::class)->upgrade($agent['serverId']))->toThrow(AgentUpgradeUnavailable::class, 'no verifiable kiln-agent build for arm64');
+    expect(fn () => app(AgentUpgrades::class)->upgrade($agent['serverId']))->toThrow(AgentUpgradeUnavailable::class, 'no verifiable falak-agent build for arm64');
 });
 
-it('counts outdated agents for kiln-ctl', function () {
+it('counts outdated agents for falak-ctl', function () {
     upgrade_agent($this->organization->id);
     upgrade_agent($this->organization->id, ['agent_version' => 'v1.1.0', 'agent_sha256' => $this->shippedSha]);
 
-    $this->artisan('kiln:agents --outdated --count')->expectsOutput('1')->assertSuccessful();
-    $this->artisan('kiln:agents')->expectsOutputToContain('kiln-agent linux-amd64: v1.1.0')->assertSuccessful();
+    $this->artisan('falak:agents --outdated --count')->expectsOutput('1')->assertSuccessful();
+    $this->artisan('falak:agents')->expectsOutputToContain('falak-agent linux-amd64: v1.1.0')->assertSuccessful();
 });

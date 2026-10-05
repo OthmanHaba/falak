@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Edge\Http\Controllers;
+namespace Falak\Edge\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Kiln\Identity\Contracts\CurrentOrganization;
-use Kiln\Identity\Contracts\OrganizationAccess;
-use Kiln\Projects\Contracts\ProjectDirectory;
-use Kiln\Projects\Contracts\ServiceKind;
-use Kiln\Sites\Contracts\Data\SiteData;
-use Kiln\Sites\Contracts\SiteDirectory;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Identity\Contracts\OrganizationAccess;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\ServiceKind;
+use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteDirectory;
 
 trait ResolvesSite
 {

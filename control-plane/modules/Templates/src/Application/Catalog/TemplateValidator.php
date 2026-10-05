@@ -1,16 +1,16 @@
 <?php
 
-namespace Kiln\Templates\Application\Catalog;
+namespace Falak\Templates\Application\Catalog;
 
-use Kiln\Templates\Application\Compose\ComposeAnalyzer;
-use Kiln\Templates\Application\Compose\ComposeDocument;
-use Kiln\Templates\Application\Compose\KilnPlaceholders;
-use Kiln\Templates\Domain\InvalidTemplate;
-use Kiln\Templates\Domain\Template;
+use Falak\Templates\Application\Compose\ComposeAnalyzer;
+use Falak\Templates\Application\Compose\ComposeDocument;
+use Falak\Templates\Application\Compose\FalakPlaceholders;
+use Falak\Templates\Domain\InvalidTemplate;
+use Falak\Templates\Domain\Template;
 
 /**
  * Whether a template's compose file satisfies it (docs/COMPOSE_TEMPLATES.md §2 "Validation"): the compose file
- * parses; every `${VAR}` is an input or a Kiln variable; `${{ … }}` placeholders are valid; public services exist
+ * parses; every `${VAR}` is an input or a Falak variable; `${{ … }}` placeholders are valid; public services exist
  * and expose their port; images are pinned; no `build:`; and the compose runtime's policy passes.
  */
 final class TemplateValidator
@@ -48,27 +48,27 @@ final class TemplateValidator
             }
 
             if (($service['container_name'] ?? null) !== null) {
-                $errors[] = "{$at}.container_name: remove it (Kiln names containers per site so a template can be deployed twice)";
+                $errors[] = "{$at}.container_name: remove it (Falak names containers per site so a template can be deployed twice)";
             }
         }
 
         foreach ($compose->variables() as $variable) {
-            if (! $variable['optional'] && ! in_array($variable['name'], $inputs, true) && ! in_array($variable['name'], KilnPlaceholders::RUNTIME_VARIABLES, true)) {
-                $errors[] = "compose.yaml: \${{$variable['name']}} is neither an input nor a Kiln variable";
+            if (! $variable['optional'] && ! in_array($variable['name'], $inputs, true) && ! in_array($variable['name'], FalakPlaceholders::RUNTIME_VARIABLES, true)) {
+                $errors[] = "compose.yaml: \${{$variable['name']}} is neither an input nor a Falak variable";
             }
         }
 
         foreach ($compose->placeholders() as $expression) {
-            if (($problem = KilnPlaceholders::problem($expression, $publicServices)) !== null) {
+            if (($problem = FalakPlaceholders::problem($expression, $publicServices)) !== null) {
                 $errors[] = "compose.yaml: {$problem}";
             }
         }
 
         foreach ($template->inputs as $input) {
             foreach ([$input->default] as $value) {
-                foreach (KilnPlaceholders::find((string) $value) as [$function, $service]) {
+                foreach (FalakPlaceholders::find((string) $value) as [$function, $service]) {
                     if ($service !== null && ! in_array($service, $publicServices, true)) {
-                        $errors[] = "template.yaml: inputs.{$input->key}.default uses kiln.{$function}({$service}) but {$service} is not a public service";
+                        $errors[] = "template.yaml: inputs.{$input->key}.default uses falak.{$function}({$service}) but {$service} is not a public service";
                     }
                 }
             }

@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Deployments\Domain\Enums;
+namespace Falak\Deployments\Domain\Enums;
 
 enum StepStatus: string
 {

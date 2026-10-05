@@ -1,15 +1,15 @@
 <?php
 
-namespace Kiln\Fleet\Application\Console;
+namespace Falak\Fleet\Application\Console;
 
 use Illuminate\Console\Command;
-use Kiln\Fleet\Infrastructure\Pki\CertificateAuthorityService;
+use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
 
 final class CaInitCommand extends Command
 {
     protected $signature = 'fleet:ca:init';
 
-    protected $description = 'Create the Kiln agent CA (if missing) and write ca.pem for the edge';
+    protected $description = 'Create the Falak agent CA (if missing) and write ca.pem for the edge';
 
     public function handle(CertificateAuthorityService $ca): int
     {

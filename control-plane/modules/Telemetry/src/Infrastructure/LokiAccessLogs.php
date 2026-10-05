@@ -1,14 +1,14 @@
 <?php
 
-namespace Kiln\Telemetry\Infrastructure;
+namespace Falak\Telemetry\Infrastructure;
 
 use DateTimeInterface;
-use Kiln\Sites\Contracts\SiteDirectory;
-use Kiln\Telemetry\Application\Queries\LogQueryBuilder;
-use Kiln\Telemetry\Contracts\AccessLogs;
-use Kiln\Telemetry\Contracts\Data\AccessLogEntry;
-use Kiln\Telemetry\Contracts\Data\LogLine;
-use Kiln\Telemetry\Contracts\LogsQuery;
+use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Telemetry\Application\Queries\LogQueryBuilder;
+use Falak\Telemetry\Contracts\AccessLogs;
+use Falak\Telemetry\Contracts\Data\AccessLogEntry;
+use Falak\Telemetry\Contracts\Data\LogLine;
+use Falak\Telemetry\Contracts\LogsQuery;
 
 final class LokiAccessLogs implements AccessLogs
 {

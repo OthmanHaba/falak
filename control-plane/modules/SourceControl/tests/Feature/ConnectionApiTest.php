@@ -1,8 +1,8 @@
 <?php
 
 use Illuminate\Support\Facades\Http;
-use Kiln\Identity\Contracts\Role;
-use Kiln\SourceControl\Domain\Models\Connection;
+use Falak\Identity\Contracts\Role;
+use Falak\SourceControl\Domain\Models\Connection;
 
 beforeEach(function () {
     [$this->user, $this->organization] = actingAsMember(Role::Admin);

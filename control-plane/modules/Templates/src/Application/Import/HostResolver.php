@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Templates\Application\Import;
+namespace Falak\Templates\Application\Import;
 
 interface HostResolver
 {

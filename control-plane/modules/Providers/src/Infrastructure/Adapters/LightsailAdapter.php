@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Providers\Infrastructure\Adapters;
+namespace Falak\Providers\Infrastructure\Adapters;
 
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -8,14 +8,14 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use Kiln\Providers\Contracts\Data\Image;
-use Kiln\Providers\Contracts\Data\Machine;
-use Kiln\Providers\Contracts\Data\MachineSpec;
-use Kiln\Providers\Contracts\Data\Region;
-use Kiln\Providers\Contracts\Data\Size;
-use Kiln\Providers\Contracts\Exceptions\ProviderException;
-use Kiln\Providers\Contracts\ProviderType;
-use Kiln\Providers\Infrastructure\Aws\SigV4Signer;
+use Falak\Providers\Contracts\Data\Image;
+use Falak\Providers\Contracts\Data\Machine;
+use Falak\Providers\Contracts\Data\MachineSpec;
+use Falak\Providers\Contracts\Data\Region;
+use Falak\Providers\Contracts\Data\Size;
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\ProviderType;
+use Falak\Providers\Infrastructure\Aws\SigV4Signer;
 use stdClass;
 
 /**
@@ -274,6 +274,6 @@ final class LightsailAdapter extends HttpProviderAdapter
     /** Lightsail instance names: letters, digits, dashes, underscores, dots; must start with a letter/digit. */
     private function instanceName(string $name): string
     {
-        return substr(ltrim((string) preg_replace('/[^A-Za-z0-9_.-]+/', '-', $name), '-_.'), 0, 255) ?: 'kiln-server';
+        return substr(ltrim((string) preg_replace('/[^A-Za-z0-9_.-]+/', '-', $name), '-_.'), 0, 255) ?: 'falak-server';
     }
 }

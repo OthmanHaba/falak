@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Databases\Application\Actions;
+namespace Falak\Databases\Application\Actions;
 
 use Illuminate\Support\Str;
-use Kiln\Databases\Application\AgentCommands;
-use Kiln\Databases\Domain\Enums\ResourceStatus;
-use Kiln\Databases\Domain\Models\Database;
-use Kiln\Databases\Infrastructure\CommandPayloads;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Databases\Application\AgentCommands;
+use Falak\Databases\Domain\Enums\ResourceStatus;
+use Falak\Databases\Domain\Models\Database;
+use Falak\Databases\Infrastructure\CommandPayloads;
+use Falak\Identity\Contracts\AuditLog;
 
 /**
  * Drops the database on the server; the row (and its grants) is removed once db.drop converges.

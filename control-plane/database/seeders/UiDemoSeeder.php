@@ -6,71 +6,71 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
-use Kiln\Databases\Application\EngineInventory;
-use Kiln\Databases\Domain\Enums\Engine;
-use Kiln\Databases\Domain\Enums\ResourceStatus;
-use Kiln\Databases\Domain\Enums\StorageDriver;
-use Kiln\Databases\Domain\Models\Backup;
-use Kiln\Databases\Domain\Models\BackupSchedule;
-use Kiln\Databases\Domain\Models\Database;
-use Kiln\Databases\Domain\Models\Grant;
-use Kiln\Databases\Domain\Models\StorageProvider;
-use Kiln\Deployments\Domain\Models\Deployment;
-use Kiln\Deployments\Domain\Models\DeploymentStep;
-use Kiln\Deployments\Domain\Models\DeploymentTarget;
-use Kiln\Deployments\Domain\Models\OutputLine;
-use Kiln\Deployments\Domain\Models\Release;
-use Kiln\Edge\Application\ComposeServiceDomains;
-use Kiln\Identity\Application\Actions\CreateOrganization;
-use Kiln\Identity\Application\Actions\RegisterUser;
-use Kiln\Identity\Domain\Models\User;
-use Kiln\Processes\Domain\Enums\ApplyStatus;
-use Kiln\Processes\Domain\Enums\OctaneRouteStatus;
-use Kiln\Processes\Domain\Models\Daemon;
-use Kiln\Processes\Domain\Models\OctaneRoute;
-use Kiln\Processes\Domain\Models\Schedule;
-use Kiln\Processes\Domain\Models\ServerState;
-use Kiln\Processes\Domain\Models\Worker;
-use Kiln\Processes\Infrastructure\ProgramNames;
-use Kiln\Projects\Application\Actions\CreateEnvironment;
-use Kiln\Projects\Application\Actions\CreateProject;
-use Kiln\Projects\Application\Actions\GroupServices;
-use Kiln\Projects\Application\Actions\ToggleFavorite;
-use Kiln\Projects\Domain\Models\Project;
-use Kiln\Projects\Domain\Models\Service;
-use Kiln\Servers\Contracts\ServerStatus;
-use Kiln\Servers\Contracts\ServerType;
-use Kiln\Servers\Domain\Models\Server;
-use Kiln\Servers\Domain\Stack\Stack;
-use Kiln\Sites\Contracts\BuildMode;
-use Kiln\Sites\Contracts\ComposeSites;
-use Kiln\Sites\Contracts\ComposeSource;
-use Kiln\Sites\Contracts\Data\LaravelSettings;
-use Kiln\Sites\Contracts\Framework;
-use Kiln\Sites\Contracts\OctaneServer;
-use Kiln\Sites\Contracts\SiteRuntime;
-use Kiln\Sites\Contracts\TargetRole;
-use Kiln\Sites\Contracts\TargetStatus;
-use Kiln\Sites\Domain\Models\ComposeVersion;
-use Kiln\Sites\Domain\Models\EnvironmentVersion;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteTarget;
-use Kiln\Templates\Application\Actions\SaveCustomTemplate;
+use Falak\Databases\Application\EngineInventory;
+use Falak\Databases\Domain\Enums\Engine;
+use Falak\Databases\Domain\Enums\ResourceStatus;
+use Falak\Databases\Domain\Enums\StorageDriver;
+use Falak\Databases\Domain\Models\Backup;
+use Falak\Databases\Domain\Models\BackupSchedule;
+use Falak\Databases\Domain\Models\Database;
+use Falak\Databases\Domain\Models\Grant;
+use Falak\Databases\Domain\Models\StorageProvider;
+use Falak\Deployments\Domain\Models\Deployment;
+use Falak\Deployments\Domain\Models\DeploymentStep;
+use Falak\Deployments\Domain\Models\DeploymentTarget;
+use Falak\Deployments\Domain\Models\OutputLine;
+use Falak\Deployments\Domain\Models\Release;
+use Falak\Edge\Application\ComposeServiceDomains;
+use Falak\Identity\Application\Actions\CreateOrganization;
+use Falak\Identity\Application\Actions\RegisterUser;
+use Falak\Identity\Domain\Models\User;
+use Falak\Processes\Domain\Enums\ApplyStatus;
+use Falak\Processes\Domain\Enums\OctaneRouteStatus;
+use Falak\Processes\Domain\Models\Daemon;
+use Falak\Processes\Domain\Models\OctaneRoute;
+use Falak\Processes\Domain\Models\Schedule;
+use Falak\Processes\Domain\Models\ServerState;
+use Falak\Processes\Domain\Models\Worker;
+use Falak\Processes\Infrastructure\ProgramNames;
+use Falak\Projects\Application\Actions\CreateEnvironment;
+use Falak\Projects\Application\Actions\CreateProject;
+use Falak\Projects\Application\Actions\GroupServices;
+use Falak\Projects\Application\Actions\ToggleFavorite;
+use Falak\Projects\Domain\Models\Project;
+use Falak\Projects\Domain\Models\Service;
+use Falak\Servers\Contracts\ServerStatus;
+use Falak\Servers\Contracts\ServerType;
+use Falak\Servers\Domain\Models\Server;
+use Falak\Servers\Domain\Stack\Stack;
+use Falak\Sites\Contracts\BuildMode;
+use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\ComposeSource;
+use Falak\Sites\Contracts\Data\LaravelSettings;
+use Falak\Sites\Contracts\Framework;
+use Falak\Sites\Contracts\OctaneServer;
+use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Sites\Contracts\TargetRole;
+use Falak\Sites\Contracts\TargetStatus;
+use Falak\Sites\Domain\Models\ComposeVersion;
+use Falak\Sites\Domain\Models\EnvironmentVersion;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteTarget;
+use Falak\Templates\Application\Actions\SaveCustomTemplate;
 
 /**
  * Local UI demo data (`php artisan db:seed --class=UiDemoSeeder`): an admin, an organization, a few servers and
- * sites so the redesigned pages have something to render. Same credentials as the sim: admin@kiln.test / kiln-demo-2026.
+ * sites so the redesigned pages have something to render. Same credentials as the sim: admin@falak.test / falak-demo-2026.
  * Written directly against module models like DatabaseSeeder — never run in production.
  */
 class UiDemoSeeder extends Seeder
 {
     public function run(RegisterUser $register, CreateOrganization $createOrganization): void
     {
-        if (User::query()->where('email', 'admin@kiln.test')->exists()) {
+        if (User::query()->where('email', 'admin@falak.test')->exists()) {
             return;
         }
 
-        $admin = $register('Ada Admin', 'admin@kiln.test', 'kiln-demo-2026');
+        $admin = $register('Ada Admin', 'admin@falak.test', 'falak-demo-2026');
         $admin->markEmailAsVerified();
         $organization = $createOrganization($admin, 'Acme Studio');
         $admin->forceFill(['current_organization_id' => $organization->id])->save();
@@ -112,7 +112,7 @@ class UiDemoSeeder extends Seeder
                 'isolated' => true,
                 'repository' => $repository,
                 'branch' => $repository ? 'main' : null,
-                'deploy_script' => '$KILN_FETCH',
+                'deploy_script' => '$FALAK_FETCH',
                 'laravel' => new LaravelSettings,
                 'shared_paths' => [],
             ]);
@@ -218,7 +218,7 @@ services:
     environment:
       API_TOKEN: ${API_TOKEN}
       LOG_LEVEL: ${LOG_LEVEL}
-      PUBLIC_URL: ${{ kiln.url(api) }}
+      PUBLIC_URL: ${{ falak.url(api) }}
       REDIS_URL: redis://cache:6379
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
@@ -243,7 +243,7 @@ YAML;
             'build_mode' => BuildMode::Docker,
             'framework' => Framework::Docker,
             'web_directory' => '',
-            'unix_user' => 'kiln',
+            'unix_user' => 'falak',
             'deploy_script' => '',
             'laravel' => new LaravelSettings,
             'shared_paths' => [],
@@ -293,7 +293,7 @@ YAML;
                   WEBHOOK_URL: https://automations.acme.dev/
                 expose: ["5678"]
                 labels:
-                  kiln.deploy.leader_command: "n8n db:migrate"
+                  falak.deploy.leader_command: "n8n db:migrate"
                 volumes:
                   - n8n-data:/home/node/.n8n
                 depends_on: [postgres, redis]

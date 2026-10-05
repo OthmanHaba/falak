@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Databases\Domain\Policies;
+namespace Falak\Databases\Domain\Policies;
 
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
-use Kiln\Identity\Contracts\OrganizationAccess;
+use Falak\Identity\Contracts\OrganizationAccess;
 
 /**
  * One policy for every organization-scoped Databases model (they all carry organization_id).

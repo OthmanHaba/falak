@@ -1,11 +1,11 @@
 <?php
 
-namespace Kiln\Terminal\Application\Actions;
+namespace Falak\Terminal\Application\Actions;
 
-use Kiln\Fleet\Contracts\AgentGateway;
-use Kiln\Fleet\Contracts\Exceptions\AgentUnavailable;
-use Kiln\Terminal\Application\SessionTransitions;
-use Kiln\Terminal\Domain\Models\TerminalSession;
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Falak\Terminal\Application\SessionTransitions;
+use Falak\Terminal\Domain\Models\TerminalSession;
 
 /**
  * Close a session on the host (terminal.close is a no-op for unknown sessions) and record the reason.

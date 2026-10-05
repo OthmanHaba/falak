@@ -1,4 +1,4 @@
-import { Button } from '@/components/kiln/button';
+import { Button } from '@/components/falak/button';
 import AuthLayout, { AuthLink, AuthStatus } from '@/layouts/auth-layout';
 import { Head, useForm } from '@inertiajs/react';
 import { type FormEventHandler } from 'react';

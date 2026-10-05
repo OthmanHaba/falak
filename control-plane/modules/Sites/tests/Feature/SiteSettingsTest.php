@@ -1,15 +1,15 @@
 <?php
 
 use Illuminate\Support\Facades\Event;
-use Kiln\Identity\Contracts\Role;
-use Kiln\Servers\Events\ServerDeleted;
-use Kiln\Sites\Contracts\TargetRole;
-use Kiln\Sites\Domain\Models\Site;
-use Kiln\Sites\Domain\Models\SiteCommand;
-use Kiln\Sites\Events\SiteDeleted;
-use Kiln\Sites\Events\SiteTargetsChanged;
-use Kiln\Sites\Events\SiteUpdated;
-use Kiln\SourceControl\Events\ConnectionDeleted;
+use Falak\Identity\Contracts\Role;
+use Falak\Servers\Events\ServerDeleted;
+use Falak\Sites\Contracts\TargetRole;
+use Falak\Sites\Domain\Models\Site;
+use Falak\Sites\Domain\Models\SiteCommand;
+use Falak\Sites\Events\SiteDeleted;
+use Falak\Sites\Events\SiteTargetsChanged;
+use Falak\Sites\Events\SiteUpdated;
+use Falak\SourceControl\Events\ConnectionDeleted;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -47,7 +47,7 @@ it('updates general settings and announces what changed', function () {
 
     $site = $this->site->refresh();
     expect($site->name)->toBe('Shop EU')->and($site->web_directory)->toBe('web')
-        ->and($site->toData()->documentRoot())->toBe('/srv/kiln/sites/shop/current/web');
+        ->and($site->toData()->documentRoot())->toBe('/srv/falak/sites/shop/current/web');
 
     Event::assertDispatched(SiteUpdated::class, fn (SiteUpdated $e) => $e->changed(['name', 'web_directory', 'health_check_path'][0]) && $e->changed('web_directory') && ! $e->changed('runtime'));
 
@@ -61,9 +61,9 @@ it('moves the FPM pool when the PHP version changes', function () {
 
     $pools = $this->agents->ofType('runtime.fpm.pool');
     expect($pools)->toHaveCount(3)
-        ->and($pools[1]['payload'])->toBe(['php_version' => '8.4', 'pool' => 'shop', 'user' => 'kiln', 'state' => 'absent'])
+        ->and($pools[1]['payload'])->toBe(['php_version' => '8.4', 'pool' => 'shop', 'user' => 'falak', 'state' => 'absent'])
         ->and($pools[2]['payload']['php_version'])->toBe('8.3')
-        ->and($pools[2]['payload']['listen'])->toBe('/run/php/kiln-shop-8.3.sock');
+        ->and($pools[2]['payload']['listen'])->toBe('/run/php/falak-shop-8.3.sock');
 });
 
 it('switches between php runtimes but not to containers', function () {
@@ -154,9 +154,9 @@ it('toggles maintenance mode with artisan on every ready server', function () {
     $this->put("/sites/{$this->site->id}/laravel", ['scheduler' => true, 'horizon' => true, 'octane' => false, 'maintenance' => true])->assertSessionHasNoErrors();
 
     $exec = $this->agents->last('system.exec');
-    expect($exec['payload']['script'])->toContain('php8.4 artisan down --retry=60')->toContain("cd '/srv/kiln/sites/shop/current'")
-        ->and($exec['payload']['user'])->toBe('kiln')
-        ->and($exec['payload']['env']['KILN_IS_LEADER'])->toBe('1')
+    expect($exec['payload']['script'])->toContain('php8.4 artisan down --retry=60')->toContain("cd '/srv/falak/sites/shop/current'")
+        ->and($exec['payload']['user'])->toBe('falak')
+        ->and($exec['payload']['env']['FALAK_IS_LEADER'])->toBe('1')
         ->and($this->site->refresh()->laravel->horizon)->toBeTrue()
         ->and(SiteCommand::query()->count())->toBe(1);
 

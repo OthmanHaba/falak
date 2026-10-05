@@ -1,6 +1,6 @@
 <?php
 
-namespace Kiln\Projects\Domain\Models;
+namespace Falak\Projects\Domain\Models;
 
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Kiln\Projects\Contracts\Data\EnvironmentData;
+use Falak\Projects\Contracts\Data\EnvironmentData;
 
 /**
  * @property string $id

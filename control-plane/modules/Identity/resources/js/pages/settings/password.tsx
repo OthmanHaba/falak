@@ -1,7 +1,7 @@
-import { Button } from '@/components/kiln/button';
-import { Field } from '@/components/kiln/field';
-import { Input } from '@/components/kiln/input';
-import { Section } from '@/components/kiln/section';
+import { Button } from '@/components/falak/button';
+import { Field } from '@/components/falak/field';
+import { Input } from '@/components/falak/input';
+import { Section } from '@/components/falak/section';
 import SettingsLayout from '@/layouts/settings/layout';
 import { useForm } from '@inertiajs/react';
 import { useRef, type FormEventHandler } from 'react';

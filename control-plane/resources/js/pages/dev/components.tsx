@@ -42,7 +42,7 @@ import {
     Textarea,
     toast,
     Tooltip,
-} from '@/components/kiln';
+} from '@/components/falak';
 import { usePage } from '@inertiajs/react';
 import { Copy, Database, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -136,8 +136,8 @@ export default function ComponentsGallery() {
         <AppShell breadcrumbs={[{ title: 'Components', href: '/dev/components' }]}>
             <div className="grid gap-10">
                 <PageHeader
-                    title="Kiln components"
-                    description="Local-only gallery of resources/js/components/kiln (docs/UI_DESIGN.md §6)."
+                    title="Falak components"
+                    description="Local-only gallery of resources/js/components/falak (docs/UI_DESIGN.md §6)."
                     actions={
                         <Button variant="primary" icon={<Plus />}>
                             Primary
@@ -196,7 +196,7 @@ export default function ComponentsGallery() {
                         </Field>
                     </div>
                     <Callout tone="success" title="Verified">
-                        Kiln wrote and deleted a probe object.
+                        Falak wrote and deleted a probe object.
                     </Callout>
                     <Callout tone="danger" title="Could not verify">
                         Hetzner Cloud: unable to authenticate
@@ -286,7 +286,7 @@ export default function ComponentsGallery() {
                             />
                         </Field>
                         <Field label="Deploy script" className="sm:col-span-2">
-                            <Textarea mono defaultValue={'$KILN_FETCH\ncomposer install\n$KILN_ACTIVATE'} />
+                            <Textarea mono defaultValue={'$FALAK_FETCH\ncomposer install\n$FALAK_ACTIVATE'} />
                         </Field>
                         <Field inline label="Push to deploy">
                             <Switch checked={on} onCheckedChange={setOn} />

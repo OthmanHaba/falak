@@ -1,13 +1,13 @@
 <?php
 
-namespace Kiln\Databases\Application\Actions;
+namespace Falak\Databases\Application\Actions;
 
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Kiln\Databases\Domain\Models\StorageProvider;
-use Kiln\Databases\Infrastructure\ObjectStorage\ObjectStores;
-use Kiln\Databases\Infrastructure\ObjectStorage\StorageRequestFailed;
-use Kiln\Identity\Contracts\AuditLog;
+use Falak\Databases\Domain\Models\StorageProvider;
+use Falak\Databases\Infrastructure\ObjectStorage\ObjectStores;
+use Falak\Databases\Infrastructure\ObjectStorage\StorageRequestFailed;
+use Falak\Identity\Contracts\AuditLog;
 
 /**
  * Writes and deletes a probe object with the provider's credentials (the same permissions backups and
@@ -23,10 +23,10 @@ final class VerifyStorageProvider
     public function __invoke(StorageProvider $provider): void
     {
         $store = $this->stores->for($provider);
-        $key = $store->key('.kiln-verify-'.Str::lower((string) Str::ulid()));
+        $key = $store->key('.falak-verify-'.Str::lower((string) Str::ulid()));
 
         try {
-            $store->put($key, 'kiln storage verification '.now()->toIso8601String()."\n", 'text/plain');
+            $store->put($key, 'falak storage verification '.now()->toIso8601String()."\n", 'text/plain');
             $store->delete($key);
         } catch (StorageRequestFailed $e) {
             $provider->forceFill(['verified_at' => null])->save();

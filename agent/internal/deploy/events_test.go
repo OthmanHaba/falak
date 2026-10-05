@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/kiln/agent/internal/obs"
-	"github.com/kiln/agent/internal/runner"
+	"github.com/OthmanHaba/falak/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
 type recSink struct {
@@ -35,22 +35,22 @@ func (failingProcs) Restart(context.Context, []string) error {
 
 // Mirrors the Grafana alert / dashboard LogQL:
 //
-//	{service_name="kiln-agent"} | kiln_event_type="deployment" | kiln_deployment_status="failed"
-//	sum by (kiln_site_id, kiln_deployment_id) (...)
+//	{service_name="falak-agent"} | falak_event_type="deployment" | falak_deployment_status="failed"
+//	sum by (falak_site_id, falak_deployment_id) (...)
 func checkEvent(t *testing.T, l obs.LogRecord, status, phase, release string) {
 	t.Helper()
-	if l.Service != "kiln-agent" {
-		t.Errorf("service.name %q, want kiln-agent", l.Service)
+	if l.Service != "falak-agent" {
+		t.Errorf("service.name %q, want falak-agent", l.Service)
 	}
 	if l.SiteID != "01J9Z8Y7X6W5V4T3S2R1Q0P9S1" {
-		t.Errorf("kiln.site.id (resource) %q", l.SiteID)
+		t.Errorf("falak.site.id (resource) %q", l.SiteID)
 	}
 	want := map[string]string{
-		"kiln.event.type":        "deployment",
-		"kiln.deployment.status": status,
-		"kiln.deployment.phase":  phase,
-		"kiln.deployment.id":     "01J9Z8Y7X6W5V4T3S2R1Q0P9D1",
-		"kiln.release.id":        release,
+		"falak.event.type":        "deployment",
+		"falak.deployment.status": status,
+		"falak.deployment.phase":  phase,
+		"falak.deployment.id":     "01J9Z8Y7X6W5V4T3S2R1Q0P9D1",
+		"falak.release.id":        release,
 	}
 	for k, v := range want {
 		if l.Attrs[k] != v {
@@ -122,7 +122,7 @@ func TestDeploymentLifecycleEvents(t *testing.T) {
 	}
 	ev = sink.take()
 	checkEvent(t, ev[0], StatusFailed, PhaseHook, r1)
-	if ev[0].Attrs["kiln.deployment.hook"] != "migrate" {
+	if ev[0].Attrs["falak.deployment.hook"] != "migrate" {
 		t.Fatal("hook name missing")
 	}
 
