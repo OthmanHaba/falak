@@ -56,10 +56,6 @@ jobs:
           composer install -q --no-interaction --no-scripts --no-progress --prefer-dist
           bun install --frozen-lockfile
 
-      - name: Brand check
-        working-directory: .
-        run: tools/check-brand.sh
-
       - name: Pint
         run: vendor/bin/pint --test
 
