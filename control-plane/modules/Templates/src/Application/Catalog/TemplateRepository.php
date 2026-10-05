@@ -2,11 +2,11 @@
 
 namespace Falak\Templates\Application\Catalog;
 
-use Illuminate\Support\Facades\Log;
 use Falak\Templates\Domain\InvalidTemplate;
 use Falak\Templates\Domain\Models\CustomTemplate;
 use Falak\Templates\Domain\Template;
 use Falak\Templates\Domain\TemplateSource;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Templates an organization can deploy: the curated catalog plus its own custom templates.

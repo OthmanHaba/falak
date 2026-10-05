@@ -2,10 +2,10 @@
 
 namespace Falak\Sites\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Sites\Application\TargetProvisioner;
 use Falak\Sites\Contracts\TargetStatus;
 use Falak\Sites\Domain\Models\SiteTarget;
+use Illuminate\Validation\ValidationException;
 
 final class RetryTarget
 {

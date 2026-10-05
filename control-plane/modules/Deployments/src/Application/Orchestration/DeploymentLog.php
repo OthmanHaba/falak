@@ -2,12 +2,12 @@
 
 namespace Falak\Deployments\Application\Orchestration;
 
-use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Carbon;
 use Falak\Deployments\Domain\Models\DeploymentStep;
 use Falak\Deployments\Domain\Models\DeploymentTarget;
 use Falak\Deployments\Domain\Models\OutputLine;
 use Falak\Deployments\Events\DeploymentOutputReceived;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Carbon;
 use Throwable;
 
 /**

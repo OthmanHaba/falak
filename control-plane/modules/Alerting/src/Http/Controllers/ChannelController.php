@@ -2,11 +2,6 @@
 
 namespace Falak\Alerting\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Alerting\Application\Actions\DeleteChannel;
 use Falak\Alerting\Application\Actions\SaveChannel;
 use Falak\Alerting\Application\Actions\SendTestMessage;
@@ -17,6 +12,11 @@ use Falak\Alerting\Infrastructure\Senders\SenderRegistry;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class ChannelController extends Controller
 {

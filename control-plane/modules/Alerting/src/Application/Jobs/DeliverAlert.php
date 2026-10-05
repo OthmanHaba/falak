@@ -2,14 +2,14 @@
 
 namespace Falak\Alerting\Application\Jobs;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Str;
 use Falak\Alerting\Application\AlertMessage;
 use Falak\Alerting\Domain\Enums\DeliveryStatus;
 use Falak\Alerting\Domain\Models\Delivery;
 use Falak\Alerting\Infrastructure\Senders\DeliveryFailed;
 use Falak\Alerting\Infrastructure\Senders\SenderRegistry;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**

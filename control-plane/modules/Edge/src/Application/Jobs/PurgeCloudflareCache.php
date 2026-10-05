@@ -2,11 +2,11 @@
 
 namespace Falak\Edge\Application\Jobs;
 
+use Falak\Edge\Application\CloudflareEdgeControls;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Falak\Edge\Application\CloudflareEdgeControls;
 
 /** Purges a site's names at Cloudflare (after a deploy or rollback); a no-op outside managed zones. */
 final class PurgeCloudflareCache implements ShouldQueue

@@ -2,8 +2,6 @@
 
 namespace Falak\Deployments\Http\Controllers\Api;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Application\Orchestration\Orchestrator;
 use Falak\Deployments\Domain\Enums\ReleaseStatus;
@@ -16,6 +14,8 @@ use Falak\Deployments\Http\Controllers\PresentsDeployments;
 use Falak\Deployments\Http\Controllers\ResolvesSites;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * Public API v1 used by the `falak` CLI (agent/internal/cli/api). Sanctum tokens pinned to one

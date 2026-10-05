@@ -2,8 +2,6 @@
 
 namespace Falak\Telemetry;
 
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Support\Facades\Event;
 use Falak\Deployments\Events\ReleaseActivated;
 use Falak\Fleet\Events\AgentEnrolled;
 use Falak\Fleet\Events\AgentVersionChanged;
@@ -43,6 +41,8 @@ use Falak\Telemetry\Infrastructure\Metrics\MimirBackend;
 use Falak\Telemetry\Infrastructure\Metrics\VictoriaMetricsBackend;
 use Falak\Telemetry\Infrastructure\NullServerSites;
 use Falak\Telemetry\Infrastructure\TempoTracesQuery;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Event;
 
 class TelemetryServiceProvider extends ModuleServiceProvider
 {

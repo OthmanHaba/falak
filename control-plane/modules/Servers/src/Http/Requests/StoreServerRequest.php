@@ -2,11 +2,11 @@
 
 namespace Falak\Servers\Http\Requests;
 
-use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Providers\Contracts\ProviderType;
 use Falak\Servers\Contracts\ServerType;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 final class StoreServerRequest extends FormRequest
 {

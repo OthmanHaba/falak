@@ -2,16 +2,16 @@
 
 namespace Falak\Identity\Http\Controllers\Settings;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Application\Actions\ConfirmTwoFactor;
 use Falak\Identity\Application\Actions\DisableTwoFactor;
 use Falak\Identity\Application\Actions\EnableTwoFactor;
 use Falak\Identity\Application\Actions\RegenerateRecoveryCodes;
 use Falak\Identity\Domain\Models\User;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 use Laravel\Fortify\Fortify;
 
 final class TwoFactorController extends Controller

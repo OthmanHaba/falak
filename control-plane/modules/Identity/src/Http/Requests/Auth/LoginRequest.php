@@ -2,6 +2,7 @@
 
 namespace Falak\Identity\Http\Requests\Auth;
 
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -9,7 +10,6 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Falak\Identity\Domain\Models\User;
 
 class LoginRequest extends FormRequest
 {

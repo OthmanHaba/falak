@@ -2,11 +2,6 @@
 
 namespace Falak\Network\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
@@ -21,6 +16,11 @@ use Falak\Network\Domain\Models\PrivateNetworkMember;
 use Falak\Servers\Contracts\Data\ServerData;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Servers\Contracts\ServerHeaders;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class PrivateNetworkController extends Controller
 {

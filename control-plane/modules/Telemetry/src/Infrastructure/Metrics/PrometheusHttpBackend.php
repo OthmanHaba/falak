@@ -3,11 +3,11 @@
 namespace Falak\Telemetry\Infrastructure\Metrics;
 
 use DateTimeInterface;
-use Illuminate\Http\Client\PendingRequest;
 use Falak\Telemetry\Contracts\Data\MetricSeries;
 use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
 use Falak\Telemetry\Contracts\MetricsBackend;
 use Falak\Telemetry\Infrastructure\HttpClient;
+use Illuminate\Http\Client\PendingRequest;
 
 /**
  * Prometheus HTTP API (/api/v1/query, /api/v1/query_range), spoken by both VictoriaMetrics and Mimir.

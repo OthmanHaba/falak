@@ -2,10 +2,6 @@
 
 namespace Falak\Deployments\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Falak\Deployments\Application\Actions\UpdateDeploySettings;
 use Falak\Deployments\Domain\Enums\Strategy;
 use Falak\Deployments\Domain\Models\SiteSettings;
@@ -15,6 +11,10 @@ use Falak\Kernel\Http\Controller;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
 use Falak\Sites\Contracts\SiteDeploySettings;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 final class DeploySettingsController extends Controller
 {

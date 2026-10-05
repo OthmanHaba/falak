@@ -2,12 +2,12 @@
 
 namespace Falak\Recipes\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Recipes\Application\RunProgress;
 use Falak\Recipes\Domain\Enums\TargetStatus;
 use Falak\Recipes\Domain\Models\RunTarget;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Records the outcome of recipe system.exec commands and rolls up the run status.

@@ -1,11 +1,11 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Falak\Telemetry\Application\Queries\TraceQueryBuilder;
 use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 use Falak\Telemetry\Contracts\TracesQuery;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
     Http::preventStrayRequests();

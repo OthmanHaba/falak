@@ -2,14 +2,14 @@
 
 namespace Falak\SourceControl\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Kernel\Http\Controller;
 use Falak\SourceControl\Application\Actions\ReceiveGitHubAppEvent;
 use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Domain\Models\GitHubApp;
 use Falak\SourceControl\Infrastructure\GitHubApp\GitHubAppResolver;
 use Falak\SourceControl\Infrastructure\Webhooks\WebhookPayloads;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * A GitHub App's webhook: POST /api/webhooks/source-control/github-app/{app}, where {app} is the registered app's

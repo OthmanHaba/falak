@@ -2,12 +2,12 @@
 
 namespace Falak\Servers\Database\Factories;
 
-use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Str;
 use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Domain\Stack\Stack;
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * @extends Factory<Server>

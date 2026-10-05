@@ -2,8 +2,6 @@
 
 namespace Falak\Sites;
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Identity\Contracts\PermissionRegistry;
@@ -39,6 +37,8 @@ use Falak\Sites\Infrastructure\EloquentSiteNameResolver;
 use Falak\Sites\Infrastructure\NullSiteDomains;
 use Falak\SourceControl\Events\ConnectionDeleted;
 use Falak\Telemetry\Contracts\ServerSites;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 
 class SitesServiceProvider extends ModuleServiceProvider
 {

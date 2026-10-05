@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Identity\Contracts\Role;
 use Falak\Projects\Contracts\ProjectDirectory;
@@ -9,6 +8,7 @@ use Falak\Projects\Events\ServiceLinked;
 use Falak\Projects\Events\ServiceUnlinked;
 use Falak\Servers\Contracts\ServerType;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';

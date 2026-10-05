@@ -2,10 +2,6 @@
 
 namespace Falak\Projects\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Databases\Contracts\Data\DatabaseData;
 use Falak\Databases\Contracts\DatabaseConnections;
 use Falak\Databases\Contracts\DatabaseDirectory;
@@ -19,6 +15,10 @@ use Falak\Projects\Domain\Models\Environment;
 use Falak\Projects\Domain\Models\Project;
 use Falak\Projects\Domain\Models\Service;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**

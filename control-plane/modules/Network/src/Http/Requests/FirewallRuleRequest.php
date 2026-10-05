@@ -3,11 +3,11 @@
 namespace Falak\Network\Http\Requests;
 
 use Closure;
-use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 use Falak\Network\Domain\Enums\RuleAction;
 use Falak\Network\Domain\Enums\RuleProtocol;
 use Falak\Network\Domain\Support\AddressRules;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 final class FirewallRuleRequest extends FormRequest
 {

@@ -2,14 +2,14 @@
 
 namespace Falak\Databases\Application\Jobs;
 
+use Falak\Databases\Application\Actions\PruneBackups;
+use Falak\Databases\Domain\Models\BackupSchedule;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Falak\Databases\Application\Actions\PruneBackups;
-use Falak\Databases\Domain\Models\BackupSchedule;
 
 final class PruneScheduleBackups implements ShouldBeUnique, ShouldQueue
 {

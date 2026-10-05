@@ -2,8 +2,6 @@
 
 namespace Falak\Functions\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Deployments\Contracts\DeploymentTrigger;
 use Falak\Functions\Application\AgentSupport;
 use Falak\Functions\Application\Code;
@@ -14,6 +12,8 @@ use Falak\Functions\Domain\Models\FunctionDraft;
 use Falak\Functions\Domain\Models\FunctionVersion;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Sites\Contracts\Data\SiteData;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * The editor's Deploy: save the code as a new version (unless it equals the newest one) and deploy it. The editor

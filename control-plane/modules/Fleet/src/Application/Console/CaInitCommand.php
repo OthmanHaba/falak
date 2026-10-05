@@ -2,8 +2,8 @@
 
 namespace Falak\Fleet\Application\Console;
 
-use Illuminate\Console\Command;
 use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
+use Illuminate\Console\Command;
 
 final class CaInitCommand extends Command
 {

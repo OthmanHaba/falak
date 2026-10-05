@@ -2,10 +2,10 @@
 
 namespace Falak\Deployments\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Deployments\Application\Orchestration\Orchestrator;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Advances deployments when their agent commands finish (proc.apply: the restart step converges the new

@@ -2,12 +2,6 @@
 
 namespace Falak\Fleet\Application\Jobs;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldBeUnique;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Support\Facades\DB;
 use Falak\Fleet\Application\AgentUpgradeRollout;
 use Falak\Fleet\Application\CommandLifecycle;
 use Falak\Fleet\Application\CommandRedelivery;
@@ -18,6 +12,12 @@ use Falak\Fleet\Domain\Models\AgentMetric;
 use Falak\Fleet\Domain\Models\Command;
 use Falak\Fleet\Domain\Models\InstallToken;
 use Falak\Fleet\Events\AgentWentOffline;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Scheduled every minute: offline detection, lost-command redelivery (lease expiry, see CommandRedelivery),

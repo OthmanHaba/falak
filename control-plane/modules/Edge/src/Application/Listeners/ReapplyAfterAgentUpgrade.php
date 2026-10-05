@@ -2,9 +2,9 @@
 
 namespace Falak\Edge\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Fleet\Events\AgentVersionChanged;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * A new agent version may understand edge fields its predecessor had stripped (e.g. per-site access logs), while

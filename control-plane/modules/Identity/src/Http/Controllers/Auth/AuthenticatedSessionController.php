@@ -2,16 +2,16 @@
 
 namespace Falak\Identity\Http\Controllers\Auth;
 
+use Falak\Identity\Application\Registration;
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Http\Requests\Auth\LoginRequest;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Inertia\Response;
-use Falak\Identity\Application\Registration;
-use Falak\Identity\Contracts\AuditLog;
-use Falak\Identity\Http\Requests\Auth\LoginRequest;
-use Falak\Kernel\Http\Controller;
 
 class AuthenticatedSessionController extends Controller
 {

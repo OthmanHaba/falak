@@ -2,9 +2,6 @@
 
 namespace Falak\Edge\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\DB;
 use Falak\Edge\Application\CertificateInstaller;
 use Falak\Edge\Application\ComposeServiceDomains;
 use Falak\Edge\Application\EdgeChanges;
@@ -31,6 +28,9 @@ use Falak\Sites\Events\SiteCreated;
 use Falak\Sites\Events\SiteDeleted;
 use Falak\Sites\Events\SiteTargetsChanged;
 use Falak\Sites\Events\SiteUpdated;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Re-applies the edge of every affected server when a site changes.

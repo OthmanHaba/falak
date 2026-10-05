@@ -2,10 +2,10 @@
 
 namespace Falak\Databases\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Identity\Contracts\AuditLog;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Deletes a backup's object (signed DELETE) and its history row.

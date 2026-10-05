@@ -2,8 +2,6 @@
 
 namespace Falak\Edge\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Support\Facades\Log;
 use Falak\Edge\Application\EdgeChanges;
 use Falak\Edge\Domain\Models\CertificateInstall;
 use Falak\Edge\Domain\Models\CloudflareTunnel;
@@ -13,6 +11,8 @@ use Falak\Edge\Domain\Models\Upstream;
 use Falak\Edge\Infrastructure\Cloudflare\CloudflareApi;
 use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
 use Falak\Servers\Events\ServerDeleted;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Log;
 
 final class ForgetDeletedServer implements ShouldQueue
 {

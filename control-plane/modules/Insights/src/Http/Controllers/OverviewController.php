@@ -3,14 +3,6 @@
 namespace Falak\Insights\Http\Controllers;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Insights\Application\Queries\SiteOverview;
@@ -22,6 +14,14 @@ use Falak\Projects\Contracts\Data\ProjectData;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
 use Falak\Telemetry\Contracts\TelemetryLinks;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * /observability Overview tab: organization-wide (or per project / per site) application health from the

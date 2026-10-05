@@ -2,7 +2,6 @@
 
 namespace Falak\Providers;
 
-use Illuminate\Support\Facades\Gate;
 use Falak\Identity\Contracts\PermissionRegistry;
 use Falak\Identity\Contracts\Role;
 use Falak\Kernel\Support\ModuleServiceProvider;
@@ -11,6 +10,7 @@ use Falak\Providers\Domain\Models\ProviderCredential;
 use Falak\Providers\Domain\Policies\ProviderCredentialPolicy;
 use Falak\Providers\Infrastructure\AdapterFactory;
 use Falak\Providers\Infrastructure\EloquentProviderGateway;
+use Illuminate\Support\Facades\Gate;
 
 class ProvidersServiceProvider extends ModuleServiceProvider
 {

@@ -3,12 +3,6 @@
 namespace Falak\Insights\Http\Controllers;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\Data\UserData;
 use Falak\Identity\Contracts\OrganizationAccess;
@@ -31,6 +25,12 @@ use Falak\Insights\Domain\Support\StackFrame;
 use Falak\Insights\Domain\Support\StackTrace;
 use Falak\Kernel\Http\Controller;
 use Falak\Telemetry\Contracts\TelemetryLinks;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class IssueController extends Controller
 {

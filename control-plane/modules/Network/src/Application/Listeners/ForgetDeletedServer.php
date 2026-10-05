@@ -2,12 +2,12 @@
 
 namespace Falak\Network\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Network\Application\Actions\RemoveNetworkMember;
 use Falak\Network\Domain\Models\FirewallRule;
 use Falak\Network\Domain\Models\FirewallState;
 use Falak\Network\Domain\Models\PrivateNetworkMember;
 use Falak\Servers\Events\ServerDeleted;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Drops a deleted server's firewall and removes it from its private networks (re-applying the rest).

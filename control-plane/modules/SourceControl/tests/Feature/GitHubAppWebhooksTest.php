@@ -1,12 +1,12 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Http;
 use Falak\Identity\Contracts\Role;
 use Falak\SourceControl\Domain\Models\Push;
 use Falak\SourceControl\Domain\Models\Webhook;
 use Falak\SourceControl\Events\PushReceived;
 use Falak\SourceControl\Infrastructure\Providers\GitHubClient;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/../Support/helpers.php';
 

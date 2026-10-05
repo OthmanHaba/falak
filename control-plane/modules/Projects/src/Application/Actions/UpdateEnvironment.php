@@ -2,10 +2,10 @@
 
 namespace Falak\Projects\Application\Actions;
 
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Projects\Domain\Models\Environment;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Rename an environment (its URL slug follows the name).

@@ -3,12 +3,12 @@
 namespace Falak\Insights\Application\Actions;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Falak\Insights\Application\HeartbeatTracker;
 use Falak\Insights\Application\IssueTracker;
 use Falak\Insights\Contracts\IssueKind;
 use Falak\Insights\Domain\Support\Fingerprinter;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**

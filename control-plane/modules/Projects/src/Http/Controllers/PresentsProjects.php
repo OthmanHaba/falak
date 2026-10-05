@@ -2,12 +2,12 @@
 
 namespace Falak\Projects\Http\Controllers;
 
-use Illuminate\Contracts\Auth\Authenticatable;
-use Illuminate\Http\Request;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Projects\Domain\Models\Environment;
 use Falak\Projects\Domain\Models\Project;
 use Falak\Projects\Domain\Policies\ProjectPolicy;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 trait PresentsProjects

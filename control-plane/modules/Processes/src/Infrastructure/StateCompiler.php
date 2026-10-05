@@ -2,7 +2,6 @@
 
 namespace Falak\Processes\Infrastructure;
 
-use Illuminate\Support\Collection;
 use Falak\Deployments\Contracts\Data\LiveRelease;
 use Falak\Deployments\Contracts\LiveReleases;
 use Falak\Processes\Application\OctaneRoutes;
@@ -17,6 +16,7 @@ use Falak\Sites\Contracts\OctaneServer;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Contracts\TargetStatus;
+use Illuminate\Support\Collection;
 
 /**
  * Compiles the complete desired proc.apply and cron.apply payloads of one server from every site

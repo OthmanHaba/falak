@@ -2,9 +2,9 @@
 
 namespace Falak\Alerting\Application\Listeners;
 
-use Illuminate\Contracts\Container\Container;
 use Falak\Alerting\Contracts\Alertable;
 use Falak\Alerting\Contracts\Alerts;
+use Illuminate\Contracts\Container\Container;
 
 /**
  * Wildcard listener: any event implementing Alertable is routed, so emitting modules never

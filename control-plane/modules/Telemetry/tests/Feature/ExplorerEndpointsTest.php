@@ -1,9 +1,9 @@
 <?php
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Falak\Identity\Contracts\Role;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
     Http::preventStrayRequests();

@@ -2,10 +2,10 @@
 
 namespace Falak\Processes\Events;
 
-use Illuminate\Foundation\Events\Dispatchable;
 use Falak\Alerting\Contracts\Alertable;
 use Falak\Alerting\Contracts\Data\AlertData;
 use Falak\Alerting\Contracts\Severity;
+use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * A program reported by {@see ProgramCrashLooping} is running again.

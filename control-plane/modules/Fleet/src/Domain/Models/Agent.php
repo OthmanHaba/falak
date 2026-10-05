@@ -3,15 +3,15 @@
 namespace Falak\Fleet\Domain\Models;
 
 use DateTimeImmutable;
+use Falak\Fleet\Contracts\AgentStatus;
+use Falak\Fleet\Contracts\Data\AgentInfo;
+use Falak\Fleet\Database\Factories\AgentFactory;
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Falak\Fleet\Contracts\AgentStatus;
-use Falak\Fleet\Contracts\Data\AgentInfo;
-use Falak\Fleet\Database\Factories\AgentFactory;
 
 /**
  * An enrolled falak-agent. Its id is the CN of its client certificates.

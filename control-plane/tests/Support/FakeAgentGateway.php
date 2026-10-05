@@ -3,7 +3,6 @@
 namespace Tests\Support;
 
 use DateTimeImmutable;
-use Illuminate\Support\Str;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Contracts\Data\CommandHandle;
@@ -17,6 +16,7 @@ use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Events\CommandOutputReceived;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Servers\Contracts\ServerDirectory;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Assert;
 
 /**

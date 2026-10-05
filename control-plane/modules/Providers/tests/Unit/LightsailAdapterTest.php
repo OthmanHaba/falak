@@ -1,13 +1,13 @@
 <?php
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Http;
 use Falak\Providers\Contracts\Data\Machine;
 use Falak\Providers\Contracts\Data\MachineSpec;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
 use Falak\Providers\Infrastructure\Adapters\LightsailAdapter;
 use Falak\Providers\Infrastructure\Aws\SigV4Signer;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/../fixtures.php';
 

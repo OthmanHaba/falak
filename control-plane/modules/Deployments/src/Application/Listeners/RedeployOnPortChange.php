@@ -2,9 +2,6 @@
 
 namespace Falak\Deployments\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\ValidationException;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Contracts\Exceptions\DeploymentTriggerBusy;
 use Falak\Deployments\Domain\Enums\DeploymentStatus;
@@ -14,6 +11,9 @@ use Falak\Deployments\Domain\Models\Release;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Events\SiteUpdated;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**

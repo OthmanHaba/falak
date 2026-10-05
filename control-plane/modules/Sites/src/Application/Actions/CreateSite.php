@@ -3,9 +3,6 @@
 namespace Falak\Sites\Application\Actions;
 
 use Closure;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Sites\Application\ComposeSettings;
 use Falak\Sites\Application\SiteRules;
@@ -25,6 +22,9 @@ use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\Sites\Domain\Presets\Preset;
 use Falak\Sites\Events\SiteCreated;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 final class CreateSite
 {

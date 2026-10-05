@@ -2,10 +2,6 @@
 
 namespace Falak\Network\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -19,6 +15,10 @@ use Falak\Network\Domain\Models\FirewallState;
 use Falak\Network\Http\Requests\FirewallRuleRequest;
 use Falak\Network\Infrastructure\FirewallCompiler;
 use Falak\Servers\Contracts\ServerHeaders;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class FirewallController extends Controller
 {

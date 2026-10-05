@@ -2,11 +2,6 @@
 
 namespace Falak\Edge\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Falak\Edge\Application\Actions\AddDomain;
 use Falak\Edge\Application\Actions\MakePrimaryDomain;
 use Falak\Edge\Application\Actions\RemoveDomain;
@@ -39,6 +34,11 @@ use Falak\Servers\Contracts\ServerType;
 use Falak\Sites\Contracts\Data\DomainChoice;
 use Falak\Sites\Contracts\DomainType;
 use Falak\Sites\Contracts\TargetRole;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 final class DomainController extends Controller
 {

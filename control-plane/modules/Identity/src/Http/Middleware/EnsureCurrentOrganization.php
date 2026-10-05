@@ -3,8 +3,8 @@
 namespace Falak\Identity\Http\Middleware;
 
 use Closure;
-use Illuminate\Http\Request;
 use Falak\Identity\Contracts\CurrentOrganization;
+use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**

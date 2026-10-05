@@ -2,7 +2,6 @@
 
 namespace Falak\Edge\Infrastructure;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Edge\Application\Actions\AddDomain;
 use Falak\Edge\Application\ComposeServiceDomains;
 use Falak\Edge\Application\DnsTargets;
@@ -13,6 +12,7 @@ use Falak\Sites\Contracts\Data\DomainChoice;
 use Falak\Sites\Contracts\DomainType;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteDomains;
+use Illuminate\Validation\ValidationException;
 
 final class EloquentSiteDomains implements SiteDomains
 {

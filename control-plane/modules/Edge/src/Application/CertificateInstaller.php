@@ -2,12 +2,12 @@
 
 namespace Falak\Edge\Application;
 
-use Illuminate\Support\Str;
 use Falak\Edge\Domain\Enums\InstallStatus;
 use Falak\Edge\Domain\Models\Certificate;
 use Falak\Edge\Domain\Models\CertificateInstall;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Illuminate\Support\Str;
 
 /**
  * Converges edge.cert.install on the servers routing a certificate's site.

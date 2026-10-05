@@ -2,12 +2,12 @@
 
 namespace Falak\Projects\Application\Canvas;
 
-use Illuminate\Http\Request;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Projects\Domain\Models\Environment;
 use Falak\Projects\Domain\Models\Project;
 use Falak\Projects\Domain\Policies\ProjectPolicy;
+use Illuminate\Http\Request;
 
 /**
  * The `falak` Inertia prop shared with every authenticated page (UI_DESIGN §9 `FalakShared`): the current

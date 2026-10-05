@@ -1,8 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Str;
 use Falak\Edge\Application\Jobs\ApplyEdgeConfig;
 use Falak\Edge\Application\Listeners\ReactToSiteChanges;
 use Falak\Edge\Contracts\EdgeRoutes;
@@ -22,6 +19,9 @@ use Falak\Servers\Contracts\ServerType;
 use Falak\Sites\Contracts\Data\LaravelSettings;
 use Falak\Sites\Contracts\OctaneServer;
 use Falak\Sites\Contracts\SiteRuntime;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/../Support/helpers.php';
 

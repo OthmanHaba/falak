@@ -2,10 +2,10 @@
 
 namespace Falak\Databases\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Application\EngineInventory;
 use Falak\Databases\Domain\Models\DatabaseServer;
 use Falak\Identity\Contracts\AuditLog;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Manually pins the engine version / port shown in connection details (when detection is wrong).

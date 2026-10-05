@@ -4,12 +4,12 @@ namespace Falak\Insights\Application\Actions;
 
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
-use Illuminate\Support\Facades\DB;
 use Falak\Insights\Application\IssueTracker;
 use Falak\Insights\Contracts\IssueKind;
 use Falak\Insights\Domain\Enums\ThresholdMetric;
 use Falak\Insights\Domain\Models\Threshold;
 use Falak\Insights\Events\ThresholdBreached;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Evaluates every enabled threshold over its window of complete minutes. p95 over a window is the

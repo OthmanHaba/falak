@@ -2,11 +2,11 @@
 
 namespace Falak\Fleet\Http\Controllers\Agent;
 
-use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Http\Middleware\AuthenticateAgent;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 trait ReadsProtocolDocuments
 {

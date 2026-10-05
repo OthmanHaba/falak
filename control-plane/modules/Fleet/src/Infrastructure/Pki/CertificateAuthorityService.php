@@ -3,9 +3,9 @@
 namespace Falak\Fleet\Infrastructure\Pki;
 
 use DateTimeImmutable;
+use Falak\Fleet\Domain\Models\CertificateAuthority;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Support\Facades\DB;
-use Falak\Fleet\Domain\Models\CertificateAuthority;
 use phpseclib3\Crypt\Common\PrivateKey;
 use phpseclib3\Crypt\EC;
 use phpseclib3\Crypt\EC\PrivateKey as EcPrivateKey;

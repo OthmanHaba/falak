@@ -2,7 +2,6 @@
 
 namespace Falak\Servers\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Identity\Contracts\AuditLog;
@@ -12,6 +11,7 @@ use Falak\Servers\Application\ServerStatusUpdater;
 use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Infrastructure\ProvisioningPlanBuilder;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Sends the full provisioning plan (provision.apply) to the server's agent. Used after the machine check (or right

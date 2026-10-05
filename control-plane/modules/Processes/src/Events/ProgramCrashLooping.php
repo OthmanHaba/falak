@@ -2,10 +2,10 @@
 
 namespace Falak\Processes\Events;
 
-use Illuminate\Foundation\Events\Dispatchable;
 use Falak\Alerting\Contracts\Alertable;
 use Falak\Alerting\Contracts\Data\AlertData;
 use Falak\Alerting\Contracts\Severity;
+use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * proc.status reported a program that keeps exiting (fatal, or in backoff after many restarts).

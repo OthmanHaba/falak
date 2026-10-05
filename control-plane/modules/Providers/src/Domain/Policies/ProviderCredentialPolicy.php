@@ -2,9 +2,9 @@
 
 namespace Falak\Providers\Domain\Policies;
 
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Providers\Domain\Models\ProviderCredential;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 final class ProviderCredentialPolicy
 {

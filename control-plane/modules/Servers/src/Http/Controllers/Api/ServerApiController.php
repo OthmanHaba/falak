@@ -2,9 +2,6 @@
 
 namespace Falak\Servers\Http\Controllers\Api;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Fleet\Contracts\AgentUpgrades;
 use Falak\Fleet\Contracts\Exceptions\AgentUpgradeUnavailable;
@@ -17,6 +14,9 @@ use Falak\Servers\Application\Actions\DeleteServer;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Http\Controllers\PresentsServers;
 use Falak\Servers\Http\Requests\StoreServerRequest;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 /**
  * Public API (Sanctum tokens; abilities are permission names).

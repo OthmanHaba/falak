@@ -2,9 +2,9 @@
 
 namespace Falak\Databases\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Databases\Application\Actions\EnableContainerAccess;
 use Falak\Fleet\Events\AgentVersionChanged;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * An agent that learned db.containers lets the server's containers reach its localhost engines.

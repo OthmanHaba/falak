@@ -2,11 +2,6 @@
 
 namespace Falak\Databases\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Databases\Application\Actions\DeleteStorageProvider;
 use Falak\Databases\Application\Actions\SaveStorageProvider;
 use Falak\Databases\Application\Actions\VerifyStorageProvider;
@@ -16,6 +11,11 @@ use Falak\Databases\Domain\Policies\DatabasesPolicy;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class StorageProviderController extends Controller
 {

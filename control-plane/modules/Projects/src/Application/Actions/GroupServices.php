@@ -2,13 +2,13 @@
 
 namespace Falak\Projects\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Projects\Contracts\ServiceKind;
 use Falak\Projects\Domain\Models\Environment;
 use Falak\Projects\Domain\Models\Group;
 use Falak\Projects\Domain\Models\Service;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Put services of one environment into a new canvas group (UI_DESIGN §4.3). The group's anchor is the top-left of the

@@ -3,9 +3,9 @@
 namespace Falak\Insights\Application\Queries;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\DB;
 use Falak\Insights\Contracts\IssueKind;
 use Falak\Insights\Domain\Models\Issue;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Charts for the issue detail page: occurrences per hour (exceptions) or the watched metric

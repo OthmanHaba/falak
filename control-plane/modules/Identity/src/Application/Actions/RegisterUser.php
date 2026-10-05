@@ -2,10 +2,10 @@
 
 namespace Falak\Identity\Application\Actions;
 
-use Illuminate\Auth\Events\Registered;
-use Illuminate\Support\Facades\DB;
 use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Events\UserRegistered;
+use Illuminate\Auth\Events\Registered;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Creates a user together with their personal organization.

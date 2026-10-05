@@ -2,11 +2,11 @@
 
 namespace Falak\Edge\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Edge\Application\CertificateInstaller;
 use Falak\Edge\Domain\Models\Certificate;
 use Falak\Edge\Domain\Models\Domain;
 use Falak\Identity\Contracts\AuditLog;
+use Illuminate\Validation\ValidationException;
 
 final class DeleteCertificate
 {

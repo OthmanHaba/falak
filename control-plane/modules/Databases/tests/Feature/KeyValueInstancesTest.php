@@ -1,8 +1,5 @@
 <?php
 
-use Illuminate\Database\QueryException;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Application\EngineInventory;
 use Falak\Databases\Contracts\Data\DatabaseConsumer;
 use Falak\Databases\Contracts\DatabaseConnections;
@@ -19,6 +16,9 @@ use Falak\Fleet\Domain\Models\Agent;
 use Falak\Identity\Contracts\Role;
 use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Domain\Models\MachineInspection;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';

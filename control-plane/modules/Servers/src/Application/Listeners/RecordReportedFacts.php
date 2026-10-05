@@ -2,10 +2,10 @@
 
 namespace Falak\Servers\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Fleet\Events\AgentFactsReported;
 use Falak\Servers\Application\ServerFacts;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 final class RecordReportedFacts implements ShouldQueue
 {

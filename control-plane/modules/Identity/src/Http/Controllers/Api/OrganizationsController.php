@@ -2,14 +2,14 @@
 
 namespace Falak\Identity\Http\Controllers\Api;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Identity\Domain\Models\PersonalAccessToken;
 use Falak\Identity\Domain\Models\User;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * GET /api/v1/organizations — API tokens are pinned to one organization, so a token only sees that

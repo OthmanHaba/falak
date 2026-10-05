@@ -3,7 +3,6 @@
 namespace Falak\Sites\Tests\Support;
 
 use Closure;
-use Illuminate\Support\Str;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Contracts\Data\CommandHandle;
@@ -11,6 +10,7 @@ use Falak\Fleet\Contracts\Data\CommandOutput;
 use Falak\Fleet\Contracts\Data\CommandResult;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Fleet\Contracts\Exceptions\InvalidCommandPayload;
+use Illuminate\Support\Str;
 
 /**
  * AgentGateway double that records dispatches and validates each payload against the protocol schema

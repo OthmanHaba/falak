@@ -1,14 +1,14 @@
 <?php
 
+use Falak\Identity\Application\Notifications\OrganizationInvitation;
+use Falak\Identity\Contracts\Role;
+use Falak\Identity\Domain\Models\Invitation;
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
-use Falak\Identity\Application\Notifications\OrganizationInvitation;
-use Falak\Identity\Contracts\Role;
-use Falak\Identity\Domain\Models\Invitation;
-use Falak\Identity\Domain\Models\User;
 
 function signUp(string $email): TestResponse
 {

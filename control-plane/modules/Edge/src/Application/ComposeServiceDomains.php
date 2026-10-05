@@ -2,9 +2,6 @@
 
 namespace Falak\Edge\Application;
 
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Edge\Contracts\TlsMode;
 use Falak\Edge\Domain\Enums\WwwRedirect;
 use Falak\Edge\Domain\Models\DnsRecord;
@@ -16,6 +13,9 @@ use Falak\Sites\Contracts\Data\PublicService;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Domains of a compose site's public services (docs/plans/COMPOSE_APPS.md, phase 2). Every public service's domains

@@ -3,7 +3,6 @@
 namespace Falak\Sites\Infrastructure\Compose;
 
 use DateTimeImmutable;
-use Illuminate\Support\Facades\DB;
 use Falak\Sites\Application\Compose\ComposeNetworks;
 use Falak\Sites\Application\Compose\FalakAdjustments;
 use Falak\Sites\Contracts\ComposeServiceExtraction;
@@ -18,6 +17,7 @@ use Falak\Sites\Domain\Models\ComposeState;
 use Falak\Sites\Domain\Models\ComposeVersion;
 use Falak\Sites\Domain\Models\OrganizationSettings;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Support\Facades\DB;
 use stdClass;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;

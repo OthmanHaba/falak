@@ -2,10 +2,10 @@
 
 namespace Falak\Deployments\Http\Channels;
 
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Deployments\Domain\Models\Deployment;
 use Falak\Deployments\Domain\Policies\DeploymentPermissions;
 use Falak\Identity\Contracts\OrganizationAccess;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
  * private-deployments.{deploymentId}: members of the deployment's organization with deployments.view.

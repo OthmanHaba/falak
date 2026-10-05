@@ -2,8 +2,6 @@
 
 namespace Falak\Sites\Application\Actions;
 
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
@@ -12,6 +10,8 @@ use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteCommand;
 use Falak\Sites\Infrastructure\CommandPayloads;
 use Falak\Sites\Infrastructure\SiteVariables;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Run a shell command in the site's current release on one of its servers (system.exec as the site user).

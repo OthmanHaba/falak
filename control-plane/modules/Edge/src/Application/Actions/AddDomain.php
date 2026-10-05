@@ -2,8 +2,6 @@
 
 namespace Falak\Edge\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Edge\Application\ComposeServiceDomains;
 use Falak\Edge\Application\EdgeChanges;
 use Falak\Edge\Contracts\TlsMode;
@@ -12,6 +10,8 @@ use Falak\Edge\Domain\Models\Domain;
 use Falak\Edge\Events\DomainAdded;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Sites\Contracts\Data\SiteData;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class AddDomain
 {

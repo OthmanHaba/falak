@@ -2,7 +2,6 @@
 
 namespace Falak\Servers\Infrastructure;
 
-use Illuminate\Support\Str;
 use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Domain\Enums\PhpVersionStatus;
 use Falak\Servers\Domain\MachineCheck\ComponentDecision;
@@ -10,6 +9,7 @@ use Falak\Servers\Domain\MachineCheck\Decision;
 use Falak\Servers\Domain\MachineCheck\MachineCheck;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Domain\Stack\Stack;
+use Illuminate\Support\Str;
 
 /**
  * Builds the full desired state for `provision.apply`

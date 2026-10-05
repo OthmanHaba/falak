@@ -2,13 +2,13 @@
 
 namespace Falak\Sites\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Servers\Events\ServerDeleted;
 use Falak\Sites\Contracts\TargetRole;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\Sites\Events\SiteTargetsChanged;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * A deleted server leaves every site's deployment group; the next target becomes leader when needed.

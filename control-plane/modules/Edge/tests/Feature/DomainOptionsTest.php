@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Http\Client\Factory;
-use Illuminate\Support\Facades\Http;
 use Falak\Edge\Application\DnsInstructions;
 use Falak\Edge\Application\GeneratedDomains;
 use Falak\Edge\Contracts\Data\DnsTarget;
@@ -17,6 +15,8 @@ use Falak\Identity\Contracts\Role;
 use Falak\Servers\Contracts\ServerType;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Http\Client\Factory;
+use Illuminate\Support\Facades\Http;
 
 /*
  * Domain choices for new sites (generated / test / custom), DNS instructions and the live DNS check. Real Sites +

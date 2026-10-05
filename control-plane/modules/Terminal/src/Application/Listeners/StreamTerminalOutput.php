@@ -2,13 +2,13 @@
 
 namespace Falak\Terminal\Application\Listeners;
 
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Falak\Fleet\Events\CommandOutputReceived;
 use Falak\Terminal\Application\SessionTransitions;
 use Falak\Terminal\Domain\Models\TerminalFrame;
 use Falak\Terminal\Domain\Models\TerminalSession;
 use Falak\Terminal\Events\TerminalOutput;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Records terminal.open output as asciicast frames and relays it to live viewers.

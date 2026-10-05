@@ -2,10 +2,10 @@
 
 namespace Falak\Fleet\Database\Factories;
 
-use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Str;
 use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Fleet\Domain\Models\Agent;
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * @extends Factory<Agent>

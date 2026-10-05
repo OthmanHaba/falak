@@ -2,13 +2,13 @@
 
 namespace Falak\Network\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Network\Domain\Enums\ApplyStatus;
 use Falak\Network\Domain\Enums\RuleAction;
 use Falak\Network\Domain\Enums\RuleProtocol;
 use Falak\Network\Domain\Models\FirewallRule;
 use Falak\Network\Domain\Models\FirewallState;
 use Falak\Servers\Contracts\Data\ServerData;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Seeds SSH (and HTTP/HTTPS for servers terminating HTTP) once per server. Idempotent: a server

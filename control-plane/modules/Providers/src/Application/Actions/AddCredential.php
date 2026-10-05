@@ -2,7 +2,6 @@
 
 namespace Falak\Providers\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
 use Falak\Providers\Contracts\ProviderType;
@@ -11,6 +10,7 @@ use Falak\Providers\Domain\CredentialStatus;
 use Falak\Providers\Domain\Models\ProviderCredential;
 use Falak\Providers\Events\ProviderCredentialAdded;
 use Falak\Providers\Infrastructure\AdapterFactory;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Stores a provider credential after verifying it against the provider API.

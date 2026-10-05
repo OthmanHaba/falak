@@ -1,12 +1,12 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Identity\Contracts\Role;
 use Falak\Projects\Domain\Models\Environment;
 use Falak\Projects\Domain\Models\Service;
 use Falak\Projects\Events\EnvironmentCreated;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 

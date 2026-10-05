@@ -2,10 +2,10 @@
 
 namespace Falak\Templates\Application\Inputs;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Templates\Domain\InputType;
 use Falak\Templates\Domain\Template;
 use Falak\Templates\Domain\TemplateInput;
+use Illuminate\Validation\ValidationException;
 
 /**
  * The values a site created from a template starts with: what the user entered, else a freshly generated value

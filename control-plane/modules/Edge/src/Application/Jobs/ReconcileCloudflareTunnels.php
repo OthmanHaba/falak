@@ -2,15 +2,15 @@
 
 namespace Falak\Edge\Application\Jobs;
 
+use Falak\Edge\Application\CloudflareTunnels;
+use Falak\Edge\Domain\Models\CloudflareTunnel;
+use Falak\Edge\Domain\Models\OriginLock;
+use Falak\Network\Contracts\Firewalls;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Cache;
-use Falak\Edge\Application\CloudflareTunnels;
-use Falak\Edge\Domain\Models\CloudflareTunnel;
-use Falak\Edge\Domain\Models\OriginLock;
-use Falak\Network\Contracts\Firewalls;
 
 /**
  * Every few minutes: a tunnel Cloudflare reports down (cloudflared stopped after it was installed) is marked in error,

@@ -2,7 +2,6 @@
 
 namespace Falak\Edge\Infrastructure;
 
-use Illuminate\Support\Collection;
 use Falak\Edge\Application\ComposeServiceDomains;
 use Falak\Edge\Contracts\TlsMode;
 use Falak\Edge\Domain\Enums\InstallStatus;
@@ -27,6 +26,7 @@ use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Contracts\TargetStatus;
+use Illuminate\Support\Collection;
 
 /**
  * Compiles the full edge.caddy.apply payload for one server from every site routed through it:

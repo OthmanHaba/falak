@@ -2,11 +2,11 @@
 
 namespace Falak\Processes\Http\Controllers;
 
-use Illuminate\Http\Request;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Http\Request;
 
 trait ResolvesSite
 {

@@ -1,14 +1,14 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
 use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 use Falak\Telemetry\Contracts\MetricsBackend;
 use Falak\Telemetry\Infrastructure\Metrics\MimirBackend;
 use Falak\Telemetry\Infrastructure\Metrics\VictoriaMetricsBackend;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
     Http::preventStrayRequests();

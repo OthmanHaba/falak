@@ -2,12 +2,12 @@
 
 namespace Falak\Fleet\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Domain\Models\Command;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * UI endpoint: status + output of one command (initial load and polling fallback for live logs).

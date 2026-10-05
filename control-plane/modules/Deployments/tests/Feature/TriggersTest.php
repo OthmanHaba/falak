@@ -1,8 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Contracts\DeploymentTrigger;
 use Falak\Deployments\Domain\Enums\DeploymentStatus;
@@ -13,6 +10,9 @@ use Falak\Identity\Contracts\Role;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\SourceControl\Contracts\Data\CommitData;
 use Falak\SourceControl\Events\PushReceived;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 require_once __DIR__.'/../Support/helpers.php';
 

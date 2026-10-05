@@ -2,11 +2,11 @@
 
 namespace Falak\Identity\Application\Notifications;
 
+use Falak\Identity\Contracts\Role;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
-use Falak\Identity\Contracts\Role;
 
 final class OrganizationInvitation extends Notification implements ShouldQueue
 {

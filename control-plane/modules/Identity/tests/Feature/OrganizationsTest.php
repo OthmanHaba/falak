@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Inertia\Testing\AssertableInertia as Assert;
 use Falak\Identity\Application\Actions\CreateOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Identity\Contracts\Role;
@@ -9,6 +7,8 @@ use Falak\Identity\Domain\Models\AuditEntry;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Events\OrganizationDeleted;
+use Illuminate\Support\Facades\Event;
+use Inertia\Testing\AssertableInertia as Assert;
 
 it('redirects members without an organization to create one', function () {
     $this->actingAs(User::factory()->create())

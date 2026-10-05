@@ -2,7 +2,6 @@
 
 namespace Falak\Fleet\Application\Actions;
 
-use Illuminate\Support\Str;
 use Falak\Fleet\Application\PayloadCompatibility;
 use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Fleet\Contracts\CommandStatus;
@@ -13,6 +12,7 @@ use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Domain\Models\Command;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Fleet\Infrastructure\Signals\CommandSignal;
+use Illuminate\Support\Str;
 
 final class QueueCommand
 {

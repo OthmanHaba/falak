@@ -2,8 +2,8 @@
 
 namespace Falak\Telemetry\Application\Queries;
 
-use InvalidArgumentException;
 use Falak\Telemetry\Contracts\PromQl;
+use InvalidArgumentException;
 
 /**
  * Builds LogQL from structured filters. The organization matcher is always present, so users can

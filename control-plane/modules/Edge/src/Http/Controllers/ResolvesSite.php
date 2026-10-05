@@ -2,14 +2,14 @@
 
 namespace Falak\Edge\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 trait ResolvesSite
 {

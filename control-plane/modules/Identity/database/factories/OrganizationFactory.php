@@ -2,10 +2,10 @@
 
 namespace Falak\Identity\Database\Factories;
 
-use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Str;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Identity\Domain\Models\User;
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * Raw organization rows. Prefer the CreateOrganization action in tests that need membership and roles.

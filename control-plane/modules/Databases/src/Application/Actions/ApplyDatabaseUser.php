@@ -2,13 +2,13 @@
 
 namespace Falak\Databases\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Databases\Application\AgentCommands;
 use Falak\Databases\Application\KeyValue\ApplyKeyValueInstance;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Databases\Infrastructure\CommandPayloads;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Converges a user (password, host, grants on active databases) with db.user.apply. Every apply gets a

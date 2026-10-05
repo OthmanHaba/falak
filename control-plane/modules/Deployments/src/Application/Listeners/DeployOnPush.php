@@ -2,13 +2,13 @@
 
 namespace Falak\Deployments\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Support\Facades\Log;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Contracts\Exceptions\DeploymentTriggerBusy;
 use Falak\Deployments\Domain\Enums\Trigger;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\SourceControl\Events\PushReceived;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**

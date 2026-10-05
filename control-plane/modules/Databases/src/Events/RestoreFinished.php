@@ -2,10 +2,10 @@
 
 namespace Falak\Databases\Events;
 
-use Illuminate\Foundation\Events\Dispatchable;
 use Falak\Alerting\Contracts\Alertable;
 use Falak\Alerting\Contracts\Data\AlertData;
 use Falak\Alerting\Contracts\Severity;
+use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * A restore from backup completed (succeeded or failed).

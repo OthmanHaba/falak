@@ -1,9 +1,9 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Kernel\Http\LegacyRedirect;
 use Falak\Providers\Http\Controllers\CatalogController;
 use Falak\Providers\Http\Controllers\ProviderCredentialController;
+use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'org', 'org.can:providers.view'])->group(function () {
     // The page lives in the settings shell (docs/UI_DESIGN.md §3); the old URL redirects (keeping ?add=1).

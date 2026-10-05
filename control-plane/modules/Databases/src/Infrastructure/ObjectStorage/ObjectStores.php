@@ -2,8 +2,8 @@
 
 namespace Falak\Databases\Infrastructure\ObjectStorage;
 
-use Illuminate\Http\Client\Factory as HttpFactory;
 use Falak\Databases\Domain\Models\StorageProvider;
+use Illuminate\Http\Client\Factory as HttpFactory;
 
 final class ObjectStores
 {

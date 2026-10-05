@@ -2,8 +2,6 @@
 
 namespace Falak\Network\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Network\Application\ApplyFirewalls;
 use Falak\Network\Application\ConvergePrivateNetwork;
@@ -14,6 +12,8 @@ use Falak\Network\Domain\Models\PrivateNetworkMember;
 use Falak\Network\Events\PrivateNetworkChanged;
 use Falak\Network\Infrastructure\WireGuardKeys;
 use Falak\Servers\Contracts\Data\ServerData;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Joins a server to the mesh: allocates the lowest free address, generates its X25519 key pair,

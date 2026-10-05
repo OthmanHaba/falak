@@ -2,10 +2,10 @@
 
 namespace Falak\Databases\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Databases\Domain\Enums\Engine;
 use Falak\Databases\Domain\Models\DatabaseServer;
 use Falak\Servers\Events\DatabaseEngineInstallFailed;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * An engine added to a server never got installed: drop its row (registered from the stack meanwhile) unless it

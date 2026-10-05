@@ -1,10 +1,10 @@
 <?php
 
-use Illuminate\Contracts\Redis\Factory;
-use Illuminate\Support\Facades\DB;
 use Falak\Fleet\Infrastructure\Signals\CommandSignal;
 use Falak\Fleet\Infrastructure\Signals\DatabaseCommandSignal;
 use Falak\Fleet\Infrastructure\Signals\RedisCommandSignal;
+use Illuminate\Contracts\Redis\Factory;
+use Illuminate\Support\Facades\DB;
 
 it('returns as soon as the check yields commands', function () {
     $calls = 0;

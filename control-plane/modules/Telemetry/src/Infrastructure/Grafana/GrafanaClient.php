@@ -2,9 +2,9 @@
 
 namespace Falak\Telemetry\Infrastructure\Grafana;
 
-use Illuminate\Http\Client\PendingRequest;
 use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 use Falak\Telemetry\Infrastructure\HttpClient;
+use Illuminate\Http\Client\PendingRequest;
 
 /**
  * Grafana HTTP API with a service-account token.

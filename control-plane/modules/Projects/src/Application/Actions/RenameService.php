@@ -2,8 +2,8 @@
 
 namespace Falak\Projects\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Projects\Domain\Models\Service;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Rename a canvas service (its display name and the handle `${{ name.KEY }}` references use). The site /

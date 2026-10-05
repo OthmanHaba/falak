@@ -3,13 +3,13 @@
 namespace Falak\Deployments\Application\Orchestration;
 
 use Closure;
-use Illuminate\Support\Facades\DB;
 use Falak\Deployments\Domain\Enums\DeploymentStatus;
 use Falak\Deployments\Domain\Models\Deployment;
 use Falak\Deployments\Events\DeploymentFailed;
 use Falak\Deployments\Events\DeploymentUpdated;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Support\Facades\DB;
 
 /**
  * One deployment at a time per site: later ones wait (status queued, the "stacked" view) and start

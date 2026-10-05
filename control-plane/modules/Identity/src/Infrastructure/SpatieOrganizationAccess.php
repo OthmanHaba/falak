@@ -2,13 +2,13 @@
 
 namespace Falak\Identity\Infrastructure;
 
-use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Contracts\Auth\Authenticatable;
-use Illuminate\Support\Facades\DB;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\PersonalAccessToken;
 use Falak\Identity\Domain\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Exceptions\PermissionDoesNotExist;
 use Spatie\Permission\PermissionRegistrar;
 

@@ -1,10 +1,10 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Builds\Http\Controllers\BuildController;
 use Falak\Builds\Http\Controllers\BuilderBinaryController;
 use Falak\Builds\Http\Controllers\BuilderController;
 use Falak\Kernel\Http\LegacyRedirect;
+use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'org'])->group(function () {
     Route::get('builds', [BuildController::class, 'index'])->name('builds.index');

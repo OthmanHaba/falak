@@ -2,10 +2,10 @@
 
 namespace Falak\Network\Events;
 
-use Illuminate\Foundation\Events\Dispatchable;
 use Falak\Alerting\Contracts\Alertable;
 use Falak\Alerting\Contracts\Data\AlertData;
 use Falak\Alerting\Contracts\Severity;
+use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * The agent could not apply a server's nftables ruleset (the previous ruleset stays active).

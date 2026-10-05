@@ -2,11 +2,11 @@
 
 namespace Falak\Alerting\Domain\Models;
 
+use Falak\Alerting\Domain\Enums\DeliveryStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Falak\Alerting\Domain\Enums\DeliveryStatus;
 
 /**
  * @property string $id

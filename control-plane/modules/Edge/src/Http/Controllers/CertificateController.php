@@ -2,12 +2,12 @@
 
 namespace Falak\Edge\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Edge\Application\Actions\DeleteCertificate;
 use Falak\Edge\Application\Actions\UploadCertificate;
 use Falak\Edge\Domain\Models\Certificate;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 final class CertificateController extends Controller
 {

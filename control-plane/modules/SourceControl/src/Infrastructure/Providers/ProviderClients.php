@@ -2,8 +2,8 @@
 
 namespace Falak\SourceControl\Infrastructure\Providers;
 
-use Illuminate\Contracts\Container\Container;
 use Falak\SourceControl\Contracts\ProviderType;
+use Illuminate\Contracts\Container\Container;
 
 class ProviderClients
 {

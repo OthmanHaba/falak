@@ -2,11 +2,11 @@
 
 namespace Falak\Providers\Database\Factories;
 
-use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Str;
 use Falak\Providers\Contracts\ProviderType;
 use Falak\Providers\Domain\CredentialStatus;
 use Falak\Providers\Domain\Models\ProviderCredential;
+use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 /**
  * @extends Factory<ProviderCredential>

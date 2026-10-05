@@ -2,8 +2,8 @@
 
 namespace Falak\Identity\Tests\Feature\Auth;
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Falak\Identity\Domain\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class AuthenticationTest extends TestCase

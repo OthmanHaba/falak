@@ -1,8 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Http;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Application\Jobs\ReconcileDeployments;
 use Falak\Deployments\Application\Listeners\RedeployOnPortChange;
@@ -28,6 +25,9 @@ use Falak\Fleet\Events\CommandOutputReceived;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Events\SiteUpdated;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/../Support/helpers.php';
 

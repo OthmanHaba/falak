@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Inertia\Testing\AssertableInertia as Assert;
 use Falak\Identity\Application\Actions\ConfirmTwoFactor;
 use Falak\Identity\Application\Actions\EnableTwoFactor;
 use Falak\Identity\Contracts\OrganizationAccess;
@@ -10,6 +8,8 @@ use Falak\Identity\Domain\Models\AuditEntry;
 use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Events\OrganizationCreated;
 use Falak\Identity\Events\UserRegistered;
+use Illuminate\Support\Facades\Event;
+use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Fortify\Fortify;
 use PragmaRX\Google2FA\Google2FA;
 

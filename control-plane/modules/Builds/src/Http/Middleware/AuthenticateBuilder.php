@@ -3,9 +3,9 @@
 namespace Falak\Builds\Http\Middleware;
 
 use Closure;
-use Illuminate\Http\Request;
 use Falak\Builds\Application\LocalBuilder;
 use Falak\Builds\Domain\Models\Builder;
+use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**

@@ -1,7 +1,7 @@
 <?php
 
-use Inertia\Testing\AssertableInertia as Assert;
 use Falak\Identity\Contracts\Role;
+use Inertia\Testing\AssertableInertia as Assert;
 
 it('serves organization settings at the canonical /settings/{section} URLs', function (string $url, string $component) {
     actingAsMember(Role::Owner);

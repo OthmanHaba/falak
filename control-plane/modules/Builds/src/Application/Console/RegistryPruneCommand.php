@@ -2,8 +2,8 @@
 
 namespace Falak\Builds\Application\Console;
 
-use Illuminate\Console\Command;
 use Falak\Builds\Application\RegistryPruner;
+use Illuminate\Console\Command;
 
 final class RegistryPruneCommand extends Command
 {

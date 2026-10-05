@@ -2,9 +2,6 @@
 
 namespace Falak\Deployments\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\ValidationException;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Contracts\Exceptions\DeploymentTriggerBusy;
 use Falak\Deployments\Domain\Enums\DeploymentStatus;
@@ -15,6 +12,9 @@ use Falak\Deployments\Events\DeploymentFailed;
 use Falak\Deployments\Events\DeploymentSucceeded;
 use Falak\Sites\Contracts\ComposeSites;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 /**
  * A compose stack whose services run as their own Falak sites needs those sites live (its services reach them by name),

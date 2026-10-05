@@ -2,10 +2,10 @@
 
 namespace Falak\Insights\Domain\Policies;
 
+use Falak\Identity\Contracts\OrganizationAccess;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
-use Falak\Identity\Contracts\OrganizationAccess;
 
 /**
  * Issues, thresholds and heartbeat monitors: `insights.view` to see, `insights.manage` to change.

@@ -2,8 +2,8 @@
 
 namespace Falak\Processes\Events;
 
-use Illuminate\Foundation\Events\Dispatchable;
 use Falak\Processes\Contracts\OctaneRouting;
+use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * {@see OctaneRouting::listeningPort()} changed for a site on a server: Octane became reachable (the edge

@@ -1,12 +1,12 @@
 <?php
 
-use Illuminate\Support\Str;
 use Falak\Fleet\Domain\Models\Command;
 use Falak\Fleet\Infrastructure\AgentBinaries;
 use Falak\Identity\Application\Actions\CreateApiToken;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\AuditEntry;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/../Support/helpers.php';
 require_once __DIR__.'/../../../Fleet/tests/Support/helpers.php';

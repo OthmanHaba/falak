@@ -3,11 +3,6 @@
 namespace Falak\Alerting\Tests\Feature;
 
 use DateTimeImmutable;
-use Illuminate\Contracts\Auth\Authenticatable;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Http;
 use Falak\Alerting\Contracts\Alertable;
 use Falak\Alerting\Contracts\Data\AlertData;
 use Falak\Alerting\Contracts\Severity;
@@ -28,6 +23,11 @@ use Falak\Insights\Events\IssueRegressed;
 use Falak\Insights\Events\IssueResolved;
 use Falak\Insights\Events\ThresholdBreached;
 use Falak\Servers\Events\ServerProvisioned;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/../Support/helpers.php';
 

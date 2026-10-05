@@ -2,11 +2,11 @@
 
 namespace Falak\Recipes\Domain\Models;
 
+use Falak\Recipes\Domain\Enums\RunStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Falak\Recipes\Domain\Enums\RunStatus;
 
 /**
  * One execution of a recipe (or built-in) on N servers. Script and user are snapshotted.

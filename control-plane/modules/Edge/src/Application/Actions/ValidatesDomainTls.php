@@ -2,12 +2,12 @@
 
 namespace Falak\Edge\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Edge\Contracts\TlsMode;
 use Falak\Edge\Domain\Enums\WwwRedirect;
 use Falak\Edge\Domain\Models\Certificate;
 use Falak\Edge\Domain\Models\DnsCredential;
 use Falak\Edge\Domain\Models\Domain;
+use Illuminate\Validation\ValidationException;
 
 trait ValidatesDomainTls
 {

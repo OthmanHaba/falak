@@ -2,16 +2,16 @@
 
 namespace Falak\Providers\Domain\Models;
 
+use Falak\Providers\Contracts\Data\CredentialSummary;
+use Falak\Providers\Contracts\ProviderType;
+use Falak\Providers\Database\Factories\ProviderCredentialFactory;
+use Falak\Providers\Domain\CredentialStatus;
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Falak\Providers\Contracts\Data\CredentialSummary;
-use Falak\Providers\Contracts\ProviderType;
-use Falak\Providers\Database\Factories\ProviderCredentialFactory;
-use Falak\Providers\Domain\CredentialStatus;
 
 /**
  * A cloud provider account for one organization. `credentials` is encrypted at rest and hidden

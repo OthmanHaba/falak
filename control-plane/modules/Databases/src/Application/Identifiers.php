@@ -2,8 +2,8 @@
 
 namespace Falak\Databases\Application;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Domain\Enums\Engine;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Database / user name rules shared by every action (mirrors the agent schemas' identifier pattern).

@@ -2,15 +2,15 @@
 
 namespace Falak\Edge\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Falak\Edge\Application\Actions\CreateDnsCredential;
 use Falak\Edge\Application\Actions\DeleteDnsCredential;
 use Falak\Edge\Domain\Models\DnsCredential;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 final class DnsCredentialController extends Controller
 {

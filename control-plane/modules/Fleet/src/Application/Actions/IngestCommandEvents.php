@@ -2,11 +2,11 @@
 
 namespace Falak\Fleet\Application\Actions;
 
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Falak\Fleet\Application\CommandLifecycle;
 use Falak\Fleet\Domain\Models\Command;
 use Falak\Fleet\Events\CommandOutputReceived;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Stores a batch of agent events for one command, idempotently on (command_id, seq), and applies

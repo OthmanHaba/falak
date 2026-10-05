@@ -2,16 +2,16 @@
 
 namespace Falak\Alerting\Http\Controllers;
 
+use Falak\Alerting\Application\Actions\MarkNotificationsRead;
+use Falak\Alerting\Domain\Models\Notification;
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Falak\Alerting\Application\Actions\MarkNotificationsRead;
-use Falak\Alerting\Domain\Models\Notification;
-use Falak\Identity\Contracts\CurrentOrganization;
-use Falak\Kernel\Http\Controller;
 
 /**
  * Notification center: the current user's notifications in the current organization.

@@ -2,11 +2,11 @@
 
 namespace Falak\Functions\Application;
 
-use Illuminate\Contracts\Cache\Repository as Cache;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Contracts\Cache\Repository as Cache;
 use Throwable;
 
 /**

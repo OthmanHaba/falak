@@ -1,8 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
 use Falak\Builds\Application\Actions\CreateExternalBuilder;
 use Falak\Builds\Application\Artifacts\ArtifactStorage;
 use Falak\Builds\Application\BuildConfiguration;
@@ -27,6 +24,9 @@ use Falak\Identity\Contracts\Role;
 use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Events\ServerProvisioned;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/../../../Deployments/tests/Support/helpers.php';
 

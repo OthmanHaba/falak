@@ -2,12 +2,12 @@
 
 namespace Falak\SourceControl\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Domain\Models\Connection;
 use Falak\SourceControl\Infrastructure\Providers\ProviderClients;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Store a connection after verifying its credentials against the provider API.

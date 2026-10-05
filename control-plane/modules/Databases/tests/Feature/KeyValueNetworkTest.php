@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Str;
 use Falak\Databases\Application\Actions\EnableContainerAccess;
 use Falak\Databases\Application\EngineInventory;
 use Falak\Databases\Contracts\Data\DatabaseConsumer;
@@ -27,6 +26,7 @@ use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Events\ServerProvisioned;
+use Illuminate\Support\Str;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../../../Projects/tests/Support/helpers.php';

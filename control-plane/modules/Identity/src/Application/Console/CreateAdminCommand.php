@@ -2,12 +2,12 @@
 
 namespace Falak\Identity\Application\Console;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Str;
 use Falak\Identity\Application\Actions\CreateApiToken;
 use Falak\Identity\Application\Actions\CreateOrganization;
 use Falak\Identity\Application\Actions\RegisterUser;
 use Falak\Identity\Domain\Models\User;
+use Illuminate\Console\Command;
+use Illuminate\Support\Str;
 
 /**
  * First-run bootstrap for a self-hosted install: creates (or reuses) a user, the organization they own,

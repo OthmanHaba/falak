@@ -2,10 +2,10 @@
 
 namespace Falak\Terminal\Http\Channels;
 
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Identity\Contracts\OrganizationDirectory;
 use Falak\Terminal\Domain\Models\TerminalSession;
 use Falak\Terminal\Domain\Policies\TerminalSessionPolicy;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
  * presence-terminal.sessions.{sessionId}.{epoch}: the owner, plus members with terminal.attach while the session is shared.

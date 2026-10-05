@@ -2,13 +2,13 @@
 
 namespace Falak\Templates\Application\Console;
 
-use Illuminate\Console\Command;
 use Falak\Templates\Application\Catalog\Catalog;
 use Falak\Templates\Application\Catalog\TemplateValidator;
 use Falak\Templates\Application\Compose\FalakPlaceholders;
 use Falak\Templates\Application\Inputs\InputResolver;
 use Falak\Templates\Domain\InputType;
 use Falak\Templates\Domain\TemplateInput;
+use Illuminate\Console\Command;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**

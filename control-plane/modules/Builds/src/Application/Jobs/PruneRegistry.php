@@ -2,11 +2,11 @@
 
 namespace Falak\Builds\Application\Jobs;
 
+use Falak\Builds\Application\RegistryPruner;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Falak\Builds\Application\RegistryPruner;
 
 /**
  * Daily, after PruneArtifacts: deletes the registry images of builds whose artifact was pruned, that no release may

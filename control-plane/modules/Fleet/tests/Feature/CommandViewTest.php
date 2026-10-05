@@ -1,12 +1,12 @@
 <?php
 
+use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Http\Channels\CommandChannel;
+use Falak\Identity\Contracts\Role;
 use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Contracts\Broadcasting\Factory;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Str;
-use Falak\Fleet\Contracts\AgentGateway;
-use Falak\Fleet\Http\Channels\CommandChannel;
-use Falak\Identity\Contracts\Role;
 
 require_once __DIR__.'/../Support/helpers.php';
 

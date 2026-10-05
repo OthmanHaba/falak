@@ -2,10 +2,10 @@
 
 namespace Falak\Processes\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Edge\Events\EdgeApplied;
 use Falak\Processes\Application\OctaneRoutes;
 use Falak\Processes\Application\ServerConverger;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Disable ordering: a draining Octane stops only once the server's edge runs a config that no longer

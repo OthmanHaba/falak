@@ -2,9 +2,9 @@
 
 namespace Falak\Builds\Infrastructure\Artifacts;
 
+use Falak\Builds\Application\Artifacts\ArtifactStorage;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\Facades\Log;
-use Falak\Builds\Application\Artifacts\ArtifactStorage;
 use Throwable;
 
 /**

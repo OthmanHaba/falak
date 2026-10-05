@@ -2,16 +2,16 @@
 
 namespace Falak\Deployments\Domain\Models;
 
-use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Database\Eloquent\Concerns\HasUlids;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Carbon;
 use Falak\Deployments\Domain\Enums\DeploymentStatus;
 use Falak\Deployments\Domain\Enums\Strategy;
 use Falak\Deployments\Domain\Enums\Trigger;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Concerns\HasUlids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 /**
  * One deployment of a site: a persisted state machine driven by its steps.

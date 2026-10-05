@@ -2,8 +2,6 @@
 
 namespace Falak\Sites\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Sites\Application\OctanePorts;
 use Falak\Sites\Application\SiteRules;
@@ -15,6 +13,8 @@ use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\Sites\Events\SiteTargetsChanged;
 use Falak\Sites\Events\SiteUpdated;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Change the servers a site deploys to (the multi-server deployment group) and its leader.

@@ -1,8 +1,8 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Deployments\Http\Controllers\Api\DeploymentApiController;
 use Falak\Deployments\Http\Controllers\DeployHookController;
+use Illuminate\Support\Facades\Route;
 
 // Mounted under /api.
 Route::middleware(['auth:sanctum', 'org'])->prefix('v1')->name('api.v1.')->group(function () {

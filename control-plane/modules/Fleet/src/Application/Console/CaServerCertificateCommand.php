@@ -2,8 +2,8 @@
 
 namespace Falak\Fleet\Application\Console;
 
-use Illuminate\Console\Command;
 use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
+use Illuminate\Console\Command;
 
 /**
  * Agents pin the Falak CA for the mTLS API, so the agent-facing listener needs a certificate issued by it.

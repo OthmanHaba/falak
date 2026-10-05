@@ -2,9 +2,6 @@
 
 namespace Falak\Insights;
 
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
 use Falak\Fleet\Events\InsightsReceived;
 use Falak\Identity\Contracts\PermissionRegistry;
 use Falak\Identity\Contracts\Role;
@@ -25,6 +22,9 @@ use Falak\Insights\Infrastructure\EloquentIssueDirectory;
 use Falak\Insights\Infrastructure\IdSiteNameResolver;
 use Falak\Kernel\Support\ModuleServiceProvider;
 use Falak\Processes\Events\SchedulesApplied;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 
 class InsightsServiceProvider extends ModuleServiceProvider
 {

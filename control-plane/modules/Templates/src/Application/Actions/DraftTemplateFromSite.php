@@ -2,8 +2,6 @@
 
 namespace Falak\Templates\Application\Actions;
 
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Templates\Application\Catalog\Catalog;
@@ -15,6 +13,8 @@ use Falak\Templates\Application\Compose\FalakPlaceholders;
 use Falak\Templates\Application\Compose\SiteCompose;
 use Falak\Templates\Domain\InvalidTemplate;
 use Falak\Templates\Domain\Models\CustomTemplate;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\Yaml\Yaml;
 
 /**

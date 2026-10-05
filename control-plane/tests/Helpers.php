@@ -5,12 +5,12 @@
 | Identity state directly; production code must still go through Identity\Contracts.
 */
 
-use Illuminate\Support\Str;
 use Falak\Identity\Application\Actions\AssignRole;
 use Falak\Identity\Application\Actions\CreateOrganization;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Identity\Domain\Models\User;
+use Illuminate\Support\Str;
 
 /**
  * Create a user who is a member of $organization (or of a fresh organization) with $role,

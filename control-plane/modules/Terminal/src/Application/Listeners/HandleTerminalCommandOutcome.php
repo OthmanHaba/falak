@@ -2,11 +2,11 @@
 
 namespace Falak\Terminal\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Terminal\Application\SessionTransitions;
 use Falak\Terminal\Domain\Models\TerminalSession;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * The terminal.open command ended: the shell exited, the agent closed it (idle / timeout / close request),

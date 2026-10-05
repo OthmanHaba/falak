@@ -2,13 +2,13 @@
 
 namespace Falak\Fleet\Application;
 
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\DB;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Domain\Models\Command;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Fleet\Infrastructure\Signals\CommandSignal;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Commands whose delivery was lost. Every falak-agent process identifies itself with a session id

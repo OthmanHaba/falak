@@ -2,8 +2,6 @@
 
 namespace Falak\Sites\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
@@ -19,6 +17,8 @@ use Falak\Sites\Domain\Presets\Preset;
 use Falak\Sites\Infrastructure\EloquentSiteHeaders;
 use Falak\SourceControl\Contracts\Data\ConnectionData;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 trait PresentsSites
 {

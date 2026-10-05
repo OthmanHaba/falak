@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Sites\Http\Controllers\ComposeController;
 use Falak\Sites\Http\Controllers\ComposePolicyController;
 use Falak\Sites\Http\Controllers\ComposeRepositoryController;
@@ -9,6 +8,7 @@ use Falak\Sites\Http\Controllers\EnvironmentController;
 use Falak\Sites\Http\Controllers\SiteCommandController;
 use Falak\Sites\Http\Controllers\SiteController;
 use Falak\Sites\Http\Controllers\SiteSettingsController;
+use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'org'])->group(function () {
     Route::get('sites', [SiteController::class, 'index'])->name('sites.index');

@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Str;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Edge\Tests\Support\FakeServerDirectory;
 use Falak\Edge\Tests\Support\FakeSiteDirectory;
@@ -21,6 +20,7 @@ use Falak\Sites\Contracts\SiteHeaders;
 use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Contracts\TargetRole;
 use Falak\Sites\Contracts\TargetStatus;
+use Illuminate\Support\Str;
 
 /**
  * Bind in-memory Sites / Servers directories and a schema-validating recording AgentGateway.

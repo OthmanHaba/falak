@@ -2,6 +2,9 @@
 
 namespace Falak\Identity\Http\Controllers\Auth;
 
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Identity\Domain\Models\User;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -9,9 +12,6 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
-use Falak\Identity\Contracts\AuditLog;
-use Falak\Identity\Domain\Models\User;
-use Falak\Kernel\Http\Controller;
 use Laravel\Fortify\Contracts\TwoFactorAuthenticationProvider;
 use Laravel\Fortify\Fortify;
 

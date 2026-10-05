@@ -2,10 +2,10 @@
 
 namespace Falak\Network\Domain\Policies;
 
-use Illuminate\Auth\Access\Response;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Network\Domain\Models\FirewallRule;
+use Illuminate\Auth\Access\Response;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 final class FirewallRulePolicy
 {

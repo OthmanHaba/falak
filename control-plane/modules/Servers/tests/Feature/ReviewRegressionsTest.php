@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Str;
 use Falak\Fleet\Application\Jobs\SweepFleet;
 use Falak\Fleet\Contracts\Enrollment;
 use Falak\Identity\Contracts\Role;
@@ -12,6 +11,7 @@ use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Domain\Enums\PhpVersionStatus;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Tests\Support\FakeProviderGateway;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/../Support/helpers.php';
 

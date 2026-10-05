@@ -2,9 +2,6 @@
 
 namespace Falak\Databases\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Application\Actions\ApplyDatabaseUser;
 use Falak\Databases\Application\Jobs\PruneScheduleBackups;
 use Falak\Databases\Application\KeyValue\ApplyKeyValueInstance;
@@ -26,6 +23,9 @@ use Falak\Databases\Events\RestoreFinished;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Identity\Contracts\AuditLog;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Settles databases, users, backups and restores when the db.* commands Databases dispatched finish.

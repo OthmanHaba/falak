@@ -2,8 +2,6 @@
 
 namespace Falak\Processes\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Support\Str;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Processes\Application\OctaneRoutes;
@@ -13,6 +11,8 @@ use Falak\Processes\Domain\Models\ServerState;
 use Falak\Processes\Events\SchedulesApplied;
 use Falak\Processes\Infrastructure\AgentProcessControl;
 use Falak\Processes\Infrastructure\StateScheduleDirectory;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Str;
 
 /**
  * Settles proc.apply / cron.apply / proc.status commands dispatched by Processes. Only the currently

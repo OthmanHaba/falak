@@ -2,10 +2,10 @@
 
 namespace Falak\Telemetry\Application\Console;
 
-use Illuminate\Console\Command;
 use Falak\Telemetry\Application\Actions\ProvisionGrafana;
 use Falak\Telemetry\Domain\Models\GrafanaState;
 use Falak\Telemetry\Infrastructure\Grafana\GrafanaClient;
+use Illuminate\Console\Command;
 use Throwable;
 
 /**

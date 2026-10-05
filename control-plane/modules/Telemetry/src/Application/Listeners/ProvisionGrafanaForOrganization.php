@@ -2,11 +2,11 @@
 
 namespace Falak\Telemetry\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Support\Facades\Log;
 use Falak\Identity\Events\OrganizationCreated;
 use Falak\Telemetry\Application\Actions\ProvisionGrafana;
 use Falak\Telemetry\Infrastructure\Grafana\GrafanaClient;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final class ProvisionGrafanaForOrganization implements ShouldQueue

@@ -2,10 +2,10 @@
 
 namespace Falak\Alerting\Domain\Policies;
 
+use Falak\Identity\Contracts\OrganizationAccess;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
-use Falak\Identity\Contracts\OrganizationAccess;
 
 /**
  * Organization-scoped policy for channels and rules: viewing needs alerting.view, changes need

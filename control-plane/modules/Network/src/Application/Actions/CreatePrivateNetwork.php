@@ -2,11 +2,11 @@
 
 namespace Falak\Network\Application\Actions;
 
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Network\Domain\Models\PrivateNetwork;
 use Falak\Network\Domain\Support\Ipv4Cidr;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 final class CreatePrivateNetwork
 {

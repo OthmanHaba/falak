@@ -2,9 +2,6 @@
 
 namespace Falak\Network\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -15,6 +12,9 @@ use Falak\Network\Domain\Models\PrivateNetworkMember;
 use Falak\Servers\Contracts\Data\ServerData;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Servers\Contracts\ServerType;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class NetworkController extends Controller
 {

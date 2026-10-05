@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\Role;
 use Falak\Sites\Contracts\ComposeInspector;
 use Falak\Sites\Contracts\ComposeSites;
@@ -11,6 +10,7 @@ use Falak\Sites\Contracts\SiteFactory;
 use Falak\Sites\Domain\Models\ComposeVersion;
 use Falak\Sites\Domain\Models\OrganizationSettings;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\Yaml\Yaml;
 
 require_once __DIR__.'/../Support/helpers.php';

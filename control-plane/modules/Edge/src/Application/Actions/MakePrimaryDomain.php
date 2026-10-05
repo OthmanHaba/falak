@@ -2,12 +2,12 @@
 
 namespace Falak\Edge\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Edge\Application\ComposeServiceDomains;
 use Falak\Edge\Application\EdgeChanges;
 use Falak\Edge\Domain\Models\Domain;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Support\Facades\DB;
 
 final class MakePrimaryDomain
 {

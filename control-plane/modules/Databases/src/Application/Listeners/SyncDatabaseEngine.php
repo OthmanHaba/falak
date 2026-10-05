@@ -2,11 +2,11 @@
 
 namespace Falak\Databases\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Databases\Application\Actions\EnableContainerAccess;
 use Falak\Databases\Application\EngineInventory;
 use Falak\Servers\Events\DatabaseEngineInstalled;
 use Falak\Servers\Events\ServerProvisioned;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Registers the server's database engine once provisioning converged.

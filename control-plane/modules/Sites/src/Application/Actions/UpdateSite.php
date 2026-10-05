@@ -2,7 +2,6 @@
 
 namespace Falak\Sites\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Sites\Application\SiteRules;
 use Falak\Sites\Application\SourceControlLinker;
@@ -13,6 +12,7 @@ use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\Sites\Events\SiteUpdated;
+use Illuminate\Validation\ValidationException;
 
 /**
  * General settings: name, repository, runtime + versions, build mode, directories, ports, health check.

@@ -2,11 +2,11 @@
 
 namespace Falak\Terminal\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Servers\Events\ServerDeleted;
 use Falak\Terminal\Application\SessionTransitions;
 use Falak\Terminal\Domain\Enums\SessionStatus;
 use Falak\Terminal\Domain\Models\TerminalSession;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * The server is gone: end its live sessions. Recordings are kept.

@@ -1,8 +1,5 @@
 <?php
 
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 use Falak\Deployments\Domain\Models\Release;
 use Falak\Deployments\Tests\Support\FakeAnnotations;
 use Falak\Deployments\Tests\Support\FakeBuildService;
@@ -19,6 +16,9 @@ use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\Sites\Tests\Support\FakeSourceControlGateway;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../../../Sites/tests/Support/helpers.php';

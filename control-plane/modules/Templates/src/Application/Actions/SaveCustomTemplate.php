@@ -2,8 +2,6 @@
 
 namespace Falak\Templates\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Templates\Application\Catalog\Catalog;
 use Falak\Templates\Application\Catalog\TemplateParser;
@@ -13,6 +11,8 @@ use Falak\Templates\Domain\Models\CustomTemplate;
 use Falak\Templates\Domain\Models\CustomTemplateRevision;
 use Falak\Templates\Domain\Template;
 use Falak\Templates\Domain\TemplateSource;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Import or edit an organization template. Same schema and validation as the catalog; every save appends a

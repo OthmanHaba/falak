@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Hash;
 use Falak\Edge\Contracts\TlsMode;
 use Falak\Edge\Domain\Enums\InstallStatus;
 use Falak\Edge\Domain\Enums\LbPolicy;
@@ -19,6 +17,8 @@ use Falak\Edge\Events\DomainAdded;
 use Falak\Edge\Events\DomainRemoved;
 use Falak\Identity\Contracts\Role;
 use Falak\Servers\Contracts\ServerType;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Hash;
 
 require_once __DIR__.'/../Support/helpers.php';
 

@@ -2,9 +2,9 @@
 
 namespace Falak\Fleet\Application\Console;
 
-use Illuminate\Console\Command;
 use Falak\Fleet\Application\ShippedAgent;
 use Falak\Fleet\Contracts\AgentUpgrades;
+use Illuminate\Console\Command;
 
 /**
  * `php artisan falak:agents --outdated [--count]` — agents running an older build than this control plane ships

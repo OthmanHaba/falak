@@ -2,10 +2,10 @@
 
 namespace Falak\Deployments\Domain\Models;
 
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
 use Falak\Deployments\Domain\Enums\Strategy;
 use Falak\Sites\Contracts\Data\SiteData;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 /**
  * Per-site deployment settings (created with defaults on first use).

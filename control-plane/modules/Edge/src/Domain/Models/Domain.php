@@ -2,12 +2,12 @@
 
 namespace Falak\Edge\Domain\Models;
 
-use Illuminate\Database\Eloquent\Concerns\HasUlids;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Falak\Edge\Contracts\Data\DomainData;
 use Falak\Edge\Contracts\TlsMode;
 use Falak\Edge\Domain\Enums\WwwRedirect;
+use Illuminate\Database\Eloquent\Concerns\HasUlids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property string $id

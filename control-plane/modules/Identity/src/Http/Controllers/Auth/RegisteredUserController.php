@@ -2,6 +2,11 @@
 
 namespace Falak\Identity\Http\Controllers\Auth;
 
+use Falak\Identity\Application\Actions\AcceptInvitation;
+use Falak\Identity\Application\Actions\RegisterUser;
+use Falak\Identity\Application\Registration;
+use Falak\Identity\Domain\Models\User;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -9,11 +14,6 @@ use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
-use Falak\Identity\Application\Actions\AcceptInvitation;
-use Falak\Identity\Application\Actions\RegisterUser;
-use Falak\Identity\Application\Registration;
-use Falak\Identity\Domain\Models\User;
-use Falak\Kernel\Http\Controller;
 
 class RegisteredUserController extends Controller
 {

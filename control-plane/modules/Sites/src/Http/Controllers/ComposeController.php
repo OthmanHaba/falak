@@ -2,12 +2,6 @@
 
 namespace Falak\Sites\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Identity\Contracts\AuditLog;
@@ -26,6 +20,12 @@ use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\Sites\Http\Requests\StoreSiteRequest;
 use Falak\Sites\Infrastructure\Compose\EloquentComposeSites;
 use Falak\Sites\Infrastructure\Compose\YamlComposeInspector;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**

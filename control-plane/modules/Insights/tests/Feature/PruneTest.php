@@ -1,10 +1,10 @@
 <?php
 
-use Illuminate\Support\Facades\DB;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Events\OrganizationDeleted;
 use Falak\Insights\Application\Actions\PruneInsights;
 use Falak\Insights\Domain\Models\Issue;
+use Illuminate\Support\Facades\DB;
 
 require_once __DIR__.'/../Support/helpers.php';
 

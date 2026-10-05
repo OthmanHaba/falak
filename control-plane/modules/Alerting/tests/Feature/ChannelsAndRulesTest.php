@@ -1,13 +1,13 @@
 <?php
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Falak\Alerting\Domain\Enums\ChannelType;
 use Falak\Alerting\Domain\Models\Channel;
 use Falak\Alerting\Domain\Models\Rule;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\AuditEntry;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/../Support/helpers.php';
 

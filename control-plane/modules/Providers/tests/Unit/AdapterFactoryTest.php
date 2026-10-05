@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Http;
 use Falak\Providers\Contracts\Data\MachineSpec;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
 use Falak\Providers\Contracts\ProviderType;
@@ -11,6 +10,7 @@ use Falak\Providers\Infrastructure\Adapters\HetznerAdapter;
 use Falak\Providers\Infrastructure\Adapters\LightsailAdapter;
 use Falak\Providers\Infrastructure\Adapters\LinodeAdapter;
 use Falak\Providers\Infrastructure\Adapters\VultrAdapter;
+use Illuminate\Support\Facades\Http;
 
 it('builds the adapter for each provider type', function (ProviderType $type, array $credentials, string $class) {
     $adapter = app(AdapterFactory::class)->make($type, $credentials);

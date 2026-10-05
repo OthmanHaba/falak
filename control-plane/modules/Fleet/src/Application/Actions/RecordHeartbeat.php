@@ -2,7 +2,6 @@
 
 namespace Falak\Fleet\Application\Actions;
 
-use Illuminate\Support\Carbon;
 use Falak\Fleet\Application\CommandRedelivery;
 use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Fleet\Contracts\CommandStatus;
@@ -11,6 +10,7 @@ use Falak\Fleet\Domain\Models\AgentMetric;
 use Falak\Fleet\Events\AgentCameOnline;
 use Falak\Fleet\Events\AgentFactsReported;
 use Falak\Fleet\Events\AgentVersionChanged;
+use Illuminate\Support\Carbon;
 
 final class RecordHeartbeat
 {

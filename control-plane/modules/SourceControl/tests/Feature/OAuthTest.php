@@ -1,9 +1,9 @@
 <?php
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Falak\Identity\Contracts\Role;
 use Falak\SourceControl\Domain\Models\Connection;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/../Support/helpers.php';
 

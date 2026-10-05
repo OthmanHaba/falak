@@ -2,12 +2,12 @@
 
 namespace Falak\Databases\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Application\AgentCommands;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Databases\Infrastructure\CommandPayloads;
 use Falak\Identity\Contracts\AuditLog;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Changes a user's grants and/or MySQL host and re-applies the full user state.

@@ -2,9 +2,6 @@
 
 namespace Falak\Projects;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
 use Falak\Databases\Events\DatabaseCreated;
 use Falak\Databases\Events\DatabaseDeleted;
 use Falak\Identity\Contracts\PermissionRegistry;
@@ -27,6 +24,9 @@ use Falak\Projects\Infrastructure\ReferenceResolver;
 use Falak\Sites\Events\ComposeServiceExtracted;
 use Falak\Sites\Events\SiteCreated;
 use Falak\Sites\Events\SiteDeleted;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 
 class ProjectsServiceProvider extends ModuleServiceProvider
 {

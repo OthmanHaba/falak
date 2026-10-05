@@ -1,9 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
@@ -17,6 +13,10 @@ use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Events\CommandOutputReceived;
 use Falak\Fleet\Events\InsightsReceived;
 use Falak\Fleet\Infrastructure\Signals\CommandSignal;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/../Support/helpers.php';
 

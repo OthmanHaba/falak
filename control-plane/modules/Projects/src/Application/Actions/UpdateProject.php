@@ -2,9 +2,9 @@
 
 namespace Falak\Projects\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Projects\Domain\Models\Project;
+use Illuminate\Validation\ValidationException;
 
 final class UpdateProject
 {

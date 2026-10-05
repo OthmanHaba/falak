@@ -2,9 +2,6 @@
 
 namespace Falak\Servers\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\Data\CommandHandle;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
@@ -13,6 +10,9 @@ use Falak\Servers\Domain\Enums\PhpVersionStatus;
 use Falak\Servers\Domain\Models\PhpVersion;
 use Falak\Servers\Events\PhpVersionChanged;
 use Falak\Servers\Infrastructure\CommandPayloads;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 final class SetDefaultPhpVersion
 {

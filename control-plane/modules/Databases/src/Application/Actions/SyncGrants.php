@@ -2,8 +2,8 @@
 
 namespace Falak\Databases\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Domain\Models\DatabaseUser;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Replaces a user's grants. Databases must live on the same database server.

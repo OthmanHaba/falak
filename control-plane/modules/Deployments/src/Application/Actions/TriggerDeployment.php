@@ -2,11 +2,6 @@
 
 namespace Falak\Deployments\Application\Actions;
 
-use Illuminate\Contracts\Cache\LockTimeoutException;
-use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Deployments\Application\Orchestration\DeploymentLog;
 use Falak\Deployments\Application\Orchestration\DeploymentQueue;
 use Falak\Deployments\Contracts\Exceptions\DeploymentTriggerBusy;
@@ -18,6 +13,11 @@ use Falak\Deployments\Events\DeploymentUpdated;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**

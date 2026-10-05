@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Identity\Contracts\Role;
 use Falak\Processes\Application\Jobs\PollProcessStatus;
@@ -13,6 +12,7 @@ use Falak\Processes\Domain\Models\OctaneRoute;
 use Falak\Processes\Events\OctaneRoutingChanged;
 use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 

@@ -2,11 +2,11 @@
 
 namespace Falak\Servers\Application;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Servers\Domain\Enums\PhpVersionStatus;
 use Falak\Servers\Domain\Models\PhpVersion;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Fits the PHP versions a server should get to what its OS can install (servers.php_versions_by_os), once the

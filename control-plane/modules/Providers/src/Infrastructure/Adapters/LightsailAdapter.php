@@ -2,12 +2,6 @@
 
 namespace Falak\Providers\Infrastructure\Adapters;
 
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Http\Client\Response;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 use Falak\Providers\Contracts\Data\Image;
 use Falak\Providers\Contracts\Data\Machine;
 use Falak\Providers\Contracts\Data\MachineSpec;
@@ -16,6 +10,12 @@ use Falak\Providers\Contracts\Data\Size;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
 use Falak\Providers\Contracts\ProviderType;
 use Falak\Providers\Infrastructure\Aws\SigV4Signer;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use stdClass;
 
 /**

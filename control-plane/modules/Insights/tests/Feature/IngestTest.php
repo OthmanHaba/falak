@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use Falak\Identity\Contracts\Role;
 use Falak\Insights\Contracts\IssueDirectory;
 use Falak\Insights\Contracts\IssueKind;
@@ -11,6 +9,8 @@ use Falak\Insights\Domain\Models\Issue;
 use Falak\Insights\Events\IssueOpened;
 use Falak\Insights\Events\IssueRegressed;
 use Falak\Insights\Events\IssueResolved;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 require_once __DIR__.'/../../../Fleet/tests/Support/helpers.php';

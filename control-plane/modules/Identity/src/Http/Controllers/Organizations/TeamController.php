@@ -2,11 +2,6 @@
 
 namespace Falak\Identity\Http\Controllers\Organizations;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Application\Actions\CreateTeam;
 use Falak\Identity\Application\Actions\DeleteTeam;
 use Falak\Identity\Application\Actions\SyncTeamMembers;
@@ -14,6 +9,11 @@ use Falak\Identity\Application\Actions\UpdateTeam;
 use Falak\Identity\Domain\Models\Team;
 use Falak\Identity\Domain\Models\User;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class TeamController extends Controller
 {

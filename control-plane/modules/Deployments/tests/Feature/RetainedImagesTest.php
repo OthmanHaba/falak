@@ -1,9 +1,9 @@
 <?php
 
-use Illuminate\Support\Str;
 use Falak\Deployments\Contracts\RetainedImages;
 use Falak\Deployments\Domain\Enums\ReleaseStatus;
 use Falak\Deployments\Domain\Models\Release;
+use Illuminate\Support\Str;
 
 /*
  * Images releases may still run (the registry cleanup keeps them): Docker site images and compose `image:`s of

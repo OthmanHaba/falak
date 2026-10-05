@@ -1,12 +1,12 @@
 <?php
 
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Falak\Providers\Contracts\Data\Machine;
 use Falak\Providers\Contracts\Data\MachineSpec;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
 use Falak\Providers\Infrastructure\Adapters\HetznerAdapter;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/../fixtures.php';
 

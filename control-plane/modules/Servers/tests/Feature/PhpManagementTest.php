@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Identity\Contracts\Role;
 use Falak\Servers\Contracts\ServerStatus;
@@ -8,6 +7,7 @@ use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Domain\Enums\PhpVersionStatus;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Events\PhpVersionChanged;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 

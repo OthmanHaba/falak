@@ -2,10 +2,10 @@
 
 namespace Falak\Servers\Domain\Policies;
 
-use Illuminate\Auth\Access\Response;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Servers\Domain\Models\SshKey;
+use Illuminate\Auth\Access\Response;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 final class SshKeyPolicy
 {

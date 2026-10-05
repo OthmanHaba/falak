@@ -2,11 +2,11 @@
 
 namespace Falak\Providers\Application\Actions;
 
-use Illuminate\Support\Str;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
 use Falak\Providers\Domain\CredentialStatus;
 use Falak\Providers\Domain\Models\ProviderCredential;
 use Falak\Providers\Infrastructure\AdapterFactory;
+use Illuminate\Support\Str;
 
 /**
  * Re-checks a stored credential and records the outcome.

@@ -2,11 +2,6 @@
 
 namespace Falak\Edge\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Edge\Application\CloudflareConnections;
 use Falak\Edge\Application\CloudflareEdgeControls;
 use Falak\Edge\Application\CloudflareTunnels;
@@ -25,6 +20,11 @@ use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
 use Falak\Servers\Contracts\Data\ServerData;
 use Falak\Servers\Contracts\ServerDirectory;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * Settings → Integrations → Cloudflare.

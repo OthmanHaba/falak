@@ -2,9 +2,9 @@
 
 namespace Falak\Servers\Http\Channels;
 
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
  * private-servers.{serverId}: members of the server's organization with servers.view.

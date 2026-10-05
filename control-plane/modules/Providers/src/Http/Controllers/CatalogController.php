@@ -3,8 +3,6 @@
 namespace Falak\Providers\Http\Controllers;
 
 use Closure;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Kernel\Http\Controller;
 use Falak\Providers\Contracts\Data\Image;
@@ -13,6 +11,8 @@ use Falak\Providers\Contracts\Data\Size;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
 use Falak\Providers\Contracts\ProviderGateway;
 use Falak\Providers\Domain\Models\ProviderCredential;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * JSON catalog lookups for the "create server" form (regions → sizes, images).

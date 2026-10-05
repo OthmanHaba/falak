@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Edge\Http\Controllers\CertificateController;
 use Falak\Edge\Http\Controllers\CloudflareController;
 use Falak\Edge\Http\Controllers\DnsController;
@@ -11,6 +10,7 @@ use Falak\Edge\Http\Controllers\LoadBalancerController;
 use Falak\Edge\Http\Controllers\MountController;
 use Falak\Edge\Http\Controllers\RateLimitController;
 use Falak\Edge\Http\Controllers\RoutingController;
+use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'org'])->group(function () {
     // A function's Settings → Paths: paths of other sites it serves.

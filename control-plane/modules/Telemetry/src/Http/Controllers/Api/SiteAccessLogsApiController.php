@@ -2,9 +2,6 @@
 
 namespace Falak\Telemetry\Http\Controllers\Api;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use InvalidArgumentException;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -13,6 +10,9 @@ use Falak\Telemetry\Contracts\AccessLogs;
 use Falak\Telemetry\Contracts\Data\AccessLogEntry;
 use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
 use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use InvalidArgumentException;
 
 /**
  * GET /api/v1/sites/{site}/access-logs?since=&limit=&cursor=&server=&deployment=&method=&status=&path=&client_ip=

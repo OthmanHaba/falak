@@ -2,10 +2,6 @@
 
 namespace Falak\Databases;
 
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Log;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Databases\Application\Jobs\RunDueBackups;
@@ -52,6 +48,10 @@ use Falak\Servers\Events\DatabaseEngineInstallFailed;
 use Falak\Servers\Events\ServerDeleted;
 use Falak\Servers\Events\ServerProvisioned;
 use Falak\Sites\Events\SiteTargetsChanged;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 
 class DatabasesServiceProvider extends ModuleServiceProvider
 {

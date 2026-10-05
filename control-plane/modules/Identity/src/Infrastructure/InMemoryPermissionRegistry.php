@@ -2,10 +2,10 @@
 
 namespace Falak\Identity\Infrastructure;
 
-use InvalidArgumentException;
 use Falak\Identity\Contracts\Permission;
 use Falak\Identity\Contracts\PermissionRegistry;
 use Falak\Identity\Contracts\Role;
+use InvalidArgumentException;
 
 final class InMemoryPermissionRegistry implements PermissionRegistry
 {

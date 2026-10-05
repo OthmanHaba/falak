@@ -2,12 +2,6 @@
 
 namespace Falak\Identity;
 
-use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Database\Events\MigrationsEnded;
-use Illuminate\Http\Request;
-use Illuminate\Routing\Router;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
 use Falak\Identity\Application\Console\CreateAdminCommand;
 use Falak\Identity\Application\Console\SyncPermissionsCommand;
 use Falak\Identity\Application\Listeners\SyncPermissionsAfterMigrations;
@@ -31,6 +25,12 @@ use Falak\Identity\Infrastructure\ResolvedCurrentOrganization;
 use Falak\Identity\Infrastructure\SpatieOrganizationAccess;
 use Falak\Kernel\Support\ModuleServiceProvider;
 use Falak\Kernel\Support\SharedProps;
+use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Database\Events\MigrationsEnded;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 use Laravel\Fortify\Fortify;
 use Laravel\Sanctum\Sanctum;
 

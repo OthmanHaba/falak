@@ -2,10 +2,10 @@
 
 namespace Falak\Databases\Application;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\Data\CommandHandle;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Thin wrapper over the AgentGateway that turns "no agent" into a user-facing validation error.

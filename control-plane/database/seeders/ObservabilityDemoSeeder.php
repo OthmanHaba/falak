@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Seeder;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Alerting\Domain\Enums\AlertOutcome;
 use Falak\Alerting\Domain\Enums\ChannelType;
@@ -27,6 +26,7 @@ use Falak\Processes\Domain\Models\Schedule;
 use Falak\Processes\Infrastructure\ProgramNames;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Database\Seeder;
 
 /**
  * Observability demo data for the UI (called by UiDemoSeeder): a week of request/job/query aggregates with a daily

@@ -1,7 +1,7 @@
 <?php
 
-use Illuminate\Support\Str;
 use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
+use Illuminate\Support\Str;
 use phpseclib3\File\X509;
 
 require_once __DIR__.'/../Support/helpers.php';

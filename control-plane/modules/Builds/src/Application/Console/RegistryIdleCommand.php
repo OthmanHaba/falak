@@ -2,9 +2,9 @@
 
 namespace Falak\Builds\Application\Console;
 
-use Illuminate\Console\Command;
 use Falak\Builds\Contracts\BuildStatus;
 use Falak\Builds\Domain\Models\Build;
+use Illuminate\Console\Command;
 
 /**
  * Whether the built-in registry may be stopped for garbage collection (`falak-ctl registry gc` asks first): exit 0 when

@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Fleet\Contracts\CommandStatus;
@@ -23,6 +22,7 @@ use Falak\Servers\Events\ServerCreated;
 use Falak\Servers\Events\ServerDeleted;
 use Falak\Servers\Events\ServerProvisioned;
 use Falak\Servers\Tests\Support\FakeProviderGateway;
+use Illuminate\Support\Facades\Event;
 use phpseclib3\Crypt\EC;
 
 require_once __DIR__.'/../Support/helpers.php';

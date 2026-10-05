@@ -1,11 +1,11 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Alerting\Http\Controllers\ChannelController;
 use Falak\Alerting\Http\Controllers\HistoryController;
 use Falak\Alerting\Http\Controllers\NotificationController;
 use Falak\Alerting\Http\Controllers\RuleController;
 use Falak\Kernel\Http\LegacyRedirect;
+use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'org'])->group(function () {
     // Channels and rules live in the settings shell (docs/UI_DESIGN.md §3); the old URLs redirect.

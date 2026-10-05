@@ -2,8 +2,8 @@
 
 namespace Falak\Projects\Application\Console;
 
-use Illuminate\Console\Command;
 use Falak\Projects\Application\Actions\BackfillProjects;
+use Illuminate\Console\Command;
 
 final class BackfillProjectsCommand extends Command
 {

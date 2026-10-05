@@ -2,14 +2,14 @@
 
 namespace Falak\Alerting\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Support\Facades\DB;
 use Falak\Alerting\Domain\Models\Alert;
 use Falak\Alerting\Domain\Models\Channel;
 use Falak\Alerting\Domain\Models\DedupState;
 use Falak\Alerting\Domain\Models\Notification;
 use Falak\Alerting\Domain\Models\Rule;
 use Falak\Identity\Events\OrganizationDeleted;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\DB;
 
 final class DeleteOrganizationAlerting implements ShouldQueue
 {

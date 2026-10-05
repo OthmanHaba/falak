@@ -1,14 +1,14 @@
 <?php
 
-use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Falak\Identity\Application\Actions\CreateApiToken;
 use Falak\Identity\Application\Actions\CreateOrganization;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\Exceptions\NoCurrentOrganization;
 use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Infrastructure\ResolvedCurrentOrganization;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 function freshCurrentOrganization(): CurrentOrganization
 {

@@ -2,10 +2,6 @@
 
 namespace Falak\Servers\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 use Falak\Kernel\Http\Controller;
 use Falak\Servers\Application\Actions\ApplyProvisioningPlan;
 use Falak\Servers\Application\Actions\ProvisionServer;
@@ -14,6 +10,10 @@ use Falak\Servers\Application\MachineChecks;
 use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Domain\Models\MachineInspection;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 /**
  * The machine check on the server page (Re-check, Provision) and its API: `GET|POST /api/v1/servers/{server}/inspection`,

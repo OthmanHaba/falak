@@ -2,11 +2,11 @@
 
 namespace Falak\Builds\Http\Controllers\Internal;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Builds\Application\Artifacts\ArtifactStorage;
 use Falak\Builds\Infrastructure\Artifacts\LocalArtifactStorage;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**

@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Str;
 use Falak\Fleet\Application\Actions\ClaimCommands;
 use Falak\Fleet\Application\Jobs\SweepFleet;
 use Falak\Fleet\Contracts\AgentGateway;
@@ -12,6 +10,8 @@ use Falak\Fleet\Domain\Models\Command;
 use Falak\Fleet\Events\AgentVersionChanged;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/../Support/helpers.php';
 

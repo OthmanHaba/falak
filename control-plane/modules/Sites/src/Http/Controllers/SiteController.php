@@ -2,10 +2,6 @@
 
 namespace Falak\Sites\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
@@ -16,6 +12,10 @@ use Falak\Sites\Application\Actions\DeleteSite;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Http\Requests\StoreSiteRequest;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 final class SiteController extends Controller
 {

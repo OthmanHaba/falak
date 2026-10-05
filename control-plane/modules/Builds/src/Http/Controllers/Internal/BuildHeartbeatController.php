@@ -2,12 +2,12 @@
 
 namespace Falak\Builds\Http\Controllers\Internal;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Falak\Builds\Domain\Models\Build;
 use Falak\Builds\Domain\Models\Builder;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 /**
  * POST /api/internal/builds/{build}/heartbeat — falak-builder, every 20 s while it runs a build. 204; 410 when the

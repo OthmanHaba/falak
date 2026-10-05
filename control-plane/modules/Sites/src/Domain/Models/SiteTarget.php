@@ -2,12 +2,12 @@
 
 namespace Falak\Sites\Domain\Models;
 
-use Illuminate\Database\Eloquent\Concerns\HasUlids;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Falak\Sites\Contracts\Data\SiteTargetData;
 use Falak\Sites\Contracts\TargetRole;
 use Falak\Sites\Contracts\TargetStatus;
+use Illuminate\Database\Eloquent\Concerns\HasUlids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * A server a site is deployed to (the multi-server deployment group).

@@ -3,11 +3,11 @@
 namespace Falak\Fleet\Application\Actions;
 
 use DateTimeImmutable;
-use Illuminate\Support\Str;
 use Falak\Fleet\Contracts\Data\InstallToken as InstallTokenData;
 use Falak\Fleet\Domain\Models\InstallToken;
 use Falak\Fleet\Infrastructure\PanelUrls;
 use Falak\Identity\Contracts\AuditLog;
+use Illuminate\Support\Str;
 
 final class IssueInstallToken
 {

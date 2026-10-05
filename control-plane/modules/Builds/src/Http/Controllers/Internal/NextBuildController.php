@@ -2,13 +2,13 @@
 
 namespace Falak\Builds\Http\Controllers\Internal;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Falak\Builds\Application\Actions\AssignBuild;
 use Falak\Builds\Application\Actions\ReapOrphanedBuilds;
 use Falak\Builds\Domain\Models\Builder;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 /**
  * GET /api/internal/builds/next?wait=<s>&builder=<name>&run=<run id> — long-poll: 200 + job JSON, or 204. A poll

@@ -1,9 +1,9 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Deployments\Http\Controllers\DeploymentController;
 use Falak\Deployments\Http\Controllers\DeploySettingsController;
 use Falak\Deployments\Http\Controllers\ReleaseController;
+use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth', 'org'])->prefix('sites/{site}')->group(function () {
     Route::get('deployments', [DeploymentController::class, 'index'])->name('deployments.index');

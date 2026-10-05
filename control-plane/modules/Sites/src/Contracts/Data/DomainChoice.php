@@ -3,8 +3,8 @@
 namespace Falak\Sites\Contracts\Data;
 
 use Closure;
-use Illuminate\Validation\ValidationException;
 use Falak\Sites\Contracts\DomainType;
+use Illuminate\Validation\ValidationException;
 
 /**
  * A domain picked in a create form or sent to the API: `{type: generated|test|custom, name?}`. A plain string is a

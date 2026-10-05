@@ -1,9 +1,9 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Kernel\Http\LegacyRedirect;
 use Falak\Recipes\Http\Controllers\RecipeController;
 use Falak\Recipes\Http\Controllers\RunController;
+use Illuminate\Support\Facades\Route;
 
 // Server page tab (/servers/{id}/recipes) owned by Recipes.
 Route::middleware(['auth', 'org'])->get('servers/{server}/recipes', [RunController::class, 'server'])->name('recipes.server');

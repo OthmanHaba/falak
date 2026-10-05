@@ -2,12 +2,12 @@
 
 namespace Falak\Providers\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
 use Falak\Providers\Domain\CredentialStatus;
 use Falak\Providers\Domain\Models\ProviderCredential;
 use Falak\Providers\Infrastructure\AdapterFactory;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Renames a credential and/or rotates its secret (new secrets are verified before they replace the old ones).

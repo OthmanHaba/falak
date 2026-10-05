@@ -2,7 +2,6 @@
 
 namespace Falak\Network\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Network\Application\ConvergePrivateNetwork;
@@ -14,6 +13,7 @@ use Falak\Network\Events\FirewallApplied;
 use Falak\Network\Events\FirewallApplyFailed;
 use Falak\Network\Events\PrivateNetworkChanged;
 use Falak\Network\Infrastructure\WireGuardKeys;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Settles firewall and WireGuard state from the outcome of the commands Network dispatched.

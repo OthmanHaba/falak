@@ -2,11 +2,11 @@
 
 namespace Falak\Servers\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Identity\Events\OrganizationDeleted;
 use Falak\Servers\Application\Actions\DeleteServer;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Domain\Models\SshKey;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Tenant cleanup. Machines are NOT destroyed at the provider (the organization's credentials are gone

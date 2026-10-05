@@ -1,12 +1,12 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Kernel\Http\LegacyRedirect;
 use Falak\Telemetry\Http\Controllers\LogController;
 use Falak\Telemetry\Http\Controllers\ServerMetricsController;
 use Falak\Telemetry\Http\Controllers\SettingsController;
 use Falak\Telemetry\Http\Controllers\SiteTelemetryController;
 use Falak\Telemetry\Http\Controllers\TraceController;
+use Illuminate\Support\Facades\Route;
 
 $ulid = '[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}';
 

@@ -2,8 +2,6 @@
 
 namespace Falak\Network;
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Fleet\Events\CommandFailed;
@@ -30,6 +28,8 @@ use Falak\Network\Infrastructure\NoWebOriginPolicy;
 use Falak\Network\Infrastructure\QueuedFirewalls;
 use Falak\Servers\Events\ServerDeleted;
 use Falak\Servers\Events\ServerProvisioned;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 
 class NetworkServiceProvider extends ModuleServiceProvider
 {

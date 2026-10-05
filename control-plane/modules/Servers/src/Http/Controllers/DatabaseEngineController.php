@@ -2,13 +2,13 @@
 
 namespace Falak\Servers\Http\Controllers;
 
+use Falak\Kernel\Http\Controller;
+use Falak\Servers\Application\Actions\InstallDatabaseEngine;
+use Falak\Servers\Domain\Models\Server;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Falak\Kernel\Http\Controller;
-use Falak\Servers\Application\Actions\InstallDatabaseEngine;
-use Falak\Servers\Domain\Models\Server;
 
 /**
  * Adding a database or cache engine (Redis, Valkey) to a provisioned server (panel Settings → Database engine and

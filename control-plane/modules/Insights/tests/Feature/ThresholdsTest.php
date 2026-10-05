@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Identity\Contracts\Role;
 use Falak\Insights\Application\Actions\EvaluateThresholds;
 use Falak\Insights\Contracts\IssueKind;
@@ -10,6 +9,7 @@ use Falak\Insights\Domain\Models\Threshold;
 use Falak\Insights\Events\IssueOpened;
 use Falak\Insights\Events\IssueRegressed;
 use Falak\Insights\Events\ThresholdBreached;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 

@@ -2,12 +2,6 @@
 
 namespace Falak\Sites\Domain\Models;
 
-use Illuminate\Database\Eloquent\Casts\Attribute;
-use Illuminate\Database\Eloquent\Concerns\HasUlids;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Support\Carbon;
 use Falak\Sites\Contracts\BuildMode;
 use Falak\Sites\Contracts\ComposeSource;
 use Falak\Sites\Contracts\Data\ComposeConfig;
@@ -18,6 +12,12 @@ use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\Framework;
 use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Contracts\TargetRole;
+use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Concerns\HasUlids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
 /**
  * @property string $id

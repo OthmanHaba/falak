@@ -2,14 +2,14 @@
 
 namespace Falak\SourceControl\Http\Controllers\Api;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
 use Falak\SourceControl\Application\Actions\CreateConnection;
 use Falak\SourceControl\Domain\Models\Connection;
 use Falak\SourceControl\Http\Requests\StoreConnectionRequest;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * Public API v1: source control connections (credentials are write-only and never returned).

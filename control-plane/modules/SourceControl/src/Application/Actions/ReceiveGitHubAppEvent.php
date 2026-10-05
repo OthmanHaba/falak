@@ -2,8 +2,6 @@
 
 namespace Falak\SourceControl\Application\Actions;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\SourceControl\Application\Jobs\RefreshInstallationRepositories;
 use Falak\SourceControl\Contracts\ProviderType;
@@ -15,6 +13,8 @@ use Falak\SourceControl\Infrastructure\GitHubApp\AppCredentials;
 use Falak\SourceControl\Infrastructure\Providers\GitHubAppTokens;
 use Falak\SourceControl\Infrastructure\Providers\GitHubClient;
 use Falak\SourceControl\Infrastructure\Webhooks\WebhookPayloads;
+use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 /**
  * A verified delivery to a GitHub App's webhook (one per app, covering every installation and repository):

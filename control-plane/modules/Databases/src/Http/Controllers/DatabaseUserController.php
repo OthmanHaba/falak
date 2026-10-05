@@ -2,9 +2,6 @@
 
 namespace Falak\Databases\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Databases\Application\Actions\CreateDatabaseUser;
 use Falak\Databases\Application\Actions\DeleteDatabaseUser;
 use Falak\Databases\Application\Actions\RevealDatabaseUserPassword;
@@ -13,6 +10,9 @@ use Falak\Databases\Application\Actions\UpdateDatabaseUser;
 use Falak\Databases\Domain\Models\DatabaseServer;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 final class DatabaseUserController extends Controller
 {

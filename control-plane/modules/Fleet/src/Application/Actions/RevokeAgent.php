@@ -2,13 +2,13 @@
 
 namespace Falak\Fleet\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Fleet\Application\CommandLifecycle;
 use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Events\AgentRevoked;
 use Falak\Identity\Contracts\AuditLog;
+use Illuminate\Support\Facades\DB;
 
 final class RevokeAgent
 {

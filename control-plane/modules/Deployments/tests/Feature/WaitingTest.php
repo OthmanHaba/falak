@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Event;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Application\Jobs\ReconcileDeployments;
 use Falak\Deployments\Application\Orchestration\DeploymentQueue;
@@ -19,6 +17,8 @@ use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\Sites\Events\SiteDeleted;
 use Falak\SourceControl\Contracts\Data\CommitData;
 use Falak\SourceControl\Events\PushReceived;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 

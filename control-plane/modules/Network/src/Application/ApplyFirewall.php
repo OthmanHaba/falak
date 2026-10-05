@@ -2,7 +2,6 @@
 
 namespace Falak\Network\Application;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Network\Application\Actions\EnsureDefaultFirewallRules;
@@ -11,6 +10,7 @@ use Falak\Network\Domain\Models\FirewallState;
 use Falak\Network\Infrastructure\CanonicalJson;
 use Falak\Network\Infrastructure\FirewallCompiler;
 use Falak\Servers\Contracts\ServerDirectory;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Converges a server's firewall: compiles the full desired ruleset and dispatches `net.firewall.apply`

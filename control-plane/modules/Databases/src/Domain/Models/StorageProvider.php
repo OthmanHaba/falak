@@ -2,10 +2,10 @@
 
 namespace Falak\Databases\Domain\Models;
 
+use Falak\Databases\Domain\Enums\StorageDriver;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Falak\Databases\Domain\Enums\StorageDriver;
 
 /**
  * S3-compatible bucket for backups. Credentials are encrypted and never leave the control plane:

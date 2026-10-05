@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Fleet\Events\CommandOutputReceived;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\AuditEntry;
@@ -14,6 +13,7 @@ use Falak\Terminal\Domain\Models\TerminalSession;
 use Falak\Terminal\Events\TerminalOutput;
 use Falak\Terminal\Events\TerminalSessionClosed;
 use Falak\Terminal\Events\TerminalSessionOpened;
+use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';

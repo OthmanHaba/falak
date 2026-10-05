@@ -2,10 +2,10 @@
 
 namespace Falak\Servers\Domain\Policies;
 
-use Illuminate\Auth\Access\Response;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Auth\Access\Response;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 final class ServerPolicy
 {

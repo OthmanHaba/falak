@@ -2,10 +2,6 @@
 
 namespace Falak\Servers\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
 use Falak\Servers\Application\Queries\ServerServices;
@@ -13,6 +9,10 @@ use Falak\Servers\Contracts\ServerHeaders;
 use Falak\Servers\Domain\Models\PhpVersion;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Domain\Models\SshKey;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * The Servers-owned tabs of the server page (/servers/{id}/{tab}): Metrics, Processes, SSH keys, PHP and Settings.

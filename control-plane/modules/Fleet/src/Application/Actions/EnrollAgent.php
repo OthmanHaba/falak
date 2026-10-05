@@ -2,9 +2,6 @@
 
 namespace Falak\Fleet\Application\Actions;
 
-use Illuminate\Auth\AuthenticationException;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Domain\Models\InstallToken;
@@ -13,6 +10,9 @@ use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
 use Falak\Fleet\Infrastructure\Pki\InvalidCsr;
 use Falak\Fleet\Infrastructure\Pki\IssuedCertificate;
 use Falak\Identity\Contracts\AuditLog;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Consumes a one-time install token, signs the agent's CSR and registers the agent.

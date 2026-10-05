@@ -2,9 +2,6 @@
 
 namespace Falak\Databases\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Databases\Application\ConnectionInfo;
 use Falak\Databases\Application\KeyValue\KeyValueSettings;
 use Falak\Databases\Application\KeyValue\UpdateKeyValueSettings;
@@ -21,6 +18,9 @@ use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 /**
  * One database as a canvas service (UI_DESIGN §5.4): JSON for the database panel's tabs; a browser visit opens

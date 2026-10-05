@@ -2,8 +2,6 @@
 
 namespace Falak\Servers\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Fleet\Contracts\Enrollment;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Providers\Contracts\ProviderGateway;
@@ -17,6 +15,8 @@ use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Domain\Models\SshKey;
 use Falak\Servers\Domain\Stack\Stack;
 use Falak\Servers\Events\ServerCreated;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Registers a server. Provider servers are created asynchronously at the provider with a cloud-init

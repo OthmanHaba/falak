@@ -3,7 +3,6 @@
 namespace Falak\Deployments\Infrastructure;
 
 use DateTimeImmutable;
-use Illuminate\Support\Carbon;
 use Falak\Deployments\Contracts\Data\DeploymentSummary;
 use Falak\Deployments\Contracts\DeploymentDirectory;
 use Falak\Deployments\Domain\Enums\DeploymentStatus;
@@ -11,6 +10,7 @@ use Falak\Deployments\Domain\Enums\StepStatus;
 use Falak\Deployments\Domain\Models\Deployment;
 use Falak\Deployments\Domain\Models\DeploymentStep;
 use Falak\Deployments\Domain\Models\Release;
+use Illuminate\Support\Carbon;
 
 final class EloquentDeploymentDirectory implements DeploymentDirectory
 {

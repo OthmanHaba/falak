@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Broadcast;
-use Illuminate\Support\Facades\Http;
 use Falak\Alerting\Application\Jobs\PruneAlerting;
 use Falak\Alerting\Domain\Models\Alert;
 use Falak\Alerting\Domain\Models\Channel;
@@ -11,6 +9,8 @@ use Falak\Alerting\Http\Channels\UserNotificationsChannel;
 use Falak\Identity\Application\Actions\AssignRole;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Events\OrganizationDeleted;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/../Support/helpers.php';
 

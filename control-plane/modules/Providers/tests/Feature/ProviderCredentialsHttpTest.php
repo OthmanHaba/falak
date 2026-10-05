@@ -1,14 +1,14 @@
 <?php
 
+use Falak\Identity\Contracts\Role;
+use Falak\Providers\Domain\Models\ProviderCredential;
+use Falak\Providers\Events\ProviderCredentialAdded;
+use Falak\Providers\Events\ProviderCredentialRemoved;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
-use Falak\Identity\Contracts\Role;
-use Falak\Providers\Domain\Models\ProviderCredential;
-use Falak\Providers\Events\ProviderCredentialAdded;
-use Falak\Providers\Events\ProviderCredentialRemoved;
 
 beforeEach(function () {
     Http::preventStrayRequests();

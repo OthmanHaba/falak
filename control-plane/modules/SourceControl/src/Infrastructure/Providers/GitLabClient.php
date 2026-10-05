@@ -2,12 +2,12 @@
 
 namespace Falak\SourceControl\Infrastructure\Providers;
 
-use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Support\Facades\Http;
 use Falak\SourceControl\Contracts\Data\BranchData;
 use Falak\SourceControl\Contracts\Data\CommitData;
 use Falak\SourceControl\Contracts\Data\RepositoryData;
 use Falak\SourceControl\Domain\Models\Connection;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Facades\Http;
 
 /**
  * GitLab REST v4 (gitlab.com or self-hosted through the connection's base URL).

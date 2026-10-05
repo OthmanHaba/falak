@@ -2,16 +2,16 @@
 
 namespace Falak\Terminal\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Http\Response;
-use Illuminate\Validation\ValidationException;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Kernel\Http\Controller;
 use Falak\Terminal\Application\Actions\ResizeSession;
 use Falak\Terminal\Application\Actions\SendInput;
 use Falak\Terminal\Domain\Models\TerminalFrame;
 use Falak\Terminal\Domain\Models\TerminalSession;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Validation\ValidationException;
 
 /**
  * The live data path of a session: keystrokes in (dedicated, rate-limited route), resize, and

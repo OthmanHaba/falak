@@ -1,9 +1,9 @@
 <?php
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Falak\Fleet\Domain\Models\CertificateAuthority;
 use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
 use Falak\Fleet\Infrastructure\Pki\InvalidCsr;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use phpseclib3\File\X509;
 
 require_once __DIR__.'/../Support/helpers.php';

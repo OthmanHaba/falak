@@ -2,9 +2,9 @@
 
 namespace Falak\Edge\Domain\Models;
 
+use Falak\Edge\Domain\Enums\ApplyStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Falak\Edge\Domain\Enums\ApplyStatus;
 
 /**
  * Last edge.caddy.apply sent to a server.

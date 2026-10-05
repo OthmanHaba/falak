@@ -1,12 +1,12 @@
 <?php
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Falak\Databases\Domain\Enums\StorageDriver;
 use Falak\Databases\Domain\Models\StorageProvider;
 use Falak\Databases\Infrastructure\ObjectStorage\ObjectStores;
 use Falak\Identity\Contracts\Role;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';

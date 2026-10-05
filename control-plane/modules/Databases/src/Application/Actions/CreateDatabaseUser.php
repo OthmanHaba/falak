@@ -2,14 +2,14 @@
 
 namespace Falak\Databases\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Application\Identifiers;
 use Falak\Databases\Application\Passwords;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Models\DatabaseServer;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Identity\Contracts\AuditLog;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class CreateDatabaseUser
 {

@@ -2,9 +2,9 @@
 
 namespace Falak\Databases\Application\KeyValue;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Fleet\Contracts\AgentDirectory;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Settings of a Redis / Valkey instance (maxmemory_mb, eviction, persistence): defaults, validation, and the memory

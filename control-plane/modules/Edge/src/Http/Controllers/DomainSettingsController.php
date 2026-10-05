@@ -2,11 +2,6 @@
 
 namespace Falak\Edge\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Edge\Application\GeneratedDomains;
 use Falak\Edge\Domain\Models\CloudflareZone;
 use Falak\Edge\Domain\Models\OrganizationSetting;
@@ -15,6 +10,11 @@ use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * Organization settings → Domains: which service generated domains use (or off), and the test domain in effect.

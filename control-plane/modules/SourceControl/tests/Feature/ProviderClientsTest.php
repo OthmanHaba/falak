@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Falak\Identity\Contracts\Role;
 use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 use Falak\SourceControl\Contracts\ProviderType;
@@ -9,6 +7,8 @@ use Falak\SourceControl\Infrastructure\Providers\BitbucketClient;
 use Falak\SourceControl\Infrastructure\Providers\CustomGitClient;
 use Falak\SourceControl\Infrastructure\Providers\GitHubClient;
 use Falak\SourceControl\Infrastructure\Providers\GitLabClient;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use phpseclib3\Crypt\RSA;
 
 require_once __DIR__.'/../Support/helpers.php';

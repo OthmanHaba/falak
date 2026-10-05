@@ -2,10 +2,6 @@
 
 namespace Falak\Functions\Http\Controllers;
 
-use Illuminate\Contracts\Auth\Authenticatable;
-use Illuminate\Http\Client\Factory as HttpClient;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Deployments\Contracts\DeploymentDirectory;
 use Falak\Functions\Application\Actions\DeployCode;
 use Falak\Functions\Application\Actions\DeployVersion;
@@ -26,6 +22,10 @@ use Falak\Kernel\Http\Controller;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteDomains;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Http\Client\Factory as HttpClient;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * The function panel's Code, Versions and Scaling tabs (JSON).

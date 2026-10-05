@@ -2,9 +2,9 @@
 
 namespace Falak\Recipes\Http\Channels;
 
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Recipes\Domain\Models\Run;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
  * private-recipes.runs.{runId}: members of the run's organization with recipes.view.

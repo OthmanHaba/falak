@@ -2,8 +2,6 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
 use Falak\Alerting\Domain\Enums\ChannelType;
 use Falak\Alerting\Domain\Models\Channel;
 use Falak\Alerting\Domain\Models\Rule;
@@ -18,6 +16,8 @@ use Falak\Recipes\Application\Actions\SaveRecipe;
 use Falak\SourceControl\Contracts\ProviderType as GitProvider;
 use Falak\SourceControl\Domain\Models\Connection;
 use Falak\SourceControl\Domain\Models\Push;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 
 /**
  * Organization settings demo data (called by UiDemoSeeder): git connections and pushes, cloud credentials, backup

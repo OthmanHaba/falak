@@ -2,12 +2,12 @@
 
 namespace Falak\Providers\Infrastructure\Adapters;
 
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\ProviderAdapter;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
-use Falak\Providers\Contracts\Exceptions\ProviderException;
-use Falak\Providers\Contracts\ProviderAdapter;
 use Throwable;
 
 /**

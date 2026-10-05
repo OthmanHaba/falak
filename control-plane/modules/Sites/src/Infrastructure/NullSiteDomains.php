@@ -2,11 +2,11 @@
 
 namespace Falak\Sites\Infrastructure;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Sites\Application\ComposeSettings;
 use Falak\Sites\Contracts\Data\DomainChoice;
 use Falak\Sites\Contracts\DomainType;
 use Falak\Sites\Contracts\SiteDomains;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Used until a domains owner (Edge) rebinds SiteDomains: only the test domain and custom names, nothing routed.

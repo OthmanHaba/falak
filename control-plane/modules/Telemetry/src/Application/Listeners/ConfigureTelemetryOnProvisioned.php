@@ -2,10 +2,10 @@
 
 namespace Falak\Telemetry\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Servers\Events\ServerProvisioned;
 use Falak\Telemetry\Contracts\TelemetryConfigurator;
 use Falak\Telemetry\Domain\Models\PendingConfiguration;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 final class ConfigureTelemetryOnProvisioned implements ShouldQueue
 {

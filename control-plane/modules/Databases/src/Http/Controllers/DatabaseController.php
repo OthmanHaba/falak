@@ -2,8 +2,6 @@
 
 namespace Falak\Databases\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Databases\Application\Actions\CreateDatabase;
 use Falak\Databases\Application\Actions\DeleteDatabase;
 use Falak\Databases\Application\Actions\RunBackup;
@@ -12,6 +10,8 @@ use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseServer;
 use Falak\Databases\Domain\Models\StorageProvider;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 final class DatabaseController extends Controller
 {

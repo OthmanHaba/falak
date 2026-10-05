@@ -4,11 +4,11 @@ namespace Falak\SourceControl\Infrastructure\Providers;
 
 use DateTimeImmutable;
 use Exception;
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Domain\Models\Connection;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
-use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
-use Falak\SourceControl\Domain\Models\Connection;
 
 /**
  * Shared HTTP plumbing for API-backed providers.

@@ -2,11 +2,11 @@
 
 namespace Falak\Deployments\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Builds\Events\BuildCancelled;
 use Falak\Builds\Events\BuildFailed;
 use Falak\Builds\Events\BuildSucceeded;
 use Falak\Deployments\Application\Orchestration\Orchestrator;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 final class HandleBuildEvents implements ShouldQueue
 {

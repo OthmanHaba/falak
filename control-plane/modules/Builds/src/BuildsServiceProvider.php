@@ -2,11 +2,6 @@
 
 namespace Falak\Builds;
 
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Http\Client\Factory as HttpFactory;
-use Illuminate\Support\Facades\Broadcast;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Builds\Application\Artifacts\ArtifactStorage;
@@ -31,6 +26,11 @@ use Falak\Kernel\Support\ModuleServiceProvider;
 use Falak\Servers\Events\ServerDeleted;
 use Falak\Servers\Events\ServerProvisioned;
 use Falak\Sites\Events\SiteDeleted;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Http\Client\Factory as HttpFactory;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 
 class BuildsServiceProvider extends ModuleServiceProvider
 {

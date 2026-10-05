@@ -2,12 +2,12 @@
 
 namespace Falak\Telemetry\Infrastructure;
 
+use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
+use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
-use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 
 /**
  * Shared HTTP plumbing for the observability backends: base URL, timeouts, auth headers and

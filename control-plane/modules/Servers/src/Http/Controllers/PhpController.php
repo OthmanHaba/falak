@@ -2,9 +2,6 @@
 
 namespace Falak\Servers\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Falak\Kernel\Http\Controller;
 use Falak\Servers\Application\Actions\InstallPhpVersion;
 use Falak\Servers\Application\Actions\RemovePhpVersion;
@@ -12,6 +9,9 @@ use Falak\Servers\Application\Actions\SetDefaultPhpVersion;
 use Falak\Servers\Application\Actions\UpdatePhpSettings;
 use Falak\Servers\Domain\Models\PhpVersion;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 final class PhpController extends Controller
 {

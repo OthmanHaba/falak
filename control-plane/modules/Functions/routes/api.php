@@ -1,7 +1,7 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Functions\Http\Controllers\Api\FunctionApiController;
+use Illuminate\Support\Facades\Route;
 
 // Mounted under /api; used by `falak fn …`.
 Route::middleware(['auth:sanctum', 'org'])->prefix('v1')->name('api.v1.')->group(function () {

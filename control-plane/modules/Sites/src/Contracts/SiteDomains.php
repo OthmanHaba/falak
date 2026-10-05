@@ -2,8 +2,8 @@
 
 namespace Falak\Sites\Contracts;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Sites\Contracts\Data\DomainChoice;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Site domains owned by Edge. Sites binds a null implementation; Edge (which owns domains, TLS and load balancers)

@@ -2,9 +2,9 @@
 
 namespace Falak\Network\Domain\Models;
 
+use Falak\Network\Domain\Enums\ApplyStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Falak\Network\Domain\Enums\ApplyStatus;
 
 /**
  * Per-server convergence state of the nftables ruleset.

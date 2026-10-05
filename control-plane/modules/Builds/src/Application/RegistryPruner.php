@@ -2,14 +2,14 @@
 
 namespace Falak\Builds\Application;
 
-use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use Falak\Builds\Contracts\BuildStatus;
 use Falak\Builds\Domain\Models\Build;
 use Falak\Deployments\Contracts\RetainedImages;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**

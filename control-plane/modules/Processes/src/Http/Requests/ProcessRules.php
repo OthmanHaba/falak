@@ -5,9 +5,9 @@ namespace Falak\Processes\Http\Requests;
 use Closure;
 use Cron\CronExpression;
 use DateTimeZone;
-use Illuminate\Validation\Rule;
 use Falak\Processes\Domain\Models\Daemon;
 use Falak\Sites\Contracts\Data\SiteData;
+use Illuminate\Validation\Rule;
 
 /**
  * Validation rules for workers, daemons and scheduled jobs of a site.

@@ -1,10 +1,10 @@
 <?php
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Falak\Identity\Contracts\Role;
 use Falak\Recipes\Domain\Models\Recipe;
 use Falak\Recipes\Infrastructure\BuiltinRecipes;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\Support\FakeAgentGateway;
 
 beforeEach(function () {

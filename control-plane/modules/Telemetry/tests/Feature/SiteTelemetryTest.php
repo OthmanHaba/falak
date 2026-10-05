@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Falak\Identity\Contracts\Role;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Sites\Contracts\BuildMode;
@@ -12,6 +10,8 @@ use Falak\Sites\Contracts\TargetRole;
 use Falak\Sites\Contracts\TargetStatus;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
     Http::preventStrayRequests();

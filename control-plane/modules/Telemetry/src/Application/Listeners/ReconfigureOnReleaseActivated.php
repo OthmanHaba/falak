@@ -2,9 +2,9 @@
 
 namespace Falak\Telemetry\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Deployments\Events\ReleaseActivated;
 use Falak\Telemetry\Contracts\TelemetryConfigurator;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * telemetry.configure carries the release each site runs (its records are labelled with the deployment and release

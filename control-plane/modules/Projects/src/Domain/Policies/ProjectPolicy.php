@@ -2,10 +2,10 @@
 
 namespace Falak\Projects\Domain\Policies;
 
-use Illuminate\Auth\Access\Response;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Projects\Domain\Models\Project;
+use Illuminate\Auth\Access\Response;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 final class ProjectPolicy
 {

@@ -2,13 +2,13 @@
 
 namespace Falak\Edge\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Edge\Application\DomainOptions;
 use Falak\Edge\Contracts\DnsCheck;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * The domain picker's data (web session and API): GET domains/options and GET dns/check.

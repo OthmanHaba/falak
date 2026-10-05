@@ -2,11 +2,6 @@
 
 namespace Falak\SourceControl\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -20,6 +15,11 @@ use Falak\SourceControl\Http\Controllers\Concerns\ConnectFlowState;
 use Falak\SourceControl\Infrastructure\GitHubApp\AppCredentials;
 use Falak\SourceControl\Infrastructure\GitHubApp\AppManifest;
 use Falak\SourceControl\Infrastructure\GitHubApp\GitHubAppResolver;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 /**
  * "Connect GitHub" through a GitHub App:

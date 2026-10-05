@@ -1,10 +1,10 @@
 <?php
 
-use Illuminate\Testing\TestResponse;
 use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Domain\Models\Connection;
 use Falak\SourceControl\Domain\Models\GitHubApp;
 use Falak\SourceControl\Domain\Models\Webhook;
+use Illuminate\Testing\TestResponse;
 use phpseclib3\Crypt\RSA;
 
 /**

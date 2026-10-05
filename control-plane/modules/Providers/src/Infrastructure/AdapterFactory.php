@@ -2,7 +2,6 @@
 
 namespace Falak\Providers\Infrastructure;
 
-use Illuminate\Contracts\Config\Repository as Config;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
 use Falak\Providers\Contracts\ProviderAdapter;
 use Falak\Providers\Contracts\ProviderType;
@@ -12,6 +11,7 @@ use Falak\Providers\Infrastructure\Adapters\HetznerAdapter;
 use Falak\Providers\Infrastructure\Adapters\LightsailAdapter;
 use Falak\Providers\Infrastructure\Adapters\LinodeAdapter;
 use Falak\Providers\Infrastructure\Adapters\VultrAdapter;
+use Illuminate\Contracts\Config\Repository as Config;
 
 final class AdapterFactory
 {

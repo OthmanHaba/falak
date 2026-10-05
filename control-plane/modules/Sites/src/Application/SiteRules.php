@@ -2,7 +2,6 @@
 
 namespace Falak\Sites\Application;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Servers\Contracts\Data\ServerData;
 use Falak\Servers\Contracts\ServerDirectory;
@@ -13,6 +12,7 @@ use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Cross-module validation shared by the create / update actions.

@@ -2,16 +2,16 @@
 
 namespace Falak\Identity\Http\Controllers\Settings;
 
+use Falak\Identity\Application\Actions\DeleteAccount;
+use Falak\Identity\Domain\Models\User;
+use Falak\Identity\Http\Requests\Settings\ProfileUpdateRequest;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Inertia\Response;
-use Falak\Identity\Application\Actions\DeleteAccount;
-use Falak\Identity\Domain\Models\User;
-use Falak\Identity\Http\Requests\Settings\ProfileUpdateRequest;
-use Falak\Kernel\Http\Controller;
 
 class ProfileController extends Controller
 {

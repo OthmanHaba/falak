@@ -2,13 +2,13 @@
 
 namespace Falak\SourceControl\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Identity\Events\OrganizationDeleted;
 use Falak\SourceControl\Application\Actions\DeleteConnection;
 use Falak\SourceControl\Application\Actions\DeleteGitHubApp;
 use Falak\SourceControl\Domain\Models\Connection;
 use Falak\SourceControl\Domain\Models\GitHubApp;
 use Falak\SourceControl\Domain\Models\Push;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Tenant cleanup: registered GitHub Apps, connections, deploy keys, webhooks and the push log (provider clean-up is

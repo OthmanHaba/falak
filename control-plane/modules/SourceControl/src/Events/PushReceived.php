@@ -2,8 +2,8 @@
 
 namespace Falak\SourceControl\Events;
 
-use Illuminate\Foundation\Events\Dispatchable;
 use Falak\SourceControl\Contracts\Data\CommitData;
+use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * A verified push webhook for a branch (tag pushes and branch deletions are not announced).

@@ -2,13 +2,13 @@
 
 namespace Falak\Servers\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Fleet\Events\AgentEnrolled;
 use Falak\Servers\Application\Actions\ProvisionServer;
 use Falak\Servers\Application\Actions\SyncServerSshKeys;
 use Falak\Servers\Application\ServerFacts;
 use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 final class StartProvisioningOnEnrollment implements ShouldQueue
 {

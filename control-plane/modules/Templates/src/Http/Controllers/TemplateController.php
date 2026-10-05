@@ -2,10 +2,6 @@
 
 namespace Falak\Templates\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -17,6 +13,10 @@ use Falak\Templates\Application\Inputs\InputResolver;
 use Falak\Templates\Domain\Template;
 use Falak\Templates\Domain\TemplateSource;
 use Falak\Templates\TemplatesServiceProvider;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**

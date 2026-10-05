@@ -2,9 +2,6 @@
 
 namespace Falak\Deployments\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Domain\Enums\ReleaseStatus;
 use Falak\Deployments\Domain\Enums\Trigger;
@@ -13,6 +10,9 @@ use Falak\Deployments\Domain\Models\Release;
 use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Deployments\Domain\Policies\DeploymentPermissions;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 final class ReleaseController extends Controller
 {

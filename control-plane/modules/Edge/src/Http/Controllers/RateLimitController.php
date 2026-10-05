@@ -2,15 +2,15 @@
 
 namespace Falak\Edge\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Falak\Edge\Application\CloudflareRateLimits;
 use Falak\Edge\Domain\Models\CloudflareZone;
 use Falak\Edge\Domain\Models\Domain;
 use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
  * A domain's Cloudflare rate limit (panel Settings → Networking and API v1). {domain} is the domain's id or name.

@@ -2,15 +2,15 @@
 
 namespace Falak\Processes\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Kernel\Http\Controller;
 use Falak\Processes\Application\Actions\RestartSiteProcesses;
 use Falak\Processes\Application\StatusPoller;
 use Falak\Processes\Domain\Models\ServerState;
 use Falak\Sites\Contracts\TargetStatus;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Throwable;
 
 /**

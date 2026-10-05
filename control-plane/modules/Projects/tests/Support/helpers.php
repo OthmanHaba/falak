@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Str;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseServer;
@@ -21,6 +20,7 @@ use Falak\Sites\Contracts\TargetStatus;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/../../../Sites/tests/Support/helpers.php';
 require_once __DIR__.'/../../../Databases/tests/Support/helpers.php';

@@ -2,11 +2,11 @@
 
 namespace Falak\Identity\Http\Controllers\Organizations;
 
+use Falak\Identity\Domain\Models\AuditEntry;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
-use Falak\Identity\Domain\Models\AuditEntry;
-use Falak\Kernel\Http\Controller;
 
 final class AuditLogController extends Controller
 {

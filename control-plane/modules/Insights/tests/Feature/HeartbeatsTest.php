@@ -1,7 +1,6 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\Event;
 use Falak\Identity\Contracts\Role;
 use Falak\Insights\Application\HeartbeatTracker;
 use Falak\Insights\Contracts\IssueKind;
@@ -14,6 +13,7 @@ use Falak\Insights\Events\IssueResolved;
 use Falak\Insights\Http\Controllers\HeartbeatController;
 use Falak\Processes\Contracts\Data\ScheduledJobData;
 use Falak\Processes\Contracts\ScheduleDirectory;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 

@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Inertia\Testing\AssertableInertia as Assert;
 use Falak\Identity\Application\Actions\CreateApiToken;
 use Falak\Identity\Application\Actions\CreateOrganization;
 use Falak\Identity\Application\Actions\CreateTeam;
@@ -12,6 +10,8 @@ use Falak\Identity\Domain\Models\AuditEntry;
 use Falak\Identity\Domain\Models\PersonalAccessToken;
 use Falak\Identity\Events\MemberRemoved;
 use Falak\Identity\Events\MemberRoleChanged;
+use Illuminate\Support\Facades\Event;
+use Inertia\Testing\AssertableInertia as Assert;
 
 it('lists members with roles for every member', function () {
     [$owner, $organization] = actingAsMember();

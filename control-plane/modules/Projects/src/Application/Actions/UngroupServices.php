@@ -2,9 +2,9 @@
 
 namespace Falak\Projects\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Projects\Domain\Models\Group;
 use Falak\Projects\Domain\Models\Service;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Dissolve a canvas group: its services keep their place on screen (positions become absolute again).

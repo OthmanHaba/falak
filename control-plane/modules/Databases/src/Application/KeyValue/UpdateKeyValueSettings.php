@@ -2,11 +2,11 @@
 
 namespace Falak\Databases\Application\KeyValue;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Identity\Contracts\AuditLog;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Changes an instance's memory limit, eviction policy or persistence and re-applies it. The agent changes them on the

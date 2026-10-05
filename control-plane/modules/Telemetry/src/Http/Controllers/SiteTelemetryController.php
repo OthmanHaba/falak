@@ -3,9 +3,6 @@
 namespace Falak\Telemetry\Http\Controllers;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -21,6 +18,9 @@ use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
 use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 use Falak\Telemetry\Contracts\MetricsBackend;
 use Falak\Telemetry\Contracts\TelemetryLinks;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * JSON behind the service panel's Metrics and Logs tabs for one site (docs/UI_DESIGN.md §5.1).

@@ -2,11 +2,11 @@
 
 namespace Falak\Deployments\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Deployments\Application\Orchestration\DeploymentQueue;
 use Falak\Sites\Events\SiteTargetFailed;
 use Falak\Sites\Events\SiteTargetReady;
 use Falak\Sites\Events\SiteTargetsChanged;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * A site's servers changed preparation state: start, keep or fail its deployment waiting for them.

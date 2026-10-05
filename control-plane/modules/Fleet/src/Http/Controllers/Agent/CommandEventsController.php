@@ -2,13 +2,13 @@
 
 namespace Falak\Fleet\Http\Controllers\Agent;
 
+use Falak\Fleet\Application\Actions\IngestCommandEvents;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
-use Falak\Fleet\Application\Actions\IngestCommandEvents;
-use Falak\Fleet\Infrastructure\ProtocolSchemas;
-use Falak\Kernel\Http\Controller;
 
 /**
  * POST /agent/v1/commands/{id}/events — NDJSON of event.schema.json → 204 (idempotent on (command_id, seq)).

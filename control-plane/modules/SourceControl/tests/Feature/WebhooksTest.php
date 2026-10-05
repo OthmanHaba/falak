@@ -1,10 +1,10 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Identity\Contracts\Role;
 use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Domain\Models\Push;
 use Falak\SourceControl\Events\PushReceived;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 

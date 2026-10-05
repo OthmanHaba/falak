@@ -2,9 +2,9 @@
 
 namespace Falak\Templates\Tests\Support;
 
+use Falak\Deployments\Contracts\DeploymentTrigger;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Falak\Deployments\Contracts\DeploymentTrigger;
 
 final class FakeDeploymentTrigger implements DeploymentTrigger
 {

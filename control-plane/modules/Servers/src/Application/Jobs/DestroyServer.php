@@ -2,10 +2,6 @@
 
 namespace Falak\Servers\Application\Jobs;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
 use Falak\Fleet\Contracts\Enrollment;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
@@ -14,6 +10,10 @@ use Falak\Servers\Application\ServerStatusUpdater;
 use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Events\ServerDeleted;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
 
 /**
  * Revokes the agent, destroys the machine at the provider (idempotent) and removes the server.

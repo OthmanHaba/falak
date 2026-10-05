@@ -2,14 +2,14 @@
 
 namespace Falak\Identity\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Events\MemberRoleChanged;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class TransferOwnership
 {

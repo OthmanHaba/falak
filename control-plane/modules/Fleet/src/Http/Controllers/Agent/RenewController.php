@@ -2,15 +2,15 @@
 
 namespace Falak\Fleet\Http\Controllers\Agent;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 use Falak\Fleet\Application\Actions\RenewCertificate;
 use Falak\Fleet\Domain\Models\Certificate;
 use Falak\Fleet\Http\Middleware\AuthenticateAgent;
 use Falak\Fleet\Infrastructure\Pki\InvalidCsr;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 /**
  * POST /agent/v1/renew — { csr_pem } → { cert_pem }, authenticated by the current certificate.

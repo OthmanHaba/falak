@@ -2,10 +2,6 @@
 
 namespace Falak\Fleet\Infrastructure;
 
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Falak\Fleet\Application\AgentUpgradeRollout;
 use Falak\Fleet\Application\ShippedAgent;
 use Falak\Fleet\Contracts\AgentStatus;
@@ -16,6 +12,10 @@ use Falak\Fleet\Contracts\Data\AgentVersionInfo;
 use Falak\Fleet\Contracts\Exceptions\AgentUpgradeUnavailable;
 use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Domain\Models\AgentUpgrade;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 final class EloquentAgentUpgrades implements AgentUpgrades
 {

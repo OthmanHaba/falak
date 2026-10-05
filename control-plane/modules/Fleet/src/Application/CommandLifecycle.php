@@ -2,12 +2,12 @@
 
 namespace Falak\Fleet\Application;
 
-use Illuminate\Support\Carbon;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Domain\Models\Command;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Events\CommandOutputReceived;
+use Illuminate\Support\Carbon;
 
 /**
  * State transitions of a command. Terminal transitions announce CommandFinished / CommandFailed exactly once

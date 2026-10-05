@@ -1,8 +1,8 @@
 <?php
 
-use Illuminate\Support\Facades\Http;
 use Falak\Identity\Contracts\Role;
 use Falak\Providers\Domain\Models\ProviderCredential;
+use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
     Http::preventStrayRequests();

@@ -2,11 +2,11 @@
 
 namespace Falak\SourceControl\Infrastructure\Providers;
 
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
+use Falak\SourceControl\Contracts\ProviderType;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
-use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
-use Falak\SourceControl\Contracts\ProviderType;
 
 /**
  * OAuth 2 authorization-code flows for GitHub (OAuth app), GitLab and Bitbucket Cloud.

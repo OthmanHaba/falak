@@ -1,8 +1,8 @@
 <?php
 
-use Illuminate\Validation\ValidationException;
 use Falak\Templates\Application\Catalog\TemplateParser;
 use Falak\Templates\Application\Inputs\InputResolver;
+use Illuminate\Validation\ValidationException;
 
 require_once __DIR__.'/../Support/helpers.php';
 

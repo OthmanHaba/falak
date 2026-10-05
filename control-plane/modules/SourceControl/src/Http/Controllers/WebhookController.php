@@ -2,12 +2,12 @@
 
 namespace Falak\SourceControl\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Kernel\Http\Controller;
 use Falak\SourceControl\Application\Actions\ReceiveWebhook;
 use Falak\SourceControl\Domain\Models\Webhook;
 use Falak\SourceControl\Infrastructure\Webhooks\WebhookPayloads;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * Inbound push webhooks: POST /api/webhooks/source-control/{webhook}.

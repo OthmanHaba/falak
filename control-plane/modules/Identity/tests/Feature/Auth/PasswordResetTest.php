@@ -2,10 +2,10 @@
 
 namespace Falak\Identity\Tests\Feature\Auth;
 
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
-use Falak\Identity\Domain\Models\User;
 use Tests\TestCase;
 
 class PasswordResetTest extends TestCase

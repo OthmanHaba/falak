@@ -2,14 +2,14 @@
 
 namespace Falak\Processes\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Kernel\Http\Controller;
 use Falak\Processes\Application\Actions\DeleteProcess;
 use Falak\Processes\Application\Actions\SaveDaemon;
 use Falak\Processes\Domain\Models\Daemon;
 use Falak\Processes\Http\Requests\ProcessRules;
 use Falak\Sites\Contracts\Data\SiteData;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 final class DaemonController extends Controller
 {

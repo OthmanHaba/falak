@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Edge\Application\PathMounts;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Edge\Contracts\TlsMode;
@@ -25,6 +23,8 @@ use Falak\Sites\Contracts\Data\ComposeConfig;
 use Falak\Sites\Contracts\Data\PublicService;
 use Falak\Sites\Contracts\SiteDomains;
 use Falak\Sites\Contracts\SiteRuntime;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 require_once __DIR__.'/../Support/helpers.php';
 

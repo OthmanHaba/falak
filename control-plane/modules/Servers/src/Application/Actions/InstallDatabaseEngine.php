@@ -2,14 +2,14 @@
 
 namespace Falak\Servers\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Servers\Application\MachineChecks;
 use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Domain\MachineCheck\Decision;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Events\DatabaseEngineInstalled;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**

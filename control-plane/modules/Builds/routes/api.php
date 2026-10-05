@@ -1,11 +1,11 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Builds\Http\Controllers\Internal\ArtifactController;
 use Falak\Builds\Http\Controllers\Internal\BuildEventsController;
 use Falak\Builds\Http\Controllers\Internal\BuildHeartbeatController;
 use Falak\Builds\Http\Controllers\Internal\NextBuildController;
 use Falak\Builds\Http\Middleware\AuthenticateBuilder;
+use Illuminate\Support\Facades\Route;
 
 // Internal API for falak-builder (agent/internal/builder/endpoints.go). Mounted under /api.
 Route::prefix('internal')->group(function () {

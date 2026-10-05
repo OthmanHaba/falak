@@ -2,11 +2,6 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Domain\Models\Agent;
@@ -37,6 +32,11 @@ use Falak\Servers\Domain\Stack\Stack;
 use Falak\Terminal\Domain\Enums\SessionStatus;
 use Falak\Terminal\Domain\Models\TerminalFrame;
 use Falak\Terminal\Domain\Models\TerminalSession;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Realistic infrastructure for the UI demo (called by UiDemoSeeder): agents with heartbeat metrics, PHP versions,

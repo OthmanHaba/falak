@@ -2,8 +2,6 @@
 
 namespace Falak\Edge\Infrastructure;
 
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Falak\Edge\Application\ComposeServiceDomains;
 use Falak\Edge\Application\Jobs\ApplyEdgeConfig;
 use Falak\Edge\Contracts\Data\DomainData;
@@ -19,6 +17,8 @@ use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Fleet\Contracts\Exceptions\InvalidCommandPayload;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 final class EloquentEdgeRoutes implements EdgeRoutes
 {

@@ -1,9 +1,6 @@
 <?php
 
 use Carbon\CarbonImmutable;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Events\OrganizationCreated;
 use Falak\Telemetry\Application\Actions\ProvisionGrafana;
@@ -15,6 +12,9 @@ use Falak\Telemetry\Domain\Models\DeploymentAnnotation;
 use Falak\Telemetry\Domain\Models\GrafanaState;
 use Falak\Telemetry\Infrastructure\Grafana\GrafanaClient;
 use Falak\Telemetry\Infrastructure\Grafana\GrafanaNames;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 beforeEach(function () {
     Http::preventStrayRequests();

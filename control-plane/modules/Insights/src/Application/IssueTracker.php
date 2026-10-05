@@ -3,14 +3,14 @@
 namespace Falak\Insights\Application;
 
 use Carbon\CarbonInterface;
-use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Facades\DB;
 use Falak\Insights\Contracts\IssueKind;
 use Falak\Insights\Contracts\IssueStatus;
 use Falak\Insights\Domain\Models\Issue;
 use Falak\Insights\Events\IssueOpened;
 use Falak\Insights\Events\IssueRegressed;
 use Falak\Insights\Events\IssueResolved;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Creates / updates issues by fingerprint and owns their status transitions:

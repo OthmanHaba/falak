@@ -2,13 +2,6 @@
 
 namespace Falak\Terminal;
 
-use Illuminate\Cache\RateLimiting\Limit;
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Broadcast;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\RateLimiter;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Events\CommandOutputReceived;
@@ -23,6 +16,13 @@ use Falak\Terminal\Application\Listeners\StreamTerminalOutput;
 use Falak\Terminal\Domain\Models\TerminalSession;
 use Falak\Terminal\Domain\Policies\TerminalSessionPolicy;
 use Falak\Terminal\Http\Channels\TerminalSessionChannel;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 
 class TerminalServiceProvider extends ModuleServiceProvider
 {

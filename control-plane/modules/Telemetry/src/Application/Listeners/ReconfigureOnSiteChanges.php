@@ -2,11 +2,11 @@
 
 namespace Falak\Telemetry\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Sites\Events\SiteCreated;
 use Falak\Sites\Events\SiteDeleted;
 use Falak\Sites\Events\SiteTargetsChanged;
 use Falak\Telemetry\Contracts\TelemetryConfigurator;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * telemetry.configure carries each server's site list (slug → site id); resend it when that list changes.

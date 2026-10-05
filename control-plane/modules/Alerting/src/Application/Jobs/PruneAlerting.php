@@ -2,12 +2,12 @@
 
 namespace Falak\Alerting\Application\Jobs;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\DB;
 use Falak\Alerting\Domain\Models\Alert;
 use Falak\Alerting\Domain\Models\DedupState;
 use Falak\Alerting\Domain\Models\Notification;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Deletes alert history, deliveries, rule hits and notifications older than alerting.retention_days,

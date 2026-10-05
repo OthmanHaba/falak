@@ -2,13 +2,13 @@
 
 namespace Falak\Fleet\Http\Controllers\Agent;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Fleet\Application\Actions\ClaimCommands;
 use Falak\Fleet\Application\CommandRedelivery;
 use Falak\Fleet\Domain\Models\Command;
 use Falak\Fleet\Infrastructure\Signals\CommandSignal;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * GET /agent/v1/commands?wait=30 — long-poll; returns as soon as commands are queued.

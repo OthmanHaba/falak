@@ -2,8 +2,6 @@
 
 namespace Falak\Fleet\Application;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Falak\Fleet\Application\Actions\QueueCommand;
 use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Fleet\Contracts\AgentUpgradeStatus;
@@ -13,6 +11,8 @@ use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Domain\Models\AgentUpgrade;
 use Falak\Fleet\Events\AgentUpgradeFailed;
 use Falak\Fleet\Events\AgentUpgradeSucceeded;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Drives agent upgrades: queued → running (system.upgrade_agent sent) → installed (the agent swapped its binary and

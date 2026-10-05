@@ -2,10 +2,6 @@
 
 namespace Falak\Providers\Infrastructure\Adapters;
 
-use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 use Falak\Providers\Contracts\Data\Image;
 use Falak\Providers\Contracts\Data\Machine;
 use Falak\Providers\Contracts\Data\MachineSpec;
@@ -13,6 +9,10 @@ use Falak\Providers\Contracts\Data\Region;
 use Falak\Providers\Contracts\Data\Size;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
 use Falak\Providers\Contracts\ProviderType;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 /**
  * Akamai Connected Cloud (Linode) API v4 — https://techdocs.akamai.com/linode-api/reference/api

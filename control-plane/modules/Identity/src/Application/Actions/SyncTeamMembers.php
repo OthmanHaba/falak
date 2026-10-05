@@ -2,9 +2,9 @@
 
 namespace Falak\Identity\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Domain\Models\Team;
+use Illuminate\Validation\ValidationException;
 
 final class SyncTeamMembers
 {

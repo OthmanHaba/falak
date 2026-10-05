@@ -2,10 +2,6 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Str;
 use Falak\Databases\Application\EngineInventory;
 use Falak\Databases\Domain\Enums\Engine;
 use Falak\Databases\Domain\Enums\ResourceStatus;
@@ -56,6 +52,10 @@ use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\Templates\Application\Actions\SaveCustomTemplate;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Str;
 
 /**
  * Local UI demo data (`php artisan db:seed --class=UiDemoSeeder`): an admin, an organization, a few servers and

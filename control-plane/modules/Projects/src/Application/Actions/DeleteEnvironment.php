@@ -2,9 +2,9 @@
 
 namespace Falak\Projects\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Projects\Domain\Models\Environment;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Delete an empty, non-production environment.

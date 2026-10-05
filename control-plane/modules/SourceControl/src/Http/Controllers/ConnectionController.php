@@ -2,13 +2,6 @@
 
 namespace Falak\SourceControl\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -27,6 +20,13 @@ use Falak\SourceControl\Infrastructure\GitHubApp\AppManifest;
 use Falak\SourceControl\Infrastructure\GitHubApp\GitHubAppResolver;
 use Falak\SourceControl\Infrastructure\Providers\GitHubClient;
 use Falak\SourceControl\Infrastructure\Providers\OAuthProviders;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class ConnectionController extends Controller
 {

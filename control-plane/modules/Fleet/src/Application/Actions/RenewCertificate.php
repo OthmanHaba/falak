@@ -2,11 +2,11 @@
 
 namespace Falak\Fleet\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Domain\Models\Certificate;
 use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
 use Falak\Fleet\Infrastructure\Pki\IssuedCertificate;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Issues a fresh certificate for an authenticated agent. The presenting certificate stays valid until the

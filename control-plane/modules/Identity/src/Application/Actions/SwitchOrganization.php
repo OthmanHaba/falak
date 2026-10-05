@@ -2,12 +2,12 @@
 
 namespace Falak\Identity\Application\Actions;
 
-use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Contracts\Container\Container;
-use Illuminate\Http\Request;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Infrastructure\ResolvedCurrentOrganization;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Contracts\Container\Container;
+use Illuminate\Http\Request;
 
 final class SwitchOrganization
 {

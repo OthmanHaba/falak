@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Str;
 use Falak\Fleet\Application\Jobs\SweepFleet;
 use Falak\Fleet\Application\ShippedAgent;
 use Falak\Fleet\Contracts\AgentUpgrades;
@@ -13,6 +11,8 @@ use Falak\Fleet\Domain\Models\Command;
 use Falak\Fleet\Events\AgentUpgradeFailed;
 use Falak\Fleet\Events\AgentUpgradeSucceeded;
 use Falak\Fleet\Infrastructure\AgentBinaries;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/../Support/helpers.php';
 

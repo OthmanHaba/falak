@@ -2,11 +2,11 @@
 
 namespace Falak\Sites\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Events\SiteEnvironmentChanged;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Store a new environment version when variables or deploy-script exposure changed.

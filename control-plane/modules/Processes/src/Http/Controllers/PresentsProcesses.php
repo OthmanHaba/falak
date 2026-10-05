@@ -2,13 +2,13 @@
 
 namespace Falak\Processes\Http\Controllers;
 
-use Illuminate\Http\Request;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Processes\Domain\Models\ServerState;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteHeaders;
 use Falak\Telemetry\Contracts\TelemetryLinks;
+use Illuminate\Http\Request;
 
 /**
  * Props shared by the Queues, Daemons and Scheduler tabs: site header, per-server apply state and the

@@ -1,8 +1,8 @@
 <?php
 
-use Illuminate\Database\Migrations\Migration;
 use Falak\Sites\Application\OctanePorts;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Database\Migrations\Migration;
 
 /**
  * Octane ports used to be derived (app_port, else 8000 + crc32(site id) % 1000) and could collide silently.

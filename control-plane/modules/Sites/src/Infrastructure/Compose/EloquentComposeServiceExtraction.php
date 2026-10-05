@@ -2,10 +2,6 @@
 
 namespace Falak\Sites\Infrastructure\Compose;
 
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Contracts\Data\DatabaseData;
 use Falak\Databases\Contracts\DatabaseDirectory;
 use Falak\Databases\Contracts\DatabaseProvisioner;
@@ -35,6 +31,10 @@ use Falak\Sites\Events\ComposeServiceExtracted;
 use Falak\Sites\Events\SiteUpdated;
 use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 use Throwable;

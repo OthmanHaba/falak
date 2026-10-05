@@ -2,10 +2,10 @@
 
 namespace Falak\Insights\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Insights\Domain\Models\Issue;
+use Illuminate\Validation\ValidationException;
 
 final class AssignIssue
 {

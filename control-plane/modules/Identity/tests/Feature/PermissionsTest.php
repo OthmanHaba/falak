@@ -1,12 +1,12 @@
 <?php
 
-use Illuminate\Auth\Access\AuthorizationException;
 use Falak\Identity\Application\Actions\AssignRole;
 use Falak\Identity\Application\Actions\SyncPermissions;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Identity\Contracts\OrganizationDirectory;
 use Falak\Identity\Contracts\PermissionRegistry;
 use Falak\Identity\Contracts\Role as RoleEnum;
+use Illuminate\Auth\Access\AuthorizationException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 

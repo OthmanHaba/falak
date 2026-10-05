@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Identity\Contracts\Role;
 use Falak\Network\Application\ConvergePrivateNetwork;
 use Falak\Network\Contracts\PrivateNetwork as PrivateNetworkContract;
@@ -13,6 +12,7 @@ use Falak\Network\Infrastructure\WireGuardKeys;
 use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Events\ServerDeleted;
+use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';

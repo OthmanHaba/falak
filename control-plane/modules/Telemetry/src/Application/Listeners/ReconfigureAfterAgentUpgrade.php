@@ -2,9 +2,9 @@
 
 namespace Falak\Telemetry\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Fleet\Events\AgentVersionChanged;
 use Falak\Telemetry\Contracts\TelemetryConfigurator;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * A new agent version may understand log source fields its predecessor had stripped (kind, multiline): resend.

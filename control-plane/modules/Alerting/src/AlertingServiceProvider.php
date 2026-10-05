@@ -2,10 +2,6 @@
 
 namespace Falak\Alerting;
 
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Support\Facades\Broadcast;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
 use Falak\Alerting\Application\Jobs\PruneAlerting;
 use Falak\Alerting\Application\Listeners\DeleteOrganizationAlerting;
 use Falak\Alerting\Application\Listeners\MapModuleEvents;
@@ -40,6 +36,10 @@ use Falak\Kernel\Support\ModuleServiceProvider;
 use Falak\Servers\Events\ServerAttentionCleared;
 use Falak\Servers\Events\ServerNeedsAttention;
 use Falak\Servers\Events\ServerProvisioned;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 
 class AlertingServiceProvider extends ModuleServiceProvider
 {

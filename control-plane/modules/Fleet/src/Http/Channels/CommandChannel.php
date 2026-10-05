@@ -2,9 +2,9 @@
 
 namespace Falak\Fleet\Http\Channels;
 
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Fleet\Domain\Models\Command;
 use Falak\Identity\Contracts\OrganizationAccess;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
  * private-fleet.commands.{commandId}: members of the command's organization with fleet.commands.view.

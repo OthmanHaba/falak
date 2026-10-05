@@ -2,12 +2,12 @@
 
 namespace Falak\Terminal\Application\Jobs;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
 use Falak\Terminal\Application\Actions\CloseSession;
 use Falak\Terminal\Domain\Enums\SessionStatus;
 use Falak\Terminal\Domain\Models\TerminalSession;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
 
 /**
  * Control-plane fallback for session limits (the agent enforces them too, but may be offline):

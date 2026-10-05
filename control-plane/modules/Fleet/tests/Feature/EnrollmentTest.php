@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Str;
 use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Fleet\Contracts\Enrollment;
 use Falak\Fleet\Domain\Models\Agent;
@@ -10,6 +8,8 @@ use Falak\Fleet\Events\AgentEnrolled;
 use Falak\Fleet\Events\AgentRevoked;
 use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
 use Falak\Identity\Domain\Models\AuditEntry;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 use phpseclib3\File\X509;
 
 require_once __DIR__.'/../Support/helpers.php';

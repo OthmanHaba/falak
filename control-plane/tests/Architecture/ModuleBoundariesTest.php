@@ -1,8 +1,8 @@
 <?php
 
+use Falak\Kernel\Modules;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Contracts\Broadcasting\ShouldRescue;
-use Falak\Kernel\Modules;
 
 $layers = fn (string $module) => array_map(
     fn (string $layer) => "Falak\\{$module}\\{$layer}",

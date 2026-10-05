@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Http;
-use Illuminate\Validation\ValidationException;
 use Falak\Deployments\Contracts\DeploymentTrigger;
 use Falak\Deployments\Domain\Enums\DeploymentStatus;
 use Falak\Deployments\Domain\Models\Deployment;
@@ -22,6 +20,8 @@ use Falak\Sites\Contracts\SiteDomains;
 use Falak\Sites\Contracts\SiteFactory;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\ValidationException;
 
 require_once __DIR__.'/../../../Deployments/tests/Support/helpers.php';
 require_once __DIR__.'/../../../Projects/tests/Support/helpers.php';

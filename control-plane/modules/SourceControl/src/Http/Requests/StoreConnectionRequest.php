@@ -2,11 +2,11 @@
 
 namespace Falak\SourceControl\Http\Requests;
 
+use Falak\Identity\Contracts\CurrentOrganization;
+use Falak\SourceControl\Contracts\ProviderType;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
-use Falak\Identity\Contracts\CurrentOrganization;
-use Falak\SourceControl\Contracts\ProviderType;
 
 /**
  * Shared by the web form and the API: which auth types each provider accepts, and the credentials to store.

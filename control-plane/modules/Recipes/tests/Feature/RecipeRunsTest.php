@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Identity\Contracts\Role;
@@ -14,6 +12,8 @@ use Falak\Recipes\Events\RecipeRunUpdated;
 use Falak\Recipes\Http\Channels\RunChannel;
 use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeAgentGateway;
 
 beforeEach(function () {

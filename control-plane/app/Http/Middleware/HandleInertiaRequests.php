@@ -2,10 +2,10 @@
 
 namespace App\Http\Middleware;
 
+use Falak\Kernel\Support\SharedProps;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
-use Falak\Kernel\Support\SharedProps;
 
 class HandleInertiaRequests extends Middleware
 {

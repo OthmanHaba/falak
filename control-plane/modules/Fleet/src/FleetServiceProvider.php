@@ -2,13 +2,6 @@
 
 namespace Falak\Fleet;
 
-use Illuminate\Cache\RateLimiting\Limit;
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Broadcast;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\Route;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Fleet\Application\Actions\IssueInstallToken;
@@ -44,6 +37,13 @@ use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\PermissionRegistry;
 use Falak\Identity\Contracts\Role;
 use Falak\Kernel\Support\ModuleServiceProvider;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 
 class FleetServiceProvider extends ModuleServiceProvider
 {

@@ -2,10 +2,10 @@
 
 namespace Falak\Fleet\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Domain\Models\Command;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Atomically moves queued commands to "delivered" for one poll. Concurrent polls of the same

@@ -2,6 +2,7 @@
 
 namespace Falak\Identity\Http\Controllers\Settings;
 
+use Falak\Kernel\Http\Controller;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -9,7 +10,6 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
 use Inertia\Response;
-use Falak\Kernel\Http\Controller;
 
 class PasswordController extends Controller
 {

@@ -2,10 +2,6 @@
 
 namespace Falak\Edge\Application;
 
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Edge\Application\Jobs\SyncCloudflareDns;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Edge\Contracts\TlsMode;
@@ -18,6 +14,10 @@ use Falak\Edge\Infrastructure\Cloudflare\CloudflareApi;
 use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Servers\Contracts\ServerDirectory;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use SensitiveParameter;
 
 /**

@@ -2,9 +2,6 @@
 
 namespace Falak\Templates;
 
-use Illuminate\Contracts\Cache\Repository as Cache;
-use Illuminate\Contracts\Foundation\Application;
-use Illuminate\Http\Client\Factory as Http;
 use Falak\Identity\Contracts\PermissionRegistry;
 use Falak\Identity\Contracts\Role;
 use Falak\Kernel\Support\ModuleServiceProvider;
@@ -21,6 +18,9 @@ use Falak\Templates\Infrastructure\FilesystemCatalog;
 use Falak\Templates\Infrastructure\GuardedHttpFetcher;
 use Falak\Templates\Infrastructure\InspectorComposeAnalyzer;
 use Falak\Templates\Infrastructure\SiteDataCompose;
+use Illuminate\Contracts\Cache\Repository as Cache;
+use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Http\Client\Factory as Http;
 
 /**
  * One-click templates backed by Docker Compose (docs/COMPOSE_TEMPLATES.md §2–§4): the curated catalog, custom

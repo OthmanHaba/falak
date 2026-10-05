@@ -2,14 +2,14 @@
 
 namespace Falak\Builds\Application\Jobs;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
 use Falak\Builds\Application\Artifacts\ArtifactStorage;
 use Falak\Builds\Contracts\BuildStatus;
 use Falak\Builds\Domain\Models\Build;
 use Falak\Builds\Domain\Models\BuildLog;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
 
 /**
  * Daily retention: keep the newest N artifacts per site (and none older than max_age_days), delete

@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Http;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Events\OrganizationDeleted;
 use Falak\Telemetry\Application\Jobs\DispatchPendingTelemetry;
@@ -8,6 +7,7 @@ use Falak\Telemetry\Contracts\TelemetryConfigurator;
 use Falak\Telemetry\Domain\Models\GrafanaState;
 use Falak\Telemetry\Domain\Models\PendingConfiguration;
 use Falak\Telemetry\Domain\Models\TelemetrySettings;
+use Illuminate\Support\Facades\Http;
 
 it('retries pending configurations for servers without an agent, then drops them', function () {
     PendingConfiguration::query()->create(['server_id' => '01jxxx0000000000000000000a', 'organization_id' => '01jorg0000000000000000000a', 'due_at' => now()->subSecond()]);

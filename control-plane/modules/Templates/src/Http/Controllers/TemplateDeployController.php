@@ -2,9 +2,6 @@
 
 namespace Falak\Templates\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -16,6 +13,9 @@ use Falak\Templates\Application\Actions\DeployTemplate;
 use Falak\Templates\Application\Catalog\TemplateRepository;
 use Falak\Templates\Domain\TemplateSource;
 use Falak\Templates\TemplatesServiceProvider;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * POST /projects/{project}/{environment}/templates/{slug}/deploy — the Deploy button of the configure form.

@@ -2,10 +2,10 @@
 
 namespace Falak\Sites\Domain\Policies;
 
-use Illuminate\Auth\Access\Response;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Auth\Access\Response;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 final class SitePolicy
 {

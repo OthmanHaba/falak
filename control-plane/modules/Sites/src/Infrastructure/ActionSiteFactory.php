@@ -2,8 +2,6 @@
 
 namespace Falak\Sites\Infrastructure;
 
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\ValidationException;
 use Falak\Sites\Application\Actions\CreateSite;
 use Falak\Sites\Application\Actions\DeleteSite;
 use Falak\Sites\Application\Actions\DuplicateSite;
@@ -13,6 +11,8 @@ use Falak\Sites\Contracts\Data\SitePlacement;
 use Falak\Sites\Contracts\SiteFactory;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Http\Requests\StoreSiteRequest;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 final class ActionSiteFactory implements SiteFactory
 {

@@ -2,7 +2,6 @@
 
 namespace Falak\Databases\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Databases\Application\KeyValue\ConvergeKeyValueNetwork;
 use Falak\Fleet\Events\AgentFactsReported;
 use Falak\Network\Events\PrivateNetworkChanged;
@@ -10,6 +9,7 @@ use Falak\Projects\Events\ServiceLinked;
 use Falak\Projects\Events\ServiceUnlinked;
 use Falak\Servers\Events\ServerProvisioned;
 use Falak\Sites\Events\SiteTargetsChanged;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Who uses a Redis / Valkey instance, or how servers reach each other, changed: its bind addresses and firewall peers

@@ -2,10 +2,10 @@
 
 namespace Falak\Sites\Application;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Sites\Contracts\Data\LaravelSettings;
 use Falak\Sites\Contracts\OctaneServer;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Octane server + port of a site. The port is stable (persisted in the site's Laravel settings) and unique

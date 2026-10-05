@@ -2,7 +2,6 @@
 
 namespace Falak\Processes\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Processes\Application\OctaneRoutes;
 use Falak\Processes\Application\ServerConverger;
 use Falak\Processes\Domain\Models\Daemon;
@@ -14,6 +13,7 @@ use Falak\Sites\Events\SiteDeleted;
 use Falak\Sites\Events\SiteTargetReady;
 use Falak\Sites\Events\SiteTargetsChanged;
 use Falak\Sites\Events\SiteUpdated;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Re-converges every affected server when a site changes (runtime, PHP version, paths, users, Laravel

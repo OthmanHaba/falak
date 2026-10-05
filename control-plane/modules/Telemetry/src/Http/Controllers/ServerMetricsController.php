@@ -3,10 +3,6 @@
 namespace Falak\Telemetry\Http\Controllers;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -17,6 +13,10 @@ use Falak\Telemetry\Contracts\Data\MetricSeries;
 use Falak\Telemetry\Contracts\Exceptions\TelemetryQueryFailed;
 use Falak\Telemetry\Contracts\Exceptions\TelemetryUnavailable;
 use Falak\Telemetry\Contracts\MetricsBackend;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 final class ServerMetricsController extends Controller
 {

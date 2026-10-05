@@ -2,10 +2,10 @@
 
 namespace Falak\Sites\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Events\SiteUpdated;
 use Falak\SourceControl\Events\ConnectionDeleted;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Sites keep their repository name when the connection goes away but lose the link, key and push-to-deploy.

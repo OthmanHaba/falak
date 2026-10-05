@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\AuditEntry;
@@ -8,6 +7,7 @@ use Falak\Terminal\Domain\Models\TerminalFrame;
 use Falak\Terminal\Events\TerminalOutput;
 use Falak\Terminal\Events\TerminalSessionUpdated;
 use Falak\Terminal\Http\Channels\TerminalSessionChannel;
+use Illuminate\Support\Facades\Event;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\Support\FakeAgentGateway;
 

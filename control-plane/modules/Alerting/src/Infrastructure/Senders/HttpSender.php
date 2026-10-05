@@ -2,12 +2,12 @@
 
 namespace Falak\Alerting\Infrastructure\Senders;
 
+use Falak\Alerting\Application\AlertMessage;
+use Falak\Alerting\Contracts\Severity;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use Falak\Alerting\Application\AlertMessage;
-use Falak\Alerting\Contracts\Severity;
 
 abstract class HttpSender implements ChannelSender
 {

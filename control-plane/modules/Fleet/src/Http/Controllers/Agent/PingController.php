@@ -2,9 +2,9 @@
 
 namespace Falak\Fleet\Http\Controllers\Agent;
 
+use Falak\Kernel\Http\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Falak\Kernel\Http\Controller;
 
 /**
  * GET /agent/v1/ping — an authenticated request for `falak-agent check`: { agent_id, time }. It records no heartbeat

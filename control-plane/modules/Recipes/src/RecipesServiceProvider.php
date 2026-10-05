@@ -2,9 +2,6 @@
 
 namespace Falak\Recipes;
 
-use Illuminate\Support\Facades\Broadcast;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Events\CommandOutputReceived;
@@ -19,6 +16,9 @@ use Falak\Recipes\Domain\Policies\RecipePolicy;
 use Falak\Recipes\Domain\Policies\RunPolicy;
 use Falak\Recipes\Http\Channels\RunChannel;
 use Falak\Recipes\Infrastructure\BuiltinRecipes;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 
 class RecipesServiceProvider extends ModuleServiceProvider
 {

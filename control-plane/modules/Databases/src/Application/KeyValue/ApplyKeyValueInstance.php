@@ -2,12 +2,12 @@
 
 namespace Falak\Databases\Application\KeyValue;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Databases\Application\AgentCommands;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Databases\Infrastructure\CommandPayloads;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Converges a Redis / Valkey instance with db.redis.apply (configuration, password, unit). Every apply takes a new

@@ -2,9 +2,6 @@
 
 namespace Falak\Functions\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Falak\Functions\Application\Actions\CreateFunction;
 use Falak\Functions\Application\Starters;
 use Falak\Functions\FunctionsServiceProvider as Permissions;
@@ -14,6 +11,9 @@ use Falak\Kernel\Http\Controller;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
 use Falak\Sites\Contracts\Data\DomainChoice;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * POST /projects/{project}/{environment}/functions — the Create picker's Function form. GET lists the starters.

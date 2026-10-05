@@ -2,15 +2,15 @@
 
 namespace Falak\Identity\Infrastructure;
 
-use Illuminate\Contracts\Auth\Factory as AuthFactory;
-use Illuminate\Contracts\Container\Container;
-use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Domain\Models\AuditEntry;
 use Falak\Identity\Domain\Models\PersonalAccessToken;
 use Falak\Identity\Domain\Models\User;
+use Illuminate\Contracts\Auth\Factory as AuthFactory;
+use Illuminate\Contracts\Container\Container;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 final class DatabaseAuditLog implements AuditLog
 {

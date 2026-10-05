@@ -6,6 +6,8 @@
  * consecutive requests through it, asserting nothing from one request leaks into the next.
  */
 
+use Falak\Identity\Application\Actions\CreateOrganization;
+use Falak\Identity\Application\Actions\RegisterUser;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Foundation\Application;
@@ -14,8 +16,6 @@ use Illuminate\Foundation\Vite;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\HtmlString;
-use Falak\Identity\Application\Actions\CreateOrganization;
-use Falak\Identity\Application\Actions\RegisterUser;
 use Laravel\Octane\ApplicationFactory;
 use Laravel\Octane\RequestContext;
 use Laravel\Octane\Testing\Fakes\FakeClient;

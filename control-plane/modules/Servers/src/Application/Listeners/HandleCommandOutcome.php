@@ -2,7 +2,6 @@
 
 namespace Falak\Servers\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Identity\Contracts\AuditLog;
@@ -19,6 +18,7 @@ use Falak\Servers\Events\DatabaseEngineInstallFailed;
 use Falak\Servers\Events\PhpVersionChanged;
 use Falak\Servers\Events\ServerAttentionCleared;
 use Falak\Servers\Events\ServerProvisioned;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Reacts to the outcome of commands Servers dispatched: machine checks, provisioning plans and PHP version changes.

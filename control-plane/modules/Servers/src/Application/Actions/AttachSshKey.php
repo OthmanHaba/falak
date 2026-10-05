@@ -2,10 +2,10 @@
 
 namespace Falak\Servers\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Domain\Models\SshKey;
+use Illuminate\Validation\ValidationException;
 
 final class AttachSshKey
 {

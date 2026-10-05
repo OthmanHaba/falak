@@ -2,10 +2,10 @@
 
 namespace Falak\Terminal\Domain\Policies;
 
-use Illuminate\Auth\Access\Response;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Terminal\Domain\Models\TerminalSession;
+use Illuminate\Auth\Access\Response;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
  * Who may watch, type into, close, share and replay a terminal session.

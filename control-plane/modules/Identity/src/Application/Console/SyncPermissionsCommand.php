@@ -2,8 +2,8 @@
 
 namespace Falak\Identity\Application\Console;
 
-use Illuminate\Console\Command;
 use Falak\Identity\Application\Actions\SyncPermissions;
+use Illuminate\Console\Command;
 
 final class SyncPermissionsCommand extends Command
 {

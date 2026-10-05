@@ -2,14 +2,14 @@
 
 namespace Falak\Sites\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Kernel\Http\Controller;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Application\Actions\RunSiteCommand;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteCommand;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 final class SiteCommandController extends Controller
 {

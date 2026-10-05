@@ -2,11 +2,11 @@
 
 namespace Falak\Templates\Infrastructure;
 
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Factory as Http;
 use Falak\Templates\Application\Import\FetchFailed;
 use Falak\Templates\Application\Import\HostResolver;
 use Falak\Templates\Application\Import\RemoteFetcher;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Factory as Http;
 
 /**
  * SSRF-guarded GET: https only, no credentials in the URL, every address the host resolves to must be public

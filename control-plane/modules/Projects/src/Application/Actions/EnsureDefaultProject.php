@@ -2,9 +2,9 @@
 
 namespace Falak\Projects\Application\Actions;
 
-use Illuminate\Database\UniqueConstraintViolationException;
 use Falak\Projects\Domain\Models\Environment;
 use Falak\Projects\Domain\Models\Project;
+use Illuminate\Database\UniqueConstraintViolationException;
 use RuntimeException;
 
 /**

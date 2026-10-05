@@ -2,13 +2,13 @@
 
 namespace Falak\Terminal\Http\Controllers;
 
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\OrganizationDirectory;
 use Falak\Kernel\Http\Controller;
 use Falak\Terminal\Domain\Models\TerminalSession;
 use Falak\Terminal\Infrastructure\AsciicastWriter;
+use Inertia\Inertia;
+use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class RecordingController extends Controller

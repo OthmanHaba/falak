@@ -2,13 +2,13 @@
 
 namespace Falak\Identity\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Identity\Domain\Models\PersonalAccessToken;
 use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Events\OrganizationDeleted;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Deletes an organization. Other modules clean up their tenant data by listening to OrganizationDeleted.

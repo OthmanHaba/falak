@@ -2,8 +2,6 @@
 
 namespace Falak\Edge\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Edge\Application\ComposeServiceDomains;
 use Falak\Edge\Application\PathMounts;
 use Falak\Edge\Contracts\EdgeRoutes;
@@ -12,6 +10,8 @@ use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
  * A function's Settings → Paths: the sites whose paths it serves (JSON for the service panel).

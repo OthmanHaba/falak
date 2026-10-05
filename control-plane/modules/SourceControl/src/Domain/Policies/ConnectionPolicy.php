@@ -2,10 +2,10 @@
 
 namespace Falak\SourceControl\Domain\Policies;
 
-use Illuminate\Auth\Access\Response;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\SourceControl\Domain\Models\Connection;
+use Illuminate\Auth\Access\Response;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 final class ConnectionPolicy
 {

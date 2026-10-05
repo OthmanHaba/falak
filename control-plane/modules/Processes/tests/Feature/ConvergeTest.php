@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Queue;
 use Falak\Identity\Contracts\Role;
 use Falak\Processes\Application\Jobs\ConvergeServer;
 use Falak\Processes\Application\ServerConverger;
@@ -17,6 +15,8 @@ use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Contracts\TargetStatus;
 use Falak\Sites\Events\SiteDeleted;
 use Falak\Sites\Events\SiteTargetReady;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
 
 require_once __DIR__.'/../Support/helpers.php';
 

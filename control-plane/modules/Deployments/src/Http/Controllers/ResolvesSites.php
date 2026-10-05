@@ -2,14 +2,14 @@
 
 namespace Falak\Deployments\Http\Controllers;
 
-use Illuminate\Contracts\Auth\Authenticatable;
-use Illuminate\Http\Request;
 use Falak\Deployments\Domain\Models\Deployment;
 use Falak\Deployments\Domain\Policies\DeploymentPermissions;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Http\Request;
 
 /**
  * Sites (by id or slug) and deployments of the current organization; anything else is a 404.

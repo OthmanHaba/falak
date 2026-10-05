@@ -2,11 +2,11 @@
 
 namespace Falak\Edge\Application\Actions;
 
-use Illuminate\Support\Facades\Hash;
 use Falak\Edge\Application\EdgeChanges;
 use Falak\Edge\Domain\Models\SecurityRule;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Sites\Contracts\Data\SiteData;
+use Illuminate\Support\Facades\Hash;
 use SensitiveParameter;
 
 final class AddSecurityRule

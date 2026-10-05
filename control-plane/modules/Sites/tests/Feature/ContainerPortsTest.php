@@ -1,10 +1,10 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Identity\Contracts\Role;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Events\SiteDeleted;
 use Falak\Sites\Events\SiteUpdated;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 

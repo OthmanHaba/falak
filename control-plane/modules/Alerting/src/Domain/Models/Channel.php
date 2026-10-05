@@ -2,11 +2,11 @@
 
 namespace Falak\Alerting\Domain\Models;
 
+use Falak\Alerting\Domain\Enums\ChannelType;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Carbon;
-use Falak\Alerting\Domain\Enums\ChannelType;
 
 /**
  * @property string $id

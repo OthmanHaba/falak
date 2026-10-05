@@ -1,12 +1,12 @@
 <?php
 
-use Inertia\Testing\AssertableInertia as Assert;
 use Falak\Identity\Application\Actions\CreateApiToken;
 use Falak\Identity\Application\Actions\CreateOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\AuditEntry;
 use Falak\Identity\Domain\Models\PersonalAccessToken;
+use Inertia\Testing\AssertableInertia as Assert;
 
 it('lists only the abilities the user holds and the tokens of the current organization', function () {
     [$user, $organization] = actingAsMember(Role::Viewer);

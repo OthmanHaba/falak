@@ -2,13 +2,13 @@
 
 namespace Falak\Projects\Domain\Models;
 
+use Falak\Projects\Contracts\Data\ServiceData;
+use Falak\Projects\Contracts\ServiceKind;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
-use Falak\Projects\Contracts\Data\ServiceData;
-use Falak\Projects\Contracts\ServiceKind;
 
 /**
  * A site / database placed on an environment's canvas. `ref_id` is the owning module's opaque ULID.

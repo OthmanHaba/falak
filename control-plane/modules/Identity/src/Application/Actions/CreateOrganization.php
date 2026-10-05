@@ -2,13 +2,13 @@
 
 namespace Falak\Identity\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Events\OrganizationCreated;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 final class CreateOrganization
 {

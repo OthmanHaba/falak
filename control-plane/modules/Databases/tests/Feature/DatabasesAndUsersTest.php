@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use Falak\Databases\Contracts\DatabaseDirectory;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Models\Database;
@@ -10,6 +8,8 @@ use Falak\Databases\Events\DatabaseCreated;
 use Falak\Databases\Events\DatabaseDeleted;
 use Falak\Identity\Contracts\Role;
 use Falak\Servers\Contracts\ServerType;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';

@@ -3,7 +3,6 @@
 namespace Falak\Deployments\Tests\Support;
 
 use DateTimeImmutable;
-use Illuminate\Support\Str;
 use Falak\Builds\Contracts\BuildService;
 use Falak\Builds\Contracts\BuildStatus;
 use Falak\Builds\Contracts\Data\ArtifactData;
@@ -15,6 +14,7 @@ use Falak\Builds\Events\BuildCancelled;
 use Falak\Builds\Events\BuildFailed;
 use Falak\Builds\Events\BuildSucceeded;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Support\Str;
 
 /**
  * In-memory BuildService: builds stay queued until the test succeeds / fails them (firing the real

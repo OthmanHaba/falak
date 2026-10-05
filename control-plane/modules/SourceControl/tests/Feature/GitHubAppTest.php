@@ -1,8 +1,5 @@
 <?php
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Falak\Identity\Contracts\Role;
 use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 use Falak\SourceControl\Contracts\ProviderType;
@@ -11,6 +8,9 @@ use Falak\SourceControl\Domain\Models\Connection;
 use Falak\SourceControl\Domain\Models\GitHubApp;
 use Falak\SourceControl\Domain\Models\Webhook;
 use Falak\SourceControl\Infrastructure\Providers\GitHubClient;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/../Support/helpers.php';
 

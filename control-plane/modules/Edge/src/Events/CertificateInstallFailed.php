@@ -2,10 +2,10 @@
 
 namespace Falak\Edge\Events;
 
-use Illuminate\Foundation\Events\Dispatchable;
 use Falak\Alerting\Contracts\Alertable;
 use Falak\Alerting\Contracts\Data\AlertData;
 use Falak\Alerting\Contracts\Severity;
+use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * edge.cert.install failed on a server (the domains keep their previous certificate there).

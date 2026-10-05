@@ -2,13 +2,13 @@
 
 namespace Falak\Sites\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Sites\Application\TargetProvisioner;
 use Falak\Sites\Domain\Models\SiteCommand;
 use Falak\Sites\Domain\Models\SiteTarget;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Advances target preparation and records the outcome of site commands.

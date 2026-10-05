@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Identity\Application\Actions\DeleteOrganization;
 use Falak\Identity\Contracts\Role;
 use Falak\Projects\Application\Actions\BackfillProjects;
@@ -10,6 +9,7 @@ use Falak\Projects\Domain\Models\Project;
 use Falak\Projects\Domain\Models\Service;
 use Falak\Projects\Events\EnvironmentCreated;
 use Falak\Projects\Events\ProjectCreated;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 

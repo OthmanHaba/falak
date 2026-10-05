@@ -1,11 +1,11 @@
 <?php
 
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 use Falak\SourceControl\Infrastructure\GitHubApp\AppCredentials;
 use Falak\SourceControl\Infrastructure\Providers\GitHubAppTokens;
 use Falak\SourceControl\Infrastructure\Providers\GitHubClient;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use phpseclib3\Crypt\RSA;
 
 beforeEach(function () {

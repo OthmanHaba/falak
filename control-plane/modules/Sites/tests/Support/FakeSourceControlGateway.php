@@ -2,7 +2,6 @@
 
 namespace Falak\Sites\Tests\Support;
 
-use Illuminate\Support\Str;
 use Falak\SourceControl\Contracts\Data\BranchData;
 use Falak\SourceControl\Contracts\Data\CheckoutCredentials;
 use Falak\SourceControl\Contracts\Data\CommitData;
@@ -15,6 +14,7 @@ use Falak\SourceControl\Contracts\Exceptions\NoApi;
 use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Illuminate\Support\Str;
 
 /**
  * In-memory SourceControlGateway implementing only the public contract.

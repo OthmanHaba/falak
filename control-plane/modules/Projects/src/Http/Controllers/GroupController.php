@@ -2,14 +2,14 @@
 
 namespace Falak\Projects\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Falak\Kernel\Http\Controller;
 use Falak\Projects\Application\Actions\GroupServices;
 use Falak\Projects\Application\Actions\UngroupServices;
 use Falak\Projects\Domain\Models\Group;
 use Falak\Projects\Domain\Models\Project;
 use Falak\Projects\Http\Requests\ProjectRules;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**

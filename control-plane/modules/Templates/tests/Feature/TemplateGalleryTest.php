@@ -1,9 +1,9 @@
 <?php
 
-use Inertia\Testing\AssertableInertia as Assert;
 use Falak\Identity\Contracts\Role;
 use Falak\Templates\Application\Catalog\Catalog;
 use Falak\Templates\Domain\Models\CustomTemplate;
+use Inertia\Testing\AssertableInertia as Assert;
 
 require_once __DIR__.'/../Support/helpers.php';
 

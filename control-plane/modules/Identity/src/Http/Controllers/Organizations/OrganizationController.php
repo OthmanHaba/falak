@@ -2,10 +2,6 @@
 
 namespace Falak\Identity\Http\Controllers\Organizations;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Application\Actions\CreateOrganization;
 use Falak\Identity\Application\Actions\DeleteOrganization;
 use Falak\Identity\Application\Actions\SwitchOrganization;
@@ -13,6 +9,10 @@ use Falak\Identity\Application\Actions\TransferOwnership;
 use Falak\Identity\Application\Actions\UpdateOrganization;
 use Falak\Identity\Domain\Models\User;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class OrganizationController extends Controller
 {

@@ -2,7 +2,6 @@
 
 namespace Falak\Builds\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Builds\Application\Actions\InstallServerBuilder;
 use Falak\Builds\Contracts\BuildStatus;
 use Falak\Builds\Domain\Models\Build;
@@ -13,6 +12,7 @@ use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Events\ServerDeleted;
 use Falak\Servers\Events\ServerProvisioned;
 use Falak\Sites\Events\SiteDeleted;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Builder servers become build workers when provisioned; deleted servers / organizations / sites

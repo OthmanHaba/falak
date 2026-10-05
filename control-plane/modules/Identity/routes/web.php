@@ -1,8 +1,5 @@
 <?php
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 use Falak\Identity\Http\Controllers\Auth\AuthenticatedSessionController;
 use Falak\Identity\Http\Controllers\Auth\ConfirmablePasswordController;
 use Falak\Identity\Http\Controllers\Auth\EmailVerificationNotificationController;
@@ -21,6 +18,9 @@ use Falak\Identity\Http\Controllers\Settings\ApiTokenController;
 use Falak\Identity\Http\Controllers\Settings\PasswordController;
 use Falak\Identity\Http\Controllers\Settings\ProfileController;
 use Falak\Identity\Http\Controllers\Settings\TwoFactorController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 Route::middleware('guest')->group(function () {
     Route::get('register', [RegisteredUserController::class, 'create'])->name('register');

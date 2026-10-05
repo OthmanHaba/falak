@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Fleet\Http\Controllers\Agent\CommandEventsController;
 use Falak\Fleet\Http\Controllers\Agent\CommandPollController;
 use Falak\Fleet\Http\Controllers\Agent\EnrollController;
@@ -10,6 +9,7 @@ use Falak\Fleet\Http\Controllers\Agent\PingController;
 use Falak\Fleet\Http\Controllers\Agent\RenewController;
 use Falak\Fleet\Http\Middleware\AuthenticateAgent;
 use Falak\Fleet\Http\Middleware\ForceJson;
+use Illuminate\Support\Facades\Route;
 
 // Mounted at /agent/v1 by the Kernel. Contract: contracts/agent-protocol/README.md.
 

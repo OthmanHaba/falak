@@ -1,11 +1,11 @@
 <?php
 
-use Illuminate\Support\Facades\Http;
 use Falak\Templates\Application\Import\FetchFailed;
 use Falak\Templates\Application\Import\HostResolver;
 use Falak\Templates\Application\Import\RemoteFetcher;
 use Falak\Templates\Infrastructure\GuardedHttpFetcher;
 use Falak\Templates\Tests\Support\FakeHostResolver;
+use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
     app()->instance(HostResolver::class, new FakeHostResolver([

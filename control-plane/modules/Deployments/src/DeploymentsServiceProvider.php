@@ -2,9 +2,6 @@
 
 namespace Falak\Deployments;
 
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Support\Facades\Broadcast;
-use Illuminate\Support\Facades\Event;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Builds\Events\BuildCancelled;
@@ -51,6 +48,9 @@ use Falak\Sites\Events\SiteTargetReady;
 use Falak\Sites\Events\SiteTargetsChanged;
 use Falak\Sites\Events\SiteUpdated;
 use Falak\SourceControl\Events\PushReceived;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Event;
 
 class DeploymentsServiceProvider extends ModuleServiceProvider
 {

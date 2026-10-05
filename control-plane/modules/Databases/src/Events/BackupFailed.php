@@ -2,10 +2,10 @@
 
 namespace Falak\Databases\Events;
 
-use Illuminate\Foundation\Events\Dispatchable;
 use Falak\Alerting\Contracts\Alertable;
 use Falak\Alerting\Contracts\Data\AlertData;
 use Falak\Alerting\Contracts\Severity;
+use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * A backup could not be taken or uploaded (agent failure, timeout, no agent connected).

@@ -2,13 +2,13 @@
 
 namespace Falak\Builds\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Builds\Application\BuildProgress;
 use Falak\Builds\Application\JobPayload;
 use Falak\Builds\Contracts\BuildStatus;
 use Falak\Builds\Domain\Models\Build;
 use Falak\Builds\Domain\Models\Builder;
 use Falak\Builds\Events\BuildUpdated;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**

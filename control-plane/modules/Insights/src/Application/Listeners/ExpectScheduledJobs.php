@@ -2,9 +2,9 @@
 
 namespace Falak\Insights\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Insights\Application\HeartbeatTracker;
 use Falak\Processes\Events\SchedulesApplied;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * Keeps heartbeat monitors in step with the schedule sets Processes applies to servers.

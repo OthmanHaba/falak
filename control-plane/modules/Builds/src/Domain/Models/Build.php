@@ -3,12 +3,12 @@
 namespace Falak\Builds\Domain\Models;
 
 use DateTimeImmutable;
+use Falak\Builds\Contracts\BuildStatus;
+use Falak\Builds\Contracts\Data\BuildData;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Falak\Builds\Contracts\BuildStatus;
-use Falak\Builds\Contracts\Data\BuildData;
 
 /**
  * @property string $id

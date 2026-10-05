@@ -2,8 +2,6 @@
 
 namespace Falak\Processes;
 
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Support\Facades\Event;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Edge\Events\EdgeApplied;
@@ -35,6 +33,8 @@ use Falak\Sites\Events\SiteDeleted;
 use Falak\Sites\Events\SiteTargetReady;
 use Falak\Sites\Events\SiteTargetsChanged;
 use Falak\Sites\Events\SiteUpdated;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Event;
 
 class ProcessesServiceProvider extends ModuleServiceProvider
 {

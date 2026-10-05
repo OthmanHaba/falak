@@ -2,10 +2,6 @@
 
 namespace Falak\SourceControl\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -14,6 +10,10 @@ use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Http\Controllers\Concerns\ConnectFlowState;
 use Falak\SourceControl\Infrastructure\Providers\OAuthProviders;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
  * OAuth connect flows (GitHub OAuth app, GitLab, Bitbucket); GitHub Apps live in {@see GitHubAppController}.

@@ -2,11 +2,6 @@
 
 namespace Falak\Identity\Http\Controllers\Organizations;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Application\Actions\ChangeMemberRole;
 use Falak\Identity\Application\Actions\RemoveMember;
 use Falak\Identity\Contracts\OrganizationAccess;
@@ -14,6 +9,11 @@ use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\Invitation;
 use Falak\Identity\Domain\Models\User;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class MemberController extends Controller
 {

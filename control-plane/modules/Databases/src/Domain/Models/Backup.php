@@ -2,13 +2,13 @@
 
 namespace Falak\Databases\Domain\Models;
 
+use Falak\Databases\Domain\Enums\BackupStatus;
+use Falak\Databases\Domain\Enums\Compression;
+use Falak\Databases\Domain\Enums\Engine;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Falak\Databases\Domain\Enums\BackupStatus;
-use Falak\Databases\Domain\Enums\Compression;
-use Falak\Databases\Domain\Enums\Engine;
 
 /**
  * One dump shipped to object storage. Rows outlive the database, schedule and server.

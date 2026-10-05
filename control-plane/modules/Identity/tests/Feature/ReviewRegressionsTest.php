@@ -1,10 +1,10 @@
 <?php
 
-use Illuminate\Http\Middleware\TrustProxies;
-use Illuminate\Http\Request;
 use Falak\Identity\Application\Actions\CreateApiToken;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Domain\Models\AuditEntry;
+use Illuminate\Http\Middleware\TrustProxies;
+use Illuminate\Http\Request;
 
 it('keeps the via_token name in audit context while redacting secrets', function () {
     [$user, $organization] = memberOf();

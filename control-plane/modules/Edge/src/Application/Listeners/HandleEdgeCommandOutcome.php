@@ -2,8 +2,6 @@
 
 namespace Falak\Edge\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Support\Str;
 use Falak\Edge\Application\Jobs\SyncCloudflareDns;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Edge\Domain\Enums\ApplyStatus;
@@ -19,6 +17,8 @@ use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Network\Contracts\Firewalls;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Str;
 
 /**
  * Settles edge.caddy.apply / edge.cert.install commands dispatched by Edge.

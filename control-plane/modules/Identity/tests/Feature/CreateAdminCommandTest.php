@@ -1,8 +1,8 @@
 <?php
 
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
-use Falak\Identity\Domain\Models\User;
 
 function runAdmin(array $args): array
 {

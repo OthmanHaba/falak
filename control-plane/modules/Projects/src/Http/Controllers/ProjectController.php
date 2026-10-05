@@ -2,11 +2,6 @@
 
 namespace Falak\Projects\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -20,6 +15,11 @@ use Falak\Projects\Domain\Policies\ProjectPolicy;
 use Falak\Projects\Http\Requests\ProjectRules;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * Projects grid, settings page and project CRUD (JSON for fetch clients, redirects for Inertia visits).

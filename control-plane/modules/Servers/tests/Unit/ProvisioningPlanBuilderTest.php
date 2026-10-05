@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Domain\Enums\PhpVersionStatus;
@@ -8,6 +7,7 @@ use Falak\Servers\Domain\Models\PhpVersion;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Domain\Stack\Stack;
 use Falak\Servers\Infrastructure\ProvisioningPlanBuilder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 

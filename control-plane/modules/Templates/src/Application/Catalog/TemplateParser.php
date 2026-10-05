@@ -2,13 +2,13 @@
 
 namespace Falak\Templates\Application\Catalog;
 
-use InvalidArgumentException;
 use Falak\Templates\Domain\Category;
 use Falak\Templates\Domain\Generator;
 use Falak\Templates\Domain\InputType;
 use Falak\Templates\Domain\InvalidTemplate;
 use Falak\Templates\Domain\Template;
 use Falak\Templates\Domain\TemplateInput;
+use InvalidArgumentException;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 

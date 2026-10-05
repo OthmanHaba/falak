@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Event;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\AuditEntry;
 use Falak\Projects\Contracts\ProjectDirectory;
@@ -10,6 +8,8 @@ use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Events\SiteEnvironmentChanged;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 

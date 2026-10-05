@@ -2,13 +2,13 @@
 
 namespace Falak\Servers\Application\Jobs;
 
+use Falak\Providers\Contracts\Exceptions\ProviderException;
+use Falak\Providers\Contracts\ProviderGateway;
+use Falak\Servers\Domain\Models\Server;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Falak\Providers\Contracts\Exceptions\ProviderException;
-use Falak\Providers\Contracts\ProviderGateway;
-use Falak\Servers\Domain\Models\Server;
 
 /**
  * Polls the provider until the machine has a public IP (some providers assign it asynchronously).

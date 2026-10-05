@@ -1,10 +1,10 @@
 <?php
 
-use Inertia\Testing\AssertableInertia as Assert;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\AuditEntry;
+use Inertia\Testing\AssertableInertia as Assert;
 
 it('denies the audit log to roles without audit.view', function (Role $role) {
     [, $organization] = memberOf();

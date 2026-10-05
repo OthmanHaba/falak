@@ -2,9 +2,9 @@
 
 namespace Falak\Projects\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Projects\Domain\Models\Project;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Delete an empty project. Services are never deleted implicitly: delete or move them first.

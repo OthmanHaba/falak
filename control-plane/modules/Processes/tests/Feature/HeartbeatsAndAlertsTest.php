@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Carbon;
 use Falak\Alerting\Contracts\Alerts;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Data\AlertData;
@@ -16,6 +15,7 @@ use Falak\Processes\Domain\Models\Schedule;
 use Falak\Processes\Domain\Models\ServerState;
 use Falak\Processes\Events\ProgramCrashLooping;
 use Falak\Processes\Events\ProgramRecovered;
+use Illuminate\Support\Carbon;
 
 require_once __DIR__.'/../Support/helpers.php';
 

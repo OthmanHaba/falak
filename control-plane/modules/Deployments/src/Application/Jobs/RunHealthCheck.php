@@ -2,11 +2,6 @@
 
 namespace Falak\Deployments\Application\Jobs;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Http\Client\Factory as HttpFactory;
-use Illuminate\Queue\InteractsWithQueue;
 use Falak\Deployments\Application\Orchestration\DeploymentLog;
 use Falak\Deployments\Application\Orchestration\Orchestrator;
 use Falak\Deployments\Domain\Enums\StepStatus;
@@ -18,6 +13,11 @@ use Falak\Edge\Contracts\TlsMode;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Http\Client\Factory as HttpFactory;
+use Illuminate\Queue\InteractsWithQueue;
 use Throwable;
 
 /**

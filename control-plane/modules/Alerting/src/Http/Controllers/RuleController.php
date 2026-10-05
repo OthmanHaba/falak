@@ -3,10 +3,6 @@
 namespace Falak\Alerting\Http\Controllers;
 
 use DateTimeZone;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Alerting\Application\Actions\DeleteRule;
 use Falak\Alerting\Application\Actions\SaveRule;
 use Falak\Alerting\Contracts\AlertTypes;
@@ -17,6 +13,10 @@ use Falak\Alerting\Http\Requests\RuleRequest;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class RuleController extends Controller
 {

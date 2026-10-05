@@ -2,11 +2,11 @@
 
 namespace Falak\Sites\Domain\Models;
 
+use Falak\Sites\Contracts\Data\EnvironmentData;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Falak\Sites\Contracts\Data\EnvironmentData;
 
 /**
  * An immutable version of a site's environment. Values are encrypted at rest.

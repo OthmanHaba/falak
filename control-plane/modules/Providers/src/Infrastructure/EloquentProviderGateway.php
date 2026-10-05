@@ -2,13 +2,13 @@
 
 namespace Falak\Providers\Infrastructure;
 
-use Illuminate\Contracts\Cache\Repository as Cache;
-use Illuminate\Contracts\Config\Repository as Config;
 use Falak\Providers\Contracts\Data\CredentialSummary;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
 use Falak\Providers\Contracts\ProviderAdapter;
 use Falak\Providers\Contracts\ProviderGateway;
 use Falak\Providers\Domain\Models\ProviderCredential;
+use Illuminate\Contracts\Cache\Repository as Cache;
+use Illuminate\Contracts\Config\Repository as Config;
 
 final class EloquentProviderGateway implements ProviderGateway
 {

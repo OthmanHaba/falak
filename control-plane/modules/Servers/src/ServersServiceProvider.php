@@ -2,9 +2,6 @@
 
 namespace Falak\Servers;
 
-use Illuminate\Support\Facades\Broadcast;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
 use Falak\Fleet\Events\AgentCameOnline;
 use Falak\Fleet\Events\AgentEnrolled;
 use Falak\Fleet\Events\AgentFactsReported;
@@ -31,6 +28,9 @@ use Falak\Servers\Http\Channels\ServerChannel;
 use Falak\Servers\Infrastructure\EloquentServerDirectory;
 use Falak\Servers\Infrastructure\ProvisioningPlanBuilder;
 use Falak\Servers\Infrastructure\ServerHeaderPresenter;
+use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
 
 class ServersServiceProvider extends ModuleServiceProvider
 {

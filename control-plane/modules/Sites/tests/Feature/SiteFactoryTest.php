@@ -1,12 +1,12 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\Role;
 use Falak\Sites\Contracts\Data\SitePlacement;
 use Falak\Sites\Contracts\SiteFactory;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Events\SiteCreated;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Validation\ValidationException;
 
 require_once __DIR__.'/../Support/helpers.php';
 

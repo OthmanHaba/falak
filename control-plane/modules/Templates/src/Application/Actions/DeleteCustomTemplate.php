@@ -2,10 +2,10 @@
 
 namespace Falak\Templates\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Templates\Domain\Models\CustomTemplate;
 use Falak\Templates\Domain\Models\CustomTemplateRevision;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Sites created from the template keep running; only the template (and its history) goes away.

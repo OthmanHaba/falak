@@ -2,9 +2,9 @@
 
 namespace Falak\Insights\Application\Listeners;
 
+use Falak\Identity\Events\OrganizationDeleted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\DB;
-use Falak\Identity\Events\OrganizationDeleted;
 
 final class DeleteOrganizationInsights implements ShouldQueue
 {

@@ -3,9 +3,9 @@
 namespace Falak\Fleet\Http\Middleware;
 
 use Closure;
-use Illuminate\Http\Request;
 use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Domain\Models\Certificate;
+use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\IpUtils;
 use Symfony\Component\HttpFoundation\Response;
 

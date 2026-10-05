@@ -2,8 +2,6 @@
 
 namespace Falak\Projects\Application\Actions;
 
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Projects\Contracts\ServiceKind;
 use Falak\Projects\Domain\Models\Environment;
@@ -12,6 +10,8 @@ use Falak\Projects\Domain\Models\Service;
 use Falak\Projects\Events\EnvironmentCreated;
 use Falak\Sites\Contracts\Data\SitePlacement;
 use Falak\Sites\Contracts\SiteFactory;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Create an environment, empty or duplicated from another environment of the project. Duplicating

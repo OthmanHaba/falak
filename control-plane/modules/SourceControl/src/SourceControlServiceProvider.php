@@ -2,11 +2,6 @@
 
 namespace Falak\SourceControl;
 
-use Illuminate\Cache\RateLimiting\Limit;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\RateLimiter;
 use Falak\Identity\Contracts\PermissionRegistry;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Events\OrganizationDeleted;
@@ -16,6 +11,11 @@ use Falak\SourceControl\Contracts\SourceControlGateway;
 use Falak\SourceControl\Domain\Models\Connection;
 use Falak\SourceControl\Domain\Policies\ConnectionPolicy;
 use Falak\SourceControl\Infrastructure\EloquentSourceControlGateway;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 
 class SourceControlServiceProvider extends ModuleServiceProvider
 {

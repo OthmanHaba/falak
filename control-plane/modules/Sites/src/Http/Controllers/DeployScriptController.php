@@ -2,15 +2,15 @@
 
 namespace Falak\Sites\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Kernel\Http\Controller;
 use Falak\Sites\Application\Actions\UpdateDeployScript;
 use Falak\Sites\Contracts\DeployScript;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Presets\Preset;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 final class DeployScriptController extends Controller
 {

@@ -1,7 +1,7 @@
 <?php
 
-use Illuminate\Database\Migrations\Migration;
 use Falak\Projects\Application\Actions\BackfillProjects;
+use Illuminate\Database\Migrations\Migration;
 
 /**
  * Data migration: every organization gets a "Default" project with a production environment and every

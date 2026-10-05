@@ -2,11 +2,11 @@
 
 namespace Falak\Databases\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\DatabaseServer;
 use Falak\Servers\Events\ServerDeleted;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * The server is gone: drop its engine, databases, users and schedules. Backup history (and the objects

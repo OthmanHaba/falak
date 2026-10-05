@@ -2,12 +2,12 @@
 
 namespace Falak\Alerting\Application;
 
-use Illuminate\Contracts\Auth\Factory as AuthFactory;
-use Illuminate\Contracts\Auth\UserProvider;
 use Falak\Alerting\Domain\Models\Alert;
 use Falak\Alerting\Domain\Models\Notification;
 use Falak\Alerting\Events\NotificationCreated;
 use Falak\Identity\Contracts\OrganizationAccess;
+use Illuminate\Contracts\Auth\Factory as AuthFactory;
+use Illuminate\Contracts\Auth\UserProvider;
 
 /**
  * Creates notification-center entries for every organization member allowed to see alerts

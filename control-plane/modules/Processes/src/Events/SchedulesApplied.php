@@ -2,8 +2,8 @@
 
 namespace Falak\Processes\Events;
 
-use Illuminate\Foundation\Events\Dispatchable;
 use Falak\Processes\Contracts\Data\ScheduledJobData;
+use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * A server converged to its desired schedule set (cron.apply finished). `$jobs` is the complete set.

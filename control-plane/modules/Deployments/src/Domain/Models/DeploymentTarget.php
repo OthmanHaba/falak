@@ -2,9 +2,9 @@
 
 namespace Falak\Deployments\Domain\Models;
 
+use Falak\Deployments\Domain\Enums\TargetStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
-use Falak\Deployments\Domain\Enums\TargetStatus;
 
 /**
  * @property string $id

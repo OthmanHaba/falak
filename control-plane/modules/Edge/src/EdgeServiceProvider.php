@@ -2,9 +2,6 @@
 
 namespace Falak\Edge;
 
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Http\Client\Factory as HttpFactory;
-use Illuminate\Support\Facades\Event;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Deployments\Events\DeploymentRolledBack;
@@ -58,6 +55,9 @@ use Falak\Sites\Events\SiteCreated;
 use Falak\Sites\Events\SiteDeleted;
 use Falak\Sites\Events\SiteTargetsChanged;
 use Falak\Sites\Events\SiteUpdated;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Http\Client\Factory as HttpFactory;
+use Illuminate\Support\Facades\Event;
 
 class EdgeServiceProvider extends ModuleServiceProvider
 {

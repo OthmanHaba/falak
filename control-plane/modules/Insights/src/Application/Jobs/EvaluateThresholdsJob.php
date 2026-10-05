@@ -2,10 +2,10 @@
 
 namespace Falak\Insights\Application\Jobs;
 
+use Falak\Insights\Application\Actions\EvaluateThresholds;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Falak\Insights\Application\Actions\EvaluateThresholds;
 
 final class EvaluateThresholdsJob implements ShouldQueue
 {

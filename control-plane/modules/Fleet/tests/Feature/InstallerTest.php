@@ -1,9 +1,9 @@
 <?php
 
+use Falak\Fleet\Contracts\Enrollment;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
-use Falak\Fleet\Contracts\Enrollment;
 use Symfony\Component\Process\Process;
 
 require_once __DIR__.'/../Support/helpers.php';

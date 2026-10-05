@@ -1,8 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Queue;
-use Illuminate\Support\Str;
 use Falak\Edge\Application\Jobs\ApplyEdgeConfig;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Edge\Contracts\TlsMode;
@@ -26,6 +23,9 @@ use Falak\Sites\Events\SiteCreated;
 use Falak\Sites\Events\SiteDeleted;
 use Falak\Sites\Events\SiteTargetsChanged;
 use Falak\Sites\Events\SiteUpdated;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/../Support/helpers.php';
 

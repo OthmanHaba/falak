@@ -2,12 +2,6 @@
 
 namespace Falak\Servers\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Fleet\Contracts\AgentUpgrades;
 use Falak\Fleet\Contracts\Data\MetricSample;
@@ -31,6 +25,12 @@ use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Domain\Models\SshKey;
 use Falak\Servers\Domain\Stack\Stack;
 use Falak\Servers\Http\Requests\StoreServerRequest;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class ServerController extends Controller
 {

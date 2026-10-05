@@ -2,10 +2,6 @@
 
 namespace Falak\Edge\Application;
 
-use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
 use Falak\Edge\Domain\Models\CloudflareTunnel;
 use Falak\Edge\Domain\Models\CloudflareZone;
 use Falak\Edge\Domain\Models\DnsRecord;
@@ -15,6 +11,10 @@ use Falak\Edge\Infrastructure\Cloudflare\CloudflareError;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\TargetRole;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Keeps Cloudflare DNS in line with a site's names: one A / AAAA record per server the name points at (the load

@@ -2,11 +2,6 @@
 
 namespace Falak\Edge\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Falak\Edge\Application\Actions\AddRedirect;
 use Falak\Edge\Application\Actions\AddSecurityRule;
 use Falak\Edge\Application\Actions\DeleteSiteRule;
@@ -24,6 +19,11 @@ use Falak\Edge\Http\Rules\Cidr;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
 use Falak\Sites\Contracts\Data\SiteData;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 final class RoutingController extends Controller
 {

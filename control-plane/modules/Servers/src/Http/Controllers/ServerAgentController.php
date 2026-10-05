@@ -2,8 +2,6 @@
 
 namespace Falak\Servers\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Fleet\Contracts\AgentUpgrades;
 use Falak\Fleet\Contracts\Exceptions\AgentUpgradeUnavailable;
 use Falak\Identity\Contracts\AuditLog;
@@ -11,6 +9,8 @@ use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 /**
  * Agent upgrades from the Servers pages (organization admins: `fleet.agents.manage`).

@@ -2,10 +2,10 @@
 
 namespace Falak\Identity\Http\Requests\Settings;
 
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
-use Falak\Identity\Domain\Models\User;
 
 class ProfileUpdateRequest extends FormRequest
 {

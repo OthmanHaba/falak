@@ -2,11 +2,6 @@
 
 namespace Falak\Insights\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
@@ -17,6 +12,11 @@ use Falak\Insights\Domain\Enums\ThresholdMetric;
 use Falak\Insights\Domain\Models\HeartbeatMonitor;
 use Falak\Insights\Domain\Models\Threshold;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class ThresholdController extends Controller
 {

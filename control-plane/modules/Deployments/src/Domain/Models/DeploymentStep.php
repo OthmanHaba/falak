@@ -2,12 +2,12 @@
 
 namespace Falak\Deployments\Domain\Models;
 
+use Falak\Deployments\Domain\Enums\StepKind;
+use Falak\Deployments\Domain\Enums\StepStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
-use Falak\Deployments\Domain\Enums\StepKind;
-use Falak\Deployments\Domain\Enums\StepStatus;
 
 /**
  * One node of a deployment's plan (a DAG): a build, an agent command on one server, or a health

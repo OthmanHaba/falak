@@ -2,11 +2,6 @@
 
 namespace Falak\Identity\Http\Controllers\Settings;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Application\Actions\CreateApiToken;
 use Falak\Identity\Application\Actions\RevokeApiToken;
 use Falak\Identity\Contracts\CurrentOrganization;
@@ -15,6 +10,11 @@ use Falak\Identity\Domain\Models\PersonalAccessToken;
 use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Infrastructure\SpatieOrganizationAccess;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class ApiTokenController extends Controller
 {

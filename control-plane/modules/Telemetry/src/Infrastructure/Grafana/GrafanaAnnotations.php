@@ -3,9 +3,9 @@
 namespace Falak\Telemetry\Infrastructure\Grafana;
 
 use DateTimeInterface;
-use Illuminate\Support\Facades\Log;
 use Falak\Telemetry\Contracts\Annotations;
 use Falak\Telemetry\Domain\Models\DeploymentAnnotation;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**

@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Databases\Contracts\Data\DatabaseData;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Application\Listeners\DeploySplitSitesFirst;
@@ -24,6 +23,7 @@ use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteFactory;
 use Falak\Sites\Domain\Models\ComposeVersion;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Support\Facades\Event;
 use Symfony\Component\Yaml\Yaml;
 
 require_once __DIR__.'/../Support/helpers.php';

@@ -2,8 +2,8 @@
 
 namespace Falak\Databases\Contracts;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Contracts\Data\DatabaseData;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Database creation for other modules (Projects' canvas "Create → Database").

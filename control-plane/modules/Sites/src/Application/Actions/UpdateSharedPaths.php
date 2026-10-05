@@ -2,11 +2,11 @@
 
 namespace Falak\Sites\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Sites\Contracts\Data\SharedPath;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Events\SiteUpdated;
+use Illuminate\Validation\ValidationException;
 
 final class UpdateSharedPaths
 {

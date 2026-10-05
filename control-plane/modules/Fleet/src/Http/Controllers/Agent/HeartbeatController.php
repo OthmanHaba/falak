@@ -2,11 +2,11 @@
 
 namespace Falak\Fleet\Http\Controllers\Agent;
 
-use Illuminate\Http\Request;
-use Illuminate\Http\Response;
 use Falak\Fleet\Application\Actions\RecordHeartbeat;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 
 /**
  * POST /agent/v1/heartbeat — heartbeat.schema.json → 204.

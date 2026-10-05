@@ -2,11 +2,6 @@
 
 namespace Falak\Servers\Application\Jobs;
 
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use Falak\Providers\Contracts\Data\MachineSpec;
 use Falak\Providers\Contracts\Exceptions\ProviderException;
 use Falak\Providers\Contracts\ProviderGateway;
@@ -14,6 +9,11 @@ use Falak\Servers\Application\ServerStatusUpdater;
 use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Domain\Models\SshKey;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
 use Throwable;
 
 /**

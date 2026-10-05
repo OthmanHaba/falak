@@ -2,11 +2,11 @@
 
 namespace Falak\Deployments\Infrastructure;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Contracts\DeploymentTrigger;
 use Falak\Deployments\Domain\Enums\Trigger;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Validation\ValidationException;
 
 final class ActionDeploymentTrigger implements DeploymentTrigger
 {

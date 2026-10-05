@@ -1,8 +1,5 @@
 <?php
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Http;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Events\OrganizationDeleted;
 use Falak\SourceControl\Contracts\ProviderType;
@@ -11,6 +8,9 @@ use Falak\SourceControl\Domain\Models\Connection;
 use Falak\SourceControl\Domain\Models\DeployKey;
 use Falak\SourceControl\Domain\Models\Push;
 use Falak\SourceControl\Events\ConnectionDeleted;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/../Support/helpers.php';
 

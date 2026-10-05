@@ -2,7 +2,6 @@
 
 namespace Falak\Network\Application;
 
-use Illuminate\Support\Facades\DB;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Network\Domain\Enums\ApplyStatus;
@@ -11,6 +10,7 @@ use Falak\Network\Domain\Models\PrivateNetwork;
 use Falak\Network\Domain\Models\PrivateNetworkMember;
 use Falak\Network\Infrastructure\CanonicalJson;
 use Falak\Network\Infrastructure\WireGuardPayloads;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Converges every member of a private network:

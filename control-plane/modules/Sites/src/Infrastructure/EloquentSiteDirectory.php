@@ -2,7 +2,6 @@
 
 namespace Falak\Sites\Infrastructure;
 
-use Illuminate\Database\Eloquent\Builder;
 use Falak\Sites\Contracts\Data\EnvironmentData;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\Data\SiteTargetData;
@@ -10,6 +9,7 @@ use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
+use Illuminate\Database\Eloquent\Builder;
 
 final class EloquentSiteDirectory implements SiteDirectory
 {

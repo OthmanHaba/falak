@@ -2,16 +2,16 @@
 
 namespace Falak\Fleet\Http\Controllers\Agent;
 
-use Illuminate\Auth\AuthenticationException;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 use Falak\Fleet\Application\Actions\EnrollAgent;
 use Falak\Fleet\Infrastructure\PanelUrls;
 use Falak\Fleet\Infrastructure\Pki\CertificateAuthorityService;
 use Falak\Fleet\Infrastructure\Pki\InvalidCsr;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 /**
  * POST /agent/v1/enroll — plain TLS + one-time token (enroll-request → enroll-response).

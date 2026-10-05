@@ -3,12 +3,12 @@
 namespace Falak\Identity\Application;
 
 use Closure;
-use Illuminate\Contracts\Cache\LockTimeoutException;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Application\Actions\AcceptInvitation;
 use Falak\Identity\Domain\Models\Invitation;
 use Falak\Identity\Domain\Models\User;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Who may sign up (config identity.registration, FALAK_REGISTRATION): open, invite or closed. A panel without any

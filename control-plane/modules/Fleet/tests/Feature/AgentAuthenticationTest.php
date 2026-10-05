@@ -1,8 +1,8 @@
 <?php
 
+use Falak\Fleet\Contracts\Enrollment;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
-use Falak\Fleet\Contracts\Enrollment;
 
 require_once __DIR__.'/../Support/helpers.php';
 

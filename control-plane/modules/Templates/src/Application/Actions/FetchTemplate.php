@@ -2,9 +2,9 @@
 
 namespace Falak\Templates\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Templates\Application\Import\FetchFailed;
 use Falak\Templates\Application\Import\RemoteFetcher;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 

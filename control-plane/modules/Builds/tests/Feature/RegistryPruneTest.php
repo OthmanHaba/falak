@@ -1,14 +1,14 @@
 <?php
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 use Falak\Builds\Application\RegistryPruner;
 use Falak\Builds\Contracts\BuildStatus;
 use Falak\Builds\Domain\Models\Build;
 use Falak\Deployments\Contracts\RetainedImages;
 use Falak\Identity\Contracts\Role;
 use Falak\Sites\Contracts\SiteFactory;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 /*
  * The built-in registry cleanup (falak:registry-prune, daily): images of builds whose artifact was pruned go, unless a

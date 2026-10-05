@@ -4,10 +4,6 @@ namespace Falak\Insights\Http\Controllers;
 
 use Carbon\CarbonImmutable;
 use Closure;
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
@@ -17,6 +13,10 @@ use Falak\Insights\Domain\Models\HeartbeatMonitor;
 use Falak\Insights\Domain\Models\HeartbeatRun;
 use Falak\Insights\Domain\Support\CronSchedule;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class HeartbeatController extends Controller
 {

@@ -3,14 +3,14 @@
 namespace Falak\Alerting\Http\Requests;
 
 use DateTimeZone;
-use Illuminate\Auth\Access\Response;
-use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule as ValidationRule;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Alerting\Domain\Models\Rule;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
+use Illuminate\Auth\Access\Response;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule as ValidationRule;
 
 final class RuleRequest extends FormRequest
 {

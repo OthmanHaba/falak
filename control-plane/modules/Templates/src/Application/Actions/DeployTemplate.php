@@ -2,8 +2,6 @@
 
 namespace Falak\Templates\Application\Actions;
 
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Deployments\Contracts\DeploymentTrigger;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Projects\Contracts\Data\EnvironmentData;
@@ -17,6 +15,8 @@ use Falak\Sites\Contracts\SiteFactory;
 use Falak\Templates\Application\Compose\FalakPlaceholders;
 use Falak\Templates\Application\Inputs\InputResolver;
 use Falak\Templates\Domain\Template;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Create a compose site from a template and start its first deployment (docs/COMPOSE_TEMPLATES.md §3, §5):

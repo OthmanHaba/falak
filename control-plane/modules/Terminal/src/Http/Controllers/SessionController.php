@@ -2,10 +2,6 @@
 
 namespace Falak\Terminal\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
@@ -20,6 +16,10 @@ use Falak\Terminal\Application\Actions\ShareSession;
 use Falak\Terminal\Domain\Enums\SessionStatus;
 use Falak\Terminal\Domain\Models\TerminalSession;
 use Falak\Terminal\Domain\Policies\TerminalSessionPolicy;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class SessionController extends Controller
 {

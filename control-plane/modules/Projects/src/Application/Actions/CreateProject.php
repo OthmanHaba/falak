@@ -2,13 +2,13 @@
 
 namespace Falak\Projects\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Projects\Domain\Models\Environment;
 use Falak\Projects\Domain\Models\Project;
 use Falak\Projects\Events\EnvironmentCreated;
 use Falak\Projects\Events\ProjectCreated;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Create a project with its `production` environment.

@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use Falak\Deployments\Events\DeploymentSucceeded;
 use Falak\Edge\Application\Actions\AddDomain;
 use Falak\Edge\Application\Actions\RemoveDomain;
@@ -42,6 +40,8 @@ use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Events\SiteCreated;
 use Falak\Sites\Events\SiteDeleted;
 use Falak\Sites\Events\SiteTargetsChanged;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /*
  * Cloudflare integration: connection, managed zones, DNS records Falak creates / updates / removes (its own only),

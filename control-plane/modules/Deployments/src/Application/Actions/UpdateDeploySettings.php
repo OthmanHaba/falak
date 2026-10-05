@@ -2,11 +2,11 @@
 
 namespace Falak\Deployments\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Deployments\Domain\Enums\Strategy;
 use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Sites\Contracts\Data\SiteData;
+use Illuminate\Validation\ValidationException;
 
 final class UpdateDeploySettings
 {

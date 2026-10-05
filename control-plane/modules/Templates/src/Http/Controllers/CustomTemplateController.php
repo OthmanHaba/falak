@@ -2,11 +2,6 @@
 
 namespace Falak\Templates\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -19,6 +14,11 @@ use Falak\Templates\Application\Catalog\TemplateRepository;
 use Falak\Templates\Domain\Models\CustomTemplate;
 use Falak\Templates\Domain\Models\CustomTemplateRevision;
 use Falak\Templates\TemplatesServiceProvider;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * Settings → Templates: the organization's own templates (import by paste / upload / URL, edit, delete) and

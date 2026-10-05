@@ -2,10 +2,10 @@
 
 namespace Falak\SourceControl\Infrastructure\GitHubApp;
 
+use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 
 /**
  * GitHub App Manifest flow (docs.github.com → "Registering a GitHub App from a manifest"): Falak POSTs a manifest

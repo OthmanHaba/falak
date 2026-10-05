@@ -2,10 +2,10 @@
 
 namespace Falak\Network\Http\Controllers;
 
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Servers\Contracts\Data\ServerData;
 use Falak\Servers\Contracts\ServerDirectory;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 trait ResolvesServers
 {

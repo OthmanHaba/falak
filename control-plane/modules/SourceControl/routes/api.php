@@ -1,9 +1,9 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\SourceControl\Http\Controllers\Api\ConnectionApiController;
 use Falak\SourceControl\Http\Controllers\GitHubAppWebhookController;
 use Falak\SourceControl\Http\Controllers\WebhookController;
+use Illuminate\Support\Facades\Route;
 
 // Public endpoints (authenticated by per-webhook signatures / tokens, not sessions).
 Route::post('webhooks/source-control/github-app/{app}', GitHubAppWebhookController::class)

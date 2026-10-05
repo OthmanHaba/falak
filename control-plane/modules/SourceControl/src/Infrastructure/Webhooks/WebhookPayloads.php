@@ -4,10 +4,10 @@ namespace Falak\SourceControl\Infrastructure\Webhooks;
 
 use DateTimeImmutable;
 use Exception;
-use Illuminate\Http\Request;
 use Falak\SourceControl\Contracts\Data\CommitData;
 use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Infrastructure\Providers\BitbucketClient;
+use Illuminate\Http\Request;
 
 /**
  * Signature verification and push parsing for inbound webhooks, per provider.

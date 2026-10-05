@@ -2,11 +2,11 @@
 
 namespace Falak\Insights\Domain\Models;
 
+use Falak\Insights\Domain\Enums\MonitoredEventType;
+use Falak\Insights\Domain\Enums\ThresholdMetric;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Falak\Insights\Domain\Enums\MonitoredEventType;
-use Falak\Insights\Domain\Enums\ThresholdMetric;
 
 /**
  * @property string $id

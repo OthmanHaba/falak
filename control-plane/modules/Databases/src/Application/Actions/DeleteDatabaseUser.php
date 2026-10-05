@@ -2,12 +2,12 @@
 
 namespace Falak\Databases\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Application\AgentCommands;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Databases\Infrastructure\CommandPayloads;
 use Falak\Identity\Contracts\AuditLog;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Drops the account (db.user.apply state=absent); the row goes once the agent confirms.

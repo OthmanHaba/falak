@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\AuditEntry;
 use Falak\SourceControl\Contracts\Exceptions\ConnectionNotFound;
@@ -10,6 +8,8 @@ use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Contracts\SourceControlGateway;
 use Falak\SourceControl\Domain\Models\DeployKey;
 use Falak\SourceControl\Domain\Models\Webhook;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 
 require_once __DIR__.'/../Support/helpers.php';
 

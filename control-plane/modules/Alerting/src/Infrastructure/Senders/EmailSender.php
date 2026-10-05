@@ -2,10 +2,10 @@
 
 namespace Falak\Alerting\Infrastructure\Senders;
 
-use Illuminate\Support\Facades\Mail;
 use Falak\Alerting\Application\AlertMessage;
 use Falak\Alerting\Application\Mail\AlertMail;
 use Falak\Alerting\Domain\Enums\ChannelType;
+use Illuminate\Support\Facades\Mail;
 use Throwable;
 
 /** Email via the application mailer. Config: {recipients: list<email>}. */

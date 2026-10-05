@@ -2,11 +2,11 @@
 
 namespace Falak\Fleet\Http\Controllers;
 
-use Illuminate\Http\Response;
 use Falak\Fleet\Domain\Models\InstallToken;
 use Falak\Fleet\Infrastructure\AgentBinaries;
 use Falak\Fleet\Infrastructure\InstallScript;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**

@@ -2,8 +2,6 @@
 
 namespace Falak\Terminal\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Identity\Contracts\AuditLog;
@@ -11,6 +9,8 @@ use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Terminal\Domain\Enums\SessionStatus;
 use Falak\Terminal\Domain\Models\TerminalSession;
 use Falak\Terminal\Events\TerminalSessionOpened;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class OpenSession
 {

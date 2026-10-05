@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Servers\Application\MachineChecks;
 use Falak\Servers\Contracts\ServerType;
@@ -8,6 +7,7 @@ use Falak\Servers\Domain\MachineCheck\MachineCheck;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Domain\Stack\Stack;
 use Falak\Servers\Infrastructure\ProvisioningPlanBuilder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 
 require_once __DIR__.'/../Support/machine_reports.php';
 

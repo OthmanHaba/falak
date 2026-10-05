@@ -2,10 +2,6 @@
 
 namespace Falak\Servers\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
@@ -15,6 +11,10 @@ use Falak\Servers\Application\Actions\DeleteSshKey;
 use Falak\Servers\Application\Actions\DetachSshKey;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Domain\Models\SshKey;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 final class SshKeyController extends Controller
 {

@@ -2,12 +2,12 @@
 
 namespace Falak\Insights\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
 use Falak\Insights\Application\Actions\CommentOnIssue;
 use Falak\Insights\Domain\Models\Issue;
 use Falak\Insights\Domain\Models\IssueComment;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 final class CommentController extends Controller
 {

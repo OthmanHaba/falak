@@ -2,9 +2,9 @@
 
 namespace Falak\Insights\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Fleet\Events\InsightsReceived;
 use Falak\Insights\Application\Actions\IngestInsights;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 final class IngestReceivedInsights implements ShouldQueue
 {

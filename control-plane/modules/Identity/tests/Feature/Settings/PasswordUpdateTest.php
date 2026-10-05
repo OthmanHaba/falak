@@ -2,9 +2,9 @@
 
 namespace Falak\Identity\Tests\Feature\Settings;
 
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
-use Falak\Identity\Domain\Models\User;
 use Tests\TestCase;
 
 class PasswordUpdateTest extends TestCase

@@ -2,11 +2,11 @@
 
 namespace Falak\Processes\Domain\Models;
 
+use Falak\Processes\Domain\Enums\OctaneRouteStatus;
+use Falak\Sites\Contracts\OctaneServer;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Falak\Processes\Domain\Enums\OctaneRouteStatus;
-use Falak\Sites\Contracts\OctaneServer;
 
 /**
  * @property string $id

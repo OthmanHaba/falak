@@ -1,9 +1,5 @@
 <?php
 
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Mail;
 use Falak\Alerting\Application\AlertMessage;
 use Falak\Alerting\Application\Mail\AlertMail;
 use Falak\Alerting\Contracts\Severity;
@@ -14,6 +10,10 @@ use Falak\Alerting\Infrastructure\Senders\HttpSender;
 use Falak\Alerting\Infrastructure\Senders\SlackSender;
 use Falak\Alerting\Infrastructure\Senders\TelegramSender;
 use Falak\Alerting\Infrastructure\Senders\WebhookSender;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 
 beforeEach(function () {
     Http::preventStrayRequests();

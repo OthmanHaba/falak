@@ -2,9 +2,9 @@
 
 namespace Falak\Processes\Domain\Models;
 
+use Falak\Processes\Domain\Enums\ApplyStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Falak\Processes\Domain\Enums\ApplyStatus;
 
 /**
  * What Processes last sent to (and heard back from) one server.

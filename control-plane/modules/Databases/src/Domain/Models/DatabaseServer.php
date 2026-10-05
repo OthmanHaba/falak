@@ -2,11 +2,11 @@
 
 namespace Falak\Databases\Domain\Models;
 
+use Falak\Databases\Domain\Enums\Engine;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
-use Falak\Databases\Domain\Enums\Engine;
 
 /**
  * The database engine running on a server (derived from the server's stack and agent facts).

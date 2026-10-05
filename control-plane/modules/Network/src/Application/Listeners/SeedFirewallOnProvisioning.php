@@ -2,11 +2,11 @@
 
 namespace Falak\Network\Application\Listeners;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Falak\Network\Application\Actions\EnsureDefaultFirewallRules;
 use Falak\Network\Application\ApplyFirewall;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Servers\Events\ServerProvisioned;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
 /**
  * A freshly provisioned server gets its default rules (22, plus 80/443 when it serves HTTP) applied.

@@ -2,10 +2,10 @@
 
 namespace Falak\Deployments\Tests\Support;
 
-use Illuminate\Support\Str;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Processes\Contracts\ProcessControl;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Support\Str;
 
 /**
  * ProcessControl that restarts every site through one proc.restart per server (so tests can drive

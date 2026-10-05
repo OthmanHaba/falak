@@ -1,7 +1,7 @@
 <?php
 
-use Illuminate\Support\Str;
 use Falak\Insights\Application\Actions\IngestInsights;
+use Illuminate\Support\Str;
 
 const INSIGHTS_SITE = '01j8sxte0000000000000000aa';
 const INSIGHTS_OTHER_SITE = '01j8sxte0000000000000000bb';

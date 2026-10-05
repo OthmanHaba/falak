@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Alerting\Domain\Enums\AlertOutcome;
 use Falak\Alerting\Domain\Models\Alert;
 use Falak\Alerting\Domain\Models\DedupState;
@@ -14,6 +13,7 @@ use Falak\Servers\Domain\Models\MachineInspection;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Servers\Events\ServerNeedsAttention;
 use Falak\Servers\Events\ServerProvisioned;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 require_once __DIR__.'/../Support/machine_reports.php';

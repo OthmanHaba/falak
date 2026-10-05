@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Str;
 use Falak\Fleet\Application\Jobs\SweepFleet;
 use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Fleet\Contracts\AgentStatus;
@@ -10,6 +8,8 @@ use Falak\Fleet\Events\AgentCameOnline;
 use Falak\Fleet\Events\AgentFactsReported;
 use Falak\Fleet\Events\AgentVersionChanged;
 use Falak\Fleet\Events\AgentWentOffline;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/../Support/helpers.php';
 

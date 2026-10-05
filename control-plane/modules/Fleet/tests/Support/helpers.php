@@ -1,10 +1,10 @@
 <?php
 
-use Illuminate\Testing\TestResponse;
 use Falak\Fleet\Contracts\Enrollment;
 use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Domain\Models\Certificate;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
+use Illuminate\Testing\TestResponse;
 use phpseclib3\Crypt\Common\PrivateKey;
 use phpseclib3\Crypt\EC;
 use phpseclib3\Crypt\RSA;

@@ -2,12 +2,12 @@
 
 namespace Falak\Edge\Application;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Edge\Contracts\Data\DnsTarget;
 use Falak\Edge\Infrastructure\EloquentSiteDomains;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\TargetRole;
+use Illuminate\Validation\ValidationException;
 
 /**
  * What the domain picker offers for a new or existing site: the test domain, a generated name (pointing at the

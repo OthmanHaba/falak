@@ -1,9 +1,9 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Functions\Http\Controllers\CreateFunctionController;
 use Falak\Functions\Http\Controllers\FunctionController;
 use Falak\Functions\Http\Controllers\ScheduleController;
+use Illuminate\Support\Facades\Route;
 
 $ulid = '[0-9A-Za-z]{26}';
 

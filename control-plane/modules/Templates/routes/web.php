@@ -1,9 +1,9 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
 use Falak\Templates\Http\Controllers\CustomTemplateController;
 use Falak\Templates\Http\Controllers\TemplateController;
 use Falak\Templates\Http\Controllers\TemplateDeployController;
+use Illuminate\Support\Facades\Route;
 
 $ulid = '[0-9A-Za-z]{26}';
 $slug = '[a-z0-9][a-z0-9-]{0,49}';

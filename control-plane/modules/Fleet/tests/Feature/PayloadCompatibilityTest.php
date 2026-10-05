@@ -1,8 +1,8 @@
 <?php
 
-use Illuminate\Support\Str;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Domain\Models\Command;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/../Support/helpers.php';
 

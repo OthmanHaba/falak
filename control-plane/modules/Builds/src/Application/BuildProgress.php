@@ -2,8 +2,6 @@
 
 namespace Falak\Builds\Application;
 
-use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Carbon;
 use Falak\Builds\Application\Artifacts\ArtifactStorage;
 use Falak\Builds\Contracts\BuildStatus;
 use Falak\Builds\Domain\Models\Build;
@@ -13,6 +11,8 @@ use Falak\Builds\Events\BuildFailed;
 use Falak\Builds\Events\BuildOutputReceived;
 use Falak\Builds\Events\BuildSucceeded;
 use Falak\Builds\Events\BuildUpdated;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Carbon;
 use Throwable;
 
 /**

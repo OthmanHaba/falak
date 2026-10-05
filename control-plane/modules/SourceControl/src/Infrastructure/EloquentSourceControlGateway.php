@@ -2,7 +2,6 @@
 
 namespace Falak\SourceControl\Infrastructure;
 
-use Illuminate\Support\Str;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\SourceControl\Contracts\Data\CheckoutCredentials;
 use Falak\SourceControl\Contracts\Data\CommitData;
@@ -21,6 +20,7 @@ use Falak\SourceControl\Infrastructure\GitHubApp\AppManifest;
 use Falak\SourceControl\Infrastructure\Providers\CustomGitClient;
 use Falak\SourceControl\Infrastructure\Providers\ProviderClient;
 use Falak\SourceControl\Infrastructure\Providers\ProviderClients;
+use Illuminate\Support\Str;
 
 final class EloquentSourceControlGateway implements SourceControlGateway
 {

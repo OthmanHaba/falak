@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Str;
 use Falak\Deployments\Domain\Models\Release;
 use Falak\Deployments\Domain\Models\ServerRelease;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
@@ -14,6 +13,7 @@ use Falak\Sites\Contracts\TargetRole;
 use Falak\Sites\Contracts\TargetStatus;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
+use Illuminate\Support\Str;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../../../../tests/Support/FakeAgentGateway.php';

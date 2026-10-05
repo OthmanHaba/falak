@@ -2,9 +2,6 @@
 
 namespace Falak\Sites\Http\Requests;
 
-use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
-use Illuminate\Validation\Validator;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Sites\Application\Actions\CreateSite;
@@ -16,6 +13,9 @@ use Falak\Sites\Contracts\Data\SitePlacement;
 use Falak\Sites\Contracts\Framework;
 use Falak\Sites\Contracts\SiteFactory;
 use Falak\Sites\Contracts\SiteRuntime;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 final class StoreSiteRequest extends FormRequest
 {

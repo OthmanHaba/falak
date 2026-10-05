@@ -2,7 +2,6 @@
 
 namespace Falak\Edge\Application\Actions;
 
-use Illuminate\Validation\ValidationException;
 use Falak\Edge\Application\CertificateInstaller;
 use Falak\Edge\Application\EdgeChanges;
 use Falak\Edge\Application\Jobs\SyncCloudflareDns;
@@ -13,6 +12,7 @@ use Falak\Identity\Contracts\AuditLog;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Servers\Contracts\ServerType;
 use Falak\Sites\Contracts\Data\SiteData;
+use Illuminate\Validation\ValidationException;
 
 final class ConfigureLoadBalancer
 {

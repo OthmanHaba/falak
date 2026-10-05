@@ -2,11 +2,11 @@
 
 namespace Falak\Identity\Tests\Feature\Auth;
 
+use Falak\Identity\Domain\Models\User;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\URL;
-use Falak\Identity\Domain\Models\User;
 use Tests\TestCase;
 
 class EmailVerificationTest extends TestCase

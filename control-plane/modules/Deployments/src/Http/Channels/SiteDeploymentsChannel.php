@@ -2,10 +2,10 @@
 
 namespace Falak\Deployments\Http\Channels;
 
-use Illuminate\Contracts\Auth\Authenticatable;
 use Falak\Deployments\Domain\Policies\DeploymentPermissions;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
  * private-deployments.site.{siteId}: deployment list updates for a site.

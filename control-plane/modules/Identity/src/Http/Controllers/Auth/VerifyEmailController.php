@@ -2,11 +2,11 @@
 
 namespace Falak\Identity\Http\Controllers\Auth;
 
+use Falak\Kernel\Http\Controller;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\RedirectResponse;
-use Falak\Kernel\Http\Controller;
 
 class VerifyEmailController extends Controller
 {

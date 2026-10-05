@@ -2,8 +2,8 @@
 
 namespace Falak\Sites\Events;
 
-use Illuminate\Foundation\Events\Dispatchable;
 use Falak\Sites\Contracts\Data\SitePlacement;
+use Illuminate\Foundation\Events\Dispatchable;
 
 final class SiteCreated
 {

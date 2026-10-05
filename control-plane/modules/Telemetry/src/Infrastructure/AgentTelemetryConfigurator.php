@@ -2,7 +2,6 @@
 
 namespace Falak\Telemetry\Infrastructure;
 
-use Illuminate\Support\Str;
 use Falak\Deployments\Contracts\LiveReleases;
 use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
@@ -12,6 +11,7 @@ use Falak\Telemetry\Contracts\Data\SiteTelemetryTarget;
 use Falak\Telemetry\Contracts\ServerSites;
 use Falak\Telemetry\Contracts\TelemetryConfigurator;
 use Falak\Telemetry\Domain\Models\TelemetrySettings;
+use Illuminate\Support\Str;
 
 final class AgentTelemetryConfigurator implements TelemetryConfigurator
 {

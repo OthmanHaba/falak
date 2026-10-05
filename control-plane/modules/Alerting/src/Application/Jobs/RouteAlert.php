@@ -2,10 +2,10 @@
 
 namespace Falak\Alerting\Application\Jobs;
 
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Falak\Alerting\Application\AlertRouter;
 use Falak\Alerting\Contracts\Data\AlertData;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
 
 final class RouteAlert implements ShouldQueue
 {

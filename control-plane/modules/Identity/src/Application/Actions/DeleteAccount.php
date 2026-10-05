@@ -2,12 +2,12 @@
 
 namespace Falak\Identity\Application\Actions;
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Events\OrganizationDeleted;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Deletes a user account together with their personal organization. Refuses while the user

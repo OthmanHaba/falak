@@ -2,15 +2,15 @@
 
 namespace Falak\Identity\Infrastructure;
 
-use Illuminate\Contracts\Auth\Factory as AuthFactory;
-use Illuminate\Contracts\Container\Container;
-use Illuminate\Http\Request;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\Data\OrganizationData;
 use Falak\Identity\Contracts\Exceptions\NoCurrentOrganization;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Identity\Domain\Models\PersonalAccessToken;
 use Falak\Identity\Domain\Models\User;
+use Illuminate\Contracts\Auth\Factory as AuthFactory;
+use Illuminate\Contracts\Container\Container;
+use Illuminate\Http\Request;
 
 /**
  * Lazily resolves the current organization (request-scoped binding).

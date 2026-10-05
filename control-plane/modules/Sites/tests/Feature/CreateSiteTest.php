@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Event;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\AuditEntry;
 use Falak\Projects\Contracts\ProjectDirectory;
@@ -14,6 +13,7 @@ use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Events\SiteCreated;
 use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
 

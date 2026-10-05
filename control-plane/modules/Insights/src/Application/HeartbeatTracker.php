@@ -4,9 +4,6 @@ namespace Falak\Insights\Application;
 
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
-use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Facades\DB;
-use InvalidArgumentException;
 use Falak\Insights\Contracts\IssueKind;
 use Falak\Insights\Contracts\IssueStatus;
 use Falak\Insights\Domain\Models\HeartbeatMonitor;
@@ -14,6 +11,9 @@ use Falak\Insights\Domain\Models\Issue;
 use Falak\Insights\Events\HeartbeatMissed;
 use Falak\Processes\Contracts\Data\ScheduledJobData;
 use Falak\Processes\Contracts\ScheduleDirectory;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 /**
  * Cron heartbeat tracking (cron.apply `$defs.heartbeat`): monitors are created on the first

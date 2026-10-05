@@ -2,12 +2,12 @@
 
 namespace Falak\Alerting\Domain\Models;
 
+use Falak\Alerting\Contracts\Severity;
+use Falak\Alerting\Domain\QuietHours;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Carbon;
-use Falak\Alerting\Contracts\Severity;
-use Falak\Alerting\Domain\QuietHours;
 
 /**
  * @property string $id

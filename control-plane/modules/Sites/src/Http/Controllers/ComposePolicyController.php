@@ -2,16 +2,16 @@
 
 namespace Falak\Sites\Http\Controllers;
 
-use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
 use Falak\Sites\Domain\Models\OrganizationSettings;
 use Falak\Sites\Domain\Models\Site;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * Organization settings → Compose: the compose policy (docs/COMPOSE_TEMPLATES.md §1.3).

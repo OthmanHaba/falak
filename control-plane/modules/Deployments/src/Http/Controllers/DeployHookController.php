@@ -2,14 +2,14 @@
 
 namespace Falak\Deployments\Http\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Domain\Enums\Trigger;
 use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Kernel\Http\Controller;
 use Falak\Sites\Contracts\SiteDirectory;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 /**
  * GET|POST /api/deploy/{token} — deploy hook URL (CI, chat ops). Reserved query parameters:

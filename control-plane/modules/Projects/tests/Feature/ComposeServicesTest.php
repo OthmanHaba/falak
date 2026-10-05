@@ -1,6 +1,5 @@
 <?php
 
-use Illuminate\Validation\ValidationException;
 use Falak\Databases\Application\EngineInventory;
 use Falak\Databases\Contracts\Data\DatabaseData;
 use Falak\Databases\Contracts\DatabaseProvisioner;
@@ -12,6 +11,7 @@ use Falak\Sites\Contracts\ComposeServiceExtraction;
 use Falak\Sites\Contracts\ComposeSites;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Events\ComposeServiceExtracted;
+use Illuminate\Validation\ValidationException;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';

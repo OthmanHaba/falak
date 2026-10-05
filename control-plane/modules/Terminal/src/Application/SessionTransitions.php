@@ -2,12 +2,12 @@
 
 namespace Falak\Terminal\Application;
 
-use Illuminate\Support\Carbon;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Terminal\Domain\Enums\SessionStatus;
 use Falak\Terminal\Domain\Models\TerminalSession;
 use Falak\Terminal\Events\TerminalSessionClosed;
 use Falak\Terminal\Events\TerminalSessionUpdated;
+use Illuminate\Support\Carbon;
 
 /**
  * State changes of a session; every change is broadcast to live viewers, closing announces
