@@ -58,8 +58,34 @@ final class EnableContainerAccess
                 ->get()
             : collect();
 
+        // An agent downgraded below db.redis.network: its Redis / Valkey engines go back to loopback only (the payload
+        // never carries more for it either, PayloadCompatibility), their instances re-applied, the firewall without their peers.
+        $downgraded = $features !== null && ! $supports(KeyValueNetwork::FEATURE)
+            ? DatabaseServer::query()
+                ->where('server_id', $serverId)
+                ->whereIn('engine', EngineKind::KeyValue->values())
+                ->where('container_access', true)
+                ->get()
+            : collect();
+
+        if ($downgraded->isNotEmpty()) {
+            foreach ($downgraded as $engine) {
+                $engine->forceFill(['container_access' => false])->save();
+            }
+
+            $this->firewalls->converge($serverId);
+
+            foreach ($downgraded as $engine) {
+                Database::query()
+                    ->where('database_server_id', $engine->id)
+                    ->whereIn('status', [ResourceStatus::Active, ResourceStatus::Pending])
+                    ->orderBy('created_at')
+                    ->each(fn (Database $instance) => ($this->applyInstance)($instance, background: true));
+            }
+        }
+
         if ($sql->isEmpty() && $keyValue->isEmpty()) {
-            return false;
+            return $downgraded->isNotEmpty();
         }
 
         // Flag and firewall first: users only carry the Docker ranges (which make the agent listen beyond localhost)

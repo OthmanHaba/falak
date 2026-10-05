@@ -541,7 +541,10 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   holds it (not lo / docker / br- / veth; DigitalOcean's eth1, Lightsail's eth0); none: any interface. The route is
   not asked (rc.2 did: `ip route get` answers the default route for any private address, pinning a WireGuard peer to
   eth0 when its config wasn't there yet, and nothing re-applied). Both fields are stripped for older
-  agents (`PayloadCompatibility`).
+  agents (`PayloadCompatibility`), and `db.redis.apply` `bind` is forced to `["127.0.0.1"]` for them
+  (`PayloadCompatibility::VALUES`; review: an agent downgraded after its engine's container access was on still got
+  private binds). A downgrade (`AgentVersionChanged` without the feature) also turns the key-value engines' container
+  access off, converges the firewall (no instance ports / peers) and re-applies the instances on loopback.
 - **After a reboot** (found in review): docker0 appears after `docker.service`, a Kiln private network's address after
   `wg-quick@<interface>.service`, but the template unit is only `After=network.target` — Redis 6.2+ / Valkey refused to
   start ("Failed listening on port") and systemd gave up after 5 starts in 10 s; Redis 6.0 started without the address

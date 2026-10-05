@@ -183,6 +183,29 @@ it('re-applies existing instances when the agent learns db.redis.network', funct
     expect($this->agents->dispatched('db.redis.apply'))->toHaveCount($before + 1);
 });
 
+it('goes back to loopback when the agent is downgraded below db.redis.network, and never sends it a wider bind', function () {
+    $a = kvnet_server($this, 'app-a');
+    $b = kvnet_server($this, 'app-b');
+    kvnet_wireguard($this, ['10.90.0.1' => $a, '10.90.0.2' => $b]);
+    $instance = kvnet_instance($this, $a);
+    projects_site($this->organization, 'shop', [], projects_default_env($this->organization), [$b]);
+    expect($this->agents->last('db.redis.apply')['payload']['bind'])->toBe(['127.0.0.1', '10.90.0.1']);
+    $before = count($this->agents->dispatched('db.redis.apply'));
+
+    event(new AgentVersionChanged('agent', $this->organization->id, $a->id, '0.7.1', '0.7.0', ['db.redis', 'db.containers']));
+
+    expect(DatabaseServer::query()->where('server_id', $a->id)->where('engine', 'redis')->value('container_access'))->toBeFalse()
+        ->and($this->agents->dispatched('db.redis.apply'))->toHaveCount($before + 1)
+        ->and($this->agents->last('db.redis.apply')['payload'])->toMatchArray(['name' => 'cache', 'bind' => ['127.0.0.1']])->not->toHaveKey('containers')
+        ->and(kvnet_ports($a))->not->toHaveKey('redis-cache');
+
+    // Whatever a module builds, an agent without the feature gets loopback only (the field itself it understands).
+    $payload = PayloadCompatibility::adapt('db.redis.apply', (object) ['name' => 'cache', 'bind' => ['127.0.0.1', '10.90.0.1'], 'containers' => true], ['db.redis', 'db.containers']);
+    $kept = PayloadCompatibility::adapt('db.redis.apply', (object) ['name' => 'cache', 'bind' => ['127.0.0.1', '10.90.0.1']], KV_NET);
+    expect($payload->bind)->toBe(['127.0.0.1'])->and((array) $payload)->not->toHaveKey('containers')
+        ->and($kept->bind)->toBe(['127.0.0.1', '10.90.0.1']);
+});
+
 it('reaches an instance from another server over a WireGuard network: bind, firewall peers, host', function () {
     $a = kvnet_server($this, 'app-a', attributes: ['private_ipv4' => '10.0.1.5']);
     $b = kvnet_server($this, 'app-b', attributes: ['private_ipv4' => '10.0.1.6']);
