@@ -37,7 +37,7 @@ removes the field for agents that do not (`Fleet\Application\PayloadCompatibilit
 a new version (`Fleet\Events\AgentVersionChanged`), modules re-send state they would otherwise deduplicate.
 Current features: `edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`, `fn.v1`, `fn.v2`, `fn.v3`,
 `db.containers`, `compose.v2`, `docker.networks`, `docker.networks.create`, `compose.up.services`, `provision.v2`,
-`db.redis`, `db.redis.network`.
+`db.redis`, `db.redis.network`, `net.firewall.peer_interfaces`.
 
 A feature can also gate a whole **command**: the control plane only queues it for agents that list the feature
 (older agents would fail it as an unknown type). `provision.v2` adds `provision.inspect` and `provision.apply`
@@ -114,7 +114,8 @@ listens on) and `container_host`. A changed bind list restarts the instance the 
 the interface they arrive on — `container_ports[].peer_interfaces` (address → interface) when the control plane names
 it (a Kiln WireGuard network's, also before its config reaches the server), else the agent's: a Kiln WireGuard network
 whose `Address` range holds the peer, a local subnet; none: any interface — after the Docker-bridge accepts and before
-the port's drop: `sources` may then be empty. Both fields
+the port's drop: `sources` may then be empty. `peer_interfaces` needs feature `net.firewall.peer_interfaces`
+(stripped otherwise). Both fields
 are stripped for agents without the feature (the control plane never sends them non-loopback binds either).
 
 ## Agent sessions and lost deliveries

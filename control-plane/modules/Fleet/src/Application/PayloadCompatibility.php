@@ -57,7 +57,11 @@ final class PayloadCompatibility
         // plane sends neither non-loopback binds nor key-value container ports to older agents anyway.
         'db.redis.network' => [
             'db.redis.apply' => ['containers'],
-            'net.firewall.apply' => ['container_ports.*.peers', 'container_ports.*.peer_interfaces'],
+            'net.firewall.apply' => ['container_ports.*.peers'],
+        ],
+        // The interface of a WireGuard peer (rc.1 / rc.2 agents with db.redis.network decode strictly and guess it).
+        'net.firewall.peer_interfaces' => [
+            'net.firewall.apply' => ['container_ports.*.peer_interfaces'],
         ],
     ];
 

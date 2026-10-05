@@ -123,7 +123,7 @@
           },
           "peer_interfaces": {
             "type": "object",
-            "description": "feature db.redis.network: the interface a peer arrives on (a Kiln WireGuard network's), by peer address; its accept rule is limited to it. Peers not listed: the agent resolves the interface (local subnet) or accepts them on any interface.",
+            "description": "feature net.firewall.peer_interfaces: the interface a peer arrives on (a Kiln WireGuard network's), by peer address; its accept rule is limited to it. Peers not listed: the agent resolves the interface (local subnet) or accepts them on any interface.",
             "additionalProperties": {
               "type": "string",
               "pattern": "^[A-Za-z0-9_.-]{1,15}$"

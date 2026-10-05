@@ -51,6 +51,8 @@ var Features = []string{
 	// WireGuard ones, missing ones skipped and reported) and net.firewall.apply container_ports[].peers: Redis / Valkey
 	// instances reached from the server's containers and over private networks.
 	"db.redis.network",
+	// net.firewall.apply container_ports[].peer_interfaces: the control plane names a WireGuard peer's interface.
+	"net.firewall.peer_interfaces",
 }
 
 var (

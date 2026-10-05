@@ -130,6 +130,9 @@ it('keeps instances on 127.0.0.1 for agents without db.redis.network, and strips
     $redis = PayloadCompatibility::adapt('db.redis.apply', (object) ['name' => 'cache', 'bind' => ['127.0.0.1'], 'containers' => true], ['db.redis']);
     $firewall = PayloadCompatibility::adapt('net.firewall.apply', json_decode('{"container_ports":[{"id":"redis-cache","ports":["6380"],"sources":["172.16.0.0/12"],"peers":["10.90.0.2"],"peer_interfaces":{"10.90.0.2":"wg-kiln"}}]}'), ['db.containers']);
     $kept = PayloadCompatibility::adapt('db.redis.apply', (object) ['containers' => true], ['db.redis', 'db.redis.network']);
+    // An rc agent with db.redis.network but not net.firewall.peer_interfaces keeps the peers, without their interfaces.
+    $rc = PayloadCompatibility::adapt('net.firewall.apply', json_decode('{"container_ports":[{"id":"redis-cache","ports":["6380"],"peers":["10.90.0.2"],"peer_interfaces":{"10.90.0.2":"wg-kiln"}}]}'), ['db.containers', 'db.redis.network']);
+    expect((array) $rc->container_ports[0])->toHaveKey('peers')->not->toHaveKey('peer_interfaces');
     expect((array) $redis)->not->toHaveKey('containers')
         ->and((array) $firewall->container_ports[0])->not->toHaveKey('peers')->not->toHaveKey('peer_interfaces')->toHaveKey('sources')
         ->and($kept->containers)->toBeTrue();
