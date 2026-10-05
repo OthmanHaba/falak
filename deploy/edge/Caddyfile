@@ -111,3 +111,6 @@
 }
 
 import /etc/caddy/sites/*.caddyfile
+
+# Operator-owned sites from /opt/falak/edge (mounted read-only; empty unless the operator adds files).
+import /etc/caddy/custom/*.caddyfile

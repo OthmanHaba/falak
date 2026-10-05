@@ -147,6 +147,7 @@ The agent binaries come from the control-plane image, so servers download them f
 /opt/falak/deploy/         compose.yml, falak-ctl, image support files (replaced on update; previous kept as deploy.prev)
 /opt/falak/observability/  Loki/Tempo/Grafana/gateway configs
 /opt/falak/backups/        falak-ctl backup output
+/opt/falak/edge/           optional extra sites served by the edge (yours; never touched by updates)
 ```
 
 **Which file?** `.env` holds the settings `deploy/compose.yml` passes to the containers by name (domains, secrets,
@@ -218,6 +219,27 @@ through the Docker bridge (agent 0.4.5+). The engines accept connections from Do
 servers uses other `default-address-pools`, set `FALAK_DOCKER_NETWORKS` (comma-separated IPv4 CIDRs, /8–/30) in
 `/opt/falak/custom.env` and run `falak-ctl up`; it applies to database users created or updated afterwards. Entries
 that are not such ranges are ignored with a warning in the logs (Docker's defaults apply when none is left).
+
+### Extra sites on the control-plane host (optional)
+
+The edge (Caddy, ports 80/443) also loads every `/opt/falak/edge/*.caddyfile`. The folder is mounted read-only at
+`/etc/caddy/custom`, so files next to a site file are served from there. Example, a static site in
+`/opt/falak/edge/www/example.com/`:
+
+```
+# /opt/falak/edge/example.com.caddyfile
+example.com {
+	import security_headers
+	encode zstd gzip
+	root * /etc/caddy/custom/www/example.com
+	file_server
+}
+```
+
+Point the domain's DNS at this server, then reload: `falak-ctl compose exec edge caddy reload --config
+/etc/caddy/Caddyfile --adapter caddyfile` (Let's Encrypt issues the certificate on the first request). A broken file
+makes the reload fail and the running config stays; at a container restart it would stop the edge, so validate first
+with `caddy validate` in place of `caddy reload`.
 
 ### Domains for new services
 

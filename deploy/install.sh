@@ -303,6 +303,7 @@ fetch_files() {
     mv "$stage/$d" "$FALAK_DIR/$d"
   done
   rm -rf "$stage"
+  mkdir -p "$FALAK_DIR/edge"
   install -m 0755 "$FALAK_DIR/deploy/falak-ctl" /usr/local/bin/falak-ctl
   ok "falak-ctl installed to /usr/local/bin/falak-ctl"
 }

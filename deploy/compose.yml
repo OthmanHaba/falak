@@ -313,6 +313,8 @@ services:
     volumes:
       - falak-ca:/falak/ca:ro
       - edge-pki:/falak/edge-pki
+      # Operator-owned extra sites (/opt/falak/edge/*.caddyfile, plus any files they serve); see docs/INSTALL.md.
+      - ../edge:/etc/caddy/custom:ro
       - caddy-data:/data
       - caddy-config:/config
     ports:
