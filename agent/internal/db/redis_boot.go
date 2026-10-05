@@ -23,11 +23,12 @@ import (
 //
 //   - A second drop-in, 40-kiln-boot.conf, orders the instance after network-online.target, docker.service and the
 //     Kiln WireGuard units on the host (ordering only: none of them is pulled in, an absent one is ignored) and makes
-//     systemd retry every 2 s with no start limit. It only needs a daemon-reload, never a restart: it is kept apart from
+//     systemd retry every 2 s (at most 150 starts in 10 minutes). It only needs a daemon-reload, never a restart: it is kept apart from
 //     50-kiln.conf, whose changes restart the instance.
 //   - RedisWatch checks every instance once a minute: an instance whose configured addresses all exist but that does not
-//     listen on each of them is restarted (data kept: snapshotted first), a failed one started. Each instance gets one
-//     attempt per set of host addresses, so a broken one is not restarted over and over.
+//     listen on each of them is restarted (data kept: snapshotted first), a failed one started. Attempts back off
+//     (1, 2, 5, then every 10 minutes) while they don't help; the backoff starts over once the instance is healthy or
+//     one of its addresses was gone (it came back: worth trying at once).
 
 // wgQuickConf is the header net.wireguard.apply writes into /etc/wireguard/<interface>.conf.
 const wgQuickConf = "# Managed by Kiln (net.wireguard.apply)"
@@ -50,7 +51,10 @@ func renderRedisBootDropIn(wgUnits []string) string {
 		"[Unit]\n" +
 		"Wants=network-online.target\n" +
 		"After=" + strings.Join(after, " ") + "\n" +
-		"StartLimitIntervalSec=0\n" +
+		// A few minutes of retries every 2 s (docker0 and WireGuard come up within them), then RedisWatch takes over: a
+		// broken instance doesn't restart every 2 s forever.
+		"StartLimitIntervalSec=10min\n" +
+		"StartLimitBurst=150\n" +
 		"\n" +
 		"[Service]\n" +
 		"RestartSec=2s\n"
@@ -167,14 +171,11 @@ func (db *DB) RedisCheck(ctx context.Context) {
 		return
 	}
 	present := map[string]bool{}
-	var hostAddrs []string
 	for _, it := range ifs {
 		for _, a := range it.Addrs {
 			present[a.String()] = true
-			hostAddrs = append(hostAddrs, a.String())
 		}
 	}
-	slices.Sort(hostAddrs)
 	for _, e := range entries {
 		base, ok := strings.CutSuffix(e.Name(), ".json")
 		if !ok {
@@ -192,7 +193,7 @@ func (db *DB) RedisCheck(ctx context.Context) {
 		if !ok {
 			continue
 		}
-		db.checkInstance(ctx, k, name, present, strings.Join(hostAddrs, " "))
+		db.checkInstance(ctx, k, name, present)
 		unlock()
 		if ctx.Err() != nil {
 			return
@@ -200,12 +201,54 @@ func (db *DB) RedisCheck(ctx context.Context) {
 	}
 }
 
-func (db *DB) checkInstance(ctx context.Context, k kvEngine, name string, present map[string]bool, hostKey string) {
+// watchAttempts is RedisWatch's record of one unit: how many attempts in a row did not help, and when the last was.
+type watchAttempts struct {
+	n    int
+	last time.Time
+}
+
+// RedisWatchBackoff is the wait after the 1st, 2nd, 3rd… attempt that did not help (the last one repeats).
+var RedisWatchBackoff = []time.Duration{time.Minute, 2 * time.Minute, 5 * time.Minute, 10 * time.Minute}
+
+// mayAttempt tells whether the unit's backoff allows an attempt now.
+func (db *DB) mayAttempt(unit string) bool {
+	db.watchMu.Lock()
+	defer db.watchMu.Unlock()
+	a, ok := db.watchTried[unit]
+	if !ok || a.n == 0 {
+		return true
+	}
+	wait := RedisWatchBackoff[min(a.n, len(RedisWatchBackoff))-1]
+	return !redisNow().Before(a.last.Add(wait))
+}
+
+// attempted records an attempt (a stop or a start was issued).
+func (db *DB) attempted(unit string) {
+	db.watchMu.Lock()
+	defer db.watchMu.Unlock()
+	if db.watchTried == nil {
+		db.watchTried = map[string]watchAttempts{}
+	}
+	a := db.watchTried[unit]
+	db.watchTried[unit] = watchAttempts{n: a.n + 1, last: redisNow()}
+}
+
+// resetAttempts starts the backoff over: the instance is healthy, or one of its addresses was gone.
+func (db *DB) resetAttempts(unit string) {
+	db.watchMu.Lock()
+	defer db.watchMu.Unlock()
+	delete(db.watchTried, unit)
+}
+
+func (db *DB) checkInstance(ctx context.Context, k kvEngine, name string, present map[string]bool) {
 	unit := k.unit(name)
 	log := db.d.Logger.With("unit", unit)
 	onDisk, err := db.d.FS.ReadFile(k.confPath(name))
 	if err != nil {
 		return // removed, or never written
+	}
+	if !db.d.FS.Exists(k.dropIn(name)) {
+		return // removed half way (or never applied): the watch doesn't bring the drop-in directory back
 	}
 	if err := db.ensureBootDropIn(ctx, k, name); err != nil {
 		log.Warn("redis watch: boot drop-in", "err", err)
@@ -216,21 +259,10 @@ func (db *DB) checkInstance(ctx context.Context, k kvEngine, name string, presen
 	}
 	for _, a := range conf.bind {
 		if ip := net.ParseIP(a); ip == nil || !present[ip.String()] {
-			return // not there yet: nothing can listen on it (systemd keeps retrying a refused start)
+			// Not there yet: nothing can listen on it (systemd retries a refused start). Once it is back, try at once.
+			db.resetAttempts(unit)
+			return
 		}
-	}
-	// One attempt per set of host addresses: a new address (or one gone and back) earns another.
-	attempted := func() bool {
-		db.watchMu.Lock()
-		defer db.watchMu.Unlock()
-		if db.watchTried == nil {
-			db.watchTried = map[string]string{}
-		}
-		if db.watchTried[unit] == hostKey {
-			return true
-		}
-		db.watchTried[unit] = hostKey
-		return false
 	}
 	switch db.activeState(ctx, unit) {
 	case "active":
@@ -240,12 +272,10 @@ func (db *DB) checkInstance(ctx context.Context, k kvEngine, name string, presen
 			return
 		}
 		if len(missing) == 0 {
-			db.watchMu.Lock()
-			delete(db.watchTried, unit)
-			db.watchMu.Unlock()
+			db.resetAttempts(unit)
 			return
 		}
-		if attempted() {
+		if !db.mayAttempt(unit) {
 			return
 		}
 		state := db.loadRedisState(k, name)
@@ -253,19 +283,26 @@ func (db *DB) checkInstance(ctx context.Context, k kvEngine, name string, presen
 			return // the process does not run this file (an apply was interrupted): its redelivery restarts it
 		}
 		log.Warn("redis instance does not listen on all of its addresses, restarting it", "missing", strings.Join(missing, " "))
-		if err := db.restartKeepingData(ctx, k, name, conf, state); err != nil {
+		stopped, err := db.restartKeepingData(ctx, k, name, conf, state)
+		if stopped {
+			db.attempted(unit)
+		}
+		if err != nil {
 			log.Warn("redis watch: restart failed", "err", err)
 		}
 	case "failed", "inactive":
 		res, err := db.d.Runner.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"is-enabled", "--quiet", unit}})
-		if err != nil || res.ExitCode != 0 || attempted() {
+		if err != nil || res.ExitCode != 0 || !db.mayAttempt(unit) {
 			return
 		}
 		log.Warn("redis instance is not running although its addresses exist, starting it")
+		db.attempted(unit)
 		_, _ = db.d.Runner.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"reset-failed", unit}})
 		if _, err := runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"start", unit}}); err != nil {
 			log.Warn("redis watch: start failed", "err", err)
 		}
+	default:
+		// activating (systemd still retrying), deactivating, unknown: leave it to systemd for now.
 	}
 }
 
@@ -279,8 +316,9 @@ func (db *DB) activeState(ctx context.Context, unit string) string {
 }
 
 // restartKeepingData restarts a running instance with its unchanged config: snapshotted first (unless it keeps
-// nothing), never while its first AOF rewrite runs (the AOF could not be loaded).
-func (db *DB) restartKeepingData(ctx context.Context, k kvEngine, name string, conf parsedConf, state redisState) error {
+// nothing), never while its first AOF rewrite runs (the AOF could not be loaded). stopped tells whether it got as far as
+// stopping the instance (a failure before that is not an attempt: nothing was done).
+func (db *DB) restartKeepingData(ctx context.Context, k kvEngine, name string, conf parsedConf, state redisState) (stopped bool, err error) {
 	unit := k.unit(name)
 	c := conn{db: db, k: k, port: conf.port, password: state.Password, config: state.ConfigName}
 	if c.password == "" {
@@ -290,7 +328,7 @@ func (db *DB) restartKeepingData(ctx context.Context, k kvEngine, name string, c
 		c.config = conf.configName
 	}
 	if err := c.ping(ctx); err != nil {
-		return fmt.Errorf("not reachable on 127.0.0.1:%d: %w", conf.port, err)
+		return false, fmt.Errorf("not reachable on 127.0.0.1:%d: %w", conf.port, err)
 	}
 	mode := conf.persistence
 	if c.config != "" {
@@ -300,25 +338,25 @@ func (db *DB) restartKeepingData(ctx context.Context, k kvEngine, name string, c
 	}
 	if mode == "aof" {
 		if incomplete, err := c.aofIncomplete(ctx); err != nil {
-			return err
+			return false, err
 		} else if incomplete {
-			return fmt.Errorf("its AOF rewrite is not finished; retried later")
+			return false, fmt.Errorf("its AOF rewrite is not finished; the watch tries again on its next pass")
 		}
 	}
 	if err := db.prepareStop(ctx, c, mode, mode); err != nil {
-		return fmt.Errorf("prepare the restart: %w", err)
+		return false, fmt.Errorf("prepare the restart: %w", err)
 	}
 	// Stop and start are not cut short by the agent shutting down: the instance must not be left stopped.
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
 	defer cancel()
 	if _, err := runner.Check(sctx, db.d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"stop", unit}}); err != nil {
-		return fmt.Errorf("stop: %w", err)
+		return true, fmt.Errorf("stop: %w", err)
 	}
 	_, _ = db.d.Runner.Run(sctx, runner.Cmd{Name: "systemctl", Args: []string{"reset-failed", unit}})
 	if _, err := runner.Check(sctx, db.d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"start", unit}}); err != nil {
-		return fmt.Errorf("start: %w%s", err, db.journalTail(sctx, unit))
+		return true, fmt.Errorf("start: %w%s", err, db.journalTail(sctx, unit))
 	}
-	return c.ready(ctx)
+	return true, c.ready(ctx)
 }
 
 // tryLockInstance takes the instance's lock only when it is free (see lockInstance).

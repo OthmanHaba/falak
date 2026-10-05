@@ -39,7 +39,7 @@ type DB struct {
 	d Deps
 
 	watchMu    sync.Mutex
-	watchTried map[string]string // unit → the host addresses RedisWatch last acted on it with
+	watchTried map[string]watchAttempts // unit → RedisWatch's restarts / starts of it
 }
 
 // New builds db executors.

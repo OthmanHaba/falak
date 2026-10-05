@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/kiln/agent/internal/runner"
 	"github.com/kiln/agent/internal/runner/runnertest"
@@ -47,7 +49,7 @@ func TestRedisBootDropInOrdersAfterDockerAndKilnWireGuard(t *testing.T) {
 		b, _ := os.ReadFile(filepath.Join(root, "/etc/systemd/system/redis-server@kiln-cache.service.d/40-kiln-boot.conf"))
 		return string(b)
 	}
-	for _, want := range []string{"[Unit]\nWants=network-online.target\nAfter=network-online.target docker.service wg-quick@wg-a1b2c3d4.service\nStartLimitIntervalSec=0\n",
+	for _, want := range []string{"[Unit]\nWants=network-online.target\nAfter=network-online.target docker.service wg-quick@wg-a1b2c3d4.service\nStartLimitIntervalSec=10min\nStartLimitBurst=150\n",
 		"[Service]\nRestartSec=2s\n"} {
 		if !strings.Contains(boot(), want) {
 			t.Fatalf("boot drop-in misses %q:\n%s", want, boot())
@@ -124,9 +126,21 @@ func TestRedisApplyRestartsAnInstanceMissingAnAddress(t *testing.T) {
 	}
 }
 
+// fakeClock replaces redisNow for one test; advance moves it.
+func fakeClock(t *testing.T) (advance func(time.Duration)) {
+	t.Helper()
+	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	var mu sync.Mutex
+	old := redisNow
+	redisNow = func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	t.Cleanup(func() { redisNow = old })
+	return func(d time.Duration) { mu.Lock(); now = now.Add(d); mu.Unlock() }
+}
+
 func TestRedisCheckRestartsAnInstanceOnceItsAddressExists(t *testing.T) {
 	f, db, root, h := watchHost(t)
 	hostInterfaces(t, root, true)
+	advance := fakeClock(t)
 	p := redisPayload()
 	p.Bind, p.Containers = []string{"10.90.0.3"}, true
 	applyOK(t, db, p)
@@ -141,11 +155,14 @@ func TestRedisCheckRestartsAnInstanceOnceItsAddressExists(t *testing.T) {
 		}
 		return n
 	}
+	check := func() int {
+		f.Reset()
+		db.RedisCheck(context.Background())
+		return starts()
+	}
 
 	// All listening: nothing to do.
-	f.Reset()
-	db.RedisCheck(context.Background())
-	if starts() != 0 || slices.Contains(f.Lines(), "systemctl stop "+unit) {
+	if check() != 0 || slices.Contains(f.Lines(), "systemctl stop "+unit) {
 		t.Fatal(f.Lines())
 	}
 
@@ -153,41 +170,96 @@ func TestRedisCheckRestartsAnInstanceOnceItsAddressExists(t *testing.T) {
 	// be done; once it is there the instance is restarted, its data kept.
 	fakeInterfaces(t, iface("lo", "127.0.0.1"), iface("wg-kiln", "10.90.0.3"))
 	proc().bind = []string{"127.0.0.1", "10.90.0.3"}
-	f.Reset()
-	db.RedisCheck(context.Background())
-	if starts() != 0 {
+	if check() != 0 {
 		t.Fatal(f.Lines())
 	}
 	hostInterfaces(t, root, true)
 	h.redisCmds = nil
-	f.Reset()
-	db.RedisCheck(context.Background())
-	if starts() != 1 || !slices.Equal(proc().bind, []string{"127.0.0.1", "10.90.0.3", "172.17.0.1"}) || proc().loadedFrom != "dump.rdb" {
+	if check() != 1 || !slices.Equal(proc().bind, []string{"127.0.0.1", "10.90.0.3", "172.17.0.1"}) || proc().loadedFrom != "dump.rdb" {
 		t.Fatalf("%v %+v", f.Lines(), proc())
 	}
 	inOrder(t, h.redisCmds, "SAVE", "PING")
 
-	// A restart that did not help is not repeated for the same host addresses.
+	// Healthy again: the backoff starts over, so the next problem is handled at once.
+	if check() != 0 {
+		t.Fatal(f.Lines())
+	}
 	proc().bind = []string{"127.0.0.1"}
-	f.Reset()
-	db.RedisCheck(context.Background())
-	if starts() != 0 {
-		t.Fatal("restarted again for the same addresses")
+	if check() != 1 {
+		t.Fatal("a new problem after a healthy pass waits")
 	}
 
-	// Redis 6.2+ gave up starting (old drop-in, or systemd's limit): started once its addresses exist.
+	// A restart that did not help backs off: 1, 2, 5, then every 10 minutes. Other interfaces coming and going
+	// (veths, bridges) don't matter.
+	stubborn := func() { proc().bind = []string{"127.0.0.1"} }
+	stubborn()
+	if check() != 0 {
+		t.Fatal("restarted again at once")
+	}
+	fakeInterfaces(t, iface("lo", "127.0.0.1"), iface("wg-kiln", "10.90.0.3"), iface("docker0", "172.17.0.1"), iface("veth1a2b", "169.254.1.1"))
+	if check() != 0 {
+		t.Fatal("a new veth is no reason to restart")
+	}
+	for _, wait := range []time.Duration{time.Minute, 2 * time.Minute, 5 * time.Minute, 10 * time.Minute, 10 * time.Minute} {
+		advance(wait - time.Second)
+		if check() != 0 {
+			t.Fatalf("restarted before %s", wait)
+		}
+		advance(time.Second)
+		if check() != 1 {
+			t.Fatalf("not restarted after %s", wait)
+		}
+		stubborn()
+	}
+
+	// An address gone and back: tried at once.
+	fakeInterfaces(t, iface("lo", "127.0.0.1"), iface("docker0", "172.17.0.1"))
+	check()
+	hostInterfaces(t, root, true)
+	if check() != 1 {
+		t.Fatal("an address back is not tried at once")
+	}
+
+	// Not reachable for the snapshot (nothing stopped): not an attempt, the next pass tries again.
+	stubborn()
+	db.resetAttempts(unit)
+	pw := proc().password
+	proc().password = "something-else-entirely"
+	if check() != 0 || slices.Contains(f.Lines(), "systemctl stop "+unit) {
+		t.Fatal(f.Lines())
+	}
+	proc().password = pw
+	if check() != 1 {
+		t.Fatal("a failure before the stop counted as an attempt")
+	}
+
+	// Redis 6.2+ gave up starting (systemd's start limit): started once its addresses exist, backing off when it keeps failing.
 	delete(h.procs, unit)
-	fakeInterfaces(t, iface("lo", "127.0.0.1"), iface("wg-kiln", "10.90.0.3"), iface("docker0", "172.17.0.1"), iface("ens10", "10.0.1.5"))
-	f.Reset()
-	db.RedisCheck(context.Background())
-	if starts() != 1 || proc() == nil || !slices.Contains(f.Lines(), "systemctl reset-failed "+unit) {
+	db.resetAttempts(unit)
+	if check() != 1 || proc() == nil || !slices.Contains(f.Lines(), "systemctl reset-failed "+unit) {
 		t.Fatal(f.Lines())
 	}
 	delete(h.procs, unit)
+	if check() != 0 {
+		t.Fatal("a unit that keeps failing is started again at once")
+	}
+	advance(time.Minute)
+	if check() != 1 {
+		t.Fatal("not started again after a minute")
+	}
+}
+
+// The watch never brings back a drop-in directory a remove deleted (its config still there, say).
+func TestRedisCheckSkipsAnInstanceWithoutItsDropIn(t *testing.T) {
+	f, db, root, _ := watchHost(t)
+	hostInterfaces(t, root, true)
+	applyOK(t, db, redisPayload())
+	dir := filepath.Join(root, "/etc/systemd/system/redis-server@kiln-cache.service.d")
+	os.RemoveAll(dir)
 	f.Reset()
 	db.RedisCheck(context.Background())
-	if starts() != 0 {
-		t.Fatal("a unit that keeps failing is started once per set of addresses")
+	if exists(dir) || len(f.Lines()) != 0 {
+		t.Fatal(f.Lines())
 	}
 }
 

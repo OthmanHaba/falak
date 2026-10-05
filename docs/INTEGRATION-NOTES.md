@@ -547,11 +547,15 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   start ("Failed listening on port") and systemd gave up after 5 starts in 10 s; Redis 6.0 started without the address
   and never picked it up. A second drop-in `40-kiln-boot.conf` (only a daemon-reload, never a restart; kept apart from
   `50-kiln.conf`, whose changes restart) adds `Wants=network-online.target`, `After=network-online.target docker.service
-  wg-quick@<each Kiln interface in /etc/wireguard>.service` (ordering only), `StartLimitIntervalSec=0`, `RestartSec=2s`.
-  The agent's `RedisWatch` (30 s after start, then every minute; skips an instance a command holds) refreshes that
-  drop-in, restarts a running instance that does not listen (`ss -ltn`) on every configured address that exists (SAVE
-  first, as the apply's restart; only when the process runs the file on disk) and starts a failed / inactive enabled one,
-  once per set of host addresses. `db.redis.apply` also restarts an instance missing one of its addresses instead of
+  wg-quick@<each Kiln interface in /etc/wireguard>.service` (ordering only), `StartLimitIntervalSec=10min`,
+  `StartLimitBurst=150`, `RestartSec=2s` (rc.2 had no limit: a broken instance restarted every 2 s forever).
+  The agent's `RedisWatch` (30 s after start, then every minute; skips an instance a command holds, and one whose
+  `50-kiln.conf` is gone — a remove half way) refreshes that drop-in, restarts a running instance that does not listen
+  (`ss -ltn`) on every configured address that exists (SAVE first, as the apply's restart; only when the process runs
+  the file on disk) and starts a failed / inactive enabled one. Attempts that don't help back off 1, 2, 5, then every
+  10 min; the backoff starts over when the instance is healthy or one of its own addresses was gone (rc.2 keyed one
+  attempt on all host addresses, so veth churn granted new ones); a restart that fails before the stop (not reachable,
+  AOF rewrite running) is not an attempt. `db.redis.apply` also restarts an instance missing one of its addresses instead of
   taking it as live. Docker integration test: an instance whose address (in a holder container's namespace, NET_ADMIN)
   is removed before a restart comes up on it once it is back — 6.0 through the restart, 7.0 / 8.0 / Valkey 7.2–9.0
   through the start — with its data, on all six images.
