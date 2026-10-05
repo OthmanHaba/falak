@@ -131,9 +131,9 @@ State-style commands (`*.apply`) send the **full desired state**; the agent conv
 
 ```
 agent/
-├── cmd/falak-agent/      ← server daemon
-├── cmd/falak/            ← CLI (talks to control-plane public API)
-├── cmd/falak-builder/    ← build worker (Railpack/BuildKit), runs on builder nodes
+├── cmd/falak-agent/     ← server daemon
+├── cmd/falak/           ← CLI (talks to control-plane public API)
+├── cmd/falak-builder/   ← build worker (Railpack/BuildKit), runs on builder nodes
 └── internal/
     ├── enroll/  transport/  commands/ (registry + executors)
     ├── deploy/  docker/  runtime/  edge/ (Caddy admin API)
@@ -191,7 +191,7 @@ Deploy script macros: `$FALAK_FETCH`, `$FALAK_ACTIVATE`, `$FALAK_RESTART_PROCS`;
 ## 6. Observability
 
 ```
-app ──(falak/apm-laravel | @falak/apm-node)──► unix:/run/falak/otlp.sock ─┐
+app ─(falak/apm-laravel | @falak/apm-node)─► unix:/run/falak/otlp.sock ─┐
 host metrics / logs / container logs ──────────────────────────────────┤ falak-agent (batch, retry, disk buffer)
                                                                         └─► OTLP/HTTP ─► Loki · Tempo · VictoriaMetrics|Mimir ─► Grafana
                                                      exceptions/breaches ─► control plane Insights

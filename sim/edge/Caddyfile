@@ -1,8 +1,8 @@
 # Sim edge for the Falak control plane.
 #
-#   falak.test (+ localhost)   panel, installer, enrollment. TLS from Caddy's internal CA
+#   falak.test (+ localhost)  panel, installer, enrollment. TLS from Caddy's internal CA
 #                             (published to /falak/edge-pki/root.crt and trusted by the sim servers).
-#   agents.falak.test          agent mTLS API. TLS server cert issued by the Falak Fleet CA
+#   agents.falak.test         agent mTLS API. TLS server cert issued by the Falak Fleet CA
 #                             (agents pin it); site added by the entrypoint once
 #                             /falak/ca/agent-api.{pem,key} exist (see sites/ below).
 #
@@ -87,7 +87,7 @@ falak.test, localhost, edge {
 }
 
 # Sim caches (compose.yml, `make clean-cache`), TLS from the same internal CA the servers trust:
-#   downloads.falak.test         runtime release mirror (FALAK_*_MIRROR) -> sim-downloads (caching nginx)
+#   downloads.falak.test        runtime release mirror (FALAK_*_MIRROR) -> sim-downloads (caching nginx)
 #   ppa.launchpadcontent.net    resolve to the edge only on the servers (compose extra_hosts): the ondrej/php
 #   ghcr.io                     PPA and GHCR, served through pull-through caches of the real upstreams.
 downloads.falak.test, ppa.launchpadcontent.net {

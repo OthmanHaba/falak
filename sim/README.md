@@ -7,10 +7,10 @@ runs systemd as PID 1 and sshd.
 
 ```
 host ──https://localhost:8443──► edge (Caddy)
-                                  ├─ falak.test / localhost   TLS: Caddy internal CA ─► control-plane :8080 (panel, FrankenPHP worker mode)
+                                  ├─ falak.test / localhost  TLS: Caddy internal CA ─► control-plane :8080 (panel, FrankenPHP worker mode)
                                   │                                                ├► agent-api :8080 (/agent/*, /install/*, /api/internal/*)
                                   │                                                └► reverb :8080 (/app, /apps)
-                                  └─ agents.falak.test        TLS: Fleet-issued cert + agent mTLS ─► agent-api
+                                  └─ agents.falak.test       TLS: Fleet-issued cert + agent mTLS ─► agent-api
 srv-app-1 · srv-app-2 · srv-db-1  ── fleet network (10.77.20.0/24) ──► edge as falak.test / agents.falak.test
   (Ubuntu 24.04, systemd, sshd)   └─ observability network ─────────► gateway:4318 (OTLP)
 control-plane · agent-api · horizon · reverb ── backend network (10.77.10.0/24) ► postgres · valkey

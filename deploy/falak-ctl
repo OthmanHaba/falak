@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
 # falak-ctl — operate a Falak install (Docker Compose stack in /opt/falak, created by install.sh).
 #
-#   falak-ctl status                         containers, health, version, URLs, PHP thread usage
-#   falak-ctl logs [service] [-f]            recent logs (all services, or one)
-#   falak-ctl up | down | restart [svc]      start / stop / restart the stack
-#   falak-ctl update [--version vX.Y.Z]      backup -> pull -> migrate -> restart -> health check,
+#   falak-ctl status                        containers, health, version, URLs, PHP thread usage
+#   falak-ctl logs [service] [-f]           recent logs (all services, or one)
+#   falak-ctl up | down | restart [svc]     start / stop / restart the stack
+#   falak-ctl update [--version vX.Y.Z]     backup -> pull -> migrate -> restart -> health check,
 #                                           automatic rollback (previous version + DB restore) on failure,
 #                                           then removes Falak images older than the previous version
-#   falak-ctl prune-images [--dry-run]       remove Falak images except the current and previous version
-#   falak-ctl backup [--label NAME]          Postgres dump + app storage + Fleet CA + .env -> backups/
-#   falak-ctl restore <file> [--yes]         restore a backup (stops the app while restoring)
-#   falak-ctl doctor                         DNS, certificates, ports, disk, containers, agent API, PHP threads
-#   falak-ctl domain set <domain> [--keep-old]   move the panel to a new domain
+#   falak-ctl prune-images [--dry-run]      remove Falak images except the current and previous version
+#   falak-ctl backup [--label NAME]         Postgres dump + app storage + Fleet CA + .env -> backups/
+#   falak-ctl restore <file> [--yes]        restore a backup (stops the app while restoring)
+#   falak-ctl doctor                        DNS, certificates, ports, disk, containers, agent API, PHP threads
+#   falak-ctl domain set <domain> [--keep-old]  move the panel to a new domain
 #   falak-ctl registry status | prune [--dry-run] | gc [--dry-run] [--force]
 #                                           built-in image registry: address and size / delete unneeded images /
 #                                           garbage-collect (weekly from /etc/cron.d/falak-registry-gc)
 #   falak-ctl admin reset-password <email> [--password=...]
 #   falak-ctl admin create <email>
-#   falak-ctl artisan <args...>              run php artisan in the control-plane container
-#   falak-ctl compose <args...>              raw docker compose with the install's settings
-#   falak-ctl reload-configs                 recreate services whose mounted config files changed on disk
+#   falak-ctl artisan <args...>             run php artisan in the control-plane container
+#   falak-ctl compose <args...>             raw docker compose with the install's settings
+#   falak-ctl reload-configs                recreate services whose mounted config files changed on disk
 #   falak-ctl version
 #
 # Environment: FALAK_DIR (default /opt/falak), FALAK_PROJECT (compose project, default falak).

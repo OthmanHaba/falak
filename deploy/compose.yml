@@ -4,13 +4,13 @@
 #   docker compose -p falak --env-file /opt/falak/.env -f /opt/falak/deploy/compose.yml [--profile observability] up -d
 #
 #   internet ──:80/:443──► edge (Caddy: ACME TLS, agent mTLS, security headers)
-#                           ├─ FALAK_DOMAIN           ─► control-plane :8080 (panel: FrankenPHP worker mode)
+#                           ├─ FALAK_DOMAIN          ─► control-plane :8080 (panel: FrankenPHP worker mode)
 #                           │                        ├► agent-api :8080 (/agent/*, /install/*, /api/internal/*)
 #                           │                        ├► reverb :8080 (/app, /apps)
 #                           │                        └► gateway :4318 (/otlp/*, observability profile)
-#                           ├─ FALAK_AGENT_API_HOST   ─► agent-api (Fleet-CA server cert, client certs verified)
-#                           ├─ FALAK_GRAFANA_HOST     ─► grafana :3000 (observability profile)
-#                           └─ FALAK_REGISTRY_HOST    ─► registry :5000 (built-in image registry, basic auth)
+#                           ├─ FALAK_AGENT_API_HOST  ─► agent-api (Fleet-CA server cert, client certs verified)
+#                           ├─ FALAK_GRAFANA_HOST    ─► grafana :3000 (observability profile)
+#                           └─ FALAK_REGISTRY_HOST   ─► registry :5000 (built-in image registry, basic auth)
 #   control-plane · agent-api · horizon · reverb · scheduler ── backend ──► postgres · valkey
 #   builder ── public ──► edge (as FALAK_DOMAIN; artifact upload/download over the panel URL)
 #   registry ── registry (internal) ◄── edge only: builders push and servers pull through FALAK_REGISTRY_HOST

@@ -180,6 +180,10 @@ curl -fsSL https://raw.githubusercontent.com/OthmanHaba/falak/main/deploy/instal
   | sudo bash -s -- --domain falak.example.com --email you@example.com [--observability]
 ```
 
+Once [falak.sh](https://falak.sh) serves the script, the short form is
+`curl -fsSL https://falak.sh/install.sh | sudo bash -s -- --domain ... --email ...`; the GitHub URL above is
+the canonical one.
+
 The installer runs preflight checks, installs Docker, generates `/opt/falak/.env`, pulls the release images
 from GHCR, starts the Compose stack (`deploy/compose.yml`: FrankenPHP web, Horizon, Reverb, scheduler,
 Postgres 17, Valkey, a Caddy edge with Let's Encrypt and agent mTLS, and the builder) and prints the first
