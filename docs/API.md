@@ -372,7 +372,9 @@ everyone else gets a resolution error saying to update the agent):
   only;
 - a site on another server of the environment (native or containers, also a site spanning both): the instance server's
   address on a private network they share — a Kiln private network (WireGuard) first, else the provider private network
-  (both servers have a provider private IPv4 from the same provider). The instance listens there while a site of its
+  only where both servers are on it for sure (created by Kiln with the same provider credential, in the same region, on
+  DigitalOcean or Lightsail, whose servers of one account and region share a private network by default; never Hetzner,
+  Vultr, Linode, whose private networks are opt-in, nor custom servers). The instance listens there while a site of its
   environment runs on another server; the firewall opens its port to those servers' addresses only. **Never a public
   address:** servers sharing no private network get `… shares no private network with <server> … Add both servers to a
   private network (Network → Private networks)`. Until the agent listens on the address (a restart that keeps the data),

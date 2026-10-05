@@ -38,6 +38,9 @@ require_once __DIR__.'/../../../Network/tests/Support/helpers.php';
 
 const KV_NET = ['db.redis', 'db.containers', 'db.redis.network'];
 
+/** DigitalOcean droplets Kiln created with one credential in one region: on the region's default VPC. */
+const KV_DO_FRA = ['provider' => 'digitalocean', 'provider_credential_id' => '01k6aaaaaaaaaaaaaaaaaaaaaa', 'region' => 'fra1'];
+
 function kvnet_server(object $test, string $name, array $features = KV_NET, array $attributes = []): Server
 {
     $server = databases_server($test->organization, 'postgresql', ServerType::App, [
@@ -215,10 +218,10 @@ it('reaches an instance from another server over a WireGuard network: bind, fire
 });
 
 it('falls back to the provider private network, and never resolves to a public address', function () {
-    $a = kvnet_server($this, 'app-a', attributes: ['private_ipv4' => '10.0.1.5']);
-    $b = kvnet_server($this, 'app-b', attributes: ['private_ipv4' => '10.0.1.6']);
-    $public = kvnet_server($this, 'app-c');
-    $elsewhere = kvnet_server($this, 'app-d', attributes: ['private_ipv4' => '10.0.1.7', 'provider' => 'digitalocean']);
+    $a = kvnet_server($this, 'app-a', attributes: ['private_ipv4' => '10.0.1.5', ...KV_DO_FRA]);
+    $b = kvnet_server($this, 'app-b', attributes: ['private_ipv4' => '10.0.1.6', ...KV_DO_FRA]);
+    $public = kvnet_server($this, 'app-c', attributes: KV_DO_FRA);
+    $elsewhere = kvnet_server($this, 'app-d', attributes: ['private_ipv4' => '10.0.1.7', 'provider' => 'hetzner']);
     $instance = kvnet_instance($this, $a);
 
     projects_site($this->organization, 'shop', [], projects_default_env($this->organization), [$b]);
@@ -242,6 +245,41 @@ it('falls back to the provider private network, and never resolves to a public a
 
     // A site on app-b and app-c: no network all of them share with app-a.
     expect($this->connections->unreachable($instance->id, kvnet_consumer([$b, $public])))->toContain('runs on app-c');
+});
+
+it('uses a provider private network only where membership is known: same provider credential and region, default-VPC providers, never custom servers', function () {
+    $a = kvnet_server($this, 'app-a', attributes: ['private_ipv4' => '10.0.1.5', ...KV_DO_FRA]);
+    $instance = kvnet_instance($this, $a);
+    $peer = fn (string $name, array $attributes) => kvnet_server($this, $name, attributes: ['private_ipv4' => '10.0.1.'.random_int(10, 250), ...$attributes]);
+
+    // A private IPv4 alone says nothing: another region, another credential (account), a provider whose private
+    // networks are opt-in (Hetzner, Vultr, Linode), or custom servers (NATed, other networks).
+    foreach ([
+        $peer('ams', [...KV_DO_FRA, 'region' => 'ams3']),
+        $peer('team', [...KV_DO_FRA, 'provider_credential_id' => '01k6bbbbbbbbbbbbbbbbbbbbbb']),
+        $peer('imported', [...KV_DO_FRA, 'provider_credential_id' => null]),
+    ] as $server) {
+        expect($this->connections->unreachable($instance->id, kvnet_consumer($server, name: 'shop')))->toContain('shares no private network with app-a');
+    }
+
+    $h1 = $peer('h1', ['provider' => 'hetzner', 'provider_credential_id' => '01k6cccccccccccccccccccccc', 'region' => 'fsn1']);
+    $h2 = $peer('h2', ['provider' => 'hetzner', 'provider_credential_id' => '01k6cccccccccccccccccccccc', 'region' => 'fsn1']);
+    $c1 = $peer('c1', ['provider' => 'custom']);
+    $c2 = $peer('c2', ['provider' => 'custom']);
+    $onHetzner = kvnet_instance($this, $h1, 'jobs');
+    $onCustom = kvnet_instance($this, $c1, 'queue');
+    expect($this->connections->unreachable($onHetzner->id, kvnet_consumer($h2, name: 'shop')))->toContain('shares no private network with h1')
+        ->and($this->connections->unreachable($onCustom->id, kvnet_consumer($c2, name: 'shop')))->toContain('shares no private network with c1');
+
+    // Lightsail instances of one account and region reach each other's private IPs.
+    $l1 = $peer('l1', ['provider' => 'lightsail', 'provider_credential_id' => '01k6dddddddddddddddddddddd', 'region' => 'eu-central-1']);
+    $l2 = $peer('l2', ['provider' => 'lightsail', 'provider_credential_id' => '01k6dddddddddddddddddddddd', 'region' => 'eu-central-1']);
+    $onLightsail = kvnet_instance($this, $l1, 'sessions');
+    expect($this->connections->unreachable($onLightsail->id, kvnet_consumer($l2, name: 'shop')))->not->toContain('shares no private network');
+
+    // The sim's custom fleet: only with KILN_REDIS_CUSTOM_PRIVATE_NETWORK.
+    config(['databases.key_value.custom_private_network' => true]);
+    expect($this->connections->unreachable($onCustom->id, kvnet_consumer($c2, name: 'shop')))->not->toContain('shares no private network');
 });
 
 it('applies again when an address that was missing on the host appears, and when Docker arrives', function () {
@@ -278,8 +316,8 @@ it('applies again when an address that was missing on the host appears, and when
 });
 
 it('shows who can connect, and from where, on the instance panel', function () {
-    $a = kvnet_server($this, 'app-a', attributes: ['private_ipv4' => '10.0.1.5']);
-    $b = kvnet_server($this, 'app-b', attributes: ['private_ipv4' => '10.0.1.6']);
+    $a = kvnet_server($this, 'app-a', attributes: ['private_ipv4' => '10.0.1.5', ...KV_DO_FRA]);
+    $b = kvnet_server($this, 'app-b', attributes: ['private_ipv4' => '10.0.1.6', ...KV_DO_FRA]);
     $c = kvnet_server($this, 'app-c');
     $instance = kvnet_instance($this, $a);
     projects_site($this->organization, 'shop', [], projects_default_env($this->organization), [$b]);

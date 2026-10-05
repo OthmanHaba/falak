@@ -8,6 +8,7 @@ use Kiln\Databases\Domain\Models\DatabaseServer;
 use Kiln\Network\Contracts\PrivateNetwork;
 use Kiln\Projects\Contracts\ProjectDirectory;
 use Kiln\Projects\Contracts\ServiceKind;
+use Kiln\Servers\Contracts\Data\ServerData;
 use Kiln\Servers\Contracts\ServerDirectory;
 use Kiln\Sites\Contracts\SiteDirectory;
 
@@ -20,8 +21,11 @@ use Kiln\Sites\Contracts\SiteDirectory;
  *   their own gateway; the firewall accepts the port on the Docker bridges from the Docker ranges only.
  * - Other servers (native or containers, whose traffic is NATed to their server's address): the instance's server's
  *   private address on a network both share — a Kiln private network (WireGuard) first, else the provider private
- *   network (both servers have a provider private IPv4 from the same provider). Never the public address: without a
- *   shared private network the reference stays unresolved. The firewall accepts the port from those servers'
+ *   network, only where membership is known: both servers created by Kiln with the same credential, in the same
+ *   region, of a provider that puts such servers on one private network by default (databases.key_value.
+ *   provider_private_networks). A private IPv4 alone proves nothing (separate VPCs, regions, NATed custom servers: the
+ *   address could be unreachable or another machine's, and the password would go there). Never the public address:
+ *   without a shared private network the reference stays unresolved. The firewall accepts the port from those servers'
  *   addresses on that network only ("peers").
  *
  * The consumers are the sites placed in the instance's environment (references only resolve there), so the instance
@@ -228,7 +232,7 @@ final class KeyValueNetwork
             foreach ($serverIds as $id) {
                 $server = $this->servers->find($id);
 
-                if ($server?->privateIpv4 !== null && $server->provider === $instance->provider) {
+                if ($server?->privateIpv4 !== null && self::shareProviderNetwork($instance, $server)) {
                     $peers[$id] = $server->privateIpv4;
                 }
             }
@@ -237,5 +241,21 @@ final class KeyValueNetwork
         }
 
         return $candidates;
+    }
+
+    /** Both servers are on one provider private network for sure (see the class doc). */
+    private static function shareProviderNetwork(ServerData $a, ServerData $b): bool
+    {
+        if ($a->provider !== $b->provider) {
+            return false;
+        }
+
+        if ($a->provider === 'custom') {
+            return (bool) config('databases.key_value.custom_private_network', false);
+        }
+
+        return in_array($a->provider, (array) config('databases.key_value.provider_private_networks', []), true)
+            && $a->providerCredentialId !== null && $a->providerCredentialId === $b->providerCredentialId
+            && $a->region !== null && $a->region === $b->region;
     }
 }

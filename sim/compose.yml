@@ -90,6 +90,9 @@ x-control-plane: &control-plane
     KILN_AGENT_SCHEMAS_PATH: /opt/kiln/src/contracts/agent-protocol
     KILN_TEMPLATES_PATH: /opt/kiln/src/templates
     KILN_AGENT_WAKE_DRIVER: redis
+    # The sim's servers are custom servers on one fleet network: Redis instances may use their private IPv4s (off in
+    # production, where custom servers' private addresses can be NATed or on different networks).
+    KILN_REDIS_CUSTOM_PRIVATE_NETWORK: "true"
     # Runtime release binaries through the sim's caching mirror (product feature, see docs/INSTALL.md).
     KILN_FRANKENPHP_MIRROR: https://downloads.kiln.test/github/php/frankenphp/releases/download
     KILN_NODE_MIRROR: https://downloads.kiln.test/nodejs

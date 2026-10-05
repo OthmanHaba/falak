@@ -138,7 +138,8 @@ Details in `docs/INTEGRATION-NOTES.md` ("Redis and Valkey network access and com
 - "The project's servers" became **the servers of the sites in the instance's environment** (references resolve per
   environment); the firewall opens the port to exactly those servers' private addresses (`container_ports[].peers`),
   not to every private-network member. Private address order: Kiln private network, then the provider private network
-  (same provider); never public — such references stay unresolved with a message.
+  (same provider credential and region, DigitalOcean / Lightsail only; custom servers only in the sim); never public —
+  such references stay unresolved with a message.
 - Compose: the leader must already run the image's engine (no automatic engine install); `REDIS_PORT` /
   `REDIS_PASSWORD` are added next to a `REDIS_HOST` that had none; inline stacks can take services out at creation.
 

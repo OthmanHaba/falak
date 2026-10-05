@@ -559,8 +559,15 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   `bind` = 127.0.0.1 + the instance server's address on a private network shared with each other server running a site
   of the instance's **environment** (references only resolve there; the SQL "remote" rule is "dedicated server listens
   everywhere", which Redis must never do): a Kiln private network first (oldest of the instance's server that all of
-  the site's servers share), else the provider private network (both servers have a provider private IPv4 and the same
-  provider — `custom` included, which is how the sim's fleet network works). `containers` = container access on and
+  the site's servers share), else the provider private network, only where membership is known (fixed in review: "same
+  provider and both have a private IPv4" resolved separate VPCs / regions / NATed custom servers to an address that was
+  unreachable or another machine's, with the password sent there): both created by Kiln with the same provider
+  credential, in the same region, of a provider in `databases.key_value.provider_private_networks` (DigitalOcean's
+  default VPC per region, Lightsail; not Hetzner / Vultr / Linode, opt-in networks — Kiln stores no network id).
+  `custom` servers only with `KILN_REDIS_CUSTOM_PRIVATE_NETWORK=true` (off by default; the sim sets it for its fleet
+  network). `ServerData` gained `providerCredentialId` and `region`. The SQL `DB_HOST` (`EloquentDatabaseConnections::
+  host()`) still takes the database server's WireGuard address, else its private IPv4, else its public one, whoever
+  the consumer is (by design it falls back to public; unchanged). `containers` = container access on and
   `KILN_DOCKER_NETWORKS` not empty. `peers` = those servers' addresses on that network (their containers are NATed to
   them). `DatabaseContainerPorts` reports each instance's own port (`<engine>-<name>`, Docker ranges + peers); the SQL
   entries are unchanged. `databases_databases.network` keeps `wanted` (last sent), `bind` / `container_host` / `skipped`

@@ -220,6 +220,8 @@ class Server extends Model
             cacheEngine: $this->installing('cache') ? null : $this->stack->cache,
             docker: $this->stack->docker,
             unixUser: (string) config('servers.unix_user', 'kiln'),
+            providerCredentialId: $this->provider_credential_id,
+            region: $this->region,
         );
     }
 }
