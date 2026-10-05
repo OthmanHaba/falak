@@ -593,8 +593,13 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   (`ServerDirectory::installableCaches()` is new, for the message): another cache engine → "one cache engine per server";
   none → install it first; Valkey not offered for the OS (`servers.caches_by_os`) → say so. `ServiceReferences` mode
   `cache`: `redis://` / `valkey://` URLs of the service anywhere in a value → `{ref:REDIS_URL}` (path such as `/1`
-  kept, credentials replaced), `<service>:<port>` anywhere → `{ref:REDIS_HOST}:{ref:REDIS_PORT}`, the bare name under a
-  host key → `{ref:REDIS_HOST}`, `REDIS_`/`VALKEY_` …PORT / …PASS(WORD) companions; a `REDIS_HOST` without
+  kept, credentials replaced), `<service>:<port>` where it is an address (after `//` or `@`, or a whole item of the value
+  under a host-like key or with a port of 1024+; `IMAGE=redis:7` / `redis:7-alpine` are not) →
+  `{ref:REDIS_HOST}:{ref:REDIS_PORT}`, the bare name under a host key → `{ref:REDIS_HOST}`, `REDIS_`/`VALKEY_` …PORT /
+  …PASS(WORD) companions only when a key of their own prefix points at the service (`REDIS_QUEUE_PORT` follows
+  `REDIS_QUEUE_HOST`: with two Redis services, the kept one's port and password stay); `rediss://` / `valkeys://` values
+  of the service are left alone (no TLS on Kiln instances), as are their group's companions, and the extraction warns
+  ("… connects over TLS (rediss://) … left pointing at <service>"; `compose_services.<service>.tls_references`); a `REDIS_HOST` without
   `REDIS_PORT` / `REDIS_PASSWORD` gains them (`KilnAdjustments` adds only those two keys to a service's environment;
   split-out sites too) — clients default to 6379 and no password. Inline stacks take `compose_services` at creation too
   (they were repository-only; the sim needs it: its git server has no API). The UI says the container's data is not

@@ -138,11 +138,18 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             throw $e;
         }
 
-        $this->record($stack, $service, [
+        $decision = [
             'mode' => 'database',
             'database_id' => $database->id,
             'rewrites' => ServiceReferences::find($document, $service, $keyValue ? 'cache' : 'database', $this->stackVariables($stack)),
-        ]);
+        ];
+
+        // rediss:// / valkeys:// values keep pointing at the service: a Kiln instance has no TLS (ComposeSettings warns).
+        if ($keyValue && ($tls = ServiceReferences::tlsReferences($document, $service, $this->stackVariables($stack))) !== []) {
+            $decision['tls_references'] = $tls;
+        }
+
+        $this->record($stack, $service, $decision);
 
         // On the canvas "<stack> <service>" (handle e.g. shop-db): the stack's own name is usually the database's too.
         ComposeServiceExtracted::dispatch($stack->id, $stack->organization_id, $service, 'database', $database->id, "{$stack->name} {$service}");

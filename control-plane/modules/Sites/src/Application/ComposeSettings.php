@@ -338,6 +338,11 @@ final class ComposeSettings
             try {
                 if ($item['mode'] === ComposeConfig::MODE_DATABASE) {
                     $extraction->toDatabase($site->id, $item['service'], $item['database_id'], (string) $item['engine'], $compose);
+                    $tls = array_map('strval', (array) ($site->fresh()?->compose_services[$item['service']]['tls_references'] ?? []));
+
+                    if ($tls !== []) {
+                        $warnings[] = "{$item['service']}: ".implode(', ', $tls).' '.(count($tls) === 1 ? 'connects' : 'connect')." over TLS (rediss://), which a Kiln instance doesn't offer, so ".(count($tls) === 1 ? 'it was' : 'they were')." left pointing at {$item['service']}: point ".(count($tls) === 1 ? 'it' : 'them')." at the Kiln instance's REDIS_URL (redis://) yourself.";
+                    }
                 } else {
                     $created = $extraction->toSite($site->id, $item['service'], $item['site'], $compose);
                     array_push($warnings, ...$this->reachWarnings($site, $item['service'], $created));
