@@ -20,8 +20,8 @@ use Kiln\Sites\Contracts\Data\ComposeRewrites;
  * - cache (a Redis / Valkey service becoming a Kiln instance): `redis://[…@]<service>[:port]` anywhere in a value →
  *   REDIS_URL (credentials included; a database path like `/1` is kept), `<service>:<port>` anywhere in a value →
  *   REDIS_HOST:REDIS_PORT, the bare name under a host-like key → REDIS_HOST; in such a group REDIS_/VALKEY_ prefixed
- *   …PORT and …PASS(WORD) → REDIS_PORT, REDIS_PASSWORD, and a REDIS_HOST without a REDIS_PASSWORD next to it gains one
- *   (the instance always has a password; Laravel reads REDIS_PASSWORD).
+ *   …PORT and …PASS(WORD) → REDIS_PORT, REDIS_PASSWORD, and a REDIS_HOST without REDIS_PORT / REDIS_PASSWORD next to it
+ *   gains them (instances listen on 6380+ and always have a password; clients default to 6379 and none).
  */
 final class ServiceReferences
 {
@@ -194,8 +194,11 @@ final class ServiceReferences
             }
         }
 
-        if (isset($found['REDIS_HOST']) && ! array_key_exists('REDIS_PASSWORD', $variables)) {
-            $found['REDIS_PASSWORD'] = '{ref:REDIS_PASSWORD}';
+        // Laravel-style clients default to port 6379 and no password: a REDIS_HOST gains the instance's port and password.
+        foreach (['REDIS_PORT', 'REDIS_PASSWORD'] as $key) {
+            if (isset($found['REDIS_HOST']) && ! array_key_exists($key, $variables)) {
+                $found[$key] = '{ref:'.$key.'}';
+            }
         }
 
         return $found;

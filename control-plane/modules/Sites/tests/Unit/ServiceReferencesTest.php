@@ -72,7 +72,7 @@ it('finds a Redis service inside values: URLs (path kept), host:port pairs, host
             'REDIS_URL' => '{ref:REDIS_URL}',
             'VALKEY_PASSWORD' => '{ref:REDIS_PASSWORD}',
         ],
-        // The stack had a REDIS_PASSWORD already: rewritten, not added.
-        ComposeRewrites::STACK => ['REDIS_HOST' => '{ref:REDIS_HOST}', 'REDIS_PASSWORD' => '{ref:REDIS_PASSWORD}'],
+        // The stack had a REDIS_PASSWORD already: rewritten; REDIS_PORT added.
+        ComposeRewrites::STACK => ['REDIS_HOST' => '{ref:REDIS_HOST}', 'REDIS_PASSWORD' => '{ref:REDIS_PASSWORD}', 'REDIS_PORT' => '{ref:REDIS_PORT}'],
     ]);
 });

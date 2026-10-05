@@ -28,7 +28,6 @@ services:
     build: ./app
     environment:
       REDIS_HOST: cache
-      REDIS_PORT: "6379"
       CACHE_URL: redis://cache:6379/1
       SESSION_DRIVER: redis
   worker:
@@ -103,7 +102,7 @@ it('replaces an official redis service with a Kiln Redis on the stack server, it
         'app' => [
             'CACHE_URL' => '${{ Shop cache.REDIS_URL }}/1',
             'REDIS_HOST' => '${{ Shop cache.REDIS_HOST }}',
-            // The instance always has a password: Laravel reads it next to REDIS_HOST.
+            // The instance listens on 6380+ and always has a password: both join REDIS_HOST.
             'REDIS_PASSWORD' => '${{ Shop cache.REDIS_PASSWORD }}',
             'REDIS_PORT' => '${{ Shop cache.REDIS_PORT }}',
         ],
@@ -132,7 +131,7 @@ it('replaces an official redis service with a Kiln Redis on the stack server, it
     // Rendering: the service is gone, the remaining services read the rewritten variables (REDIS_PASSWORD added).
     $doc = KilnAdjustments::apply(Yaml::parse(CACHE_STACK), $stack->refresh()->composeConfig(), null, $this->extraction->rewrites($stack->id))['doc'];
     expect($doc['services'])->not->toHaveKey('cache')
-        ->and($doc['services']['app']['environment'])->toMatchArray(['REDIS_HOST' => '${KILN_SVC_APP_REDIS_HOST}', 'REDIS_PASSWORD' => '${KILN_SVC_APP_REDIS_PASSWORD}', 'SESSION_DRIVER' => 'redis'])
+        ->and($doc['services']['app']['environment'])->toMatchArray(['REDIS_HOST' => '${KILN_SVC_APP_REDIS_HOST}', 'REDIS_PORT' => '${KILN_SVC_APP_REDIS_PORT}', 'REDIS_PASSWORD' => '${KILN_SVC_APP_REDIS_PASSWORD}', 'SESSION_DRIVER' => 'redis'])
         ->and($doc['services']['worker']['environment'])->toBe(['BROKER=${KILN_SVC_WORKER_BROKER}', 'QUEUE_ADDR=${KILN_SVC_WORKER_QUEUE_ADDR}', 'OTHER=mycache:6379']);
 });
 

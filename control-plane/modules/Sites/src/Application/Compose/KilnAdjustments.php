@@ -16,8 +16,8 @@ use Kiln\Sites\Contracts\Data\ComposeRewrites;
  */
 final class KilnAdjustments
 {
-    /** The one rewritten key added to a service that didn't set it (ServiceReferences, cache mode). */
-    private const ADDED_KEY = 'REDIS_PASSWORD';
+    /** Rewritten keys added to a service that didn't set them (ServiceReferences, cache mode: next to a REDIS_HOST). */
+    private const ADDED_KEYS = ['REDIS_PORT' => true, 'REDIS_PASSWORD' => true];
 
     /** The release directory holding shipped repository files (agent docker.AssetsDir). */
     public const REPO_DIR = 'repo';
@@ -267,9 +267,9 @@ final class KilnAdjustments
                 }
             }
 
-            // A Kiln Redis' REDIS_PASSWORD next to a REDIS_HOST the service set without one is added (the instance always
-            // has a password). Other keys the service no longer sets stay out.
-            foreach (array_intersect_key($rewrites, [self::ADDED_KEY => true]) as $key => $replacement) {
+            // A Kiln Redis' REDIS_PORT / REDIS_PASSWORD next to a REDIS_HOST the service set without them are added (the
+            // instance listens on 6380+ and always has a password). Other keys the service no longer sets stay out.
+            foreach (array_intersect_key($rewrites, self::ADDED_KEYS) as $key => $replacement) {
                 $environment[] = $key.'=${'.ComposeRewrites::variable($service, $key).'}';
                 $note('variable', $service, "{$key} added: {$replacement}.");
             }
@@ -285,7 +285,7 @@ final class KilnAdjustments
             }
         }
 
-        foreach (array_intersect_key($rewrites, [self::ADDED_KEY => true]) as $key => $replacement) {
+        foreach (array_intersect_key($rewrites, self::ADDED_KEYS) as $key => $replacement) {
             $environment[$key] = '${'.ComposeRewrites::variable($service, (string) $key).'}';
             $note('variable', $service, "{$key} added: {$replacement}.");
         }

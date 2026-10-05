@@ -574,8 +574,8 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             }
 
             $variables = array_map('strval', (array) ($current->variables ?? []));
-            // A Kiln Redis' REDIS_PASSWORD joins a REDIS_HOST that had none (as in the stack).
-            $next = array_replace($variables, array_intersect_key($replacements, $variables), array_intersect_key($replacements, ['REDIS_PASSWORD' => true]));
+            // A Kiln Redis' REDIS_PORT / REDIS_PASSWORD join a REDIS_HOST that had none (as in the stack).
+            $next = array_replace($variables, array_intersect_key($replacements, $variables), array_intersect_key($replacements, ['REDIS_PORT' => true, 'REDIS_PASSWORD' => true]));
 
             if ($next !== $variables) {
                 app(SaveEnvironment::class)($site, $next, (array) ($current->exposed ?? []), Auth::id(), 'site.environment_updated');
