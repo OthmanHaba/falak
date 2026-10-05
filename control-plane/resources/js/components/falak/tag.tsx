@@ -10,7 +10,7 @@ export interface TagProps extends HTMLAttributes<HTMLSpanElement> {
 
 const TONES: Record<NonNullable<TagProps['tone']>, string> = {
     neutral: 'border border-border bg-surface-2 text-fg-muted',
-    accent: 'bg-primary-soft text-primary',
+    accent: 'bg-primary-soft text-primary-on-soft',
     success: 'bg-success-soft text-success',
     warning: 'bg-warning-soft text-warning',
     info: 'bg-info-soft text-info',

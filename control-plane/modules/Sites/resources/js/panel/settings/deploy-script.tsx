@@ -71,7 +71,7 @@ export function DeployScriptSettings({ ctx }: ServiceTabProps) {
                 className={cn(
                     'rounded-sm border px-1.5 py-0.5 font-mono text-[11px] transition-colors',
                     macro
-                        ? 'border-primary/30 bg-primary-soft text-primary hover:border-primary'
+                        ? 'border-primary/30 bg-primary-soft text-primary-on-soft hover:border-primary'
                         : 'border-border bg-surface-2 text-fg-muted hover:text-fg',
                 )}
             >

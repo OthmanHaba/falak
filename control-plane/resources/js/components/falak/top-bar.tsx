@@ -52,7 +52,7 @@ function HelpMenu() {
 }
 
 /**
- * [Falak ◆] [Org ▾] / [Project ▾] / [Environment ▾] … [⌘K Search] [🔔] [Help] [Avatar ▾]  (§3)
+ * [◉ Falak] [Org ▾] / [Project ▾] / [Environment ▾] … [⌘K Search] [🔔] [Help] [Avatar ▾]  (§3)
  * Pages without project context show their breadcrumbs in the path instead.
  */
 export function TopBar({ breadcrumbs = [] }: { breadcrumbs?: BreadcrumbItem[] }) {
