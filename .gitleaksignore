@@ -9,3 +9,4 @@ f0b43b81f4d3c6f0a52bffebb3196c382777bfc4:agent/internal/db/redis_test.go:generic
 b58b575af808c59e43087b887472dc4135c1dd3c:agent/testdata/command-examples/db.redis.apply.json:generic-api-key:1
 b58b575af808c59e43087b887472dc4135c1dd3c:agent/internal/db/redis_test.go:generic-api-key:60
 b58b575af808c59e43087b887472dc4135c1dd3c:agent/internal/db/redis_test.go:generic-api-key:122
+84f53a9989f75727a6d0673330b9300fa3c624f8:agent/testdata/command-examples/db.redis.apply.json:generic-api-key:1
