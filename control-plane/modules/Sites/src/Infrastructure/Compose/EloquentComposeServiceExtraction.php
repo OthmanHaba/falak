@@ -155,6 +155,12 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             $decision['unclear_companions'] = $unclear;
         }
 
+        // Healthchecks of the remaining services that name the service (`redis-cli -h cache ping`, `pg_isready -h db`): a
+        // command isn't rewritten (its host, port and password flags differ per tool), so ComposeSettings warns.
+        if (($healthchecks = ServiceReferences::healthchecksNaming($document, $service)) !== []) {
+            $decision['healthchecks'] = $healthchecks;
+        }
+
         $this->record($stack, $service, $decision);
 
         // On the canvas "<stack> <service>" (handle e.g. shop-db): the stack's own name is usually the database's too.

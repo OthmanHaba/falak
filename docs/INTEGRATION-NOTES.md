@@ -628,7 +628,10 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   service of the stack, else it stays and the extraction warns, `compose_services.<service>.unclear_companions`);
   `rediss://` / `valkeys://` values
   of the service are left alone (no TLS on Kiln instances), as are their group's companions, and the extraction warns
-  ("… connects over TLS (rediss:// / valkeys://) … left pointing at <service>"; `compose_services.<service>.tls_references`); a `REDIS_HOST` without
+  ("… connects over TLS (rediss:// / valkeys://) … left pointing at <service>"; `compose_services.<service>.tls_references`);
+  healthchecks of the remaining services that name the extracted service as a host (`redis-cli -h cache ping`; Redis
+  and SQL extractions) are not rewritten — host, port and password flags differ per tool — and the extraction warns
+  (`compose_services.<service>.healthchecks`; review finding); a `REDIS_HOST` without
   `REDIS_PORT` / `REDIS_PASSWORD` gains them (`KilnAdjustments` adds only those two keys to a service's environment;
   split-out sites too) — clients default to 6379 and no password. Inline stacks take `compose_services` at creation too
   (they were repository-only; the sim needs it: its git server has no API). The UI says the container's data is not

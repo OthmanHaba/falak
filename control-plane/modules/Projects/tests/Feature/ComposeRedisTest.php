@@ -254,3 +254,26 @@ YAML;
         ->and($created->warnings[0])->toStartWith('cache: REDIS_PORT (app), REDIS_PASSWORD (app) were left as they are: next to a host that pointed at cache, but also to one pointing at another service')
         ->and(array_keys($this->extraction->rewrites($created->site->id)->forService('app')))->toBe(['QUEUE_HOST']);
 });
+
+it('warns about healthchecks that still name the extracted service: commands are not rewritten', function () {
+    $server = compose_redis_server($this);
+    $yaml = <<<'YAML'
+services:
+  app:
+    image: ghcr.io/acme/app:1
+    environment: {REDIS_HOST: cache}
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "cache", "ping"]
+  cache:
+    image: redis:7.4.1-alpine
+YAML;
+
+    $created = app(SiteFactory::class)->create($this->organization->id, $this->user->id, [
+        'name' => 'hc', 'runtime' => 'compose', 'server_ids' => [$server->id], 'compose_source' => 'inline', 'compose_content' => $yaml,
+        'compose_services' => ['cache' => ['mode' => 'database', 'engine' => 'redis']],
+    ]);
+
+    expect($created->warnings)->toHaveCount(1)
+        ->and($created->warnings[0])->toStartWith('cache: the healthcheck of app still names cache, which no longer runs in the stack, so it fails')
+        ->and(Site::query()->findOrFail($created->site->id)->compose_services['cache']['healthchecks'])->toBe(['app']);
+});

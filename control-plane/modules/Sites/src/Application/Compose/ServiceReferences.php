@@ -276,6 +276,30 @@ final class ServiceReferences
     }
 
     /**
+     * The other services whose healthcheck command names $service as a host (a word of its own: not `redis-cli`,
+     * `redis-server` or `myredis`).
+     *
+     * @param  array<string, mixed>  $document  the parsed compose file
+     * @return list<string>
+     */
+    public static function healthchecksNaming(array $document, string $service): array
+    {
+        $host = preg_quote($service, '#');
+        $out = [];
+
+        foreach ((array) ($document['services'] ?? []) as $name => $definition) {
+            $test = is_array($definition) ? ($definition['healthcheck']['test'] ?? null) : null;
+            $command = is_array($test) ? implode(' ', array_map('strval', array_filter($test, 'is_scalar'))) : (is_string($test) ? $test : '');
+
+            if ((string) $name !== $service && preg_match("#(?<![\w.-]){$host}(?![\w.-])#", $command) === 1) {
+                $out[] = (string) $name;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * The environment of each other service, and the stack's variables (labelled for messages).
      *
      * @param  array<string, mixed>  $document

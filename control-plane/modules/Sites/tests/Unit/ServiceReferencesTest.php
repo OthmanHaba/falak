@@ -149,3 +149,15 @@ it('takes REDIS_ companions next to a host key of another prefix when the group 
         'worker' => ['QUEUE_HOST' => '{ref:REDIS_HOST}'],
     ])->and(ServiceReferences::unclearCompanions($document, 'cache'))->toBe(['REDIS_PORT (worker)']);
 });
+
+it('finds the healthchecks of other services that name a service as a host', function () {
+    $document = ['services' => [
+        'app' => ['healthcheck' => ['test' => ['CMD', 'redis-cli', '-h', 'redis', 'ping']]],
+        'probe' => ['healthcheck' => ['test' => 'redis-cli -h redis:6379 ping || exit 1']],
+        'self' => ['healthcheck' => ['test' => ['CMD-SHELL', 'redis-cli -h $$REDIS_HOST ping']]],
+        'other' => ['healthcheck' => ['test' => ['CMD', 'redis-server', '--version', 'myredis', 'redis.example.com']]],
+        'redis' => ['image' => 'redis:7', 'healthcheck' => ['test' => ['CMD', 'redis-cli', 'ping']]],
+    ]];
+
+    expect(ServiceReferences::healthchecksNaming($document, 'redis'))->toBe(['app', 'probe']);
+});
