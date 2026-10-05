@@ -106,7 +106,7 @@ final class ConvergePrivateNetwork
                 $member->server_id,
                 'net.wireguard.apply',
                 $payload,
-                (int) config('network.command_timeout', 120),
+                (int) config('network.wireguard_apply_timeout', 900),
                 "net.wireguard:{$member->id}:{$member->revision}",
             );
 

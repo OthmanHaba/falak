@@ -13,4 +13,8 @@ return [
     'ssh_port' => 22,
 
     'command_timeout' => 120,
+
+    // net.wireguard.apply: the first apply on a server installs wireguard-tools (apt-get update + install, each may
+    // wait up to 5 min for the apt lock).
+    'wireguard_apply_timeout' => 900,
 ];

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/kiln/agent/internal/commands"
 	"github.com/kiln/agent/internal/runner"
@@ -133,6 +134,9 @@ func confLine(conf, key string) string {
 	return ""
 }
 
+// wgInstallBudget is the time an install of wireguard-tools must have left before it starts.
+var wgInstallBudget = 3 * time.Minute
+
 // wgToolsMu serializes the on-demand install (two networks applied at once).
 var wgToolsMu sync.Mutex
 
@@ -155,6 +159,11 @@ func (n *Net) ensureWireGuardTools(ctx context.Context, st commands.Stream) erro
 	defer wgToolsMu.Unlock()
 	if present() {
 		return nil
+	}
+	// An install cut off by the command's timeout leaves dpkg interrupted (the next one repairs it, see system.Apt), so
+	// don't start one that can't finish.
+	if dl, ok := ctx.Deadline(); ok && time.Until(dl) < wgInstallBudget {
+		return fmt.Errorf("wireguard-tools is not installed and only %s is left to install it; the command is retried with more time", time.Until(dl).Round(time.Second))
 	}
 	if _, err := system.AptFor(n.d.Runner, n.d.FS, st).Ensure(ctx, []string{"wireguard-tools"}, true); err != nil {
 		return fmt.Errorf("install wireguard-tools: %w", err)

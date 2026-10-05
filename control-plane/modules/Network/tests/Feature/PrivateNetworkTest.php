@@ -90,6 +90,8 @@ it('generates a key pair per member and installs the private key on the host onl
 
     $apply = $this->agents->last('net.wireguard.apply', $this->a->id);
     expect(network_schema_errors('net.wireguard.apply', $apply['payload']))->toBe([])
+        // The first apply may install wireguard-tools.
+        ->and($apply['timeout'])->toBe(900)
         ->and($apply['payload'])->toEqual([
             'address' => '10.90.0.1/24',
             'interface' => $this->network->interface,

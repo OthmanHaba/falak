@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kiln/agent/internal/commands"
 	"github.com/kiln/agent/internal/hostfs"
@@ -408,5 +409,19 @@ func TestFirewallApplyRestrictsPeersToTheirInterface(t *testing.T) {
 	p.ContainerPorts[0].PeerInterfaces = map[string]string{"10.92.0.2": "wg x"}
 	if _, err := n.FirewallApply(context.Background(), p, st); !commands.IsPayloadError(err) {
 		t.Fatal(err)
+	}
+}
+
+// Too little time left for the install: fail before apt starts (a killed install leaves dpkg interrupted).
+func TestWireGuardDoesNotStartAnInstallThatCannotFinish(t *testing.T) {
+	f := &runnertest.Fake{}
+	n := New(Deps{Runner: f, FS: hostfs.FS{Root: t.TempDir()}})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if _, err := n.WireGuardApply(ctx, WireGuardPayload{Interface: "wg-a1b2c3d4", Address: "10.90.0.3/24"}, st); err == nil || !strings.Contains(err.Error(), "retried with more time") {
+		t.Fatal(err)
+	}
+	if len(f.Lines()) != 0 {
+		t.Fatal(f.Lines())
 	}
 }
