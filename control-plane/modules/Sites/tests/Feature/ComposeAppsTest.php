@@ -438,3 +438,34 @@ YAML;
 
     expect($services)->toBe(['app' => null, 'cache' => 'redis', 'library' => 'redis', 'sessions' => 'valkey', 'stack' => null, 'bitnami' => null, 'mirror' => null, 'custom' => null]);
 });
+
+it('gives inline projects a restart policy at deploy where none is set, and nothing else of the repository adjustments', function () {
+    $inline = <<<'YAML'
+services:
+  web:
+    image: nginx:1.27-alpine
+    container_name: shop-web
+    volumes: [./conf:/etc/nginx/conf.d:ro]
+  worker:
+    image: busybox
+    restart: on-failure
+  cron:
+    image: busybox
+    deploy: {restart_policy: {condition: any}}
+YAML;
+    $site = app(SiteFactory::class)->create($this->organization->id, $this->user->id, [
+        'name' => 'inline', 'runtime' => 'compose', 'server_ids' => [$this->server->id], 'compose_source' => 'inline', 'compose_content' => $inline,
+        'public_services' => [['service' => 'web', 'port' => 80]],
+    ])->site;
+
+    // The stored file stays as written; the policy is added at render, so existing inline sites get it on their next deploy.
+    expect(Site::query()->findOrFail($site->id)->composeConfig()?->source->value)->toBe('inline');
+    $rendered = app(ComposeSites::class)->render($site->id, $inline, [], '01j9zq4n8v2m6r0t3w5y7b9d1f');
+    $services = Yaml::parse($rendered->yaml)['services'];
+
+    expect($services['web']['restart'])->toBe('unless-stopped')
+        ->and($services['web']['container_name'])->toBe('shop-web')
+        ->and($services['web']['volumes'])->toBe(['./conf:/etc/nginx/conf.d:ro'])
+        ->and($services['worker']['restart'])->toBe('on-failure')
+        ->and($services['cron'])->not->toHaveKey('restart');
+});

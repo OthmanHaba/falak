@@ -12,7 +12,8 @@ use Kiln\Sites\Contracts\Data\ComposeRewrites;
  * For repository projects ($repoFiles given) paths are root-relative (ComposeProject) and the files the project
  * mounts are shipped under <release>/repo/: bind sources, env_file entries and configs/secrets files found in the
  * repository point there; bind sources the repository lacks (data folders) become named volumes unless the user
- * keeps them; env files it lacks are replaced by Kiln's variables. Inline projects keep their paths.
+ * keeps them; env files it lacks are replaced by Kiln's variables. Inline projects keep their paths and container names;
+ * both get `restart: unless-stopped` on services without a restart policy.
  */
 final class KilnAdjustments
 {
@@ -94,6 +95,12 @@ final class KilnAdjustments
                 $service['environment'] = self::rewriteEnvironment($service['environment'], $own, (string) $name, $note);
             }
 
+            // Inline projects too (templates are inline): without a policy Docker leaves containers stopped after a reboot.
+            if (! isset($service['restart']) && ! isset($service['deploy']['restart_policy'])) {
+                $service['restart'] = 'unless-stopped';
+                $restartDefaults[] = $name;
+            }
+
             if (! $repo) {
                 $services[$name] = $service;
 
@@ -103,11 +110,6 @@ final class KilnAdjustments
             if (isset($service['container_name'])) {
                 $note('container_name', $name, 'container_name removed: Kiln names containers per environment and release.');
                 unset($service['container_name']);
-            }
-
-            if (! isset($service['restart']) && ! isset($service['deploy']['restart_policy'])) {
-                $service['restart'] = 'unless-stopped';
-                $restartDefaults[] = $name;
             }
 
             if (is_array($service['volumes'] ?? null)) {
