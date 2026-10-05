@@ -222,8 +222,35 @@ YAML;
         'compose_services' => ['cache' => ['mode' => 'database', 'engine' => 'redis']],
     ]);
 
-    expect($created->warnings)->toBe(["cache: REDIS_URL (app) connects over TLS (rediss://), which a Kiln instance doesn't offer, so it was left pointing at cache: point it at the Kiln instance's REDIS_URL (redis://) yourself."])
+    expect($created->warnings)->toBe(["cache: REDIS_URL (app) connects over TLS (rediss:// / valkeys://), which a Kiln instance doesn't offer, so it was left pointing at cache: point it at the Kiln instance's REDIS_URL (redis://) yourself."])
         ->and(Site::query()->findOrFail($created->site->id)->compose_services['cache']['tls_references'])->toBe(['REDIS_URL (app)'])
         // The plain host is rewritten; the TLS URL and its group's password are not.
+        ->and(array_keys($this->extraction->rewrites($created->site->id)->forService('app')))->toBe(['QUEUE_HOST']);
+});
+
+it('warns about REDIS_PORT / REDIS_PASSWORD it cannot attribute: next to the extracted service\'s host and another service\'s', function () {
+    $server = compose_redis_server($this);
+    $yaml = <<<'YAML'
+services:
+  app:
+    image: ghcr.io/acme/app:1
+    environment:
+      QUEUE_HOST: cache
+      SESSION_HOST: sessions
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: secret
+  cache:
+    image: redis:7.4.1-alpine
+  sessions:
+    image: redis:7.4.1-alpine
+YAML;
+
+    $created = app(SiteFactory::class)->create($this->organization->id, $this->user->id, [
+        'name' => 'two', 'runtime' => 'compose', 'server_ids' => [$server->id], 'compose_source' => 'inline', 'compose_content' => $yaml,
+        'compose_services' => ['cache' => ['mode' => 'database', 'engine' => 'redis']],
+    ]);
+
+    expect($created->warnings)->toHaveCount(1)
+        ->and($created->warnings[0])->toStartWith('cache: REDIS_PORT (app), REDIS_PASSWORD (app) were left as they are: next to a host that pointed at cache, but also to one pointing at another service')
         ->and(array_keys($this->extraction->rewrites($created->site->id)->forService('app')))->toBe(['QUEUE_HOST']);
 });

@@ -53,10 +53,11 @@ final class ServiceReferences
         }
 
         $groups[ComposeRewrites::STACK] = array_map('strval', $stackVariables);
+        $others = array_values(array_diff(array_map('strval', array_keys((array) ($document['services'] ?? []))), [$service]));
         $found = [];
 
         foreach ($groups as $group => $variables) {
-            if (($templates = self::inGroup($variables, $service, $mode)) !== []) {
+            if (($templates = self::inGroup($variables, $service, $mode, $others)) !== []) {
                 ksort($templates);
                 $found[$group] = $templates;
             }
@@ -133,9 +134,10 @@ final class ServiceReferences
 
     /**
      * @param  array<string, string>  $variables
+     * @param  list<string>  $others  the stack's other services
      * @return array<string, string>
      */
-    private static function inGroup(array $variables, string $service, string $mode): array
+    private static function inGroup(array $variables, string $service, string $mode, array $others = []): array
     {
         $found = [];
 
@@ -146,7 +148,7 @@ final class ServiceReferences
         }
 
         if ($found !== [] && $mode === 'cache') {
-            return self::cacheCompanions($variables, $found, $service);
+            return self::cacheCompanions($variables, $found, $service, $others)['found'];
         }
 
         if ($found === [] || $mode !== 'database') {
@@ -176,19 +178,36 @@ final class ServiceReferences
     }
 
     /**
+     * The companions (REDIS_ / VALKEY_ …PORT, …PASS(WORD)) of the keys that point at the service: those of their own
+     * prefix (REDIS_QUEUE_PORT belongs to REDIS_QUEUE_HOST). A companion whose prefix has no host key at all
+     * (REDIS_PORT next to QUEUE_HOST: cache) is taken too when nothing in the group points at another service of the
+     * stack — it can only be this one's; otherwise it is left and reported (`orphans`). A group that also reaches the
+     * service over TLS (left alone) keeps its companions.
+     *
      * @param  array<string, string>  $variables
      * @param  array<string, string>  $found
-     * @return array<string, string>
+     * @param  list<string>  $others  the stack's other services
+     * @return array{found: array<string, string>, orphans: list<string>}
      */
-    private static function cacheCompanions(array $variables, array $found, string $service): array
+    private static function cacheCompanions(array $variables, array $found, string $service, array $others = []): array
     {
-        // Only the companions of a key that points at the service: REDIS_QUEUE_PORT belongs to REDIS_QUEUE_HOST. A group
-        // that also reaches it over TLS (left alone) keeps its companions too.
         $tls = array_map(self::cacheGroup(...), array_keys(array_filter($variables, fn (string $value) => self::cacheTls(trim($value), $service))));
         $groups = array_diff(array_map(self::cacheGroup(...), array_keys($found)), $tls);
+        // Prefixes that name a host of their own (REDIS_HOST=queue: its REDIS_PORT is queue's).
+        $hosted = array_map(self::cacheGroup(...), array_keys(array_filter($variables, fn (string $value, string $key) => preg_match(self::HOST_KEY, $key) === 1, ARRAY_FILTER_USE_BOTH)));
+        $elsewhere = $tls !== [] || array_filter($variables, function (string $value, string $key) use ($others) {
+            foreach ($others as $other) {
+                if (self::cacheTemplate($key, trim($value), $other) !== null) {
+                    return true;
+                }
+            }
+
+            return false;
+        }, ARRAY_FILTER_USE_BOTH) !== [];
+        $orphans = [];
 
         foreach ($variables as $key => $value) {
-            if (isset($found[$key]) || preg_match(self::CACHE_PREFIX, $key) !== 1 || ! in_array(self::cacheGroup($key), $groups, true)) {
+            if (isset($found[$key]) || preg_match(self::CACHE_PREFIX, $key) !== 1) {
                 continue;
             }
 
@@ -198,9 +217,16 @@ final class ServiceReferences
                 preg_match('/(PASS|PASSWORD)$/', $name) === 1 => 'REDIS_PASSWORD',
                 default => null,
             };
+            $group = self::cacheGroup($key);
 
-            if ($reference !== null) {
+            if ($reference === null || (! in_array($group, $groups, true) && in_array($group, $hosted, true))) {
+                continue;
+            }
+
+            if (in_array($group, $groups, true) || ! $elsewhere) {
                 $found[$key] = '{ref:'.$reference.'}';
+            } else {
+                $orphans[] = $key;
             }
         }
 
@@ -211,7 +237,64 @@ final class ServiceReferences
             }
         }
 
-        return $found;
+        return ['found' => $found, 'orphans' => $orphans];
+    }
+
+    /**
+     * Companions left alone although their group points at the service (see cacheCompanions): the group also points at
+     * another service of the stack, so whose port / password they are is unclear.
+     *
+     * @param  array<string, mixed>  $document  the parsed compose file
+     * @param  array<string, string>  $stackVariables  the stack's own variables (its `.env`)
+     * @return list<string> "KEY (group)"
+     */
+    public static function unclearCompanions(array $document, string $service, array $stackVariables = []): array
+    {
+        $out = [];
+
+        foreach (self::groups($document, $service, $stackVariables) as $group => $variables) {
+            $found = [];
+
+            foreach ($variables as $key => $value) {
+                if (($template = self::cacheTemplate($key, trim($value), $service)) !== null) {
+                    $found[$key] = $template;
+                }
+            }
+
+            if ($found === []) {
+                continue;
+            }
+
+            $others = array_values(array_diff(array_map('strval', array_keys((array) ($document['services'] ?? []))), [$service]));
+
+            foreach (self::cacheCompanions($variables, $found, $service, $others)['orphans'] as $key) {
+                $out[] = "{$key} ({$group})";
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * The environment of each other service, and the stack's variables (labelled for messages).
+     *
+     * @param  array<string, mixed>  $document
+     * @param  array<string, string>  $stackVariables
+     * @return array<string, array<string, string>>
+     */
+    private static function groups(array $document, string $service, array $stackVariables): array
+    {
+        $groups = [];
+
+        foreach ((array) ($document['services'] ?? []) as $name => $definition) {
+            if ((string) $name !== $service && is_array($definition)) {
+                $groups[(string) $name] = self::environment($definition['environment'] ?? []);
+            }
+        }
+
+        $groups['the stack\'s variables'] = array_map('strval', $stackVariables);
+
+        return $groups;
     }
 
     /**
@@ -224,18 +307,9 @@ final class ServiceReferences
      */
     public static function tlsReferences(array $document, string $service, array $stackVariables = []): array
     {
-        $groups = [];
-
-        foreach ((array) ($document['services'] ?? []) as $name => $definition) {
-            if ((string) $name !== $service && is_array($definition)) {
-                $groups[(string) $name] = self::environment($definition['environment'] ?? []);
-            }
-        }
-
-        $groups['the stack\'s variables'] = array_map('strval', $stackVariables);
         $found = [];
 
-        foreach ($groups as $group => $variables) {
+        foreach (self::groups($document, $service, $stackVariables) as $group => $variables) {
             foreach ($variables as $key => $value) {
                 if (self::cacheTls(trim($value), $service)) {
                     $found[] = "{$key} ({$group})";

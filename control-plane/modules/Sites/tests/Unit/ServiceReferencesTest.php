@@ -133,3 +133,19 @@ it('leaves TLS URLs of a Redis service alone and lists them, and takes <service>
     ])->and(ServiceReferences::tlsReferences($document, 'redis', ['TLS_CACHE' => 'valkeys://redis']))
         ->toBe(['REDIS_URL (app)', "TLS_CACHE (the stack's variables)"]);
 });
+
+it('takes REDIS_ companions next to a host key of another prefix when the group points at no other service, and reports them otherwise', function () {
+    $document = ['services' => [
+        'app' => ['environment' => ['QUEUE_HOST' => 'cache', 'REDIS_PORT' => '6379', 'REDIS_PASSWORD' => 'x', 'DB_HOST' => 'db']],
+        'worker' => ['environment' => ['QUEUE_HOST' => 'cache', 'SESSION_HOST' => 'sessions', 'REDIS_PORT' => '6379']],
+        'cache' => ['image' => 'redis:7'],
+        'sessions' => ['image' => 'redis:7'],
+    ]];
+
+    // app: only cache is a service its values point at (db isn't one of the stack's) → REDIS_PORT / REDIS_PASSWORD are cache's.
+    expect(ServiceReferences::find($document, 'cache', 'cache'))->toBe([
+        'app' => ['QUEUE_HOST' => '{ref:REDIS_HOST}', 'REDIS_PASSWORD' => '{ref:REDIS_PASSWORD}', 'REDIS_PORT' => '{ref:REDIS_PORT}'],
+        // worker also points at sessions: whose REDIS_PORT is it? Left, and reported.
+        'worker' => ['QUEUE_HOST' => '{ref:REDIS_HOST}'],
+    ])->and(ServiceReferences::unclearCompanions($document, 'cache'))->toBe(['REDIS_PORT (worker)']);
+});

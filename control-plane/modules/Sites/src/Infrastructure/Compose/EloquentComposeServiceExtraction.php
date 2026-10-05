@@ -149,6 +149,12 @@ final class EloquentComposeServiceExtraction implements ComposeServiceExtraction
             $decision['tls_references'] = $tls;
         }
 
+        // REDIS_PORT / REDIS_PASSWORD next to a host of another prefix, in a group that also points at another service:
+        // left as they are (ComposeSettings warns).
+        if ($keyValue && ($unclear = ServiceReferences::unclearCompanions($document, $service, $this->stackVariables($stack))) !== []) {
+            $decision['unclear_companions'] = $unclear;
+        }
+
         $this->record($stack, $service, $decision);
 
         // On the canvas "<stack> <service>" (handle e.g. shop-db): the stack's own name is usually the database's too.

@@ -620,9 +620,12 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   under a host-like key or with a port of 1024+; `IMAGE=redis:7` / `redis:7-alpine` are not) →
   `{ref:REDIS_HOST}:{ref:REDIS_PORT}`, the bare name under a host key → `{ref:REDIS_HOST}`, `REDIS_`/`VALKEY_` …PORT /
   …PASS(WORD) companions only when a key of their own prefix points at the service (`REDIS_QUEUE_PORT` follows
-  `REDIS_QUEUE_HOST`: with two Redis services, the kept one's port and password stay); `rediss://` / `valkeys://` values
+  `REDIS_QUEUE_HOST`: with two Redis services, the kept one's port and password stay; a prefix with no host key of its
+  own — `REDIS_PORT` next to `QUEUE_HOST: cache` — follows the service when nothing else in the group points at another
+  service of the stack, else it stays and the extraction warns, `compose_services.<service>.unclear_companions`);
+  `rediss://` / `valkeys://` values
   of the service are left alone (no TLS on Kiln instances), as are their group's companions, and the extraction warns
-  ("… connects over TLS (rediss://) … left pointing at <service>"; `compose_services.<service>.tls_references`); a `REDIS_HOST` without
+  ("… connects over TLS (rediss:// / valkeys://) … left pointing at <service>"; `compose_services.<service>.tls_references`); a `REDIS_HOST` without
   `REDIS_PORT` / `REDIS_PASSWORD` gains them (`KilnAdjustments` adds only those two keys to a service's environment;
   split-out sites too) — clients default to 6379 and no password. Inline stacks take `compose_services` at creation too
   (they were repository-only; the sim needs it: its git server has no API). The UI says the container's data is not
