@@ -417,3 +417,24 @@ it('keeps the project read at creation for the canvas, before the first deploy',
     expect($project)->not->toBeNull()
         ->and(array_keys(Yaml::parse((string) $project)['services']))->toContain('web');
 });
+
+it('offers official Redis and Valkey images as Kiln databases, not redis-stack, bitnami or built images', function () {
+    $this->git->files['caches/compose.yml'] = <<<'YAML'
+services:
+  app: {image: nginx}
+  cache: {image: redis:7.4-alpine}
+  library: {image: docker.io/library/redis@sha256:0123}
+  sessions: {image: valkey/valkey:8}
+  stack: {image: redis/redis-stack:latest}
+  bitnami: {image: bitnami/redis:7.2}
+  mirror: {image: registry.example.com/redis:7}
+  custom: {image: redis:7, build: ./redis}
+YAML;
+
+    $services = collect($this->postJson('/sites/compose/inspect', [
+        'source_connection_id' => $this->connection->id, 'repository' => 'acme/shop', 'branch' => 'main',
+        'compose_files' => ['caches/compose.yml'], 'public_services' => [['service' => 'app', 'port' => 80]],
+    ])->assertOk()->json('data.services'))->pluck('database_engine', 'name')->all();
+
+    expect($services)->toBe(['app' => null, 'cache' => 'redis', 'library' => 'redis', 'sessions' => 'valkey', 'stack' => null, 'bitnami' => null, 'mirror' => null, 'custom' => null]);
+});

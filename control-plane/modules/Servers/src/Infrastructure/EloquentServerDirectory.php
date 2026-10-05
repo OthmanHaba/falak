@@ -68,4 +68,9 @@ final class EloquentServerDirectory implements ServerDirectory
 
         return $ports;
     }
+
+    public function installableCaches(string $serverId): array
+    {
+        return Server::query()->find(strtolower($serverId))?->installableCaches() ?? [];
+    }
 }

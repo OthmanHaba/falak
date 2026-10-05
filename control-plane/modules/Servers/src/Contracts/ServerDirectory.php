@@ -30,4 +30,11 @@ interface ServerDirectory
      * @return list<int>
      */
     public function takenPorts(string $serverId): array;
+
+    /**
+     * Cache engines (redis | valkey) the server's OS can install (servers.caches_by_os); empty for an unknown server.
+     *
+     * @return list<string>
+     */
+    public function installableCaches(string $serverId): array;
 }

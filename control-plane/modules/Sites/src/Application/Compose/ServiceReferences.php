@@ -17,14 +17,21 @@ use Kiln\Sites\Contracts\Data\ComposeRewrites;
  * - database only: in a group that points at the database, its companion keys (DB_/DATABASE_/POSTGRES_/PG/MYSQL_/
  *   MARIADB_ prefixed …PORT, …USER(NAME), …PASS(WORD), …DB/DATABASE/NAME) → DB_PORT, DB_USERNAME, DB_PASSWORD,
  *   DB_DATABASE.
+ * - cache (a Redis / Valkey service becoming a Kiln instance): `redis://[…@]<service>[:port]` anywhere in a value →
+ *   REDIS_URL (credentials included; a database path like `/1` is kept), `<service>:<port>` anywhere in a value →
+ *   REDIS_HOST:REDIS_PORT, the bare name under a host-like key → REDIS_HOST; in such a group REDIS_/VALKEY_ prefixed
+ *   …PORT and …PASS(WORD) → REDIS_PORT, REDIS_PASSWORD, and a REDIS_HOST without a REDIS_PASSWORD next to it gains one
+ *   (the instance always has a password; Laravel reads REDIS_PASSWORD).
  */
 final class ServiceReferences
 {
     private const DB_PREFIX = '/^(DB|DATABASE|POSTGRES|POSTGRESQL|PG|MYSQL|MARIADB)_?/i';
 
+    private const CACHE_PREFIX = '/^(REDIS|VALKEY)_?/i';
+
     /**
      * @param  array<string, mixed>  $document  the parsed compose file
-     * @param  'database'|'site'  $mode
+     * @param  'database'|'cache'|'site'  $mode
      * @param  array<string, string>  $stackVariables  the stack's own variables (its `.env`)
      * @return array<string, array<string, string>> group (a remaining service, or ComposeRewrites::STACK) => variable
      *                                              => template; each group is detected on its own, so the same name in
@@ -133,6 +140,10 @@ final class ServiceReferences
             }
         }
 
+        if ($found !== [] && $mode === 'cache') {
+            return self::cacheCompanions($variables, $found);
+        }
+
         if ($found === [] || $mode !== 'database') {
             return $found;
         }
@@ -159,8 +170,57 @@ final class ServiceReferences
         return $found;
     }
 
+    /**
+     * @param  array<string, string>  $variables
+     * @param  array<string, string>  $found
+     * @return array<string, string>
+     */
+    private static function cacheCompanions(array $variables, array $found): array
+    {
+        foreach ($variables as $key => $value) {
+            if (isset($found[$key]) || preg_match(self::CACHE_PREFIX, $key) !== 1) {
+                continue;
+            }
+
+            $name = strtoupper($key);
+            $reference = match (true) {
+                str_ends_with($name, 'PORT') => 'REDIS_PORT',
+                preg_match('/(PASS|PASSWORD)$/', $name) === 1 => 'REDIS_PASSWORD',
+                default => null,
+            };
+
+            if ($reference !== null) {
+                $found[$key] = '{ref:'.$reference.'}';
+            }
+        }
+
+        if (isset($found['REDIS_HOST']) && ! array_key_exists('REDIS_PASSWORD', $variables)) {
+            $found['REDIS_PASSWORD'] = '{ref:REDIS_PASSWORD}';
+        }
+
+        return $found;
+    }
+
+    /** A Redis / Valkey service inside a value: its URLs, then `<service>:<port>`, then the bare name under a host key. */
+    private static function cacheTemplate(string $key, string $value, string $service): ?string
+    {
+        $host = preg_quote($service, '#');
+        $out = (string) preg_replace("#\b(?:redis|valkey)://(?:[^@/\s]*@)?{$host}(?::\d+)?(?=[/?\s,;\"']|$)#i", '{ref:REDIS_URL}', $value, -1, $urls);
+        $out = (string) preg_replace("#(?<![\w.@-]){$host}:\d+(?![\w.])#", '{ref:REDIS_HOST}:{ref:REDIS_PORT}', $out, -1, $pairs);
+
+        if ($urls + $pairs > 0) {
+            return $out;
+        }
+
+        return $value === $service && preg_match('/(HOST|HOSTNAME|ADDR|ADDRESS|SERVER|ENDPOINT)$/i', $key) === 1 ? '{ref:REDIS_HOST}' : null;
+    }
+
     private static function template(string $key, string $value, string $service, string $mode): ?string
     {
+        if ($mode === 'cache') {
+            return self::cacheTemplate($key, $value, $service);
+        }
+
         $host = preg_quote($service, '#');
 
         if (preg_match("#^[a-z][a-z0-9+.\-]*://(?:[^@/\s]*@)?{$host}(?::\d+)?(/\S*)?$#i", $value, $match) === 1) {

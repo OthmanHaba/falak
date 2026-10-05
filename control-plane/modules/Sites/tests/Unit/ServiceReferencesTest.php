@@ -43,3 +43,36 @@ it('reads environment maps and KEY=value lists', function () {
     expect(ServiceReferences::environment(['A=1', 'B=x=y', 'C', 'D' => true, 'E' => 2, 'F' => null]))
         ->toBe(['A' => '1', 'B' => 'x=y', 'D' => 'true', 'E' => '2']);
 });
+
+it('finds a Redis service inside values: URLs (path kept), host:port pairs, host keys, its companions, and adds REDIS_PASSWORD', function () {
+    $document = ['services' => [
+        'app' => ['environment' => [
+            'REDIS_HOST' => 'redis',
+            'REDIS_PORT' => '6379',
+            'CACHE_URL' => 'redis://redis:6379/2',
+            'CELERY' => 'redis://user:pw@redis:6379/0?timeout=5, valkey://redis',
+            'CACHE_DRIVER' => 'redis',
+            'NOT_IT' => 'myredis:6379 redis.example.com:6379 redis_2:6379',
+        ]],
+        'sidekiq' => ['environment' => ['REDIS_URL=redis://redis', 'VALKEY_PASSWORD=x', 'ADDR=tcp://redis:6379']],
+        'other' => ['environment' => ['REDIS_HOST' => 'elsewhere', 'REDIS_PASSWORD' => 'x']],
+        'redis' => ['image' => 'redis:7'],
+    ]];
+
+    expect(ServiceReferences::find($document, 'redis', 'cache', ['REDIS_HOST' => 'redis', 'REDIS_PASSWORD' => '']))->toBe([
+        'app' => [
+            'CACHE_URL' => '{ref:REDIS_URL}/2',
+            'CELERY' => '{ref:REDIS_URL}/0?timeout=5, {ref:REDIS_URL}',
+            'REDIS_HOST' => '{ref:REDIS_HOST}',
+            'REDIS_PASSWORD' => '{ref:REDIS_PASSWORD}',
+            'REDIS_PORT' => '{ref:REDIS_PORT}',
+        ],
+        'sidekiq' => [
+            'ADDR' => 'tcp://{ref:REDIS_HOST}:{ref:REDIS_PORT}',
+            'REDIS_URL' => '{ref:REDIS_URL}',
+            'VALKEY_PASSWORD' => '{ref:REDIS_PASSWORD}',
+        ],
+        // The stack had a REDIS_PASSWORD already: rewritten, not added.
+        ComposeRewrites::STACK => ['REDIS_HOST' => '{ref:REDIS_HOST}', 'REDIS_PASSWORD' => '{ref:REDIS_PASSWORD}'],
+    ]);
+});

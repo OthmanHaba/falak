@@ -20,11 +20,17 @@ use Kiln\SourceControl\Contracts\SourceControlGateway;
  */
 final class RepoComposeInspection
 {
-    /** Images Kiln can replace with a managed database (Databases engines). */
+    /**
+     * Images Kiln can replace with a managed database (Databases engines). Redis / Valkey: the official images only
+     * (`redis`, `valkey/valkey`, any tag); redis-stack, bitnami/redis and the like stay containers (modules, other
+     * configuration).
+     */
     private const DATABASE_IMAGES = [
         'postgresql' => '/(^|\/)(postgres|postgis|postgresql)(:|@|$)/',
         'mysql' => '/(^|\/)(mysql|percona)(:|@|$)/',
         'mariadb' => '/(^|\/)mariadb(:|@|$)/',
+        'redis' => '#^(docker\.io/)?(library/)?redis(:|@|$)#',
+        'valkey' => '#^(docker\.io/)?valkey/valkey(:|@|$)#',
     ];
 
     /** Most repository paths checked for one inspection, and the time allowed for them. */
