@@ -111,7 +111,9 @@ in the result's `skipped` (Redis would refuse to start); the control plane appli
 any bridge network of the server reach it through their gateway. The result reports `bind` (what the instance
 listens on) and `container_host`. A changed bind list restarts the instance the usual way (data kept).
 `net.firewall.apply` `container_ports[].peers` (same feature) are other servers' addresses accepted for the ports on
-any interface, after the Docker-bridge accepts and before the port's drop: `sources` may then be empty. Both fields
+the interface they arrive on (the agent tells: a Kiln WireGuard network whose `Address` range holds them, a local
+subnet, else the route; none: any interface), after the Docker-bridge accepts and before the port's drop: `sources` may
+then be empty. Both fields
 are stripped for agents without the feature (the control plane never sends them non-loopback binds either).
 
 ## Agent sessions and lost deliveries

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -350,5 +351,50 @@ func TestTunnelApplyInstallsRunsAndRemoves(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, p)); err == nil {
 			t.Errorf("%s left behind", p)
 		}
+	}
+}
+
+// Peers are accepted on the interface they arrive on: a Kiln WireGuard network's (from its config, even while it is
+// down), the provider NIC whose subnet holds them, or the one the kernel routes them through; else on any interface.
+func TestFirewallApplyRestrictsPeersToTheirInterface(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "etc/wireguard"), 0o700)
+	os.WriteFile(filepath.Join(root, "etc/wireguard/wg-a1b2c3d4.conf"), []byte("# Managed by Kiln (net.wireguard.apply) — do not edit\n[Interface]\nPrivateKey = x\nAddress = 10.90.0.1/24\nListenPort = 51820\n"), 0o600)
+	os.WriteFile(filepath.Join(root, "etc/wireguard/wg0.conf"), []byte("[Interface]\nAddress = 10.91.0.1/24\n"), 0o600)
+	old := localNets
+	localNets = func() ([]localNet, error) {
+		parse := func(iface, cidr string) localNet {
+			ip, n, _ := net.ParseCIDR(cidr)
+			n.IP = ip
+			return localNet{iface: iface, net: n}
+		}
+		return []localNet{parse("lo", "127.0.0.1/8"), parse("eth0", "203.0.113.5/24"), parse("eth1", "10.114.0.2/20"), parse("docker0", "172.17.0.1/16"), parse("enp7s0", "10.0.0.2/32")}, nil
+	}
+	t.Cleanup(func() { localNets = old })
+	f := &runnertest.Fake{}
+	f.On("ip -o route get 10.0.1.7", runner.Result{Stdout: []byte("10.0.1.7 via 10.0.0.1 dev enp7s0 src 10.0.0.2 uid 0 \\    cache \n")})
+	f.On("ip -o route get 172.17.0.9", runner.Result{Stdout: []byte("172.17.0.9 dev docker0 src 172.17.0.1 uid 0 \\    cache \n")})
+	f.On("ip -o route get", runner.Result{ExitCode: 2})
+	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
+	p := payload()
+	p.ContainerPorts = []ContainerPorts{{ID: "redis-cache", Protocol: "tcp", Ports: []string{"6380"},
+		Peers: []string{"10.90.0.2", "10.114.0.3", "10.0.1.7", "10.91.0.2", "172.17.0.9", "10.90.0.5"}, Comment: "Redis cache"}}
+	if _, err := n.FirewallApply(context.Background(), p, st); err != nil {
+		t.Fatal(err)
+	}
+	rs, _ := os.ReadFile(filepath.Join(root, RulesetPath))
+	for _, w := range []string{
+		`iifname "wg-a1b2c3d4" ip saddr { 10.90.0.2, 10.90.0.5 } tcp dport 6380 accept comment "kiln:containers-redis-cache-peers Redis cache"`,
+		`iifname "eth1" ip saddr 10.114.0.3 tcp dport 6380 accept`,
+		`iifname "enp7s0" ip saddr 10.0.1.7 tcp dport 6380 accept`,
+		// Not Kiln's WireGuard, no route, or a container bridge: any interface, as before.
+		"\t\tip saddr { 10.91.0.2, 172.17.0.9 } tcp dport 6380 accept",
+	} {
+		if !strings.Contains(string(rs), w) {
+			t.Fatalf("missing %q in\n%s", w, rs)
+		}
+	}
+	if strings.Index(string(rs), `kiln:containers-redis-cache-peers`) > strings.Index(string(rs), `kiln:containers-redis-cache-only`) {
+		t.Fatalf("peers after the drop:\n%s", rs)
 	}
 }

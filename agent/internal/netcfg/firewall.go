@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -66,12 +67,15 @@ type FirewallPayload struct {
 	// ContainerPorts are host ports the server's containers may reach (Docker bridges: docker0 and br-*), e.g. a
 	// database engine used by compose stacks and functions on the same server. Accepted before the rules.
 	ContainerPorts []ContainerPorts `json:"container_ports,omitempty"`
+	// PeerInterfaces (filled in by the agent, not sent): the interface each peer address arrives on.
+	PeerInterfaces map[string]string `json:"-"`
 }
 
 // ContainerPorts opens ports to the Docker bridge interfaces only (feature db.containers): accepted from Sources (the
 // Docker address ranges) on the bridges, then dropped from everywhere else — ahead of private-network and user rules,
 // so only loopback and containers reach the port. Peers (feature db.redis.network) are addresses of other servers
-// also accepted, on any interface (a Redis instance used by the project's servers over a private network).
+// also accepted (a Redis instance used by the project's servers over a private network), on the interface they arrive
+// on when the agent can tell (see peerInterfaces), else on any interface.
 type ContainerPorts struct {
 	ID       string   `json:"id"`
 	Protocol string   `json:"protocol"`
@@ -158,12 +162,25 @@ func RenderRuleset(p FirewallPayload) (string, error) {
 			}
 		}
 		if len(c.Peers) > 0 {
-			lines, err := renderRule(Rule{ID: "containers-" + c.ID + "-peers", Protocol: c.Protocol, Ports: c.Ports, Sources: c.Peers, Comment: c.Comment})
-			if err != nil {
-				return "", err
+			// One rule per interface the peers arrive on ("" = unknown: any interface), interfaces in name order.
+			byIface := map[string][]string{}
+			for _, peer := range c.Peers {
+				iface := p.PeerInterfaces[peer]
+				byIface[iface] = append(byIface[iface], peer)
 			}
-			for _, l := range lines {
-				b.WriteString("\t\t" + l + "\n")
+			ifaces := make([]string, 0, len(byIface))
+			for iface := range byIface {
+				ifaces = append(ifaces, iface)
+			}
+			sort.Strings(ifaces)
+			for _, iface := range ifaces {
+				lines, err := renderRule(Rule{ID: "containers-" + c.ID + "-peers", Protocol: c.Protocol, Ports: c.Ports, Sources: byIface[iface], Interface: iface, Comment: c.Comment})
+				if err != nil {
+					return "", err
+				}
+				for _, l := range lines {
+					b.WriteString("\t\t" + l + "\n")
+				}
 			}
 		}
 		drop, err := renderRule(Rule{ID: "containers-" + c.ID + "-only", Action: "drop", Protocol: c.Protocol, Ports: c.Ports, Comment: "only containers"})
@@ -315,6 +332,7 @@ WantedBy=sysinit.target
 
 // FirewallApply validates, persists and atomically applies the ruleset.
 func (n *Net) FirewallApply(ctx context.Context, p FirewallPayload, st commands.Stream) (any, error) {
+	p.PeerInterfaces = n.peerInterfaces(ctx, p.ContainerPorts)
 	rs, err := RenderRuleset(p)
 	if err != nil {
 		return nil, err

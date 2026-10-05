@@ -532,8 +532,12 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   is private). The result reports `bind` and `container_host`. A changed bind restarts through the phase-1 path (data
   kept: tested with a key across the restart, and in the Docker integration test on all six versions, which also
   connects from another container with and without the password). `net.firewall.apply` `container_ports[].peers`:
-  addresses accepted for the port on any interface, after the Docker-bridge accepts and before the port's drop (so a
-  private network's accept-all rule doesn't open the instance to every member). Both fields are stripped for older
+  addresses accepted for the port, after the Docker-bridge accepts and before the port's drop (so a private network's
+  accept-all rule doesn't open the instance to every member), on the interface they arrive on (review finding: they
+  were accepted on any interface): the agent resolves it per peer — a Kiln WireGuard network whose config `Address`
+  range holds it (known while the interface is still down; `iifname` matches by name), a local interface whose subnet
+  holds it (not lo / docker / br- / veth), else `ip -o route get`'s dev (Hetzner's /32 private addresses behind a
+  gateway); none of these: any interface, as before. Both fields are stripped for older
   agents (`PayloadCompatibility`).
 - **After a reboot** (found in review): docker0 appears after `docker.service`, a Kiln private network's address after
   `wg-quick@<interface>.service`, but the template unit is only `After=network.target` — Redis 6.2+ / Valkey refused to
