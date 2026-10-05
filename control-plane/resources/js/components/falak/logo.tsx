@@ -1,11 +1,34 @@
 import { cn } from '@/lib/utils';
+import { useId } from 'react';
 
-/** Falak mark: a faceted diamond in the accent color. */
+/** The two orbit bands cut out of the sphere (viewBox -310 -310 620 620). */
+const ORBITS = ['M-345 117Q-43 52 285-180', 'M-307 206Q7 164 335-44'];
+
+/**
+ * Falak mark: a sphere with two orbit bands, in the brand green (`currentColor`, `text-primary` by default). Small
+ * renderings (≤ 20px) use the thicker band so the gaps survive. The mask id is unique per instance.
+ */
 export function FalakMark({ className, size = 20 }: { className?: string; size?: number }) {
+    const maskId = `falak-mark-orbits-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+
     return (
-        <svg viewBox="0 0 24 24" width={size} height={size} className={cn('text-primary shrink-0', className)} aria-hidden>
-            <path d="M12 1.5 22.5 12 12 22.5 1.5 12Z" fill="currentColor" opacity="0.28" />
-            <path d="M12 5.5 18.5 12 12 18.5 5.5 12Z" fill="currentColor" />
+        <svg
+            viewBox="-310 -310 620 620"
+            width={size}
+            height={size}
+            fill="currentColor"
+            className={cn('text-primary shrink-0', className)}
+            aria-hidden
+        >
+            <mask id={maskId}>
+                <rect x="-310" y="-310" width="620" height="620" fill="#fff" />
+                <g fill="none" stroke="#000" strokeWidth={size <= 20 ? 52 : 34}>
+                    {ORBITS.map((d) => (
+                        <path key={d} d={d} />
+                    ))}
+                </g>
+            </mask>
+            <circle r="296" mask={`url(#${maskId})`} />
         </svg>
     );
 }

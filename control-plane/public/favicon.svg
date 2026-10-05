@@ -1,7 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="-310 -310 620 620" fill="#4F7A5A" role="img" aria-label="Falak">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-310 -310 620 620">
+  <style>circle{fill:#4F7A5A}@media (prefers-color-scheme:dark){circle{fill:#7FA66A}}</style>
   <mask id="falak-mark-orbits">
     <rect x="-310" y="-310" width="620" height="620" fill="#fff"/>
-    <g fill="none" stroke="#000" stroke-width="34">
+    <g fill="none" stroke="#000" stroke-width="52">
       <path d="M-345 117Q-43 52 285-180"/>
       <path d="M-307 206Q7 164 335-44"/>
     </g>

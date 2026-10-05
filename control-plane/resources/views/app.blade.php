@@ -10,6 +10,15 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <meta name="color-scheme" content="dark light">
+        @if ($appearance === 'system')
+            <meta name="theme-color" content="#F4F7F3" media="(prefers-color-scheme: light)">
+            <meta name="theme-color" content="#0B0F0C" media="(prefers-color-scheme: dark)">
+        @else
+            <meta name="theme-color" content="{{ $appearance === 'light' ? '#F4F7F3' : '#0B0F0C' }}">
+        @endif
+        <link rel="icon" href="/favicon.ico" sizes="48x48">
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
         @if (config('broadcasting.default') === 'reverb' && filled(config('broadcasting.connections.reverb.key')))
             {{-- Runtime Reverb key for prebuilt images (VITE_REVERB_* are build-time); the key is public. --}}
             <meta name="falak-reverb-key" content="{{ config('broadcasting.connections.reverb.key') }}">
