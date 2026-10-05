@@ -534,10 +534,13 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   connects from another container with and without the password). `net.firewall.apply` `container_ports[].peers`:
   addresses accepted for the port, after the Docker-bridge accepts and before the port's drop (so a private network's
   accept-all rule doesn't open the instance to every member), on the interface they arrive on (review finding: they
-  were accepted on any interface): the agent resolves it per peer — a Kiln WireGuard network whose config `Address`
-  range holds it (known while the interface is still down; `iifname` matches by name), a local interface whose subnet
-  holds it (not lo / docker / br- / veth), else `ip -o route get`'s dev (Hetzner's /32 private addresses behind a
-  gateway); none of these: any interface, as before. Both fields are stripped for older
+  were accepted on any interface): a WireGuard peer's interface comes from the control plane
+  (`peer_interfaces`, the network's interface name; `iifname` matches by name, so the rule is right before the
+  network's config reaches the server — the firewall often converges first, e.g. right after a member is added);
+  other peers: a Kiln WireGuard network whose config `Address` range holds it, else a local interface whose subnet
+  holds it (not lo / docker / br- / veth; DigitalOcean's eth1, Lightsail's eth0); none: any interface. The route is
+  not asked (rc.2 did: `ip route get` answers the default route for any private address, pinning a WireGuard peer to
+  eth0 when its config wasn't there yet, and nothing re-applied). Both fields are stripped for older
   agents (`PayloadCompatibility`).
 - **After a reboot** (found in review): docker0 appears after `docker.service`, a Kiln private network's address after
   `wg-quick@<interface>.service`, but the template unit is only `After=network.target` — Redis 6.2+ / Valkey refused to

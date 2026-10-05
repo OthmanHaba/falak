@@ -67,7 +67,8 @@ type FirewallPayload struct {
 	// ContainerPorts are host ports the server's containers may reach (Docker bridges: docker0 and br-*), e.g. a
 	// database engine used by compose stacks and functions on the same server. Accepted before the rules.
 	ContainerPorts []ContainerPorts `json:"container_ports,omitempty"`
-	// PeerInterfaces (filled in by the agent, not sent): the interface each peer address arrives on.
+	// PeerInterfaces (filled in by the agent, not sent): the interface each peer address not named by the control plane
+	// arrives on.
 	PeerInterfaces map[string]string `json:"-"`
 }
 
@@ -75,14 +76,18 @@ type FirewallPayload struct {
 // Docker address ranges) on the bridges, then dropped from everywhere else — ahead of private-network and user rules,
 // so only loopback and containers reach the port. Peers (feature db.redis.network) are addresses of other servers
 // also accepted (a Redis instance used by the project's servers over a private network), on the interface they arrive
-// on when the agent can tell (see peerInterfaces), else on any interface.
+// on: PeerInterfaces when the control plane names it (WireGuard), else the agent's guess (see peerInterfaces), else any
+// interface.
 type ContainerPorts struct {
 	ID       string   `json:"id"`
 	Protocol string   `json:"protocol"`
 	Ports    []string `json:"ports"`
 	Sources  []string `json:"sources"`
 	Peers    []string `json:"peers,omitempty"`
-	Comment  string   `json:"comment"`
+	// PeerInterfaces: the interface a peer arrives on, by address (the control plane knows a Kiln WireGuard
+	// network's, also before the interface exists here). Peers not listed: see peerInterfaces.
+	PeerInterfaces map[string]string `json:"peer_interfaces,omitempty"`
+	Comment        string            `json:"comment"`
 }
 
 // dockerBridges are the interfaces container traffic to the host arrives on: the default bridge and the bridges of
@@ -165,7 +170,10 @@ func RenderRuleset(p FirewallPayload) (string, error) {
 			// One rule per interface the peers arrive on ("" = unknown: any interface), interfaces in name order.
 			byIface := map[string][]string{}
 			for _, peer := range c.Peers {
-				iface := p.PeerInterfaces[peer]
+				iface, ok := c.PeerInterfaces[peer]
+				if !ok {
+					iface = p.PeerInterfaces[peer]
+				}
 				byIface[iface] = append(byIface[iface], peer)
 			}
 			ifaces := make([]string, 0, len(byIface))
@@ -332,7 +340,7 @@ WantedBy=sysinit.target
 
 // FirewallApply validates, persists and atomically applies the ruleset.
 func (n *Net) FirewallApply(ctx context.Context, p FirewallPayload, st commands.Stream) (any, error) {
-	p.PeerInterfaces = n.peerInterfaces(ctx, p.ContainerPorts)
+	p.PeerInterfaces = n.peerInterfaces(p.ContainerPorts)
 	rs, err := RenderRuleset(p)
 	if err != nil {
 		return nil, err

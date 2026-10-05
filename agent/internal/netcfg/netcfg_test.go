@@ -354,8 +354,10 @@ func TestTunnelApplyInstallsRunsAndRemoves(t *testing.T) {
 	}
 }
 
-// Peers are accepted on the interface they arrive on: a Kiln WireGuard network's (from its config, even while it is
-// down), the provider NIC whose subnet holds them, or the one the kernel routes them through; else on any interface.
+// Peers are accepted on the interface they arrive on: the one the control plane names (a Kiln WireGuard network's,
+// whether or not its config exists yet), a Kiln WireGuard network's range from its config, or the provider NIC whose
+// subnet holds them; else on any interface. The route is never asked: a private address without a specific route goes
+// through the default route (eth0), which would pin a WireGuard peer to the public NIC.
 func TestFirewallApplyRestrictsPeersToTheirInterface(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "etc/wireguard"), 0o700)
@@ -368,33 +370,43 @@ func TestFirewallApplyRestrictsPeersToTheirInterface(t *testing.T) {
 			n.IP = ip
 			return localNet{iface: iface, net: n}
 		}
-		return []localNet{parse("lo", "127.0.0.1/8"), parse("eth0", "203.0.113.5/24"), parse("eth1", "10.114.0.2/20"), parse("docker0", "172.17.0.1/16"), parse("enp7s0", "10.0.0.2/32")}, nil
+		return []localNet{parse("lo", "127.0.0.1/8"), parse("eth0", "203.0.113.5/24"), parse("eth1", "10.114.0.2/20"), parse("docker0", "172.17.0.1/16")}, nil
 	}
 	t.Cleanup(func() { localNets = old })
 	f := &runnertest.Fake{}
-	f.On("ip -o route get 10.0.1.7", runner.Result{Stdout: []byte("10.0.1.7 via 10.0.0.1 dev enp7s0 src 10.0.0.2 uid 0 \\    cache \n")})
-	f.On("ip -o route get 172.17.0.9", runner.Result{Stdout: []byte("172.17.0.9 dev docker0 src 172.17.0.1 uid 0 \\    cache \n")})
-	f.On("ip -o route get", runner.Result{ExitCode: 2})
+	// What a real host answers for any private address: the default route.
+	f.On("ip -o route get", runner.Result{Stdout: []byte("10.92.0.2 via 203.0.113.1 dev eth0 src 203.0.113.5 uid 0 \\    cache \n")})
 	n := New(Deps{Runner: f, FS: hostfs.FS{Root: root}})
 	p := payload()
 	p.ContainerPorts = []ContainerPorts{{ID: "redis-cache", Protocol: "tcp", Ports: []string{"6380"},
-		Peers: []string{"10.90.0.2", "10.114.0.3", "10.0.1.7", "10.91.0.2", "172.17.0.9", "10.90.0.5"}, Comment: "Redis cache"}}
+		// 10.92.0.2: a WireGuard network whose config hasn't arrived on this server yet; the control plane names it.
+		Peers:          []string{"10.90.0.2", "10.114.0.3", "10.92.0.2", "10.91.0.2", "172.17.0.9", "10.90.0.5", "10.0.1.7"},
+		PeerInterfaces: map[string]string{"10.92.0.2": "wg-e5f6a7b8"},
+		Comment:        "Redis cache"}}
 	if _, err := n.FirewallApply(context.Background(), p, st); err != nil {
 		t.Fatal(err)
 	}
 	rs, _ := os.ReadFile(filepath.Join(root, RulesetPath))
 	for _, w := range []string{
 		`iifname "wg-a1b2c3d4" ip saddr { 10.90.0.2, 10.90.0.5 } tcp dport 6380 accept comment "kiln:containers-redis-cache-peers Redis cache"`,
+		`iifname "wg-e5f6a7b8" ip saddr 10.92.0.2 tcp dport 6380 accept`,
 		`iifname "eth1" ip saddr 10.114.0.3 tcp dport 6380 accept`,
-		`iifname "enp7s0" ip saddr 10.0.1.7 tcp dport 6380 accept`,
-		// Not Kiln's WireGuard, no route, or a container bridge: any interface, as before.
-		"\t\tip saddr { 10.91.0.2, 172.17.0.9 } tcp dport 6380 accept",
+		// Not Kiln's WireGuard, no local subnet, or a container bridge: any interface, as before.
+		"\t\tip saddr { 10.91.0.2, 172.17.0.9, 10.0.1.7 } tcp dport 6380 accept",
 	} {
 		if !strings.Contains(string(rs), w) {
 			t.Fatalf("missing %q in\n%s", w, rs)
 		}
 	}
+	if strings.Contains(string(rs), `iifname "eth0"`) || f.Ran("ip -o route get 10.92.0.2") {
+		t.Fatalf("a peer pinned to the default route's interface:\n%s", rs)
+	}
 	if strings.Index(string(rs), `kiln:containers-redis-cache-peers`) > strings.Index(string(rs), `kiln:containers-redis-cache-only`) {
 		t.Fatalf("peers after the drop:\n%s", rs)
+	}
+	// A bad interface name from the payload is refused.
+	p.ContainerPorts[0].PeerInterfaces = map[string]string{"10.92.0.2": "wg x"}
+	if _, err := n.FirewallApply(context.Background(), p, st); !commands.IsPayloadError(err) {
+		t.Fatal(err)
 	}
 }

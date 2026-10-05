@@ -1,26 +1,22 @@
 package netcfg
 
 import (
-	"context"
 	"net"
 	"os"
-	"regexp"
 	"strings"
-	"time"
-
-	"github.com/kiln/agent/internal/runner"
 )
 
 // Which interface a container_ports peer (another server using a Redis instance over a private network) arrives on, so
-// its accept rule names it (iifname: it matches by name, also before the interface exists):
+// its accept rule names it (iifname: it matches by name, also before the interface exists). The control plane names a
+// Kiln WireGuard peer's interface (peer_interfaces); for the others the agent looks at:
 //
-//  1. a Kiln WireGuard network whose address range (/etc/wireguard/<interface>.conf, Address) contains the peer — known
-//     even while the interface is down;
-//  2. a local interface whose subnet contains it (the provider's private NIC), container bridges and veths excluded;
-//  3. the interface the kernel routes it through (`ip -o route get`: a provider private network reached through a
-//     gateway, such as Hetzner's /32 addresses).
+//  1. a Kiln WireGuard network whose address range (/etc/wireguard/<interface>.conf, Address) contains the peer;
+//  2. a local interface whose subnet contains it (the provider's private NIC, DigitalOcean's eth1 or Lightsail's eth0),
+//     container bridges and veths excluded.
 //
-// None of them: the peer is accepted on any interface, as before.
+// None of them: the peer is accepted on any interface. The route (`ip route get`) is not asked: a private address with
+// no specific route resolves through the default route, which would pin a WireGuard peer to the public NIC before its
+// interface exists.
 
 // localNet is one interface address with its subnet.
 type localNet struct {
@@ -52,17 +48,19 @@ var localNets = func() ([]localNet, error) {
 	return out, nil
 }
 
-var routeDevRe = regexp.MustCompile(`\bdev (\S+)`)
-
 // notPeerInterface: loopback and container interfaces never carry another server's traffic.
 func notPeerInterface(name string) bool {
 	return name == "lo" || strings.HasPrefix(name, "docker") || strings.HasPrefix(name, "br-") || strings.HasPrefix(name, "veth")
 }
 
-func (n *Net) peerInterfaces(ctx context.Context, ports []ContainerPorts) map[string]string {
+func (n *Net) peerInterfaces(ports []ContainerPorts) map[string]string {
 	var peers []string
 	for _, c := range ports {
-		peers = append(peers, c.Peers...)
+		for _, peer := range c.Peers {
+			if _, named := c.PeerInterfaces[peer]; !named {
+				peers = append(peers, peer)
+			}
+		}
 	}
 	if len(peers) == 0 {
 		return nil
@@ -98,15 +96,6 @@ func (n *Net) peerInterfaces(ctx context.Context, ports []ContainerPorts) map[st
 		}
 		if iface := containing(local, ip); iface != "" && !notPeerInterface(iface) {
 			out[peer] = iface
-			continue
-		}
-		cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		res, err := n.d.Runner.Run(cctx, runner.Cmd{Name: "ip", Args: []string{"-o", "route", "get", ip.String()}})
-		cancel()
-		if err == nil && res.ExitCode == 0 {
-			if m := routeDevRe.FindStringSubmatch(string(res.Stdout)); m != nil && ifaceRe.MatchString(m[1]) && !notPeerInterface(m[1]) {
-				out[peer] = m[1]
-			}
 		}
 	}
 	return out

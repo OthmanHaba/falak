@@ -69,6 +69,8 @@ final class DatabaseContainerPorts implements ContainerHostPorts
                 'ports' => [(string) $instance->port],
                 'sources' => $sources,
                 'peers' => $desired['peers'] ?: null,
+                // The WireGuard interface of each peer that arrives on one: its accept rule names it (iifname).
+                'peer_interfaces' => $desired['peer_interfaces'] ?: null,
                 'comment' => mb_substr("{$instance->databaseServer->engine->label()} {$instance->name}", 0, 120),
             ], fn ($value) => $value !== null);
         }

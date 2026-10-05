@@ -121,6 +121,14 @@
               "description": "IPv4/IPv6 address or CIDR of a server allowed to reach the ports (private network / provider private address)"
             }
           },
+          "peer_interfaces": {
+            "type": "object",
+            "description": "feature db.redis.network: the interface a peer arrives on (a Kiln WireGuard network's), by peer address; its accept rule is limited to it. Peers not listed: the agent resolves the interface (local subnet) or accepts them on any interface.",
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_.-]{1,15}$"
+            }
+          },
           "ports": {
             "type": "array",
             "minItems": 1,

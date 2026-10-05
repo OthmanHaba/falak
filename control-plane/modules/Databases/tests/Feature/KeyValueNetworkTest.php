@@ -128,10 +128,10 @@ it('keeps instances on 127.0.0.1 for agents without db.redis.network, and strips
         ->and($this->connections->variables($instance->id, kvnet_consumer($other))['REDIS_HOST'])->toBe('127.0.0.1');
 
     $redis = PayloadCompatibility::adapt('db.redis.apply', (object) ['name' => 'cache', 'bind' => ['127.0.0.1'], 'containers' => true], ['db.redis']);
-    $firewall = PayloadCompatibility::adapt('net.firewall.apply', json_decode('{"container_ports":[{"id":"redis-cache","ports":["6380"],"sources":["172.16.0.0/12"],"peers":["10.90.0.2"]}]}'), ['db.containers']);
+    $firewall = PayloadCompatibility::adapt('net.firewall.apply', json_decode('{"container_ports":[{"id":"redis-cache","ports":["6380"],"sources":["172.16.0.0/12"],"peers":["10.90.0.2"],"peer_interfaces":{"10.90.0.2":"wg-kiln"}}]}'), ['db.containers']);
     $kept = PayloadCompatibility::adapt('db.redis.apply', (object) ['containers' => true], ['db.redis', 'db.redis.network']);
     expect((array) $redis)->not->toHaveKey('containers')
-        ->and((array) $firewall->container_ports[0])->not->toHaveKey('peers')->toHaveKey('sources')
+        ->and((array) $firewall->container_ports[0])->not->toHaveKey('peers')->not->toHaveKey('peer_interfaces')->toHaveKey('sources')
         ->and($kept->containers)->toBeTrue();
 });
 
@@ -195,6 +195,8 @@ it('reaches an instance from another server over a WireGuard network: bind, fire
     expect($this->agents->dispatched('db.redis.apply'))->toHaveCount($applies + 1)
         ->and($apply['payload'])->toMatchArray(['bind' => ['127.0.0.1', '10.90.0.1'], 'containers' => true])
         ->and(kvnet_ports($a)['redis-cache']['peers'])->toBe(['10.90.0.2'])
+        // The agent can't tell a WireGuard peer's interface before the network's config is there: the control plane names it.
+        ->and(kvnet_ports($a)['redis-cache']['peer_interfaces'])->toBe(['10.90.0.2' => PrivateNetwork::query()->value('interface')])
         ->and(network_schema_errors('net.firewall.apply', app(FirewallCompiler::class)->compile($a->id)))->toBe([])
         // Until the agent listens there, the reference waits.
         ->and($this->connections->unreachable($instance->id, kvnet_consumer($b)))->toContain('does not listen on 10.90.0.1 (private network mesh) yet');
@@ -231,7 +233,9 @@ it('falls back to the provider private network, and never resolves to a public a
 
     $apply = $this->agents->last('db.redis.apply');
     expect($apply['payload']['bind'])->toBe(['127.0.0.1', '10.0.1.5'])
-        ->and(kvnet_ports($a)['redis-cache']['peers'])->toBe(['10.0.1.6']);
+        ->and(kvnet_ports($a)['redis-cache']['peers'])->toBe(['10.0.1.6'])
+        // A provider network's interface: the agent finds it (the NIC whose subnet holds the peer).
+        ->and(kvnet_ports($a)['redis-cache'])->not->toHaveKey('peer_interfaces');
     $this->agents->succeed($apply['handle'], kvnet_result($apply['payload']));
 
     expect($this->connections->variables($instance->id, kvnet_consumer($b, true))['REDIS_HOST'])->toBe('10.0.1.5');

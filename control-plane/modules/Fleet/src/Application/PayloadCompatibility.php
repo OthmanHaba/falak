@@ -57,7 +57,7 @@ final class PayloadCompatibility
         // plane sends neither non-loopback binds nor key-value container ports to older agents anyway.
         'db.redis.network' => [
             'db.redis.apply' => ['containers'],
-            'net.firewall.apply' => ['container_ports.*.peers'],
+            'net.firewall.apply' => ['container_ports.*.peers', 'container_ports.*.peer_interfaces'],
         ],
     ];
 

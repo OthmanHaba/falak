@@ -86,7 +86,7 @@ final class KeyValueNetwork
      * it). Kiln private networks first (oldest of the instance's server), then the provider private network.
      *
      * @param  list<string>  $serverIds
-     * @return array{host: ?string, via: ?string, peers: array<string, string>, missing: list<string>} missing: servers
+     * @return array{host: ?string, via: ?string, interface: ?string, peers: array<string, string>, missing: list<string>} missing: servers
      *                                                                                                 sharing no
      *                                                                                                 private network
      *                                                                                                 with it at all
@@ -98,30 +98,34 @@ final class KeyValueNetwork
 
         foreach ($candidates as $candidate) {
             if (count($candidate['peers']) === count($serverIds)) {
-                return ['host' => $candidate['host'], 'via' => $candidate['via'], 'peers' => $candidate['peers'], 'missing' => []];
+                return ['host' => $candidate['host'], 'via' => $candidate['via'], 'interface' => $candidate['interface'], 'peers' => $candidate['peers'], 'missing' => []];
             }
         }
 
         $covered = array_merge(...array_map(fn (array $c) => array_keys($c['peers']), $candidates ?: [['peers' => []]]));
 
-        return ['host' => null, 'via' => null, 'peers' => [], 'missing' => array_values(array_diff($serverIds, $covered))];
+        return ['host' => null, 'via' => null, 'interface' => null, 'peers' => [], 'missing' => array_values(array_diff($serverIds, $covered))];
     }
 
     /**
      * What the instance should listen on and let in.
      *
-     * @return array{bind: list<string>, containers: bool, peers: list<string>}
+     * @return array{bind: list<string>, containers: bool, peers: list<string>, peer_interfaces: array<string, string>}
+     *                                                                    peer_interfaces: the WireGuard interface a peer
+     *                                                                    arrives on (the agent can't tell before the
+     *                                                                    interface exists)
      */
     public function desired(Database $database): array
     {
         $server = $database->databaseServer;
 
         if (! self::enabled($server)) {
-            return ['bind' => ['127.0.0.1'], 'containers' => false, 'peers' => []];
+            return ['bind' => ['127.0.0.1'], 'containers' => false, 'peers' => [], 'peer_interfaces' => []];
         }
 
         $bind = [];
         $peers = [];
+        $interfaces = [];
 
         foreach ($this->consumers($database) as $consumer) {
             $others = array_values(array_diff($consumer->serverIds, [$database->server_id]));
@@ -135,6 +139,10 @@ final class KeyValueNetwork
             if ($reach['host'] !== null) {
                 $bind[] = $reach['host'];
                 array_push($peers, ...array_values($reach['peers']));
+
+                foreach ($reach['interface'] !== null ? $reach['peers'] : [] as $address) {
+                    $interfaces[$address] = $reach['interface'];
+                }
             }
         }
 
@@ -143,7 +151,9 @@ final class KeyValueNetwork
         $peers = array_values(array_unique($peers));
         sort($peers);
 
-        return ['bind' => ['127.0.0.1', ...$bind], 'containers' => self::containerRanges() !== [], 'peers' => $peers];
+        ksort($interfaces);
+
+        return ['bind' => ['127.0.0.1', ...$bind], 'containers' => self::containerRanges() !== [], 'peers' => $peers, 'peer_interfaces' => $interfaces];
     }
 
     /**
@@ -207,7 +217,7 @@ final class KeyValueNetwork
 
     /**
      * @param  list<string>  $serverIds
-     * @return list<array{host: string, via: string, peers: array<string, string>}>
+     * @return list<array{host: string, via: string, interface: ?string, peers: array<string, string>}>
      */
     private function candidates(string $instanceServerId, array $serverIds): array
     {
@@ -221,7 +231,7 @@ final class KeyValueNetwork
         }
 
         foreach ($this->network->networksOf($instanceServerId) as $membership) {
-            $candidates[] = ['host' => $membership->address, 'via' => "private network {$membership->name}", 'peers' => $peerNetworks[$membership->networkId] ?? []];
+            $candidates[] = ['host' => $membership->address, 'via' => "private network {$membership->name}", 'interface' => $membership->interface, 'peers' => $peerNetworks[$membership->networkId] ?? []];
         }
 
         $instance = $this->servers->find($instanceServerId);
@@ -237,7 +247,7 @@ final class KeyValueNetwork
                 }
             }
 
-            $candidates[] = ['host' => $instance->privateIpv4, 'via' => 'provider private network', 'peers' => $peers];
+            $candidates[] = ['host' => $instance->privateIpv4, 'via' => 'provider private network', 'interface' => null, 'peers' => $peers];
         }
 
         return $candidates;
