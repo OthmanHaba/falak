@@ -11,6 +11,7 @@ use Kiln\Databases\Domain\Models\DatabaseServer;
 use Kiln\Databases\Infrastructure\DatabaseContainerPorts;
 use Kiln\Fleet\Application\PayloadCompatibility;
 use Kiln\Fleet\Domain\Models\Agent;
+use Kiln\Fleet\Events\AgentFactsReported;
 use Kiln\Fleet\Events\AgentVersionChanged;
 use Kiln\Identity\Contracts\Role;
 use Kiln\Network\Domain\Enums\ApplyStatus;
@@ -313,6 +314,17 @@ it('applies again when an address that was missing on the host appears, and when
     event(new ServerProvisioned($c->id, $this->organization->id, 'app', 'app-c'));
     expect($this->agents->dispatched('db.redis.apply'))->toHaveCount($applies + 1)
         ->and($this->agents->last('db.redis.apply')['payload']['name'])->toBe('jobs');
+    // Docker installed by hand on the active server: the agent's facts report it, and the instance is applied again.
+    $d = kvnet_server($this, 'app-d');
+    $late = kvnet_instance($this, $d, 'late');
+    Database::query()->whereKey($late->id)->update(['network' => json_encode([...$late->network, 'container_host' => null, 'bind' => ['127.0.0.1']])]);
+    $applies = count($this->agents->dispatched('db.redis.apply'));
+    $agent = Agent::query()->where('server_id', $d->id)->firstOrFail();
+    event(new AgentFactsReported($agent->id, $this->organization->id, $d->id, ['hostname' => 'app-d', 'docker' => null]));
+    expect($this->agents->dispatched('db.redis.apply'))->toHaveCount($applies);
+    event(new AgentFactsReported($agent->id, $this->organization->id, $d->id, ['hostname' => 'app-d', 'docker' => '28.0.4']));
+    expect($this->agents->dispatched('db.redis.apply'))->toHaveCount($applies + 1)
+        ->and($this->agents->last('db.redis.apply')['payload'])->toMatchArray(['name' => 'late', 'containers' => true]);
 });
 
 it('shows who can connect, and from where, on the instance panel', function () {

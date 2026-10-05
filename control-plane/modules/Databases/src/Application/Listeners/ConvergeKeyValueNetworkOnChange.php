@@ -4,6 +4,7 @@ namespace Kiln\Databases\Application\Listeners;
 
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Kiln\Databases\Application\KeyValue\ConvergeKeyValueNetwork;
+use Kiln\Fleet\Events\AgentFactsReported;
 use Kiln\Network\Events\PrivateNetworkChanged;
 use Kiln\Projects\Events\ServiceLinked;
 use Kiln\Projects\Events\ServiceUnlinked;
@@ -42,5 +43,16 @@ final class ConvergeKeyValueNetworkOnChange implements ShouldQueue
     public function serverProvisioned(ServerProvisioned $event): void
     {
         ($this->converge)($event->organizationId, $event->serverId, docker: true);
+    }
+
+    /**
+     * Docker installed on an active server outside Kiln (Kiln only installs it with the server's provisioning): the
+     * agent's facts (sent when they change) report its version.
+     */
+    public function agentFactsReported(AgentFactsReported $event): void
+    {
+        if ($event->serverId !== null && ! empty($event->facts['docker'])) {
+            ($this->converge)($event->organizationId, $event->serverId, docker: true);
+        }
     }
 }

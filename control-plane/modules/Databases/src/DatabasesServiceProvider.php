@@ -35,6 +35,7 @@ use Kiln\Databases\Infrastructure\DatabaseContainerPorts;
 use Kiln\Databases\Infrastructure\EloquentDatabaseConnections;
 use Kiln\Databases\Infrastructure\EloquentDatabaseDirectory;
 use Kiln\Databases\Infrastructure\ObjectStorage\EndpointGuard;
+use Kiln\Fleet\Events\AgentFactsReported;
 use Kiln\Fleet\Events\AgentVersionChanged;
 use Kiln\Fleet\Events\CommandFailed;
 use Kiln\Fleet\Events\CommandFinished;
@@ -105,6 +106,7 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         Event::listen(SiteTargetsChanged::class, [ConvergeKeyValueNetworkOnChange::class, 'siteTargetsChanged']);
         Event::listen(PrivateNetworkChanged::class, [ConvergeKeyValueNetworkOnChange::class, 'privateNetworkChanged']);
         Event::listen(ServerProvisioned::class, [ConvergeKeyValueNetworkOnChange::class, 'serverProvisioned']);
+        Event::listen(AgentFactsReported::class, [ConvergeKeyValueNetworkOnChange::class, 'agentFactsReported']);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationData::class);
 
         if (($invalid = (array) config('databases.container_networks_invalid', [])) !== [] && $this->app->runningInConsole()) {

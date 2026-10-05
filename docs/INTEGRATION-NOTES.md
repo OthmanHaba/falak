@@ -573,10 +573,12 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   entries are unchanged. `databases_databases.network` keeps `wanted` (last sent), `bind` / `container_host` / `skipped`
   (last reported) and `applied_command`.
 - **Convergence** (`ConvergeKeyValueNetwork`, queued listener): `ServiceLinked` / `ServiceUnlinked` (Projects),
-  `SiteTargetsChanged` (Sites), `PrivateNetworkChanged` (Network), `ServerProvisioned` (Servers). Firewalls of the
+  `SiteTargetsChanged` (Sites), `PrivateNetworkChanged` (Network), `ServerProvisioned` (Servers), and `AgentFactsReported`
+  (Fleet) with a Docker version — Kiln installs Docker only with a server's provisioning, so this covers Docker
+  installed by hand on an active server (review finding; facts are sent only when they change). Firewalls of the
   organization's instance servers converge (a no-op when the hash is unchanged); an instance is re-applied only when its
   desired bind / containers differ from `wanted`, or once its last apply settled with a wanted address skipped (a
-  private network converged since), or — on `ServerProvisioned` — when it should listen on docker0 but found none.
+  private network converged since), or — on `ServerProvisioned` / facts with Docker — when it should listen on docker0 but found none.
   An apply in flight is never stacked (settled = `applied_command` is the instance's `command_id`).
 - **References** (`KeyValueNetwork::hostFor`): native on the instance's server → `127.0.0.1`; containers there →
   `container_host`; any other server (native, containers, or a site spanning both) → the shared private address. Never
