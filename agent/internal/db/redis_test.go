@@ -37,6 +37,7 @@ type fakeProc struct {
 	rewriteErr bool   // the last AOF rewrite failed
 	startSave  string // save points it started with
 	disabled   []string
+	bind       []string // what it listens on (its config's bind, unless the test says otherwise)
 }
 
 // fakeRedisHost fakes systemd, useradd/id and redis-cli on a temp root. Instances behave as their config says:
@@ -114,7 +115,14 @@ func newRedisHost(t *testing.T, f *runnertest.Fake, root string) *fakeRedisHost 
 		// The fake's own instances listen on their ports.
 		for _, p := range h.procs {
 			if strings.HasSuffix(c.Line, ":"+strconv.Itoa(p.port)) {
-				return runner.Result{Stdout: []byte(fmt.Sprintf("LISTEN 0 511 127.0.0.1:%d 0.0.0.0:* users:((\"redis-server\",pid=%d,fd=6))\n", p.port, 40000+p.port))}, nil
+				var out strings.Builder
+				for _, a := range p.bind {
+					if strings.Contains(a, ":") {
+						a = "[" + a + "]"
+					}
+					fmt.Fprintf(&out, "LISTEN 0 511 %s:%d 0.0.0.0:* users:((\"redis-server\",pid=%d,fd=6))\n", a, p.port, 40000+p.port)
+				}
+				return runner.Result{Stdout: []byte(out.String())}, nil
 			}
 		}
 		return runner.Result{}, nil
@@ -153,6 +161,8 @@ func (h *fakeRedisHost) start(unit string) (runner.Result, error) {
 		switch f[0] {
 		case "port":
 			p.port, _ = strconv.Atoi(f[1])
+		case "bind":
+			p.bind = f[1:]
 		case "requirepass":
 			p.password, _ = strconv.Unquote(f[1])
 		case "rename-command":

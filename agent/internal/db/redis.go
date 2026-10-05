@@ -402,9 +402,19 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 	dropIn := renderRedisDropIn(k, p.Name)
 	want := conn{db: db, k: k, port: p.Port, password: p.Password, config: state.ConfigName}
 	active := db.unitActive(ctx, unit)
+	if err := db.ensureBootDropIn(ctx, k, p.Name); err != nil {
+		return nil, err
+	}
+	// A running process that misses one of its addresses (Redis 6.0 started before it existed) needs a restart.
+	var notListening []string
+	if active {
+		if missing, err := db.notListening(ctx, p.Port, bind); err == nil {
+			notListening = missing
+		}
+	}
 
 	// Already live: the marker is only written once the running process uses exactly this file.
-	if active && state.Applied == hashOf(desired) && string(onDisk) == desired && db.fileIs(k.dropIn(p.Name), dropIn) && want.pingWait(ctx) == nil {
+	if active && len(notListening) == 0 && state.Applied == hashOf(desired) && string(onDisk) == desired && db.fileIs(k.dropIn(p.Name), dropIn) && want.pingWait(ctx) == nil {
 		return result(RedisApplyResult{}), nil
 	}
 
@@ -454,7 +464,7 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 
 	// Live: memory, eviction, password and persistence change on the running process; the file then matches it.
 	// Renamed commands, port, bind and the drop-in only change with a restart.
-	if live != nil && !dropInChanged && prev.Port == p.Port && slices.Equal(prev.Bind, bind) && prev.ConfigName == state.ConfigName &&
+	if live != nil && !dropInChanged && len(notListening) == 0 && prev.Port == p.Port && slices.Equal(prev.Bind, bind) && prev.ConfigName == state.ConfigName &&
 		prev.ConfigName != "" && prev.Disabled == final.Disabled {
 		err := db.applyLive(ctx, *live, p, from)
 		if err == nil {
@@ -483,7 +493,8 @@ func (db *DB) RedisApply(ctx context.Context, p RedisApplyPayload, st commands.S
 		}
 	}
 
-	// Restart: another port, bind, drop-in or renamed commands, the instance not running, or a live change that failed.
+	// Restart: another port, bind, drop-in or renamed commands, an address not listened on, the instance not running, or
+	// a live change that failed.
 	if dl, ok := ctx.Deadline(); ok && time.Until(dl) < RedisMinRestartBudget {
 		return nil, fmt.Errorf("not enough time left to restart %s safely (%s); the command is retried", unit, time.Until(dl).Round(time.Second))
 	}

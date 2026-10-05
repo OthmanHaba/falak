@@ -535,6 +535,19 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   addresses accepted for the port on any interface, after the Docker-bridge accepts and before the port's drop (so a
   private network's accept-all rule doesn't open the instance to every member). Both fields are stripped for older
   agents (`PayloadCompatibility`).
+- **After a reboot** (found in review): docker0 appears after `docker.service`, a Kiln private network's address after
+  `wg-quick@<interface>.service`, but the template unit is only `After=network.target` — Redis 6.2+ / Valkey refused to
+  start ("Failed listening on port") and systemd gave up after 5 starts in 10 s; Redis 6.0 started without the address
+  and never picked it up. A second drop-in `40-kiln-boot.conf` (only a daemon-reload, never a restart; kept apart from
+  `50-kiln.conf`, whose changes restart) adds `Wants=network-online.target`, `After=network-online.target docker.service
+  wg-quick@<each Kiln interface in /etc/wireguard>.service` (ordering only), `StartLimitIntervalSec=0`, `RestartSec=2s`.
+  The agent's `RedisWatch` (30 s after start, then every minute; skips an instance a command holds) refreshes that
+  drop-in, restarts a running instance that does not listen (`ss -ltn`) on every configured address that exists (SAVE
+  first, as the apply's restart; only when the process runs the file on disk) and starts a failed / inactive enabled one,
+  once per set of host addresses. `db.redis.apply` also restarts an instance missing one of its addresses instead of
+  taking it as live. Docker integration test: an instance whose address (in a holder container's namespace, NET_ADMIN)
+  is removed before a restart comes up on it once it is back — 6.0 through the restart, 7.0 / 8.0 / Valkey 7.2–9.0
+  through the start — with its data, on all six images.
 - **Control plane** (`Databases\Application\KeyValue\KeyValueNetwork`): a key-value engine row's `container_access`
   turns on when the agent has `db.redis.network` (`EnableContainerAccess`, on upgrade / provisioning / engine install,
   dedicated cache servers too), which re-applies the instances (one restart each). Desired state per instance:

@@ -3,11 +3,15 @@ package db
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +42,7 @@ type dockerRunner struct {
 	k         kvEngine
 	name      string
 	container string
+	netns     string // run in this container's network namespace (its addresses outlive the instance's restarts)
 }
 
 func (d *dockerRunner) docker(ctx context.Context, stdin io.Reader, args ...string) (runner.Result, error) {
@@ -69,10 +74,22 @@ func (d *dockerRunner) Run(ctx context.Context, c runner.Cmd) (runner.Result, er
 			return d.docker(ctx, nil, c.Args[0], d.container)
 		}
 		conf := d.k.confPath(d.name)
-		return d.docker(ctx, nil, "run", "-d", "--name", d.container, "--user", "0:0", "--entrypoint", d.k.server,
+		args := []string{"run", "-d", "--name", d.container, "--user", "0:0", "--entrypoint", d.k.server}
+		if d.netns != "" {
+			args = append(args, "--network", "container:"+d.netns)
+		}
+		return d.docker(ctx, nil, append(args,
 			"-v", filepath.Join(d.root, d.k.confDir)+":"+d.k.confDir,
 			"-v", filepath.Join(d.root, d.k.dataPath(d.name))+":"+d.k.dataPath(d.name),
-			d.image, conf)
+			d.image, conf)...)
+	case c.Name == "systemctl" && c.Args[0] == "show" && slices.Contains(c.Args, "--property=ActiveState"):
+		res, err := d.docker(ctx, nil, "inspect", "-f", "{{.State.Running}}", d.container)
+		if err != nil || strings.TrimSpace(string(res.Stdout)) != "true" {
+			return runner.Result{Stdout: []byte("failed\n")}, nil
+		}
+		return runner.Result{Stdout: []byte("active\n")}, nil
+	case c.Name == "ss" && slices.Contains(c.Args, "-ltn"):
+		return d.listening(ctx, c.Args[len(c.Args)-1])
 	case c.Name == "systemctl" && c.Args[0] == "disable":
 		return d.docker(ctx, nil, "rm", "-f", d.container)
 	case c.Name == "journalctl":
@@ -88,7 +105,41 @@ func (d *dockerRunner) Run(ctx context.Context, c runner.Cmd) (runner.Result, er
 	case c.Name == "getent":
 		return runner.Result{ExitCode: 2}, nil // the user is "created" every time: useradd is a no-op here
 	}
-	return runner.Result{}, nil // systemctl daemon-reload / enable / reset-failed, useradd, userdel, ss
+	return runner.Result{}, nil // systemctl daemon-reload / enable / is-enabled / reset-failed, useradd, userdel, ss -p
+}
+
+// listening answers `ss -H -ltn sport = :<port>` from /proc/net/tcp{,6} of the instance's network namespace (the images
+// have no ss): one "LISTEN 0 0 <addr>:<port> *:*" line per listening socket on the port.
+func (d *dockerRunner) listening(ctx context.Context, filter string) (runner.Result, error) {
+	port, err := strconv.Atoi(filter[strings.LastIndex(filter, ":")+1:]) // "sport = :6390"
+	if err != nil {
+		return runner.Result{ExitCode: 1}, nil
+	}
+	in := d.container
+	if d.netns != "" {
+		in = d.netns
+	}
+	res, _ := d.docker(ctx, nil, "exec", in, "cat", "/proc/net/tcp", "/proc/net/tcp6")
+	var out strings.Builder
+	for _, line := range strings.Split(string(res.Stdout), "\n") {
+		f := strings.Fields(line)
+		if len(f) < 4 || f[3] != "0A" { // 0A = LISTEN
+			continue
+		}
+		hexAddr, hexPort, ok := strings.Cut(f[1], ":")
+		p, err := strconv.ParseUint(hexPort, 16, 16)
+		raw, err2 := hex.DecodeString(hexAddr)
+		if !ok || err != nil || err2 != nil || int(p) != port || (len(raw) != 4 && len(raw) != 16) {
+			continue
+		}
+		// The kernel prints each 32-bit word in host (little-endian) order.
+		ip := make(net.IP, len(raw))
+		for w := 0; w < len(raw); w += 4 {
+			ip[w], ip[w+1], ip[w+2], ip[w+3] = raw[w+3], raw[w+2], raw[w+1], raw[w]
+		}
+		fmt.Fprintf(&out, "LISTEN 0 0 %s *:*\n", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
+	}
+	return runner.Result{Stdout: []byte(out.String())}, nil
 }
 
 func TestRedisIntegration(t *testing.T) {
@@ -322,6 +373,83 @@ func TestRedisIntegration(t *testing.T) {
 			if exists(filepath.Join(root, k.dataPath("cache"))) {
 				t.Fatal("data left")
 			}
+
+			t.Run("address appears after the start", func(t *testing.T) { redisIntegrationLateAddress(t, img.engine, img.image) })
 		})
+	}
+}
+
+// redisIntegrationLateAddress: an instance bound to a private address that is missing when it starts (as docker0 or a
+// WireGuard address after a reboot) comes up on it once the address appears, data kept. The address lives in a holder
+// container's network namespace (NET_ADMIN), which the instance's container joins and which outlives its restarts.
+func redisIntegrationLateAddress(t *testing.T, engine, image string) {
+	k, _ := kvEngineFor(engine)
+	ctx := context.Background()
+	root := t.TempDir()
+	unitFile := filepath.Join(root, "/usr/lib/systemd/system", k.server+"@.service")
+	os.MkdirAll(filepath.Dir(unitFile), 0o755)
+	os.WriteFile(unitFile, []byte("[Service]\n"), 0o644)
+	suffix := fmt.Sprintf("%s-%d", strings.NewReplacer("/", "-", ":", "-", ".", "-").Replace(image), time.Now().UnixNano())
+	d := &dockerRunner{t: t, root: root, image: image, k: k, name: "late", container: "kiln-redis-it-late-" + suffix, netns: "kiln-redis-it-netns-" + suffix}
+	defer d.docker(ctx, nil, "rm", "-f", d.container)
+	defer d.docker(ctx, nil, "rm", "-f", d.netns)
+	must := func(args ...string) {
+		t.Helper()
+		if res, err := d.docker(ctx, nil, args...); err != nil || res.ExitCode != 0 {
+			t.Fatalf("docker %v: %s %v", args, res.Stderr, err)
+		}
+	}
+	must("run", "-d", "--name", d.netns, "--cap-add", "NET_ADMIN", "alpine:3.22", "sleep", "900")
+	const addr = "10.250.0.5"
+	addrUp := func(up bool) {
+		t.Helper()
+		op := map[bool]string{true: "add", false: "del"}[up]
+		must("exec", d.netns, "ip", "addr", op, addr+"/32", "dev", "eth0")
+		if up {
+			fakeInterfaces(t, iface("lo", "127.0.0.1"), iface("eth0", addr))
+		} else {
+			fakeInterfaces(t, iface("lo", "127.0.0.1"))
+		}
+	}
+	db := New(Deps{Runner: d, FS: hostfs.FS{Root: root}, TempDir: t.TempDir()})
+	p := RedisApplyPayload{Engine: engine, Name: "late", Port: 6390, Password: "Xk3pQ9vR2mT7wL4nB8cF6hJ1", MaxMemoryMB: 32, Eviction: "noeviction", Persistence: "rdb", Bind: []string{addr}}
+	c := conn{db: db, k: k, port: p.Port, password: p.Password}
+
+	addrUp(true)
+	if r, err := db.RedisApply(ctx, p, st); err != nil || !r.(RedisApplyResult).Restarted {
+		t.Fatalf("%+v %v", r, err)
+	}
+	c.config = db.loadRedisState(k, "late").ConfigName
+	if _, err := c.do(ctx, "SET", "b", "1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// "Reboot": the address is gone when the instance starts again.
+	addrUp(false)
+	must("restart", "-t", "5", d.container)
+	time.Sleep(2 * time.Second)
+	running := db.activeState(ctx, k.unit("late")) == "active"
+	t.Logf("%s without its address: running=%v", image, running) // Redis 6.0 starts without it, 6.2+ / Valkey refuse
+	db.RedisCheck(ctx)
+	if running {
+		if missing, err := db.notListening(ctx, p.Port, []string{"127.0.0.1", addr}); err != nil || !slices.Equal(missing, []string{addr}) {
+			t.Fatalf("listens on a missing address? missing %v (%v)", missing, err)
+		}
+	} else if db.activeState(ctx, k.unit("late")) == "active" {
+		t.Fatal("started while its address is missing")
+	}
+
+	// The address appears: the next check brings the instance up on it.
+	addrUp(true)
+	db.RedisCheck(ctx)
+	if err := c.ready(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if missing, err := db.notListening(ctx, p.Port, []string{"127.0.0.1", addr}); err != nil || len(missing) != 0 {
+		t.Fatalf("not listening on %v (%v)", missing, err)
+	}
+	res, _ := d.docker(ctx, nil, "exec", "-e", "REDISCLI_AUTH="+p.Password, d.container, k.cli, "-h", addr, "-p", strconv.Itoa(p.Port), "--no-auth-warning", "GET", "b")
+	if got := strings.TrimSpace(string(res.Stdout)); got != "1" {
+		t.Fatalf("GET b over %s: %q %s", addr, got, res.Stderr)
 	}
 }
