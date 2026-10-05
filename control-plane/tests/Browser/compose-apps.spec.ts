@@ -60,6 +60,22 @@ const INSPECTION = {
             database_engine: 'postgresql',
             mode: 'keep',
         },
+        {
+            name: 'cache',
+            image: 'redis:7.4-alpine',
+            build: false,
+            build_context: null,
+            ports: [6379],
+            published_ports: [],
+            volumes: [],
+            binds: [],
+            env_files: [],
+            healthcheck: false,
+            depends_on: [],
+            variables: [],
+            database_engine: 'redis',
+            mode: 'keep',
+        },
     ],
     variables: [
         { name: 'APP_KEY', default: null, required: true, services: ['app'], source: 'compose' },
@@ -144,6 +160,12 @@ test('creates a Docker Compose app from a repository: files, services, variables
     await form.getByRole('combobox', { name: 'db runs' }).click();
     await page.getByRole('option', { name: 'Kiln PostgreSQL database' }).click();
     await expect(form.getByText(/Kiln creates a PostgreSQL database/)).toBeVisible();
+    await expect(form.getByTestId('compose-database-note-db')).toContainText('db’s existing data is not copied');
+    // The official redis image can become a Kiln Redis instance (phase 4 of docs/plans/REDIS.md).
+    await form.getByRole('combobox', { name: 'cache runs' }).click();
+    await page.getByRole('option', { name: 'Kiln Redis database' }).click();
+    await expect(form.getByText(/Kiln creates a Redis instance on the stack’s server/)).toBeVisible();
+    await expect(form.getByTestId('compose-database-note-cache')).toContainText('the Kiln instance starts empty');
     await form.getByTestId('compose-service-app').getByRole('checkbox').check();
 
     // The required variable blocks Deploy until it has a value.
@@ -165,7 +187,7 @@ test('creates a Docker Compose app from a repository: files, services, variables
         repository: 'acme/shop',
         branch: 'main',
         compose_files: ['docker/compose.yml', 'docker/compose.prod.yml'],
-        compose_services: { db: { mode: 'database', engine: 'postgresql' } },
+        compose_services: { db: { mode: 'database', engine: 'postgresql' }, cache: { mode: 'database', engine: 'redis' } },
         compose_adjustments: { keep_binds: ['app:./docker/storage'] },
         variables: { APP_KEY: 'base64:abc' },
     });
