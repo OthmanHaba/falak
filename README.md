@@ -121,10 +121,10 @@ gateway starts it on the first request and adds instances under load. Details: [
 on macOS or Linux (amd64/arm64) in one line. The script picks the right binary from the latest release, checks it
 against `SHA256SUMS` and puts it in `/usr/local/bin` (or `~/.local/bin`):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OthmanHaba/falak/main/deploy/install-cli.sh | sh
+curl -fsSL https://falak.sh/install-cli.sh | sh
 
 # install and log in in one go
-curl -fsSL https://raw.githubusercontent.com/OthmanHaba/falak/main/deploy/install-cli.sh | FALAK_URL=https://falak.example.com sh
+curl -fsSL https://falak.sh/install-cli.sh | FALAK_URL=https://falak.example.com sh
 ```
 `FALAK_VERSION=v0.2.6` pins a version and `FALAK_INSTALL_DIR` changes the target. Log in with an API token from
 **Settings → API tokens**. The token is checked, then stored in `~/Library/Application Support/falak/credentials.json`
@@ -176,13 +176,12 @@ One command on a fresh Ubuntu 22.04/24.04 or Debian 12 host (4 GB RAM recommende
 `falak.example.com` and `agents.falak.example.com` at the host first:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OthmanHaba/falak/main/deploy/install.sh \
+curl -fsSL https://falak.sh/install.sh \
   | sudo bash -s -- --domain falak.example.com --email you@example.com [--observability]
 ```
 
-Once [falak.sh](https://falak.sh) serves the script, the short form is
-`curl -fsSL https://falak.sh/install.sh | sudo bash -s -- --domain ... --email ...`; the GitHub URL above is
-the canonical one.
+`https://falak.sh/install.sh` redirects to the script on GitHub `main`
+(`https://raw.githubusercontent.com/OthmanHaba/falak/main/deploy/install.sh`), so either URL works.
 
 The installer runs preflight checks, installs Docker, generates `/opt/falak/.env`, pulls the release images
 from GHCR, starts the Compose stack (`deploy/compose.yml`: FrankenPHP web, Horizon, Reverb, scheduler,

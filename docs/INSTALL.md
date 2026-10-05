@@ -79,13 +79,12 @@ Create these records before you install (replace the IP with your server's publi
 ## 3. Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/OthmanHaba/falak/main/deploy/install.sh \
+curl -fsSL https://falak.sh/install.sh \
   | sudo bash -s -- --domain falak.example.com --email you@example.com
 ```
 
-Once [falak.sh](https://falak.sh) serves the script, the short form is
-`curl -fsSL https://falak.sh/install.sh | sudo bash -s -- --domain ... --email ...`; the GitHub URL above is
-the canonical one.
+`https://falak.sh/install.sh` redirects to the script on GitHub `main`
+(`https://raw.githubusercontent.com/OthmanHaba/falak/main/deploy/install.sh`), so either URL works.
 
 Or pin a release with its own copy of the script:
 `curl -fsSL https://github.com/OthmanHaba/falak/releases/download/v1.2.3/install.sh | sudo bash -s -- --domain ... --email ...`

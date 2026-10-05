@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Falak installer — single-host Docker Compose install into /opt/falak.
 #
-#   curl -fsSL https://raw.githubusercontent.com/OthmanHaba/falak/main/deploy/install.sh \
+#   curl -fsSL https://falak.sh/install.sh \
 #     | sudo bash -s -- --domain falak.example.com --email you@example.com
 #
 # Options (each also settable via the environment variable in brackets):
