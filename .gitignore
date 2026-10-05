@@ -4,3 +4,6 @@
 *.log
 /agent/bin/
 /sim/.data/
+
+# Local Cloudflare API token (never commit)
+cloud-flare-access-key
