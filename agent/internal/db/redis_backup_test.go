@@ -669,3 +669,50 @@ func TestSpaceGuardStopsTheCopyOnALowDisk(t *testing.T) {
 		t.Fatal(out.Len())
 	}
 }
+
+// Only the copies this restore moved aside stay; older ones (earlier restores, persistence changes) are removed.
+func TestRedisRestoreKeepsOnlyTheLatestMovedAsideCopies(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	newRedisHost(t, f, root)
+	redisNow = func() time.Time { return time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC) }
+	defer func() { redisNow = time.Now }()
+	applyOK(t, db, redisPayload())
+	data := filepath.Join(root, "/var/lib/falak-redis/cache")
+	victim := filepath.Join(root, "victim")
+	os.MkdirAll(victim, 0o755)
+	os.WriteFile(filepath.Join(victim, "keep"), []byte("x"), 0o600)
+	for _, name := range []string{"dump.rdb.falak-20261001T000000Z", "dump.rdb.falak-20261001T000000Z-2", "appendonly.aof.falak-20260901T000000Z"} {
+		os.WriteFile(filepath.Join(data, name), []byte("old"), 0o600)
+	}
+	os.MkdirAll(filepath.Join(data, "appendonlydir.falak-20260901T000000Z"), 0o700)
+	os.WriteFile(filepath.Join(data, "appendonlydir.falak-20260901T000000Z", "appendonly.aof.manifest"), []byte("old"), 0o600)
+	os.Symlink(victim, filepath.Join(data, "dump.rdb.falak-20260101T000000Z"))
+	os.WriteFile(filepath.Join(data, "notes.falak-20260101T000000Z"), []byte("not ours"), 0o600)
+	writeGzip(t, filepath.Join(root, "/backups/b.rdb.gz"), "REDIS0011 restored data")
+
+	r, err := db.Restore(context.Background(), restorePayload("redis", "/backups/b.rdb.gz"), st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved := strings.Join(r.(RestoreResult).MovedAside, ","); moved != "dump.rdb.falak-20261006T120000Z" {
+		t.Fatal(moved)
+	}
+	var left []string
+	entries, _ := os.ReadDir(data)
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	if strings.Join(left, ",") != "dump.rdb,dump.rdb.falak-20261006T120000Z,notes.falak-20260101T000000Z" {
+		t.Fatal(left)
+	}
+	if !exists(filepath.Join(victim, "keep")) {
+		t.Fatal("followed a link")
+	}
+
+	// Nothing moved aside (no files yet): nothing pruned.
+	os.Remove(filepath.Join(data, "dump.rdb"))
+	if _, err := pruneAside(data, nil); err != nil || !exists(filepath.Join(data, "dump.rdb.falak-20261006T120000Z")) {
+		t.Fatal(err)
+	}
+}

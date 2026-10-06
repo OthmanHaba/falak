@@ -135,7 +135,8 @@ instance user) and the unit starts; with AOF it starts from the same config with
 appendonly yes` (renamed command) rewrites the AOF from memory and the config file is put back. Without persistence
 the loaded `dump.rdb` is removed. A failed start, `PING` or AOF switch removes the restored files, puts the earlier
 ones and config back, starts the instance again and fails with the unit's log tail. The instance must exist (the
-agent never creates one in a restore). The result adds `rdb` and `moved_aside` (the earlier files' new names, kept).
+agent never creates one in a restore). The result adds `rdb` and `moved_aside` (the earlier files' new names, kept; older `.falak-*` copies of these files
+are removed after a successful restore, so only the latest set stays).
 The control plane only sends these engines to agents that list the feature.
 Backup results add `uncompressed_bytes` (every engine: the dump's size before gzip). Restores check the instance's disk
 first, before anything changes: free space (statfs) must cover the gunzipped snapshot (twice with AOF, for the

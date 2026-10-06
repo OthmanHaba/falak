@@ -544,7 +544,8 @@ Plan: `docs/plans/REDIS.md` (deviations in its "As built (v0.9.0, phase 3)"); pr
   the pending restart; a failed stop starts the unit again if it ran and fails with "nothing was changed") → `dump.rdb`, `appendonlydir`, `appendonly.aof` renamed `<file>.falak-<UTC>` → snapshot renamed to
   `dump.rdb` only if the name still is the file written (`os.SameFile`; `rename(2)` follows no link) → AOF instances: config written with `appendonly no` and state recorded as `rdb` (a
   redelivered apply then finishes the switch) → `reset-failed`, `start`, `PING` (LOADING extends the wait) → AOF:
-  `CONFIG SET appendonly yes`, wait for the rewrite, `save ""`, config and state put back → `none`: `dump.rdb` deleted.
+  `CONFIG SET appendonly yes`, wait for the rewrite, `save ""`, config and state put back → `none`: `dump.rdb` deleted
+  → older `<file>.falak-*` copies removed (only this restore's are kept; none when it moved nothing).
   Any failure after the stop: restored files removed, earlier ones renamed back, config / state rewritten, the unit
   started again if it ran, error "restore into <unit> failed, the earlier data is back: <cause>" + `journalctl` tail.
   The instance lock keeps applies, removes, backups and `RedisWatch` out meanwhile.

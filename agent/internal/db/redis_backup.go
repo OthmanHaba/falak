@@ -8,6 +8,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -30,7 +32,8 @@ import (
 // checked against the installed server (a Redis 7.4+ snapshot can't load into Valkey, a Valkey 9 one into Redis, …)
 // before anything changes. Then the unit is stopped (always: that also cancels an automatic restart pending; a failed
 // stop starts it again and changes nothing), the current dump.rdb / appendonlydir / appendonly.aof are moved
-// aside (<file>.falak-<UTC time>), the snapshot becomes dump.rdb (0600, the instance user) and the unit starts. An
+// aside (<file>.falak-<UTC time>; once the restore succeeded, older copies from earlier restores or persistence changes
+// are removed, so only the latest set is kept), the snapshot becomes dump.rdb (0600, the instance user) and the unit starts. An
 // instance with AOF starts from a config with `appendonly no` (Redis ignores dump.rdb while AOF is on), then switches AOF
 // on live (CONFIG SET appendonly yes rewrites the AOF from memory) and its config file is put back. If the start, PING
 // or the AOF switch fails, the restored files are removed, the earlier ones put back, the earlier config written and the
@@ -433,7 +436,44 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 		result.MovedAside = append(result.MovedAside, m[1])
 	}
 	fmt.Fprintf(st.Stdout(), "%s restored from %s; earlier files kept as %s\n", unit, h, strings.Join(result.MovedAside, ", "))
+	// Only the files this restore moved aside are kept: older copies would pile up with every restore.
+	pruned, err := pruneAside(dataP, result.MovedAside)
+	if len(pruned) > 0 {
+		fmt.Fprintf(st.Stdout(), "removed older copies: %s\n", strings.Join(pruned, ", "))
+	}
+	if err != nil {
+		db.d.Logger.Warn("could not remove older moved-aside files", "unit", unit, "err", err)
+	}
 	return result, nil
+}
+
+// asideName matches the copies moveAsideNamed leaves in a data directory.
+var asideName = regexp.MustCompile(`^(dump\.rdb|appendonlydir|appendonly\.aof)\.falak-[0-9]{8}T[0-9]{6}Z(-[0-9]+)?$`)
+
+// pruneAside removes every moved-aside copy in dir but keep (data directory names). With nothing to keep (the
+// instance had no files) nothing is removed: the newest copies are still the latest data before the restore.
+func pruneAside(dir string, keep []string) ([]string, error) {
+	if len(keep) == 0 {
+		return nil, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var pruned []string
+	var errs []error
+	for _, e := range entries {
+		if !asideName.MatchString(e.Name()) || slices.Contains(keep, e.Name()) {
+			continue
+		}
+		// RemoveAll removes a link itself, never what it points to.
+		if err := os.RemoveAll(dir + "/" + e.Name()); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		pruned = append(pruned, e.Name())
+	}
+	return pruned, errors.Join(errs...)
 }
 
 // RedisRestoreHeadroom is the free space a restore leaves on the instance's disk beyond the snapshot (and the AOF
