@@ -441,6 +441,13 @@ write_env() {
   if [ "$fresh" = 1 ]; then ok "generated new secrets"; else ok "kept existing secrets, updated settings"; fi
 }
 
+# The key-encryption key (/opt/falak/secrets/kek, 32 bytes from /dev/urandom, 0400, owned by the containers'
+# www-data): every secret in the database is sealed under it. Created once; a re-run keeps it.
+write_kek() {
+  info "Key-encryption key ($FALAK_DIR/secrets/kek)"
+  kctl kek init || die "could not create the key-encryption key"
+}
+
 check_subnet() {
   local subnet prefix
   subnet="$(env_get FALAK_EDGE_SUBNET)"; prefix="${subnet%.*}."
@@ -516,6 +523,8 @@ summary() {
     printf '  (shown once — store it in a password manager)\n'
   fi
   printf '\n  Next: falak-ctl status | falak-ctl doctor | falak-ctl backup\n'
+  printf '  %sSave the emergency kit now:%s falak-ctl kek export /root/falak-emergency-kit.txt — the key that\n' "$Y" "$N"
+  printf '  decrypts every secret Falak stores. Keep it offline, apart from the backups, then delete it from this host.\n'
   printf '  %sBack up regularly and copy backups off this host:%s they contain the Fleet CA — losing it\n' "$Y" "$N"
   printf '  means re-enrolling every server. Docs: https://github.com/%s/blob/main/docs/INSTALL.md\n\n' "$REPO"
 }
@@ -526,6 +535,7 @@ main() {
   resolve_version
   fetch_files
   write_env
+  write_kek
   check_subnet
   if [ "$FROM_SOURCE" = 1 ]; then build_images; fi
   start_stack

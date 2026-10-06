@@ -9,8 +9,13 @@
 #                                           then removes Falak images older than the previous version
 #   falak-ctl prune-images [--dry-run]      remove Falak images except the current and previous version
 #   falak-ctl backup [--label NAME]         Postgres dump + app storage + Fleet CA + .env -> backups/
+#                                           (+ the KEK, only when FALAK_BACKUP_PASSPHRASE encrypts the backup)
 #   falak-ctl restore <file> [--yes]        restore a backup (stops the app while restoring)
-#   falak-ctl doctor                        DNS, certificates, ports, disk, containers, agent API, PHP threads
+#   falak-ctl doctor                        DNS, certificates, ports, disk, containers, agent API, PHP threads, KEK
+#   falak-ctl kek init | status             key-encryption key (secrets/kek): create if missing, fix permissions / check
+#   falak-ctl kek export <file>             write the emergency kit (the KEK) to a file you keep offline
+#   falak-ctl kek import <file> [--force]   put the KEK back from an emergency kit
+#   falak-ctl kek rotate                    new KEK; data keys are re-wrapped, the old KEK stays for older backups
 #   falak-ctl domain set <domain> [--keep-old]  move the panel to a new domain
 #   falak-ctl registry status | prune [--dry-run] | gc [--dry-run] [--force]
 #                                           built-in image registry: address and size / delete unneeded images /
@@ -32,6 +37,7 @@ ENV_FILE="$FALAK_DIR/.env"
 COMPOSE_FILE="$FALAK_DIR/deploy/compose.yml"
 BACKUP_DIR="$FALAK_DIR/backups"
 APP_SERVICES="control-plane agent-api horizon reverb scheduler builder"
+PHP_SERVICES="control-plane agent-api horizon reverb scheduler"
 FALAK_REPO_DEFAULT="OthmanHaba/falak"
 TMP_LIST=""
 # shellcheck disable=SC2086  # mktemp paths, space-separated
@@ -139,6 +145,199 @@ ensure_registry_gc_schedule() {
     printf '# Falak: weekly garbage collection of the built-in image registry (falak-ctl registry gc).\n%s\n' "$line" > "$file"
     chmod 644 "$file"
   fi
+}
+
+# --- key-encryption key (KEK) ---------------------------------------------------------------------------
+# Every secret in the database is sealed with data keys that are wrapped by the KEK: 32 random bytes in
+# $FALAK_DIR/secrets/kek, never in .env or the database, mounted read-only into the PHP containers. The container
+# runs as www-data (uid 33): the file is 0400 and owned by it, its directory 0711 (no listing). Losing the KEK
+# makes every secret unreadable, so `kek export` writes an emergency kit to keep offline.
+# FALAK_KEK_PROVIDER=aws-kms | vault-transit keeps the KEK in KMS / Vault instead (no file).
+SECRETS_DIR="$FALAK_DIR/secrets"
+KEK_FILE="$SECRETS_DIR/kek"
+KEK_PREVIOUS="$SECRETS_DIR/kek.previous"
+KEK_SIZE=32
+
+kek_provider() { env_get FALAK_KEK_PROVIDER local; }
+app_uid() { printf '%s' "${FALAK_APP_UID:-33}"; }
+
+file_size() { wc -c < "$1" | tr -d ' '; }
+file_mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+file_uid() { stat -c %u "$1" 2>/dev/null || stat -f %u "$1"; }
+sha256_hex() { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
+
+kek_fingerprint() { # kek_fingerprint FILE -> the KEK id the control plane records (sha256("falak-kek-id:" || key), 16 hex)
+  { printf 'falak-kek-id:'; cat "$1"; } | sha256_hex | cut -c1-16
+}
+
+kek_secure() { # kek_secure FILE : 0400, owned by the container's www-data (when we can chown)
+  chmod 0400 "$1"
+  chown "$(app_uid):$(app_uid)" "$1" 2>/dev/null || [ "$(id -u)" != 0 ] || warn "could not chown $1 to uid $(app_uid)"
+}
+
+kek_write_new() { # kek_write_new FILE : 32 bytes from /dev/urandom, never replacing an existing file
+  local tmp
+  tmp="$(mktemp "$SECRETS_DIR/.kek.XXXXXX")"
+  head -c "$KEK_SIZE" /dev/urandom > "$tmp"
+  [ "$(file_size "$tmp")" = "$KEK_SIZE" ] || { rm -f "$tmp"; die "could not read $KEK_SIZE bytes from /dev/urandom"; }
+  kek_secure "$tmp"
+  ln "$tmp" "$1" 2>/dev/null || { rm -f "$tmp"; die "$1 already exists"; }
+  rm -f "$tmp"
+}
+
+# Create the KEK when missing (install, and updates from releases before it existed); fix its permissions.
+# Never replaces one: a wrong-size file stops here instead.
+ensure_kek() { # ensure_kek [--quiet]
+  [ "$(kek_provider)" = local ] || return 0
+  install -d -m 0711 "$SECRETS_DIR"
+  chmod 0711 "$SECRETS_DIR"
+  if [ ! -e "$KEK_FILE" ]; then
+    kek_write_new "$KEK_FILE"
+    info "created the key-encryption key $KEK_FILE (id $(kek_fingerprint "$KEK_FILE"))"
+    say "  Without it the secrets in the database and in backups can't be decrypted. Keep a copy off this host:"
+    say "    falak-ctl kek export /root/falak-emergency-kit.txt   (then move it to a password manager or offline storage)"
+  fi
+  [ -f "$KEK_FILE" ] || die "$KEK_FILE is not a file (a directory created by Docker?). Remove it, then put the KEK back (falak-ctl kek import <kit>)"
+  [ "$(file_size "$KEK_FILE")" = "$KEK_SIZE" ] || die "$KEK_FILE must be exactly $KEK_SIZE bytes (it has $(file_size "$KEK_FILE")); restore it from the emergency kit (falak-ctl kek import <kit>)"
+  kek_secure "$KEK_FILE"
+  if [ -f "$KEK_PREVIOUS" ]; then kek_secure "$KEK_PREVIOUS"; fi
+  [ "${1:-}" = --quiet ] || ok "key-encryption key $(kek_fingerprint "$KEK_FILE")"
+}
+
+cmd_kek() {
+  require_install
+  local sub="${1:-}"; shift || true
+  case "$sub" in
+    init) ensure_kek ;;
+    status) kek_status ;;
+    export) kek_export "$@" ;;
+    import) kek_import "$@" ;;
+    rotate) kek_rotate "$@" ;;
+    *) die "usage: falak-ctl kek init | status | export <file> | import <file> [--force] | rotate" ;;
+  esac
+}
+
+kek_status() { # problems are counted by the caller (doctor) from the return code
+  local problems=0 provider mode
+  provider="$(kek_provider)"
+  if [ "$provider" != local ]; then
+    ok "key-encryption key held by $provider"
+  elif [ ! -f "$KEK_FILE" ]; then
+    bad "$KEK_FILE is missing: the control plane can't start (falak-ctl kek import <kit>, or falak-ctl kek init on a new install)"
+    return 1
+  else
+    mode="$(file_mode "$KEK_FILE")"
+    if [ "$(file_size "$KEK_FILE")" != "$KEK_SIZE" ]; then bad "$KEK_FILE has $(file_size "$KEK_FILE") bytes (expected $KEK_SIZE)"; problems=$((problems + 1))
+    elif [ "$mode" != 400 ] && [ "$mode" != 600 ]; then bad "$KEK_FILE has mode $mode (expected 400): falak-ctl kek init fixes it"; problems=$((problems + 1))
+    elif [ "$(file_uid "$KEK_FILE")" != "$(app_uid)" ]; then bad "$KEK_FILE is owned by uid $(file_uid "$KEK_FILE"), not the container's www-data ($(app_uid)): falak-ctl kek init fixes it"; problems=$((problems + 1))
+    else ok "key-encryption key $KEK_FILE (id $(kek_fingerprint "$KEK_FILE"), mode $mode)"
+    fi
+    [ -f "$KEK_PREVIOUS" ] && say "  previous KEK kept for older backups: $KEK_PREVIOUS (id $(kek_fingerprint "$KEK_PREVIOUS"))"
+  fi
+  if is_running control-plane; then
+    if compose exec -T control-plane php artisan falak:keys:check --no-interaction >/dev/null 2>&1; then
+      ok "the control plane unwraps every data key with it"
+    else
+      bad "falak:keys:check failed: falak-ctl artisan falak:keys:check"; problems=$((problems + 1))
+    fi
+  fi
+  [ "$problems" = 0 ]
+}
+
+# The emergency kit: the KEK (base64) with what it is for and how to put it back. Written to a file the admin
+# names, mode 0600, never over an existing file and never to stdout.
+kek_export() {
+  local out="${1:-}"
+  if [ -z "$out" ] || [ "$out" = - ]; then
+    say "usage: falak-ctl kek export <file>"
+    say
+    say "Writes the emergency kit: the key-encryption key that protects every secret in Falak's database and backups."
+    say "Store the file offline or in a password manager, apart from the backups, then delete it from this host."
+    exit 2
+  fi
+  [ ! -e "$out" ] || die "$out exists; choose a new file"
+  local provider; provider="$(kek_provider)"
+  local tmp
+  tmp="$(mktemp "$(dirname "$out")/.falak-kit.XXXXXX")" || die "cannot write in $(dirname "$out")"
+  chmod 600 "$tmp"
+  {
+    echo "FALAK EMERGENCY KIT: key-encryption key (KEK)"
+    echo
+    echo "Install:   $(env_get FALAK_DOMAIN)"
+    echo "Created:   $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "Provider:  $provider"
+    if [ "$provider" = local ]; then
+      echo "KEK id:    $(kek_fingerprint "$KEK_FILE")"
+      echo
+      echo "Every secret Falak stores (environment variables, database passwords, keys, tokens) is encrypted under this"
+      echo "key. A database backup is useless without it. Keep this file offline or in a password manager, apart from"
+      echo "the backups, and delete it from the server once it is stored."
+      echo
+      echo "Put it back (a new host, or a lost $KEK_FILE):"
+      echo "    falak-ctl kek import <this file>"
+      echo
+      echo "-----BEGIN FALAK KEK-----"
+      base64 < "$KEK_FILE" | tr -d '\n'; echo
+      echo "-----END FALAK KEK-----"
+    else
+      echo
+      echo "The KEK never leaves $provider; this kit holds no key material. Keep access to that key (and its"
+      echo "FALAK_KEK_* settings in custom.env): without it the secrets in the database can't be decrypted."
+    fi
+  } > "$tmp"
+  ln "$tmp" "$out" 2>/dev/null || { rm -f "$tmp"; die "$out exists; choose a new file"; }
+  rm -f "$tmp"
+  ok "wrote $out (mode 600). Move it off this host, then delete it here."
+}
+
+kek_import() { # kek_import KIT [--force] : the KEK from an emergency kit; --force replaces a different KEK (kept aside)
+  local kit="" force=0
+  while [ $# -gt 0 ]; do
+    case "$1" in --force) force=1 ;; -*) die "kek import: unknown option $1" ;; *) kit="$1" ;; esac
+    shift
+  done
+  if [ -z "$kit" ] || [ ! -f "$kit" ]; then die "usage: falak-ctl kek import <emergency kit file> [--force]"; fi
+  [ "$(kek_provider)" = local ] || die "FALAK_KEK_PROVIDER is $(kek_provider): there is no KEK file to import"
+  install -d -m 0711 "$SECRETS_DIR"
+  local tmp
+  tmp="$(mktemp "$SECRETS_DIR/.kek.XXXXXX")"
+  sed -n '/^-----BEGIN FALAK KEK-----$/,/^-----END FALAK KEK-----$/p' "$kit" | sed '1d;$d' | tr -d ' \r\n' | base64 -d > "$tmp" 2>/dev/null || true
+  if [ "$(file_size "$tmp")" != "$KEK_SIZE" ]; then rm -f "$tmp"; die "$kit holds no valid KEK (expected a FALAK KEK block of $KEK_SIZE bytes)"; fi
+  local id; id="$(kek_fingerprint "$tmp")"
+  if grep -q '^KEK id:' "$kit" && ! grep -q "^KEK id: *$id\$" "$kit"; then rm -f "$tmp"; die "$kit: the key does not match its KEK id (damaged copy?)"; fi
+  if [ -f "$KEK_FILE" ]; then
+    if [ "$(kek_fingerprint "$KEK_FILE")" = "$id" ]; then rm -f "$tmp"; ensure_kek; return 0; fi
+    [ "$force" = 1 ] || { rm -f "$tmp"; die "$KEK_FILE holds another KEK ($(kek_fingerprint "$KEK_FILE")); --force replaces it (it is kept as $KEK_FILE.replaced-<time>)"; }
+    mv "$KEK_FILE" "$KEK_FILE.replaced-$(date -u +%Y%m%dT%H%M%SZ)"
+  fi
+  kek_secure "$tmp"
+  mv "$tmp" "$KEK_FILE"
+  ok "imported KEK $id into $KEK_FILE"
+  if is_running control-plane; then say "  Restart the control plane to use it: falak-ctl up"; fi
+}
+
+# New local KEK: the current one becomes kek.previous (still read for data keys it wraps), the control plane
+# re-wraps every data key under the new one. kek.previous stays: backups taken before the rotation need it.
+kek_rotate() {
+  [ "$(kek_provider)" = local ] || die "FALAK_KEK_PROVIDER is $(kek_provider): rotate the key in KMS / Vault (or point FALAK_KEK_* at a new key), then: falak-ctl artisan falak:keys:rotate-kek --all"
+  ensure_kek --quiet
+  is_running control-plane || die "the control plane is not running (falak-ctl up first)"
+  if [ -f "$KEK_PREVIOUS" ]; then
+    local old; old="$SECRETS_DIR/kek.retired-$(kek_fingerprint "$KEK_PREVIOUS")"
+    mv "$KEK_PREVIOUS" "$old"
+    warn "the KEK before the last rotation moved to $old (backups older than that rotation need it)"
+  fi
+  local before; before="$(kek_fingerprint "$KEK_FILE")"
+  mv "$KEK_FILE" "$KEK_PREVIOUS"
+  kek_write_new "$KEK_FILE"
+  info "rotating the KEK: $before -> $(kek_fingerprint "$KEK_FILE")"
+  # shellcheck disable=SC2086  # service names, space-separated
+  compose restart $PHP_SERVICES >/dev/null
+  wait_healthy 420 >/dev/null || die "the stack did not become healthy with the new KEK (the old one is $KEK_PREVIOUS)"
+  compose exec -T control-plane php artisan falak:keys:rotate-kek --no-interaction \
+    || die "re-wrapping the data keys failed; both KEKs are in place, run: falak-ctl artisan falak:keys:rotate-kek"
+  ok "every data key is wrapped by the new KEK; the previous one stays at $KEK_PREVIOUS for older backups"
+  say "  Export a new emergency kit now: falak-ctl kek export <file>"
 }
 
 curl_config_quote() { # curl_config_quote VALUE -> "VALUE" for a curl config file (\ and " escaped)
@@ -558,17 +757,34 @@ cmd_backup() {
 
   cp "$ENV_FILE" "$work/env"
   [ -f "$FALAK_DIR/custom.env" ] && cp "$FALAK_DIR/custom.env" "$work/custom.env"
+
+  # The KEK decrypts every secret in db.dump. It goes into the backup only when the backup itself is encrypted:
+  # a plain archive with both would hand out every secret. Without it, the KEK must be kept separately.
+  local pass
+  pass="$(env_get FALAK_BACKUP_PASSPHRASE)"
+  if [ "$(kek_provider)" = local ] && [ -f "$KEK_FILE" ]; then
+    if [ -n "$pass" ]; then
+      mkdir -m 700 "$work/secrets"
+      cp "$KEK_FILE" "$work/secrets/kek"
+      [ -f "$KEK_PREVIOUS" ] && cp "$KEK_PREVIOUS" "$work/secrets/kek.previous"
+      [ "$quiet" = 1 ] || ok "key-encryption key $(kek_fingerprint "$KEK_FILE") (in the encrypted backup)"
+    else
+      warn "THIS BACKUP DOES NOT CONTAIN THE KEY-ENCRYPTION KEY ($KEK_FILE, id $(kek_fingerprint "$KEK_FILE"))."
+      warn "Without it the secrets in this backup can't be decrypted. Keep the KEK separately (falak-ctl kek export <file>),"
+      warn "or set FALAK_BACKUP_PASSPHRASE in $ENV_FILE to encrypt backups and include it."
+    fi
+  fi
   {
     echo "falak_version=$(env_get FALAK_VERSION)"
     echo "created_at=$ts"
     echo "host=$(hostname)"
     echo "domain=$(env_get FALAK_DOMAIN)"
+    echo "kek_provider=$(kek_provider)"
+    if [ -f "$KEK_FILE" ]; then echo "kek_id=$(kek_fingerprint "$KEK_FILE")"; fi
   } > "$work/manifest"
 
   out="$BACKUP_DIR/$name.tar.gz"
   tar -C "$work" -czf "$out.tmp" .
-  local pass
-  pass="$(env_get FALAK_BACKUP_PASSPHRASE)"
   if [ -n "$pass" ]; then
     FALAK_BACKUP_PASSPHRASE="$pass" openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:FALAK_BACKUP_PASSPHRASE \
       -in "$out.tmp" -out "$out.enc.tmp" && rm -f "$out.tmp" && mv "$out.enc.tmp" "$out.enc"
@@ -577,7 +793,7 @@ cmd_backup() {
     mv "$out.tmp" "$out"
   fi
   chmod 600 "$out"
-  [ "$quiet" = 1 ] || ok "wrote $out ($(du -h "$out" | cut -f1)) — contains secrets (APP_KEY, Fleet CA), keep it safe"
+  [ "$quiet" = 1 ] || ok "wrote $out ($(du -h "$out" | cut -f1)) — contains secrets (.env with APP_KEY, the sealed database), keep it safe"
 
   s3_upload "$out"
 
@@ -644,6 +860,32 @@ cmd_restore() {
   do_restore "$file" "$keep_env"
 }
 
+restore_kek() { # restore_kek WORK_DIR : the backup's KEK replaces this host's (it sealed the restored database)
+  local work="$1" id
+  [ "$(kek_provider)" = local ] || return 0
+  install -d -m 0711 "$SECRETS_DIR"
+  if [ -f "$work/secrets/kek" ]; then
+    id="$(kek_fingerprint "$work/secrets/kek")"
+    if [ -f "$KEK_FILE" ] && [ "$(kek_fingerprint "$KEK_FILE")" != "$id" ]; then
+      mv "$KEK_FILE" "$KEK_FILE.replaced-$(date -u +%Y%m%dT%H%M%SZ)"
+      warn "this host's KEK was replaced by the backup's (kept as $KEK_FILE.replaced-*)"
+    fi
+    install -m 0400 "$work/secrets/kek" "$KEK_FILE"
+    if [ -f "$work/secrets/kek.previous" ] && [ ! -f "$KEK_PREVIOUS" ]; then install -m 0400 "$work/secrets/kek.previous" "$KEK_PREVIOUS"; fi
+    ensure_kek --quiet
+    ok "key-encryption key $id restored"
+    return 0
+  fi
+  id="$(sed -n 's/^kek_id=//p' "$work/manifest" 2>/dev/null || true)"
+  if [ -n "$id" ] && [ -f "$KEK_FILE" ] && [ "$(kek_fingerprint "$KEK_FILE")" != "$id" ]; then
+    warn "the backup was sealed under KEK $id, but $KEK_FILE is $(kek_fingerprint "$KEK_FILE"): the control plane won't start until"
+    warn "that KEK is back (falak-ctl kek import <emergency kit> --force)"
+  elif [ -n "$id" ] && [ ! -f "$KEK_FILE" ]; then
+    warn "the backup has no KEK and this host has none: import KEK $id first (falak-ctl kek import <emergency kit>)"
+  fi
+  ensure_kek --quiet
+}
+
 do_restore() { # do_restore FILE KEEP_ENV
   local file="$1" keep_env="$2" work
   work="$(tmpdir)"
@@ -662,8 +904,10 @@ do_restore() { # do_restore FILE KEEP_ENV
     [ -n "$keep_source" ] && env_set FALAK_DEPLOY_SOURCE "$keep_source"
     [ -n "$keep_pull" ] && env_set FALAK_PULL "$keep_pull"
     [ "${RESTORE_KEEP_VERSION:-1}" = 1 ] && [ -n "$keep_version" ] && env_set FALAK_VERSION "$keep_version"
-    ok ".env restored (APP_KEY decrypts the Fleet CA key in the database)"
+    ok ".env restored"
   fi
+
+  restore_kek "$work"
 
   compose up -d --wait postgres valkey >/dev/null
   # Align the role password with the (restored) .env; local socket connections are trusted in the image.
@@ -726,6 +970,7 @@ cmd_update() {
   install_bundle "$staged"; rm -rf "$staged"
   env_set FALAK_VERSION "$target"
   ensure_registry_env
+  ensure_kek --quiet
   if ! pull_images; then
     bad "pulling images for $target failed; nothing was changed"
     env_set FALAK_VERSION "$prev"; restore_prev_bundle
@@ -824,6 +1069,9 @@ cmd_doctor() {
   code="$(edge_curl "$domain" /install/agent/linux-amd64 -o /dev/null -w '%{http_code}' -r 0-0 2>/dev/null || true)"
   case "$code" in 200|206) ok "agent binaries served (/install/agent/linux-amd64)";; *) bad "agent binary download -> ${code:-no response}"; problems=$((problems + 1));; esac
   rm -f "$ca"
+
+  info "Encryption keys"
+  kek_status || problems=$((problems + 1))
 
   info "Image registry"
   if [ -z "$registry" ]; then
@@ -971,14 +1219,14 @@ cmd_admin() {
   esac
 }
 
-usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local cmd="${1:-help}"; shift || true
   case "$cmd" in
     status) cmd_status "$@" ;;
     logs) cmd_logs "$@" ;;
-    up) require_install; ensure_registry_env
+    up) require_install; ensure_registry_env; ensure_kek --quiet
         pull_images missing || die "pulling images failed (see above); nothing was started"
         wait_healthy "${1:-420}" && health_check ;;
     down) require_install; compose down ;;
@@ -995,6 +1243,7 @@ main() {
     reload-configs) require_install; recreate_drifted 300 ;;
     registry) cmd_registry "$@" ;;
     prune-images) cmd_prune_images "$@" ;;
+    kek) cmd_kek "$@" ;;
     version) require_install; env_get FALAK_VERSION; echo ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;

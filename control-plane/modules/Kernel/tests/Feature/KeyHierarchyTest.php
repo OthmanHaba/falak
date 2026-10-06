@@ -250,6 +250,8 @@ it('checks the KEK and the data keys without printing secrets', function () {
         ->expectsOutputToContain('1 (0 wrapped by an earlier KEK)')
         ->assertSuccessful();
 
+    $this->artisan('falak:keys:check --kek-only')->doesntExpectOutputToContain('Data keys')->assertSuccessful();
+
     useKek('/nonexistent/falak/kek');
     $this->artisan('falak:keys:check')->expectsOutputToContain('does not exist')->assertFailed();
 });

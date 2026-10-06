@@ -12,7 +12,8 @@ use Throwable;
 
 final class CheckKeysCommand extends Command
 {
-    protected $signature = 'falak:keys:check';
+    protected $signature = 'falak:keys:check
+        {--kek-only : check the KEK alone, not every data key (start of the container roles that do not migrate)}';
 
     protected $description = 'Check the key-encryption key and that every data key unwraps with it (prints no secrets)';
 
@@ -37,7 +38,7 @@ final class CheckKeysCommand extends Command
         $this->components->twoColumnDetail('KEK', "{$kek->provider()} {$kek->id()}");
 
         // Before the first migration there are no data keys to check.
-        if (! Schema::hasTable('kernel_data_keys')) {
+        if ($this->option('kek-only') || ! Schema::hasTable('kernel_data_keys')) {
             return self::SUCCESS;
         }
 
