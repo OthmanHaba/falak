@@ -340,8 +340,8 @@ final class StepPayloads
             ], fn ($v) => $v !== null),
             StepKind::Switch => $this->rollbackTo($deployment, $site, (string) $deployment->target_release_id),
             StepKind::Revert => $this->rollbackTo($deployment, $site, (string) ($step->meta['release_id'] ?? '')),
-            StepKind::Swap => $this->swap($deployment, $site, $serverId, $this->imageFor($deployment, $site)),
-            StepKind::RevertSwap => $this->swap($deployment, $site, $serverId, [(string) ($step->meta['image'] ?? ''), null]),
+            StepKind::Swap => $this->swap($deployment, $site, $serverId, $this->imageFor($deployment, $site), (string) $deployment->release_id),
+            StepKind::RevertSwap => $this->swap($deployment, $site, $serverId, [(string) ($step->meta['image'] ?? ''), null], (string) ($deployment->previous_release_id ?? $deployment->release_id)),
             StepKind::Build, StepKind::HealthCheck, StepKind::Restart, StepKind::RevertRestart => throw new RuntimeException("{$step->kind->value} is not an agent command."),
         };
     }
@@ -427,12 +427,24 @@ final class StepPayloads
         return array_filter([
             ...$this->base($deployment, $site),
             'shared_paths' => array_map(fn (SharedPath $path) => ['path' => $path->path, 'type' => $path->type === 'file' ? 'file' : 'dir'], $this->sites->sharedPaths($site->id)),
-            'env_file' => ['content' => $this->dotenv([...$env, ...$this->injected($deployment, $site, $serverId)])],
+            'env_file' => ['content' => $this->dotenv([...$env, ...$this->injected($deployment, $site, $serverId), ...$this->configCache($site)])],
             'owner' => ['user' => $site->unixUser],
             'writable_dirs' => $site->framework->isLaravel() ? ['bootstrap/cache', 'storage'] : [],
             'context' => $this->context($deployment, $site),
             'mask' => $this->mask($site, $env) ?: null,
+            'config_cache' => $this->configCache($site) !== [] ? true : null,
         ], fn ($v) => $v !== null);
+    }
+
+    /**
+     * Laravel's config cache holds every resolved secret: it goes to the release's tmpfs directory (the agent links it
+     * as .falak-cache; relative paths are resolved against the release), never to bootstrap/cache on disk.
+     *
+     * @return array<string, string>
+     */
+    private function configCache(SiteData $site): array
+    {
+        return $site->framework->isLaravel() && $site->runtime->isPhp() ? ['APP_CONFIG_CACHE' => '.falak-cache/config.php'] : [];
     }
 
     /**
@@ -595,6 +607,21 @@ final class StepPayloads
      */
     public function restoreSecrets(SiteData $site, LiveRelease $live, string $secretsMode): ?array
     {
+        $release = (string) self::upper($live->releaseId);
+
+        if ($site->runtime === SiteRuntime::Compose) {
+            $stored = Release::query()->find($live->releaseId)?->compose;
+
+            return is_array($stored) ? [
+                'site' => $site->slug,
+                'sites_root' => dirname($site->rootPath),
+                'release_id' => $release,
+                'compose' => true,
+                'env_file' => ['content' => self::composeDotenv($env = $this->composeEnv($stored, $live->serverId))],
+                'mask' => $this->mask($site, $env) ?: null,
+            ] : null;
+        }
+
         // Releases made before Falak recorded their variables get the site's current ones.
         $env = $live->environment !== [] ? array_map('strval', $live->environment) : $this->releaseVariables($site);
 
@@ -603,12 +630,13 @@ final class StepPayloads
 
             return $files === [] ? null : [
                 'site' => $site->slug,
+                'release_id' => $release,
                 'secret_files' => $files,
                 'mask' => array_column($files, 'name'),
             ];
         }
 
-        if ($site->runtime->isContainer() || $site->runtime === SiteRuntime::Function) {
+        if ($site->runtime === SiteRuntime::Function) {
             return null;
         }
 
@@ -616,14 +644,20 @@ final class StepPayloads
             'FALAK_SITE_ID' => self::upper($site->id),
             'FALAK_SERVER_ID' => self::upper($live->serverId),
             'FALAK_DEPLOYMENT_ID' => self::upper($live->deploymentId),
-            'FALAK_RELEASE_ID' => self::upper($live->releaseId),
+            'FALAK_RELEASE_ID' => $release,
         ]);
+        $laravel = $this->configCache($site) !== [];
 
         return array_filter([
             'site' => $site->slug,
             'sites_root' => dirname($site->rootPath),
-            'env_file' => ['content' => $this->dotenv([...$env, ...$injected])],
+            'release_id' => $release,
+            'env_file' => ['content' => $this->dotenv([...$env, ...$injected, ...$this->configCache($site)])],
+            'config_cache' => $laravel ? true : null,
             'owner' => ['user' => $site->unixUser],
+            // The config cache was on the tmpfs too: rebuild it, then let PHP and the site's programs read the env again.
+            'after' => $laravel ? ['script' => ($site->phpVersion ? "php{$site->phpVersion}" : 'php').' artisan config:cache', 'user' => $site->unixUser] : null,
+            'reload' => [...($this->reload($site) ?? []), ['kind' => 'site_procs', 'name' => $site->slug]],
             'mask' => $this->mask($site, $env) ?: null,
         ], fn ($v) => $v !== null);
     }
@@ -725,7 +759,7 @@ final class StepPayloads
      * @param  array{0: string, 1: ?array<string, string>}  $image
      * @return array<string, mixed>
      */
-    private function swap(Deployment $deployment, SiteData $site, string $serverId, array $image): array
+    private function swap(Deployment $deployment, SiteData $site, string $serverId, array $image, string $releaseId): array
     {
         [$ref, $auth] = $image;
 
@@ -780,7 +814,8 @@ final class StepPayloads
             'labels' => (object) array_filter([
                 'falak.site.id' => self::upper($site->id),
                 'falak.deployment.id' => self::upper($deployment->id),
-                'falak.release.id' => self::upper($deployment->release_id),
+                // The release the container runs (a revert runs the previous one): secrets are restored for it after a reboot.
+                'falak.release.id' => self::upper($releaseId),
             ]),
             'secret_files' => $files ?: null,
             'mask' => $mask ?: null,
@@ -835,6 +870,7 @@ final class StepPayloads
             'entrypoint' => $source->entrypoint,
             'files' => $files,
             'env' => (object) array_map('strval', $env),
+            'mask' => $this->mask($site, $env) ?: null,
             'scaling' => $source->scaling,
             'limits' => $source->limits,
             // The function's current access rules, also for rollbacks (a revoked key never comes back with an old

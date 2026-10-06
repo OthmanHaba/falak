@@ -13,6 +13,7 @@ use Falak\Processes\Domain\Models\Worker;
 use Falak\Sites\Contracts\Data\LaravelSettings;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\OctaneServer;
+use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Contracts\TargetStatus;
@@ -39,6 +40,7 @@ final class StateCompiler
         private readonly SiteDirectory $sites,
         private readonly LiveReleases $releases,
         private readonly ScheduleSources $sources,
+        private readonly SecretVariables $secrets,
     ) {}
 
     public function compile(string $serverId): CompiledState
@@ -68,8 +70,17 @@ final class StateCompiler
             $isLeader = $site->target($serverId)?->isLeader() ?? false;
 
             $release = $live[$site->id];
+            $secretNames = $this->secrets->names([...($this->sites->environment($site->id)->variables ?? []), ...$release->environment]);
 
             foreach ($this->sitePrograms($site, $serverId, $release, $workers->get($site->id, new Collection), $daemons->get($site->id, new Collection)) as [$program, $kind, $label]) {
+                // The agent masks these variables' values in the program's logs.
+                $mask = array_values(array_filter(array_unique([...$secretNames, ...$this->secrets->names($program['env'] ?? [])]), fn (string $name) => array_key_exists($name, $program['env'] ?? [])));
+                sort($mask);
+
+                if ($mask !== []) {
+                    $program['mask'] = $mask;
+                }
+
                 $programs[] = $program;
                 // `hash` tells restartForSite() which programs a proc.apply restarts anyway (changed definition).
                 $programMeta[$program['name']] = ['site_id' => $site->id, 'kind' => $kind, 'label' => $label, 'numprocs' => $program['numprocs'] ?? 1, 'hash' => PayloadHash::of($program)];

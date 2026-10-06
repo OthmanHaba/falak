@@ -103,7 +103,7 @@ it('prepares isolated php-fpm sites: unix user, then the FPM pool', function () 
         'state' => 'present',
     ])->and($pool['payload']['php_admin_values']['open_basedir'])->toStartWith('/srv/falak/sites/1-blog/')
         // The release .env links to the agent's tmpfs (PHP checks the resolved path).
-        ->and($pool['payload']['php_admin_values']['open_basedir'])->toEndWith(':/run/falak/env/1-blog.env')
+        ->and($pool['payload']['php_admin_values']['open_basedir'])->toEndWith(':/run/falak/env/1-blog.env:/run/falak/env/1-blog.d/')
         ->and($target->refresh()->step)->toBe('pool');
 
     sites_finish($pool);

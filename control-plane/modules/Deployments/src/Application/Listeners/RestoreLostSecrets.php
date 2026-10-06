@@ -4,6 +4,7 @@ namespace Falak\Deployments\Application\Listeners;
 
 use Falak\Deployments\Application\Orchestration\StepPayloads;
 use Falak\Deployments\Contracts\LiveReleases;
+use Falak\Deployments\Domain\Enums\DeploymentStatus;
 use Falak\Deployments\Domain\Models\Deployment;
 use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Fleet\Contracts\AgentGateway;
@@ -43,7 +44,12 @@ final class RestoreLostSecrets
             $site = $sites[$slug] ?? null;
             $release = $site !== null ? ($live[$site->id] ?? null) : null;
 
-            if ($release === null || ! Cache::add("deployments:restore-secrets:{$event->serverId}:{$site->id}", true, self::THROTTLE)) {
+            // A running deployment writes the site's secrets itself (and may be replacing the release): ask again later.
+            if ($release === null || Deployment::query()->where('site_id', $site->id)->whereIn('status', [DeploymentStatus::Queued, ...DeploymentStatus::occupying()])->exists()) {
+                continue;
+            }
+
+            if (! Cache::add("deployments:restore-secrets:{$event->serverId}:{$site->id}", true, self::THROTTLE)) {
                 continue;
             }
 

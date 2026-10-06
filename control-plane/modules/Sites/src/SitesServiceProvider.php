@@ -2,6 +2,7 @@
 
 namespace Falak\Sites;
 
+use Falak\Fleet\Events\AgentVersionChanged;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Identity\Contracts\PermissionRegistry;
@@ -13,6 +14,7 @@ use Falak\Servers\Events\ServerDeleted;
 use Falak\Sites\Application\Listeners\DeleteOrganizationSites;
 use Falak\Sites\Application\Listeners\DetachSourceConnection;
 use Falak\Sites\Application\Listeners\HandleCommandOutcome;
+use Falak\Sites\Application\Listeners\ReapplyFpmPools;
 use Falak\Sites\Application\Listeners\RecordComposeStatus;
 use Falak\Sites\Application\Listeners\RemoveServerTargets;
 use Falak\Sites\Contracts\ComposeInspector;
@@ -92,6 +94,7 @@ class SitesServiceProvider extends ModuleServiceProvider
         Event::listen(CommandFinished::class, [RecordComposeStatus::class, 'handleFinished']);
         Event::listen(CommandFailed::class, [RecordComposeStatus::class, 'handleFailed']);
         Event::listen(ServerDeleted::class, RemoveServerTargets::class);
+        Event::listen(AgentVersionChanged::class, ReapplyFpmPools::class);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationSites::class);
         Event::listen(ConnectionDeleted::class, DetachSourceConnection::class);
     }
