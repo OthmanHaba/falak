@@ -13,7 +13,9 @@ use Illuminate\Support\Facades\DB;
 /**
  * A compose stack goes live on a server: each named volume of its (rendered) file is a docker volume of that server,
  * attached to the services that mount it. Compose names the Docker volume <project>_<key> unless the file sets `name:`
- * (or it is `external`: then its key); `external` volumes are recorded but never deleted by Falak. Volumes the file dropped keep their data, unattached.
+ * (or it is `external`: then its key). Only <project>_<key> volumes are the stack's own: a `name:` could point at any
+ * Docker volume of the server (another stack's, a protected one), so those and `external` ones are recorded as
+ * external — never deleted by Falak. Volumes the file dropped keep their data, unattached.
  */
 final class SyncComposeVolumes
 {
@@ -48,6 +50,7 @@ final class SyncComposeVolumes
                 $key = (string) $key;
                 // External volumes are never prefixed with the project.
                 $dockerName = $definition['name'] ?? ($definition['external'] ? $key : "{$project}_{$key}");
+                $external = (bool) $definition['external'] || $dockerName !== "{$project}_{$key}";
 
                 if (preg_match(Volume::DOCKER_NAME, $dockerName) !== 1) {
                     continue;
@@ -56,16 +59,16 @@ final class SyncComposeVolumes
                 $volume = $existing->get($key) ?? Volume::query()->create([
                     'organization_id' => $organizationId,
                     'server_id' => $serverId,
-                    'name' => mb_substr("{$project}-{$key}", 0, 128),
+                    'name' => $this->name($serverId, "{$project}-{$key}"),
                     'kind' => VolumeKind::Docker,
                     'docker_name' => $dockerName,
-                    'options' => ['compose' => ['site_id' => $siteId, 'key' => $key], 'external' => (bool) $definition['external']],
+                    'options' => ['compose' => ['site_id' => $siteId, 'key' => $key], 'external' => $external],
                     // Compose creates it with the stack's `up`.
                     'status' => VolumeStatus::Active,
                 ]);
 
-                if ($volume->docker_name !== $dockerName || $volume->external() !== (bool) $definition['external']) {
-                    $volume->forceFill(['docker_name' => $dockerName, 'options' => [...(array) $volume->options, 'external' => (bool) $definition['external']]])->save();
+                if ($volume->docker_name !== $dockerName || $volume->external() !== $external) {
+                    $volume->forceFill(['docker_name' => $dockerName, 'options' => [...(array) $volume->options, 'external' => $external]])->save();
                 }
 
                 $this->attach($volume, $siteId, $mounts[$key] ?? []);
@@ -77,6 +80,19 @@ final class SyncComposeVolumes
                 $volume->attachments()->delete();
             }
         });
+    }
+
+    /** A name no other volume of the server has (a user may have taken <project>-<key>). */
+    private function name(string $serverId, string $name): string
+    {
+        $name = mb_substr($name, 0, 100);
+        $candidate = $name;
+
+        for ($i = 2; Volume::query()->where('server_id', $serverId)->where('name', $candidate)->exists(); $i++) {
+            $candidate = "{$name}-{$i}";
+        }
+
+        return $candidate;
     }
 
     /**

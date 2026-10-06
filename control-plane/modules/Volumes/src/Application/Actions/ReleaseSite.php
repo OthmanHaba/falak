@@ -42,8 +42,8 @@ final class ReleaseSite
                 throw ValidationException::withMessages(['delete_volumes' => 'Choose volumes of this service.']);
             }
 
-            if ($volume->protected) {
-                throw ValidationException::withMessages(['delete_volumes' => "{$volume->name} is protected and is never deleted with its service."]);
+            if (($refusal = $this->delete->refusal($volume)) !== null) {
+                throw ValidationException::withMessages(['delete_volumes' => $refusal]);
             }
         }
 

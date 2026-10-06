@@ -58,9 +58,12 @@ final class YamlComposeInspector implements ComposeInspector
 
         foreach ((array) ($doc['volumes'] ?? []) as $name => $volume) {
             $volumes[] = (string) $name;
-            // The Docker volume behind a key: `name:` when set (external volumes too), else Compose's <project>_<key>.
+            // The Docker volume behind a key: `name:` when set (external volumes too, legacy `external: {name: x}`
+            // included), else Compose's <project>_<key>.
+            $legacy = is_array($volume) && is_array($volume['external'] ?? null) && is_string($volume['external']['name'] ?? null) && $volume['external']['name'] !== ''
+                ? $volume['external']['name'] : null;
             $volumeDefinitions[(string) $name] = [
-                'name' => is_array($volume) && is_string($volume['name'] ?? null) && $volume['name'] !== '' ? $volume['name'] : null,
+                'name' => is_array($volume) && is_string($volume['name'] ?? null) && $volume['name'] !== '' ? $volume['name'] : $legacy,
                 'external' => is_array($volume) && (($volume['external'] ?? false) === true || is_array($volume['external'] ?? null)),
             ];
             $device = is_array($volume) ? ($volume['driver_opts']['device'] ?? null) : null;

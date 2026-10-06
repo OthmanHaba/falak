@@ -38,6 +38,10 @@ final class CloneVolume
             throw ValidationException::withMessages(['volume' => 'Only active Docker and sized volumes can be cloned.']);
         }
 
+        if ($source->holdsDatabase()) {
+            throw ValidationException::withMessages(['volume' => 'A database’s data volume is copied through the database’s backups.']);
+        }
+
         $local = $serverId === $source->server_id;
 
         if (! $local && $storageProviderId === null) {
@@ -47,7 +51,7 @@ final class CloneVolume
         $target = $this->create->prepare($source->organization_id, $serverId, $name, $source->kind, $source->size_limit_bytes, labels: (array) $source->labels, actorId: $actorId);
 
         $operation = DB::transaction(function () use ($target, $source, $actorId) {
-            $target->save();
+            CreateVolume::save($target);
 
             return Operation::query()->create([
                 'organization_id' => $source->organization_id,

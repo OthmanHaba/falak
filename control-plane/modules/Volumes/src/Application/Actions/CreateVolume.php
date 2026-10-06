@@ -8,6 +8,7 @@ use Falak\Volumes\Application\AgentCommands;
 use Falak\Volumes\Contracts\VolumeKind;
 use Falak\Volumes\Domain\Enums\VolumeStatus;
 use Falak\Volumes\Domain\Models\Volume;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -40,7 +41,7 @@ final class CreateVolume
         ?string $actorId = null,
     ): Volume {
         $volume = $this->prepare($organizationId, $serverId, $name, $kind, $sizeBytes, $hostPath, $labels, $protected, $actorId);
-        $volume->save();
+        self::save($volume);
 
         $handle = $this->commands->tryDispatch($serverId, 'volume.create', AgentCommands::createPayload($volume), "volume.create:{$volume->id}");
         $volume->forceFill($handle !== null
@@ -125,7 +126,22 @@ final class CreateVolume
     }
 
     /**
-     * An absolute, normalized host path inside one of the allowed directories (config volumes.bind_allow).
+     * Save a prepared volume; a volume of the same name created meanwhile on the server is a validation error.
+     *
+     * @throws ValidationException
+     */
+    public static function save(Volume $volume): void
+    {
+        try {
+            $volume->save();
+        } catch (UniqueConstraintViolationException) {
+            throw ValidationException::withMessages(['name' => "The server already has a volume named {$volume->name}."]);
+        }
+    }
+
+    /**
+     * An absolute, normalized host path inside one of the allowed directories (config volumes.bind_allow). The
+     * directory itself is refused, only paths below it are allowed (the agent applies the same rule).
      *
      * @throws ValidationException
      */

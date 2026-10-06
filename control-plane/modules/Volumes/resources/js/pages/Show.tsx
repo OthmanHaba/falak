@@ -604,7 +604,7 @@ function CopyDialog({
                       consistency: form.consistency,
                       ...(otherServer ? { storage_provider_id: form.storage_provider_id } : {}),
                   }
-                : { server_id: form.server_id, storage_provider_id: form.storage_provider_id, consistency: form.consistency, confirm: form.confirm };
+                : { server_id: form.server_id, storage_provider_id: form.storage_provider_id, confirm: form.confirm };
         const done = await action.run(
             'POST',
             `/volumes/${volume.id}/${mode}`,
@@ -629,7 +629,7 @@ function CopyDialog({
             description={
                 mode === 'clone'
                     ? 'Copies the data into a new volume. To another server it travels through your backup storage.'
-                    : 'Archive → restore on the target → its services switch to it and redeploy → this volume is deleted. Its services must already run on the target server.'
+                    : 'Its services stop → archive → restore on the target → they switch to it and redeploy → this volume is deleted. Its services must already run on the target server.'
             }
             footer={
                 <>
@@ -669,13 +669,21 @@ function CopyDialog({
                         )}
                     </Field>
                 )}
-                <Field label="Consistency" error={action.errors.consistency}>
-                    <Select
-                        value={form.consistency}
-                        onValueChange={(value) => setForm({ ...form, consistency: value })}
-                        options={CONSISTENCY_OPTIONS}
-                    />
-                </Field>
+                {mode === 'clone' && (
+                    <Field label="Consistency" error={action.errors.consistency}>
+                        <Select
+                            value={form.consistency}
+                            onValueChange={(value) => setForm({ ...form, consistency: value })}
+                            options={CONSISTENCY_OPTIONS}
+                        />
+                    </Field>
+                )}
+                {mode === 'move' && (
+                    <Callout tone="warning">
+                        Downtime: the services using this volume stay stopped from the archive until they run on the target server (the time to copy
+                        the data through storage, then redeploy).
+                    </Callout>
+                )}
                 {mode === 'move' && (
                     <Field label={`Type ${volume.name} to confirm`} error={action.errors.confirm}>
                         <Input mono value={form.confirm} onChange={(event) => setForm({ ...form, confirm: event.target.value })} autoComplete="off" />

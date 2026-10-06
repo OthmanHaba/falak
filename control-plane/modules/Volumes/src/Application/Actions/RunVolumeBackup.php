@@ -49,6 +49,8 @@ final class RunVolumeBackup
 
         $error = match (true) {
             ! $volume->kind->portable() => 'Only Docker and sized volumes can be backed up.',
+            // Moves carry a database's data to its new server; other copies go through the database's own backups.
+            $volume->holdsDatabase() && $trigger !== 'move' => 'A database’s data volume is backed up with the database.',
             $volume->status !== VolumeStatus::Active => "The volume is {$volume->status->value}.",
             $provider === null => 'Choose a storage provider of this organization.',
             default => null,
@@ -105,6 +107,9 @@ final class RunVolumeBackup
             'volume' => $volume->ref(),
             'consistency' => $consistency->value,
             'destination' => ['kind' => 'presigned_url', 'url' => $url],
+            // A move: the services mounting it stay stopped from this snapshot until they run on the target (no write
+            // after the snapshot is lost). The move redeploys them, on the target or, when it fails, where they were.
+            ...($trigger === 'move' ? ['keep_stopped' => true] : []),
         ];
         $key = "volume.archive:{$backup->id}";
 

@@ -36,6 +36,10 @@ final class RestoreVolumeBackup
 
         $source = $backup->volume_id !== null ? Volume::query()->find($backup->volume_id) : null;
 
+        if ($source !== null && $source->holdsDatabase()) {
+            throw ValidationException::withMessages(['backup' => 'A database’s data volume is restored with the database.']);
+        }
+
         if ($swap && ($source === null || $source->server_id !== $serverId)) {
             throw ValidationException::withMessages(['swap' => 'Swapping needs the backed-up volume, and a restore on its server.']);
         }
@@ -44,7 +48,7 @@ final class RestoreVolumeBackup
         $target = $this->create->prepare($backup->organization_id, $serverId, $name, $backup->volume_kind, $size, labels: (array) ($source?->labels ?? []), actorId: $actorId);
 
         $operation = DB::transaction(function () use ($target, $backup, $source, $swap, $actorId) {
-            $target->save();
+            CreateVolume::save($target);
 
             return Operation::query()->create([
                 'organization_id' => $backup->organization_id,

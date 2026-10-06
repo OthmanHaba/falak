@@ -40,6 +40,10 @@ final class SaveBackupSchedule
             throw ValidationException::withMessages(['volume' => 'Only Docker and sized volumes can be backed up.']);
         }
 
+        if ($volume->holdsDatabase()) {
+            throw ValidationException::withMessages(['volume' => 'A database’s data volume is backed up with the database.']);
+        }
+
         if ($this->storage->find($volume->organization_id, $storageProviderId) === null) {
             throw ValidationException::withMessages(['storage_provider_id' => 'Choose a storage provider of this organization.']);
         }

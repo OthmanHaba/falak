@@ -53,7 +53,7 @@ final class VolumeController extends Controller
         $kind = VolumeKind::from($data['kind']);
 
         // Bind volumes are the host's own files.
-        if ($kind === VolumeKind::Bind && ! in_array($this->access->roleOf((string) $request->user()?->getAuthIdentifier(), $organizationId), [Role::Owner, Role::Admin], true)) {
+        if ($kind === VolumeKind::Bind && ! $this->admin($request, $organizationId)) {
             throw ValidationException::withMessages(['kind' => 'Only admins can mount host paths.']);
         }
 
@@ -67,6 +67,11 @@ final class VolumeController extends Controller
     {
         $this->authorize('manage', $volume);
         $data = $request->validate(['protected' => ['sometimes', 'boolean'], ...self::LABELS]);
+
+        // Protection guards data against deletion: only admins lift it.
+        if ($volume->protected && array_key_exists('protected', $data) && ! $data['protected'] && ! $this->admin($request, $volume->organization_id)) {
+            throw ValidationException::withMessages(['protected' => 'Only admins can turn protection off.']);
+        }
 
         $update($volume, array_key_exists('protected', $data) ? (bool) $data['protected'] : null, array_key_exists('labels', $data) ? self::labels($data) : null);
 
@@ -90,6 +95,12 @@ final class VolumeController extends Controller
     public function attach(Request $request, Volume $volume, AttachVolume $attach): RedirectResponse|JsonResponse
     {
         $this->authorize('manage', $volume);
+
+        // A host path mounted into a container exposes the host's files: admins only.
+        if ($volume->kind === VolumeKind::Bind && ! $this->admin($request, $volume->organization_id)) {
+            throw ValidationException::withMessages(['volume' => 'Only admins can mount host paths.']);
+        }
+
         $data = $request->validate([
             'site_id' => ['required', 'string', 'size:26'],
             'mount_path' => ['required', 'string', 'max:1024'],
@@ -137,7 +148,8 @@ final class VolumeController extends Controller
     }
 
     /**
-     * POST /volumes/{volume}/move {server_id, storage_provider_id, consistency, confirm: the volume's name}.
+     * POST /volumes/{volume}/move {server_id, storage_provider_id, confirm: the volume's name}. Its services are down
+     * from the archive until they run on the target.
      */
     public function move(Request $request, Volume $volume, MoveVolume $move): RedirectResponse|JsonResponse
     {
@@ -145,11 +157,10 @@ final class VolumeController extends Controller
         $data = $request->validate([
             'server_id' => ['required', 'string', 'size:26'],
             'storage_provider_id' => ['required', 'string', 'size:26'],
-            'consistency' => ['sometimes', Rule::enum(Consistency::class)],
             'confirm' => ['required', 'string', Rule::in([$volume->name])],
         ], ['confirm.in' => 'Type the volume name to confirm.']);
 
-        $operation = $move($volume, strtolower($data['server_id']), $data['storage_provider_id'], Consistency::from($data['consistency'] ?? 'stop'), $request->user()?->getAuthIdentifier());
+        $operation = $move($volume, strtolower($data['server_id']), $data['storage_provider_id'], $request->user()?->getAuthIdentifier());
 
         return $this->done($request, $this->presentOperation($operation));
     }
@@ -213,9 +224,14 @@ final class VolumeController extends Controller
     /** Host paths (bind volumes) are the server's own files: their browser is for admins. */
     private function hostPaths(Request $request, Volume $volume): void
     {
-        if ($volume->kind === VolumeKind::Bind && ! in_array($this->access->roleOf((string) $request->user()?->getAuthIdentifier(), $volume->organization_id), [Role::Owner, Role::Admin], true)) {
+        if ($volume->kind === VolumeKind::Bind && ! $this->admin($request, $volume->organization_id)) {
             abort(403, 'Only admins can browse host paths.');
         }
+    }
+
+    private function admin(Request $request, string $organizationId): bool
+    {
+        return in_array($this->access->roleOf((string) $request->user()?->getAuthIdentifier(), $organizationId), [Role::Owner, Role::Admin], true);
     }
 
     /**

@@ -34,6 +34,8 @@ return new class extends Migration
             $table->ulid('created_by')->nullable();
             $table->timestamps();
             $table->index(['server_id', 'docker_name']);
+            // Shared paths (no server) are named <site slug>/<path>.
+            $table->unique(['server_id', 'name']);
         });
 
         Schema::create('volumes_attachments', function (Blueprint $table) {

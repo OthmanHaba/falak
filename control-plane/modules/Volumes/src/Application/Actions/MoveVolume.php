@@ -16,9 +16,10 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Move a volume to another server: archive → restore there into a volume of the same name → its services switch to
- * it and redeploy → the source is deleted. Each step starts when the previous one succeeded (HandleCommandOutcome);
- * a failure stops the move with the source untouched. Its services must already run on the target server.
+ * Move a volume to another server: its services stop → archive → restore there into a volume of the same name → its
+ * services switch to it and redeploy → the source is deleted. Each step starts when the previous one succeeded
+ * (HandleCommandOutcome); a failure stops the move with the source untouched and redeploys the services where they
+ * were. The services are down from the archive to the redeploy. They must already run on the target server.
  */
 final class MoveVolume
 {
@@ -32,7 +33,7 @@ final class MoveVolume
     /**
      * @throws ValidationException
      */
-    public function __invoke(Volume $source, string $serverId, string $storageProviderId, Consistency $consistency = Consistency::Stop, ?string $actorId = null): Operation
+    public function __invoke(Volume $source, string $serverId, string $storageProviderId, ?string $actorId = null): Operation
     {
         if (! $source->kind->portable() || $source->status !== VolumeStatus::Active) {
             throw ValidationException::withMessages(['volume' => 'Only active Docker and sized volumes can be moved.']);
@@ -62,7 +63,7 @@ final class MoveVolume
         $target = $this->create->prepare($source->organization_id, $serverId, $source->name, $source->kind, $source->size_limit_bytes, labels: (array) $source->labels, protected: $source->protected, actorId: $actorId);
 
         $operation = DB::transaction(function () use ($target, $source, $actorId) {
-            $target->save();
+            CreateVolume::save($target);
 
             return Operation::query()->create([
                 'organization_id' => $source->organization_id,
@@ -75,7 +76,7 @@ final class MoveVolume
         });
 
         try {
-            $backup = ($this->backup)($source, $storageProviderId, $consistency, 'move', actorId: $actorId);
+            $backup = ($this->backup)($source, $storageProviderId, Consistency::Stop, 'move', actorId: $actorId);
 
             if ($backup->status === BackupStatus::Failed) {
                 throw ValidationException::withMessages(['volume' => (string) $backup->error]);

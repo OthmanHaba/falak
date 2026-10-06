@@ -40,6 +40,10 @@ final class DeleteSite
             throw ValidationException::withMessages(['delete_volumes' => 'Volumes are deleted on their servers: not without cleaning up the site there.']);
         }
 
+        // First: a protected or foreign pick fails the delete before anything is removed. The picked volumes are
+        // deleted on their servers once the containers stopped below no longer mount them (volume.delete wait_s).
+        $this->volumes->releaseSite($site->id, $deleteVolumeIds, $actorId);
+
         if ($cleanupRemote && $site->runtime === SiteRuntime::PhpFpm && $site->php_version) {
             foreach ($serverIds as $serverId) {
                 $this->provisioner->removePool($site, $serverId, $site->php_version);
@@ -51,10 +55,6 @@ final class DeleteSite
                 $this->provisioner->removeContainers($site, $serverId);
             }
         }
-
-        // Validated before anything is removed (a protected pick fails the delete); the picked volumes go once the
-        // containers stopped above no longer mount them.
-        $this->volumes->releaseSite($site->id, $deleteVolumeIds, $actorId);
 
         if ($cleanupRemote) {
             $this->sourceControl->unlink($site->id, $site->source_connection_id, $site->repository, $site->deploy_key_id);

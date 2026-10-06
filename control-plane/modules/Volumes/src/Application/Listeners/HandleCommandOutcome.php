@@ -38,7 +38,7 @@ final class HandleCommandOutcome implements ShouldQueue
     public function handleFinished(CommandFinished $event): void
     {
         if (in_array($event->type, self::TYPES, true)) {
-            $this->settle($event->type, $event->commandId, $event->organizationId, true, null, $event->result ?? []);
+            $this->settle($event->type, $event->commandId, $event->organizationId, true, null, $event->result ?? [], $event->serverId);
         }
     }
 
@@ -46,14 +46,14 @@ final class HandleCommandOutcome implements ShouldQueue
     {
         if (in_array($event->type, self::TYPES, true)) {
             $reason = $event->error ?: "Command {$event->status}".($event->exitCode !== null ? " (exit code {$event->exitCode})" : '');
-            $this->settle($event->type, $event->commandId, $event->organizationId, false, mb_substr($reason, 0, 1000), $event->result ?? []);
+            $this->settle($event->type, $event->commandId, $event->organizationId, false, mb_substr($reason, 0, 1000), $event->result ?? [], $event->serverId);
         }
     }
 
     /**
      * @param  array<string, mixed>  $result
      */
-    private function settle(string $type, string $commandId, string $organizationId, bool $succeeded, ?string $error, array $result): void
+    private function settle(string $type, string $commandId, string $organizationId, bool $succeeded, ?string $error, array $result, string $serverId = ''): void
     {
         match ($type) {
             'volume.create' => $this->created($commandId, $succeeded, $error, $result),
@@ -62,7 +62,7 @@ final class HandleCommandOutcome implements ShouldQueue
             'volume.archive' => $this->archived($commandId, $succeeded, $error, $result),
             'volume.restore', 'volume.clone' => $this->filled($commandId, $succeeded, $error, $result),
             'volume.download' => $this->downloaded($commandId, $succeeded, $error, $result),
-            'volume.inventory' => $succeeded ? $this->inventory($organizationId, $result) : null,
+            'volume.inventory' => $succeeded ? $this->inventory($organizationId, $serverId, $result) : null,
         };
     }
 
@@ -213,6 +213,8 @@ final class HandleCommandOutcome implements ShouldQueue
                 : "Volume {$source->name} swapped for its restore {$target->name}");
         }
 
+        $operation->succeed([...$result, 'redeployed' => $redeployed]);
+
         if ($operation->kind === OperationKind::Move && $source !== null) {
             // The move recreated the protection on the target; the source goes once its containers stopped using it.
             $source->forceFill(['protected' => false])->save();
@@ -220,11 +222,9 @@ final class HandleCommandOutcome implements ShouldQueue
             try {
                 ($this->delete)($source, $operation->requested_by, (int) config('volumes.delete_wait_s', 120), background: true);
             } catch (ValidationException $e) {
-                $result['source_kept'] = collect($e->errors())->flatten()->first();
+                $operation->forceFill(['result' => [...(array) $operation->result, 'source_kept' => collect($e->errors())->flatten()->first()]])->save();
             }
         }
-
-        $operation->succeed([...$result, 'redeployed' => $redeployed]);
 
         $this->audit->record("volumes.{$operation->kind->value}_succeeded", 'volume', $target->id, ['name' => $target->name, 'operation_id' => $operation->id], $target->organization_id);
     }
@@ -246,12 +246,12 @@ final class HandleCommandOutcome implements ShouldQueue
     }
 
     /**
-     * Usage of the volumes a server reported (only volumes of the organization that owns the server). A volume over
+     * Usage of the volumes a server reported (only its own volumes, of the organization that owns it). A volume over
      * {@see VolumeAlmostFull::THRESHOLD} of its limit alerts once per crossing.
      *
      * @param  array<string, mixed>  $result  volume.inventory $defs/result
      */
-    private function inventory(string $organizationId, array $result): void
+    private function inventory(string $organizationId, string $serverId, array $result): void
     {
         $items = collect((array) ($result['volumes'] ?? []))->filter(fn ($item) => is_array($item) && is_string($item['id'] ?? null))->keyBy('id');
 
@@ -259,7 +259,10 @@ final class HandleCommandOutcome implements ShouldQueue
             return;
         }
 
-        Volume::query()->where('organization_id', $organizationId)->whereIn('id', $items->keys()->all())->get()
+        // A server reports its own volumes (shared paths: those of its sites, measured on their leader).
+        Volume::query()->where('organization_id', $organizationId)->whereIn('id', $items->keys()->all())
+            ->where(fn ($q) => $q->where('server_id', $serverId)->orWhere(fn ($q) => $q->whereNull('server_id')->where('kind', VolumeKind::SharedPath)))
+            ->get()
             ->each(function (Volume $volume) use ($items) {
                 $item = $items->get($volume->id);
 

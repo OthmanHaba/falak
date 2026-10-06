@@ -2,6 +2,7 @@
 
 namespace Falak\Volumes\Domain\Models;
 
+use Falak\Volumes\Contracts\AttachableType;
 use Falak\Volumes\Contracts\VolumeKind;
 use Falak\Volumes\Domain\Enums\VolumeStatus;
 use Illuminate\Database\Eloquent\Collection;
@@ -133,6 +134,12 @@ class Volume extends Model
             'name' => $this->kind === VolumeKind::Docker ? $this->docker_name : null,
             'path' => in_array($this->kind, [VolumeKind::Bind, VolumeKind::SharedPath], true) ? $this->host_path : null,
         ], fn ($value) => $value !== null);
+    }
+
+    /** A database container's data (step 3): read through the database's own backups, never cloned or browsed. */
+    public function holdsDatabase(): bool
+    {
+        return $this->attachments->contains(fn (Attachment $attachment) => $attachment->attachable_type === AttachableType::Database);
     }
 
     /** Fraction of its limit in use (sized volumes; null when unknown). */

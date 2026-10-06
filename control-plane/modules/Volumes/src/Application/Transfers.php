@@ -6,6 +6,7 @@ use Falak\Databases\Contracts\BackupStorage;
 use Falak\Databases\Contracts\Exceptions\StorageUnavailable;
 use Falak\Volumes\Application\Actions\PruneVolumeBackups;
 use Falak\Volumes\Domain\Enums\BackupStatus;
+use Falak\Volumes\Domain\Enums\OperationKind;
 use Falak\Volumes\Domain\Enums\VolumeStatus;
 use Falak\Volumes\Domain\Models\Attachment;
 use Falak\Volumes\Domain\Models\Operation;
@@ -47,6 +48,8 @@ final class Transfers
             ...AgentCommands::createPayload($target),
             'source' => ['kind' => 'url', 'url' => $url],
             'sha256' => $backup->sha256,
+            // The agent stops downloading past the recorded size, and unpacking past the unpacked one.
+            'archive_bytes' => $backup->size_bytes ?: null,
             'uncompressed_bytes' => $backup->uncompressed_bytes ?: null,
         ], fn ($v) => $v !== null);
         $key = "volume.restore:{$operation->id}";
@@ -99,6 +102,14 @@ final class Transfers
     public function failed(Operation $operation, ?Volume $target, string $error): void
     {
         $operation->fail($error);
+
+        // A move stopped the services for its archive: they come back on the source volume.
+        $source = $operation->kind === OperationKind::Move ? Volume::query()->with('attachments')->find($operation->meta('source_id')) : null;
+
+        if ($source !== null) {
+            $this->redeployer->redeploy($source->attachments->map(fn (Attachment $attachment) => $attachment->siteId())->filter()->values()->all(),
+                $operation->requested_by, "Volume {$source->name} could not be moved: back on its server");
+        }
 
         if ($target !== null && $target->exists && $target->status === VolumeStatus::Pending) {
             $target->forceFill(['status' => VolumeStatus::Failed, 'status_message' => mb_substr($error, 0, 1000)])->save();
