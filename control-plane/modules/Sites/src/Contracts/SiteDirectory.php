@@ -3,7 +3,6 @@
 namespace Falak\Sites\Contracts;
 
 use Falak\Sites\Contracts\Data\EnvironmentData;
-use Falak\Sites\Contracts\Data\SharedPath;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\Data\SiteTargetData;
 
@@ -45,11 +44,6 @@ interface SiteDirectory
      * Environment for a release: the given version, or the latest when null. Null when the site has none.
      */
     public function environment(string $siteId, ?int $version = null): ?EnvironmentData;
-
-    /**
-     * @return list<SharedPath>
-     */
-    public function sharedPaths(string $siteId): array;
 
     /**
      * Deploy script variables (FALAK_*) for a deployment; merged with exposed environment variables.

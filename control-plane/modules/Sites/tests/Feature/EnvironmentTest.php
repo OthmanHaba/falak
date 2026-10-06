@@ -138,7 +138,7 @@ it('creates Laravel sites logging to files and migrates the old stderr default',
 
     $current = EnvironmentVersion::query()->where('site_id', $this->site->id)->firstOrFail();
     app(SaveEnvironment::class)($this->site, ['LOG_CHANNEL' => 'stderr', 'A' => 'b'], ['A'], null);
-    $custom = Site::query()->create(array_merge($this->site->only(['organization_id', 'runtime', 'build_mode', 'framework', 'php_version', 'unix_user', 'deploy_script', 'laravel', 'shared_paths']), ['name' => 'Custom', 'slug' => 'custom']));
+    $custom = Site::query()->create(array_merge($this->site->only(['organization_id', 'runtime', 'build_mode', 'framework', 'php_version', 'unix_user', 'deploy_script', 'laravel']), ['name' => 'Custom', 'slug' => 'custom']));
     app(SaveEnvironment::class)($custom, ['LOG_CHANNEL' => 'papertrail'], [], null);
 
     (require base_path('modules/Sites/database/migrations/2026_10_03_600001_switch_laravel_sites_to_file_logs.php'))->up();

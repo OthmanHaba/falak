@@ -9,6 +9,7 @@ use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Identity\Domain\Models\User;
 use Falak\Servers\Domain\Models\Server;
+use Falak\Sites\Contracts\Data\SharedPath;
 use Falak\Sites\Contracts\TargetRole;
 use Falak\Sites\Contracts\TargetStatus;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
@@ -16,6 +17,7 @@ use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\Sites\Tests\Support\FakeSourceControlGateway;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Falak\Volumes\Contracts\ServiceVolumes;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -124,7 +126,6 @@ function deploy_world(int $servers = 1, array $site = [], Role $role = Role::Own
         'unix_user' => 'falak',
         'deploy_script' => DEPLOY_LARAVEL_SCRIPT,
         'laravel' => ['scheduler' => true],
-        'shared_paths' => [['path' => 'storage', 'type' => 'directory'], ['path' => '.env', 'type' => 'file']],
         'health_check_path' => '/up',
         'test_domain_enabled' => false,
         ...$site,
@@ -138,6 +139,8 @@ function deploy_world(int $servers = 1, array $site = [], Role $role = Role::Own
             'status' => TargetStatus::Ready,
         ]);
     }
+
+    app(ServiceVolumes::class)->syncSharedPaths($model->organization_id, $model->id, [new SharedPath('storage'), new SharedPath('.env', 'file')]);
 
     EnvironmentVersion::query()->create([
         'site_id' => $model->id,

@@ -40,10 +40,12 @@ it('deletes a site by slug and stops its containers on the servers (202, async l
     Event::assertDispatched(SiteDeleted::class, fn (SiteDeleted $event) => $event->siteId === $this->site->id);
 });
 
-it('deletes a site by id and accepts delete_volumes', function () {
+it('deletes a site by id and accepts delete_volumes (volume ids)', function () {
     $token = site_api_token($this->admin, $this->organization->id, ['*']);
 
-    $this->withToken($token)->deleteJson('/api/v1/sites/'.strtoupper($this->site->id), ['delete_volumes' => true])->assertStatus(202);
+    $this->withToken($token)->deleteJson('/api/v1/sites/'.strtoupper($this->site->id), ['delete_volumes' => ['01j9z8y7x6w5v4t3s2r1q0p9na']])
+        ->assertUnprocessable()->assertJsonValidationErrors(['delete_volumes']);
+    $this->withToken($token)->deleteJson('/api/v1/sites/'.strtoupper($this->site->id), ['delete_volumes' => []])->assertStatus(202);
 
     expect(Site::query()->count())->toBe(0);
 });

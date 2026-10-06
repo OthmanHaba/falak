@@ -8,6 +8,7 @@ use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\Telemetry\Contracts\Data\SiteTelemetryTarget;
 use Falak\Telemetry\Contracts\ServerSites;
+use Falak\Volumes\Contracts\VolumeMounts;
 
 /**
  * Sites hosted on a server for telemetry.configure: the slug → site id mapping (the agent labels logs, spans and
@@ -28,6 +29,8 @@ final class EloquentServerSites implements ServerSites
         'var/log' => '*.log',
         'var' => 'log/*.log',
     ];
+
+    public function __construct(private readonly VolumeMounts $volumes) {}
 
     public function forServer(string $serverId): array
     {
@@ -51,7 +54,7 @@ final class EloquentServerSites implements ServerSites
 
         $sources = [];
 
-        foreach ($site->shared_paths as $shared) {
+        foreach ($this->volumes->sharedPaths($site->id) as $shared) {
             /** @var SharedPath $shared */
             $files = self::LOG_DIRECTORIES[trim($shared->path, '/')] ?? null;
 

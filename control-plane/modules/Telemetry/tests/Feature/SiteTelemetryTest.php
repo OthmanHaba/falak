@@ -36,7 +36,6 @@ beforeEach(function () {
         'isolated' => true,
         'deploy_script' => '$FALAK_FETCH',
         'laravel' => new LaravelSettings,
-        'shared_paths' => [],
     ]);
 
     foreach ($this->servers as $index => $server) {

@@ -14,6 +14,7 @@ final readonly class ComposeServiceSummary
      * @param  list<string>  $bindMounts  host paths the service bind-mounts
      * @param  list<string>  $dependsOn
      * @param  ?string  $leaderCommand  label falak.deploy.leader_command (run once on the leader before activation)
+     * @param  list<array{volume: string, target: string, read_only: bool}>  $namedMounts  where each named volume is mounted
      */
     public function __construct(
         public string $name,
@@ -26,6 +27,7 @@ final readonly class ComposeServiceSummary
         public bool $healthcheck,
         public array $dependsOn = [],
         public ?string $leaderCommand = null,
+        public array $namedMounts = [],
     ) {}
 
     public function exposes(int $port): bool

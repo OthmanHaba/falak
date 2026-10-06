@@ -79,10 +79,11 @@ final class SiteController extends Controller
 
         $data = $request->validate([
             'name' => ['required', 'string', Rule::in([$site->name])],
-            'delete_volumes' => ['sometimes', 'boolean'],
+            'delete_volumes' => ['sometimes', 'array', 'max:100'],
+            'delete_volumes.*' => ['string', 'size:26'],
         ], ['name.in' => 'Type the site name to confirm.']);
 
-        $delete($site, deleteVolumes: (bool) ($data['delete_volumes'] ?? false));
+        $delete($site, deleteVolumeIds: array_values($data['delete_volumes'] ?? []), actorId: $request->user()?->getAuthIdentifier());
 
         return $request->wantsJson() && $request->header('X-Inertia') === null ? response()->json(null, 204) : to_route('sites.index');
     }

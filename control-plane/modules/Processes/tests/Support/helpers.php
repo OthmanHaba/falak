@@ -46,7 +46,6 @@ function processes_site(string $organizationId, array $servers, array $attribute
         'isolated' => true,
         'deploy_script' => '$FALAK_FETCH',
         'laravel' => new LaravelSettings,
-        'shared_paths' => [],
         ...$attributes,
     ]);
 

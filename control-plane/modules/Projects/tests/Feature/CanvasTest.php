@@ -8,6 +8,7 @@ use Falak\Servers\Domain\Models\Server;
 use Falak\Sites\Contracts\ComposeSites;
 use Falak\Sites\Contracts\TargetStatus;
 use Falak\Sites\Domain\Models\ComposeVersion;
+use Falak\Volumes\Domain\Models\Volume;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -38,6 +39,7 @@ it('returns every service of the environment with live status, servers and refer
     $engineServer = Server::query()->find($engine->server_id);
 
     $response = $this->getJson("{$this->url}/canvas")->assertOk();
+    $storage = Volume::query()->where('name', "{$shop->slug}/storage")->firstOrFail();
 
     expect($response->json('services'))->toHaveCount(3)
         ->and($response->json('services.0'))->toBe([
@@ -54,7 +56,7 @@ it('returns every service of the environment with live status, servers and refer
             'subtitle' => 'PostgreSQL 16 · '.$engineServer->name,
             'servers' => [['id' => $engineServer->id, 'name' => $engineServer->name, 'leader' => false, 'online' => false]],
             'badges' => [],
-            'volumes' => [['name' => 'postgresql-data', 'detail' => $engineServer->name]],
+            'volumes' => [['id' => null, 'name' => 'postgresql-data', 'detail' => $engineServer->name, 'used_bytes' => null, 'limit_bytes' => null, 'url' => null]],
             'compose' => null,
             'last_deployment' => null,
         ])
@@ -75,7 +77,7 @@ it('returns every service of the environment with live status, servers and refer
                 ['id' => $web2->id, 'name' => 'web-2', 'leader' => false, 'online' => false],
             ],
             'badges' => [],
-            'volumes' => [['name' => 'storage', 'detail' => 'shared']],
+            'volumes' => [['id' => $storage->id, 'name' => 'storage', 'detail' => 'shared', 'used_bytes' => null, 'limit_bytes' => null, 'url' => "/volumes/{$storage->id}"]],
             'compose' => null,
             'last_deployment' => [
                 'id' => $done->id,

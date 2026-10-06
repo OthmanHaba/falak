@@ -16,7 +16,6 @@ final readonly class SiteData
      * @param  string  $webDirectory  document root relative to the release ("public", "" for the release root)
      * @param  ?int  $appPort  loopback host port Caddy proxies to (node/bun/deno listen on it; docker/compose publish to it)
      * @param  ?string  $testDomain  <slug>.<FALAK_TEST_DOMAIN> when enabled
-     * @param  list<SharedPath>  $sharedPaths
      * @param  list<SiteTargetData>  $targets
      * @param  ?ComposeConfig  $compose  compose runtime only
      * @param  ?int  $containerPort  docker runtime: the port the app listens on inside its container
@@ -49,7 +48,6 @@ final readonly class SiteData
         public string $deployScript,
         public LaravelSettings $laravel,
         public ?string $testDomain,
-        public array $sharedPaths,
         public array $targets,
         public ?ComposeConfig $compose = null,
         public ?int $containerPort = null,
@@ -76,6 +74,7 @@ final readonly class SiteData
         return $this->rootPath.'/current';
     }
 
+    /** Where shared paths live on every server (Volumes: shared_path volumes). */
     public function sharedPath(): string
     {
         return $this->rootPath.'/shared';

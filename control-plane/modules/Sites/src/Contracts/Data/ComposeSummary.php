@@ -15,6 +15,8 @@ final readonly class ComposeSummary
      * @param  list<string>  $violations  policy violations (§1.3); allowed only with the organization's "Allow privileged compose"
      * @param  list<string>  $errors  the file cannot be used (YAML/structure errors)
      * @param  list<string>  $warnings  usable, but Falak changes or ignores something (e.g. host ports)
+     * @param  array<string, array{name: ?string, external: bool}>  $volumeDefinitions  top-level named volumes: their
+     *                                                                                  explicit Docker `name:` and `external`
      */
     public function __construct(
         public array $services,
@@ -22,6 +24,7 @@ final readonly class ComposeSummary
         public array $violations,
         public array $errors,
         public array $warnings = [],
+        public array $volumeDefinitions = [],
     ) {}
 
     /** Parses and has at least one service. */

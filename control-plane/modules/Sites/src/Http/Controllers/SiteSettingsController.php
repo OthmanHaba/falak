@@ -19,6 +19,7 @@ use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\Sites\Http\Requests\StoreSiteRequest;
 use Falak\SourceControl\Contracts\Exceptions\SourceControlException;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Falak\Volumes\Contracts\VolumeMounts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -85,7 +86,7 @@ final class SiteSettingsController extends Controller
                 'document_root' => $site->toData()->documentRoot(),
                 'laravel' => $site->laravel->toArray(),
                 'octane_servers' => array_map(fn (OctaneServer $server) => ['value' => $server->value, 'label' => $server->label()], OctaneServer::for($site->runtime)),
-                'shared_paths' => array_map(fn ($path) => $path->toArray(), $site->shared_paths),
+                'shared_paths' => array_map(fn ($path) => $path->toArray(), app(VolumeMounts::class)->sharedPaths($site->id)),
                 'created_at' => $site->created_at->toIso8601String(),
             ],
             'source' => [
@@ -160,7 +161,7 @@ final class SiteSettingsController extends Controller
             'paths.*.type' => ['required', Rule::in(['directory', 'file'])],
         ]);
 
-        $update($site, array_values($data['paths']));
+        $update($site, array_values($data['paths']), $request->user()?->getAuthIdentifier());
 
         return back();
     }

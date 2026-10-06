@@ -20,6 +20,7 @@ use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Http\Controllers\PresentsSites;
 use Falak\Sites\Http\Requests\StoreSiteRequest;
+use Falak\Volumes\Contracts\VolumeMounts;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -73,22 +74,22 @@ final class SiteApiController extends Controller
         return response()->json(['data' => [
             ...$this->resources(collect([$model]))[0],
             'deploy_script' => $model->deploy_script,
-            'shared_paths' => array_map(fn ($path) => $path->toArray(), $model->shared_paths),
+            'shared_paths' => array_map(fn ($path) => $path->toArray(), app(VolumeMounts::class)->sharedPaths($model->id)),
             'laravel' => $model->laravel->toArray(),
         ]]);
     }
 
     /**
-     * DELETE /api/v1/sites/{site} {delete_volumes?} → 202. The site is gone at once; stopping its PHP pools /
+     * DELETE /api/v1/sites/{site} {delete_volumes?: volume ids} → 202. The site is gone at once; stopping its PHP pools /
      * containers on the servers runs as agent commands afterwards (like DELETE /servers). Files under
-     * /srv/falak/sites/<slug> stay on the servers, compose named volumes too unless delete_volumes.
+     * /srv/falak/sites/<slug> stay on the servers, and its volumes too except those listed in delete_volumes.
      */
     public function destroy(Request $request, string $site, DeleteSite $delete): Response
     {
         $model = $this->resolve($request, $site, 'sites.delete');
-        $data = $request->validate(['delete_volumes' => ['sometimes', 'boolean']]);
+        $data = $request->validate(['delete_volumes' => ['sometimes', 'array', 'max:100'], 'delete_volumes.*' => ['string', 'size:26']]);
 
-        $delete($model, deleteVolumes: (bool) ($data['delete_volumes'] ?? false));
+        $delete($model, deleteVolumeIds: array_values($data['delete_volumes'] ?? []), actorId: $request->user()?->getAuthIdentifier());
 
         return response()->noContent(202);
     }
