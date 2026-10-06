@@ -44,6 +44,9 @@ type BackupResult struct {
 	DurationMS int64  `json:"duration_ms"`
 	// RDB is a Redis / Valkey snapshot's format, e.g. REDIS0011 or VALKEY080.
 	RDB string `json:"rdb,omitempty"`
+	// UncompressedBytes is the dump's size before compression; a restore of a Redis / Valkey snapshot gets it back
+	// (db.restore uncompressed_bytes) to check the disk's free space and cap what it writes.
+	UncompressedBytes int64 `json:"uncompressed_bytes,omitempty"`
 }
 
 func (e engine) dumpCmd(dbname string) runner.Cmd {
@@ -135,7 +138,8 @@ func (db *DB) ship(ctx context.Context, p BackupPayload, start time.Time, st com
 		gz = gzip.NewWriter(fileW)
 		out = gz
 	}
-	err = write(out)
+	counted := &countingWriter{w: out}
+	err = write(counted)
 	if gz != nil {
 		if cerr := gz.Close(); err == nil {
 			err = cerr
@@ -151,7 +155,7 @@ func (db *DB) ship(ctx context.Context, p BackupPayload, start time.Time, st com
 	if err != nil {
 		return BackupResult{}, err
 	}
-	result := BackupResult{SizeBytes: fi.Size(), SHA256: hex.EncodeToString(h.Sum(nil))}
+	result := BackupResult{SizeBytes: fi.Size(), SHA256: hex.EncodeToString(h.Sum(nil)), UncompressedBytes: counted.n}
 	if p.Destination.Kind == "local" {
 		if err := os.Rename(file, db.d.FS.P(p.Destination.Path)); err != nil {
 			return BackupResult{}, err
@@ -216,6 +220,9 @@ type RestorePayload struct {
 	Compression string   `json:"compression"`
 	Source      Location `json:"source"`
 	SHA256      string   `json:"sha256"`
+	// UncompressedBytes is the size the backup recorded (feature db.redis.restore_checks; Redis / Valkey restores
+	// check the free space against it and cap the gunzipped copy).
+	UncompressedBytes int64 `json:"uncompressed_bytes,omitempty"`
 }
 
 // RestoreResult is its result.
@@ -225,6 +232,17 @@ type RestoreResult struct {
 	// Redis / Valkey: the snapshot's format and the instance's earlier files, moved aside (data directory names).
 	RDB        string   `json:"rdb,omitempty"`
 	MovedAside []string `json:"moved_aside,omitempty"`
+}
+
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+	return n, err
 }
 
 type countingReader struct {

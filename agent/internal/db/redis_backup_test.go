@@ -118,7 +118,7 @@ func TestRedisBackupSnapshotsTheRunningInstance(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := r.(BackupResult)
-	if res.RDB != "REDIS0011" || res.SHA256 == "" || res.SizeBytes == 0 || res.Location != "/backups/cache.rdb.gz" {
+	if res.RDB != "REDIS0011" || res.SHA256 == "" || res.SizeBytes == 0 || res.Location != "/backups/cache.rdb.gz" || res.UncompressedBytes != int64(len("REDIS0011 snapshot of redis-server@falak-cache.service")) {
 		t.Fatalf("%+v", res)
 	}
 	if got := gunzipFile(t, filepath.Join(root, "/backups/cache.rdb.gz")); got != "REDIS0011 snapshot of redis-server@falak-cache.service" {
@@ -499,7 +499,7 @@ func TestStageSnapshotNeverFollowsALink(t *testing.T) {
 	os.WriteFile(victim, []byte("keep"), 0o644)
 	staged := filepath.Join(dir, ".falak-restore.rdb")
 	os.Symlink(victim, staged)
-	if _, _, _, err := stageSnapshot(src, "gzip", staged, fileOwner{uid: -1, gid: -1}); err == nil {
+	if _, _, _, err := stageSnapshot(src, "gzip", staged, fileOwner{uid: -1, gid: -1}, stageLimits{}); err == nil {
 		t.Fatal("wrote through a symlink")
 	}
 	if b, _ := os.ReadFile(victim); string(b) != "keep" {
@@ -509,7 +509,7 @@ func TestStageSnapshotNeverFollowsALink(t *testing.T) {
 		t.Fatal(fi.Mode())
 	}
 	os.Remove(staged)
-	n, h, fi, err := stageSnapshot(src, "gzip", staged, fileOwner{uid: -1, gid: -1})
+	n, h, fi, err := stageSnapshot(src, "gzip", staged, fileOwner{uid: -1, gid: -1}, stageLimits{})
 	if err != nil || n != int64(len("REDIS0011 data")) || h.String() != "REDIS0011" || fi.Mode().Perm() != 0o600 {
 		t.Fatal(n, h, fi, err)
 	}
@@ -552,5 +552,120 @@ func TestRedisRestoreRefusesAReplacedStagingFile(t *testing.T) {
 	}
 	if proc := h.procs["redis-server@falak-cache.service"]; proc == nil || proc.loaded != "REDIS0009 at stop" {
 		t.Fatalf("%+v", proc)
+	}
+}
+
+func fakeFreeBytes(t *testing.T, free func(string) int64) {
+	t.Helper()
+	old := freeBytes
+	freeBytes = func(path string) (int64, error) { return free(path), nil }
+	t.Cleanup(func() { freeBytes = old })
+}
+
+// A disk without room for the gunzipped snapshot (plus the AOF rewrite, plus headroom) is refused before anything
+// is written or stopped.
+func TestRedisRestoreChecksTheFreeSpaceFirst(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	p := redisPayload()
+	p.Persistence = "aof"
+	applyOK(t, db, p)
+	content := "REDIS0011 " + strings.Repeat("x", 1000)
+	writeGzip(t, filepath.Join(root, "/backups/b.rdb.gz"), content)
+	data := filepath.Join(root, "/var/lib/falak-redis/cache")
+	var asked string
+	free := RedisRestoreHeadroom + 2*int64(len(content)) - 1 // one byte short: AOF needs the snapshot twice
+	fakeFreeBytes(t, func(path string) int64 { asked = path; return free })
+	f.Reset()
+
+	q := restorePayload("redis", "/backups/b.rdb.gz")
+	_, err := db.Restore(context.Background(), q, st)
+	if err == nil || !strings.Contains(err.Error(), "not enough free space in /var/lib/falak-redis/cache") || !strings.Contains(err.Error(), "as much again for the AOF rewrite") || !strings.Contains(err.Error(), "nothing was changed") {
+		t.Fatal(err)
+	}
+	if asked != data || f.Ran("systemctl stop") || exists(filepath.Join(data, ".falak-restore.rdb")) || h.procs["redis-server@falak-cache.service"] == nil {
+		t.Fatal(asked, f.Lines())
+	}
+	// The recorded size wins over the trailer.
+	free++
+	q.UncompressedBytes = int64(len(content)) + 1
+	if _, err := db.Restore(context.Background(), q, st); err == nil || !strings.Contains(err.Error(), "not enough free space") {
+		t.Fatal(err)
+	}
+	q.UncompressedBytes = 0
+	if _, err := db.Restore(context.Background(), q, st); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A backup that gunzips to more than its recorded size is refused before the instance is touched.
+func TestRedisRestoreCapsTheGunzippedCopy(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	newRedisHost(t, f, root)
+	applyOK(t, db, redisPayload())
+	fakeFreeBytes(t, func(string) int64 { return 1 << 40 })
+	writeGzip(t, filepath.Join(root, "/backups/b.rdb.gz"), "REDIS0011"+strings.Repeat("\x00", 3<<20))
+	f.Reset()
+	q := restorePayload("redis", "/backups/b.rdb.gz")
+	q.UncompressedBytes = 100
+	if _, err := db.Restore(context.Background(), q, st); err == nil || !strings.Contains(err.Error(), "gunzips to more than") {
+		t.Fatal(err)
+	}
+	if f.Ran("systemctl stop") || exists(filepath.Join(root, "/var/lib/falak-redis/cache/.falak-restore.rdb")) {
+		t.Fatal(f.Lines())
+	}
+}
+
+func TestSnapshotSize(t *testing.T) {
+	dir := t.TempDir()
+	gz := filepath.Join(dir, "b.rdb.gz")
+	writeGzip(t, gz, "REDIS0011 twelve")
+	if n, exact, err := snapshotSize(gz, "gzip", 0); n != 16 || !exact || err != nil {
+		t.Fatal(n, exact, err)
+	}
+	if n, exact, _ := snapshotSize(gz, "gzip", 5000); n != 5000 || !exact {
+		t.Fatal(n, exact)
+	}
+	plain := filepath.Join(dir, "b.rdb")
+	os.WriteFile(plain, []byte("REDIS0011"), 0o600)
+	if n, exact, _ := snapshotSize(plain, "none", 0); n != 9 || !exact {
+		t.Fatal(n, exact)
+	}
+	if _, _, err := snapshotSize(plain, "gzip", 0); err == nil || !strings.Contains(err.Error(), "gunzip") {
+		t.Fatal(err)
+	}
+	// Too big for the trailer to be trusted: ISIZE 10 on a 5 MB file is 4 GiB + 10 at least, and only a lower bound.
+	big := filepath.Join(dir, "big.rdb.gz")
+	b := make([]byte, 5_000_000)
+	copy(b[len(b)-4:], []byte{10, 0, 0, 0})
+	os.WriteFile(big, b, 0o600)
+	if n, exact, _ := snapshotSize(big, "gzip", 0); n != 1<<32+10 || exact {
+		t.Fatal(n, exact)
+	}
+	copy(b[len(b)-4:], []byte{0, 0, 0x60, 0}) // 6 MiB: plausible as is
+	os.WriteFile(big, b, 0o600)
+	if n, exact, _ := snapshotSize(big, "gzip", 0); n != 6<<20 || exact {
+		t.Fatal(n, exact)
+	}
+}
+
+// The copy stops once the disk runs low, whatever the size check expected.
+func TestSpaceGuardStopsTheCopyOnALowDisk(t *testing.T) {
+	free := int64(1 << 40)
+	fakeFreeBytes(t, func(string) int64 { return free })
+	var out bytes.Buffer
+	g := &spaceGuard{w: &out, dir: "/data"}
+	chunk := make([]byte, 32<<20)
+	if _, err := g.Write(chunk); err != nil {
+		t.Fatal(err)
+	}
+	free = RedisRestoreHeadroom - 1
+	if _, err := g.Write(chunk); err == nil || !strings.Contains(err.Error(), "nearly full") {
+		t.Fatal(err)
+	}
+	if out.Len() != 32<<20 {
+		t.Fatal(out.Len())
 	}
 }

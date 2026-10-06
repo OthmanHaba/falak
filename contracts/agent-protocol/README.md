@@ -37,7 +37,7 @@ removes the field for agents that do not (`Fleet\Application\PayloadCompatibilit
 a new version (`Fleet\Events\AgentVersionChanged`), modules re-send state they would otherwise deduplicate.
 Current features: `edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`, `fn.v1`, `fn.v2`, `fn.v3`,
 `db.containers`, `compose.v2`, `docker.networks`, `docker.networks.create`, `compose.up.services`, `provision.v2`,
-`db.redis`, `db.redis.network`, `net.firewall.peer_interfaces`, `db.redis.backup`.
+`db.redis`, `db.redis.network`, `net.firewall.peer_interfaces`, `db.redis.backup`, `db.redis.restore_checks`.
 
 A feature can also gate a whole **command**: the control plane only queues it for agents that list the feature
 (older agents would fail it as an unknown type). `provision.v2` adds `provision.inspect` and `provision.apply`
@@ -137,6 +137,12 @@ the loaded `dump.rdb` is removed. A failed start, `PING` or AOF switch removes t
 ones and config back, starts the instance again and fails with the unit's log tail. The instance must exist (the
 agent never creates one in a restore). The result adds `rdb` and `moved_aside` (the earlier files' new names, kept).
 The control plane only sends these engines to agents that list the feature.
+Backup results add `uncompressed_bytes` (every engine: the dump's size before gzip). Restores check the instance's disk
+first, before anything changes: free space (statfs) must cover the gunzipped snapshot (twice with AOF, for the
+rewrite) plus 256 MiB, and the copy is capped at that size (+1 % + 1 MiB) and stops when less than 256 MiB is left.
+The size comes from the payload's `uncompressed_bytes` (feature `db.redis.restore_checks`, stripped for older agents;
+the control plane sends what the backup recorded), else from the gzip trailer (`ISIZE`, exact below ~4 MB of gzip,
+otherwise a lower bound and no cap).
 
 ## Agent sessions and lost deliveries
 Every `falak-agent` process sends a random session id (`X-Falak-Agent-Session: s-<32 hex>`, 8-64 characters of

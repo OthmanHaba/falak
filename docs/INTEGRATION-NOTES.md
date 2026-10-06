@@ -532,7 +532,11 @@ Plan: `docs/plans/REDIS.md` (deviations in its "As built (v0.9.0, phase 3)"); pr
   running process; `SYNC`/`PSYNC`/`REPLCONF` were left enabled in v0.7.0 for this) → header check → lock released →
   gzip + sha256 + presigned PUT through the SQL path (`ship`). A failed `redis-cli` reports its last line, passwords
   redacted.
-- **Restore:** download (sha256) → gunzip to `<data>/.falak-restore.rdb` (`O_EXCL|O_NOFOLLOW`; mode 0600 and the
+- **Restore:** download (sha256) → free space of the data directory's disk (statfs) ≥ the gunzipped size (twice for
+  AOF: the rewrite) + `RedisRestoreHeadroom` (256 MiB), the size being the backup's `uncompressed_bytes` (sent as
+  `db.restore uncompressed_bytes`, feature `db.redis.restore_checks`), else the gzip `ISIZE` trailer (exact for gzip
+  files under ~4 MB, else a lower bound: mod 2^32) → gunzip, capped at that size + 1 % + 1 MiB when exact, aborted
+  when less than the headroom is left, to `<data>/.falak-restore.rdb` (`O_EXCL|O_NOFOLLOW`; mode 0600 and the
   instance user set on the open descriptor, never by path: the data directory belongs to the instance user) → header → RDB version vs.
   `<engine>-server --version` (see REDIS.md for the matrix) — all before anything changes → enough time left
   (`RedisMinRestartBudget`) → if running: an unfinished first AOF rewrite is switched off and `SAVE`d →

@@ -5,6 +5,8 @@ use Falak\Databases\Application\EngineInventory;
 use Falak\Databases\Application\Jobs\RunDueBackups;
 use Falak\Databases\Contracts\DatabaseProvisioner;
 use Falak\Databases\Domain\Enums\BackupStatus;
+use Falak\Databases\Domain\Enums\Compression;
+use Falak\Databases\Domain\Enums\Engine;
 use Falak\Databases\Domain\Enums\RestoreStatus;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\BackupSchedule;
@@ -13,6 +15,8 @@ use Falak\Databases\Domain\Models\DatabaseServer;
 use Falak\Databases\Domain\Models\Restore;
 use Falak\Databases\Events\BackupFailed;
 use Falak\Databases\Events\BackupSucceeded;
+use Falak\Databases\Infrastructure\CommandPayloads;
+use Falak\Fleet\Application\PayloadCompatibility;
 use Falak\Fleet\Domain\Models\Agent;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\Role;
@@ -222,4 +226,28 @@ it('gives a short-lived download link to people who may restore, audited', funct
     $this->actingAs($developer)->get("/databases/backups/{$backup->id}/download")->assertForbidden();
     [$outsider] = memberOf();
     $this->actingAs($outsider)->get("/databases/backups/{$backup->id}/download")->assertNotFound();
+});
+
+it('records the snapshot size before compression and sends it with restores to agents with db.redis.restore_checks', function () {
+    $this->post("/databases/databases/{$this->instance->id}/backups", ['storage_provider_id' => $this->provider->id]);
+    $this->agents->succeed($this->agents->last('db.backup')['handle'], [...kvb_result(), 'uncompressed_bytes' => 5_368_709_120]);
+    $backup = Backup::query()->firstOrFail();
+    expect($backup->uncompressed_bytes)->toBe(5_368_709_120);
+
+    $this->post("/databases/backups/{$backup->id}/restore", ['database_server_id' => $this->engine->id, 'database' => 'cache', 'confirm' => 'cache'])->assertSessionHasNoErrors();
+    $command = $this->agents->last('db.restore');
+    expect(databases_schema_errors($command))->toBe([])
+        ->and($command['payload']['uncompressed_bytes'])->toBe(5_368_709_120);
+
+    // Agents without the feature (rc.1) decode strictly: the field is stripped.
+    $payload = json_decode(json_encode($command['payload']));
+    expect((array) PayloadCompatibility::adapt('db.restore', clone $payload, KVB_FEATURES))->not->toHaveKey('uncompressed_bytes')
+        ->and(PayloadCompatibility::adapt('db.restore', clone $payload, [...KVB_FEATURES, 'db.redis.restore_checks'])->uncompressed_bytes)->toBe(5_368_709_120);
+
+    // Backups of older agents carry no size; SQL restores never send one.
+    $this->agents->fail($command['handle'], 'x');
+    $backup->forceFill(['uncompressed_bytes' => null])->save();
+    $this->post("/databases/backups/{$backup->id}/restore", ['database_server_id' => $this->engine->id, 'database' => 'cache', 'confirm' => 'cache'])->assertSessionHasNoErrors();
+    expect($this->agents->last('db.restore')['payload'])->not->toHaveKey('uncompressed_bytes')
+        ->and(CommandPayloads::restore(Engine::MySql, 'shop', Compression::Gzip, 'https://x', null, 1000))->not->toHaveKey('uncompressed_bytes');
 });

@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -302,7 +303,27 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 			return nil, err
 		}
 	}
-	size, h, stagedInfo, err := stageSnapshot(file, p.Compression, staged, owner)
+	// The disk must hold the gunzipped snapshot (and, with AOF, the rewrite that follows) with room to spare, checked
+	// before anything is written; the copy is capped and stops when the disk runs low anyway.
+	want, exact, err := snapshotSize(file, p.Compression, p.UncompressedBytes)
+	if err != nil {
+		return nil, err
+	}
+	need := want + RedisRestoreHeadroom
+	if inst.persistence == "aof" {
+		need += want
+	}
+	if free, err := freeBytes(dataP); err != nil {
+		return nil, fmt.Errorf("check the free space in %s: %w", k.dataPath(name), err)
+	} else if free < need {
+		return nil, fmt.Errorf("not enough free space in %s: the snapshot needs about %s there (%s gunzipped%s, plus %s to spare), %s is free; nothing was changed",
+			k.dataPath(name), humanBytes(need), humanBytes(want), map[bool]string{true: " and as much again for the AOF rewrite"}[inst.persistence == "aof"], humanBytes(RedisRestoreHeadroom), humanBytes(free))
+	}
+	limit := int64(0)
+	if exact {
+		limit = want + want/100 + 1<<20
+	}
+	size, h, stagedInfo, err := stageSnapshot(file, p.Compression, staged, owner, stageLimits{max: limit, dir: dataP})
 	if err != nil {
 		return nil, err
 	}
@@ -415,13 +436,104 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 	return result, nil
 }
 
+// RedisRestoreHeadroom is the free space a restore leaves on the instance's disk beyond the snapshot (and the AOF
+// rewrite); the copy also stops when less than this is left.
+var RedisRestoreHeadroom int64 = 256 << 20
+
+// freeBytes is the space available on path's filesystem (statfs f_bavail: what unprivileged writers may use).
+var freeBytes = func(path string) (int64, error) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(path, &st); err != nil {
+		return 0, err
+	}
+	return int64(st.Bavail) * int64(st.Bsize), nil
+}
+
+// snapshotSize is the gunzipped snapshot's size: the one the backup recorded (exact), an uncompressed file's own
+// size (exact), else what the gzip trailer says (ISIZE, the size modulo 4 GiB). ISIZE is exact for a file too small to
+// wrap (deflate expands at most ~1032:1); for a bigger one it is the smallest size with that remainder that is not
+// below the compressed size (deflate never shrinks an RDB, which is already LZF-compressed, below it by more than
+// its block overhead): a lower bound, so nothing is capped.
+func snapshotSize(file, compression string, recorded int64) (int64, bool, error) {
+	if recorded > 0 {
+		return recorded, true, nil
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		return 0, false, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return 0, false, err
+	}
+	if compression == "none" {
+		return fi.Size(), true, nil
+	}
+	if fi.Size() < 18 {
+		return 0, false, errors.New("gunzip: the backup is too short to be gzip")
+	}
+	b := make([]byte, 4)
+	if _, err := f.ReadAt(b, fi.Size()-4); err != nil {
+		return 0, false, err
+	}
+	isize := int64(binary.LittleEndian.Uint32(b))
+	const wrap = int64(1) << 32
+	if fi.Size()*1032 < wrap {
+		return isize, true, nil
+	}
+	floor := fi.Size() - fi.Size()/4096 - 64
+	for isize < floor {
+		isize += wrap
+	}
+	return isize, false, nil
+}
+
+// stageLimits bound the staged copy: max bytes (0: none) and the directory whose free space it keeps above
+// RedisRestoreHeadroom ("" : unchecked).
+type stageLimits struct {
+	max int64
+	dir string
+}
+
+// spaceGuard fails a write once the filesystem has less than RedisRestoreHeadroom free (checked every 64 MiB), so a
+// size the trailer got wrong can't fill the disk the running instance writes to.
+type spaceGuard struct {
+	w       io.Writer
+	dir     string
+	pending int64
+}
+
+func (g *spaceGuard) Write(p []byte) (int, error) {
+	g.pending += int64(len(p))
+	if g.pending >= 64<<20 {
+		g.pending = 0
+		if free, err := freeBytes(g.dir); err == nil && free < RedisRestoreHeadroom {
+			return 0, fmt.Errorf("the disk is nearly full (%s free); nothing was changed", humanBytes(free))
+		}
+	}
+	return g.w.Write(p)
+}
+
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GiB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MiB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KiB", float64(n)/(1<<10))
+	}
+	return fmt.Sprintf("%d bytes", n)
+}
+
 // fileOwner is who owns the staged snapshot (-1: unchanged, e.g. in tests).
 type fileOwner struct{ uid, gid int }
 
 // stageSnapshot writes the (gunzipped) dump to staged, a new file (O_EXCL, O_NOFOLLOW: never through a link the
 // instance user put there), whose mode (0600) and owner are set on the open descriptor, never by path. It checks the
 // header and returns the file's identity, which the install compares with what the name points to then.
-func stageSnapshot(file, compression, staged string, owner fileOwner) (int64, rdbHeader, os.FileInfo, error) {
+func stageSnapshot(file, compression, staged string, owner fileOwner, lim stageLimits) (int64, rdbHeader, os.FileInfo, error) {
 	in, closeIn, err := openDump(file, compression)
 	if err != nil {
 		return 0, rdbHeader{}, nil, err
@@ -440,9 +552,20 @@ func stageSnapshot(file, compression, staged string, owner fileOwner) (int64, rd
 			return 0, rdbHeader{}, nil, fmt.Errorf("chown the snapshot: %w", err)
 		}
 	}
-	n, err := io.Copy(out, in)
+	var src io.Reader = in
+	if lim.max > 0 {
+		src = io.LimitReader(in, lim.max+1)
+	}
+	var dst io.Writer = out
+	if lim.dir != "" {
+		dst = &spaceGuard{w: out, dir: lim.dir}
+	}
+	n, err := io.Copy(dst, src)
 	if err != nil {
 		return 0, rdbHeader{}, nil, fmt.Errorf("write the snapshot: %w", err)
+	}
+	if lim.max > 0 && n > lim.max {
+		return 0, rdbHeader{}, nil, fmt.Errorf("the backup gunzips to more than the %d bytes it was recorded with; nothing was changed", lim.max)
 	}
 	b := make([]byte, 9)
 	m, _ := out.ReadAt(b, 0)

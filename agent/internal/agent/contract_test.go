@@ -282,8 +282,22 @@ func TestDatabaseBackupSchemasPerEngine(t *testing.T) {
 			}
 		}
 	}
+	// The recorded size a restore gets back (feature db.redis.restore_checks).
+	sch, err := c.Compile(idBase + "commands/db.restore.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for body, valid := range map[string]bool{
+		`{"engine":"redis","database":"cache",` + src + `,"uncompressed_bytes":1048576}`: true,
+		`{"engine":"redis","database":"cache",` + src + `,"uncompressed_bytes":0}`:       false,
+	} {
+		v, _ := jsonschema.UnmarshalJSON(strings.NewReader(body))
+		if err := sch.Validate(v); (err == nil) != valid {
+			t.Errorf("%s: valid=%v, err=%v", body, valid, err)
+		}
+	}
 	for typ, res := range map[string]any{
-		"db.backup":  db.BackupResult{SizeBytes: 10, SHA256: strings.Repeat("a", 64), Location: "https://s3.example.com/b/k", DurationMS: 5, RDB: "VALKEY080"},
+		"db.backup":  db.BackupResult{SizeBytes: 10, SHA256: strings.Repeat("a", 64), Location: "https://s3.example.com/b/k", DurationMS: 5, RDB: "VALKEY080", UncompressedBytes: 42},
 		"db.restore": db.RestoreResult{Bytes: 10, DurationMS: 5, RDB: "REDIS0011", MovedAside: []string{"dump.rdb.falak-20261006T120000Z"}},
 	} {
 		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json#/$defs/result")

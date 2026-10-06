@@ -126,7 +126,7 @@ final class CommandPayloads
     /**
      * @return array<string, mixed>
      */
-    public static function restore(Engine $engine, string $database, Compression $compression, string $downloadUrl, ?string $sha256): array
+    public static function restore(Engine $engine, string $database, Compression $compression, string $downloadUrl, ?string $sha256, ?int $uncompressedBytes = null): array
     {
         return array_filter([
             'engine' => $engine->protocol(),
@@ -134,6 +134,8 @@ final class CommandPayloads
             'compression' => $compression->value,
             'source' => ['kind' => 'url', 'url' => $downloadUrl],
             'sha256' => $sha256,
+            // Redis / Valkey (feature db.redis.restore_checks): the free space the gunzipped snapshot needs.
+            'uncompressed_bytes' => $engine->isKeyValue() && $uncompressedBytes !== null && $uncompressedBytes > 0 ? $uncompressedBytes : null,
         ], fn ($value) => $value !== null);
     }
 

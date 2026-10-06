@@ -56,6 +56,8 @@ var Features = []string{
 	// db.backup / db.restore with engine redis | valkey: RDB snapshots of instances (redis-cli --rdb) and restores into
 	// them (RDB header and version checked, earlier files moved aside and put back when the start fails).
 	"db.redis.backup",
+	// db.restore uncompressed_bytes (Redis / Valkey: free-space check and cap of the gunzipped snapshot).
+	"db.redis.restore_checks",
 }
 
 var (

@@ -63,6 +63,11 @@ final class PayloadCompatibility
         'net.firewall.peer_interfaces' => [
             'net.firewall.apply' => ['container_ports.*.peer_interfaces'],
         ],
+        // The recorded size of a Redis / Valkey snapshot (rc.1 agents with db.redis.backup decode strictly; they
+        // restore without the free-space check).
+        'db.redis.restore_checks' => [
+            'db.restore' => ['uncompressed_bytes'],
+        ],
     ];
 
     /**

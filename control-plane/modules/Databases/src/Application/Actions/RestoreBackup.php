@@ -94,7 +94,7 @@ final class RestoreBackup
             $handle = $this->commands->dispatch(
                 $target->server_id,
                 'db.restore',
-                CommandPayloads::restore($target->engine, $databaseName, $backup->compression, $url, $backup->sha256),
+                CommandPayloads::restore($target->engine, $databaseName, $backup->compression, $url, $backup->sha256, $backup->uncompressed_bytes),
                 (int) config('databases.timeouts.restore', 3600),
                 "db.restore:{$restore->id}",
                 'database_server_id',

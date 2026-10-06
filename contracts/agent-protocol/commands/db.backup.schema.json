@@ -133,6 +133,10 @@
           "type": "string",
           "pattern": "^(REDIS[0-9]{4}|VALKEY[0-9]{3})$",
           "description": "Redis / Valkey: the snapshot's RDB header (format and version)"
+        },
+        "uncompressed_bytes": {
+          "type": "integer",
+          "description": "The dump's size before compression (a Redis / Valkey restore gets it back as uncompressed_bytes)"
         }
       }
     }

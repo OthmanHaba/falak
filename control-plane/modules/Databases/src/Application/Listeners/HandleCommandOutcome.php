@@ -228,7 +228,7 @@ final class HandleCommandOutcome implements ShouldQueue
     }
 
     /**
-     * @param  array<string, mixed>  $result  db.backup $defs/result: size_bytes, sha256, location, duration_ms
+     * @param  array<string, mixed>  $result  db.backup $defs/result: size_bytes, sha256, location, duration_ms, uncompressed_bytes
      */
     private function backup(string $commandId, bool $succeeded, ?string $error, array $result): void
     {
@@ -259,6 +259,7 @@ final class HandleCommandOutcome implements ShouldQueue
         $backup->forceFill([
             'status' => BackupStatus::Succeeded,
             'size_bytes' => (int) ($result['size_bytes'] ?? 0),
+            'uncompressed_bytes' => is_int($result['uncompressed_bytes'] ?? null) && $result['uncompressed_bytes'] > 0 ? $result['uncompressed_bytes'] : null,
             'sha256' => $sha,
             'duration_ms' => $durationMs,
             'error' => null,

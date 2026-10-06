@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property string $trigger manual|scheduled
  * @property BackupStatus $status
  * @property ?int $size_bytes
+ * @property ?int $uncompressed_bytes
  * @property ?string $sha256
  * @property ?int $duration_ms
  * @property ?string $command_id
@@ -59,6 +60,7 @@ class Backup extends Model
             'compression' => Compression::class,
             'status' => BackupStatus::class,
             'size_bytes' => 'integer',
+            'uncompressed_bytes' => 'integer',
             'duration_ms' => 'integer',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',

@@ -77,6 +77,11 @@
     "sha256": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
+    },
+    "uncompressed_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Feature db.redis.restore_checks, Redis / Valkey: the snapshot's size the backup recorded (db.backup uncompressed_bytes). The agent checks the instance's free disk space against it and caps the gunzipped copy; without it, the gzip trailer gives an estimate."
     }
   },
   "allOf": [
