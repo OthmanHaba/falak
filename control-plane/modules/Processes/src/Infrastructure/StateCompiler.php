@@ -13,6 +13,7 @@ use Falak\Processes\Domain\Models\Worker;
 use Falak\Sites\Contracts\Data\LaravelSettings;
 use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\OctaneServer;
+use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Contracts\TargetStatus;
@@ -39,6 +40,7 @@ final class StateCompiler
         private readonly SiteDirectory $sites,
         private readonly LiveReleases $releases,
         private readonly ScheduleSources $sources,
+        private readonly SecretVariables $secrets,
     ) {}
 
     public function compile(string $serverId): CompiledState
@@ -68,14 +70,17 @@ final class StateCompiler
             $isLeader = $site->target($serverId)?->isLeader() ?? false;
 
             $release = $live[$site->id];
+            $secretNames = $this->secrets->names([...($this->sites->environment($site->id)->variables ?? []), ...$release->environment]);
 
             foreach ($this->sitePrograms($site, $serverId, $release, $workers->get($site->id, new Collection), $daemons->get($site->id, new Collection)) as [$program, $kind, $label]) {
+                $program = $this->withMask($program, $secretNames);
                 $programs[] = $program;
                 // `hash` tells restartForSite() which programs a proc.apply restarts anyway (changed definition).
                 $programMeta[$program['name']] = ['site_id' => $site->id, 'kind' => $kind, 'label' => $label, 'numprocs' => $program['numprocs'] ?? 1, 'hash' => PayloadHash::of($program)];
             }
 
             foreach ($this->siteJobs($site, $serverId, $release, $isLeader, $schedules->get($site->id, new Collection)) as [$job, $kind, $label]) {
+                $job = $this->withMask($job, $secretNames);
                 $jobs[] = $job;
                 $jobMeta[$job['name']] = [
                     'site_id' => $site->id,
@@ -336,6 +341,23 @@ final class StateCompiler
             'site' => $site->slug,
             ...$overrides,
         ], fn ($value) => $value !== null);
+    }
+
+    /**
+     * Names the secret variables of a program's or job's env: the agent masks their values in its logs and keeps them
+     * on the tmpfs only (its state files never hold them).
+     *
+     * @param  array<string, mixed>  $entry
+     * @param  list<string>  $secretNames  the site's
+     * @return array<string, mixed>
+     */
+    private function withMask(array $entry, array $secretNames): array
+    {
+        $env = (array) ($entry['env'] ?? []);
+        $mask = array_values(array_filter(array_unique([...$secretNames, ...$this->secrets->names($env)]), fn (string $name) => array_key_exists($name, $env)));
+        sort($mask);
+
+        return $mask === [] ? $entry : [...$entry, 'mask' => $mask];
     }
 
     /**

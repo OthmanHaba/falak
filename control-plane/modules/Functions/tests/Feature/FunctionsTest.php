@@ -497,3 +497,12 @@ it('sends test requests to the function’s own URL only', function () {
     // Absolute URLs or other hosts cannot be requested.
     $this->postJson(fn_url($world->site, '/invoke'), ['method' => 'GET', 'path' => 'https://internal.example/'])->assertUnprocessable();
 });
+
+it('names the function secrets in fn.release.apply so the agent masks them', function () {
+    [$world, $function] = fn_world();
+    $this->postJson(fn_url($world->site, '/deploy'), ['files' => ['index.ts' => FN_V2], 'base_version_id' => $function->head()->id])->assertCreated();
+    $apply = $world->agents->last('fn.release.apply')['payload'];
+
+    expect($apply['env']['APP_KEY'])->toBe('base64:secret')
+        ->and($apply['mask'])->toBe(['APP_KEY']);
+});

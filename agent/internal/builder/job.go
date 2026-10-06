@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/OthmanHaba/falak/agent/internal/redact"
 )
 
 var sprintf = fmt.Sprintf
@@ -33,6 +35,8 @@ type Job struct {
 	Native   *NativeSpec       `json:"native,omitempty"`
 	Docker   *DockerSpec       `json:"docker,omitempty"`
 	Compose  *ComposeSpec      `json:"compose,omitempty"` // docker mode: build the `build:` services of a compose file
+	// Mask names the secret variables of Env and Docker.BuildArgs: their values are masked in the build log.
+	Mask []string `json:"mask,omitempty"`
 }
 
 // Repo to clone.
@@ -178,8 +182,16 @@ func DecodeJob(r io.Reader) (Job, error) {
 func (j Job) Secrets() []string {
 	var s []string
 	add := func(v string) {
-		if len(v) >= 4 {
+		if v != "" {
 			s = append(s, v)
+		}
+	}
+	for _, v := range redact.FromEnv(j.Env, j.Mask) {
+		add(v)
+	}
+	if j.Docker != nil {
+		for _, v := range redact.FromEnv(j.Docker.BuildArgs, j.Mask) {
+			add(v)
 		}
 	}
 	add(j.Repo.Token)

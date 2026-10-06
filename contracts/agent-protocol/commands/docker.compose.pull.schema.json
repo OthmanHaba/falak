@@ -111,6 +111,15 @@
         "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
       },
       "description": "Only these services (default: all)"
+    },
+    "mask": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "uniqueItems": true,
+      "description": "Names of the secret variables in this payload. The agent looks their values up in the payload (env maps, dotenv content) and masks them, plus their base64 and URL-encoded forms, as •••• in the command's output, error and result. Values shorter than 6 bytes are not masked."
     }
   },
   "$defs": {

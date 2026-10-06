@@ -20,5 +20,8 @@
     "server": "registry.falak.local",
     "username": "falak",
     "password": "s3cret"
-  }
+  },
+  "mask": [
+    "DB_PASSWORD"
+  ]
 }

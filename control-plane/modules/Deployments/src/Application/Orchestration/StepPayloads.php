@@ -3,11 +3,13 @@
 namespace Falak\Deployments\Application\Orchestration;
 
 use Falak\Builds\Contracts\BuildService;
+use Falak\Deployments\Contracts\Data\LiveRelease;
 use Falak\Deployments\Contracts\FunctionSources;
 use Falak\Deployments\Domain\Enums\StepKind;
 use Falak\Deployments\Domain\Models\Deployment;
 use Falak\Deployments\Domain\Models\DeploymentStep;
 use Falak\Deployments\Domain\Models\Release;
+use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Projects\Contracts\VariableReferences;
@@ -15,6 +17,7 @@ use Falak\Sites\Contracts\ComposeServiceExtraction;
 use Falak\Sites\Contracts\ComposeSites;
 use Falak\Sites\Contracts\Data\SharedPath;
 use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
 use RuntimeException;
@@ -34,6 +37,7 @@ final class StepPayloads
         private readonly FunctionSources $functions,
         private readonly AgentDirectory $agents,
         private readonly ComposeServiceExtraction $extraction,
+        private readonly SecretVariables $secrets,
     ) {}
 
     // ---- Docker Compose (docs/COMPOSE_TEMPLATES.md §1.4) -------------------------------------------------------
@@ -202,6 +206,7 @@ final class StepPayloads
             'env' => (object) $env,
             'project_env_file' => '.env',
             'registry_auth' => $this->composeRegistryAuth($release),
+            'mask' => $this->mask($site, $env) ?: null,
         ], fn ($v) => $v !== null);
     }
 
@@ -335,8 +340,8 @@ final class StepPayloads
             ], fn ($v) => $v !== null),
             StepKind::Switch => $this->rollbackTo($deployment, $site, (string) $deployment->target_release_id),
             StepKind::Revert => $this->rollbackTo($deployment, $site, (string) ($step->meta['release_id'] ?? '')),
-            StepKind::Swap => $this->swap($deployment, $site, $serverId, $this->imageFor($deployment, $site)),
-            StepKind::RevertSwap => $this->swap($deployment, $site, $serverId, [(string) ($step->meta['image'] ?? ''), null]),
+            StepKind::Swap => $this->swap($deployment, $site, $serverId, $this->imageFor($deployment, $site), (string) $deployment->release_id),
+            StepKind::RevertSwap => $this->swap($deployment, $site, $serverId, [(string) ($step->meta['image'] ?? ''), null], (string) ($deployment->previous_release_id ?? $deployment->release_id)),
             StepKind::Build, StepKind::HealthCheck, StepKind::Restart, StepKind::RevertRestart => throw new RuntimeException("{$step->kind->value} is not an agent command."),
         };
     }
@@ -419,14 +424,27 @@ final class StepPayloads
         $env = $this->releaseVariables($site);
         $this->rememberEnvironment($deployment, $env);
 
-        return [
+        return array_filter([
             ...$this->base($deployment, $site),
             'shared_paths' => array_map(fn (SharedPath $path) => ['path' => $path->path, 'type' => $path->type === 'file' ? 'file' : 'dir'], $this->sites->sharedPaths($site->id)),
-            'env_file' => ['content' => $this->dotenv([...$env, ...$this->injected($deployment, $site, $serverId)])],
+            'env_file' => ['content' => $this->dotenv([...$env, ...$this->injected($deployment, $site, $serverId), ...$this->configCache($site)])],
             'owner' => ['user' => $site->unixUser],
             'writable_dirs' => $site->framework->isLaravel() ? ['bootstrap/cache', 'storage'] : [],
             'context' => $this->context($deployment, $site),
-        ];
+            'mask' => $this->mask($site, $env) ?: null,
+            'config_cache' => $this->configCache($site) !== [] ? true : null,
+        ], fn ($v) => $v !== null);
+    }
+
+    /**
+     * Laravel's config cache holds every resolved secret: it goes to the release's tmpfs directory (the agent links it
+     * as .falak-cache; relative paths are resolved against the release), never to bootstrap/cache on disk.
+     *
+     * @return array<string, string>
+     */
+    private function configCache(SiteData $site): array
+    {
+        return $site->framework->isLaravel() && $site->runtime->isPhp() ? ['APP_CONFIG_CACHE' => '.falak-cache/config.php'] : [];
     }
 
     /**
@@ -449,15 +467,19 @@ final class StepPayloads
      */
     private function hook(DeploymentStep $step, Deployment $deployment, SiteData $site, string $serverId): array
     {
-        return [
+        $env = $this->scriptEnvironment($deployment, $site, $serverId);
+
+        return array_filter([
             ...$this->base($deployment, $site),
             'name' => (string) ($step->meta['name'] ?? 'script'),
             'script' => "set -e\n".(string) ($step->meta['script'] ?? ':'),
             'user' => $site->unixUser,
             'cwd' => (string) ($step->meta['cwd'] ?? 'release'),
-            'env' => (object) $this->scriptEnvironment($deployment, $site, $serverId),
+            'env' => (object) $env,
             'context' => $this->context($deployment, $site),
-        ];
+            // Every secret of the site: scripts also read the .env, where the agent looks these names up.
+            'mask' => $this->mask($site, $env, false) ?: null,
+        ], fn ($v) => $v !== null);
     }
 
     /**
@@ -555,6 +577,103 @@ final class StepPayloads
     }
 
     /**
+     * Names of the secret variables (payload `mask`: the agent masks their values in the command's output). By name, or
+     * through a `${{ service.KEY }}` reference to a secret, which only the site's stored variables still show.
+     *
+     * @param  array<string, string>  $env  the payload's variables
+     * @param  bool  $presentOnly  only names $env has (false: every secret of the site, e.g. for scripts reading .env)
+     * @return list<string>
+     */
+    public function mask(SiteData $site, array $env, bool $presentOnly = true): array
+    {
+        $names = array_unique([
+            ...$this->secrets->names($this->sites->environment($site->id)?->variables ?? []),
+            ...$this->secrets->names($env),
+        ]);
+        $names = array_values(array_filter($names, fn (string $name) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $name) === 1 && (! $presentOnly || array_key_exists($name, $env))));
+        sort($names);
+
+        return $names;
+    }
+
+    /**
+     * site.env.write for a server whose agent lost a site's secrets (a reboot emptied /run): the live release's `.env`
+     * for sites with releases on disk, the secret files of a container site in the secrets mode `files`. Null when the
+     * site has nothing to restore there.
+     *
+     * @return ?array<string, mixed>
+     *
+     * @throws RuntimeException when the site's variables cannot be resolved (releases made before Falak kept them)
+     */
+    public function restoreSecrets(SiteData $site, LiveRelease $live, string $secretsMode): ?array
+    {
+        $release = (string) self::upper($live->releaseId);
+
+        if ($site->runtime === SiteRuntime::Compose) {
+            $stored = Release::query()->find($live->releaseId)?->compose;
+
+            return is_array($stored) ? [
+                'site' => $site->slug,
+                'sites_root' => dirname($site->rootPath),
+                'release_id' => $release,
+                'compose' => true,
+                'env_file' => ['content' => self::composeDotenv($env = $this->composeEnv($stored, $live->serverId))],
+                'mask' => $this->mask($site, $env) ?: null,
+            ] : null;
+        }
+
+        // Releases made before Falak recorded their variables get the site's current ones.
+        $env = $live->environment !== [] ? array_map('strval', $live->environment) : $this->releaseVariables($site);
+
+        if ($site->runtime === SiteRuntime::Docker) {
+            $files = $secretsMode === SiteSettings::SECRETS_FILES ? $this->secretFiles($site, $env) : [];
+
+            return $files === [] ? null : [
+                'site' => $site->slug,
+                'release_id' => $release,
+                'secret_files' => $files,
+                'mask' => array_column($files, 'name'),
+            ];
+        }
+
+        if ($site->runtime === SiteRuntime::Function) {
+            return null;
+        }
+
+        $injected = array_filter([
+            'FALAK_SITE_ID' => self::upper($site->id),
+            'FALAK_SERVER_ID' => self::upper($live->serverId),
+            'FALAK_DEPLOYMENT_ID' => self::upper($live->deploymentId),
+            'FALAK_RELEASE_ID' => $release,
+        ]);
+        $laravel = $this->configCache($site) !== [];
+
+        return array_filter([
+            'site' => $site->slug,
+            'sites_root' => dirname($site->rootPath),
+            'release_id' => $release,
+            'env_file' => ['content' => $this->dotenv([...$env, ...$injected, ...$this->configCache($site)])],
+            'config_cache' => $laravel ? true : null,
+            'owner' => ['user' => $site->unixUser],
+            // The config cache was on the tmpfs too: rebuild it, then let PHP and the site's programs read the env again.
+            'after' => $laravel ? ['script' => ($site->phpVersion ? "php{$site->phpVersion}" : 'php').' artisan config:cache', 'user' => $site->unixUser] : null,
+            'reload' => [...($this->reload($site) ?? []), ['kind' => 'site_procs', 'name' => $site->slug]],
+            'mask' => $this->mask($site, $env) ?: null,
+        ], fn ($v) => $v !== null);
+    }
+
+    /**
+     * The secret variables of $env as /run/secrets files (the secrets mode `files`).
+     *
+     * @param  array<string, string>  $env
+     * @return list<array{name: string, content: string}>
+     */
+    private function secretFiles(SiteData $site, array $env): array
+    {
+        return array_map(fn (string $name) => ['name' => $name, 'content' => (string) $env[$name]], $this->mask($site, $env));
+    }
+
+    /**
      * @param  array<string, string>  $variables
      */
     private function dotenv(array $variables): string
@@ -640,7 +759,7 @@ final class StepPayloads
      * @param  array{0: string, 1: ?array<string, string>}  $image
      * @return array<string, mixed>
      */
-    private function swap(Deployment $deployment, SiteData $site, string $serverId, array $image): array
+    private function swap(Deployment $deployment, SiteData $site, string $serverId, array $image, string $releaseId): array
     {
         [$ref, $auth] = $image;
 
@@ -658,10 +777,21 @@ final class StepPayloads
             throw new RuntimeException('The site app port leaves no room for the green container port.');
         }
 
-        $env = $this->releaseVariables($site);
+        $variables = $this->releaseVariables($site);
+        // Kept with the release: the secret files are restored from it after a server reboot.
+        $this->rememberEnvironment($deployment, $variables);
         // The app listens on its container port; Falak publishes it on the site's loopback host ports (blue/green).
         $listen = $site->listenPort();
-        $env = array_filter([...$env, 'PORT' => (string) $listen, ...$this->injected($deployment, $site, $serverId)], fn ($v, $k) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH);
+        $env = array_filter([...$variables, 'PORT' => (string) $listen, ...$this->injected($deployment, $site, $serverId)], fn ($v, $k) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', (string) $k) === 1, ARRAY_FILTER_USE_BOTH);
+        $mask = $this->mask($site, $env);
+        $files = [];
+
+        // Secrets mode `files`: secret variables are /run/secrets files, not env (docker inspect shows env).
+        if ($deployment->setting('secrets_mode') === SiteSettings::SECRETS_FILES) {
+            $files = $this->secretFiles($site, $env);
+            $env = array_diff_key($env, array_flip($mask));
+        }
+
         $health = (array) $deployment->setting('health', []);
 
         return array_filter([
@@ -684,8 +814,11 @@ final class StepPayloads
             'labels' => (object) array_filter([
                 'falak.site.id' => self::upper($site->id),
                 'falak.deployment.id' => self::upper($deployment->id),
-                'falak.release.id' => self::upper($deployment->release_id),
+                // The release the container runs (a revert runs the previous one): secrets are restored for it after a reboot.
+                'falak.release.id' => self::upper($releaseId),
             ]),
+            'secret_files' => $files ?: null,
+            'mask' => $mask ?: null,
         ], fn ($v) => $v !== null);
     }
 
@@ -737,6 +870,7 @@ final class StepPayloads
             'entrypoint' => $source->entrypoint,
             'files' => $files,
             'env' => (object) array_map('strval', $env),
+            'mask' => $this->mask($site, $env) ?: null,
             'scaling' => $source->scaling,
             'limits' => $source->limits,
             // The function's current access rules, also for rollbacks (a revoked key never comes back with an old

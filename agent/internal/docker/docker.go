@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
@@ -30,7 +31,15 @@ type Options struct {
 	FS        hostfs.FS
 	Upstreams UpstreamSetter
 	HTTP      *http.Client // health checks
-	Logger    *slog.Logger
+	// SecretsDir holds containers' secret files, on a tmpfs; default DefaultSecretsDir.
+	SecretsDir string
+	// EnvDir holds compose projects' env files, on a tmpfs; default envlinks.DefaultEnvDir.
+	EnvDir string
+	// Links remembers the release links to compose env files (MissingSecrets after a reboot); nil = none.
+	Links interface {
+		Record(site, link, target string) error
+	}
+	Logger *slog.Logger
 	// Client overrides the Engine client (tests).
 	Client *Client
 }
@@ -52,6 +61,12 @@ func New(o Options) *Service {
 	}
 	if o.Logger == nil {
 		o.Logger = slog.Default()
+	}
+	if o.SecretsDir == "" {
+		o.SecretsDir = DefaultSecretsDir
+	}
+	if o.EnvDir == "" {
+		o.EnvDir = envlinks.DefaultEnvDir
 	}
 	c := o.Client
 	if c == nil {
@@ -157,7 +172,14 @@ type RunPayload struct {
 	RestartPolicy string            `json:"restart_policy,omitempty"`
 	MemoryBytes   int64             `json:"memory_bytes,omitempty"`
 	CPUs          float64           `json:"cpus,omitempty"`
+	// SecretFiles are mounted read-only at /run/secrets/<name> (never in the container's env, which docker inspect shows).
+	SecretFiles []SecretFile `json:"secret_files,omitempty"`
+	// Mask names the secret variables of env.
+	Mask []string `json:"mask,omitempty"`
 }
+
+// Secrets are the masked env values and the secret files.
+func (p RunPayload) Secrets() []string { return secretValues(p.Env, p.Mask, p.SecretFiles) }
 
 // NetworkJoin is an existing network the container joins besides its own, under extra DNS names (a compose service
 // run as its own Falak site joins its stack's network as the service it was, so both sides keep resolving each other).
@@ -204,7 +226,7 @@ const (
 // specHash hashes everything that defines the container (not pull policy or credentials).
 func (p RunPayload) specHash() string {
 	q := p
-	q.Pull, q.Auth = "", nil
+	q.Pull, q.Auth, q.Mask = "", nil, nil
 	b, _ := json.Marshal(q)
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
@@ -309,7 +331,16 @@ func (s *Service) ensureContainer(ctx context.Context, p RunPayload, st commands
 			return "", false, err
 		}
 	}
-	id, err := s.c.ContainerCreate(ctx, p.Name, p.createBody(hash))
+	if len(p.SecretFiles) > 0 {
+		if err := s.writeSecrets(p.Name, numericOwner(p.User), p.SecretFiles); err != nil {
+			return "", false, err
+		}
+	} else {
+		s.removeSecrets(p.Name)
+	}
+	body := p.createBody(hash)
+	s.withSecrets(&body, p.Name, p.User, p.SecretFiles)
+	id, err := s.c.ContainerCreate(ctx, p.Name, body)
 	if err != nil {
 		return "", false, err
 	}
@@ -394,6 +425,7 @@ func (s *Service) stop(ctx context.Context, p StopPayload, _ commands.Stream) (a
 		if err := s.c.ContainerRemove(ctx, cur.ID); err != nil {
 			return nil, err
 		}
+		s.removeSecrets(p.Name)
 		changed = true
 	}
 	return ChangedResult{Changed: changed}, nil

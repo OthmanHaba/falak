@@ -6,6 +6,7 @@ use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Fleet\Domain\Models\AgentMetric;
 use Falak\Fleet\Events\AgentCameOnline;
 use Falak\Fleet\Events\AgentFactsReported;
+use Falak\Fleet\Events\AgentSecretsMissing;
 use Falak\Fleet\Events\AgentVersionChanged;
 use Falak\Fleet\Events\AgentWentOffline;
 use Illuminate\Support\Facades\Event;
@@ -101,4 +102,18 @@ it('announces a changed agent version with the features it reports', function ()
         && $e->previousVersion === '1.0.0' && $e->version === '1.1.0' && $e->features === ['edge.access_log']);
     expect(app(AgentDirectory::class)->forServer($this->serverId)->supports('edge.access_log'))->toBeTrue()
         ->and(app(AgentDirectory::class)->forServer($this->serverId)->supports('telemetry.log_kind'))->toBeFalse();
+});
+
+it('announces sites whose secrets the server lost (missing_secrets)', function () {
+    Event::fake([AgentSecretsMissing::class]);
+
+    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(), $this->headers)->assertNoContent();
+    Event::assertNotDispatched(AgentSecretsMissing::class);
+
+    $heartbeat = fleet_heartbeat(['missing_secrets' => ['shop', 'api', 'shop']]);
+    expect(fleet_schema_errors('heartbeat.schema.json', $heartbeat))->toBe([])
+        ->and(fleet_schema_errors('heartbeat.schema.json', fleet_heartbeat(['missing_secrets' => ['../etc']])))->not->toBe([]);
+
+    $this->postJson('/agent/v1/heartbeat', $heartbeat, $this->headers)->assertNoContent();
+    Event::assertDispatched(AgentSecretsMissing::class, fn (AgentSecretsMissing $e) => $e->serverId === $this->serverId && $e->sites === ['shop', 'api']);
 });

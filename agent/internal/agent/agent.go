@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/docker"
 	"github.com/OthmanHaba/falak/agent/internal/edge"
 	"github.com/OthmanHaba/falak/agent/internal/enroll"
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/facts"
 	"github.com/OthmanHaba/falak/agent/internal/fngateway"
 	"github.com/OthmanHaba/falak/agent/internal/functions"
@@ -81,14 +83,17 @@ func Build(d Deps) *Components {
 	reg := commands.NewRegistry()
 	sink := d.Telemetry.Sink()
 
-	sup := supervisor.New(supervisor.Options{StateDir: d.FS.P(cfg.StateDir), LogDir: d.FS.P(cfg.LogDir), Sink: sink, Logger: log.With("component", "supervisor")})
+	// Programs' and cron jobs' secret env variables live on the tmpfs, never in their state files.
+	sup := supervisor.New(supervisor.Options{StateDir: d.FS.P(cfg.StateDir), SecretsPath: d.FS.P(filepath.Join(cfg.RunDir, "state", "proc-secrets.json")),
+		LogDir: d.FS.P(cfg.LogDir), Sink: sink, Logger: log.With("component", "supervisor")})
 	var insights cron.InsightsPoster
 	if d.Insights != nil {
 		insights = d.Insights
 	}
 	tel := d.Telemetry
 	sched := cron.New(cron.Options{
-		StateDir: d.FS.P(cfg.StateDir), Runner: d.Runner, Insights: insights, Sink: sink, Logger: log.With("component", "cron"),
+		StateDir: d.FS.P(cfg.StateDir), SecretsPath: d.FS.P(filepath.Join(cfg.RunDir, "state", "cron-secrets.json")), Runner: d.Runner, Insights: insights, Sink: sink,
+		Logger: log.With("component", "cron"),
 		SiteID: func(slug string) string {
 			for _, s := range tel.Relay().Config().Sites {
 				if s.Slug == slug {
@@ -100,12 +105,17 @@ func Build(d Deps) *Components {
 	})
 	edgeClient := &edge.Client{Base: cfg.CaddyAdmin}
 	edgeMgr := edge.New(edge.Options{Client: edgeClient, FS: d.FS, EtcDir: cfg.EtcDir, Logger: log.With("component", "edge")})
-	dock := docker.New(docker.Options{Socket: cfg.DockerSock, Runner: d.Runner, FS: d.FS, Upstreams: edgeMgr, Logger: log.With("component", "docker")})
-	dep := deploy.New(deploy.Options{FS: d.FS, Runner: d.Runner, HTTP: d.HTTP, SitesRoot: cfg.SitesRoot, Procs: sup, Workers: edgeClient, Events: sink, Logger: log.With("component", "deploy")})
+	// Secrets on servers live on the tmpfs only: sites' env files and containers' secret files.
+	envDir := filepath.Join(cfg.RunDir, "env")
+	links := envlinks.New(filepath.Join(d.FS.P(cfg.StateDir), "env-links.json"))
+	dock := docker.New(docker.Options{Socket: cfg.DockerSock, Runner: d.Runner, FS: d.FS, Upstreams: edgeMgr, SecretsDir: filepath.Join(cfg.RunDir, "secrets"),
+		EnvDir: envDir, Links: links, Logger: log.With("component", "docker")})
+	dep := deploy.New(deploy.Options{FS: d.FS, Runner: d.Runner, HTTP: d.HTTP, SitesRoot: cfg.SitesRoot, EnvDir: envDir, Containers: dock, Links: links,
+		Procs: sup, Workers: edgeClient, Events: sink, Logger: log.With("component", "deploy")})
 	terms := pty.New(pty.Options{Logger: log.With("component", "pty")})
 
 	system.New(system.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, AgentVersion: version.Version, Restart: d.RestartAgent,
-		BinaryPath: installedBinary(d.FS), RunningSHA256: version.BinarySHA256}).Register(reg)
+		BinaryPath: installedBinary(d.FS), RunningSHA256: version.BinarySHA256, SiteSecrets: dep.SiteSecrets}).Register(reg)
 	provision.New(provision.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
 	runtime.New(runtime.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
 	edgeMgr.Register(reg)
@@ -234,7 +244,8 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Client: client, Interval: cfg.Heartbeat, Running: disp.Running, Log: log.With("component", "heartbeat"),
 		Summary: func() transport.Heartbeat {
 			s := tel.Summary()
-			return transport.Heartbeat{UptimeS: s.UptimeS, Load: s.Load, CPUPercent: s.CPUPercent, MemoryUsedBytes: s.MemUsedBytes, DiskUsedBytes: s.DiskUsedBytes}
+			return transport.Heartbeat{UptimeS: s.UptimeS, Load: s.Load, CPUPercent: s.CPUPercent, MemoryUsedBytes: s.MemUsedBytes, DiskUsedBytes: s.DiskUsedBytes,
+				MissingSecrets: missingSecrets(comps.Deployer.MissingSecrets(runCtx), comps.Supervisor.WaitingSites(), comps.Cron.WaitingSites())}
 		},
 		Facts: func(ctx context.Context) (any, error) {
 			f, err := facts.Collect(ctx, r, fs, version.Version)
@@ -315,4 +326,20 @@ func installedBinary(fs hostfs.FS) string {
 		return fs.P(BinaryPath)
 	}
 	return ""
+}
+
+// missingSecrets merges the sites whose secrets are gone (env files, container files, waiting programs and jobs).
+func missingSecrets(lists ...[]string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, l := range lists {
+		for _, s := range l {
+			if !seen[s] {
+				seen[s] = true
+				out = append(out, s)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }

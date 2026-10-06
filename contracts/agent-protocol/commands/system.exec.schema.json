@@ -37,6 +37,20 @@
     "stdin": {
       "type": "string",
       "description": "Data written to the process stdin"
+    },
+    "site": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Site whose env file the script may read (site commands): the values of `mask` there are masked too"
+    },
+    "mask": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "uniqueItems": true,
+      "description": "Names of the secret variables in this payload. The agent looks their values up in the payload (env maps, dotenv content) and masks them in every form they commonly leak in (see the README) as •••• in the command's output, error and result. Values shorter than 6 bytes are not masked. With `site`, also the values of these names in the site's env file."
     }
   },
   "$defs": {

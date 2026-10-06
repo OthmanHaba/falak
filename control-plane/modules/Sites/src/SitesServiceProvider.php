@@ -2,6 +2,7 @@
 
 namespace Falak\Sites;
 
+use Falak\Fleet\Events\AgentVersionChanged;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Identity\Contracts\PermissionRegistry;
@@ -13,11 +14,13 @@ use Falak\Servers\Events\ServerDeleted;
 use Falak\Sites\Application\Listeners\DeleteOrganizationSites;
 use Falak\Sites\Application\Listeners\DetachSourceConnection;
 use Falak\Sites\Application\Listeners\HandleCommandOutcome;
+use Falak\Sites\Application\Listeners\ReapplyFpmPools;
 use Falak\Sites\Application\Listeners\RecordComposeStatus;
 use Falak\Sites\Application\Listeners\RemoveServerTargets;
 use Falak\Sites\Contracts\ComposeInspector;
 use Falak\Sites\Contracts\ComposeServiceExtraction;
 use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Contracts\SiteDeploySettings;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteDomains;
@@ -35,6 +38,7 @@ use Falak\Sites\Infrastructure\EloquentSiteDirectory;
 use Falak\Sites\Infrastructure\EloquentSiteHeaders;
 use Falak\Sites\Infrastructure\EloquentSiteNameResolver;
 use Falak\Sites\Infrastructure\NullSiteDomains;
+use Falak\Sites\Infrastructure\PatternSecretVariables;
 use Falak\SourceControl\Events\ConnectionDeleted;
 use Falak\Telemetry\Contracts\ServerSites;
 use Illuminate\Support\Facades\Event;
@@ -51,6 +55,7 @@ class SitesServiceProvider extends ModuleServiceProvider
         SiteDirectory::class => EloquentSiteDirectory::class,
         SiteHeaders::class => EloquentSiteHeaders::class,
         SiteDeploySettings::class => EloquentSiteDeploySettings::class,
+        SecretVariables::class => PatternSecretVariables::class,
         SiteFactory::class => ActionSiteFactory::class,
         ComposeInspector::class => YamlComposeInspector::class,
         ComposeSites::class => EloquentComposeSites::class,
@@ -89,6 +94,7 @@ class SitesServiceProvider extends ModuleServiceProvider
         Event::listen(CommandFinished::class, [RecordComposeStatus::class, 'handleFinished']);
         Event::listen(CommandFailed::class, [RecordComposeStatus::class, 'handleFailed']);
         Event::listen(ServerDeleted::class, RemoveServerTargets::class);
+        Event::listen(AgentVersionChanged::class, ReapplyFpmPools::class);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationSites::class);
         Event::listen(ConnectionDeleted::class, DetachSourceConnection::class);
     }

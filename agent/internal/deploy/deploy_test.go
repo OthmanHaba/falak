@@ -67,6 +67,11 @@ func (p *procs) Restart(_ context.Context, n []string) error {
 	return nil
 }
 
+func (p *procs) RestartSite(_ context.Context, site string) ([]string, error) {
+	p.names = append(p.names, []string{"site:" + site})
+	return []string{site + "-worker"}, nil
+}
+
 func newDeployer(t *testing.T) (*Deployer, *runnertest.Fake, *procs, *httptest.Server, map[string][]byte) {
 	artifacts := map[string][]byte{}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -147,8 +152,13 @@ func TestReleaseLifecycle(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(root, "releases", r1, ".env")); string(b) != "APP_KEY=secret\n" {
 		t.Fatal(".env not reachable through release symlink")
 	}
-	if fi, _ := os.Stat(filepath.Join(root, "shared/.env")); fi.Mode().Perm() != 0o640 {
-		t.Fatalf(".env mode %v", fi.Mode().Perm())
+	// The env file lives on the tmpfs only; shared/.env links to it.
+	envFile := d.o.FS.P("/run/falak/env/shop.env")
+	if fi, _ := os.Stat(envFile); fi == nil || fi.Mode().Perm() != 0o440 {
+		t.Fatalf("env file %v", fi)
+	}
+	if link, err := os.Readlink(filepath.Join(root, "shared/.env")); err != nil || link != envFile {
+		t.Fatalf("shared/.env link %q %v", link, err)
 	}
 	// Releases and shared/ are closed to other local users (config caches and .env hold secrets).
 	for _, dir := range []string{"releases/" + r1, "shared"} {

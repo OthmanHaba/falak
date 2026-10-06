@@ -5,6 +5,7 @@ namespace Falak\Processes;
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
 use Falak\Edge\Events\EdgeApplied;
+use Falak\Fleet\Events\AgentSecretsMissing;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Identity\Contracts\PermissionRegistry;
@@ -16,6 +17,7 @@ use Falak\Processes\Application\Listeners\ConvergeOnSiteChanges;
 use Falak\Processes\Application\Listeners\DeleteOrganizationProcesses;
 use Falak\Processes\Application\Listeners\ForgetDeletedServer;
 use Falak\Processes\Application\Listeners\HandleCommandOutcome;
+use Falak\Processes\Application\Listeners\ResendLostProcessSecrets;
 use Falak\Processes\Application\Listeners\StopDrainedOctane;
 use Falak\Processes\Contracts\OctaneRouting;
 use Falak\Processes\Contracts\ProcessControl;
@@ -75,6 +77,7 @@ class ProcessesServiceProvider extends ModuleServiceProvider
         Event::listen(CommandFinished::class, [HandleCommandOutcome::class, 'handleFinished']);
         Event::listen(CommandFailed::class, [HandleCommandOutcome::class, 'handleFailed']);
         Event::listen(ServerDeleted::class, ForgetDeletedServer::class);
+        Event::listen(AgentSecretsMissing::class, ResendLostProcessSecrets::class);
         Event::listen(EdgeApplied::class, StopDrainedOctane::class);
         Event::listen(OrganizationDeleted::class, DeleteOrganizationProcesses::class);
 

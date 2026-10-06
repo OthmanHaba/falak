@@ -4,6 +4,7 @@ namespace Falak\Builds\Application;
 
 use Falak\Builds\Application\Artifacts\ArtifactStorage;
 use Falak\Builds\Domain\Models\Build;
+use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
 use Falak\SourceControl\Contracts\SourceControlGateway;
@@ -21,6 +22,7 @@ final class JobPayload
         private readonly ArtifactStorage $storage,
         private readonly BuildConfiguration $configuration,
         private readonly Registry $registry,
+        private readonly SecretVariables $secrets,
     ) {}
 
     public static function artifactKey(Build $build): string
@@ -74,6 +76,16 @@ final class JobPayload
 
         if ($env !== []) {
             $job['env'] = (object) $env;
+            // The builder masks these variables' values in the build log (env and build args carry the same ones).
+            $mask = array_values(array_filter(
+                array_unique([...$this->secrets->names($this->sites->environment($site->id)->variables ?? []), ...$this->secrets->names($env)]),
+                fn (string $name) => array_key_exists($name, $env),
+            ));
+
+            if ($mask !== []) {
+                sort($mask);
+                $job['mask'] = $mask;
+            }
         }
 
         if ($build->mode === 'docker' && $site->runtime === SiteRuntime::Compose) {

@@ -12,6 +12,12 @@
     "memory_used_bytes": { "type": "integer" },
     "disk_used_bytes": { "type": "integer" },
     "running_commands": { "type": "array", "items": { "type": "string" } },
+    "missing_secrets": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+      "maxItems": 500,
+      "description": "Site slugs whose env file (/run/falak/env) or container secret files (/run/falak/secrets) are gone, usually because a reboot emptied the tmpfs. The control plane answers with site.env.write. Sent with every heartbeat until restored; omitted when empty."
+    },
     "facts": { "$ref": "facts.schema.json", "description": "Only sent when changed since last heartbeat" }
   }
 }

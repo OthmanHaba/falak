@@ -135,6 +135,15 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
             "description": "Site slug (directory name under /srv/falak/sites)"
+          },
+          "mask": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "uniqueItems": true,
+            "description": "Names of the secret variables of env: their values are masked (••••) in the program's log files and OTLP log records, and kept on the tmpfs, never in the agent's proc.json; after a reboot the program waits (heartbeat missing_secrets) until proc.apply sends it again."
           }
         }
       }

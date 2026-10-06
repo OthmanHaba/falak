@@ -15,12 +15,15 @@ interface DeploySettings {
     health_timeout_s: number;
     health_retries: number;
     health_retry_delay_s: number;
+    secrets_mode: 'env' | 'files';
 }
 
 /** GET /sites/{site}/deploy-settings (JSON). */
 interface DeploySettingsData {
     settings: DeploySettings;
     defaultHealthPath: string;
+    /** Container sites can take their secret variables as files. */
+    secretFiles: boolean;
     strategies: { value: string; label: string; description: string }[];
     pushToDeploy: boolean;
     hasRepository: boolean;
@@ -119,6 +122,28 @@ export function DeployStrategySettings({ ctx }: ServiceTabProps) {
                 </Field>
                 {form.strategy === 'rolling' && number('batch_size', 'Batch size', 'Servers updated at a time.')}
                 {number('keep_releases', 'Releases to keep', 'Older releases are pruned after each deploy.')}
+                {data.secretFiles && (
+                    <Field
+                        label="Secrets"
+                        error={errors.secrets_mode}
+                        hint={
+                            form.secrets_mode === 'files'
+                                ? 'Secret variables are files in /run/secrets (e.g. /run/secrets/DB_PASSWORD), not environment variables, so docker inspect never shows them. Applies from the next deploy.'
+                                : 'Secret variables are passed as environment variables. Applies from the next deploy.'
+                        }
+                        className="sm:col-span-2"
+                    >
+                        <Select
+                            value={form.secrets_mode}
+                            disabled={!manage}
+                            onValueChange={(value) => set({ secrets_mode: value === 'files' ? 'files' : 'env' })}
+                            options={[
+                                { value: 'env', label: 'Environment variables' },
+                                { value: 'files', label: 'Files in /run/secrets' },
+                            ]}
+                        />
+                    </Field>
+                )}
                 <div className="grid gap-3 sm:col-span-2">
                     <Field inline label="Health check gates activation (failed checks roll the server back)">
                         <Switch checked={form.health_enabled} disabled={!manage} onCheckedChange={(on) => set({ health_enabled: on })} />

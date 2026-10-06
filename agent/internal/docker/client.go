@@ -412,12 +412,15 @@ type CreateBody struct {
 
 // HostConfig subset.
 type HostConfig struct {
-	PortBindings  map[string][]PortBinding `json:"PortBindings,omitempty"`
-	Binds         []string                 `json:"Binds,omitempty"`
-	NetworkMode   string                   `json:"NetworkMode,omitempty"`
-	RestartPolicy RestartPolicy            `json:"RestartPolicy"`
-	Memory        int64                    `json:"Memory,omitempty"`
-	NanoCPUs      int64                    `json:"NanoCpus,omitempty"`
+	PortBindings map[string][]PortBinding `json:"PortBindings,omitempty"`
+	Binds        []string                 `json:"Binds,omitempty"`
+	// Mounts, unlike Binds, never create a missing bind source: a container whose secret files are gone after a
+	// reboot fails to start instead of starting without them.
+	Mounts        []Mount       `json:"Mounts,omitempty"`
+	NetworkMode   string        `json:"NetworkMode,omitempty"`
+	RestartPolicy RestartPolicy `json:"RestartPolicy"`
+	Memory        int64         `json:"Memory,omitempty"`
+	NanoCPUs      int64         `json:"NanoCpus,omitempty"`
 	// Hardening (function containers).
 	ReadonlyRootfs bool              `json:"ReadonlyRootfs,omitempty"`
 	Tmpfs          map[string]string `json:"Tmpfs,omitempty"`
@@ -425,6 +428,14 @@ type HostConfig struct {
 	SecurityOpt    []string          `json:"SecurityOpt,omitempty"`
 	PidsLimit      int64             `json:"PidsLimit,omitempty"`
 	AutoRemove     bool              `json:"AutoRemove,omitempty"`
+}
+
+// Mount is a bind mount.
+type Mount struct {
+	Type     string `json:"Type"`
+	Source   string `json:"Source"`
+	Target   string `json:"Target"`
+	ReadOnly bool   `json:"ReadOnly,omitempty"`
 }
 
 // PortBinding is host ip/port.

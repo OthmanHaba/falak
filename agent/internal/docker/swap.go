@@ -34,7 +34,15 @@ type SwapPayload struct {
 	EdgeRouteID string            `json:"edge_route_id"`
 	DrainS      *int              `json:"drain_s,omitempty"`
 	Labels      map[string]string `json:"labels,omitempty"`
+	// SecretFiles are mounted read-only at /run/secrets/<name> instead of being passed as env (the site's secrets
+	// mode "files"); each color has its own directory.
+	SecretFiles []SecretFile `json:"secret_files,omitempty"`
+	// Mask names the secret variables of env.
+	Mask []string `json:"mask,omitempty"`
 }
+
+// Secrets are the masked env values and the secret files.
+func (p SwapPayload) Secrets() []string { return secretValues(p.Env, p.Mask, p.SecretFiles) }
 
 // HealthSpec is the HTTP readiness probe.
 type HealthSpec struct {
@@ -79,7 +87,7 @@ func (p SwapPayload) runSpec(color string) RunPayload {
 		Name: "falak-" + p.Site + "-" + color, Image: p.Image, Env: p.Env, Command: p.Command,
 		Ports:   []PortSpec{{HostIP: "127.0.0.1", HostPort: p.port(color), ContainerPort: p.ContainerPort}},
 		Volumes: p.Volumes, Network: p.Network, Networks: p.Networks, Labels: labels, RestartPolicy: "unless-stopped",
-		MemoryBytes: p.MemoryBytes, CPUs: p.CPUs,
+		MemoryBytes: p.MemoryBytes, CPUs: p.CPUs, SecretFiles: p.SecretFiles,
 	}
 }
 
@@ -94,6 +102,10 @@ func (p SwapPayload) specHash() string {
 func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (any, error) {
 	if p.Site == "" || p.Image == "" || p.ContainerPort == 0 || p.Ports.Blue == 0 || p.Ports.Green == 0 {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("site, image, container_port and ports are required")}
+	}
+	// The site names containers and their secret directories (removed and rewritten below).
+	if !siteRe.MatchString(p.Site) {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid site %q", p.Site)}
 	}
 	if p.Ports.Blue == p.Ports.Green {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("blue and green ports must differ")}
@@ -171,8 +183,17 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 	if err := s.awaitNetworks(ctx, spec.Networks, st); err != nil {
 		return nil, err
 	}
-	id, err := s.c.ContainerCreate(ctx, spec.Name, spec.createBody(spec.specHash()))
+	s.removeSecrets(spec.Name)
+	if len(spec.SecretFiles) > 0 {
+		if err := s.writeSecrets(spec.Name, "", spec.SecretFiles); err != nil {
+			return nil, err
+		}
+	}
+	body := spec.createBody(spec.specHash())
+	s.withSecrets(&body, spec.Name, "", spec.SecretFiles)
+	id, err := s.c.ContainerCreate(ctx, spec.Name, body)
 	if err != nil {
+		s.removeSecrets(spec.Name)
 		return nil, err
 	}
 	// A split-out compose service joins its stack's networks before it starts, so it resolves the stack's services
@@ -185,11 +206,13 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 	}
 	if err := s.c.ContainerStart(ctx, id); err != nil {
 		_ = s.c.ContainerRemove(context.WithoutCancel(ctx), id)
+		s.removeSecrets(spec.Name)
 		return nil, err
 	}
 	fail := func(err error) (any, error) {
 		s.log.Warn("container swap failed, removing new container", "site", p.Site, "color", target, "err", err)
 		_ = s.c.ContainerRemove(context.WithoutCancel(ctx), id)
+		s.removeSecrets(spec.Name)
 		return nil, err
 	}
 	if err := s.waitHealthy(ctx, p.port(target), h, st); err != nil {
@@ -221,6 +244,8 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 		}
 		if err := s.c.ContainerRemove(context.WithoutCancel(ctx), c.ID); err != nil {
 			s.log.Warn("remove old container", "id", c.ID, "err", err)
+		} else {
+			s.removeSecrets(containerName(c))
 		}
 	}
 	return SwapResult{Changed: true, ActiveColor: target, ContainerID: id, Upstream: up, PreviousColor: active}, nil

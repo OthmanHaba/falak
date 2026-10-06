@@ -149,6 +149,56 @@ The size comes from the payload's `uncompressed_bytes` (feature `db.redis.restor
 the control plane sends what the backup recorded), else from the gzip trailer (`ISIZE`, exact below ~4 MB of gzip,
 otherwise a lower bound and no cap).
 
+## Secrets on servers (v0.10.0)
+**Env files on tmpfs.** `deploy.prepare` writes `env_file` to `/run/falak/env/<site>.env` (directory 0711 root, file
+0440 owned by the site user and its group, which the edge user joins for FrankenPHP) and makes `shared/.env` a symlink
+to it, replacing the regular file earlier agents kept; every release's `.env` links to `shared/.env`. The link is
+made through an `os.Root` on the site directory and refused when `shared/` or a directory on the path is a symlink
+(the site user owns the site directory). Laravel's config cache holds the resolved secrets too: with `config_cache`
+the agent gives each release a tmpfs directory `/run/falak/env/<site>.d/<release>` (0750, site user and group) linked
+as `<release>/.falak-cache`, and the control plane sets `APP_CONFIG_CACHE=.falak-cache/config.php` in the `.env`
+(Laravel resolves it against the release, so each release keeps its own cache). PHP-FPM pools of isolated sites get
+both tmpfs paths in `open_basedir` (PHP checks the resolved path);
+the control plane re-applies the pools when an agent reports a new version. Nothing with a secret is written under
+`/srv/falak/sites`.
+
+**Compose projects.** `docker.compose.up` / `.pull` write their `.env*` files to `/run/falak/env/compose-<project>.env`
+(0400 root); the release directory links to it and `--env-file` points at it.
+
+**Secret files for containers.** `docker.run` and `deploy.container.swap` take `secret_files`: written to
+`/run/falak/secrets/<container>/<NAME>` and bind-mounted read-only at `/run/secrets` (a `Mounts` bind, which never
+creates a missing source). The parent directory is 0700 root, so no other host user reaches them; inside the container
+they are 0444 in a 0555 directory (the image's user is unknown), or 0400/0500 owned by a numeric `user`. The
+variables passed as files are not in the container's env, so `docker inspect` doesn't show them. Each color of a swap
+has its own directory, removed with the container.
+
+**Supervised programs and cron jobs.** `proc.apply` programs and `cron.apply` jobs name their secret variables in
+`mask`. The agent's state files (`/var/lib/falak/proc.json`, `cron.json`) keep only the other variables and the names
+of the secret ones; the values are in `/run/falak/state/{proc,cron}-secrets.json` (0600). After a reboot a program or
+job whose secrets are gone does not start: it waits, its site is reported in `missing_secrets`, and the control plane
+answers with a forced `proc.apply` / `cron.apply` for the server.
+
+**After a reboot** `/run` is empty: Docker can't start a container whose secret directory is missing, and env links
+dangle. The agent remembers every env link it made (`/var/lib/falak/env-links.json`, paths only: any sites root,
+compose releases) and every heartbeat carries `missing_secrets` (at most 500 site slugs) until they are restored. The
+control plane answers with `site.env.write` for the live release (`release_id`), unless a deployment of the site is
+running, at most once per server and site every two minutes: the `.env` (classic sites; then `after` runs
+`artisan config:cache` for Laravel and `reload` reloads PHP and restarts the site's programs, `site_procs`), the compose
+env file (`compose`), or the secret files of a container site in the files mode. The agent only restores what is
+missing (an existing file or directory was written by a deployment since, and may be mounted), refuses a release that
+is no longer current, and starts the containers that could not start without their files.
+
+**Output masking.** Payloads that carry secrets list the names of their secret variables in `mask`
+(`deploy.prepare`, `deploy.hook`, `deploy.container.swap`, `docker.run`, `docker.compose.up`, `docker.compose.pull`,
+`site.env.write`, `fn.release.apply`, `system.exec`, and each `proc.apply` program); the values are never sent twice.
+The agent takes the values from the same payload (env maps, dotenv content, every `secret_files` content) and, for
+`deploy.hook` and `system.exec` with `site`, from the site's env file, which scripts read. Each value (6 bytes or
+more; 4 in build logs) becomes `••••` as is and in the forms it commonly leaks in: base64 (standard and URL alphabets,
+at all three byte alignments inside a longer encoding), URL-encoded, lower-case hex, JSON-escaped (Go and PHP styles)
+and quoted for a single-quoted shell word; matches split across writes are masked too (at most 8 KiB is held back).
+This covers command output, errors, results, deployment lifecycle events and supervised programs' log files and OTLP
+records. Build jobs take the same `mask` for `env` and `build_args`.
+
 ## Agent sessions and lost deliveries
 Every `falak-agent` process sends a random session id (`X-Falak-Agent-Session: s-<32 hex>`, 8-64 characters of
 `[A-Za-z0-9._:-]`) on every mTLS request. Agents from before sessions send none; that is accepted.
@@ -164,7 +214,7 @@ A lost command whose schema has `"x-falak-redeliverable": true` at its root is q
 the agent answers a command id it already finished from its journal, so nothing runs twice. Redeliverable:
 declarative state (`edge.caddy.apply`, `edge.cert.install`, `telemetry.configure`, `proc.apply`, `cron.apply`,
 `net.firewall.apply`, `net.wireguard.apply`, `db.user.apply`, `db.redis.apply`, `db.redis.remove`,
-`system.ssh_key.sync`), read-only commands
+`system.ssh_key.sync`, `site.env.write`), read-only commands
 (`proc.status`, `system.facts`, `docker.compose.ps`, `provision.inspect`) and `system.upgrade_agent` (a no-op once
 installed). Any other type fails instead, so the deployment waiting on it fails fast: `failed` with "The agent
 restarted before running the command" when it was never started, `timed_out` otherwise (a late result still

@@ -50,8 +50,10 @@ final class CommandPayloads
         ];
 
         if ($site->isolated) {
-            // Keep PHP inside the site's own tree.
-            $payload['php_admin_values'] = ['open_basedir' => $site->rootPath().'/:/tmp/:/usr/share/php/'];
+            // Keep PHP inside the site's own tree. Its .env and Laravel's config cache link to the agent's tmpfs, and PHP
+            // checks the resolved path.
+            $tmpfs = rtrim((string) config('sites.env_dir', '/run/falak/env'), '/')."/{$site->slug}";
+            $payload['php_admin_values'] = ['open_basedir' => $site->rootPath()."/:/tmp/:/usr/share/php/:{$tmpfs}.env:{$tmpfs}.d/"];
         }
 
         return $payload;
@@ -59,9 +61,10 @@ final class CommandPayloads
 
     /**
      * @param  array<string, string>  $env
+     * @param  list<string>  $mask  the site's secret variable names (masked in the output; the command reads .env)
      * @return array<string, mixed> system.exec
      */
-    public static function exec(Site $site, string $command, array $env = []): array
+    public static function exec(Site $site, string $command, array $env = [], array $mask = []): array
     {
         $current = escapeshellarg($site->currentPath());
 
@@ -73,6 +76,11 @@ final class CommandPayloads
 
         if ($env !== []) {
             $payload['env'] = $env;
+        }
+
+        if ($mask !== []) {
+            $payload['site'] = $site->slug;
+            $payload['mask'] = $mask;
         }
 
         return $payload;

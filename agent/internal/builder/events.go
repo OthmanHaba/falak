@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
@@ -160,21 +159,4 @@ func (s *HTTPSink) flush(ctx context.Context) error {
 	s.pending = s.pending[len(batch):]
 	s.mu.Unlock()
 	return nil
-}
-
-// redactor masks secrets in output before it becomes an event.
-type redactor struct {
-	w       io.Writer
-	secrets []string
-}
-
-func (r redactor) Write(p []byte) (int, error) {
-	s := string(p)
-	for _, sec := range r.secrets {
-		s = strings.ReplaceAll(s, sec, "********")
-	}
-	if _, err := io.WriteString(r.w, s); err != nil {
-		return 0, err
-	}
-	return len(p), nil
 }

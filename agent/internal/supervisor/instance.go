@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/OthmanHaba/falak/agent/internal/redact"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
@@ -144,10 +145,15 @@ func (in *instance) runOnce(stopCh chan struct{}) (code int, stopped bool) {
 	}
 	defer outW.Flush()
 	defer errW.Flush()
+	// Secrets never reach the log files or the OTLP relay.
+	secrets := redact.NewSet(redact.FromEnv(spec.Env, spec.Mask)...)
+	maskOut, maskErr := redact.NewWriter(secrets, outW), redact.NewWriter(secrets, errW)
+	defer maskErr.Flush()
+	defer maskOut.Flush()
 
 	cmd := exec.Command(spec.Command[0], spec.Command[1:]...)
 	cmd.Dir = spec.Cwd
-	cmd.Stdout, cmd.Stderr = outW, errW
+	cmd.Stdout, cmd.Stderr = maskOut, maskErr
 	cmd.WaitDelay = 2 * time.Second
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	env := []string{

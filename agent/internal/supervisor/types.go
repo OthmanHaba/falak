@@ -30,6 +30,8 @@ type Program struct {
 	StopTimeoutS int               `json:"stop_timeout_s,omitempty"`
 	Log          *LogSpec          `json:"log,omitempty"`
 	Site         string            `json:"site,omitempty"`
+	// Mask names the secret variables of env: their values are masked in the program's logs (file and OTLP).
+	Mask []string `json:"mask,omitempty"`
 }
 
 // Backoff controls restart delays.
