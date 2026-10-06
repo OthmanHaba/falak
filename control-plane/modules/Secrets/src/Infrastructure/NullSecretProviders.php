@@ -10,12 +10,17 @@ use Falak\Secrets\Contracts\SecretProviders;
  */
 final class NullSecretProviders implements SecretProviders
 {
-    public function resolve(string $reference, ?string $providerId, string $organizationId): string
+    public function resolve(#[\SensitiveParameter] string $reference, ?string $providerId, string $organizationId): string
     {
         $scheme = str_contains($reference, '://') ? strstr($reference, '://', true) : null;
 
         throw new SecretProviderUnavailable($scheme !== null && preg_match('/^[a-z0-9+.-]{1,32}$/', $scheme) === 1
             ? "provider not configured (no secret provider handles {$scheme}:// references)"
             : 'provider not configured');
+    }
+
+    public function exists(string $providerId, string $organizationId): bool
+    {
+        return false;
     }
 }

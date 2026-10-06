@@ -13,6 +13,9 @@ use Falak\Secrets\Contracts\SecretScope;
  */
 final class Scopes
 {
+    /** @var array<string, list<ServiceData>> "scope:id" => site services, for one request */
+    private array $servicesUnder = [];
+
     public function __construct(private readonly ProjectDirectory $projects) {}
 
     /** Whether the scope exists and belongs to the organization. */
@@ -66,6 +69,15 @@ final class Scopes
      * @return list<ServiceData>
      */
     public function siteServicesUnder(string $organizationId, SecretScope $scope, string $scopeId): array
+    {
+        // Lists ask once per secret; secrets share a handful of scopes (all of them the organization, in its list).
+        return $this->servicesUnder["{$scope->value}:{$scopeId}"] ??= $this->computeServicesUnder($organizationId, $scope, $scopeId);
+    }
+
+    /**
+     * @return list<ServiceData>
+     */
+    private function computeServicesUnder(string $organizationId, SecretScope $scope, string $scopeId): array
     {
         $environments = match ($scope) {
             SecretScope::Organization => array_merge(...array_map(

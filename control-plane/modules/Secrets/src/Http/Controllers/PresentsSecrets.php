@@ -65,9 +65,10 @@ trait PresentsSecrets
     }
 
     /**
+     * @param  bool  $detailed  IP addresses and actor ids (users with secrets.manage)
      * @return array<string, mixed>
      */
-    protected function presentAccess(AccessLogEntry $entry, OrganizationDirectory $directory): array
+    protected function presentAccess(AccessLogEntry $entry, OrganizationDirectory $directory, bool $detailed): array
     {
         return [
             'id' => $entry->id,
@@ -80,9 +81,9 @@ trait PresentsSecrets
                 AccessorType::Build => 'Build',
                 AccessorType::System => 'Falak',
             },
-            'actor_id' => $entry->actor_id,
+            'actor_id' => $detailed ? $entry->actor_id : null,
             'reason' => $entry->reason,
-            'ip' => $entry->ip,
+            'ip' => $detailed ? $entry->ip : null,
             'created_at' => $entry->created_at->toIso8601String(),
         ];
     }

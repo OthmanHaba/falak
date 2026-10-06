@@ -26,7 +26,6 @@ final class SecretRules
             'kind' => ['sometimes', Rule::enum(SecretKind::class)],
             'value' => ['nullable', 'string', 'max:'.self::MAX_VALUE, 'required_unless:kind,linked'],
             'reference' => ['nullable', 'string', 'max:2000', 'required_if:kind,linked'],
-            'provider_id' => ['nullable', 'string', 'max:26'],
             ...self::metadata(),
         ];
     }
@@ -41,6 +40,8 @@ final class SecretRules
             'available_to_previews' => ['sometimes', 'boolean'],
             'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'rotation_days' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:3650'],
+            // Linked secrets; the action checks it is one of the organization's providers.
+            'provider_id' => ['sometimes', 'nullable', 'string', 'size:26'],
         ];
     }
 

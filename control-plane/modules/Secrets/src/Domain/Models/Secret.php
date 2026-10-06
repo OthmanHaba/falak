@@ -41,6 +41,35 @@ class Secret extends Model
     /** @var list<string> */
     protected $guarded = [];
 
+    /** When the current version was created, preloaded for lists by {@see withCurrentVersionDates()}. */
+    public ?Carbon $currentVersionCreatedAt = null;
+
+    /**
+     * Preload the current versions' dates (rotation due dates) in one query.
+     *
+     * @param  iterable<Secret>  $secrets
+     */
+    public static function withCurrentVersionDates(iterable $secrets): void
+    {
+        $byId = [];
+
+        foreach ($secrets as $secret) {
+            $byId[$secret->id] = $secret;
+        }
+
+        if ($byId === []) {
+            return;
+        }
+
+        foreach (SecretVersion::query()->whereIn('secret_id', array_keys($byId))->get(['secret_id', 'version', 'created_at']) as $version) {
+            $secret = $byId[$version->secret_id];
+
+            if ($version->version === $secret->current_version) {
+                $secret->currentVersionCreatedAt = $version->created_at;
+            }
+        }
+    }
+
     /**
      * @return array<string, string>
      */
@@ -77,7 +106,8 @@ class Secret extends Model
             return null;
         }
 
-        $since = SecretVersion::query()->where('secret_id', $this->id)->where('version', $this->current_version)->value('created_at');
+        $since = $this->currentVersionCreatedAt
+            ?? SecretVersion::query()->where('secret_id', $this->id)->where('version', $this->current_version)->value('created_at');
 
         return Carbon::parse($since ?? $this->created_at)->addDays($this->rotation_days);
     }

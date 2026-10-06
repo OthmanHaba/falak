@@ -54,6 +54,7 @@ final class SecretApiController extends Controller
             ->when($filter['scope'] ?? null, fn ($query, $scope) => $query->where('scope_type', $scope))
             ->when($filter['scope_id'] ?? null, fn ($query, $id) => $query->where('scope_id', strtolower($id)))
             ->orderBy('name')->get();
+        Secret::withCurrentVersionDates($secrets);
 
         return response()->json(['data' => $secrets->map(fn (Secret $secret) => $this->presentSecret($secret, $this->scopes))->values()]);
     }

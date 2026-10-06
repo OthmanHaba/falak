@@ -3,6 +3,7 @@
 namespace Falak\Secrets\Application\Actions;
 
 use Falak\Identity\Contracts\AuditLog;
+use Falak\Secrets\Contracts\SecretProviders;
 use Falak\Secrets\Domain\Enums\SecretKind;
 use Falak\Secrets\Domain\Models\Secret;
 use Illuminate\Validation\ValidationException;
@@ -13,7 +14,10 @@ use Illuminate\Validation\ValidationException;
  */
 final class UpdateSecret
 {
-    public function __construct(private readonly AuditLog $audit) {}
+    public function __construct(
+        private readonly AuditLog $audit,
+        private readonly SecretProviders $providers,
+    ) {}
 
     /**
      * @param  array{description?: ?string, sensitive?: bool, available_to_previews?: bool, rotation_days?: ?int, provider_id?: ?string}  $data
@@ -26,8 +30,14 @@ final class UpdateSecret
 
         $changes = array_intersect_key($data, array_flip(['description', 'sensitive', 'available_to_previews', 'rotation_days']));
 
-        if ($secret->kind === SecretKind::Linked && array_key_exists('provider_id', $data)) {
-            $changes['provider_id'] = $data['provider_id'];
+        if (array_key_exists('provider_id', $data)) {
+            $providerId = $data['provider_id'] !== null ? strtolower((string) $data['provider_id']) : null;
+
+            if ($providerId !== null && ($secret->kind !== SecretKind::Linked || ! $this->providers->exists($providerId, $secret->organization_id))) {
+                throw ValidationException::withMessages(['provider_id' => 'Choose a secret provider of this organization (linked secrets only).']);
+            }
+
+            $changes['provider_id'] = $providerId;
         }
 
         $secret->fill($changes);

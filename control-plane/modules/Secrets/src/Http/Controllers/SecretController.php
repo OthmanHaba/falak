@@ -114,16 +114,17 @@ final class SecretController extends Controller
     }
 
     /** GET /secrets/{secret}: metadata, versions, access log and usage (no value). */
-    public function show(Secret $secret, OrganizationDirectory $directory, SecretUsage $usage): JsonResponse
+    public function show(Request $request, Secret $secret, OrganizationDirectory $directory, SecretUsage $usage): JsonResponse
     {
         $this->authorize('view', $secret);
+        $detailed = $request->user()?->can('manage', $secret) ?? false;
 
         $access = AccessLogEntry::query()->where('secret_id', $secret->id)->orderByDesc('created_at')->orderByDesc('id')->limit(50)->get();
 
         return response()->json(['data' => [
             ...$this->presentSecret($secret, $this->scopes, $usage->of([$secret])[$secret->id] ?? []),
             'versions' => $secret->versions()->limit(100)->get()->map(fn ($version) => $this->presentVersion($secret, $version, $directory))->values(),
-            'access_log' => $access->map(fn (AccessLogEntry $entry) => $this->presentAccess($entry, $directory))->values(),
+            'access_log' => $access->map(fn (AccessLogEntry $entry) => $this->presentAccess($entry, $directory, $detailed))->values(),
         ]])->header('Cache-Control', 'no-store');
     }
 
@@ -258,6 +259,7 @@ final class SecretController extends Controller
     private function list(array $secrets, SecretUsage $usage): array
     {
         $used = $usage->of($secrets);
+        Secret::withCurrentVersionDates($secrets);
 
         return array_map(fn (Secret $secret) => $this->presentSecret($secret, $this->scopes, $used[$secret->id] ?? []), $secrets);
     }

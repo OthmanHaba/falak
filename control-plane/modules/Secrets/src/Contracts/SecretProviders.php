@@ -22,5 +22,8 @@ interface SecretProviders
      * @throws SecretProviderUnavailable when no value can be produced (provider not configured or unreachable
      *                                   with nothing cached, reference not found, access denied)
      */
-    public function resolve(string $reference, ?string $providerId, string $organizationId): string;
+    public function resolve(#[\SensitiveParameter] string $reference, ?string $providerId, string $organizationId): string;
+
+    /** Whether the provider exists and belongs to the organization (a linked secret may name it). */
+    public function exists(string $providerId, string $organizationId): bool;
 }
