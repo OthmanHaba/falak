@@ -13,7 +13,7 @@ final class EloquentSiteEnvironments implements SiteEnvironments
 {
     public function __construct(private readonly SaveEnvironment $save) {}
 
-    public function set(string $siteId, array $values, ?string $userId, string $auditAction, ?int $baseVersion = null): ?int
+    public function set(string $siteId, #[\SensitiveParameter] array $values, ?string $userId, string $auditAction, ?int $baseVersion = null): ?int
     {
         $site = Site::query()->findOrFail(strtolower($siteId));
 

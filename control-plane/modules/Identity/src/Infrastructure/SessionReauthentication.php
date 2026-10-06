@@ -46,7 +46,7 @@ final class SessionReauthentication implements Reauthentication
         return $user instanceof User && $user->hasTwoFactorEnabled();
     }
 
-    public function confirm(Request $request, string $password, ?string $code): void
+    public function confirm(Request $request, #[\SensitiveParameter] string $password, #[\SensitiveParameter] ?string $code): void
     {
         $user = $request->user();
 

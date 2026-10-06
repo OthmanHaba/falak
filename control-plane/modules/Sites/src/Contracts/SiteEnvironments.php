@@ -19,7 +19,7 @@ interface SiteEnvironments
      *
      * @throws EnvironmentChanged when $baseVersion is no longer the latest version
      */
-    public function set(string $siteId, array $values, ?string $userId, string $auditAction, ?int $baseVersion = null): ?int;
+    public function set(string $siteId, #[\SensitiveParameter] array $values, ?string $userId, string $auditAction, ?int $baseVersion = null): ?int;
 
     /**
      * Replace one variable's value in every stored version of the site's environment, the current one included

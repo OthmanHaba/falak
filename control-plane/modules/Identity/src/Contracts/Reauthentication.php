@@ -23,5 +23,5 @@ interface Reauthentication
      *
      * @throws ValidationException on `password` or `code`
      */
-    public function confirm(Request $request, string $password, ?string $code): void;
+    public function confirm(Request $request, #[\SensitiveParameter] string $password, #[\SensitiveParameter] ?string $code): void;
 }
