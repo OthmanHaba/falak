@@ -1,6 +1,6 @@
 name: MinIO
 slug: minio
-version: 1.0.0
+version: 1.0.1
 description: S3-compatible object storage with its web console (community build — upstream stopped publishing images).
 category: storage
 icon: minio
@@ -12,6 +12,8 @@ tags: [s3, object storage, backups]
 public:
   - service: minio
     port: 9000
+    # The S3 API answers 403 on / without credentials.
+    health_check_path: /minio/health/live
   - service: console
     port: 8080
 inputs:

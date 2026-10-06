@@ -178,7 +178,7 @@ final class TemplateParser
     }
 
     /**
-     * @return list<array{service: string, port: int}>
+     * @return list<array{service: string, port: int, health_check_path?: string}>
      */
     private function public(mixed $value): array
     {
@@ -192,8 +192,8 @@ final class TemplateParser
         $seen = [];
 
         foreach ($value as $i => $entry) {
-            if (! is_array($entry) || array_diff(array_keys($entry), ['service', 'port']) !== []) {
-                $this->error("public[{$i}]", 'must be {service, port}');
+            if (! is_array($entry) || array_diff(array_keys($entry), ['service', 'port', 'health_check_path']) !== []) {
+                $this->error("public[{$i}]", 'must be {service, port, health_check_path?}');
 
                 continue;
             }
@@ -219,8 +219,17 @@ final class TemplateParser
                 continue;
             }
 
+            // The deploy health check's path for this service (e.g. MinIO answers 403 on / without credentials).
+            $health = $entry['health_check_path'] ?? null;
+
+            if ($health !== null && (! is_string($health) || preg_match('#^/[^\s]{0,254}$#', $health) !== 1)) {
+                $this->error("public[{$i}].health_check_path", 'must be a path starting with / (e.g. /health)');
+
+                continue;
+            }
+
             $seen[$service] = true;
-            $public[] = ['service' => $service, 'port' => $port];
+            $public[] = ['service' => $service, 'port' => $port] + ($health !== null ? ['health_check_path' => $health] : []);
         }
 
         return $public;

@@ -125,7 +125,7 @@ final class DeployTemplate
                 'service' => $public['service'],
                 'port' => $public['port'],
                 'domain' => $customDomains[$public['service']] ?? null,
-            ], $template->public),
+            ] + (isset($public['health_check_path']) ? ['health_check_path' => $public['health_check_path']] : []), $template->public),
             'variables' => array_map($render, $values),
             'template' => ['slug' => $template->slug, 'version' => $template->version, 'source' => $template->source->value],
         ], new SitePlacement($environment->projectId, $environment->id, $x, $y, $name));

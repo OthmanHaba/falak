@@ -63,6 +63,7 @@ it('rejects schema violations with located messages', function (string $yaml, st
     'unknown category' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: games\npublic: [{service: web, port: 80}]", 'category must be one of'],
     'unknown key' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\nport: 80\npublic: [{service: web, port: 80}]", 'port unknown key'],
     'no public' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai", 'public list at least one'],
+    'bad health check path' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\npublic: [{service: web, port: 80, health_check_path: health}]", 'health_check_path must be a path starting with /'],
     'bad port' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\npublic: [{service: web, port: 99999}]", 'port must be a port number'],
     'bad key' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\npublic: [{service: web, port: 80}]\ninputs: [{key: lower}]", 'must be an environment variable name'],
     'reserved key' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\npublic: [{service: web, port: 80}]\ninputs: [{key: FALAK_X}]", 'reserved'],
@@ -79,3 +80,9 @@ it('rejects schema violations with located messages', function (string $yaml, st
     'not yaml' => ['name: [unclosed', 'template.yaml:'],
     'both composes' => ["name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: ai\npublic: [{service: web, port: 80}]\ncompose: {services: {}}", 'either inline or as compose.yaml'],
 ]);
+
+it('reads a public service\'s health check path', function () {
+    $template = (new TemplateParser)->parse("name: A\nslug: a\nversion: 1.0.0\ndescription: d\ncategory: storage\npublic:\n  - {service: s3, port: 9000, health_check_path: /minio/health/live}\n  - {service: web, port: 80}", "services:\n  s3:\n    image: x:1\n  web:\n    image: y:1\n");
+
+    expect($template->public)->toBe([['service' => 's3', 'port' => 9000, 'health_check_path' => '/minio/health/live'], ['service' => 'web', 'port' => 80]]);
+});
