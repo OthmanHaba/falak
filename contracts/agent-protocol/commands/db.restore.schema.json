@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.restore.schema.json",
-  "title": "db.restore — restore a dump into a database (created if missing)",
+  "title": "db.restore — restore a dump into a database (created if missing), or an RDB snapshot into an existing Redis / Valkey instance",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,12 +13,14 @@
     "engine": {
       "enum": [
         "mysql",
-        "postgres"
+        "postgres",
+        "redis",
+        "valkey"
       ]
     },
     "database": {
       "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+      "description": "SQL: the database. Redis / Valkey (feature db.redis.backup): the instance's name."
     },
     "compression": {
       "enum": [
@@ -77,6 +79,37 @@
       "pattern": "^[a-f0-9]{64}$"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "engine": {
+            "enum": [
+              "redis",
+              "valkey"
+            ]
+          }
+        },
+        "required": [
+          "engine"
+        ]
+      },
+      "then": {
+        "properties": {
+          "database": {
+            "pattern": "^[a-z][a-z0-9_-]{0,40}$"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "database": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "result": {
       "type": "object",
@@ -90,6 +123,18 @@
         },
         "duration_ms": {
           "type": "integer"
+        },
+        "rdb": {
+          "type": "string",
+          "pattern": "^(REDIS[0-9]{4}|VALKEY[0-9]{3})$",
+          "description": "Redis / Valkey: the snapshot's RDB header"
+        },
+        "moved_aside": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Redis / Valkey: the instance's earlier dump.rdb / appendonlydir / appendonly.aof, renamed <file>.falak-<UTC time> in its data directory"
         }
       }
     }
