@@ -81,10 +81,12 @@ it('backs up an instance: db.backup with engine redis, the instance name and an 
         ->and($command['payload']['destination']['kind'])->toBe('presigned_url')
         ->and(json_encode($command['payload']))->not->toContain('super-secret-access-key-value')
         ->and($backup->engine->value)->toBe('redis')
+        ->and($backup->started_at?->toIso8601String())->toBe('2026-10-06T02:59:30+00:00')
         ->and($backup->object_key)->toMatch('#^acme/'.preg_quote(Str::slug($this->engine->server_name), '#').'-[a-z0-9]{6}/cache/2026/10/20261006T025930Z-'.$backup->id.'\.rdb\.gz$#');
 
     $this->agents->succeed($command['handle'], kvb_result());
-    expect($backup->refresh())->status->toBe(BackupStatus::Succeeded)->and($backup->isRestorable())->toBeTrue();
+    expect($backup->refresh())->status->toBe(BackupStatus::Succeeded)->and($backup->isRestorable())->toBeTrue()
+        ->and($this->getJson("/databases/databases/{$this->instance->id}")->json('data.backups.0.started_at'))->toBe('2026-10-06T02:59:30+00:00');
     Event::assertDispatched(BackupSucceeded::class, fn ($e) => $e->databaseName === 'cache');
 
     // Uncompressed: the plain RDB file.

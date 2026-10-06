@@ -133,6 +133,7 @@ trait PresentsDatabases
             'command_id' => $backup->command_id,
             'restorable' => $backup->isRestorable(),
             'created_at' => $backup->created_at->toIso8601String(),
+            'started_at' => $backup->started_at?->toIso8601String(),
             'finished_at' => $backup->finished_at?->toIso8601String(),
             'pruned_at' => $backup->pruned_at?->toIso8601String(),
         ];

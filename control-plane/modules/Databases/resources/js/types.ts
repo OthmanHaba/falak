@@ -113,6 +113,8 @@ export interface BackupRow {
     command_id: string | null;
     restorable: boolean;
     created_at: string;
+    /** When the backup was handed to the agent. */
+    started_at: string | null;
     finished_at: string | null;
     pruned_at: string | null;
 }

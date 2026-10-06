@@ -114,7 +114,8 @@ final class RunBackup
             return $backup;
         }
 
-        $backup->fill(['command_id' => $handle->id])->save();
+        // Started: handed to the agent (the control plane learns of the agent starting it only from its result).
+        $backup->fill(['command_id' => $handle->id, 'started_at' => now()])->save();
 
         $this->audit->record('databases.backup_started', 'backup', $backup->id, [
             'database' => $database->name,
