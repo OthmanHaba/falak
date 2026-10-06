@@ -34,5 +34,6 @@
   },
   "mask": [
     "APP_KEY"
-  ]
+  ],
+  "config_cache": true
 }

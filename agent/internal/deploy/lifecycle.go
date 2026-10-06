@@ -40,6 +40,8 @@ type PreparePayload struct {
 	WritableDirs []string      `json:"writable_dirs,omitempty"`
 	Context      *Context      `json:"context,omitempty"`
 	Mask         []string      `json:"mask,omitempty"`
+	// ConfigCache gives the release a tmpfs cache directory linked as .falak-cache (Laravel's config cache).
+	ConfigCache bool `json:"config_cache,omitempty"`
 }
 
 // Secrets are the values of the masked variables in the env file.
@@ -116,6 +118,11 @@ func (d *Deployer) Prepare(ctx context.Context, p PreparePayload, s commands.Str
 			return nil, err
 		}
 		res.Changed = res.Changed || ch
+	}
+	if p.ConfigCache {
+		if err := d.releaseCache(st, p.Site, p.ReleaseID, p.Owner); err != nil {
+			return nil, err
+		}
 	}
 	for _, sp := range shared {
 		c, err := cleanRel(sp.Path)
@@ -493,6 +500,7 @@ func (d *Deployer) Prune(ctx context.Context, p PrunePayload, s commands.Stream)
 		if err := os.RemoveAll(st.release(id)); err != nil {
 			return res, err
 		}
+		_ = os.RemoveAll(d.o.FS.P(CacheDir(d.o.EnvDir, p.Site, id)))
 		res.Removed = append(res.Removed, id)
 		fmt.Fprintf(s.Stdout(), "removed release %s\n", id)
 	}

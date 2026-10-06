@@ -43,11 +43,38 @@ type EnvLinks interface {
 // envFile is the host path of a site's env file.
 func (d *Deployer) envFile(site string) string { return filepath.Join(d.o.EnvDir, site+".env") }
 
-// CacheDir is the host path of a site's writable tmpfs directory for caches that hold secrets: Laravel's config cache
-// (the control plane sets APP_CONFIG_CACHE=<dir>/config.php in the site's .env, so it never lands in bootstrap/cache).
-func CacheDir(envDir, site string) string { return filepath.Join(envDir, site+".d") }
+// CacheLink is the link in a release to its tmpfs cache directory. Laravel's config cache holds every resolved secret:
+// with `config_cache`, the control plane sets APP_CONFIG_CACHE=.falak-cache/config.php in the .env (relative paths are
+// resolved against the release), so `artisan config:cache` writes to the tmpfs, one directory per release.
+const CacheLink = ".falak-cache"
 
-// writeEnvFile writes a site's env file (and creates its cache directory) on the tmpfs.
+// CacheDir is the host path of a release's tmpfs cache directory.
+func CacheDir(envDir, site, releaseID string) string {
+	return filepath.Join(envDir, site+".d", releaseID)
+}
+
+// releaseCache creates a release's tmpfs cache directory (site user, 0750: the site group, i.e. the edge user under
+// FrankenPHP, reads it) and links the release's .falak-cache to it.
+func (d *Deployer) releaseCache(st site, siteName, releaseID string, owner *Owner) error {
+	if err := envlinks.EnsureDir(d.o.FS.P(d.o.EnvDir)); err != nil {
+		return err
+	}
+	parent, dir := filepath.Join(d.o.EnvDir, siteName+".d"), CacheDir(d.o.EnvDir, siteName, releaseID)
+	if err := os.MkdirAll(d.o.FS.P(dir), 0o750); err != nil {
+		return err
+	}
+	if owner != nil && owner.User != "" && d.o.FS.IsReal() {
+		for _, p := range []string{parent, dir} {
+			if err := d.o.FS.Chown(p, owner.User, owner.Group); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := d.linkInSite(st, filepath.Join("releases", releaseID, CacheLink), d.o.FS.P(dir), owner)
+	return err
+}
+
+// writeEnvFile writes a site's env file on the tmpfs.
 func (d *Deployer) writeEnvFile(siteName, content string, owner *Owner) (bool, error) {
 	if err := envlinks.EnsureDir(d.o.FS.P(d.o.EnvDir)); err != nil {
 		return false, err
@@ -57,16 +84,8 @@ func (d *Deployer) writeEnvFile(siteName, content string, owner *Owner) (bool, e
 	if err != nil {
 		return false, err
 	}
-	cache := d.o.FS.P(CacheDir(d.o.EnvDir, siteName))
-	if err := os.MkdirAll(cache, 0o750); err != nil {
-		return false, err
-	}
 	if owner != nil && owner.User != "" && d.o.FS.IsReal() {
 		if err := d.o.FS.Chown(hostFile, owner.User, owner.Group); err != nil {
-			return false, err
-		}
-		// Laravel writes config.php here as the site user; the site group (edge user) reads it.
-		if err := d.o.FS.Chown(CacheDir(d.o.EnvDir, siteName), owner.User, owner.Group); err != nil {
 			return false, err
 		}
 	}
@@ -240,7 +259,8 @@ type EnvWritePayload struct {
 	// (a deployment won the race and wrote newer files).
 	ReleaseID   string       `json:"release_id"`
 	EnvFile     *EnvFile     `json:"env_file,omitempty"`
-	Compose     bool         `json:"compose,omitempty"` // env_file is the compose project's (compose-<site>.env)
+	Compose     bool         `json:"compose,omitempty"`      // env_file is the compose project's (compose-<site>.env)
+	ConfigCache bool         `json:"config_cache,omitempty"` // recreate the release's tmpfs cache directory (see CacheLink)
 	Owner       *Owner       `json:"owner,omitempty"`
 	SecretFiles []SecretFile `json:"secret_files,omitempty"`
 	After       *AfterWrite  `json:"after,omitempty"`
@@ -311,6 +331,11 @@ func (d *Deployer) WriteEnv(ctx context.Context, p EnvWritePayload, s commands.S
 		}
 		res.Changed = ch
 		fmt.Fprintf(s.Stdout(), "env file of %s written\n", p.Site)
+	}
+	if p.ConfigCache {
+		if err := d.releaseCache(st, p.Site, p.ReleaseID, p.Owner); err != nil {
+			return nil, err
+		}
 	}
 	if len(p.SecretFiles) > 0 {
 		if d.o.Containers == nil {

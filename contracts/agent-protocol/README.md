@@ -154,9 +154,11 @@ otherwise a lower bound and no cap).
 0440 owned by the site user and its group, which the edge user joins for FrankenPHP) and makes `shared/.env` a symlink
 to it, replacing the regular file earlier agents kept; every release's `.env` links to `shared/.env`. The link is
 made through an `os.Root` on the site directory and refused when `shared/` or a directory on the path is a symlink
-(the site user owns the site directory). Laravel's config cache holds the resolved secrets too: the control plane sets
-`APP_CONFIG_CACHE=/run/falak/env/<site>.d/config.php` in the `.env`, and the agent creates that directory (0750, site
-user and group). PHP-FPM pools of isolated sites get both paths in `open_basedir` (PHP checks the resolved path);
+(the site user owns the site directory). Laravel's config cache holds the resolved secrets too: with `config_cache`
+the agent gives each release a tmpfs directory `/run/falak/env/<site>.d/<release>` (0750, site user and group) linked
+as `<release>/.falak-cache`, and the control plane sets `APP_CONFIG_CACHE=.falak-cache/config.php` in the `.env`
+(Laravel resolves it against the release, so each release keeps its own cache). PHP-FPM pools of isolated sites get
+both tmpfs paths in `open_basedir` (PHP checks the resolved path);
 the control plane re-applies the pools when an agent reports a new version. Nothing with a secret is written under
 `/srv/falak/sites`.
 

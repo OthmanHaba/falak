@@ -49,14 +49,18 @@ func TestEnvFileRehydrationAfterReboot(t *testing.T) {
 	ctx := context.Background()
 	root := d.o.FS.P("/srv/falak/sites/shop")
 	fetch(t, d, srv, arts, r1, "v1")
-	if _, err := d.Prepare(ctx, PreparePayload{Site: "shop", ReleaseID: r1, EnvFile: &EnvFile{Content: "APP_KEY=secret-1\n"}, Owner: &Owner{User: "shop"}}, st()); err != nil {
+	if _, err := d.Prepare(ctx, PreparePayload{Site: "shop", ReleaseID: r1, EnvFile: &EnvFile{Content: "APP_KEY=secret-1\n"}, Owner: &Owner{User: "shop"}, ConfigCache: true}, st()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.Activate(ctx, ActivatePayload{Site: "shop", ReleaseID: r1}, st()); err != nil {
 		t.Fatal(err)
 	}
-	// The site's tmpfs cache directory (Laravel's APP_CONFIG_CACHE) exists next to the env file.
-	if fi, err := os.Stat(d.o.FS.P("/run/falak/env/shop.d")); err != nil || !fi.IsDir() {
+	// The release's config cache directory (APP_CONFIG_CACHE=.falak-cache/config.php) is on the tmpfs.
+	cacheDir := d.o.FS.P("/run/falak/env/shop.d/" + r1)
+	if link, err := os.Readlink(filepath.Join(root, "releases", r1, CacheLink)); err != nil || link != cacheDir {
+		t.Fatalf("cache link %q %v", link, err)
+	}
+	if fi, err := os.Stat(cacheDir); err != nil || !fi.IsDir() {
 		t.Fatalf("cache dir: %v", err)
 	}
 	// A site that was never prepared and a stray directory are not reported.
@@ -79,7 +83,7 @@ func TestEnvFileRehydrationAfterReboot(t *testing.T) {
 
 	fake.On("/bin/bash", runner.Result{ExitCode: 0})
 	c := &commands.Collector{}
-	res, err := d.WriteEnv(ctx, EnvWritePayload{Site: "shop", ReleaseID: r1, EnvFile: &EnvFile{Content: "APP_KEY=secret-1\n"},
+	res, err := d.WriteEnv(ctx, EnvWritePayload{Site: "shop", ReleaseID: r1, EnvFile: &EnvFile{Content: "APP_KEY=secret-1\n"}, ConfigCache: true,
 		After: &AfterWrite{Script: "php artisan config:cache", User: "shop"}, Reload: []Reload{{Kind: "site_procs", Name: "shop"}}}, commands.NewTestStream("w", c))
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +93,9 @@ func TestEnvFileRehydrationAfterReboot(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(root, "current", ".env")); string(b) != "APP_KEY=secret-1\n" {
 		t.Fatalf("current .env %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(root, "current", CacheLink)); err != nil {
+		t.Fatalf("config cache directory not restored: %v", err)
 	}
 	if calls := fake.Calls(); len(calls) != 1 || calls[0].User != "shop" || !strings.Contains(strings.Join(calls[0].Args, " "), "config:cache") || calls[0].Dir != filepath.Join(root, "current") {
 		t.Fatalf("after script: %+v", calls)
@@ -232,5 +239,26 @@ func TestHookOutputMasksTheSiteEnvFile(t *testing.T) {
 	out := c.Output("stdout")
 	if strings.Contains(out, "from-env-file") || strings.Contains(out, "from-payload") || !strings.Contains(out, "DB_PASSWORD=•••• TOKEN=•••• APP_NAME=Shop") {
 		t.Fatalf("output %q", out)
+	}
+}
+
+func TestPruneRemovesTheReleaseCacheDirectory(t *testing.T) {
+	d, _, _, srv, arts := newDeployer(t)
+	ctx := context.Background()
+	for _, id := range []string{r1, r2} {
+		fetch(t, d, srv, arts, id, id)
+		if _, err := d.Prepare(ctx, PreparePayload{Site: "shop", ReleaseID: id, ConfigCache: true}, st()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d.Activate(ctx, ActivatePayload{Site: "shop", ReleaseID: r2}, st())
+	if _, err := d.Prune(ctx, PrunePayload{Site: "shop", Keep: 1}, st()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(d.o.FS.P("/run/falak/env/shop.d/" + r1)); !os.IsNotExist(err) {
+		t.Fatal("pruned release's cache directory left behind")
+	}
+	if _, err := os.Stat(d.o.FS.P("/run/falak/env/shop.d/" + r2)); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -144,6 +144,11 @@
       },
       "description": "Deployment context. Labels the deployment lifecycle OTLP log events (falak.event.type=deployment, falak.deployment.id, falak.site.id, falak.release.id, falak.deployment.phase, falak.deployment.status); in deploy.hook also exposed to scripts as FALAK_SITE_ID, FALAK_DEPLOYMENT_ID, FALAK_COMMIT, FALAK_AUTHOR, FALAK_BRANCH, FALAK_TRIGGER, FALAK_PHP_BINARY"
     },
+    "config_cache": {
+      "type": "boolean",
+      "default": false,
+      "description": "Give the release a tmpfs cache directory (/run/falak/env/<site>.d/<release_id>, site user, 0750) linked as .falak-cache: with APP_CONFIG_CACHE=.falak-cache/config.php in the .env, Laravel's config cache (every resolved secret) never reaches the disk. Pruning a release removes its directory."
+    },
     "mask": {
       "type": "array",
       "items": {
