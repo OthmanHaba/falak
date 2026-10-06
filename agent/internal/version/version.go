@@ -53,6 +53,9 @@ var Features = []string{
 	"db.redis.network",
 	// net.firewall.apply container_ports[].peer_interfaces: the control plane names a WireGuard peer's interface.
 	"net.firewall.peer_interfaces",
+	// db.backup / db.restore with engine redis | valkey: RDB snapshots of instances (redis-cli --rdb) and restores into
+	// them (RDB header and version checked, earlier files moved aside and put back when the start fails).
+	"db.redis.backup",
 }
 
 var (

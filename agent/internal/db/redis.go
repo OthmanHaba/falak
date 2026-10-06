@@ -617,17 +617,26 @@ func (db *DB) kvDisabled(ctx context.Context, k kvEngine) ([]string, error) {
 	if k.name != "valkey" {
 		return disabledCommands(k, ""), nil
 	}
+	if v := db.kvVersion(ctx, k); v != "" {
+		return disabledCommands(k, v), nil
+	}
+	return nil, fmt.Errorf("could not read the %s version (%s --version)", k.label, k.server)
+}
+
+// kvVersion is the installed server's version ("7.0.15"; "" when it can't be read): `<server> --version` prints
+// "Redis server v=7.0.15 sha=…" (Valkey 7.2: "Server v=7.2.13 …").
+func (db *DB) kvVersion(ctx context.Context, k kvEngine) string {
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	res, err := db.d.Runner.Run(cctx, runner.Cmd{Name: db.d.FS.P("/usr/bin/" + k.server), Args: []string{"--version"}})
 	if err == nil && res.ExitCode == 0 {
 		for _, w := range strings.Fields(string(res.Stdout)) {
 			if v, ok := strings.CutPrefix(w, "v="); ok && v != "" {
-				return disabledCommands(k, v), nil
+				return v
 			}
 		}
 	}
-	return nil, fmt.Errorf("could not read the %s version (%s --version)", k.label, k.server)
+	return ""
 }
 
 // applyLive changes the running instance without a restart.
@@ -708,7 +717,15 @@ func (db *DB) moveStale(k kvEngine, name, from, to string) error {
 }
 
 func (db *DB) moveAside(k kvEngine, name string, files ...string) error {
+	_, err := db.moveAsideNamed(k, name, files...)
+	return err
+}
+
+// moveAsideNamed renames each existing file of the instance's data directory to <file>.falak-<UTC time> and returns
+// the moves (file → its new name, both data directory names) in order.
+func (db *DB) moveAsideNamed(k kvEngine, name string, files ...string) ([][2]string, error) {
 	stamp := redisNow().UTC().Format("20060102T150405Z")
+	var moved [][2]string
 	for _, f := range files {
 		path := db.d.FS.P(k.dataPath(name) + "/" + f)
 		if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
@@ -719,10 +736,11 @@ func (db *DB) moveAside(k kvEngine, name string, files ...string) error {
 			target = path + ".falak-" + stamp + "-" + strconv.Itoa(i)
 		}
 		if err := os.Rename(path, target); err != nil {
-			return fmt.Errorf("move %s aside: %w", f, err)
+			return moved, fmt.Errorf("move %s aside: %w", f, err)
 		}
+		moved = append(moved, [2]string{f, target[strings.LastIndex(target, "/")+1:]})
 	}
-	return nil
+	return moved, nil
 }
 
 func exists(path string) bool {
