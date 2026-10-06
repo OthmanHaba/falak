@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
@@ -215,23 +216,64 @@ func (s *Service) prepare(project, dir string, files []ComposeFile, envFile stri
 		}
 	}
 	args := []string{"compose", "-p", project}
-	if envFile != "" {
-		args = append(args, "--env-file", envFile)
-	}
+	envArg := envFile
 	for _, f := range files {
-		// .env files hold secrets: owner-only.
-		mode := os.FileMode(0o640)
-		if strings.HasPrefix(f.Name, ".env") || f.Name == envFile {
-			mode = 0o600
+		if !strings.HasPrefix(f.Name, ".env") && f.Name != envFile {
+			if err := replaceFile(release, f.Name, []byte(f.Content), 0o640); err != nil {
+				return nil, err
+			}
+			args = append(args, "-f", f.Name)
+			continue
 		}
-		if err := replaceFile(release, f.Name, []byte(f.Content), mode); err != nil {
+		// Env files hold secrets: on the tmpfs only (root, 0400); the release links to them, so `--env-file .env`
+		// in leader commands keeps working, and after a reboot site.env.write restores them.
+		target, err := s.writeComposeEnv(project, f.Name, f.Content)
+		if err != nil {
 			return nil, err
 		}
-		if f.Name != envFile && !strings.HasPrefix(f.Name, ".env") {
-			args = append(args, "-f", f.Name)
+		if err := replaceLink(release, f.Name, target); err != nil {
+			return nil, err
+		}
+		if s.opts.Links != nil {
+			if err := s.opts.Links.Record(project, filepath.Join(s.opts.FS.P(dir), f.Name), target); err != nil {
+				s.log.Warn("record env link", "err", err)
+			}
+		}
+		if f.Name == envFile {
+			envArg = target
 		}
 	}
+	if envArg != "" {
+		args = append(args[:3], append([]string{"--env-file", envArg}, args[3:]...)...)
+	}
 	return args, nil
+}
+
+// writeComposeEnv writes a compose env file to the tmpfs and returns its real path.
+func (s *Service) writeComposeEnv(project, name, content string) (string, error) {
+	if err := envlinks.EnsureDir(s.opts.FS.P(s.opts.EnvDir)); err != nil {
+		return "", err
+	}
+	host := envlinks.ComposeEnvFile(s.opts.EnvDir, project, name)
+	if _, err := s.opts.FS.WriteFile(host, []byte(content), 0o400); err != nil {
+		return "", err
+	}
+	return s.opts.FS.P(host), nil
+}
+
+// replaceLink makes name a symlink to target, replacing whatever is there (never writing through it).
+func replaceLink(root *os.Root, name, target string) error {
+	if cur, err := root.Readlink(name); err == nil && cur == target {
+		return nil
+	}
+	tmp := "." + name + ".falak-link"
+	if err := root.RemoveAll(tmp); err != nil {
+		return err
+	}
+	if err := root.Symlink(target, tmp); err != nil {
+		return err
+	}
+	return root.Rename(tmp, name)
 }
 
 // writeAssets builds repo/ afresh: repo.tmp is removed (RemoveAll never follows symlinks), filled through a root

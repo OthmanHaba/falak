@@ -22,6 +22,7 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/docker"
 	"github.com/OthmanHaba/falak/agent/internal/edge"
 	"github.com/OthmanHaba/falak/agent/internal/enroll"
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/facts"
 	"github.com/OthmanHaba/falak/agent/internal/fngateway"
 	"github.com/OthmanHaba/falak/agent/internal/functions"
@@ -101,14 +102,16 @@ func Build(d Deps) *Components {
 	edgeClient := &edge.Client{Base: cfg.CaddyAdmin}
 	edgeMgr := edge.New(edge.Options{Client: edgeClient, FS: d.FS, EtcDir: cfg.EtcDir, Logger: log.With("component", "edge")})
 	// Secrets on servers live on the tmpfs only: sites' env files and containers' secret files.
+	envDir := filepath.Join(cfg.RunDir, "env")
+	links := envlinks.New(filepath.Join(d.FS.P(cfg.StateDir), "env-links.json"))
 	dock := docker.New(docker.Options{Socket: cfg.DockerSock, Runner: d.Runner, FS: d.FS, Upstreams: edgeMgr, SecretsDir: filepath.Join(cfg.RunDir, "secrets"),
-		Logger: log.With("component", "docker")})
-	dep := deploy.New(deploy.Options{FS: d.FS, Runner: d.Runner, HTTP: d.HTTP, SitesRoot: cfg.SitesRoot, EnvDir: filepath.Join(cfg.RunDir, "env"), Containers: dock,
+		EnvDir: envDir, Links: links, Logger: log.With("component", "docker")})
+	dep := deploy.New(deploy.Options{FS: d.FS, Runner: d.Runner, HTTP: d.HTTP, SitesRoot: cfg.SitesRoot, EnvDir: envDir, Containers: dock, Links: links,
 		Procs: sup, Workers: edgeClient, Events: sink, Logger: log.With("component", "deploy")})
 	terms := pty.New(pty.Options{Logger: log.With("component", "pty")})
 
 	system.New(system.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, AgentVersion: version.Version, Restart: d.RestartAgent,
-		BinaryPath: installedBinary(d.FS), RunningSHA256: version.BinarySHA256}).Register(reg)
+		BinaryPath: installedBinary(d.FS), RunningSHA256: version.BinarySHA256, SiteSecrets: dep.SiteSecrets}).Register(reg)
 	provision.New(provision.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
 	runtime.New(runtime.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP}).Register(reg)
 	edgeMgr.Register(reg)

@@ -40,7 +40,8 @@ func TestComposeUpWaitEnvFileAndStatus(t *testing.T) {
 		t.Fatalf("%+v", fin)
 	}
 	c := fr.Calls()[0]
-	if c.Line != "docker compose -p shop --env-file .env -f compose.yaml up -d --pull missing --remove-orphans --wait --wait-timeout 90" {
+	envFile := filepath.Join(root, "run/falak/env/compose-shop.env")
+	if c.Line != "docker compose -p shop --env-file "+envFile+" -f compose.yaml up -d --pull missing --remove-orphans --wait --wait-timeout 90" {
 		t.Fatalf("line %q", c.Line)
 	}
 	if len(c.Env) != 1 || !strings.HasPrefix(c.Env[0], "DOCKER_CONFIG=") {
@@ -49,8 +50,9 @@ func TestComposeUpWaitEnvFileAndStatus(t *testing.T) {
 	if _, err := os.Stat(strings.TrimPrefix(c.Env[0], "DOCKER_CONFIG=")); !os.IsNotExist(err) {
 		t.Fatalf("docker config dir not removed: %v", err)
 	}
+	// The env file is on the tmpfs (root-only); the release links to it.
 	st, _ := os.Stat(filepath.Join(root, dir, ".env"))
-	if st == nil || st.Mode().Perm() != 0o600 {
+	if st == nil || st.Mode().Perm() != 0o400 {
 		t.Fatalf(".env mode %v", st)
 	}
 	res := fin.Result.(ComposeUpResult)
@@ -89,7 +91,7 @@ func TestComposePull(t *testing.T) {
 	s, _, fr, _, root := newSvc(t)
 	fin, _ := exec1(t, s, "docker.compose.pull", ComposePullPayload{Project: "shop", Directory: "/srv/r",
 		Files: []ComposeFile{{Name: "compose.yaml", Content: "services: {}\n"}, {Name: ".env", Content: "A=1\n"}}, ProjectEnvFile: ".env"})
-	if fin.Error != "" || fr.Calls()[0].Line != "docker compose -p shop --env-file .env -f compose.yaml pull --quiet" {
+	if fin.Error != "" || fr.Calls()[0].Line != "docker compose -p shop --env-file "+filepath.Join(root, "run/falak/env/compose-shop.env")+" -f compose.yaml pull --quiet" {
 		t.Fatalf("%+v %v", fin, fr.Lines())
 	}
 	if b, _ := os.ReadFile(filepath.Join(root, "srv/r/.env")); string(b) != "A=1\n" {

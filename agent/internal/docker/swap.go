@@ -103,6 +103,10 @@ func (s *Service) swap(ctx context.Context, p SwapPayload, st commands.Stream) (
 	if p.Site == "" || p.Image == "" || p.ContainerPort == 0 || p.Ports.Blue == 0 || p.Ports.Green == 0 {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("site, image, container_port and ports are required")}
 	}
+	// The site names containers and their secret directories (removed and rewritten below).
+	if !siteRe.MatchString(p.Site) {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid site %q", p.Site)}
+	}
 	if p.Ports.Blue == p.Ports.Green {
 		return nil, &commands.PayloadError{Err: fmt.Errorf("blue and green ports must differ")}
 	}

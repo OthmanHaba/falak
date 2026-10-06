@@ -67,6 +67,11 @@ func (p *procs) Restart(_ context.Context, n []string) error {
 	return nil
 }
 
+func (p *procs) RestartSite(_ context.Context, site string) ([]string, error) {
+	p.names = append(p.names, []string{"site:" + site})
+	return []string{site + "-worker"}, nil
+}
+
 func newDeployer(t *testing.T) (*Deployer, *runnertest.Fake, *procs, *httptest.Server, map[string][]byte) {
 	artifacts := map[string][]byte{}
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

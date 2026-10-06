@@ -237,6 +237,15 @@ func stopProgram(p *program) {
 	p.err.Close()
 }
 
+// RestartSite restarts every program of a site (none: nothing to do) and returns their names.
+func (s *Supervisor) RestartSite(ctx context.Context, site string) ([]string, error) {
+	names, err := s.resolve(nil, site)
+	if err != nil || len(names) == 0 {
+		return names, err
+	}
+	return names, s.Restart(ctx, names)
+}
+
 // Restart gracefully restarts the named programs (all when names is empty). Stopped/exited instances
 // are started. Unknown names are an error.
 func (s *Supervisor) Restart(ctx context.Context, names []string) error {

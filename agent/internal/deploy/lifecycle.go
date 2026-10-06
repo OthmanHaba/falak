@@ -78,6 +78,11 @@ func (d *Deployer) Prepare(ctx context.Context, p PreparePayload, s commands.Str
 	if p.SharedPaths != nil {
 		shared = *p.SharedPaths
 	}
+	// The site user owns the site directory: a shared/ it replaced with a symlink is never followed (chown, chmod and
+	// the env link below would act on the link's target).
+	if fi, err := os.Lstat(st.shared()); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		return nil, fmt.Errorf("%s is a symlink: refusing to prepare through it", st.shared())
+	}
 	if err := os.MkdirAll(st.shared(), 0o755); err != nil {
 		return nil, err
 	}
@@ -530,6 +535,17 @@ func (d *Deployer) reload(ctx context.Context, rs []Reload, s commands.Stream) e
 				names = []string{r.Name}
 			}
 			err = d.o.Procs.Restart(ctx, names)
+		case "site_procs":
+			// A site's programs (they read its .env when they start).
+			if d.o.Procs == nil {
+				err = errors.New("process supervisor unavailable")
+				break
+			}
+			if !slugRE.MatchString(r.Name) {
+				err = fmt.Errorf("site_procs reload needs a site slug, got %q", r.Name)
+				break
+			}
+			_, err = d.o.Procs.RestartSite(ctx, r.Name)
 		case "frankenphp":
 			if d.o.Workers == nil {
 				err = errors.New("edge client unavailable")

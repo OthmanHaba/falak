@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
@@ -32,7 +33,13 @@ type Options struct {
 	HTTP      *http.Client // health checks
 	// SecretsDir holds containers' secret files, on a tmpfs; default DefaultSecretsDir.
 	SecretsDir string
-	Logger     *slog.Logger
+	// EnvDir holds compose projects' env files, on a tmpfs; default envlinks.DefaultEnvDir.
+	EnvDir string
+	// Links remembers the release links to compose env files (MissingSecrets after a reboot); nil = none.
+	Links interface {
+		Record(site, link, target string) error
+	}
+	Logger *slog.Logger
 	// Client overrides the Engine client (tests).
 	Client *Client
 }
@@ -57,6 +64,9 @@ func New(o Options) *Service {
 	}
 	if o.SecretsDir == "" {
 		o.SecretsDir = DefaultSecretsDir
+	}
+	if o.EnvDir == "" {
+		o.EnvDir = envlinks.DefaultEnvDir
 	}
 	c := o.Client
 	if c == nil {

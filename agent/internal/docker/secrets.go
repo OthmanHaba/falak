@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/OthmanHaba/falak/agent/internal/commands"
 )
 
 // DefaultSecretsDir holds the containers' secret files: /run/falak/secrets/<container>/<NAME>, bind-mounted read-only
@@ -29,6 +31,7 @@ const SecretsTarget = "/run/secrets"
 
 // Labels of containers with secret files.
 const (
+	LabelRelease      = "falak.release.id"    // set by the control plane (upper-case ULID)
 	LabelSecrets      = "falak.secrets"       // "files"
 	LabelSecretsOwner = "falak.secrets.owner" // "uid:gid" when the files belong to the container's user
 )
@@ -39,7 +42,10 @@ type SecretFile struct {
 	Content string `json:"content"`
 }
 
-var secretNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var (
+	secretNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	siteRe       = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+)
 
 // secretValues are the payload's secrets: masked env values and every secret file.
 func secretValues(env map[string]string, mask []string, files []SecretFile) []string {
@@ -197,10 +203,14 @@ func (s *Service) MissingSecrets(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-// RestoreSiteSecrets writes files into the secret directory of every container of the site that has them, and starts
-// those that are not running (they could not start while the directory was missing).
-func (s *Service) RestoreSiteSecrets(ctx context.Context, site string, files map[string]string, w io.Writer) ([]string, error) {
-	list, err := s.c.ContainerList(ctx, true, []string{LabelSite + "=" + site, LabelSecrets + "=files"})
+// RestoreSiteSecrets recreates the missing secret directory of each container of the site's release (labelled
+// falak.release.id) and starts it if it isn't running (it could not start without the directory). A directory that
+// exists is never touched: it may be mounted into a running container, and a deployment wrote it since.
+func (s *Service) RestoreSiteSecrets(ctx context.Context, site, releaseID string, files map[string]string, w io.Writer) ([]string, error) {
+	if !siteRe.MatchString(site) {
+		return nil, &commands.PayloadError{Err: fmt.Errorf("invalid site %q", site)}
+	}
+	list, err := s.c.ContainerList(ctx, true, []string{LabelSite + "=" + site, LabelSecrets + "=files", LabelRelease + "=" + strings.ToUpper(releaseID)})
 	if err != nil {
 		return nil, err
 	}
@@ -209,22 +219,27 @@ func (s *Service) RestoreSiteSecrets(ctx context.Context, site string, files map
 		sf = append(sf, SecretFile{Name: name, Content: content})
 	}
 	sort.Slice(sf, func(i, j int) bool { return sf[i].Name < sf[j].Name })
-	var restored []string
+	if len(list) == 0 {
+		return nil, fmt.Errorf("no container of %s runs release %s with secret files: not restoring them", site, releaseID)
+	}
+	restored := []string{}
 	for _, c := range list {
 		name := containerName(c)
-		_, err := os.Stat(s.secretsDir(name))
-		missing := errors.Is(err, fs.ErrNotExist)
+		if _, err := os.Stat(s.secretsDir(name)); !errors.Is(err, fs.ErrNotExist) {
+			fmt.Fprintf(w, "secret files of %s are present: left as they are\n", name)
+			continue
+		}
 		if err := s.writeSecrets(name, c.Labels[LabelSecretsOwner], sf); err != nil {
 			return restored, fmt.Errorf("secrets of %s: %w", name, err)
 		}
+		fmt.Fprintf(w, "secret files of %s written\n", name)
 		// Only a container that could not start without its files is started (a stopped one stays stopped).
-		if missing && c.State != "running" {
+		if c.State != "running" {
 			if err := s.c.ContainerStart(ctx, c.ID); err != nil {
 				return restored, fmt.Errorf("starting %s: %w", name, err)
 			}
 			fmt.Fprintf(w, "started %s\n", name)
 		}
-		fmt.Fprintf(w, "secret files of %s written\n", name)
 		restored = append(restored, name)
 	}
 	return restored, nil

@@ -34,6 +34,8 @@ import (
 // ProcRestarter restarts supervised programs (implemented by the supervisor).
 type ProcRestarter interface {
 	Restart(ctx context.Context, names []string) error
+	// RestartSite restarts a site's programs (workers, daemons) and returns their names.
+	RestartSite(ctx context.Context, site string) ([]string, error)
 }
 
 // WorkerRestarter restarts FrankenPHP worker scripts (implemented by edge.Client).
@@ -50,10 +52,12 @@ type Options struct {
 	EnvDir    string // sites' env files, on a tmpfs; default DefaultEnvDir
 	// Containers restores container secret files (site.env.write); nil without Docker.
 	Containers ContainerSecrets
-	Procs      ProcRestarter
-	Workers    WorkerRestarter
-	Events     obs.Sink // deployment lifecycle log records (falak.event.type=deployment); nil disables
-	Logger     *slog.Logger
+	// Links remembers links to tmpfs env files for MissingEnv; nil scans the default sites root only.
+	Links   EnvLinks
+	Procs   ProcRestarter
+	Workers WorkerRestarter
+	Events  obs.Sink // deployment lifecycle log records (falak.event.type=deployment); nil disables
+	Logger  *slog.Logger
 }
 
 // Deployer implements deploy.* executors (except container.swap, which lives in the docker package).

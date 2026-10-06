@@ -16,6 +16,7 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/commands"
 	"github.com/OthmanHaba/falak/agent/internal/facts"
 	"github.com/OthmanHaba/falak/agent/internal/hostfs"
+	"github.com/OthmanHaba/falak/agent/internal/redact"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
@@ -30,7 +31,9 @@ type Deps struct {
 	// RunningSHA256 reports the checksum of the running executable (version.BinarySHA256).
 	RunningSHA256 func() string
 	Restart       func() error // restarts the agent service after an upgrade
-	RestartDelay  time.Duration
+	// SiteSecrets returns the values of keys in a site's env file (system.exec `site`); nil = none.
+	SiteSecrets  func(site string, keys []string) []string
+	RestartDelay time.Duration
 }
 
 // System holds the executors.
@@ -81,7 +84,14 @@ type ExecPayload struct {
 	Cwd    string            `json:"cwd"`
 	Env    map[string]string `json:"env"`
 	Stdin  *string           `json:"stdin"`
+	// Site whose env file the script may read (site commands): Mask's values there are masked too.
+	Site string `json:"site,omitempty"`
+	// Mask names the secret variables of env (and of the site's env file).
+	Mask []string `json:"mask,omitempty"`
 }
+
+// Secrets are the masked env values.
+func (p ExecPayload) Secrets() []string { return redact.FromEnv(p.Env, p.Mask) }
 
 // ExecResult is its result.
 type ExecResult struct {
@@ -93,6 +103,9 @@ type ExecResult struct {
 func (s *System) Exec(ctx context.Context, p ExecPayload, st commands.Stream) (any, error) {
 	if p.Script == "" {
 		return nil, &commands.PayloadError{Err: errors.New("script is required")}
+	}
+	if p.Site != "" && s.d.SiteSecrets != nil {
+		redact.Add(ctx, s.d.SiteSecrets(p.Site, p.Mask)...)
 	}
 	shell := p.Shell
 	if shell == "" {

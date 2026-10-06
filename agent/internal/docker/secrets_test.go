@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 )
 
 // unlock makes the read-only secret directories under root removable again (tests don't run as root).
@@ -106,6 +108,8 @@ func TestMissingAndRestoredSecretsAfterReboot(t *testing.T) {
 	ok := 200
 	p := swapPayload(healthServer(t, &ok), healthServer(t, &ok))
 	p.SecretFiles = []SecretFile{{Name: "DB_PASSWORD", Content: "db-secret-123"}}
+	const release = "01J9Z8Y7X6W5V4T3S2R1Q0P9N1"
+	p.Labels = map[string]string{LabelRelease: release}
 	if fin, _ := exec1(t, s, "deploy.container.swap", p); fin.Error != "" {
 		t.Fatal(fin.Error)
 	}
@@ -125,7 +129,11 @@ func TestMissingAndRestoredSecretsAfterReboot(t *testing.T) {
 		t.Fatalf("missing = %v", got)
 	}
 	var out bytes.Buffer
-	names, err := s.RestoreSiteSecrets(ctx, "shop", map[string]string{"DB_PASSWORD": "db-secret-123"}, &out)
+	// Files of another release (a deployment replaced the container meanwhile) are refused.
+	if _, err := s.RestoreSiteSecrets(ctx, "shop", "01J9Z8Y7X6W5V4T3S2R1Q0P9N2", map[string]string{"DB_PASSWORD": "old"}, &out); err == nil {
+		t.Fatal("restore for another release accepted")
+	}
+	names, err := s.RestoreSiteSecrets(ctx, "shop", strings.ToLower(release), map[string]string{"DB_PASSWORD": "db-secret-123"}, &out)
 	if err != nil || !slices.Equal(names, []string{"falak-shop-blue"}) {
 		t.Fatalf("%v %v", names, err)
 	}
@@ -138,11 +146,18 @@ func TestMissingAndRestoredSecretsAfterReboot(t *testing.T) {
 	if got, _ := s.MissingSecrets(ctx); len(got) != 0 {
 		t.Fatalf("still missing: %v", got)
 	}
-	// A container stopped on purpose (its files are there) stays stopped.
+	// A directory that exists (mounted, maybe newer) is never replaced; its container, stopped on purpose, stays
+	// stopped.
+	dir := filepath.Join(root, "run/falak/secrets/falak-shop-blue")
+	before, _ := os.Stat(dir)
 	e.byName("falak-shop-blue").running = false
-	s.RestoreSiteSecrets(ctx, "shop", map[string]string{"DB_PASSWORD": "db-secret-123"}, &out)
-	if e.byName("falak-shop-blue").running {
-		t.Fatal("a stopped container was started")
+	s.RestoreSiteSecrets(ctx, "shop", release, map[string]string{"DB_PASSWORD": "other-value"}, &out)
+	after, _ := os.Stat(dir)
+	if e.byName("falak-shop-blue").running || !os.SameFile(before, after) {
+		t.Fatal("an existing secret directory was replaced or its stopped container started")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "DB_PASSWORD")); string(b) != "db-secret-123" {
+		t.Fatalf("file %q", b)
 	}
 }
 
@@ -160,5 +175,38 @@ func TestInvalidSecretFileName(t *testing.T) {
 	fin, _ := exec1(t, s, "docker.run", RunPayload{Name: "bad", Image: "redis:7", SecretFiles: []SecretFile{{Name: "../etc/passwd", Content: "x"}}})
 	if !strings.Contains(fin.Error, "invalid secret file name") {
 		t.Fatalf("error %q", fin.Error)
+	}
+}
+
+func TestSwapRejectsAnInvalidSite(t *testing.T) {
+	s, _, _ := secretsSvc(t)
+	p := swapPayload(1, 2)
+	p.Site = "../../etc"
+	if fin, _ := exec1(t, s, "deploy.container.swap", p); !strings.Contains(fin.Error, "invalid site") {
+		t.Fatalf("error %q", fin.Error)
+	}
+}
+
+func TestComposeEnvFilesLiveOnTheTmpfs(t *testing.T) {
+	s, _, fr, _, root := newSvc(t)
+	links := envlinks.New("")
+	s.opts.Links = links
+	dir := "/srv/falak/sites/shop/releases/01J9Z8Y7X6W5V4T3S2R1Q0P9N1"
+	exec1(t, s, "docker.compose.pull", ComposePullPayload{Project: "shop", Directory: dir, ProjectEnvFile: ".env",
+		Files: []ComposeFile{{Name: "compose.yaml", Content: "services: {}\n"}, {Name: ".env", Content: "DB_PASSWORD=pw-123456\n"}}})
+	target := filepath.Join(root, "run/falak/env/compose-shop.env")
+	if fi, err := os.Stat(target); err != nil || fi.Mode().Perm() != 0o400 {
+		t.Fatalf("tmpfs env file: %v %v", fi, err)
+	}
+	link := filepath.Join(root, dir, ".env")
+	if cur, err := os.Readlink(link); err != nil || cur != target {
+		t.Fatalf("release .env link %q %v", cur, err)
+	}
+	if calls := fr.Calls(); len(calls) == 0 || !slices.Contains(calls[0].Args, target) {
+		t.Fatalf("--env-file not the tmpfs file: %+v", calls)
+	}
+	os.RemoveAll(filepath.Join(root, "run"))
+	if got := links.Missing(); !slices.Equal(got, []string{"shop"}) {
+		t.Fatalf("missing = %v", got)
 	}
 }
