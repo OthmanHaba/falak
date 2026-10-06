@@ -172,7 +172,8 @@ Details in `docs/INTEGRATION-NOTES.md` ("Redis and Valkey backups and restores")
 - **Targets:** existing, active instances of either key-value engine; a restore never creates an instance (nor a
   `databases_databases` row). SQL dumps never go into instances and snapshots never into SQL engines.
 - **Backup:** `redis-cli --rdb` writes to a root-only temp file outside the data directory; the instance lock is held
-  only for the snapshot, not the upload. A stopped instance fails ("is not running"). Redis 7+ waits
+  only for the snapshot, not the upload. The raw file and its gzipped copy share the agent's TempDir while it
+  compresses (the raw one is removed before the upload); streaming (`--rdb -`, Redis 7.0+ only) is left for later. A stopped instance fails ("is not running"). Redis 7+ waits
   `repl-diskless-sync-delay` (5 s by default) before it streams the snapshot.
 - **Extra:** a Download action (SQL backups too): `GET /databases/backups/{backup}/download`, a 5-minute presigned GET
   (`FALAK_BACKUP_DOWNLOAD_LINK_TTL`), restore permission, audited `databases.backup_downloaded`.

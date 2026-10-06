@@ -184,14 +184,19 @@ func (db *DB) redisBackup(ctx context.Context, p BackupPayload, st commands.Stre
 	}
 	defer os.Remove(snap)
 	fmt.Fprintf(st.Stdout(), "snapshot of %s: %s\n", k.unit(p.Database), h)
+	// Disk: the raw snapshot and its gzipped copy both sit in TempDir while it is compressed; the raw one goes before
+	// the upload. Streaming `redis-cli --rdb -` (7.0+) into gzip would save the first, but needs a version switch, a
+	// header check on the stream and the instance lock held through the compression: not worth it for now.
 	result, err := db.ship(ctx, p, start, st, func(out io.Writer) error {
 		f, err := os.Open(snap)
 		if err != nil {
 			return err
 		}
 		defer f.Close()
-		_, err = io.Copy(out, f)
-		return err
+		if _, err = io.Copy(out, f); err != nil {
+			return err
+		}
+		return os.Remove(snap)
 	})
 	if err != nil {
 		return nil, err

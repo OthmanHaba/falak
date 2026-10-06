@@ -5,6 +5,8 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -822,5 +824,34 @@ func TestRedisRestoreWarnsWhenTheDatasetIsOverTheMemoryLimit(t *testing.T) {
 	r, _ = db.Restore(context.Background(), restorePayload("redis", "/backups/b.rdb.gz"), st)
 	if w := r.(RestoreResult).Warnings; len(w) != 1 || !strings.Contains(w[0], "keys get evicted (maxmemory-policy allkeys-lru)") {
 		t.Fatal(w)
+	}
+}
+
+// The raw snapshot is gone before the upload: only the gzipped copy is on disk meanwhile.
+func TestRedisBackupRemovesTheRawSnapshotBeforeTheUpload(t *testing.T) {
+	f := &runnertest.Fake{}
+	var tmp string
+	var during []string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		entries, _ := os.ReadDir(tmp)
+		for _, e := range entries {
+			during = append(during, e.Name())
+		}
+	}))
+	defer srv.Close()
+	db, root := newDB(t, f, srv.Client())
+	tmp = db.d.TempDir
+	newRedisHost(t, f, root)
+	applyOK(t, db, redisPayload())
+
+	if _, err := db.Backup(context.Background(), BackupPayload{Engine: "redis", Database: "cache", Compression: "gzip", Destination: Location{Kind: "presigned_url", URL: srv.URL + "/b/k?X-Amz-Signature=x"}}, st); err != nil {
+		t.Fatal(err)
+	}
+	if len(during) != 1 || !strings.HasPrefix(during[0], "falak-backup-") {
+		t.Fatal(during)
+	}
+	if entries, _ := os.ReadDir(tmp); len(entries) != 0 {
+		t.Fatal(entries)
 	}
 }

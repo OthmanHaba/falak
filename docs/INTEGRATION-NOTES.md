@@ -531,7 +531,10 @@ Plan: `docs/plans/REDIS.md` (deviations in its "As built (v0.9.0, phase 3)"); pr
   `redis-cli -h 127.0.0.1 -p <port> --no-auth-warning --rdb <tmp>` with `REDISCLI_AUTH` (a replica-style snapshot of the
   running process; `SYNC`/`PSYNC`/`REPLCONF` were left enabled in v0.7.0 for this) → header check → lock released →
   gzip + sha256 + presigned PUT through the SQL path (`ship`). A failed `redis-cli` reports its last line, passwords
-  redacted.
+  redacted. Disk: the agent's TempDir holds the raw snapshot and its gzipped copy while it compresses (about RDB size +
+  gzip size at the peak); the raw file is removed before the upload. Not streamed: `redis-cli --rdb -` (stdout) only
+  exists from Redis 7.0 (not 22.04's 6.0), the header would have to be checked on the stream, and `--rdb` into a FIFO
+  is untested across versions — so TempDir needs room for the dataset plus its gzip.
 - **Restore:** download (sha256) → free space of the data directory's disk (statfs) ≥ the gunzipped size (twice for
   AOF: the rewrite) + `RedisRestoreHeadroom` (256 MiB), the size being the backup's `uncompressed_bytes` (sent as
   `db.restore uncompressed_bytes`, feature `db.redis.restore_checks`), else the gzip `ISIZE` trailer (exact for gzip
