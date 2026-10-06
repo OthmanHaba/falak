@@ -73,7 +73,7 @@ func (s *Service) Archive(ctx context.Context, p ArchivePayload, st commands.Str
 		return nil, err
 	}
 	defer root.Close()
-	estimate, _ := du(ctx, root.FS(), UsageTimeout)
+	estimate, _ := du(ctx, root, UsageTimeout)
 	dir, err := s.staging(estimate)
 	if err != nil {
 		return nil, err
@@ -644,7 +644,7 @@ func (s *Service) Clone(ctx context.Context, p ClonePayload, st commands.Stream)
 		return nil, fmt.Errorf("volume %s is not empty: clones go into a new or empty volume", p.Target.ID)
 	}
 	// Streamed (nothing is staged): the target needs room for the source's data.
-	if used, _ := du(ctx, src.FS(), UsageTimeout); used > 0 {
+	if used, _ := du(ctx, src, UsageTimeout); used > 0 {
 		if err := s.room(s.d.FS.P(dhp), used, "volume "+p.Target.ID); err != nil {
 			return nil, err
 		}

@@ -531,7 +531,7 @@ func (s *Service) usage(ctx context.Context, r Ref, running []containerMounts) V
 		return u
 	}
 	defer root.Close()
-	used, err := du(ctx, root.FS(), UsageTimeout)
+	used, err := du(ctx, root, UsageTimeout)
 	u.UsedBytes = &used
 	if err != nil {
 		u.Error = err.Error()
@@ -541,11 +541,11 @@ func (s *Service) usage(ctx context.Context, r Ref, running []containerMounts) V
 
 // du sums the sizes of the regular files of a volume (or one of its directories) without following symlinks, for
 // at most limit.
-func du(ctx context.Context, fsys fs.FS, limit time.Duration) (int64, error) {
+func du(ctx context.Context, root *os.Root, limit time.Duration) (int64, error) {
 	deadline := time.Now().Add(limit)
 	var total int64
 	n := 0
-	err := fs.WalkDir(fsys, ".", func(_ string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(root.FS(), ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // unreadable entries are skipped
 		}
@@ -558,7 +558,7 @@ func du(ctx context.Context, fsys fs.FS, limit time.Duration) (int64, error) {
 			}
 		}
 		if d.Type().IsRegular() {
-			if fi, err := d.Info(); err == nil {
+			if fi, err := root.Lstat(name); err == nil { // through the root: DirEntry.Info isn't, on Linux
 				total += fi.Size()
 			}
 		}

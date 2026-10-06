@@ -147,7 +147,9 @@ func (s *Service) Browse(ctx context.Context, p BrowsePayload, _ commands.Stream
 	}
 	entries := make([]Entry, 0, len(des))
 	for _, de := range des {
-		info, err := de.Info() // lstat: symlinks are reported, never followed
+		// Lstat through the root (DirEntry.Info resolves the name against the working directory on Linux):
+		// symlinks are reported, never followed.
+		info, err := root.Lstat(path.Join(rel, de.Name()))
 		if err != nil {
 			continue
 		}
@@ -193,7 +195,7 @@ func (s *Service) search(ctx context.Context, root *os.Root, rel, needle string,
 			out.Truncated = true
 			return stop
 		}
-		if info, err := d.Info(); err == nil {
+		if info, err := root.Lstat(name); err == nil {
 			out.Entries = append(out.Entries, entryOf(path.Dir(name), info))
 		}
 		return nil
@@ -275,15 +277,18 @@ func (s *Service) Download(ctx context.Context, p DownloadPayload, st commands.S
 		return nil, fmt.Errorf("%s is not a file or directory", rel)
 	}
 	var total int64
-	err = fs.WalkDir(root.FS(), rel, func(_ string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(root.FS(), rel, func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.Type().IsRegular() {
-			if info, err := d.Info(); err == nil {
-				if total += info.Size(); total > p.MaxBytes {
-					return fmt.Errorf("%s holds more than the %d-byte download limit", rel, p.MaxBytes)
-				}
+			// A size that can't be read fails the download: the limit must never be skipped.
+			info, err := root.Lstat(name)
+			if err != nil {
+				return err
+			}
+			if total += info.Size(); total > p.MaxBytes {
+				return fmt.Errorf("%s holds more than the %d-byte download limit", rel, p.MaxBytes)
 			}
 		}
 		return nil
