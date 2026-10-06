@@ -9,10 +9,10 @@ use Falak\Sites\Contracts\Data\SiteData;
 
 /**
  * A compose site drawn as a group of its compose services (UI_DESIGN §4.3): one card per compose service with its own
- * status, named volumes as strips, and `depends_on` edges. Positions are relative to the site card's x/y; services
+ * status, its volumes as disks, and `depends_on` edges. Positions are relative to the site card's x/y; services
  * without a stored position are laid out on a two-column grid.
  *
- * @phpstan-type ComposeChild array{name: string, icon: string, image: ?string, status: string, status_label: string, url: ?string, volumes: list<string>, position: array{x: int, y: int}}
+ * @phpstan-type ComposeChild array{name: string, icon: string, image: ?string, status: string, status_label: string, url: ?string, volumes: list<array{id: ?string, name: string, detail: ?string, used_bytes: ?int, limit_bytes: ?int, url: ?string}>, position: array{x: int, y: int}}
  */
 final class ComposeGroup
 {
@@ -59,9 +59,10 @@ final class ComposeGroup
     /**
      * @param  list<ComposeServiceState>  $states
      * @param  array{0: string, 1: string}  $siteStatus  status + label of the site (deployments / targets)
+     * @param  array<string, list<array{id: ?string, name: string, detail: ?string, used_bytes: ?int, limit_bytes: ?int, url: ?string}>>  $volumes  by service (Volumes)
      * @return array{template: ?string, collapsed: bool, services: list<ComposeChild>, edges: list<array{from: string, to: string}>}
      */
-    public static function for(Service $service, SiteData $site, ComposeSummary $summary, array $states, array $siteStatus): array
+    public static function for(Service $service, SiteData $site, ComposeSummary $summary, array $states, array $siteStatus, array $volumes = []): array
     {
         $layout = is_array($service->layout) ? $service->layout : [];
         $stored = is_array($layout['children'] ?? null) ? $layout['children'] : [];
@@ -98,7 +99,8 @@ final class ComposeGroup
                 'status' => $status,
                 'status_label' => $label,
                 'url' => $public[$compose->name] ?? null,
-                'volumes' => $compose->volumes,
+                // Volumes once the stack went live (Volumes rows), the file's named volumes before.
+                'volumes' => $volumes[$compose->name] ?? array_map(fn (string $name) => ['id' => null, 'name' => $name, 'detail' => null, 'used_bytes' => null, 'limit_bytes' => null, 'url' => null], $compose->volumes),
                 'position' => ['x' => (int) $position['x'], 'y' => (int) $position['y']],
             ];
 

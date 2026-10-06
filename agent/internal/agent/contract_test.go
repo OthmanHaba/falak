@@ -18,6 +18,7 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/fngateway"
 	"github.com/OthmanHaba/falak/agent/internal/functions"
 	"github.com/OthmanHaba/falak/agent/internal/transport"
+	"github.com/OthmanHaba/falak/agent/internal/volumes"
 )
 
 // Catalogue is the v1 command catalogue from ARCHITECTURE.md §3.
@@ -34,6 +35,7 @@ var Catalogue = []string{
 	"fn.release.apply", "fn.release.remove", "fn.run", "fn.status",
 	"docker.pull", "docker.run", "docker.stop", "docker.compose.up", "docker.compose.down", "docker.compose.pull", "docker.compose.ps", "docker.compose.restart", "docker.prune",
 	"telemetry.configure",
+	"volume.create", "volume.resize", "volume.delete", "volume.inventory", "volume.archive", "volume.restore", "volume.clone", "volume.browse", "volume.download",
 	"terminal.open", "terminal.input", "terminal.resize", "terminal.close",
 }
 
@@ -166,6 +168,14 @@ func TestSchemasRejectInvalidPayloads(t *testing.T) {
 		"fn.release.apply":       `{"site":"hello","release":"r1","image":"i","entrypoint":"../index.ts","files":[{"path":"../index.ts","content":""}]}`,
 		"fn.status":              `{"site":"Hello World"}`,
 		"fn.run":                 `{"site":"hello","schedule":"../x"}`,
+		"volume.browse":          `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"path":"/etc"}`,
+		"volume.create":          `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"}}`,
+		"volume.delete":          `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"docker"}}`,
+		"volume.archive":         `{"volume":{"id":"01J9Z8Y7X6W5V4T3S2R1Q0P9NA","kind":"sized"},"destination":{"kind":"presigned_url","url":"https://s3.example.com/k"}}`,
+		"volume.download":        `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"bind","path":"/srv/data"},"destination":{"kind":"presigned_url","url":"http://s3.example.com/k"},"max_bytes":1}`,
+		"volume.resize":          `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"size_bytes":1024}`,
+		"volume.restore":         `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"size_bytes":16777216,"source":{"kind":"url","url":"https://s3.example.com/k"},"sha256":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","archive_bytes":0}`,
+		"volume.clone":           `{"source":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"target":{"id":"01j9z8y7x6w5v4t3s2r1q0p9nb","kind":"docker"}}`,
 	}
 	for typ, payload := range bad {
 		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json")
@@ -308,6 +318,58 @@ func TestDatabaseBackupSchemasPerEngine(t *testing.T) {
 		v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(b))
 		if err := sch.Validate(v); err != nil {
 			t.Errorf("%s result invalid: %v\n%s", typ, err, b)
+		}
+	}
+}
+
+// Results of the volume.* executors validate against their schemas' $defs.result.
+func TestVolumeResultsValidate(t *testing.T) {
+	c := compiler(t)
+	used, size, avail, yes := int64(10), int64(100), int64(90), true
+	sha := strings.Repeat("a", 64)
+	for typ, res := range map[string]any{
+		"volume.create": volumes.CreateResult{Path: "/var/lib/falak/volumes/x", SizeBytes: 1 << 30, Created: true},
+		"volume.resize": volumes.ResizeResult{SizeBytes: 2 << 30, PreviousBytes: 1 << 30, Grown: true},
+		"volume.delete": volumes.DeleteResult{Deleted: true, Existed: true},
+		"volume.inventory": volumes.InventoryResult{Volumes: []volumes.VolumeUsage{
+			{ID: "01j9z8y7x6w5v4t3s2r1q0p9na", Kind: "sized", Exists: true, UsedBytes: &used, SizeBytes: &size, AvailableBytes: &avail, Mounted: &yes, Containers: []string{"falak-shop-blue"}},
+			{ID: "01j9z8y7x6w5v4t3s2r1q0p9nb", Kind: "docker", Exists: false},
+		}, Docker: []volumes.DockerVolume{{Name: "shop_pgdata", Driver: "local", Labels: map[string]string{"a": "b"}, Containers: []string{"shop-db-1"}}}, DurationMS: 3},
+		"volume.archive":  volumes.ArchiveResult{SizeBytes: 10, SHA256: sha, Location: "https://s3.example.com/k", UncompressedBytes: 20, Files: 2, DurationMS: 1, Containers: []string{"c"}},
+		"volume.restore":  volumes.RestoreResult{Bytes: 20, Files: 2, DurationMS: 1},
+		"volume.clone":    volumes.RestoreResult{Bytes: 20, Files: 2, DurationMS: 1, Containers: []string{"c"}},
+		"volume.browse":   volumes.BrowseResult{Path: "", Entries: []volumes.Entry{{Name: "a", Path: "a", Type: "dir", Size: 0, MTime: "2026-10-06T12:00:00Z"}}, Total: 1},
+		"volume.download": volumes.DownloadResult{SizeBytes: 10, SHA256: sha, Location: "https://s3.example.com/k", Format: "tar.zst", Name: "uploads.tar.zst", Files: 3},
+	} {
+		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json#/$defs/result")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := json.Marshal(res)
+		v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(b))
+		if err := sch.Validate(v); err != nil {
+			t.Errorf("%s result invalid: %v\n%s", typ, err, b)
+		}
+	}
+}
+
+// volume.archive keep_stopped only goes with consistency stop (moves).
+func TestVolumeArchiveKeepStoppedNeedsStop(t *testing.T) {
+	c := compiler(t)
+	sch, err := c.Compile(idBase + "commands/volume.archive.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"destination":{"kind":"presigned_url","url":"https://s3.example.com/k"}`
+	for body, valid := range map[string]bool{
+		base + `,"consistency":"stop","keep_stopped":true}`:   true,
+		base + `,"consistency":"pause","keep_stopped":true}`:  false,
+		base + `,"keep_stopped":true}`:                        false,
+		base + `,"consistency":"pause","keep_stopped":false}`: true,
+	} {
+		v, _ := jsonschema.UnmarshalJSON(strings.NewReader(body))
+		if err := sch.Validate(v); (err == nil) != valid {
+			t.Errorf("%s: valid=%v, err=%v", body, valid, err)
 		}
 	}
 }

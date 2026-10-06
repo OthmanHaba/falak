@@ -20,6 +20,9 @@ use Falak\Sites\Contracts\Data\SiteData;
 use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
+use Falak\Volumes\Contracts\Data\Mount;
+use Falak\Volumes\Contracts\ServiceVolumes;
+use Falak\Volumes\Contracts\VolumeMounts;
 use RuntimeException;
 
 /**
@@ -38,6 +41,8 @@ final class StepPayloads
         private readonly AgentDirectory $agents,
         private readonly ComposeServiceExtraction $extraction,
         private readonly SecretVariables $secrets,
+        private readonly VolumeMounts $mounts,
+        private readonly ServiceVolumes $volumes,
     ) {}
 
     /** @var array<string, list<string>> site id => variables the last resolve filled from the secret store */
@@ -222,6 +227,9 @@ final class StepPayloads
     private function composeUp(SiteData $site, array $release, string $releaseId, string $serverId, Deployment $deployment): array
     {
         $bootstrap = array_values(array_map('strval', (array) ($release['bootstrap'] ?? [])));
+
+        // The stack's named volumes become (or stay) volumes of this server, attached to the services mounting them.
+        $this->volumes->composeDeployed($site->organizationId, $site->id, $serverId, $site->slug, (string) $release['yaml']);
 
         return [
             ...$this->composeFiles($site, $release, $releaseId, $serverId, $deployment),
@@ -429,7 +437,8 @@ final class StepPayloads
 
         return array_filter([
             ...$this->base($deployment, $site),
-            'shared_paths' => array_map(fn (SharedPath $path) => ['path' => $path->path, 'type' => $path->type === 'file' ? 'file' : 'dir'], $this->sites->sharedPaths($site->id)),
+            // Shared paths are the site's shared_path volumes.
+            'shared_paths' => array_map(fn (SharedPath $path) => ['path' => $path->path, 'type' => $path->type === 'file' ? 'file' : 'dir'], $this->mounts->sharedPaths($site->id)),
             'env_file' => ['content' => $this->dotenv([...$env, ...$this->injected($deployment, $site, $serverId), ...$this->configCache($site)])],
             'owner' => ['user' => $site->unixUser],
             'writable_dirs' => $site->framework->isLaravel() ? ['bootstrap/cache', 'storage'] : [],
@@ -818,6 +827,8 @@ final class StepPayloads
             'edge_route_id' => $site->testDomain !== null || $this->edge->domainsFor($site->id) !== [] ? $this->edge->routeId($site->id) : null,
             // A compose service run as its own site keeps reaching the stack's services (and they it) by name.
             'networks' => $this->compose->stackNetworks($site->id, $serverId) ?: null,
+            // Volumes attached to the site on this server: Docker volumes by name, sized ones at their mountpoint.
+            'volumes' => array_map(fn (Mount $mount) => $mount->toPayload(), $this->mounts->forSite($site->id, $serverId)) ?: null,
             'labels' => (object) array_filter([
                 'falak.site.id' => self::upper($site->id),
                 'falak.deployment.id' => self::upper($deployment->id),

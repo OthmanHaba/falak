@@ -93,8 +93,8 @@ final class ServiceController extends Controller
     }
 
     /**
-     * DELETE /projects/{project}/{environment}/services/{service} {confirm: service name} — delete the site /
-     * database behind a card (§1.9: typed confirmation).
+     * DELETE /projects/{project}/{environment}/services/{service} {confirm: service name, delete_volumes?: volume ids}
+     * — delete the site / database behind a card (§1.9: typed confirmation). Volumes are kept unless picked.
      */
     public function destroy(Request $request, Project $project, string $environment, string $service, DeleteService $delete): JsonResponse
     {
@@ -105,10 +105,11 @@ final class ServiceController extends Controller
         $this->access->authorize($request->user(), $project->organization_id, $record->kind === ServiceKind::Site ? 'sites.delete' : 'databases.manage');
         $data = $request->validate([
             'confirm' => ['required', 'string', Rule::in([$record->name])],
-            'delete_volumes' => ['sometimes', 'boolean'],
+            'delete_volumes' => ['sometimes', 'array', 'max:100'],
+            'delete_volumes.*' => ['string', 'size:26'],
         ], ['confirm.in' => 'Type the service name to confirm.']);
 
-        $delete($record, (bool) ($data['delete_volumes'] ?? false));
+        $delete($record, array_values($data['delete_volumes'] ?? []), $request->user()?->getAuthIdentifier());
 
         return response()->json(null, 204);
     }

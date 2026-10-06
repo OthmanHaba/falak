@@ -26,6 +26,20 @@ type Config struct {
 	CaddyAdmin string
 	DockerSock string
 	Insecure   bool // skip TLS verification for enrollment (sim/dev only)
+	// VolumeBindAllow lists the host directories `bind` volumes may use (colon-separated in FALAK_VOLUME_BIND_ALLOW);
+	// empty refuses every bind volume.
+	VolumeBindAllow string
+}
+
+// BindAllow splits VolumeBindAllow into absolute paths.
+func (c Config) BindAllow() []string {
+	var out []string
+	for _, p := range filepath.SplitList(c.VolumeBindAllow) {
+		if filepath.IsAbs(p) {
+			out = append(out, filepath.Clean(p))
+		}
+	}
+	return out
 }
 
 // Default returns production defaults.
@@ -64,6 +78,7 @@ func (c *Config) Bind(fs *flag.FlagSet) {
 	s(&c.OTLPSocket, "otlp-socket", "FALAK_OTLP_SOCKET", d.OTLPSocket, "OTLP unix socket (empty disables)")
 	s(&c.CaddyAdmin, "caddy-admin", "FALAK_CADDY_ADMIN", d.CaddyAdmin, "Caddy admin API URL")
 	s(&c.DockerSock, "docker-socket", "FALAK_DOCKER_SOCKET", d.DockerSock, "Docker Engine socket")
+	s(&c.VolumeBindAllow, "volume-bind-allow", "FALAK_VOLUME_BIND_ALLOW", "", "host directories bind volumes may use, colon-separated (empty refuses bind volumes)")
 	fs.DurationVar(&c.Heartbeat, "heartbeat", envDur("FALAK_HEARTBEAT", d.Heartbeat), "heartbeat interval (env FALAK_HEARTBEAT)")
 	fs.IntVar(&c.PollWait, "poll-wait", envInt("FALAK_POLL_WAIT", d.PollWait), "long-poll wait seconds (env FALAK_POLL_WAIT)")
 	fs.BoolVar(&c.Insecure, "insecure-enroll", os.Getenv("FALAK_INSECURE_ENROLL") == "1", "skip TLS verify during enrollment (dev only)")

@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/volume.archive.schema.json",
+  "title": "volume.archive — a consistent tar | zstd snapshot of a volume, PUT to a presigned URL (servers never hold storage credentials)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "volume",
+    "destination"
+  ],
+  "properties": {
+    "volume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-z]{26}$",
+          "description": "The volume's id (lower-case ULID)"
+        },
+        "kind": {
+          "enum": [
+            "docker",
+            "sized",
+            "bind",
+            "shared_path"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+          "description": "docker: the Docker volume's name"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/[^\\x00]*$",
+          "maxLength": 4096,
+          "description": "bind: the host path (within the agent's FALAK_VOLUME_BIND_ALLOW); shared_path: the site's shared path (under the sites root). sized volumes live at /var/lib/falak/volumes/<id>"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "docker"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "name"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "bind",
+                  "shared_path"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "path"
+            ]
+          }
+        }
+      ]
+    },
+    "consistency": {
+      "enum": [
+        "none",
+        "pause",
+        "stop"
+      ],
+      "default": "none",
+      "description": "What happens to running containers that mount the volume while it is read: nothing, docker pause (seconds), or stop and start again"
+    },
+    "destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "url"
+      ],
+      "properties": {
+        "kind": {
+          "const": "presigned_url"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "keep_stopped": {
+      "type": "boolean",
+      "default": false,
+      "description": "consistency stop only: the stopped containers stay stopped after a successful upload (a move redeploys them on the target); a failed upload starts them again"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "keep_stopped": {
+            "const": true
+          }
+        },
+        "required": [
+          "keep_stopped"
+        ]
+      },
+      "then": {
+        "required": [
+          "consistency"
+        ],
+        "properties": {
+          "consistency": {
+            "const": "stop"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size_bytes",
+        "sha256",
+        "location"
+      ],
+      "properties": {
+        "size_bytes": {
+          "type": "integer"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "location": {
+          "type": "string"
+        },
+        "uncompressed_bytes": {
+          "type": "integer"
+        },
+        "files": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer"
+        },
+        "containers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Containers paused or stopped while the volume was read"
+        }
+      }
+    }
+  }
+}

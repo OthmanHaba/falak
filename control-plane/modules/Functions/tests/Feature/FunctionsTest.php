@@ -36,7 +36,7 @@ function fn_world(Role $role = Role::Owner): array
     $world = deploy_world(site: [
         'name' => 'Hooks', 'runtime' => 'function', 'build_mode' => 'docker', 'framework' => 'docker', 'php_version' => null,
         'repository' => null, 'source_connection_id' => null, 'branch' => null, 'deploy_script' => '', 'health_check_path' => null,
-        'laravel' => [], 'shared_paths' => [],
+        'laravel' => [],
     ], role: $role);
     fn_agent($world->servers[0]->id, $world->organization->id);
     $function = app(FunctionStore::class)->ensure(app(SiteDirectory::class)->find($world->site->id));

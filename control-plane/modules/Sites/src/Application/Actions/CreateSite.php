@@ -22,6 +22,7 @@ use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
 use Falak\Sites\Domain\Presets\Preset;
 use Falak\Sites\Events\SiteCreated;
+use Falak\Volumes\Contracts\ServiceVolumes;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -38,6 +39,7 @@ final class CreateSite
         private readonly TargetProvisioner $provisioner,
         private readonly SourceControlLinker $sourceControl,
         private readonly AuditLog $audit,
+        private readonly ServiceVolumes $volumes,
         private readonly ComposeSettings $composeSettings,
         private readonly SiteDomains $domains,
     ) {}
@@ -214,7 +216,6 @@ final class CreateSite
                 'health_check_path' => $runtime->isFunction() ? null : ($data['health_check_path'] ?? $preset->healthCheckPath),
                 'deploy_script' => $preset->deployScript."\n",
                 'laravel' => $framework->isLaravel() ? $preset->laravel : [],
-                'shared_paths' => $preset->sharedPaths,
                 'test_domain_enabled' => (bool) ($data['test_domain_enabled'] ?? true),
                 'created_by' => $userId,
             ]);
@@ -241,6 +242,9 @@ final class CreateSite
             if ($compose !== null && $compose['content'] !== null) {
                 $this->composeSettings->saveVersion($site, $compose['content'], $userId);
             }
+
+            // The preset's shared paths (storage, .env …) are volumes of kind shared_path.
+            $this->volumes->syncSharedPaths($organizationId, $site->id, $preset->sharedPaths, $userId);
 
             if ($configure !== null) {
                 $configure($site);

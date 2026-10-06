@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/volume.inventory.schema.json",
+  "title": "volume.inventory — usage of the given volumes (df for sized volumes, du otherwise) and the server's Docker volumes (read-only)",
+  "x-falak-redeliverable": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [],
+  "properties": {
+    "volumes": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-z]{26}$",
+            "description": "The volume's id (lower-case ULID)"
+          },
+          "kind": {
+            "enum": [
+              "docker",
+              "sized",
+              "bind",
+              "shared_path"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+            "description": "docker: the Docker volume's name"
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^/[^\\x00]*$",
+            "maxLength": 4096,
+            "description": "bind: the host path (within the agent's FALAK_VOLUME_BIND_ALLOW); shared_path: the site's shared path (under the sites root). sized volumes live at /var/lib/falak/volumes/<id>"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "docker"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "name"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "bind",
+                    "shared_path"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "path"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "docker": {
+      "type": "boolean",
+      "default": true,
+      "description": "Also list every Docker volume on the server"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "volumes"
+      ],
+      "properties": {
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "kind",
+              "exists"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9a-z]{26}$",
+                "description": "The volume's id (lower-case ULID)"
+              },
+              "kind": {
+                "enum": [
+                  "docker",
+                  "sized",
+                  "bind",
+                  "shared_path"
+                ]
+              },
+              "exists": {
+                "type": "boolean"
+              },
+              "used_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "sized: the filesystem's size"
+              },
+              "available_bytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mounted": {
+                "type": "boolean",
+                "description": "sized: the loop mount is active"
+              },
+              "containers": {
+                "type": "array",
+                "maxItems": 64,
+                "items": {
+                  "type": "string"
+                },
+                "description": "Running containers that mount it"
+              },
+              "error": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "docker": {
+          "type": "array",
+          "maxItems": 5000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "driver": {
+                "type": "string"
+              },
+              "labels": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "containers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "duration_ms": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

@@ -8,6 +8,8 @@ use Falak\Sites\Contracts\ComposeSource;
 use Falak\Sites\Contracts\Data\SitePlacement;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
+use Falak\Volumes\Contracts\ServiceVolumes;
+use Falak\Volumes\Contracts\VolumeMounts;
 use Illuminate\Support\Str;
 
 /**
@@ -22,6 +24,8 @@ final class DuplicateSite
     public function __construct(
         private readonly CreateSite $create,
         private readonly OctanePorts $octanePorts,
+        private readonly ServiceVolumes $volumes,
+        private readonly VolumeMounts $mounts,
     ) {}
 
     /**
@@ -75,8 +79,8 @@ final class DuplicateSite
                 $copy->forceFill([
                     'deploy_script' => $source->deploy_script,
                     'laravel' => $source->laravel,
-                    'shared_paths' => $source->shared_paths,
                 ])->save();
+                $this->volumes->syncSharedPaths($copy->organization_id, $copy->id, $this->mounts->sharedPaths($source->id));
 
                 // The copy may share servers with the source: it gets its own Octane port.
                 $this->octanePorts->reassign($copy->load('targets'));

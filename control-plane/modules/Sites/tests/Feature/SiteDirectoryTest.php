@@ -5,6 +5,7 @@ use Falak\Identity\Events\OrganizationDeleted;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteHeaders;
 use Falak\Sites\Domain\Models\Site;
+use Falak\Volumes\Contracts\VolumeMounts;
 
 require_once __DIR__.'/../Support/helpers.php';
 
@@ -33,7 +34,7 @@ it('looks sites up by organization, server, repository and leader', function () 
         ->and($directory->forRepository($connection->id, 'acme/shop', 'develop'))->toBe([])
         ->and($directory->leader($shop->id)->serverId)->toBe($b->id)
         ->and($directory->targets($shop->id))->toHaveCount(2)
-        ->and(array_map(fn ($p) => $p->path, $directory->sharedPaths($shop->id)))->toBe(['storage', '.env']);
+        ->and(array_map(fn ($p) => $p->path, app(VolumeMounts::class)->sharedPaths($shop->id)))->toBe(['storage', '.env']);
 
     $data = $directory->find($shop->id);
     expect($data->testDomain)->toBe('shop.preview.falak.sh')

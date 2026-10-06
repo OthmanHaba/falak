@@ -1,0 +1,1 @@
+{"volume": {"id": "01j9z8y7x6w5v4t3s2r1q0p9nd", "kind": "sized"}, "size_bytes": 10737418240, "source": {"kind": "url", "url": "https://backups.r2.example.com/volumes/shop-data/20261006T120000Z.tar.zst?X-Amz-Signature=abc"}, "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "uncompressed_bytes": 52428800, "archive_bytes": 4194304}

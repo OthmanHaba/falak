@@ -15,11 +15,13 @@ use Falak\Projects\Domain\Models\Environment;
 use Falak\Projects\Domain\Models\Project;
 use Falak\Projects\Domain\Models\Service;
 use Falak\Servers\Domain\Models\Server;
+use Falak\Sites\Contracts\Data\SharedPath;
 use Falak\Sites\Contracts\TargetRole;
 use Falak\Sites\Contracts\TargetStatus;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
+use Falak\Volumes\Contracts\ServiceVolumes;
 use Illuminate\Support\Str;
 
 require_once __DIR__.'/../../../Sites/tests/Support/helpers.php';
@@ -61,7 +63,6 @@ function projects_site(Organization $organization, string $name, array $variable
         'unix_user' => 'falak',
         'deploy_script' => "\$FALAK_FETCH\n\$FALAK_ACTIVATE\n",
         'laravel' => ['scheduler' => true],
-        'shared_paths' => [['path' => 'storage', 'type' => 'directory']],
         'test_domain_enabled' => false,
         ...$attributes,
     ]);
@@ -74,6 +75,8 @@ function projects_site(Organization $organization, string $name, array $variable
             'status' => $targetStatus,
         ]);
     }
+
+    app(ServiceVolumes::class)->syncSharedPaths($site->organization_id, $site->id, [new SharedPath('storage')]);
 
     EnvironmentVersion::query()->create([
         'site_id' => $site->id,

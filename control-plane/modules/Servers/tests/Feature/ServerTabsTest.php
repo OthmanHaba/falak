@@ -36,7 +36,6 @@ function server_tabs_site(Server $server, string $name = 'Storefront'): Site
         'branch' => 'main',
         'deploy_script' => '$FALAK_FETCH',
         'laravel' => new LaravelSettings,
-        'shared_paths' => [],
     ]);
     SiteTarget::query()->create(['site_id' => $site->id, 'server_id' => $server->id, 'role' => TargetRole::Leader, 'status' => TargetStatus::Ready]);
 

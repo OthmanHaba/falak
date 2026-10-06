@@ -54,9 +54,18 @@ final class YamlComposeInspector implements ComposeInspector
         }
 
         $volumes = [];
+        $volumeDefinitions = [];
 
         foreach ((array) ($doc['volumes'] ?? []) as $name => $volume) {
             $volumes[] = (string) $name;
+            // The Docker volume behind a key: `name:` when set (external volumes too, legacy `external: {name: x}`
+            // included), else Compose's <project>_<key>.
+            $legacy = is_array($volume) && is_array($volume['external'] ?? null) && is_string($volume['external']['name'] ?? null) && $volume['external']['name'] !== ''
+                ? $volume['external']['name'] : null;
+            $volumeDefinitions[(string) $name] = [
+                'name' => is_array($volume) && is_string($volume['name'] ?? null) && $volume['name'] !== '' ? $volume['name'] : $legacy,
+                'external' => is_array($volume) && (($volume['external'] ?? false) === true || is_array($volume['external'] ?? null)),
+            ];
             $device = is_array($volume) ? ($volume['driver_opts']['device'] ?? null) : null;
 
             if (is_string($device) && str_starts_with($device, '/')) {
@@ -119,7 +128,7 @@ final class YamlComposeInspector implements ComposeInspector
                 }
             }
 
-            [$named, $binds] = $this->volumes($service['volumes'] ?? [], $volumes);
+            [$named, $binds, $mounts] = $this->volumes($service['volumes'] ?? [], $volumes);
 
             foreach ($binds as $source) {
                 if (str_contains($source, 'docker.sock')) {
@@ -151,10 +160,11 @@ final class YamlComposeInspector implements ComposeInspector
                 healthcheck: $healthcheck,
                 dependsOn: array_values(array_map('strval', is_array($service['depends_on'] ?? null) ? (array_is_list($service['depends_on']) ? $service['depends_on'] : array_keys($service['depends_on'])) : [])),
                 leaderCommand: $leader,
+                namedMounts: $mounts,
             );
         }
 
-        return new ComposeSummary($services, $volumes, array_values(array_unique($violations)), $errors, $warnings);
+        return new ComposeSummary($services, $volumes, array_values(array_unique($violations)), $errors, $warnings, $volumeDefinitions);
     }
 
     /**
@@ -218,12 +228,13 @@ final class YamlComposeInspector implements ComposeInspector
 
     /**
      * @param  list<string>  $declared  top-level named volumes
-     * @return array{0: list<string>, 1: list<string>} named volumes, bind sources
+     * @return array{0: list<string>, 1: list<string>, 2: list<array{volume: string, target: string, read_only: bool}>} named volumes, bind sources, named volume mounts
      */
     private function volumes(mixed $volumes, array $declared): array
     {
         $named = [];
         $binds = [];
+        $mounts = [];
 
         foreach (is_array($volumes) ? $volumes : [] as $volume) {
             if (is_array($volume)) {
@@ -234,6 +245,10 @@ final class YamlComposeInspector implements ComposeInspector
                     $binds[] = $source;
                 } elseif ($type === 'volume' && $source !== '') {
                     $named[] = $source;
+
+                    if (is_string($volume['target'] ?? null) && str_starts_with($volume['target'], '/')) {
+                        $mounts[] = ['volume' => $source, 'target' => $volume['target'], 'read_only' => ($volume['read_only'] ?? false) === true];
+                    }
                 }
 
                 continue;
@@ -251,10 +266,14 @@ final class YamlComposeInspector implements ComposeInspector
                 $binds[] = $source;
             } else {
                 $named[] = $source;
+
+                if (str_starts_with($parts[1], '/')) {
+                    $mounts[] = ['volume' => $source, 'target' => $parts[1], 'read_only' => in_array('ro', explode(',', $parts[2] ?? ''), true)];
+                }
             }
         }
 
-        return [array_values(array_unique($named)), array_values(array_unique($binds))];
+        return [array_values(array_unique($named)), array_values(array_unique($binds)), $mounts];
     }
 
     /**

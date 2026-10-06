@@ -49,6 +49,7 @@ use Falak\Sites\Infrastructure\EloquentSiteNameResolver;
 use Falak\Telemetry\Contracts\ServerSites;
 use Falak\Telemetry\Contracts\TelemetryConfigurator;
 use Falak\Telemetry\Domain\Models\TelemetrySettings;
+use Falak\Volumes\Contracts\ServiceVolumes;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -60,7 +61,7 @@ function wiring_site(string $organizationId, Server $server, string $slug = 'sho
 {
     $site = Site::query()->create([
         'organization_id' => $organizationId, 'name' => ucfirst($slug), 'slug' => $slug, 'runtime' => SiteRuntime::FrankenPhp, 'build_mode' => BuildMode::Native,
-        'framework' => Framework::Laravel, 'php_version' => '8.4', 'unix_user' => 'falak', 'deploy_script' => '', 'laravel' => new LaravelSettings, 'shared_paths' => [],
+        'framework' => Framework::Laravel, 'php_version' => '8.4', 'unix_user' => 'falak', 'deploy_script' => '', 'laravel' => new LaravelSettings,
     ]);
     SiteTarget::query()->create(['site_id' => $site->id, 'server_id' => $server->id, 'role' => TargetRole::Leader, 'status' => TargetStatus::Ready]);
 
@@ -107,11 +108,13 @@ it('tails PHP sites\' shared log directories and labels records with the live re
     TelemetrySettings::query()->create(['organization_id' => $organization->id, 'otlp_endpoint' => 'https://otlp.example.com']);
     $server = Server::factory()->create(['organization_id' => $organization->id, 'type' => ServerType::Web]);
     $site = wiring_site($organization->id, $server);
-    $site->forceFill(['shared_paths' => [new SharedPath('storage'), new SharedPath('.env', 'file')]])->save();
+    app(ServiceVolumes::class)->syncSharedPaths($organization->id, $site->id, [new SharedPath('storage'), new SharedPath('.env', 'file')]);
     $symfony = wiring_site($organization->id, $server, 'symfony');
-    $symfony->forceFill(['framework' => Framework::Symfony, 'shared_paths' => [new SharedPath('var/log')]])->save();
+    $symfony->forceFill(['framework' => Framework::Symfony])->save();
+    app(ServiceVolumes::class)->syncSharedPaths($organization->id, $symfony->id, [new SharedPath('var/log')]);
     $node = wiring_site($organization->id, $server, 'node');
-    $node->forceFill(['framework' => Framework::Node, 'runtime' => SiteRuntime::Node, 'shared_paths' => [new SharedPath('storage')]])->save();
+    $node->forceFill(['framework' => Framework::Node, 'runtime' => SiteRuntime::Node])->save();
+    app(ServiceVolumes::class)->syncSharedPaths($organization->id, $node->id, [new SharedPath('storage')]);
     app()->instance(LiveReleases::class, new class($site->id, $server->id) implements LiveReleases
     {
         public function __construct(private string $siteId, private string $serverId) {}

@@ -13,6 +13,7 @@ use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Events\SiteCreated;
 use Falak\SourceControl\Contracts\ProviderType;
 use Falak\SourceControl\Contracts\SourceControlGateway;
+use Falak\Volumes\Contracts\VolumeMounts;
 use Illuminate\Support\Facades\Event;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -46,7 +47,7 @@ it('creates a Laravel site on several servers with a leader, preset defaults and
         ->and($site->web_directory)->toBe('public')
         ->and($site->unix_user)->toBe('falak')
         ->and($site->laravel->scheduler)->toBeTrue()
-        ->and(array_map(fn ($p) => $p->path, $site->shared_paths))->toBe(['storage', '.env'])
+        ->and(array_map(fn ($p) => $p->path, app(VolumeMounts::class)->sharedPaths($site->id)))->toBe(['storage', '.env'])
         ->and($site->deploy_script)->toContain('$FALAK_FETCH')->toContain('$FALAK_ACTIVATE')->toContain('artisan migrate --force')
         ->and($site->testDomain())->toBe('shop.falak.test')
         ->and($site->deploy_key_id)->not->toBeNull()

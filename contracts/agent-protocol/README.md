@@ -199,6 +199,39 @@ and quoted for a single-quoted shell word; matches split across writes are maske
 This covers command output, errors, results, deployment lifecycle events and supervised programs' log files and OTLP
 records. Build jobs take the same `mask` for `env` and `build_args`.
 
+## Volumes (v0.10.0)
+`volume.*` commands name a volume by `{id, kind, name?, path?}`: `docker` (a named volume, `name`), `sized` (an ext4
+image `/var/lib/falak/volumes/images/<id>.img` loop-mounted at `/var/lib/falak/volumes/<id>` by the systemd unit
+`var-lib-falak-volumes-<id>.mount` — systemd names a mount unit after its path — so the mount survives reboots),
+`bind` (a host path within the agent's `FALAK_VOLUME_BIND_ALLOW`, colon-separated; empty refuses bind volumes) and
+`shared_path` (a classic site's `<sites root>/<site>/shared/<path>`). `volume.create` and `volume.resize` (grow only:
+`fallocate`, `losetup -c`, `resize2fs` online) are idempotent; `volume.delete` waits up to `wait_s` for running
+containers that mount the volume (by name, or by host path) to go away and refuses otherwise unless `force`; bind
+paths are never deleted. `volume.inventory` reports usage (statfs for mounted sized volumes, a du-style walk that
+never follows symlinks otherwise) and the server's Docker volumes.
+
+Snapshots (`volume.archive`) are `tar | zstd` streams PUT to a presigned URL like database backups (sha256 and size
+in the result, the signature never echoed); `consistency` pauses or stops the running containers that mount the
+volume while it is read. `volume.restore` and `volume.clone` write into a new or empty volume only (created when
+missing), check the sha256 before anything is written, and extract through an `os.Root`: absolute names, `..`
+segments, writes through symlinks and hard links out of the volume are refused. `volume.browse` (list, or a name
+search) and `volume.download` (a file as is, a folder as `.tar.zst`, capped by `max_bytes`) refuse any path with a
+symlink in it.
+
+Bind and shared-path directories may be writable by others (a site's user owns its site directory), so the agent
+never re-walks their path as a string: it opens them once from a trusted anchor (the allowlist entry — the entry
+itself is refused, only paths strictly below it — or the sites root) one component at a time, refusing symlinks and
+directories swapped while being opened, and every later access (browse, archive, download, du, delete) goes through
+that handle. `volume.create` refuses an existing Docker volume that does not carry the volume's `falak.volume.id`
+label unless `adopt: true` (restores and clones never adopt). `volume.archive` with `consistency: stop` and
+`keep_stopped: true` leaves the stopped containers stopped after a successful upload (moves). Snapshots and
+downloads are staged in `<volumes root>/.staging` (0700, the volume store's filesystem, never /tmp) after a free-space
+check (estimate + 10%); `volume.restore` aborts a download larger than `archive_bytes` + 1 MiB and never unpacks more
+than `uncompressed_bytes` + 1%. A sized volume's empty mountpoint is made immutable (`chattr +i`) before it is
+mounted, so containers bound to it while the mount is missing cannot write to the host's disk; the mount unit is
+ordered `Before=docker.service`. `volume.resize` to the current size still runs `losetup -c` and `resize2fs`, so a
+resize that failed half way can be retried.
+
 ## Agent sessions and lost deliveries
 Every `falak-agent` process sends a random session id (`X-Falak-Agent-Session: s-<32 hex>`, 8-64 characters of
 `[A-Za-z0-9._:-]`) on every mTLS request. Agents from before sessions send none; that is accepted.

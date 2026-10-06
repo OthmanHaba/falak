@@ -61,11 +61,6 @@ final class FakeSiteDirectory implements SiteDirectory, SiteHeaders
         return null;
     }
 
-    public function sharedPaths(string $siteId): array
-    {
-        return [];
-    }
-
     public function deployVariables(string $siteId, string $serverId, array $context = []): array
     {
         return $context;

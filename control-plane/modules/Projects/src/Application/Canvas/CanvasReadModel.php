@@ -27,6 +27,10 @@ use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteDomains;
 use Falak\Sites\Contracts\SiteRuntime;
 use Falak\Sites\Contracts\TargetStatus;
+use Falak\Volumes\Contracts\AttachableType;
+use Falak\Volumes\Contracts\Data\VolumeData;
+use Falak\Volumes\Contracts\ServiceVolumes;
+use Falak\Volumes\Contracts\VolumeKind;
 use Illuminate\Support\Carbon;
 
 /**
@@ -34,12 +38,14 @@ use Illuminate\Support\Carbon;
  * services with live status (deployments, targets, servers), and edges derived from variable references.
  *
  * Groups (§4.3): user groups frame services (`group_id`, positions relative to the group anchor); compose sites carry
- * `compose` — their compose services, drawn as a group of cards with `depends_on` edges. `volumes` are the persistent
- * storage a card shows as a strip: compose named volumes, a database engine's data directory, a site's shared paths.
+ * `compose` — their compose services, drawn as a group of cards with `depends_on` edges. `volumes` are the disks a card
+ * shows (Volumes): the volumes attached to a service with used / limit and a link to their page, a compose service's
+ * named volumes (by name until the stack's first deploy), a database engine's data directory.
  *
  * @phpstan-import-type ComposeChild from ComposeGroup
  *
- * @phpstan-type CanvasService array{id: string, kind: string, ref_id: string, name: string, icon: string, position: array{x: int, y: int}, group_id: ?string, status: string, status_label: string, url: ?string, subtitle: ?string, servers: list<array{id: string, name: string, leader: bool, online: bool}>, badges: list<string>, volumes: list<array{name: string, detail: ?string}>, compose: ?array{template: ?string, collapsed: bool, services: list<ComposeChild>}, last_deployment: ?array{id: string, status: string, commit: ?string, message: ?string, finished_at: ?string}}
+ * @phpstan-type CanvasService array{id: string, kind: string, ref_id: string, name: string, icon: string, position: array{x: int, y: int}, group_id: ?string, status: string, status_label: string, url: ?string, subtitle: ?string, servers: list<array{id: string, name: string, leader: bool, online: bool}>, badges: list<string>, volumes: list<CanvasVolume>, compose: ?array{template: ?string, collapsed: bool, services: list<ComposeChild>}, last_deployment: ?array{id: string, status: string, commit: ?string, message: ?string, finished_at: ?string}}
+ * @phpstan-type CanvasVolume array{id: ?string, name: string, detail: ?string, used_bytes: ?int, limit_bytes: ?int, url: ?string}
  * @phpstan-type CanvasEdge array{from: string, to: string, kind: string, problem?: string}
  * @phpstan-type CanvasGroup array{id: string, name: string, position: array{x: int, y: int}, collapsed: bool}
  */
@@ -56,6 +62,7 @@ final class CanvasReadModel
         private readonly ComposeSites $compose,
         private readonly ComposeInspector $inspector,
         private readonly DatabaseConnections $connections,
+        private readonly ServiceVolumes $volumes,
     ) {}
 
     /**
@@ -80,6 +87,7 @@ final class CanvasReadModel
 
         $databases = $this->databases->findMany($databaseIds);
         $deployments = $this->deployments->currentForSites(array_keys($sites));
+        $volumes = $this->volumes->forSites(array_keys($sites));
         $domains = $this->domains->primaryDomains(array_keys($sites));
 
         $serverIds = array_values(array_unique([
@@ -95,7 +103,7 @@ final class CanvasReadModel
         foreach ($services as $service) {
             $card = match ($service->kind) {
                 ServiceKind::Site => isset($sites[$service->ref_id])
-                    ? $this->site($service, $sites[$service->ref_id], $deployments[$service->ref_id] ?? null, $domains[$service->ref_id] ?? null, $servers, $agents)
+                    ? $this->site($service, $sites[$service->ref_id], $deployments[$service->ref_id] ?? null, $domains[$service->ref_id] ?? null, $servers, $agents, $volumes[$service->ref_id] ?? [])
                     : null,
                 ServiceKind::Database => isset($databases[$service->ref_id])
                     ? $this->database($service, $databases[$service->ref_id], $servers, $agents)
@@ -124,9 +132,10 @@ final class CanvasReadModel
     /**
      * @param  array<string, ServerData>  $servers
      * @param  array<string, mixed>  $agents
+     * @param  list<VolumeData>  $volumes  attached to the site or its compose services
      * @return CanvasService
      */
-    private function site(Service $service, SiteData $site, ?DeploymentSummary $deployment, ?string $domain, array $servers, array $agents): array
+    private function site(Service $service, SiteData $site, ?DeploymentSummary $deployment, ?string $domain, array $servers, array $agents, array $volumes = []): array
     {
         [$status, $label] = $this->siteStatus($site, $deployment);
         $host = $domain ?? $site->testDomain;
@@ -139,7 +148,7 @@ final class CanvasReadModel
 
         if ($site->compose !== null) {
             [$states, $summary] = $this->composeState($site);
-            $compose = ComposeGroup::for($service, $site, $summary, $states, [$status, $label]);
+            $compose = ComposeGroup::for($service, $site, $summary, $states, [$status, $label], self::composeVolumes($site->id, $volumes));
             [$subtitle, $status, $label] = $this->composeCard($summary, $states, $status, $label);
         }
 
@@ -153,10 +162,8 @@ final class CanvasReadModel
             'servers' => array_map(fn ($target) => $this->server($target->serverId, $target->isLeader(), $servers, $agents), $site->targets),
             // Runtime traits worth seeing on the card (Laravel Octane serves the app behind the edge).
             'badges' => $site->framework->isLaravel() && $site->runtime->isPhp() && $site->laravel->octane ? ['Octane'] : [],
-            // Shared paths persist across releases on every server: the site's "volume".
-            'volumes' => $compose === null && $site->runtime !== SiteRuntime::Static
-                ? array_values(array_map(fn ($path) => ['name' => $path->path, 'detail' => 'shared'], array_filter($site->sharedPaths, fn ($path) => $path->type === 'directory')))
-                : [],
+            // Its volumes (a classic site's shared directories, a container's mounts); compose services carry their own.
+            'volumes' => $compose === null && $site->runtime !== SiteRuntime::Static ? self::siteVolumes($site->id, $volumes) : [],
             'compose' => $compose !== null ? ['template' => $compose['template'], 'collapsed' => $compose['collapsed'], 'services' => $compose['services']] : null,
             'compose_edges' => $compose['edges'] ?? [],
             'last_deployment' => $deployment !== null ? [
@@ -198,9 +205,66 @@ final class CanvasReadModel
             'servers' => [$this->server($database->serverId, false, $servers, $agents)],
             'badges' => [],
             // The engine's data directory on its server.
-            'volumes' => [['name' => $database->engine.'-data', 'detail' => $servers[$database->serverId]->name ?? null]],
+            'volumes' => [['id' => null, 'name' => $database->engine.'-data', 'detail' => $servers[$database->serverId]->name ?? null, 'used_bytes' => null, 'limit_bytes' => null, 'url' => null]],
             'compose' => null,
             'last_deployment' => null,
+        ];
+    }
+
+    /**
+     * @param  list<VolumeData>  $volumes
+     * @return list<CanvasVolume>
+     */
+    private static function siteVolumes(string $siteId, array $volumes): array
+    {
+        $chips = [];
+
+        foreach ($volumes as $volume) {
+            foreach ($volume->attachments as $attachment) {
+                // A shared .env is one file: no disk on the card.
+                if ($attachment->type === AttachableType::Site && $attachment->attachableId === $siteId && ! $volume->sharedFile) {
+                    $chips[] = self::chip($volume, $volume->kind === VolumeKind::SharedPath ? $attachment->mountPath : $volume->name, $volume->kind === VolumeKind::SharedPath ? 'shared' : $attachment->mountPath);
+                }
+            }
+        }
+
+        return $chips;
+    }
+
+    /**
+     * Compose services' volumes, by service.
+     *
+     * @param  list<VolumeData>  $volumes
+     * @return array<string, list<CanvasVolume>>
+     */
+    private static function composeVolumes(string $siteId, array $volumes): array
+    {
+        $chips = [];
+
+        foreach ($volumes as $volume) {
+            foreach ($volume->attachments as $attachment) {
+                if ($attachment->type === AttachableType::ComposeService && $attachment->attachableId === $siteId && $attachment->service !== null) {
+                    // A stack on several servers has a volume per server: one chip per name.
+                    $chips[$attachment->service][$volume->name] ??= self::chip($volume, $volume->name, $attachment->mountPath);
+                }
+            }
+        }
+
+        return array_map('array_values', $chips);
+    }
+
+    /**
+     * @return CanvasVolume
+     */
+    private static function chip(VolumeData $volume, string $name, ?string $detail): array
+    {
+        return [
+            'id' => $volume->id,
+            'name' => $name,
+            'detail' => $detail,
+            'used_bytes' => $volume->usedBytes,
+            'limit_bytes' => $volume->sizeLimitBytes,
+            'url' => "/volumes/{$volume->id}",
         ];
     }
 
