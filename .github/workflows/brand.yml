@@ -3,9 +3,9 @@ name: brand
 # Every push and PR, whatever it touches: no file may bring back the product's previous name.
 on:
   push:
-    branches: [main]
+    branches: [main, "release/**"]
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
 
 jobs:
   check:
