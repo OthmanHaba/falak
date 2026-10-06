@@ -239,7 +239,8 @@ References in the Variables tab link to their service: clicking it stacks that s
 
 ### 5.4 Tabs — database service
 **Overview** (engine, server, connection strings with copy + reveal, private-network address) · **Databases &
-users** · **Backups** (schedules, history, restore) · **Metrics** · **Settings**.
+users** · **Backups** (schedules, history, download, restore) · **Metrics** · **Settings**. Redis / Valkey instances:
+no Databases & users tab; Backups are RDB snapshots restored into an existing instance (instance picker).
 
 ### 5.5 Panel stack
 Panels are layers of one **PanelStack** (`components/falak/panel-stack.tsx`): base service panel → optionally another

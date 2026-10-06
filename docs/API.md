@@ -352,6 +352,19 @@ starts empty). The server must run the engine; a Redis / Valkey instance gets it
 and needs an agent with `db.redis` (`422` "Update the agent on <server> first" otherwise). Sites: the `POST /sites`
 body with `kind: "site"`. `201 {data: <canvas service>, warnings[]}`; the instance is `provisioning` until the agent
 confirms.
+
+Database backups have no `/api/v1` endpoints yet; the panel's session routes (CSRF, `Accept: application/json` for
+errors as JSON) are the same for SQL databases and Redis / Valkey instances (v0.9.0, agent feature `db.redis.backup`,
+`422` "Update the agent on <server> first" without it): `POST /databases/databases/{database}/backups
+{storage_provider_id, compression?: gzip|none}` (key-value: an RDB snapshot, object `….rdb.gz`), `POST
+/databases/servers/{databaseServer}/schedules {name, storage_provider_id, database_ids[], cron, retention_count?,
+retention_days?, compression?, enabled?}` · `PUT|DELETE /databases/schedules/{schedule}` · `POST
+/databases/schedules/{schedule}/run`, `POST /databases/backups/{backup}/restore {database_server_id, database,
+confirm}` (`databases.restore`; key-value: `database` is an existing, active instance of a Redis or Valkey server,
+snapshots never go into SQL engines nor dumps into instances), `GET /databases/backups/{backup}/download` (302 to a
+presigned URL valid 5 minutes, or `{url}` as JSON; `databases.restore`, audited), `DELETE /databases/backups/{backup}`,
+`GET /databases/databases/{database}` (JSON: the panel's backups, schedules, restores, `restore_targets[]` with
+`engine` and key-value `instances[]`).
 ### `PATCH|DELETE /api/v1/projects/{project}/environments/{environment}` — `projects.manage`
 Rename (the slug follows). Only empty, non-production environments can be deleted.
 
