@@ -43,6 +43,9 @@ The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protoco
 | `projects.view` / `projects.manage` | view: all; manage: admin, developer | projects + environments / create, rename, delete, duplicate environments |
 | `functions.view` | admin, developer, viewer | functions, their code, versions, schedules and runs |
 | `functions.deploy` | admin, developer | deploy function code and versions (also needs `deployments.create`), run schedules |
+| `secrets.view` | admin, developer, viewer | secret names, metadata, versions (never values) |
+| `secrets.manage` | admin, developer | create secrets, set values, roll back, delete |
+| `secrets.reveal` | admin, developer | read a non-sensitive value; a token needs this ability **by name** (`*` is not enough) |
 
 ## Identity
 
@@ -402,6 +405,11 @@ everyone else gets a resolution error saying to update the agent):
   the reference says so (`does not listen on <address> yet`).
 The instance always keeps its password, `protected-mode` and the disabled commands.
 Unknown services/keys and cycles fail the deployment: `Unresolved variable references: …`.
+`${{ secrets.NAME }}` reads the secret store instead of a service (`secrets` is never a service name there): the
+current version of the nearest secret `NAME` of the service owning the variable — its service, environment, project,
+then organization secrets. A missing secret fails the deployment (`STRIPE_KEY: secret STRIPE_KEY is not defined for
+this service …`), as does a linked secret whose provider is not configured. Each read is in the secret's access log
+(once per deployment and version).
 An engine on an app or worker server serves that server only, and `DB_HOST` / `DATABASE_URL` resolve only for a
 consumer running on that server alone:
 - a native site gets `127.0.0.1`;
@@ -419,6 +427,30 @@ site on it, the Docker bridge for containers there, and for sites on other serve
 of them share with it (a Falak private network first, else the provider private network where both servers are on it for
 sure, as above). **Never a public address** — servers sharing no private network get `… shares no private network with
 <server>, and database references never point at a public address. Add both servers to a private network …`.
+
+## Secrets
+
+Organization secrets in four scopes (`organization`, `project`, `environment`, `service` — a project service id),
+referenced from variables as `${{ secrets.NAME }}`. Names are environment variable names (`^[A-Z_][A-Z0-9_]*$`), unique
+per scope. Every value is a new immutable version, sealed under the organization's data key and bound to the secret and
+version. Responses carry metadata only (`id, name, scope, scope_id, scope_label, kind, sensitive, available_to_previews,
+description, rotation_days, rotation_due_at, current_version, last_accessed_at, created_at, updated_at`). Secrets of
+other organizations are `404`.
+
+### `GET /api/v1/secrets[?scope=&scope_id=]` · `GET /api/v1/secrets/{secret}` — `secrets.view`
+### `POST /api/v1/secrets` — `secrets.manage`
+`{name, scope, scope_id, value | (kind: "linked", reference, provider_id?), sensitive? (default true),
+available_to_previews? (default false), description?, rotation_days?}`. `201`. A **sensitive** secret is write-only:
+it can be replaced, never revealed, and stays sensitive.
+### `PUT /api/v1/secrets/{secret}/value` `{value}` — `secrets.manage`
+A new version, current from the next deployment.
+### `POST /api/v1/secrets/{secret}/rollback` `{version}` — `secrets.manage`
+A new version with that version's value (history is never rewritten). Disabled versions can't be restored.
+### `DELETE /api/v1/secrets/{secret}` — `secrets.manage`
+Every version goes; the access log stays. References to it fail the next deployment.
+### `POST /api/v1/secrets/{secret}/reveal[?version=]` — `secrets.reveal`, by name on the token
+`{data: {version, value}}` (a linked secret: its reference). `403` for sensitive secrets and for tokens without the
+`secrets.reveal` ability itself. Logged in the access log as the token, and audited.
 
 ## Source control
 
