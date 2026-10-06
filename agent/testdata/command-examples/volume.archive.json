@@ -1,1 +1,1 @@
-{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9nb","kind":"docker","name":"shop_pgdata"},"consistency":"pause","destination":{"kind":"presigned_url","url":"https://backups.r2.example.com/volumes/shop-data/20261006T120000Z.tar.zst?X-Amz-Signature=abc"}}
+{"volume": {"id": "01j9z8y7x6w5v4t3s2r1q0p9nb", "kind": "docker", "name": "shop_pgdata"}, "consistency": "stop", "destination": {"kind": "presigned_url", "url": "https://backups.r2.example.com/volumes/shop-data/20261006T120000Z.tar.zst?X-Amz-Signature=abc"}, "keep_stopped": true}

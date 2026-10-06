@@ -28,6 +28,8 @@ type CreatePayload struct {
 	Volume    Ref               `json:"volume"`
 	SizeBytes int64             `json:"size_bytes,omitempty"`
 	Labels    map[string]string `json:"labels,omitempty"`
+	// Adopt takes over an existing Docker volume that is not this volume's (the control plane asks explicitly).
+	Adopt bool `json:"adopt,omitempty"`
 }
 
 // CreateResult is its result.
@@ -47,10 +49,16 @@ func (s *Service) Create(ctx context.Context, p CreatePayload, st commands.Strea
 			return nil, payloadErr("invalid label %q", k)
 		}
 	}
-	return s.create(ctx, p.Volume, p.SizeBytes, p.Labels, st)
+	return s.create(ctx, p.Volume, p.SizeBytes, p.Labels, p.Adopt, st)
 }
 
-func (s *Service) create(ctx context.Context, r Ref, size int64, labels map[string]string, st commands.Stream) (CreateResult, error) {
+// idLabel ties a Docker volume to the Falak volume that created it.
+const idLabel = "falak.volume.id"
+
+// create makes a volume if it is missing. An existing Docker volume is only this volume when it carries its id
+// label (a retried create); anyone else's is refused unless adopt, so a name never silently takes over another
+// volume's data.
+func (s *Service) create(ctx context.Context, r Ref, size int64, labels map[string]string, adopt bool, st commands.Stream) (CreateResult, error) {
 	switch r.Kind {
 	case KindDocker:
 		if s.d.Docker == nil {
@@ -59,9 +67,18 @@ func (s *Service) create(ctx context.Context, r Ref, size int64, labels map[stri
 		if v, ok, err := s.d.Docker.VolumeInspect(ctx, r.Name); err != nil {
 			return CreateResult{}, err
 		} else if ok {
+			if v.Labels[idLabel] != r.ID && !adopt {
+				return CreateResult{}, fmt.Errorf("docker volume %s already exists and is not this volume", r.Name)
+			}
 			return CreateResult{Path: v.Mountpoint}, nil
 		}
-		v, err := s.d.Docker.VolumeCreate(ctx, r.Name, labels)
+		withID := map[string]string{idLabel: r.ID}
+		for k, v := range labels {
+			if k != idLabel {
+				withID[k] = v
+			}
+		}
+		v, err := s.d.Docker.VolumeCreate(ctx, r.Name, withID)
 		if err != nil {
 			return CreateResult{}, fmt.Errorf("create docker volume %s: %w", r.Name, err)
 		}
@@ -70,13 +87,16 @@ func (s *Service) create(ctx context.Context, r Ref, size int64, labels map[stri
 	case KindSized:
 		return s.createSized(ctx, r.ID, size, st)
 	default:
-		existed := s.d.FS.Exists(r.Path)
-		if err := s.d.FS.MkdirAll(r.Path, 0o755); err != nil {
-			return CreateResult{}, err
+		root, existed, err := s.openPath(r, false)
+		if err != nil {
+			return CreateResult{}, fmt.Errorf("%s: not a usable directory: %w", r.Path, err)
 		}
-		if _, ok, err := s.hostPath(ctx, r); err != nil || !ok {
-			return CreateResult{}, fmt.Errorf("%s: not a usable directory: %v", r.Path, err)
+		if !existed {
+			if root, _, err = s.openPath(r, true); err != nil {
+				return CreateResult{}, fmt.Errorf("%s: not a usable directory: %w", r.Path, err)
+			}
 		}
+		root.Close()
 		return CreateResult{Path: r.Path, Created: !existed}, nil
 	}
 }
@@ -106,7 +126,9 @@ func (s *Service) unitPath(id string) string {
 	return filepath.Join(s.d.UnitDir, unitName(s.mountpoint(id)))
 }
 
-// unit is the mount unit of a sized volume: the image is loop-mounted at boot, before services that use it.
+// unit is the mount unit of a sized volume: the image is loop-mounted at boot, before Docker starts the containers
+// that use it. Should the mount fail anyway, the mountpoint itself is immutable (createSized), so a container bound
+// to it cannot fill the host's disk instead of the volume.
 func (s *Service) unit(id string) string {
 	return fmt.Sprintf(`# Managed by falak-agent (volume.create): sized volume %s.
 [Unit]
@@ -157,6 +179,13 @@ func (s *Service) createSized(ctx context.Context, id string, size int64, st com
 	if err := s.d.FS.MkdirAll(mp, 0o755); err != nil {
 		return CreateResult{}, err
 	}
+	// The empty mountpoint (the host's directory, under the mount) is made immutable: nothing can write into it
+	// while the volume is not mounted.
+	if !s.d.Mounted(s.d.FS.P(mp)) {
+		if _, err := s.run(ctx, st, "chattr", "+i", s.d.FS.P(mp)); err != nil {
+			return CreateResult{}, err
+		}
+	}
 	changed, err := s.d.FS.WriteFile(s.unitPath(id), []byte(s.unit(id)), 0o644)
 	if err != nil {
 		return CreateResult{}, err
@@ -192,7 +221,8 @@ type ResizeResult struct {
 var loopRe = regexp.MustCompile(`^(/dev/loop[0-9]+):`)
 
 // Resize grows a sized volume online: the image file first, then the loop device's size, then the filesystem.
-// Shrinking is refused (ext4 cannot shrink online, and data could be lost).
+// Shrinking is refused (ext4 cannot shrink online, and data could be lost). An image already at the size still
+// gets the loop device and filesystem grown: a resize that failed half way is retried by sending it again.
 func (s *Service) Resize(ctx context.Context, p ResizePayload, st commands.Stream) (any, error) {
 	if err := s.check(p.Volume); err != nil {
 		return nil, err
@@ -212,11 +242,10 @@ func (s *Service) Resize(ctx context.Context, p ResizePayload, st commands.Strea
 	switch {
 	case p.SizeBytes < prev:
 		return nil, payloadErr("volume %s is %d bytes: shrinking to %d is refused", p.Volume.ID, prev, p.SizeBytes)
-	case p.SizeBytes == prev:
-		return ResizeResult{SizeBytes: prev, PreviousBytes: prev}, nil
-	}
-	if _, err := s.run(ctx, st, "fallocate", "-l", strconv.FormatInt(p.SizeBytes, 10), img); err != nil {
-		return nil, err
+	case p.SizeBytes > prev:
+		if _, err := s.run(ctx, st, "fallocate", "-l", strconv.FormatInt(p.SizeBytes, 10), img); err != nil {
+			return nil, err
+		}
 	}
 	res, err := s.run(ctx, st, "losetup", "-j", img)
 	if err != nil {
@@ -230,8 +259,12 @@ func (s *Service) Resize(ctx context.Context, p ResizePayload, st commands.Strea
 			return nil, err
 		}
 	} else {
-		// Not mounted: an offline resize needs a clean check first.
-		if _, err := s.run(ctx, st, "e2fsck", "-f", "-p", img); err != nil {
+		// Not mounted: an offline resize needs a clean check first (exit 1: errors were corrected).
+		res, err := s.d.Runner.Run(ctx, runner.Cmd{Name: "e2fsck", Args: []string{"-f", "-p", img}, Stderr: st.Stderr()})
+		if err == nil && res.ExitCode > 1 {
+			err = &runner.ExitError{Cmd: "e2fsck -f -p " + img, Code: res.ExitCode, Stderr: string(res.Stderr)}
+		}
+		if err != nil {
 			return nil, err
 		}
 		if _, err := s.run(ctx, st, "resize2fs", img); err != nil {
@@ -239,7 +272,7 @@ func (s *Service) Resize(ctx context.Context, p ResizePayload, st commands.Strea
 		}
 	}
 	fmt.Fprintf(st.Stdout(), "volume %s grown from %d to %d bytes\n", p.Volume.ID, prev, p.SizeBytes)
-	return ResizeResult{SizeBytes: p.SizeBytes, PreviousBytes: prev, Grown: true}, nil
+	return ResizeResult{SizeBytes: p.SizeBytes, PreviousBytes: prev, Grown: p.SizeBytes > prev}, nil
 }
 
 // DeletePayload is volume.delete.
@@ -309,8 +342,17 @@ func (s *Service) Delete(ctx context.Context, p DeletePayload, st commands.Strea
 		return DeleteResult{Deleted: existed, Existed: existed}, nil
 	case KindSized:
 		return s.deleteSized(ctx, r.ID, p.Force, st)
-	default: // shared_path: Falak's own directory under the site
-		if err := os.RemoveAll(s.d.FS.P(r.Path)); err != nil {
+	default: // shared_path: Falak's own directory under the site, removed through its parent's handle (no symlink is
+		// followed, even one swapped in while delete waited)
+		parent, base, err := s.openParent(r)
+		if err != nil {
+			return nil, err
+		}
+		defer parent.Close()
+		if fi, err := parent.Lstat(base); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+			return nil, fmt.Errorf("%s %w", r.Path, errSymlink)
+		}
+		if err := parent.RemoveAll(base); err != nil {
 			return nil, err
 		}
 		return DeleteResult{Deleted: true, Existed: true}, nil
@@ -341,7 +383,12 @@ func (s *Service) deleteSized(ctx context.Context, id string, force bool, st com
 	if _, err := s.d.FS.Remove(s.image(id)); err != nil {
 		return DeleteResult{}, err
 	}
-	// The mountpoint is an empty directory once unmounted (never RemoveAll: it would be the volume's data).
+	// The mountpoint is an empty, immutable directory once unmounted (never RemoveAll: it would be the volume's data).
+	if s.d.FS.Exists(mp) {
+		if _, err := s.run(ctx, st, "chattr", "-i", s.d.FS.P(mp)); err != nil {
+			return DeleteResult{}, err
+		}
+	}
 	if err := os.Remove(s.d.FS.P(mp)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return DeleteResult{}, err
 	}
@@ -478,7 +525,13 @@ func (s *Service) usage(ctx context.Context, r Ref, running []containerMounts) V
 		u.SizeBytes, u.AvailableBytes, u.UsedBytes = &size, &avail, &used
 		return u
 	}
-	used, err := du(ctx, s.d.FS.P(hp), UsageTimeout)
+	root, _, err := s.openRoot(ctx, r)
+	if err != nil {
+		u.Error = err.Error()
+		return u
+	}
+	defer root.Close()
+	used, err := du(ctx, root.FS(), UsageTimeout)
 	u.UsedBytes = &used
 	if err != nil {
 		u.Error = err.Error()
@@ -486,12 +539,13 @@ func (s *Service) usage(ctx context.Context, r Ref, running []containerMounts) V
 	return u
 }
 
-// du sums the sizes of the regular files below dir without following symlinks, for at most limit.
-func du(ctx context.Context, dir string, limit time.Duration) (int64, error) {
+// du sums the sizes of the regular files of a volume (or one of its directories) without following symlinks, for
+// at most limit.
+func du(ctx context.Context, fsys fs.FS, limit time.Duration) (int64, error) {
 	deadline := time.Now().Add(limit)
 	var total int64
 	n := 0
-	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(fsys, ".", func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // unreadable entries are skipped
 		}

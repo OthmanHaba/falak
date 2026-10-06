@@ -3,6 +3,10 @@
 // allowlist and classic sites' shared paths. Snapshots are tar | zstd streams PUT to presigned URLs, so servers
 // never hold storage credentials. Every file access inside a volume goes through an os.Root opened at the volume's
 // root and never follows a symbolic link.
+//
+// Bind and shared-path volumes live in directories other users may write (a site's user owns its site directory),
+// so their path is never re-walked as a string: it is opened once from a trusted anchor (the bind allowlist entry,
+// the sites root) one component at a time, refusing symlinks, and every later access uses that handle.
 package volumes
 
 import (
@@ -10,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -81,9 +86,9 @@ type Deps struct {
 	UnitDir string
 	// SitesRoot confines shared_path volumes to <SitesRoot>/<site>/shared/.
 	SitesRoot string
-	// BindAllow lists the host directories bind volumes may use (empty refuses them).
+	// BindAllow lists the host directories bind volumes may live below (empty refuses them; never the
+	// directory itself, like the control plane).
 	BindAllow []string
-	TempDir   string
 	// StatFS and Mounted are injectable for tests (defaults: statfs(2), /proc/self/mountinfo).
 	StatFS  func(path string) (Usage, error)
 	Mounted func(path string) bool
@@ -151,7 +156,8 @@ func payloadErr(format string, a ...any) error {
 	return &commands.PayloadError{Err: fmt.Errorf(format, a...)}
 }
 
-// check validates a ref and, for bind and shared paths, that the path is one the agent may touch.
+// check validates a ref and, for bind and shared paths, that the path is one the agent may touch (as a string: the
+// directories themselves are opened through anchor and descend).
 func (s *Service) check(r Ref) error {
 	if !idRe.MatchString(r.ID) {
 		return payloadErr("invalid volume id %q", r.ID)
@@ -166,8 +172,8 @@ func (s *Service) check(r Ref) error {
 		if err := s.checkPath(r.Path); err != nil {
 			return err
 		}
-		if !s.within(r.Path, s.d.BindAllow) {
-			return payloadErr("bind path %s is not within the agent's FALAK_VOLUME_BIND_ALLOW", r.Path)
+		if _, _, ok := s.bindAnchor(r.Path); !ok {
+			return payloadErr("bind path %s is not below a directory of the agent's FALAK_VOLUME_BIND_ALLOW", r.Path)
 		}
 	case KindSharedPath:
 		if err := s.checkPath(r.Path); err != nil {
@@ -177,9 +183,6 @@ func (s *Service) check(r Ref) error {
 		parts := strings.Split(filepath.ToSlash(rel), "/")
 		if err != nil || len(parts) < 3 || parts[0] == ".." || parts[1] != "shared" {
 			return payloadErr("shared path %s is not under %s/<site>/shared/", r.Path, s.d.SitesRoot)
-		}
-		if !s.within(r.Path, []string{filepath.Join(s.d.SitesRoot, parts[0], "shared")}) {
-			return payloadErr("shared path %s leaves its site's shared directory", r.Path)
 		}
 	default:
 		return payloadErr("unknown volume kind %q", r.Kind)
@@ -194,48 +197,144 @@ func (s *Service) checkPath(p string) error {
 	return nil
 }
 
-// within reports whether host path p is one of the allowed directories or below one, also once symlinks in the
-// existing part of the path are resolved.
-func (s *Service) within(p string, allowed []string) bool {
-	for _, a := range allowed {
+// bindAnchor returns the allowlisted directory a bind path is strictly below, and the path relative to it.
+func (s *Service) bindAnchor(p string) (string, string, bool) {
+	for _, a := range s.d.BindAllow {
 		a = filepath.Clean(a)
-		if p != a && !strings.HasPrefix(p, a+string(filepath.Separator)) {
-			continue
-		}
-		ra, err := filepath.EvalSymlinks(s.d.FS.P(a))
-		if err != nil {
-			// The allowed directory doesn't exist yet: nothing below it can be a symlink out.
-			return errors.Is(err, os.ErrNotExist)
-		}
-		rp, err := resolveExisting(s.d.FS.P(p))
-		if err != nil {
-			return false
-		}
-		if rp == ra || strings.HasPrefix(rp, ra+string(filepath.Separator)) {
-			return true
+		if a != "/" && strings.HasPrefix(p, a+string(filepath.Separator)) {
+			return a, strings.TrimPrefix(p, a+string(filepath.Separator)), true
 		}
 	}
-	return false
+	return "", "", false
 }
 
-// resolveExisting resolves symlinks in the longest existing prefix of p and appends the rest.
-func resolveExisting(p string) (string, error) {
-	rest := ""
-	for {
-		r, err := filepath.EvalSymlinks(p)
-		if err == nil {
-			return filepath.Join(r, rest), nil
+// anchor returns the trusted directory a bind or shared-path volume is opened from (root-owned or configured by the
+// admin) and the volume's path relative to it: the bind allowlist entry, or the sites root for <site>/shared/<path>.
+func (s *Service) anchor(r Ref) (string, string, error) {
+	if r.Kind == KindBind {
+		a, rel, ok := s.bindAnchor(r.Path)
+		if !ok {
+			return "", "", payloadErr("bind path %s is not allowed", r.Path)
 		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return "", err
-		}
-		parent := filepath.Dir(p)
-		if parent == p {
-			return "", err
-		}
-		rest = filepath.Join(filepath.Base(p), rest)
-		p = parent
+		return a, rel, nil
 	}
+	root := filepath.Clean(s.d.SitesRoot)
+	return root, strings.TrimPrefix(r.Path, root+string(filepath.Separator)), nil
+}
+
+// errSymlink is returned when a component of a volume's path is a symbolic link.
+var errSymlink = errors.New("is a symbolic link")
+
+// descendHook runs between a component's check and its opening (tests swap the directory there).
+var descendHook func(comp string)
+
+// descend opens rel below root one component at a time: every component must be a real directory (Lstat, never
+// followed), and the directory opened must be the one that was checked, so a component swapped for a symlink in
+// between is refused. It closes the roots it opened on the way, never root.
+func descend(root *os.Root, rel string) (*os.Root, error) {
+	cur := root
+	closeCur := func() {
+		if cur != root {
+			cur.Close()
+		}
+	}
+	for _, comp := range strings.Split(rel, string(filepath.Separator)) {
+		if comp == "" || comp == "." || comp == ".." {
+			closeCur()
+			return nil, fmt.Errorf("invalid path component %q", comp)
+		}
+		fi, err := cur.Lstat(comp)
+		if err != nil {
+			closeCur()
+			return nil, err
+		}
+		if fi.Mode()&fs.ModeSymlink != 0 {
+			closeCur()
+			return nil, fmt.Errorf("%s %w", comp, errSymlink)
+		}
+		if !fi.IsDir() {
+			closeCur()
+			return nil, fmt.Errorf("%s is not a directory", comp)
+		}
+		if descendHook != nil {
+			descendHook(comp)
+		}
+		next, err := cur.OpenRoot(comp)
+		if err != nil {
+			closeCur()
+			return nil, err
+		}
+		got, err := next.Stat(".")
+		if err != nil || !os.SameFile(fi, got) {
+			next.Close()
+			closeCur()
+			return nil, fmt.Errorf("%s changed while it was opened", comp)
+		}
+		closeCur()
+		cur = next
+	}
+	if cur == root {
+		return nil, errors.New("empty volume path")
+	}
+	return cur, nil
+}
+
+// openPath opens a bind or shared-path volume's directory from its anchor (see descend). With create, missing
+// directories are made below the anchor first (os.Root never lets that leave it). ok is false when it doesn't exist.
+func (s *Service) openPath(r Ref, create bool) (*os.Root, bool, error) {
+	a, rel, err := s.anchor(r)
+	if err != nil {
+		return nil, false, err
+	}
+	if create {
+		if err := s.d.FS.MkdirAll(a, 0o755); err != nil {
+			return nil, false, err
+		}
+	}
+	ar, err := os.OpenRoot(s.d.FS.P(a))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	defer ar.Close()
+	if create {
+		if err := ar.MkdirAll(filepath.ToSlash(rel), 0o755); err != nil {
+			return nil, false, err
+		}
+	}
+	root, err := descend(ar, rel)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return root, true, nil
+}
+
+// openParent opens the directory holding a bind or shared-path volume (see descend) and returns the volume's name in it.
+func (s *Service) openParent(r Ref) (*os.Root, string, error) {
+	a, rel, err := s.anchor(r)
+	if err != nil {
+		return nil, "", err
+	}
+	ar, err := os.OpenRoot(s.d.FS.P(a))
+	if err != nil {
+		return nil, "", err
+	}
+	parent, base := filepath.Split(rel)
+	parent = strings.TrimSuffix(parent, string(filepath.Separator))
+	if parent == "" {
+		return ar, base, nil
+	}
+	defer ar.Close()
+	pr, err := descend(ar, parent)
+	if err != nil {
+		return nil, "", err
+	}
+	return pr, base, nil
 }
 
 func (s *Service) mountpoint(id string) string { return filepath.Join(s.d.Root, id) }
@@ -254,16 +353,11 @@ func (s *Service) hostPath(ctx context.Context, r Ref) (string, bool, error) {
 		mp := s.mountpoint(r.ID)
 		return mp, s.d.FS.Exists(s.image(r.ID)), nil
 	default:
-		fi, err := os.Stat(s.d.FS.P(r.Path))
-		if errors.Is(err, os.ErrNotExist) {
-			return r.Path, false, nil
+		root, ok, err := s.openPath(r, false)
+		if err != nil || !ok {
+			return r.Path, false, err
 		}
-		if err != nil {
-			return "", false, err
-		}
-		if !fi.IsDir() {
-			return "", false, fmt.Errorf("%s is not a directory", r.Path)
-		}
+		root.Close()
 		return r.Path, true, nil
 	}
 }
@@ -273,6 +367,16 @@ func (s *Service) hostPath(ctx context.Context, r Ref) (string, bool, error) {
 func (s *Service) openRoot(ctx context.Context, r Ref) (*os.Root, string, error) {
 	if err := s.check(r); err != nil {
 		return nil, "", err
+	}
+	if r.Kind == KindBind || r.Kind == KindSharedPath {
+		root, ok, err := s.openPath(r, false)
+		if err != nil {
+			return nil, "", err
+		}
+		if !ok {
+			return nil, "", fmt.Errorf("volume %s does not exist", r.ID)
+		}
+		return root, r.Path, nil
 	}
 	p, ok, err := s.hostPath(ctx, r)
 	if err != nil {
@@ -334,7 +438,7 @@ func names(cs []container) []string {
 }
 
 // quiesce applies a consistency mode to the containers that mount a volume and returns the function that undoes
-// it, plus the containers it touched.
+// it, plus the containers it touched. A move keeps them stopped (the caller skips undo once the archive is safe).
 func (s *Service) quiesce(ctx context.Context, r Ref, hostPath, mode string, st commands.Stream) (func(), []string, error) {
 	if mode == "" || mode == "none" {
 		return func() {}, nil, nil
@@ -405,4 +509,45 @@ func mounted(path string) bool {
 
 func unescapeMount(s string) string {
 	return strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`).Replace(s)
+}
+
+// Margin is added to every free-space estimate (10%).
+const freeMargin = 1.1
+
+// stagingDir is where snapshots and downloads are staged: on the volume store's filesystem (never /tmp, often a
+// small tmpfs), readable by root only.
+func (s *Service) stagingDir() (string, error) {
+	dir := filepath.Join(s.d.Root, ".staging")
+	if err := s.d.FS.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return s.d.FS.P(dir), nil
+}
+
+// staging returns the staging directory once it has room for need bytes (plus the margin).
+func (s *Service) staging(need int64) (string, error) {
+	dir, err := s.stagingDir()
+	if err != nil {
+		return "", err
+	}
+	if err := s.room(dir, need, "staging ("+filepath.Join(s.d.Root, ".staging")+")"); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// room fails when the filesystem holding dir has less than need bytes (plus the margin) free.
+func (s *Service) room(dir string, need int64, what string) error {
+	if need <= 0 {
+		return nil
+	}
+	us, err := s.d.StatFS(dir)
+	if err != nil {
+		return fmt.Errorf("free space of %s: %w", what, err)
+	}
+	want := uint64(float64(need) * freeMargin)
+	if us.Available < want {
+		return fmt.Errorf("not enough free space for %s: %d bytes free, %d needed", what, us.Available, want)
+	}
+	return nil
 }

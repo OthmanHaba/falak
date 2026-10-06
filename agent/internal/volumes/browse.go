@@ -255,7 +255,11 @@ func (s *Service) Download(ctx context.Context, p DownloadPayload, st commands.S
 		if fi.Size() > p.MaxBytes {
 			return nil, fmt.Errorf("%s is %d bytes, over the %d-byte download limit", rel, fi.Size(), p.MaxBytes)
 		}
-		file, sum, size, err := s.copyFile(root, rel, p.MaxBytes)
+		dir, err := s.staging(fi.Size())
+		if err != nil {
+			return nil, err
+		}
+		file, sum, size, err := s.copyFile(dir, root, rel, p.MaxBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -287,7 +291,11 @@ func (s *Service) Download(ctx context.Context, p DownloadPayload, st commands.S
 	if err != nil {
 		return nil, err
 	}
-	file, sum, size, stats, err := s.plainStage(func(w io.Writer) (tarStats, error) { return writeTar(ctx, root, rel, w) })
+	dir, err := s.staging(total)
+	if err != nil {
+		return nil, err
+	}
+	file, sum, size, stats, err := s.plainStage(dir, func(w io.Writer) (tarStats, error) { return writeTar(ctx, root, rel, w) })
 	if err != nil {
 		return nil, err
 	}
@@ -302,20 +310,20 @@ func (s *Service) Download(ctx context.Context, p DownloadPayload, st commands.S
 }
 
 // plainStage is stage without the Sealer: downloads are for the user to open.
-func (s *Service) plainStage(write func(io.Writer) (tarStats, error)) (string, string, int64, tarStats, error) {
+func (s *Service) plainStage(dir string, write func(io.Writer) (tarStats, error)) (string, string, int64, tarStats, error) {
 	plain := *s
 	plain.d.Seal = nil
-	return plain.stage(write)
+	return plain.stage(dir, write)
 }
 
-// copyFile copies one file of a volume (at most limit bytes) into a temp file, hashing it.
-func (s *Service) copyFile(root *os.Root, rel string, limit int64) (string, string, int64, error) {
+// copyFile copies one file of a volume (at most limit bytes) into the staging directory dir, hashing it.
+func (s *Service) copyFile(dir string, root *os.Root, rel string, limit int64) (string, string, int64, error) {
 	src, err := root.OpenFile(rel, os.O_RDONLY|noFollow, 0)
 	if err != nil {
 		return "", "", 0, err
 	}
 	defer src.Close()
-	f, err := os.CreateTemp(s.d.TempDir, "falak-volume-download-*")
+	f, err := os.CreateTemp(dir, "download-*")
 	if err != nil {
 		return "", "", 0, err
 	}

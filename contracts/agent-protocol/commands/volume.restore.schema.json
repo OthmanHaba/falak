@@ -126,6 +126,11 @@
       "type": "integer",
       "minimum": 1,
       "description": "The snapshot's unpacked size, checked against the free space"
+    },
+    "archive_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The snapshot's recorded (compressed) size: a download larger than it (+1 MiB) is aborted"
     }
   },
   "$defs": {

@@ -33,6 +33,9 @@ type ArchivePayload struct {
 	Volume      Ref      `json:"volume"`
 	Consistency string   `json:"consistency,omitempty"`
 	Destination Location `json:"destination"`
+	// KeepStopped (consistency stop only): the stopped containers stay stopped once the snapshot is uploaded — a
+	// move redeploys them on the target, so nothing writes to the source after its last snapshot.
+	KeepStopped bool `json:"keep_stopped,omitempty"`
 }
 
 // ArchiveResult is its result.
@@ -55,23 +58,44 @@ func checkDestination(d Location) error {
 
 // Archive streams a snapshot of a volume (tar | zstd, then the Sealer when set) into a staging file while hashing
 // it, then PUTs it to the presigned URL. Containers that mount the volume are paused or stopped for the read when
-// the consistency mode asks.
+// the consistency mode asks; with keep_stopped they stay stopped after a successful upload (a failed one starts
+// them again: the source keeps serving).
 func (s *Service) Archive(ctx context.Context, p ArchivePayload, st commands.Stream) (any, error) {
 	start := time.Now()
 	if err := checkDestination(p.Destination); err != nil {
 		return nil, err
+	}
+	if p.KeepStopped && p.Consistency != "stop" {
+		return nil, payloadErr("keep_stopped needs consistency stop")
 	}
 	root, hp, err := s.openRoot(ctx, p.Volume)
 	if err != nil {
 		return nil, err
 	}
 	defer root.Close()
+	estimate, _ := du(ctx, root.FS(), UsageTimeout)
+	dir, err := s.staging(estimate)
+	if err != nil {
+		return nil, err
+	}
 	undo, touched, err := s.quiesce(ctx, p.Volume, hp, p.Consistency, st)
 	if err != nil {
 		return nil, err
 	}
-	file, sum, size, stats, err := s.stage(func(w io.Writer) (tarStats, error) {
-		defer undo()
+	resumed := false
+	resume := func() {
+		if !resumed {
+			resumed = true
+			undo()
+		}
+	}
+	defer resume() // on any failure
+	file, sum, size, stats, err := s.stage(dir, func(w io.Writer) (tarStats, error) {
+		defer func() {
+			if !p.KeepStopped {
+				resume()
+			}
+		}()
 		return writeTar(ctx, root, ".", w)
 	})
 	if err != nil {
@@ -82,14 +106,19 @@ func (s *Service) Archive(ctx context.Context, p ArchivePayload, st commands.Str
 	if err != nil {
 		return nil, err
 	}
+	if p.KeepStopped {
+		resumed = true // uploaded: the containers stay stopped for the move
+		fmt.Fprintf(st.Stdout(), "kept %s stopped\n", strings.Join(touched, ", "))
+	}
 	fmt.Fprintf(st.Stdout(), "snapshot of volume %s: %d files, %d bytes, sha256 %s\n", p.Volume.ID, stats.files, size, sum)
 	return ArchiveResult{SizeBytes: size, SHA256: sum, Location: loc, UncompressedBytes: stats.bytes, Files: stats.files,
 		DurationMS: time.Since(start).Milliseconds(), Containers: touched}, nil
 }
 
-// stage writes tar output through zstd (and the Sealer) into a temp file, returning its path, sha256 and size.
-func (s *Service) stage(write func(io.Writer) (tarStats, error)) (string, string, int64, tarStats, error) {
-	f, err := os.CreateTemp(s.d.TempDir, "falak-volume-*")
+// stage writes tar output through zstd (and the Sealer) into a file of the staging directory dir, returning its
+// path, sha256 and size.
+func (s *Service) stage(dir string, write func(io.Writer) (tarStats, error)) (string, string, int64, tarStats, error) {
+	f, err := os.CreateTemp(dir, "volume-*")
 	if err != nil {
 		return "", "", 0, tarStats{}, err
 	}
@@ -427,7 +456,12 @@ type RestorePayload struct {
 	Source            Location          `json:"source"`
 	SHA256            string            `json:"sha256"`
 	UncompressedBytes int64             `json:"uncompressed_bytes,omitempty"`
+	// ArchiveBytes is the snapshot's recorded (compressed) size: the download is aborted past it (+1 MiB).
+	ArchiveBytes int64 `json:"archive_bytes,omitempty"`
 }
+
+// fetchSlack is what a download may exceed the recorded archive size by.
+const fetchSlack = 1 << 20
 
 // RestoreResult is its result (also volume.clone's, with Containers).
 type RestoreResult struct {
@@ -458,7 +492,18 @@ func (s *Service) Restore(ctx context.Context, p RestorePayload, st commands.Str
 	if err := s.check(p.Volume); err != nil {
 		return nil, err
 	}
-	if _, err := s.create(ctx, p.Volume, p.SizeBytes, p.Labels, st); err != nil {
+	if p.ArchiveBytes < 0 || p.UncompressedBytes < 0 {
+		return nil, payloadErr("sizes must be positive")
+	}
+	need := p.ArchiveBytes
+	if need == 0 {
+		need = p.UncompressedBytes
+	}
+	dir, err := s.staging(need)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.create(ctx, p.Volume, p.SizeBytes, p.Labels, false, st); err != nil {
 		return nil, err
 	}
 	root, hp, err := s.openRoot(ctx, p.Volume)
@@ -476,7 +521,7 @@ func (s *Service) Restore(ctx context.Context, p RestorePayload, st commands.Str
 			return nil, fmt.Errorf("volume %s has %d bytes free, the snapshot needs %d", p.Volume.ID, us.Available, p.UncompressedBytes)
 		}
 	}
-	file, err := s.fetch(ctx, p.Source, p.SHA256)
+	file, err := s.fetch(ctx, dir, p.Source, p.SHA256, p.ArchiveBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -497,7 +542,11 @@ func (s *Service) Restore(ctx context.Context, p RestorePayload, st commands.Str
 		return nil, err
 	}
 	defer zr.Close()
+	// Never unpack more than the snapshot recorded (+1%), whatever the stream claims.
 	limit := p.UncompressedBytes
+	if limit > 0 {
+		limit += limit / 100
+	}
 	stats, err := extract(ctx, root, zr, limit)
 	if err != nil {
 		return nil, fmt.Errorf("restore into volume %s: %w", p.Volume.ID, err)
@@ -506,8 +555,9 @@ func (s *Service) Restore(ctx context.Context, p RestorePayload, st commands.Str
 	return RestoreResult{Bytes: stats.bytes, Files: stats.files, DurationMS: time.Since(start).Milliseconds()}, nil
 }
 
-// fetch downloads a snapshot to a temp file and checks its sha256.
-func (s *Service) fetch(ctx context.Context, src Location, want string) (string, error) {
+// fetch downloads a snapshot into the staging directory dir and checks its sha256. With max > 0, a body larger
+// than max (+fetchSlack) is refused.
+func (s *Service) fetch(ctx context.Context, dir string, src Location, want string, max int64) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src.URL, nil)
 	if err != nil {
 		return "", errors.New("invalid source url")
@@ -523,14 +573,28 @@ func (s *Service) fetch(ctx context.Context, src Location, want string) (string,
 	if resp.StatusCode/100 != 2 {
 		return "", fmt.Errorf("download snapshot: %s", resp.Status)
 	}
-	f, err := os.CreateTemp(s.d.TempDir, "falak-volume-restore-*")
+	capBytes := int64(-1)
+	if max > 0 {
+		capBytes = max + fetchSlack
+		if resp.ContentLength > capBytes {
+			return "", fmt.Errorf("download snapshot: %d bytes, the backup recorded %d", resp.ContentLength, max)
+		}
+	}
+	f, err := os.CreateTemp(dir, "restore-*")
 	if err != nil {
 		return "", err
 	}
 	h := sha256.New()
-	_, err = io.Copy(io.MultiWriter(f, h), resp.Body)
+	var body io.Reader = resp.Body
+	if capBytes > 0 {
+		body = io.LimitReader(resp.Body, capBytes+1)
+	}
+	n, err := io.Copy(io.MultiWriter(f, h), body)
 	if cerr := f.Close(); err == nil {
 		err = cerr
+	}
+	if err == nil && capBytes > 0 && n > capBytes {
+		err = fmt.Errorf("larger than the %d bytes the backup recorded", max)
 	}
 	if err != nil {
 		os.Remove(f.Name())
@@ -566,10 +630,10 @@ func (s *Service) Clone(ctx context.Context, p ClonePayload, st commands.Stream)
 		return nil, err
 	}
 	defer src.Close()
-	if _, err := s.create(ctx, p.Target, p.SizeBytes, p.Labels, st); err != nil {
+	if _, err := s.create(ctx, p.Target, p.SizeBytes, p.Labels, false, st); err != nil {
 		return nil, err
 	}
-	dst, _, err := s.openRoot(ctx, p.Target)
+	dst, dhp, err := s.openRoot(ctx, p.Target)
 	if err != nil {
 		return nil, err
 	}
@@ -578,6 +642,12 @@ func (s *Service) Clone(ctx context.Context, p ClonePayload, st commands.Stream)
 		return nil, err
 	} else if !ok {
 		return nil, fmt.Errorf("volume %s is not empty: clones go into a new or empty volume", p.Target.ID)
+	}
+	// Streamed (nothing is staged): the target needs room for the source's data.
+	if used, _ := du(ctx, src.FS(), UsageTimeout); used > 0 {
+		if err := s.room(s.d.FS.P(dhp), used, "volume "+p.Target.ID); err != nil {
+			return nil, err
+		}
 	}
 	undo, touched, err := s.quiesce(ctx, p.Source, hp, p.Consistency, st)
 	if err != nil {

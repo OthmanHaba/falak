@@ -174,6 +174,8 @@ func TestSchemasRejectInvalidPayloads(t *testing.T) {
 		"volume.archive":         `{"volume":{"id":"01J9Z8Y7X6W5V4T3S2R1Q0P9NA","kind":"sized"},"destination":{"kind":"presigned_url","url":"https://s3.example.com/k"}}`,
 		"volume.download":        `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"bind","path":"/srv/data"},"destination":{"kind":"presigned_url","url":"http://s3.example.com/k"},"max_bytes":1}`,
 		"volume.resize":          `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"size_bytes":1024}`,
+		"volume.restore":         `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"size_bytes":16777216,"source":{"kind":"url","url":"https://s3.example.com/k"},"sha256":"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08","archive_bytes":0}`,
+		"volume.clone":           `{"source":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"target":{"id":"01j9z8y7x6w5v4t3s2r1q0p9nb","kind":"docker"}}`,
 	}
 	for typ, payload := range bad {
 		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json")
@@ -347,6 +349,27 @@ func TestVolumeResultsValidate(t *testing.T) {
 		v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(b))
 		if err := sch.Validate(v); err != nil {
 			t.Errorf("%s result invalid: %v\n%s", typ, err, b)
+		}
+	}
+}
+
+// volume.archive keep_stopped only goes with consistency stop (moves).
+func TestVolumeArchiveKeepStoppedNeedsStop(t *testing.T) {
+	c := compiler(t)
+	sch, err := c.Compile(idBase + "commands/volume.archive.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := `{"volume":{"id":"01j9z8y7x6w5v4t3s2r1q0p9na","kind":"sized"},"destination":{"kind":"presigned_url","url":"https://s3.example.com/k"}`
+	for body, valid := range map[string]bool{
+		base + `,"consistency":"stop","keep_stopped":true}`:   true,
+		base + `,"consistency":"pause","keep_stopped":true}`:  false,
+		base + `,"keep_stopped":true}`:                        false,
+		base + `,"consistency":"pause","keep_stopped":false}`: true,
+	} {
+		v, _ := jsonschema.UnmarshalJSON(strings.NewReader(body))
+		if err := sch.Validate(v); (err == nil) != valid {
+			t.Errorf("%s: valid=%v, err=%v", body, valid, err)
 		}
 	}
 }

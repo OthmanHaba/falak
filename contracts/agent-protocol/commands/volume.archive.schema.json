@@ -108,8 +108,37 @@
           }
         }
       }
+    },
+    "keep_stopped": {
+      "type": "boolean",
+      "default": false,
+      "description": "consistency stop only: the stopped containers stay stopped after a successful upload (a move redeploys them on the target); a failed upload starts them again"
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "keep_stopped": {
+            "const": true
+          }
+        },
+        "required": [
+          "keep_stopped"
+        ]
+      },
+      "then": {
+        "required": [
+          "consistency"
+        ],
+        "properties": {
+          "consistency": {
+            "const": "stop"
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "result": {
       "type": "object",

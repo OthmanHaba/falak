@@ -92,6 +92,11 @@
         "type": "string",
         "maxLength": 256
       }
+    },
+    "adopt": {
+      "type": "boolean",
+      "default": false,
+      "description": "docker: take over an existing Docker volume that does not carry this volume's falak.volume.id label (otherwise refused)"
     }
   },
   "allOf": [

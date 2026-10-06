@@ -152,7 +152,7 @@ func newEnv(t *testing.T, mod func(*Deps)) *env {
 		return runner.Result{}, f.Truncate(n)
 	})
 	e := &env{fs: fs, run: run, docker: newFakeDocker(fs), mounted: map[string]bool{}}
-	d := Deps{Runner: run, FS: fs, Docker: e.docker, TempDir: t.TempDir(), Poll: 10 * time.Millisecond,
+	d := Deps{Runner: run, FS: fs, Docker: e.docker, Poll: 10 * time.Millisecond,
 		StatFS:  func(string) (Usage, error) { return Usage{Size: 1000, Available: 600, Used: 400}, nil },
 		Mounted: func(p string) bool { return e.mounted[p] }}
 	if mod != nil {
@@ -191,6 +191,7 @@ func TestSizedVolumeLifecycle(t *testing.T) {
 	want := []string{
 		"fallocate -l 67108864 " + img + ".partial",
 		"mkfs.ext4 -F -q -m 0 -L falak-" + id1[16:] + " " + img + ".partial",
+		"chattr +i " + e.fs.P("/var/lib/falak/volumes/"+id1),
 		"systemctl daemon-reload",
 		"systemctl enable --now " + unit,
 	}
@@ -213,7 +214,7 @@ func TestSizedVolumeLifecycle(t *testing.T) {
 	if err != nil || res.(CreateResult).Created {
 		t.Fatalf("%+v %v", res, err)
 	}
-	if got := e.run.Lines(); len(got) != 1 || got[0] != "systemctl enable --now "+unit {
+	if got := e.run.Lines(); len(got) != 2 || got[1] != "systemctl enable --now "+unit {
 		t.Fatalf("second create ran %v", got)
 	}
 	if _, err := e.svc.Create(ctx, CreatePayload{Volume: sized(id2)}, &nopStream{}); !isPayload(err) {
@@ -224,11 +225,17 @@ func TestSizedVolumeLifecycle(t *testing.T) {
 	if _, err := e.svc.Resize(ctx, ResizePayload{Volume: sized(id1), SizeBytes: 32 << 20}, &nopStream{}); !isPayload(err) || !strings.Contains(err.Error(), "shrinking") {
 		t.Fatalf("shrink: %v", err)
 	}
+	// The same size still grows the filesystem (a retried resize); offline, e2fsck's "errors corrected" is fine.
 	e.run.Reset()
+	e.run.On("e2fsck", runner.Result{ExitCode: 1})
 	res, err = e.svc.Resize(ctx, ResizePayload{Volume: sized(id1), SizeBytes: size}, &nopStream{})
-	if err != nil || res.(ResizeResult).Grown || len(e.run.Lines()) != 0 {
-		t.Fatalf("same size: %+v %v %v", res, err, e.run.Lines())
+	if err != nil || res.(ResizeResult).Grown {
+		t.Fatalf("same size: %+v %v", res, err)
 	}
+	if want := []string{"losetup -j " + img, "e2fsck -f -p " + img, "resize2fs " + img}; strings.Join(e.run.Lines(), "\n") != strings.Join(want, "\n") {
+		t.Fatalf("same size commands: %v", e.run.Lines())
+	}
+	e.run.Reset()
 	e.run.On("losetup -j", runner.Result{Stdout: []byte("/dev/loop7: [64769]:1234 (" + img + ")\n")})
 	res, err = e.svc.Resize(ctx, ResizePayload{Volume: sized(id1), SizeBytes: 128 << 20}, &nopStream{})
 	if err != nil {
@@ -266,7 +273,7 @@ func TestSizedVolumeLifecycle(t *testing.T) {
 	if err != nil || !res.(DeleteResult).Deleted {
 		t.Fatalf("%+v %v", res, err)
 	}
-	want = []string{"systemctl disable --now " + unit, "systemctl daemon-reload"}
+	want = []string{"systemctl disable --now " + unit, "systemctl daemon-reload", "chattr -i " + e.fs.P(mountSource)}
 	if got := e.run.Lines(); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("delete commands: %v", got)
 	}
@@ -431,7 +438,7 @@ func TestArchiveRestoreRoundTrip(t *testing.T) {
 	// Free space is checked against the snapshot's size.
 	e.svc.d.StatFS = func(string) (Usage, error) { return Usage{Available: 10}, nil }
 	dst3 := Ref{ID: "01j9z8y7x6w5v4t3s2r1q0p9nc", Kind: KindDocker, Name: "restored"}
-	if _, err := e.svc.Restore(ctx, RestorePayload{Volume: dst3, Source: source, SHA256: ar.SHA256, UncompressedBytes: ar.UncompressedBytes}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "bytes free") {
+	if _, err := e.svc.Restore(ctx, RestorePayload{Volume: dst3, Source: source, SHA256: ar.SHA256, UncompressedBytes: ar.UncompressedBytes}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "free") {
 		t.Fatalf("free space: %v", err)
 	}
 }
@@ -531,7 +538,7 @@ func TestClone(t *testing.T) {
 // bindEnv has a bind volume at /srv/data with files, a symlink to /etc, and a symlink to a directory outside.
 func bindEnv(t *testing.T, st *store) (*env, Ref) {
 	e := newEnv(t, func(d *Deps) {
-		d.BindAllow = []string{"/srv/data"}
+		d.BindAllow = []string{"/srv"}
 		if st != nil {
 			d.HTTP = st.srv.Client()
 		}
@@ -650,10 +657,20 @@ func TestBindAndSharedPathConfinement(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	for _, p := range []string{"/srv/other", "/srv/datax", "/srv/data/link", "/srv/data/link/sub", "/srv/data/../x", "relative"} {
+	// The allowlisted directory itself is refused, like the control plane does; only what is below it is allowed.
+	for _, p := range []string{"/srv/data", "/srv/other", "/srv/datax", "/srv/data/../x", "relative"} {
 		if _, err := e.svc.Create(ctx, CreatePayload{Volume: Ref{ID: id1, Kind: KindBind, Path: p}}, &nopStream{}); !isPayload(err) {
 			t.Errorf("bind %s accepted: %v", p, err)
 		}
+	}
+	// A symlink on the way is never followed (nothing is created outside).
+	for _, p := range []string{"/srv/data/link", "/srv/data/link/sub"} {
+		if _, err := e.svc.Create(ctx, CreatePayload{Volume: Ref{ID: id1, Kind: KindBind, Path: p}}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+			t.Errorf("bind %s accepted: %v", p, err)
+		}
+	}
+	if ok, _ := emptyDir(e.fs.P("/outside")); !ok {
+		t.Fatal("created through a symlink")
 	}
 	res, err := e.svc.Create(ctx, CreatePayload{Volume: Ref{ID: id1, Kind: KindBind, Path: "/srv/data/media"}}, &nopStream{})
 	if err != nil || !res.(CreateResult).Created || !e.fs.Exists("/srv/data/media") {
@@ -763,5 +780,192 @@ func TestUploadErrorsNeverCarryTheSignature(t *testing.T) {
 	_, err := e.svc.Archive(context.Background(), ArchivePayload{Volume: vol, Destination: Location{Kind: "presigned_url", URL: srv.URL + "/k?X-Amz-Signature=topsecret"}}, &nopStream{})
 	if err == nil || strings.Contains(err.Error(), "topsecret") {
 		t.Fatalf("%v", err)
+	}
+}
+
+// sharedEnv has a classic site's shared path /srv/falak/sites/shop/shared/storage and a secret outside it.
+func sharedEnv(t *testing.T, st *store) (*env, Ref) {
+	e := newEnv(t, func(d *Deps) {
+		if st != nil {
+			d.HTTP = st.srv.Client()
+		}
+	})
+	write(t, e.fs, "/srv/falak/sites/shop/shared/storage/app.log", "log")
+	write(t, e.fs, "/outside/shadow", "secret")
+	return e, Ref{ID: id1, Kind: KindSharedPath, Path: "/srv/falak/sites/shop/shared/storage"}
+}
+
+// swap replaces a directory with a symlink to /outside (what a site's user can do to its own shared directory).
+func swap(t *testing.T, e *env, dir string) {
+	t.Helper()
+	if err := os.RemoveAll(e.fs.P(dir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(e.fs.P("/outside"), e.fs.P(dir)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSharedPathSymlinkSwapsAreRefused(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	dest := Location{Kind: "presigned_url", URL: st.url("snap")}
+	for _, dir := range []string{"/srv/falak/sites/shop/shared/storage", "/srv/falak/sites/shop/shared"} {
+		t.Run(dir, func(t *testing.T) {
+			e, vol := sharedEnv(t, st)
+			swap(t, e, dir)
+			if _, err := e.svc.Browse(ctx, BrowsePayload{Volume: vol}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+				t.Fatalf("browse: %v", err)
+			}
+			if _, err := e.svc.Archive(ctx, ArchivePayload{Volume: vol, Destination: dest}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+				t.Fatalf("archive: %v", err)
+			}
+			if _, err := e.svc.Download(ctx, DownloadPayload{Volume: vol, Destination: dest, MaxBytes: 100}, &nopStream{}); err == nil {
+				t.Fatal("download followed the symlink")
+			}
+			if _, err := e.svc.Delete(ctx, DeletePayload{Volume: vol}, &nopStream{}); err == nil {
+				t.Fatal("delete followed the symlink")
+			}
+			if b, err := e.fs.ReadFile("/outside/shadow"); err != nil || string(b) != "secret" {
+				t.Fatal("the file outside was touched")
+			}
+			if _, ok := st.objects["/snap"]; ok {
+				t.Fatal("something outside was uploaded")
+			}
+		})
+	}
+}
+
+func TestSharedPathSwappedWhileOpening(t *testing.T) {
+	e, vol := sharedEnv(t, nil)
+	// The directory is swapped between its check and its opening.
+	descendHook = func(comp string) {
+		if comp == "storage" {
+			swap(t, e, "/srv/falak/sites/shop/shared/storage")
+		}
+	}
+	t.Cleanup(func() { descendHook = nil })
+	if _, err := e.svc.Browse(context.Background(), BrowsePayload{Volume: vol}, &nopStream{}); err == nil {
+		t.Fatal("browse opened a directory swapped for a symlink")
+	}
+}
+
+func TestSharedPathDelete(t *testing.T) {
+	e, vol := sharedEnv(t, nil)
+	res, err := e.svc.Delete(context.Background(), DeletePayload{Volume: vol}, &nopStream{})
+	if err != nil || !res.(DeleteResult).Deleted || e.fs.Exists("/srv/falak/sites/shop/shared/storage") || !e.fs.Exists("/srv/falak/sites/shop/shared") {
+		t.Fatalf("%+v %v", res, err)
+	}
+}
+
+func TestArchiveKeepsMovedServicesStopped(t *testing.T) {
+	st := newStore(t)
+	e := newEnv(t, func(d *Deps) { d.HTTP = st.srv.Client() })
+	ctx := context.Background()
+	src := Ref{ID: id1, Kind: KindDocker, Name: "data"}
+	if _, err := e.svc.Create(ctx, CreatePayload{Volume: src}, &nopStream{}); err != nil {
+		t.Fatal(err)
+	}
+	e.docker.containers = func() []docker.ContainerSummary {
+		return []docker.ContainerSummary{{ID: "c1", Names: []string{"/api"}, Mounts: []docker.MountPoint{{Name: "data"}}}}
+	}
+	dest := Location{Kind: "presigned_url", URL: st.url("move")}
+	if _, err := e.svc.Archive(ctx, ArchivePayload{Volume: src, Consistency: "pause", KeepStopped: true, Destination: dest}, &nopStream{}); !isPayload(err) {
+		t.Fatalf("keep_stopped without stop: %v", err)
+	}
+	res, err := e.svc.Archive(ctx, ArchivePayload{Volume: src, Consistency: "stop", KeepStopped: true, Destination: dest}, &nopStream{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(res.(ArchiveResult).Containers, ",") != "api" || strings.Join(e.docker.calls, ",") != "stop c1" {
+		t.Fatalf("%+v %v", res, e.docker.calls)
+	}
+	// A failed upload starts them again: the source keeps serving.
+	e.docker.calls = nil
+	bad := Location{Kind: "presigned_url", URL: "https://127.0.0.1:1/x"}
+	if _, err := e.svc.Archive(ctx, ArchivePayload{Volume: src, Consistency: "stop", KeepStopped: true, Destination: bad}, &nopStream{}); err == nil {
+		t.Fatal("upload to nowhere succeeded")
+	}
+	if strings.Join(e.docker.calls, ",") != "stop c1,start c1" {
+		t.Fatalf("%v", e.docker.calls)
+	}
+}
+
+func TestStagingIsOnTheVolumeStoreAndChecksFreeSpace(t *testing.T) {
+	st := newStore(t)
+	var statted []string
+	free := uint64(1 << 30)
+	e := newEnv(t, func(d *Deps) {
+		d.HTTP = st.srv.Client()
+		d.StatFS = func(p string) (Usage, error) {
+			statted = append(statted, p)
+			return Usage{Size: 1 << 31, Available: free}, nil
+		}
+	})
+	ctx := context.Background()
+	src := Ref{ID: id1, Kind: KindDocker, Name: "data"}
+	if _, err := e.svc.Create(ctx, CreatePayload{Volume: src}, &nopStream{}); err != nil {
+		t.Fatal(err)
+	}
+	write(t, e.fs, "/docker/data/big", strings.Repeat("x", 1000))
+	dest := Location{Kind: "presigned_url", URL: st.url("snap")}
+	res, err := e.svc.Archive(ctx, ArchivePayload{Volume: src, Destination: dest}, &nopStream{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	staging := e.fs.P("/var/lib/falak/volumes/.staging")
+	if fi, err := os.Stat(staging); err != nil || fi.Mode().Perm() != 0o700 || len(statted) == 0 || statted[0] != staging {
+		t.Fatalf("staging %v %v %v", fi, err, statted)
+	}
+	if left, _ := os.ReadDir(staging); len(left) != 0 {
+		t.Fatalf("staging files left: %v", left)
+	}
+	free = 1000 // under the 1000 bytes + 10%
+	if _, err := e.svc.Archive(ctx, ArchivePayload{Volume: src, Destination: dest}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "not enough free space") {
+		t.Fatalf("free space: %v", err)
+	}
+
+	// Restores download at most the recorded archive size (+1 MiB).
+	free = 1 << 30
+	ar := res.(ArchiveResult)
+	st.objects["/huge"] = append(append([]byte{}, st.objects["/snap"]...), make([]byte, 2<<20)...)
+	sum := sha256.Sum256(st.objects["/huge"])
+	_, err = e.svc.Restore(ctx, RestorePayload{Volume: Ref{ID: id2, Kind: KindDocker, Name: "dst"}, Source: Location{Kind: "url", URL: st.url("huge")},
+		SHA256: hex.EncodeToString(sum[:]), ArchiveBytes: ar.SizeBytes}, &nopStream{})
+	if err == nil || !strings.Contains(err.Error(), "recorded") {
+		t.Fatalf("oversized download: %v", err)
+	}
+	if _, err := e.svc.Restore(ctx, RestorePayload{Volume: Ref{ID: id2, Kind: KindDocker, Name: "dst"}, Source: Location{Kind: "url", URL: st.url("snap")},
+		SHA256: ar.SHA256, ArchiveBytes: ar.SizeBytes, UncompressedBytes: ar.UncompressedBytes}, &nopStream{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCreateNeverAdoptsAnotherDockerVolume(t *testing.T) {
+	e := newEnv(t, nil)
+	ctx := context.Background()
+	if _, err := e.docker.VolumeCreate(ctx, "pgdata", map[string]string{"com.docker.compose.project": "other"}); err != nil {
+		t.Fatal(err)
+	}
+	vol := Ref{ID: id1, Kind: KindDocker, Name: "pgdata"}
+	if _, err := e.svc.Create(ctx, CreatePayload{Volume: vol}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "not this volume") {
+		t.Fatalf("adopted: %v", err)
+	}
+	if _, err := e.svc.Restore(ctx, RestorePayload{Volume: vol, Source: Location{Kind: "url", URL: "https://x.example/s"}, SHA256: strings.Repeat("a", 64)}, &nopStream{}); err == nil || !strings.Contains(err.Error(), "not this volume") {
+		t.Fatalf("restore adopted: %v", err)
+	}
+	if res, err := e.svc.Create(ctx, CreatePayload{Volume: vol, Adopt: true}, &nopStream{}); err != nil || res.(CreateResult).Created {
+		t.Fatalf("adopt: %+v %v", res, err)
+	}
+	// A retried create of the same volume is fine: Falak labels what it creates with the volume's id.
+	mine := Ref{ID: id2, Kind: KindDocker, Name: "mine"}
+	for i, created := range []bool{true, false} {
+		res, err := e.svc.Create(ctx, CreatePayload{Volume: mine}, &nopStream{})
+		if err != nil || res.(CreateResult).Created != created {
+			t.Fatalf("create %d: %+v %v", i, res, err)
+		}
+	}
+	if v, _, _ := e.docker.VolumeInspect(ctx, "mine"); v.Labels[idLabel] != id2 {
+		t.Fatalf("labels %v", v.Labels)
 	}
 }
