@@ -54,7 +54,8 @@ final class SessionReauthentication implements Reauthentication
             throw ValidationException::withMessages(['password' => __('auth.failed')]);
         }
 
-        $throttleKey = 'reauthenticate|'.$user->id.'|'.$request->ip();
+        // Per user, not per address: the session is already authenticated, so the password is what's guessed.
+        $throttleKey = 'reauthenticate|'.$user->id;
 
         if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
             $seconds = RateLimiter::availableIn($throttleKey);

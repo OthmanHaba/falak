@@ -19,6 +19,7 @@ use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Domain\Policies\OrganizationPolicy;
 use Falak\Identity\Http\Middleware\EnsureCurrentOrganization;
 use Falak\Identity\Http\Middleware\EnsureOrganizationPermission;
+use Falak\Identity\Http\Middleware\EnsureReauthenticated;
 use Falak\Identity\Infrastructure\CastSealedTwoFactorEncrypter;
 use Falak\Identity\Infrastructure\DatabaseAuditLog;
 use Falak\Identity\Infrastructure\EloquentOrganizationDirectory;
@@ -78,6 +79,7 @@ class IdentityServiceProvider extends ModuleServiceProvider
         $router = $this->app->make('router');
         $router->aliasMiddleware('org', EnsureCurrentOrganization::class);
         $router->aliasMiddleware('org.can', EnsureOrganizationPermission::class);
+        $router->aliasMiddleware('reauthenticated', EnsureReauthenticated::class);
 
         $this->registerPermissions($this->app->make(PermissionRegistry::class));
 
