@@ -47,6 +47,11 @@ final class EloquentProjectDirectory implements ProjectDirectory
         return $this->service($kind, $refId)?->toData();
     }
 
+    public function findService(string $serviceId): ?ServiceData
+    {
+        return Service::query()->find(strtolower($serviceId))?->toData();
+    }
+
     public function servicesIn(string $environmentId): array
     {
         return Service::query()->where('environment_id', strtolower($environmentId))->orderBy('created_at')->orderBy('id')->get()

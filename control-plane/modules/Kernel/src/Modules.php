@@ -23,6 +23,7 @@ final class Modules
         'Processes',
         'Databases',
         'Projects',
+        'Secrets',
         'Templates',
         'Functions',
         'Network',

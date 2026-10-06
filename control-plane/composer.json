@@ -60,6 +60,7 @@
             "Falak\\Projects\\": "modules/Projects/src/",
             "Falak\\Templates\\": "modules/Templates/src/",
             "Falak\\Functions\\": "modules/Functions/src/",
+            "Falak\\Secrets\\": "modules/Secrets/src/",
             "Falak\\Identity\\Database\\Factories\\": "modules/Identity/database/factories/",
             "Falak\\Providers\\Database\\Factories\\": "modules/Providers/database/factories/",
             "Falak\\Fleet\\Database\\Factories\\": "modules/Fleet/database/factories/",
@@ -89,7 +90,8 @@
             "Falak\\Terminal\\Tests\\": "modules/Terminal/tests/",
             "Falak\\Projects\\Tests\\": "modules/Projects/tests/",
             "Falak\\Templates\\Tests\\": "modules/Templates/tests/",
-            "Falak\\Functions\\Tests\\": "modules/Functions/tests/"
+            "Falak\\Functions\\Tests\\": "modules/Functions/tests/",
+            "Falak\\Secrets\\Tests\\": "modules/Secrets/tests/"
         }
     },
     "scripts": {

@@ -36,6 +36,8 @@ use Falak\Fleet\Contracts\Exceptions\AgentUnavailable;
 use Falak\Fleet\Contracts\Exceptions\InvalidCommandPayload;
 use Falak\Fleet\Contracts\Exceptions\UnknownCommandType;
 use Falak\Processes\Contracts\ProcessControl;
+use Falak\Secrets\Contracts\Data\SecretAccessor;
+use Falak\Secrets\Contracts\Secrets;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Contracts\BuildMode;
 use Falak\Sites\Contracts\ComposeSites;
@@ -86,6 +88,7 @@ final class Orchestrator
         private readonly ProcessControl $processes,
         private readonly ComposeSites $compose,
         private readonly FunctionSources $functions,
+        private readonly Secrets $secrets,
     ) {}
 
     // ---- entry points -------------------------------------------------------------------------
@@ -765,7 +768,11 @@ final class Orchestrator
                 // A new release: Octane is restarted (octane:reload would keep the old release), the edge holds requests meanwhile.
                 $handles = $this->processes->restartForSite($site->id, (string) $step->server_id, newRelease: true);
             } else {
-                $payload = $this->payloads->for($step, $deployment, $site);
+                // Secrets the payload resolves are logged as read by this deployment.
+                $payload = $this->secrets->accessedAs(
+                    SecretAccessor::deployment($deployment->id, $deployment->number),
+                    fn () => $this->payloads->for($step, $deployment, $site),
+                );
 
                 if ($payload === null) {
                     $this->log->note($deployment->id, 'No leader command to run.', $step);

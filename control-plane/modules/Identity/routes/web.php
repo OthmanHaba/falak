@@ -77,7 +77,8 @@ Route::middleware('auth')->group(function () {
 
     Route::middleware('org')->group(function () {
         Route::get('settings/api-tokens', [ApiTokenController::class, 'index'])->name('api-tokens.index');
-        Route::post('settings/api-tokens', [ApiTokenController::class, 'store'])->name('api-tokens.store');
+        // A token outlives the session and may carry secrets.reveal: minting one needs a fresh password (+ 2FA) check.
+        Route::post('settings/api-tokens', [ApiTokenController::class, 'store'])->middleware('reauthenticated')->name('api-tokens.store');
         Route::delete('settings/api-tokens/{token}', [ApiTokenController::class, 'destroy'])->name('api-tokens.destroy');
 
         // Canonical organization settings pages live in the /settings/{section} shell (docs/UI_DESIGN.md §3).

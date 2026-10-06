@@ -7,6 +7,7 @@ use Falak\Builds\Application\BuildProgress;
 use Falak\Builds\Contracts\BuildStatus;
 use Falak\Builds\Contracts\Data\BuildRequest;
 use Falak\Builds\Domain\Models\Build;
+use Falak\Secrets\Contracts\Data\SecretAccessor;
 use Falak\Sites\Contracts\SiteDirectory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -33,7 +34,9 @@ final class RequestBuild
         }
 
         $commit = $request->commit !== null ? strtolower($request->commit) : null;
-        $cacheKey = $this->configuration->cacheKey($site, $mode, $commit);
+        $cacheKey = $this->configuration->cacheKey($site, $mode, $commit, $request->deploymentId !== null
+            ? SecretAccessor::deployment($request->deploymentId)
+            : SecretAccessor::system('Build requested'));
         $branch = $request->branch ?? $site->branch;
 
         if ($commit !== null && $request->allowReuse) {

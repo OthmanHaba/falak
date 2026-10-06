@@ -339,6 +339,11 @@ final class CanvasReadModel
             $consumer = null;
 
             foreach ($this->references->referencesIn($variables) as $reference) {
+                // ${{ secrets.NAME }} is the secret store, not a service.
+                if (strtolower(trim($reference['service'])) === VariableReferences::SECRETS) {
+                    continue;
+                }
+
                 $target = $byHandle[Service::handle($reference['service'])] ?? null;
 
                 if ($target === null || $target->id === $service->id) {

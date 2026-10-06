@@ -2,39 +2,31 @@
 
 namespace Falak\Identity\Http\Controllers\Auth;
 
+use Falak\Identity\Contracts\Reauthentication;
 use Falak\Kernel\Http\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
+/**
+ * Re-authentication: the password, plus the two-factor code when 2FA is enabled. Satisfies both Laravel's
+ * `password.confirm` and Falak's `reauthenticated` middleware.
+ */
 class ConfirmablePasswordController extends Controller
 {
-    /**
-     * Show the confirm password page.
-     */
-    public function show(): Response
+    public function show(Request $request, Reauthentication $reauthentication): Response
     {
-        return Inertia::render('Identity/auth/confirm-password');
+        return Inertia::render('Identity/auth/confirm-password', [
+            'requiresCode' => $reauthentication->requiresCode($request->user()),
+        ]);
     }
 
-    /**
-     * Confirm the user's password.
-     */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, Reauthentication $reauthentication): RedirectResponse
     {
-        if (! Auth::guard('web')->validate([
-            'email' => $request->user()->email,
-            'password' => $request->password,
-        ])) {
-            throw ValidationException::withMessages([
-                'password' => __('auth.password'),
-            ]);
-        }
+        $data = $request->validate(['password' => ['required', 'string'], 'code' => ['nullable', 'string', 'max:16']]);
 
-        $request->session()->put('auth.password_confirmed_at', time());
+        $reauthentication->confirm($request, (string) $data['password'], $data['code'] ?? null);
 
         return redirect()->intended(config('fortify.home'));
     }

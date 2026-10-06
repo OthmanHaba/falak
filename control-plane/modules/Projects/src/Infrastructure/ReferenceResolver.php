@@ -7,12 +7,18 @@ use Falak\Databases\Contracts\DatabaseConnections;
 use Falak\Projects\Contracts\Data\ResolvedVariables;
 use Falak\Projects\Contracts\ServiceKind;
 use Falak\Projects\Contracts\VariableReferences;
+use Falak\Projects\Domain\Models\Environment;
 use Falak\Projects\Domain\Models\Service;
+use Falak\Secrets\Contracts\Data\ScopeChain;
+use Falak\Secrets\Contracts\Secrets;
 use Falak\Sites\Contracts\SiteDirectory;
 
 /**
  * `${{ service.KEY }}` resolution within one environment. Site variables may themselves contain
  * references; they are resolved recursively and cycles are reported instead of looping.
+ *
+ * `${{ secrets.NAME }}` resolves through the secret store, in the scope chain of the service whose variable holds
+ * the reference (a site's variable referenced from another site still sees that site's own secrets).
  */
 final class ReferenceResolver implements VariableReferences
 {
@@ -35,9 +41,33 @@ final class ReferenceResolver implements VariableReferences
 
     private ?DatabaseConsumer $consumer = null;
 
+    private ?string $environmentId = null;
+
+    /** Report secret problems without reading values. */
+    private bool $checkOnly = false;
+
+    /** Resolving for a preview environment: only secrets available to previews. */
+    private bool $forPreview = false;
+
+    /** @var array<string, array{value: string, sensitive: bool}> resolved "serviceId|NAME" secrets */
+    private array $secretValues = [];
+
+    /** @var array<string, true> variables whose value includes a secret */
+    private array $secretKeys = [];
+
+    /** @var array<string, true> variables whose value includes a sensitive secret */
+    private array $sensitiveKeys = [];
+
+    /** @var list<bool> every secret substituted so far (its sensitive flag), in order */
+    private array $marks = [];
+
+    /** @var array<string, list<bool>> the secrets inside each resolved "serviceId.KEY" (replayed on reuse) */
+    private array $nodeMarks = [];
+
     public function __construct(
         private readonly SiteDirectory $sites,
         private readonly DatabaseConnections $databases,
+        private readonly Secrets $secrets,
     ) {}
 
     public function resolve(string $environmentId, string $siteId, array $variables): ResolvedVariables
@@ -45,11 +75,27 @@ final class ReferenceResolver implements VariableReferences
         return $this->run($environmentId, $siteId, $variables);
     }
 
-    public function resolveForSite(string $siteId, array $variables): ResolvedVariables
+    public function resolveForSite(string $siteId, array $variables, ?array $only = null, bool $forPreview = false): ResolvedVariables
     {
         $environmentId = Service::query()->where('kind', ServiceKind::Site)->where('ref_id', strtolower($siteId))->value('environment_id');
+        $this->forPreview = $forPreview;
 
-        return $this->run($environmentId !== null ? (string) $environmentId : null, $siteId, $variables);
+        try {
+            return $this->run($environmentId !== null ? (string) $environmentId : null, $siteId, $variables, $only);
+        } finally {
+            $this->forPreview = false;
+        }
+    }
+
+    public function check(string $siteId, array $variables): array
+    {
+        $this->checkOnly = true;
+
+        try {
+            return $this->resolveForSite($siteId, $variables)->errors;
+        } finally {
+            $this->checkOnly = false;
+        }
     }
 
     public function referencesIn(array $variables): array
@@ -69,14 +115,16 @@ final class ReferenceResolver implements VariableReferences
 
     /**
      * @param  array<string, string>  $variables
+     * @param  list<string>|null  $only  the variables to output (others are only read through self-references)
      */
-    private function run(?string $environmentId, string $siteId, array $variables): ResolvedVariables
+    private function run(?string $environmentId, string $siteId, array $variables, ?array $only = null): ResolvedVariables
     {
         $variables = array_map('strval', $variables);
-        $references = array_map(fn (array $r) => ['service' => $r['service'], 'key' => $r['key']], $this->referencesIn($variables));
+        $wanted = $only === null ? $variables : array_intersect_key($variables, array_flip($only));
+        $references = array_map(fn (array $r) => ['service' => $r['service'], 'key' => $r['key']], $this->referencesIn($wanted));
 
         if ($references === []) {
-            return new ResolvedVariables($variables, [], []);
+            return new ResolvedVariables($wanted, [], []);
         }
 
         $this->services = [];
@@ -86,9 +134,15 @@ final class ReferenceResolver implements VariableReferences
         $this->siteId = strtolower($siteId);
         $this->siteVariables = $variables;
         $this->consumer = null;
+        $this->environmentId = $environmentId;
+        $this->secretValues = [];
+        $this->secretKeys = [];
+        $this->sensitiveKeys = [];
+        $this->marks = [];
+        $this->nodeMarks = [];
 
         if ($environmentId === null) {
-            return new ResolvedVariables($variables, ['The site is not part of a project environment, so ${{ service.KEY }} references cannot be resolved.'], $references);
+            return new ResolvedVariables($wanted, ['The site is not part of a project environment, so ${{ service.KEY }} references cannot be resolved.'], $references);
         }
 
         foreach (Service::query()->where('environment_id', $environmentId)->get() as $service) {
@@ -98,21 +152,33 @@ final class ReferenceResolver implements VariableReferences
         $self = $this->serviceOfSite();
         $output = [];
 
-        foreach ($variables as $key => $value) {
-            $output[$key] = $this->substitute($value, (string) $key, $self !== null ? ["{$self->id}.{$key}"] : []);
+        foreach ($wanted as $key => $value) {
+            $output[$key] = $this->substitute($value, (string) $key, $self !== null ? ["{$self->id}.{$key}"] : [], $self);
         }
 
-        return new ResolvedVariables($output, array_values(array_unique($this->errors)), $references);
+        return new ResolvedVariables(
+            $output,
+            array_values(array_unique($this->errors)),
+            $references,
+            array_map('strval', array_keys($this->secretKeys)),
+            array_map('strval', array_keys($this->sensitiveKeys)),
+        );
     }
 
     /**
      * @param  list<string>  $stack  "serviceId.KEY" entries being resolved (cycle detection)
+     * @param  Service|null  $owner  the service whose variable this is (null: the site being released, not on the canvas)
      */
-    private function substitute(string $value, string $variable, array $stack): string
+    private function substitute(string $value, string $variable, array $stack, ?Service $owner): string
     {
-        return (string) preg_replace_callback(self::PATTERN, function (array $match) use ($variable, $stack) {
+        return (string) preg_replace_callback(self::PATTERN, function (array $match) use ($variable, $stack, $owner) {
             $name = trim($match[1]);
             $key = $match[2];
+
+            if (strtolower($name) === self::SECRETS) {
+                return $this->secret($key, $match[0], $variable, $owner);
+            }
+
             $service = $this->services[Service::handle($name)] ?? null;
 
             if ($service === null) {
@@ -130,6 +196,10 @@ final class ReferenceResolver implements VariableReferences
             }
 
             if (array_key_exists($node, $this->resolved)) {
+                foreach ($this->nodeMarks[$node] ?? [] as $sensitive) {
+                    $this->markSecret($variable, $sensitive);
+                }
+
                 return $this->resolved[$node];
             }
 
@@ -151,16 +221,79 @@ final class ReferenceResolver implements VariableReferences
             }
 
             $errorsBefore = count($this->errors);
+            $marksBefore = count($this->marks);
             $resolved = $service->kind === ServiceKind::Site
-                ? $this->substitute($values[$key], $variable, [...$stack, $node])
+                ? $this->substitute($values[$key], $variable, [...$stack, $node], $service)
                 : $values[$key];
 
             if (count($this->errors) === $errorsBefore) {
                 $this->resolved[$node] = $resolved;
+                $this->nodeMarks[$node] = array_slice($this->marks, $marksBefore);
             }
 
             return $resolved;
         }, $value);
+    }
+
+    /**
+     * One `${{ secrets.NAME }}`: the secret's value, or the reference unchanged with an error.
+     */
+    private function secret(string $name, string $reference, string $variable, ?Service $owner): string
+    {
+        $chain = $owner !== null
+            ? new ScopeChain($owner->organization_id, $owner->project_id, $owner->environment_id, $owner->id)
+            : $this->environmentChain();
+
+        if ($chain === null) {
+            $this->errors[] = "{$variable}: {$reference} cannot be resolved outside a project environment.";
+
+            return $reference;
+        }
+
+        $memo = ($chain->serviceId ?? $chain->environmentId).'|'.$name;
+
+        if (isset($this->secretValues[$memo])) {
+            $this->markSecret($variable, $this->secretValues[$memo]['sensitive']);
+
+            return $this->secretValues[$memo]['value'];
+        }
+
+        $result = $this->checkOnly
+            ? $this->secrets->check($chain, [$name], forPreview: $this->forPreview)
+            : $this->secrets->resolve($chain, [$name], forPreview: $this->forPreview);
+
+        if (isset($result->errors[$name])) {
+            $this->errors[] = "{$variable}: {$result->errors[$name]}.";
+
+            return $reference;
+        }
+
+        if ($this->checkOnly) {
+            return $reference;
+        }
+
+        $this->secretValues[$memo] = ['value' => $result->values[$name], 'sensitive' => $result->isSensitive($name)];
+        $this->markSecret($variable, $result->isSensitive($name));
+
+        return $result->values[$name];
+    }
+
+    private function markSecret(string $variable, bool $sensitive): void
+    {
+        $this->marks[] = $sensitive;
+        $this->secretKeys[$variable] = true;
+
+        if ($sensitive) {
+            $this->sensitiveKeys[$variable] = true;
+        }
+    }
+
+    /** The scope chain of the environment itself, for a site that is not on its canvas. */
+    private function environmentChain(): ?ScopeChain
+    {
+        $environment = $this->environmentId !== null ? Environment::query()->find($this->environmentId) : null;
+
+        return $environment === null ? null : new ScopeChain($environment->organization_id, $environment->project_id, $environment->id);
     }
 
     /**
