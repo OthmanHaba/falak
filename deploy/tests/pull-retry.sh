@@ -74,7 +74,8 @@ for permanent in \
   'Error response from daemon: Head "https://ghcr.io/v2/acme/falak-edge/manifests/v0.9.0": denied' \
   'Error response from daemon: manifest unknown' \
   'Error response from daemon: manifest for ghcr.io/acme/falak-edge:v9.9.9 not found: manifest unknown: manifest unknown' \
-  'Error response from daemon: Head "https://ghcr.io/v2/acme/falak-edge/manifests/v0.9.0": unauthorized'; do
+  'Error response from daemon: Head "https://registry-1.docker.io/v2/acme/falak-edge/manifests/v0.9.0": unauthorized: authentication required' \
+  'Error response from daemon: pull access denied for acme/falak-edge, repository does not exist or may require '"'"'docker login'"'"': denied: requested access to the resource is denied'; do
   printf 'FALAK_IMAGE_PREFIX=ghcr.io/acme\nFALAK_VERSION=v0.9.0\n' > "$FALAK_DIR/.env"
   reset 99; error="$permanent"
   if pull_images 2>"$work/err"; then fail "a permanent failure succeeded"; fi
@@ -85,6 +86,25 @@ for permanent in \
 done
 error="$transient"
 pass "access denied and unknown manifests / tags fail at once, with the registry's error"
+
+# Network errors that happen to say "not found" or "denied" are not registry refusals: retried.
+for flaky in \
+  'Error response from daemon: Get "https://ghcr.io/v2/": dial tcp: lookup ghcr.io on 127.0.0.53:53: no such host' \
+  'Error response from daemon: Get "https://ghcr.io/v2/": dial tcp: lookup ghcr.io: not found' \
+  'Error response from daemon: Get "https://ghcr.io/v2/": dial tcp 140.82.121.34:443: connect: permission denied' \
+  'Error response from daemon: Get "https://ghcr.io/v2/": net/http: TLS handshake timeout'; do
+  printf 'FALAK_IMAGE_PREFIX=ghcr.io/acme\nFALAK_VERSION=v0.9.0\n' > "$FALAK_DIR/.env"
+  reset 1; error="$flaky"
+  pull_images 2>"$work/err" || fail "'$flaky' was not retried"
+  [ "$(wc -l < "$calls" | tr -d ' ')" = 2 ] || fail "'$flaky': $(wc -l < "$calls") attempts"
+done
+error="$transient"
+pass "DNS / connection errors (no such host, lookup … not found, permission denied) are retried"
+
+# One definition: deploy/install.sh and deploy/falak-ctl carry the same pull_permanent.
+body() { sed -n '/^# pull_permanent FILE/,/^}/p' "$1"; }
+[ -n "$(body "$here/../install.sh")" ] && [ "$(body "$here/../install.sh")" = "$(body "$here/../falak-ctl")" ] || fail "pull_permanent differs between install.sh and falak-ctl"
+pass "install.sh and falak-ctl share the same pull_permanent"
 
 printf 'FALAK_IMAGE_PREFIX=ghcr.io/acme\nFALAK_VERSION=v0.9.0\n' > "$FALAK_DIR/.env"
 reset 1

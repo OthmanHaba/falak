@@ -382,9 +382,11 @@ pull_attempts() {
   echo 4
 }
 
-# pull_permanent FILE : the pull's error output says retrying can't help (no access, no such image or tag).
+# pull_permanent FILE : the pull's error output is a registry refusal no retry fixes: no access, or no such image or
+# tag. Registry phrases only — a network error that merely says "not found" (a DNS lookup) stays transient. Kept
+# identical in deploy/install.sh and deploy/falak-ctl (deploy/tests/pull-retry.sh checks it).
 pull_permanent() {
-  grep -qiE 'denied|unauthorized|authentication required|manifest unknown|not found' "$1"
+  grep -qiE 'manifest unknown|manifest (for )?[^ ]+ not found|pull access denied|requested access to the resource is denied|unauthorized:|authentication required|": denied(:|$)' "$1"
 }
 
 # pull_retry CMD... : run an image pull, retrying transient registry errors ("connection reset by peer", IPv6
