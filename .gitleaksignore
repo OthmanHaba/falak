@@ -13,3 +13,8 @@ b58b575af808c59e43087b887472dc4135c1dd3c:agent/internal/db/redis_test.go:generic
 84f53a9989f75727a6d0673330b9300fa3c624f8:agent/testdata/command-examples/db.redis.apply.json:generic-api-key:1
 # Same fake Redis password (Xk3pQ9…) on the line the Falak rename rewrote.
 7b82b0e7f820dd16016c9b3afd284750a623b87f:agent/internal/db/redis_test.go:generic-api-key:1094
+# Fake SECRET_KEY_BASE fixture in SaveAsTemplateTest (q8Zr2L…): the test asserts a saved template never contains it.
+36257f7ea5fa860682c22292807a8a21de861143:control-plane/modules/Templates/tests/Feature/SaveAsTemplateTest.php:generic-api-key:37
+# The same fake Redis password (Xk3pQ9…) in redis_backup_test.go on feat/redis-backups.
+3c4a44335ef32e99d3ab42b64938057a512115c5:agent/internal/db/redis_backup_test.go:generic-api-key:417
+3c4a44335ef32e99d3ab42b64938057a512115c5:agent/internal/db/redis_backup_test.go:generic-api-key:425
