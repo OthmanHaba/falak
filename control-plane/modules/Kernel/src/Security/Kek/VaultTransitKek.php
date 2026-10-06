@@ -5,6 +5,7 @@ namespace Falak\Kernel\Security\Kek;
 use Falak\Kernel\Security\DecryptionFailed;
 use Falak\Kernel\Security\KeyEncryptionKey;
 use Falak\Kernel\Security\KeyUnavailable;
+use Falak\Kernel\Security\RedactsKeyMaterial;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
@@ -21,6 +22,8 @@ use Illuminate\Support\Facades\Http;
  */
 final class VaultTransitKek implements KeyEncryptionKey
 {
+    use RedactsKeyMaterial;
+
     public const PROVIDER = 'vault-transit';
 
     private const PREFIX = 'vt1:';

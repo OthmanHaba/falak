@@ -36,6 +36,10 @@ return [
             'namespace' => env('FALAK_KEK_VAULT_NAMESPACE'),
         ],
 
+        // Seconds a process keeps using the data key it looked up as active (a rotation elsewhere is seen after
+        // this); falak:keys:rotate-data waits this long between passes for those processes to catch up.
+        'active_ttl' => (int) env('FALAK_KEYS_ACTIVE_TTL', 60),
+
         // Rows re-encrypted per batch by falak:keys:rotate-data.
         'rotate_batch' => (int) env('FALAK_KEYS_ROTATE_BATCH', 200),
     ],

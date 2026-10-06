@@ -5,6 +5,7 @@ namespace Falak\Kernel\Security\Kek;
 use Falak\Kernel\Security\DecryptionFailed;
 use Falak\Kernel\Security\KeyEncryptionKey;
 use Falak\Kernel\Security\KeyUnavailable;
+use Falak\Kernel\Security\RedactsKeyMaterial;
 use Falak\Kernel\Support\Aws\SigV4Signer;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
@@ -19,9 +20,13 @@ use Illuminate\Support\Facades\Http;
  */
 final class AwsKmsKek implements KeyEncryptionKey
 {
+    use RedactsKeyMaterial;
+
     public const PROVIDER = 'aws-kms';
 
     private const PREFIX = 'kms1:';
+
+    private ?string $arn = null;
 
     public function __construct(
         private readonly string $keyId,
@@ -41,15 +46,34 @@ final class AwsKmsKek implements KeyEncryptionKey
         return self::PROVIDER;
     }
 
+    /**
+     * The key ARN, never an alias: data keys record the key that really wrapped them, so repointing an alias
+     * (a new KMS key) shows up as a KEK change that falak:keys:rotate-kek re-wraps, and Decrypt names the
+     * original key. An alias is resolved once with DescribeKey.
+     */
     public function id(): string
     {
-        return $this->keyId;
+        if ($this->arn !== null) {
+            return $this->arn;
+        }
+
+        if (preg_match('/^arn:aws[a-z-]*:kms:[^:]+:\d+:key\//', $this->keyId)) {
+            return $this->arn = $this->keyId;
+        }
+
+        $arn = $this->call('DescribeKey', ['KeyId' => $this->keyId])['KeyMetadata']['Arn'] ?? null;
+
+        if (! is_string($arn) || $arn === '') {
+            throw new KeyUnavailable("AWS KMS DescribeKey returned no ARN for {$this->keyId}.");
+        }
+
+        return $this->arn = $arn;
     }
 
     public function wrap(#[\SensitiveParameter] string $dataKey, array $context): string
     {
         $json = $this->call('Encrypt', [
-            'KeyId' => $this->keyId,
+            'KeyId' => $this->id(),
             'Plaintext' => base64_encode($dataKey),
             'EncryptionContext' => (object) $context,
         ]);
@@ -70,7 +94,7 @@ final class AwsKmsKek implements KeyEncryptionKey
         }
 
         $json = $this->call('Decrypt', [
-            'KeyId' => $this->keyId,
+            'KeyId' => $this->id(),
             'CiphertextBlob' => substr($wrapped, strlen(self::PREFIX)),
             'EncryptionContext' => (object) $context,
         ]);

@@ -77,7 +77,7 @@ describe('local KEK', function () {
 });
 
 describe('AWS KMS KEK', function () {
-    beforeEach(fn () => $this->kek = new AwsKmsKek('alias/falak', 'eu-central-1', 'AKIDEXAMPLE', 'secret-key-example'));
+    beforeEach(fn () => $this->kek = new AwsKmsKek('arn:aws:kms:eu-central-1:111122223333:key/k-1', 'eu-central-1', 'AKIDEXAMPLE', 'secret-key-example'));
 
     it('wraps with a SigV4-signed KMS Encrypt that carries the context', function () {
         Http::fake(['https://kms.eu-central-1.amazonaws.com/' => Http::response(['CiphertextBlob' => 'YmxvYg==', 'KeyId' => 'arn:aws:kms:eu-central-1:1:key/x'])]);
@@ -92,7 +92,7 @@ describe('AWS KMS KEK', function () {
                 && $request->header('Content-Type')[0] === 'application/x-amz-json-1.1'
                 && str_starts_with($request->header('Authorization')[0], 'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/')
                 && str_contains($request->header('Authorization')[0], '/eu-central-1/kms/aws4_request')
-                && $body['KeyId'] === 'alias/falak'
+                && $body['KeyId'] === 'arn:aws:kms:eu-central-1:111122223333:key/k-1'
                 && base64_decode($body['Plaintext']) === '0123456789abcdef0123456789abcdef'
                 && $body['EncryptionContext'] === ['falak:purpose' => 'platform'];
         });
@@ -114,6 +114,24 @@ describe('AWS KMS KEK', function () {
 
         expect(fn () => $this->kek->unwrap('kms1:YmxvYg==', []))->toThrow(DecryptionFailed::class)
             ->and(fn () => $this->kek->unwrap('kms1:YmxvYg==', []))->toThrow(KeyUnavailable::class, 'AccessDeniedException) not allowed');
+    });
+
+    it('records the key ARN behind an alias, so repointing the alias is a KEK change', function () {
+        Http::fake(['*' => Http::sequence()
+            ->push(['KeyMetadata' => ['Arn' => 'arn:aws:kms:eu-central-1:111122223333:key/k-1']])
+            ->push(['CiphertextBlob' => 'YmxvYg=='])
+            ->push(['KeyMetadata' => ['Arn' => 'arn:aws:kms:eu-central-1:111122223333:key/k-2']]),
+        ]);
+
+        $kek = new AwsKmsKek('alias/falak', 'eu-central-1', 'AKID', 'secret');
+        expect($kek->id())->toBe('arn:aws:kms:eu-central-1:111122223333:key/k-1')
+            ->and($kek->wrap('k', []))->toBe('kms1:YmxvYg==')
+            ->and($kek->id())->toBe('arn:aws:kms:eu-central-1:111122223333:key/k-1') // resolved once
+            ->and((new AwsKmsKek('alias/falak', 'eu-central-1', 'AKID', 'secret'))->id())->toBe('arn:aws:kms:eu-central-1:111122223333:key/k-2');
+
+        Http::assertSentCount(3);
+        Http::assertSent(fn (Request $r) => $r->header('X-Amz-Target')[0] === 'TrentService.DescribeKey' && json_decode($r->body(), true)['KeyId'] === 'alias/falak');
+        Http::assertSent(fn (Request $r) => $r->header('X-Amz-Target')[0] === 'TrentService.Encrypt' && json_decode($r->body(), true)['KeyId'] === 'arn:aws:kms:eu-central-1:111122223333:key/k-1');
     });
 
     it('needs its settings', function () {

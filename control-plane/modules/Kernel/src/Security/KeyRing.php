@@ -8,19 +8,31 @@ use Illuminate\Support\Facades\DB;
 /**
  * Data keys: one active key per purpose (the platform, or one organization), created on first use and
  * wrapped by the KEK. Unwrapped keys are cached in this process's memory only, never in a shared cache.
+ *
+ * A key created inside the caller's database transaction is only "pending" until it is seen committed: if
+ * that transaction rolls back, the key row is gone, and a cached copy would go on sealing values under a key
+ * id that no longer exists. Pending keys are checked against the database on every use until then.
  */
 class KeyRing
 {
-    /** @var array<string, string> data key id => key bytes */
+    use RedactsKeyMaterial;
+
+    /** @var array<string, string> data key id => key bytes (committed keys) */
     private array $material = [];
 
     /** @var array<string, array{0: DataKey, 1: int}> purpose => [active data key, when it was looked up] */
     private array $active = [];
 
-    /** Long-lived workers look the active key up again after this many seconds (a rotation elsewhere). */
-    private const ACTIVE_TTL = 60;
+    /** @var array<string, string> data key id => key bytes, for keys created inside a transaction */
+    private array $pending = [];
 
     public function __construct(private readonly KeyEncryptionKeys $keks) {}
+
+    /** Long-lived workers look the active key up again after this many seconds (a rotation elsewhere). */
+    public static function activeTtl(): int
+    {
+        return max(0, (int) config('kernel.keys.active_ttl', 60));
+    }
 
     /** The active platform data key (model casts), created on first use. */
     public function platform(): DataKey
@@ -42,9 +54,15 @@ class KeyRing
 
     public function activeFor(string $purpose): DataKey
     {
-        if (isset($this->active[$purpose]) && time() - $this->active[$purpose][1] < self::ACTIVE_TTL) {
-            return $this->active[$purpose][0];
+        if (isset($this->active[$purpose]) && time() - $this->active[$purpose][1] < self::activeTtl()) {
+            $key = $this->active[$purpose][0];
+
+            if (! isset($this->pending[$key->id]) || $this->settle($key->id)) {
+                return $key;
+            }
         }
+
+        unset($this->active[$purpose]);
 
         $key = $this->current($purpose)
             // Serialize creation so two processes sealing at once don't each create a key (harmless, but noisy).
@@ -61,13 +79,15 @@ class KeyRing
      */
     public function rotate(string $purpose): DataKey
     {
-        return DB::transaction(function () use ($purpose) {
+        $key = DB::transaction(function () use ($purpose) {
             DataKey::query()->where('purpose', $purpose)->whereNull('retired_at')->update(['retired_at' => now()]);
-            $key = $this->create($purpose);
-            $this->active[$purpose] = [$key, time()];
 
-            return $key;
+            return $this->create($purpose);
         });
+
+        $this->active[$purpose] = [$key, time()];
+
+        return $key;
     }
 
     /**
@@ -81,6 +101,16 @@ class KeyRing
 
         if (isset($this->material[$id])) {
             return $this->material[$id];
+        }
+
+        if (isset($this->pending[$id])) {
+            $bytes = $this->pending[$id];
+
+            if (! $this->settle($id)) {
+                throw new DecryptionFailed("Data key {$id} does not exist (its transaction was rolled back).");
+            }
+
+            return $bytes;
         }
 
         $key = $key instanceof DataKey ? $key : DataKey::query()->find($id);
@@ -125,6 +155,27 @@ class KeyRing
     {
         $this->material = [];
         $this->active = [];
+        $this->pending = [];
+    }
+
+    /**
+     * Whether a pending key still exists. Seen outside any transaction, it is committed: cached like any
+     * other key from then on.
+     */
+    private function settle(string $id): bool
+    {
+        if (! DataKey::query()->whereKey($id)->exists()) {
+            unset($this->pending[$id]);
+
+            return false;
+        }
+
+        if (DB::transactionLevel() === 0) {
+            $this->material[$id] = $this->pending[$id];
+            unset($this->pending[$id]);
+        }
+
+        return true;
     }
 
     private function current(string $purpose): ?DataKey
@@ -146,7 +197,11 @@ class KeyRing
             'kek_id' => $kek->id(),
         ])->save();
 
-        $this->material[$key->id] = $bytes;
+        if (DB::transactionLevel() === 0) {
+            $this->material[$key->id] = $bytes;
+        } else {
+            $this->pending[$key->id] = $bytes;
+        }
 
         return $key;
     }

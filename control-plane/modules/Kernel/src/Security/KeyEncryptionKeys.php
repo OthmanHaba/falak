@@ -13,6 +13,8 @@ use Illuminate\Contracts\Config\Repository;
  */
 class KeyEncryptionKeys
 {
+    use RedactsKeyMaterial;
+
     private ?KeyEncryptionKey $current = null;
 
     /** @var array<string, KeyEncryptionKey> */

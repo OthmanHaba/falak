@@ -6,6 +6,7 @@ use Falak\Kernel\Security\Aead;
 use Falak\Kernel\Security\DecryptionFailed;
 use Falak\Kernel\Security\KeyEncryptionKey;
 use Falak\Kernel\Security\KeyUnavailable;
+use Falak\Kernel\Security\RedactsKeyMaterial;
 
 /**
  * KEK from a file of 32 random bytes (default /opt/falak/secrets/kek), readable by the app user only.
@@ -13,6 +14,8 @@ use Falak\Kernel\Security\KeyUnavailable;
  */
 final class LocalKek implements KeyEncryptionKey
 {
+    use RedactsKeyMaterial;
+
     public const PROVIDER = 'local';
 
     private const PREFIX = 'lk1:';
