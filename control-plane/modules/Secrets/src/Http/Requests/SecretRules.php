@@ -3,6 +3,7 @@
 namespace Falak\Secrets\Http\Requests;
 
 use Falak\Secrets\Contracts\SecretScope;
+use Falak\Secrets\Domain\Enums\OnChange;
 use Falak\Secrets\Domain\Enums\SecretKind;
 use Illuminate\Validation\Rule;
 
@@ -40,8 +41,10 @@ final class SecretRules
             'available_to_previews' => ['sometimes', 'boolean'],
             'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'rotation_days' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:3650'],
-            // Linked secrets; the action checks it is one of the organization's providers.
+            // Linked secrets; the action checks it is one of the organization's providers and suits the reference.
             'provider_id' => ['sometimes', 'nullable', 'string', 'size:26'],
+            'watch_minutes' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:1440'],
+            'on_change' => ['sometimes', Rule::enum(OnChange::class)],
         ];
     }
 
@@ -75,6 +78,7 @@ final class SecretRules
             'name.regex' => 'Use an environment variable name: capital letters, digits and underscores, not starting with a digit.',
             'value.required_unless' => 'Enter a value.',
             'reference.required_if' => 'Enter the reference of the value at the provider.',
+            'watch_minutes.min' => 'Poll at most once a minute.',
         ];
     }
 }

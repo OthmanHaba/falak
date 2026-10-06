@@ -143,10 +143,9 @@ it('disables a version with its rollback copies, and not while the current versi
         ->and(fn () => app(RollBackSecret::class)($secret->refresh(), 5, null))->toThrow(ValidationException::class);
 });
 
-it('fails a linked secret until a provider is configured', function () {
-    secrets_create($this->organization, 'VAULTED', '', attributes: ['kind' => 'linked', 'reference' => 'vault://kv/data/app#DB_PASS']);
-
-    expect(app(Secrets::class)->resolve($this->chain, ['VAULTED'])->errors['VAULTED'])->toBe('secret VAULTED: provider not configured (no secret provider handles vault:// references)');
+it('refuses a linked secret until a provider of its type is configured', function () {
+    expect(fn () => secrets_create($this->organization, 'VAULTED', '', attributes: ['kind' => 'linked', 'reference' => 'vault://kv/data/app#DB_PASS']))
+        ->toThrow(ValidationException::class, 'Add a HashiCorp Vault / OpenBao provider first');
 });
 
 it('deletes the secrets, access log and data key of a deleted organization', function () {

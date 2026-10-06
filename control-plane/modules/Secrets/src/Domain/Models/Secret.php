@@ -3,6 +3,7 @@
 namespace Falak\Secrets\Domain\Models;
 
 use Falak\Secrets\Contracts\SecretScope;
+use Falak\Secrets\Domain\Enums\OnChange;
 use Falak\Secrets\Domain\Enums\SecretKind;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -27,6 +28,11 @@ use Illuminate\Support\Carbon;
  * @property ?int $rotation_days
  * @property int $current_version
  * @property ?Carbon $last_accessed_at
+ * @property ?int $watch_minutes
+ * @property OnChange $on_change
+ * @property ?Carbon $next_poll_at
+ * @property ?Carbon $last_polled_at
+ * @property ?string $value_hmac
  * @property ?string $created_by
  * @property Carbon $created_at
  * @property Carbon $updated_at
@@ -40,6 +46,9 @@ class Secret extends Model
 
     /** @var list<string> */
     protected $guarded = [];
+
+    /** @var list<string> */
+    protected $hidden = ['value_hmac'];
 
     /** When the current version was created, preloaded for lists by {@see withCurrentVersionDates()}. */
     public ?Carbon $currentVersionCreatedAt = null;
@@ -83,6 +92,10 @@ class Secret extends Model
             'rotation_days' => 'integer',
             'current_version' => 'integer',
             'last_accessed_at' => 'datetime',
+            'watch_minutes' => 'integer',
+            'on_change' => OnChange::class,
+            'next_poll_at' => 'datetime',
+            'last_polled_at' => 'datetime',
         ];
     }
 
