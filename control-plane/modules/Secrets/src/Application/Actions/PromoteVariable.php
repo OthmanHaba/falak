@@ -15,7 +15,8 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * Promote a site variable to a secret: its value moves into a new secret of the site's service, and the
- * variable becomes `${{ secrets.NAME }}`. Both happen in one transaction.
+ * variable becomes `${{ secrets.NAME }}` — in the current version and in every older one, so restoring or
+ * revealing an old version can't bring the value back. All in one transaction.
  */
 final class PromoteVariable
 {
@@ -54,11 +55,15 @@ final class PromoteVariable
                 'description' => "Promoted from {$site->name}'s {$key} variable",
             ], $userId);
 
+            $reference = '${{ '.VariableReferences::SECRETS.".{$name} }}";
+
             try {
-                $this->environments->set($site->id, [$key => '${{ '.VariableReferences::SECRETS.".{$name} }}"], $userId, 'site.environment_promoted', $environment->version);
+                $this->environments->set($site->id, [$key => $reference], $userId, 'site.environment_promoted', $environment->version);
             } catch (EnvironmentChanged $e) {
                 throw ValidationException::withMessages(['key' => $e->getMessage().' Try again.']);
             }
+
+            $this->environments->redact($site->id, $key, $reference);
 
             return $secret;
         });

@@ -20,4 +20,13 @@ interface SiteEnvironments
      * @throws EnvironmentChanged when $baseVersion is no longer the latest version
      */
     public function set(string $siteId, array $values, ?string $userId, string $auditAction, ?int $baseVersion = null): ?int;
+
+    /**
+     * Replace one variable's value in every stored version of the site's environment, the current one included
+     * (no new version): a value moved elsewhere (e.g. into a secret) can't be restored or revealed from history.
+     * Versions without the variable are left alone. Join the caller's transaction.
+     *
+     * @return int versions rewritten
+     */
+    public function redact(string $siteId, string $key, string $replacement): int;
 }

@@ -29,4 +29,25 @@ final class EloquentSiteEnvironments implements SiteEnvironments
             return ($this->save)($site, $variables, $current->exposed ?? [], $userId, $auditAction)?->version;
         });
     }
+
+    public function redact(string $siteId, string $key, string $replacement): int
+    {
+        return DB::transaction(function () use ($siteId, $key, $replacement) {
+            $rewritten = 0;
+
+            foreach (EnvironmentVersion::query()->where('site_id', strtolower($siteId))->lockForUpdate()->get() as $version) {
+                $variables = $version->variables;
+
+                if (! array_key_exists($key, $variables) || (string) $variables[$key] === $replacement) {
+                    continue;
+                }
+
+                $variables[$key] = $replacement;
+                $version->forceFill(['variables' => $variables])->save();
+                $rewritten++;
+            }
+
+            return $rewritten;
+        });
+    }
 }

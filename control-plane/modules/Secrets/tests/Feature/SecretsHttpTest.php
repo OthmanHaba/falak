@@ -10,6 +10,7 @@ use Falak\Secrets\Contracts\SecretScope;
 use Falak\Secrets\Domain\Models\AccessLogEntry;
 use Falak\Secrets\Domain\Models\Secret;
 use Falak\Sites\Contracts\SiteDirectory;
+use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Laravel\Fortify\Fortify;
@@ -167,4 +168,20 @@ it('promotes a site variable to a service secret', function () {
 
     $chain = new ScopeChain($this->organization->id, $this->projectId, $this->environment->id, $serviceId);
     expect(app(Secrets::class)->resolve($chain, ['STRIPE_KEY'])->values['STRIPE_KEY'])->toBe('sk_live_PROMOTED');
+});
+
+it('redacts a promoted value from every older environment version', function () {
+    $web = projects_site($this->organization, 'web', ['STRIPE_KEY' => 'sk_OLD_value', 'OTHER' => 'kept'], $this->environment);
+    EnvironmentVersion::query()->create(['site_id' => $web->id, 'version' => 2, 'variables' => ['STRIPE_KEY' => 'sk_NEW_value', 'OTHER' => 'kept'], 'exposed' => [], 'changed_keys' => ['STRIPE_KEY'], 'created_at' => now()]);
+
+    $this->postJson('/secrets/promote', ['service_id' => secrets_service_of($web), 'key' => 'STRIPE_KEY', 'name' => 'STRIPE_KEY'])->assertCreated();
+
+    foreach (EnvironmentVersion::query()->where('site_id', $web->id)->get() as $version) {
+        expect($version->variables['STRIPE_KEY'])->toBe('${{ secrets.STRIPE_KEY }}')->and($version->variables['OTHER'])->toBe('kept');
+    }
+
+    // Restoring or revealing version 1 does not bring the value back.
+    $this->postJson("/sites/{$web->id}/environment/versions/1/restore")->assertOk();
+    expect(app(SiteDirectory::class)->environment($web->id)->variables['STRIPE_KEY'])->toBe('${{ secrets.STRIPE_KEY }}');
+    expect($this->postJson("/sites/{$web->id}/environment/reveal", ['version' => 1])->getContent())->not->toContain('sk_OLD_value');
 });
