@@ -1,0 +1,157 @@
+# Falak database images (images/db, docs/DB_IMAGES.md): for every engine/version in images/db/versions.json, build
+# the image, smoke-test it against a real container (images/db/test.sh, amd64), scan it with Trivy (a fixable HIGH or
+# CRITICAL fails), and, outside pull requests, publish it multi-arch to GHCR with an SBOM, signed with cosign
+# (keyless, GitHub OIDC).
+#
+# Tags, ghcr.io/<owner>/falak-<engine>:
+#   main and the weekly rebuild  <version>, <version>-falak<run>       (run = this workflow's run number)
+#   release/** branches          <version>-rc, <version>-rc-falak<run>
+#   tags vX.Y.Z                  <version>-vX.Y.Z                       (the images built from that release)
+#   pull requests                build, test and scan only
+name: db-images
+
+on:
+  push:
+    branches: [main, 'release/**']
+    tags: ['v*']
+    paths: ['images/db/**', 'agent/**', '.github/workflows/db-images.yml']
+  pull_request:
+    branches: [main, 'release/**']
+    paths: ['images/db/**', 'agent/**', '.github/workflows/db-images.yml']
+  schedule:
+    # Weekly: pick up base image security updates (a new -falak<run> tag, offered as a minor upgrade).
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-images-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TRIVY_IMAGE: aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck images/db/*.sh
+      - name: Matrix from versions.json
+        id: plan
+        run: |
+          go_image=$(jq -r .go_image images/db/versions.json)
+          matrix=$(jq -c --arg go "$go_image" '[.images[] | {engine, version, platforms,
+            build_args: (["GO_IMAGE=\($go)", "BASE_IMAGE=\(.base)", "ENGINE_VERSION=\(.version)"]
+              + ((.args // {}) | to_entries | map("\(.key)=\(.value)")) | join("\n"))}]' images/db/versions.json)
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  image:
+    name: ${{ matrix.engine }} ${{ matrix.version }}
+    needs: plan
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # cosign keyless signing
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version and tags
+        id: meta
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/falak-${{ matrix.engine }}"
+          v="${{ matrix.version }}"
+          version="sha-${GITHUB_SHA::12}"
+          tags=""
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            case "$GITHUB_REF" in
+              refs/heads/main) tags="$image:$v,$image:$v-falak$GITHUB_RUN_NUMBER" ;;
+              refs/heads/release/*) tags="$image:$v-rc,$image:$v-rc-falak$GITHUB_RUN_NUMBER" ;;
+              refs/tags/v*) version="$GITHUB_REF_NAME" tags="$image:$v-$GITHUB_REF_NAME" ;;
+            esac
+          fi
+          {
+            echo "image=$image"
+            echo "version=$version"
+            echo "tags=$tags"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+        if: steps.meta.outputs.tags != ''
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (amd64, loaded for the tests)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/db/${{ matrix.engine }}/Dockerfile
+          platforms: linux/amd64
+          build-args: |
+            ${{ matrix.build_args }}
+            FALAK_VERSION=${{ steps.meta.outputs.version }}
+          load: true
+          tags: falak-ci/falak-${{ matrix.engine }}:${{ matrix.version }}
+          cache-from: type=gha,scope=db-${{ matrix.engine }}-${{ matrix.version }}
+          cache-to: type=gha,mode=max,scope=db-${{ matrix.engine }}-${{ matrix.version }}
+
+      - name: Smoke tests (start, health, tuning, TLS, backups, spooling, PITR)
+        run: IMAGE="falak-ci/falak-${{ matrix.engine }}:${{ matrix.version }}" images/db/test.sh "${{ matrix.engine }}" "${{ matrix.version }}"
+
+      - name: Trivy (fixable HIGH/CRITICAL fail)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/images/db:/cfg:ro" "$TRIVY_IMAGE" \
+            image --config /cfg/trivy.yaml --ignorefile /cfg/.trivyignore \
+            "falak-ci/falak-${{ matrix.engine }}:${{ matrix.version }}"
+
+      - uses: docker/login-action@v3
+        if: steps.meta.outputs.tags != ''
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (multi-arch, SBOM and provenance attached)
+        id: push
+        if: steps.meta.outputs.tags != ''
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/db/${{ matrix.engine }}/Dockerfile
+          platforms: ${{ matrix.platforms }}
+          build-args: |
+            ${{ matrix.build_args }}
+            FALAK_VERSION=${{ steps.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=db-${{ matrix.engine }}-${{ matrix.version }}
+
+      - uses: sigstore/cosign-installer@v3
+        if: steps.meta.outputs.tags != ''
+
+      - name: Sign (cosign keyless) and attest the SBOM
+        if: steps.meta.outputs.tags != ''
+        env:
+          REF: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
+        run: |
+          cosign sign --yes --recursive "$REF"
+          docker buildx imagetools inspect "$REF" --format '{{ json (index .SBOM "linux/amd64").SPDX }}' > sbom.spdx.json
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
+          cosign verify "$REF" \
+            --certificate-identity "${{ github.server_url }}/${{ github.workflow_ref }}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          echo "published $REF (${{ steps.meta.outputs.tags }})" >> "$GITHUB_STEP_SUMMARY"
