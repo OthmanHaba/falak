@@ -434,3 +434,58 @@ func TestRedisSnapshotOfARealServer(t *testing.T) {
 }
 
 func must(b []byte, _ error) []byte { return b }
+
+// A unit waiting for its automatic restart is not active (is-active says "activating"), yet it must be stopped: the
+// stop cancels the pending restart, which would otherwise start the instance in the middle of the file swap.
+func TestRedisRestoreAlwaysStopsTheUnit(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	applyOK(t, db, redisPayload())
+	writeGzip(t, filepath.Join(root, "/backups/b.rdb.gz"), "REDIS0011 restored data")
+	delete(h.procs, "redis-server@falak-cache.service") // crashed, restart pending
+	f.Reset()
+
+	if _, err := db.Restore(context.Background(), restorePayload("redis", "/backups/b.rdb.gz"), st); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Join(f.Lines(), "\n")
+	stop, start := strings.Index(lines, "systemctl stop redis-server@falak-cache.service"), strings.Index(lines, "systemctl start redis-server@falak-cache.service")
+	if stop < 0 || start < stop {
+		t.Fatal(lines)
+	}
+	if proc := h.procs["redis-server@falak-cache.service"]; proc == nil || proc.loaded != "REDIS0011 restored data" {
+		t.Fatalf("%+v", proc)
+	}
+}
+
+// A failed stop changes nothing and starts whatever it left again.
+func TestRedisRestoreFailedStopStartsTheInstanceAgain(t *testing.T) {
+	f := &runnertest.Fake{}
+	stops := 0
+	f.OnFunc("systemctl stop", func(runnertest.Call) (runner.Result, error) {
+		stops++
+		return runner.Result{ExitCode: 1, Stderr: []byte("Job for redis-server@falak-cache.service canceled")}, nil
+	})
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	applyOK(t, db, redisPayload())
+	data := filepath.Join(root, "/var/lib/falak-redis/cache")
+	os.WriteFile(filepath.Join(data, "dump.rdb"), []byte("REDIS0009 current"), 0o600)
+	writeGzip(t, filepath.Join(root, "/backups/b.rdb.gz"), "REDIS0011 restored data")
+	f.Reset()
+
+	_, err := db.Restore(context.Background(), restorePayload("redis", "/backups/b.rdb.gz"), st)
+	if err == nil || !strings.Contains(err.Error(), "stop redis-server@falak-cache.service") || !strings.Contains(err.Error(), "nothing was changed") {
+		t.Fatal(err)
+	}
+	if stops != 1 || !f.Ran("systemctl start redis-server@falak-cache.service") || h.procs["redis-server@falak-cache.service"] == nil {
+		t.Fatal(f.Lines())
+	}
+	if b, _ := os.ReadFile(filepath.Join(data, "dump.rdb")); string(b) != "REDIS0009 current" {
+		t.Fatalf("dump.rdb changed: %q", b)
+	}
+	if entries, _ := os.ReadDir(data); len(entries) != 1 {
+		t.Fatal(entries)
+	}
+}

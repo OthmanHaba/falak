@@ -534,8 +534,9 @@ Plan: `docs/plans/REDIS.md` (deviations in its "As built (v0.9.0, phase 3)"); pr
   redacted.
 - **Restore:** download (sha256) → gunzip to `<data>/.falak-restore.rdb` (0600, `O_EXCL`) → header → RDB version vs.
   `<engine>-server --version` (see REDIS.md for the matrix) — all before anything changes → enough time left
-  (`RedisMinRestartBudget`) → if running: an unfinished first AOF rewrite is switched off and `SAVE`d, then
-  `systemctl stop` → `dump.rdb`, `appendonlydir`, `appendonly.aof` renamed `<file>.falak-<UTC>` → snapshot renamed to
+  (`RedisMinRestartBudget`) → if running: an unfinished first AOF rewrite is switched off and `SAVE`d →
+  `systemctl stop`, always (a unit waiting for its automatic restart is "activating", not active: the stop cancels
+  the pending restart; a failed stop starts the unit again if it ran and fails with "nothing was changed") → `dump.rdb`, `appendonlydir`, `appendonly.aof` renamed `<file>.falak-<UTC>` → snapshot renamed to
   `dump.rdb` (0600, instance user) → AOF instances: config written with `appendonly no` and state recorded as `rdb` (a
   redelivered apply then finishes the switch) → `reset-failed`, `start`, `PING` (LOADING extends the wait) → AOF:
   `CONFIG SET appendonly yes`, wait for the rewrite, `save ""`, config and state put back → `none`: `dump.rdb` deleted.

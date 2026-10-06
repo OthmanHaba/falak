@@ -25,7 +25,8 @@ import (
 //
 // Restore: the snapshot is downloaded (sha256 checked), gunzipped into the instance's data directory and its header
 // checked against the installed server (a Redis 7.4+ snapshot can't load into Valkey, a Valkey 9 one into Redis, …)
-// before anything changes. Then the unit is stopped, the current dump.rdb / appendonlydir / appendonly.aof are moved
+// before anything changes. Then the unit is stopped (always: that also cancels an automatic restart pending; a failed
+// stop starts it again and changes nothing), the current dump.rdb / appendonlydir / appendonly.aof are moved
 // aside (<file>.falak-<UTC time>), the snapshot becomes dump.rdb (0600, the instance user) and the unit starts. An
 // instance with AOF starts from a config with `appendonly no` (Redis ignores dump.rdb while AOF is on), then switches AOF
 // on live (CONFIG SET appendonly yes rewrites the AOF from memory) and its config file is put back. If the start, PING
@@ -325,20 +326,26 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 
 	unit := k.unit(name)
 	c := inst.c
+	// wasActive only decides whether a rollback starts the instance again.
 	wasActive := db.unitActive(ctx, unit)
-	if wasActive {
+	if wasActive && c.config != "" {
 		// An AOF whose first rewrite still runs can't be stopped cleanly (Redis refuses while writing it): AOF off, and a
 		// snapshot of what is there for the way back.
-		if c.config != "" {
-			if incomplete, err := c.aofIncomplete(ctx); err == nil && incomplete {
-				if _, err := c.do(ctx, c.config, "SET", "appendonly", "no"); err == nil {
-					_, _ = c.do(ctx, "SAVE")
-				}
+		if incomplete, err := c.aofIncomplete(ctx); err == nil && incomplete {
+			if _, err := c.do(ctx, c.config, "SET", "appendonly", "no"); err == nil {
+				_, _ = c.do(ctx, "SAVE")
 			}
 		}
-		if _, err := runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"stop", unit}}); err != nil {
-			return nil, fmt.Errorf("stop %s: %w%s", unit, err, db.journalTail(ctx, unit))
+	}
+	// Stopped whatever is-active said: a unit waiting for its automatic restart ("activating") is not active, and
+	// would start in the middle of the file swap; the stop cancels the pending restart.
+	if _, err := runner.Check(ctx, db.d.Runner, runner.Cmd{Name: "systemctl", Args: []string{"stop", unit}}); err != nil {
+		tail := db.journalTail(ctx, unit)
+		if wasActive {
+			// Nothing was changed yet: whatever the failed stop left is started again (best effort).
+			_, _ = db.d.Runner.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"start", unit}})
 		}
+		return nil, fmt.Errorf("stop %s: %w; nothing was changed%s", unit, err, tail)
 	}
 
 	var moved [][2]string
@@ -436,12 +443,11 @@ func (db *DB) restoreRollback(ctx context.Context, k kvEngine, name string, inst
 	defer cancel()
 	unit := k.unit(name)
 	tail := db.journalTail(rctx, unit)
-	if db.unitActive(rctx, unit) {
-		if c.config != "" {
-			_, _ = c.do(rctx, c.config, "SET", "appendonly", "no") // an AOF rewrite would hold up the stop
-		}
-		_, _ = db.d.Runner.Run(rctx, runner.Cmd{Name: "systemctl", Args: []string{"stop", unit}})
+	if c.config != "" && db.unitActive(rctx, unit) {
+		_, _ = c.do(rctx, c.config, "SET", "appendonly", "no") // an AOF rewrite would hold up the stop
 	}
+	// Always: a start that failed may have left an automatic restart pending.
+	_, _ = db.d.Runner.Run(rctx, runner.Cmd{Name: "systemctl", Args: []string{"stop", unit}})
 	var problems []string
 	dataP := db.d.FS.P(k.dataPath(name))
 	if installed {

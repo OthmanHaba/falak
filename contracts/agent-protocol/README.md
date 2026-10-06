@@ -128,7 +128,8 @@ then it is gzipped and shipped like a SQL dump. The result adds `rdb` (e.g. `RED
 ("is not running"). Restore: the source is downloaded (sha256 checked) and gunzipped into the instance's data
 directory, the header checked and its version against the installed server (`<engine>-server --version`): Valkey
 refuses Redis 7.4+ snapshots (RDB 12+), Redis refuses `VALKEY…` ones, Valkey < 9 refuses `VALKEY…`, Redis 6.x / 7.0
-/ 7.2 refuse versions above 9 / 10 / 11; this fails before anything changes. Then the unit stops, `dump.rdb`,
+/ 7.2 refuse versions above 9 / 10 / 11; this fails before anything changes. Then the unit stops (always, also
+when it is not active: that cancels an automatic restart pending; a failed stop starts it again and changes nothing), `dump.rdb`,
 `appendonlydir`, `appendonly.aof` are renamed `<file>.falak-<UTC time>`, the snapshot becomes `dump.rdb` (0600, the
 instance user) and the unit starts; with AOF it starts from the same config with `appendonly no`, then `CONFIG SET
 appendonly yes` (renamed command) rewrites the AOF from memory and the config file is put back. Without persistence
