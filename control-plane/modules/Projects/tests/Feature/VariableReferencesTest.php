@@ -1,12 +1,40 @@
 <?php
 
+use Falak\Databases\Application\EngineInventory;
 use Falak\Databases\Contracts\DatabaseConnections;
-use Falak\Network\Contracts\PrivateNetwork;
+use Falak\Databases\Domain\Enums\Engine;
+use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Network\Domain\Enums\ApplyStatus;
+use Falak\Network\Domain\Models\PrivateNetwork;
+use Falak\Network\Domain\Models\PrivateNetworkMember;
 use Falak\Projects\Contracts\VariableReferences;
 use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Domain\Models\Server;
+use Illuminate\Support\Str;
 
 require_once __DIR__.'/../Support/helpers.php';
+
+/** DigitalOcean droplets Falak created with one credential in one region share the region's default VPC. */
+function refs_do_fra(): array
+{
+    return ['provider' => 'digitalocean', 'provider_credential_id' => '01k6bbbbbbbbbbbbbbbbbbbbbb', 'region' => 'fra1'];
+}
+
+/** A dedicated database server's engine. */
+function refs_dedicated_engine(object $test, string $engine = 'postgresql', array $attributes = []): DatabaseServer
+{
+    return app(EngineInventory::class)->sync(databases_server($test->organization, $engine, ServerType::Database, $attributes)->id);
+}
+
+/** @param  array<string, Server>  $members  WireGuard address => server */
+function refs_wireguard(object $test, array $members): void
+{
+    $network = PrivateNetwork::query()->create(['organization_id' => $test->organization->id, 'name' => 'mesh', 'cidr' => '10.90.0.0/24', 'interface' => 'wg-'.Str::lower(Str::random(8)), 'listen_port' => 51820]);
+
+    foreach ($members as $address => $server) {
+        PrivateNetworkMember::query()->create(['organization_id' => $test->organization->id, 'network_id' => $network->id, 'server_id' => $server->id, 'address' => $address, 'public_key' => base64_encode(random_bytes(32)), 'private_key' => base64_encode(random_bytes(32)), 'key_status' => 'installed', 'status' => ApplyStatus::Applied]);
+    }
+}
 
 beforeEach(function () {
     [, $this->organization] = memberOf();
@@ -15,10 +43,11 @@ beforeEach(function () {
 });
 
 it('resolves database and site references in the same environment', function () {
-    [$database, $user, $engine] = projects_database($this->organization, 'shop', $this->environment, engineServer: databases_engine($this->organization, 'postgresql', ServerType::Database));
+    [$database, $user, $engine] = projects_database($this->organization, 'shop', $this->environment, engineServer: refs_dedicated_engine($this, attributes: refs_do_fra()));
     $engineServer = Server::query()->find($engine->server_id);
     projects_site($this->organization, 'Api', ['API_KEY' => 'secret-key', 'PUBLIC_URL' => 'https://api.test'], $this->environment);
-    $web = projects_site($this->organization, 'Web', [], $this->environment);
+    $webServer = Server::factory()->create(['organization_id' => $this->organization->id, 'private_ipv4' => '10.0.0.30', ...refs_do_fra()]);
+    $web = projects_site($this->organization, 'Web', [], $this->environment, [$webServer]);
 
     $result = $this->references->resolve($this->environment->id, $web->id, [
         'DATABASE_URL' => '${{ shop.DATABASE_URL }}',
@@ -47,13 +76,10 @@ it('resolves database and site references in the same environment', function () 
 });
 
 it('prefers the private network address of the database server', function () {
-    $network = Mockery::mock(PrivateNetwork::class);
-    $network->shouldReceive('addressOf')->andReturn('10.90.0.7');
-    app()->instance(PrivateNetwork::class, $network);
-    app()->forgetInstance(DatabaseConnections::class);
-
-    projects_database($this->organization, 'shop', $this->environment, 'mysql', databases_engine($this->organization, 'mysql', ServerType::Database));
-    $web = projects_site($this->organization, 'Web', [], $this->environment);
+    [, , $engine] = projects_database($this->organization, 'shop', $this->environment, 'mysql', refs_dedicated_engine($this, 'mysql', refs_do_fra()));
+    $webServer = Server::factory()->create(['organization_id' => $this->organization->id, 'private_ipv4' => '10.0.0.30', ...refs_do_fra()]);
+    refs_wireguard($this, ['10.90.0.7' => Server::query()->find($engine->server_id), '10.90.0.8' => $webServer]);
+    $web = projects_site($this->organization, 'Web', [], $this->environment, [$webServer]);
 
     $result = app(VariableReferences::class)->resolve($this->environment->id, $web->id, ['URL' => '${{ shop.DATABASE_URL }}', 'CONN' => '${{ shop.DB_CONNECTION }}']);
 
@@ -169,7 +195,7 @@ it('gives 127.0.0.1 for an app-server engine only to native sites running on tha
         ->toStartWith('HOST: shop.DB_HOST cannot be used here: Box runs in a container, but containers on');
 });
 
-it('gives containers on the engine server the server address once container access is on', function () {
+it('gives containers on the engine server the Docker bridge address once container access is on', function () {
     [, , $engine] = projects_database($this->organization, 'shop', $this->environment);
     $engine->forceFill(['container_access' => true])->save();
     $engineServer = Server::query()->find($engine->server_id);
@@ -180,8 +206,8 @@ it('gives containers on the engine server the server address once container acce
         $result = $this->references->resolve($this->environment->id, $site->id, $refs);
 
         expect($result->errors)->toBe([])
-            ->and($result->variables['HOST'])->toBe($engineServer->private_ipv4)
-            ->and($result->variables['URL'])->toContain("@{$engineServer->private_ipv4}:5432/");
+            ->and($result->variables['HOST'])->toBe('172.17.0.1')
+            ->and($result->variables['URL'])->toContain('@172.17.0.1:5432/');
     }
 
     // Native sites on that server keep the loopback address.
@@ -189,13 +215,70 @@ it('gives containers on the engine server the server address once container acce
     expect($this->references->resolve($this->environment->id, $local->id, $refs)->variables['HOST'])->toBe('127.0.0.1');
 });
 
-it('gives containers and other servers the network address of a dedicated database server', function () {
-    [, , $engine] = projects_database($this->organization, 'shop', $this->environment, engineServer: databases_engine($this->organization, 'postgresql', ServerType::Database));
-    $other = Server::factory()->create(['organization_id' => $this->organization->id]);
+it('uses the docker0 address the agent reported on the server, else databases.docker_bridge_host', function () {
+    [, , $engine] = projects_database($this->organization, 'shop', $this->environment);
+    $engine->forceFill(['container_access' => true])->save();
+    $engineServer = Server::query()->find($engine->server_id);
+    $box = projects_site($this->organization, 'Box', [], $this->environment, [$engineServer], ['runtime' => 'docker', 'framework' => 'docker', 'php_version' => null]);
+
+    config(['databases.docker_bridge_host' => '172.31.0.1']);
+    expect($this->references->resolve($this->environment->id, $box->id, ['HOST' => '${{ shop.DB_HOST }}'])->variables['HOST'])->toBe('172.31.0.1');
+
+    // A Redis instance on the server listens on docker0: its address is the real one.
+    $engineServer->forceFill(['stack' => ['database' => 'postgresql', 'cache' => 'redis']])->save();
+    $cache = app(EngineInventory::class)->sync($engineServer->id, Engine::Redis);
+    $cache->databases()->create(['organization_id' => $cache->organization_id, 'server_id' => $cache->server_id, 'name' => 'cache', 'status' => 'active', 'port' => 6380, 'network' => ['bind' => ['127.0.0.1', '172.20.0.1'], 'container_host' => '172.20.0.1']]);
+
+    expect(app(VariableReferences::class)->resolve($this->environment->id, $box->id, ['HOST' => '${{ shop.DB_HOST }}'])->variables['HOST'])->toBe('172.20.0.1');
+});
+
+it('leaves containers unresolved when container access to databases is turned off', function () {
+    [, , $engine] = projects_database($this->organization, 'shop', $this->environment);
+    $engine->forceFill(['container_access' => true])->save();
+    config(['databases.container_networks' => []]);
+    $box = projects_site($this->organization, 'Box', [], $this->environment, [Server::query()->find($engine->server_id)], ['runtime' => 'docker', 'framework' => 'docker', 'php_version' => null]);
+
+    expect($this->references->resolve($this->environment->id, $box->id, ['HOST' => '${{ shop.DB_HOST }}'])->errors)
+        ->toBe(['HOST: shop.DB_HOST cannot be used here: Box runs in a container, but container access to databases is turned off (FALAK_DOCKER_NETWORKS).']);
+});
+
+it('gives containers and other servers the address of a dedicated database server on a private network they share', function () {
+    [, , $engine] = projects_database($this->organization, 'shop', $this->environment, engineServer: refs_dedicated_engine($this, attributes: refs_do_fra()));
+    $engineServer = Server::query()->find($engine->server_id);
+    $other = Server::factory()->create(['organization_id' => $this->organization->id, 'private_ipv4' => '10.0.0.31', ...refs_do_fra()]);
     $fn = projects_site($this->organization, 'Fn', [], $this->environment, [$other], ['runtime' => 'function', 'framework' => 'docker', 'php_version' => null]);
 
     $result = $this->references->resolve($this->environment->id, $fn->id, ['HOST' => '${{ shop.DB_HOST }}']);
 
     expect($result->errors)->toBe([])
-        ->and($result->variables['HOST'])->toBe(Server::query()->find($engine->server_id)->private_ipv4);
+        ->and($result->variables['HOST'])->toBe($engineServer->private_ipv4);
+
+    // Containers on the database server itself: the Docker bridge.
+    $box = projects_site($this->organization, 'Box', [], $this->environment, [$engineServer], ['runtime' => 'docker', 'framework' => 'docker', 'php_version' => null]);
+    expect($this->references->resolve($this->environment->id, $box->id, ['HOST' => '${{ shop.DB_HOST }}'])->variables['HOST'])->toBe('172.17.0.1');
+});
+
+it('never points a dedicated database server\'s references at a public address', function () {
+    // Public address only, and a private IPv4 on a provider whose private networks are opt-in: neither proves a
+    // shared network, so the reference stays unresolved instead of sending the password there.
+    [, , $engine] = projects_database($this->organization, 'shop', $this->environment, engineServer: refs_dedicated_engine($this, attributes: ['provider' => 'hetzner', 'private_ipv4' => null, 'ipv4' => '203.0.113.9']));
+    $engineName = Server::query()->find($engine->server_id)->name;
+    $web = Server::factory()->create(['organization_id' => $this->organization->id, 'name' => 'web-9', 'provider' => 'hetzner', 'private_ipv4' => '10.0.0.30']);
+    $site = projects_site($this->organization, 'Shop', [], $this->environment, [$web]);
+    $refs = ['URL' => '${{ shop.DATABASE_URL }}', 'NAME' => '${{ shop.DB_DATABASE }}'];
+
+    $result = $this->references->resolve($this->environment->id, $site->id, $refs);
+
+    expect($result->errors)->toBe(["URL: shop.DATABASE_URL cannot be used here: Shop runs on web-9, which shares no private network with {$engineName}, and database references never point at a public address. Add both servers to a private network (Network → Private networks)."])
+        ->and($result->variables['NAME'])->toBe('shop');
+
+    // Hetzner private IPs on both sides prove nothing either.
+    Server::query()->whereKey($engine->server_id)->update(['private_ipv4' => '10.0.0.20']);
+    expect($this->references->resolve($this->environment->id, $site->id, $refs)->errors)->toHaveCount(1);
+
+    // A Falak private network both are in: resolved there.
+    refs_wireguard($this, ['10.90.0.2' => Server::query()->find($engine->server_id), '10.90.0.3' => $web]);
+    $result = $this->references->resolve($this->environment->id, $site->id, $refs);
+    expect($result->errors)->toBe([])
+        ->and($result->variables['URL'])->toBe('postgresql://shop_user:p%40ss%2Fword@10.90.0.2:5432/shop');
 });

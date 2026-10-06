@@ -1,5 +1,6 @@
 <?php
 
+use Falak\Databases\Application\EngineInventory;
 use Falak\Deployments\Application\Actions\TriggerDeployment;
 use Falak\Deployments\Domain\Enums\DeploymentStatus;
 use Falak\Deployments\Domain\Enums\Trigger;
@@ -10,6 +11,7 @@ use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
+use Falak\Sites\Domain\Models\Site;
 
 require_once __DIR__.'/../Support/helpers.php';
 require_once __DIR__.'/../../../Deployments/tests/Support/helpers.php';
@@ -48,7 +50,11 @@ function projects_deploy(DeployWorld $world): Deployment
 
 it('renders resolved references into the release .env and the deploy script environment', function () {
     $world = projects_deploy_world(['APP_KEY' => 'base64:k', 'DATABASE_URL' => '${{ shop.DATABASE_URL }}', 'DB_HOST' => '${{ shop.DB_HOST }}']);
-    [, , $engine] = projects_database($world->organization, 'shop', projects_default_env($world->organization), engineServer: databases_engine($world->organization, 'postgresql', ServerType::Database));
+    // A dedicated database server on the site's private network (DigitalOcean droplets of one credential and region).
+    $vpc = ['provider' => 'digitalocean', 'provider_credential_id' => '01k6cccccccccccccccccccccc', 'region' => 'fra1'];
+    $engineServer = databases_server($world->organization, 'postgresql', ServerType::Database, $vpc);
+    Server::query()->whereIn('id', Site::query()->findOrFail($world->site->id)->serverIds())->update([...$vpc, 'private_ipv4' => '10.0.0.40']);
+    [, , $engine] = projects_database($world->organization, 'shop', projects_default_env($world->organization), engineServer: app(EngineInventory::class)->sync($engineServer->id));
     $host = Server::query()->find($engine->server_id)->private_ipv4;
 
     $deployment = projects_deploy($world);

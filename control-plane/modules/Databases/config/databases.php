@@ -36,13 +36,15 @@ return [
         'evictions' => ['noeviction', 'allkeys-lru', 'allkeys-lfu', 'allkeys-random', 'volatile-lru', 'volatile-lfu', 'volatile-random', 'volatile-ttl'],
         'persistences' => ['rdb', 'aof', 'none'],
         // Providers whose servers of one account and region share a private network by default, used when no Falak
-        // private network connects an instance's server with a site's: DigitalOcean (each region's default VPC) and
-        // Lightsail (instances of a region reach each other's private IP). Not Hetzner, Vultr, Linode: their private
-        // networks are opt-in and can differ per server, so a private IPv4 says nothing about who shares it. Servers
-        // must be created by Falak with the same provider credential, in the same region.
+        // private network connects an instance's (or a dedicated SQL database server's) server with a site's:
+        // DigitalOcean (each region's default VPC) and Lightsail (instances of a region reach each other's private IP).
+        // Not Hetzner, Vultr, Linode: their private networks are opt-in and can differ per server, so a private IPv4
+        // says nothing about who shares it. Servers must be created by Falak with the same provider credential, in the
+        // same region.
         'provider_private_networks' => ['digitalocean', 'lightsail'],
-        // Custom servers: their private IPv4s are taken as one network (never in production — they may be NATed or
-        // in different networks). The sim's fleet network uses it.
+        // Custom servers (Redis / Valkey and dedicated SQL database servers alike): their private IPv4s are taken as
+        // one network (never in production — they may be NATed or in different networks). The sim's fleet network
+        // uses it.
         'custom_private_network' => (bool) env('FALAK_REDIS_CUSTOM_PRIVATE_NETWORK', false),
     ],
 
@@ -54,6 +56,11 @@ return [
     // /8–/30; invalid entries are dropped (and logged), Docker's defaults apply when none is valid.
     'container_networks' => $dockerNetworks['networks'],
     'container_networks_invalid' => $dockerNetworks['invalid'],
+
+    // The Docker default bridge's address (docker0) that containers on a server use to reach its PostgreSQL / MySQL /
+    // MariaDB engines, when no Redis / Valkey instance there has reported the real one. Docker's default; change it
+    // when the daemon sets another `bip`.
+    'docker_bridge_host' => env('FALAK_DOCKER_BRIDGE_HOST', '172.17.0.1'),
 
     // Agent command timeouts (seconds).
     'timeouts' => [

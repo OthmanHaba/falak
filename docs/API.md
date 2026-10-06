@@ -368,8 +368,7 @@ Rename (the slug follows). Only empty, non-production environments can be delete
 Site variables may contain `${{ <service>.<KEY> }}`; they resolve at deploy time (release `.env`, deploy script
 environment, public build variables) against services of the **same environment**. Service names match
 case-insensitively with spaces/dots/underscores as dashes. Database services expose `DATABASE_URL`,
-`DB_CONNECTION`, `DB_HOST` (dedicated database server: private network → provider private IP → public IP), `DB_PORT`,
-`DB_DATABASE`,
+`DB_CONNECTION`, `DB_HOST` (depends on the site, below; never a public address), `DB_PORT`, `DB_DATABASE`,
 `DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the database); site services expose their own variables.
 Redis and Valkey services (instances) expose `REDIS_URL` (`redis://default:<password>@<host>:<port>`), `REDIS_HOST`,
 `REDIS_PORT` (the instance's own port, 6380–6479), `REDIS_PASSWORD` and `REDIS_CLIENT` (`phpredis`). `REDIS_HOST` /
@@ -393,15 +392,20 @@ Unknown services/keys and cycles fail the deployment: `Unresolved variable refer
 An engine on an app or worker server serves that server only, and `DB_HOST` / `DATABASE_URL` resolve only for a
 consumer running on that server alone:
 - a native site gets `127.0.0.1`;
-- a container on it (Docker site, compose stack, function) gets the server's own address (private network → provider
-  private IP → public IP), which containers reach through the Docker bridge. The engine accepts the Docker address
+- a container on it (Docker site, compose stack, function) gets the Docker bridge's address (`docker0`: the one the
+  agent reported for a Redis / Valkey instance on the server, else `FALAK_DOCKER_BRIDGE_HOST`, default `172.17.0.1`).
+  The engine accepts the Docker address
   ranges (`FALAK_DOCKER_NETWORKS`, default `172.16.0.0/12,192.168.0.0/16`: PostgreSQL host rules, an extra MySQL account
   per range) and the firewall opens its port on the Docker bridges only (`docker0`, `br-*`). This needs agent 0.4.5 or
   newer (feature `db.containers`); it turns on per engine once the agent reports it. Before that, the reference fails
   and says to update the agent.
 
 A site on other servers gets a resolution error naming the reason instead of a host it cannot reach; use a dedicated
-database server for those.
+database server for those. A dedicated database server resolves like a Redis / Valkey instance: `127.0.0.1` for a native
+site on it, the Docker bridge for containers there, and for sites on other servers its address on a private network all
+of them share with it (a Falak private network first, else the provider private network where both servers are on it for
+sure, as above). **Never a public address** — servers sharing no private network get `… shares no private network with
+<server>, and database references never point at a public address. Add both servers to a private network …`.
 
 ## Source control
 
