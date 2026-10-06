@@ -31,6 +31,7 @@ The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protoco
 |---|---|---|
 | `sites.view` | admin, developer, viewer | list/show sites |
 | `sites.env.view` / `sites.env.manage` | admin, developer | read / replace the site environment |
+| `sites.delete` | admin | delete sites (`DELETE /api/v1/sites/{site}`) |
 | `deployments.view` | admin, developer, viewer | deployments, output, releases |
 | `deployments.create` | admin, developer | deploy, cancel queued/waiting/building deployments |
 | `deployments.rollback` | admin, developer | roll back to an earlier release |
@@ -169,8 +170,8 @@ Same body and validation as the web form (`name`, `framework`, `server_ids[]`, o
 `app_port`, `container_port`, `health_check_path`, …). `201` with the site resource plus `warnings[]` from the git provider;
 `422` on errors. Docker sites take `container_port` (the port the app listens on inside its container, default 3000, may
 repeat across sites; an `app_port` sent for a docker site is read as it); their `app_port` is the loopback host port Falak
-allocates. Changing a docker site's `container_port` (`PATCH /sites/{id}`) redeploys it. `DELETE /sites/{id}` stops the
-site's containers (compose: `docker compose down`; `delete_volumes: true` also removes named volumes).
+allocates. Changing a docker site's `container_port` (site settings) redeploys it. Deleting a site
+([`DELETE /api/v1/sites/{site}`](#delete-apiv1sitessite--sitesdelete)) stops its containers.
 Optional `root_directory` (git sites, also `PATCH`): the repository subfolder the app lives in (monorepos), e.g.
 `apps/api` — relative, surrounding slashes trimmed, no `.`/`..` segments. Builds run there and the release is that
 folder (deploy steps and hooks run in it); Docker uses it as the build context and resolves `dockerfile` / the
@@ -223,6 +224,14 @@ or the first service's name = the site): `POST /sites/{site}/domains`, `POST /si
 `POST /sites/{site}/security-rules`, `POST /sites/{site}/headers`, `PUT /sites/{site}/edge-settings` (its IP lists
 only: the service's allow list replaces the site's, its deny list adds to it) and a function's
 `POST /sites/{function}/function-mounts`. `GET /sites/{site}/domains|routing` list `services` and each row's `service`.
+
+### `DELETE /api/v1/sites/{site}` — `sites.delete`
+Optional body `{"delete_volumes": true}`. `202` with no body: the site is deleted at once (the edge drops its
+routes, its queue workers stop, the repository's webhook / deploy key are unlinked); stopping what it runs on its
+servers follows as agent commands, as with `DELETE /api/v1/servers/{server}`. PHP sites lose their PHP-FPM pool,
+docker sites their blue and green containers, compose sites run `docker compose down` (`delete_volumes: true` also
+removes the named volumes; kept by default). Files under `/srv/falak/sites/<slug>` stay on the servers. The token
+needs `sites.view` as well; `404` for a site of another organization, `422` when `delete_volumes` is not a boolean.
 
 ### `GET /api/v1/sites/{site}/env` — `sites.env.view`
 Returns the latest environment version as dotenv (audited as a reveal).

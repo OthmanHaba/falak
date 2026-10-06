@@ -8,6 +8,7 @@ use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
 use Falak\Servers\Contracts\ServerDirectory;
 use Falak\Sites\Application\Actions\CreateSite;
+use Falak\Sites\Application\Actions\DeleteSite;
 use Falak\Sites\Application\Actions\SaveEnvironment;
 use Falak\Sites\Application\Actions\UpdateLaravelSettings;
 use Falak\Sites\Contracts\Data\LaravelSettings;
@@ -21,6 +22,7 @@ use Falak\Sites\Http\Controllers\PresentsSites;
 use Falak\Sites\Http\Requests\StoreSiteRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -74,6 +76,21 @@ final class SiteApiController extends Controller
             'shared_paths' => array_map(fn ($path) => $path->toArray(), $model->shared_paths),
             'laravel' => $model->laravel->toArray(),
         ]]);
+    }
+
+    /**
+     * DELETE /api/v1/sites/{site} {delete_volumes?} → 202. The site is gone at once; stopping its PHP pools /
+     * containers on the servers runs as agent commands afterwards (like DELETE /servers). Files under
+     * /srv/falak/sites/<slug> stay on the servers, compose named volumes too unless delete_volumes.
+     */
+    public function destroy(Request $request, string $site, DeleteSite $delete): Response
+    {
+        $model = $this->resolve($request, $site, 'sites.delete');
+        $data = $request->validate(['delete_volumes' => ['sometimes', 'boolean']]);
+
+        $delete($model, deleteVolumes: (bool) ($data['delete_volumes'] ?? false));
+
+        return response()->noContent(202);
     }
 
     /**
