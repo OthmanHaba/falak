@@ -55,6 +55,21 @@ os_field() { sed -n "s/^$1=//p" "${FALAK_OS_RELEASE:-/etc/os-release}" 2>/dev/nu
 SUPPORTED_OS="Ubuntu 22.04/24.04/26.04 and Debian 12"
 os_supported() { case "$1:$2" in ubuntu:22.04|ubuntu:24.04|ubuntu:26.04|debian:12) return 0 ;; *) return 1 ;; esac; }
 
+# pull_retry CMD... : run an image pull, retrying transient registry errors ("connection reset by peer", IPv6
+# resets, 5xx) with backoff: FALAK_PULL_ATTEMPTS tries (default 4), waiting 5s, 10s, 20s ... in between.
+pull_retry() {
+  local attempt=1 max="${FALAK_PULL_ATTEMPTS:-4}" delay="${FALAK_PULL_DELAY:-5}"
+  until "$@"; do
+    if [ "$attempt" -ge "$max" ]; then
+      warn "image pull failed $attempt times, giving up"
+      return 1
+    fi
+    warn "image pull failed (attempt $attempt of $max, usually a transient registry or network error); retrying in ${delay}s"
+    sleep "$delay"
+    attempt=$((attempt + 1)); delay=$((delay * 2))
+  done
+}
+
 usage() { sed -n '2,28p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || echo "see docs/INSTALL.md"; }
 
 while [ $# -gt 0 ]; do
@@ -409,7 +424,7 @@ dc() { COMPOSE_PROFILES="$(env_get COMPOSE_PROFILES)" docker compose -p "$FALAK_
 start_stack() {
   info "Starting Falak $VERSION"
   if [ "$(env_get FALAK_PULL 1)" != 0 ]; then
-    dc pull --quiet || die "pulling images from $IMAGE_PREFIX failed (is release $VERSION published? private packages need 'docker login ghcr.io')"
+    pull_retry dc pull --quiet || die "pulling images from $IMAGE_PREFIX failed (is release $VERSION published? private packages need 'docker login ghcr.io')"
     ok "images pulled"
   fi
   if ! dc up -d --wait --wait-timeout 600 --remove-orphans; then

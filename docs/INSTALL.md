@@ -101,7 +101,8 @@ What it does:
    `/opt/falak/{deploy,observability}`. It also installs `falak-ctl` to `/usr/local/bin`.
 4. Generates `/opt/falak/.env` (mode 600) with `APP_KEY`, database and Valkey passwords, Reverb keys, the
    builder token, the OTLP token, and all `FALAK_*` URLs.
-5. Pulls the images `ghcr.io/<owner>/falak-{control-plane,builder,edge}:<version>`, starts the stack, and
+5. Pulls the images `ghcr.io/<owner>/falak-{control-plane,builder,edge}:<version>` (retrying transient registry
+   errors up to 4 times with backoff, `FALAK_PULL_ATTEMPTS`), starts the stack, and
    waits until every service is healthy. Database migrations run in the `control-plane` service on start.
 6. Creates the first administrator with `falak:admin` and **prints the password once**.
 
@@ -292,7 +293,9 @@ falak-ctl update --version v1.3.0
 An update:
 
 1. takes a backup (`backups/falak-backup-<ts>-pre-update-<old>.tar.gz`);
-2. fetches the new deploy bundle and pulls the new images (if a pull fails, nothing changes);
+2. fetches the new deploy bundle and pulls the new images. Transient registry errors (`connection reset by peer`, IPv6
+   resets) are retried with backoff: 4 attempts, 5 s / 10 s / 20 s apart (`FALAK_PULL_ATTEMPTS` in `.env` changes the
+   count). If the pull still fails, nothing changes;
 3. recreates the stack. The `control-plane` service runs the migrations, and `horizon`, `reverb` and
    `scheduler` wait until it is healthy;
 4. recreates every service whose **mounted config files** changed (see below) and prints their names;

@@ -372,12 +372,32 @@ restore_prev_bundle() {
   done
 }
 
-pull_images() {
+# pull_retry CMD... : run an image pull, retrying transient registry errors ("connection reset by peer", IPv6
+# resets, 5xx) with backoff: FALAK_PULL_ATTEMPTS tries (default 4), waiting 5s, 10s, 20s ... in between.
+pull_retry() {
+  local attempt=1 max delay
+  max="$(env_get FALAK_PULL_ATTEMPTS "${FALAK_PULL_ATTEMPTS:-4}")"; delay="${FALAK_PULL_DELAY:-5}"
+  until "$@"; do
+    if [ "$attempt" -ge "$max" ]; then
+      bad "image pull failed $attempt times, giving up"
+      return 1
+    fi
+    warn "image pull failed (attempt $attempt of $max, usually a transient registry or network error); retrying in ${delay}s"
+    sleep "$delay"
+    attempt=$((attempt + 1)); delay=$((delay * 2))
+  done
+}
+
+pull_images() { # pull_images [missing] : all images (update), or only the ones not present yet (up)
   if [ "$(env_get FALAK_PULL 1)" = "0" ]; then
     info "FALAK_PULL=0: using local images"
     return 0
   fi
-  compose pull --quiet
+  if [ "${1:-}" = missing ]; then
+    pull_retry compose pull --quiet --policy missing
+  else
+    pull_retry compose pull --quiet
+  fi
 }
 
 # The images this install pulls or builds itself (never third-party images such as postgres or grafana).
@@ -930,7 +950,9 @@ main() {
   case "$cmd" in
     status) cmd_status "$@" ;;
     logs) cmd_logs "$@" ;;
-    up) require_install; ensure_registry_env; wait_healthy "${1:-420}" && health_check ;;
+    up) require_install; ensure_registry_env
+        pull_images missing || die "pulling images failed (see above); nothing was started"
+        wait_healthy "${1:-420}" && health_check ;;
     down) require_install; compose down ;;
     restart) require_install; compose restart "$@" ;;
     update|upgrade) cmd_update "$@" ;;
