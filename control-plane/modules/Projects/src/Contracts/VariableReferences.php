@@ -31,8 +31,10 @@ interface VariableReferences
      * unchanged even when the site is in no environment.
      *
      * @param  array<string, string>  $variables
+     * @param  list<string>|null  $only  resolve and return only these variables (self-references still see all)
+     * @param  bool  $forPreview  a preview environment: secrets not available to previews count as missing
      */
-    public function resolveForSite(string $siteId, array $variables): ResolvedVariables;
+    public function resolveForSite(string $siteId, array $variables, ?array $only = null, bool $forPreview = false): ResolvedVariables;
 
     /**
      * The errors resolveForSite() would report, without reading any secret (nothing decrypted or logged as an

@@ -22,6 +22,12 @@ final readonly class SecretAccessor
         return new self(AccessorType::Deployment, $deploymentId, $number !== null ? "Deployment #{$number}" : 'Deployment');
     }
 
+    /** A build (its build-time variables), with the deployment that asked for it. */
+    public static function build(string $buildId, ?string $deploymentId = null): self
+    {
+        return new self(AccessorType::Build, $buildId, $deploymentId !== null ? "Build for deployment {$deploymentId}" : 'Build');
+    }
+
     public static function user(string $userId, string $reason, ?string $ip = null): self
     {
         return new self(AccessorType::User, $userId, $reason, $userId, $ip);

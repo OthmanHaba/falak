@@ -21,8 +21,9 @@ interface Secrets
      *
      * @param  list<string>  $names
      * @param  SecretAccessor|null  $accessor  null: the one set by {@see accessedAs()}, else the signed-in user or the system
+     * @param  bool  $forPreview  a preview environment: secrets not available to previews count as missing
      */
-    public function resolve(ScopeChain $chain, array $names, ?SecretAccessor $accessor = null): ResolvedSecrets;
+    public function resolve(ScopeChain $chain, array $names, ?SecretAccessor $accessor = null, bool $forPreview = false): ResolvedSecrets;
 
     /**
      * Which names would resolve, without reading any value (no decryption, no provider call, nothing logged):
@@ -30,7 +31,7 @@ interface Secrets
      *
      * @param  list<string>  $names
      */
-    public function check(ScopeChain $chain, array $names): ResolvedSecrets;
+    public function check(ScopeChain $chain, array $names, bool $forPreview = false): ResolvedSecrets;
 
     /**
      * Run the callback with reads attributed to the accessor (e.g. a deployment building its step payloads).

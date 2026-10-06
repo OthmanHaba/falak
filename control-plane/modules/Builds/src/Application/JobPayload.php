@@ -4,6 +4,7 @@ namespace Falak\Builds\Application;
 
 use Falak\Builds\Application\Artifacts\ArtifactStorage;
 use Falak\Builds\Domain\Models\Build;
+use Falak\Secrets\Contracts\Data\SecretAccessor;
 use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteRuntime;
@@ -72,7 +73,7 @@ final class JobPayload
             $job['runtime'] = $hint;
         }
 
-        $env = $this->configuration->environment($site);
+        $env = $this->configuration->environment($site, SecretAccessor::build($build->id, $build->deployment_id));
 
         if ($env !== []) {
             $job['env'] = (object) $env;

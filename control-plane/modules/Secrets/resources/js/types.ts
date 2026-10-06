@@ -41,7 +41,7 @@ export interface SecretVersionRow {
 export interface SecretAccessRow {
     id: number;
     version: number;
-    actor_type: 'user' | 'deployment' | 'api_token' | 'system';
+    actor_type: 'user' | 'deployment' | 'build' | 'api_token' | 'system';
     actor: string;
     actor_id: string | null;
     reason: string;

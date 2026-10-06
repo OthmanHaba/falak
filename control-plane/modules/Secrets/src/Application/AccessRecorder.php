@@ -8,16 +8,16 @@ use Falak\Secrets\Domain\Models\AccessLogEntry;
 use Falak\Secrets\Domain\Models\Secret;
 
 /**
- * Writes the secret access log. A deployment resolves its variables once per step; it is logged once per
- * secret version.
+ * Writes the secret access log. A deployment resolves its variables once per step (a build several times); each
+ * is logged once per secret version.
  */
 final class AccessRecorder
 {
     public function record(Secret $secret, int $version, SecretAccessor $accessor): void
     {
-        if ($accessor->type === AccessorType::Deployment && AccessLogEntry::query()
+        if (in_array($accessor->type, [AccessorType::Deployment, AccessorType::Build], true) && $accessor->id !== null && AccessLogEntry::query()
             ->where('secret_id', $secret->id)->where('version', $version)
-            ->where('actor_type', AccessorType::Deployment->value)->where('actor_id', $accessor->id)
+            ->where('actor_type', $accessor->type->value)->where('actor_id', $accessor->id)
             ->exists()) {
             return;
         }

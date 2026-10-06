@@ -32,14 +32,14 @@ final class SecretStore implements Secrets
         private readonly AccessRecorder $recorder,
     ) {}
 
-    public function resolve(ScopeChain $chain, array $names, ?SecretAccessor $accessor = null): ResolvedSecrets
+    public function resolve(ScopeChain $chain, array $names, ?SecretAccessor $accessor = null, bool $forPreview = false): ResolvedSecrets
     {
-        return $this->run($chain, $names, $accessor ?? $this->accessor());
+        return $this->run($chain, $names, $accessor ?? $this->accessor(), $forPreview);
     }
 
-    public function check(ScopeChain $chain, array $names): ResolvedSecrets
+    public function check(ScopeChain $chain, array $names, bool $forPreview = false): ResolvedSecrets
     {
-        return $this->run($chain, $names, null);
+        return $this->run($chain, $names, null, $forPreview);
     }
 
     public function accessedAs(SecretAccessor $accessor, callable $callback): mixed
@@ -57,7 +57,7 @@ final class SecretStore implements Secrets
      * @param  list<string>  $names
      * @param  SecretAccessor|null  $accessor  null: check only (read nothing)
      */
-    private function run(ScopeChain $chain, array $names, ?SecretAccessor $accessor): ResolvedSecrets
+    private function run(ScopeChain $chain, array $names, ?SecretAccessor $accessor, bool $forPreview): ResolvedSecrets
     {
         $names = array_values(array_unique($names));
         $secrets = $this->lookup->nearest($chain, $names);
@@ -75,6 +75,13 @@ final class SecretStore implements Secrets
 
             if ($secret === null) {
                 $errors[$name] = "secret {$name} is not defined for this service (in its service, environment, project or organization secrets)";
+
+                continue;
+            }
+
+            // The nearest secret decides: a farther one is not a fallback for a secret kept from previews.
+            if ($forPreview && ! $secret->available_to_previews) {
+                $errors[$name] = "secret {$name} is not available to preview environments (turn it on in the secret's settings)";
 
                 continue;
             }

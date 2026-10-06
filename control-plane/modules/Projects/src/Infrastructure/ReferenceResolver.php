@@ -46,6 +46,9 @@ final class ReferenceResolver implements VariableReferences
     /** Report secret problems without reading values. */
     private bool $checkOnly = false;
 
+    /** Resolving for a preview environment: only secrets available to previews. */
+    private bool $forPreview = false;
+
     /** @var array<string, array{value: string, sensitive: bool}> resolved "serviceId|NAME" secrets */
     private array $secretValues = [];
 
@@ -72,11 +75,16 @@ final class ReferenceResolver implements VariableReferences
         return $this->run($environmentId, $siteId, $variables);
     }
 
-    public function resolveForSite(string $siteId, array $variables): ResolvedVariables
+    public function resolveForSite(string $siteId, array $variables, ?array $only = null, bool $forPreview = false): ResolvedVariables
     {
         $environmentId = Service::query()->where('kind', ServiceKind::Site)->where('ref_id', strtolower($siteId))->value('environment_id');
+        $this->forPreview = $forPreview;
 
-        return $this->run($environmentId !== null ? (string) $environmentId : null, $siteId, $variables);
+        try {
+            return $this->run($environmentId !== null ? (string) $environmentId : null, $siteId, $variables, $only);
+        } finally {
+            $this->forPreview = false;
+        }
     }
 
     public function check(string $siteId, array $variables): array
@@ -107,14 +115,16 @@ final class ReferenceResolver implements VariableReferences
 
     /**
      * @param  array<string, string>  $variables
+     * @param  list<string>|null  $only  the variables to output (others are only read through self-references)
      */
-    private function run(?string $environmentId, string $siteId, array $variables): ResolvedVariables
+    private function run(?string $environmentId, string $siteId, array $variables, ?array $only = null): ResolvedVariables
     {
         $variables = array_map('strval', $variables);
-        $references = array_map(fn (array $r) => ['service' => $r['service'], 'key' => $r['key']], $this->referencesIn($variables));
+        $wanted = $only === null ? $variables : array_intersect_key($variables, array_flip($only));
+        $references = array_map(fn (array $r) => ['service' => $r['service'], 'key' => $r['key']], $this->referencesIn($wanted));
 
         if ($references === []) {
-            return new ResolvedVariables($variables, [], []);
+            return new ResolvedVariables($wanted, [], []);
         }
 
         $this->services = [];
@@ -132,7 +142,7 @@ final class ReferenceResolver implements VariableReferences
         $this->nodeMarks = [];
 
         if ($environmentId === null) {
-            return new ResolvedVariables($variables, ['The site is not part of a project environment, so ${{ service.KEY }} references cannot be resolved.'], $references);
+            return new ResolvedVariables($wanted, ['The site is not part of a project environment, so ${{ service.KEY }} references cannot be resolved.'], $references);
         }
 
         foreach (Service::query()->where('environment_id', $environmentId)->get() as $service) {
@@ -142,7 +152,7 @@ final class ReferenceResolver implements VariableReferences
         $self = $this->serviceOfSite();
         $output = [];
 
-        foreach ($variables as $key => $value) {
+        foreach ($wanted as $key => $value) {
             $output[$key] = $this->substitute($value, (string) $key, $self !== null ? ["{$self->id}.{$key}"] : [], $self);
         }
 
@@ -248,7 +258,9 @@ final class ReferenceResolver implements VariableReferences
             return $this->secretValues[$memo]['value'];
         }
 
-        $result = $this->checkOnly ? $this->secrets->check($chain, [$name]) : $this->secrets->resolve($chain, [$name]);
+        $result = $this->checkOnly
+            ? $this->secrets->check($chain, [$name], forPreview: $this->forPreview)
+            : $this->secrets->resolve($chain, [$name], forPreview: $this->forPreview);
 
         if (isset($result->errors[$name])) {
             $this->errors[] = "{$variable}: {$result->errors[$name]}.";

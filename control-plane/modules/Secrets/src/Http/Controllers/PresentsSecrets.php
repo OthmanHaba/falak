@@ -77,6 +77,7 @@ trait PresentsSecrets
                 AccessorType::User => $this->userName($entry->user_id, $directory) ?? 'Deleted user',
                 AccessorType::ApiToken => 'API token'.(($name = $this->userName($entry->user_id, $directory)) !== null ? " of {$name}" : ''),
                 AccessorType::Deployment => 'Deployment',
+                AccessorType::Build => 'Build',
                 AccessorType::System => 'Falak',
             },
             'actor_id' => $entry->actor_id,
