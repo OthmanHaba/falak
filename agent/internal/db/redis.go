@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
@@ -759,9 +760,29 @@ func (db *DB) moveAsideNamed(k kvEngine, name string, files ...string) ([][2]str
 		if err := os.Rename(path, target); err != nil {
 			return moved, fmt.Errorf("move %s aside: %w", f, err)
 		}
+		restrictAside(target)
 		moved = append(moved, [2]string{f, target[strings.LastIndex(target, "/")+1:]})
 	}
 	return moved, nil
+}
+
+// restrictAside makes a moved-aside copy private to its owner (Redis writes dump.rdb 0660 under the unit's umask):
+// 0600 for a file, 0700 for a directory (appendonlydir), set on the opened file (O_NOFOLLOW: a link is left alone).
+// Best effort: the copy is only a keepsake.
+func restrictAside(path string) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	switch {
+	case err != nil:
+	case fi.Mode().IsRegular():
+		_ = f.Chmod(0o600)
+	case fi.IsDir():
+		_ = f.Chmod(0o700)
+	}
 }
 
 func exists(path string) bool {

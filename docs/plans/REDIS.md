@@ -164,7 +164,7 @@ Details in `docs/INTEGRATION-NOTES.md` ("Redis and Valkey backups and restores")
   `appendonlydir` (or 6.0's `appendonly.aof`) is moved aside, plus any `dump.rdb`.
 - **Persistence `none`:** the loaded `dump.rdb` is deleted after the start (a restart starts empty, as `none` promises).
 - **Moved-aside files stay** in the data directory (`<file>.falak-<UTC time>`, reported in `moved_aside` and the
-  command output) — only the latest set: once a restore succeeded, every other `dump.rdb` / `appendonlydir` /
+  command output), owner-only (0600 files, 0700 `appendonlydir`; Redis writes `dump.rdb` 0660) — only the latest set: once a restore succeeded, every other `dump.rdb` / `appendonlydir` /
   `appendonly.aof` `.falak-*` copy (earlier restores, persistence changes) is removed (listed in the output; links
   are removed, never followed). A restore that moved nothing (an instance without files) removes nothing. A rollback (start, `PING` or AOF switch failed) removes the restored files,
   renames them back, rewrites the earlier config / state and starts the instance if it ran before (own 10-minute

@@ -955,3 +955,35 @@ func TestRedisRestoreWithAOFRollsBackPromptlyWhenAOFKeepsGoingOff(t *testing.T) 
 		t.Fatalf("%+v", proc)
 	}
 }
+
+// Moved-aside copies are private to the instance user: Redis writes dump.rdb 0660 (the unit's umask).
+func TestMovedAsideCopiesAreOwnerOnly(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	newRedisHost(t, f, root)
+	redisNow = func() time.Time { return time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC) }
+	defer func() { redisNow = time.Now }()
+	applyOK(t, db, redisPayload())
+	k, _ := kvEngineFor("redis")
+	data := filepath.Join(root, "/var/lib/falak-redis/cache")
+	os.WriteFile(filepath.Join(data, "dump.rdb"), []byte("REDIS0011"), 0o600)
+	os.Chmod(filepath.Join(data, "dump.rdb"), 0o660)
+	os.MkdirAll(filepath.Join(data, "appendonlydir"), 0o770)
+	os.Chmod(filepath.Join(data, "appendonlydir"), 0o770)
+	victim := filepath.Join(root, "victim")
+	os.WriteFile(victim, nil, 0o644)
+	os.Symlink(victim, filepath.Join(data, "appendonly.aof"))
+
+	moved, err := db.moveAsideNamed(k, "cache", kvDataFiles...)
+	if err != nil || len(moved) != 3 {
+		t.Fatal(moved, err)
+	}
+	for name, want := range map[string]os.FileMode{"dump.rdb.falak-20261006T120000Z": 0o600, "appendonlydir.falak-20261006T120000Z": 0o700} {
+		if fi, err := os.Lstat(filepath.Join(data, name)); err != nil || fi.Mode().Perm() != want {
+			t.Fatalf("%s: %v %v", name, fi.Mode(), err)
+		}
+	}
+	if fi, _ := os.Stat(victim); fi.Mode().Perm() != 0o644 {
+		t.Fatal("followed a link")
+	}
+}
