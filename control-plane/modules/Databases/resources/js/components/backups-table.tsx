@@ -7,9 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { router, useForm } from '@inertiajs/react';
 import { format } from 'date-fns';
-import { RotateCcw, Trash2 } from 'lucide-react';
+import { Download, RotateCcw, Trash2 } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
-import { type BackupRow } from '../types';
+import { isKeyValue, type BackupRow, type RestoreTarget } from '../types';
 import { StatusBadge, formatBytes, formatDuration } from './database-ui';
 
 interface Props {
@@ -17,11 +17,12 @@ interface Props {
     showServer?: boolean;
     canManage: boolean;
     canRestore: boolean;
-    restoreTargets?: { id: string; label: string }[];
+    restoreTargets?: RestoreTarget[];
 }
 
 /**
- * Backup history with restore (typed confirmation) and delete.
+ * Backup history with download, restore (typed confirmation) and delete. Redis / Valkey snapshots restore into an
+ * existing instance of the target server.
  */
 export function BackupsTable({ backups, showServer = false, canManage, canRestore, restoreTargets = [] }: Props) {
     const [restoring, setRestoring] = useState<BackupRow | null>(null);
@@ -45,19 +46,21 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
     }
 
     const canPickTarget = restoreTargets.length > 0;
+    const keyValue = isKeyValue(restoring?.engine);
+    const targetInstances = restoreTargets.find((target) => target.id === form.data.database_server_id)?.instances ?? null;
 
     return (
         <>
             <Table>
                 <TableHeader>
                     <TableRow>
-                        <TableHead className="pl-6">Database</TableHead>
+                        <TableHead className="pl-6">Database / instance</TableHead>
                         <TableHead>Taken</TableHead>
                         <TableHead>Size</TableHead>
                         <TableHead>Duration</TableHead>
                         <TableHead>SHA-256</TableHead>
                         <TableHead>Status</TableHead>
-                        {(canManage || canRestore) && <TableHead className="w-24" />}
+                        {(canManage || canRestore) && <TableHead className="w-32" />}
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -83,6 +86,13 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                             </TableCell>
                             {(canManage || canRestore) && (
                                 <TableCell className="text-right whitespace-nowrap">
+                                    {canRestore && backup.restorable && (
+                                        <Button variant="ghost" size="icon" aria-label="Download" title="Download" asChild>
+                                            <a href={`/databases/backups/${backup.id}/download`}>
+                                                <Download />
+                                            </a>
+                                        </Button>
+                                    )}
                                     {canRestore && backup.restorable && (canPickTarget || backup.database_server_id) && (
                                         <Button variant="ghost" size="icon" aria-label="Restore" title="Restore" onClick={() => openRestore(backup)}>
                                             <RotateCcw />
@@ -106,8 +116,18 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                         <DialogHeader>
                             <DialogTitle>Restore {restoring?.database_name}</DialogTitle>
                             <DialogDescription>
-                                The dump from {restoring ? format(new Date(restoring.created_at), 'yyyy-MM-dd HH:mm') : ''} is loaded into the target
-                                database (created if missing). Existing data in that database is overwritten.
+                                {keyValue ? (
+                                    <>
+                                        The snapshot from {restoring ? format(new Date(restoring.created_at), 'yyyy-MM-dd HH:mm') : ''} replaces all
+                                        data of the target instance (restarted; its current files are kept aside on the server). A Redis 7.4+ snapshot
+                                        can&apos;t go into Valkey.
+                                    </>
+                                ) : (
+                                    <>
+                                        The dump from {restoring ? format(new Date(restoring.created_at), 'yyyy-MM-dd HH:mm') : ''} is loaded into the
+                                        target database (created if missing). Existing data in that database is overwritten.
+                                    </>
+                                )}
                             </DialogDescription>
                         </DialogHeader>
                         {canPickTarget && (
@@ -129,13 +149,28 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                             </div>
                         )}
                         <div className="grid gap-2">
-                            <Label htmlFor="restore-db">Target database</Label>
-                            <Input
-                                id="restore-db"
-                                className="font-mono"
-                                value={form.data.database}
-                                onChange={(e) => form.setData('database', e.target.value)}
-                            />
+                            <Label htmlFor="restore-db">{keyValue ? 'Target instance' : 'Target database'}</Label>
+                            {keyValue && targetInstances ? (
+                                <Select value={form.data.database} onValueChange={(value) => form.setData('database', value)}>
+                                    <SelectTrigger id="restore-db" className="font-mono">
+                                        <SelectValue placeholder="Choose an instance" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {targetInstances.map((name) => (
+                                            <SelectItem key={name} value={name} className="font-mono">
+                                                {name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            ) : (
+                                <Input
+                                    id="restore-db"
+                                    className="font-mono"
+                                    value={form.data.database}
+                                    onChange={(e) => form.setData('database', e.target.value)}
+                                />
+                            )}
                             <InputError message={form.errors.database} />
                         </div>
                         <div className="grid gap-2">

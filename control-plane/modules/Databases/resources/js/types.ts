@@ -8,6 +8,15 @@ export function isKeyValue(engine: string | null | undefined): boolean {
     return engine !== null && engine !== undefined && KEY_VALUE_ENGINES.includes(engine);
 }
 
+/** Where a backup can be restored: SQL servers of the same protocol, or Redis / Valkey servers with their instances. */
+export interface RestoreTarget {
+    id: string;
+    label: string;
+    engine: EngineName;
+    /** Redis / Valkey: the active instances (a snapshot only goes into an existing one); null for SQL engines. */
+    instances: string[] | null;
+}
+
 export interface KeyValueSettings {
     maxmemory_mb: number;
     eviction: string;

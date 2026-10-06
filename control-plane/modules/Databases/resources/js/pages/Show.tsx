@@ -24,6 +24,7 @@ import {
     type DatabaseServer,
     type DatabaseUserRow,
     type RestoreRow,
+    type RestoreTarget,
     type ScheduleRow,
     type StorageOption,
 } from '../types';
@@ -37,7 +38,7 @@ interface Props {
     backups: BackupRow[];
     restores: RestoreRow[];
     storageProviders: StorageOption[];
-    restoreTargets: { id: string; label: string }[];
+    restoreTargets: RestoreTarget[];
     options: { privileges: string[]; versions: string[]; compressions: string[]; default_charset: string | null; default_collation: string | null };
     can: { manage: boolean; reveal: boolean; restore: boolean; manageStorage: boolean };
 }
@@ -59,7 +60,7 @@ export default function Show({
 }: Props) {
     const [editingEngine, setEditingEngine] = useState(false);
     const engine = useForm({ version: server.version_source === 'manual' ? (server.version ?? '') : '', port: String(server.port) });
-    // Redis / Valkey: instances with their own port and `default` user; no extra users, schedules or backups yet.
+    // Redis / Valkey: instances with their own port and `default` user; no extra users (backups: RDB snapshots).
     const keyValue = server.kind === 'key_value';
 
     const breadcrumbs: BreadcrumbItem[] = [
@@ -141,7 +142,7 @@ export default function Show({
                                         on {server.server_name} reference it as <code>{'${{ <service>.REDIS_URL }}'}</code>; the instance&apos;s panel
                                         on the canvas shows the connection details.
                                     </p>
-                                    <p>Backups, containers and other servers come in a later release.</p>
+                                    <p>Backups are RDB snapshots of the running instance; a restore replaces an instance&apos;s data.</p>
                                 </CardContent>
                             </Card>
                         ) : (
@@ -150,26 +151,22 @@ export default function Show({
                     </div>
                 </div>
 
-                {!keyValue && (
-                    <SchedulesCard
-                        server={server}
-                        schedules={schedules}
-                        databases={databases}
-                        storageProviders={storageProviders}
-                        canManage={can.manage}
-                    />
-                )}
+                <SchedulesCard
+                    server={server}
+                    schedules={schedules}
+                    databases={databases}
+                    storageProviders={storageProviders}
+                    canManage={can.manage}
+                />
 
-                {!keyValue && (
-                    <Card className="gap-0 py-0">
-                        <CardHeader className="border-b py-4">
-                            <CardTitle className="text-base">Backups</CardTitle>
-                        </CardHeader>
-                        <CardContent className="px-0">
-                            <BackupsTable backups={backups} canManage={can.manage} canRestore={can.restore} restoreTargets={restoreTargets} />
-                        </CardContent>
-                    </Card>
-                )}
+                <Card className="gap-0 py-0">
+                    <CardHeader className="border-b py-4">
+                        <CardTitle className="text-base">Backups</CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-0">
+                        <BackupsTable backups={backups} canManage={can.manage} canRestore={can.restore} restoreTargets={restoreTargets} />
+                    </CardContent>
+                </Card>
 
                 {restores.length > 0 && (
                     <Card>

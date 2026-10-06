@@ -9,6 +9,7 @@ import {
     type DatabaseServer,
     type DatabaseUserRow,
     type RestoreRow,
+    type RestoreTarget,
     type ScheduleRow,
     type StorageOption,
 } from '../types';
@@ -23,7 +24,7 @@ export interface DatabasePanelData {
     backups: BackupRow[];
     restores: RestoreRow[];
     storage_providers: StorageOption[];
-    restore_targets: { id: string; label: string }[];
+    restore_targets: RestoreTarget[];
     options: {
         privileges: string[];
         versions: string[];
