@@ -126,6 +126,23 @@ it('rolls back by creating a new version, and disables old versions only', funct
     expect(fn () => app(RollBackSecret::class)($secret, 2, null))->toThrow(ValidationException::class);
 });
 
+it('disables a version with its rollback copies, and not while the current version is one', function () {
+    $secret = secrets_create($this->organization, 'KEY', 'leaked');            // v1
+    app(SetSecretValue::class)($secret, 'two', null);                          // v2
+    app(RollBackSecret::class)($secret->refresh(), 1, null);                   // v3 = copy of v1
+    app(RollBackSecret::class)($secret->refresh(), 2, null);                   // v4 = copy of v2
+    app(RollBackSecret::class)($secret->refresh(), 3, null);                   // v5 = copy of v3 (so of v1), current
+
+    expect(fn () => app(DisableSecretVersion::class)($secret->refresh(), 1))->toThrow(ValidationException::class, 'rollback copy of v1');
+
+    app(SetSecretValue::class)($secret->refresh(), 'fresh', null);             // v6
+    expect(app(DisableSecretVersion::class)($secret->refresh(), 1))->toBe([1, 3, 5]);
+
+    $disabled = SecretVersion::query()->where('secret_id', $secret->id)->whereNotNull('disabled_at')->orderBy('version')->pluck('version')->all();
+    expect($disabled)->toBe([1, 3, 5])
+        ->and(fn () => app(RollBackSecret::class)($secret->refresh(), 5, null))->toThrow(ValidationException::class);
+});
+
 it('fails a linked secret until a provider is configured', function () {
     secrets_create($this->organization, 'VAULTED', '', attributes: ['kind' => 'linked', 'reference' => 'vault://kv/data/app#DB_PASS']);
 
