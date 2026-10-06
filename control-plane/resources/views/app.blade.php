@@ -11,10 +11,10 @@
         <meta name="csrf-token" content="{{ csrf_token() }}">
         <meta name="color-scheme" content="dark light">
         @if ($appearance === 'system')
-            <meta name="theme-color" content="#F4F7F3" media="(prefers-color-scheme: light)">
-            <meta name="theme-color" content="#0B0F0C" media="(prefers-color-scheme: dark)">
+            <meta name="theme-color" content="#F5F9FA" media="(prefers-color-scheme: light)">
+            <meta name="theme-color" content="#0A0F12" media="(prefers-color-scheme: dark)">
         @else
-            <meta name="theme-color" content="{{ $appearance === 'light' ? '#F4F7F3' : '#0B0F0C' }}">
+            <meta name="theme-color" content="{{ $appearance === 'light' ? '#F5F9FA' : '#0A0F12' }}">
         @endif
         <link rel="icon" href="/favicon.ico" sizes="48x48">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">

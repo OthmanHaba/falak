@@ -21,123 +21,130 @@
 .dark {
     color-scheme: dark;
 
-    --bg: #0b0f0c;
-    --bg-canvas: #0d120e;
-    --grid: #1e2820;
-    --surface-1: #111713;
-    --surface-2: #17201a;
-    --surface-3: #1e2921;
-    --border: #243128;
-    --border-strong: #324236;
-    --text: #f2f5f2;
-    --text-muted: #a7b0a9;
-    --text-faint: #6e786f;
-    /* Text on the light-ish accent / success fills of the dark theme: dark, for WCAG AA (6.9:1 on --accent). */
-    --text-on-accent: #0b0f0c;
+    /* Aurora teal: cool blue-green-grey neutrals, teal accent. */
+    --bg: #0a0f12;
+    --bg-canvas: #0c1215;
+    --grid: #1c272d;
+    --surface-1: #10171b;
+    --surface-2: #162026;
+    --surface-3: #1d2a31;
+    --border: #22313a;
+    --border-strong: #304450;
+    --text: #eef4f5;
+    --text-muted: #9fb0b5;
+    /* Tertiary text: AA (>= 4.5:1) on every surface up to --surface-3. */
+    --text-faint: #8597a0;
+    /* Text on the light accent / success fills of the dark theme: dark, for WCAG AA (10.3:1 on --accent). */
+    --text-on-accent: #0a0f12;
     /* Text on --danger fills. */
     --text-on-danger: #ffffff;
 
-    --accent: #7fa66a;
-    --accent-hover: #93b87e;
-    --accent-soft: #1b2a1d;
+    --accent: #4fd1c5;
+    --accent-hover: #76e0d6;
+    --accent-soft: #10302f;
     /* Accent-colored text on --accent-soft (tags, selected chips). */
-    --accent-on-soft: #93b87e;
-    --selection: rgba(127, 166, 106, 0.3);
+    --accent-on-soft: #76e0d6;
+    --selection: rgba(79, 209, 197, 0.28);
 
-    --success: #5dbe7a;
-    --success-soft: rgba(93, 190, 122, 0.14);
+    /* Status: a true green (not the teal accent) and a blue info. */
+    --success: #5ccb5f;
+    --success-soft: rgba(92, 203, 95, 0.14);
     --warning: #f59e0b;
     --warning-soft: rgba(245, 158, 11, 0.14);
     --danger: #ef4444;
     --danger-soft: rgba(239, 68, 68, 0.14);
-    --info: #38bdf8;
-    --info-soft: rgba(56, 189, 248, 0.14);
-    --faint-soft: rgba(110, 120, 111, 0.16);
+    --info: #60a5fa;
+    --info-soft: rgba(96, 165, 250, 0.14);
+    /* Decorative grey (#66767d) for soft neutral fills; not for text. */
+    --faint-soft: rgba(102, 118, 125, 0.18);
 
-    --overlay: rgba(4, 6, 5, 0.64);
+    --overlay: rgba(3, 6, 8, 0.64);
     --elevation-panel: 0 8px 32px rgba(0, 0, 0, 0.45);
     /* Floating panels over the canvas: a hairline ring plus a soft, wide shadow. */
     --elevation-float: 0 0 0 1px rgba(255, 255, 255, 0.02), 0 24px 64px -12px rgba(0, 0, 0, 0.6), 0 8px 24px -8px rgba(0, 0, 0, 0.5);
     /* Veil over a panel that recedes under a stacked one. */
-    --panel-dim: rgba(4, 6, 5, 0.45);
+    --panel-dim: rgba(3, 6, 8, 0.45);
     /* Canvas groups: a tinted, translucent frame. */
     --group-bg: rgba(255, 255, 255, 0.025);
     --group-border: rgba(255, 255, 255, 0.07);
 
-    /* Chart series (MetricChart), fixed order: brand green first, then hues far from it (no second green). */
-    --chart-1: #7fa66a;
+    /* Chart series (MetricChart), fixed order: the teal accent first, then hues far from it (no second teal). */
+    --chart-1: #4fd1c5;
     --chart-2: #d95926;
     --chart-3: #8b5cf6;
     --chart-4: #3987e5;
     --chart-5: #d55181;
 
     /* ANSI palette for LogViewer. */
-    --ansi-black: #2f3a32;
+    --ansi-black: #26343c;
     --ansi-red: #f87171;
     --ansi-green: #4ade80;
     --ansi-yellow: #fbbf24;
     --ansi-blue: #60a5fa;
     --ansi-magenta: #c084fc;
     --ansi-cyan: #22d3ee;
-    --ansi-white: #e4e9e4;
-    --ansi-bright-black: #6e786f;
+    --ansi-white: #dce6e8;
+    --ansi-bright-black: #8597a0;
 }
 
 .light {
     color-scheme: light;
 
-    --bg: #f4f7f3;
-    --bg-canvas: #f0f4ef;
-    --grid: #d8e0d7;
+    --bg: #f5f9fa;
+    --bg-canvas: #f0f6f7;
+    --grid: #d5e2e5;
     --surface-1: #ffffff;
-    --surface-2: #edf2ec;
-    --surface-3: #e4ebe3;
-    --border: #d8e0d7;
-    --border-strong: #c3cec2;
-    --text: #172019;
-    --text-muted: #5f6d62;
-    --text-faint: #8a968c;
+    --surface-2: #ecf3f4;
+    --surface-3: #e4eef0;
+    --border: #d5e2e5;
+    --border-strong: #bccdd2;
+    --text: #13202a;
+    --text-muted: #556670;
+    /* Tertiary text: AA (>= 4.5:1) on every surface up to --surface-3. */
+    --text-faint: #5b6c75;
     --text-on-accent: #ffffff;
     --text-on-danger: #ffffff;
 
-    --accent: #4f7a5a;
-    --accent-hover: #3f674a;
-    --accent-soft: #e1eae0;
-    --accent-on-soft: #3f674a;
-    --selection: rgba(79, 122, 90, 0.24);
+    /* The brand teal #0f8b8d deepened for AA: white on it 5.5:1, and as link text on --surface-2 4.9:1. */
+    --accent: #0b7577;
+    --accent-hover: #0a6668;
+    --accent-soft: #ddf0ef;
+    --accent-on-soft: #0a6668;
+    --selection: rgba(15, 139, 141, 0.22);
 
-    --success: #22863a;
-    --success-soft: rgba(34, 134, 58, 0.12);
+    --success: #1f7a35;
+    --success-soft: rgba(31, 122, 53, 0.12);
     --warning: #d97706;
     --warning-soft: rgba(245, 158, 11, 0.16);
     --danger: #dc2626;
     --danger-soft: rgba(239, 68, 68, 0.12);
-    --info: #0284c7;
-    --info-soft: rgba(56, 189, 248, 0.16);
-    --faint-soft: rgba(138, 150, 140, 0.16);
+    --info: #2563eb;
+    --info-soft: rgba(37, 99, 235, 0.12);
+    /* Decorative grey (#8a9aa2) for soft neutral fills; not for text. */
+    --faint-soft: rgba(138, 154, 162, 0.18);
 
-    --overlay: rgba(23, 32, 25, 0.28);
-    --elevation-panel: 0 8px 24px rgba(16, 28, 20, 0.08);
-    --elevation-float: 0 0 0 1px rgba(16, 28, 20, 0.02), 0 24px 56px -16px rgba(16, 28, 20, 0.16), 0 6px 16px -6px rgba(16, 28, 20, 0.08);
-    --panel-dim: rgba(240, 244, 239, 0.55);
-    --group-bg: rgba(23, 32, 25, 0.028);
-    --group-border: rgba(23, 32, 25, 0.08);
+    --overlay: rgba(19, 32, 42, 0.28);
+    --elevation-panel: 0 8px 24px rgba(12, 28, 38, 0.08);
+    --elevation-float: 0 0 0 1px rgba(12, 28, 38, 0.02), 0 24px 56px -16px rgba(12, 28, 38, 0.16), 0 6px 16px -6px rgba(12, 28, 38, 0.08);
+    --panel-dim: rgba(240, 246, 247, 0.55);
+    --group-bg: rgba(19, 32, 42, 0.028);
+    --group-border: rgba(19, 32, 42, 0.08);
 
-    --chart-1: #4f7a5a;
+    --chart-1: #0b7577;
     --chart-2: #eb6834;
     --chart-3: #7c3aed;
     --chart-4: #2a78d6;
     --chart-5: #e87ba4;
 
-    --ansi-black: #172019;
+    --ansi-black: #13202a;
     --ansi-red: #dc2626;
     --ansi-green: #15803d;
     --ansi-yellow: #a16207;
     --ansi-blue: #1d4ed8;
     --ansi-magenta: #7e22ce;
     --ansi-cyan: #0e7490;
-    --ansi-white: #5f6d62;
-    --ansi-bright-black: #8a968c;
+    --ansi-white: #556670;
+    --ansi-bright-black: #5b6c75;
 }
 
 @theme {
@@ -195,7 +202,7 @@
     --color-group: var(--group-bg);
     --color-group-border: var(--group-border);
 
-    /* `primary` IS the Falak accent (brand green). */
+    /* `primary` IS the Falak accent (Aurora teal). */
     --color-primary: var(--accent);
     --color-primary-hover: var(--accent-hover);
     --color-primary-soft: var(--accent-soft);
@@ -221,7 +228,7 @@
     /*
      * Legacy aliases for the pre-redesign pages (components/ui/*, module pages) so they render in the Falak palette
      * until each is rebuilt. New code uses the Falak names above. Note `accent` here is the legacy *hover surface*,
-     * not the green accent (that is `primary`).
+     * not the teal accent (that is `primary`).
      */
     --color-background: var(--bg);
     --color-foreground: var(--text);

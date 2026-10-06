@@ -83,14 +83,14 @@ export function terminalTheme(): Record<string, string> {
     if (typeof window === 'undefined') return {};
     const styles = getComputedStyle(document.documentElement);
     const token = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
-    const ansi = (name: string) => token(`--ansi-${name}`, token('--text', '#f2f5f2'));
+    const ansi = (name: string) => token(`--ansi-${name}`, token('--text', '#eef4f5'));
 
     return {
-        background: token('--bg-canvas', '#0d120e'),
-        foreground: token('--text', '#f2f5f2'),
-        cursor: token('--accent', '#7fa66a'),
-        cursorAccent: token('--bg-canvas', '#0d120e'),
-        selectionBackground: token('--selection', 'rgba(127,166,106,.3)'),
+        background: token('--bg-canvas', '#0c1215'),
+        foreground: token('--text', '#eef4f5'),
+        cursor: token('--accent', '#4fd1c5'),
+        cursorAccent: token('--bg-canvas', '#0c1215'),
+        selectionBackground: token('--selection', 'rgba(79,209,197,.28)'),
         black: ansi('black'),
         red: ansi('red'),
         green: ansi('green'),
@@ -106,7 +106,7 @@ export function terminalTheme(): Record<string, string> {
         brightBlue: ansi('blue'),
         brightMagenta: ansi('magenta'),
         brightCyan: ansi('cyan'),
-        brightWhite: token('--text', '#f2f5f2'),
+        brightWhite: token('--text', '#eef4f5'),
     };
 }
 
