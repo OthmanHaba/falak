@@ -347,7 +347,7 @@ type ComposeChild = { name: string; icon: string; image: string | null; status: 
 type CanvasGroup = { id: string; name: string; position: { x: number; y: number }; collapsed: boolean };
 type Canvas = {
   services: CanvasService[];
-  edges: { from: string; to: string; kind: 'reference' | 'depends_on' }[];  // ids: project_services.id or `{id}:{compose service}`
+  edges: { from: string; to: string; kind: 'reference' | 'depends_on'; problem?: string }[];  // ids: project_services.id or `{id}:{compose service}`; problem: an unresolvable database host reference (amber edge, "!" mark)
   groups: CanvasGroup[];
 };
 ```

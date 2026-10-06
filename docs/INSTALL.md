@@ -353,6 +353,24 @@ automatic sizing (the containers log a notice). It is no longer needed, because 
 `agent-api` service (see [Performance](#performance-php-threads-and-worker-mode)). Remove the line, then run
 `falak-ctl up`. `falak-ctl doctor` reports it until you do.
 
+**Upgrading to v0.9.0: database references no longer use public or provider-only addresses.** `${{ db.DB_HOST }}`
+and `${{ db.DATABASE_URL }}` of a PostgreSQL / MySQL / MariaDB database on a **dedicated database server** used to
+fall back to that server's provider private IP, then its public IPv4 / IPv6, when the site's servers shared no Falak
+private network with it. From v0.9.0 they follow the Redis / Valkey rules: a Falak private network (WireGuard) first,
+else the provider private network only where Falak knows the servers share it (DigitalOcean, Lightsail: same provider
+credential and region) — never a public address. So references to a dedicated database server reached over its
+**public IP**, or over a **Hetzner, Vultr or Linode private IP** (opt-in networks Falak can't verify), or between
+custom servers, **no longer resolve**, and the next deploy of those sites fails with "… shares no private network
+with <server>, and database references never point at a public address". Before you deploy after the update:
+
+1. open the project canvas: such references are drawn in amber with a "!" mark that gives the reason (the site's
+   **Variables** tab lists them too, under "Unresolved references");
+2. add the database server and the site's servers to a private network (**Network → Private networks**), wait until
+   it is applied, and deploy. (Or set the host by hand in the site's variables instead of a reference.)
+
+Engines on app / worker servers are unaffected for native sites (`127.0.0.1`); containers on that server now get the
+Docker bridge address (`172.17.0.1`, or `FALAK_DOCKER_BRIDGE_HOST`) instead of the server's own address.
+
 If step 3, 4 or 5 fails, `falak-ctl` **rolls back automatically**. It restores the previous deploy files and
 `FALAK_VERSION`, restores the database, storage and Fleet CA from the pre-update backup (the new migrations
 may already have run), and starts the previous version again.

@@ -1,7 +1,9 @@
 <?php
 
+use Falak\Databases\Application\EngineInventory;
 use Falak\Identity\Contracts\Role;
 use Falak\Projects\Domain\Models\Service;
+use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Domain\Models\Server;
 use Falak\Sites\Contracts\ComposeSites;
 use Falak\Sites\Contracts\TargetStatus;
@@ -87,11 +89,44 @@ it('returns every service of the environment with live status, servers and refer
         ->and($response->json('services.2.status'))->toBe('deploying')
         ->and($response->json('services.2.status_label'))->toBe('Deploying 66%')
         ->and($response->json('services.2.last_deployment.finished_at'))->toBeNull()
-        ->and($response->json('edges'))->toEqualCanonicalizing([
+        ->and(array_map(fn (array $edge) => array_diff_key($edge, ['problem' => 0]), $response->json('edges')))->toEqualCanonicalizing([
             ['from' => $serviceIds[$shop->id], 'to' => $serviceIds[$database->id], 'kind' => 'reference'],
             ['from' => $serviceIds[$shop->id], 'to' => $serviceIds[$api->id], 'kind' => 'reference'],
             ['from' => $serviceIds[$api->id], 'to' => $serviceIds[$database->id], 'kind' => 'reference'],
         ]);
+
+    // The engine runs on an app server the sites don't run on: their host references don't resolve, and the edges
+    // say why before a deploy fails on it. Keys without a host (none here) and site edges carry nothing.
+    $problems = collect($response->json('edges'))->mapWithKeys(fn (array $edge) => ["{$edge['from']}>{$edge['to']}" => $edge['problem'] ?? null]);
+    expect($problems["{$serviceIds[$shop->id]}>{$serviceIds[$database->id]}"])->toStartWith('DATABASE_URL: shop.DATABASE_URL cannot be used here: Storefront runs on web-1, web-2, but the database runs on')
+        ->and($problems["{$serviceIds[$api->id]}>{$serviceIds[$database->id]}"])->toStartWith('DB: shop.DB_HOST cannot be used here: Api runs on web-1, but')
+        ->and($problems["{$serviceIds[$shop->id]}>{$serviceIds[$api->id]}"])->toBeNull();
+});
+
+it('flags references to a dedicated database server that shares no private network with the site (v0.9.0: never public)', function () {
+    $dbServer = databases_server($this->organization, 'postgresql', ServerType::Database, ['name' => 'db-1', 'provider' => 'hetzner']);
+    [$database] = projects_database($this->organization, 'shop', $this->environment, engineServer: app(EngineInventory::class)->sync($dbServer->id));
+    $web = sites_server($this->organization->id, ['name' => 'web-1', 'provider' => 'hetzner']);
+    $site = projects_site($this->organization, 'Storefront', ['DB_HOST' => '${{ shop.DB_HOST }}', 'DB_DATABASE' => '${{ shop.DB_DATABASE }}'], $this->environment, [$web]);
+    // Only the database name: nothing to resolve per server.
+    $other = projects_site($this->organization, 'Reports', ['DB_DATABASE' => '${{ shop.DB_DATABASE }}'], $this->environment, [$web]);
+    $serviceIds = Service::query()->pluck('id', 'ref_id');
+
+    $edges = collect($this->getJson("{$this->url}/canvas")->assertOk()->json('edges'))->keyBy(fn (array $edge) => $edge['from']);
+
+    expect($edges[$serviceIds[$site->id]]['problem'])
+        ->toBe('DB_HOST: shop.DB_HOST cannot be used here: Storefront runs on web-1, which shares no private network with db-1, and database references never point at a public address. Add both servers to a private network (Network → Private networks).')
+        ->and($edges[$serviceIds[$other->id]])->not->toHaveKey('problem');
+});
+
+it('flags no reference edge whose database host resolves', function () {
+    $server = databases_server($this->organization, 'postgresql', ServerType::App, ['name' => 'app-1']);
+    [$database] = projects_database($this->organization, 'shop', $this->environment, engineServer: app(EngineInventory::class)->sync($server->id));
+    projects_site($this->organization, 'Storefront', ['DB_HOST' => '${{ shop.DB_HOST }}'], $this->environment, [$server]);
+
+    $edges = $this->getJson("{$this->url}/canvas")->assertOk()->json('edges');
+
+    expect($edges)->toHaveCount(1)->and($edges[0])->not->toHaveKey('problem');
 });
 
 it('derives statuses from targets and deployments', function (?string $deployment, TargetStatus $target, bool $servers, string $status, string $label) {

@@ -634,9 +634,8 @@ Plan: `docs/plans/REDIS.md` (deviations in its "As built (v0.9.0, phase 3)"); pr
   credential, in the same region, of a provider in `databases.key_value.provider_private_networks` (DigitalOcean's
   default VPC per region, Lightsail; not Hetzner / Vultr / Linode, opt-in networks — Falak stores no network id).
   `custom` servers only with `FALAK_REDIS_CUSTOM_PRIVATE_NETWORK=true` (off by default; the sim sets it for its fleet
-  network). `ServerData` gained `providerCredentialId` and `region`. The SQL `DB_HOST` (`EloquentDatabaseConnections::
-  host()`) still takes the database server's WireGuard address, else its private IPv4, else its public one, whoever
-  the consumer is (by design it falls back to public; unchanged). `containers` = container access on and
+  network). `ServerData` gained `providerCredentialId` and `region`. (The SQL `DB_HOST` still fell back to a private IPv4, then
+  a public address here; v0.9.0 changed that, see "SQL references never resolve to a public address" below.) `containers` = container access on and
   `FALAK_DOCKER_NETWORKS` not empty. `peers` = those servers' addresses on that network (their containers are NATed to
   them). `DatabaseContainerPorts` reports each instance's own port (`<engine>-<name>`, Docker ranges + peers); the SQL
   entries are unchanged. `databases_databases.network` keeps `wanted` (last sent), `bind` / `container_host` / `skipped`
@@ -716,3 +715,21 @@ certificates, alert delivery to real Slack/Discord/Telegram, the Grafana provisi
 - Alerting webhook SSRF guard doesn't resolve DNS (rebinding not blocked).
 - Grafana dashboards are copied per org folder but not org-filtered inside Grafana.
 - Laravel generated Dockerfile builds assets before composer (projects importing CSS from vendor/ need own Dockerfile).
+
+## SQL references never resolve to a public address (v0.9.0) — upgrade note
+- **Behaviour change** (`EloquentDatabaseConnections::sqlHost()`, commit "Databases: SQL references never resolve to a
+  public address"): `DB_HOST` / `DATABASE_URL` of PostgreSQL / MySQL / MariaDB follow the Redis / Valkey rules —
+  127.0.0.1 natively on the engine's server, the Docker bridge for containers there, and for other servers (dedicated
+  database servers only) an address on a private network all of the site's servers share with it: a Falak private
+  network first, else the provider private network where membership is known (`databases.key_value.
+  provider_private_networks`: DigitalOcean, Lightsail; custom servers only with `FALAK_REDIS_CUSTOM_PRIVATE_NETWORK`).
+  Before v0.9.0 a dedicated server was reached over its provider private IP or public IPv4 / IPv6 whatever the
+  consumer: those setups (public IP; Hetzner / Vultr / Linode private IPs) **stop resolving after the upgrade**, and
+  the next deploy fails with the `unreachable()` reason. Documented for operators in `docs/INSTALL.md` ("Upgrading to
+  v0.9.0").
+- **Visible before a deploy:** the canvas (`CanvasReadModel::edges()`) adds `problem` to a site → database edge when a
+  host key it references (`HOST_KEYS`, `REDIS_HOST_KEYS`) is unreachable for that site — the same text as the deploy's
+  error (`"<VAR>: <db>.<KEY> cannot be used here: <reason>"`); `canvas-board.tsx` draws such edges amber with a "!"
+  mark (`falak-edge-problem`, the reason as its title / label). The site's Variables tab already listed them
+  (`reference_errors`, "Unresolved references — the next deploy fails until they are fixed"). Keys without a host
+  (`DB_DATABASE`, …) are never flagged. Tests: `modules/Projects/tests/Feature/CanvasTest.php`.

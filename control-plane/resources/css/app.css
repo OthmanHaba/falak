@@ -504,6 +504,29 @@
     stroke: var(--accent);
     stroke-opacity: 0.8;
 }
+/* A reference that won't resolve (the next deploy fails): amber, with a "!" mark explaining it on hover. */
+.falak-canvas .falak-edge.falak-edge-problem-path .react-flow__edge-path {
+    stroke: var(--warning);
+    stroke-opacity: 0.9;
+}
+.falak-canvas .falak-edge-problem {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    border: 1px solid var(--warning);
+    background: var(--warning-soft);
+    background-color: color-mix(in srgb, var(--warning) 18%, var(--bg-canvas));
+    color: var(--warning);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    pointer-events: all;
+    z-index: 3;
+}
 .falak-canvas .react-flow__minimap {
     background: var(--surface-1);
     border: 1px solid var(--border);

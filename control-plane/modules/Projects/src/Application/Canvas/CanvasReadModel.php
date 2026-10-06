@@ -3,7 +3,9 @@
 namespace Falak\Projects\Application\Canvas;
 
 use DateTimeInterface;
+use Falak\Databases\Contracts\Data\DatabaseConsumer;
 use Falak\Databases\Contracts\Data\DatabaseData;
+use Falak\Databases\Contracts\DatabaseConnections;
 use Falak\Databases\Contracts\DatabaseDirectory;
 use Falak\Deployments\Contracts\Data\DeploymentSummary;
 use Falak\Deployments\Contracts\DeploymentDirectory;
@@ -38,7 +40,7 @@ use Illuminate\Support\Carbon;
  * @phpstan-import-type ComposeChild from ComposeGroup
  *
  * @phpstan-type CanvasService array{id: string, kind: string, ref_id: string, name: string, icon: string, position: array{x: int, y: int}, group_id: ?string, status: string, status_label: string, url: ?string, subtitle: ?string, servers: list<array{id: string, name: string, leader: bool, online: bool}>, badges: list<string>, volumes: list<array{name: string, detail: ?string}>, compose: ?array{template: ?string, collapsed: bool, services: list<ComposeChild>}, last_deployment: ?array{id: string, status: string, commit: ?string, message: ?string, finished_at: ?string}}
- * @phpstan-type CanvasEdge array{from: string, to: string, kind: string}
+ * @phpstan-type CanvasEdge array{from: string, to: string, kind: string, problem?: string}
  * @phpstan-type CanvasGroup array{id: string, name: string, position: array{x: int, y: int}, collapsed: bool}
  */
 final class CanvasReadModel
@@ -53,6 +55,7 @@ final class CanvasReadModel
         private readonly VariableReferences $references,
         private readonly ComposeSites $compose,
         private readonly ComposeInspector $inspector,
+        private readonly DatabaseConnections $connections,
     ) {}
 
     /**
@@ -306,11 +309,14 @@ final class CanvasReadModel
     }
 
     /**
-     * A site whose variables reference another service of the environment points at it.
+     * A site whose variables reference another service of the environment points at it. An edge to a database whose
+     * host (DB_HOST, DATABASE_URL, REDIS_HOST, REDIS_URL) can't be resolved for the site carries the reason as
+     * `problem` (the deploy would fail with it): e.g. a dedicated database server the site shares no private network
+     * with, since references never point at a public address.
      *
      * @param  list<Service>  $services
      * @param  array<string, SiteData>  $sites
-     * @return list<array{from: string, to: string}>
+     * @return list<array{from: string, to: string, problem?: string}>
      */
     private function edges(array $services, array $sites): array
     {
@@ -329,11 +335,26 @@ final class CanvasReadModel
 
             $variables = $this->sites->environment($service->ref_id)?->variables ?? [];
 
+            $site = $sites[$service->ref_id];
+            $consumer = null;
+
             foreach ($this->references->referencesIn($variables) as $reference) {
                 $target = $byHandle[Service::handle($reference['service'])] ?? null;
 
-                if ($target !== null && $target->id !== $service->id) {
-                    $edges["{$service->id}>{$target->id}"] = ['from' => $service->id, 'to' => $target->id];
+                if ($target === null || $target->id === $service->id) {
+                    continue;
+                }
+
+                $key = "{$service->id}>{$target->id}";
+                $edges[$key] ??= ['from' => $service->id, 'to' => $target->id];
+
+                if ($target->kind === ServiceKind::Database && ! isset($edges[$key]['problem'])
+                    && in_array($reference['key'], [...DatabaseConnections::HOST_KEYS, ...DatabaseConnections::REDIS_HOST_KEYS], true)) {
+                    $consumer ??= new DatabaseConsumer($site->name, $site->serverIds(), $site->runtime->usesDocker());
+
+                    if (($reason = $this->connections->unreachable($target->ref_id, $consumer)) !== null) {
+                        $edges[$key]['problem'] = "{$reference['variable']}: {$target->name}.{$reference['key']} cannot be used here: {$reason}";
+                    }
                 }
             }
         }
