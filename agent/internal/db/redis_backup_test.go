@@ -511,9 +511,25 @@ func TestStageSnapshotNeverFollowsALink(t *testing.T) {
 		t.Fatal(fi.Mode())
 	}
 	os.Remove(staged)
-	n, h, fi, err := stageSnapshot(src, "gzip", staged, fileOwner{uid: -1, gid: -1}, stageLimits{})
-	if err != nil || n != int64(len("REDIS0011 data")) || h.String() != "REDIS0011" || fi.Mode().Perm() != 0o600 {
-		t.Fatal(n, h, fi, err)
+	n, h, out, err := stageSnapshot(src, "gzip", staged, fileOwner{uid: -1, gid: -1}, stageLimits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer out.Close()
+	fi, _ := out.Stat()
+	if n != int64(len("REDIS0011 data")) || h.String() != "REDIS0011" || fi.Mode().Perm() != 0o600 || !isOpenFile(staged, out) {
+		t.Fatal(n, h, fi)
+	}
+	// Another name for it (a hard link the instance user made) or a link in its place is not it.
+	os.Link(staged, filepath.Join(dir, "mine"))
+	if isOpenFile(staged, out) {
+		t.Fatal("a second link accepted")
+	}
+	os.Remove(filepath.Join(dir, "mine"))
+	os.Rename(staged, staged+".old")
+	os.Symlink(staged+".old", staged)
+	if isOpenFile(staged, out) {
+		t.Fatal("a link accepted")
 	}
 }
 

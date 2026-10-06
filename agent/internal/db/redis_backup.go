@@ -333,10 +333,13 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 	if exact {
 		limit = want + want/100 + 1<<20
 	}
-	size, h, stagedInfo, err := stageSnapshot(file, p.Compression, staged, owner, stageLimits{max: limit, dir: dataP})
+	size, h, stagedFile, err := stageSnapshot(file, p.Compression, staged, owner, stageLimits{max: limit, dir: dataP})
 	if err != nil {
 		return nil, err
 	}
+	// Kept open until the snapshot is installed: while it is, no other file can get its inode number, so a name that
+	// still points at that inode is this file (once closed, a file created in its place may reuse the number).
+	defer stagedFile.Close()
 	version := db.kvVersion(ctx, k)
 	if version == "" {
 		db.d.Logger.Warn("could not read the server version; the snapshot's RDB version is not checked", "engine", k.name)
@@ -392,14 +395,18 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 	}
 	dump := dataP + "/dump.rdb"
 	// The data directory belongs to the instance user: the staged name must still be the file written above (mode and
-	// owner were set on its descriptor), never something put in its place. rename(2) moves a name, it follows no link.
-	if fi, err := os.Lstat(staged); err != nil || !os.SameFile(fi, stagedInfo) {
+	// owner were set on its descriptor), never something put in its place. rename(2) moves a name, it follows no link;
+	// what it moved is checked again, as the name could change between the check and the rename.
+	if !isOpenFile(staged, stagedFile) {
 		return nil, rollback(fmt.Errorf("install the snapshot: %s was replaced", staged))
 	}
 	if err := os.Rename(staged, dump); err != nil {
 		return nil, rollback(fmt.Errorf("install the snapshot: %w", err))
 	}
 	installed = true
+	if !isOpenFile(dump, stagedFile) {
+		return nil, rollback(fmt.Errorf("install the snapshot: %s was replaced", staged))
+	}
 	if aof {
 		if err := db.writeRedisConf(k, name, first); err != nil {
 			return nil, rollback(err)
@@ -623,10 +630,26 @@ func humanBytes(n int64) string {
 // fileOwner is who owns the staged snapshot (-1: unchanged, e.g. in tests).
 type fileOwner struct{ uid, gid int }
 
+// isOpenFile tells whether path names the open file f itself: a regular file (Lstat, no link followed) with f's
+// device and inode, and f's only name (a hard link the instance user made to it elsewhere would let them change it).
+// f must still be open, or its inode number may already belong to another file.
+func isOpenFile(path string, f *os.File) bool {
+	fi, err := os.Lstat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	own, err := f.Stat()
+	if err != nil || !os.SameFile(fi, own) {
+		return false
+	}
+	st, ok := own.Sys().(*syscall.Stat_t)
+	return ok && uint64(st.Nlink) == 1
+}
+
 // stageSnapshot writes the (gunzipped) dump to staged, a new file (O_EXCL, O_NOFOLLOW: never through a link the
 // instance user put there), whose mode (0600) and owner are set on the open descriptor, never by path. It checks the
-// header and returns the file's identity, which the install compares with what the name points to then.
-func stageSnapshot(file, compression, staged string, owner fileOwner, lim stageLimits) (int64, rdbHeader, os.FileInfo, error) {
+// header and returns the file, still open: the caller closes it once installed (see isOpenFile).
+func stageSnapshot(file, compression, staged string, owner fileOwner, lim stageLimits) (int64, rdbHeader, *os.File, error) {
 	in, closeIn, err := openDump(file, compression)
 	if err != nil {
 		return 0, rdbHeader{}, nil, err
@@ -636,7 +659,12 @@ func stageSnapshot(file, compression, staged string, owner fileOwner, lim stageL
 	if err != nil {
 		return 0, rdbHeader{}, nil, err
 	}
-	defer out.Close()
+	ok := false
+	defer func() {
+		if !ok {
+			out.Close()
+		}
+	}()
 	if err := out.Chmod(0o600); err != nil {
 		return 0, rdbHeader{}, nil, err
 	}
@@ -666,14 +694,8 @@ func stageSnapshot(file, compression, staged string, owner fileOwner, lim stageL
 	if err != nil {
 		return 0, rdbHeader{}, nil, fmt.Errorf("the backup is %w", err)
 	}
-	fi, err := out.Stat()
-	if err != nil {
-		return 0, rdbHeader{}, nil, err
-	}
-	if err := out.Close(); err != nil {
-		return 0, rdbHeader{}, nil, fmt.Errorf("write the snapshot: %w", err)
-	}
-	return n, h, fi, nil
+	ok = true
+	return n, h, out, nil
 }
 
 // restoreRollback puts the instance back as it was before the restore: the restored files go, the earlier ones come
