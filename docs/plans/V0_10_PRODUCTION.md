@@ -121,14 +121,18 @@ A `linked` secret stores a **reference**, not a value: `vault://kv/data/app#DB_P
   promoted to a secret in one click.
 
 ### On servers
-- **Classic sites.** `.env` moves to tmpfs: `/run/falak/env/<site>.env` (0400, owned by the site user). The release's
-  `.env` becomes a symlink to it. After a reboot the agent asks the CP to re-send it (`secrets.rehydrate`), so secrets
-  are never written to persistent disk.
-- **Containers.** Per service, choose env vars (today) or **files** (`/run/secrets/NAME`, tmpfs bind, 0400), which
-  `docker inspect` does not show.
-- **Masking.** Each command payload carries the hashes and lengths of the secret values it contains. The agent
-  replaces exact occurrences, plus base64 and URL-encoded forms, with `••••` in deploy, hook, build and command output
-  before anything leaves the server. The CP log sinks apply the same filter again.
+- **Classic sites.** `.env` moves to tmpfs: `/run/falak/env/<site>.env` (0440, site user and site group: the edge user
+  runs PHP under FrankenPHP). The release's `.env` becomes a symlink to it. After a reboot the agent reports the site in
+  its heartbeat (`missing_secrets`) and the CP re-sends it (`site.env.write`), so secrets are never written to
+  persistent disk. *(Built in step 1d.)*
+- **Containers.** Per site, choose env vars (default) or **files** (`/run/secrets/NAME`, tmpfs bind; 0444 in a 0555
+  directory under a 0700 root-only parent, or 0400 owned by a numeric container user), which `docker inspect` does not
+  show. Compose projects keep env vars for now. *(Built in step 1d.)*
+- **Masking.** Each command payload lists the *names* of its secret variables (`mask`); the agent takes the values from
+  the same payload (or the site's env file for hooks), so no extra copy is ever sent. It replaces exact occurrences,
+  plus base64 and URL-encoded forms, with `••••` in deploy, hook, build and command output before anything leaves the
+  server. The CP deployment log applies the same filter again. Until the store exists, names are matched against
+  `sites.secret_variables` (one config list; the store's `sensitive` flag replaces it). *(Built in step 1d.)*
 
 ### UI
 - A Secrets page per project and environment: list, version history, diff of metadata (never values), last

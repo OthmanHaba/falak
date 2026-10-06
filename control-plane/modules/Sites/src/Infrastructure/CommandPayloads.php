@@ -50,8 +50,8 @@ final class CommandPayloads
         ];
 
         if ($site->isolated) {
-            // Keep PHP inside the site's own tree.
-            $payload['php_admin_values'] = ['open_basedir' => $site->rootPath().'/:/tmp/:/usr/share/php/'];
+            // Keep PHP inside the site's own tree. Its .env links to the agent's tmpfs, and PHP checks the resolved path.
+            $payload['php_admin_values'] = ['open_basedir' => $site->rootPath()."/:/tmp/:/usr/share/php/:/run/falak/env/{$site->slug}.env"];
         }
 
         return $payload;

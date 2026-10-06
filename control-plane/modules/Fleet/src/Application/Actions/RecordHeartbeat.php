@@ -9,6 +9,7 @@ use Falak\Fleet\Domain\Models\Agent;
 use Falak\Fleet\Domain\Models\AgentMetric;
 use Falak\Fleet\Events\AgentCameOnline;
 use Falak\Fleet\Events\AgentFactsReported;
+use Falak\Fleet\Events\AgentSecretsMissing;
 use Falak\Fleet\Events\AgentVersionChanged;
 use Illuminate\Support\Carbon;
 
@@ -83,6 +84,12 @@ final class RecordHeartbeat
 
         if ($wasOffline) {
             AgentCameOnline::dispatch($agent->id, $agent->organization_id, $agent->server_id, $previousHeartbeat?->toDateTimeImmutable());
+        }
+
+        $missing = array_values(array_unique(array_map('strval', (array) ($heartbeat['missing_secrets'] ?? []))));
+
+        if ($missing !== [] && $agent->server_id !== null) {
+            AgentSecretsMissing::dispatch($agent->id, $agent->organization_id, $agent->server_id, $missing);
         }
 
         if ($facts !== null) {
