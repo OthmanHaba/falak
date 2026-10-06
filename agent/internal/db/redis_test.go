@@ -39,6 +39,7 @@ type fakeProc struct {
 	disabled   []string
 	bind       []string // what it listens on (its config's bind, unless the test says otherwise)
 	loaded     string   // dump.rdb's content when it started from it
+	runID      string   // INFO's run_id: new on every start
 }
 
 // fakeRedisHost fakes systemd, useradd/id and redis-cli on a temp root. Instances behave as their config says:
@@ -58,6 +59,7 @@ type fakeRedisHost struct {
 	rdb          string // what redis-cli --rdb writes (default REDIS0011 + a payload)
 	badDump      string // a start from a dump.rdb containing this fails (as Redis on a corrupt or unknown snapshot)
 	usedMemory   int64  // INFO memory's used_memory (0: not reported)
+	starts       int    // processes started (run_ids)
 }
 
 func newRedisHost(t *testing.T, f *runnertest.Fake, root string) *fakeRedisHost {
@@ -150,7 +152,8 @@ func (h *fakeRedisHost) start(unit string) (runner.Result, error) {
 	if err != nil {
 		return runner.Result{ExitCode: 1, Stderr: []byte("no config")}, nil
 	}
-	p := &fakeProc{unit: unit, loading: h.loading}
+	h.starts++
+	p := &fakeProc{unit: unit, loading: h.loading, runID: fmt.Sprintf("%040d", h.starts)}
 	for _, line := range strings.Split(string(b), "\n") {
 		if f := strings.Fields(line); len(f) == 3 && f[0] == "rename-command" && f[2] == `""` {
 			p.disabled = append(p.disabled, f[1])
@@ -257,7 +260,7 @@ func (h *fakeRedisHost) cli(c runnertest.Call) (runner.Result, error) {
 		}
 		b := map[bool]string{true: "1", false: "0"}
 		status := map[bool]string{true: "err", false: "ok"}[p.rewriteErr]
-		return out("# Persistence\r\naof_enabled:" + b[p.appendonly] + "\r\naof_rewrite_in_progress:" + b[p.rewriting] + "\r\naof_rewrite_scheduled:0\r\naof_last_bgrewrite_status:" + status + "\r")
+		return out("# Server\r\nrun_id:" + p.runID + "\r\n# Persistence\r\naof_enabled:" + b[p.appendonly] + "\r\naof_rewrite_in_progress:" + b[p.rewriting] + "\r\naof_rewrite_scheduled:0\r\naof_last_bgrewrite_status:" + status + "\r")
 	case args[0] == p.config && len(args) == 3 && args[1] == "GET" && args[2] == "save":
 		return out("save\n" + p.save)
 	case args[0] == p.config && len(args) == 4 && args[1] == "SET" && args[2] == h.failSet:
@@ -481,7 +484,7 @@ func TestRedisPersistenceTransitionsLiveKeepTheData(t *testing.T) {
 	if m, _ := os.ReadFile(filepath.Join(data, "appendonlydir", "appendonly.aof.manifest")); string(m) != "fresh" {
 		t.Fatal("stale AOF kept")
 	}
-	inOrder(t, h.redisCmds, "INFO persistence", cfg+" GET save", cfg+" SET maxmemory 128mb", cfg+" SET maxmemory-policy noeviction", cfg+" SET appendonly yes", "INFO persistence", cfg+" SET save ")
+	inOrder(t, h.redisCmds, "INFO persistence", cfg+" GET save", cfg+" SET maxmemory 128mb", cfg+" SET maxmemory-policy noeviction", cfg+" SET appendonly yes", "INFO default", cfg+" SET save ")
 
 	// aof → rdb: SAVE before AOF goes off, so dump.rdb holds the data.
 	step("rdb")

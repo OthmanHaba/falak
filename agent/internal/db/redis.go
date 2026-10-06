@@ -678,6 +678,7 @@ func (db *DB) setPersistence(ctx context.Context, c conn, name, from, to string)
 		return nil
 	case "aof":
 		// from is the live process' mode: a running AOF (aof_enabled:1, even mid-rewrite) is never moved.
+		runID := c.runID(ctx)
 		if from != "aof" {
 			if err := db.moveAside(c.k, name, "appendonlydir", "appendonly.aof"); err != nil {
 				return err
@@ -686,7 +687,27 @@ func (db *DB) setPersistence(ctx context.Context, c conn, name, from, to string)
 				return err
 			}
 		}
-		if err := c.waitAOFRewrite(ctx); err != nil {
+		err := c.waitAOFRewrite(ctx, runID)
+		var off *errAOFOff
+		if errors.As(err, &off) && from != "aof" {
+			// The process restarted from a config without AOF (or AOF was switched off) while its rewrite ran: it loaded
+			// what that config loads, so switch it on again, once, on the process now running.
+			c.db.d.Logger.Warn("AOF went off during its rewrite, switching it on again", "unit", c.k.unit(name), "err", err)
+			if err := c.ready(ctx); err != nil {
+				return fmt.Errorf("%w; the server did not answer again: %v", off, err)
+			}
+			if err := db.moveAside(c.k, name, "appendonlydir", "appendonly.aof"); err != nil {
+				return err
+			}
+			runID = c.runID(ctx)
+			if err := set("appendonly", "yes"); err != nil {
+				return fmt.Errorf("%w; switching it on again failed: %v", off, err)
+			}
+			if err = c.waitAOFRewrite(ctx, runID); err != nil {
+				return fmt.Errorf("%w; switched on again, then: %v", off, err)
+			}
+		}
+		if err != nil {
 			return err
 		}
 		return set("save", "")
@@ -1219,13 +1240,48 @@ func (c conn) info(ctx context.Context, section string) (map[string]string, erro
 	return m, nil
 }
 
-// waitAOFRewrite waits for the rewrite CONFIG SET appendonly yes started (the AOF then holds the dataset).
-func (c conn) waitAOFRewrite(ctx context.Context) error {
+// errAOFOff: AOF is off while its rewrite was awaited — the process restarted from a config without it (killed and
+// started again by systemd while a restore or an apply ran from its first config), or something switched it off.
+type errAOFOff struct{ restarted bool }
+
+func (e *errAOFOff) Error() string {
+	if e.restarted {
+		return "AOF is off again before its rewrite finished: the server restarted (new run_id) from a config without AOF"
+	}
+	return "AOF is off again before its rewrite finished (switched off)"
+}
+
+// waitAOFRewrite waits for the rewrite CONFIG SET appendonly yes started (the AOF then holds the dataset). AOF found
+// off (no rewrite running or scheduled) ends the wait at once with *errAOFOff instead of waiting out RedisAOFTimeout;
+// a server that stops answering is waited for (it may be restarting) a few times.
+//
+// runID is the server's run_id when AOF was switched on ("" = unknown: the first answer counts).
+func (c conn) waitAOFRewrite(ctx context.Context, runID string) error {
 	deadline := within(ctx, RedisAOFTimeout)
-	for {
-		m, err := c.info(ctx, "persistence")
+	restarted := false
+	for lost := 0; ; {
+		// "default" includes the server section (run_id) and persistence, also on Redis 6.0 (one section per INFO).
+		m, err := c.info(ctx, "default")
 		if err != nil {
-			return err
+			var re *RedisError
+			if ctx.Err() != nil || errors.As(err, &re) && !strings.HasPrefix(re.Reply, "LOADING") || lost >= 3 {
+				return err
+			}
+			lost++
+			if rerr := c.ready(ctx); rerr != nil {
+				return fmt.Errorf("%w (and it did not come back: %v)", err, rerr)
+			}
+			continue
+		}
+		if id := m["run_id"]; id != "" {
+			if runID == "" {
+				runID = id
+			} else if id != runID {
+				restarted = true
+			}
+		}
+		if m["aof_enabled"] == "0" && m["aof_rewrite_in_progress"] == "0" && m["aof_rewrite_scheduled"] == "0" {
+			return &errAOFOff{restarted: restarted}
 		}
 		if m["aof_enabled"] == "1" && m["aof_rewrite_in_progress"] == "0" && m["aof_rewrite_scheduled"] == "0" {
 			if s := m["aof_last_bgrewrite_status"]; s != "" && s != "ok" {
@@ -1242,6 +1298,15 @@ func (c conn) waitAOFRewrite(ctx context.Context) error {
 		case <-time.After(redisPoll):
 		}
 	}
+}
+
+// runID is the server's run_id ("" when INFO doesn't answer).
+func (c conn) runID(ctx context.Context) string {
+	m, err := c.info(ctx, "server")
+	if err != nil {
+		return ""
+	}
+	return m["run_id"]
 }
 
 func firstLine(s string) string {

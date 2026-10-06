@@ -547,7 +547,10 @@ Plan: `docs/plans/REDIS.md` (deviations in its "As built (v0.9.0, phase 3)"); pr
   the pending restart; a failed stop starts the unit again if it ran and fails with "nothing was changed") → `dump.rdb`, `appendonlydir`, `appendonly.aof` renamed `<file>.falak-<UTC>` → snapshot renamed to
   `dump.rdb` only if the name still is the file written (`os.SameFile`; `rename(2)` follows no link) → AOF instances: config written with `appendonly no` and state recorded as `rdb` (a
   redelivered apply then finishes the switch) → `reset-failed`, `start`, `PING` (LOADING extends the wait) → AOF:
-  `CONFIG SET appendonly yes`, wait for the rewrite, `save ""`, config and state put back (3 tries; still failing:
+  `CONFIG SET appendonly yes`, wait for the rewrite (`waitAOFRewrite`: `INFO default`; AOF found off with no rewrite
+  running or scheduled — the process was killed and systemd started it again from the first config, its `run_id`
+  changed — ends the wait at once instead of after `RedisAOFTimeout`, and AOF is switched on again once on the new
+  process; off again → rollback with the reason), `save ""`, config and state put back (3 tries; still failing:
   success with a warning, both left as the first start's, which the next apply converges without a restart) → `none`: `dump.rdb` deleted
   → `INFO memory`: `used_memory` over `maxmemory` is a warning (Redis loads it anyway; the next writes evict keys, or
   are refused with `noeviction`) → older `<file>.falak-*` copies removed (only this restore's are kept; none when it

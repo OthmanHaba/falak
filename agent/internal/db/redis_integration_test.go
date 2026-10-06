@@ -43,7 +43,8 @@ type dockerRunner struct {
 	k         kvEngine
 	name      string
 	container string
-	netns     string // run in this container's network namespace (its addresses outlive the instance's restarts)
+	netns     string                                  // run in this container's network namespace (its addresses outlive the instance's restarts)
+	afterCLI  func(ctx context.Context, stdin string) // called after each redis-cli command with its stdin
 }
 
 func (d *dockerRunner) docker(ctx context.Context, stdin io.Reader, args ...string) (runner.Result, error) {
@@ -114,7 +115,16 @@ func (d *dockerRunner) Run(ctx context.Context, c runner.Cmd) (runner.Result, er
 			}
 			return res, nil
 		}
-		return d.docker(ctx, c.Stdin, append(append(args, d.container, d.k.cli), cliArgs...)...)
+		var stdin string
+		if c.Stdin != nil {
+			b, _ := io.ReadAll(c.Stdin)
+			stdin = string(b)
+		}
+		res, err := d.docker(ctx, strings.NewReader(stdin), append(append(args, d.container, d.k.cli), cliArgs...)...)
+		if d.afterCLI != nil {
+			d.afterCLI(ctx, stdin)
+		}
+		return res, err
 	case strings.HasSuffix(c.Name, "/usr/bin/"+d.k.server):
 		return d.docker(ctx, nil, "run", "--rm", "--entrypoint", d.k.server, d.image, "--version")
 	case c.Name == "getent":
@@ -553,6 +563,44 @@ func redisIntegrationBackupRestore(t *testing.T, engine, image string) {
 	check("after a restart with the rewritten AOF")
 	if r, err := db.RedisApply(ctx, p, st); err != nil || r.(RedisApplyResult).Changed {
 		t.Fatalf("apply after the restore: %+v %v", r, err)
+	}
+
+	// Killed while AOF is switched back on (systemd starts it again from the restore's first config, appendonly no):
+	// noticed at once, AOF switched on again on the new process, the restore succeeds — not a 15-minute wait.
+	do("SET", "a", "4")
+	do("SET", "later", "x")
+	killed := 0
+	d.afterCLI = func(ctx context.Context, stdin string) {
+		if killed == 0 && strings.Contains(stdin, `"appendonly" "yes"`) {
+			killed++
+			if res, err := d.docker(ctx, nil, "restart", "-t", "0", d.container); err != nil || res.ExitCode != 0 {
+				t.Errorf("restart: %v %s", err, res.Stderr)
+			}
+		}
+	}
+	started := time.Now()
+	err = restore(backup, sum)
+	d.afterCLI = nil
+	if err != nil || killed != 1 {
+		t.Fatalf("restore with a kill during the AOF switch: %v (killed %d)", err, killed)
+	}
+	t.Logf("%s: killed during the AOF switch, restored in %s", image, time.Since(started).Round(time.Millisecond))
+	if time.Since(started) > 2*time.Minute {
+		t.Fatal("waited too long")
+	}
+	check("after a kill during the AOF switch")
+	if m, err := c.info(ctx, "persistence"); err != nil || m["aof_enabled"] != "1" {
+		t.Fatalf("AOF not on again after the kill: %v %v", m, err)
+	}
+	if _, err := d.docker(ctx, nil, "restart", d.container); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ready(ctx); err != nil {
+		t.Fatal(err)
+	}
+	check("after a restart following the kill")
+	if r, err := db.RedisApply(ctx, p, st); err != nil || r.(RedisApplyResult).Changed {
+		t.Fatalf("apply after the restore with a kill: %+v %v", r, err)
 	}
 
 	// A snapshot the server can't load: the earlier data (AOF) comes back.

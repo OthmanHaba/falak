@@ -871,3 +871,87 @@ func TestRedisBackupRemovesTheRawSnapshotBeforeTheUpload(t *testing.T) {
 		t.Fatal(entries)
 	}
 }
+
+// The instance restarts (killed, systemd starts it again from the first config: appendonly no) while its AOF rewrite
+// runs: seen at once (AOF off, new run_id), and AOF is switched on again on the new process instead of waiting out
+// RedisAOFTimeout and rolling back.
+func TestRedisRestoreWithAOFSurvivesARestartDuringTheRewrite(t *testing.T) {
+	oldAOF := RedisAOFTimeout
+	RedisAOFTimeout = 10 * time.Second
+	defer func() { RedisAOFTimeout = oldAOF }()
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	p := redisPayload()
+	p.Persistence = "aof"
+	applyOK(t, db, p)
+	conf, _ := os.ReadFile(filepath.Join(root, "/etc/falak-redis/cache.conf"))
+	writeGzip(t, filepath.Join(root, "/backups/b.rdb.gz"), "REDIS0011 restored data")
+	const unit = "redis-server@falak-cache.service"
+	restarts := 0
+	h.redisCmds = nil
+	h.stuckRewrite = true
+	h.onInfo = func() {
+		if proc := h.procs[unit]; proc != nil && proc.rewriting && restarts == 0 {
+			restarts++
+			h.stuckRewrite = false
+			h.start(unit) // the next INFO reaches a new process, started from the config on disk (appendonly no)
+		}
+	}
+
+	start := time.Now()
+	r, err := db.Restore(context.Background(), restorePayload("redis", "/backups/b.rdb.gz"), st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatal("waited for the AOF timeout")
+	}
+	proc := h.procs[unit]
+	if restarts != 1 || proc.runID == "" || !proc.appendonly || proc.loaded != "REDIS0011 restored data" {
+		t.Fatalf("%d %+v", restarts, proc)
+	}
+	if n := strings.Count(strings.Join(h.redisCmds, "\n"), "SET appendonly yes"); n != 2 {
+		t.Fatalf("appendonly yes sent %d times: %v", n, h.redisCmds)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "/etc/falak-redis/cache.conf")); string(b) != string(conf) {
+		t.Fatal("config not put back")
+	}
+	if len(r.(RestoreResult).MovedAside) != 1 {
+		t.Fatal(r)
+	}
+}
+
+// When AOF goes off again after the second switch too, the restore rolls back at once with the reason.
+func TestRedisRestoreWithAOFRollsBackPromptlyWhenAOFKeepsGoingOff(t *testing.T) {
+	oldAOF := RedisAOFTimeout
+	RedisAOFTimeout = 10 * time.Second
+	defer func() { RedisAOFTimeout = oldAOF }()
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	p := redisPayload()
+	p.Persistence = "aof"
+	applyOK(t, db, p)
+	writeGzip(t, filepath.Join(root, "/backups/b.rdb.gz"), "REDIS0011 restored data")
+	const unit = "redis-server@falak-cache.service"
+	h.stuckRewrite = true
+	h.onInfo = func() {
+		if proc := h.procs[unit]; proc != nil && proc.rewriting && proc.loadedFrom == "dump.rdb" {
+			h.start(unit)
+		}
+	}
+
+	start := time.Now()
+	_, err := db.Restore(context.Background(), restorePayload("redis", "/backups/b.rdb.gz"), st)
+	if err == nil || !strings.Contains(err.Error(), "the earlier data is back") || !strings.Contains(err.Error(), "the server restarted (new run_id)") || !strings.Contains(err.Error(), "switched on again, then") {
+		t.Fatal(err)
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatal("waited for the AOF timeout")
+	}
+	h.onInfo = nil
+	if proc := h.procs[unit]; proc == nil || proc.loadedFrom != "aof" || !proc.appendonly {
+		t.Fatalf("%+v", proc)
+	}
+}
