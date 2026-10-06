@@ -36,7 +36,8 @@ import (
 // are removed, so only the latest set is kept), the snapshot becomes dump.rdb (0600, the instance user) and the unit starts. An
 // instance with AOF starts from a config with `appendonly no` (Redis ignores dump.rdb while AOF is on), then switches AOF
 // on live (CONFIG SET appendonly yes rewrites the AOF from memory) and its config file is put back (retried; when that
-// still fails the restore succeeds with a warning, and the next apply converges). If the start, PING
+// still fails the restore succeeds with a warning, and the next apply converges). A dataset over the instance's maxmemory
+// is a warning too (Redis loads it; evictions or refused writes follow). If the start, PING
 // or the AOF switch fails, the restored files are removed, the earlier ones put back, the earlier config written and the
 // instance started again; the restore fails with the unit's log tail.
 
@@ -435,6 +436,9 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 		// Loaded; an instance without persistence keeps nothing on disk (its next restart starts empty, as always).
 		_ = os.Remove(dump)
 	}
+	if w := c.overMemory(ctx); w != "" {
+		warnings = append(warnings, w)
+	}
 	result := RestoreResult{Bytes: size, DurationMS: time.Since(start).Milliseconds(), RDB: h.String(), Warnings: warnings}
 	for _, m := range moved {
 		result.MovedAside = append(result.MovedAside, m[1])
@@ -452,6 +456,25 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 		db.d.Logger.Warn("could not remove older moved-aside files", "unit", unit, "err", err)
 	}
 	return result, nil
+}
+
+// overMemory warns when the loaded dataset uses more memory than the instance's maxmemory ("" otherwise, or when
+// INFO can't tell). Redis loads it anyway; the next writes then evict keys, or are refused with noeviction.
+func (c conn) overMemory(ctx context.Context) string {
+	m, err := c.info(ctx, "memory")
+	if err != nil {
+		return ""
+	}
+	used, err1 := strconv.ParseInt(m["used_memory"], 10, 64)
+	limit, err2 := strconv.ParseInt(m["maxmemory"], 10, 64)
+	if err1 != nil || err2 != nil || limit <= 0 || used <= limit {
+		return ""
+	}
+	then := "keys get evicted (maxmemory-policy " + m["maxmemory_policy"] + ") as soon as clients write"
+	if p := m["maxmemory_policy"]; p == "noeviction" || p == "" {
+		then = "writes are refused (OOM) until memory is freed (maxmemory-policy noeviction)"
+	}
+	return fmt.Sprintf("the restored dataset uses %s of memory, more than the instance's limit of %s: %s. Raise the instance's memory limit to keep every key", humanBytes(used), humanBytes(limit), then)
 }
 
 // retryWrite runs a local file write up to 3 times, redisPoll apart.

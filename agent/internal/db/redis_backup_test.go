@@ -793,3 +793,34 @@ func TestRetryWrite(t *testing.T) {
 		t.Fatal(err, calls)
 	}
 }
+
+// A dataset over the instance's maxmemory loads (Redis doesn't refuse it), with a warning about what follows.
+func TestRedisRestoreWarnsWhenTheDatasetIsOverTheMemoryLimit(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	applyOK(t, db, redisPayload()) // 128 MB, noeviction
+	writeGzip(t, filepath.Join(root, "/backups/b.rdb.gz"), "REDIS0011 restored data")
+
+	h.usedMemory = 100 << 20
+	r, err := db.Restore(context.Background(), restorePayload("redis", "/backups/b.rdb.gz"), st)
+	if err != nil || len(r.(RestoreResult).Warnings) != 0 {
+		t.Fatal(r, err)
+	}
+	h.usedMemory = 300 << 20
+	r, err = db.Restore(context.Background(), restorePayload("redis", "/backups/b.rdb.gz"), st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := r.(RestoreResult).Warnings
+	if len(w) != 1 || !strings.Contains(w[0], "uses 300.0 MiB of memory, more than the instance's limit of 128.0 MiB") || !strings.Contains(w[0], "writes are refused") {
+		t.Fatal(w)
+	}
+	p := redisPayload()
+	p.Eviction = "allkeys-lru"
+	applyOK(t, db, p)
+	r, _ = db.Restore(context.Background(), restorePayload("redis", "/backups/b.rdb.gz"), st)
+	if w := r.(RestoreResult).Warnings; len(w) != 1 || !strings.Contains(w[0], "keys get evicted (maxmemory-policy allkeys-lru)") {
+		t.Fatal(w)
+	}
+}

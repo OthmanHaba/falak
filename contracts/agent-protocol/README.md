@@ -139,7 +139,8 @@ agent never creates one in a restore). The result adds `rdb` and `moved_aside` (
 are removed after a successful restore, so only the latest set stays) and `warnings`: with AOF, once `CONFIG SET
 appendonly yes` succeeded the data is restored, so a config file / state that can't be put back (3 tries) leaves
 the first start's (`appendonly no`, state `rdb`) and the restore succeeds with a warning; the next `db.redis.apply`
-converges (it reads the live mode, aof, and rewrites both without a restart), and the control plane queues one.
+converges (it reads the live mode, aof, and rewrites both without a restart), and the control plane queues one. A
+loaded dataset whose `used_memory` exceeds `maxmemory` is a warning too (evictions or refused writes follow).
 The control plane only sends these engines to agents that list the feature.
 Backup results add `uncompressed_bytes` (every engine: the dump's size before gzip). Restores check the instance's disk
 first, before anything changes: free space (statfs) must cover the gunzipped snapshot (twice with AOF, for the

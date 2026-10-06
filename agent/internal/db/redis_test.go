@@ -57,6 +57,7 @@ type fakeRedisHost struct {
 	redisCmds    []string
 	rdb          string // what redis-cli --rdb writes (default REDIS0011 + a payload)
 	badDump      string // a start from a dump.rdb containing this fails (as Redis on a corrupt or unknown snapshot)
+	usedMemory   int64  // INFO memory's used_memory (0: not reported)
 }
 
 func newRedisHost(t *testing.T, f *runnertest.Fake, root string) *fakeRedisHost {
@@ -246,6 +247,13 @@ func (h *fakeRedisHost) cli(c runnertest.Call) (runner.Result, error) {
 	case args[0] == "INFO":
 		if h.onInfo != nil {
 			h.onInfo()
+		}
+		if len(args) > 1 && args[1] == "memory" {
+			if h.usedMemory == 0 {
+				return out("# Memory\r")
+			}
+			mb, _ := strconv.ParseInt(strings.TrimSuffix(p.maxmemory, "mb"), 10, 64)
+			return out(fmt.Sprintf("# Memory\r\nused_memory:%d\r\nmaxmemory:%d\r\nmaxmemory_policy:%s\r", h.usedMemory, mb<<20, p.policy))
 		}
 		b := map[bool]string{true: "1", false: "0"}
 		status := map[bool]string{true: "err", false: "ok"}[p.rewriteErr]
