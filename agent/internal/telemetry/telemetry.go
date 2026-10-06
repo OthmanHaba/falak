@@ -107,6 +107,7 @@ type Service struct {
 	mu        sync.Mutex
 	cur       Payload
 	listeners otlp.Listeners
+	loops     sync.WaitGroup // the loops Start launched
 }
 
 // New builds the service (nothing runs until Start).
@@ -157,7 +158,8 @@ func New(opts Options) (*Service, error) {
 
 func (s *Service) configPath() string { return filepath.Join(s.opts.EtcDir, "telemetry.json") }
 
-// Start launches the receiver and background loops; returns an error when a listener fails.
+// Start launches the receiver and background loops; returns an error when a listener fails. The loops stop when ctx
+// is cancelled; Wait returns once they have (some write state on the way out: log offsets, the OTLP disk buffer).
 func (s *Service) Start(ctx context.Context) error {
 	ls, err := s.relay.Serve(ctx, s.opts.UnixSocket, s.opts.HTTPAddr)
 	if err != nil {
@@ -166,20 +168,27 @@ func (s *Service) Start(ctx context.Context) error {
 	s.mu.Lock()
 	s.listeners = ls
 	s.mu.Unlock()
-	go s.relay.Run(ctx)
-	go s.collector.Run(ctx)
-	go s.tailer.Run(ctx)
+	run := func(f func(context.Context)) {
+		s.loops.Add(1)
+		go func() { defer s.loops.Done(); f(ctx) }()
+	}
+	run(s.relay.Run)
+	run(s.collector.Run)
+	run(s.tailer.Run)
 	if s.docker != nil {
-		go s.docker.Run(ctx)
+		run(s.docker.Run)
 	}
 	if s.stats != nil {
-		go s.stats.Run(ctx)
+		run(s.stats.Run)
 	}
 	if s.tee != nil {
-		go s.tee.Run(ctx)
+		run(s.tee.Run)
 	}
 	return nil
 }
+
+// Wait blocks until the loops Start launched have returned (after its ctx was cancelled).
+func (s *Service) Wait() { s.loops.Wait() }
 
 // Listeners reports the bound receiver addresses (after Start).
 func (s *Service) Listeners() otlp.Listeners {
