@@ -38,6 +38,7 @@ import (
 	"github.com/OthmanHaba/falak/agent/internal/telemetry"
 	"github.com/OthmanHaba/falak/agent/internal/transport"
 	"github.com/OthmanHaba/falak/agent/internal/version"
+	"github.com/OthmanHaba/falak/agent/internal/volumes"
 )
 
 // InsightsPoster posts NDJSON to /agent/v1/insights.
@@ -129,6 +130,8 @@ func Build(d Deps) *Components {
 	fns := functions.New(functions.Deps{FS: d.FS, Runner: d.Runner, Docker: docker.NewClient(cfg.DockerSock), Gateway: fngateway.NewClient(""),
 		Logger: log.With("component", "functions"), Binary: BinaryPath, Version: version.Version})
 	fns.Register(reg)
+	volumes.New(volumes.Deps{Runner: d.Runner, FS: d.FS, HTTP: d.HTTP, Docker: docker.NewClient(cfg.DockerSock), Logger: log.With("component", "volumes"),
+		Root: filepath.Join(cfg.StateDir, "volumes"), SitesRoot: cfg.SitesRoot, BindAllow: cfg.BindAllow()}).Register(reg)
 	d.Telemetry.Register(reg)
 	terms.Register(reg)
 

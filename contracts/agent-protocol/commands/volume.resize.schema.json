@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/volume.resize.schema.json",
+  "title": "volume.resize — grow a sized volume online (fallocate, losetup -c, resize2fs); shrinking is refused",
+  "x-falak-redeliverable": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "volume",
+    "size_bytes"
+  ],
+  "properties": {
+    "volume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-z]{26}$",
+          "description": "The volume's id (lower-case ULID)"
+        },
+        "kind": {
+          "enum": [
+            "docker",
+            "sized",
+            "bind",
+            "shared_path"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
+          "description": "docker: the Docker volume's name"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/[^\\x00]*$",
+          "maxLength": 4096,
+          "description": "bind: the host path (within the agent's FALAK_VOLUME_BIND_ALLOW); shared_path: the site's shared path (under the sites root). sized volumes live at /var/lib/falak/volumes/<id>"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "docker"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "name"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "bind",
+                  "shared_path"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "path"
+            ]
+          }
+        }
+      ]
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 16777216,
+      "maximum": 17592186044416,
+      "description": "sized: the image file's size in bytes (16 MiB – 16 TiB)"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size_bytes",
+        "previous_bytes",
+        "grown"
+      ],
+      "properties": {
+        "size_bytes": {
+          "type": "integer"
+        },
+        "previous_bytes": {
+          "type": "integer"
+        },
+        "grown": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

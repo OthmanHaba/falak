@@ -380,6 +380,16 @@ type ContainerSummary struct {
 	State   string            `json:"State"`
 	Created int64             `json:"Created"`
 	Labels  map[string]string `json:"Labels"`
+	Mounts  []MountPoint      `json:"Mounts,omitempty"`
+}
+
+// MountPoint is one of a container's mounts as GET /containers/json lists it (Name: a named volume's name;
+// Source: the host path behind it).
+type MountPoint struct {
+	Type        string `json:"Type"`
+	Name        string `json:"Name,omitempty"`
+	Source      string `json:"Source"`
+	Destination string `json:"Destination"`
 }
 
 // ContainerList lists containers (all states when all=true) matching label filters ("k=v").
@@ -633,4 +643,59 @@ func (c *Client) NetworkCreate(ctx context.Context, name string, labels map[stri
 		return nil
 	}
 	return err
+}
+
+// ContainerPause freezes a container's processes.
+func (c *Client) ContainerPause(ctx context.Context, id string) error {
+	_, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/pause", nil, nil, nil)
+	return err
+}
+
+// ContainerUnpause thaws a paused container.
+func (c *Client) ContainerUnpause(ctx context.Context, id string) error {
+	_, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/unpause", nil, nil, nil)
+	return err
+}
+
+// Volume is a named volume (GET /volumes/{name}).
+type Volume struct {
+	Name       string            `json:"Name"`
+	Driver     string            `json:"Driver"`
+	Mountpoint string            `json:"Mountpoint"`
+	Labels     map[string]string `json:"Labels"`
+}
+
+// VolumeCreate creates a local named volume (an existing one is returned as is).
+func (c *Client) VolumeCreate(ctx context.Context, name string, labels map[string]string) (Volume, error) {
+	var out Volume
+	_, err := c.do(ctx, http.MethodPost, "/volumes/create", nil, map[string]any{"Name": name, "Driver": "local", "Labels": labels}, &out)
+	return out, err
+}
+
+// VolumeInspect returns a named volume; exists=false on 404.
+func (c *Client) VolumeInspect(ctx context.Context, name string) (Volume, bool, error) {
+	var out Volume
+	_, err := c.do(ctx, http.MethodGet, "/volumes/"+url.PathEscape(name), nil, nil, &out)
+	if IsNotFound(err) {
+		return Volume{}, false, nil
+	}
+	return out, err == nil, err
+}
+
+// VolumeList lists every named volume.
+func (c *Client) VolumeList(ctx context.Context) ([]Volume, error) {
+	var out struct {
+		Volumes []Volume `json:"Volumes"`
+	}
+	_, err := c.do(ctx, http.MethodGet, "/volumes", nil, nil, &out)
+	return out.Volumes, err
+}
+
+// VolumeRemove removes a named volume; existed=false on 404. Docker refuses a volume a container still uses (409).
+func (c *Client) VolumeRemove(ctx context.Context, name string) (bool, error) {
+	_, err := c.do(ctx, http.MethodDelete, "/volumes/"+url.PathEscape(name), nil, nil, nil)
+	if IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
 }
