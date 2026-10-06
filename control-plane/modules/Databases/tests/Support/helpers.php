@@ -6,9 +6,9 @@ use Falak\Databases\Domain\Enums\StorageDriver;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseServer;
 use Falak\Databases\Domain\Models\StorageProvider;
-use Falak\Databases\Infrastructure\ObjectStorage\EndpointGuard;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Identity\Domain\Models\Organization;
+use Falak\Kernel\Network\EndpointGuard;
 use Falak\Servers\Contracts\ServerType;
 use Falak\Servers\Domain\Models\Server;
 
@@ -74,5 +74,5 @@ function databases_schema_errors(array $command): array
  */
 function databases_fake_dns(string $address = '93.184.216.34'): void
 {
-    app()->bind(EndpointGuard::class, fn () => new EndpointGuard((bool) config('databases.allow_private_endpoints', false), fn (string $host) => [$address]));
+    app()->instance(EndpointGuard::class, new EndpointGuard(fn (string $host) => [$address]));
 }

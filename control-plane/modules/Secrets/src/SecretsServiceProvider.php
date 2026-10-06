@@ -21,7 +21,6 @@ use Falak\Secrets\Events\LinkedSecretChanged;
 use Falak\Secrets\Events\ProviderRecovered;
 use Falak\Secrets\Events\ProviderUnreachable;
 use Falak\Secrets\Infrastructure\ExternalSecretProviders;
-use Falak\Secrets\Infrastructure\Providers\EndpointGuard;
 use Falak\Secrets\Infrastructure\SecretStore;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Event;
@@ -34,10 +33,6 @@ class SecretsServiceProvider extends ModuleServiceProvider
      *
      * @var array<class-string, class-string>
      */
-    public array $singletons = [
-        EndpointGuard::class => EndpointGuard::class,
-    ];
-
     public function register(): void
     {
         $this->mergeConfigFrom($this->modulePath().'/config/secrets.php', 'secrets');

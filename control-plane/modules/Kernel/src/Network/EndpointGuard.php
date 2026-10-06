@@ -1,15 +1,16 @@
 <?php
 
-namespace Falak\Secrets\Infrastructure\Providers;
+namespace Falak\Kernel\Network;
 
 /**
- * Keeps provider requests away from the control plane's own network (SSRF): an endpoint must resolve only to
- * public addresses. A provider with "allow private network" (a self-hosted Vault or Infisical on the LAN) may
- * also reach private, loopback and CGNAT ranges. Link-local and cloud metadata addresses (169.254.169.254 and
- * friends) are refused always.
+ * Keeps control-plane requests to user-supplied endpoints (secret providers, backup object storage) away from
+ * the control plane's own network (SSRF): an endpoint must be https and resolve only to public addresses.
+ * Callers that allow private networks (a self-hosted Vault, a MinIO on the LAN) may also reach private, loopback
+ * and CGNAT ranges. Link-local and cloud metadata addresses (169.254.169.254 and friends) are refused always,
+ * including when embedded in an IPv6 address; numeric hosts other than a dotted quad are refused.
  *
- * Checked when a provider is saved and before every request; the request is then pinned to the addresses
- * checked here, so a DNS answer that changes in between (rebinding) can't redirect it.
+ * Check when an endpoint is saved and before every request; pin the request to the addresses returned by
+ * {@see check()}, so a DNS answer that changes in between (rebinding) can't redirect it.
  */
 class EndpointGuard
 {
@@ -47,44 +48,58 @@ class EndpointGuard
     /**
      * @return list<string> the addresses the host resolves to (all allowed)
      *
-     * @throws ProviderFailure when the URL is not https, does not resolve, or reaches a refused address
+     * @throws EndpointRefused when the URL is not https, does not resolve, or reaches a refused address
      */
     public function check(string $url, bool $allowPrivate): array
     {
         if (strtolower((string) parse_url($url, PHP_URL_SCHEME)) !== 'https') {
-            throw new ProviderFailure('Provider endpoints must use https://.');
+            throw new EndpointRefused('Endpoints must use https://.');
         }
 
         $host = trim((string) parse_url($url, PHP_URL_HOST), '[]');
 
         if ($host === '') {
-            throw new ProviderFailure('The provider endpoint has no host.');
+            throw new EndpointRefused('The endpoint has no host.');
         }
 
         // Numeric hosts other than a dotted quad (2130706433, 0x7f.1, 0177.0.0.1): HTTP clients read them as
         // addresses, DNS does not. Refused rather than guessed.
         if (filter_var($host, FILTER_VALIDATE_IP) === false && preg_match('/^(0x[0-9a-f]*|\d+)(\.(0x[0-9a-f]*|\d+))*\.?$/i', $host) === 1) {
-            throw new ProviderFailure("The provider host {$host} is not a canonical address.");
+            throw new EndpointRefused("The host {$host} is not a canonical address.");
         }
 
         $addresses = filter_var($host, FILTER_VALIDATE_IP) !== false ? [$host] : ($this->resolver)($host);
 
         if ($addresses === []) {
-            throw new ProviderFailure("The provider host {$host} does not resolve.");
+            throw new EndpointRefused("The host {$host} does not resolve.");
         }
 
         foreach ($addresses as $address) {
-            $refusal = $this->refusal($address, $allowPrivate);
+            $refusal = $this->addressRefusal($address, $allowPrivate);
 
             if ($refusal !== null) {
-                throw new ProviderFailure("The provider host {$host} resolves to {$refusal}.");
+                throw new EndpointRefused("The host {$host} resolves to {$address}, {$refusal}.");
             }
         }
 
         return array_values($addresses);
     }
 
-    private function refusal(string $address, bool $allowPrivate): ?string
+    /**
+     * Why the URL is refused, or null when it is allowed (the {@see check()} message, without the exception).
+     */
+    public function refusal(string $url, bool $allowPrivate): ?string
+    {
+        try {
+            $this->check($url, $allowPrivate);
+        } catch (EndpointRefused $e) {
+            return $e->getMessage();
+        }
+
+        return null;
+    }
+
+    private function addressRefusal(string $address, bool $allowPrivate): ?string
     {
         if (filter_var($address, FILTER_VALIDATE_IP) === false) {
             return 'a link-local, metadata or reserved address, which is never allowed';
@@ -93,7 +108,7 @@ class EndpointGuard
         // An IPv6 address carrying an IPv4 one (in any notation) is checked as that IPv4 address as well.
         $embedded = self::embeddedIpv4($address);
 
-        if ($embedded !== null && ($refusal = $this->refusal($embedded, $allowPrivate)) !== null) {
+        if ($embedded !== null && ($refusal = $this->addressRefusal($embedded, $allowPrivate)) !== null) {
             return $refusal;
         }
 
@@ -106,7 +121,7 @@ class EndpointGuard
         }
 
         if (self::within($address, self::PRIVATE) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
-            return 'a private or reserved address (turn on "allow private network" for a self-hosted provider)';
+            return 'a private or reserved address (allowed only where private networks are enabled)';
         }
 
         return null;

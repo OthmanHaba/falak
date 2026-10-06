@@ -2,6 +2,8 @@
 
 namespace Falak\Secrets\Infrastructure\Providers;
 
+use Falak\Kernel\Network\EndpointGuard;
+use Falak\Kernel\Network\EndpointRefused;
 use Falak\Secrets\Domain\Models\SecretProvider;
 use GuzzleHttp\Exception\TransferException;
 use Illuminate\Http\Client\ConnectionException;
@@ -46,7 +48,11 @@ class ProviderClient
             // Both the provider and the instance must allow private networks, at request time (the instance may have
             // turned it off since the provider was saved).
             $allowPrivate = $provider->allow_private_network && $provider->type->selfHostable() && (bool) config('secrets.providers.allow_private_network', false);
-            $addresses = $this->guard->check($url, $allowPrivate);
+            try {
+                $addresses = $this->guard->check($url, $allowPrivate);
+            } catch (EndpointRefused $e) {
+                throw new ProviderFailure($e->getMessage());
+            }
             $host = trim((string) parse_url($url, PHP_URL_HOST), '[]');
 
             if (filter_var($host, FILTER_VALIDATE_IP) === false) {

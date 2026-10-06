@@ -274,3 +274,22 @@ it('asks a failing provider once per deployment, then uses the last good values'
     expect(app(Secrets::class)->resolve($chain, ['A', 'B'])->values)->toBe(['A' => 'a', 'B' => 'b'])
         ->and($GLOBALS['vault_calls'])->toBe(2);
 });
+
+it('refuses provider endpoints whose IPv6 addresses embed metadata or private IPv4 ones', function () {
+    config(['secrets.providers.allow_private_network' => true]);
+
+    foreach (['::ffff:a9fe:a9fe', '64:ff9b::a9fe:a9fe', '2002:a9fe:a9fe::1', 'fec0::1'] as $address) {
+        secrets_guard(['vault.example.com' => [$address]]);
+        expect(fn () => secrets_vault($this->organization, attributes: ['allow_private_network' => true]))->toThrow(ValidationException::class, 'never allowed');
+    }
+
+    // Saved while public; rebound to a 6to4 address embedding a private one before the request.
+    secrets_guard();
+    $provider = secrets_vault($this->organization);
+    secrets_guard(['vault.example.com' => ['2002:c0a8:0101::1']]);
+    Http::fake();
+
+    expect(fn () => app(ExternalSecretProviders::class)->refresh('vault://kv/data/app#K', $provider->id, $this->organization->id))
+        ->toThrow(SecretProviderUnavailable::class, 'private or reserved');
+    Http::assertNothingSent();
+});

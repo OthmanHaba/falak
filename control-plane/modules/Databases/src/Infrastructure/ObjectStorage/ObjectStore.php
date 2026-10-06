@@ -4,6 +4,7 @@ namespace Falak\Databases\Infrastructure\ObjectStorage;
 
 use Falak\Databases\Domain\Enums\StorageDriver;
 use Falak\Databases\Domain\Models\StorageProvider;
+use Falak\Kernel\Network\EndpointGuard;
 use Falak\Kernel\Support\Aws\SigV4Signer;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
@@ -19,7 +20,9 @@ final class ObjectStore
         private readonly StorageProvider $provider,
         private readonly HttpFactory $http,
         private readonly int $timeout = 30,
-        private readonly EndpointGuard $guard = new EndpointGuard(allowPrivate: true),
+        private readonly EndpointGuard $guard = new EndpointGuard,
+        // Private endpoints (a MinIO on the LAN): databases.allow_private_endpoints.
+        private readonly bool $allowPrivate = true,
     ) {}
 
     /**
@@ -112,7 +115,7 @@ final class ObjectStore
      */
     private function send(callable $request, string $method, string $key, bool $allowNotFound = false): void
     {
-        if ($refusal = $this->guard->refusal($this->url($key))) {
+        if ($refusal = $this->guard->refusal($this->url($key), $this->allowPrivate)) {
             throw new StorageRequestFailed($refusal);
         }
 

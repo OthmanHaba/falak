@@ -3,13 +3,12 @@
 namespace Falak\Secrets\Application\Actions;
 
 use Falak\Identity\Contracts\AuditLog;
+use Falak\Kernel\Network\EndpointGuard;
 use Falak\Secrets\Application\Providers\ProviderFields;
 use Falak\Secrets\Domain\Enums\ProviderStatus;
 use Falak\Secrets\Domain\Enums\ProviderType;
 use Falak\Secrets\Domain\Models\ProviderValue;
 use Falak\Secrets\Domain\Models\SecretProvider;
-use Falak\Secrets\Infrastructure\Providers\EndpointGuard;
-use Falak\Secrets\Infrastructure\Providers\ProviderFailure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -195,12 +194,6 @@ final class SaveSecretProvider
             return 'Enter an https:// URL (no credentials, query or fragment).';
         }
 
-        try {
-            $this->guard->check($url, $allowPrivate);
-        } catch (ProviderFailure $e) {
-            return $e->getMessage();
-        }
-
-        return null;
+        return $this->guard->refusal($url, $allowPrivate);
     }
 }
