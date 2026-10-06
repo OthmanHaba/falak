@@ -170,7 +170,8 @@ For e-mail, set `MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `
 Every secret Falak stores (site environments, database and storage credentials, private keys, tokens, two-factor
 secrets) is encrypted at rest with AES-256-GCM under a **data key**. Data keys are stored in the database, wrapped
 by the **key-encryption key (KEK)**. The KEK is not `APP_KEY` and is never in `.env` or the database, so a copy of
-the database together with `.env` reveals no secrets.
+the database together with `.env` reveals no secrets. Each value is bound to its row: copied to another row or
+column (another organization's, say), it no longer decrypts.
 
 - **Where.** `install.sh` creates `/opt/falak/secrets/kek`: 32 random bytes, mode `0400`, owned by uid 33 (the
   containers' `www-data`), in a `0711` directory. It is mounted read-only into the PHP containers (`control-plane`,
@@ -183,11 +184,18 @@ the database together with `.env` reveals no secrets.
   KEK back (`--force` replaces a different one, which is kept aside).
 - **Backups.** A backup contains the KEK only when it is encrypted (`FALAK_BACKUP_PASSPHRASE`). Otherwise
   `falak-ctl backup` warns that the backup can't be decrypted without the KEK, which you then keep separately (the
-  emergency kit).
+  emergency kit). It also leaves the KMS / Vault credentials (`FALAK_KEK_AWS_ACCESS_KEY_ID`,
+  `FALAK_KEK_AWS_SECRET_ACCESS_KEY`, `FALAK_KEK_AWS_SESSION_TOKEN`, `FALAK_KEK_VAULT_TOKEN`) out of an unencrypted
+  backup's `.env` / `custom.env`, with the same warning. `falak-ctl restore` refuses a backup without its KEK when
+  this host has neither the KEK its data keys are wrapped by nor its predecessor (`kek.previous`); import it first,
+  or pass `--force`.
 - **Rotation.** `falak-ctl kek rotate` creates a new KEK, keeps the old one as `secrets/kek.previous` (backups from
   before the rotation need it) and re-wraps every data key (`falak:keys:rotate-kek`). Secrets are not re-encrypted:
-  only the data keys change. `falak-ctl artisan falak:keys:rotate-data` starts a new data key and re-encrypts every
-  value under it in batches; if it is interrupted, run it again with `--resume`.
+  only the data keys change. It refuses to start while a data key is still wrapped by `kek.previous` (an unfinished
+  rotation: run `falak-ctl artisan falak:keys:rotate-kek` first). A `kek.previous` from an earlier rotation moves to
+  `kek.retired-<id>`. `falak-ctl artisan falak:keys:rotate-data` starts a new data key and re-encrypts every value
+  under it in batches. Running workers may use the old key for up to a minute (`FALAK_KEYS_ACTIVE_TTL`), so it passes
+  again after that until nothing is left under the old key; if it is interrupted, run it again with `--resume`.
 - **KMS / Vault.** Set `FALAK_KEK_PROVIDER=aws-kms` or `vault-transit` in `.env` to keep the KEK in AWS KMS or a
   Vault/OpenBao transit key: it never leaves them, and there is no file. Put the provider's settings in
   `custom.env`: `FALAK_KEK_AWS_KMS_KEY_ID`, `FALAK_KEK_AWS_REGION`, `FALAK_KEK_AWS_ACCESS_KEY_ID`,
@@ -410,7 +418,8 @@ re-encrypted once by a migration during the update (see [Encryption keys](#encry
 with `APP_KEY` and seals it under a new data key. Values already converted are skipped, so an interrupted migration
 can run again. There is no fallback afterwards: keep `APP_KEY` unchanged until the update has finished. The KEK file
 must exist before v0.10.0 starts, and the falak-ctl that runs the update is the one already installed. Install the
-v0.10.0 falak-ctl first; it creates the KEK during the update:
+v0.10.0 falak-ctl first; it creates the KEK during the update. The `agent-api`, `horizon`, `reverb` and `scheduler`
+services wait until the `control-plane` service has run the migrations:
 
 ```bash
 curl -fsSL https://github.com/OthmanHaba/falak/releases/download/v0.10.0/falak-ctl -o /usr/local/bin/falak-ctl

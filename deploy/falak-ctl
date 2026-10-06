@@ -10,7 +10,7 @@
 #   falak-ctl prune-images [--dry-run]      remove Falak images except the current and previous version
 #   falak-ctl backup [--label NAME]         Postgres dump + app storage + Fleet CA + .env -> backups/
 #                                           (+ the KEK, only when FALAK_BACKUP_PASSPHRASE encrypts the backup)
-#   falak-ctl restore <file> [--yes]        restore a backup (stops the app while restoring)
+#   falak-ctl restore <file> [--yes] [--force]  restore a backup (stops the app while restoring)
 #   falak-ctl doctor                        DNS, certificates, ports, disk, containers, agent API, PHP threads, KEK
 #   falak-ctl kek init | status             key-encryption key (secrets/kek): create if missing, fix permissions / check
 #   falak-ctl kek export <file>             write the emergency kit (the KEK) to a file you keep offline
@@ -316,12 +316,33 @@ kek_import() { # kek_import KIT [--force] : the KEK from an emergency kit; --for
   if is_running control-plane; then say "  Restart the control plane to use it: falak-ctl up"; fi
 }
 
+# falak:keys:check --json in the running control plane: one line, e.g.
+#   {"ok":true,"provider":"local","kek_id":"…","data_keys":3,"stale":0,"failed":0,"kek_ids":["…"]}
+# Fails (non-zero) when a data key doesn't unwrap or the control plane isn't running.
+keys_check_json() {
+  compose exec -T control-plane php artisan falak:keys:check --json --no-interaction 2>/dev/null | tail -1
+}
+
+json_number() { # json_number KEY JSON -> the number, or nothing
+  printf '%s' "$2" | sed -n "s/.*\"$1\":\([0-9][0-9]*\).*/\1/p"
+}
+
+json_kek_ids() { # json_kek_ids JSON -> the kek_ids array, comma-separated
+  printf '%s' "$1" | sed -n 's/.*"kek_ids":\[\([^]]*\)\].*/\1/p' | tr -d '"'
+}
+
 # New local KEK: the current one becomes kek.previous (still read for data keys it wraps), the control plane
 # re-wraps every data key under the new one. kek.previous stays: backups taken before the rotation need it.
 kek_rotate() {
   [ "$(kek_provider)" = local ] || die "FALAK_KEK_PROVIDER is $(kek_provider): rotate the key in KMS / Vault (or point FALAK_KEK_* at a new key), then: falak-ctl artisan falak:keys:rotate-kek --all"
   ensure_kek --quiet
   is_running control-plane || die "the control plane is not running (falak-ctl up first)"
+  # kek.previous is about to be retired: only when no data key still needs it (an unfinished rotation).
+  local report stale
+  report="$(keys_check_json)" || die "falak:keys:check failed; fix that before rotating (falak-ctl artisan falak:keys:check)"
+  stale="$(json_number stale "$report")"
+  [ -n "$stale" ] || die "could not read falak:keys:check --json: $report"
+  [ "$stale" = 0 ] || die "$stale data key(s) are still wrapped by an earlier KEK ($KEK_PREVIOUS): finish that rotation first (falak-ctl artisan falak:keys:rotate-kek), then rotate again"
   if [ -f "$KEK_PREVIOUS" ]; then
     local old; old="$SECRETS_DIR/kek.retired-$(kek_fingerprint "$KEK_PREVIOUS")"
     mv "$KEK_PREVIOUS" "$old"
@@ -755,13 +776,17 @@ cmd_backup() {
   tar -tzf "$work/falak-ca.tar.gz" 2>/dev/null | grep -q 'ca.pem' || warn "Fleet CA certificate not found in the falak-ca volume (no agents enrolled yet?)"
   [ "$quiet" = 1 ] || ok "volumes: falak-ca (Fleet CA), app-storage, caddy-data"
 
-  cp "$ENV_FILE" "$work/env"
-  [ -f "$FALAK_DIR/custom.env" ] && cp "$FALAK_DIR/custom.env" "$work/custom.env"
-
-  # The KEK decrypts every secret in db.dump. It goes into the backup only when the backup itself is encrypted:
-  # a plain archive with both would hand out every secret. Without it, the KEK must be kept separately.
-  local pass
+  # The KEK decrypts every secret in db.dump. It (and the KMS / Vault credentials that reach it) goes into the
+  # backup only when the backup itself is encrypted: a plain archive with both would hand out every secret.
+  # Without it, the KEK must be kept separately.
+  local pass stripped=0
   pass="$(env_get FALAK_BACKUP_PASSPHRASE)"
+  copy_env_for_backup "$ENV_FILE" "$work/env" "$pass" || stripped=1
+  if [ -f "$FALAK_DIR/custom.env" ]; then copy_env_for_backup "$FALAK_DIR/custom.env" "$work/custom.env" "$pass" || stripped=1; fi
+  if [ "$stripped" = 1 ]; then
+    warn "THE KEK PROVIDER'S CREDENTIALS (FALAK_KEK_AWS_* / FALAK_KEK_VAULT_TOKEN) WERE LEFT OUT OF THIS UNENCRYPTED BACKUP."
+    warn "Keep them separately, or set FALAK_BACKUP_PASSPHRASE in $ENV_FILE to encrypt backups and include them."
+  fi
   if [ "$(kek_provider)" = local ] && [ -f "$KEK_FILE" ]; then
     if [ -n "$pass" ]; then
       mkdir -m 700 "$work/secrets"
@@ -781,13 +806,22 @@ cmd_backup() {
     echo "domain=$(env_get FALAK_DOMAIN)"
     echo "kek_provider=$(kek_provider)"
     if [ -f "$KEK_FILE" ]; then echo "kek_id=$(kek_fingerprint "$KEK_FILE")"; fi
+    # The KEKs the database's data keys are wrapped by (restore checks this host has them).
+    if is_running control-plane; then echo "kek_ids=$(json_kek_ids "$(keys_check_json || true)")"; fi
   } > "$work/manifest"
 
   out="$BACKUP_DIR/$name.tar.gz"
-  tar -C "$work" -czf "$out.tmp" .
+  # The plaintext archive must not outlive a failed or interrupted encryption (cleanup on exit removes both).
+  TMP_LIST="$TMP_LIST $out.tmp $out.enc.tmp"
+  tar -C "$work" -czf "$out.tmp" . || die "could not write $out.tmp"
   if [ -n "$pass" ]; then
-    FALAK_BACKUP_PASSPHRASE="$pass" openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:FALAK_BACKUP_PASSPHRASE \
-      -in "$out.tmp" -out "$out.enc.tmp" && rm -f "$out.tmp" && mv "$out.enc.tmp" "$out.enc"
+    if ! FALAK_BACKUP_PASSPHRASE="$pass" openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:FALAK_BACKUP_PASSPHRASE \
+      -in "$out.tmp" -out "$out.enc.tmp"; then
+      rm -f "$out.tmp" "$out.enc.tmp"
+      die "encrypting the backup failed; nothing was kept"
+    fi
+    rm -f "$out.tmp"
+    mv "$out.enc.tmp" "$out.enc"
     out="$out.enc"
   else
     mv "$out.tmp" "$out"
@@ -804,6 +838,18 @@ cmd_backup() {
     rm -f "$old"; [ "$quiet" = 1 ] || say "  pruned $(basename "$old")"
   done
   LAST_BACKUP="$out"
+}
+
+# copy_env_for_backup SRC DEST PASSPHRASE : an env file for the backup. Unencrypted backups leave out the KEK
+# provider's credentials (they reach the KEK). Returns 1 when it left something out.
+copy_env_for_backup() {
+  local pattern='^[[:space:]]*(export[[:space:]]+)?FALAK_KEK_(AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|VAULT_TOKEN)='
+  if [ -n "$3" ] || ! grep -Eq "$pattern" "$1"; then
+    cp "$1" "$2"
+    return 0
+  fi
+  grep -Ev "$pattern" "$1" > "$2" || true
+  return 1
 }
 
 s3_upload() { # optional: FALAK_BACKUP_S3_{ENDPOINT,BUCKET,REGION,ACCESS_KEY,SECRET_KEY,PREFIX}
@@ -839,17 +885,18 @@ extract_backup() { # extract_backup FILE DIR
 
 cmd_restore() {
   require_install
-  local file="" yes=0 keep_env=0
+  local file="" yes=0 keep_env=0 force=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --yes|-y) yes=1 ;;
       --keep-env) keep_env=1 ;;
+      --force) force=1 ;;
       -*) die "restore: unknown option $1" ;;
       *) file="$1" ;;
     esac
     shift
   done
-  [ -n "$file" ] || die "usage: falak-ctl restore <backup file> [--yes] [--keep-env]"
+  [ -n "$file" ] || die "usage: falak-ctl restore <backup file> [--yes] [--keep-env] [--force]"
   if [ ! -f "$file" ] && [ -f "$BACKUP_DIR/$file" ]; then file="$BACKUP_DIR/$file"; fi
   [ -f "$file" ] || die "no such file: $file"
   if [ "$yes" != 1 ]; then
@@ -857,7 +904,29 @@ cmd_restore() {
     printf 'Restore %s? This REPLACES the database, app storage, Fleet CA and .env. [y/N] ' "$file"
     read -r answer; [ "$answer" = y ] || [ "$answer" = Y ] || die "aborted"
   fi
-  do_restore "$file" "$keep_env"
+  do_restore "$file" "$keep_env" "$force"
+}
+
+# restore_kek_check WORK_DIR FORCE : before anything is replaced, a backup without its KEK may only be restored
+# when this host has every KEK its data keys are wrapped by (secrets/kek or kek.previous), unless --force.
+restore_kek_check() {
+  local work="$1" force="$2" ids have="" id missing=""
+  [ "$(kek_provider)" = local ] || return 0
+  [ ! -f "$work/secrets/kek" ] || return 0
+  ids="$(sed -n 's/^kek_ids=//p' "$work/manifest" 2>/dev/null || true)"
+  [ -n "$ids" ] || ids="$(sed -n 's/^kek_id=//p' "$work/manifest" 2>/dev/null || true)"
+  [ -n "$ids" ] || return 0   # older than v0.10.0: nothing sealed under a KEK yet
+  if [ -f "$KEK_FILE" ]; then have="$(kek_fingerprint "$KEK_FILE")"; fi
+  if [ -f "$KEK_PREVIOUS" ]; then have="$have $(kek_fingerprint "$KEK_PREVIOUS")"; fi
+  for id in ${ids//,/ }; do
+    case " $have " in *" $id "*) ;; *) missing="$missing $id" ;; esac
+  done
+  [ -n "$missing" ] || return 0
+  if [ "$force" = 1 ]; then
+    warn "restoring without KEK(s)$missing: the control plane won't start until they are back (falak-ctl kek import <kit> --force)"
+    return 0
+  fi
+  die "the backup's data keys are wrapped by KEK(s)$missing, which this host doesn't have (secrets/kek, kek.previous:${have:- none}). Import it first (falak-ctl kek import <emergency kit> --force), or restore anyway with --force"
 }
 
 restore_kek() { # restore_kek WORK_DIR : the backup's KEK replaces this host's (it sealed the restored database)
@@ -876,22 +945,17 @@ restore_kek() { # restore_kek WORK_DIR : the backup's KEK replaces this host's (
     ok "key-encryption key $id restored"
     return 0
   fi
-  id="$(sed -n 's/^kek_id=//p' "$work/manifest" 2>/dev/null || true)"
-  if [ -n "$id" ] && [ -f "$KEK_FILE" ] && [ "$(kek_fingerprint "$KEK_FILE")" != "$id" ]; then
-    warn "the backup was sealed under KEK $id, but $KEK_FILE is $(kek_fingerprint "$KEK_FILE"): the control plane won't start until"
-    warn "that KEK is back (falak-ctl kek import <emergency kit> --force)"
-  elif [ -n "$id" ] && [ ! -f "$KEK_FILE" ]; then
-    warn "the backup has no KEK and this host has none: import KEK $id first (falak-ctl kek import <emergency kit>)"
-  fi
+  # No KEK in the backup: restore_kek_check made sure this host has the ones it needs (or --force).
   ensure_kek --quiet
 }
 
-do_restore() { # do_restore FILE KEEP_ENV
-  local file="$1" keep_env="$2" work
+do_restore() { # do_restore FILE KEEP_ENV [FORCE]
+  local file="$1" keep_env="$2" force="${3:-0}" work
   work="$(tmpdir)"
   info "restoring $(basename "$file")"
   extract_backup "$file" "$work"
   sed 's/^/  /' "$work/manifest" 2>/dev/null || true
+  restore_kek_check "$work" "$force"
 
   # shellcheck disable=SC2086
   compose stop $APP_SERVICES edge >/dev/null 2>&1 || true
@@ -995,7 +1059,7 @@ cmd_update() {
   env_set FALAK_VERSION "$prev"
   restore_prev_bundle
   if [ -n "$backup" ]; then
-    RESTORE_KEEP_VERSION=1 do_restore "$backup" 0 || die "ROLLBACK FAILED: restore $backup manually (falak-ctl restore $backup --yes)"
+    RESTORE_KEEP_VERSION=1 do_restore "$backup" 0 1 || die "ROLLBACK FAILED: restore $backup manually (falak-ctl restore $backup --yes)"
   else
     if ! wait_healthy 420 || ! health_check; then die "ROLLBACK FAILED: previous version $prev is not healthy"; fi
   fi

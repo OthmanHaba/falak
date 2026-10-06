@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2329  # stubs (is_running, compose, …) are called by the sourced falak-ctl
 # Scripted test for the key-encryption key in falak-ctl: `kek init` creates 32 random bytes at secrets/kek once
 # (0400, directory 0711) and never replaces it, a wrong-size file stops it, the emergency kit round-trips through
 # `kek export` / `kek import`, and the KEK id matches the control plane's. Docker is not needed.
@@ -94,3 +95,102 @@ rm -rf "$SECRETS_DIR"
 ensure_kek --quiet
 [ ! -e "$SECRETS_DIR" ] || fail "kek init created a file for aws-kms"
 pass "kek init does nothing when the KEK is held by KMS / Vault"
+
+# --- helpers around falak:keys:check --json -------------------------------------------------------------
+report='{"ok":true,"provider":"local","kek_id":"aaaa","data_keys":3,"stale":2,"failed":0,"kek_ids":["aaaa","bbbb"]}'
+[ "$(json_number stale "$report")" = 2 ] || fail "json_number stale"
+[ "$(json_number data_keys "$report")" = 3 ] || fail "json_number data_keys"
+[ "$(json_kek_ids "$report")" = aaaa,bbbb ] || fail "json_kek_ids: $(json_kek_ids "$report")"
+pass "falak:keys:check --json is parsed (stale count, KEK ids)"
+
+# A fresh local install for the rest.
+export FALAK_DIR="$work/third"
+mkdir -p "$FALAK_DIR/deploy"
+: > "$FALAK_DIR/deploy/compose.yml"
+printf 'FALAK_DOMAIN=falak.example.com\n' > "$FALAK_DIR/.env"
+# shellcheck disable=SC2034  # read by the sourced falak-ctl functions
+{
+  ENV_FILE="$FALAK_DIR/.env"
+  COMPOSE_FILE="$FALAK_DIR/deploy/compose.yml"
+  BACKUP_DIR="$FALAK_DIR/backups"
+  SECRETS_DIR="$FALAK_DIR/secrets"
+  KEK_FILE="$SECRETS_DIR/kek"
+  KEK_PREVIOUS="$SECRETS_DIR/kek.previous"
+}
+ensure_kek --quiet
+current="$(kek_fingerprint "$KEK_FILE")"
+
+# --- kek rotate refuses while data keys still need kek.previous -------------------------------------------
+is_running() { return 0; }
+keys_check_json() { printf '{"ok":true,"provider":"local","kek_id":"%s","data_keys":2,"stale":1,"failed":0,"kek_ids":["%s","x"]}\n' "$current" "$current"; }
+head -c 32 /dev/urandom > "$KEK_PREVIOUS"; chmod 0400 "$KEK_PREVIOUS"
+previous="$(kek_fingerprint "$KEK_PREVIOUS")"
+out="$( (kek_rotate) 2>&1)" && fail "kek rotate went ahead with a stale data key"
+grep -q 'still wrapped by an earlier KEK' <<<"$out" || fail "rotate refusal: $out"
+[ "$(kek_fingerprint "$KEK_PREVIOUS")" = "$previous" ] || fail "kek.previous was touched"
+[ "$(kek_fingerprint "$KEK_FILE")" = "$current" ] || fail "kek was touched"
+ls "$SECRETS_DIR"/kek.retired-* >/dev/null 2>&1 && fail "kek.previous was retired"
+keys_check_json() { printf '{"ok":false,"stale":0,"failed":1}\n'; return 1; }
+(kek_rotate >/dev/null 2>&1) && fail "kek rotate went ahead after a failed check"
+[ "$(kek_fingerprint "$KEK_FILE")" = "$current" ] || fail "kek was touched after a failed check"
+pass "kek rotate refuses (touching nothing) while a data key is wrapped by an earlier KEK or the check fails"
+
+# --- restore: a backup without its KEK needs this host to have it ------------------------------------------
+bk="$work/backup"; mkdir -p "$bk"
+printf 'kek_provider=local\nkek_id=%s\nkek_ids=%s,%s\n' "$current" "$current" "$previous" > "$bk/manifest"
+restore_kek_check "$bk" 0 || fail "restore refused although kek and kek.previous are here"
+printf 'kek_provider=local\nkek_id=%s\nkek_ids=ffffffffffffffff\n' "$current" > "$bk/manifest"
+out="$( (restore_kek_check "$bk" 0) 2>&1)" && fail "restore went ahead without the backup's KEK"
+grep -q 'ffffffffffffffff' <<<"$out" || fail "refusal does not name the missing KEK: $out"
+(restore_kek_check "$bk" 1 >/dev/null 2>&1) || fail "--force did not let the restore through"
+printf 'falak_version=v0.9.0\n' > "$bk/manifest"
+restore_kek_check "$bk" 0 || fail "a backup from before v0.10.0 was refused"
+mkdir -p "$bk/secrets"; head -c 32 /dev/urandom > "$bk/secrets/kek"
+printf 'kek_ids=ffffffffffffffff\n' > "$bk/manifest"
+restore_kek_check "$bk" 0 || fail "a backup that carries its KEK was refused"
+pass "restore refuses a backup whose KEKs this host lacks (kek and kek.previous checked), unless --force"
+
+# --- backup: KEK provider credentials stay out of unencrypted backups ------------------------------------
+printf 'MAIL_HOST=smtp\nFALAK_KEK_AWS_KMS_KEY_ID=alias/falak\nFALAK_KEK_AWS_SECRET_ACCESS_KEY=s3cr3t\nexport FALAK_KEK_VAULT_TOKEN=hvs.x\n' > "$work/custom.env"
+copy_env_for_backup "$work/custom.env" "$work/plain.env" "" && fail "nothing reported as left out"
+grep -q 's3cr3t\|hvs.x' "$work/plain.env" && fail "credentials in an unencrypted backup"
+grep -q '^MAIL_HOST=smtp$' "$work/plain.env" || fail "MAIL_HOST was dropped"
+grep -q '^FALAK_KEK_AWS_KMS_KEY_ID=alias/falak$' "$work/plain.env" || fail "the KMS key id was dropped"
+copy_env_for_backup "$work/custom.env" "$work/enc.env" "passphrase" || fail "encrypted backup reported a strip"
+cmp -s "$work/custom.env" "$work/enc.env" || fail "encrypted backup lost settings"
+pass "unencrypted backups leave out FALAK_KEK_AWS_* / FALAK_KEK_VAULT_TOKEN credentials"
+
+# --- backup: a failed encryption leaves no plaintext archive ---------------------------------------------
+is_running() { return 0; }
+compose() { if [ "${1:-}" = exec ] && [ "${3:-}" = postgres ]; then echo dump; fi; return 0; }
+docker() { printf 'x'; }
+keys_check_json() { echo '{"ok":true,"kek_ids":[]}'; }
+openssl() { return 1; }
+printf 'FALAK_BACKUP_PASSPHRASE=pw\n' >> "$FALAK_DIR/.env"
+(cmd_backup --quiet >/dev/null 2>&1) && fail "backup succeeded although encryption failed"
+leftover="$(find "$BACKUP_DIR" -name 'falak-backup-*' 2>/dev/null)"
+[ -z "$leftover" ] || fail "a failed encryption left $leftover"
+pass "a backup whose encryption fails leaves no plaintext archive behind"
+
+openssl() { # stub: copies -in to -out
+  local in="" out=""
+  while [ $# -gt 0 ]; do case "$1" in -in) in="$2"; shift ;; -out) out="$2"; shift ;; esac; shift; done
+  cp "$in" "$out"
+}
+cmd_backup --quiet >/dev/null 2>&1 || fail "backup failed with a working openssl"
+enc="$(find "$BACKUP_DIR" -name 'falak-backup-*.tar.gz.enc')"
+[ -n "$enc" ] || fail "no encrypted backup written"
+[ -z "$(find "$BACKUP_DIR" -name '*.tmp')" ] || fail "temporary archives left behind"
+tar -tzf "$enc" | grep -q '^\./secrets/kek$' || fail "the encrypted backup lacks the KEK"
+pass "an encrypted backup carries the KEK and leaves no temporary archive"
+
+# --- entrypoint: roles other than web wait for the migrations, every role checks the KEK first -------------
+entry="$here/../control-plane/entrypoint.sh"
+for role in agent-api horizon reverb scheduler; do
+  block="$(awk -v r="  $role)" '$0 == r {on=1; next} on && /^    ;;$/ {exit} on {print}' "$entry")"
+  grep -q 'check_keys --kek-only' <<<"$block" || fail "$role does not check the KEK"
+  [ "$(grep -n 'wait_for_migrations' <<<"$block" | cut -d: -f1)" -lt "$(grep -n 'exec ' <<<"$block" | head -1 | cut -d: -f1)" ] \
+    || fail "$role starts before the migrations ran"
+done
+grep -q '^zend.exception_ignore_args = On$' "$here/../control-plane/php.ini" || fail "php.ini keeps arguments in stack traces"
+pass "the entrypoint makes agent-api, horizon, reverb and scheduler wait for migrations; traces carry no arguments"

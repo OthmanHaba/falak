@@ -9,6 +9,7 @@
 #
 #   FALAK_MIGRATE=1          web role runs `migrate --force` before serving (set on exactly one service)
 #   FALAK_WAIT_TIMEOUT=120   seconds to wait for Postgres/Valkey before giving up
+#   FALAK_MIGRATE_WAIT_TIMEOUT=900  seconds the other roles wait for the web role's migrations before giving up
 #   FALAK_KEK_GENERATE=1     web role creates a missing local KEK at FALAK_KEK_PATH (the sim only; production
 #                            installs get it from install.sh / falak-ctl, outside the containers)
 #   FALAK_EDGE_AGENT_API_HOST  issue/renew the agent-API server certificate from the Fleet CA into
@@ -75,6 +76,23 @@ check_keys() {
     log "the key-encryption key is unusable (see above; docs/INSTALL.md, \"Encryption keys\"). On the host: falak-ctl doctor"
     exit 1
   fi
+}
+
+# Roles other than web wait until no migration is pending: the web role runs them, and until then the database
+# may hold values the code can't read yet (v0.10.0: secrets re-sealed from APP_KEY to the KEK). `migrate:status
+# --pending=N` exits N while any is pending (and 1 before the migrations table exists).
+wait_for_migrations() {
+  deadline=$(( $(date +%s) + ${FALAK_MIGRATE_WAIT_TIMEOUT:-900} ))
+  waited=0
+  until php artisan migrate:status --pending=3 --no-interaction >/dev/null 2>&1; do
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      log "migrations are still pending after ${FALAK_MIGRATE_WAIT_TIMEOUT:-900}s (the control-plane service runs them: falak-ctl logs control-plane)"
+      exit 1
+    fi
+    [ "$waited" = 1 ] || log "waiting for the control-plane service to finish the database migrations"
+    waited=1
+    sleep 3
+  done
 }
 
 # Agents pin the Falak CA on the mTLS API, so the agents host is served with a certificate issued by the
@@ -188,6 +206,7 @@ case "$role" in
     wait_for_services
     cache_config
     check_keys --kek-only
+    wait_for_migrations
     configure_php agent-api
     exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile
     ;;
@@ -195,18 +214,21 @@ case "$role" in
     wait_for_services
     cache_config
     check_keys --kek-only
+    wait_for_migrations
     exec php artisan horizon
     ;;
   reverb)
     wait_for_services
     cache_config
     check_keys --kek-only
+    wait_for_migrations
     exec php artisan reverb:start --host=0.0.0.0 --port="${REVERB_SERVER_PORT:-8080}"
     ;;
   scheduler)
     wait_for_services
     cache_config
     check_keys --kek-only
+    wait_for_migrations
     exec php artisan schedule:work
     ;;
   *)
