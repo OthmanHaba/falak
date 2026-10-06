@@ -4,6 +4,7 @@ namespace Falak\Databases\Infrastructure\ObjectStorage;
 
 use Falak\Databases\Domain\Enums\StorageDriver;
 use Falak\Databases\Domain\Models\StorageProvider;
+use Falak\Kernel\Support\Aws\SigV4Signer;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Response;

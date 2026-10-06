@@ -1,6 +1,6 @@
 <?php
 
-namespace Falak\Databases\Infrastructure\ObjectStorage;
+namespace Falak\Kernel\Support\Aws;
 
 use DateTimeImmutable;
 use DateTimeInterface;
@@ -9,8 +9,8 @@ use InvalidArgumentException;
 
 /**
  * AWS Signature Version 4 (header signing and query-string presigning), implemented in-house so no
- * storage SDK is needed. Works for every S3-compatible store (AWS S3, Cloudflare R2, Backblaze B2,
- * DigitalOcean Spaces, MinIO).
+ * AWS SDK is needed. Works for every S3-compatible store (AWS S3, Cloudflare R2, Backblaze B2,
+ * DigitalOcean Spaces, MinIO) and, with $s3 = false, for other AWS APIs such as KMS.
  *
  * @see https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_sigv-create-signed-request.html
  * @see https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html

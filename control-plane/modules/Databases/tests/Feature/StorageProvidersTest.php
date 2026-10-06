@@ -3,8 +3,8 @@
 use Falak\Databases\Domain\Enums\StorageDriver;
 use Falak\Databases\Domain\Models\StorageProvider;
 use Falak\Databases\Infrastructure\ObjectStorage\ObjectStores;
-use Falak\Databases\Infrastructure\ObjectStorage\SigV4Signer;
 use Falak\Identity\Contracts\Role;
+use Falak\Kernel\Support\Aws\SigV4Signer;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
