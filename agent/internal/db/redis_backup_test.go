@@ -716,3 +716,80 @@ func TestRedisRestoreKeepsOnlyTheLatestMovedAsideCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Once AOF is back on, the data is restored: a config file that can't be put back (retried) is a warning, and the
+// next apply converges from what the files say (the first start's) without a restart.
+func TestRedisRestoreWithAOFWarnsWhenTheConfigCantBePutBack(t *testing.T) {
+	oldPoll := redisPoll
+	redisPoll = time.Millisecond
+	defer func() { redisPoll = oldPoll }()
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	h := newRedisHost(t, f, root)
+	p := redisPayload()
+	p.Persistence = "aof"
+	applyOK(t, db, p)
+	confPath := filepath.Join(root, "/etc/falak-redis/cache.conf")
+	conf, _ := os.ReadFile(confPath)
+	first := strings.Replace(string(conf), "\nappendonly yes\n", "\nappendonly no\n", 1)
+	state := readState(t, db, "redis", "cache")
+	writeGzip(t, filepath.Join(root, "/backups/b.rdb.gz"), "REDIS0011 restored data")
+	// While the AOF rewrite runs, the config file's name becomes a directory: every write of it fails.
+	h.onInfo = func() {
+		if p := h.procs["redis-server@falak-cache.service"]; p == nil || p.loadedFrom != "dump.rdb" || !p.appendonly {
+			return
+		}
+		h.onInfo = nil
+		os.Remove(confPath)
+		os.Mkdir(confPath, 0o755)
+	}
+
+	r, err := db.Restore(context.Background(), restorePayload("redis", "/backups/b.rdb.gz"), st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := r.(RestoreResult)
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "config file could not be put back") || !strings.Contains(res.Warnings[0], "applied again") {
+		t.Fatalf("%+v", res)
+	}
+	proc := h.procs["redis-server@falak-cache.service"]
+	if proc.loaded != "REDIS0011 restored data" || !proc.appendonly {
+		t.Fatalf("%+v", proc)
+	}
+	// The state still describes the first start (appendonly no), like the file once it can be written.
+	if s := readState(t, db, "redis", "cache"); s.Applied != hashOf(first) || s.Persistence != "rdb" {
+		t.Fatalf("%+v", s)
+	}
+	os.Remove(confPath)
+	os.WriteFile(confPath, []byte(first), 0o640)
+
+	r2 := applyOK(t, db, p)
+	if !r2.Changed || r2.Restarted || h.procs["redis-server@falak-cache.service"] != proc || !proc.appendonly {
+		t.Fatalf("%+v %+v", r2, proc)
+	}
+	if b, _ := os.ReadFile(confPath); string(b) != string(conf) || !reflect.DeepEqual(readState(t, db, "redis", "cache"), state) {
+		t.Fatal("not converged")
+	}
+	if r := applyOK(t, db, p); r.Changed {
+		t.Fatal("second apply not a no-op")
+	}
+}
+
+func TestRetryWrite(t *testing.T) {
+	oldPoll := redisPoll
+	redisPoll = time.Millisecond
+	defer func() { redisPoll = oldPoll }()
+	calls := 0
+	if err := retryWrite(context.Background(), func() error {
+		if calls++; calls < 3 {
+			return os.ErrPermission
+		}
+		return nil
+	}); err != nil || calls != 3 {
+		t.Fatal(err, calls)
+	}
+	calls = 0
+	if err := retryWrite(context.Background(), func() error { calls++; return os.ErrPermission }); err == nil || calls != 3 {
+		t.Fatal(err, calls)
+	}
+}

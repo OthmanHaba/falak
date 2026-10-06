@@ -35,7 +35,8 @@ import (
 // aside (<file>.falak-<UTC time>; once the restore succeeded, older copies from earlier restores or persistence changes
 // are removed, so only the latest set is kept), the snapshot becomes dump.rdb (0600, the instance user) and the unit starts. An
 // instance with AOF starts from a config with `appendonly no` (Redis ignores dump.rdb while AOF is on), then switches AOF
-// on live (CONFIG SET appendonly yes rewrites the AOF from memory) and its config file is put back. If the start, PING
+// on live (CONFIG SET appendonly yes rewrites the AOF from memory) and its config file is put back (retried; when that
+// still fails the restore succeeds with a warning, and the next apply converges). If the start, PING
 // or the AOF switch fails, the restored files are removed, the earlier ones put back, the earlier config written and the
 // instance started again; the restore fails with the unit's log tail.
 
@@ -414,16 +415,19 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 	if err := c.ready(ctx); err != nil {
 		return nil, rollback(fmt.Errorf("%s did not answer PING on 127.0.0.1:%d: %w", unit, c.port, err))
 	}
+	var warnings []string
 	if aof {
 		if err := db.setPersistence(ctx, c, name, "rdb", "aof"); err != nil {
 			return nil, rollback(fmt.Errorf("switch AOF back on: %w", err))
 		}
-		if err := db.writeRedisConf(k, name, inst.conf); err != nil {
-			return nil, err
-		}
-		if inst.hasState {
-			if err := db.saveRedisState(k, name, inst.state); err != nil {
-				return nil, err
+		// The data is replaced and the AOF holds it: the restore succeeded. A config file or state that can't be put
+		// back is a warning, not a failure. They still describe the first start (appendonly no, state "rdb"), which
+		// the next db.redis.apply converges from: it asks the process for its mode (aof) and only rewrites them.
+		if err := retryWrite(ctx, func() error { return db.writeRedisConf(k, name, inst.conf) }); err != nil {
+			warnings = append(warnings, fmt.Sprintf("%s runs with AOF on, but its config file could not be put back (%v): it says appendonly no until the instance is applied again, and a restart before that loses what was written since the restore", unit, err))
+		} else if inst.hasState {
+			if err := retryWrite(ctx, func() error { return db.saveRedisState(k, name, inst.state) }); err != nil {
+				warnings = append(warnings, fmt.Sprintf("%s runs with AOF on, but the agent's state of it could not be updated (%v); the next apply of the instance records it", unit, err))
 			}
 		}
 	}
@@ -431,11 +435,14 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 		// Loaded; an instance without persistence keeps nothing on disk (its next restart starts empty, as always).
 		_ = os.Remove(dump)
 	}
-	result := RestoreResult{Bytes: size, DurationMS: time.Since(start).Milliseconds(), RDB: h.String()}
+	result := RestoreResult{Bytes: size, DurationMS: time.Since(start).Milliseconds(), RDB: h.String(), Warnings: warnings}
 	for _, m := range moved {
 		result.MovedAside = append(result.MovedAside, m[1])
 	}
 	fmt.Fprintf(st.Stdout(), "%s restored from %s; earlier files kept as %s\n", unit, h, strings.Join(result.MovedAside, ", "))
+	for _, w := range warnings {
+		fmt.Fprintf(st.Stdout(), "warning: %s\n", w)
+	}
 	// Only the files this restore moved aside are kept: older copies would pile up with every restore.
 	pruned, err := pruneAside(dataP, result.MovedAside)
 	if len(pruned) > 0 {
@@ -445,6 +452,24 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 		db.d.Logger.Warn("could not remove older moved-aside files", "unit", unit, "err", err)
 	}
 	return result, nil
+}
+
+// retryWrite runs a local file write up to 3 times, redisPoll apart.
+func retryWrite(ctx context.Context, write func() error) error {
+	var err error
+	for i := 0; i < 3; i++ {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return err
+			case <-time.After(redisPoll):
+			}
+		}
+		if err = write(); err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // asideName matches the copies moveAsideNamed leaves in a data directory.

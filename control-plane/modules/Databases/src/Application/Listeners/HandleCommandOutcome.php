@@ -274,7 +274,10 @@ final class HandleCommandOutcome implements ShouldQueue
     }
 
     /**
-     * @param  array<string, mixed>  $result  db.restore $defs/result: bytes, duration_ms
+     * A Redis / Valkey restore with warnings (e.g. its config file could not be put back) queues an apply of the
+     * instance, which converges the agent's files with what runs.
+     *
+     * @param  array<string, mixed>  $result  db.restore $defs/result: bytes, duration_ms, warnings
      */
     private function restore(string $commandId, bool $succeeded, ?string $error, array $result): void
     {
@@ -284,15 +287,29 @@ final class HandleCommandOutcome implements ShouldQueue
             return;
         }
 
+        $warnings = $succeeded ? array_values(array_slice(array_map(
+            fn ($warning) => mb_substr((string) $warning, 0, 1000),
+            array_filter((array) ($result['warnings'] ?? []), fn ($warning) => is_string($warning) && $warning !== ''),
+        ), 0, 10)) : [];
+
         $restore->forceFill([
             'status' => $succeeded ? RestoreStatus::Succeeded : RestoreStatus::Failed,
             'bytes' => isset($result['bytes']) ? (int) $result['bytes'] : null,
             'duration_ms' => isset($result['duration_ms']) ? (int) $result['duration_ms'] : null,
             'error' => $succeeded ? null : $error,
+            'warnings' => $warnings !== [] ? $warnings : null,
             'finished_at' => now(),
         ])->save();
 
         $keyValue = DatabaseServer::query()->find($restore->database_server_id)?->engine->isKeyValue() ?? false;
+
+        if ($keyValue && $warnings !== []) {
+            $instance = Database::query()->where('database_server_id', $restore->database_server_id)->where('name', $restore->database_name)->first();
+
+            if ($instance !== null && $instance->status === ResourceStatus::Active) {
+                ($this->applyInstance)($instance, background: true);
+            }
+        }
 
         if ($succeeded && ! $keyValue) {
             // The agent creates the database when missing; track it like any other (instances are never created).

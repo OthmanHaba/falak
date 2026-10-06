@@ -446,9 +446,18 @@ export function DatabaseBackupsTab({ ctx }: ServiceTabProps) {
                             { id: 'created', header: 'Started', cell: (restore) => <RelativeTime value={restore.created_at} /> },
                             {
                                 id: 'error',
-                                header: 'Error',
+                                header: 'Notes',
                                 hideOnMobile: true,
-                                cell: (restore) => <span className="text-danger text-xs">{restore.error}</span>,
+                                cell: (restore) =>
+                                    restore.error ? (
+                                        <span className="text-danger text-xs">{restore.error}</span>
+                                    ) : (
+                                        <ul className="text-warning grid gap-0.5 text-xs">
+                                            {(restore.warnings ?? []).map((warning) => (
+                                                <li key={warning}>{warning}</li>
+                                            ))}
+                                        </ul>
+                                    ),
                             },
                         ]}
                     />

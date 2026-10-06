@@ -298,7 +298,7 @@ func TestDatabaseBackupSchemasPerEngine(t *testing.T) {
 	}
 	for typ, res := range map[string]any{
 		"db.backup":  db.BackupResult{SizeBytes: 10, SHA256: strings.Repeat("a", 64), Location: "https://s3.example.com/b/k", DurationMS: 5, RDB: "VALKEY080", UncompressedBytes: 42},
-		"db.restore": db.RestoreResult{Bytes: 10, DurationMS: 5, RDB: "REDIS0011", MovedAside: []string{"dump.rdb.falak-20261006T120000Z"}},
+		"db.restore": db.RestoreResult{Bytes: 10, DurationMS: 5, RDB: "REDIS0011", MovedAside: []string{"dump.rdb.falak-20261006T120000Z"}, Warnings: []string{"over the memory limit"}},
 	} {
 		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json#/$defs/result")
 		if err != nil {

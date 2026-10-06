@@ -152,6 +152,7 @@ trait PresentsDatabases
             'bytes' => $restore->bytes,
             'duration_ms' => $restore->duration_ms,
             'error' => $restore->error,
+            'warnings' => $restore->warnings ?? [],
             'command_id' => $restore->command_id,
             'created_at' => $restore->created_at->toIso8601String(),
             'finished_at' => $restore->finished_at?->toIso8601String(),

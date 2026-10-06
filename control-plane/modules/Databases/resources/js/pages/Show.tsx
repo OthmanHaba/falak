@@ -192,6 +192,11 @@ export default function Show({
                                             <StatusBadge status={restore.status} title={restore.error} />
                                         </span>
                                         {restore.error && <p className="w-full text-xs text-red-600">{restore.error}</p>}
+                                        {(restore.warnings ?? []).map((warning) => (
+                                            <p key={warning} className="text-warning w-full text-xs">
+                                                {warning}
+                                            </p>
+                                        ))}
                                     </li>
                                 ))}
                             </ul>

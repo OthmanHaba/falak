@@ -140,6 +140,13 @@
             "type": "string"
           },
           "description": "Redis / Valkey: the instance's earlier dump.rdb / appendonlydir / appendonly.aof, renamed <file>.falak-<UTC time> in its data directory"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Redis / Valkey: the restore succeeded, but something needs attention (a config file that could not be put back, a dataset over the memory limit)"
         }
       }
     }

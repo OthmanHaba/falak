@@ -126,6 +126,8 @@ export interface RestoreRow {
     bytes: number | null;
     duration_ms: number | null;
     error: string | null;
+    /** A successful restore's warnings (Redis / Valkey: e.g. a dataset over the memory limit). */
+    warnings: string[];
     command_id: string | null;
     created_at: string;
     finished_at: string | null;

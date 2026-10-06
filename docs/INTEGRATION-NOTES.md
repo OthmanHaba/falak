@@ -544,7 +544,8 @@ Plan: `docs/plans/REDIS.md` (deviations in its "As built (v0.9.0, phase 3)"); pr
   the pending restart; a failed stop starts the unit again if it ran and fails with "nothing was changed") → `dump.rdb`, `appendonlydir`, `appendonly.aof` renamed `<file>.falak-<UTC>` → snapshot renamed to
   `dump.rdb` only if the name still is the file written (`os.SameFile`; `rename(2)` follows no link) → AOF instances: config written with `appendonly no` and state recorded as `rdb` (a
   redelivered apply then finishes the switch) → `reset-failed`, `start`, `PING` (LOADING extends the wait) → AOF:
-  `CONFIG SET appendonly yes`, wait for the rewrite, `save ""`, config and state put back → `none`: `dump.rdb` deleted
+  `CONFIG SET appendonly yes`, wait for the rewrite, `save ""`, config and state put back (3 tries; still failing:
+  success with a warning, both left as the first start's, which the next apply converges without a restart) → `none`: `dump.rdb` deleted
   → older `<file>.falak-*` copies removed (only this restore's are kept; none when it moved nothing).
   Any failure after the stop: restored files removed, earlier ones renamed back, config / state rewritten, the unit
   started again if it ran, error "restore into <unit> failed, the earlier data is back: <cause>" + `journalctl` tail.
@@ -555,7 +556,9 @@ Plan: `docs/plans/REDIS.md` (deviations in its "As built (v0.9.0, phase 3)"); pr
   the target server and be active, Redis ↔ Valkey allowed (the agent refuses incompatible RDB versions);
   `HandleCommandOutcome` never creates a database row for key-value restores. Schedules, retention and pruning are
   the SQL code unchanged. Restore targets (`restore_targets` / `restoreTargets`) carry `engine` and, for key-value
-  servers, their active `instances`.
+  servers, their active `instances`. A restore's `warnings` are kept (`databases_restores.warnings`), shown in
+  amber in the Restores lists (panel and page), and a key-value restore with warnings queues a `db.redis.apply` of
+  the instance (it converges a config file the agent could not put back).
 - **Download (new, all engines):** `GET /databases/backups/{backup}/download` → 302 to a presigned GET valid 300 s
   (`databases.download_link_ttl`, `FALAK_BACKUP_DOWNLOAD_LINK_TTL`), or `{url}` for JSON; `databases.restore`
   permission (the file is all the data), throttled 30/min, audited `databases.backup_downloaded`; 422 unless the

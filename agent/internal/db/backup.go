@@ -232,6 +232,9 @@ type RestoreResult struct {
 	// Redis / Valkey: the snapshot's format and the instance's earlier files, moved aside (data directory names).
 	RDB        string   `json:"rdb,omitempty"`
 	MovedAside []string `json:"moved_aside,omitempty"`
+	// Warnings: the restore succeeded, but something needs attention (Redis / Valkey: a config file that could not
+	// be put back).
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type countingWriter struct {

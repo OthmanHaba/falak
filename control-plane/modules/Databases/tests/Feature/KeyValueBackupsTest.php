@@ -251,3 +251,25 @@ it('records the snapshot size before compression and sends it with restores to a
     expect($this->agents->last('db.restore')['payload'])->not->toHaveKey('uncompressed_bytes')
         ->and(CommandPayloads::restore(Engine::MySql, 'shop', Compression::Gzip, 'https://x', null, 1000))->not->toHaveKey('uncompressed_bytes');
 });
+
+it('keeps a restore\'s warnings, shows them and re-applies the instance so the agent converges', function () {
+    $this->post("/databases/databases/{$this->instance->id}/backups", ['storage_provider_id' => $this->provider->id]);
+    $this->agents->succeed($this->agents->last('db.backup')['handle'], kvb_result());
+    $backup = Backup::query()->firstOrFail();
+    $applies = count($this->agents->dispatched('db.redis.apply'));
+
+    $this->post("/databases/backups/{$backup->id}/restore", ['database_server_id' => $this->engine->id, 'database' => 'cache', 'confirm' => 'cache'])->assertSessionHasNoErrors();
+    $warning = 'redis-server@falak-cache.service runs with AOF on, but its config file could not be put back (disk full)';
+    $this->agents->succeed($this->agents->last('db.restore')['handle'], ['bytes' => 900, 'duration_ms' => 3000, 'rdb' => 'REDIS0011', 'warnings' => [$warning, '', 42]]);
+
+    expect(Restore::query()->firstOrFail())->status->toBe(RestoreStatus::Succeeded)->warnings->toBe([$warning])->error->toBeNull()
+        ->and(count($this->agents->dispatched('db.redis.apply')))->toBe($applies + 1)
+        ->and($this->agents->last('db.redis.apply')['payload']['name'])->toBe('cache')
+        ->and($this->getJson("/databases/databases/{$this->instance->id}")->assertOk()->json('data.restores.0.warnings'))->toBe([$warning]);
+
+    // Without warnings nothing more is sent.
+    $this->post("/databases/backups/{$backup->id}/restore", ['database_server_id' => $this->engine->id, 'database' => 'cache', 'confirm' => 'cache'])->assertSessionHasNoErrors();
+    $this->agents->succeed($this->agents->last('db.restore')['handle'], ['bytes' => 900, 'duration_ms' => 3000, 'rdb' => 'REDIS0011']);
+    expect(Restore::query()->latest('id')->first()->warnings)->toBeNull()
+        ->and(count($this->agents->dispatched('db.redis.apply')))->toBe($applies + 1);
+});
