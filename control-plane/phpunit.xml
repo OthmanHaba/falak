@@ -29,6 +29,10 @@
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="FALAK_CA_PATH" value="/tmp/falak-tests/ca"/>
         <env name="FALAK_AGENT_BINARIES_PATH" value="/tmp/falak-tests/agent"/>
+        <!-- Created by Tests\TestCase on first use (32 random bytes, 0600); never a production KEK. -->
+        <env name="FALAK_KEK_PROVIDER" value="local"/>
+        <env name="FALAK_KEK_PATH" value="/tmp/falak-tests/kek"/>
+        <env name="FALAK_KEK_PREVIOUS_PATH" value="/tmp/falak-tests/kek.previous"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>
