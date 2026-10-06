@@ -143,7 +143,7 @@
               "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
             },
             "uniqueItems": true,
-            "description": "Names of the secret variables of env: their values are masked (••••) in the program's log files and OTLP log records."
+            "description": "Names of the secret variables of env: their values are masked (••••) in the program's log files and OTLP log records, and kept on the tmpfs, never in the agent's proc.json; after a reboot the program waits (heartbeat missing_secrets) until proc.apply sends it again."
           }
         }
       }

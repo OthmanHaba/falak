@@ -80,6 +80,15 @@
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
             "description": "Site slug (directory name under /srv/falak/sites)"
+          },
+          "mask": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "uniqueItems": true,
+            "description": "Names of the secret variables of env: kept on the tmpfs, never in the agent's cron.json; after a reboot the job waits (heartbeat missing_secrets) until cron.apply sends it again."
           }
         }
       }

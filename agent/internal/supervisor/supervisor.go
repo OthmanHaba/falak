@@ -13,15 +13,19 @@ import (
 	"sync"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/obs"
 )
 
 // Options configures a Supervisor.
 type Options struct {
 	StateDir string // proc.json lives here ("" = no persistence)
-	LogDir   string // default program log directory (default /var/log/falak)
-	Sink     obs.Sink
-	Logger   *slog.Logger
+	// SecretsPath is a tmpfs file for the masked env variables of persisted programs: proc.json on disk keeps only
+	// the others. After a reboot it is gone and those programs wait (WaitingSites) until proc.apply sends them again.
+	SecretsPath string
+	LogDir      string // default program log directory (default /var/log/falak)
+	Sink        obs.Sink
+	Logger      *slog.Logger
 }
 
 // Supervisor owns all supervised programs.
@@ -32,6 +36,13 @@ type Supervisor struct {
 	applyMu  sync.Mutex // serializes apply/restart/shutdown
 	mu       sync.Mutex
 	programs map[string]*program
+	waiting  map[string]waitingProgram // restored programs whose secrets are gone
+}
+
+// waitingProgram is a persisted program that cannot start: its secret env variables were on the tmpfs.
+type waitingProgram struct {
+	spec Program  // env without the secrets
+	keys []string // the missing variables
 }
 
 type program struct {
@@ -104,6 +115,8 @@ type (
 
 type stateFile struct {
 	Programs []Program `json:"programs"`
+	// SecretKeys are each program's env variables kept on the tmpfs (Options.SecretsPath), not in this file.
+	SecretKeys map[string][]string `json:"secret_keys,omitempty"`
 }
 
 // Start restores the persisted desired set. Programs keep running until Shutdown.
@@ -122,8 +135,39 @@ func (s *Supervisor) Start(ctx context.Context) error {
 	if err := json.Unmarshal(b, &st); err != nil {
 		return fmt.Errorf("proc.json: %w", err)
 	}
-	_, err = s.Apply(ctx, st.Programs)
+	stored := envlinks.SecretStore{Path: s.opts.SecretsPath}.Load()
+	var ready []Program
+	waiting := map[string]waitingProgram{}
+	for _, p := range st.Programs {
+		keys := st.SecretKeys[p.Name]
+		env, ok := envlinks.Restore(p.Env, keys, stored[p.Name])
+		if !ok {
+			// Never started without its secrets: it waits for the control plane (heartbeat missing_secrets).
+			s.log.Warn("program waits for its secrets", "program", p.Name, "site", p.Site)
+			waiting[p.Name] = waitingProgram{spec: p, keys: keys}
+			continue
+		}
+		p.Env = env
+		ready = append(ready, p)
+	}
+	_, err = s.apply(ctx, ready, waiting)
 	return err
+}
+
+// WaitingSites lists the sites of programs waiting for their secrets.
+func (s *Supervisor) WaitingSites() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	seen := map[string]bool{}
+	var out []string
+	for _, w := range s.waiting {
+		if w.spec.Site != "" && !seen[w.spec.Site] {
+			seen[w.spec.Site] = true
+			out = append(out, w.spec.Site)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Shutdown gracefully stops every program (desired set stays persisted).
@@ -139,8 +183,12 @@ func (s *Supervisor) Shutdown() {
 	parallel(progs, func(p *program) { stopProgram(p) })
 }
 
-// Apply converges to the desired program set.
+// Apply converges to the desired program set (which replaces any program waiting for its secrets).
 func (s *Supervisor) Apply(ctx context.Context, desired []Program) (ApplyResult, error) {
+	return s.apply(ctx, desired, nil)
+}
+
+func (s *Supervisor) apply(ctx context.Context, desired []Program, waiting map[string]waitingProgram) (ApplyResult, error) {
 	res := ApplyResult{Started: []string{}, Stopped: []string{}, Restarted: []string{}, Unchanged: []string{}}
 	want := map[string]Program{}
 	for _, p := range desired {
@@ -205,6 +253,9 @@ func (s *Supervisor) Apply(ctx context.Context, desired []Program) (ApplyResult,
 		sort.Strings(l)
 	}
 	res.Changed = len(res.Started)+len(res.Stopped)+len(res.Restarted) > 0
+	s.mu.Lock()
+	s.waiting = waiting
+	s.mu.Unlock()
 	if err := s.persist(); err != nil {
 		errs = append(errs, err)
 	}
@@ -340,12 +391,28 @@ func (s *Supervisor) persist() error {
 		return nil
 	}
 	s.mu.Lock()
-	st := stateFile{Programs: []Program{}}
+	st := stateFile{Programs: []Program{}, SecretKeys: map[string][]string{}}
+	secrets := map[string]map[string]string{}
 	for _, p := range s.programs {
-		st.Programs = append(st.Programs, p.spec)
+		spec := p.spec
+		plain, secret := envlinks.Split(spec.Env, spec.Mask)
+		spec.Env = plain
+		if len(secret) > 0 {
+			secrets[spec.Name] = secret
+			st.SecretKeys[spec.Name] = envlinks.Keys(secret)
+		}
+		st.Programs = append(st.Programs, spec)
+	}
+	for name, w := range s.waiting {
+		st.Programs = append(st.Programs, w.spec)
+		st.SecretKeys[name] = w.keys
 	}
 	s.mu.Unlock()
 	sort.Slice(st.Programs, func(i, j int) bool { return st.Programs[i].Name < st.Programs[j].Name })
+	// Secrets first: proc.json never names a secret the tmpfs doesn't hold yet.
+	if err := (envlinks.SecretStore{Path: s.opts.SecretsPath}).Save(secrets); err != nil {
+		return err
+	}
 	b, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err

@@ -172,6 +172,12 @@ they are 0444 in a 0555 directory (the image's user is unknown), or 0400/0500 ow
 variables passed as files are not in the container's env, so `docker inspect` doesn't show them. Each color of a swap
 has its own directory, removed with the container.
 
+**Supervised programs and cron jobs.** `proc.apply` programs and `cron.apply` jobs name their secret variables in
+`mask`. The agent's state files (`/var/lib/falak/proc.json`, `cron.json`) keep only the other variables and the names
+of the secret ones; the values are in `/run/falak/state/{proc,cron}-secrets.json` (0600). After a reboot a program or
+job whose secrets are gone does not start: it waits, its site is reported in `missing_secrets`, and the control plane
+answers with a forced `proc.apply` / `cron.apply` for the server.
+
 **After a reboot** `/run` is empty: Docker can't start a container whose secret directory is missing, and env links
 dangle. The agent remembers every env link it made (`/var/lib/falak/env-links.json`, paths only: any sites root,
 compose releases) and every heartbeat carries `missing_secrets` (at most 500 site slugs) until they are restored. The

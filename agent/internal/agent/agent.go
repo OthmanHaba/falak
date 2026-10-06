@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -82,14 +83,17 @@ func Build(d Deps) *Components {
 	reg := commands.NewRegistry()
 	sink := d.Telemetry.Sink()
 
-	sup := supervisor.New(supervisor.Options{StateDir: d.FS.P(cfg.StateDir), LogDir: d.FS.P(cfg.LogDir), Sink: sink, Logger: log.With("component", "supervisor")})
+	// Programs' and cron jobs' secret env variables live on the tmpfs, never in their state files.
+	sup := supervisor.New(supervisor.Options{StateDir: d.FS.P(cfg.StateDir), SecretsPath: d.FS.P(filepath.Join(cfg.RunDir, "state", "proc-secrets.json")),
+		LogDir: d.FS.P(cfg.LogDir), Sink: sink, Logger: log.With("component", "supervisor")})
 	var insights cron.InsightsPoster
 	if d.Insights != nil {
 		insights = d.Insights
 	}
 	tel := d.Telemetry
 	sched := cron.New(cron.Options{
-		StateDir: d.FS.P(cfg.StateDir), Runner: d.Runner, Insights: insights, Sink: sink, Logger: log.With("component", "cron"),
+		StateDir: d.FS.P(cfg.StateDir), SecretsPath: d.FS.P(filepath.Join(cfg.RunDir, "state", "cron-secrets.json")), Runner: d.Runner, Insights: insights, Sink: sink,
+		Logger: log.With("component", "cron"),
 		SiteID: func(slug string) string {
 			for _, s := range tel.Relay().Config().Sites {
 				if s.Slug == slug {
@@ -241,7 +245,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Summary: func() transport.Heartbeat {
 			s := tel.Summary()
 			return transport.Heartbeat{UptimeS: s.UptimeS, Load: s.Load, CPUPercent: s.CPUPercent, MemoryUsedBytes: s.MemUsedBytes, DiskUsedBytes: s.DiskUsedBytes,
-				MissingSecrets: comps.Deployer.MissingSecrets(runCtx)}
+				MissingSecrets: missingSecrets(comps.Deployer.MissingSecrets(runCtx), comps.Supervisor.WaitingSites(), comps.Cron.WaitingSites())}
 		},
 		Facts: func(ctx context.Context) (any, error) {
 			f, err := facts.Collect(ctx, r, fs, version.Version)
@@ -322,4 +326,20 @@ func installedBinary(fs hostfs.FS) string {
 		return fs.P(BinaryPath)
 	}
 	return ""
+}
+
+// missingSecrets merges the sites whose secrets are gone (env files, container files, waiting programs and jobs).
+func missingSecrets(lists ...[]string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, l := range lists {
+		for _, s := range l {
+			if !seen[s] {
+				seen[s] = true
+				out = append(out, s)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }

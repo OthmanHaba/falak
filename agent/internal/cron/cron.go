@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/obs"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 	"github.com/OthmanHaba/falak/agent/internal/transport"
@@ -43,11 +44,14 @@ func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) 
 // Options configures the scheduler.
 type Options struct {
 	StateDir string // cron.json ("" = no persistence)
-	Runner   runner.Runner
-	Insights InsightsPoster // nil = heartbeats only as spans
-	Sink     obs.Sink
-	Clock    Clock
-	Logger   *slog.Logger
+	// SecretsPath is a tmpfs file for the masked env variables of persisted jobs: cron.json on disk keeps only the
+	// others. After a reboot it is gone and those jobs wait (WaitingSites) until cron.apply sends them again.
+	SecretsPath string
+	Runner      runner.Runner
+	Insights    InsightsPoster // nil = heartbeats only as spans
+	Sink        obs.Sink
+	Clock       Clock
+	Logger      *slog.Logger
 	// SiteID resolves a site slug to its ULID for heartbeats (optional; defaults to the slug).
 	SiteID func(slug string) string
 }
@@ -65,6 +69,20 @@ type Job struct {
 	TimeoutS  int               `json:"timeout_s,omitempty"`
 	Heartbeat *bool             `json:"heartbeat,omitempty"`
 	Site      string            `json:"site,omitempty"`
+	// Mask names the secret variables of env (kept on the tmpfs, never in cron.json).
+	Mask []string `json:"mask,omitempty"`
+}
+
+// stateFile is cron.json: the jobs without their secret variables, which live on the tmpfs (Options.SecretsPath).
+type stateFile struct {
+	Jobs       []Job               `json:"jobs"`
+	SecretKeys map[string][]string `json:"secret_keys,omitempty"`
+}
+
+// waitingJob is a persisted job that cannot run: its secret env variables were on the tmpfs.
+type waitingJob struct {
+	job  Job
+	keys []string
 }
 
 // ApplyPayload is the cron.apply payload.
@@ -125,6 +143,7 @@ type Scheduler struct {
 	entries map[string]*entry
 	hash    string
 	running map[string]int // job name → in-flight runs
+	waiting map[string]waitingJob
 	wake    chan struct{}
 	wg      sync.WaitGroup
 }
@@ -164,11 +183,24 @@ func (s *Scheduler) Start(ctx context.Context) error {
 		case err != nil:
 			return err
 		default:
-			var p ApplyPayload
-			if err := json.Unmarshal(b, &p); err != nil {
+			var st stateFile
+			if err := json.Unmarshal(b, &st); err != nil {
 				return fmt.Errorf("cron.json: %w", err)
 			}
-			if _, err := s.Apply(p.Jobs); err != nil {
+			stored := envlinks.SecretStore{Path: s.opts.SecretsPath}.Load()
+			var ready []Job
+			waiting := map[string]waitingJob{}
+			for _, j := range st.Jobs {
+				env, ok := envlinks.Restore(j.Env, st.SecretKeys[j.Name], stored[j.Name])
+				if !ok {
+					s.log.Warn("cron job waits for its secrets", "job", j.Name, "site", j.Site)
+					waiting[j.Name] = waitingJob{job: j, keys: st.SecretKeys[j.Name]}
+					continue
+				}
+				j.Env = env
+				ready = append(ready, j)
+			}
+			if _, err := s.apply(ready, waiting); err != nil {
 				return err
 			}
 		}
@@ -184,8 +216,26 @@ func (s *Scheduler) Start(ctx context.Context) error {
 // Wait blocks until the loop and all runs have ended (after ctx cancellation).
 func (s *Scheduler) Wait() { s.wg.Wait() }
 
-// Apply replaces the job set.
-func (s *Scheduler) Apply(jobs []Job) (ApplyResult, error) {
+// Apply replaces the job set (and any job waiting for its secrets).
+func (s *Scheduler) Apply(jobs []Job) (ApplyResult, error) { return s.apply(jobs, nil) }
+
+// WaitingSites lists the sites of jobs waiting for their secrets.
+func (s *Scheduler) WaitingSites() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	seen := map[string]bool{}
+	var out []string
+	for _, w := range s.waiting {
+		if w.job.Site != "" && !seen[w.job.Site] {
+			seen[w.job.Site] = true
+			out = append(out, w.job.Site)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (s *Scheduler) apply(jobs []Job, waiting map[string]waitingJob) (ApplyResult, error) {
 	now := s.opts.Clock.Now()
 	next := map[string]*entry{}
 	for _, j := range jobs {
@@ -225,6 +275,8 @@ func (s *Scheduler) Apply(jobs []Job) (ApplyResult, error) {
 
 	s.mu.Lock()
 	changed := h != s.hash
+	persist := changed || len(waiting) > 0 || len(s.waiting) > 0
+	s.waiting = waiting
 	for name, e := range next {
 		// Keep the pending activation of an unchanged job so a re-apply never skips/duplicates a run.
 		if old, ok := s.entries[name]; ok && sameJob(old.job, e.job) {
@@ -241,15 +293,8 @@ func (s *Scheduler) Apply(jobs []Job) (ApplyResult, error) {
 	}
 	s.mu.Unlock()
 
-	if changed && s.opts.StateDir != "" {
-		if err := os.MkdirAll(s.opts.StateDir, 0o700); err != nil {
-			return res, err
-		}
-		p := filepath.Join(s.opts.StateDir, "cron.json")
-		if err := os.WriteFile(p+".tmp", raw, 0o600); err != nil {
-			return res, err
-		}
-		if err := os.Rename(p+".tmp", p); err != nil {
+	if persist && s.opts.StateDir != "" {
+		if err := s.persist(sorted, waiting); err != nil {
 			return res, err
 		}
 	}
@@ -479,4 +524,39 @@ func spanStatus(st string) string {
 	default:
 		return "failed"
 	}
+}
+
+// persist writes cron.json without secret variables, which go to the tmpfs first.
+func (s *Scheduler) persist(jobs []Job, waiting map[string]waitingJob) error {
+	st := stateFile{Jobs: []Job{}, SecretKeys: map[string][]string{}}
+	secrets := map[string]map[string]string{}
+	for _, j := range jobs {
+		plain, secret := envlinks.Split(j.Env, j.Mask)
+		j.Env = plain
+		if len(secret) > 0 {
+			secrets[j.Name] = secret
+			st.SecretKeys[j.Name] = envlinks.Keys(secret)
+		}
+		st.Jobs = append(st.Jobs, j)
+	}
+	for name, w := range waiting {
+		st.Jobs = append(st.Jobs, w.job)
+		st.SecretKeys[name] = w.keys
+	}
+	sort.Slice(st.Jobs, func(i, k int) bool { return st.Jobs[i].Name < st.Jobs[k].Name })
+	if err := (envlinks.SecretStore{Path: s.opts.SecretsPath}).Save(secrets); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(st)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(s.opts.StateDir, 0o700); err != nil {
+		return err
+	}
+	p := filepath.Join(s.opts.StateDir, "cron.json")
+	if err := os.WriteFile(p+".tmp", raw, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(p+".tmp", p)
 }
