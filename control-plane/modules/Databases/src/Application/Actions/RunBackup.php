@@ -61,7 +61,8 @@ final class RunBackup
 
         $store = $this->stores->for($provider);
         $backup = new Backup;
-        $backup->id = (string) Str::ulid();
+        // Lowercase, like every HasUlids id (it is also part of the object key).
+        $backup->id = strtolower((string) Str::ulid());
         $now = now()->utc();
 
         $backup->fill([
