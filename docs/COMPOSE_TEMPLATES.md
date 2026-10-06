@@ -189,6 +189,8 @@ min_memory_mb: 512
 public:
   - service: n8n
     port: 5678
+    # health_check_path: /healthz   # optional: the deploy health check's path for this service (default: the site's
+    #                               # check path for the first service, "any answer below 500" for the others)
 inputs:
   - key: N8N_ENCRYPTION_KEY
     type: secret          # string | secret | email | number | boolean | select | domain

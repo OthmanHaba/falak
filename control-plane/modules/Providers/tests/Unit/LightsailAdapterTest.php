@@ -101,13 +101,15 @@ it('lists Ubuntu LTS blueprints', function () {
     Http::fake(['*' => Http::response(['blueprints' => [
         ['blueprintId' => 'ubuntu_24_04', 'name' => 'Ubuntu', 'version' => '24.04 LTS', 'type' => 'os', 'isActive' => true],
         ['blueprintId' => 'ubuntu_22_04', 'name' => 'Ubuntu', 'version' => '22.04 LTS', 'type' => 'os', 'isActive' => true],
+        ['blueprintId' => 'ubuntu_26_04', 'name' => 'Ubuntu', 'version' => '26.04 LTS', 'type' => 'os', 'isActive' => true],
         ['blueprintId' => 'wordpress', 'name' => 'WordPress', 'version' => '6', 'type' => 'app', 'isActive' => true],
     ]])]);
 
     $images = lightsail()->images();
 
-    expect(array_map(fn ($i) => $i->id, $images))->toBe(['ubuntu_24_04', 'ubuntu_22_04'])
-        ->and($images[0]->name)->toBe('Ubuntu 24.04 LTS');
+    expect(array_map(fn ($i) => $i->id, $images))->toBe(['ubuntu_24_04', 'ubuntu_22_04', 'ubuntu_26_04'])
+        ->and($images[0]->name)->toBe('Ubuntu 24.04 LTS')
+        ->and($images[2]->version)->toBe('26.04');
 });
 
 it('creates instances in the target region with user data, same-region key pair and tags', function () {

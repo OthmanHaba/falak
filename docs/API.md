@@ -31,6 +31,7 @@ The agent protocol (`/agent/v1`, mTLS) is documented in `contracts/agent-protoco
 |---|---|---|
 | `sites.view` | admin, developer, viewer | list/show sites |
 | `sites.env.view` / `sites.env.manage` | admin, developer | read / replace the site environment |
+| `sites.delete` | admin | delete sites (`DELETE /api/v1/sites/{site}`) |
 | `deployments.view` | admin, developer, viewer | deployments, output, releases |
 | `deployments.create` | admin, developer | deploy, cancel queued/waiting/building deployments |
 | `deployments.rollback` | admin, developer | roll back to an earlier release |
@@ -169,8 +170,8 @@ Same body and validation as the web form (`name`, `framework`, `server_ids[]`, o
 `app_port`, `container_port`, `health_check_path`, …). `201` with the site resource plus `warnings[]` from the git provider;
 `422` on errors. Docker sites take `container_port` (the port the app listens on inside its container, default 3000, may
 repeat across sites; an `app_port` sent for a docker site is read as it); their `app_port` is the loopback host port Falak
-allocates. Changing a docker site's `container_port` (`PATCH /sites/{id}`) redeploys it. `DELETE /sites/{id}` stops the
-site's containers (compose: `docker compose down`; `delete_volumes: true` also removes named volumes).
+allocates. Changing a docker site's `container_port` (site settings) redeploys it. Deleting a site
+([`DELETE /api/v1/sites/{site}`](#delete-apiv1sitessite--sitesdelete)) stops its containers.
 Optional `root_directory` (git sites, also `PATCH`): the repository subfolder the app lives in (monorepos), e.g.
 `apps/api` — relative, surrounding slashes trimmed, no `.`/`..` segments. Builds run there and the release is that
 folder (deploy steps and hooks run in it); Docker uses it as the build context and resolves `dockerfile` / the
@@ -223,6 +224,14 @@ or the first service's name = the site): `POST /sites/{site}/domains`, `POST /si
 `POST /sites/{site}/security-rules`, `POST /sites/{site}/headers`, `PUT /sites/{site}/edge-settings` (its IP lists
 only: the service's allow list replaces the site's, its deny list adds to it) and a function's
 `POST /sites/{function}/function-mounts`. `GET /sites/{site}/domains|routing` list `services` and each row's `service`.
+
+### `DELETE /api/v1/sites/{site}` — `sites.delete`
+Optional body `{"delete_volumes": true}`. `202` with no body: the site is deleted at once (the edge drops its
+routes, its queue workers stop, the repository's webhook / deploy key are unlinked); stopping what it runs on its
+servers follows as agent commands, as with `DELETE /api/v1/servers/{server}`. PHP sites lose their PHP-FPM pool,
+docker sites their blue and green containers, compose sites run `docker compose down` (`delete_volumes: true` also
+removes the named volumes; kept by default). Files under `/srv/falak/sites/<slug>` stay on the servers. The token
+needs `sites.view` as well; `404` for a site of another organization, `422` when `delete_volumes` is not a boolean.
 
 ### `GET /api/v1/sites/{site}/env` — `sites.env.view`
 Returns the latest environment version as dotenv (audited as a reveal).
@@ -352,6 +361,19 @@ starts empty). The server must run the engine; a Redis / Valkey instance gets it
 and needs an agent with `db.redis` (`422` "Update the agent on <server> first" otherwise). Sites: the `POST /sites`
 body with `kind: "site"`. `201 {data: <canvas service>, warnings[]}`; the instance is `provisioning` until the agent
 confirms.
+
+Database backups have no `/api/v1` endpoints yet; the panel's session routes (CSRF, `Accept: application/json` for
+errors as JSON) are the same for SQL databases and Redis / Valkey instances (v0.9.0, agent feature `db.redis.backup`,
+`422` "Update the agent on <server> first" without it): `POST /databases/databases/{database}/backups
+{storage_provider_id, compression?: gzip|none}` (key-value: an RDB snapshot, object `….rdb.gz`), `POST
+/databases/servers/{databaseServer}/schedules {name, storage_provider_id, database_ids[], cron, retention_count?,
+retention_days?, compression?, enabled?}` · `PUT|DELETE /databases/schedules/{schedule}` · `POST
+/databases/schedules/{schedule}/run`, `POST /databases/backups/{backup}/restore {database_server_id, database,
+confirm}` (`databases.restore`; key-value: `database` is an existing, active instance of a Redis or Valkey server,
+snapshots never go into SQL engines nor dumps into instances), `GET /databases/backups/{backup}/download` (302 to a
+presigned URL valid 5 minutes, or `{url}` as JSON; `databases.restore`, audited), `DELETE /databases/backups/{backup}`,
+`GET /databases/databases/{database}` (JSON: the panel's backups, schedules, restores, `restore_targets[]` with
+`engine` and key-value `instances[]`).
 ### `PATCH|DELETE /api/v1/projects/{project}/environments/{environment}` — `projects.manage`
 Rename (the slug follows). Only empty, non-production environments can be deleted.
 
@@ -359,8 +381,7 @@ Rename (the slug follows). Only empty, non-production environments can be delete
 Site variables may contain `${{ <service>.<KEY> }}`; they resolve at deploy time (release `.env`, deploy script
 environment, public build variables) against services of the **same environment**. Service names match
 case-insensitively with spaces/dots/underscores as dashes. Database services expose `DATABASE_URL`,
-`DB_CONNECTION`, `DB_HOST` (dedicated database server: private network → provider private IP → public IP), `DB_PORT`,
-`DB_DATABASE`,
+`DB_CONNECTION`, `DB_HOST` (depends on the site, below; never a public address), `DB_PORT`, `DB_DATABASE`,
 `DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the database); site services expose their own variables.
 Redis and Valkey services (instances) expose `REDIS_URL` (`redis://default:<password>@<host>:<port>`), `REDIS_HOST`,
 `REDIS_PORT` (the instance's own port, 6380–6479), `REDIS_PASSWORD` and `REDIS_CLIENT` (`phpredis`). `REDIS_HOST` /
@@ -384,15 +405,20 @@ Unknown services/keys and cycles fail the deployment: `Unresolved variable refer
 An engine on an app or worker server serves that server only, and `DB_HOST` / `DATABASE_URL` resolve only for a
 consumer running on that server alone:
 - a native site gets `127.0.0.1`;
-- a container on it (Docker site, compose stack, function) gets the server's own address (private network → provider
-  private IP → public IP), which containers reach through the Docker bridge. The engine accepts the Docker address
+- a container on it (Docker site, compose stack, function) gets the Docker bridge's address (`docker0`: the one the
+  agent reported for a Redis / Valkey instance on the server, else `FALAK_DOCKER_BRIDGE_HOST`, default `172.17.0.1`).
+  The engine accepts the Docker address
   ranges (`FALAK_DOCKER_NETWORKS`, default `172.16.0.0/12,192.168.0.0/16`: PostgreSQL host rules, an extra MySQL account
   per range) and the firewall opens its port on the Docker bridges only (`docker0`, `br-*`). This needs agent 0.4.5 or
   newer (feature `db.containers`); it turns on per engine once the agent reports it. Before that, the reference fails
   and says to update the agent.
 
 A site on other servers gets a resolution error naming the reason instead of a host it cannot reach; use a dedicated
-database server for those.
+database server for those. A dedicated database server resolves like a Redis / Valkey instance: `127.0.0.1` for a native
+site on it, the Docker bridge for containers there, and for sites on other servers its address on a private network all
+of them share with it (a Falak private network first, else the provider private network where both servers are on it for
+sure, as above). **Never a public address** — servers sharing no private network get `… shares no private network with
+<server>, and database references never point at a public address. Add both servers to a private network …`.
 
 ## Source control
 

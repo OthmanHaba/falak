@@ -100,6 +100,7 @@ type Tailer struct {
 	files   map[string]*fileState
 	saved   map[string]savedOffset
 	dirty   bool
+	stop    context.Context // the running poll's: cancelled, it stops between files and lines
 }
 
 // NewTailer creates a tailer; offsets persist in <stateDir>/log-offsets.json (stateDir is a host path).
@@ -139,7 +140,9 @@ func (t *Tailer) Run(ctx context.Context) {
 	tick := time.NewTicker(t.interval)
 	defer tick.Stop()
 	for {
-		t.Poll()
+		// A poll can take long (4 MiB per file, a slow sink): it stops between files and lines once ctx is done, so
+		// the shutdown below (which saves the offsets) follows promptly.
+		t.poll(ctx)
 		select {
 		case <-ctx.Done():
 			t.mu.Lock()
@@ -163,11 +166,25 @@ func inode(fi os.FileInfo) uint64 {
 }
 
 // Poll performs one pass over all sources.
-func (t *Tailer) Poll() {
+func (t *Tailer) Poll() { t.poll(context.Background()) }
+
+func (t *Tailer) poll(ctx context.Context) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.stop = ctx
+	defer func() { t.stop = nil }()
+	if ctx.Err() != nil {
+		return
+	}
 	seen := map[string]bool{}
 	for _, src := range t.sources {
+		if ctx.Err() != nil {
+			// Unfinished pass: files not seen this time are not taken for vanished.
+			if t.dirty {
+				t.saveLocked()
+			}
+			return
+		}
 		matches, err := filepath.Glob(t.fs.P(src.Path))
 		if err != nil {
 			continue
@@ -176,7 +193,7 @@ func (t *Tailer) Poll() {
 		delete(t.fresh, src.Path)
 		sort.Strings(matches)
 		for _, real := range matches {
-			if seen[real] {
+			if seen[real] || ctx.Err() != nil {
 				continue
 			}
 			seen[real] = true
@@ -184,7 +201,7 @@ func (t *Tailer) Poll() {
 		}
 	}
 	for real, st := range t.files {
-		if !seen[real] {
+		if !seen[real] && ctx.Err() == nil {
 			// Path vanished (rotated away, not yet recreated): drain what is left, then close.
 			t.readAvailable(real, st)
 			t.flushPartial(real, st)
@@ -262,7 +279,7 @@ func (t *Tailer) readAvailable(real string, st *fileState) int {
 	}
 	buf := make([]byte, 64<<10)
 	read := 0
-	for read < readChunk {
+	for read < readChunk && !t.stopped() {
 		n, err := st.f.Read(buf)
 		if n > 0 {
 			read += n
@@ -277,9 +294,18 @@ func (t *Tailer) readAvailable(real string, st *fileState) int {
 	return read
 }
 
+// stopped tells whether the running poll should end (its context is done).
+func (t *Tailer) stopped() bool { return t.stop != nil && t.stop.Err() != nil }
+
 func (t *Tailer) consume(real string, st *fileState, b []byte) {
 	data := append(st.partial, b...)
 	for {
+		if t.stopped() {
+			// Stop between lines: the offset goes back to the first line not handled, so the next start reads it.
+			st.offset -= int64(len(data))
+			st.partial = nil
+			return
+		}
 		i := bytes.IndexByte(data, '\n')
 		if i < 0 {
 			break

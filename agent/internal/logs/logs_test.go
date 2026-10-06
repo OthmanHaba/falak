@@ -242,3 +242,66 @@ func TestDockerFollowerComposeService(t *testing.T) {
 		t.Fatalf("fresh container attached without its startup logs: %s", logsQuery)
 	}
 }
+
+// slowSink takes its time per record and cancels ctx after `after` records.
+type slowSink struct {
+	memSink
+	after  int
+	cancel context.CancelFunc
+}
+
+func (s *slowSink) EmitLog(r obs.LogRecord) {
+	s.memSink.EmitLog(r)
+	if len(s.bodies()) == s.after {
+		s.cancel()
+	}
+	time.Sleep(2 * time.Millisecond)
+}
+
+// Run stops mid-poll once its context is done (a long poll must not outlast the agent's shutdown), saves the offset
+// of the first line it did not ship, and the next tailer ships the rest exactly once.
+func TestTailerStopsBetweenLinesAndResumes(t *testing.T) {
+	root := t.TempDir()
+	fs := hostfs.FS{Root: root}
+	os.MkdirAll(fs.P("/var/log/app"), 0o755)
+	var lines strings.Builder
+	for i := 0; i < 5000; i++ {
+		fmt.Fprintf(&lines, "line %d\n", i)
+	}
+	path := fs.P("/var/log/app/a.log")
+	src := []Source{{Path: "/var/log/app/*.log", Site: "shop"}}
+
+	// First sight starts at EOF: write the lines after a first poll.
+	sink := &memSink{}
+	tl := NewTailer(fs, "/var/lib/falak", sink, nil)
+	tl.SetSources(src)
+	appendFile(t, path, "")
+	tl.Poll()
+	appendFile(t, path, lines.String())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	slow := &slowSink{after: 100, cancel: cancel}
+	tl2 := NewTailer(fs, "/var/lib/falak", slow, nil)
+	tl2.SetSources(src)
+	done := make(chan struct{})
+	start := time.Now()
+	go func() { tl2.Run(ctx); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not stop")
+	}
+	shipped := slow.bodies()
+	if len(shipped) < 100 || len(shipped) > 101 || time.Since(start) > 2*time.Second {
+		t.Fatalf("shipped %d lines in %s before stopping", len(shipped), time.Since(start))
+	}
+
+	rest := &memSink{}
+	tl3 := NewTailer(fs, "/var/lib/falak", rest, nil)
+	tl3.SetSources(src)
+	tl3.Poll()
+	all := append(shipped, rest.bodies()...)
+	if len(all) != 5000 || all[0] != "line 0" || all[len(shipped)] != fmt.Sprintf("line %d", len(shipped)) || all[4999] != "line 4999" {
+		t.Fatalf("%d lines, resumed at %q", len(all), rest.bodies()[0])
+	}
+}

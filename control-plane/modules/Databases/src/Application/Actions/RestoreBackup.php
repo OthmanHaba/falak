@@ -4,6 +4,8 @@ namespace Falak\Databases\Application\Actions;
 
 use Falak\Databases\Application\AgentCommands;
 use Falak\Databases\Application\Identifiers;
+use Falak\Databases\Application\KeyValue\KeyValueBackups;
+use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Enums\RestoreStatus;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\DatabaseServer;
@@ -18,6 +20,10 @@ use Illuminate\Validation\ValidationException;
  * Restores a backup into a database (created by the agent when missing) on any database server of the
  * organization with the same wire engine. The agent downloads the dump with a presigned GET URL and
  * verifies its SHA-256 before loading it.
+ *
+ * Redis / Valkey: an RDB snapshot goes into an existing, active instance of either key-value engine (the agent checks
+ * that the installed server loads the snapshot's RDB version, e.g. Valkey refuses Redis 7.4+ snapshots, before it
+ * changes anything); SQL dumps never go into an instance and snapshots never into a SQL engine.
  */
 final class RestoreBackup
 {
@@ -25,6 +31,7 @@ final class RestoreBackup
         private readonly AgentCommands $commands,
         private readonly ObjectStores $stores,
         private readonly AuditLog $audit,
+        private readonly KeyValueBackups $keyValue,
     ) {}
 
     public function __invoke(Backup $backup, DatabaseServer $target, string $databaseName, ?string $actorId = null): Restore
@@ -37,15 +44,32 @@ final class RestoreBackup
             throw ValidationException::withMessages(['database_server_id' => 'Choose a database server of this organization.']);
         }
 
-        if ($target->engine->isKeyValue() || $backup->engine->isKeyValue()) {
-            throw ValidationException::withMessages(['database_server_id' => 'Restoring Redis and Valkey instances is not supported yet (coming in a later release).']);
+        if ($target->engine->isKeyValue() !== $backup->engine->isKeyValue()) {
+            throw ValidationException::withMessages(['database_server_id' => $backup->engine->isKeyValue()
+                ? "A {$backup->engine->label()} snapshot can only be restored into a Redis or Valkey instance, not into {$target->engine->label()}."
+                : "A {$backup->engine->label()} dump cannot be restored into a {$target->engine->label()} instance."]);
         }
 
-        if ($target->engine->protocol() !== $backup->engine->protocol()) {
+        if (! $target->engine->isKeyValue() && $target->engine->protocol() !== $backup->engine->protocol()) {
             throw ValidationException::withMessages(['database_server_id' => "A {$backup->engine->label()} dump cannot be restored into {$target->engine->label()}."]);
         }
 
         Identifiers::assertValid($target->engine, $databaseName, 'database');
+
+        if ($target->engine->isKeyValue()) {
+            // Instances are never created by a restore: their port, password and unit come from the instance.
+            $instance = $target->databases()->where('name', $databaseName)->first();
+
+            if (! $instance) {
+                throw ValidationException::withMessages(['database' => "{$target->server_name} has no {$target->engine->label()} instance named \"{$databaseName}\"."]);
+            }
+
+            if ($instance->status !== ResourceStatus::Active) {
+                throw ValidationException::withMessages(['database' => "Instance \"{$databaseName}\" is {$instance->status->value}."]);
+            }
+
+            $this->keyValue->assertSupported($target, 'database_server_id');
+        }
 
         $running = Restore::query()->where('database_server_id', $target->id)->where('database_name', $databaseName)
             ->whereIn('status', [RestoreStatus::Pending, RestoreStatus::Running])->exists();
@@ -70,7 +94,7 @@ final class RestoreBackup
             $handle = $this->commands->dispatch(
                 $target->server_id,
                 'db.restore',
-                CommandPayloads::restore($target->engine, $databaseName, $backup->compression, $url, $backup->sha256),
+                CommandPayloads::restore($target->engine, $databaseName, $backup->compression, $url, $backup->sha256, $backup->uncompressed_bytes),
                 (int) config('databases.timeouts.restore', 3600),
                 "db.restore:{$restore->id}",
                 'database_server_id',

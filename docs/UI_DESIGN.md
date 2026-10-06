@@ -51,16 +51,19 @@ deepened in light mode so white button text and links pass.
 | `--accent-soft` | `#10302f` | `#ddf0ef` | selected nav, soft badges |
 | `--accent-on-soft` | `#76e0d6` | `#0a6668` | accent text on `--accent-soft` |
 | `--text-on-accent` | `#0a0f12` | `#ffffff` | text on accent / success fills |
-| `--text-on-danger` | `#ffffff` | `#ffffff` | text on danger fills |
+| `--text-on-danger` | `#ffffff` | `#ffffff` | text on `--danger-fill` |
 | `--selection` | `rgba(79,209,197,.28)` | `rgba(15,139,141,.22)` | text selection, terminal selection |
 | `--success` | `#5ccb5f` | `#1f7a35` | active/healthy — a true green, clearly apart from the teal |
-| `--warning` | `#f59e0b` | `#d97706` | building/deploying/degraded |
-| `--danger` | `#ef4444` | `#dc2626` | failed/crashed/offline |
+| `--warning` | `#f59e0b` | `#a85207` | building/deploying/degraded (light: darker amber, AA as text) |
+| `--danger` | `#ef4444` | `#dc2626` | failed/crashed/offline: text, dots, bars |
+| `--danger-fill` | `#dc2626` | `#dc2626` | danger buttons, badges, counters (fills with `--text-on-danger` on them) |
 | `--info` | `#60a5fa` | `#2563eb` | queued/informational — blue, so it never reads as the accent |
 
 Each status has a `-soft` translucent fill of the same hue. Key contrasts: dark accent fill with `#0a0f12` text
 10.3:1, accent link on `--surface-2` 8.9:1, on-soft 9.0:1; light accent fill with white text 5.5:1, accent link on
-`--surface-2` 4.9:1, on-soft 5.7:1. Chart series (`--chart-1..5`): teal accent, orange, violet, blue, pink.
+`--surface-2` 4.9:1, on-soft 5.7:1. White on `--danger-fill` 4.8:1 in both themes (white on the dark theme's brighter
+`--danger` would be 3.8:1, so fills with text use `bg-danger-fill`; `--danger` stays for red text and markers). Light
+`--warning` text 5.4:1 on white, 4.6:1 on `--surface-3`. Chart series (`--chart-1..5`): teal accent, orange, violet, blue, pink.
 
 Brand core: `#0a0f12` + `#0f8b8d` / `#4fd1c5` + `#eef4f5`. The mark (`FalakMark`, `public/favicon.svg`) is a sphere
 with two orbit bands, always in the accent teal next to the "Falak" wordmark in `--text`; at ≤ 20px the bands are
@@ -239,7 +242,8 @@ References in the Variables tab link to their service: clicking it stacks that s
 
 ### 5.4 Tabs — database service
 **Overview** (engine, server, connection strings with copy + reveal, private-network address) · **Databases &
-users** · **Backups** (schedules, history, restore) · **Metrics** · **Settings**.
+users** · **Backups** (schedules, history, download, restore) · **Metrics** · **Settings**. Redis / Valkey instances:
+no Databases & users tab; Backups are RDB snapshots restored into an existing instance (instance picker).
 
 ### 5.5 Panel stack
 Panels are layers of one **PanelStack** (`components/falak/panel-stack.tsx`): base service panel → optionally another
@@ -343,7 +347,7 @@ type ComposeChild = { name: string; icon: string; image: string | null; status: 
 type CanvasGroup = { id: string; name: string; position: { x: number; y: number }; collapsed: boolean };
 type Canvas = {
   services: CanvasService[];
-  edges: { from: string; to: string; kind: 'reference' | 'depends_on' }[];  // ids: project_services.id or `{id}:{compose service}`
+  edges: { from: string; to: string; kind: 'reference' | 'depends_on'; problem?: string }[];  // ids: project_services.id or `{id}:{compose service}`; problem: an unresolvable database host reference (amber edge, "!" mark)
   groups: CanvasGroup[];
 };
 ```

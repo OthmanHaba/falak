@@ -133,6 +133,7 @@ trait PresentsDatabases
             'command_id' => $backup->command_id,
             'restorable' => $backup->isRestorable(),
             'created_at' => $backup->created_at->toIso8601String(),
+            'started_at' => $backup->started_at?->toIso8601String(),
             'finished_at' => $backup->finished_at?->toIso8601String(),
             'pruned_at' => $backup->pruned_at?->toIso8601String(),
         ];
@@ -152,10 +153,36 @@ trait PresentsDatabases
             'bytes' => $restore->bytes,
             'duration_ms' => $restore->duration_ms,
             'error' => $restore->error,
+            'warnings' => $restore->warnings ?? [],
             'command_id' => $restore->command_id,
             'created_at' => $restore->created_at->toIso8601String(),
             'finished_at' => $restore->finished_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Where a backup of the source's engine can be restored: SQL engine servers of the same wire protocol (the
+     * database is created when missing), or for Redis / Valkey the key-value engine servers with their active instances
+     * (a snapshot only goes into an existing instance; the agent checks the RDB version against the target).
+     *
+     * @return list<array{id: string, label: string, engine: string, instances: ?list<string>}>
+     */
+    protected function restoreTargets(DatabaseServer $source): array
+    {
+        return DatabaseServer::query()->where('organization_id', $source->organization_id)->orderBy('server_name')->get()
+            ->filter(fn (DatabaseServer $target) => $source->engine->isKeyValue()
+                ? $target->engine->isKeyValue()
+                : ! $target->engine->isKeyValue() && $target->engine->protocol() === $source->engine->protocol())
+            ->map(fn (DatabaseServer $target) => [
+                'id' => $target->id,
+                'label' => "{$target->server_name} ({$target->label()})",
+                'engine' => $target->engine->value,
+                'instances' => $target->engine->isKeyValue()
+                    ? $target->databases()->where('status', 'active')->orderBy('name')->pluck('name')->values()->all()
+                    : null,
+            ])
+            ->values()
+            ->all();
     }
 
     /**

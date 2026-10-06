@@ -274,6 +274,9 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	comps.PTY.CloseAll()
 	comps.Supervisor.Shutdown()
 	comps.Cron.Wait()
+	// Telemetry stops with runCtx (cancelled above) and writes its state on the way out (log offsets, OTLP buffer):
+	// done before Run returns, never into a state directory that is being removed or reused.
+	waitTimeout(tel.Wait, 15*time.Second)
 	stopOutbox()
 	outboxDone.Wait()
 	return nil

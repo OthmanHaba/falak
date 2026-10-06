@@ -3,6 +3,7 @@
 namespace Falak\Databases\Application\Actions;
 
 use Cron\CronExpression;
+use Falak\Databases\Application\KeyValue\KeyValueBackups;
 use Falak\Databases\Domain\Enums\Compression;
 use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\DatabaseServer;
@@ -14,16 +15,17 @@ use Illuminate\Validation\ValidationException;
 
 final class SaveBackupSchedule
 {
-    public function __construct(private readonly AuditLog $audit) {}
+    public function __construct(
+        private readonly AuditLog $audit,
+        private readonly KeyValueBackups $keyValue,
+    ) {}
 
     /**
      * @param  array{name: string, storage_provider_id: string, database_ids: list<string>, cron: string, retention_count?: ?int, retention_days?: ?int, compression?: ?string, enabled?: ?bool}  $data
      */
     public function __invoke(DatabaseServer $server, array $data, ?BackupSchedule $schedule = null, ?string $actorId = null): BackupSchedule
     {
-        if ($server->engine->isKeyValue()) {
-            throw ValidationException::withMessages(['database_ids' => "Backups of {$server->engine->label()} instances are not supported yet (coming in a later release)."]);
-        }
+        $this->keyValue->assertSupported($server, 'database_ids');
 
         $cron = trim(preg_replace('/\s+/', ' ', $data['cron']) ?? '');
 
@@ -41,7 +43,7 @@ final class SaveBackupSchedule
         $valid = $server->databases()->whereIn('id', $databaseIds)->pluck('id')->all();
 
         if ($databaseIds === [] || count($valid) !== count($databaseIds)) {
-            throw ValidationException::withMessages(['database_ids' => 'Choose one or more databases on this server.']);
+            throw ValidationException::withMessages(['database_ids' => ($server->engine->isKeyValue() ? 'Choose one or more instances on this server.' : 'Choose one or more databases on this server.')]);
         }
 
         $enabled = $data['enabled'] ?? true;

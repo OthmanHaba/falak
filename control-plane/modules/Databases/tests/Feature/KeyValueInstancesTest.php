@@ -103,7 +103,7 @@ it('creates an instance from the canvas provisioner: port, settings, default use
     expect($second->port)->toBe(6382);
 });
 
-it('refuses agents without db.redis, bad names, wrong engines, settings over the RAM and backups', function () {
+it('refuses agents without db.redis, bad names, wrong engines, settings over the RAM, and backups without db.redis.backup', function () {
     $old = kv_server($this, features: ['db.containers']);
 
     expect(fn () => app(DatabaseProvisioner::class)->create($this->organization->id, $old->server_id, 'redis', 'cache'))
@@ -128,7 +128,7 @@ it('refuses agents without db.redis, bad names, wrong engines, settings over the
     $provider = databases_provider($this->organization);
 
     $this->post("/databases/databases/{$data->id}/backups", ['storage_provider_id' => $provider->id])
-        ->assertSessionHasErrors(['database' => 'Backups of Redis instances are not supported yet (coming in a later release).']);
+        ->assertSessionHasErrors(['database' => "Update the agent on {$engine->server_name} first: backups and restores of Redis instances need a newer agent (feature db.redis.backup)."]);
     $this->post("/databases/servers/{$engine->id}/schedules", ['name' => 'nightly', 'storage_provider_id' => $provider->id, 'database_ids' => [$data->id], 'cron' => '0 3 * * *'])
         ->assertSessionHasErrors('database_ids');
     $this->post("/databases/servers/{$engine->id}/users", ['username' => 'extra', 'grants' => []])->assertSessionHasErrors('username');
@@ -232,7 +232,7 @@ it('shows the instance panel with key-value options and its own port', function 
         ->assertJsonPath('data.users.0.username', 'default')
         ->assertJsonPath('data.options.max_memory_mb', 1536)
         ->assertJsonPath('data.options.persistences', ['rdb', 'aof', 'none'])
-        ->assertJsonPath('data.restore_targets', []);
+        ->assertJsonPath('data.restore_targets.0.engine', 'redis'); // key-value engines only (phase 3)
 
     // The index lists the instances' ports for the key-value row, not the stock instance's 6379.
     $rows = collect($this->getJson('/databases')->assertOk()->json('data'));

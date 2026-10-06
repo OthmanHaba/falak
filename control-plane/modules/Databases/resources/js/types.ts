@@ -8,6 +8,15 @@ export function isKeyValue(engine: string | null | undefined): boolean {
     return engine !== null && engine !== undefined && KEY_VALUE_ENGINES.includes(engine);
 }
 
+/** Where a backup can be restored: SQL servers of the same protocol, or Redis / Valkey servers with their instances. */
+export interface RestoreTarget {
+    id: string;
+    label: string;
+    engine: EngineName;
+    /** Redis / Valkey: the active instances (a snapshot only goes into an existing one); null for SQL engines. */
+    instances: string[] | null;
+}
+
 export interface KeyValueSettings {
     maxmemory_mb: number;
     eviction: string;
@@ -104,6 +113,8 @@ export interface BackupRow {
     command_id: string | null;
     restorable: boolean;
     created_at: string;
+    /** When the backup was handed to the agent. */
+    started_at: string | null;
     finished_at: string | null;
     pruned_at: string | null;
 }
@@ -117,6 +128,8 @@ export interface RestoreRow {
     bytes: number | null;
     duration_ms: number | null;
     error: string | null;
+    /** A successful restore's warnings (Redis / Valkey: e.g. a dataset over the memory limit). */
+    warnings: string[];
     command_id: string | null;
     created_at: string;
     finished_at: string | null;
@@ -164,4 +177,23 @@ export interface Connection {
     port: number;
     hosts: ConnectionHost[];
     access?: ConnectionAccess[];
+}
+
+/**
+ * The restore form after another target server is picked: a Redis / Valkey snapshot goes into one of that server's
+ * instances, so the instance chosen for the previous server (absent from the new one) is cleared, and with it the
+ * confirmation. SQL keeps the typed database name (it is created when missing).
+ */
+export function retargetRestore<T extends { database_server_id: string; database: string; confirm: string }>(
+    data: T,
+    serverId: string,
+    keyValue: boolean,
+    targets: RestoreTarget[],
+): T {
+    if (!keyValue) return { ...data, database_server_id: serverId };
+    const instances = targets.find((target) => target.id === serverId)?.instances ?? [];
+
+    return instances.includes(data.database)
+        ? { ...data, database_server_id: serverId }
+        : { ...data, database_server_id: serverId, database: '', confirm: '' };
 }

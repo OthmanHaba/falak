@@ -85,6 +85,7 @@ it('filters sizes by region and availability', function () {
 it('lists Ubuntu LTS distribution images', function () {
     Http::fake(['api.digitalocean.com/v2/images*' => Http::response([
         'images' => [
+            ['id' => 5, 'slug' => 'ubuntu-26-04-x64', 'distribution' => 'Ubuntu', 'name' => '26.04 (LTS) x64'],
             ['id' => 1, 'slug' => 'ubuntu-24-04-x64', 'distribution' => 'Ubuntu', 'name' => '24.04 (LTS) x64'],
             ['id' => 2, 'slug' => 'ubuntu-22-04-x64', 'distribution' => 'Ubuntu', 'name' => '22.04 (LTS) x64'],
             ['id' => 3, 'slug' => 'ubuntu-20-04-x64', 'distribution' => 'Ubuntu', 'name' => '20.04 (LTS) x64'],
@@ -95,8 +96,9 @@ it('lists Ubuntu LTS distribution images', function () {
 
     $images = digitalocean()->images();
 
-    expect(array_map(fn ($i) => $i->id, $images))->toBe(['ubuntu-24-04-x64', 'ubuntu-22-04-x64'])
-        ->and($images[0]->version)->toBe('24.04');
+    expect(array_map(fn ($i) => $i->id, $images))->toBe(['ubuntu-26-04-x64', 'ubuntu-24-04-x64', 'ubuntu-22-04-x64'])
+        ->and($images[0]->version)->toBe('26.04')
+        ->and($images[1]->version)->toBe('24.04');
 
     Http::assertSent(fn (Request $r) => str_contains($r->url(), 'type=distribution'));
 });

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.backup.schema.json",
-  "title": "db.backup — dump a database, compress, write to a local path or PUT to a presigned URL",
+  "title": "db.backup — dump a database (Redis / Valkey: an RDB snapshot of an instance), compress, write to a local path or PUT to a presigned URL",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,12 +13,14 @@
     "engine": {
       "enum": [
         "mysql",
-        "postgres"
+        "postgres",
+        "redis",
+        "valkey"
       ]
     },
     "database": {
       "type": "string",
-      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+      "description": "SQL: the database. Redis / Valkey (feature db.redis.backup): the instance's name."
     },
     "compression": {
       "enum": [
@@ -73,6 +75,37 @@
       ]
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "engine": {
+            "enum": [
+              "redis",
+              "valkey"
+            ]
+          }
+        },
+        "required": [
+          "engine"
+        ]
+      },
+      "then": {
+        "properties": {
+          "database": {
+            "pattern": "^[a-z][a-z0-9_-]{0,40}$"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "database": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "result": {
       "type": "object",
@@ -95,6 +128,15 @@
         },
         "duration_ms": {
           "type": "integer"
+        },
+        "rdb": {
+          "type": "string",
+          "pattern": "^(REDIS[0-9]{4}|VALKEY[0-9]{3})$",
+          "description": "Redis / Valkey: the snapshot's RDB header (format and version)"
+        },
+        "uncompressed_bytes": {
+          "type": "integer",
+          "description": "The dump's size before compression (a Redis / Valkey restore gets it back as uncompressed_bytes)"
         }
       }
     }

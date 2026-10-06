@@ -13,6 +13,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/db"
 	"github.com/OthmanHaba/falak/agent/internal/docker"
 	"github.com/OthmanHaba/falak/agent/internal/fngateway"
 	"github.com/OthmanHaba/falak/agent/internal/functions"
@@ -242,6 +243,62 @@ func TestFunctionResultsValidate(t *testing.T) {
 			{Site: "hello", Release: "r2", Running: 1, InFlight: 3, ColdStarts: 2, Requests: 40, LastRequestAt: &at},
 			{Site: "idle", Release: "r1"},
 		}},
+	} {
+		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json#/$defs/result")
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := json.Marshal(res)
+		v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(b))
+		if err := sch.Validate(v); err != nil {
+			t.Errorf("%s result invalid: %v\n%s", typ, err, b)
+		}
+	}
+}
+
+// db.backup / db.restore name a SQL database or a Redis / Valkey instance (feature db.redis.backup): each engine's
+// names only, and the key-value results validate.
+func TestDatabaseBackupSchemasPerEngine(t *testing.T) {
+	c := compiler(t)
+	dest := `"destination":{"kind":"presigned_url","url":"https://s3.example.com/b/k?X-Amz-Signature=x"}`
+	src := `"source":{"kind":"url","url":"https://s3.example.com/b/k"}`
+	for payload, valid := range map[string]bool{
+		`{"engine":"redis","database":"cache-1",` + dest + `}`:     true,
+		`{"engine":"valkey","database":"sessions_2",` + dest + `}`: true,
+		`{"engine":"redis","database":"Cache",` + dest + `}`:       false,
+		`{"engine":"valkey","database":"9lives",` + dest + `}`:     false,
+		`{"engine":"mysql","database":"shop_db",` + dest + `}`:     true,
+		`{"engine":"mysql","database":"shop-db",` + dest + `}`:     false,
+		`{"engine":"memcached","database":"cache",` + dest + `}`:   false,
+	} {
+		for typ, body := range map[string]string{"db.backup": payload, "db.restore": strings.Replace(payload, dest, src, 1)} {
+			sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			v, _ := jsonschema.UnmarshalJSON(strings.NewReader(body))
+			if err := sch.Validate(v); (err == nil) != valid {
+				t.Errorf("%s %s: valid=%v, err=%v", typ, body, valid, err)
+			}
+		}
+	}
+	// The recorded size a restore gets back (feature db.redis.restore_checks).
+	sch, err := c.Compile(idBase + "commands/db.restore.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for body, valid := range map[string]bool{
+		`{"engine":"redis","database":"cache",` + src + `,"uncompressed_bytes":1048576}`: true,
+		`{"engine":"redis","database":"cache",` + src + `,"uncompressed_bytes":0}`:       false,
+	} {
+		v, _ := jsonschema.UnmarshalJSON(strings.NewReader(body))
+		if err := sch.Validate(v); (err == nil) != valid {
+			t.Errorf("%s: valid=%v, err=%v", body, valid, err)
+		}
+	}
+	for typ, res := range map[string]any{
+		"db.backup":  db.BackupResult{SizeBytes: 10, SHA256: strings.Repeat("a", 64), Location: "https://s3.example.com/b/k", DurationMS: 5, RDB: "VALKEY080", UncompressedBytes: 42},
+		"db.restore": db.RestoreResult{Bytes: 10, DurationMS: 5, RDB: "REDIS0011", MovedAside: []string{"dump.rdb.falak-20261006T120000Z"}, Warnings: []string{"over the memory limit"}},
 	} {
 		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json#/$defs/result")
 		if err != nil {

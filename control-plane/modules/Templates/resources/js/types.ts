@@ -20,7 +20,7 @@ export interface TemplateSummary {
     min_memory_mb: number | null;
     tags: string[];
     services: { name: string; image: string }[];
-    public: { service: string; port: number }[];
+    public: { service: string; port: number; health_check_path?: string }[];
 }
 
 export type InputType = 'string' | 'secret' | 'email' | 'number' | 'boolean' | 'select' | 'domain';

@@ -104,6 +104,7 @@ it('lists only Ubuntu LTS system images per architecture', function () {
         'images' => [
             ['id' => 161547269, 'name' => 'ubuntu-24.04', 'description' => 'Ubuntu 24.04', 'os_flavor' => 'ubuntu', 'os_version' => '24.04', 'architecture' => 'x86'],
             ['id' => 161547270, 'name' => 'ubuntu-24.04', 'description' => 'Ubuntu 24.04', 'os_flavor' => 'ubuntu', 'os_version' => '24.04', 'architecture' => 'arm'],
+            ['id' => 300000001, 'name' => 'ubuntu-26.04', 'description' => 'Ubuntu 26.04', 'os_flavor' => 'ubuntu', 'os_version' => '26.04', 'architecture' => 'x86'],
             ['id' => 67794396, 'name' => 'ubuntu-20.04', 'description' => 'Ubuntu 20.04', 'os_flavor' => 'ubuntu', 'os_version' => '20.04', 'architecture' => 'x86'],
             ['id' => 114690387, 'name' => 'debian-12', 'description' => 'Debian 12', 'os_flavor' => 'debian', 'os_version' => '12', 'architecture' => 'x86'],
         ],
@@ -112,9 +113,10 @@ it('lists only Ubuntu LTS system images per architecture', function () {
 
     $images = hetzner()->images();
 
-    expect($images)->toHaveCount(2)
+    expect($images)->toHaveCount(3)
         ->and($images[0]->id)->toBe('161547269')
-        ->and($images[1]->arch)->toBe('arm64');
+        ->and($images[1]->arch)->toBe('arm64')
+        ->and($images[2]->version)->toBe('26.04');
 
     Http::assertSent(fn (Request $r) => str_contains($r->url(), 'type=system') && str_contains($r->url(), 'status=available'));
 });

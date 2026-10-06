@@ -204,3 +204,14 @@ it('deploys templates over the public API with a token', function () {
         ->assertCreated()
         ->assertJsonStructure(['data' => ['site_id']]);
 });
+
+it('passes a public service\'s health check path on to the site', function () {
+    templates_fixture_catalog(['hello' => [str_replace("port: 9000\n", "port: 9000\n    health_check_path: /healthz\n", TEMPLATES_FIXTURE_TEMPLATE), TEMPLATES_FIXTURE_COMPOSE]]);
+
+    $this->postJson($this->url, deploy_payload())->assertCreated();
+
+    expect($this->fakes['sites']->last()['public_services'])->toBe([
+        ['service' => 'web', 'port' => 8080, 'domain' => null],
+        ['service' => 'admin', 'port' => 9000, 'domain' => 'admin.example.com', 'health_check_path' => '/healthz'],
+    ]);
+});

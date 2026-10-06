@@ -19,7 +19,7 @@ use Illuminate\Support\Str;
  */
 final class HetznerAdapter extends HttpProviderAdapter
 {
-    private const UBUNTU_VERSIONS = ['22.04', '24.04'];
+    private const UBUNTU_VERSIONS = ['22.04', '24.04', '26.04'];
 
     /**
      * @param  array<string, int>  $http

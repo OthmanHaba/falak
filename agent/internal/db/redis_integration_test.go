@@ -2,6 +2,7 @@ package db
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -42,7 +43,8 @@ type dockerRunner struct {
 	k         kvEngine
 	name      string
 	container string
-	netns     string // run in this container's network namespace (its addresses outlive the instance's restarts)
+	netns     string                                  // run in this container's network namespace (its addresses outlive the instance's restarts)
+	afterCLI  func(ctx context.Context, stdin string) // called after each redis-cli command with its stdin
 }
 
 func (d *dockerRunner) docker(ctx context.Context, stdin io.Reader, args ...string) (runner.Result, error) {
@@ -99,7 +101,30 @@ func (d *dockerRunner) Run(ctx context.Context, c runner.Cmd) (runner.Result, er
 		for _, e := range c.Env {
 			args = append(args, "-e", e)
 		}
-		return d.docker(ctx, c.Stdin, append(append(args, d.container, d.k.cli), c.Args...)...)
+		cliArgs := append([]string(nil), c.Args...)
+		// --rdb <host path>: written inside the container, then copied out.
+		if i := slices.Index(cliArgs, "--rdb"); i >= 0 {
+			hostPath := cliArgs[i+1]
+			cliArgs[i+1] = "/tmp/falak-it.rdb"
+			res, err := d.docker(ctx, c.Stdin, append(append(args, d.container, d.k.cli), cliArgs...)...)
+			if err != nil || res.ExitCode != 0 {
+				return res, err
+			}
+			if cp, err := d.docker(ctx, nil, "cp", d.container+":/tmp/falak-it.rdb", hostPath); err != nil || cp.ExitCode != 0 {
+				return cp, err
+			}
+			return res, nil
+		}
+		var stdin string
+		if c.Stdin != nil {
+			b, _ := io.ReadAll(c.Stdin)
+			stdin = string(b)
+		}
+		res, err := d.docker(ctx, strings.NewReader(stdin), append(append(args, d.container, d.k.cli), cliArgs...)...)
+		if d.afterCLI != nil {
+			d.afterCLI(ctx, stdin)
+		}
+		return res, err
 	case strings.HasSuffix(c.Name, "/usr/bin/"+d.k.server):
 		return d.docker(ctx, nil, "run", "--rm", "--entrypoint", d.k.server, d.image, "--version")
 	case c.Name == "getent":
@@ -375,6 +400,7 @@ func TestRedisIntegration(t *testing.T) {
 			}
 
 			t.Run("address appears after the start", func(t *testing.T) { redisIntegrationLateAddress(t, img.engine, img.image) })
+			t.Run("backup and restore", func(t *testing.T) { redisIntegrationBackupRestore(t, img.engine, img.image) })
 		})
 	}
 }
@@ -452,4 +478,192 @@ func redisIntegrationLateAddress(t *testing.T, engine, image string) {
 	if got := strings.TrimSpace(string(res.Stdout)); got != "1" {
 		t.Fatalf("GET b over %s: %q %s", addr, got, res.Stderr)
 	}
+}
+
+// redisBackups are the snapshots of the earlier images in the run (the Redis ones are restored into Valkey).
+var redisBackups = map[string][]byte{}
+
+// redisIntegrationBackupRestore: db.backup takes a snapshot of the running instance (redis-cli --rdb), db.restore brings
+// it back (rdb and AOF instances), a snapshot the server can't load is put back with the earlier data, and Redis
+// snapshots load into Valkey up to Redis 7.2 (RDB 11) while Redis 8's (RDB 12) are refused.
+func redisIntegrationBackupRestore(t *testing.T, engine, image string) {
+	k, _ := kvEngineFor(engine)
+	ctx := context.Background()
+	root := t.TempDir()
+	unitFile := filepath.Join(root, "/usr/lib/systemd/system", k.server+"@.service")
+	os.MkdirAll(filepath.Dir(unitFile), 0o755)
+	os.WriteFile(unitFile, []byte("[Service]\n"), 0o644)
+	d := &dockerRunner{t: t, root: root, image: image, k: k, name: "bk",
+		container: fmt.Sprintf("falak-redis-it-bk-%s-%d", strings.NewReplacer("/", "-", ":", "-", ".", "-").Replace(image), time.Now().UnixNano())}
+	defer d.docker(ctx, nil, "rm", "-f", d.container)
+	db := New(Deps{Runner: d, FS: hostfs.FS{Root: root}, TempDir: t.TempDir()})
+	p := RedisApplyPayload{Engine: engine, Name: "bk", Port: 6395, Password: "Xk3pQ9vR2mT7wL4nB8cF6hJ1", MaxMemoryMB: 64, Eviction: "noeviction", Persistence: "rdb"}
+	if _, err := db.RedisApply(ctx, p, st); err != nil {
+		t.Fatal(err)
+	}
+	c := conn{db: db, k: k, port: p.Port, password: p.Password, config: db.loadRedisState(k, "bk").ConfigName}
+	do := func(args ...string) string {
+		t.Helper()
+		out, err := c.do(ctx, args...)
+		if err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+		return out
+	}
+	do("SET", "a", "1")
+	do("EVAL", "for i=1,2000 do redis.call('SET','pop:'..i,i) end return 1", "0")
+	do("HSET", "h", "f", "v")
+
+	backup := filepath.Join(root, "/backups/bk.rdb.gz")
+	r, err := db.Backup(ctx, BackupPayload{Engine: engine, Database: "bk", Compression: "gzip", Destination: Location{Kind: "local", Path: "/backups/bk.rdb.gz"}}, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%s snapshot: %s, %d bytes", image, r.(BackupResult).RDB, r.(BackupResult).SizeBytes)
+	sum := r.(BackupResult).SHA256
+	restore := func(file, sha string) error {
+		_, err := db.Restore(ctx, RestorePayload{Engine: engine, Database: "bk", Compression: "gzip", Source: Location{Kind: "local", Path: strings.TrimPrefix(file, root)}, SHA256: sha}, st)
+		return err
+	}
+	check := func(when string) {
+		t.Helper()
+		if do("GET", "a") != "1" || do("GET", "pop:2000") != "2000" || do("HGET", "h", "f") != "v" || do("EXISTS", "later") != "0" {
+			t.Fatalf("%s: data not as backed up", when)
+		}
+	}
+
+	// rdb: the keys written after the backup are gone, the backed-up ones back.
+	do("SET", "a", "2")
+	do("SET", "later", "x")
+	if err := restore(backup, sum); err != nil {
+		t.Fatal(err)
+	}
+	check("after the rdb restore")
+
+	// AOF: the restore starts from the snapshot, AOF is rewritten and on again; a restart loads it with everything.
+	p.Persistence = "aof"
+	if _, err := db.RedisApply(ctx, p, st); err != nil {
+		t.Fatal(err)
+	}
+	do("SET", "a", "3")
+	do("SET", "later", "x")
+	if err := restore(backup, sum); err != nil {
+		t.Fatal(err)
+	}
+	check("after the AOF restore")
+	if m, err := c.info(ctx, "persistence"); err != nil || m["aof_enabled"] != "1" {
+		t.Fatalf("AOF not on again: %v %v", m, err)
+	}
+	if _, err := d.docker(ctx, nil, "restart", d.container); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ready(ctx); err != nil {
+		t.Fatal(err)
+	}
+	check("after a restart with the rewritten AOF")
+	if r, err := db.RedisApply(ctx, p, st); err != nil || r.(RedisApplyResult).Changed {
+		t.Fatalf("apply after the restore: %+v %v", r, err)
+	}
+
+	// Killed while AOF is switched back on (systemd starts it again from the restore's first config, appendonly no):
+	// noticed at once, AOF switched on again on the new process, the restore succeeds — not a 15-minute wait.
+	do("SET", "a", "4")
+	do("SET", "later", "x")
+	killed := 0
+	d.afterCLI = func(ctx context.Context, stdin string) {
+		if killed == 0 && strings.Contains(stdin, `"appendonly" "yes"`) {
+			killed++
+			if res, err := d.docker(ctx, nil, "restart", "-t", "0", d.container); err != nil || res.ExitCode != 0 {
+				t.Errorf("restart: %v %s", err, res.Stderr)
+			}
+		}
+	}
+	started := time.Now()
+	err = restore(backup, sum)
+	d.afterCLI = nil
+	if err != nil || killed != 1 {
+		t.Fatalf("restore with a kill during the AOF switch: %v (killed %d)", err, killed)
+	}
+	t.Logf("%s: killed during the AOF switch, restored in %s", image, time.Since(started).Round(time.Millisecond))
+	if time.Since(started) > 2*time.Minute {
+		t.Fatal("waited too long")
+	}
+	check("after a kill during the AOF switch")
+	if m, err := c.info(ctx, "persistence"); err != nil || m["aof_enabled"] != "1" {
+		t.Fatalf("AOF not on again after the kill: %v %v", m, err)
+	}
+	if _, err := d.docker(ctx, nil, "restart", d.container); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ready(ctx); err != nil {
+		t.Fatal(err)
+	}
+	check("after a restart following the kill")
+	if r, err := db.RedisApply(ctx, p, st); err != nil || r.(RedisApplyResult).Changed {
+		t.Fatalf("apply after the restore with a kill: %+v %v", r, err)
+	}
+
+	// A snapshot the server can't load: the earlier data (AOF) comes back.
+	do("SET", "kept", "yes")
+	broken := filepath.Join(root, "/backups/broken.rdb.gz")
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	gz.Write([]byte("REDIS0009\xfe\x00\xfb\x09\x00\x00\x03only-half"))
+	gz.Close()
+	os.WriteFile(broken, buf.Bytes(), 0o600)
+	oldReady := RedisReadyTimeout
+	RedisReadyTimeout = 8 * time.Second
+	err = restore(broken, "")
+	RedisReadyTimeout = oldReady
+	if err == nil || !strings.Contains(err.Error(), "the earlier data is back") {
+		t.Fatalf("broken snapshot: %v", err)
+	}
+	t.Logf("broken snapshot: %v", err)
+	if do("GET", "kept") != "yes" || do("GET", "pop:2000") != "2000" {
+		t.Fatal("rollback lost the earlier data")
+	}
+
+	// Across engines: Redis snapshots of the earlier subtests into Valkey.
+	if engine == "valkey" {
+		for img, content := range redisBackups {
+			if !strings.HasPrefix(img, "redis:") {
+				continue
+			}
+			file := filepath.Join(root, "/backups/from-"+strings.ReplaceAll(img, ":", "-")+".rdb.gz")
+			os.WriteFile(file, content, 0o600)
+			size := do("DBSIZE")
+			err := restore(file, "")
+			hdr, _ := readRDBHeaderGz(file)
+			if hdr.version > 11 {
+				if err == nil || !strings.Contains(err.Error(), "comes from Redis 7.4 or newer") {
+					t.Fatalf("%s (%s) into %s: %v", img, hdr, image, err)
+				}
+				if do("DBSIZE") != size || do("GET", "pop:2000") != "2000" {
+					t.Fatal("a refused restore changed the data")
+				}
+				continue
+			}
+			if err != nil {
+				t.Fatalf("%s (%s) into %s: %v", img, hdr, image, err)
+			}
+			check(img + " snapshot in " + image)
+		}
+	}
+	b, _ := os.ReadFile(backup)
+	redisBackups[image] = b
+}
+
+func readRDBHeaderGz(file string) (rdbHeader, error) {
+	f, err := os.Open(file)
+	if err != nil {
+		return rdbHeader{}, err
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return rdbHeader{}, err
+	}
+	b := make([]byte, 9)
+	n, _ := io.ReadFull(gz, b)
+	return parseRDBHeader(b[:n])
 }

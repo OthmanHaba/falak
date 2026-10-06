@@ -9,7 +9,7 @@ namespace Falak\Templates\Domain;
 final readonly class Template
 {
     /**
-     * @param  list<array{service: string, port: int}>  $public
+     * @param  list<array{service: string, port: int, health_check_path?: string}>  $public
      * @param  list<TemplateInput>  $inputs
      * @param  list<string>  $tags
      * @param  ?string  $icon  simple-icons key, or "./icon.svg" (catalog only)

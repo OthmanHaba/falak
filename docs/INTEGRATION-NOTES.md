@@ -413,7 +413,7 @@ A real-server test on AWS surfaced these; each is fixed and covered by tests.
 
 ## Redis and Valkey (v0.7.0, phase 1)
 Plan: `docs/plans/REDIS.md`. Phase 1 = engine + instances; network access (phase 2) and compose apps (phase 4) came
-with v0.7.1 (next section); backups / restore (phase 3) are still open.
+with v0.7.1, backups / restore (phase 3) with v0.9.0 (sections below).
 - **Engines.** `Databases\Domain\Enums\Engine` gained `Redis` / `Valkey` and `kind()` (`EngineKind::Sql | KeyValue`).
   SQL-only methods (charset, collation, privileges) answer null / `[]` for key-value engines; `isMysqlFamily()` is
   MySQL / MariaDB only (it used to be "not PostgreSQL"). `databases_servers` is unique per `(server_id, engine)`: an app
@@ -421,7 +421,7 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   type's row is `dedicated`); `sync($serverId, ?Engine)` returns the row of that engine (SQL by default). Versions come
   from `facts.runtimes.redis|valkey` (agent: `<engine>-server --version`; a `redis-server` that is really Valkey,
   Debian's valkey-redis-compat, is not reported as Redis) or `databases.distro_versions` (per engine, falling back to
-  Ubuntu 24.04's). Lookups by server take the engine; restore targets stay SQL-only (container access and firewall ports
+  Ubuntu 24.04's). Lookups by server take the engine; restore targets were SQL-only until v0.9.0 (container access and firewall ports
   for instances: v0.7.1).
 - **Instances.** A Redis / Valkey "database" is an instance: `databases_databases.port` (lowest free of
   `databases.key_value.ports` 6380–6479; taken = the server's other instances of both engines and
@@ -431,7 +431,7 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   `^[a-z][a-z0-9_-]{0,40}$`, reserved `default`, `falak`. Each instance has exactly one `DatabaseUser` (granted on it)
   holding the requirepass password; its row is named after the instance because usernames are unique per engine row,
   and it is presented and used as `default`. Extra users, grant edits, user deletion, backups, schedules and restores
-  are refused for key-value engines with a message (backups: phase 3).
+  are refused for key-value engines with a message (backups, schedules and restores: v0.9.0, below).
 - **Agent** (`db.redis`, details in `contracts/agent-protocol/README.md`): `db.redis.apply` / `db.redis.remove`, both
   redeliverable. One process per instance through the distribution's template unit `redis-server@falak-<name>` /
   `valkey-server@falak-<name>` (Debian's packaging generates both: `Type=notify`, `--supervised systemd --daemonize no`,
@@ -505,8 +505,7 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   audited reveal, REDIS_* `.env`, a `redis-cli` line with `REDISCLI_AUTH`, Rotate password — live, sites pick it up on
   their next deploy —, reference keys), Settings (memory, eviction, persistence with a warning for `none`, version;
   no port). Databases index: instance ports and count for key-value rows.
-- **API.** `POST /api/v1/projects/{project}/environments/{environment}/services` (the canvas' Create, with a token). "Databases & users" and Backups tabs are hidden for key-value services until
-  backups land. Databases server page lists instances with port and memory. Server Settings has a Redis / Valkey block.
+- **API.** `POST /api/v1/projects/{project}/environments/{environment}/services` (the canvas' Create, with a token). "Databases & users" is hidden for key-value services (Backups: v0.9.0). Databases server page lists instances with port and memory. Server Settings has a Redis / Valkey block.
 - **Sim.** Server images ship `redis-server` (stock service disabled; not `valkey-server` too: the machine check refuses
   two cache engines on one machine). E2E stage `redis` (`ONLY=redis` after a full run): Redis installed on app-2
   through the API, an instance created through the services API, `${{ cache.REDIS_* }}` deployed with the Bun site,
@@ -522,6 +521,62 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
 - **Not verified:** the sim E2E stage has not been run yet; Playwright (needs the sim); Ubuntu 22.04's Redis 6.0 and
   26.04 under systemd (Redis 6.0 and Valkey 9.0 only in the Docker integration test). A real Ubuntu 24.04 (Redis, Valkey 7.2) and 26.04 (Valkey 9.0) VM is needed before
   the rc.
+
+## Redis and Valkey backups and restores (v0.9.0, phase 3)
+Plan: `docs/plans/REDIS.md` (deviations in its "As built (v0.9.0, phase 3)"); protocol in `contracts/agent-protocol/README.md`.
+- **Feature `db.redis.backup`** (agent): `db.backup` / `db.restore` with `engine: redis | valkey`, `database` = the
+  instance name. No secret in the payload: the agent takes port, password and the renamed `CONFIG` from its state
+  (else the config file). Results: `rdb` (header, e.g. `REDIS0010`), restores also `moved_aside`.
+- **Backup** (`agent/internal/db/redis_backup.go`): instance lock → unit must be active and answer `PING` →
+  `redis-cli -h 127.0.0.1 -p <port> --no-auth-warning --rdb <tmp>` with `REDISCLI_AUTH` (a replica-style snapshot of the
+  running process; `SYNC`/`PSYNC`/`REPLCONF` were left enabled in v0.7.0 for this) → header check → lock released →
+  gzip + sha256 + presigned PUT through the SQL path (`ship`). A failed `redis-cli` reports its last line, passwords
+  redacted. Disk: the agent's TempDir holds the raw snapshot and its gzipped copy while it compresses (about RDB size +
+  gzip size at the peak); the raw file is removed before the upload. Not streamed: `redis-cli --rdb -` (stdout) only
+  exists from Redis 7.0 (not 22.04's 6.0), the header would have to be checked on the stream, and `--rdb` into a FIFO
+  is untested across versions — so TempDir needs room for the dataset plus its gzip.
+- **Restore:** download (sha256) → free space of the data directory's disk (statfs) ≥ the gunzipped size (twice for
+  AOF: the rewrite) + `RedisRestoreHeadroom` (256 MiB), the size being the backup's `uncompressed_bytes` (sent as
+  `db.restore uncompressed_bytes`, feature `db.redis.restore_checks`), else the gzip `ISIZE` trailer (exact for gzip
+  files under ~4 MB, else a lower bound: mod 2^32) → gunzip, capped at that size + 1 % + 1 MiB when exact, aborted
+  when less than the headroom is left, to `<data>/.falak-restore.rdb` (`O_EXCL|O_NOFOLLOW`; mode 0600 and the
+  instance user set on the open descriptor, never by path: the data directory belongs to the instance user) → header → RDB version vs.
+  `<engine>-server --version` (see REDIS.md for the matrix) — all before anything changes → enough time left
+  (`RedisMinRestartBudget`) → if running: an unfinished first AOF rewrite is switched off and `SAVE`d →
+  `systemctl stop`, always (a unit waiting for its automatic restart is "activating", not active: the stop cancels
+  the pending restart; a failed stop starts the unit again if it ran and fails with "nothing was changed") → `dump.rdb`, `appendonlydir`, `appendonly.aof` renamed `<file>.falak-<UTC>` → snapshot renamed to
+  `dump.rdb` only if the name still is the file written (`os.SameFile`; `rename(2)` follows no link) → AOF instances: config written with `appendonly no` and state recorded as `rdb` (a
+  redelivered apply then finishes the switch) → `reset-failed`, `start`, `PING` (LOADING extends the wait) → AOF:
+  `CONFIG SET appendonly yes`, wait for the rewrite (`waitAOFRewrite`: `INFO default`; AOF found off with no rewrite
+  running or scheduled — the process was killed and systemd started it again from the first config, its `run_id`
+  changed — ends the wait at once instead of after `RedisAOFTimeout`, and AOF is switched on again once on the new
+  process; off again → rollback with the reason), `save ""`, config and state put back (3 tries; still failing:
+  success with a warning, both left as the first start's, which the next apply converges without a restart) → `none`: `dump.rdb` deleted
+  → `INFO memory`: `used_memory` over `maxmemory` is a warning (Redis loads it anyway; the next writes evict keys, or
+  are refused with `noeviction`) → older `<file>.falak-*` copies removed (only this restore's are kept; none when it
+  moved nothing).
+  Any failure after the stop: restored files removed, earlier ones renamed back, config / state rewritten, the unit
+  started again if it ran, error "restore into <unit> failed, the earlier data is back: <cause>" + `journalctl` tail.
+  The instance lock keeps applies, removes, backups and `RedisWatch` out meanwhile.
+- **Control plane:** `KeyValueBackups` (feature gate) used by `RunBackup` (manual → 422, scheduled → failed backup with
+  the reason), `SaveBackupSchedule`, `RestoreBackup`. Object keys end `.rdb.gz` / `.rdb`
+  (`Compression::extension($engine)`). Restore rules: snapshot ↔ key-value targets only, the instance must exist on
+  the target server and be active, Redis ↔ Valkey allowed (the agent refuses incompatible RDB versions);
+  `HandleCommandOutcome` never creates a database row for key-value restores. Schedules, retention and pruning are
+  the SQL code unchanged. Restore targets (`restore_targets` / `restoreTargets`) carry `engine` and, for key-value
+  servers, their active `instances`. A restore's `warnings` are kept (`databases_restores.warnings`), shown in
+  amber in the Restores lists (panel and page), and a key-value restore with warnings queues a `db.redis.apply` of
+  the instance (it converges a config file the agent could not put back).
+- **Download (new, all engines):** `GET /databases/backups/{backup}/download` → 302 to a presigned GET valid 300 s
+  (`databases.download_link_ttl`, `FALAK_BACKUP_DOWNLOAD_LINK_TTL`), or `{url}` for JSON; `databases.restore`
+  permission (the file is all the data), throttled 30/min, audited `databases.backup_downloaded`; 422 unless the
+  backup succeeded and its storage provider exists.
+- **UI:** the canvas panel's Backups tab and the Databases server page's schedules / backups now show for Redis and
+  Valkey; the restore dialog picks the target server and one of its instances (typed confirmation); Download in the
+  row actions (panel, server page, organization Backups page).
+- **Verified:** Docker integration test on Redis 6.0 / 7.0 / 8.0 and Valkey 7.2 / 8.1 / 9.0 (snapshots `REDIS0009`,
+  `REDIS0010`, `REDIS0012`, `REDIS0011`, `REDIS0011`, `VALKEY080`); local Redis 8.6 writes `REDIS0013`.
+  **Not verified:** a real systemd host (file ownership, `ProtectSystem=strict`), Playwright, the sim E2E.
 
 ## Redis and Valkey network access and compose apps (v0.7.1, phases 2 and 4)
 - **Feature `db.redis.network`** (agent): `db.redis.apply` `bind` only takes loopback, private (RFC 1918, CGNAT
@@ -582,9 +637,8 @@ with v0.7.1 (next section); backups / restore (phase 3) are still open.
   credential, in the same region, of a provider in `databases.key_value.provider_private_networks` (DigitalOcean's
   default VPC per region, Lightsail; not Hetzner / Vultr / Linode, opt-in networks — Falak stores no network id).
   `custom` servers only with `FALAK_REDIS_CUSTOM_PRIVATE_NETWORK=true` (off by default; the sim sets it for its fleet
-  network). `ServerData` gained `providerCredentialId` and `region`. The SQL `DB_HOST` (`EloquentDatabaseConnections::
-  host()`) still takes the database server's WireGuard address, else its private IPv4, else its public one, whoever
-  the consumer is (by design it falls back to public; unchanged). `containers` = container access on and
+  network). `ServerData` gained `providerCredentialId` and `region`. (The SQL `DB_HOST` still fell back to a private IPv4, then
+  a public address here; v0.9.0 changed that, see "SQL references never resolve to a public address" below.) `containers` = container access on and
   `FALAK_DOCKER_NETWORKS` not empty. `peers` = those servers' addresses on that network (their containers are NATed to
   them). `DatabaseContainerPorts` reports each instance's own port (`<engine>-<name>`, Docker ranges + peers); the SQL
   entries are unchanged. `databases_databases.network` keeps `wanted` (last sent), `bind` / `container_host` / `skipped`
@@ -664,3 +718,21 @@ certificates, alert delivery to real Slack/Discord/Telegram, the Grafana provisi
 - Alerting webhook SSRF guard doesn't resolve DNS (rebinding not blocked).
 - Grafana dashboards are copied per org folder but not org-filtered inside Grafana.
 - Laravel generated Dockerfile builds assets before composer (projects importing CSS from vendor/ need own Dockerfile).
+
+## SQL references never resolve to a public address (v0.9.0) — upgrade note
+- **Behaviour change** (`EloquentDatabaseConnections::sqlHost()`, commit "Databases: SQL references never resolve to a
+  public address"): `DB_HOST` / `DATABASE_URL` of PostgreSQL / MySQL / MariaDB follow the Redis / Valkey rules —
+  127.0.0.1 natively on the engine's server, the Docker bridge for containers there, and for other servers (dedicated
+  database servers only) an address on a private network all of the site's servers share with it: a Falak private
+  network first, else the provider private network where membership is known (`databases.key_value.
+  provider_private_networks`: DigitalOcean, Lightsail; custom servers only with `FALAK_REDIS_CUSTOM_PRIVATE_NETWORK`).
+  Before v0.9.0 a dedicated server was reached over its provider private IP or public IPv4 / IPv6 whatever the
+  consumer: those setups (public IP; Hetzner / Vultr / Linode private IPs) **stop resolving after the upgrade**, and
+  the next deploy fails with the `unreachable()` reason. Documented for operators in `docs/INSTALL.md` ("Upgrading to
+  v0.9.0").
+- **Visible before a deploy:** the canvas (`CanvasReadModel::edges()`) adds `problem` to a site → database edge when a
+  host key it references (`HOST_KEYS`, `REDIS_HOST_KEYS`) is unreachable for that site — the same text as the deploy's
+  error (`"<VAR>: <db>.<KEY> cannot be used here: <reason>"`); `canvas-board.tsx` draws such edges amber with a "!"
+  mark (`falak-edge-problem`, the reason as its title / label). The site's Variables tab already listed them
+  (`reference_errors`, "Unresolved references — the next deploy fails until they are fixed"). Keys without a host
+  (`DB_DATABASE`, …) are never flagged. Tests: `modules/Projects/tests/Feature/CanvasTest.php`.

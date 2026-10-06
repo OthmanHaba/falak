@@ -84,6 +84,7 @@ it('lists Ubuntu LTS operating systems', function () {
         'os' => [
             ['id' => 2284, 'name' => 'Ubuntu 24.04 LTS x64', 'arch' => 'x64', 'family' => 'ubuntu'],
             ['id' => 1743, 'name' => 'Ubuntu 22.04 LTS x64', 'arch' => 'x64', 'family' => 'ubuntu'],
+            ['id' => 2625, 'name' => 'Ubuntu 26.04 LTS x64', 'arch' => 'x64', 'family' => 'ubuntu'],
             ['id' => 2136, 'name' => 'Debian 12 x64 (bookworm)', 'arch' => 'x64', 'family' => 'debian'],
         ],
         'meta' => ['links' => ['next' => '']],
@@ -91,8 +92,9 @@ it('lists Ubuntu LTS operating systems', function () {
 
     $images = vultr()->images();
 
-    expect(array_map(fn ($i) => $i->id, $images))->toBe(['2284', '1743'])
-        ->and($images[0]->arch)->toBe('amd64');
+    expect(array_map(fn ($i) => $i->id, $images))->toBe(['2284', '1743', '2625'])
+        ->and($images[0]->arch)->toBe('amd64')
+        ->and($images[2]->version)->toBe('26.04');
 });
 
 it('creates instances with base64 user data', function () {

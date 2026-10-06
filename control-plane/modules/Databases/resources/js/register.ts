@@ -14,7 +14,7 @@ registerNavigation({ id: 'databases', title: 'Databases', url: '/databases', ico
 // Canvas service panel of a database (§5.4).
 registerServiceTabs(
     { id: 'overview', kinds: ['database'], title: 'Overview', order: 100, permission: 'databases.view', component: DatabaseOverviewTab },
-    // Redis / Valkey instances have one `default` user (Overview) and no backups yet: those tabs are SQL only.
+    // Redis / Valkey instances have one `default` user (Overview): that tab is SQL only. Backups: RDB snapshots for both.
     {
         id: 'databases',
         kinds: ['database'],
@@ -31,7 +31,6 @@ registerServiceTabs(
         order: 300,
         permission: 'databases.view',
         component: DatabaseBackupsTab,
-        when: (service) => !isKeyValue(service.icon),
     },
     { id: 'settings', kinds: ['database'], title: 'Settings', order: 900, permission: 'databases.view', component: DatabaseSettingsTab },
 );

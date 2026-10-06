@@ -36,7 +36,7 @@
     --text-faint: #8597a0;
     /* Text on the light accent / success fills of the dark theme: dark, for WCAG AA (10.3:1 on --accent). */
     --text-on-accent: #0a0f12;
-    /* Text on --danger fills. */
+    /* Text on --danger-fill (white 4.8:1; the brighter --danger stays for red text, dots and bars on dark surfaces). */
     --text-on-danger: #ffffff;
 
     --accent: #4fd1c5;
@@ -52,6 +52,8 @@
     --warning: #f59e0b;
     --warning-soft: rgba(245, 158, 11, 0.14);
     --danger: #ef4444;
+    /* Danger buttons, badges and counters with text on them: deeper than --danger for AA with white text. */
+    --danger-fill: #dc2626;
     --danger-soft: rgba(239, 68, 68, 0.14);
     --info: #60a5fa;
     --info-soft: rgba(96, 165, 250, 0.14);
@@ -114,9 +116,11 @@
 
     --success: #1f7a35;
     --success-soft: rgba(31, 122, 53, 0.12);
-    --warning: #d97706;
+    /* Darker amber for AA as text: 5.4:1 on white, 4.6:1 on --surface-3 (#d97706 was 3.2:1 on white). */
+    --warning: #a85207;
     --warning-soft: rgba(245, 158, 11, 0.16);
     --danger: #dc2626;
+    --danger-fill: #dc2626;
     --danger-soft: rgba(239, 68, 68, 0.12);
     --info: #2563eb;
     --info-soft: rgba(37, 99, 235, 0.12);
@@ -214,6 +218,7 @@
     --color-warning: var(--warning);
     --color-warning-soft: var(--warning-soft);
     --color-danger: var(--danger);
+    --color-danger-fill: var(--danger-fill);
     --color-danger-soft: var(--danger-soft);
     --color-info: var(--info);
     --color-info-soft: var(--info-soft);
@@ -242,7 +247,7 @@
     --color-muted-foreground: var(--text-muted);
     --color-accent: var(--surface-2);
     --color-accent-foreground: var(--text);
-    --color-destructive: var(--danger);
+    --color-destructive: var(--danger-fill);
     --color-destructive-foreground: var(--text-on-danger);
     --color-input: var(--border-strong);
     --color-ring: var(--accent);
@@ -498,6 +503,29 @@
 .falak-canvas .falak-edge.falak-edge-active .react-flow__edge-path {
     stroke: var(--accent);
     stroke-opacity: 0.8;
+}
+/* A reference that won't resolve (the next deploy fails): amber, with a "!" mark explaining it on hover. */
+.falak-canvas .falak-edge.falak-edge-problem-path .react-flow__edge-path {
+    stroke: var(--warning);
+    stroke-opacity: 0.9;
+}
+.falak-canvas .falak-edge-problem {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    border: 1px solid var(--warning);
+    background: var(--warning-soft);
+    background-color: color-mix(in srgb, var(--warning) 18%, var(--bg-canvas));
+    color: var(--warning);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    pointer-events: all;
+    z-index: 3;
 }
 .falak-canvas .react-flow__minimap {
     background: var(--surface-1);

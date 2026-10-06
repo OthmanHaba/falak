@@ -20,6 +20,7 @@ use Illuminate\Support\Carbon;
  * @property ?int $duration_ms
  * @property ?string $command_id
  * @property ?string $error
+ * @property ?list<string> $warnings
  * @property ?string $requested_by
  * @property ?Carbon $finished_at
  * @property Carbon $created_at
@@ -43,6 +44,7 @@ class Restore extends Model
             'status' => RestoreStatus::class,
             'bytes' => 'integer',
             'duration_ms' => 'integer',
+            'warnings' => 'array',
             'finished_at' => 'datetime',
         ];
     }

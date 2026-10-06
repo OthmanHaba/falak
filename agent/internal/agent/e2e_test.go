@@ -19,6 +19,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -223,4 +225,25 @@ func TestEndToEndRun(t *testing.T) {
 	case <-time.After(20 * time.Second):
 		t.Fatal("Run did not shut down")
 	}
+	// Nothing writes the state directory once Run has returned (telemetry saved its log offsets on the way out after
+	// Run had returned, racing t.TempDir's cleanup: "unlinkat …/var/lib/falak: directory not empty").
+	before := stateTree(root + "/var/lib/falak")
+	time.Sleep(500 * time.Millisecond)
+	for p, mt := range stateTree(root + "/var/lib/falak") {
+		if b, ok := before[p]; !ok || !b.Equal(mt) {
+			t.Errorf("written after Run returned: %s", p)
+		}
+	}
+}
+
+// stateTree maps every path under root to its modification time.
+func stateTree(root string) map[string]time.Time {
+	m := map[string]time.Time{}
+	_ = filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
+		if err == nil {
+			m[p] = fi.ModTime()
+		}
+		return nil
+	})
+	return m
 }

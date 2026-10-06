@@ -20,13 +20,15 @@ Releases are published from [github.com/OthmanHaba/falak](https://github.com/Oth
 
 | | Minimum | Recommended |
 |---|---|---|
-| OS | Ubuntu 22.04 / 24.04, Debian 12 (amd64 or arm64) | Ubuntu 24.04 |
+| OS | Ubuntu 22.04 / 24.04 / 26.04, Debian 12 (amd64 or arm64); others need `--force` | Ubuntu 24.04 or 26.04 |
 | RAM | 2 GB (installer warns below 4 GB) | 4 GB; **8 GB with `--observability`** |
 | Disk | 10 GB free | 25 GB+ (images, build artifacts, backups) |
 | Network | public IPv4 (or IPv6); ports **80** and **443** free and reachable | |
 | DNS | records for the panel, `agents.` and `registry.` hosts (below) | |
 
-This host runs only Falak. The servers Falak manages are separate machines.
+This host runs only Falak. The servers Falak manages are separate machines: Ubuntu 22.04, 24.04 or 26.04 (the agent
+installer warns on other apt-based systems). On 26.04 PHP comes from Ubuntu's archive (PHP 8.5 only) until `ppa:ondrej/php`
+publishes packages for it; databases are the release's own (PostgreSQL 18, MySQL 8.4, MariaDB 11.8, Redis 8.0, Valkey 9.0).
 
 **Resource budget** (limits are caps, not reservations). Idle values were measured with three managed servers enrolled and a site deployed (sim) and on a 2-CPU host profile (bench):
 
@@ -92,12 +94,16 @@ Or pin a release with its own copy of the script:
 What it does:
 
 1. **Preflight:** checks that you are root, the OS, the CPU architecture, RAM, disk, that ports 80/443 are free, and that DNS for the panel and `agents.` host (plus `grafana.` with `--observability`) points at this host's public IP.
-2. Installs **Docker Engine** and the Compose plugin from Docker's official apt repository if they are missing.
+2. Installs **Docker Engine** and the Compose plugin from Docker's official apt repository if they are missing, using
+   the suite of the host's codename (`jammy`, `noble`, `resolute`, `bookworm`). `jammy`, `noble` and `bookworm` are
+   used as they are; for other codenames it checks (with retries) that Docker has published the suite, and if not
+   yet (a brand-new release) it falls back to `noble` (Ubuntu) or `bookworm` (Debian) and says so.
 3. Downloads the release bundle `falak-deploy.tar.gz`, verifies it against `SHA256SUMS`, and unpacks it to
    `/opt/falak/{deploy,observability}`. It also installs `falak-ctl` to `/usr/local/bin`.
 4. Generates `/opt/falak/.env` (mode 600) with `APP_KEY`, database and Valkey passwords, Reverb keys, the
    builder token, the OTLP token, and all `FALAK_*` URLs.
-5. Pulls the images `ghcr.io/<owner>/falak-{control-plane,builder,edge}:<version>`, starts the stack, and
+5. Pulls the images `ghcr.io/<owner>/falak-{control-plane,builder,edge}:<version>` (retrying transient registry
+   errors up to 4 times with backoff, `FALAK_PULL_ATTEMPTS`), starts the stack, and
    waits until every service is healthy. Database migrations run in the `control-plane` service on start.
 6. Creates the first administrator with `falak:admin` and **prints the password once**.
 
@@ -288,7 +294,10 @@ falak-ctl update --version v1.3.0
 An update:
 
 1. takes a backup (`backups/falak-backup-<ts>-pre-update-<old>.tar.gz`);
-2. fetches the new deploy bundle and pulls the new images (if a pull fails, nothing changes);
+2. fetches the new deploy bundle and pulls the new images. Transient registry errors (`connection reset by peer`, IPv6
+   resets) are retried with backoff: 4 attempts, 5 s / 10 s / 20 s apart (`FALAK_PULL_ATTEMPTS` in `.env` changes the
+   count; anything but a positive number means 4, with a warning). Errors no retry fixes (access denied, unknown
+   manifest or tag) fail at once. If the pull still fails, nothing changes;
 3. recreates the stack. The `control-plane` service runs the migrations, and `horizon`, `reverb` and
    `scheduler` wait until it is healthy;
 4. recreates every service whose **mounted config files** changed (see below) and prints their names;
@@ -343,6 +352,24 @@ containers.
 automatic sizing (the containers log a notice). It is no longer needed, because agents now long-poll their own
 `agent-api` service (see [Performance](#performance-php-threads-and-worker-mode)). Remove the line, then run
 `falak-ctl up`. `falak-ctl doctor` reports it until you do.
+
+**Upgrading to v0.9.0: database references no longer use public or provider-only addresses.** `${{ db.DB_HOST }}`
+and `${{ db.DATABASE_URL }}` of a PostgreSQL / MySQL / MariaDB database on a **dedicated database server** used to
+fall back to that server's provider private IP, then its public IPv4 / IPv6, when the site's servers shared no Falak
+private network with it. From v0.9.0 they follow the Redis / Valkey rules: a Falak private network (WireGuard) first,
+else the provider private network only where Falak knows the servers share it (DigitalOcean, Lightsail: same provider
+credential and region) — never a public address. So references to a dedicated database server reached over its
+**public IP**, or over a **Hetzner, Vultr or Linode private IP** (opt-in networks Falak can't verify), or between
+custom servers, **no longer resolve**, and the next deploy of those sites fails with "… shares no private network
+with <server>, and database references never point at a public address". Before you deploy after the update:
+
+1. open the project canvas: such references are drawn in amber with a "!" mark that gives the reason (the site's
+   **Variables** tab lists them too, under "Unresolved references");
+2. add the database server and the site's servers to a private network (**Network → Private networks**), wait until
+   it is applied, and deploy. (Or set the host by hand in the site's variables instead of a reference.)
+
+Engines on app / worker servers are unaffected for native sites (`127.0.0.1`); containers on that server now get the
+Docker bridge address (`172.17.0.1`, or `FALAK_DOCKER_BRIDGE_HOST`) instead of the server's own address.
 
 If step 3, 4 or 5 fails, `falak-ctl` **rolls back automatically**. It restores the previous deploy files and
 `FALAK_VERSION`, restores the database, storage and Fleet CA from the pre-update backup (the new migrations

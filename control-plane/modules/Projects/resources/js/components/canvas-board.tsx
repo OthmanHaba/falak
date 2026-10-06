@@ -5,6 +5,7 @@ import {
     Background,
     BackgroundVariant,
     BaseEdge,
+    EdgeLabelRenderer,
     Handle,
     MarkerType,
     MiniMap,
@@ -301,16 +302,53 @@ const ComposeNodeView = memo(function ComposeNodeView({ data }: NodeProps<Compos
 // Not `group`: xyflow ships default styles for that node type.
 const nodeTypes = { service: ServiceNodeView, child: ChildNodeView, frame: GroupNodeView, compose: ComposeNodeView };
 
-type RoutedEdge = Edge<{ points: Point[] }, 'routed'>;
+type RoutedEdge = Edge<{ points: Point[]; problem?: string }, 'routed'>;
 
-/** A derived edge drawn along its precomputed orthogonal route, dashed, with an arrowhead at the referenced service. */
+/** The middle of a route (by length), where an edge's warning sits. */
+function routeMiddle(points: Point[]): Point {
+    const lengths = points.slice(1).map((point, i) => Math.abs(point.x - points[i].x) + Math.abs(point.y - points[i].y));
+    let left = lengths.reduce((sum, length) => sum + length, 0) / 2;
+    for (let i = 0; i < lengths.length; i++) {
+        if (left <= lengths[i] && lengths[i] > 0) {
+            const t = left / lengths[i];
+            return { x: points[i].x + (points[i + 1].x - points[i].x) * t, y: points[i].y + (points[i + 1].y - points[i].y) * t };
+        }
+        left -= lengths[i];
+    }
+    return points[0];
+}
+
+/**
+ * A derived edge drawn along its precomputed orthogonal route, dashed, with an arrowhead at the referenced service. A
+ * reference that won't resolve (e.g. no private network to a dedicated database server) is drawn in amber with a
+ * warning mark that explains it.
+ */
 const RoutedEdgeView = memo(function RoutedEdgeView({ id, data, sourceX, sourceY, targetX, targetY, markerEnd }: EdgeProps<RoutedEdge>) {
     const points = data?.points ?? [
         { x: sourceX, y: sourceY },
         { x: targetX, y: targetY },
     ];
+    const problem = data?.problem;
+    const middle = problem ? routeMiddle(points) : null;
 
-    return <BaseEdge id={id} path={roundedPath(points)} markerEnd={markerEnd} />;
+    return (
+        <>
+            <BaseEdge id={id} path={roundedPath(points)} markerEnd={markerEnd} />
+            {problem && middle && (
+                <EdgeLabelRenderer>
+                    <span
+                        role="img"
+                        aria-label={`Unresolved reference: ${problem}`}
+                        title={`${problem}\n\nThe next deploy fails until this is fixed (see the site's Variables).`}
+                        className="falak-edge-problem nodrag nopan"
+                        style={{ transform: `translate(-50%, -50%) translate(${middle.x}px, ${middle.y}px)` }}
+                    >
+                        !
+                    </span>
+                </EdgeLabelRenderer>
+            )}
+        </>
+    );
 });
 
 const edgeTypes = { routed: RoutedEdgeView };
@@ -561,6 +599,11 @@ export function CanvasBoard({
     const endpoint = (id: string) => computed.alias.get(id) ?? id;
     const flowEdges = useMemo<RoutedEdge[]>(() => {
         const seen = new Set<string>();
+        // Edges merged into one (collapsed groups) keep any problem.
+        const problems = new Map<string, string>();
+        for (const edge of edges) {
+            if (edge.problem) problems.set(`${endpoint(edge.from)}>${endpoint(edge.to)}`, edge.problem);
+        }
 
         return edges.flatMap((edge) => {
             const from = endpoint(edge.from);
@@ -578,6 +621,7 @@ export function CanvasBoard({
             const active =
                 selectedId !== null &&
                 (edge.from === selectedId || edge.to === selectedId || from.startsWith(selectedId) || to.startsWith(selectedId));
+            const problem = problems.get(key);
 
             return [
                 {
@@ -587,9 +631,14 @@ export function CanvasBoard({
                     target: to,
                     sourceHandle: 's-r',
                     targetHandle: 't-l',
-                    data: { points: routeEdge(source, target, obstacles) },
-                    className: cn('falak-edge', active && 'falak-edge-active'),
-                    markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: active ? 'var(--accent)' : 'var(--text-faint)' },
+                    data: { points: routeEdge(source, target, obstacles), problem },
+                    className: cn('falak-edge', active && 'falak-edge-active', problem && 'falak-edge-problem-path'),
+                    markerEnd: {
+                        type: MarkerType.ArrowClosed,
+                        width: 14,
+                        height: 14,
+                        color: problem ? 'var(--warning)' : active ? 'var(--accent)' : 'var(--text-faint)',
+                    },
                     focusable: false,
                     selectable: false,
                     zIndex: 2,

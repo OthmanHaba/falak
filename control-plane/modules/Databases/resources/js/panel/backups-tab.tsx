@@ -17,9 +17,9 @@ import {
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { type ServiceTabProps } from '@/lib/registry';
 import { Link } from '@inertiajs/react';
-import { Archive, CalendarClock, Play, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { Archive, CalendarClock, Download, Play, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { type BackupRow, type ScheduleRow } from '../types';
+import { isKeyValue, type BackupRow, type ScheduleRow } from '../types';
 import { formatBytes, mutate, useDatabasePanel, type DatabasePanelData } from './api';
 
 function RestoreDialog({
@@ -33,8 +33,10 @@ function RestoreDialog({
     onClose: () => void;
     reload: () => Promise<void>;
 }) {
+    const keyValue = isKeyValue(data.server.engine);
     const [target, setTarget] = useState(data.server.id);
     const [name, setName] = useState(data.database.name);
+    const instances = data.restore_targets.find((item) => item.id === target)?.instances ?? null;
     const [confirm, setConfirm] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [running, setRunning] = useState(false);
@@ -61,7 +63,9 @@ function RestoreDialog({
             title="Restore backup"
             description={
                 backup
-                    ? `Restores the ${new Date(backup.created_at).toLocaleString()} backup of ${backup.database_name}. The target database is overwritten.`
+                    ? keyValue
+                        ? `Replaces all data of the target instance with the ${new Date(backup.created_at).toLocaleString()} snapshot of ${backup.database_name}. The instance restarts; its current files are kept aside on the server, and put back if the snapshot does not load.`
+                        : `Restores the ${new Date(backup.created_at).toLocaleString()} backup of ${backup.database_name}. The target database is overwritten.`
                     : undefined
             }
             footer={
@@ -76,16 +80,33 @@ function RestoreDialog({
             }
         >
             <form id="restore-backup" onSubmit={submit} className="grid gap-4">
-                <Field label="Target engine server">
+                <Field label={keyValue ? 'Target server' : 'Target engine server'}>
                     <Select
                         value={target}
-                        onValueChange={setTarget}
+                        onValueChange={(value) => {
+                            setTarget(value);
+                            if (keyValue) setName('');
+                        }}
                         options={data.restore_targets.map((item) => ({ value: item.id, label: item.label }))}
                     />
                 </Field>
-                <Field label="Target database" hint="Created when it does not exist.">
-                    <Input value={name} onChange={(event) => setName(event.target.value)} mono />
-                </Field>
+                {keyValue ? (
+                    <Field
+                        label="Target instance"
+                        hint="Redis and Valkey snapshots load into an existing instance; Valkey can't load Redis 7.4+ snapshots."
+                    >
+                        <Select
+                            value={name || undefined}
+                            onValueChange={setName}
+                            placeholder="Choose an instance"
+                            options={(instances ?? []).map((instance) => ({ value: instance, label: instance }))}
+                        />
+                    </Field>
+                ) : (
+                    <Field label="Target database" hint="Created when it does not exist.">
+                        <Input value={name} onChange={(event) => setName(event.target.value)} mono />
+                    </Field>
+                )}
                 <Field
                     label={
                         <>
@@ -146,7 +167,11 @@ function ScheduleForm({ data, onDone, reload }: { data: DatabasePanelData; onDon
                     options={data.storage_providers.map((provider) => ({ value: provider.id, label: `${provider.name} · ${provider.bucket}` }))}
                 />
             </Field>
-            <Field label="Keep last" hint="Backups kept per database" error={errors.retention_count}>
+            <Field
+                label="Keep last"
+                hint={`Backups kept per ${isKeyValue(data.server.engine) ? 'instance' : 'database'}`}
+                error={errors.retention_count}
+            >
                 <Input
                     value={form.retention_count}
                     onChange={(event) => setForm({ ...form, retention_count: event.target.value.replace(/\D/g, '') })}
@@ -177,6 +202,7 @@ export function DatabaseBackupsTab({ ctx }: ServiceTabProps) {
     if (!data) return error ? <p className="text-danger text-sm">{error}</p> : <SkeletonRows rows={6} />;
 
     const { can } = data;
+    const noun = isKeyValue(data.server.engine) ? 'instance' : 'database';
     const provider = storage ?? data.storage_providers[0]?.id ?? null;
 
     if (data.storage_providers.length === 0 && data.backups.length === 0) {
@@ -251,7 +277,7 @@ export function DatabaseBackupsTab({ ctx }: ServiceTabProps) {
 
             <Section
                 title="Schedules"
-                description="Automatic backups of this database."
+                description={`Automatic backups of this ${noun}.`}
                 aside={
                     can.manage &&
                     !addingSchedule &&
@@ -343,7 +369,7 @@ export function DatabaseBackupsTab({ ctx }: ServiceTabProps) {
                 />
             </Section>
 
-            <Section title="History" description="The last 50 backups of this database." bare>
+            <Section title="History" description={`The last 50 backups of this ${noun}${noun === 'instance' ? ' (RDB snapshots)' : ''}.`} bare>
                 <DataTable
                     label="Backups"
                     rows={data.backups}
@@ -375,7 +401,14 @@ export function DatabaseBackupsTab({ ctx }: ServiceTabProps) {
                     ]}
                     rowActions={(backup) => [
                         ...(can.restore && backup.restorable
-                            ? [{ label: 'Restore…', icon: <RotateCcw />, onSelect: () => setRestoring(backup) }]
+                            ? [
+                                  {
+                                      label: 'Download',
+                                      icon: <Download />,
+                                      onSelect: () => window.location.assign(`/databases/backups/${backup.id}/download`),
+                                  },
+                                  { label: 'Restore…', icon: <RotateCcw />, onSelect: () => setRestoring(backup) },
+                              ]
                             : []),
                         ...(can.manage
                             ? [
@@ -413,9 +446,18 @@ export function DatabaseBackupsTab({ ctx }: ServiceTabProps) {
                             { id: 'created', header: 'Started', cell: (restore) => <RelativeTime value={restore.created_at} /> },
                             {
                                 id: 'error',
-                                header: 'Error',
+                                header: 'Notes',
                                 hideOnMobile: true,
-                                cell: (restore) => <span className="text-danger text-xs">{restore.error}</span>,
+                                cell: (restore) =>
+                                    restore.error ? (
+                                        <span className="text-danger text-xs">{restore.error}</span>
+                                    ) : (
+                                        <ul className="text-warning grid gap-0.5 text-xs">
+                                            {(restore.warnings ?? []).map((warning) => (
+                                                <li key={warning}>{warning}</li>
+                                            ))}
+                                        </ul>
+                                    ),
                             },
                         ]}
                     />

@@ -71,3 +71,11 @@ it('validates every catalog template', function (string $slug) {
         expect(in_array($template->icon, CATALOG_BRAND_ICONS, true))->toBeTrue("{$slug}: the UI has no brand icon {$template->icon}");
     }
 })->with(CATALOG_V1);
+
+it('checks MinIO\'s health on its liveness endpoint (the S3 API answers 403 on / without credentials)', function () {
+    $files = catalog_files()['minio'];
+    $template = (new TemplateParser)->parse($files['template'], $files['compose']);
+
+    expect($template->public[0])->toBe(['service' => 'minio', 'port' => 9000, 'health_check_path' => '/minio/health/live'])
+        ->and($template->public[1])->not->toHaveKey('health_check_path');
+});

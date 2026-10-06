@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
@@ -617,17 +618,26 @@ func (db *DB) kvDisabled(ctx context.Context, k kvEngine) ([]string, error) {
 	if k.name != "valkey" {
 		return disabledCommands(k, ""), nil
 	}
+	if v := db.kvVersion(ctx, k); v != "" {
+		return disabledCommands(k, v), nil
+	}
+	return nil, fmt.Errorf("could not read the %s version (%s --version)", k.label, k.server)
+}
+
+// kvVersion is the installed server's version ("7.0.15"; "" when it can't be read): `<server> --version` prints
+// "Redis server v=7.0.15 sha=…" (Valkey 7.2: "Server v=7.2.13 …").
+func (db *DB) kvVersion(ctx context.Context, k kvEngine) string {
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	res, err := db.d.Runner.Run(cctx, runner.Cmd{Name: db.d.FS.P("/usr/bin/" + k.server), Args: []string{"--version"}})
 	if err == nil && res.ExitCode == 0 {
 		for _, w := range strings.Fields(string(res.Stdout)) {
 			if v, ok := strings.CutPrefix(w, "v="); ok && v != "" {
-				return disabledCommands(k, v), nil
+				return v
 			}
 		}
 	}
-	return nil, fmt.Errorf("could not read the %s version (%s --version)", k.label, k.server)
+	return ""
 }
 
 // applyLive changes the running instance without a restart.
@@ -669,6 +679,7 @@ func (db *DB) setPersistence(ctx context.Context, c conn, name, from, to string)
 		return nil
 	case "aof":
 		// from is the live process' mode: a running AOF (aof_enabled:1, even mid-rewrite) is never moved.
+		runID := c.runID(ctx)
 		if from != "aof" {
 			if err := db.moveAside(c.k, name, "appendonlydir", "appendonly.aof"); err != nil {
 				return err
@@ -677,7 +688,27 @@ func (db *DB) setPersistence(ctx context.Context, c conn, name, from, to string)
 				return err
 			}
 		}
-		if err := c.waitAOFRewrite(ctx); err != nil {
+		err := c.waitAOFRewrite(ctx, runID)
+		var off *errAOFOff
+		if errors.As(err, &off) && from != "aof" {
+			// The process restarted from a config without AOF (or AOF was switched off) while its rewrite ran: it loaded
+			// what that config loads, so switch it on again, once, on the process now running.
+			c.db.d.Logger.Warn("AOF went off during its rewrite, switching it on again", "unit", c.k.unit(name), "err", err)
+			if err := c.ready(ctx); err != nil {
+				return fmt.Errorf("%w; the server did not answer again: %v", off, err)
+			}
+			if err := db.moveAside(c.k, name, "appendonlydir", "appendonly.aof"); err != nil {
+				return err
+			}
+			runID = c.runID(ctx)
+			if err := set("appendonly", "yes"); err != nil {
+				return fmt.Errorf("%w; switching it on again failed: %v", off, err)
+			}
+			if err = c.waitAOFRewrite(ctx, runID); err != nil {
+				return fmt.Errorf("%w; switched on again, then: %v", off, err)
+			}
+		}
+		if err != nil {
 			return err
 		}
 		return set("save", "")
@@ -708,7 +739,15 @@ func (db *DB) moveStale(k kvEngine, name, from, to string) error {
 }
 
 func (db *DB) moveAside(k kvEngine, name string, files ...string) error {
+	_, err := db.moveAsideNamed(k, name, files...)
+	return err
+}
+
+// moveAsideNamed renames each existing file of the instance's data directory to <file>.falak-<UTC time> and returns
+// the moves (file → its new name, both data directory names) in order.
+func (db *DB) moveAsideNamed(k kvEngine, name string, files ...string) ([][2]string, error) {
 	stamp := redisNow().UTC().Format("20060102T150405Z")
+	var moved [][2]string
 	for _, f := range files {
 		path := db.d.FS.P(k.dataPath(name) + "/" + f)
 		if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
@@ -719,10 +758,31 @@ func (db *DB) moveAside(k kvEngine, name string, files ...string) error {
 			target = path + ".falak-" + stamp + "-" + strconv.Itoa(i)
 		}
 		if err := os.Rename(path, target); err != nil {
-			return fmt.Errorf("move %s aside: %w", f, err)
+			return moved, fmt.Errorf("move %s aside: %w", f, err)
 		}
+		restrictAside(target)
+		moved = append(moved, [2]string{f, target[strings.LastIndex(target, "/")+1:]})
 	}
-	return nil
+	return moved, nil
+}
+
+// restrictAside makes a moved-aside copy private to its owner (Redis writes dump.rdb 0660 under the unit's umask):
+// 0600 for a file, 0700 for a directory (appendonlydir), set on the opened file (O_NOFOLLOW: a link is left alone).
+// Best effort: the copy is only a keepsake.
+func restrictAside(path string) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	switch {
+	case err != nil:
+	case fi.Mode().IsRegular():
+		_ = f.Chmod(0o600)
+	case fi.IsDir():
+		_ = f.Chmod(0o700)
+	}
 }
 
 func exists(path string) bool {
@@ -1201,13 +1261,48 @@ func (c conn) info(ctx context.Context, section string) (map[string]string, erro
 	return m, nil
 }
 
-// waitAOFRewrite waits for the rewrite CONFIG SET appendonly yes started (the AOF then holds the dataset).
-func (c conn) waitAOFRewrite(ctx context.Context) error {
+// errAOFOff: AOF is off while its rewrite was awaited — the process restarted from a config without it (killed and
+// started again by systemd while a restore or an apply ran from its first config), or something switched it off.
+type errAOFOff struct{ restarted bool }
+
+func (e *errAOFOff) Error() string {
+	if e.restarted {
+		return "AOF is off again before its rewrite finished: the server restarted (new run_id) from a config without AOF"
+	}
+	return "AOF is off again before its rewrite finished (switched off)"
+}
+
+// waitAOFRewrite waits for the rewrite CONFIG SET appendonly yes started (the AOF then holds the dataset). AOF found
+// off (no rewrite running or scheduled) ends the wait at once with *errAOFOff instead of waiting out RedisAOFTimeout;
+// a server that stops answering is waited for (it may be restarting) a few times.
+//
+// runID is the server's run_id when AOF was switched on ("" = unknown: the first answer counts).
+func (c conn) waitAOFRewrite(ctx context.Context, runID string) error {
 	deadline := within(ctx, RedisAOFTimeout)
-	for {
-		m, err := c.info(ctx, "persistence")
+	restarted := false
+	for lost := 0; ; {
+		// "default" includes the server section (run_id) and persistence, also on Redis 6.0 (one section per INFO).
+		m, err := c.info(ctx, "default")
 		if err != nil {
-			return err
+			var re *RedisError
+			if ctx.Err() != nil || errors.As(err, &re) && !strings.HasPrefix(re.Reply, "LOADING") || lost >= 3 {
+				return err
+			}
+			lost++
+			if rerr := c.ready(ctx); rerr != nil {
+				return fmt.Errorf("%w (and it did not come back: %v)", err, rerr)
+			}
+			continue
+		}
+		if id := m["run_id"]; id != "" {
+			if runID == "" {
+				runID = id
+			} else if id != runID {
+				restarted = true
+			}
+		}
+		if m["aof_enabled"] == "0" && m["aof_rewrite_in_progress"] == "0" && m["aof_rewrite_scheduled"] == "0" {
+			return &errAOFOff{restarted: restarted}
 		}
 		if m["aof_enabled"] == "1" && m["aof_rewrite_in_progress"] == "0" && m["aof_rewrite_scheduled"] == "0" {
 			if s := m["aof_last_bgrewrite_status"]; s != "" && s != "ok" {
@@ -1224,6 +1319,15 @@ func (c conn) waitAOFRewrite(ctx context.Context) error {
 		case <-time.After(redisPoll):
 		}
 	}
+}
+
+// runID is the server's run_id ("" when INFO doesn't answer).
+func (c conn) runID(ctx context.Context) string {
+	m, err := c.info(ctx, "server")
+	if err != nil {
+		return ""
+	}
+	return m["run_id"]
 }
 
 func firstLine(s string) string {

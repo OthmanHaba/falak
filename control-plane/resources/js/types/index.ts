@@ -160,6 +160,8 @@ export interface CanvasEdge {
     from: string;
     to: string;
     kind?: 'reference' | 'depends_on';
+    /** A reference to a database whose host can't be resolved for the site: why (the next deploy fails on it). */
+    problem?: string;
 }
 
 export interface Canvas {

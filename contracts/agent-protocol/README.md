@@ -37,7 +37,7 @@ removes the field for agents that do not (`Fleet\Application\PayloadCompatibilit
 a new version (`Fleet\Events\AgentVersionChanged`), modules re-send state they would otherwise deduplicate.
 Current features: `edge.access_log`, `telemetry.log_kind`, `system.upgrade_agent.v2`, `fn.v1`, `fn.v2`, `fn.v3`,
 `db.containers`, `compose.v2`, `docker.networks`, `docker.networks.create`, `compose.up.services`, `provision.v2`,
-`db.redis`, `db.redis.network`, `net.firewall.peer_interfaces`.
+`db.redis`, `db.redis.network`, `net.firewall.peer_interfaces`, `db.redis.backup`, `db.redis.restore_checks`.
 
 A feature can also gate a whole **command**: the control plane only queues it for agents that list the feature
 (older agents would fail it as an unknown type). `provision.v2` adds `provision.inspect` and `provision.apply`
@@ -117,6 +117,37 @@ whose `Address` range holds the peer, a local subnet; none: any interface — af
 the port's drop: `sources` may then be empty. `peer_interfaces` needs feature `net.firewall.peer_interfaces`
 (stripped otherwise). Both fields
 are stripped for agents without the feature (the control plane never sends them non-loopback binds either).
+
+**Backups and restores (`db.redis.backup`).** `db.backup` / `db.restore` take `engine: redis | valkey` with the
+instance's name as `database` (`^[a-z][a-z0-9_-]{0,40}$`; SQL engines keep their identifier pattern). The agent
+reaches the instance with the port and password it knows (state, else config file): no secret in the payload.
+Backup: `redis-cli --rdb <tmp>` (`valkey-cli`) against the running instance, password in `REDISCLI_AUTH` — a
+consistent snapshot through the replication handshake (`SYNC`, hence not disabled), no restart, nothing written in
+the data directory; the file must start with an RDB header (`REDIS` + 4 digits, or Valkey 9's `VALKEY` + 3 digits),
+then it is gzipped and shipped like a SQL dump. The result adds `rdb` (e.g. `REDIS0011`). A stopped instance fails
+("is not running"). Restore: the source is downloaded (sha256 checked) and gunzipped into the instance's data
+directory, the header checked and its version against the installed server (`<engine>-server --version`): Valkey
+refuses Redis 7.4+ snapshots (RDB 12+), Redis refuses `VALKEY…` ones, Valkey < 9 refuses `VALKEY…`, Redis 6.x / 7.0
+/ 7.2 refuse versions above 9 / 10 / 11; this fails before anything changes. Then the unit stops (always, also
+when it is not active: that cancels an automatic restart pending; a failed stop starts it again and changes nothing), `dump.rdb`,
+`appendonlydir`, `appendonly.aof` are renamed `<file>.falak-<UTC time>`, the snapshot becomes `dump.rdb` (0600, the
+instance user) and the unit starts; with AOF it starts from the same config with `appendonly no`, then `CONFIG SET
+appendonly yes` (renamed command) rewrites the AOF from memory and the config file is put back. Without persistence
+the loaded `dump.rdb` is removed. A failed start, `PING` or AOF switch removes the restored files, puts the earlier
+ones and config back, starts the instance again and fails with the unit's log tail. The instance must exist (the
+agent never creates one in a restore). The result adds `rdb` and `moved_aside` (the earlier files' new names, kept; older `.falak-*` copies of these files
+are removed after a successful restore, so only the latest set stays) and `warnings`: with AOF, once `CONFIG SET
+appendonly yes` succeeded the data is restored, so a config file / state that can't be put back (3 tries) leaves
+the first start's (`appendonly no`, state `rdb`) and the restore succeeds with a warning; the next `db.redis.apply`
+converges (it reads the live mode, aof, and rewrites both without a restart), and the control plane queues one. A
+loaded dataset whose `used_memory` exceeds `maxmemory` is a warning too (evictions or refused writes follow).
+The control plane only sends these engines to agents that list the feature.
+Backup results add `uncompressed_bytes` (every engine: the dump's size before gzip). Restores check the instance's disk
+first, before anything changes: free space (statfs) must cover the gunzipped snapshot (twice with AOF, for the
+rewrite) plus 256 MiB, and the copy is capped at that size (+1 % + 1 MiB) and stops when less than 256 MiB is left.
+The size comes from the payload's `uncompressed_bytes` (feature `db.redis.restore_checks`, stripped for older agents;
+the control plane sends what the backup recorded), else from the gzip trailer (`ISIZE`, exact below ~4 MB of gzip,
+otherwise a lower bound and no cap).
 
 ## Agent sessions and lost deliveries
 Every `falak-agent` process sends a random session id (`X-Falak-Agent-Session: s-<32 hex>`, 8-64 characters of
