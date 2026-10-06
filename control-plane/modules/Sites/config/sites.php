@@ -47,4 +47,20 @@ return [
     // Site commands (system.exec).
     'command_timeout' => (int) env('FALAK_SITE_COMMAND_TIMEOUT', 600),
     'command_history' => 50,
+
+    // Which site variables hold secrets (SecretVariables): masked in deploy, hook and build output, and passed as files
+    // in the secrets mode `files`. Matched against the upper-cased name; `except` wins. A variable whose value references
+    // a secret of another service (`${{ db.DB_PASSWORD }}`) is secret too. The secret store (v0.10.0 step 1b) replaces
+    // these patterns with each secret's `sensitive` flag.
+    'secret_variables' => [
+        'patterns' => [
+            '/PASSWORD/', '/(^|_)PASS(WD)?($|_)/', '/SECRET/', '/TOKEN/', '/PRIVATE/', '/CREDENTIAL/', '/(^|_)KEYS?$/', '/(^|_)AUTH($|_)/',
+            '/(^|_)DSN$/', '/(^|_)SALT$/', '/PASSPHRASE/', '/^(DATABASE|DB|REDIS|MONGO(DB)?|AMQP|RABBITMQ|BROKER|CACHE|QUEUE)_URLS?$/',
+        ],
+        // Identifiers and values meant for browsers are not secrets: AWS_ACCESS_KEY_ID (only with its secret key),
+        // publishable keys, and anything a frontend build inlines.
+        'except' => [
+            '/^FALAK_/', '/_KEY_ID$/', '/(^|_)PUBLIC(_|$)/', '/PUBLISHABLE/', '/^(VITE|MIX|NEXT_PUBLIC|NUXT_PUBLIC|EXPO_PUBLIC|REACT_APP|GATSBY|PUBLIC)_/',
+        ],
+    ],
 ];

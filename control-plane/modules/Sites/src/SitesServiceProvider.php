@@ -18,6 +18,7 @@ use Falak\Sites\Application\Listeners\RemoveServerTargets;
 use Falak\Sites\Contracts\ComposeInspector;
 use Falak\Sites\Contracts\ComposeServiceExtraction;
 use Falak\Sites\Contracts\ComposeSites;
+use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Contracts\SiteDeploySettings;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteDomains;
@@ -35,6 +36,7 @@ use Falak\Sites\Infrastructure\EloquentSiteDirectory;
 use Falak\Sites\Infrastructure\EloquentSiteHeaders;
 use Falak\Sites\Infrastructure\EloquentSiteNameResolver;
 use Falak\Sites\Infrastructure\NullSiteDomains;
+use Falak\Sites\Infrastructure\PatternSecretVariables;
 use Falak\SourceControl\Events\ConnectionDeleted;
 use Falak\Telemetry\Contracts\ServerSites;
 use Illuminate\Support\Facades\Event;
@@ -51,6 +53,7 @@ class SitesServiceProvider extends ModuleServiceProvider
         SiteDirectory::class => EloquentSiteDirectory::class,
         SiteHeaders::class => EloquentSiteHeaders::class,
         SiteDeploySettings::class => EloquentSiteDeploySettings::class,
+        SecretVariables::class => PatternSecretVariables::class,
         SiteFactory::class => ActionSiteFactory::class,
         ComposeInspector::class => YamlComposeInspector::class,
         ComposeSites::class => EloquentComposeSites::class,
