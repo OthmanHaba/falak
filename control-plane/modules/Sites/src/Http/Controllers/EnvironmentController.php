@@ -26,7 +26,7 @@ final class EnvironmentController extends Controller
     /**
      * JSON for the service panel's Variables tab (keys, exposure, versions, references); a browser visit opens the
      * panel. Values only leave the server on an explicit, audited reveal, except values that are nothing but
-     * `${{ service.KEY }}` references (they hold no secret).
+     * `${{ service.KEY }}` / `${{ secrets.NAME }}` references (they hold no secret).
      */
     public function show(Request $request, Site $site, OrganizationDirectory $directory, VariableReferences $references): JsonResponse|RedirectResponse
     {
@@ -45,7 +45,8 @@ final class EnvironmentController extends Controller
             $variables,
             fn (string $value) => preg_match(VariableReferences::PATTERN, $value) === 1 && trim((string) preg_replace(VariableReferences::PATTERN, '', $value)) === '',
         );
-        $resolved = $references->referencesIn($variables) !== [] ? $references->resolveForSite($site->id, $variables) : null;
+        // Checked without reading secrets: opening the panel is not a read of the secret store.
+        $referenceErrors = $references->referencesIn($variables) !== [] ? $references->check($site->id, $variables) : [];
 
         return response()->json(['data' => [
             'site' => ['id' => $site->id, 'name' => $site->name],
@@ -56,7 +57,7 @@ final class EnvironmentController extends Controller
                 'exposed' => array_values(array_intersect($current->exposed, array_keys($variables))),
                 'references' => $referenceOnly,
                 'referencing' => array_values(array_unique(array_map(fn (array $r) => $r['variable'], $references->referencesIn($variables)))),
-                'reference_errors' => $resolved?->errors ?? [],
+                'reference_errors' => $referenceErrors,
                 'created_at' => $current->created_at->toIso8601String(),
             ] : null,
             'versions' => $versions->map(function (EnvironmentVersion $version) use ($directory, &$users) {
