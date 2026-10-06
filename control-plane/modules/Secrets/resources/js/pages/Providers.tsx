@@ -407,7 +407,10 @@ function SettingField({
     error?: string;
     onChange: (value: string) => void;
 }) {
-    const hint = stored && field.secret ? 'Stored. Leave empty to keep it.' : field.hint;
+    const hint =
+        stored && field.secret
+            ? 'Stored. Leave empty to keep it; enter it again if you change where it is sent (URL, CA, region, role, header).'
+            : field.hint;
 
     return (
         <Field label={field.label} hint={hint} error={error} required={field.required && !stored}>
