@@ -7,8 +7,13 @@ enum Compression: string
     case Gzip = 'gzip';
     case None = 'none';
 
-    public function extension(): string
+    /**
+     * The object key's extension: a SQL dump, or a Redis / Valkey RDB snapshot.
+     */
+    public function extension(?Engine $engine = null): string
     {
-        return $this === self::Gzip ? '.sql.gz' : '.sql';
+        $base = $engine?->isKeyValue() ? '.rdb' : '.sql';
+
+        return $this === self::Gzip ? "{$base}.gz" : $base;
     }
 }

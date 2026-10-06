@@ -74,9 +74,7 @@ final class DatabasePanelController extends Controller
             'restores' => $restores->map(fn (Restore $restore) => $this->presentRestore($restore))->values(),
             'storage_providers' => StorageProvider::query()->where('organization_id', $organizationId)->orderBy('name')->get(['id', 'name', 'driver', 'bucket'])
                 ->map(fn (StorageProvider $provider) => ['id' => $provider->id, 'name' => $provider->name, 'driver' => $provider->driver->value, 'bucket' => $provider->bucket])->values(),
-            'restore_targets' => DatabaseServer::query()->where('organization_id', $organizationId)->orderBy('server_name')->get()
-                ->filter(fn (DatabaseServer $target) => ! $target->engine->isKeyValue() && $target->engine->protocol() === $server->engine->protocol())
-                ->map(fn (DatabaseServer $target) => ['id' => $target->id, 'label' => "{$target->server_name} ({$target->label()})"])->values(),
+            'restore_targets' => $this->restoreTargets($server),
             'options' => [
                 'privileges' => $server->engine->privileges(),
                 'versions' => array_values((array) config("databases.versions.{$server->engine->value}", [])),

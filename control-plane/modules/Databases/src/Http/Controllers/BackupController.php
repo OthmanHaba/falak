@@ -8,11 +8,15 @@ use Falak\Databases\Domain\Enums\BackupStatus;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\DatabaseServer;
 use Falak\Databases\Domain\Policies\DatabasesPolicy;
+use Falak\Databases\Infrastructure\ObjectStorage\ObjectStores;
+use Falak\Identity\Contracts\AuditLog;
 use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -70,6 +74,30 @@ final class BackupController extends Controller
         $restore($backup, $target, $data['database'], $request->user()?->getAuthIdentifier());
 
         return back();
+    }
+
+    /**
+     * GET /databases/backups/{backup}/download: a short-lived presigned GET URL of the object (redirect, or `{url}` as
+     * JSON). The file holds all the data (SQL dump or RDB snapshot), so it takes the restore permission; audited.
+     */
+    public function download(Request $request, Backup $backup, ObjectStores $stores, AuditLog $audit): RedirectResponse|JsonResponse
+    {
+        $this->authorize('restore', $backup);
+
+        if (! $backup->isRestorable() || ! $backup->storageProvider) {
+            throw ValidationException::withMessages(['backup' => 'Only successful backups whose storage provider still exists can be downloaded.']);
+        }
+
+        $url = $stores->for($backup->storageProvider)->presignGet($backup->object_key, (int) config('databases.download_link_ttl', 300));
+
+        $audit->record('databases.backup_downloaded', 'backup', $backup->id, [
+            'database' => $backup->database_name,
+            'server_id' => $backup->server_id,
+        ], $backup->organization_id);
+
+        return $request->wantsJson() && $request->header('X-Inertia') === null
+            ? response()->json(['url' => $url])
+            : redirect()->away($url);
     }
 
     public function destroy(Backup $backup, DeleteBackup $delete): RedirectResponse

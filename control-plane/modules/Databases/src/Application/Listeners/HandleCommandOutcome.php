@@ -291,8 +291,10 @@ final class HandleCommandOutcome implements ShouldQueue
             'finished_at' => now(),
         ])->save();
 
-        if ($succeeded) {
-            // The agent creates the database when missing; track it like any other.
+        $keyValue = DatabaseServer::query()->find($restore->database_server_id)?->engine->isKeyValue() ?? false;
+
+        if ($succeeded && ! $keyValue) {
+            // The agent creates the database when missing; track it like any other (instances are never created).
             $database = Database::query()->firstOrCreate(
                 ['database_server_id' => $restore->database_server_id, 'name' => $restore->database_name],
                 ['organization_id' => $restore->organization_id, 'server_id' => $restore->server_id, 'status' => ResourceStatus::Active, 'created_by' => $restore->requested_by],

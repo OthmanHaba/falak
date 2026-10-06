@@ -41,6 +41,7 @@ Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->gro
 
     Route::get('backups', [BackupController::class, 'index'])->name('backups.index');
     Route::post('backups/{backup}/restore', [BackupController::class, 'restore'])->name('backups.restore');
+    Route::get('backups/{backup}/download', [BackupController::class, 'download'])->middleware('throttle:30,1')->name('backups.download');
     Route::delete('backups/{backup}', [BackupController::class, 'destroy'])->name('backups.destroy');
 
     Route::post('storage', [StorageProviderController::class, 'store'])->name('storage.store');

@@ -68,6 +68,8 @@ return [
     // Presigned URL lifetimes (seconds). The upload URL must outlive queueing + the dump itself.
     'upload_url_ttl' => (int) env('FALAK_BACKUP_UPLOAD_URL_TTL', 12 * 3600),
     'download_url_ttl' => (int) env('FALAK_BACKUP_DOWNLOAD_URL_TTL', 6 * 3600),
+    // "Download" links of the panel: a short-lived presigned GET, opened right away by the browser.
+    'download_link_ttl' => (int) env('FALAK_BACKUP_DOWNLOAD_LINK_TTL', 300),
 
     // Control-plane → object storage requests (verification, pruning).
     'storage_timeout' => 30,

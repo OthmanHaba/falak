@@ -159,6 +159,31 @@ trait PresentsDatabases
     }
 
     /**
+     * Where a backup of the source's engine can be restored: SQL engine servers of the same wire protocol (the
+     * database is created when missing), or for Redis / Valkey the key-value engine servers with their active instances
+     * (a snapshot only goes into an existing instance; the agent checks the RDB version against the target).
+     *
+     * @return list<array{id: string, label: string, engine: string, instances: ?list<string>}>
+     */
+    protected function restoreTargets(DatabaseServer $source): array
+    {
+        return DatabaseServer::query()->where('organization_id', $source->organization_id)->orderBy('server_name')->get()
+            ->filter(fn (DatabaseServer $target) => $source->engine->isKeyValue()
+                ? $target->engine->isKeyValue()
+                : ! $target->engine->isKeyValue() && $target->engine->protocol() === $source->engine->protocol())
+            ->map(fn (DatabaseServer $target) => [
+                'id' => $target->id,
+                'label' => "{$target->server_name} ({$target->label()})",
+                'engine' => $target->engine->value,
+                'instances' => $target->engine->isKeyValue()
+                    ? $target->databases()->where('status', 'active')->orderBy('name')->pluck('name')->values()->all()
+                    : null,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return array<string, mixed>
      */
     protected function presentProvider(StorageProvider $provider): array
