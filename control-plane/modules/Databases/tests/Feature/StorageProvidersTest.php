@@ -3,6 +3,7 @@
 use Falak\Databases\Domain\Enums\StorageDriver;
 use Falak\Databases\Domain\Models\StorageProvider;
 use Falak\Databases\Infrastructure\ObjectStorage\ObjectStores;
+use Falak\Databases\Infrastructure\ObjectStorage\SigV4Signer;
 use Falak\Identity\Contracts\Role;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -91,6 +92,32 @@ it('verifies a provider with a signed PUT and DELETE of a probe object', functio
             && $r->header('x-amz-content-sha256')[0] === hash('sha256', $r->body()),
         fn (Request $r) => $r->method() === 'DELETE' && str_contains($r->header('Authorization')[0], 'SignedHeaders=host;x-amz-content-sha256;x-amz-date'),
     ]);
+});
+
+it('sends a PUT whose headers are exactly the ones it signed (one Content-Type)', function () {
+    Http::fake(['*' => Http::response('', 200)]);
+    $provider = databases_provider($this->organization);
+
+    app(ObjectStores::class)->for($provider)->put('acme/probe.txt', 'falak', 'text/plain');
+
+    Http::assertSent(function (Request $r) use ($provider) {
+        expect($r->method())->toBe('PUT')->and($r->toPsrRequest()->getHeader('content-type'))->toBe(['text/plain']);
+
+        // Re-sign from what is actually on the wire, as the store does.
+        preg_match('/SignedHeaders=([^,]+), Signature=([0-9a-f]{64})/', $r->header('Authorization')[0], $m);
+        $signedNames = explode(';', $m[1]);
+        expect($signedNames)->toContain('content-type');
+        $wire = [];
+        foreach ($signedNames as $name) {
+            $wire[$name] = $r->toPsrRequest()->getHeaderLine($name); // duplicates come out joined, as on the wire
+        }
+        $signer = new SigV4Signer($provider->access_key_id, $provider->secret_access_key, $provider->region);
+        $now = DateTimeImmutable::createFromFormat('Ymd\THis\Z', $r->header('x-amz-date')[0], new DateTimeZone('UTC'));
+        $canonical = $signer->canonicalRequest('PUT', (string) parse_url($r->url(), PHP_URL_PATH), '', $wire, $m[1], hash('sha256', $r->body()));
+        expect($signer->signature($canonical, $now))->toBe($m[2]);
+
+        return true;
+    });
 });
 
 it('reports storage errors without leaking secrets', function () {

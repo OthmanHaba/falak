@@ -84,6 +84,9 @@ final class ObjectStore
     {
         $url = $this->url($key);
         $headers = $this->signer()->signHeaders('PUT', $url, ['content-type' => $contentType], hash('sha256', $body));
+        // Content-Type is signed, but withBody() sets it: passed in the headers too, it went out twice
+        // ("text/plain, text/plain"), which no longer matched the signature (SignatureDoesNotMatch).
+        $headers = array_filter($headers, fn (string $name) => strtolower($name) !== 'content-type', ARRAY_FILTER_USE_KEY);
 
         $this->send(fn () => $this->http->withHeaders($headers)->timeout($this->timeout)->withBody($body, $contentType)->put($url), 'PUT', $key);
     }
