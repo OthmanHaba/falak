@@ -6,8 +6,8 @@ use Falak\Projects\Contracts\VariableReferences;
 use Falak\Sites\Contracts\SecretVariables;
 
 /**
- * Secret by name (`sites.secret_variables`), or by referencing a secret of another service (`${{ db.DB_PASSWORD }}`),
- * until the secret store flags secrets itself.
+ * Secret by name (`sites.secret_variables`), by a credentials URL value, by referencing the secret store
+ * (`${{ secrets.STRIPE_KEY }}`), or by referencing a secret of another service (`${{ db.DB_PASSWORD }}`).
  */
 final class PatternSecretVariables implements SecretVariables
 {
@@ -24,7 +24,7 @@ final class PatternSecretVariables implements SecretVariables
         }
 
         foreach ($this->references->referencesIn(array_map('strval', $variables)) as $reference) {
-            if (self::secretName($reference['key'])) {
+            if ($reference['service'] === 'secrets' || self::secretName($reference['key'])) {
                 $names[$reference['variable']] = true;
             }
         }
