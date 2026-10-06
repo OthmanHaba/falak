@@ -34,7 +34,7 @@ trait PresentsVolumes
      */
     protected function presentVolumes(Collection $volumes): array
     {
-        $ids = $volumes->modelKeys();
+        $ids = $volumes->pluck('id')->all();
         $lastBackups = VolumeBackup::query()
             ->whereIn('volume_id', $ids)
             ->where('status', BackupStatus::Succeeded)

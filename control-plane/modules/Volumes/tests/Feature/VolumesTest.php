@@ -398,11 +398,23 @@ it('reports usage periodically and alerts once when a volume crosses 85% of its 
     Event::assertDispatchedTimes(VolumeAlmostFull::class, 2);
 });
 
+it('lists a service’s volumes and the ones it could mount for its settings', function () {
+    $site = volumes_docker_site($this->organization->id, [$this->server]);
+    $attached = volumes_volume($this->organization->id, $this->server, 'attached');
+    $attached->attachments()->create(['attachable_type' => AttachableType::Site, 'attachable_id' => $site->id, 'mount_path' => '/data']);
+    $free = volumes_volume($this->organization->id, $this->server, 'free', VolumeKind::Docker);
+
+    $this->getJson("/sites/{$site->id}/volumes")->assertOk()
+        ->assertJsonPath('data.attachable', true)
+        ->assertJsonPath('data.volumes.0.id', $attached->id)
+        ->assertJsonPath('data.available.0.id', $free->id);
+});
+
 it('renders the server, project and volume pages', function () {
     $volume = volumes_volume($this->organization->id, $this->server);
 
     $this->get("/servers/{$this->server->id}/volumes")->assertOk()
-        ->assertInertia(fn ($page) => $page->component('Volumes/Server')->where('volumes.0.id', $volume->id));
+        ->assertInertia(fn ($page) => $page->component('Volumes/Server', false)->where('volumes.0.id', $volume->id));
     $this->get("/volumes/{$volume->id}")->assertOk()
-        ->assertInertia(fn ($page) => $page->component('Volumes/Show')->where('volume.name', 'data')->where('can.browse', true));
+        ->assertInertia(fn ($page) => $page->component('Volumes/Show', false)->where('volume.name', 'data')->where('can.browse', true));
 });
