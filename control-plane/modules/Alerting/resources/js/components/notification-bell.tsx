@@ -93,7 +93,7 @@ export function NotificationBell() {
                     {count > 0 && (
                         <span
                             aria-hidden
-                            className="bg-danger text-on-danger ring-bg tabular pointer-events-none absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold ring-2"
+                            className="bg-danger-fill text-on-danger ring-bg tabular pointer-events-none absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-none font-semibold ring-2"
                         >
                             {count > 99 ? '99+' : count}
                         </span>
