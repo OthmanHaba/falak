@@ -1,5 +1,5 @@
-import { cn } from '@/lib/utils';
-import { type CanvasService } from '@/types';
+import { cn, formatBytes } from '@/lib/utils';
+import { type CanvasService, type CanvasVolume } from '@/types';
 import { HardDrive, Star } from 'lucide-react';
 import { type HTMLAttributes } from 'react';
 import { ServiceIcon } from './service-icon';
@@ -10,7 +10,7 @@ export const SERVICE_CARD = { width: 240, height: 112, strip: 30 } as const;
 
 export interface ServiceCardProps extends HTMLAttributes<HTMLDivElement> {
     service: Pick<CanvasService, 'kind' | 'name' | 'icon' | 'status' | 'status_label' | 'url' | 'subtitle' | 'servers' | 'badges'> & {
-        volumes?: { name: string; detail: string | null }[];
+        volumes?: CanvasVolume[];
     };
     /** The service whose panel is open. */
     selected?: boolean;
@@ -34,13 +34,14 @@ const LABEL_TONE: Record<string, string> = {
 /**
  * The canvas card of a service (§4): icon + name (+ runtime badges), the public domain (sites) or engine/server
  * (databases) underneath, and the live status at the bottom ("● Online", "● Deploying 64%") with server chips. A
- * service with persistent storage (volume, engine data dir, shared paths) gets a strip docked under the card.
+ * service with persistent storage gets a strip of disks docked under the card: its volumes with used / limit, each
+ * linking to its volume page (an engine's data dir, or a compose volume before the first deploy, has no page).
  * Selected (panel open) = accent border; hover lifts the card (canvas CSS).
  */
 export function ServiceCard({ service, selected = false, marked = false, className, ...props }: ServiceCardProps) {
     const detail = service.kind === 'site' ? (service.url ? host(service.url) : service.subtitle) : service.subtitle;
     const servers = service.kind === 'site' ? service.servers : [];
-    const volume = service.volumes?.[0];
+    const volumes = service.volumes ?? [];
     const tone = statusSpec(service.status).tone;
 
     return (
@@ -94,17 +95,61 @@ export function ServiceCard({ service, selected = false, marked = false, classNa
                     )}
                 </div>
             </div>
-            {volume && (
+            {volumes.length > 0 && (
                 <div
-                    className="border-border bg-surface-2 text-fg-muted relative -mt-2 flex h-[38px] items-end gap-2 rounded-b-lg border border-t-0 px-4 pb-2 text-xs"
+                    className="border-border bg-surface-2 text-fg-muted relative -mt-2 flex h-[38px] items-end gap-1.5 overflow-hidden rounded-b-lg border border-t-0 px-3 pb-1.5 text-xs"
                     data-testid="volume-strip"
                 >
-                    <HardDrive className="text-fg-faint size-3.5 shrink-0" aria-hidden />
-                    <span className="min-w-0 truncate">{volume.name}</span>
-                    {(service.volumes?.length ?? 0) > 1 && <span className="text-fg-faint">+{(service.volumes?.length ?? 0) - 1}</span>}
-                    {volume.detail && <span className="text-fg-faint ml-auto shrink-0 truncate">{volume.detail}</span>}
+                    {volumes.slice(0, 2).map((volume, index) => (
+                        <VolumeChip key={volume.id ?? `${volume.name}-${index}`} volume={volume} />
+                    ))}
+                    {volumes.length > 2 && <span className="text-fg-faint text-2xs shrink-0 self-center">+{volumes.length - 2}</span>}
                 </div>
             )}
         </div>
+    );
+}
+
+/** "1.2 GB / 10 GB", "340 MB" (no limit), or the detail (server, mount path) while the usage is not known yet. */
+function usage(volume: CanvasVolume): string | null {
+    if (volume.used_bytes !== null && volume.limit_bytes !== null) return `${formatBytes(volume.used_bytes)} / ${formatBytes(volume.limit_bytes)}`;
+    if (volume.used_bytes !== null) return formatBytes(volume.used_bytes);
+
+    return volume.detail;
+}
+
+function VolumeChip({ volume }: { volume: CanvasVolume }) {
+    const text = usage(volume);
+    const full = volume.used_bytes !== null && volume.limit_bytes ? volume.used_bytes / volume.limit_bytes > 0.85 : false;
+    const className = cn(
+        'border-border bg-surface-1 text-2xs inline-flex h-5 min-w-0 items-center gap-1 rounded-sm border px-1.5',
+        volume.url && 'hover:border-border-strong hover:text-fg',
+        full && 'border-warning/50',
+    );
+    const title = [volume.name, text].filter(Boolean).join(' · ');
+    const content = (
+        <>
+            <HardDrive className={cn('size-3 shrink-0', full ? 'text-warning' : 'text-fg-faint')} aria-hidden />
+            <span className="min-w-0 truncate">{volume.name}</span>
+            {text && <span className="text-fg-faint tabular shrink-0 truncate">{text}</span>}
+        </>
+    );
+
+    // Opens the volume page; never starts a card drag or selects the card.
+    return volume.url ? (
+        <a
+            href={volume.url}
+            title={title}
+            className={className}
+            data-testid="volume-chip"
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+        >
+            {content}
+        </a>
+    ) : (
+        <span title={title} className={className} data-testid="volume-chip">
+            {content}
+        </span>
     );
 }

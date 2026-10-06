@@ -122,7 +122,7 @@ const ChildNodeView = memo(function ChildNodeView({ data }: NodeProps<ChildNode>
                     subtitle: child.image,
                     servers: [],
                     badges: [],
-                    volumes: child.volumes.map((name) => ({ name, detail: null })),
+                    volumes: child.volumes,
                 }}
                 data-compose={service.id}
             />
