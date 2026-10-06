@@ -18,7 +18,7 @@ final class PatternSecretVariables implements SecretVariables
         $names = [];
 
         foreach ($variables as $name => $value) {
-            if (self::secretName((string) $name)) {
+            if (self::secretName((string) $name) || self::secretValue((string) $value)) {
                 $names[(string) $name] = true;
             }
         }
@@ -36,19 +36,24 @@ final class PatternSecretVariables implements SecretVariables
     {
         $name = strtoupper($name);
         $config = (array) config('sites.secret_variables', []);
+        $matches = fn (string $key) => array_filter((array) ($config[$key] ?? []), fn ($pattern) => preg_match((string) $pattern, $name) === 1) !== [];
 
-        foreach ((array) ($config['except'] ?? []) as $pattern) {
-            if (preg_match((string) $pattern, $name) === 1) {
-                return false;
-            }
+        if ($matches('always')) {
+            return true;
         }
 
-        foreach ((array) ($config['patterns'] ?? []) as $pattern) {
-            if (preg_match((string) $pattern, $name) === 1) {
-                return true;
-            }
+        if ($matches('except')) {
+            return false;
         }
 
-        return false;
+        return $matches('patterns');
+    }
+
+    /**
+     * A URL with credentials (postgres://app:pw@db/app, https://user:token@host): secret whatever its name.
+     */
+    public static function secretValue(string $value): bool
+    {
+        return preg_match('#^[a-z][a-z0-9+.\-]*://[^/\s:@]+:[^/\s@]+@#i', $value) === 1;
     }
 }

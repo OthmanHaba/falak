@@ -44,23 +44,31 @@ return [
         'status_refresh_seconds' => 10,
     ],
 
+    // The agents' tmpfs directory for env files and Laravel's config cache (agent: <run dir>/env).
+    'env_dir' => '/run/falak/env',
+
     // Site commands (system.exec).
     'command_timeout' => (int) env('FALAK_SITE_COMMAND_TIMEOUT', 600),
     'command_history' => 50,
 
-    // Which site variables hold secrets (SecretVariables): masked in deploy, hook and build output, and passed as files
-    // in the secrets mode `files`. Matched against the upper-cased name; `except` wins. A variable whose value references
-    // a secret of another service (`${{ db.DB_PASSWORD }}`) is secret too. The secret store (v0.10.0 step 1b) replaces
+    // Which site variables hold secrets (SecretVariables): masked in deploy, hook, build, command and process output, and
+    // passed as files in the secrets mode `files`. Matched against the upper-cased name; `except` wins unless the name
+    // also matches `always`. A variable whose value carries credentials (scheme://user:password@…) or references a
+    // secret of another service (`${{ db.DB_PASSWORD }}`) is secret too. The secret store (v0.10.0 step 1b) replaces
     // these patterns with each secret's `sensitive` flag.
     'secret_variables' => [
         'patterns' => [
-            '/PASSWORD/', '/(^|_)PASS(WD)?($|_)/', '/SECRET/', '/TOKEN/', '/PRIVATE/', '/CREDENTIAL/', '/(^|_)KEYS?$/', '/(^|_)AUTH($|_)/',
-            '/(^|_)DSN$/', '/(^|_)SALT$/', '/PASSPHRASE/', '/^(DATABASE|DB|REDIS|MONGO(DB)?|AMQP|RABBITMQ|BROKER|CACHE|QUEUE)_URLS?$/',
+            '/PASSWORD/', '/(^|_)PASS(WD)?($|_)/', '/(^|_)PWD$/', '/SECRET/', '/TOKEN/', '/PRIVATE/', '/CREDENTIAL/', '/APIKEY/',
+            '/(^|_)KEYS?$/', '/(^|_)AUTH($|_)/', '/(^|_)DSN$/', '/(^|_)SALT$/', '/PASSPHRASE/', '/CONNECTION_STRING/',
+            '/^(DATABASE|DB|REDIS|MONGO(DB)?|POSTGRES(QL)?|PG|MYSQL|MARIADB|AMQP|RABBITMQ|BROKER|CACHE|QUEUE|ELASTICSEARCH|CLICKHOUSE)_UR[IL]S?$/',
+            '/_(DATABASE|DB|REDIS|MONGO(DB)?|POSTGRES(QL)?|MYSQL)_UR[IL]S?$/',
         ],
         // Identifiers and values meant for browsers are not secrets: AWS_ACCESS_KEY_ID (only with its secret key),
         // publishable keys, and anything a frontend build inlines.
         'except' => [
             '/^FALAK_/', '/_KEY_ID$/', '/(^|_)PUBLIC(_|$)/', '/PUBLISHABLE/', '/^(VITE|MIX|NEXT_PUBLIC|NUXT_PUBLIC|EXPO_PUBLIC|REACT_APP|GATSBY|PUBLIC)_/',
         ],
+        // Names that stay secret whatever `except` says (VITE_API_SECRET is a secret wrongly sent to the browser).
+        'always' => ['/SECRET/', '/PASSWORD/', '/TOKEN/', '/PRIVATE/'],
     ],
 ];
