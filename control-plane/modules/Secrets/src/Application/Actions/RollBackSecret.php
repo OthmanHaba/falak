@@ -10,6 +10,7 @@ use Illuminate\Validation\ValidationException;
 /**
  * Roll back to version N: a new version with N's value (re-sealed for its own version number). History is
  * never rewritten. The copy happens on the server, so it is not a read of the value (no access log entry).
+ * A linked version that recorded the value it had upstream is restored pinned to that value.
  */
 final class RollBackSecret
 {
@@ -34,6 +35,9 @@ final class RollBackSecret
             throw ValidationException::withMessages(['version' => "Version {$version} is already the current version."]);
         }
 
-        return ($this->set)($secret, $this->cipher->open($secret, $target), $userId, restoredFrom: $version);
+        // A linked version with a snapshot pins the secret to that value (deployments stop asking the provider).
+        $snapshot = $this->cipher->openSnapshot($secret, $target);
+
+        return ($this->set)($secret, $this->cipher->open($secret, $target), $userId, restoredFrom: $version, snapshot: $snapshot, note: $snapshot !== null ? "Pinned to the value of v{$version}" : null);
     }
 }

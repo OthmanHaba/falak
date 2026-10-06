@@ -1,6 +1,6 @@
 import { registerCommands, registerSettingsNav } from '@/lib/registry';
 import { type SharedData } from '@/types';
-import { KeyRound } from 'lucide-react';
+import { KeyRound, Waypoints } from 'lucide-react';
 
 // Organization settings: the organization's own secrets (inherited by every project).
 registerSettingsNav({
@@ -13,6 +13,19 @@ registerSettingsNav({
     permission: 'secrets.view',
     requiresOrganization: true,
     keywords: ['secret', 'api key', 'password', 'vault', 'credentials', 'env'],
+});
+
+// External providers behind linked secrets (Vault, AWS, 1Password, Doppler, Infisical, HTTPS webhook).
+registerSettingsNav({
+    id: 'secret-providers',
+    title: 'Secret providers',
+    url: '/settings/secrets/providers',
+    group: 'organization',
+    order: 151,
+    icon: Waypoints,
+    permission: 'secrets.view',
+    requiresOrganization: true,
+    keywords: ['vault', 'openbao', 'aws', 'secrets manager', 'ssm', '1password', 'doppler', 'infisical', 'webhook', 'linked'],
 });
 
 registerCommands({

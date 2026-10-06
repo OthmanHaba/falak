@@ -25,6 +25,7 @@ use Falak\Secrets\Contracts\Data\SecretAccessor;
 use Falak\Secrets\Contracts\SecretScope;
 use Falak\Secrets\Domain\Models\AccessLogEntry;
 use Falak\Secrets\Domain\Models\Secret;
+use Falak\Secrets\Domain\Models\SecretProvider;
 use Falak\Secrets\Domain\Policies\SecretPolicy;
 use Falak\Secrets\Http\Requests\SecretRules;
 use Falak\Sites\Contracts\SiteDirectory;
@@ -88,6 +89,7 @@ final class SecretController extends Controller
                 ...array_map(fn (ServiceData $service) => ['scope' => SecretScope::Service->value, 'id' => $service->id, 'label' => $service->name, 'environment_id' => $service->environmentId], $services),
             ],
             'secrets' => $this->list($secrets->all(), $usage),
+            'providers' => $this->providerOptions($organizationId),
             'can' => $this->abilities($request, $organizationId),
             'reauth_requires_code' => $this->reauthentication->requiresCode($request->user()),
         ]);
@@ -108,6 +110,7 @@ final class SecretController extends Controller
             'project' => null,
             'scopes' => [['scope' => SecretScope::Organization->value, 'id' => $organizationId, 'label' => 'Organization', 'environment_id' => null]],
             'secrets' => $this->list($secrets->all(), $usage),
+            'providers' => $this->providerOptions($organizationId),
             'can' => $this->abilities($request, $organizationId),
             'reauth_requires_code' => $this->reauthentication->requiresCode($request->user()),
         ]);
@@ -262,6 +265,24 @@ final class SecretController extends Controller
         Secret::withCurrentVersionDates($secrets);
 
         return array_map(fn (Secret $secret) => $this->presentSecret($secret, $this->scopes, $used[$secret->id] ?? []), $secrets);
+    }
+
+    /**
+     * The organization's providers, for linking a secret (names and types only).
+     *
+     * @return list<array{id: string, name: string, type: string, scheme: string, example: string, status: string}>
+     */
+    private function providerOptions(string $organizationId): array
+    {
+        return SecretProvider::query()->where('organization_id', $organizationId)->orderBy('name')->get()
+            ->map(fn (SecretProvider $provider) => [
+                'id' => $provider->id,
+                'name' => $provider->name,
+                'type' => $provider->type->value,
+                'scheme' => $provider->type->scheme(),
+                'example' => $provider->type->example(),
+                'status' => $provider->status->value,
+            ])->values()->all();
     }
 
     /**

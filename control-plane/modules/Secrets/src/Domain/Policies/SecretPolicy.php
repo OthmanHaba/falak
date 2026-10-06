@@ -18,6 +18,9 @@ final class SecretPolicy
     /** Create, change values, roll back, disable versions, delete. */
     public const MANAGE = 'secrets.manage';
 
+    /** Add, edit, test and delete external secret providers (their credentials and endpoints): admins only. */
+    public const PROVIDERS_MANAGE = 'secrets.providers.manage';
+
     public function __construct(private readonly OrganizationAccess $access) {}
 
     public function view(Authenticatable $user, Secret $secret): Response

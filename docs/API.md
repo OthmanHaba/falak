@@ -434,23 +434,62 @@ Organization secrets in four scopes (`organization`, `project`, `environment`, `
 referenced from variables as `${{ secrets.NAME }}`. Names are environment variable names (`^[A-Z_][A-Z0-9_]*$`), unique
 per scope. Every value is a new immutable version, sealed under the organization's data key and bound to the secret and
 version. Responses carry metadata only (`id, name, scope, scope_id, scope_label, kind, sensitive, available_to_previews,
-description, rotation_days, rotation_due_at, current_version, last_accessed_at, created_at, updated_at`). Secrets of
-other organizations are `404`.
+description, rotation_days, rotation_due_at, current_version, last_accessed_at, created_at, updated_at`, plus for linked
+secrets `provider_id, watch_minutes, on_change, last_polled_at`). Secrets of other organizations are `404`.
 
 ### `GET /api/v1/secrets[?scope=&scope_id=]` · `GET /api/v1/secrets/{secret}` — `secrets.view`
 ### `POST /api/v1/secrets` — `secrets.manage`
-`{name, scope, scope_id, value | (kind: "linked", reference, provider_id?), sensitive? (default true),
-available_to_previews? (default false), description?, rotation_days?}`. `201`. A **sensitive** secret is write-only:
+`{name, scope, scope_id, value | (kind: "linked", reference, provider_id?, watch_minutes?, on_change?), sensitive?
+(default true), available_to_previews? (default false), description?, rotation_days?}`. `201`. A linked secret's
+reference must match its provider's type (see [SECRET_PROVIDERS.md](SECRET_PROVIDERS.md)); without `provider_id` the
+organization's only provider of that type is used. `watch_minutes` (1–1440, null: not watched) and `on_change`
+(`none|restart|redeploy`) set the watch. A **sensitive** secret is write-only:
 it can be replaced, never revealed, and stays sensitive.
 ### `PUT /api/v1/secrets/{secret}/value` `{value}` — `secrets.manage`
 A new version, current from the next deployment.
 ### `POST /api/v1/secrets/{secret}/rollback` `{version}` — `secrets.manage`
-A new version with that version's value (history is never rewritten). Disabled versions can't be restored.
+A new version with that version's value (history is never rewritten). Disabled versions can't be restored. A linked
+version that recorded its value upstream is restored **pinned** to that value until a new reference is saved.
 ### `DELETE /api/v1/secrets/{secret}` — `secrets.manage`
 Every version goes; the access log stays. References to it fail the next deployment.
 ### `POST /api/v1/secrets/{secret}/reveal[?version=]` — `secrets.reveal`, by name on the token
 `{data: {version, value}}` (a linked secret: its reference). `403` for sensitive secrets and for tokens without the
 `secrets.reveal` ability itself. Logged in the access log as the token, and audited.
+
+### Secret providers
+External providers behind linked secrets (Vault / OpenBao, AWS Secrets Manager and SSM, 1Password Connect, Doppler,
+Infisical, HTTPS webhook): settings, references, caching and the webhook contract in
+[SECRET_PROVIDERS.md](SECRET_PROVIDERS.md). Responses never carry credentials:
+```json
+{"id": "01k…", "name": "Production Vault", "type": "vault", "type_label": "HashiCorp Vault / OpenBao", "scheme": "vault",
+ "settings": {"address": "https://vault.example.com", "kv_version": "2", "auth_method": "approle", "role_id": "…"},
+ "stored_credentials": ["secret_id"], "allow_private_network": false, "cache_ttl_seconds": 300,
+ "status": "untested|ok|error", "last_checked_at": "…", "last_error": null, "secrets_count": 3, "created_at": "…", "updated_at": "…"}
+```
+### `GET /api/v1/secrets/providers` · `GET /api/v1/secrets/providers/{provider}` — `secrets.view`
+### `POST /api/v1/secrets/providers` — `secrets.providers.manage` (admins)
+`{name, type: vault|aws_secrets_manager|aws_ssm|onepassword|doppler|infisical|http, config: {…}, allow_private_network?,
+cache_ttl_seconds? (0–86400, default 300)}`. `config` per type:
+- `vault`: `address, namespace?, kv_version (2|1), auth_method (approle|token|jwt), token | role_id + secret_id | role + jwt,
+  auth_mount?, ca_pem?`
+- `aws_secrets_manager`, `aws_ssm`: `region, auth_method (keys|instance_profile), access_key_id, secret_access_key,
+  session_token?, role_arn?, external_id?`
+- `onepassword`: `connect_url, token, ca_pem?` · `doppler`: `token` · `infisical`: `base_url, client_id, client_secret, ca_pem?`
+- `http`: `base_url, header_name?, header_value?, ca_pem?`
+
+URLs are `https://` and must resolve to public addresses unless `allow_private_network` (self-hostable types only, and
+only when the instance sets `FALAK_SECRETS_PROVIDERS_ALLOW_PRIVATE=true`). With `auth_method: instance_profile`,
+`role_arn` is required and the external ID is always the organization id.
+### `PATCH /api/v1/secrets/providers/{provider}` — `secrets.providers.manage`
+Same fields but `type`; without `config` the settings stay as they are. Credentials left empty keep their stored value,
+unless a setting that decides where they are sent (URL, CA, namespace, region, role, external ID, header) changes:
+then every credential must be sent again (`422` otherwise). Changing settings resets the status to `untested` and drops
+the cached values.
+### `POST /api/v1/secrets/providers/{provider}/test` — `secrets.providers.manage`
+Checks the endpoint and credentials (Vault `lookup-self`, STS `GetCallerIdentity`, Doppler `/v3/me`, Infisical login,
+Connect `/v1/vaults`, webhook test ref) and records the status. `422 {errors: {provider: [reason]}}` when it fails.
+### `DELETE /api/v1/secrets/providers/{provider}` — `secrets.providers.manage`
+`422` while linked secrets use it. Its cached values are deleted.
 
 ## Source control
 

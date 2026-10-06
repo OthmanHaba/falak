@@ -29,6 +29,24 @@ final class SecretCipher
         return $this->sealer->open($version->ciphertext, self::aad($secret->organization_id, $secret->id, $version->version), $secret->organization_id);
     }
 
+    /** A linked version's snapshot of the resolved value (own AAD: never interchangeable with the reference). */
+    public function sealSnapshot(Secret $secret, int $version, #[\SensitiveParameter] string $value): string
+    {
+        return $this->sealer->seal($value, Sealer::aad('secret-snapshot', $secret->organization_id, $secret->id, (string) $version), $secret->organization_id);
+    }
+
+    /**
+     * @throws DecryptionFailed|KeyUnavailable
+     */
+    public function openSnapshot(Secret $secret, SecretVersion $version): ?string
+    {
+        if ($version->snapshot === null) {
+            return null;
+        }
+
+        return $this->sealer->open($version->snapshot, Sealer::aad('secret-snapshot', $secret->organization_id, $secret->id, (string) $version->version), $secret->organization_id);
+    }
+
     public static function aad(string $organizationId, string $secretId, int $version): string
     {
         return Sealer::aad('secret', $organizationId, $secretId, (string) $version);

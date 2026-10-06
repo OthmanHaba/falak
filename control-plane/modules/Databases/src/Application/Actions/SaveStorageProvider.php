@@ -4,9 +4,9 @@ namespace Falak\Databases\Application\Actions;
 
 use Falak\Databases\Domain\Enums\StorageDriver;
 use Falak\Databases\Domain\Models\StorageProvider;
-use Falak\Databases\Infrastructure\ObjectStorage\EndpointGuard;
 use Falak\Databases\Infrastructure\ObjectStorage\ObjectStore;
 use Falak\Identity\Contracts\AuditLog;
+use Falak\Kernel\Network\EndpointGuard;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -38,7 +38,7 @@ final class SaveStorageProvider
             throw ValidationException::withMessages([$driver === StorageDriver::R2 ? 'account_id' : 'endpoint' => 'An https endpoint is required.']);
         }
 
-        if ($driver === StorageDriver::Minio && ($refusal = $this->guard->refusal($endpoint))) {
+        if ($driver === StorageDriver::Minio && ($refusal = $this->guard->refusal($endpoint, (bool) config('databases.allow_private_endpoints', false)))) {
             throw ValidationException::withMessages(['endpoint' => $refusal]);
         }
 

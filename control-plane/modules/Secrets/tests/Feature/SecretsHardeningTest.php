@@ -35,12 +35,23 @@ it('throttles re-authentication per user, whatever the address', function () {
 });
 
 it('accepts only providers of the organization for linked secrets', function () {
-    $this->postJson('/secrets', ['name' => 'VAULTED', 'scope' => 'organization', 'scope_id' => $this->organization->id, 'kind' => 'linked', 'reference' => 'vault://kv#X', 'provider_id' => '01k6provider00000000000000'])
+    secrets_guard();
+    [, $stranger] = memberOf();
+    $foreign = secrets_vault($stranger);
+
+    $this->postJson('/secrets', ['name' => 'VAULTED', 'scope' => 'organization', 'scope_id' => $this->organization->id, 'kind' => 'linked', 'reference' => 'vault://kv/data/app#X', 'provider_id' => '01k6provider00000000000000'])
+        ->assertJsonValidationErrors('provider_id');
+    $this->postJson('/secrets', ['name' => 'VAULTED', 'scope' => 'organization', 'scope_id' => $this->organization->id, 'kind' => 'linked', 'reference' => 'vault://kv/data/app#X', 'provider_id' => $foreign->id])
         ->assertJsonValidationErrors('provider_id');
 
-    $secret = secrets_create($this->organization, 'VAULTED', '', attributes: ['kind' => 'linked', 'reference' => 'vault://kv#X']);
+    $secret = secrets_linked($this->organization, 'VAULTED', 'vault://kv/data/app#X', $provider = secrets_vault($this->organization));
     $this->patchJson("/secrets/{$secret->id}", ['provider_id' => '01k6provider00000000000000'])->assertJsonValidationErrors('provider_id');
-    $this->patchJson("/secrets/{$secret->id}", ['provider_id' => null])->assertOk();
+    $this->patchJson("/secrets/{$secret->id}", ['provider_id' => $foreign->id])->assertJsonValidationErrors('provider_id');
+    // Null: the organization's only provider of the reference's type.
+    $this->patchJson("/secrets/{$secret->id}", ['provider_id' => null])->assertOk()->assertJsonPath('data.provider_id', $provider->id);
+
+    $managed = secrets_create($this->organization, 'PLAIN', 'x');
+    $this->patchJson("/secrets/{$managed->id}", ['provider_id' => $provider->id])->assertJsonValidationErrors('provider_id');
 });
 
 it('answers a duplicate name that lost a race with a validation error', function () {

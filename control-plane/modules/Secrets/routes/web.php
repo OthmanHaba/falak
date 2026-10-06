@@ -1,5 +1,6 @@
 <?php
 
+use Falak\Secrets\Http\Controllers\ProviderController;
 use Falak\Secrets\Http\Controllers\SecretController;
 use Illuminate\Support\Facades\Route;
 
@@ -9,6 +10,14 @@ Route::middleware(['auth', 'org'])->group(function () {
     // Pages: a project's secrets (under its settings), and the organization's own.
     Route::get('projects/{project}/settings/secrets', [SecretController::class, 'project'])->where('project', $ulid)->name('secrets.project');
     Route::get('settings/secrets', [SecretController::class, 'organization'])->name('secrets.organization');
+    Route::get('settings/secrets/providers', [ProviderController::class, 'index'])->name('secrets.providers.index');
+
+    Route::prefix('secrets/providers')->name('secrets.providers.')->group(function () use ($ulid) {
+        Route::post('/', [ProviderController::class, 'store'])->name('store');
+        Route::patch('{provider}', [ProviderController::class, 'update'])->where('provider', $ulid)->name('update');
+        Route::delete('{provider}', [ProviderController::class, 'destroy'])->where('provider', $ulid)->name('destroy');
+        Route::post('{provider}/test', [ProviderController::class, 'test'])->where('provider', $ulid)->middleware('throttle:20,1')->name('test');
+    });
 
     Route::prefix('secrets')->name('secrets.')->group(function () use ($ulid) {
         Route::post('/', [SecretController::class, 'store'])->name('store');

@@ -1,6 +1,6 @@
 <?php
 
-use Falak\Databases\Infrastructure\ObjectStorage\EndpointGuard;
+use Falak\Kernel\Network\EndpointGuard;
 use Falak\Kernel\Support\Aws\SigV4Signer;
 
 /*
@@ -117,18 +117,20 @@ it('keeps non-default ports in the signed host', function () {
 });
 
 it('guards control-plane storage requests against private addresses', function () {
-    $guard = new EndpointGuard(false, fn (string $host) => match ($host) {
+    $guard = new EndpointGuard(fn (string $host) => match ($host) {
         'internal.example' => ['10.0.0.5'],
         'mixed.example' => ['93.184.216.34', '192.168.1.1'],
         'nowhere.example' => [],
         default => ['93.184.216.34'],
     });
 
-    expect($guard->refusal('https://bucket.s3.amazonaws.com/x'))->toBeNull()
-        ->and($guard->refusal('https://internal.example/x'))->toContain('10.0.0.5')
-        ->and($guard->refusal('https://mixed.example/x'))->toContain('192.168.1.1')
-        ->and($guard->refusal('https://nowhere.example/x'))->toContain('does not resolve')
-        ->and($guard->refusal('https://127.0.0.1:9000/x'))->not->toBeNull()
-        ->and($guard->refusal('https://[::1]/x'))->not->toBeNull()
-        ->and((new EndpointGuard(true))->refusal('https://127.0.0.1/x'))->toBeNull();
+    expect($guard->refusal('https://bucket.s3.amazonaws.com/x', false))->toBeNull()
+        ->and($guard->refusal('https://internal.example/x', false))->toContain('10.0.0.5')
+        ->and($guard->refusal('https://mixed.example/x', false))->toContain('192.168.1.1')
+        ->and($guard->refusal('https://nowhere.example/x', false))->toContain('does not resolve')
+        ->and($guard->refusal('https://127.0.0.1:9000/x', false))->not->toBeNull()
+        ->and($guard->refusal('https://[::1]/x', false))->not->toBeNull()
+        ->and($guard->refusal('https://127.0.0.1/x', true))->toBeNull()
+        // Metadata is refused even where private endpoints are allowed.
+        ->and($guard->refusal('https://169.254.169.254/x', true))->toContain('never allowed');
 });

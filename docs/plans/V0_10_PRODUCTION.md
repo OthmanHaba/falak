@@ -108,7 +108,7 @@ A `linked` secret stores a **reference**, not a value: `vault://kv/data/app#DB_P
 |---|---|---|
 | Vault / OpenBao | AppRole, token, JWT | KV v2; also usable as the KEK provider (transit) |
 | AWS | access keys or role (instance profile when the CP runs on AWS) | Secrets Manager and SSM Parameter Store; KMS as KEK provider |
-| 1Password | service account token, or Connect server | |
+| 1Password | Connect server (URL + token) | service account tokens need the SDK/CLI: run Connect |
 | Doppler | service token | |
 | Infisical | universal auth (client id and secret), self-hosted URL | |
 | Generic HTTP (webhook) | bearer or header auth, mTLS optional, HTTPS only | `GET {url}?ref=` returns `{ "value": "…" }` (same model as External Secrets' webhook provider); contract in docs |
@@ -116,7 +116,9 @@ A `linked` secret stores a **reference**, not a value: `vault://kv/data/app#DB_P
 - Resolution happens **at deploy time on the control plane**. The value is cached encrypted, with a TTL; if the
   provider is unreachable, the last good value is used and an alert fires.
 - Optional **watch**: poll every N minutes. On a change, create a new version and, per secret, choose: do nothing,
-  restart the services that use it, or redeploy them.
+  restart the services that use it, or redeploy them. The version keeps the reference plus a sealed snapshot of the
+  value (only an HMAC of the last value is kept for change detection); rolling back to it pins the secret to that
+  value until a new reference is saved. Details: docs/SECRET_PROVIDERS.md.
 - References in variables: `${{ secrets.NAME }}`, alongside the existing `${{ service.KEY }}`. A plain variable can be
   promoted to a secret in one click.
 

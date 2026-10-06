@@ -109,10 +109,13 @@ final class SecretStore implements Secrets
             }
 
             try {
-                $value = $this->cipher->open($secret, $version);
-
                 if ($secret->kind === SecretKind::Linked) {
-                    $value = $this->providers->resolve($value, $secret->provider_id, $secret->organization_id);
+                    // Pinned by a rollback: the value the version recorded, not the provider's current one.
+                    $value = $version->pinned()
+                        ? (string) $this->cipher->openSnapshot($secret, $version)
+                        : $this->providers->resolve($this->cipher->open($secret, $version), $secret->provider_id, $secret->organization_id);
+                } else {
+                    $value = $this->cipher->open($secret, $version);
                 }
             } catch (SecretProviderUnavailable $e) {
                 $errors[$name] = "secret {$name}: {$e->getMessage()}";

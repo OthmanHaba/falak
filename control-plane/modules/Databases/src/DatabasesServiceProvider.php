@@ -30,7 +30,6 @@ use Falak\Databases\Infrastructure\ActionDatabaseProvisioner;
 use Falak\Databases\Infrastructure\DatabaseContainerPorts;
 use Falak\Databases\Infrastructure\EloquentDatabaseConnections;
 use Falak\Databases\Infrastructure\EloquentDatabaseDirectory;
-use Falak\Databases\Infrastructure\ObjectStorage\EndpointGuard;
 use Falak\Fleet\Events\AgentFactsReported;
 use Falak\Fleet\Events\AgentVersionChanged;
 use Falak\Fleet\Events\CommandFailed;
@@ -71,7 +70,6 @@ class DatabasesServiceProvider extends ModuleServiceProvider
     {
         $this->mergeConfigFrom($this->modulePath().'/config/databases.php', 'databases');
 
-        $this->app->bind(EndpointGuard::class, fn () => new EndpointGuard((bool) config('databases.allow_private_endpoints', false)));
     }
 
     protected function bootModule(): void

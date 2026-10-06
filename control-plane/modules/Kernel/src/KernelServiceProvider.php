@@ -2,6 +2,7 @@
 
 namespace Falak\Kernel;
 
+use Falak\Kernel\Network\EndpointGuard;
 use Falak\Kernel\Security\Casts\SealedGuard;
 use Falak\Kernel\Security\Console\CheckKeysCommand;
 use Falak\Kernel\Security\Console\GenerateKekCommand;
@@ -26,6 +27,7 @@ class KernelServiceProvider extends ModuleServiceProvider
         KeyRing::class => KeyRing::class,
         Sealer::class => Sealer::class,
         SealedColumns::class => SealedColumns::class,
+        EndpointGuard::class => EndpointGuard::class,
     ];
 
     public function register(): void

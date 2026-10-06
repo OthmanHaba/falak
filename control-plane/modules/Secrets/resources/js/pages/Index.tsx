@@ -1,12 +1,12 @@
 import { AppShell, Button, DataTable, PageHeader, RelativeTime, Select, Tag, Tooltip, toast } from '@/components/falak';
 import SettingsLayout from '@/layouts/settings/layout';
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowLeft, ArrowUpFromLine, KeyRound, Plus } from 'lucide-react';
+import { ArrowLeft, ArrowUpFromLine, KeyRound, Plus, Waypoints } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { CreateSecretDialog } from '../components/create-secret-dialog';
 import { PromoteDialog } from '../components/promote-dialog';
 import { SecretDetailDialog } from '../components/secret-detail-dialog';
-import { SCOPE_LABELS, type ScopeOption, type SecretAbilities, type SecretRow } from '../types';
+import { SCOPE_LABELS, type ProviderOption, type ScopeOption, type SecretAbilities, type SecretRow } from '../types';
 
 interface Props {
     context: 'project' | 'organization';
@@ -14,6 +14,8 @@ interface Props {
     /** Where secrets can be created from this page (project: project, environments, site services). */
     scopes: ScopeOption[];
     secrets: SecretRow[];
+    /** The organization's providers, for linked secrets. */
+    providers: ProviderOption[];
     can: SecretAbilities;
     reauth_requires_code: boolean;
 }
@@ -22,7 +24,7 @@ interface Props {
  * /projects/{p}/settings/secrets (the project's secrets, its environments' and services', plus the inherited
  * organization ones) and /settings/secrets (the organization's own). Names and metadata only.
  */
-export default function Index({ context, project, scopes, secrets, can, reauth_requires_code }: Props) {
+export default function Index({ context, project, scopes, secrets, providers, can, reauth_requires_code }: Props) {
     const [filter, setFilter] = useState('all');
     const [creating, setCreating] = useState(false);
     const [promoting, setPromoting] = useState(false);
@@ -47,6 +49,11 @@ export default function Index({ context, project, scopes, secrets, can, reauth_r
 
     const actions = (
         <div className="flex items-center gap-2">
+            {context === 'organization' && (
+                <Button icon={<Waypoints />} onClick={() => router.visit('/settings/secrets/providers')}>
+                    Providers
+                </Button>
+            )}
             {context === 'project' && can.promote && services.length > 0 && (
                 <Button icon={<ArrowUpFromLine />} onClick={() => setPromoting(true)}>
                     Promote a variable
@@ -110,6 +117,7 @@ export default function Index({ context, project, scopes, secrets, can, reauth_r
                                 <span className="truncate font-mono text-xs font-medium">{row.name}</span>
                                 {row.sensitive && <Tag tone="warning">Sensitive</Tag>}
                                 {row.kind === 'linked' && <Tag tone="info">Linked</Tag>}
+                                {row.watch_minutes && <Tag tone="faint">Watched</Tag>}
                                 {row.rotation_due_at && new Date(row.rotation_due_at) < new Date() && <Tag tone="danger">Rotation due</Tag>}
                             </span>
                         ),
@@ -163,6 +171,7 @@ export default function Index({ context, project, scopes, secrets, can, reauth_r
             <CreateSecretDialog
                 open={creating}
                 scopes={scopes}
+                providers={providers}
                 onClose={() => setCreating(false)}
                 onCreated={() => {
                     setCreating(false);
@@ -182,6 +191,7 @@ export default function Index({ context, project, scopes, secrets, can, reauth_r
             />
             <SecretDetailDialog
                 secret={open}
+                providers={providers}
                 can={can}
                 reauthRequiresCode={reauth_requires_code}
                 onClose={() => setOpenId(null)}
