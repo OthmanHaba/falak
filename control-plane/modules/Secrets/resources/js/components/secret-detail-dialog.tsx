@@ -11,6 +11,7 @@ import {
     KeyValue,
     RelativeTime,
     SecretInput,
+    Select,
     Switch,
     Tabs,
     TabsContent,
@@ -25,7 +26,15 @@ import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { Link } from '@inertiajs/react';
 import { Eye, EyeOff, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
-import { SCOPE_LABELS, type SecretAbilities, type SecretDetail, type SecretRow } from '../types';
+import {
+    ON_CHANGE_LABELS,
+    SCOPE_LABELS,
+    type OnChange,
+    type ProviderOption,
+    type SecretAbilities,
+    type SecretDetail,
+    type SecretRow,
+} from '../types';
 import { ReauthDialog } from './reauth-dialog';
 
 interface Revealed {
@@ -39,12 +48,14 @@ interface Revealed {
  */
 export function SecretDetailDialog({
     secret,
+    providers,
     can,
     reauthRequiresCode,
     onClose,
     onChanged,
 }: {
     secret: SecretRow | null;
+    providers: ProviderOption[];
     can: SecretAbilities;
     reauthRequiresCode: boolean;
     onClose: () => void;
@@ -54,7 +65,15 @@ export function SecretDetailDialog({
     const { data, error, reload } = useJson<SecretDetail>(url);
     const detail = data ?? (secret as SecretDetail | null);
 
-    const [meta, setMeta] = useState({ description: '', rotation_days: '', sensitive: true, available_to_previews: false });
+    const [meta, setMeta] = useState({
+        description: '',
+        rotation_days: '',
+        sensitive: true,
+        available_to_previews: false,
+        provider_id: '',
+        watch_minutes: '',
+        on_change: 'none' as OnChange,
+    });
     const [value, setValue] = useState('');
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [busy, setBusy] = useState<string | null>(null);
@@ -69,6 +88,9 @@ export function SecretDetailDialog({
             rotation_days: secret.rotation_days ? String(secret.rotation_days) : '',
             sensitive: secret.sensitive,
             available_to_previews: secret.available_to_previews,
+            provider_id: secret.provider_id ?? '',
+            watch_minutes: secret.watch_minutes ? String(secret.watch_minutes) : '',
+            on_change: secret.on_change,
         });
         setValue('');
         setErrors({});
@@ -103,6 +125,13 @@ export function SecretDetailDialog({
                     rotation_days: meta.rotation_days ? Number(meta.rotation_days) : null,
                     sensitive: meta.sensitive,
                     available_to_previews: meta.available_to_previews,
+                    ...(secret.kind === 'linked'
+                        ? {
+                              provider_id: meta.provider_id || null,
+                              watch_minutes: meta.watch_minutes ? Number(meta.watch_minutes) : null,
+                              on_change: meta.on_change,
+                          }
+                        : {}),
                 }),
             'Secret updated',
         );
@@ -131,6 +160,8 @@ export function SecretDetailDialog({
     const versions = data?.versions ?? [];
     const access = data?.access_log ?? [];
     const usedBy = detail.used_by ?? [];
+    const pinned = versions.find((version) => version.current)?.pinned ?? false;
+    const provider = providers.find((option) => option.id === detail.provider_id);
 
     return (
         <>
@@ -144,7 +175,8 @@ export function SecretDetailDialog({
                         <Tag>{SCOPE_LABELS[detail.scope]}</Tag>
                         <span>{detail.scope_label}</span>
                         {detail.sensitive && <Tag tone="warning">Sensitive</Tag>}
-                        {linked && <Tag tone="info">Linked</Tag>}
+                        {linked && <Tag tone="info">{provider ? `Linked · ${provider.name}` : 'Linked'}</Tag>}
+                        {pinned && <Tag tone="warning">Pinned</Tag>}
                         <span className="text-fg-faint">· v{detail.current_version}</span>
                     </span>
                 }
@@ -163,6 +195,12 @@ export function SecretDetailDialog({
                     </TabsList>
 
                     <TabsContent value="overview" className="grid gap-6">
+                        {pinned && (
+                            <Callout tone="warning">
+                                Rolled back to a recorded value: deployments use it instead of asking the provider, and the watch is paused. Save the
+                                reference again to follow the provider.
+                            </Callout>
+                        )}
                         <KeyValue
                             columns={3}
                             items={[
@@ -239,6 +277,55 @@ export function SecretDetailDialog({
                                     onChange={(event) => setMeta({ ...meta, description: event.target.value })}
                                 />
                             </Field>
+                            {linked && (
+                                <>
+                                    <Field label="Provider" error={errors.provider_id}>
+                                        <Select
+                                            value={meta.provider_id}
+                                            disabled={!can.manage}
+                                            onValueChange={(value) => setMeta({ ...meta, provider_id: value })}
+                                            options={providers.map((option) => ({
+                                                value: option.id,
+                                                label: option.name,
+                                                description: `${option.scheme}://`,
+                                            }))}
+                                        />
+                                    </Field>
+                                    <div className="grid items-start gap-4 sm:grid-cols-2">
+                                        <Field
+                                            label="Watch every (minutes)"
+                                            hint={detail.last_polled_at ? undefined : 'Empty: not watched.'}
+                                            error={errors.watch_minutes}
+                                        >
+                                            <Input
+                                                type="number"
+                                                min={1}
+                                                max={1440}
+                                                value={meta.watch_minutes}
+                                                disabled={!can.manage}
+                                                placeholder="Off"
+                                                onChange={(event) => setMeta({ ...meta, watch_minutes: event.target.value })}
+                                            />
+                                        </Field>
+                                        <Field label="When it changes" error={errors.on_change}>
+                                            <Select
+                                                value={meta.on_change}
+                                                disabled={!can.manage || !meta.watch_minutes}
+                                                onValueChange={(value) => setMeta({ ...meta, on_change: value as OnChange })}
+                                                options={(Object.keys(ON_CHANGE_LABELS) as OnChange[]).map((value) => ({
+                                                    value,
+                                                    label: ON_CHANGE_LABELS[value],
+                                                }))}
+                                            />
+                                        </Field>
+                                    </div>
+                                    {detail.last_polled_at && (
+                                        <p className="text-fg-faint -mt-2 text-xs">
+                                            Last checked <RelativeTime value={detail.last_polled_at} />
+                                        </p>
+                                    )}
+                                </>
+                            )}
                             <Field label="Rotate every (days)" error={errors.rotation_days}>
                                 <Input
                                     type="number"
@@ -297,7 +384,9 @@ export function SecretDetailDialog({
                                             <span className="tabular font-mono">v{row.version}</span>
                                             {row.current && <Tag tone="success">Current</Tag>}
                                             {row.disabled_at && <Tag tone="faint">Disabled</Tag>}
+                                            {row.pinned && <Tag tone="warning">Pinned</Tag>}
                                             {row.restored_from && <span className="text-fg-faint text-xs">from v{row.restored_from}</span>}
+                                            {row.note && !row.restored_from && <span className="text-fg-faint text-xs">{row.note}</span>}
                                         </span>
                                     ),
                                 },

@@ -1,7 +1,8 @@
-import { Button, Dialog, Field, Input, SecretInput, Segmented, Select, Switch, Textarea } from '@/components/falak';
+import { Button, Callout, Dialog, Field, Input, SecretInput, Segmented, Select, Switch, Textarea } from '@/components/falak';
 import { HttpError, errorMessage, requestJson } from '@/lib/http';
+import { Link } from '@inertiajs/react';
 import { useEffect, useState, type FormEvent } from 'react';
-import { SCOPE_LABELS, type ScopeOption } from '../types';
+import { ON_CHANGE_LABELS, SCOPE_LABELS, type OnChange, type ProviderOption, type ScopeOption } from '../types';
 
 interface Form {
     name: string;
@@ -9,6 +10,9 @@ interface Form {
     kind: 'managed' | 'linked';
     value: string;
     reference: string;
+    provider_id: string;
+    watch_minutes: string;
+    on_change: OnChange;
     sensitive: boolean;
     available_to_previews: boolean;
     description: string;
@@ -17,12 +21,15 @@ interface Form {
 
 const scopeKey = (option: ScopeOption) => `${option.scope}:${option.id}`;
 
-const blank = (scopes: ScopeOption[]): Form => ({
+const blank = (scopes: ScopeOption[], providers: ProviderOption[]): Form => ({
     name: '',
     scope: scopes[0] ? scopeKey(scopes[0]) : '',
     kind: 'managed',
     value: '',
     reference: '',
+    provider_id: providers[0]?.id ?? '',
+    watch_minutes: '',
+    on_change: 'none',
     sensitive: true,
     available_to_previews: false,
     description: '',
@@ -32,25 +39,28 @@ const blank = (scopes: ScopeOption[]): Form => ({
 export function CreateSecretDialog({
     open,
     scopes,
+    providers,
     onClose,
     onCreated,
 }: {
     open: boolean;
     scopes: ScopeOption[];
+    providers: ProviderOption[];
     onClose: () => void;
     onCreated: () => void;
 }) {
-    const [form, setForm] = useState<Form>(() => blank(scopes));
+    const [form, setForm] = useState<Form>(() => blank(scopes, providers));
+    const provider = providers.find((option) => option.id === form.provider_id);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [busy, setBusy] = useState(false);
     const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((current) => ({ ...current, [key]: value }));
 
     useEffect(() => {
         if (open) {
-            setForm(blank(scopes));
+            setForm(blank(scopes, providers));
             setErrors({});
         }
-    }, [open, scopes]);
+    }, [open, scopes, providers]);
 
     const submit = async (event: FormEvent) => {
         event.preventDefault();
@@ -64,6 +74,13 @@ export function CreateSecretDialog({
                 kind: form.kind,
                 value: form.kind === 'managed' ? form.value : null,
                 reference: form.kind === 'linked' ? form.reference : null,
+                ...(form.kind === 'linked'
+                    ? {
+                          provider_id: form.provider_id || null,
+                          watch_minutes: form.watch_minutes ? Number(form.watch_minutes) : null,
+                          on_change: form.on_change,
+                      }
+                    : {}),
                 sensitive: form.sensitive,
                 available_to_previews: form.available_to_previews,
                 description: form.description || null,
@@ -137,19 +154,55 @@ export function CreateSecretDialog({
                     <Field label="Value" error={errors.value}>
                         <SecretInput value={form.value} onChange={(value) => set('value', value)} />
                     </Field>
+                ) : providers.length === 0 ? (
+                    <Callout tone="info">
+                        Add a secret provider first (Vault, AWS, 1Password, Doppler, Infisical or an HTTPS webhook):{' '}
+                        <Link href="/settings/secrets/providers" className="text-primary hover:underline">
+                            Secret providers
+                        </Link>
+                        .
+                    </Callout>
                 ) : (
-                    <Field
-                        label="Reference"
-                        hint="e.g. vault://kv/data/app#DB_PASS or aws-sm://prod/db#password. Resolved at deploy time."
-                        error={errors.reference}
-                    >
-                        <Input
-                            mono
-                            value={form.reference}
-                            onChange={(event) => set('reference', event.target.value)}
-                            placeholder="vault://kv/data/app#KEY"
-                        />
-                    </Field>
+                    <>
+                        <Field label="Provider" error={errors.provider_id}>
+                            <Select
+                                value={form.provider_id}
+                                onValueChange={(value) => set('provider_id', value)}
+                                options={providers.map((option) => ({ value: option.id, label: option.name, description: `${option.scheme}://` }))}
+                            />
+                        </Field>
+                        <Field label="Reference" hint="Resolved on the control plane at deploy time, cached encrypted." error={errors.reference}>
+                            <Input
+                                mono
+                                value={form.reference}
+                                onChange={(event) => set('reference', event.target.value)}
+                                placeholder={provider?.example ?? 'vault://kv/data/app#KEY'}
+                            />
+                        </Field>
+                        <div className="grid items-start gap-4 sm:grid-cols-2">
+                            <Field label="Watch every" hint="Minutes. Empty: don't watch." error={errors.watch_minutes}>
+                                <Input
+                                    type="number"
+                                    min={1}
+                                    max={1440}
+                                    value={form.watch_minutes}
+                                    onChange={(event) => set('watch_minutes', event.target.value)}
+                                    placeholder="Off"
+                                />
+                            </Field>
+                            <Field label="When it changes" error={errors.on_change}>
+                                <Select
+                                    value={form.on_change}
+                                    disabled={!form.watch_minutes}
+                                    onValueChange={(value) => set('on_change', value as OnChange)}
+                                    options={(Object.keys(ON_CHANGE_LABELS) as OnChange[]).map((value) => ({
+                                        value,
+                                        label: ON_CHANGE_LABELS[value],
+                                    }))}
+                                />
+                            </Field>
+                        </div>
+                    </>
                 )}
                 <Field label="Sensitive" inline hint="Write-only: once saved, no one can read the value back (only replace it).">
                     <Switch checked={form.sensitive} onCheckedChange={(checked) => set('sensitive', checked)} />
