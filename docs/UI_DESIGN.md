@@ -28,38 +28,43 @@ Goal: replace the stock shadcn look with a Railway-grade product. Dark-first (pl
 Defined once in `resources/css/app.css` as CSS variables, mapped into Tailwind 4 `@theme`. **No hard-coded colors
 in components.**
 
-### Color — dark (default)
-| Token | Value | Use |
-|---|---|---|
-| `--bg` | `#0b0f0c` | app background |
-| `--bg-canvas` | `#0d120e` | canvas (dotted grid `--grid` `#1e2820`, 1px dots every 20px) |
-| `--surface-1` | `#111713` | panels, cards |
-| `--surface-2` | `#17201a` | hover, inputs, nested (elevated) |
-| `--surface-3` | `#1e2921` | active, selected |
-| `--border` | `#243128` | hairlines (1px) |
-| `--border-strong` | `#324236` | focused inputs, selected cards |
-| `--text` | `#f2f5f2` | primary text |
-| `--text-muted` | `#a7b0a9` | secondary |
-| `--text-faint` | `#6e786f` | tertiary, placeholders |
-| `--accent` | `#7fa66a` | primary buttons, focus ring, links (brand green) |
-| `--accent-hover` | `#93b87e` | |
-| `--accent-soft` | `#1b2a1d` | selected nav, soft badges (`--accent-on-soft` `#93b87e` for text on it) |
-| `--text-on-accent` | `#0b0f0c` | text on accent / success fills (dark: AA on the light green) |
-| `--text-on-danger` | `#ffffff` | text on danger fills |
-| `--selection` | `rgba(127,166,106,.3)` | text selection, terminal selection |
-| `--success` | `#5dbe7a` · soft `rgba(93,190,122,.14)` | active/healthy |
-| `--warning` | `#f59e0b` · soft | building/deploying/degraded |
-| `--danger` | `#ef4444` · soft | failed/crashed/offline |
-| `--info` | `#38bdf8` · soft | queued/informational |
+### Color — "Aurora teal"
+Cool blue-green-grey neutrals with a teal accent. Text pairs meet WCAG AA (≥ 4.5:1); the brand teal `#0f8b8d` is
+deepened in light mode so white button text and links pass.
 
-### Color — light
-`--bg #f4f7f3`, `--bg-canvas #f0f4ef` (grid `#d8e0d7`), `--surface-1 #ffffff`, `--surface-2 #edf2ec`,
-`--surface-3 #e4ebe3`, `--border #d8e0d7`, `--border-strong #c3cec2`, `--text #172019`, `--text-muted #5f6d62`,
-`--text-faint #8a968c`, `--accent #4f7a5a` (hover `#3f674a`, soft `#e1eae0`, on-soft `#3f674a`),
-`--text-on-accent #ffffff`, `--success #22863a`; warning/danger/info as dark with darker shades for contrast.
+| Token | Dark (default) | Light | Use |
+|---|---|---|---|
+| `--bg` | `#0a0f12` | `#f5f9fa` | app background |
+| `--bg-canvas` | `#0c1215` | `#f0f6f7` | canvas (dotted grid `--grid`, 1px dots every 20px) |
+| `--grid` | `#1c272d` | `#d5e2e5` | canvas dots |
+| `--surface-1` | `#10171b` | `#ffffff` | panels, cards |
+| `--surface-2` | `#162026` | `#ecf3f4` | hover, inputs, nested (elevated) |
+| `--surface-3` | `#1d2a31` | `#e4eef0` | active, selected |
+| `--border` | `#22313a` | `#d5e2e5` | hairlines (1px) |
+| `--border-strong` | `#304450` | `#bccdd2` | focused inputs, selected cards |
+| `--text` | `#eef4f5` | `#13202a` | primary text |
+| `--text-muted` | `#9fb0b5` | `#556670` | secondary |
+| `--text-faint` | `#8597a0` | `#5b6c75` | tertiary, placeholders (AA up to `--surface-3`) |
+| decorative grey | `#66767d` | `#8a9aa2` | `--faint-soft` fills only, never text |
+| `--accent` | `#4fd1c5` | `#0b7577` | primary buttons, focus ring, links (teal) |
+| `--accent-hover` | `#76e0d6` | `#0a6668` | |
+| `--accent-soft` | `#10302f` | `#ddf0ef` | selected nav, soft badges |
+| `--accent-on-soft` | `#76e0d6` | `#0a6668` | accent text on `--accent-soft` |
+| `--text-on-accent` | `#0a0f12` | `#ffffff` | text on accent / success fills |
+| `--text-on-danger` | `#ffffff` | `#ffffff` | text on danger fills |
+| `--selection` | `rgba(79,209,197,.28)` | `rgba(15,139,141,.22)` | text selection, terminal selection |
+| `--success` | `#5ccb5f` | `#1f7a35` | active/healthy — a true green, clearly apart from the teal |
+| `--warning` | `#f59e0b` | `#d97706` | building/deploying/degraded |
+| `--danger` | `#ef4444` | `#dc2626` | failed/crashed/offline |
+| `--info` | `#60a5fa` | `#2563eb` | queued/informational — blue, so it never reads as the accent |
 
-Brand core: `#0b0f0c` + `#4f7a5a` + `#f2f5f2`. The mark (`FalakMark`, `public/favicon.svg`) is a sphere with two
-orbit bands, always in the accent green next to the "Falak" wordmark in `--text`; at ≤ 20px the bands are thicker.
+Each status has a `-soft` translucent fill of the same hue. Key contrasts: dark accent fill with `#0a0f12` text
+10.3:1, accent link on `--surface-2` 8.9:1, on-soft 9.0:1; light accent fill with white text 5.5:1, accent link on
+`--surface-2` 4.9:1, on-soft 5.7:1. Chart series (`--chart-1..5`): teal accent, orange, violet, blue, pink.
+
+Brand core: `#0a0f12` + `#0f8b8d` / `#4fd1c5` + `#eef4f5`. The mark (`FalakMark`, `public/favicon.svg`) is a sphere
+with two orbit bands, always in the accent teal next to the "Falak" wordmark in `--text`; at ≤ 20px the bands are
+thicker. Favicons: `#0b7577` (light) / `#4fd1c5` (dark); `apple-touch-icon.png` is the dark mark on `#0a0f12`.
 
 ### Type
 - UI: **Inter** (variable, `@fontsource-variable/inter`), code/logs/ids: **JetBrains Mono**

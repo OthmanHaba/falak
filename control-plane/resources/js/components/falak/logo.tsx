@@ -5,7 +5,7 @@ import { useId } from 'react';
 const ORBITS = ['M-345 117Q-43 52 285-180', 'M-307 206Q7 164 335-44'];
 
 /**
- * Falak mark: a sphere with two orbit bands, in the brand green (`currentColor`, `text-primary` by default). Small
+ * Falak mark: a sphere with two orbit bands, in the teal accent (`currentColor`, `text-primary` by default). Small
  * renderings (≤ 20px) use the thicker band so the gaps survive. The mask id is unique per instance.
  */
 export function FalakMark({ className, size = 20 }: { className?: string; size?: number }) {
