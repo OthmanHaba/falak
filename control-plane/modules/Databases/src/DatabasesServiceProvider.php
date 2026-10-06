@@ -12,6 +12,7 @@ use Falak\Databases\Application\Listeners\ForgetDeletedServer;
 use Falak\Databases\Application\Listeners\ForgetFailedEngine;
 use Falak\Databases\Application\Listeners\HandleCommandOutcome;
 use Falak\Databases\Application\Listeners\SyncDatabaseEngine;
+use Falak\Databases\Contracts\BackupStorage;
 use Falak\Databases\Contracts\DatabaseConnections;
 use Falak\Databases\Contracts\DatabaseDirectory;
 use Falak\Databases\Contracts\DatabaseProvisioner;
@@ -30,6 +31,7 @@ use Falak\Databases\Infrastructure\ActionDatabaseProvisioner;
 use Falak\Databases\Infrastructure\DatabaseContainerPorts;
 use Falak\Databases\Infrastructure\EloquentDatabaseConnections;
 use Falak\Databases\Infrastructure\EloquentDatabaseDirectory;
+use Falak\Databases\Infrastructure\ObjectStorageBackupStorage;
 use Falak\Fleet\Events\AgentFactsReported;
 use Falak\Fleet\Events\AgentVersionChanged;
 use Falak\Fleet\Events\CommandFailed;
@@ -64,6 +66,7 @@ class DatabasesServiceProvider extends ModuleServiceProvider
         DatabaseConnections::class => EloquentDatabaseConnections::class,
         DatabaseProvisioner::class => ActionDatabaseProvisioner::class,
         ContainerHostPorts::class => DatabaseContainerPorts::class,
+        BackupStorage::class => ObjectStorageBackupStorage::class,
     ];
 
     public function register(): void
