@@ -13,7 +13,7 @@ import {
     Textarea,
 } from '@/components/falak';
 import { Head, Link, router, useForm } from '@inertiajs/react';
-import { ArrowLeft, Copy, ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Copy, ExternalLink, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import { NewEnvironmentDialog } from '../components/new-environment-dialog';
 import { canvasUrl, type ProjectAbilities, type ProjectDetail, type ProjectEnvironment } from '../types';
@@ -230,6 +230,20 @@ export default function Settings({ project, can }: Props) {
                         ]}
                     />
                 </Section>
+
+                <Section
+                    id="secrets"
+                    title="Secrets"
+                    description="API keys and passwords for the project, its environments and services, referenced from variables as ${{ secrets.NAME }}."
+                    aside={
+                        <Button asChild>
+                            <Link href={`/projects/${project.id}/settings/secrets`}>
+                                <KeyRound aria-hidden /> Manage secrets
+                            </Link>
+                        </Button>
+                    }
+                    bare
+                />
 
                 {can.manage && (
                     <Section id="danger" title="Danger zone" tone="danger">
