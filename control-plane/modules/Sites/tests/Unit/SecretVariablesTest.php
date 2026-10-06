@@ -28,6 +28,14 @@ it('names a variable that references another service secret', function () {
     ]))->toEqualCanonicalizing(['MY_DB', 'CONN']);
 });
 
+it('names a variable that references the secret store, whatever its name', function () {
+    expect(app(SecretVariables::class)->names([
+        'STRIPE' => '${{ secrets.STRIPE }}',
+        'BILLING_ENDPOINT' => 'https://api.example.com/${{ secrets.ACCOUNT }}',
+        'APP_ENV' => 'production',
+    ]))->toEqualCanonicalizing(['STRIPE', 'BILLING_ENDPOINT']);
+});
+
 it('names credentials in values, more name patterns, and secrets that except would let through', function () {
     expect(app(SecretVariables::class)->names([
         'MONGODB_URI' => 'mongodb://app:pw-123456@db/app', 'UPSTREAM' => 'https://bot:tok-123456@api.example.com/x', 'HOMEPAGE' => 'https://example.com/a@b',

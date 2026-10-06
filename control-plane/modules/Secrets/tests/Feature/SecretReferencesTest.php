@@ -71,6 +71,15 @@ it('renders secrets into the release at deploy time and logs the read as the dep
         ->and($log->reason)->toBe("Deployment #{$deployment->number}");
 });
 
+it('masks a secret store value in deploy output whatever the variable is called', function () {
+    $world = secrets_deploy_world(['APP_KEY' => 'base64:k', 'BILLING' => '${{ secrets.STRIPE_SECRET }}']);
+    secrets_create($world->organization, 'STRIPE_SECRET', 'sk_live_abc', SecretScope::Environment, projects_default_env($world->organization)->id);
+
+    secret_store_deploy($world);
+
+    expect($world->agents->last('deploy.prepare')['payload']['mask'])->toContain('BILLING');
+});
+
 it('fails the deployment with a clear error when a secret is missing', function () {
     $world = secrets_deploy_world(['APP_KEY' => 'base64:k', 'STRIPE_SECRET' => '${{ secrets.STRIPE_SECRET }}']);
 

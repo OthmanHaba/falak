@@ -40,6 +40,9 @@ final class StepPayloads
         private readonly SecretVariables $secrets,
     ) {}
 
+    /** @var array<string, list<string>> site id => variables the last resolve filled from the secret store */
+    private array $storeSecrets = [];
+
     // ---- Docker Compose (docs/COMPOSE_TEMPLATES.md §1.4) -------------------------------------------------------
 
     /**
@@ -557,6 +560,9 @@ final class StepPayloads
             throw new RuntimeException($result->errorSummary());
         }
 
+        // Variables that took a secret store value, also through another service's variable: mask() adds them.
+        $this->storeSecrets[$site->id] = $result->secretKeys;
+
         return $result->variables;
     }
 
@@ -589,6 +595,7 @@ final class StepPayloads
         $names = array_unique([
             ...$this->secrets->names($this->sites->environment($site->id)?->variables ?? []),
             ...$this->secrets->names($env),
+            ...($this->storeSecrets[$site->id] ?? []),
         ]);
         $names = array_values(array_filter($names, fn (string $name) => preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $name) === 1 && (! $presentOnly || array_key_exists($name, $env))));
         sort($names);
