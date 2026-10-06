@@ -51,7 +51,24 @@ warn() { printf '  %s!%s %s\n' "$Y" "$N" "$*" >&2; }
 die()  { printf '\n%serror:%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
 
 force_or_die() { if [ "$FORCE" = 1 ]; then warn "$1 (continuing: --force)"; else die "$2"; fi; }
-os_field() { sed -n "s/^$1=//p" /etc/os-release 2>/dev/null | tr -d '"' | head -1; }
+os_field() { sed -n "s/^$1=//p" "${FALAK_OS_RELEASE:-/etc/os-release}" 2>/dev/null | tr -d '"' | head -1; }
+SUPPORTED_OS="Ubuntu 22.04/24.04/26.04 and Debian 12"
+os_supported() { case "$1:$2" in ubuntu:22.04|ubuntu:24.04|ubuntu:26.04|debian:12) return 0 ;; *) return 1 ;; esac; }
+
+# pull_retry CMD... : run an image pull, retrying transient registry errors ("connection reset by peer", IPv6
+# resets, 5xx) with backoff: FALAK_PULL_ATTEMPTS tries (default 4), waiting 5s, 10s, 20s ... in between.
+pull_retry() {
+  local attempt=1 max="${FALAK_PULL_ATTEMPTS:-4}" delay="${FALAK_PULL_DELAY:-5}"
+  until "$@"; do
+    if [ "$attempt" -ge "$max" ]; then
+      warn "image pull failed $attempt times, giving up"
+      return 1
+    fi
+    warn "image pull failed (attempt $attempt of $max, usually a transient registry or network error); retrying in ${delay}s"
+    sleep "$delay"
+    attempt=$((attempt + 1)); delay=$((delay * 2))
+  done
+}
 
 usage() { sed -n '2,28p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || echo "see docs/INSTALL.md"; }
 
@@ -153,11 +170,8 @@ preflight() {
 
   local id ver
   id="$(os_field ID)"; ver="$(os_field VERSION_ID)"
-  case "$id:$ver" in
-    ubuntu:22.04|ubuntu:24.04|debian:12) ok "OS: $id $ver" ;;
-    *) force_or_die "unsupported OS '$id $ver'" \
-         "unsupported OS '$id $ver': Falak supports Ubuntu 22.04/24.04 and Debian 12 (--force to try anyway)" ;;
-  esac
+  if os_supported "$id" "$ver"; then ok "OS: $id $ver"
+  else force_or_die "unsupported OS '$id $ver'" "unsupported OS '$id $ver': Falak supports $SUPPORTED_OS (--force to try anyway)"; fi
 
   local arch; arch="$(uname -m)"
   case "$arch" in x86_64|aarch64) ok "arch: $arch" ;; *) die "unsupported CPU architecture $arch (amd64/arm64 only)" ;; esac
@@ -231,6 +245,21 @@ check_dns() {
 }
 
 # --- Docker ---------------------------------------------------------------------------------------------
+# docker_codename ID CODENAME : the suite of Docker's apt repository to use. Docker publishes each release's own
+# codename (jammy, noble, resolute; bookworm, trixie), usually some weeks after a new release ships; until then
+# fall back to the previous LTS / stable suite, whose packages install and run on the newer release.
+docker_codename() {
+  local id="$1" codename="$2" fallback
+  case "$id" in debian) fallback=bookworm ;; *) fallback=noble ;; esac
+  if [ -z "$codename" ]; then echo "$fallback"; return 0; fi
+  if curl -fsSI --max-time 15 "https://download.docker.com/linux/$id/dists/$codename/Release" >/dev/null 2>&1; then
+    echo "$codename"
+  else
+    warn "Docker's apt repository has no '$codename' suite (yet); using '$fallback' packages"
+    echo "$fallback"
+  fi
+}
+
 install_docker() {
   info "Docker"
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
@@ -242,6 +271,7 @@ install_docker() {
     apt-get update -qq
     apt-get install -y -qq ca-certificates curl gnupg >/dev/null
     install -m 0755 -d /etc/apt/keyrings
+    codename="$(docker_codename "$id" "$codename")"
     curl -fsSL "https://download.docker.com/linux/$id/gpg" -o /etc/apt/keyrings/docker.asc
     chmod a+r /etc/apt/keyrings/docker.asc
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/$id $codename stable" \
@@ -394,7 +424,7 @@ dc() { COMPOSE_PROFILES="$(env_get COMPOSE_PROFILES)" docker compose -p "$FALAK_
 start_stack() {
   info "Starting Falak $VERSION"
   if [ "$(env_get FALAK_PULL 1)" != 0 ]; then
-    dc pull --quiet || die "pulling images from $IMAGE_PREFIX failed (is release $VERSION published? private packages need 'docker login ghcr.io')"
+    pull_retry dc pull --quiet || die "pulling images from $IMAGE_PREFIX failed (is release $VERSION published? private packages need 'docker login ghcr.io')"
     ok "images pulled"
   fi
   if ! dc up -d --wait --wait-timeout 600 --remove-orphans; then
@@ -472,5 +502,6 @@ main() {
   summary
 }
 
-# stdin is the script itself under `curl | bash`: never let a command read it.
-main </dev/null
+# stdin is the script itself under `curl | bash`: never let a command read it. deploy/tests/*.sh source the
+# script (FALAK_INSTALL_SOURCED=1) for function-level tests.
+if [ "${FALAK_INSTALL_SOURCED:-0}" != 1 ]; then main </dev/null; fi

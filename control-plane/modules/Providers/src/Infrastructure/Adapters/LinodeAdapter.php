@@ -24,7 +24,7 @@ use Illuminate\Support\Str;
  */
 final class LinodeAdapter extends HttpProviderAdapter
 {
-    private const IMAGES = ['linode/ubuntu22.04' => '22.04', 'linode/ubuntu24.04' => '24.04'];
+    private const IMAGES = ['linode/ubuntu22.04' => '22.04', 'linode/ubuntu24.04' => '24.04', 'linode/ubuntu26.04' => '26.04'];
 
     /**
      * @param  array<string, int>  $http

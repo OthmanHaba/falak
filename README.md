@@ -97,7 +97,7 @@ Then open the UI, or use the CLI / API.
 
 ### Add a server
 UI: **Servers → Create** (Hetzner, DigitalOcean, Vultr, Linode, AWS Lightsail, or *Custom*).
-For *Custom*, run the printed one-line install command as root on a fresh Ubuntu 24.04 box. The agent
+For *Custom*, run the printed one-line install command as root on a fresh Ubuntu 22.04, 24.04 or 26.04 box. The agent
 enrolls over mTLS, then the server is provisioned automatically for its type (app, web, db, cache,
 worker, load balancer, builder).
 
@@ -172,7 +172,7 @@ Grafana (dashboards are provisioned per organization).
 
 ## 4. Production install
 
-One command on a fresh Ubuntu 22.04/24.04 or Debian 12 host (4 GB RAM recommended). Point DNS for
+One command on a fresh Ubuntu 22.04/24.04/26.04 or Debian 12 host (4 GB RAM recommended). Point DNS for
 `falak.example.com` and `agents.falak.example.com` at the host first:
 
 ```bash

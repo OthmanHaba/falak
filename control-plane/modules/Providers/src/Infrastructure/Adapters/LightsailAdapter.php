@@ -29,7 +29,7 @@ final class LightsailAdapter extends HttpProviderAdapter
 {
     private const TARGET_PREFIX = 'Lightsail_20161128.';
 
-    private const BLUEPRINTS = ['ubuntu_22_04' => '22.04', 'ubuntu_24_04' => '24.04'];
+    private const BLUEPRINTS = ['ubuntu_22_04' => '22.04', 'ubuntu_24_04' => '24.04', 'ubuntu_26_04' => '26.04'];
 
     private string $currentRegion;
 

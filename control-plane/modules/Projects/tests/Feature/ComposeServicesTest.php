@@ -83,12 +83,12 @@ it('replaces a database service with a Falak database next to the stack and rewr
     ]);
     $rewrites = $rewrites->dotenv();
 
-    // Resolved for the stack (containers on the engine's server): the server's address, once container access is on.
+    // Resolved for the stack (containers on the engine's server): the Docker bridge, once container access is on.
     $this->engine->forceFill(['container_access' => true])->save();
     $resolved = app(VariableReferences::class)->resolve($this->environment->id, $this->stack->id, $rewrites);
     expect($resolved->errors)->toBe([])
         ->and(array_keys($rewrites))->toBe(['FALAK_SVC_APP_DATABASE_URL', 'FALAK_SVC_APP_DB_HOST', 'FALAK_SVC_APP_DB_PASSWORD', 'FALAK_SVC_WORKER_PGHOST', 'FALAK_SVC_WORKER_PGPORT'])
-        ->and($resolved->variables['FALAK_SVC_APP_DB_HOST'])->toBe(Server::query()->find($this->server->id)->private_ipv4)
+        ->and($resolved->variables['FALAK_SVC_APP_DB_HOST'])->toBe('172.17.0.1')
         ->and($resolved->variables['FALAK_SVC_APP_DATABASE_URL'])->toStartWith('postgresql://shop:');
 });
 
