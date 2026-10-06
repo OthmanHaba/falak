@@ -3,6 +3,7 @@
 namespace Falak\Deployments\Domain\Models;
 
 use Falak\Deployments\Domain\Enums\Strategy;
+use Falak\Kernel\Security\Casts\Sealed;
 use Falak\Sites\Contracts\Data\SiteData;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -54,7 +55,7 @@ class SiteSettings extends Model
             'health_timeout_s' => 'integer',
             'health_retries' => 'integer',
             'health_retry_delay_s' => 'integer',
-            'hook_token' => 'encrypted',
+            'hook_token' => Sealed::class,
         ];
     }
 

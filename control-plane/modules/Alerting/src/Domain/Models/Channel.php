@@ -3,6 +3,7 @@
 namespace Falak\Alerting\Domain\Models;
 
 use Falak\Alerting\Domain\Enums\ChannelType;
+use Falak\Kernel\Security\Casts\SealedArray;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -38,7 +39,7 @@ class Channel extends Model
     {
         return [
             'type' => ChannelType::class,
-            'config' => 'encrypted:array',
+            'config' => SealedArray::class,
             'enabled' => 'boolean',
             'last_sent_at' => 'datetime',
         ];

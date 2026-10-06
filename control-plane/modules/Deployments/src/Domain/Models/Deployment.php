@@ -5,6 +5,7 @@ namespace Falak\Deployments\Domain\Models;
 use Falak\Deployments\Domain\Enums\DeploymentStatus;
 use Falak\Deployments\Domain\Enums\Strategy;
 use Falak\Deployments\Domain\Enums\Trigger;
+use Falak\Kernel\Security\Casts\SealedArray;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
 use Illuminate\Database\Eloquent\Collection;
@@ -74,7 +75,7 @@ class Deployment extends Model
             'rolled_back' => 'boolean',
             'cancel_requested' => 'boolean',
             // Deploy hook FALAK_VAR_* values may carry secrets.
-            'variables' => 'encrypted:array',
+            'variables' => SealedArray::class,
             'settings' => 'array',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',

@@ -3,6 +3,7 @@
 namespace Falak\Databases\Domain\Models;
 
 use Falak\Databases\Domain\Enums\ResourceStatus;
+use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -46,7 +47,7 @@ class DatabaseUser extends Model
     protected function casts(): array
     {
         return [
-            'password' => 'encrypted',
+            'password' => Sealed::class,
             'status' => ResourceStatus::class,
             'revision' => 'integer',
         ];

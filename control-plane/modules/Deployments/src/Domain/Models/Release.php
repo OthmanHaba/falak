@@ -3,6 +3,7 @@
 namespace Falak\Deployments\Domain\Models;
 
 use Falak\Deployments\Domain\Enums\ReleaseStatus;
+use Falak\Kernel\Security\Casts\SealedArray;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -44,7 +45,7 @@ class Release extends Model
      */
     protected function casts(): array
     {
-        return ['status' => ReleaseStatus::class, 'activated_at' => 'datetime', 'compose' => 'encrypted:array', 'environment' => 'encrypted:array'];
+        return ['status' => ReleaseStatus::class, 'activated_at' => 'datetime', 'compose' => SealedArray::class, 'environment' => SealedArray::class];
     }
 
     public static function current(string $siteId): ?self

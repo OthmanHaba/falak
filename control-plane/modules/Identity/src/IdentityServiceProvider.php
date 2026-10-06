@@ -18,6 +18,7 @@ use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Domain\Policies\OrganizationPolicy;
 use Falak\Identity\Http\Middleware\EnsureCurrentOrganization;
 use Falak\Identity\Http\Middleware\EnsureOrganizationPermission;
+use Falak\Identity\Infrastructure\CastSealedTwoFactorEncrypter;
 use Falak\Identity\Infrastructure\DatabaseAuditLog;
 use Falak\Identity\Infrastructure\EloquentOrganizationDirectory;
 use Falak\Identity\Infrastructure\InMemoryPermissionRegistry;
@@ -50,6 +51,8 @@ class IdentityServiceProvider extends ModuleServiceProvider
     {
         // Identity owns the auth routes; Fortify is used for its 2FA actions only.
         Fortify::ignoreRoutes();
+        // Two-factor secrets and recovery codes are sealed by User's casts (bound to the row), not APP_KEY.
+        Fortify::encryptUsing(new CastSealedTwoFactorEncrypter);
 
         $this->mergeConfigFrom($this->modulePath().'/config/identity.php', 'identity');
 

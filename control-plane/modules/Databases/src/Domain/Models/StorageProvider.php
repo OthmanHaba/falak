@@ -3,6 +3,7 @@
 namespace Falak\Databases\Domain\Models;
 
 use Falak\Databases\Domain\Enums\StorageDriver;
+use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -46,8 +47,8 @@ class StorageProvider extends Model
         return [
             'driver' => StorageDriver::class,
             'path_style' => 'boolean',
-            'access_key_id' => 'encrypted',
-            'secret_access_key' => 'encrypted',
+            'access_key_id' => Sealed::class,
+            'secret_access_key' => Sealed::class,
             'verified_at' => 'datetime',
         ];
     }

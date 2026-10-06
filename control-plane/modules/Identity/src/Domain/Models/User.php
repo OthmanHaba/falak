@@ -3,6 +3,7 @@
 namespace Falak\Identity\Domain\Models;
 
 use Falak\Identity\Database\Factories\UserFactory;
+use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -69,6 +70,9 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'two_factor_confirmed_at' => 'datetime',
             'password' => 'hashed',
+            // Fortify (un)serializes them through CastSealedTwoFactorEncrypter; the casts seal them.
+            'two_factor_secret' => Sealed::class,
+            'two_factor_recovery_codes' => Sealed::class,
         ];
     }
 

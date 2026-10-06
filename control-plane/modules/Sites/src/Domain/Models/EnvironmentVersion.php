@@ -2,6 +2,7 @@
 
 namespace Falak\Sites\Domain\Models;
 
+use Falak\Kernel\Security\Casts\SealedArray;
 use Falak\Sites\Contracts\Data\EnvironmentData;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -41,7 +42,7 @@ class EnvironmentVersion extends Model
     {
         return [
             'version' => 'integer',
-            'variables' => 'encrypted:array',
+            'variables' => SealedArray::class,
             'exposed' => 'array',
             'changed_keys' => 'array',
         ];

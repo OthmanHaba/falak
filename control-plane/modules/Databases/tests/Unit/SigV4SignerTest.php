@@ -1,7 +1,7 @@
 <?php
 
 use Falak\Databases\Infrastructure\ObjectStorage\EndpointGuard;
-use Falak\Databases\Infrastructure\ObjectStorage\SigV4Signer;
+use Falak\Kernel\Support\Aws\SigV4Signer;
 
 /*
 | Vectors from the AWS documentation:

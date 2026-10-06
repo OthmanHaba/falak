@@ -16,7 +16,7 @@ use RuntimeException;
 use Throwable;
 
 /**
- * Falak's internal CA (ECDSA P-256). The key lives only in the database, encrypted with APP_KEY;
+ * Falak's internal CA (ECDSA P-256). The key lives only in the database, sealed under the KEK (Sealed cast);
  * the CA certificate is also written to <fleet.ca_path>/ca.pem for the edge's client-cert verification.
  */
 final class CertificateAuthorityService

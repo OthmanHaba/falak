@@ -3,6 +3,7 @@
 namespace Falak\Sites\Domain\Models;
 
 use DateTimeImmutable;
+use Falak\Kernel\Security\Casts\Sealed;
 use Falak\Sites\Contracts\Data\ComposeVersionData;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -37,7 +38,7 @@ class ComposeVersion extends Model
      */
     protected function casts(): array
     {
-        return ['version' => 'integer', 'content' => 'encrypted'];
+        return ['version' => 'integer', 'content' => Sealed::class];
     }
 
     public function toData(): ComposeVersionData

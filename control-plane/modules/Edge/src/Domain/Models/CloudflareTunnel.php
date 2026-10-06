@@ -2,6 +2,7 @@
 
 namespace Falak\Edge\Domain\Models;
 
+use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -46,7 +47,7 @@ class CloudflareTunnel extends Model
      */
     protected function casts(): array
     {
-        return ['token' => 'encrypted'];
+        return ['token' => Sealed::class];
     }
 
     /** @return BelongsTo<DnsCredential, $this> */

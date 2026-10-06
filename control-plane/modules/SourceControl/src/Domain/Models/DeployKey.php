@@ -2,6 +2,7 @@
 
 namespace Falak\SourceControl\Domain\Models;
 
+use Falak\Kernel\Security\Casts\Sealed;
 use Falak\SourceControl\Contracts\Data\DeployKeyData;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -40,7 +41,7 @@ class DeployKey extends Model
     protected function casts(): array
     {
         return [
-            'private_key' => 'encrypted',
+            'private_key' => Sealed::class,
             'installed_at' => 'datetime',
         ];
     }

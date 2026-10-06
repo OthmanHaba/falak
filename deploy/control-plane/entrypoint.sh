@@ -9,6 +9,9 @@
 #
 #   FALAK_MIGRATE=1          web role runs `migrate --force` before serving (set on exactly one service)
 #   FALAK_WAIT_TIMEOUT=120   seconds to wait for Postgres/Valkey before giving up
+#   FALAK_MIGRATE_WAIT_TIMEOUT=900  seconds the other roles wait for the web role's migrations before giving up
+#   FALAK_KEK_GENERATE=1     web role creates a missing local KEK at FALAK_KEK_PATH (the sim only; production
+#                            installs get it from install.sh / falak-ctl, outside the containers)
 #   FALAK_EDGE_AGENT_API_HOST  issue/renew the agent-API server certificate from the Fleet CA into
 #                           $FALAK_CA_PATH (agent-api.pem/.key) — the edge serves the agents host with it.
 #
@@ -62,8 +65,38 @@ cache_config() {
   php artisan event:cache --no-interaction >/dev/null 2>&1 || true
 }
 
+# Every PHP role refuses to start without a usable key-encryption key: nothing sealed could be read or written.
+# The web role (after migrations) also checks that every data key unwraps with it, i.e. that this is the KEK the
+# database was sealed under; the other roles only check the KEK itself (one KMS/Vault call, not one per key).
+check_keys() {
+  if [ "${FALAK_KEK_GENERATE:-0}" = "1" ] && [ "${FALAK_KEK_PROVIDER:-local}" = "local" ] && [ ! -e "${FALAK_KEK_PATH:-/opt/falak/secrets/kek}" ]; then
+    php artisan falak:keys:generate-kek --no-interaction >&2
+  fi
+  if ! php artisan falak:keys:check "$@" --no-interaction >&2; then
+    log "the key-encryption key is unusable (see above; docs/INSTALL.md, \"Encryption keys\"). On the host: falak-ctl doctor"
+    exit 1
+  fi
+}
+
+# Roles other than web wait until no migration is pending: the web role runs them, and until then the database
+# may hold values the code can't read yet (v0.10.0: secrets re-sealed from APP_KEY to the KEK). `migrate:status
+# --pending=N` exits N while any is pending (and 1 before the migrations table exists).
+wait_for_migrations() {
+  deadline=$(( $(date +%s) + ${FALAK_MIGRATE_WAIT_TIMEOUT:-900} ))
+  waited=0
+  until php artisan migrate:status --pending=3 --no-interaction >/dev/null 2>&1; do
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      log "migrations are still pending after ${FALAK_MIGRATE_WAIT_TIMEOUT:-900}s (the control-plane service runs them: falak-ctl logs control-plane)"
+      exit 1
+    fi
+    [ "$waited" = 1 ] || log "waiting for the control-plane service to finish the database migrations"
+    waited=1
+    sleep 3
+  done
+}
+
 # Agents pin the Falak CA on the mTLS API, so the agents host is served with a certificate issued by the
-# Fleet CA (created on first use, key encrypted with APP_KEY in the database). Renewed 30 days before
+# Fleet CA (created on first use, key sealed in the database). Renewed 30 days before
 # expiry or when it no longer chains to the current CA; the edge hot-reloads when the files change.
 ensure_agent_api_cert() {
   host="${FALAK_EDGE_AGENT_API_HOST:-}"
@@ -157,10 +190,12 @@ case "$role" in
   web)
     wait_for_services
     cache_config
+    check_keys --kek-only
     if [ "${FALAK_MIGRATE:-0}" = "1" ]; then
       log "running migrations"
       php artisan migrate --force --no-interaction
     fi
+    check_keys
     ensure_agent_api_cert
     # Renew the agent API certificate daily while running (cheap no-op when still valid).
     ( while sleep 86400; do ensure_agent_api_cert; done ) &
@@ -170,22 +205,30 @@ case "$role" in
   agent-api)
     wait_for_services
     cache_config
+    check_keys --kek-only
+    wait_for_migrations
     configure_php agent-api
     exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile
     ;;
   horizon)
     wait_for_services
     cache_config
+    check_keys --kek-only
+    wait_for_migrations
     exec php artisan horizon
     ;;
   reverb)
     wait_for_services
     cache_config
+    check_keys --kek-only
+    wait_for_migrations
     exec php artisan reverb:start --host=0.0.0.0 --port="${REVERB_SERVER_PORT:-8080}"
     ;;
   scheduler)
     wait_for_services
     cache_config
+    check_keys --kek-only
+    wait_for_migrations
     exec php artisan schedule:work
     ;;
   *)

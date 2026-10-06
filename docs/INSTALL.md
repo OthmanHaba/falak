@@ -148,6 +148,7 @@ The agent binaries come from the control-plane image, so servers download them f
 
 ```
 /opt/falak/.env            settings + secrets (install.sh; never commit or share)
+/opt/falak/secrets/kek     key-encryption key: decrypts every secret in the database (see "Encryption keys")
 /opt/falak/custom.env      optional extra app env (GITHUB_APP_*, mirrors, FALAK_* tuning) — loaded by the app containers
 /opt/falak/deploy/         compose.yml, falak-ctl, image support files (replaced on update; previous kept as deploy.prev)
 /opt/falak/observability/  Loki/Tempo/Grafana/gateway configs
@@ -163,6 +164,46 @@ compose does not forward it from `.env`. A variable compose passes by name alway
 
 For e-mail, set `MAIL_MAILER=smtp`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` and
 `MAIL_FROM_ADDRESS` in `/opt/falak/.env`, then run `falak-ctl up`.
+
+### Encryption keys
+
+Every secret Falak stores (site environments, database and storage credentials, private keys, tokens, two-factor
+secrets) is encrypted at rest with AES-256-GCM under a **data key**. Data keys are stored in the database, wrapped
+by the **key-encryption key (KEK)**. The KEK is not `APP_KEY` and is never in `.env` or the database, so a copy of
+the database together with `.env` reveals no secrets. Each value is bound to its row: copied to another row or
+column (another organization's, say), it no longer decrypts.
+
+- **Where.** `install.sh` creates `/opt/falak/secrets/kek`: 32 random bytes, mode `0400`, owned by uid 33 (the
+  containers' `www-data`), in a `0711` directory. It is mounted read-only into the PHP containers (`control-plane`,
+  `agent-api`, `horizon`, `reverb`, `scheduler`). They refuse to start without a usable KEK, and the panel also
+  refuses one that doesn't unwrap the database's data keys. `falak-ctl kek init` creates a missing KEK (never
+  replaces one) and fixes its permissions; `falak-ctl doctor` checks it.
+- **Emergency kit.** Save it right after installing, and after every rotation:
+  `falak-ctl kek export /root/falak-emergency-kit.txt`, then move the file to a password manager or offline
+  storage and delete it from the host. It is never printed to the terminal. `falak-ctl kek import <file>` puts the
+  KEK back (`--force` replaces a different one, which is kept aside).
+- **Backups.** A backup contains the KEK only when it is encrypted (`FALAK_BACKUP_PASSPHRASE`). Otherwise
+  `falak-ctl backup` warns that the backup can't be decrypted without the KEK, which you then keep separately (the
+  emergency kit). It also leaves the KMS / Vault credentials (`FALAK_KEK_AWS_ACCESS_KEY_ID`,
+  `FALAK_KEK_AWS_SECRET_ACCESS_KEY`, `FALAK_KEK_AWS_SESSION_TOKEN`, `FALAK_KEK_VAULT_TOKEN`) out of an unencrypted
+  backup's `.env` / `custom.env`, with the same warning. `falak-ctl restore` refuses a backup without its KEK when
+  this host has neither the KEK its data keys are wrapped by nor its predecessor (`kek.previous`); import it first,
+  or pass `--force`.
+- **Rotation.** `falak-ctl kek rotate` creates a new KEK, keeps the old one as `secrets/kek.previous` (backups from
+  before the rotation need it) and re-wraps every data key (`falak:keys:rotate-kek`). Secrets are not re-encrypted:
+  only the data keys change. It refuses to start while a data key is still wrapped by `kek.previous` (an unfinished
+  rotation: run `falak-ctl artisan falak:keys:rotate-kek` first). A `kek.previous` from an earlier rotation moves to
+  `kek.retired-<id>`. `falak-ctl artisan falak:keys:rotate-data` starts a new data key and re-encrypts every value
+  under it in batches. Running workers may use the old key for up to a minute (`FALAK_KEYS_ACTIVE_TTL`), so it passes
+  again after that until nothing is left under the old key; if it is interrupted, run it again with `--resume`.
+- **KMS / Vault.** Set `FALAK_KEK_PROVIDER=aws-kms` or `vault-transit` in `.env` to keep the KEK in AWS KMS or a
+  Vault/OpenBao transit key: it never leaves them, and there is no file. Put the provider's settings in
+  `custom.env`: `FALAK_KEK_AWS_KMS_KEY_ID`, `FALAK_KEK_AWS_REGION`, `FALAK_KEK_AWS_ACCESS_KEY_ID`,
+  `FALAK_KEK_AWS_SECRET_ACCESS_KEY` (optional `FALAK_KEK_AWS_SESSION_TOKEN`), or `FALAK_KEK_VAULT_ADDR`,
+  `FALAK_KEK_VAULT_TOKEN`, `FALAK_KEK_VAULT_KEY` (default `falak`), `FALAK_KEK_VAULT_MOUNT` (default `transit`) and
+  optionally `FALAK_KEK_VAULT_NAMESPACE`. To move existing data keys, keep the old KEK readable (for a local KEK, as
+  `secrets/kek.previous`) and run `falak-ctl artisan falak:keys:rotate-kek`. After rotating the key inside KMS or
+  Vault, `--all` re-wraps every data key under the newest key version.
 
 ### Connect GitHub (GitHub App, one click)
 
@@ -277,6 +318,7 @@ falak-ctl logs [service] [-f]             # e.g. falak-ctl logs control-plane -f
 falak-ctl doctor                          # DNS, certificates, ports, disk, containers, agent API (mTLS), PHP threads, backups
 falak-ctl admin reset-password you@example.com [--password=...]
 falak-ctl admin create ops@example.com [--token=cli]
+falak-ctl kek status | export <file> | import <file> | rotate   # key-encryption key (see "Encryption keys")
 falak-ctl artisan <command>               # php artisan in the control-plane container
 falak-ctl prune-images [--dry-run]        # remove Falak images except the current and previous version
 falak-ctl registry status                 # built-in image registry: address, size, answers with its credentials
@@ -371,6 +413,25 @@ with <server>, and database references never point at a public address". Before 
 Engines on app / worker servers are unaffected for native sites (`127.0.0.1`); containers on that server now get the
 Docker bridge address (`172.17.0.1`, or `FALAK_DOCKER_BRIDGE_HOST`) instead of the server's own address.
 
+**Upgrading to v0.10.0: secrets move from `APP_KEY` to the key-encryption key.** Every encrypted column is
+re-encrypted once by a migration during the update (see [Encryption keys](#encryption-keys)): it decrypts each value
+with `APP_KEY` and seals it under a new data key. Values already converted are skipped, so an interrupted migration
+can run again. There is no fallback afterwards: keep `APP_KEY` unchanged until the update has finished. The KEK file
+must exist before v0.10.0 starts, and the falak-ctl that runs the update is the one already installed. Install the
+v0.10.0 falak-ctl first; it creates the KEK during the update. The `agent-api`, `horizon`, `reverb` and `scheduler`
+services wait until the `control-plane` service has run the migrations:
+
+```bash
+curl -fsSL https://github.com/OthmanHaba/falak/releases/download/v0.10.0/falak-ctl -o /usr/local/bin/falak-ctl
+chmod 755 /usr/local/bin/falak-ctl
+falak-ctl update --version v0.10.0
+falak-ctl kek export /root/falak-emergency-kit.txt   # then store it offline and delete it here
+```
+
+If you update with an older falak-ctl, the containers refuse to start without the KEK and the update rolls back.
+That update has already installed the new falak-ctl, so running `falak-ctl update` again then works. Backups taken
+before v0.10.0 hold `APP_KEY` ciphertexts and restore as before: the migration converts them again.
+
 If step 3, 4 or 5 fails, `falak-ctl` **rolls back automatically**. It restores the previous deploy files and
 `FALAK_VERSION`, restores the database, storage and Fleet CA from the pre-update backup (the new migrations
 may already have run), and starts the previous version again.
@@ -456,11 +517,14 @@ A backup contains:
 - `db.dump`: `pg_dump -Fc` of the database;
 - the `falak-ca` volume (Fleet CA certificate and agent API certificate), `app-storage` (build artifacts,
   app files) and `caddy-data` (ACME account and certificates);
-- `.env` and `custom.env`.
+- `.env` and `custom.env`;
+- the key-encryption key (`secrets/kek`), **only when `FALAK_BACKUP_PASSPHRASE` is set**. Without a passphrase the
+  backup warns that it can't be decrypted without the KEK: keep the emergency kit (`falak-ctl kek export`) apart
+  from the backups.
 
-> **The Fleet CA is critical.** Every agent trusts only this CA, and its private key is stored in the database
-> encrypted with `APP_KEY`. A backup is only useful with its **database and `.env` together**. If you lose
-> either one, every server must be re-enrolled. Keep copies **off the host**.
+> **The Fleet CA is critical.** Every agent trusts only this CA, and its private key is stored in the database,
+> sealed under the KEK. A backup is only useful with its **database, `.env` and the KEK together**. If you lose
+> any of them, every server must be re-enrolled and every secret entered again. Keep copies **off the host**.
 
 - Retention: the newest `FALAK_BACKUP_KEEP` backups are kept (default 14).
 - Schedule a daily backup with cron:
@@ -474,7 +538,8 @@ A backup contains:
 
 **Move to a new host:** install Falak on the new host with the same `--domain`, copy the backup over, run
 `falak-ctl restore <file> --yes`, then point DNS at the new host. The restore brings back the old `.env`
-(including `APP_KEY`), so agents keep working without re-enrolling.
+(including `APP_KEY`) and, from an encrypted backup, the KEK, so agents keep working without re-enrolling. For an
+unencrypted backup, import the KEK first: `falak-ctl kek import <emergency kit> --force`.
 
 ## 7. Change the domain
 

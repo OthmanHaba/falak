@@ -2,6 +2,7 @@
 
 namespace Falak\Servers\Domain\Models;
 
+use Falak\Kernel\Security\Casts\Sealed;
 use Falak\Servers\Contracts\Data\ServerData;
 use Falak\Servers\Contracts\ServerStatus;
 use Falak\Servers\Contracts\ServerType;
@@ -78,7 +79,7 @@ class Server extends Model
             'type' => ServerType::class,
             'status' => ServerStatus::class,
             'facts' => 'array',
-            'install_command' => 'encrypted',
+            'install_command' => Sealed::class,
             'provisioned_at' => 'datetime',
             'ssh_port' => 'integer',
         ];

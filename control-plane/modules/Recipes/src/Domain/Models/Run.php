@@ -2,6 +2,7 @@
 
 namespace Falak\Recipes\Domain\Models;
 
+use Falak\Kernel\Security\Casts\SealedArray;
 use Falak\Recipes\Domain\Enums\RunStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -46,7 +47,7 @@ class Run extends Model
         return [
             'status' => RunStatus::class,
             // Run-time variables may carry secrets (tokens, passwords).
-            'env' => 'encrypted:array',
+            'env' => SealedArray::class,
             'timeout_s' => 'integer',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',

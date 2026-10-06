@@ -2,6 +2,7 @@
 
 namespace Falak\Processes\Domain\Models;
 
+use Falak\Kernel\Security\Casts\SealedArray;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -53,7 +54,7 @@ class Worker extends Model
             'max_jobs' => 'integer',
             'max_time' => 'integer',
             'memory' => 'integer',
-            'env' => 'encrypted:array',
+            'env' => SealedArray::class,
             'server_ids' => 'array',
         ];
     }
