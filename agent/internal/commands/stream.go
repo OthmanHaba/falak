@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/OthmanHaba/falak/agent/internal/redact"
 )
 
 // maxChunk bounds the data of one output event.
@@ -147,6 +149,31 @@ func incompleteSuffix(b []byte) int {
 		}
 	}
 	return 0
+}
+
+// maskedStream masks a command's secrets in its stdout and stderr. Emit (raw terminal bytes, base64) passes through:
+// a terminal session is the user's own shell.
+type maskedStream struct {
+	Stream
+	out, err *redact.Writer
+}
+
+func newMaskedStream(s Stream, set *redact.Set) *maskedStream {
+	return &maskedStream{Stream: s, out: redact.NewWriter(set, s.Stdout()), err: redact.NewWriter(set, s.Stderr())}
+}
+
+func (m *maskedStream) Stdout() io.Writer { return m.out }
+func (m *maskedStream) Stderr() io.Writer { return m.err }
+
+// Progress first releases output held back, so it is not reported after the progress it preceded.
+func (m *maskedStream) Progress(p float64) {
+	m.flush()
+	m.Stream.Progress(p)
+}
+
+func (m *maskedStream) flush() {
+	_ = m.out.Flush()
+	_ = m.err.Flush()
 }
 
 type streamWriter struct {

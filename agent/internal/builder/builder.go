@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/redact"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 	"github.com/OthmanHaba/falak/agent/internal/version"
 )
@@ -90,18 +91,23 @@ func (b *Builder) Build(ctx context.Context, jb Job, sink commands.EventSink) (r
 	st := commands.NewEventStream(jb.ID, sink, b.Now)
 	st.Started()
 	j := &job{Job: jb, st: st, started: b.Now()}
-	j.out = redactor{st.Stdout(), jb.Secrets()}
-	j.errw = redactor{st.Stderr(), jb.Secrets()}
+	secrets := redact.NewSet(jb.Secrets()...)
+	out, errw := redact.NewWriter(secrets, st.Stdout()), redact.NewWriter(secrets, st.Stderr())
+	j.out, j.errw = out, errw
 	res = Result{BuildID: jb.ID, Mode: jb.Mode}
 	defer func() {
 		res.DurationMS = b.Now().Sub(j.started).Milliseconds()
 		code, msg := 0, ""
 		if err != nil {
-			code, msg = 1, err.Error()
+			code, msg = 1, secrets.String(err.Error())
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
-				code, msg = ExitTimeout, fmt.Sprintf("build timed out after %s: %v", jb.Timeout(), err)
+				code, msg = ExitTimeout, secrets.String(fmt.Sprintf("build timed out after %s: %v", jb.Timeout(), err))
 			}
 			fmt.Fprintf(j.errw, "build failed: %s\n", msg)
+		}
+		_ = out.Flush()
+		_ = errw.Flush()
+		if err != nil {
 			st.Finished(code, nil, msg)
 			return
 		}

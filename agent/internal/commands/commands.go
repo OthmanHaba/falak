@@ -12,6 +12,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/OthmanHaba/falak/agent/internal/redact"
 )
 
 // Envelope mirrors contracts/agent-protocol/envelope.schema.json.
@@ -82,7 +84,17 @@ func (t typed[P]) Execute(ctx context.Context, env Envelope, s Stream) (any, err
 	if err != nil {
 		return nil, err
 	}
+	if sp, ok := any(p).(SecretPayload); ok {
+		redact.Add(ctx, sp.Secrets()...)
+	}
 	return t.fn(ctx, p, s)
+}
+
+// SecretPayload is implemented by payloads that carry secrets (usually the values of the variables they list in
+// `mask`). Typed adds them to the command's redact set before the executor runs, so its output, error and result
+// never show them.
+type SecretPayload interface {
+	Secrets() []string
 }
 
 func (t typed[P]) CheckPayload(raw json.RawMessage) error {
