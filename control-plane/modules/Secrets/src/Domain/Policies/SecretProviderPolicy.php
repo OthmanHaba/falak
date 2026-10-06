@@ -8,7 +8,8 @@ use Illuminate\Auth\Access\Response;
 use Illuminate\Contracts\Auth\Authenticatable;
 
 /**
- * Providers are seen with secrets.view (names, types, status; never credentials) and changed with secrets.manage.
+ * Providers are seen with secrets.view (names, types, status; never credentials) and changed with
+ * secrets.providers.manage (admins: whoever edits an endpoint decides where stored credentials go).
  */
 final class SecretProviderPolicy
 {
@@ -21,7 +22,7 @@ final class SecretProviderPolicy
 
     public function manage(Authenticatable $user, SecretProvider $provider): Response
     {
-        return $this->check($user, $provider, SecretPolicy::MANAGE);
+        return $this->check($user, $provider, SecretPolicy::PROVIDERS_MANAGE);
     }
 
     private function check(Authenticatable $user, SecretProvider $provider, string $permission): Response

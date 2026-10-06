@@ -51,7 +51,7 @@ final class ProviderApiController extends Controller
     public function store(Request $request, SaveSecretProvider $save): JsonResponse
     {
         $organizationId = $this->organization->requireId();
-        $this->access->authorize($request->user(), $organizationId, SecretPolicy::MANAGE);
+        $this->access->authorize($request->user(), $organizationId, SecretPolicy::PROVIDERS_MANAGE);
 
         $provider = $save($organizationId, null, $request->validate(ProviderRules::create()), $request->user()?->getAuthIdentifier());
 
@@ -60,7 +60,7 @@ final class ProviderApiController extends Controller
 
     public function update(Request $request, string $provider, SaveSecretProvider $save): JsonResponse
     {
-        $model = $this->resolve($request, $provider, SecretPolicy::MANAGE);
+        $model = $this->resolve($request, $provider, SecretPolicy::PROVIDERS_MANAGE);
         $model = $save($model->organization_id, $model, $request->validate(ProviderRules::update()), $request->user()?->getAuthIdentifier());
 
         return response()->json(['data' => $this->presentProvider($model)]);
@@ -68,7 +68,7 @@ final class ProviderApiController extends Controller
 
     public function destroy(Request $request, string $provider, DeleteSecretProvider $delete): JsonResponse
     {
-        $delete($this->resolve($request, $provider, SecretPolicy::MANAGE));
+        $delete($this->resolve($request, $provider, SecretPolicy::PROVIDERS_MANAGE));
 
         return response()->json(null, 204);
     }
@@ -76,7 +76,7 @@ final class ProviderApiController extends Controller
     /** POST /api/v1/secrets/providers/{provider}/test */
     public function test(Request $request, string $provider, ExternalSecretProviders $providers): JsonResponse
     {
-        $model = $this->resolve($request, $provider, SecretPolicy::MANAGE);
+        $model = $this->resolve($request, $provider, SecretPolicy::PROVIDERS_MANAGE);
 
         try {
             $providers->test($model);

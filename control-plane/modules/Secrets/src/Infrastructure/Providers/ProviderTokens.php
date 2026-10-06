@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Cache;
 /**
  * Short-lived credentials a driver obtains by logging in (Vault AppRole / JWT client tokens, Infisical access
  * tokens, AWS AssumeRole sessions), kept in the cache until shortly before they expire. Sealed under the
- * organization's data key and bound to the provider and its last change, so editing the provider's
+ * organization's data key and bound to the provider and its config version, so editing the provider's
  * credentials starts over and nothing in the cache is readable without the key.
  */
 class ProviderTokens
@@ -54,11 +54,11 @@ class ProviderTokens
 
     private function key(SecretProvider $provider, string $name): string
     {
-        return "secrets:provider-token:{$provider->id}:{$name}:".($provider->updated_at?->getTimestamp() ?? 0);
+        return "secrets:provider-token:{$provider->id}:{$name}:{$provider->config_version}";
     }
 
     private function aad(SecretProvider $provider, string $name): string
     {
-        return Sealer::aad('secret-provider-token', $provider->organization_id, $provider->id, $name);
+        return Sealer::aad('secret-provider-token', $provider->organization_id, $provider->id, (string) $provider->config_version, $name);
     }
 }

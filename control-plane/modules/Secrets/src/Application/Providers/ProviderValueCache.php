@@ -12,7 +12,7 @@ use Illuminate\Support\Carbon;
 /**
  * The last good value of each reference, in the database (it must survive a cache flush: it is the fallback when
  * the provider is down), sealed under the organization's data key and bound to (organization, provider,
- * reference): a row copied to another reference, provider or organization does not open.
+ * its config version, reference): a row copied to another reference, provider or organization does not open.
  */
 final class ProviderValueCache
 {
@@ -58,6 +58,7 @@ final class ProviderValueCache
 
     private function aad(SecretProvider $provider, string $hash): string
     {
-        return Sealer::aad('secret-provider-value', $provider->organization_id, $provider->id, $hash);
+        // The config version too: a value fetched before the provider's settings changed never opens after.
+        return Sealer::aad('secret-provider-value', $provider->organization_id, $provider->id, (string) $provider->config_version, $hash);
     }
 }

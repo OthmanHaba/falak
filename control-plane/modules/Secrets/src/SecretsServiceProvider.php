@@ -35,7 +35,6 @@ class SecretsServiceProvider extends ModuleServiceProvider
      * @var array<class-string, class-string>
      */
     public array $singletons = [
-        SecretProviders::class => ExternalSecretProviders::class,
         EndpointGuard::class => EndpointGuard::class,
     ];
 
@@ -45,6 +44,10 @@ class SecretsServiceProvider extends ModuleServiceProvider
 
         // Request-scoped: the accessedAs() stack never outlives a request or job (Octane).
         $this->app->scoped(Secrets::class, SecretStore::class);
+
+        // Request-scoped too: a provider that failed during one deployment is not retried for each of its secrets.
+        $this->app->scoped(ExternalSecretProviders::class);
+        $this->app->scoped(SecretProviders::class, fn ($app) => $app->make(ExternalSecretProviders::class));
     }
 
     protected function bootModule(): void
@@ -56,6 +59,7 @@ class SecretsServiceProvider extends ModuleServiceProvider
         $registry->register(SecretPolicy::VIEW, [Role::Admin, Role::Developer, Role::Viewer], 'View secret names, versions, access log and usage (never values)', 'secrets');
         $registry->register(SecretPolicy::REVEAL, [Role::Admin, Role::Developer], 'Reveal values of non-sensitive secrets (API tokens need this ability explicitly)', 'secrets');
         $registry->register(SecretPolicy::MANAGE, [Role::Admin, Role::Developer], 'Create secrets, set values, roll back, disable versions and delete secrets', 'secrets');
+        $registry->register(SecretPolicy::PROVIDERS_MANAGE, [Role::Admin], 'Add, edit, test and delete external secret providers (Vault, AWS, 1Password, …)', 'secrets');
 
         $types = $this->app->make(AlertTypes::class);
         $types->register(ProviderUnreachable::ALERT_TYPE, 'Secret provider unreachable', 'Secrets', Severity::Warning);

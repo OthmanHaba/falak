@@ -72,6 +72,10 @@ final class VaultDriver implements ProviderDriver
                 : ['role' => (string) $provider->setting('role'), 'jwt' => (string) $provider->setting('jwt')];
             $mount = trim((string) $provider->setting('auth_mount', $method === 'approle' ? 'approle' : 'jwt'), '/');
 
+            if (preg_match('#^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$#', $mount) !== 1) {
+                throw new ProviderFailure('The Vault auth mount must be path segments of letters, digits, "-" and "_".');
+            }
+
             $response = $this->client->send($provider, 'POST', $this->address($provider).'/v1/auth/'.implode('/', array_map('rawurlencode', explode('/', $mount))).'/login', [
                 'headers' => $this->namespace($provider),
                 'json' => $body,

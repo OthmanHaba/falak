@@ -3,6 +3,7 @@
 namespace Falak\Secrets\Infrastructure\Providers;
 
 use Falak\Secrets\Domain\Models\SecretProvider;
+use GuzzleHttp\Exception\TransferException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
@@ -16,6 +17,9 @@ use Throwable;
  */
 class ProviderClient
 {
+    /** The largest answer read from a provider (bytes). */
+    public const MAX_BODY = 1048576;
+
     public function __construct(private readonly EndpointGuard $guard) {}
 
     /**
@@ -39,7 +43,10 @@ class ProviderClient
         $caFile = null;
 
         if (! ($options['unguarded'] ?? false)) {
-            $addresses = $this->guard->check($url, $provider->allow_private_network && $provider->type->selfHostable());
+            // Both the provider and the instance must allow private networks, at request time (the instance may have
+            // turned it off since the provider was saved).
+            $allowPrivate = $provider->allow_private_network && $provider->type->selfHostable() && (bool) config('secrets.providers.allow_private_network', false);
+            $addresses = $this->guard->check($url, $allowPrivate);
             $host = trim((string) parse_url($url, PHP_URL_HOST), '[]');
 
             if (filter_var($host, FILTER_VALIDATE_IP) === false) {
@@ -56,9 +63,16 @@ class ProviderClient
             }
         }
 
-        if ($curl !== []) {
-            $request = $request->withOptions(['curl' => $curl]);
-        }
+        // Answers are small JSON documents: anything bigger than MAX_BODY is cut off while it downloads.
+        $curl[CURLOPT_MAXFILESIZE] = self::MAX_BODY;
+        $request = $request->withOptions([
+            'curl' => $curl,
+            'progress' => function (int $total, int $downloaded): void {
+                if ($downloaded > self::MAX_BODY || $total > self::MAX_BODY) {
+                    throw new ProviderFailure('The provider\'s answer is larger than 1 MiB.');
+                }
+            },
+        ]);
 
         if (isset($options['json'])) {
             $request = $request->asJson()->withBody((string) json_encode($options['json'], JSON_UNESCAPED_SLASHES), 'application/json');
@@ -67,15 +81,21 @@ class ProviderClient
         }
 
         try {
-            return $request->send($method, $url);
-        } catch (ConnectionException) {
+            $response = $request->send($method, $url);
+        } catch (ConnectionException|TransferException) {
             // Not the exception's message: it may carry the full URL.
-            throw new ProviderFailure("{$provider->type->label()} at ".parse_url($url, PHP_URL_HOST).' is unreachable.');
+            throw new ProviderFailure("{$provider->type->label()} at ".parse_url($url, PHP_URL_HOST).' is unreachable (or its answer was too large).');
         } finally {
             if ($caFile !== null) {
                 @unlink($caFile);
             }
         }
+
+        if (strlen($response->body()) > self::MAX_BODY) {
+            throw new ProviderFailure('The provider\'s answer is larger than 1 MiB.');
+        }
+
+        return $response;
     }
 
     /**

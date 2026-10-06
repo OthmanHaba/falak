@@ -148,16 +148,22 @@ it('reads 1Password through a Connect server by vault, item and field label', fu
             'fields' => [
                 ['id' => 'f1', 'label' => 'secret key', 'value' => 'sk_test_x'],
                 ['id' => 'f2', 'label' => 'secret key', 'value' => 'sk_live_y', 'section' => ['id' => 's1']],
+                ['id' => 'f3', 'label' => 'publishable', 'value' => 'pk_x'],
+                ['id' => 'f4', 'label' => 'empty', 'value' => ''],
             ],
         ]),
     ]);
 
     $provider = secrets_provider($this->organization, ProviderType::OnePassword, ['connect_url' => 'https://op.example.com', 'token' => 'CONNECT-TOKEN']);
-    $providers = app(SecretProviders::class);
+    $providers = app(ExternalSecretProviders::class);
+    $refresh = fn (string $reference) => $providers->refresh($reference, $provider->id, $this->organization->id);
 
-    expect($providers->resolve('op://Production/Stripe/secret key', $provider->id, $this->organization->id))->toBe('sk_test_x')
-        ->and($providers->resolve('op://Production/Stripe/live/secret key', $provider->id, $this->organization->id))->toBe('sk_live_y')
-        ->and(fn () => $providers->resolve('op://Production/Stripe/nope', $provider->id, $this->organization->id))->toThrow(SecretProviderUnavailable::class, 'no field "nope"');
+    expect($refresh('op://Production/Stripe/publishable'))->toBe('pk_x')
+        ->and($refresh('op://Production/Stripe/live/secret key'))->toBe('sk_live_y')
+        // Two fields of that label (one in a section): never a guess.
+        ->and(fn () => $refresh('op://Production/Stripe/secret key'))->toThrow(SecretProviderUnavailable::class, 'several fields "secret key"')
+        ->and(fn () => $refresh('op://Production/Stripe/empty'))->toThrow(SecretProviderUnavailable::class, 'the field is empty')
+        ->and(fn () => $refresh('op://Production/Stripe/nope'))->toThrow(SecretProviderUnavailable::class, 'no field "nope"');
 
     Http::assertSent(fn (Request $request) => str_starts_with($request->url(), 'https://op.example.com/v1/vaults?filter=')
         && urldecode(parse_url($request->url(), PHP_URL_QUERY)) === 'filter=name eq "Production"' && $request->header('Authorization') === ['Bearer CONNECT-TOKEN']);
@@ -174,6 +180,7 @@ it('reads Doppler with a service token', function () {
 
 it('reads a self-hosted Infisical with universal auth on a private network when allowed', function () {
     secrets_guard(['infisical.lan' => ['10.0.0.20']]);
+    config(['secrets.providers.allow_private_network' => true]);
     Http::fake([
         'https://infisical.lan/api/v1/auth/universal-auth/login' => Http::response(['accessToken' => 'ACCESS-TOKEN', 'expiresIn' => 7200]),
         'https://infisical.lan/api/v3/secrets/raw/DB_PASS?*' => Http::response(['secret' => ['secretKey' => 'DB_PASS', 'secretValue' => 'infisical-value']]),
@@ -195,10 +202,10 @@ it('reads a generic HTTPS webhook with its header', function () {
         'https://hook.example.com/v1?ref=bad' => Http::response(['secret' => 'no value key']),
     ]);
     $provider = secrets_provider($this->organization, ProviderType::Http, ['base_url' => 'https://hook.example.com/v1/', 'header_name' => 'X-Api-Key', 'header_value' => 'HOOK-KEY']);
-    $providers = app(SecretProviders::class);
+    $providers = app(ExternalSecretProviders::class);
 
     expect($providers->resolve('https://hook.example.com/v1/app/DB_PASS', $provider->id, $this->organization->id))->toBe('hook-value')
-        ->and(fn () => $providers->resolve('https://hook.example.com/v1/bad', $provider->id, $this->organization->id))->toThrow(SecretProviderUnavailable::class, 'did not answer {"value"')
+        ->and(fn () => $providers->refresh('https://hook.example.com/v1/bad', $provider->id, $this->organization->id))->toThrow(SecretProviderUnavailable::class, 'did not answer {"value"')
         // Credentials only ever go to the base URL.
         ->and(fn () => $providers->resolve('https://evil.example.net/v1/app', $provider->id, $this->organization->id))->toThrow(SecretProviderUnavailable::class, 'start with the provider\'s base URL');
 
@@ -237,8 +244,9 @@ it('caches values sealed for the TTL, falls back to the last good value and aler
     expect($provider->refresh()->status)->toBe(ProviderStatus::Error)
         ->and($provider->last_error)->toContain('unreachable')->not->toContain('hvs.');
 
-    // Back up: a recovery clears the alert.
+    // Back up (a later deployment: the failure no longer trips this one's breaker): a recovery clears the alert.
     $GLOBALS['vault_up'] = true;
+    app()->forgetScopedInstances();
     expect(secrets_resolve($this->chain, 'K'))->toBe('cached-value');
     Event::assertDispatched(ProviderRecovered::class);
     expect($provider->refresh()->status)->toBe(ProviderStatus::Ok);
@@ -252,7 +260,7 @@ it('fails with a clear message when the provider is down and nothing is cached',
 
     $resolved = app(Secrets::class)->resolve($this->chain, ['K']);
 
-    expect($resolved->errors['K'])->toBe('secret K: HashiCorp Vault / OpenBao: HashiCorp Vault / OpenBao at vault.example.com is unreachable.')
+    expect($resolved->errors['K'])->toBe('secret K: HashiCorp Vault / OpenBao: HashiCorp Vault / OpenBao at vault.example.com is unreachable (or its answer was too large).')
         ->and($resolved->values)->toBe([]);
     Event::assertDispatched(ProviderUnreachable::class, fn (ProviderUnreachable $e) => ! $e->usedStale);
 });
@@ -287,6 +295,7 @@ it('binds cached values to their provider, reference and organization', function
 
 it('refuses endpoints on metadata addresses always, and private ones unless allowed, also at request time', function () {
     secrets_guard(['metadata.example.com' => ['169.254.169.254'], 'lan.example.com' => ['192.168.1.10']]);
+    config(['secrets.providers.allow_private_network' => true]);
 
     expect(fn () => secrets_vault($this->organization, ['address' => 'https://metadata.example.com'], ['allow_private_network' => true]))->toThrow(ValidationException::class, 'never allowed')
         ->and(fn () => secrets_vault($this->organization, ['address' => 'https://lan.example.com']))->toThrow(ValidationException::class, 'private or reserved')
@@ -440,7 +449,7 @@ it('lets viewers see providers but not change them', function () {
 
 it('manages providers with API tokens', function () {
     Http::fake(['https://api.doppler.com/v3/me' => Http::response([])]);
-    $token = $this->user->createToken('cli', ['secrets.view', 'secrets.manage']);
+    $token = $this->user->createToken('cli', ['secrets.view', 'secrets.providers.manage']);
     $token->accessToken->forceFill(['organization_id' => $this->organization->id])->save();
 
     $created = $this->withToken($token->plainTextToken)->postJson('/api/v1/secrets/providers', ['name' => 'Doppler', 'type' => 'doppler', 'config' => ['token' => 'dp.st.API']])->assertCreated();
@@ -464,12 +473,19 @@ it('uses the control plane instance profile only when the instance allows it', f
         'http://169.254.169.254/latest/api/token' => Http::response('IMDS-TOKEN'),
         'http://169.254.169.254/latest/meta-data/iam/security-credentials/' => Http::response("falak-cp\n"),
         'http://169.254.169.254/latest/meta-data/iam/security-credentials/falak-cp' => Http::response(['AccessKeyId' => 'ASIAINSTANCE', 'SecretAccessKey' => 'instance-secret', 'Token' => 'INSTANCE-SESSION', 'Expiration' => now()->addHour()->toIso8601String()]),
+        'https://sts.eu-west-1.amazonaws.com/' => Http::response(['AssumeRoleResponse' => ['AssumeRoleResult' => ['Credentials' => ['AccessKeyId' => 'ASIAROLE', 'SecretAccessKey' => 'role-secret', 'SessionToken' => 'INSTANCE-SESSION']]]]),
         'https://ssm.eu-west-1.amazonaws.com/' => Http::response(['Parameter' => ['Value' => 'from-instance']]),
     ]);
 
-    $provider = secrets_provider($this->organization, ProviderType::AwsSsm, ['region' => 'eu-west-1', 'auth_method' => 'instance_profile']);
+    expect(fn () => secrets_provider($this->organization, ProviderType::AwsSsm, ['region' => 'eu-west-1', 'auth_method' => 'instance_profile']))
+        ->toThrow(ValidationException::class, 'enter the role to assume');
+
+    // The external ID is the organization's id, whatever is entered.
+    $provider = secrets_provider($this->organization, ProviderType::AwsSsm, ['region' => 'eu-west-1', 'auth_method' => 'instance_profile', 'role_arn' => 'arn:aws:iam::123456789012:role/acme', 'external_id' => 'chosen-by-user']);
 
     expect(app(SecretProviders::class)->resolve('aws-ssm://DB', $provider->id, $this->organization->id))->toBe('from-instance');
+    Http::assertSent(fn (Request $request) => str_contains($request->url(), 'sts.') && str_contains($request->body(), 'ExternalId='.$this->organization->id)
+        && str_contains($request->header('Authorization')[0], 'Credential=ASIAINSTANCE/'));
     Http::assertSent(fn (Request $request) => $request->method() === 'PUT' && $request->header('X-aws-ec2-metadata-token-ttl-seconds') === ['21600']);
     Http::assertSent(fn (Request $request) => str_contains($request->url(), 'ssm.') && $request->header('x-amz-security-token') === ['INSTANCE-SESSION']);
 });

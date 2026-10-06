@@ -85,7 +85,14 @@ final class AwsDriver implements ProviderDriver
      */
     private function credentials(SecretProvider $provider): array
     {
-        $base = $provider->setting('auth_method', 'keys') === 'instance_profile'
+        $instanceProfile = $provider->setting('auth_method', 'keys') === 'instance_profile';
+        $role = $provider->setting('role_arn');
+
+        if ($instanceProfile && $role === null) {
+            throw new ProviderFailure('With the instance profile, the AWS provider must assume a role of yours.');
+        }
+
+        $base = $instanceProfile
             ? $this->instanceProfile($provider)
             : [
                 $provider->setting('access_key_id') ?? throw new ProviderFailure('The AWS provider has no access key.'),
@@ -93,20 +100,20 @@ final class AwsDriver implements ProviderDriver
                 $provider->setting('session_token'),
             ];
 
-        $role = $provider->setting('role_arn');
-
         if ($role === null) {
             return $base;
         }
 
-        $session = $this->tokens->remember($provider, 'aws-assume-role', function () use ($provider, $role, $base) {
+        $session = $this->tokens->remember($provider, 'aws-assume-role', function () use ($provider, $role, $base, $instanceProfile) {
             $credentials = $this->sts($provider, array_filter([
                 'Action' => 'AssumeRole',
                 'Version' => '2011-06-15',
                 'RoleArn' => $role,
                 'RoleSessionName' => 'falak-secrets',
                 'DurationSeconds' => '3600',
-                'ExternalId' => $provider->setting('external_id'),
+                // From the control plane's own role, the external ID is the organization's id, whatever was set:
+                // the role's trust policy pins it, so one organization can't assume another's role.
+                'ExternalId' => $instanceProfile ? $provider->organization_id : $provider->setting('external_id'),
             ]), $base, 'AssumeRole');
 
             return [json_encode($credentials, JSON_THROW_ON_ERROR), 3600];

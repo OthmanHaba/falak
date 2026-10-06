@@ -10,6 +10,7 @@ use Falak\Secrets\Domain\Enums\ProviderType;
 use Falak\Secrets\Domain\Models\SecretProvider;
 use Falak\Secrets\Events\ProviderRecovered;
 use Falak\Secrets\Events\ProviderUnreachable;
+use Falak\Secrets\Http\Requests\SecretRules;
 use Falak\Secrets\Infrastructure\Providers\Drivers\AwsDriver;
 use Falak\Secrets\Infrastructure\Providers\Drivers\DopplerDriver;
 use Falak\Secrets\Infrastructure\Providers\Drivers\HttpDriver;
@@ -32,6 +33,14 @@ class ExternalSecretProviders implements SecretProviders
     /** Status writes on success are skipped when the last one is this recent (seconds). */
     private const STATUS_INTERVAL = 60;
 
+    /**
+     * Providers that failed in this request or job (a deployment), with why: their other secrets go straight to
+     * the last good value instead of waiting for another timeout. Request-scoped (bound with scoped()).
+     *
+     * @var array<string, string>
+     */
+    private array $tripped = [];
+
     public function __construct(private readonly ProviderValueCache $cache) {}
 
     public function resolve(#[\SensitiveParameter] string $reference, ?string $providerId, string $organizationId): string
@@ -43,12 +52,32 @@ class ExternalSecretProviders implements SecretProviders
             return $cached['value'];
         }
 
+        // Past the maximum stale age, the last good value is no longer a fallback.
+        $stale = $cached !== null && $cached['fetched_at']->gt(now()->subSeconds(max(0, (int) config('secrets.providers.max_stale_seconds', 86400))))
+            ? $cached : null;
+
         try {
-            return $this->fetch($provider, $reference, staleAvailable: $cached !== null);
-        } catch (ProviderFailure $e) {
-            if ($cached === null) {
-                throw new SecretProviderUnavailable("{$provider->name}: {$e->getMessage()}");
+            References::parse($provider->type, $reference, $provider->config);
+        } catch (InvalidArgumentException $e) {
+            throw new SecretProviderUnavailable($e->getMessage());
+        }
+
+        try {
+            if (isset($this->tripped[$provider->id])) {
+                throw new ProviderFailure($this->tripped[$provider->id]);
             }
+
+            return $this->fetch($provider, $reference, staleAvailable: $stale !== null);
+        } catch (ProviderFailure $e) {
+            $this->tripped[$provider->id] = $e->getMessage();
+
+            if ($stale === null) {
+                throw new SecretProviderUnavailable("{$provider->name}: {$e->getMessage()}".($cached !== null
+                    ? ' The last good value is older than the maximum stale age, so it is not used.'
+                    : ''));
+            }
+
+            $cached = $stale;
 
             // Never the value or the reference's credentials: the provider and what went wrong.
             Log::warning('Secret provider unreachable; using the last good value', [
@@ -132,6 +161,12 @@ class ExternalSecretProviders implements SecretProviders
             throw $e;
         }
 
+        if (strlen($value) > SecretRules::MAX_VALUE) {
+            $this->failed($provider, $e = new ProviderFailure("{$reference} is larger than ".SecretRules::MAX_VALUE.' bytes, the most an environment variable value can be.'), $staleAvailable);
+
+            throw $e;
+        }
+
         $this->cache->put($provider, $reference, $value);
         $this->succeeded($provider);
 
@@ -141,7 +176,7 @@ class ExternalSecretProviders implements SecretProviders
     private function provider(string $reference, ?string $providerId, string $organizationId): SecretProvider
     {
         if ($providerId !== null) {
-            $provider = SecretProvider::query()->where('organization_id', $organizationId)->find($providerId);
+            $provider = SecretProvider::query()->where('organization_id', $organizationId)->find(strtolower($providerId));
 
             return $provider ?? throw new SecretProviderUnavailable('its provider no longer exists; choose another one');
         }
@@ -184,7 +219,7 @@ class ExternalSecretProviders implements SecretProviders
         ProviderUnreachable::dispatch($provider->organization_id, $provider->id, $provider->name, $e->getMessage(), $usedStale);
     }
 
-    /** Without touching updated_at: that is the credentials' version (cached login tokens are keyed by it). */
+    /** A status, not a change of the provider: updated_at stays. */
     private function record(SecretProvider $provider, ProviderStatus $status, ?string $error): void
     {
         $provider->timestamps = false;

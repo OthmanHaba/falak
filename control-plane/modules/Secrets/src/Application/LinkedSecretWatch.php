@@ -60,9 +60,12 @@ final class LinkedSecretWatch
         }
 
         if ($secret->value_hmac === null) {
-            $secret->forceFill(['value_hmac' => $this->fingerprint->of($secret->organization_id, $value)])->save();
+            // Only while the polled version is still current and still has no baseline (no rollback or new
+            // reference landed while the provider answered).
+            $recorded = Secret::query()->whereKey($secret->id)->where('current_version', $version->version)->whereNull('value_hmac')
+                ->update(['value_hmac' => $this->fingerprint->of($secret->organization_id, $value)]);
 
-            if ($version->snapshot === null) {
+            if ($recorded === 1 && $version->snapshot === null) {
                 $version->forceFill(['snapshot' => $this->cipher->sealSnapshot($secret, $version->version, $value)])->save();
             }
 
@@ -73,8 +76,11 @@ final class LinkedSecretWatch
             return false;
         }
 
-        $new = ($this->set)($secret, $reference, null, snapshot: $value, note: 'Changed upstream');
-        $secret->forceFill(['value_hmac' => $this->fingerprint->of($secret->organization_id, $value)])->save();
+        $new = $this->set->upstreamChange($secret, $version->version, $reference, $value, $this->fingerprint->of($secret->organization_id, $value));
+
+        if ($new === null) {
+            return false;
+        }
 
         $sites = $secret->on_change === OnChange::None ? [] : $this->act($secret);
 

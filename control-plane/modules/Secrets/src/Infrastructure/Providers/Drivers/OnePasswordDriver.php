@@ -29,17 +29,29 @@ final class OnePasswordDriver implements ProviderDriver
             $sections[(string) ($section['id'] ?? '')] = (string) ($section['label'] ?? '');
         }
 
-        foreach ((array) ($data['fields'] ?? []) as $field) {
-            $label = (string) ($field['label'] ?? '');
+        $matches = array_values(array_filter((array) ($data['fields'] ?? []), function ($field) use ($reference, $sections) {
             $section = $sections[(string) ($field['section']['id'] ?? '')] ?? '';
 
-            if (($label === $reference['field'] || ($field['id'] ?? null) === $reference['field'])
-                && ($reference['section'] === '' || $section === $reference['section'])) {
-                return Values::scalar($field['value'] ?? '', $display);
-            }
+            return ((string) ($field['label'] ?? '') === $reference['field'] || ($field['id'] ?? null) === $reference['field'])
+                && ($reference['section'] === '' || $section === $reference['section']);
+        }));
+
+        if ($matches === []) {
+            throw new ProviderFailure("{$display}: the item has no field \"{$reference['field']}\".");
         }
 
-        throw new ProviderFailure("{$display}: the item has no field \"{$reference['field']}\".");
+        // Never a guess between two fields of the same label.
+        if (count($matches) > 1) {
+            throw new ProviderFailure("{$display}: the item has several fields \"{$reference['field']}\"; name the section (op://<vault>/<item>/<section>/<field>) or rename one.");
+        }
+
+        $value = Values::scalar($matches[0]['value'] ?? null, $display);
+
+        if ($value === '') {
+            throw new ProviderFailure("{$display}: the field is empty.");
+        }
+
+        return $value;
     }
 
     public function test(SecretProvider $provider): void
@@ -50,10 +62,15 @@ final class OnePasswordDriver implements ProviderDriver
     private function first(SecretProvider $provider, string $path, string $filter, string $what): string
     {
         $found = $this->get($provider, $path, ['filter' => $filter], $what);
-        $id = is_array($found) ? ($found[0]['id'] ?? null) : null;
+        $found = is_array($found) ? array_values($found) : [];
+        $id = $found[0]['id'] ?? null;
 
         if (! is_string($id) || $id === '') {
             throw new ProviderFailure("1Password Connect has no {$what} (or the token can't see it).");
+        }
+
+        if (count($found) > 1) {
+            throw new ProviderFailure("1Password Connect has more than one match for {$what}; rename one so the reference is unambiguous.");
         }
 
         return $id;

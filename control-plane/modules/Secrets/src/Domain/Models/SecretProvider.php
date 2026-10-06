@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property ProviderType $type
  * @property array<string, mixed> $config
+ * @property int $config_version
  * @property bool $allow_private_network
  * @property int $cache_ttl_seconds
  * @property ProviderStatus $status
@@ -48,6 +49,7 @@ class SecretProvider extends Model
         return [
             'type' => ProviderType::class,
             'config' => SealedArray::class,
+            'config_version' => 'integer',
             'allow_private_network' => 'boolean',
             'cache_ttl_seconds' => 'integer',
             'status' => ProviderStatus::class,

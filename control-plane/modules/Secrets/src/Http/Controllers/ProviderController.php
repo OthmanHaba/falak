@@ -43,15 +43,15 @@ final class ProviderController extends Controller
         return Inertia::render('Secrets/Providers', [
             'providers' => $providers->map(fn (SecretProvider $provider) => $this->presentProvider($provider, $usage))->values(),
             'types' => $this->providerTypes(),
-            'allow_private_network' => (bool) config('secrets.providers.allow_private_network', true),
-            'can' => ['manage' => $this->access->can($request->user(), $organizationId, SecretPolicy::MANAGE)],
+            'allow_private_network' => (bool) config('secrets.providers.allow_private_network', false),
+            'can' => ['manage' => $this->access->can($request->user(), $organizationId, SecretPolicy::PROVIDERS_MANAGE)],
         ]);
     }
 
     public function store(Request $request, SaveSecretProvider $save): JsonResponse
     {
         $organizationId = $this->organization->requireId();
-        $this->access->authorize($request->user(), $organizationId, SecretPolicy::MANAGE);
+        $this->access->authorize($request->user(), $organizationId, SecretPolicy::PROVIDERS_MANAGE);
 
         $provider = $save($organizationId, null, $request->validate(ProviderRules::create()), $request->user()?->getAuthIdentifier());
 

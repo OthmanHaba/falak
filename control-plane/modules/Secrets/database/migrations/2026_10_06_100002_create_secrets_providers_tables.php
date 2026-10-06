@@ -17,6 +17,8 @@ return new class extends Migration
             $table->string('type', 32);
             // Sealed JSON: endpoint and credentials (never returned to the browser).
             $table->text('config');
+            // Bumped whenever the config changes: cached values and logins are bound to it.
+            $table->unsignedInteger('config_version')->default(1);
             // Self-hosted providers on a private network (never link-local / cloud metadata addresses).
             $table->boolean('allow_private_network')->default(false);
             $table->unsignedInteger('cache_ttl_seconds')->default(300);

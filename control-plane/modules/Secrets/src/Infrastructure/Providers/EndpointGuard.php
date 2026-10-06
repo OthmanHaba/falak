@@ -16,8 +16,16 @@ class EndpointGuard
     /** Never reachable, whatever the provider allows. */
     private const BLOCKED = [
         '0.0.0.0/8', '169.254.0.0/16', '100.100.100.200/32', '192.0.0.0/24', '224.0.0.0/4', '240.0.0.0/4',
-        '::/128', 'fe80::/10', 'fd00:ec2::254/128', 'ff00::/8',
+        '::/128', 'fe80::/10', 'fec0::/10', 'fd00:ec2::254/128', 'ff00::/8',
     ];
+
+    /**
+     * IPv6 ranges that embed an IPv4 address (checked as that address): IPv4-mapped (::ffff:0:0/96),
+     * IPv4-compatible (::/96), NAT64 (64:ff9b::/96) and 6to4 (2002::/16, the address in bytes 2–5).
+     *
+     * @var array<string, int> range => offset of the IPv4 address
+     */
+    private const EMBEDDING = ['::ffff:0:0/96' => 12, '::/96' => 12, '64:ff9b::/96' => 12, '2002::/16' => 2];
 
     /** Reachable only with "allow private network". */
     private const PRIVATE = [
@@ -53,6 +61,12 @@ class EndpointGuard
             throw new ProviderFailure('The provider endpoint has no host.');
         }
 
+        // Numeric hosts other than a dotted quad (2130706433, 0x7f.1, 0177.0.0.1): HTTP clients read them as
+        // addresses, DNS does not. Refused rather than guessed.
+        if (filter_var($host, FILTER_VALIDATE_IP) === false && preg_match('/^(0x[0-9a-f]*|\d+)(\.(0x[0-9a-f]*|\d+))*\.?$/i', $host) === 1) {
+            throw new ProviderFailure("The provider host {$host} is not a canonical address.");
+        }
+
         $addresses = filter_var($host, FILTER_VALIDATE_IP) !== false ? [$host] : ($this->resolver)($host);
 
         if ($addresses === []) {
@@ -72,12 +86,18 @@ class EndpointGuard
 
     private function refusal(string $address, bool $allowPrivate): ?string
     {
-        // IPv4-mapped IPv6 (::ffff:169.254.169.254) is checked as the IPv4 address it is.
-        if (preg_match('/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i', $address, $m) === 1) {
-            $address = $m[1];
+        if (filter_var($address, FILTER_VALIDATE_IP) === false) {
+            return 'a link-local, metadata or reserved address, which is never allowed';
         }
 
-        if (filter_var($address, FILTER_VALIDATE_IP) === false || self::within($address, self::BLOCKED)) {
+        // An IPv6 address carrying an IPv4 one (in any notation) is checked as that IPv4 address as well.
+        $embedded = self::embeddedIpv4($address);
+
+        if ($embedded !== null && ($refusal = $this->refusal($embedded, $allowPrivate)) !== null) {
+            return $refusal;
+        }
+
+        if (self::within($address, self::BLOCKED)) {
             return 'a link-local, metadata or reserved address, which is never allowed';
         }
 
@@ -87,6 +107,24 @@ class EndpointGuard
 
         if (self::within($address, self::PRIVATE) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
             return 'a private or reserved address (turn on "allow private network" for a self-hosted provider)';
+        }
+
+        return null;
+    }
+
+    private static function embeddedIpv4(string $address): ?string
+    {
+        $ip = inet_pton($address);
+
+        // :: and ::1 are IPv4-compatible in form only (unspecified and loopback: covered by the lists).
+        if ($ip === false || strlen($ip) !== 16 || in_array($address, ['::', '::1'], true) || $ip === inet_pton('::') || $ip === inet_pton('::1')) {
+            return null;
+        }
+
+        foreach (self::EMBEDDING as $range => $offset) {
+            if (self::within($address, [$range])) {
+                return (string) inet_ntop(substr($ip, $offset, 4));
+            }
         }
 
         return null;
