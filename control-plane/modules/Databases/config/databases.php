@@ -8,20 +8,20 @@ return [
     // Supported engine versions (shown in the UI; detected versions outside this list are kept but flagged).
     'versions' => [
         'mysql' => ['8.0', '8.4'],
-        'mariadb' => ['10.11', '11.4'],
-        'postgresql' => ['16', '17'],
+        'mariadb' => ['10.11', '11.4', '11.8'],
+        'postgresql' => ['16', '17', '18'],
         'redis' => ['6.0', '7.0', '7.2', '7.4', '8.0'],
         'valkey' => ['7.2', '8.0', '8.1', '9.0'],
     ],
 
     // Version installed by the distro packages provisioning uses, when the agent does not report one
     // (facts.runtimes.<engine>). Keyed by "<os id> <os version>"; an engine missing for a release falls back to
-    // Ubuntu 24.04's. Valkey (servers.caches_by_os): noble-updates 7.2, resolute 9.0, trixie 8.1 (packages.ubuntu.com,
-    // packages.debian.org, 2026-10).
+    // Ubuntu 24.04's. Valkey (servers.caches_by_os): noble-updates 7.2, resolute 9.0, trixie 8.1; resolute (26.04):
+    // PostgreSQL 18, MySQL 8.4, MariaDB 11.8, Redis 8.0 (packages.ubuntu.com, packages.debian.org, 2026-10).
     'distro_versions' => [
         'ubuntu 24.04' => ['mysql' => '8.0', 'mariadb' => '10.11', 'postgresql' => '16', 'redis' => '7.0', 'valkey' => '7.2'],
         'ubuntu 22.04' => ['mysql' => '8.0', 'mariadb' => '10.6', 'postgresql' => '14', 'redis' => '6.0'],
-        'ubuntu 26.04' => ['redis' => '8.0', 'valkey' => '9.0'],
+        'ubuntu 26.04' => ['mysql' => '8.4', 'mariadb' => '11.8', 'postgresql' => '18', 'redis' => '8.0', 'valkey' => '9.0'],
         'debian 12' => ['mysql' => '8.0', 'mariadb' => '10.11', 'postgresql' => '15', 'redis' => '7.0'],
         'debian 13' => ['redis' => '8.0', 'valkey' => '8.1'],
     ],

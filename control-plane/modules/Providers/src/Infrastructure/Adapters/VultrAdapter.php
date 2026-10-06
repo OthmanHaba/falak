@@ -79,7 +79,7 @@ final class VultrAdapter extends HttpProviderAdapter
         $images = [];
 
         foreach ($this->paginate('os', 'os') as $os) {
-            if (($os['family'] ?? null) !== 'ubuntu' || ! preg_match('/\b(22|24)\.04\b/', (string) $os['name'], $m)) {
+            if (($os['family'] ?? null) !== 'ubuntu' || ! preg_match('/\b(22|24|26)\.04\b/', (string) $os['name'], $m)) {
                 continue;
             }
 

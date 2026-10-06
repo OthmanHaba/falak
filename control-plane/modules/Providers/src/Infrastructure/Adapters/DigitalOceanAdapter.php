@@ -86,7 +86,7 @@ final class DigitalOceanAdapter extends HttpProviderAdapter
         foreach ($this->paginate('images', 'images', ['type' => 'distribution']) as $image) {
             $slug = (string) ($image['slug'] ?? '');
 
-            if (($image['distribution'] ?? null) !== 'Ubuntu' || ! preg_match('/^ubuntu-(22|24)-04-x64$/', $slug, $m)) {
+            if (($image['distribution'] ?? null) !== 'Ubuntu' || ! preg_match('/^ubuntu-(22|24|26)-04-x64$/', $slug, $m)) {
                 continue;
             }
 

@@ -74,12 +74,13 @@ it('lists Ubuntu LTS images', function () {
         'data' => [
             ['id' => 'linode/ubuntu24.04', 'label' => 'Ubuntu 24.04 LTS', 'deprecated' => false],
             ['id' => 'linode/ubuntu22.04', 'label' => 'Ubuntu 22.04 LTS', 'deprecated' => false],
+            ['id' => 'linode/ubuntu26.04', 'label' => 'Ubuntu 26.04 LTS', 'deprecated' => false],
             ['id' => 'linode/debian12', 'label' => 'Debian 12', 'deprecated' => false],
         ],
         'page' => 1, 'pages' => 1,
     ])]);
 
-    expect(array_map(fn ($i) => $i->id, linode()->images()))->toBe(['linode/ubuntu24.04', 'linode/ubuntu22.04']);
+    expect(array_map(fn ($i) => $i->id, linode()->images()))->toBe(['linode/ubuntu24.04', 'linode/ubuntu22.04', 'linode/ubuntu26.04']);
 });
 
 it('creates instances resolving key ids to key material, with a random root password and metadata user data', function () {

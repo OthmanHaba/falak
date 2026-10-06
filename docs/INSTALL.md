@@ -20,13 +20,15 @@ Releases are published from [github.com/OthmanHaba/falak](https://github.com/Oth
 
 | | Minimum | Recommended |
 |---|---|---|
-| OS | Ubuntu 22.04 / 24.04, Debian 12 (amd64 or arm64) | Ubuntu 24.04 |
+| OS | Ubuntu 22.04 / 24.04 / 26.04, Debian 12 (amd64 or arm64); others need `--force` | Ubuntu 24.04 or 26.04 |
 | RAM | 2 GB (installer warns below 4 GB) | 4 GB; **8 GB with `--observability`** |
 | Disk | 10 GB free | 25 GB+ (images, build artifacts, backups) |
 | Network | public IPv4 (or IPv6); ports **80** and **443** free and reachable | |
 | DNS | records for the panel, `agents.` and `registry.` hosts (below) | |
 
-This host runs only Falak. The servers Falak manages are separate machines.
+This host runs only Falak. The servers Falak manages are separate machines: Ubuntu 22.04, 24.04 or 26.04 (the agent
+installer warns on other apt-based systems). On 26.04 PHP comes from Ubuntu's archive (PHP 8.5 only) until `ppa:ondrej/php`
+publishes packages for it; databases are the release's own (PostgreSQL 18, MySQL 8.4, MariaDB 11.8, Redis 8.0, Valkey 9.0).
 
 **Resource budget** (limits are caps, not reservations). Idle values were measured with three managed servers enrolled and a site deployed (sim) and on a 2-CPU host profile (bench):
 
@@ -92,7 +94,9 @@ Or pin a release with its own copy of the script:
 What it does:
 
 1. **Preflight:** checks that you are root, the OS, the CPU architecture, RAM, disk, that ports 80/443 are free, and that DNS for the panel and `agents.` host (plus `grafana.` with `--observability`) points at this host's public IP.
-2. Installs **Docker Engine** and the Compose plugin from Docker's official apt repository if they are missing.
+2. Installs **Docker Engine** and the Compose plugin from Docker's official apt repository if they are missing, using
+   the suite of the host's codename (`jammy`, `noble`, `resolute`, `bookworm`). If Docker has not published that suite
+   yet (a brand-new release), it falls back to `noble` (Ubuntu) or `bookworm` (Debian) and says so.
 3. Downloads the release bundle `falak-deploy.tar.gz`, verifies it against `SHA256SUMS`, and unpacks it to
    `/opt/falak/{deploy,observability}`. It also installs `falak-ctl` to `/usr/local/bin`.
 4. Generates `/opt/falak/.env` (mode 600) with `APP_KEY`, database and Valkey passwords, Reverb keys, the

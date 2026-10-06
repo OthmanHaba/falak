@@ -35,7 +35,7 @@ interface ProviderAdapter
     public function sizes(?string $region = null): array;
 
     /**
-     * Ubuntu LTS images suitable for falak-agent (22.04 / 24.04, amd64 + arm64 where offered).
+     * Ubuntu LTS images suitable for falak-agent (22.04 / 24.04 / 26.04, amd64 + arm64 where offered).
      *
      * @return list<Image>
      */
