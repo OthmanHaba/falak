@@ -10,27 +10,17 @@ use Illuminate\Support\Facades\Schema;
 use ReflectionClass;
 
 /**
- * Every sealed column: those of model casts (Sealed / SealedArray), found by reading the casts of the models
- * in modules/<Module>/src/Domain/Models, plus columns sealed another way that modules register (e.g. by a
- * SealedEncrypter). Also batch re-sealing of a column (data-key rotation).
+ * Every column sealed by a model cast (Sealed / SealedArray), found by reading the casts of the models in
+ * modules/<Module>/src/Domain/Models, and batch re-sealing of a column (data-key rotation).
  */
 class SealedColumns
 {
-    /** @var array<string, array{table: string, primary_key: string, column: string, aad: string}> */
-    private static array $registered = [];
-
-    /** A column a module seals itself, with the AAD it uses. */
-    public static function register(string $table, string $primaryKey, string $column, string $aad): void
-    {
-        self::$registered["{$table}.{$column}"] = ['table' => $table, 'primary_key' => $primaryKey, 'column' => $column, 'aad' => $aad];
-    }
-
     /**
-     * @return list<array{table: string, primary_key: string, column: string, aad: string}>
+     * @return list<array{table: string, primary_key: string, column: string}>
      */
     public function all(): array
     {
-        $columns = array_values(self::$registered);
+        $columns = [];
 
         foreach (glob(base_path('modules/*/src/Domain/Models/*.php')) ?: [] as $file) {
             $class = 'Falak\\'.basename(dirname($file, 4)).'\\Domain\\Models\\'.basename($file, '.php');
@@ -44,7 +34,7 @@ class SealedColumns
 
             foreach ($model->getCasts() as $column => $cast) {
                 if (is_string($cast) && is_a(explode(':', $cast, 2)[0], Sealed::class, true)) {
-                    $columns[] = ['table' => $model->getTable(), 'primary_key' => $model->getKeyName(), 'column' => $column, 'aad' => Sealed::aad($model, $column)];
+                    $columns[] = ['table' => $model->getTable(), 'primary_key' => $model->getKeyName(), 'column' => $column];
                 }
             }
         }
@@ -57,7 +47,8 @@ class SealedColumns
     /**
      * Rewrite a column in batches, straight in the table (no model events, no timestamps).
      *
-     * @param  Closure(string): ?string  $convert  the stored value => its replacement, or null to leave it
+     * @param  Closure(string, string): ?string  $convert  (stored value, the row's primary key) => its replacement,
+     *                                                     or null to leave it
      * @return int rows changed
      */
     public static function rewrite(string $table, string $primaryKey, string $column, Closure $convert, int $batch = 200): int
@@ -72,7 +63,7 @@ class SealedColumns
             ->chunkById($batch, function ($rows) use ($table, $primaryKey, $column, $convert, &$changed) {
                 DB::transaction(function () use ($rows, $table, $primaryKey, $column, $convert, &$changed) {
                     foreach ($rows as $row) {
-                        $value = $convert((string) $row->{$column});
+                        $value = $convert((string) $row->{$column}, (string) $row->{$primaryKey});
 
                         if ($value !== null) {
                             DB::table($table)->where($primaryKey, $row->{$primaryKey})->update([$column => $value]);

@@ -8,11 +8,13 @@ namespace Falak\Kernel\Security;
  *   fk1:<data key id>:<base64url(nonce || ciphertext || tag)>
  *
  * The AAD is "fk1:<data key id>:" followed by the caller's AAD, which binds the value to where it lives
- * (model casts: "<table>.<column>"; organization secrets: Sealer::aad('secret', org, id, version)), so a
- * value copied to another column, record or organization fails to open.
+ * (model casts: "<table>.<column>:<primary key>"; organization secrets: Sealer::aad('secret', org, id, version)),
+ * so a value copied to another column, row or organization fails to open.
  */
 class Sealer
 {
+    use RedactsKeyMaterial;
+
     public const PREFIX = 'fk1:';
 
     public function __construct(private readonly KeyRing $keys) {}

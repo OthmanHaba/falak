@@ -2,6 +2,7 @@
 
 namespace Falak\Kernel;
 
+use Falak\Kernel\Security\Casts\SealedGuard;
 use Falak\Kernel\Security\Console\CheckKeysCommand;
 use Falak\Kernel\Security\Console\GenerateKekCommand;
 use Falak\Kernel\Security\Console\RotateDataKeyCommand;
@@ -11,6 +12,7 @@ use Falak\Kernel\Security\KeyRing;
 use Falak\Kernel\Security\SealedColumns;
 use Falak\Kernel\Security\Sealer;
 use Falak\Kernel\Support\ModuleServiceProvider;
+use Illuminate\Support\Facades\Event;
 
 /**
  * Shared infrastructure every module may use: the key hierarchy (KEK, data keys, Sealer and the
@@ -33,6 +35,9 @@ class KernelServiceProvider extends ModuleServiceProvider
 
     protected function bootModule(): void
     {
+        // A sealed value bound to another row (replicate(), a changed key) is refused before it is written.
+        Event::listen('eloquent.saving: *', fn (string $event, array $payload) => SealedGuard::check($payload[0]));
+
         if ($this->app->runningInConsole()) {
             $this->commands([CheckKeysCommand::class, GenerateKekCommand::class, RotateKekCommand::class, RotateDataKeyCommand::class]);
         }

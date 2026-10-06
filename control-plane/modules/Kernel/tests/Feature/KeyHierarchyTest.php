@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class SealedTestRecord extends Model
 {
@@ -57,6 +58,8 @@ function rawColumn(SealedTestRecord $record, string $column): ?string
 
 beforeEach(function () {
     $GLOBALS['falakTestKekFiles'] = [];
+    // No waiting between rotate-data passes (running workers are simulated where it matters).
+    config(['kernel.keys.active_ttl' => 0]);
 
     Schema::create('kernel_sealed_test_records', function (Blueprint $table) {
         $table->ulid('id')->primary();
@@ -71,8 +74,8 @@ beforeEach(function () {
         public function all(): array
         {
             return [
-                ['table' => 'kernel_sealed_test_records', 'primary_key' => 'id', 'column' => 'env', 'aad' => 'kernel_sealed_test_records.env'],
-                ['table' => 'kernel_sealed_test_records', 'primary_key' => 'id', 'column' => 'token', 'aad' => 'kernel_sealed_test_records.token'],
+                ['table' => 'kernel_sealed_test_records', 'primary_key' => 'id', 'column' => 'env'],
+                ['table' => 'kernel_sealed_test_records', 'primary_key' => 'id', 'column' => 'token'],
             ];
         }
     });
@@ -135,8 +138,91 @@ it('binds a value to its column: a ciphertext copied to another column or table 
     expect(fn () => $record->fresh()->other)->toThrow(DecryptionFailed::class);
 
     $sealer = app(Sealer::class);
-    expect($sealer->open($raw, 'kernel_sealed_test_records.token'))->toBe('tok_secret')
-        ->and(fn () => $sealer->open($raw, 'source_control_webhooks.token'))->toThrow(DecryptionFailed::class);
+    expect($sealer->open($raw, "kernel_sealed_test_records.token:{$record->id}"))->toBe('tok_secret')
+        ->and(fn () => $sealer->open($raw, "source_control_webhooks.token:{$record->id}"))->toThrow(DecryptionFailed::class);
+});
+
+it('binds a value to its row: a ciphertext copied to another row of the same column fails to open', function () {
+    $victim = SealedTestRecord::create(['token' => 'victim_secret', 'env' => ['DB_PASSWORD' => 'v']]);
+    $attacker = SealedTestRecord::create(['token' => 'mine', 'env' => ['DB_PASSWORD' => 'a']]);
+
+    DB::table('kernel_sealed_test_records')->where('id', $attacker->id)
+        ->update(['token' => rawColumn($victim, 'token'), 'env' => rawColumn($victim, 'env')]);
+
+    expect(fn () => $attacker->fresh()->token)->toThrow(DecryptionFailed::class)
+        ->and(fn () => $attacker->fresh()->env)->toThrow(DecryptionFailed::class)
+        ->and($victim->fresh()->token)->toBe('victim_secret');
+});
+
+it('assigns the ULID before sealing, and needs the key first on models without generated ids', function () {
+    $record = new SealedTestRecord;
+    $record->token = 'early';
+
+    expect($record->id)->not->toBeNull();
+    $record->save();
+    expect($record->fresh()->token)->toBe('early');
+
+    $plain = new class extends Model
+    {
+        protected $table = 'kernel_sealed_test_records';
+
+        protected $keyType = 'string';
+
+        public $incrementing = false;
+
+        protected function casts(): array
+        {
+            return ['token' => Sealed::class];
+        }
+    };
+
+    expect(fn () => $plain->token = 'x')->toThrow(LogicException::class, 'set the primary key (id) before it');
+});
+
+it('refuses to save a sealed value bound to another row (replicate, key changed afterwards)', function () {
+    $record = SealedTestRecord::create(['token' => 'tok_secret']);
+
+    expect(fn () => $record->replicate()->save())->toThrow(LogicException::class, 'sealed for another row');
+
+    $moved = new SealedTestRecord(['token' => 'x']);
+    $moved->id = strtolower((string) Str::ulid());
+    expect(fn () => $moved->save())->toThrow(LogicException::class, 'sealed for another row');
+
+    $copy = $record->replicate();
+    $copy->token = $record->token;
+    $copy->save();
+    expect($copy->fresh()->token)->toBe('tok_secret');
+});
+
+it('never caches a data key created in a transaction that was rolled back', function () {
+    $keys = app(KeyRing::class);
+
+    DB::beginTransaction();
+    $lost = $keys->platform();
+    $sealedInside = app(Sealer::class)->seal('gone', 'aad');
+    DB::rollBack();
+
+    expect(DataKey::query()->find($lost->id))->toBeNull()
+        ->and(fn () => app(Sealer::class)->open($sealedInside, 'aad'))->toThrow(DecryptionFailed::class, 'rolled back');
+
+    $sealed = app(Sealer::class)->seal('kept', 'aad');
+    expect(Sealer::keyId($sealed))->not->toBe($lost->id);
+
+    // A fresh process (new key ring) reads it.
+    app()->forgetInstance(KeyRing::class);
+    app()->forgetInstance(Sealer::class);
+    expect(app(Sealer::class)->open($sealed, 'aad'))->toBe('kept');
+});
+
+it('keeps key material out of dumps and serialization', function () {
+    $keys = app(KeyRing::class);
+    $keys->platform();
+    $kek = app(KeyEncryptionKeys::class)->current();
+
+    foreach ([$keys, $kek, app(KeyEncryptionKeys::class), app(Sealer::class)] as $object) {
+        expect(print_r($object, true))->toContain('redacted')->not->toContain('material')
+            ->and(fn () => serialize($object))->toThrow(LogicException::class);
+    }
 });
 
 it('rejects malformed envelopes and unknown data keys', function (string $value) {
@@ -210,6 +296,7 @@ it('fails clearly when a data key is wrapped by a KEK it does not have', functio
 
     $this->artisan('falak:keys:rotate-kek')->assertFailed();
     $this->artisan('falak:keys:check')->assertFailed();
+    $this->artisan('falak:keys:check --json')->expectsOutputToContain('"data_keys":1,"stale":1,"failed":1')->assertFailed();
 });
 
 it('rotates the platform data key and re-encrypts every sealed column, resumably', function () {
@@ -232,13 +319,47 @@ it('rotates the platform data key and re-encrypts every sealed column, resumably
 
     // An interrupted rotation: one value still under the old key. --resume finishes without a new key.
     DB::table('kernel_sealed_test_records')->where('id', $records[0]->id)
-        ->update(['token' => app(Sealer::class)->sealWith($old, 'tok_1', 'kernel_sealed_test_records.token')]);
+        ->update(['token' => app(Sealer::class)->sealWith($old, 'tok_1', "kernel_sealed_test_records.token:{$records[0]->id}")]);
 
     $this->artisan('falak:keys:rotate-data --resume')->assertSuccessful();
 
     expect(DataKey::query()->where('purpose', 'platform')->count())->toBe(2)
         ->and(Sealer::keyId(rawColumn($records[0], 'token')))->toBe($new->id)
         ->and($records[0]->fresh()->token)->toBe('tok_1');
+});
+
+it('rotate-data passes again until nothing is left under the old key (workers lagging behind)', function () {
+    $record = SealedTestRecord::create(['token' => 'tok']);
+    $old = app(KeyRing::class)->platform();
+    config(['kernel.keys.active_ttl' => 1]);
+    $passes = 0;
+
+    // A lagging worker seals under the retired key while the first pass runs.
+    app()->instance(SealedColumns::class, new class($record, $old, $passes) extends SealedColumns
+    {
+        public function __construct(private SealedTestRecord $record, private DataKey $old, private int &$passes) {}
+
+        public function all(): array
+        {
+            if (++$this->passes === 1) {
+                DB::table('kernel_sealed_test_records')->where('id', $this->record->id)->update([
+                    'other' => app(Sealer::class)->sealWith($this->old, 'late', "kernel_sealed_test_records.other:{$this->record->id}"),
+                ]);
+            }
+
+            return [
+                ['table' => 'kernel_sealed_test_records', 'primary_key' => 'id', 'column' => 'other'],
+                ['table' => 'kernel_sealed_test_records', 'primary_key' => 'id', 'column' => 'token'],
+            ];
+        }
+    });
+
+    $this->artisan('falak:keys:rotate-data')->assertSuccessful();
+
+    $new = app(KeyRing::class)->platform();
+    expect($passes)->toBeGreaterThanOrEqual(2)
+        ->and(Sealer::keyId(rawColumn($record, 'other')))->toBe($new->id)
+        ->and($record->fresh()->other)->toBe('late');
 });
 
 it('checks the KEK and the data keys without printing secrets', function () {
@@ -251,6 +372,10 @@ it('checks the KEK and the data keys without printing secrets', function () {
         ->assertSuccessful();
 
     $this->artisan('falak:keys:check --kek-only')->doesntExpectOutputToContain('Data keys')->assertSuccessful();
+
+    $this->artisan('falak:keys:check --json')
+        ->expectsOutput(json_encode(['ok' => true, 'provider' => 'local', 'kek_id' => $kek->id(), 'data_keys' => 1, 'stale' => 0, 'failed' => 0, 'kek_ids' => [$kek->id()]]))
+        ->assertSuccessful();
 
     useKek('/nonexistent/falak/kek');
     $this->artisan('falak:keys:check')->expectsOutputToContain('does not exist')->assertFailed();

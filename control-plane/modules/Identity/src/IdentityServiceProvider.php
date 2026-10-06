@@ -18,13 +18,12 @@ use Falak\Identity\Domain\Models\User;
 use Falak\Identity\Domain\Policies\OrganizationPolicy;
 use Falak\Identity\Http\Middleware\EnsureCurrentOrganization;
 use Falak\Identity\Http\Middleware\EnsureOrganizationPermission;
+use Falak\Identity\Infrastructure\CastSealedTwoFactorEncrypter;
 use Falak\Identity\Infrastructure\DatabaseAuditLog;
 use Falak\Identity\Infrastructure\EloquentOrganizationDirectory;
 use Falak\Identity\Infrastructure\InMemoryPermissionRegistry;
 use Falak\Identity\Infrastructure\ResolvedCurrentOrganization;
 use Falak\Identity\Infrastructure\SpatieOrganizationAccess;
-use Falak\Kernel\Security\SealedColumns;
-use Falak\Kernel\Security\SealedEncrypter;
 use Falak\Kernel\Support\ModuleServiceProvider;
 use Falak\Kernel\Support\SharedProps;
 use Illuminate\Database\Eloquent\Relations\Relation;
@@ -48,17 +47,12 @@ class IdentityServiceProvider extends ModuleServiceProvider
         OrganizationDirectory::class => EloquentOrganizationDirectory::class,
     ];
 
-    /** Fortify seals both two-factor columns through one encrypter, so they share an AAD. */
-    public const TWO_FACTOR_AAD = 'identity_users.two_factor';
-
     public function register(): void
     {
         // Identity owns the auth routes; Fortify is used for its 2FA actions only.
         Fortify::ignoreRoutes();
-        // Two-factor secrets and recovery codes are sealed under the key hierarchy, not APP_KEY.
-        Fortify::encryptUsing(new SealedEncrypter(self::TWO_FACTOR_AAD));
-        SealedColumns::register('identity_users', 'id', 'two_factor_secret', self::TWO_FACTOR_AAD);
-        SealedColumns::register('identity_users', 'id', 'two_factor_recovery_codes', self::TWO_FACTOR_AAD);
+        // Two-factor secrets and recovery codes are sealed by User's casts (bound to the row), not APP_KEY.
+        Fortify::encryptUsing(new CastSealedTwoFactorEncrypter);
 
         $this->mergeConfigFrom($this->modulePath().'/config/identity.php', 'identity');
 

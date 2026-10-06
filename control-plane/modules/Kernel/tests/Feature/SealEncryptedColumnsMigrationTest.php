@@ -12,9 +12,9 @@ function sealMigration(): object
     return require dirname(__DIR__, 2).'/database/migrations/2026_10_23_000001_seal_encrypted_columns.php';
 }
 
-function legacyChannel(string $config): string
+function legacyChannel(string $config, ?string $id = null): string
 {
-    $id = strtolower((string) Str::ulid());
+    $id ??= strtolower((string) Str::ulid());
     DB::table('alerting_channels')->insert([
         'id' => $id, 'organization_id' => strtolower((string) Str::ulid()), 'type' => 'webhook', 'name' => "c-{$id}",
         'config' => $config, 'enabled' => true, 'created_at' => now(), 'updated_at' => now(),
@@ -25,13 +25,15 @@ function legacyChannel(string $config): string
 
 it('re-encrypts APP_KEY ciphertexts with the new cast, and skips values already sealed', function () {
     $legacy = collect(range(1, 3))->map(fn ($i) => legacyChannel(Crypt::encryptString(json_encode(['url' => "https://hooks.example.com/{$i}"]))));
-    $sealedId = legacyChannel(app(Sealer::class)->seal(json_encode(['url' => 'https://already.example.com']), 'alerting_channels.config'));
+    $sealedId = strtolower((string) Str::ulid());
+    legacyChannel(app(Sealer::class)->seal(json_encode(['url' => 'https://already.example.com']), "alerting_channels.config:{$sealedId}"), $sealedId);
     $sealedRaw = DB::table('alerting_channels')->where('id', $sealedId)->value('config');
 
     sealMigration()->up();
 
     foreach ($legacy as $i => $id) {
         expect(DB::table('alerting_channels')->where('id', $id)->value('config'))->toStartWith('fk1:')
+            ->and(app(Sealer::class)->open(DB::table('alerting_channels')->where('id', $id)->value('config'), "alerting_channels.config:{$id}"))->toContain('hooks.example.com')
             ->and(Channel::query()->find($id)->config)->toBe(['url' => 'https://hooks.example.com/'.($i + 1)]);
     }
 
@@ -58,9 +60,9 @@ it('can be reversed to APP_KEY ciphertexts', function () {
     expect(Crypt::decryptString(DB::table('alerting_channels')->where('id', $id)->value('config')))->toBe('{"url":"https://hooks.example.com/x"}');
 });
 
-it('covers exactly the columns sealed today, with their AAD', function () {
-    $migrated = array_map(fn (array $c) => "{$c[0]}.{$c[1]}.{$c[2]} ".($c[3] ?? "{$c[0]}.{$c[2]}"), sealMigration()::COLUMNS);
-    $cast = array_map(fn (array $c) => "{$c['table']}.{$c['primary_key']}.{$c['column']} {$c['aad']}", app(SealedColumns::class)->all());
+it('covers exactly the columns sealed today', function () {
+    $migrated = array_map(fn (array $c) => implode('.', $c), sealMigration()::COLUMNS);
+    $cast = array_map(fn (array $c) => "{$c['table']}.{$c['primary_key']}.{$c['column']}", app(SealedColumns::class)->all());
 
     sort($migrated);
     sort($cast);
@@ -75,5 +77,5 @@ it('finds every sealed model column of the modules', function () {
     expect(count($columns))->toBe(30)
         ->and(collect($columns)->map(fn ($c) => "{$c['table']}.{$c['column']}")->all())
         ->toContain('fleet_commands.payload', 'telemetry_settings.otlp_token', 'deployments_site_settings.hook_token', 'identity_users.two_factor_secret')
-        ->and(collect($columns)->firstWhere('column', 'hook_token')['aad'])->toBe('deployments_site_settings.hook_token');
+        ->and(collect($columns)->firstWhere('column', 'hook_token')['primary_key'])->toBe('site_id');
 });

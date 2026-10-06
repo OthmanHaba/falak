@@ -1,5 +1,6 @@
 <?php
 
+use Falak\Kernel\Security\DecryptionFailed;
 use Falak\Sites\Application\Actions\SaveEnvironment;
 use Falak\Sites\Domain\Models\EnvironmentVersion;
 use Falak\Sites\Domain\Models\Site;
@@ -28,8 +29,8 @@ return new class extends Migration
                 /** @var ?EnvironmentVersion $current */
                 $current = EnvironmentVersion::query()->where('site_id', $site->id)->orderByDesc('version')->first();
                 $variables = $current?->variables ?? [];
-            } catch (DecryptException) {
-                // Encrypted with another APP_KEY (a restored or copied database): leave it to its owner.
+            } catch (DecryptException|DecryptionFailed) {
+                // Sealed under another key (a restored or copied database), or not re-sealed yet: leave it to its owner.
                 Log::warning('sites: could not read the environment to switch LOG_CHANNEL', ['site_id' => $site->id]);
 
                 return;

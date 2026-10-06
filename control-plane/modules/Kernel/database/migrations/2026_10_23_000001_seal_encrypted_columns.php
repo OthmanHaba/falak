@@ -1,5 +1,6 @@
 <?php
 
+use Falak\Kernel\Security\Casts\Sealed;
 use Falak\Kernel\Security\SealedColumns;
 use Falak\Kernel\Security\Sealer;
 use Illuminate\Contracts\Encryption\DecryptException;
@@ -8,14 +9,14 @@ use Illuminate\Support\Facades\Crypt;
 
 /**
  * v0.10.0: the `encrypted` / `encrypted:array` casts (APP_KEY) became Sealed / SealedArray (data keys under
- * the KEK), and Fortify's two-factor columns a SealedEncrypter. Re-encrypt every such column once:
- * Crypt::decryptString, then seal bound to "<table>.<column>" (two-factor: "identity_users.two_factor").
+ * the KEK), and so did Fortify's two-factor columns (a Sealed cast on User). Re-encrypt every such column once:
+ * Crypt::decryptString, then seal bound to the row: "<table>.<column>:<primary key>" (Sealed::aadFor).
  * Batched; values already sealed (fk1:) are skipped, so a migration interrupted halfway can run again.
  * The column list is frozen here on purpose (later models must not change what this migration touches).
  */
 return new class extends Migration
 {
-    /** @var list<array{0: string, 1: string, 2: string, 3?: string}> table, primary key, column, AAD (default "<table>.<column>") */
+    /** @var list<array{0: string, 1: string, 2: string}> table, primary key, column */
     public const COLUMNS = [
         ['alerting_channels', 'id', 'config'],
         ['databases_storage_providers', 'id', 'access_key_id'],
@@ -30,9 +31,9 @@ return new class extends Migration
         ['edge_dns_credentials', 'id', 'api_token'],
         ['fleet_certificate_authorities', 'id', 'private_key'],
         ['fleet_commands', 'id', 'payload'],
-        // Fortify encrypts with serialize(); the serialized string is sealed as is (SealedEncrypter unserializes).
-        ['identity_users', 'id', 'two_factor_recovery_codes', 'identity_users.two_factor'],
-        ['identity_users', 'id', 'two_factor_secret', 'identity_users.two_factor'],
+        // Fortify encrypted with serialize(); the serialized string is sealed as is (its encrypter only unserializes).
+        ['identity_users', 'id', 'two_factor_recovery_codes'],
+        ['identity_users', 'id', 'two_factor_secret'],
         ['network_private_network_members', 'id', 'private_key'],
         ['processes_daemons', 'id', 'env'],
         ['processes_workers', 'id', 'env'],
@@ -54,11 +55,8 @@ return new class extends Migration
     {
         $sealer = app(Sealer::class);
 
-        foreach (self::COLUMNS as $c) {
-            [$table, $primaryKey, $column] = $c;
-            $aad = $c[3] ?? "{$table}.{$column}";
-
-            SealedColumns::rewrite($table, $primaryKey, $column, function (string $value) use ($sealer, $table, $column, $aad) {
+        foreach (self::COLUMNS as [$table, $primaryKey, $column]) {
+            SealedColumns::rewrite($table, $primaryKey, $column, function (string $value, string $id) use ($sealer, $table, $column) {
                 if (Sealer::isSealed($value)) {
                     return null;
                 }
@@ -69,7 +67,7 @@ return new class extends Migration
                     throw new RuntimeException("{$table}.{$column}: a value could not be decrypted with APP_KEY ({$e->getMessage()}). Was APP_KEY changed? Restore it and migrate again: values already converted are skipped.", previous: $e);
                 }
 
-                return $sealer->seal($plaintext, $aad);
+                return $sealer->seal($plaintext, Sealed::aadFor($table, $column, $id));
             });
         }
     }
@@ -78,12 +76,9 @@ return new class extends Migration
     {
         $sealer = app(Sealer::class);
 
-        foreach (self::COLUMNS as $c) {
-            [$table, $primaryKey, $column] = $c;
-            $aad = $c[3] ?? "{$table}.{$column}";
-
-            SealedColumns::rewrite($table, $primaryKey, $column, fn (string $value) => Sealer::isSealed($value)
-                ? Crypt::encryptString($sealer->open($value, $aad))
+        foreach (self::COLUMNS as [$table, $primaryKey, $column]) {
+            SealedColumns::rewrite($table, $primaryKey, $column, fn (string $value, string $id) => Sealer::isSealed($value)
+                ? Crypt::encryptString($sealer->open($value, Sealed::aadFor($table, $column, $id)))
                 : null);
         }
     }
