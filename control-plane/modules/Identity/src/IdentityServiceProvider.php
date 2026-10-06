@@ -11,6 +11,7 @@ use Falak\Identity\Contracts\CurrentOrganization;
 use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Identity\Contracts\OrganizationDirectory;
 use Falak\Identity\Contracts\PermissionRegistry;
+use Falak\Identity\Contracts\Reauthentication;
 use Falak\Identity\Contracts\Role;
 use Falak\Identity\Domain\Models\Organization;
 use Falak\Identity\Domain\Models\PersonalAccessToken;
@@ -23,6 +24,7 @@ use Falak\Identity\Infrastructure\DatabaseAuditLog;
 use Falak\Identity\Infrastructure\EloquentOrganizationDirectory;
 use Falak\Identity\Infrastructure\InMemoryPermissionRegistry;
 use Falak\Identity\Infrastructure\ResolvedCurrentOrganization;
+use Falak\Identity\Infrastructure\SessionReauthentication;
 use Falak\Identity\Infrastructure\SpatieOrganizationAccess;
 use Falak\Kernel\Support\ModuleServiceProvider;
 use Falak\Kernel\Support\SharedProps;
@@ -62,6 +64,7 @@ class IdentityServiceProvider extends ModuleServiceProvider
         $this->app->scoped(SpatieOrganizationAccess::class);
         $this->app->scoped(OrganizationAccess::class, SpatieOrganizationAccess::class);
         $this->app->scoped(AuditLog::class, DatabaseAuditLog::class);
+        $this->app->scoped(Reauthentication::class, SessionReauthentication::class);
     }
 
     protected function bootModule(): void
