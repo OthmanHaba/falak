@@ -5,6 +5,7 @@ namespace Falak\Deployments\Domain\Models;
 use Falak\Deployments\Domain\Enums\Strategy;
 use Falak\Kernel\Security\Casts\Sealed;
 use Falak\Sites\Contracts\Data\SiteData;
+use Falak\Sites\Contracts\SiteRuntime;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
@@ -22,11 +23,16 @@ use Illuminate\Support\Str;
  * @property int $health_timeout_s
  * @property int $health_retries
  * @property int $health_retry_delay_s
+ * @property string $secrets_mode env | files (container sites: secret variables as /run/secrets files)
  * @property ?string $hook_token_hash
  * @property ?string $hook_token
  */
 class SiteSettings extends Model
 {
+    public const SECRETS_ENV = 'env';
+
+    public const SECRETS_FILES = 'files';
+
     protected $table = 'deployments_site_settings';
 
     protected $primaryKey = 'site_id';
@@ -73,6 +79,7 @@ class SiteSettings extends Model
             'health_timeout_s' => (int) ($defaults['health']['timeout_s'] ?? 10),
             'health_retries' => (int) ($defaults['health']['retries'] ?? 3),
             'health_retry_delay_s' => (int) ($defaults['health']['retry_delay_s'] ?? 5),
+            'secrets_mode' => self::SECRETS_ENV,
         ]);
     }
 
@@ -81,6 +88,14 @@ class SiteSettings extends Model
         $allowed = Strategy::for($site->runtime);
 
         return $this->strategy !== null && in_array($this->strategy, $allowed, true) ? $this->strategy : Strategy::default($site->runtime);
+    }
+
+    /**
+     * Files only reach containers (docker sites); every other runtime keeps environment variables.
+     */
+    public function effectiveSecretsMode(SiteData $site): string
+    {
+        return $site->runtime === SiteRuntime::Docker && $this->secrets_mode === self::SECRETS_FILES ? self::SECRETS_FILES : self::SECRETS_ENV;
     }
 
     public function healthPath(SiteData $site): string
@@ -120,6 +135,7 @@ class SiteSettings extends Model
                 'retries' => max(1, $this->health_retries),
                 'retry_delay_s' => max(0, $this->health_retry_delay_s),
             ],
+            'secrets_mode' => $this->effectiveSecretsMode($site),
         ];
     }
 }

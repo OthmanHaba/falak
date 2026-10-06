@@ -134,6 +134,18 @@ it('passes variables exposed to the deploy script to the build as well (non-pref
     expect(next_job()->assertOk()->json('env'))->toBe(['VITE_APP_NAME' => 'Shop', 'SITE_URL' => 'https://shop.example.com']);
 });
 
+it('names the secret build variables so the builder masks them in the log', function () {
+    $world = builds_world();
+    $world->site->environmentVersions()->first()->forceFill([
+        'variables' => ['NPM_TOKEN' => 'npm-secret', 'SITE_URL' => 'https://shop.example.com', 'APP_KEY' => 'secret'],
+        'exposed' => ['NPM_TOKEN', 'SITE_URL'],
+    ])->save();
+    request_build($world);
+
+    // Only names: the values are in env already. APP_KEY is not exposed to the build.
+    expect(next_job()->assertOk()->json('mask'))->toBe(['NPM_TOKEN']);
+});
+
 it('hands native jobs the build and install command overrides from FALAK_BUILD_COMMAND / FALAK_INSTALL_COMMAND', function () {
     $world = builds_world();
     $version = $world->site->environmentVersions()->first();

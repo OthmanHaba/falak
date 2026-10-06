@@ -11,6 +11,7 @@ use Falak\Kernel\Http\Controller;
 use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Contracts\ServiceKind;
 use Falak\Sites\Contracts\SiteDeploySettings;
+use Falak\Sites\Contracts\SiteRuntime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -45,7 +46,10 @@ final class DeploySettingsController extends Controller
                 'health_timeout_s' => $settings->health_timeout_s,
                 'health_retries' => $settings->health_retries,
                 'health_retry_delay_s' => $settings->health_retry_delay_s,
+                'secrets_mode' => $settings->effectiveSecretsMode($data),
             ],
+            // Container sites can take their secret variables as files instead of environment variables.
+            'secretFiles' => $data->runtime === SiteRuntime::Docker,
             'defaultHealthPath' => $data->healthCheckPath ?: '/',
             'strategies' => array_map(fn (Strategy $s) => ['value' => $s->value, 'label' => $s->label(), 'description' => $s->description()], Strategy::for($data->runtime)),
             'pushToDeploy' => $data->pushToDeploy,
@@ -70,6 +74,7 @@ final class DeploySettingsController extends Controller
             'health_timeout_s' => ['required', 'integer', 'min:1', 'max:120'],
             'health_retries' => ['required', 'integer', 'min:1', 'max:30'],
             'health_retry_delay_s' => ['required', 'integer', 'min:0', 'max:300'],
+            'secrets_mode' => ['sometimes', Rule::in([SiteSettings::SECRETS_ENV, SiteSettings::SECRETS_FILES])],
         ]);
 
         $update($data, $input, (string) $request->user()?->getAuthIdentifier());
