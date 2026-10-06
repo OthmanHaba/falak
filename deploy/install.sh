@@ -55,12 +55,37 @@ os_field() { sed -n "s/^$1=//p" "${FALAK_OS_RELEASE:-/etc/os-release}" 2>/dev/nu
 SUPPORTED_OS="Ubuntu 22.04/24.04/26.04 and Debian 12"
 os_supported() { case "$1:$2" in ubuntu:22.04|ubuntu:24.04|ubuntu:26.04|debian:12) return 0 ;; *) return 1 ;; esac; }
 
+# pull_attempts VALUE : VALUE when it is a positive integer, else 4 (with a warning).
+pull_attempts() {
+  case "$1" in
+    '' | *[!0-9]*) ;;
+    *) if [ "$((10#$1))" -ge 1 ]; then echo "$((10#$1))"; return 0; fi ;;
+  esac
+  warn "FALAK_PULL_ATTEMPTS='$1' is not a positive number; using 4"
+  echo 4
+}
+
+# pull_permanent FILE : the pull's error output says retrying can't help (no access, no such image or tag).
+pull_permanent() {
+  grep -qiE 'denied|unauthorized|authentication required|manifest unknown|not found' "$1"
+}
+
 # pull_retry CMD... : run an image pull, retrying transient registry errors ("connection reset by peer", IPv6
-# resets, 5xx) with backoff: FALAK_PULL_ATTEMPTS tries (default 4), waiting 5s, 10s, 20s ... in between.
+# resets, 5xx) with backoff: FALAK_PULL_ATTEMPTS tries (default 4), waiting 5s, 10s, 20s ... in between. Errors no
+# retry can fix (access denied, unknown manifest or tag) fail at once.
 pull_retry() {
-  local attempt=1 max="${FALAK_PULL_ATTEMPTS:-4}" delay="${FALAK_PULL_DELAY:-5}"
-  until "$@"; do
+  local attempt=1 max delay="${FALAK_PULL_DELAY:-5}" err
+  max="$(pull_attempts "${FALAK_PULL_ATTEMPTS:-4}")"
+  err="$(mktemp "${TMPDIR:-/tmp}/.falak-pull.XXXXXX")"
+  until "$@" 2>"$err"; do
+    cat "$err" >&2
+    if pull_permanent "$err"; then
+      rm -f "$err"
+      warn "image pull failed: the registry refused it (access denied, or no such image or tag); not retrying"
+      return 1
+    fi
     if [ "$attempt" -ge "$max" ]; then
+      rm -f "$err"
       warn "image pull failed $attempt times, giving up"
       return 1
     fi
@@ -68,6 +93,8 @@ pull_retry() {
     sleep "$delay"
     attempt=$((attempt + 1)); delay=$((delay * 2))
   done
+  cat "$err" >&2
+  rm -f "$err"
 }
 
 usage() { sed -n '2,28p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//' || echo "see docs/INSTALL.md"; }

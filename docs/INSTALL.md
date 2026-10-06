@@ -296,7 +296,8 @@ An update:
 1. takes a backup (`backups/falak-backup-<ts>-pre-update-<old>.tar.gz`);
 2. fetches the new deploy bundle and pulls the new images. Transient registry errors (`connection reset by peer`, IPv6
    resets) are retried with backoff: 4 attempts, 5 s / 10 s / 20 s apart (`FALAK_PULL_ATTEMPTS` in `.env` changes the
-   count). If the pull still fails, nothing changes;
+   count; anything but a positive number means 4, with a warning). Errors no retry fixes (access denied, unknown
+   manifest or tag) fail at once. If the pull still fails, nothing changes;
 3. recreates the stack. The `control-plane` service runs the migrations, and `horizon`, `reverb` and
    `scheduler` wait until it is healthy;
 4. recreates every service whose **mounted config files** changed (see below) and prints their names;
