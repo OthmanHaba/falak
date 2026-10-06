@@ -247,12 +247,15 @@ check_dns() {
 # --- Docker ---------------------------------------------------------------------------------------------
 # docker_codename ID CODENAME : the suite of Docker's apt repository to use. Docker publishes each release's own
 # codename (jammy, noble, resolute; bookworm, trixie), usually some weeks after a new release ships; until then
-# fall back to the previous LTS / stable suite, whose packages install and run on the newer release.
+# fall back to the previous LTS / stable suite, whose packages install and run on the newer release. Codenames
+# Docker is known to publish (jammy, noble, bookworm) always use their own suite, never probed: a probe that fails
+# for a network hiccup must not install another release's packages. Others are probed (with retries).
 docker_codename() {
   local id="$1" codename="$2" fallback
+  case "$id:$codename" in ubuntu:jammy|ubuntu:noble|debian:bookworm) echo "$codename"; return 0 ;; esac
   case "$id" in debian) fallback=bookworm ;; *) fallback=noble ;; esac
   if [ -z "$codename" ]; then echo "$fallback"; return 0; fi
-  if curl -fsSI --max-time 15 "https://download.docker.com/linux/$id/dists/$codename/Release" >/dev/null 2>&1; then
+  if curl -fsSI --max-time 15 --retry 3 --retry-delay 2 "https://download.docker.com/linux/$id/dists/$codename/Release" >/dev/null 2>&1; then
     echo "$codename"
   else
     warn "Docker's apt repository has no '$codename' suite (yet); using '$fallback' packages"

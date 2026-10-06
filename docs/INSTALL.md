@@ -95,8 +95,9 @@ What it does:
 
 1. **Preflight:** checks that you are root, the OS, the CPU architecture, RAM, disk, that ports 80/443 are free, and that DNS for the panel and `agents.` host (plus `grafana.` with `--observability`) points at this host's public IP.
 2. Installs **Docker Engine** and the Compose plugin from Docker's official apt repository if they are missing, using
-   the suite of the host's codename (`jammy`, `noble`, `resolute`, `bookworm`). If Docker has not published that suite
-   yet (a brand-new release), it falls back to `noble` (Ubuntu) or `bookworm` (Debian) and says so.
+   the suite of the host's codename (`jammy`, `noble`, `resolute`, `bookworm`). `jammy`, `noble` and `bookworm` are
+   used as they are; for other codenames it checks (with retries) that Docker has published the suite, and if not
+   yet (a brand-new release) it falls back to `noble` (Ubuntu) or `bookworm` (Debian) and says so.
 3. Downloads the release bundle `falak-deploy.tar.gz`, verifies it against `SHA256SUMS`, and unpacks it to
    `/opt/falak/{deploy,observability}`. It also installs `falak-ctl` to `/usr/local/bin`.
 4. Generates `/opt/falak/.env` (mode 600) with `APP_KEY`, database and Valkey passwords, Reverb keys, the

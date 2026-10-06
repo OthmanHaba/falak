@@ -31,17 +31,32 @@ printf 'PRETTY_NAME="Ubuntu Resolute Raccoon"\nID=ubuntu\nVERSION_ID="26.04"\nVE
 [ "$(os_field ID) $(os_field VERSION_ID) $(os_field VERSION_CODENAME)" = "ubuntu 26.04 resolute" ] || fail "os_field: $(os_field VERSION_ID)"
 pass "reads ID, VERSION_ID and VERSION_CODENAME from os-release"
 
-probed="$work/probed"
-curl() { # curl -fsSI --max-time N URL : Docker publishes jammy, noble, resolute and bookworm only
-  local url="${*: -1}"; printf '%s\n' "$url" >> "$probed"
+probed="$work/probed"; : > "$probed"
+curl_args="$work/curl-args"
+docker_down=0 # 1: download.docker.com unreachable (curl's timeout)
+curl() { # curl -fsSI --max-time N --retry N --retry-delay N URL : Docker publishes jammy, noble, resolute and bookworm only
+  local url="${*: -1}"; printf '%s\n' "$url" >> "$probed"; printf '%s\n' "$*" > "$curl_args"
+  if [ "$docker_down" = 1 ]; then return 28; fi
   case "$url" in */dists/jammy/Release|*/dists/noble/Release|*/dists/resolute/Release|*/dists/bookworm/Release) return 0 ;; *) return 22 ;; esac
 }
 
 [ "$(docker_codename ubuntu resolute 2>/dev/null)" = resolute ] || fail "resolute: $(docker_codename ubuntu resolute 2>&1)"
 grep -qx "https://download.docker.com/linux/ubuntu/dists/resolute/Release" "$probed" || fail "probed: $(cat "$probed")"
+grep -q -- "--retry 3" "$curl_args" || fail "the probe does not retry: $(cat "$curl_args")"
 [ "$(docker_codename ubuntu noble 2>/dev/null)" = noble ] || fail "noble"
 [ "$(docker_codename debian bookworm 2>/dev/null)" = bookworm ] || fail "bookworm"
-pass "uses Docker's suite for the host's own codename when it exists"
+pass "uses Docker's suite for the host's own codename when it exists (the probe retries)"
+
+# Known codenames are never probed: an unreachable download.docker.com must not swap the suite.
+: > "$probed"
+docker_down=1
+for known in ubuntu:jammy ubuntu:noble debian:bookworm; do
+  out="$(docker_codename "${known%%:*}" "${known#*:}" 2>"$work/err")"
+  [ "$out" = "${known#*:}" ] || fail "$known: $out"
+  [ ! -s "$work/err" ] || fail "$known warned: $(cat "$work/err")"
+done
+[ ! -s "$probed" ] || fail "known codenames probed: $(cat "$probed")"
+pass "jammy, noble and bookworm always use their own suite, without a probe"
 
 out="$(docker_codename ubuntu zesty-next 2>"$work/err")"
 [ "$out" = noble ] || fail "fallback ubuntu: $out"
