@@ -1,0 +1,130 @@
+<?php
+
+namespace Falak\Volumes\Http\Controllers;
+
+use Falak\Identity\Contracts\AuditLog;
+use Falak\Kernel\Http\Controller;
+use Falak\Volumes\Application\Actions\PruneVolumeBackups;
+use Falak\Volumes\Application\Actions\RestoreVolumeBackup;
+use Falak\Volumes\Application\Actions\RunVolumeBackup;
+use Falak\Volumes\Application\Actions\SaveBackupSchedule;
+use Falak\Volumes\Domain\Enums\BackupStatus;
+use Falak\Volumes\Domain\Enums\Consistency;
+use Falak\Volumes\Domain\Models\BackupSchedule;
+use Falak\Volumes\Domain\Models\Volume;
+use Falak\Volumes\Domain\Models\VolumeBackup;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * Volume backups: run one now, schedules with retention, restore into a new volume, delete.
+ */
+final class VolumeBackupController extends Controller
+{
+    use PresentsVolumes;
+
+    public function store(Request $request, Volume $volume, RunVolumeBackup $run): RedirectResponse|JsonResponse
+    {
+        $this->authorize('manage', $volume);
+        $data = $request->validate([
+            'storage_provider_id' => ['required', 'string', 'size:26'],
+            'consistency' => ['sometimes', Rule::enum(Consistency::class)],
+        ]);
+
+        $backup = $run($volume, $data['storage_provider_id'], Consistency::from($data['consistency'] ?? 'none'), 'manual', actorId: $request->user()?->getAuthIdentifier());
+
+        return $this->done($request, $this->presentBackup($backup), 202);
+    }
+
+    public function storeSchedule(Request $request, Volume $volume, SaveBackupSchedule $save): RedirectResponse|JsonResponse
+    {
+        $this->authorize('manage', $volume);
+
+        $schedule = $this->save($request, $volume, $save, null);
+
+        return $this->done($request, $this->presentSchedule($schedule), 201);
+    }
+
+    public function updateSchedule(Request $request, BackupSchedule $schedule, SaveBackupSchedule $save): RedirectResponse|JsonResponse
+    {
+        $this->authorize('manage', $schedule);
+
+        $schedule = $this->save($request, $schedule->volume, $save, $schedule);
+
+        return $this->done($request, $this->presentSchedule($schedule));
+    }
+
+    public function destroySchedule(Request $request, BackupSchedule $schedule, AuditLog $audit): RedirectResponse|JsonResponse
+    {
+        $this->authorize('manage', $schedule);
+
+        $schedule->delete();
+        $audit->record('volumes.backup_schedule_deleted', 'volume', $schedule->volume_id, ['schedule_id' => $schedule->id], $schedule->organization_id);
+
+        return $this->done($request);
+    }
+
+    /**
+     * POST /volumes/backups/{backup}/restore {server_id, name, size_bytes?, swap?}: into a new volume, never over one.
+     */
+    public function restore(Request $request, VolumeBackup $backup, RestoreVolumeBackup $restore): RedirectResponse|JsonResponse
+    {
+        $this->authorize('manage', $backup);
+        $data = $request->validate([
+            'server_id' => ['required', 'string', 'size:26'],
+            'name' => ['required', 'string', 'max:63'],
+            'size_bytes' => ['nullable', 'integer', 'min:1'],
+            'swap' => ['sometimes', 'boolean'],
+        ]);
+
+        $operation = $restore($backup, strtolower($data['server_id']), $data['name'], isset($data['size_bytes']) ? (int) $data['size_bytes'] : null,
+            (bool) ($data['swap'] ?? false), $request->user()?->getAuthIdentifier());
+
+        return $this->done($request, $this->presentOperation($operation), 202);
+    }
+
+    public function destroy(Request $request, VolumeBackup $backup, PruneVolumeBackups $prune, AuditLog $audit): RedirectResponse|JsonResponse
+    {
+        $this->authorize('manage', $backup);
+
+        if ($backup->status === BackupStatus::Pending) {
+            throw ValidationException::withMessages(['backup' => 'The backup is still running.']);
+        }
+
+        if ($backup->status === BackupStatus::Succeeded && ! $prune->prune($backup)) {
+            throw ValidationException::withMessages(['backup' => (string) $backup->prune_error]);
+        }
+
+        $backup->delete();
+        $audit->record('volumes.backup_deleted', 'volume', (string) $backup->volume_id, ['backup_id' => $backup->id, 'volume' => $backup->volume_name], $backup->organization_id);
+
+        return $this->done($request);
+    }
+
+    private function save(Request $request, Volume $volume, SaveBackupSchedule $save, ?BackupSchedule $schedule): BackupSchedule
+    {
+        $data = $request->validate([
+            'storage_provider_id' => ['required', 'string', 'size:26'],
+            'cron' => ['required', 'string', 'max:64'],
+            'retention_count' => ['nullable', 'integer', 'between:1,1000'],
+            'retention_days' => ['nullable', 'integer', 'between:1,3650'],
+            'consistency' => ['sometimes', Rule::enum(Consistency::class)],
+            'enabled' => ['sometimes', 'boolean'],
+        ]);
+
+        return $save(
+            $volume,
+            $data['storage_provider_id'],
+            $data['cron'],
+            isset($data['retention_count']) ? (int) $data['retention_count'] : null,
+            isset($data['retention_days']) ? (int) $data['retention_days'] : null,
+            Consistency::from($data['consistency'] ?? 'none'),
+            (bool) ($data['enabled'] ?? true),
+            $schedule,
+            $request->user()?->getAuthIdentifier(),
+        );
+    }
+}

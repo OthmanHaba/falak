@@ -37,6 +37,9 @@ final class FakeAgentGateway implements AgentGateway
     /** @var array<string, string> server id => organization id (for emitted events) */
     private array $organizations = [];
 
+    /** @var array<string, \Closure(array<string, mixed>): array<string, mixed>> command type => result, for await() callers */
+    private array $answers = [];
+
     public function __construct(private readonly ProtocolSchemas $schemas) {}
 
     public static function install(): self
@@ -57,6 +60,18 @@ final class FakeAgentGateway implements AgentGateway
     public function available(string $serverId): self
     {
         unset($this->unavailable[$serverId]);
+
+        return $this;
+    }
+
+    /**
+     * Commands of $type finish at once with $result($payload) (what await() returns), for code that waits for an answer.
+     *
+     * @param  \Closure(array<string, mixed>): array<string, mixed>  $result
+     */
+    public function answer(string $type, \Closure $result): self
+    {
+        $this->answers[$type] = $result;
 
         return $this;
     }
@@ -106,6 +121,12 @@ final class FakeAgentGateway implements AgentGateway
             'error' => null,
             'output' => [],
         ];
+
+        if (isset($this->answers[$type])) {
+            $this->commands[$id]['status'] = CommandStatus::Succeeded;
+            $this->commands[$id]['result'] = ($this->answers[$type])($this->commands[$id]['payload']);
+            $this->commands[$id]['exit_code'] = 0;
+        }
 
         return $handle;
     }
