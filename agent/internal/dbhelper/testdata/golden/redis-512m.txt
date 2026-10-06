@@ -1,0 +1,36 @@
+==> /etc/falak/db/kv/server.conf (-rw-r-----)
+# Rendered by falak-db at every container start: do not edit, changes are lost.
+# Memory limit: 512 MiB
+
+bind * -::*
+protected-mode no
+port 0
+tls-port 6379
+tls-cert-file /etc/falak/db/tls/server.crt
+tls-key-file /etc/falak/db/tls/server.key
+tls-ca-cert-file /etc/falak/db/tls/ca.crt
+tls-auth-clients no
+tls-protocols "TLSv1.2 TLSv1.3"
+# falak-db talks to the server over this socket only.
+unixsocket /run/falak-db/server.sock
+unixsocketperm 700
+aclfile /etc/falak/db/kv-acl/users.acl
+
+maxmemory 429496729
+maxmemory-policy noeviction
+
+dir /data
+dbfilename dump.rdb
+save 3600 1 300 100 60 10000
+appendonly no
+
+loglevel notice
+logfile ""
+slowlog-log-slower-than 10000
+==> /etc/falak/db/kv-acl/users.acl (-rw-------)
+user default on #5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8 ~* &* +@all -config -debug -module
+==> tuning
+maxmemory = 429496729
+maxmemory_policy = noeviction
+memory_mb = 512
+persistence = rdb

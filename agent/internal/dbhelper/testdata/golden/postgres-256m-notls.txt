@@ -1,0 +1,52 @@
+==> /etc/falak/db/postgresql.conf (-rw-r--r--)
+# Rendered by falak-db at every container start: do not edit, changes are lost.
+# Memory limit: 256 MiB
+
+listen_addresses = '*'
+port = 5432
+max_connections = 50
+unix_socket_directories = '/var/run/postgresql'
+hba_file = '/etc/falak/db/pg_hba.conf'
+password_encryption = 'scram-sha-256'
+
+shared_buffers = 64MB
+effective_cache_size = 192MB
+work_mem = 4MB
+maintenance_work_mem = 16MB
+dynamic_shared_memory_type = posix
+
+# Point-in-time recovery: every WAL segment is spooled; the agent ships the spool.
+wal_level = replica
+archive_mode = on
+archive_command = 'falak-db wal-push %p'
+archive_timeout = 60
+max_wal_senders = 10
+
+ssl = off
+
+log_destination = 'stderr'
+logging_collector = off
+log_min_duration_statement = -1
+log_line_prefix = '%m [%p] %q%u@%d '
+log_timezone = 'UTC'
+timezone = 'UTC'
+datestyle = 'iso, mdy'
+default_text_search_config = 'pg_catalog.english'
+
+# Written by `falak-db recover` into a restored data directory.
+include_if_exists = '/var/lib/postgresql/18/docker/falak-recovery.conf'
+==> /etc/falak/db/pg_hba.conf (-rw-r--r--)
+# Rendered by falak-db at every container start: do not edit, changes are lost.
+# Inside the container: trusted (the socket is not shared). Over TCP: SCRAM passwords.
+local   all          all                 trust
+local   replication  all                 trust
+host    all          all  127.0.0.1/32   scram-sha-256
+host    all          all  ::1/128        scram-sha-256
+host    all          all  all            scram-sha-256
+==> tuning
+effective_cache_size = 192MB
+maintenance_work_mem = 16MB
+max_connections = 50
+memory_mb = 256
+shared_buffers = 64MB
+work_mem = 4MB

@@ -1,0 +1,265 @@
+package dbhelper
+
+import (
+	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+// detectMemory finds the instance's memory limit: FALAK_DB_MEMORY_BYTES, else the container's cgroup limit (v2,
+// then v1), else the host's RAM. A restart after `docker update --memory` therefore re-tunes the config.
+func (h *Helper) detectMemory() (int64, string, error) {
+	if v := h.Env("FALAK_DB_MEMORY_BYTES"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n <= 0 {
+			return 0, "", usageErr("FALAK_DB_MEMORY_BYTES: not a positive integer")
+		}
+		return n, "env", nil
+	}
+	if b, err := os.ReadFile(h.path("/sys/fs/cgroup/memory.max")); err == nil {
+		if s := strings.TrimSpace(string(b)); s != "max" {
+			if n, err := strconv.ParseInt(s, 10, 64); err == nil && n > 0 {
+				return n, "cgroup", nil
+			}
+		}
+	}
+	if b, err := os.ReadFile(h.path("/sys/fs/cgroup/memory/memory.limit_in_bytes")); err == nil {
+		// v1 reports "unlimited" as a huge page-aligned number.
+		if n, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64); err == nil && n > 0 && n < 1<<60 {
+			return n, "cgroup", nil
+		}
+	}
+	f, err := os.Open(h.path("/proc/meminfo"))
+	if err != nil {
+		return 0, "", fmt.Errorf("memory limit: %w", err)
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		if fields := strings.Fields(sc.Text()); len(fields) >= 2 && fields[0] == "MemTotal:" {
+			if kb, err := strconv.ParseInt(fields[1], 10, 64); err == nil {
+				return kb << 10, "host", nil
+			}
+		}
+	}
+	return 0, "", errors.New("memory limit: MemTotal not found in /proc/meminfo")
+}
+
+func (h *Helper) settings() (Settings, error) {
+	return ParseSettings([]byte(h.Env("FALAK_DB_SETTINGS")))
+}
+
+func (h *Helper) tlsSource() string { return h.Env.or("FALAK_DB_TLS_DIR", defaultTLS) }
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.Mode().IsRegular()
+}
+
+// renderInput gathers what Render needs from the environment.
+func (h *Helper) renderInput(mem int64, s Settings) (RenderInput, error) {
+	in := RenderInput{Engine: h.Engine, MemoryBytes: mem, Settings: s, DataDir: dataDir(h.Engine, h.Env)}
+	if s.tls() {
+		in.TLSCA = fileExists(filepath.Join(h.path(h.tlsSource()), "ca.crt"))
+	}
+	if h.Engine.kv() {
+		pw, err := readPassword(h.Engine, h.Env)
+		if err != nil {
+			return in, err
+		}
+		sum := sha256.Sum256([]byte(pw))
+		in.PasswordSHA256 = hex.EncodeToString(sum[:])
+	}
+	return in, nil
+}
+
+// writeConfig writes rendered files (readable by the engine's user) and returns their paths.
+func (h *Helper) writeConfig(files []File) error {
+	for _, f := range files {
+		p := h.path(f.Path)
+		dir := filepath.Dir(p)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		if err := writeFileAtomic(p, []byte(f.Content), f.Mode); err != nil {
+			return fmt.Errorf("write %s: %w", f.Path, err)
+		}
+		// Files the server must read but others must not (the ACL) belong to the engine's user, with their dir.
+		if f.Mode&0o004 == 0 {
+			if err := h.chown(dir, p); err != nil {
+				return err
+			}
+			if err := os.Chmod(dir, 0o750); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// installTLS copies the mounted certificate and key to where the server reads them, owned by its user with the key at
+// 0600: the mount itself (a read-only bind or secret) can't be chowned, and postgres refuses group-readable keys.
+func (h *Helper) installTLS() error {
+	src := h.path(h.tlsSource())
+	dst := h.path(tlsDir)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dst, 0o750); err != nil {
+		return err
+	}
+	for _, f := range []struct {
+		name     string
+		mode     os.FileMode
+		required bool
+	}{{"server.crt", 0o644, true}, {"server.key", 0o600, true}, {"ca.crt", 0o644, false}} {
+		b, err := os.ReadFile(filepath.Join(src, f.name))
+		if errors.Is(err, fs.ErrNotExist) && !f.required {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("tls is on but %s is missing in %s (mount the certificate or set \"tls\": false): %w", f.name, h.tlsSource(), err)
+		}
+		p := filepath.Join(dst, f.name)
+		if err := writeFileAtomic(p, b, f.mode); err != nil {
+			return err
+		}
+		if err := h.chown(p); err != nil {
+			return err
+		}
+	}
+	return h.chown(dst)
+}
+
+// RenderResult is the JSON result of `config render` and the first half of `init`.
+type RenderResult struct {
+	Engine       Engine   `json:"engine"`
+	MemoryBytes  int64    `json:"memory_bytes"`
+	MemorySource string   `json:"memory_source,omitempty"`
+	Files        []string `json:"files"`
+	Tuning       Tuning   `json:"tuning"`
+}
+
+// renderAndWrite renders the config for mem and writes it.
+func (h *Helper) renderAndWrite(mem int64, s Settings) (RenderResult, error) {
+	in, err := h.renderInput(mem, s)
+	if err != nil {
+		return RenderResult{}, err
+	}
+	files, tuning, err := Render(in)
+	if err != nil {
+		return RenderResult{}, err
+	}
+	if err := h.writeConfig(files); err != nil {
+		return RenderResult{}, err
+	}
+	res := RenderResult{Engine: h.Engine, MemoryBytes: mem, Tuning: tuning}
+	for _, f := range files {
+		res.Files = append(res.Files, f.Path)
+	}
+	return res, nil
+}
+
+// ConfigRender is `falak-db config render`.
+func (h *Helper) ConfigRender(mem int64, settingsJSON string) error {
+	s, err := ParseSettings([]byte(settingsJSON))
+	if err != nil {
+		return err
+	}
+	if mem == 0 {
+		if mem, _, err = h.detectMemory(); err != nil {
+			return err
+		}
+	}
+	res, err := h.renderAndWrite(mem, s)
+	if err != nil {
+		return err
+	}
+	return h.result(res)
+}
+
+// Init is the image's entrypoint: check the environment, render the config, prepare the directories, then replace
+// itself with the official entrypoint so its first-run initialisation (POSTGRES_PASSWORD_FILE,
+// MYSQL_ROOT_PASSWORD_FILE, ...) works unchanged.
+func (h *Helper) Init(extra []string) error {
+	if err := checkEnv(h.Env); err != nil {
+		return usageErr("%v", err)
+	}
+	if !h.Engine.kv() && passwordFile(h.Engine, h.Env) == "" {
+		return usageErr("no superuser password file (%s)", map[Engine]string{
+			Postgres: "POSTGRES_PASSWORD_FILE", MySQL: "MYSQL_ROOT_PASSWORD_FILE", MariaDB: "MARIADB_ROOT_PASSWORD_FILE",
+		}[h.Engine])
+	}
+	s, err := h.settings()
+	if err != nil {
+		return err
+	}
+	mem, source, err := h.detectMemory()
+	if err != nil {
+		return err
+	}
+	if s.tls() {
+		if err := h.installTLS(); err != nil {
+			return err
+		}
+	}
+	res, err := h.renderAndWrite(mem, s)
+	if err != nil {
+		return err
+	}
+	res.MemorySource = source
+
+	spool := h.path(spoolDir(h.Env))
+	kind := spoolWAL
+	if h.Engine.mysqlFamily() {
+		kind = spoolBinlog
+	}
+	dirs := []string{spool, filepath.Join(spool, kind)}
+	if h.Engine.mysqlFamily() {
+		dirs = append(dirs, h.path(filepath.Dir(mySlowLog)))
+	}
+	if h.Engine.kv() {
+		dirs = []string{h.path(runDir)}
+	}
+	for _, d := range dirs {
+		// Parents stay traversable (0755); the spool itself is private to the engine's user.
+		if err := os.MkdirAll(filepath.Dir(d), 0o755); err != nil {
+			return err
+		}
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			return err
+		}
+		if err := h.chown(d); err != nil {
+			return err
+		}
+	}
+
+	argv := h.serverArgv(extra)
+	path, err := exec.LookPath(argv[0])
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(h.Stderr, "falak-db: %s %s, memory %d MiB (%s), starting %s\n", h.Engine, strings.Join(res.Files, " "),
+		mib(mem), source, h.Engine.server())
+	return h.Exec(path, argv, os.Environ())
+}
+
+// serverArgv is the official entrypoint's command line for our config.
+func (h *Helper) serverArgv(extra []string) []string {
+	argv := []string{"docker-entrypoint.sh", h.Engine.server()}
+	switch h.Engine {
+	case Postgres:
+		argv = append(argv, "-c", "config_file="+pgConfPath)
+	case Redis, Valkey:
+		argv = append(argv, kvConfPath)
+	}
+	return append(argv, extra...)
+}
