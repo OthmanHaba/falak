@@ -9,9 +9,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 )
 
@@ -294,7 +296,13 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 		return nil, err
 	}
 	defer os.Remove(staged)
-	size, h, err := stageSnapshot(file, p.Compression, staged)
+	owner := fileOwner{uid: -1, gid: -1}
+	if db.d.FS.IsReal() {
+		if owner.uid, owner.gid, err = hostfs.LookupIDs(k.user(name), k.user(name)); err != nil {
+			return nil, err
+		}
+	}
+	size, h, stagedInfo, err := stageSnapshot(file, p.Compression, staged, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -306,11 +314,6 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 		return nil, err
 	}
 	fmt.Fprintf(st.Stdout(), "snapshot %s, %d bytes\n", h, size)
-	if db.d.FS.IsReal() {
-		if err := db.d.FS.Chown(k.dataPath(name)+"/.falak-restore.rdb", k.user(name), k.user(name)); err != nil {
-			return nil, fmt.Errorf("chown the snapshot: %w", err)
-		}
-	}
 
 	// An instance with AOF starts once without it, from dump.rdb (Redis ignores the snapshot while AOF is on).
 	aof := inst.persistence == "aof"
@@ -357,13 +360,15 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 		return nil, rollback(err)
 	}
 	dump := dataP + "/dump.rdb"
+	// The data directory belongs to the instance user: the staged name must still be the file written above (mode and
+	// owner were set on its descriptor), never something put in its place. rename(2) moves a name, it follows no link.
+	if fi, err := os.Lstat(staged); err != nil || !os.SameFile(fi, stagedInfo) {
+		return nil, rollback(fmt.Errorf("install the snapshot: %s was replaced", staged))
+	}
 	if err := os.Rename(staged, dump); err != nil {
 		return nil, rollback(fmt.Errorf("install the snapshot: %w", err))
 	}
 	installed = true
-	if err := os.Chmod(dump, 0o600); err != nil {
-		return nil, rollback(err)
-	}
 	if aof {
 		if err := db.writeRedisConf(k, name, first); err != nil {
 			return nil, rollback(err)
@@ -410,29 +415,49 @@ func (db *DB) redisRestore(ctx context.Context, p RestorePayload, st commands.St
 	return result, nil
 }
 
-// stageSnapshot writes the (gunzipped) dump to staged (0600, new file) and checks its header.
-func stageSnapshot(file, compression, staged string) (int64, rdbHeader, error) {
+// fileOwner is who owns the staged snapshot (-1: unchanged, e.g. in tests).
+type fileOwner struct{ uid, gid int }
+
+// stageSnapshot writes the (gunzipped) dump to staged, a new file (O_EXCL, O_NOFOLLOW: never through a link the
+// instance user put there), whose mode (0600) and owner are set on the open descriptor, never by path. It checks the
+// header and returns the file's identity, which the install compares with what the name points to then.
+func stageSnapshot(file, compression, staged string, owner fileOwner) (int64, rdbHeader, os.FileInfo, error) {
 	in, closeIn, err := openDump(file, compression)
 	if err != nil {
-		return 0, rdbHeader{}, err
+		return 0, rdbHeader{}, nil, err
 	}
 	defer closeIn()
-	out, err := os.OpenFile(staged, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	out, err := os.OpenFile(staged, os.O_CREATE|os.O_EXCL|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
-		return 0, rdbHeader{}, err
+		return 0, rdbHeader{}, nil, err
+	}
+	defer out.Close()
+	if err := out.Chmod(0o600); err != nil {
+		return 0, rdbHeader{}, nil, err
+	}
+	if owner.uid >= 0 {
+		if err := out.Chown(owner.uid, owner.gid); err != nil {
+			return 0, rdbHeader{}, nil, fmt.Errorf("chown the snapshot: %w", err)
+		}
 	}
 	n, err := io.Copy(out, in)
-	if cerr := out.Close(); err == nil {
-		err = cerr
-	}
 	if err != nil {
-		return 0, rdbHeader{}, fmt.Errorf("write the snapshot: %w", err)
+		return 0, rdbHeader{}, nil, fmt.Errorf("write the snapshot: %w", err)
 	}
-	h, err := readRDBHeader(staged)
+	b := make([]byte, 9)
+	m, _ := out.ReadAt(b, 0)
+	h, err := parseRDBHeader(b[:m])
 	if err != nil {
-		return 0, rdbHeader{}, fmt.Errorf("the backup is %w", err)
+		return 0, rdbHeader{}, nil, fmt.Errorf("the backup is %w", err)
 	}
-	return n, h, nil
+	fi, err := out.Stat()
+	if err != nil {
+		return 0, rdbHeader{}, nil, err
+	}
+	if err := out.Close(); err != nil {
+		return 0, rdbHeader{}, nil, fmt.Errorf("write the snapshot: %w", err)
+	}
+	return n, h, fi, nil
 }
 
 // restoreRollback puts the instance back as it was before the restore: the restored files go, the earlier ones come

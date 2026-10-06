@@ -489,3 +489,68 @@ func TestRedisRestoreFailedStopStartsTheInstanceAgain(t *testing.T) {
 		t.Fatal(entries)
 	}
 }
+
+// The staged snapshot is a new file, never written through a link, its mode set on the descriptor.
+func TestStageSnapshotNeverFollowsALink(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "b.rdb.gz")
+	writeGzip(t, src, "REDIS0011 data")
+	victim := filepath.Join(dir, "victim")
+	os.WriteFile(victim, []byte("keep"), 0o644)
+	staged := filepath.Join(dir, ".falak-restore.rdb")
+	os.Symlink(victim, staged)
+	if _, _, _, err := stageSnapshot(src, "gzip", staged, fileOwner{uid: -1, gid: -1}); err == nil {
+		t.Fatal("wrote through a symlink")
+	}
+	if b, _ := os.ReadFile(victim); string(b) != "keep" {
+		t.Fatalf("%q", b)
+	}
+	if fi, _ := os.Stat(victim); fi.Mode().Perm() != 0o644 {
+		t.Fatal(fi.Mode())
+	}
+	os.Remove(staged)
+	n, h, fi, err := stageSnapshot(src, "gzip", staged, fileOwner{uid: -1, gid: -1})
+	if err != nil || n != int64(len("REDIS0011 data")) || h.String() != "REDIS0011" || fi.Mode().Perm() != 0o600 {
+		t.Fatal(n, h, fi, err)
+	}
+}
+
+// A staged snapshot swapped for a link while the instance stops is not installed: nothing is chmodded through it and
+// the earlier data comes back.
+func TestRedisRestoreRefusesAReplacedStagingFile(t *testing.T) {
+	f := &runnertest.Fake{}
+	db, root := newDB(t, f, nil)
+	data := filepath.Join(root, "/var/lib/falak-redis/cache")
+	victim := filepath.Join(root, "victim")
+	os.WriteFile(victim, []byte("REDIS0011 not yours"), 0o644)
+	var h *fakeRedisHost
+	f.OnFunc("systemctl stop", func(c runnertest.Call) (runner.Result, error) {
+		if p := h.procs[c.Args[len(c.Args)-1]]; p != nil && p.save != "" {
+			os.WriteFile(filepath.Join(p.dir, "dump.rdb"), []byte("REDIS0009 at stop"), 0o600)
+		}
+		delete(h.procs, c.Args[len(c.Args)-1])
+		staged := filepath.Join(data, ".falak-restore.rdb")
+		if exists(staged) {
+			os.Remove(staged)
+			os.Symlink(victim, staged)
+		}
+		return runner.Result{}, nil
+	})
+	h = newRedisHost(t, f, root)
+	applyOK(t, db, redisPayload())
+	writeGzip(t, filepath.Join(root, "/backups/b.rdb.gz"), "REDIS0011 restored data")
+
+	_, err := db.Restore(context.Background(), restorePayload("redis", "/backups/b.rdb.gz"), st)
+	if err == nil || !strings.Contains(err.Error(), "was replaced") || !strings.Contains(err.Error(), "the earlier data is back") {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Stat(victim); fi.Mode().Perm() != 0o644 {
+		t.Fatal(fi.Mode())
+	}
+	if b, _ := os.ReadFile(filepath.Join(data, "dump.rdb")); string(b) != "REDIS0009 at stop" {
+		t.Fatalf("%q", b)
+	}
+	if proc := h.procs["redis-server@falak-cache.service"]; proc == nil || proc.loaded != "REDIS0009 at stop" {
+		t.Fatalf("%+v", proc)
+	}
+}
