@@ -31,6 +31,9 @@ interface ProjectDirectory
     /** The service (with its project and environment) a site / database is placed in. */
     public function projectOf(ServiceKind|string $kind, string $refId): ?ServiceData;
 
+    /** A service by its own id (not the site / database id). */
+    public function findService(string $serviceId): ?ServiceData;
+
     /**
      * @return list<ServiceData>
      */

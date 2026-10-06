@@ -24,6 +24,7 @@ use Falak\Sites\Contracts\SecretVariables;
 use Falak\Sites\Contracts\SiteDeploySettings;
 use Falak\Sites\Contracts\SiteDirectory;
 use Falak\Sites\Contracts\SiteDomains;
+use Falak\Sites\Contracts\SiteEnvironments;
 use Falak\Sites\Contracts\SiteFactory;
 use Falak\Sites\Contracts\SiteHeaders;
 use Falak\Sites\Domain\Models\Site;
@@ -35,6 +36,7 @@ use Falak\Sites\Infrastructure\Compose\YamlComposeInspector;
 use Falak\Sites\Infrastructure\EloquentServerSites;
 use Falak\Sites\Infrastructure\EloquentSiteDeploySettings;
 use Falak\Sites\Infrastructure\EloquentSiteDirectory;
+use Falak\Sites\Infrastructure\EloquentSiteEnvironments;
 use Falak\Sites\Infrastructure\EloquentSiteHeaders;
 use Falak\Sites\Infrastructure\EloquentSiteNameResolver;
 use Falak\Sites\Infrastructure\NullSiteDomains;
@@ -56,6 +58,7 @@ class SitesServiceProvider extends ModuleServiceProvider
         SiteHeaders::class => EloquentSiteHeaders::class,
         SiteDeploySettings::class => EloquentSiteDeploySettings::class,
         SecretVariables::class => PatternSecretVariables::class,
+        SiteEnvironments::class => EloquentSiteEnvironments::class,
         SiteFactory::class => ActionSiteFactory::class,
         ComposeInspector::class => YamlComposeInspector::class,
         ComposeSites::class => EloquentComposeSites::class,
