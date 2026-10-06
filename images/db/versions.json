@@ -1,0 +1,22 @@
+{
+  "go_image": "golang:1.25-trixie@sha256:2c4c60ef415fbfa5e90300722293bef36c5e63fae17570ce18f580af933dbd73",
+  "images": [
+    {"engine": "postgres", "version": "15", "base": "postgres:15-bookworm@sha256:d4a8e1f88f475ee3e0137fa89d21ebc59f6c6ab16bf369ee92907607cc3455ae", "platforms": "linux/amd64,linux/arm64"},
+    {"engine": "postgres", "version": "16", "base": "postgres:16-bookworm@sha256:0ea6700a3b4f0ae6ce746519073558aed4d88a79d8d07622a9a644946c7319c4", "platforms": "linux/amd64,linux/arm64"},
+    {"engine": "postgres", "version": "17", "base": "postgres:17-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826", "platforms": "linux/amd64,linux/arm64"},
+    {"engine": "postgres", "version": "18", "base": "postgres:18-bookworm@sha256:afc7e2d441324c0388fa80c3d24f733b4194a4eb7f47dd8ee2b08eb1a24a647c", "platforms": "linux/amd64,linux/arm64"},
+    {"engine": "mysql", "version": "8.0", "base": "mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b", "platforms": "linux/amd64,linux/arm64",
+     "args": {"XB_REPO": "pxb-80", "XB_PACKAGE": "percona-xtrabackup-80", "XB_VERSION": "8.0.35-36.1",
+              "XB_SHA256_AMD64": "70b96ab53ec72aa91aec669ecaf0dceff90b000f3477ded9ea8645386a23cb04",
+              "XB_SHA256_ARM64": "b545971aa9a68a863b1a5fc6db2efa8a55a47ac55a68f0fb340dfe381759162c"}},
+    {"engine": "mysql", "version": "8.4", "base": "mysql:8.4@sha256:6ea90827b1100f8f2ae306a539f86d2c264a26ed435a2a9f75551dd5c3aeb242", "platforms": "linux/amd64,linux/arm64",
+     "args": {"XB_REPO": "pxb-84-lts", "XB_PACKAGE": "percona-xtrabackup-84", "XB_VERSION": "8.4.0-7.1",
+              "XB_SHA256_AMD64": "3ac6964c1face3a4eb90629bc0c2ee533da0e9a3e2084a146f45732d02f8d7d0",
+              "XB_SHA256_ARM64": "69501ea1c68e7a7b99c89c986a357215dfdef2937df35438b160eed19e35d529"}},
+    {"engine": "mariadb", "version": "10.11", "base": "mariadb:10.11@sha256:7db29378d4fdab73f8123bbc2b48905c90d1a4b00cf848b028f1e81e623257f2", "platforms": "linux/amd64,linux/arm64"},
+    {"engine": "mariadb", "version": "11.4", "base": "mariadb:11.4@sha256:1292844148b311e4ed4300022a996d39083f415a963e970cf47cad1b3b18e3a6", "platforms": "linux/amd64,linux/arm64"},
+    {"engine": "redis", "version": "7.4", "base": "redis:7.4@sha256:4fa24486b8bcca8eec45ee0eb166edc674795e53a2b53d1a9ef263eecebaac85", "platforms": "linux/amd64,linux/arm64"},
+    {"engine": "redis", "version": "8", "base": "redis:8@sha256:c94085d298b738be22c9ccdc0ac3761fa6649df7dd82ad1d42367f3cb9714935", "platforms": "linux/amd64,linux/arm64"},
+    {"engine": "valkey", "version": "8.1", "base": "valkey/valkey:8.1@sha256:640c5e62cea04b6d6f2084232651d0cc70362d31f4f805e7be94dbed6855e8f2", "platforms": "linux/amd64,linux/arm64"}
+  ]
+}

@@ -1,0 +1,5 @@
+# Ignore rules for images/db/valkey/Dockerfile (build context: repository root). Allow-list.
+*
+!agent/
+agent/bin
+**/.DS_Store

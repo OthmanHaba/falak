@@ -1,0 +1,15 @@
+# Trivy settings for the database images (.github/workflows/db-images.yml, docs/DB_IMAGES.md).
+# A HIGH or CRITICAL vulnerability with a fix available fails the build. Exceptions need a justification here
+# (paths) or in .trivyignore (one CVE per line, with a comment saying why and until when).
+severity: [HIGH, CRITICAL]
+exit-code: 1
+scan:
+  scanners: [vuln]
+  # gosu (postgres, mysql, mariadb official images) is a static Go binary built by the upstream images with an old Go
+  # toolchain, so Trivy reports Go standard library CVEs (net/http, crypto/tls, html/template, ...). gosu only calls
+  # setgroups/setuid/exec once, at container start, before the server runs; none of the reported packages are
+  # reachable. Upstream rebuilds it when the base image is rebuilt, which the weekly rebuild picks up.
+  skip-files:
+    - usr/local/bin/gosu
+vulnerability:
+  ignore-unfixed: true
