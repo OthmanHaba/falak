@@ -54,7 +54,7 @@ function secrets_deploy_world(array $variables): DeployWorld
     return $world;
 }
 
-function secrets_deploy(DeployWorld $world): Deployment
+function secret_store_deploy(DeployWorld $world): Deployment
 {
     $deployment = app(TriggerDeployment::class)(app(SiteDirectory::class)->find($world->site->id), Trigger::Manual);
     $world->builds->succeed();

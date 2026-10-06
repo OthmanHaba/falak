@@ -60,7 +60,7 @@ it('renders secrets into the release at deploy time and logs the read as the dep
     $world = secrets_deploy_world(['APP_KEY' => 'base64:k', 'STRIPE_SECRET' => '${{ secrets.STRIPE_SECRET }}']);
     secrets_create($world->organization, 'STRIPE_SECRET', 'sk_live_abc', SecretScope::Environment, projects_default_env($world->organization)->id);
 
-    $deployment = secrets_deploy($world);
+    $deployment = secret_store_deploy($world);
 
     expect($deployment->status)->toBe(DeploymentStatus::Succeeded)
         ->and($world->agents->last('deploy.prepare')['payload']['env_file']['content'])->toContain('STRIPE_SECRET=sk_live_abc');
@@ -74,7 +74,7 @@ it('renders secrets into the release at deploy time and logs the read as the dep
 it('fails the deployment with a clear error when a secret is missing', function () {
     $world = secrets_deploy_world(['APP_KEY' => 'base64:k', 'STRIPE_SECRET' => '${{ secrets.STRIPE_SECRET }}']);
 
-    $deployment = secrets_deploy($world);
+    $deployment = secret_store_deploy($world);
 
     expect($deployment->status)->toBe(DeploymentStatus::Failed)
         ->and($deployment->error)->toContain('Unresolved variable references: STRIPE_SECRET: secret STRIPE_SECRET is not defined for this service')
