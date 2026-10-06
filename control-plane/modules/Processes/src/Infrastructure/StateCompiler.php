@@ -73,20 +73,14 @@ final class StateCompiler
             $secretNames = $this->secrets->names([...($this->sites->environment($site->id)->variables ?? []), ...$release->environment]);
 
             foreach ($this->sitePrograms($site, $serverId, $release, $workers->get($site->id, new Collection), $daemons->get($site->id, new Collection)) as [$program, $kind, $label]) {
-                // The agent masks these variables' values in the program's logs.
-                $mask = array_values(array_filter(array_unique([...$secretNames, ...$this->secrets->names($program['env'] ?? [])]), fn (string $name) => array_key_exists($name, $program['env'] ?? [])));
-                sort($mask);
-
-                if ($mask !== []) {
-                    $program['mask'] = $mask;
-                }
-
+                $program = $this->withMask($program, $secretNames);
                 $programs[] = $program;
                 // `hash` tells restartForSite() which programs a proc.apply restarts anyway (changed definition).
                 $programMeta[$program['name']] = ['site_id' => $site->id, 'kind' => $kind, 'label' => $label, 'numprocs' => $program['numprocs'] ?? 1, 'hash' => PayloadHash::of($program)];
             }
 
             foreach ($this->siteJobs($site, $serverId, $release, $isLeader, $schedules->get($site->id, new Collection)) as [$job, $kind, $label]) {
+                $job = $this->withMask($job, $secretNames);
                 $jobs[] = $job;
                 $jobMeta[$job['name']] = [
                     'site_id' => $site->id,
@@ -347,6 +341,23 @@ final class StateCompiler
             'site' => $site->slug,
             ...$overrides,
         ], fn ($value) => $value !== null);
+    }
+
+    /**
+     * Names the secret variables of a program's or job's env: the agent masks their values in its logs and keeps them
+     * on the tmpfs only (its state files never hold them).
+     *
+     * @param  array<string, mixed>  $entry
+     * @param  list<string>  $secretNames  the site's
+     * @return array<string, mixed>
+     */
+    private function withMask(array $entry, array $secretNames): array
+    {
+        $env = (array) ($entry['env'] ?? []);
+        $mask = array_values(array_filter(array_unique([...$secretNames, ...$this->secrets->names($env)]), fn (string $name) => array_key_exists($name, $env)));
+        sort($mask);
+
+        return $mask === [] ? $entry : [...$entry, 'mask' => $mask];
     }
 
     /**
