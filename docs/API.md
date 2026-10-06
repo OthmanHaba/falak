@@ -467,7 +467,7 @@ Infisical, HTTPS webhook): settings, references, caching and the webhook contrac
  "status": "untested|ok|error", "last_checked_at": "…", "last_error": null, "secrets_count": 3, "created_at": "…", "updated_at": "…"}
 ```
 ### `GET /api/v1/secrets/providers` · `GET /api/v1/secrets/providers/{provider}` — `secrets.view`
-### `POST /api/v1/secrets/providers` — `secrets.manage`
+### `POST /api/v1/secrets/providers` — `secrets.providers.manage` (admins)
 `{name, type: vault|aws_secrets_manager|aws_ssm|onepassword|doppler|infisical|http, config: {…}, allow_private_network?,
 cache_ttl_seconds? (0–86400, default 300)}`. `config` per type:
 - `vault`: `address, namespace?, kv_version (2|1), auth_method (approle|token|jwt), token | role_id + secret_id | role + jwt,
@@ -477,13 +477,18 @@ cache_ttl_seconds? (0–86400, default 300)}`. `config` per type:
 - `onepassword`: `connect_url, token, ca_pem?` · `doppler`: `token` · `infisical`: `base_url, client_id, client_secret, ca_pem?`
 - `http`: `base_url, header_name?, header_value?, ca_pem?`
 
-URLs are `https://` and must resolve to public addresses unless `allow_private_network` (self-hostable types only).
-### `PATCH /api/v1/secrets/providers/{provider}` — `secrets.manage`
-Same fields but `type`. Credentials left empty keep their stored value. Changing settings resets the status to `untested`.
-### `POST /api/v1/secrets/providers/{provider}/test` — `secrets.manage`
+URLs are `https://` and must resolve to public addresses unless `allow_private_network` (self-hostable types only, and
+only when the instance sets `FALAK_SECRETS_PROVIDERS_ALLOW_PRIVATE=true`). With `auth_method: instance_profile`,
+`role_arn` is required and the external ID is always the organization id.
+### `PATCH /api/v1/secrets/providers/{provider}` — `secrets.providers.manage`
+Same fields but `type`; without `config` the settings stay as they are. Credentials left empty keep their stored value,
+unless a setting that decides where they are sent (URL, CA, namespace, region, role, external ID, header) changes:
+then every credential must be sent again (`422` otherwise). Changing settings resets the status to `untested` and drops
+the cached values.
+### `POST /api/v1/secrets/providers/{provider}/test` — `secrets.providers.manage`
 Checks the endpoint and credentials (Vault `lookup-self`, STS `GetCallerIdentity`, Doppler `/v3/me`, Infisical login,
 Connect `/v1/vaults`, webhook test ref) and records the status. `422 {errors: {provider: [reason]}}` when it fails.
-### `DELETE /api/v1/secrets/providers/{provider}` — `secrets.manage`
+### `DELETE /api/v1/secrets/providers/{provider}` — `secrets.providers.manage`
 `422` while linked secrets use it. Its cached values are deleted.
 
 ## Source control
