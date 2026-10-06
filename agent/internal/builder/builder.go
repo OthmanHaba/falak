@@ -91,7 +91,8 @@ func (b *Builder) Build(ctx context.Context, jb Job, sink commands.EventSink) (r
 	st := commands.NewEventStream(jb.ID, sink, b.Now)
 	st.Started()
 	j := &job{Job: jb, st: st, started: b.Now()}
-	secrets := redact.NewSet(jb.Secrets()...)
+	// Registry and repository tokens can be short: builds mask from 4 bytes.
+	secrets := redact.NewSetMin(4, jb.Secrets()...)
 	out, errw := redact.NewWriter(secrets, st.Stdout()), redact.NewWriter(secrets, st.Stderr())
 	j.out, j.errw = out, errw
 	res = Result{BuildID: jb.ID, Mode: jb.Mode}

@@ -1,23 +1,26 @@
 // Package redact masks secret values in everything the agent ships back to the control plane: command output,
-// errors and results, deployment lifecycle events and build logs.
+// errors and results, deployment lifecycle events, process logs and build logs.
 //
 // The control plane never sends extra copies of a secret for this: payloads list the *names* of their secret
 // variables (`mask`), and the executor looks their values up in the same payload (env maps, dotenv content) or in
-// the site's env file. Each value is matched as is, base64 (standard and URL alphabets, with or without padding)
-// and URL-encoded (query and path escaping); every match becomes Mask. Values shorter than MinLen are ignored:
-// masking "true" or "3306" would mangle unrelated output and hide nothing worth hiding.
+// the site's env file. Each value is matched in every form it commonly leaks in (see forms); every match becomes
+// Mask. Values shorter than MinLen are ignored: masking "true" or "3306" would mangle unrelated output and hide
+// nothing worth hiding.
 package redact
 
 import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/url"
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // Mask replaces every secret.
@@ -26,22 +29,33 @@ const Mask = "••••"
 // MinLen is the shortest value that is masked.
 const MinLen = 6
 
+// minForm is the shortest encoded form matched (shorter fragments of base64 would match unrelated text).
+const minForm = 6
+
+// MaxHold bounds what a Writer holds back waiting for the rest of a possible secret: past it, output is released
+// (masked as far as it is known), so a secret longer than MaxHold may show its first bytes when split across writes.
+const MaxHold = 8 << 10
+
 // Set is a growing set of secret values; safe for concurrent use. A nil *Set masks nothing.
 type Set struct {
 	mu     sync.RWMutex
+	min    int
 	values map[string]struct{}
 	pats   [][]byte // every form of every value, longest first
 	maxLen int
 }
 
 // NewSet returns a set holding values.
-func NewSet(values ...string) *Set {
-	s := &Set{values: map[string]struct{}{}}
+func NewSet(values ...string) *Set { return NewSetMin(MinLen, values...) }
+
+// NewSetMin returns a set that also masks values of at least min bytes (builds: registry and repository tokens).
+func NewSetMin(min int, values ...string) *Set {
+	s := &Set{min: max(1, min), values: map[string]struct{}{}}
 	s.Add(values...)
 	return s
 }
 
-// Add adds values (shorter than MinLen are ignored).
+// Add adds values (shorter than the set's minimum are ignored).
 func (s *Set) Add(values ...string) {
 	if s == nil {
 		return
@@ -50,7 +64,7 @@ func (s *Set) Add(values ...string) {
 	defer s.mu.Unlock()
 	added := false
 	for _, v := range values {
-		if len(v) < MinLen {
+		if len(v) < s.min {
 			continue
 		}
 		if _, ok := s.values[v]; ok {
@@ -65,12 +79,14 @@ func (s *Set) Add(values ...string) {
 	seen := map[string]bool{}
 	s.pats, s.maxLen = nil, 0
 	for v := range s.values {
-		for _, f := range forms(v) {
-			if !seen[f] {
-				seen[f] = true
-				s.pats = append(s.pats, []byte(f))
-				s.maxLen = max(s.maxLen, len(f))
+		for i, f := range forms(v) {
+			// The value itself always counts; derived forms only when long enough to be specific.
+			if seen[f] || (i > 0 && len(f) < minForm) {
+				continue
 			}
+			seen[f] = true
+			s.pats = append(s.pats, []byte(f))
+			s.maxLen = max(s.maxLen, len(f))
 		}
 	}
 	sort.Slice(s.pats, func(i, j int) bool {
@@ -100,15 +116,72 @@ func (s *Set) patterns() ([][]byte, int) {
 	return s.pats, s.maxLen
 }
 
-// forms are the encodings a value is matched in.
+// forms are the encodings a value is matched in (the value itself first):
+//   - base64, standard and URL alphabets, at each of the three byte alignments it can have inside a longer encoded
+//     string (e.g. "user:password" in a Basic auth header), keeping only the characters that depend on the value
+//     alone (the approach of GitHub Actions' log masker);
+//   - URL-encoded (query and path escaping), lower-case hex;
+//   - JSON string escapes (Go's, with and without HTML escaping, and PHP's json_encode: \/ and \uXXXX);
+//   - inside a single-quoted shell word (each quote closed, escaped and reopened).
 func forms(v string) []string {
 	b := []byte(v)
 	out := []string{v}
 	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.URLEncoding} {
-		// The unpadded form also matches the padded one (the padding stays visible, which tells nothing).
-		out = append(out, strings.TrimRight(enc.EncodeToString(b), "="))
+		for shift := 0; shift < 3; shift++ {
+			full := enc.EncodeToString(append(make([]byte, shift), b...))
+			from := (8*shift + 5) / 6
+			to := 8 * (shift + len(b)) / 6
+			if to > from {
+				out = append(out, full[from:to])
+			}
+		}
 	}
-	return append(out, url.QueryEscape(v), url.PathEscape(v))
+	out = append(out, url.QueryEscape(v), url.PathEscape(v), hex.EncodeToString(b))
+	out = append(out, jsonForms(v)...)
+	if strings.Contains(v, "'") {
+		out = append(out, strings.ReplaceAll(v, "'", `'\''`))
+	}
+	return out
+}
+
+// jsonForms are v as it appears inside a JSON string (without the quotes).
+func jsonForms(v string) []string {
+	var out []string
+	if b, err := json.Marshal(v); err == nil {
+		out = append(out, string(b[1:len(b)-1]))
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if enc.Encode(v) == nil {
+		b := bytes.TrimSpace(buf.Bytes())
+		out = append(out, string(b[1:len(b)-1]))
+	}
+	// PHP's json_encode defaults: "/" escaped, non-ASCII as \uXXXX (UTF-16 surrogate pairs), <>& kept.
+	var php strings.Builder
+	for _, r := range v {
+		switch {
+		case r == '"' || r == '\\' || r == '/':
+			php.WriteByte('\\')
+			php.WriteRune(r)
+		case r == '\n':
+			php.WriteString(`\n`)
+		case r == '\r':
+			php.WriteString(`\r`)
+		case r == '\t':
+			php.WriteString(`\t`)
+		case r < 0x20:
+			fmt.Fprintf(&php, `\u%04x`, r)
+		case r < utf8.RuneSelf:
+			php.WriteRune(r)
+		case r > 0xFFFF:
+			r -= 0x10000
+			fmt.Fprintf(&php, `\u%04x\u%04x`, 0xD800+(r>>10), 0xDC00+(r&0x3FF))
+		default:
+			fmt.Fprintf(&php, `\u%04x`, r)
+		}
+	}
+	return append(out, php.String())
 }
 
 // String masks every secret in in.
@@ -263,6 +336,15 @@ func (w *Writer) Write(p []byte) (int, error) {
 	for _, r := range sp {
 		if r[0] < cut && r[1] > cut {
 			cut = r[0]
+		}
+	}
+	// Never hold more than MaxHold: release the oldest part (matches crossing the new cut are masked whole).
+	if len(buf)-cut > MaxHold {
+		cut = len(buf) - MaxHold
+		for _, r := range sp {
+			if r[0] < cut && r[1] > cut {
+				cut = r[1]
+			}
 		}
 	}
 	out := apply(buf, sp, cut)
