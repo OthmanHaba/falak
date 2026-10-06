@@ -2,6 +2,7 @@
 
 namespace Falak\Network\Domain\Models;
 
+use Falak\Kernel\Security\Casts\Sealed;
 use Falak\Network\Domain\Enums\ApplyStatus;
 use Falak\Network\Domain\Enums\KeyStatus;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -47,7 +48,7 @@ class PrivateNetworkMember extends Model
     protected function casts(): array
     {
         return [
-            'private_key' => 'encrypted',
+            'private_key' => Sealed::class,
             'key_status' => KeyStatus::class,
             'status' => ApplyStatus::class,
             'revision' => 'integer',

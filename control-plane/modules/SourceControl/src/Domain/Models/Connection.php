@@ -2,6 +2,7 @@
 
 namespace Falak\SourceControl\Domain\Models;
 
+use Falak\Kernel\Security\Casts\SealedArray;
 use Falak\SourceControl\Contracts\Data\ConnectionData;
 use Falak\SourceControl\Contracts\ProviderType;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -50,7 +51,7 @@ class Connection extends Model
     {
         return [
             'provider' => ProviderType::class,
-            'credentials' => 'encrypted:array',
+            'credentials' => SealedArray::class,
         ];
     }
 

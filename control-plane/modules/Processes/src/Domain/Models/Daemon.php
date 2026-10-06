@@ -2,6 +2,7 @@
 
 namespace Falak\Processes\Domain\Models;
 
+use Falak\Kernel\Security\Casts\SealedArray;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -48,7 +49,7 @@ class Daemon extends Model
         return [
             'instances' => 'integer',
             'stop_timeout' => 'integer',
-            'env' => 'encrypted:array',
+            'env' => SealedArray::class,
             'server_ids' => 'array',
         ];
     }

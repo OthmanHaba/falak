@@ -2,6 +2,7 @@
 
 namespace Falak\Telemetry\Domain\Models;
 
+use Falak\Kernel\Security\Casts\Sealed;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -38,7 +39,7 @@ class TelemetrySettings extends Model
     protected function casts(): array
     {
         return [
-            'otlp_token' => 'encrypted',
+            'otlp_token' => Sealed::class,
             'traces_ratio' => 'float',
             'metrics_interval_s' => 'integer',
         ];

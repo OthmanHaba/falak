@@ -1,0 +1,79 @@
+<?php
+
+use Falak\Alerting\Domain\Models\Channel;
+use Falak\Kernel\Security\SealedColumns;
+use Falak\Kernel\Security\Sealer;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+function sealMigration(): object
+{
+    return require dirname(__DIR__, 2).'/database/migrations/2026_10_23_000001_seal_encrypted_columns.php';
+}
+
+function legacyChannel(string $config): string
+{
+    $id = strtolower((string) Str::ulid());
+    DB::table('alerting_channels')->insert([
+        'id' => $id, 'organization_id' => strtolower((string) Str::ulid()), 'type' => 'webhook', 'name' => "c-{$id}",
+        'config' => $config, 'enabled' => true, 'created_at' => now(), 'updated_at' => now(),
+    ]);
+
+    return $id;
+}
+
+it('re-encrypts APP_KEY ciphertexts with the new cast, and skips values already sealed', function () {
+    $legacy = collect(range(1, 3))->map(fn ($i) => legacyChannel(Crypt::encryptString(json_encode(['url' => "https://hooks.example.com/{$i}"]))));
+    $sealedId = legacyChannel(app(Sealer::class)->seal(json_encode(['url' => 'https://already.example.com']), 'alerting_channels.config'));
+    $sealedRaw = DB::table('alerting_channels')->where('id', $sealedId)->value('config');
+
+    sealMigration()->up();
+
+    foreach ($legacy as $i => $id) {
+        expect(DB::table('alerting_channels')->where('id', $id)->value('config'))->toStartWith('fk1:')
+            ->and(Channel::query()->find($id)->config)->toBe(['url' => 'https://hooks.example.com/'.($i + 1)]);
+    }
+
+    expect(DB::table('alerting_channels')->where('id', $sealedId)->value('config'))->toBe($sealedRaw);
+
+    // Idempotent: a second run changes nothing.
+    $before = DB::table('alerting_channels')->orderBy('id')->pluck('config')->all();
+    sealMigration()->up();
+    expect(DB::table('alerting_channels')->orderBy('id')->pluck('config')->all())->toBe($before);
+});
+
+it('stops with a clear error when a value does not decrypt with APP_KEY', function () {
+    legacyChannel('eyJpdiI6Im5vdC1yZWFsIn0=');
+
+    expect(fn () => sealMigration()->up())->toThrow(RuntimeException::class, 'alerting_channels.config: a value could not be decrypted with APP_KEY');
+});
+
+it('can be reversed to APP_KEY ciphertexts', function () {
+    $id = legacyChannel(Crypt::encryptString('{"url":"https://hooks.example.com/x"}'));
+
+    sealMigration()->up();
+    sealMigration()->down();
+
+    expect(Crypt::decryptString(DB::table('alerting_channels')->where('id', $id)->value('config')))->toBe('{"url":"https://hooks.example.com/x"}');
+});
+
+it('covers exactly the columns sealed today, with their AAD', function () {
+    $migrated = array_map(fn (array $c) => "{$c[0]}.{$c[1]}.{$c[2]} ".($c[3] ?? "{$c[0]}.{$c[2]}"), sealMigration()::COLUMNS);
+    $cast = array_map(fn (array $c) => "{$c['table']}.{$c['primary_key']}.{$c['column']} {$c['aad']}", app(SealedColumns::class)->all());
+
+    sort($migrated);
+    sort($cast);
+
+    expect($migrated)->toBe($cast);
+});
+
+it('finds every sealed model column of the modules', function () {
+    app()->forgetInstance(SealedColumns::class);
+    $columns = app(SealedColumns::class)->all();
+
+    expect(count($columns))->toBe(30)
+        ->and(collect($columns)->map(fn ($c) => "{$c['table']}.{$c['column']}")->all())
+        ->toContain('fleet_commands.payload', 'telemetry_settings.otlp_token', 'deployments_site_settings.hook_token', 'identity_users.two_factor_secret')
+        ->and(collect($columns)->firstWhere('column', 'hook_token')['aad'])->toBe('deployments_site_settings.hook_token');
+});

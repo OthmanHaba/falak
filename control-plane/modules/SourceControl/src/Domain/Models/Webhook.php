@@ -2,6 +2,7 @@
 
 namespace Falak\SourceControl\Domain\Models;
 
+use Falak\Kernel\Security\Casts\Sealed;
 use Falak\SourceControl\Contracts\Data\WebhookData;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -38,7 +39,7 @@ class Webhook extends Model
     protected function casts(): array
     {
         return [
-            'secret' => 'encrypted',
+            'secret' => Sealed::class,
             'installed' => 'boolean',
             'last_delivery_at' => 'datetime',
         ];
