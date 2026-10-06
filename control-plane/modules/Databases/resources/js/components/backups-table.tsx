@@ -9,7 +9,7 @@ import { router, useForm } from '@inertiajs/react';
 import { format } from 'date-fns';
 import { Download, RotateCcw, Trash2 } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
-import { isKeyValue, type BackupRow, type RestoreTarget } from '../types';
+import { isKeyValue, retargetRestore, type BackupRow, type RestoreTarget } from '../types';
 import { StatusBadge, formatBytes, formatDuration } from './database-ui';
 
 interface Props {
@@ -133,7 +133,10 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                         {canPickTarget && (
                             <div className="grid gap-2">
                                 <Label>Target server</Label>
-                                <Select value={form.data.database_server_id} onValueChange={(value) => form.setData('database_server_id', value)}>
+                                <Select
+                                    value={form.data.database_server_id}
+                                    onValueChange={(value) => form.setData(retargetRestore(form.data, value, keyValue, restoreTargets))}
+                                >
                                     <SelectTrigger>
                                         <SelectValue />
                                     </SelectTrigger>

@@ -178,3 +178,22 @@ export interface Connection {
     hosts: ConnectionHost[];
     access?: ConnectionAccess[];
 }
+
+/**
+ * The restore form after another target server is picked: a Redis / Valkey snapshot goes into one of that server's
+ * instances, so the instance chosen for the previous server (absent from the new one) is cleared, and with it the
+ * confirmation. SQL keeps the typed database name (it is created when missing).
+ */
+export function retargetRestore<T extends { database_server_id: string; database: string; confirm: string }>(
+    data: T,
+    serverId: string,
+    keyValue: boolean,
+    targets: RestoreTarget[],
+): T {
+    if (!keyValue) return { ...data, database_server_id: serverId };
+    const instances = targets.find((target) => target.id === serverId)?.instances ?? [];
+
+    return instances.includes(data.database)
+        ? { ...data, database_server_id: serverId }
+        : { ...data, database_server_id: serverId, database: '', confirm: '' };
+}
