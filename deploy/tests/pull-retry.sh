@@ -103,7 +103,7 @@ pass "DNS / connection errors (no such host, lookup … not found, permission de
 
 # One definition: deploy/install.sh and deploy/falak-ctl carry the same pull_permanent.
 body() { sed -n '/^# pull_permanent FILE/,/^}/p' "$1"; }
-[ -n "$(body "$here/../install.sh")" ] && [ "$(body "$here/../install.sh")" = "$(body "$here/../falak-ctl")" ] || fail "pull_permanent differs between install.sh and falak-ctl"
+if ! { [ -n "$(body "$here/../install.sh")" ] && [ "$(body "$here/../install.sh")" = "$(body "$here/../falak-ctl")" ]; }; then fail "pull_permanent differs between install.sh and falak-ctl"; fi
 pass "install.sh and falak-ctl share the same pull_permanent"
 
 printf 'FALAK_IMAGE_PREFIX=ghcr.io/acme\nFALAK_VERSION=v0.9.0\n' > "$FALAK_DIR/.env"
