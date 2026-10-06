@@ -150,6 +150,23 @@ class KeyRing
         return true;
     }
 
+    /**
+     * Delete every data key of a purpose (an organization was deleted): what they sealed can't be opened from
+     * this database again. Database backups taken before still hold the wrapped keys (readable with the KEK).
+     *
+     * @return int keys deleted
+     */
+    public function destroy(string $purpose): int
+    {
+        foreach (DataKey::query()->where('purpose', $purpose)->pluck('id') as $id) {
+            unset($this->material[(string) $id], $this->pending[(string) $id]);
+        }
+
+        unset($this->active[$purpose]);
+
+        return DataKey::query()->where('purpose', $purpose)->delete();
+    }
+
     /** Forget unwrapped keys (tests, and after a KEK rotation). */
     public function flush(): void
     {
