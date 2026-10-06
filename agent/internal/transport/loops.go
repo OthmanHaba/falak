@@ -71,7 +71,10 @@ type Heartbeat struct {
 	MemoryUsedBytes int64      `json:"memory_used_bytes"`
 	DiskUsedBytes   int64      `json:"disk_used_bytes"`
 	RunningCommands []string   `json:"running_commands"`
-	Facts           any        `json:"facts,omitempty"`
+	// MissingSecrets are sites whose env file or container secret files are gone (a reboot emptied /run): the
+	// control plane answers with site.env.write.
+	MissingSecrets []string `json:"missing_secrets,omitempty"`
+	Facts          any      `json:"facts,omitempty"`
 }
 
 // Heartbeater posts heartbeats every Interval. Facts are included on the first beat and whenever

@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/obs"
+	"github.com/OthmanHaba/falak/agent/internal/redact"
 )
 
 // Deployment lifecycle statuses and phases (observability contract: Loki query
@@ -28,6 +29,7 @@ const EventService = "falak-agent"
 type lifecycle struct {
 	site, phase, releaseID, hook string
 	ctx                          *Context
+	mask                         *redact.Set // the command's secrets (error messages are masked)
 }
 
 // emit sends one deployment lifecycle log record. Failures are ERROR with the error message as body.
@@ -58,7 +60,7 @@ func (d *Deployer) emit(l lifecycle, status string, err error) {
 	set("falak.deployment.trigger", c.Trigger)
 	sev, body := "INFO", "deployment "+status+" ("+l.phase+")"
 	if err != nil {
-		sev, body = "ERROR", err.Error()
+		sev, body = "ERROR", l.mask.String(err.Error())
 	}
 	d.o.Events.EmitLog(obs.LogRecord{
 		Time: time.Now(), Severity: sev, Body: body,

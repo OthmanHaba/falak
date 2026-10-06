@@ -59,7 +59,12 @@ type ComposeUpPayload struct {
 	// Services starts only these (and what they depend on; feature compose.up.services): a stack's bootstrap pass
 	// for the services its split-out sites use, before those sites and then the full stack deploy.
 	Services []string `json:"services,omitempty"`
+	// Mask names the secret variables of env.
+	Mask []string `json:"mask,omitempty"`
 }
+
+// Secrets are the masked env values.
+func (p ComposeUpPayload) Secrets() []string { return secretValues(p.Env, p.Mask, nil) }
 
 type ComposePullPayload struct {
 	Project        string            `json:"project"`
@@ -70,7 +75,11 @@ type ComposePullPayload struct {
 	ProjectEnvFile string            `json:"project_env_file,omitempty"`
 	RegistryAuth   *Auth             `json:"registry_auth,omitempty"`
 	Services       []string          `json:"services,omitempty"`
+	Mask           []string          `json:"mask,omitempty"`
 }
+
+// Secrets are the masked env values.
+func (p ComposePullPayload) Secrets() []string { return secretValues(p.Env, p.Mask, nil) }
 
 type ComposeDownPayload struct {
 	Project   string `json:"project"`

@@ -149,6 +149,34 @@ The size comes from the payload's `uncompressed_bytes` (feature `db.redis.restor
 the control plane sends what the backup recorded), else from the gzip trailer (`ISIZE`, exact below ~4 MB of gzip,
 otherwise a lower bound and no cap).
 
+## Secrets on servers (v0.10.0)
+**Env files on tmpfs.** `deploy.prepare` writes `env_file` to `/run/falak/env/<site>.env` (directory 0711 root, file
+0440 owned by the site user and its group, which the edge user joins for FrankenPHP) and makes `shared/.env` a symlink
+to it, replacing the regular file earlier agents kept; every release's `.env` links to `shared/.env`. PHP-FPM pools of
+isolated sites get the file in `open_basedir` (PHP checks the resolved path). Nothing with a secret is written under
+`/srv/falak/sites`.
+
+**Secret files for containers.** `docker.run` and `deploy.container.swap` take `secret_files`: written to
+`/run/falak/secrets/<container>/<NAME>` and bind-mounted read-only at `/run/secrets` (a `Mounts` bind, which never
+creates a missing source). The parent directory is 0700 root, so no other host user reaches them; inside the container
+they are 0444 in a 0555 directory (the image's user is unknown), or 0400/0500 owned by a numeric `user`. The
+variables passed as files are not in the container's env, so `docker inspect` doesn't show them. Each color of a swap
+has its own directory, removed with the container. Compose projects keep env variables for now.
+
+**After a reboot** `/run` is empty: Docker can't start a container whose secret directory is missing, and the site's
+`.env` link dangles. Every heartbeat carries `missing_secrets` (the slugs of those sites) until they are restored. The
+control plane answers with `site.env.write` (`env_file` built from the live release's variables; `secret_files` for
+container sites in files mode), throttled per server and site. The agent writes the files and starts the containers
+that could not start without them (a container stopped on purpose stays stopped).
+
+**Output masking.** Payloads that carry secrets list the names of their secret variables in `mask`
+(`deploy.prepare`, `deploy.hook`, `deploy.container.swap`, `docker.run`, `docker.compose.up`, `docker.compose.pull`,
+`site.env.write`); the values are never sent twice. The agent takes the values from the same payload (env maps,
+dotenv content, every `secret_files` content) and, for `deploy.hook`, from the site's env file, which scripts read.
+Each value (6 bytes or more), its base64 (standard and URL alphabets) and URL-encoded forms become `••••` in the
+command's output (also when split across writes), error, result and deployment lifecycle events. Build jobs take the
+same `mask` for `env` and `build_args`.
+
 ## Agent sessions and lost deliveries
 Every `falak-agent` process sends a random session id (`X-Falak-Agent-Session: s-<32 hex>`, 8-64 characters of
 `[A-Za-z0-9._:-]`) on every mTLS request. Agents from before sessions send none; that is accepted.
@@ -164,7 +192,7 @@ A lost command whose schema has `"x-falak-redeliverable": true` at its root is q
 the agent answers a command id it already finished from its journal, so nothing runs twice. Redeliverable:
 declarative state (`edge.caddy.apply`, `edge.cert.install`, `telemetry.configure`, `proc.apply`, `cron.apply`,
 `net.firewall.apply`, `net.wireguard.apply`, `db.user.apply`, `db.redis.apply`, `db.redis.remove`,
-`system.ssh_key.sync`), read-only commands
+`system.ssh_key.sync`, `site.env.write`), read-only commands
 (`proc.status`, `system.facts`, `docker.compose.ps`, `provision.inspect`) and `system.upgrade_agent` (a no-op once
 installed). Any other type fails instead, so the deployment waiting on it fails fast: `failed` with "The agent
 restarted before running the command" when it was never started, `timed_out` otherwise (a late result still

@@ -100,8 +100,11 @@ func Build(d Deps) *Components {
 	})
 	edgeClient := &edge.Client{Base: cfg.CaddyAdmin}
 	edgeMgr := edge.New(edge.Options{Client: edgeClient, FS: d.FS, EtcDir: cfg.EtcDir, Logger: log.With("component", "edge")})
-	dock := docker.New(docker.Options{Socket: cfg.DockerSock, Runner: d.Runner, FS: d.FS, Upstreams: edgeMgr, Logger: log.With("component", "docker")})
-	dep := deploy.New(deploy.Options{FS: d.FS, Runner: d.Runner, HTTP: d.HTTP, SitesRoot: cfg.SitesRoot, Procs: sup, Workers: edgeClient, Events: sink, Logger: log.With("component", "deploy")})
+	// Secrets on servers live on the tmpfs only: sites' env files and containers' secret files.
+	dock := docker.New(docker.Options{Socket: cfg.DockerSock, Runner: d.Runner, FS: d.FS, Upstreams: edgeMgr, SecretsDir: filepath.Join(cfg.RunDir, "secrets"),
+		Logger: log.With("component", "docker")})
+	dep := deploy.New(deploy.Options{FS: d.FS, Runner: d.Runner, HTTP: d.HTTP, SitesRoot: cfg.SitesRoot, EnvDir: filepath.Join(cfg.RunDir, "env"), Containers: dock,
+		Procs: sup, Workers: edgeClient, Events: sink, Logger: log.With("component", "deploy")})
 	terms := pty.New(pty.Options{Logger: log.With("component", "pty")})
 
 	system.New(system.Deps{Runner: d.Runner, FS: d.FS, Logger: log, HTTP: d.HTTP, AgentVersion: version.Version, Restart: d.RestartAgent,
@@ -234,7 +237,8 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Client: client, Interval: cfg.Heartbeat, Running: disp.Running, Log: log.With("component", "heartbeat"),
 		Summary: func() transport.Heartbeat {
 			s := tel.Summary()
-			return transport.Heartbeat{UptimeS: s.UptimeS, Load: s.Load, CPUPercent: s.CPUPercent, MemoryUsedBytes: s.MemUsedBytes, DiskUsedBytes: s.DiskUsedBytes}
+			return transport.Heartbeat{UptimeS: s.UptimeS, Load: s.Load, CPUPercent: s.CPUPercent, MemoryUsedBytes: s.MemUsedBytes, DiskUsedBytes: s.DiskUsedBytes,
+				MissingSecrets: comps.Deployer.MissingSecrets(runCtx)}
 		},
 		Facts: func(ctx context.Context) (any, error) {
 			f, err := facts.Collect(ctx, r, fs, version.Version)

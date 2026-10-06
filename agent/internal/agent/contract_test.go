@@ -26,7 +26,7 @@ var Catalogue = []string{
 	"provision.apply", "provision.inspect",
 	"runtime.php.install", "runtime.php.configure", "runtime.node.install", "runtime.bun.install", "runtime.deno.install", "runtime.frankenphp.configure", "runtime.fpm.pool",
 	"edge.caddy.apply", "edge.cert.install",
-	"deploy.fetch", "deploy.prepare", "deploy.hook", "deploy.activate", "deploy.rollback", "deploy.prune", "deploy.container.swap",
+	"deploy.fetch", "deploy.prepare", "deploy.hook", "deploy.activate", "deploy.rollback", "deploy.prune", "deploy.container.swap", "site.env.write",
 	"proc.apply", "proc.restart", "proc.status",
 	"cron.apply",
 	"db.create", "db.drop", "db.user.apply", "db.backup", "db.restore", "db.redis.apply", "db.redis.remove",

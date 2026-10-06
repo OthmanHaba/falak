@@ -38,5 +38,14 @@
   "drain_s": 10,
   "labels": {
     "falak.deployment.id": "01J9ZT8K3M4N5P6Q7R8S9T0V1Y"
-  }
+  },
+  "secret_files": [
+    {
+      "name": "DATABASE_URL",
+      "content": "postgres://api:secret@10.0.0.5:5432/api"
+    }
+  ],
+  "mask": [
+    "DATABASE_URL"
+  ]
 }

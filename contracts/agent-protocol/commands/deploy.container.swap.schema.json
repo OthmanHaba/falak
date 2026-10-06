@@ -208,6 +208,38 @@
       "additionalProperties": {
         "type": "string"
       }
+    },
+    "secret_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "content"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "description": "File name under /run/secrets (the variable's name)"
+          },
+          "content": {
+            "type": "string",
+            "description": "secret"
+          }
+        }
+      },
+      "description": "Secrets passed as files instead of env (the site's secrets mode `files`): written to /run/falak/secrets/<container>/<name> (tmpfs; parent 0700 root; files 0444 in a 0555 directory, or 0400/0500 owned by a numeric `user`) and bind-mounted read-only at /run/secrets, so `docker inspect` never shows them. A variable of the same name in env is dropped. After a reboot the container cannot start until site.env.write restores the files (heartbeat `missing_secrets`)."
+    },
+    "mask": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "uniqueItems": true,
+      "description": "Names of the secret variables in this payload. The agent looks their values up in the payload (env maps, dotenv content) and masks them, plus their base64 and URL-encoded forms, as \u2022\u2022\u2022\u2022 in the command's output, error and result. Values shorter than 6 bytes are not masked."
     }
   },
   "$defs": {

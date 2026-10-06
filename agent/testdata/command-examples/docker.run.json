@@ -32,5 +32,15 @@
   },
   "restart_policy": "unless-stopped",
   "memory_bytes": 268435456,
-  "cpus": 0.5
+  "cpus": 0.5,
+  "user": "999:999",
+  "secret_files": [
+    {
+      "name": "REDIS_PASSWORD",
+      "content": "redis-secret"
+    }
+  ],
+  "mask": [
+    "REDIS_PASSWORD"
+  ]
 }
