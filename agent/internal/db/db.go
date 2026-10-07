@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
@@ -32,6 +34,7 @@ type Docker interface {
 	ContainerStart(ctx context.Context, id string) error
 	ContainerStop(ctx context.Context, id string, timeout time.Duration) (bool, error)
 	ContainerRestart(ctx context.Context, id string, timeout time.Duration) error
+	ContainerUpdate(ctx context.Context, id string, memory, nanoCPUs int64) error
 	ContainerRemove(ctx context.Context, id string) error
 	ContainerLogs(ctx context.Context, id string, follow bool, tail int, w io.Writer) error
 	NetworkExists(ctx context.Context, name string) (bool, error)
@@ -63,7 +66,31 @@ type Deps struct {
 }
 
 // DB holds the executors.
-type DB struct{ d Deps }
+type DB struct {
+	d Deps
+	// locks serializes the commands of one instance (an update recreating the container while a backup streams from
+	// it, a restore during a password rotation): id → *sync.Mutex.
+	locks sync.Map
+}
+
+// lock takes the instances' locks (in id order, so two commands never deadlock) and returns the release.
+func (db *DB) lock(ids ...string) func() {
+	ids = slices.Clone(ids)
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	var held []*sync.Mutex
+	for _, id := range ids {
+		m, _ := db.locks.LoadOrStore(id, &sync.Mutex{})
+		mu := m.(*sync.Mutex)
+		mu.Lock()
+		held = append(held, mu)
+	}
+	return func() {
+		for i := len(held) - 1; i >= 0; i-- {
+			held[i].Unlock()
+		}
+	}
+}
 
 // New builds db executors.
 func New(d Deps) *DB {

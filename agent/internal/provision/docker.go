@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"strings"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
@@ -22,32 +23,45 @@ type DockerPlan struct {
 const DaemonConfigPath = "/etc/docker/daemon.json"
 
 // MergeLiveRestore sets "live-restore": true in a daemon.json document, keeping every other key. changed is false when
-// it is already set (the file is then left byte for byte). An invalid document is an error, never overwritten.
-func MergeLiveRestore(cur []byte) (out []byte, changed bool, err error) {
+// it is already set (the file is then left byte for byte). An explicit "live-restore": false is the administrator's
+// choice: it is kept, with a warning. An invalid document is an error, never overwritten.
+func MergeLiveRestore(cur []byte) (out []byte, changed bool, warning string, err error) {
 	doc := map[string]any{}
 	if len(bytes.TrimSpace(cur)) > 0 {
 		if err := json.Unmarshal(cur, &doc); err != nil {
-			return nil, false, fmt.Errorf("%s is not a JSON object (fix it by hand, then provision again): %w", DaemonConfigPath, err)
+			return nil, false, "", fmt.Errorf("%s is not a JSON object (fix it by hand, then provision again): %w", DaemonConfigPath, err)
 		}
 	}
-	if v, ok := doc["live-restore"].(bool); ok && v {
-		return cur, false, nil
+	switch v, ok := doc["live-restore"].(bool); {
+	case ok && v:
+		return cur, false, "", nil
+	case ok && !v:
+		return cur, false, fmt.Sprintf("%s sets live-restore to false: left as it is, so restarting or upgrading Docker restarts the database containers", DaemonConfigPath), nil
 	}
 	doc["live-restore"] = true
 	b, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		return nil, false, err
+		return nil, false, "", err
 	}
-	return append(b, '\n'), true, nil
+	return append(b, '\n'), true, "", nil
 }
 
-// dockerLiveRestore merges live-restore into daemon.json and reloads dockerd (a SIGHUP applies it, no restart).
+// dockerLiveRestore merges live-restore into daemon.json and reloads dockerd (a SIGHUP applies it, no restart). A
+// dockerd started with --live-restore already has it, and the same option in daemon.json would stop it from starting.
 func (p *Provisioner) dockerLiveRestore(ctx context.Context, st commands.Stream) (bool, error) {
+	if res, err := p.d.Runner.Run(ctx, runner.Cmd{Name: "systemctl", Args: []string{"show", "docker", "--property=ExecStart"}}); err == nil &&
+		strings.Contains(string(res.Stdout), "--live-restore") {
+		fmt.Fprintln(st.Stdout(), "docker: live-restore set on dockerd's command line")
+		return false, nil
+	}
 	cur, err := p.d.FS.ReadFile(DaemonConfigPath)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return false, err
 	}
-	out, changed, err := MergeLiveRestore(cur)
+	out, changed, warning, err := MergeLiveRestore(cur)
+	if warning != "" {
+		fmt.Fprintln(st.Stderr(), "warning: "+warning)
+	}
 	if err != nil || !changed {
 		return false, err
 	}

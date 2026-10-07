@@ -38,6 +38,9 @@ type InstanceSpec struct {
 type Publish struct {
 	Addresses []string `json:"addresses,omitempty"`
 	Public    bool     `json:"public,omitempty"`
+	// AllowedSources are the IPv4 networks (CIDR) that may reach the published port on the private addresses or, with
+	// Public, at all; the agent's DOCKER-USER rules drop everyone else. None: only loopback reaches it.
+	AllowedSources []string `json:"allowed_sources,omitempty"`
 }
 
 // TLS is the instance's certificate from the Falak CA (PEM).
@@ -126,8 +129,9 @@ func (s InstanceSpec) validate() error {
 	if s.Image == "" || strings.ContainsAny(s.Image, " \t\n@") {
 		return payloadErr("invalid image %q", s.Image)
 	}
-	if s.Digest != "" && !digestRe.MatchString(s.Digest) {
-		return payloadErr("invalid digest %q", s.Digest)
+	// Database images only run pinned by digest (the control plane ships the list CI produced): never a tag as pulled.
+	if !digestRe.MatchString(s.Digest) {
+		return payloadErr("instance.digest: a pinned sha256 digest is required, got %q", s.Digest)
 	}
 	if s.MemoryBytes < 32<<20 {
 		return payloadErr("memory_bytes must be at least 32 MiB")
@@ -150,6 +154,11 @@ func (s InstanceSpec) validate() error {
 		for _, a := range s.Publish.Addresses {
 			if !privateIPv4(a) {
 				return payloadErr("publish.addresses: %q is not a private IPv4 address (public access is publish.public)", a)
+			}
+		}
+		for _, c := range s.Publish.AllowedSources {
+			if _, n, err := net.ParseCIDR(c); err != nil || n.IP.To4() == nil || n.String() != c {
+				return payloadErr("publish.allowed_sources: %q is not an IPv4 network in CIDR form", c)
 			}
 		}
 	}
@@ -207,40 +216,56 @@ func repository(ref string) string {
 	return ref
 }
 
-// hash covers everything that defines the container. The password is not part of it (it lives in the secrets
-// directory; db.instance.password rotates it); the certificate counts by the fingerprint of the installed files (only
-// db.instance.create sends it, updates keep it).
-func (s InstanceSpec) hash(tlsFP string) string {
+// hash covers what Docker can only change by recreating the container: image, mounts, ports, network, environment.
+// Settings (a file falak-db renders at start), the certificate (files installed at start), the limits (changed in
+// place) and the firewall's allowed sources are not part of it: changing them restarts the container or nothing.
+// The password lives in the secrets directory (db.instance.password rotates it).
+func (s InstanceSpec) hash() string {
 	q := s
-	q.TLS = nil
+	q.TLS, q.Settings, q.MemoryBytes, q.CPUs = nil, nil, 0, 0
+	if s.Publish != nil {
+		p := *s.Publish
+		p.AllowedSources = nil
+		q.Publish = &p
+	}
 	b, _ := json.Marshal(q)
-	h := sha256.New()
-	h.Write(b)
-	h.Write([]byte("\x00tls\x00" + tlsFP))
-	return hex.EncodeToString(h.Sum(nil))
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }
 
 // Host paths of an instance.
 func (db *DB) volumeDir(volumeID string) string { return filepath.Join(db.d.VolumesRoot, volumeID) }
 func (db *DB) secretsDir(id string) string      { return filepath.Join(db.d.SecretsDir, Container(id)) }
 func (db *DB) tlsDir(id string) string          { return filepath.Join(db.d.EtcDir, "db", id, "tls") }
+func (db *DB) confDir(id string) string         { return filepath.Join(db.d.EtcDir, "db", id, "conf") }
 
-// createBody builds the container (pure: tested without Docker). Secrets only ever appear as the mounted directory.
-//
-// tlsFP is the installed certificate's fingerprint ("" = none: TLS off).
-func (db *DB) createBody(s InstanceSpec, tlsFP string) docker.CreateBody {
+// In-container paths of the agent's per-instance files.
+const (
+	confTarget       = "/run/falak/db/conf"
+	settingsFile     = confTarget + "/settings.json"
+	previousPassword = secretsTarget + "/password.previous"
+)
+
+// createBody builds the container (pure: tested without Docker). Secrets only ever appear as the mounted directory;
+// settings come from a file next to the certificate, so changing them is a restart, not a new container.
+func (db *DB) createBody(s InstanceSpec) docker.CreateBody {
 	vol := db.d.FS.P(db.volumeDir(s.VolumeID))
 	stop := 60
+	env := []string{
+		"FALAK_DB_SETTINGS_FILE=" + settingsFile,
+		"FALAK_DB_SPOOL=" + spoolTarget,
+		passwordEnv(s.Engine) + "=" + passwordPath,
+	}
+	if isKeyValue(s.Engine) {
+		// A password rotation's overlap: the previous password stays valid across restarts until it is retired.
+		env = append(env, "FALAK_DB_PREVIOUS_PASSWORD_FILE="+previousPassword)
+	}
 	b := docker.CreateBody{
 		Image: s.ref(),
-		Env: []string{
-			"FALAK_DB_SETTINGS=" + s.settingsJSON(tlsFP != ""),
-			"FALAK_DB_SPOOL=" + spoolTarget,
-			passwordEnv(s.Engine) + "=" + passwordPath,
-		},
+		Env:   env,
 		Labels: map[string]string{
 			docker.LabelManaged:  "true",
-			docker.LabelSpecHash: s.hash(tlsFP),
+			docker.LabelSpecHash: s.hash(),
 			LabelInstance:        s.ID,
 			LabelEngine:          s.Engine,
 		},
@@ -257,14 +282,13 @@ func (db *DB) createBody(s InstanceSpec, tlsFP string) docker.CreateBody {
 				{Type: "bind", Source: filepath.Join(vol, "data"), Target: dataTarget(s.Engine, s.Version)},
 				{Type: "bind", Source: filepath.Join(vol, "spool"), Target: spoolTarget},
 				{Type: "bind", Source: db.d.FS.P(db.secretsDir(s.ID)), Target: secretsTarget, ReadOnly: true},
+				{Type: "bind", Source: db.d.FS.P(db.tlsDir(s.ID)), Target: tlsTarget, ReadOnly: true},
+				{Type: "bind", Source: db.d.FS.P(db.confDir(s.ID)), Target: confTarget, ReadOnly: true},
 			},
 			RestartPolicy: docker.RestartPolicy{Name: "unless-stopped"},
 			Memory:        s.MemoryBytes,
 			NanoCPUs:      int64(s.CPUs * 1e9),
 		},
-	}
-	if tlsFP != "" {
-		b.HostConfig.Mounts = append(b.HostConfig.Mounts, docker.Mount{Type: "bind", Source: db.d.FS.P(db.tlsDir(s.ID)), Target: tlsTarget, ReadOnly: true})
 	}
 	if s.Engine == "postgres" {
 		b.HostConfig.ShmSize = shmSize(s.MemoryBytes)

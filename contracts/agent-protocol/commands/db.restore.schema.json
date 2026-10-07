@@ -82,6 +82,11 @@
     "sha256": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
+    },
+    "owner": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+      "description": "postgres: the role that gets the restored database and every object in it (the application's user). PostgreSQL restores load into a scratch database renamed into place only on success"
     }
   },
   "allOf": [

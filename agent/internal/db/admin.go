@@ -35,6 +35,7 @@ func (db *DB) Create(ctx context.Context, p CreatePayload, _ commands.Stream) (a
 	if err := sqlEngine(p.Instance, p.Engine); err != nil {
 		return nil, err
 	}
+	defer db.lock(p.Instance)()
 	if err := checkIdent("name", p.Name); err != nil {
 		return nil, err
 	}
@@ -68,6 +69,7 @@ func (db *DB) Drop(ctx context.Context, p DropPayload, _ commands.Stream) (any, 
 	if err := sqlEngine(p.Instance, p.Engine); err != nil {
 		return nil, err
 	}
+	defer db.lock(p.Instance)()
 	if err := checkIdent("name", p.Name); err != nil {
 		return nil, err
 	}
@@ -113,6 +115,7 @@ func (db *DB) UserApply(ctx context.Context, p UserPayload, _ commands.Stream) (
 	if err := sqlEngine(p.Instance, p.Engine); err != nil {
 		return nil, err
 	}
+	defer db.lock(p.Instance)()
 	state := p.State
 	if state == "" {
 		state = "present"

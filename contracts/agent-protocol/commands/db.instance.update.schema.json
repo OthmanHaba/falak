@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.instance.update.schema.json",
-  "title": "db.instance.update — converge an instance's container to the spec: recreated on the same volume (60 s clean shutdown) when its spec or image changed, else only started if stopped",
+  "title": "db.instance.update — converge an instance's container to the spec: settings, a new certificate and the limits apply in place (docker update + restart: falak-db renders the config at start); the container is recreated on the same volume (60 s clean shutdown) only when its image, ports, network or mounts change",
   "x-falak-redeliverable": true,
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,8 @@
         "version",
         "image",
         "volume_id",
-        "memory_bytes"
+        "memory_bytes",
+        "digest"
       ],
       "properties": {
         "id": {
@@ -48,7 +49,7 @@
         "digest": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$",
-          "description": "pin: pulled as <repository>@<digest> and checked against the image's RepoDigests. Without it the tag is pulled again on every create/update and a newer image recreates the container (minor upgrades). Cosign signatures are not verified yet."
+          "description": "required: the image runs pinned by digest (the control plane ships the digests CI published); pulled as <repository>@<digest> and checked against the image's RepoDigests"
         },
         "volume_id": {
           "type": "string",
@@ -105,6 +106,15 @@
               "type": "boolean",
               "default": false,
               "description": "publish on every address (0.0.0.0); the control plane sends settings.require_tls with it"
+            },
+            "allowed_sources": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2}$"
+              },
+              "description": "IPv4 networks (CIDR) allowed to reach the published port on `addresses` (or anywhere with `public`); the agent's DOCKER-USER chain drops every other source. Empty: nobody but loopback. Changes apply without recreating the container"
             }
           }
         },
@@ -184,6 +194,10 @@
             "starting",
             "none"
           ]
+        },
+        "restarted": {
+          "type": "boolean",
+          "description": "settings, the certificate or the limits changed in place and the engine restarted to use them"
         }
       }
     }

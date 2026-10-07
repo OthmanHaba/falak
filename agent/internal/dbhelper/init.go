@@ -55,7 +55,18 @@ func (h *Helper) detectMemory() (int64, string, error) {
 }
 
 func (h *Helper) settings() (Settings, error) {
-	return ParseSettings([]byte(h.Env("FALAK_DB_SETTINGS")))
+	return ParseSettings([]byte(h.settingsJSON()))
+}
+
+// settingsJSON is the settings: FALAK_DB_SETTINGS_FILE (a file the agent rewrites, so a change only needs a restart)
+// when set, else FALAK_DB_SETTINGS.
+func (h *Helper) settingsJSON() string {
+	if f := h.Env("FALAK_DB_SETTINGS_FILE"); f != "" {
+		if b, err := os.ReadFile(filepath.Clean(f)); err == nil && len(bytes.TrimSpace(b)) > 0 {
+			return string(b)
+		}
+	}
+	return h.Env("FALAK_DB_SETTINGS")
 }
 
 func (h *Helper) tlsSource() string { return h.Env.or("FALAK_DB_TLS_DIR", defaultTLS) }

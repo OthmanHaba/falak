@@ -126,7 +126,7 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 		}
 	case "config render":
 		fs.Int64Var(memory, "memory-bytes", 0, "memory limit in bytes (default: detected)")
-		fs.StringVar(settings, "settings", h.Env("FALAK_DB_SETTINGS"), "settings JSON (default: FALAK_DB_SETTINGS)")
+		fs.StringVar(settings, "settings", h.settingsJSON(), "settings JSON (default: FALAK_DB_SETTINGS_FILE, else FALAK_DB_SETTINGS)")
 	case "backup logical":
 		fs.StringVar(database, "database", "", "database to dump")
 		fs.StringVar(out, "out", "", "output (-: stdout)")

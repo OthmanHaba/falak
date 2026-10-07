@@ -32,6 +32,7 @@ func TestCreateDropAndUserApplyRunFalakDB(t *testing.T) {
 		return runner.Result{Stdout: []byte(`{"changed":true}`)}, nil
 	})
 	h.run.On("docker exec", runner.Result{Stdout: []byte(`{"changed":true}`)})
+	h.run.Reset()
 
 	res, err := h.db.Create(ctx, CreatePayload{Instance: instID, Engine: "mysql", Name: "shop", Charset: "utf8mb4", Collation: "utf8mb4_0900_ai_ci"}, stream())
 	if err != nil || !res.(ChangedResult).Changed {
@@ -174,13 +175,13 @@ func TestRestoreSQLPipesIntoFalakDB(t *testing.T) {
 	})
 	file := gzipFile(t, h, "PGDMP")
 	res, err := h.db.Restore(context.Background(), RestorePayload{Instance: instID, Engine: "postgres", Database: "app", Compression: "gzip",
-		Source: Location{Kind: "local", Path: file}}, stream())
+		Source: Location{Kind: "local", Path: file}, Owner: "app"}, stream())
 	if err != nil {
 		t.Fatal(err)
 	}
 	lines := h.run.Lines()
-	if lines[0] != "docker exec falak-db-"+instID+" falak-db database create --name app" ||
-		lines[1] != "docker exec -i falak-db-"+instID+" falak-db restore logical --database app --in - --clean" || in != "PGDMP" || res.(RestoreResult).Bytes != 5 {
+	// PostgreSQL: swapped in from a scratch database, ownership to the app user.
+	if len(lines) != 1 || lines[0] != "docker exec -i falak-db-"+instID+" falak-db restore logical --database app --in - --swap --owner app" || in != "PGDMP" || res.(RestoreResult).Bytes != 5 {
 		t.Errorf("lines %q stdin %q res %+v", lines, in, res)
 	}
 }
@@ -202,6 +203,7 @@ func TestRestoreKeyValueStopsTheInstance(t *testing.T) {
 		return runner.Result{}, nil
 	})
 	h.dock.calls = nil
+	h.run.Reset()
 	file := gzipFile(t, h, "REDIS0012...")
 	if _, err := h.db.Restore(ctx, RestorePayload{Instance: instID, Engine: "redis", Database: "cache", Compression: "gzip", Source: Location{Kind: "local", Path: file}}, stream()); err != nil {
 		t.Fatal(err)

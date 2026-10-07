@@ -57,6 +57,7 @@ func (db *DB) Backup(ctx context.Context, p BackupPayload, st commands.Stream) (
 	if err := checkID("instance", p.Instance); err != nil {
 		return nil, err
 	}
+	defer db.lock(p.Instance)()
 	if err := checkEngine(p.Engine); err != nil {
 		return nil, err
 	}
@@ -247,6 +248,8 @@ type RestorePayload struct {
 	Compression string   `json:"compression"`
 	Source      Location `json:"source"`
 	SHA256      string   `json:"sha256"`
+	// Owner (postgres) gets the restored database and every object in it: the application keeps migrating it.
+	Owner string `json:"owner,omitempty"`
 }
 
 // RestoreResult is its result.
@@ -286,6 +289,7 @@ func (db *DB) Restore(ctx context.Context, p RestorePayload, st commands.Stream)
 	if err := checkID("instance", p.Instance); err != nil {
 		return nil, err
 	}
+	defer db.lock(p.Instance)()
 	if err := checkEngine(p.Engine); err != nil {
 		return nil, err
 	}
@@ -311,12 +315,18 @@ func (db *DB) Restore(ctx context.Context, p RestorePayload, st commands.Stream)
 		}
 		return RestoreResult{Bytes: cr.n, DurationMS: time.Since(start).Milliseconds()}, nil
 	}
-	if _, _, err := db.exec(ctx, p.Instance, nil, nil, nil, "database", "create", "--name", p.Database); err != nil {
-		return nil, err
-	}
 	args := []string{"restore", "logical", "--database", p.Database, "--in", "-"}
 	if p.Engine == "postgres" {
-		args = append(args, "--clean")
+		// Into a scratch database, swapped in only once complete: a failed restore leaves the database as it was.
+		args = append(args, "--swap")
+		if p.Owner != "" {
+			if err := checkIdent("owner", p.Owner); err != nil {
+				return nil, err
+			}
+			args = append(args, "--owner", p.Owner)
+		}
+	} else if _, _, err := db.exec(ctx, p.Instance, nil, nil, nil, "database", "create", "--name", p.Database); err != nil {
+		return nil, err
 	}
 	if _, _, err := db.exec(ctx, p.Instance, cr, st.Stdout(), nil, args...); err != nil {
 		return nil, fmt.Errorf("restore into %s: %w", p.Database, err)

@@ -272,6 +272,11 @@ type Container struct {
 		Image  string            `json:"Image"`
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
+	// HostConfig: the limits db containers change in place (ContainerUpdate).
+	HostConfig struct {
+		Memory   int64 `json:"Memory"`
+		NanoCpus int64 `json:"NanoCpus"`
+	} `json:"HostConfig"`
 	Mounts []struct {
 		Source      string `json:"Source"`
 		Destination string `json:"Destination"`
@@ -294,6 +299,13 @@ func (c *Client) ImageRepoDigests(ctx context.Context, ref string) ([]string, bo
 		return nil, false, nil
 	}
 	return out.RepoDigests, err == nil, err
+}
+
+// ContainerUpdate changes a running container's memory limit (swap at the same value: none) and CPUs in place.
+func (c *Client) ContainerUpdate(ctx context.Context, id string, memory, nanoCPUs int64) error {
+	body := map[string]any{"Memory": memory, "MemorySwap": memory, "NanoCpus": nanoCPUs}
+	_, err := c.do(ctx, http.MethodPost, "/containers/"+id+"/update", nil, body, nil)
+	return err
 }
 
 // ContainerRestart restarts a container (stop timeout t).

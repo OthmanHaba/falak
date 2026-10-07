@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.instance.upgrade.schema.json",
-  "title": "db.instance.upgrade — a major version upgrade: copy every database from the source instance into the (created, empty) target with falak-db backup logical | restore logical, apply the users there, move the source's DNS alias to the target and stop the source",
+  "title": "db.instance.upgrade — major version upgrade of a SQL instance: users applied on the target, the source made read-only, every database copied (backup logical | restore logical) and its row counts compared table by table, then the DNS alias moved to the target and the source stopped (read-only, its volume kept). A failure makes the source writable again",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -78,6 +78,11 @@
           "collation": {
             "type": "string",
             "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+          },
+          "owner": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+            "description": "postgres: the role that gets the copied database and its objects"
           }
         }
       }
@@ -167,6 +172,12 @@
                 "type": "string"
               },
               "bytes": {
+                "type": "integer"
+              },
+              "tables": {
+                "type": "integer"
+              },
+              "rows": {
                 "type": "integer"
               }
             }

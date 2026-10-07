@@ -138,6 +138,7 @@ func (f *fakeDocker) ContainerCreate(_ context.Context, name string, b docker.Cr
 	c := &docker.Container{ID: fmt.Sprintf("c%d", f.seq), Name: "/" + name, Image: f.imageIDs[b.Image]}
 	c.Config.Image = b.Image
 	c.Config.Labels = b.Labels
+	c.HostConfig.Memory, c.HostConfig.NanoCpus = b.HostConfig.Memory, b.HostConfig.NanoCPUs
 	c.State.Status = "created"
 	for _, m := range b.HostConfig.Mounts {
 		c.Mounts = append(c.Mounts, struct {
@@ -188,6 +189,18 @@ func (f *fakeDocker) ContainerRestart(_ context.Context, id string, timeout time
 	}
 	c.State.Running, c.State.Status = true, "running"
 	f.log("restart %s %s", strings.TrimPrefix(c.Name, "/"), timeout)
+	return nil
+}
+
+func (f *fakeDocker) ContainerUpdate(_ context.Context, id string, memory, cpus int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c := f.byName(id)
+	if c == nil {
+		return &docker.APIError{Status: 404, Message: "no such container"}
+	}
+	c.HostConfig.Memory, c.HostConfig.NanoCpus = memory, cpus
+	f.log("update %s %d %d", strings.TrimPrefix(c.Name, "/"), memory, cpus)
 	return nil
 }
 
@@ -279,5 +292,5 @@ const (
 
 func spec() InstanceSpec {
 	return InstanceSpec{ID: instID, Engine: "postgres", Version: "17", Image: "ghcr.io/othmanhaba/falak-postgres:17", VolumeID: volID,
-		HostPort: 20001, MemoryBytes: 512 << 20, Settings: []byte(`{"max_connections": 200}`), Network: "falak-env-01hzyenv000000000000000001"}
+		Digest: "sha256:" + strings.Repeat("a", 64), HostPort: 20001, MemoryBytes: 512 << 20, Settings: []byte(`{"max_connections": 200}`), Network: "falak-env-01hzyenv000000000000000001"}
 }
