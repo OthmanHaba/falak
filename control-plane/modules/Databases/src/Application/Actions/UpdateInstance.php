@@ -25,7 +25,9 @@ final class UpdateInstance
     ) {}
 
     /**
-     * @param  array{memory_mb?: ?int, cpus?: ?float, settings?: ?array<string, mixed>, public_access?: ?bool, require_tls?: ?bool, pitr_enabled?: ?bool}  $data
+     * Settings merge into the current ones; a setting given as null goes back to its default.
+     *
+     * @param  array{memory_mb?: ?int, cpus?: ?float, settings?: ?array<string, mixed>, allowed_sources?: ?list<string>, public_access?: ?bool, require_tls?: ?bool, pitr_enabled?: ?bool}  $data
      *
      * @throws ValidationException
      */
@@ -52,6 +54,10 @@ final class UpdateInstance
             $changes['settings'] = $settings !== [] ? $settings : null;
         }
 
+        if (array_key_exists('allowed_sources', $data) && $data['allowed_sources'] !== null) {
+            $changes['allowed_sources'] = self::sources((array) $data['allowed_sources']) ?: null;
+        }
+
         foreach (['public_access', 'require_tls', 'pitr_enabled'] as $flag) {
             if (array_key_exists($flag, $data) && $data[$flag] !== null) {
                 $changes[$flag] = (bool) $data[$flag];
@@ -71,6 +77,36 @@ final class UpdateInstance
         $this->audit->record('databases.instance_updated', 'database_instance', $instance->id, array_diff_key($changes, ['settings' => true]) + ['settings' => array_key_exists('settings', $changes)], $instance->organization_id);
 
         return $instance;
+    }
+
+    /**
+     * The public access allowlist: IPv4 networks in CIDR form (a bare address is /32), never 0.0.0.0/0.
+     *
+     * @param  list<mixed>  $sources
+     * @return list<string>
+     *
+     * @throws ValidationException
+     */
+    public static function sources(array $sources): array
+    {
+        $out = [];
+
+        foreach (array_values($sources) as $i => $source) {
+            $source = trim((string) $source);
+            [$ip, $bits] = str_contains($source, '/') ? explode('/', $source, 2) : [$source, '32'];
+
+            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || ! ctype_digit($bits) || (int) $bits < 1 || (int) $bits > 32) {
+                throw ValidationException::withMessages(["allowed_sources.{$i}" => "{$source} is not an IPv4 address or network (CIDR, at most /1)."]);
+            }
+
+            $mask = (int) $bits === 32 ? -1 : ~((1 << (32 - (int) $bits)) - 1);
+            $out[] = long2ip(ip2long($ip) & $mask).'/'.(int) $bits;
+        }
+
+        $out = array_values(array_unique($out));
+        sort($out);
+
+        return $out;
     }
 
     /**

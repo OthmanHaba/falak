@@ -14,6 +14,8 @@ use Falak\Sites\Contracts\TargetRole;
 use Falak\Sites\Contracts\TargetStatus;
 use Falak\Sites\Domain\Models\Site;
 use Falak\Sites\Domain\Models\SiteTarget;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\Support\FakeAgentGateway;
 
 require_once __DIR__.'/../Support/helpers.php';
@@ -88,14 +90,40 @@ it('publishes the port on the private address other servers of the environment r
     $projects->shouldReceive('environment')->andReturn(null);
     app()->instance(ProjectDirectory::class, $projects);
 
+    // New addresses recreate the container: never silently, they wait to be applied.
     app(ConvergeInstanceNetwork::class)->converge($this->organization->id);
-    $update = $this->agents->last('db.instance.update');
+    expect($instance->refresh()->pending_published_addresses)->toBe(['10.90.0.1'])
+        ->and($instance->published_addresses)->toBeNull()
+        ->and($this->agents->dispatched('db.instance.update'))->toBe([]);
 
-    expect($instance->refresh()->published_addresses)->toBe(['10.90.0.1'])
-        ->and($update['payload']['instance']['publish'])->toBe(['addresses' => ['10.90.0.1']])
+    $this->post("/databases/instances/{$instance->id}/network")->assertSessionHasNoErrors();
+    $update = $this->agents->last('db.instance.update');
+    // Only web-1 (its WireGuard address) gets through the agent's firewall.
+    expect($update['payload']['instance']['publish'])->toBe(['addresses' => ['10.90.0.1'], 'allowed_sources' => ['10.90.0.2/32']])
         ->and(databases_schema_errors($update))->toBe([]);
+    $this->agents->succeed($update['handle'], ['changed' => true, 'container_id' => 'c', 'health' => 'healthy']);
 
     // Nothing changed: nothing re-applied.
     app(ConvergeInstanceNetwork::class)->converge($this->organization->id);
-    expect($this->agents->dispatched('db.instance.update'))->toHaveCount(1);
+    expect($this->agents->dispatched('db.instance.update'))->toHaveCount(1)
+        ->and($instance->refresh()->published_addresses)->toBe(['10.90.0.1']);
 })->skip(fn () => ! class_exists(EnvironmentData::class), 'Projects contracts missing');
+
+it('refuses to drop the host databases of an earlier version unless the operator confirms', function () {
+    $migration = require __DIR__.'/../../database/migrations/2026_10_30_110001_recreate_databases_tables.php';
+    Schema::create('databases_servers', fn ($table) => $table->string('id'));
+    DB::table('databases_servers')->insert(['id' => 'legacy']);
+
+    expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'FALAK_DROP_LEGACY_DATABASES=1')
+        ->and(Schema::hasTable('databases_servers'))->toBeTrue();
+
+    putenv('FALAK_DROP_LEGACY_DATABASES=1');
+
+    try {
+        $migration->up();
+    } finally {
+        putenv('FALAK_DROP_LEGACY_DATABASES');
+    }
+
+    expect(Schema::hasTable('databases_servers'))->toBeFalse()->and(Schema::hasTable('databases_instances'))->toBeTrue();
+});

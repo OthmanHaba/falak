@@ -88,6 +88,31 @@ final class InstanceNetwork
     }
 
     /**
+     * Who may reach the published port (the agent's DOCKER-USER rules drop everyone else): the consumers on other
+     * servers, by their own addresses on the private network they share with the instance's server (/32), plus the
+     * instance's public allowlist.
+     *
+     * @return list<string> IPv4 CIDRs
+     */
+    public function allowedSources(DatabaseInstance $instance): array
+    {
+        $sources = array_values((array) ($instance->allowed_sources ?? []));
+
+        foreach ($this->consumers($instance) as $consumer) {
+            if (array_diff($consumer->serverIds, [$instance->server_id]) !== []) {
+                foreach ($this->reach($instance, $consumer->serverIds)['peers'] as $address) {
+                    $sources[] = "{$address}/32";
+                }
+            }
+        }
+
+        $sources = array_values(array_unique($sources));
+        sort($sources);
+
+        return $sources;
+    }
+
+    /**
      * Where the consumer reaches the instance (null consumer: a native one on its server).
      *
      * @return array{host: ?string, port: int, reason: ?string}
@@ -135,7 +160,7 @@ final class InstanceNetwork
      * all of them share with it. Falak private networks first, then the provider private network.
      *
      * @param  list<string>  $serverIds
-     * @return array{host: ?string, via: ?string, missing: list<string>} missing: servers sharing no private network with it at all
+     * @return array{host: ?string, via: ?string, peers: list<string>, missing: list<string>} peers: the consumers' own addresses on that network (what the firewall lets in); missing: servers sharing no private network with it at all
      */
     public function reach(DatabaseInstance $instance, array $serverIds): array
     {
@@ -144,13 +169,13 @@ final class InstanceNetwork
 
         foreach ($candidates as $candidate) {
             if (count($candidate['peers']) === count($serverIds)) {
-                return ['host' => $candidate['host'], 'via' => $candidate['via'], 'missing' => []];
+                return ['host' => $candidate['host'], 'via' => $candidate['via'], 'peers' => array_values($candidate['peers']), 'missing' => []];
             }
         }
 
         $covered = array_merge(...array_map(fn (array $c) => array_keys($c['peers']), $candidates ?: [['peers' => []]]));
 
-        return ['host' => null, 'via' => null, 'missing' => array_values(array_diff($serverIds, $covered))];
+        return ['host' => null, 'via' => null, 'peers' => [], 'missing' => array_values(array_diff($serverIds, $covered))];
     }
 
     /**

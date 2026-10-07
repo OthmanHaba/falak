@@ -39,6 +39,11 @@ trait PresentsDatabases
             'port' => $instance->port,
             'host_port' => $instance->host_port,
             'published_addresses' => array_values((array) ($instance->published_addresses ?? [])),
+            // Waiting to be applied: a restart (new container) is required.
+            'pending_published_addresses' => $instance->pending_published_addresses !== null ? array_values($instance->pending_published_addresses) : null,
+            'allowed_sources' => array_values((array) ($instance->allowed_sources ?? [])),
+            'password_overlap_until' => $instance->password_overlap_until?->toIso8601String(),
+            'replaced_by' => $instance->replaced_by,
             'public_access' => $instance->public_access,
             'require_tls' => $instance->require_tls,
             'memory_mb' => intdiv($instance->memory_bytes, 1024 ** 2),

@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -13,6 +14,14 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Never silently: a v0.9.0 install's databases rows describe host engines that keep running but would no longer be
+        // managed (nor backed up). The operator confirms with FALAK_DROP_LEGACY_DATABASES=1 (docs/INSTALL.md §5).
+        $legacy = array_filter(['databases_servers', 'databases_databases', 'databases_users', 'databases_backup_schedules'], fn (string $table) => Schema::hasTable($table) && DB::table($table)->exists());
+
+        if ($legacy !== [] && ! filter_var(env('FALAK_DROP_LEGACY_DATABASES', false), FILTER_VALIDATE_BOOL)) {
+            throw new RuntimeException('Falak v0.10 runs every database in a container and no longer manages the host databases of earlier versions ('.implode(', ', $legacy).' have rows). Back them up, then set FALAK_DROP_LEGACY_DATABASES=1 and migrate again (docs/INSTALL.md §5). Nothing was changed.');
+        }
+
         foreach (['databases_restores', 'databases_backups', 'databases_backup_schedule_database', 'databases_backup_schedules', 'databases_grants', 'databases_users', 'databases_databases', 'databases_servers', 'databases_instances'] as $table) {
             Schema::dropIfExists($table);
         }
@@ -55,8 +64,15 @@ return new class extends Migration
             $table->string('hostname', 63);
             $table->unsignedInteger('port');
             $table->unsignedInteger('host_port')->nullable();
-            // Private addresses the port is published on (for other servers), as last sent.
+            // Private addresses the port is published on (for other servers), as the agent confirmed them; new ones wait
+            // in pending_published_addresses until someone applies them (Docker binds ports only on a new container).
             $table->json('published_addresses')->nullable();
+            $table->json('pending_published_addresses')->nullable();
+            $table->ulid('network_command_id')->nullable();
+            // Who may reach the published port (DOCKER-USER rules): the public allowlist set by people, and every source
+            // last sent (consumers' private addresses included).
+            $table->json('allowed_sources')->nullable();
+            $table->json('firewall_sources')->nullable();
             $table->boolean('public_access')->default(false);
             $table->boolean('require_tls')->default(false);
             $table->ulid('volume_id')->nullable()->index();
@@ -68,16 +84,23 @@ return new class extends Migration
             $table->text('root_password');
             // A rotation in flight (db.instance.password): becomes root_password once the agent confirms.
             $table->text('next_root_password')->nullable();
+            // Redis / Valkey rotations overlap: the previous password stays valid until password_overlap_until.
+            $table->text('previous_password')->nullable();
+            $table->timestamp('password_overlap_until')->nullable()->index();
             // Deleting: the data volume goes too.
             $table->boolean('delete_volume')->default(false);
-            $table->timestamp('tls_expires_at')->nullable();
+            $table->timestamp('tls_expires_at')->nullable()->index();
+            // The names and addresses the certificate is valid for (a new one is issued when they change).
+            $table->json('tls_hostnames')->nullable();
             $table->string('status', 16);
             $table->string('status_message', 1000)->nullable();
             $table->string('health', 16)->nullable();
             $table->timestamp('health_at')->nullable();
             $table->ulid('command_id')->nullable()->index();
-            // Major upgrades: the new instance names the one it replaces; the old one is retired until retire_at.
+            // Major upgrades: the new instance names the one it replaces. The old one is retired (read-only, stopped, its
+            // volume kept until someone deletes it); its container goes at retire_at once its replacement is healthy.
             $table->ulid('upgrade_of')->nullable()->index();
+            $table->ulid('replaced_by')->nullable();
             $table->timestamp('retire_at')->nullable()->index();
             $table->ulid('created_by')->nullable();
             $table->timestamps();

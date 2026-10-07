@@ -8,7 +8,13 @@ $versions = [
     'valkey' => ['8.1'],
 ];
 
-$digests = [];
+// Database images run pinned by digest, never a tag as pulled: the digests of the images CI published and signed
+// (db-image-digests.json, {"postgresql": {"17": "sha256:…"}}, written by .github/workflows/db-images.yml for a
+// release), overridable per major with FALAK_DB_IMAGE_DIGEST_<ENGINE>_<MAJOR> (dots as underscores). A major without a
+// digest can't be created or upgraded to.
+$manifest = (string) env('FALAK_DB_IMAGE_DIGESTS', __DIR__.'/db-image-digests.json');
+$manifest = str_starts_with($manifest, '/') ? $manifest : base_path($manifest);
+$digests = is_file($manifest) ? (array) json_decode((string) file_get_contents($manifest), true) : [];
 
 foreach ($versions as $engine => $majors) {
     foreach ($majors as $major) {
@@ -22,9 +28,8 @@ foreach ($versions as $engine => $majors) {
 
 return [
     // Every managed database is a container of a Falak database image (docs/DB_IMAGES.md): ghcr.io/othmanhaba/
-    // falak-<engine>:<major>. The first version of each engine is the default of a new instance. A digest pins an image
-    // (FALAK_DB_IMAGE_DIGEST_<ENGINE>_<MAJOR>, e.g. FALAK_DB_IMAGE_DIGEST_POSTGRESQL_17=sha256:…): the agent then pulls
-    // exactly it; without one it pulls the tag and the instance records the digest it got.
+    // falak-<engine>:<major>, always run by the pinned digest above (the agent refuses anything else). The first version
+    // of each engine is the default of a new instance; a new digest for a major is a minor upgrade.
     'registry' => rtrim((string) env('FALAK_DB_IMAGE_REGISTRY', 'ghcr.io/othmanhaba'), '/'),
     'tag_suffix' => (string) env('FALAK_DB_IMAGE_TAG_SUFFIX', ''),
     'versions' => $versions,
@@ -50,8 +55,15 @@ return [
 
     // TLS certificates of instances (issued by the Falak CA).
     'tls_days' => 397,
+    // Certificates are renewed (and the engine restarted with them) this many days before they expire.
+    'tls_renew_days' => 30,
 
-    // A major upgrade keeps the old instance stopped this long (hours) before it is deleted, volume included.
+    // Redis / Valkey password rotations: the previous password stays valid this many hours, while apps are redeployed
+    // with the new one, then the agent drops it.
+    'password_overlap_hours' => (int) env('FALAK_DB_PASSWORD_OVERLAP_HOURS', 24),
+
+    // A major upgrade's old instance: its container is removed this many hours after the upgrade, once the new one is
+    // healthy. Its data volume stays until someone deletes it.
     'retire_hours' => 24,
 
     // Restoring lost password files (heartbeat `databases[].secrets_missing`, after a reboot): at most once per

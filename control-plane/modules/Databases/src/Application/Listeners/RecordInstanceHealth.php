@@ -54,7 +54,7 @@ final class RecordInstanceHealth
         $this->commands->tryDispatch(
             $instance->server_id,
             'db.instance.secrets',
-            ['id' => $instance->id, 'engine' => $instance->engine->protocol(), 'password' => $instance->root_password],
+            array_filter(['id' => $instance->id, 'engine' => $instance->engine->protocol(), 'password' => $instance->root_password, 'previous' => $instance->engine->isKeyValue() ? $instance->previous_password : null]),
             (int) config('databases.timeouts.ddl', 300),
             "db.instance.secrets:{$instance->id}:".now()->format('YmdHis'),
         );

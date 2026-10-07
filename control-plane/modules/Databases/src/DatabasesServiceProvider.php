@@ -4,7 +4,7 @@ namespace Falak\Databases;
 
 use Falak\Alerting\Contracts\AlertTypes;
 use Falak\Alerting\Contracts\Severity;
-use Falak\Databases\Application\Jobs\RemoveRetiredInstances;
+use Falak\Databases\Application\Jobs\MaintainInstances;
 use Falak\Databases\Application\Jobs\RunDueBackups;
 use Falak\Databases\Application\Listeners\ConvergeInstanceNetwork;
 use Falak\Databases\Application\Listeners\DeleteOrganizationData;
@@ -97,7 +97,7 @@ class DatabasesServiceProvider extends ModuleServiceProvider
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new RunDueBackups)->everyMinute()->name('databases:backups')->withoutOverlapping();
-            $schedule->job(new RemoveRetiredInstances)->everyTenMinutes()->name('databases:retired')->withoutOverlapping();
+            $schedule->job(new MaintainInstances)->everyTenMinutes()->name('databases:maintenance')->withoutOverlapping();
         });
     }
 }

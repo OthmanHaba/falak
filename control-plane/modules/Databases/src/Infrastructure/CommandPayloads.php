@@ -3,6 +3,7 @@
 namespace Falak\Databases\Infrastructure;
 
 use Falak\Databases\Domain\Enums\Compression;
+use Falak\Databases\Domain\Enums\Engine;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseInstance;
@@ -18,10 +19,14 @@ final class CommandPayloads
      * db.instance.create / db.instance.update: the instance's full desired state. The password is the superuser's
      * (Redis / Valkey: `default`'s); the agent hands it to the container as a file, never in its environment.
      *
+     * The published addresses are the confirmed ones unless $addresses (pending ones being applied) are given; the
+     * allowed sources are what the caller last computed (firewall_sources).
+     *
      * @param  ?array{certificate: string, private_key: string, ca: string}  $tls
+     * @param  ?list<string>  $addresses
      * @return array<string, mixed>
      */
-    public static function instance(DatabaseInstance $instance, ?array $tls = null): array
+    public static function instance(DatabaseInstance $instance, ?array $tls = null, ?array $addresses = null): array
     {
         $settings = (array) ($instance->settings ?? []);
 
@@ -30,9 +35,13 @@ final class CommandPayloads
         }
 
         $publish = array_filter([
-            'addresses' => array_values((array) ($instance->published_addresses ?? [])) ?: null,
+            'addresses' => array_values($addresses ?? (array) ($instance->published_addresses ?? [])) ?: null,
             'public' => $instance->public_access ?: null,
         ], fn ($value) => $value !== null);
+
+        if ($publish !== []) {
+            $publish['allowed_sources'] = array_values((array) ($instance->firewall_sources ?? []));
+        }
 
         return [
             'instance' => array_filter([
@@ -148,6 +157,8 @@ final class CommandPayloads
      */
     public static function restore(DatabaseInstance $instance, string $database, Compression $compression, string $downloadUrl, ?string $sha256): array
     {
+        $row = $instance->databases()->where('name', $database)->first();
+
         return array_filter([
             'instance' => $instance->id,
             'engine' => $instance->engine->protocol(),
@@ -155,7 +166,24 @@ final class CommandPayloads
             'compression' => $compression->value,
             'source' => ['kind' => 'url', 'url' => $downloadUrl],
             'sha256' => $sha256,
+            'owner' => $row !== null ? self::owner($instance, $row) : null,
         ], fn ($value) => $value !== null);
+    }
+
+    /**
+     * PostgreSQL: the role that owns a database's objects after a restore or a copy (pg_restore --no-owner leaves them to
+     * the superuser, and the app's migrations then fail): the oldest user with all privileges on it.
+     */
+    public static function owner(DatabaseInstance $instance, Database $database): ?string
+    {
+        if ($instance->engine !== Engine::PostgreSql) {
+            return null;
+        }
+
+        return Grant::query()->with('user')->where('database_id', $database->id)->get()
+            ->filter(fn (Grant $grant) => $grant->user !== null && $grant->user->status !== ResourceStatus::Deleting && in_array('ALL PRIVILEGES', (array) $grant->privileges, true))
+            ->sortBy(fn (Grant $grant) => [$grant->user->created_at, $grant->user->id])
+            ->first()?->user->username;
     }
 
     /**
@@ -177,6 +205,7 @@ final class CommandPayloads
                     'name' => $database->name,
                     'charset' => $source->engine->isMysqlFamily() ? ($database->charset ?: $source->engine->defaultCharset()) : null,
                     'collation' => $source->engine->isMysqlFamily() ? ($database->collation ?: $source->engine->defaultCollation()) : null,
+                    'owner' => self::owner($source, $database),
                 ], fn ($value) => $value !== null))->values()->all() : [],
             'users' => $sql ? $source->users()->where('status', '!=', ResourceStatus::Deleting)->get()
                 ->map(fn (DatabaseUser $user) => array_filter([

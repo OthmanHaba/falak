@@ -2,6 +2,7 @@
 
 namespace Falak\Databases\Http\Controllers;
 
+use Falak\Databases\Application\Actions\ApplyInstance;
 use Falak\Databases\Application\Actions\CreateInstance;
 use Falak\Databases\Application\Actions\InstanceLifecycle;
 use Falak\Databases\Application\Actions\UpdateInstance;
@@ -27,6 +28,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -143,9 +145,28 @@ final class DatabaseInstanceController extends Controller
             'settings.*' => ['nullable'],
             'public_access' => ['nullable', 'boolean'],
             'require_tls' => ['nullable', 'boolean'],
+            'allowed_sources' => ['nullable', 'array', 'max:64'],
+            'allowed_sources.*' => ['string', 'max:18'],
         ]);
 
         $instance = $update($instance, $data, $request->user()?->getAuthIdentifier());
+
+        return $this->respond($request, $instance);
+    }
+
+    /**
+     * POST /databases/instances/{instance}/network: apply the pending published addresses (the container is recreated
+     * on its volume: Docker binds ports at creation).
+     */
+    public function network(Request $request, DatabaseInstance $instance, ApplyInstance $apply): RedirectResponse|JsonResponse
+    {
+        $this->authorize('manage', $instance);
+
+        if (! $instance->isRunning() || $instance->pending_published_addresses === null) {
+            throw ValidationException::withMessages(['instance' => 'Nothing to apply.']);
+        }
+
+        $apply($instance, applyNetwork: true);
 
         return $this->respond($request, $instance);
     }

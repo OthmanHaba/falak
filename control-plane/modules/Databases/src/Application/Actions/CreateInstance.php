@@ -64,6 +64,8 @@ final class CreateInstance
             throw ValidationException::withMessages(['version' => "{$engine->label()} ".implode(', ', $engine->versions()).' are supported.']);
         }
 
+        self::assertPinned($engine, $version);
+
         $memory = isset($data['memory_mb']) && $data['memory_mb'] !== null ? (int) $data['memory_mb'] * 1024 ** 2 : $engine->defaultMemory();
         self::assertMemory($engine, $memory);
         $disk = isset($data['disk_gb']) && $data['disk_gb'] !== null ? (int) $data['disk_gb'] * 1024 ** 3 : $engine->defaultDisk();
@@ -189,6 +191,18 @@ final class CreateInstance
     public static function volumeName(DatabaseInstance $instance): string
     {
         return 'db-'.substr($instance->name, 0, 40).'-'.substr($instance->id, -6);
+    }
+
+    /**
+     * Images only run pinned by the digest this release ships (config databases.digests).
+     *
+     * @throws ValidationException
+     */
+    public static function assertPinned(Engine $engine, string $version): void
+    {
+        if ($engine->pinnedDigest($version) === null) {
+            throw ValidationException::withMessages(['version' => "This Falak release ships no pinned image of {$engine->label()} {$version} (db-image-digests.json)."]);
+        }
     }
 
     /**

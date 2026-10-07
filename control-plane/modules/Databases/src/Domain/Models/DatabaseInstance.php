@@ -29,7 +29,14 @@ use Illuminate\Support\Carbon;
  * @property string $hostname DNS name on the environment network
  * @property int $port inside the container
  * @property ?int $host_port published on 127.0.0.1 (and private addresses); null once retired
- * @property ?list<string> $published_addresses private addresses the port is published on, as last sent
+ * @property ?list<string> $published_addresses private addresses the port is published on, as the agent confirmed
+ * @property ?list<string> $pending_published_addresses addresses waiting to be applied (a restart: Docker binds ports at creation)
+ * @property ?string $network_command_id the update applying them
+ * @property ?list<string> $allowed_sources CIDRs allowed to reach the port publicly (public access allowlist)
+ * @property ?list<string> $firewall_sources every source last sent to the agent's DOCKER-USER rules
+ * @property ?string $previous_password Redis / Valkey: still valid until password_overlap_until (sealed)
+ * @property ?Carbon $password_overlap_until
+ * @property ?string $replaced_by the instance a major upgrade moved its data to
  * @property bool $public_access
  * @property bool $require_tls
  * @property ?string $volume_id
@@ -41,6 +48,7 @@ use Illuminate\Support\Carbon;
  * @property ?string $next_root_password a rotation the agent has not confirmed yet
  * @property bool $delete_volume deleting: the data volume goes too
  * @property ?Carbon $tls_expires_at
+ * @property ?list<string> $tls_hostnames what the certificate is valid for
  * @property InstanceStatus $status
  * @property ?string $status_message
  * @property ?string $health healthy|unhealthy|starting|none|stopped (heartbeats)
@@ -63,7 +71,7 @@ class DatabaseInstance extends Model
     protected $guarded = [];
 
     /** @var list<string> */
-    protected $hidden = ['root_password', 'next_root_password'];
+    protected $hidden = ['root_password', 'next_root_password', 'previous_password'];
 
     /**
      * @return array<string, string>
@@ -76,6 +84,9 @@ class DatabaseInstance extends Model
             'port' => 'integer',
             'host_port' => 'integer',
             'published_addresses' => 'array',
+            'pending_published_addresses' => 'array',
+            'allowed_sources' => 'array',
+            'firewall_sources' => 'array',
             'public_access' => 'boolean',
             'require_tls' => 'boolean',
             'memory_bytes' => 'integer',
@@ -84,8 +95,11 @@ class DatabaseInstance extends Model
             'pitr_enabled' => 'boolean',
             'root_password' => Sealed::class,
             'next_root_password' => Sealed::class,
+            'previous_password' => Sealed::class,
+            'password_overlap_until' => 'datetime',
             'delete_volume' => 'boolean',
             'tls_expires_at' => 'datetime',
+            'tls_hostnames' => 'array',
             'health_at' => 'datetime',
             'retire_at' => 'datetime',
         ];

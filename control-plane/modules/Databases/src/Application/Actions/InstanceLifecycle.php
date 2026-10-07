@@ -82,12 +82,14 @@ final class InstanceLifecycle
             throw ValidationException::withMessages(['password' => 'Use 12–128 letters, digits, dots, dashes, underscores or tildes.']);
         }
 
-        $next = $password ?: Passwords::generate();
+        // A rotation the agent did not confirm is finished with the same password (the agent's swap is idempotent).
+        $next = $password ?: ($instance->next_root_password ?? Passwords::generate());
 
         $handle = $this->commands->dispatch(
             $instance->server_id,
             'db.instance.password',
-            ['id' => $instance->id, 'engine' => $instance->engine->protocol(), 'password' => $next],
+            // Redis / Valkey: the new password is added, the current one stays valid while apps are redeployed with the new one.
+            ['id' => $instance->id, 'engine' => $instance->engine->protocol(), 'password' => $next, 'mode' => $instance->engine->isKeyValue() ? 'add' : 'replace'],
             (int) config('databases.timeouts.ddl', 300),
             "db.instance.password:{$instance->id}:".Str::ulid(),
             'password',

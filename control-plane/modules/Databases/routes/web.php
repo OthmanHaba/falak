@@ -23,6 +23,7 @@ Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->gro
     Route::get('instances/{instance}', [DatabaseInstanceController::class, 'show'])->name('instances.show');
     Route::put('instances/{instance}', [DatabaseInstanceController::class, 'update'])->name('instances.update');
     Route::post('instances/{instance}/restart', [DatabaseInstanceController::class, 'restart'])->name('instances.restart');
+    Route::post('instances/{instance}/network', [DatabaseInstanceController::class, 'network'])->name('instances.network');
     Route::post('instances/{instance}/upgrade', [DatabaseInstanceController::class, 'upgrade'])->name('instances.upgrade');
     Route::post('instances/{instance}/password', [DatabaseInstanceController::class, 'password'])->name('instances.password');
     Route::delete('instances/{instance}', [DatabaseInstanceController::class, 'destroy'])->name('instances.destroy');

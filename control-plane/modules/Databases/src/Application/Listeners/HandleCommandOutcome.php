@@ -76,7 +76,7 @@ final class HandleCommandOutcome implements ShouldQueue
             $instance = DatabaseInstance::query()->find(explode(':', $key)[1] ?? '');
 
             if ($instance !== null) {
-                $this->instance($type, $instance, $succeeded, $error, $result ?? []);
+                $this->instance($type, $instance, $commandId, $succeeded, $error, $result ?? []);
             }
 
             return;
@@ -93,7 +93,7 @@ final class HandleCommandOutcome implements ShouldQueue
     /**
      * @param  array<string, mixed>  $result
      */
-    private function instance(string $type, DatabaseInstance $instance, bool $succeeded, ?string $error, array $result): void
+    private function instance(string $type, DatabaseInstance $instance, string $commandId, bool $succeeded, ?string $error, array $result): void
     {
         $observed = array_filter([
             'image_digest' => is_string($result['image_digest'] ?? null) && preg_match('/^sha256:[a-f0-9]{64}$/', $result['image_digest']) === 1 ? $result['image_digest'] : null,
@@ -103,9 +103,10 @@ final class HandleCommandOutcome implements ShouldQueue
 
         match ($type) {
             'db.instance.create' => $this->created($instance, $succeeded, $error, $observed),
-            'db.instance.update', 'db.instance.restart' => $instance->forceFill([...($succeeded ? $observed : []), 'status_message' => $succeeded ? null : ($type === 'db.instance.update' ? 'Update' : 'Restart')." failed: {$error}"])->save(),
+            'db.instance.update' => $this->updated($instance, $commandId, $succeeded, $error, $observed),
+            'db.instance.restart' => $instance->forceFill([...($succeeded ? $observed : []), 'status_message' => $succeeded ? null : "Restart failed: {$error}"])->save(),
             'db.instance.delete' => $this->deleted($instance, $succeeded, $error),
-            'db.instance.password' => $this->passwordRotated($instance, $succeeded, $error),
+            'db.instance.password' => $this->passwordRotated($instance, $succeeded, $error, $result),
             'db.instance.secrets' => $succeeded ? null : $instance->forceFill(['status_message' => "Restoring its password file failed: {$error}"])->save(),
             'db.instance.upgrade' => $this->upgraded($instance, $succeeded, $error),
         };
@@ -175,11 +176,18 @@ final class HandleCommandOutcome implements ShouldQueue
 
         if (! $succeeded) {
             if ($instance->status === InstanceStatus::Deleting) {
-                $instance->forceFill(['status' => InstanceStatus::Active, 'status_message' => "Delete failed: {$error}"])->save();
+                $instance->forceFill(['status' => $instance->replaced_by !== null ? InstanceStatus::Retired : InstanceStatus::Active, 'status_message' => "Delete failed: {$error}"])->save();
                 $instance->databases()->where('status', ResourceStatus::Deleting)->update(['status' => ResourceStatus::Active]);
             } else {
-                $instance->forceFill(['status_message' => "Removing the retired server failed: {$error}"])->save();
+                $instance->forceFill(['status_message' => "Removing the retired container failed: {$error}"])->save();
             }
+
+            return;
+        }
+
+        // A retired instance's container went on schedule: the row and its data volume stay until someone deletes them.
+        if ($instance->status === InstanceStatus::Retired) {
+            $instance->forceFill(['retire_at' => null, 'status_message' => 'Retired by a major upgrade: its container was removed, its data volume is kept. Delete it once you verified the upgraded database.'])->save();
 
             return;
         }
@@ -190,7 +198,7 @@ final class HandleCommandOutcome implements ShouldQueue
             $this->volumes->releaseDatabase($database->id);
         }
 
-        if (($instance->delete_volume || $instance->status === InstanceStatus::Retired) && $instance->volume_id !== null) {
+        if ($instance->delete_volume && $instance->volume_id !== null) {
             $this->volumes->deleteDatabaseVolume($instance->volume_id);
         }
 
@@ -202,21 +210,59 @@ final class HandleCommandOutcome implements ShouldQueue
         }
     }
 
-    private function passwordRotated(DatabaseInstance $instance, bool $succeeded, ?string $error): void
+    /**
+     * db.instance.update: what the agent runs is recorded; published addresses being applied become the instance's.
+     *
+     * @param  array<string, mixed>  $observed
+     */
+    private function updated(DatabaseInstance $instance, string $commandId, bool $succeeded, ?string $error, array $observed): void
+    {
+        $network = $instance->network_command_id === $commandId;
+
+        $instance->forceFill([
+            ...($succeeded ? $observed : []),
+            'status_message' => $succeeded ? null : "Update failed: {$error}",
+            ...($network && $succeeded ? ['published_addresses' => $instance->pending_published_addresses ?: null, 'pending_published_addresses' => null] : []),
+            ...($network ? ['network_command_id' => null] : []),
+        ])->save();
+    }
+
+    /**
+     * db.instance.password: the new password replaces the stored one once the agent set it. A Redis / Valkey rotation
+     * (mode add) keeps the previous one valid until password_overlap_until (MaintainInstances retires it); a retire ends
+     * the overlap.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    private function passwordRotated(DatabaseInstance $instance, bool $succeeded, ?string $error, array $result = []): void
     {
         if ($instance->next_root_password === null) {
+            // A retire (the only password command without a new password) ended the overlap.
+            if ($succeeded && $instance->previous_password !== null) {
+                $instance->forceFill(['previous_password' => null, 'password_overlap_until' => null])->save();
+            }
+
             return;
         }
 
         if (! $succeeded) {
-            $instance->forceFill(['next_root_password' => null, 'status_message' => "Password rotation failed: {$error}"])->save();
+            // The agent may have set it already (only the file swap failed): the same password is sent again on retry.
+            $instance->forceFill(['status_message' => "Password rotation failed: {$error} Rotate again to finish it."])->save();
 
             return;
         }
 
         DB::transaction(function () use ($instance) {
             $password = (string) $instance->next_root_password;
-            $instance->forceFill(['root_password' => $password, 'next_root_password' => null, 'status_message' => null])->save();
+            $instance->forceFill([
+                'root_password' => $password,
+                'next_root_password' => null,
+                'status_message' => null,
+                ...($instance->engine->isKeyValue() ? [
+                    'previous_password' => $instance->root_password,
+                    'password_overlap_until' => now()->addHours((int) config('databases.password_overlap_hours', 24)),
+                ] : []),
+            ])->save();
 
             if ($instance->engine->isKeyValue()) {
                 $instance->users()->get()->each(fn (DatabaseUser $user) => $user->forceFill(['password' => $password])->save());
@@ -226,7 +272,8 @@ final class HandleCommandOutcome implements ShouldQueue
 
     /**
      * A major upgrade copied the data: the new instance takes over the old one's databases, users, schedules, DNS name
-     * and host port; the old one is retired (stopped by the agent, deleted at retire_at).
+     * and host port; the old one is retired: read-only and stopped by the agent, its container removed at retire_at once
+     * the new one is healthy, its data volume kept until someone deletes it.
      */
     private function upgraded(DatabaseInstance $target, bool $succeeded, ?string $error): void
     {
@@ -249,7 +296,8 @@ final class HandleCommandOutcome implements ShouldQueue
 
             $source->forceFill([
                 'status' => InstanceStatus::Retired,
-                'status_message' => "Replaced by {$target->label()}.",
+                'status_message' => "Replaced by {$target->label()}: read-only and stopped, its data volume kept. Delete it once you verified the upgraded database.",
+                'replaced_by' => $target->id,
                 'host_port' => null,
                 'hostname' => "falak-db-{$source->id}",
                 'retire_at' => now()->addHours((int) config('databases.retire_hours', 24)),
@@ -276,8 +324,8 @@ final class HandleCommandOutcome implements ShouldQueue
                 $this->volumes->attach($target->volume_id, AttachableType::Database, $primary->id, '/var/lib/falak/db');
             }
 
-            // Publish on the old host port and keep the DNS name across recreations.
-            ($this->applyInstance)($target, background: true);
+            // Publish on the old host port, keep the DNS name across recreations, and a certificate valid for that name.
+            ($this->applyInstance)($target, background: true, renewCertificate: true);
         });
 
         $this->audit->record('databases.instance_upgrade_finished', 'database_instance', $target->id, ['name' => $target->name, 'version' => $target->version, 'replaced' => $source->id], $target->organization_id);
@@ -422,6 +470,16 @@ final class HandleCommandOutcome implements ShouldQueue
             'warnings' => $warnings !== [] ? $warnings : null,
             'finished_at' => now(),
         ])->save();
+
+        // A PostgreSQL restore swaps a new database in: its users' grants on it are applied again.
+        $database = $succeeded ? Database::query()->where('database_instance_id', $restore->database_instance_id)->where('name', $restore->database_name)->first() : null;
+
+        if ($database !== null) {
+            Grant::query()->where('database_id', $database->id)->with('user')->get()
+                ->map(fn (Grant $grant) => $grant->user)
+                ->filter(fn (?DatabaseUser $user) => $user !== null && $user->status !== ResourceStatus::Deleting)
+                ->each(fn (DatabaseUser $user) => ($this->applyUser)($user, background: true));
+        }
 
         $this->audit->record($succeeded ? 'databases.restore_succeeded' : 'databases.restore_failed', 'backup', $restore->backup_id, ['restore_id' => $restore->id, 'database' => $restore->database_name], $restore->organization_id);
 

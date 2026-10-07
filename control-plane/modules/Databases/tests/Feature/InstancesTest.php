@@ -1,8 +1,11 @@
 <?php
 
+use Falak\Databases\Application\Actions\ApplyInstance;
 use Falak\Databases\Application\AgentCommands;
-use Falak\Databases\Application\Jobs\RemoveRetiredInstances;
+use Falak\Databases\Application\InstanceCertificates;
+use Falak\Databases\Application\Jobs\MaintainInstances;
 use Falak\Databases\Contracts\DatabaseConnections;
+use Falak\Databases\Domain\Enums\Engine;
 use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Enums\ResourceStatus;
 use Falak\Databases\Domain\Models\Database;
@@ -184,9 +187,25 @@ it('forces TLS when public access is turned on', function () {
     $update = $this->agents->last('db.instance.update');
 
     expect($instance->refresh()->require_tls)->toBeTrue()
-        ->and($update['payload']['instance']['publish'])->toBe(['public' => true])
+        // No allowlist yet: the agent's firewall drops everyone but loopback.
+        ->and($update['payload']['instance']['publish'])->toBe(['public' => true, 'allowed_sources' => []])
         ->and(((array) $update['payload']['instance']['settings'])['require_tls'])->toBeTrue()
         ->and(databases_schema_errors($update))->toBe([]);
+
+    $this->put("/databases/instances/{$instance->id}", ['allowed_sources' => ['203.0.113.9', '198.51.100.7/24']])->assertSessionHasNoErrors();
+    expect($instance->refresh()->allowed_sources)->toBe(['198.51.100.0/24', '203.0.113.9/32'])
+        ->and($this->agents->last('db.instance.update')['payload']['instance']['publish']['allowed_sources'])->toBe(['198.51.100.0/24', '203.0.113.9/32']);
+
+    $this->put("/databases/instances/{$instance->id}", ['allowed_sources' => ['not-an-ip']])->assertSessionHasErrors('allowed_sources.0');
+});
+
+it('clears a setting given as null', function () {
+    [, , $instance] = databases_service($this->organization, attributes: ['settings' => ['max_connections' => 300, 'slow_query_ms' => 50]]);
+
+    $this->put("/databases/instances/{$instance->id}", ['settings' => ['max_connections' => null]])->assertSessionHasNoErrors();
+
+    expect($instance->refresh()->settings)->toBe(['slow_query_ms' => 50])
+        ->and((array) $this->agents->last('db.instance.update')['payload']['instance']['settings'])->toBe(['slow_query_ms' => 50]);
 });
 
 it('restarts a container', function () {
@@ -226,20 +245,45 @@ it('keeps the old password when the rotation fails', function () {
     $this->agents->fail($this->agents->last('db.instance.password')['handle'], 'engine refused');
 
     expect($instance->refresh()->root_password)->toBe($before)
-        ->and($instance->next_root_password)->toBeNull()
         ->and($instance->status_message)->toContain('engine refused');
+
+    // Rotating again finishes it with the same password (the agent may have set it already).
+    $this->post("/databases/instances/{$instance->id}/password")->assertSessionHasNoErrors();
+    $retry = $this->agents->last('db.instance.password');
+    expect($retry['payload']['password'])->toBe('a-new-password-1');
+
+    $this->agents->succeed($retry['handle'], ['changed' => false]);
+    expect($instance->refresh()->root_password)->toBe('a-new-password-1');
 });
 
-it('rotates a Redis default user through the instance password, and its references follow', function () {
+it('rotates a Redis password with an overlap: the old one stays valid until it is retired', function () {
     [$database, $user, $instance] = databases_service($this->organization, 'redis', 'cache');
+    $old = $instance->root_password;
 
     $this->post("/databases/users/{$user->id}/password")->assertSessionHasNoErrors();
     $rotate = $this->agents->last('db.instance.password');
     $this->agents->succeed($rotate['handle'], ['changed' => true]);
 
-    expect($user->refresh()->password)->toBe($rotate['payload']['password'])
+    expect($rotate['payload']['mode'])->toBe('add')
+        ->and(databases_schema_errors($rotate))->toBe([])
+        ->and($user->refresh()->password)->toBe($rotate['payload']['password'])
         ->and($instance->refresh()->root_password)->toBe($rotate['payload']['password'])
+        ->and($instance->previous_password)->toBe($old)
+        ->and($instance->password_overlap_until->isFuture())->toBeTrue()
         ->and(app(DatabaseConnections::class)->variables($database->id)['REDIS_PASSWORD'])->toBe($rotate['payload']['password']);
+
+    // Lost secrets after a reboot during the overlap: both come back.
+    AgentDatabasesReported::dispatch('agent', $this->organization->id, $instance->server_id, [['id' => $instance->id, 'state' => 'exited', 'secrets_missing' => true]]);
+    expect($this->agents->last('db.instance.secrets')['payload'])->toMatchArray(['password' => $rotate['payload']['password'], 'previous' => $old]);
+
+    // The overlap ends: the maintenance job retires the old one.
+    $this->travel(25)->hours();
+    app(MaintainInstances::class)->handle(app(AgentCommands::class), app(ApplyInstance::class), app(InstanceCertificates::class));
+    $retire = $this->agents->last('db.instance.password');
+    expect($retire['payload'])->toBe(['id' => $instance->id, 'engine' => 'redis', 'mode' => 'retire'])->and(databases_schema_errors($retire))->toBe([]);
+
+    $this->agents->succeed($retire['handle'], ['changed' => true]);
+    expect($instance->refresh()->previous_password)->toBeNull()->and($instance->password_overlap_until)->toBeNull();
 });
 
 it('deletes a container and keeps its volume unless asked', function () {
@@ -278,16 +322,27 @@ it('deletes the data volume with the container when asked', function () {
         ->and($volume->status->value)->toBe('deleting');
 });
 
-it('upgrades within a major by re-pulling the image in place', function () {
+it('upgrades within a major to the build this release pins, in place', function () {
     [, , $instance] = databases_service($this->organization);
+    $pinned = Engine::PostgreSql->pinnedDigest('17');
 
     $this->post("/databases/instances/{$instance->id}/upgrade")->assertSessionHasNoErrors();
     $update = $this->agents->last('db.instance.update');
 
-    expect($instance->refresh()->image_digest)->toBeNull()
-        ->and($update['payload']['instance'])->not->toHaveKey('digest')
+    expect($instance->refresh()->image_digest)->toBe($pinned)
+        ->and($update['payload']['instance']['digest'])->toBe($pinned)
         ->and($update['payload']['instance']['version'])->toBe('17')
         ->and($this->agents->dispatched('db.instance.create'))->toBe([]);
+
+    // Already on it: nothing to do.
+    $this->post("/databases/instances/{$instance->id}/upgrade")->assertSessionHasErrors('version');
+});
+
+it('refuses versions this release ships no pinned image of', function () {
+    config(['databases.digests.postgresql' => ['17' => Engine::PostgreSql->pinnedDigest('17')]]);
+
+    $this->post('/databases/instances', ['engine' => 'postgresql', 'server_id' => $this->server->id, 'name' => 'shop', 'version' => '16'])->assertSessionHasErrors('version');
+    expect(DatabaseInstance::query()->count())->toBe(0);
 });
 
 it('upgrades Redis majors in place on the same volume', function () {
@@ -329,7 +384,8 @@ it('upgrades a PostgreSQL major into a new container, copies the data and hands 
         'mode' => 'major',
         'source' => ['id' => $instance->id, 'engine' => 'postgres'],
         'target' => ['id' => $target->id, 'engine' => 'postgres'],
-        'databases' => [['name' => 'shop']],
+        // The restore hands every object to the app's user (its migrations keep working).
+        'databases' => [['name' => 'shop', 'owner' => 'shop']],
         'network' => $instance->network(),
         'alias' => $oldHostname,
     ])
@@ -349,8 +405,12 @@ it('upgrades a PostgreSQL major into a new container, copies the data and hands 
         ->and($schedule->refresh()->database_instance_id)->toBe($target->id)
         ->and($instance->refresh()->status)->toBe(InstanceStatus::Retired)
         ->and($instance->host_port)->toBeNull()
+        ->and($instance->replaced_by)->toBe($target->id)
         ->and($instance->retire_at->isFuture())->toBeTrue()
-        ->and($this->agents->last('db.instance.update')['payload']['instance'])->toMatchArray(['id' => $target->id, 'host_port' => $oldPort, 'aliases' => [$oldHostname]]);
+        ->and($this->agents->last('db.instance.update')['payload']['instance'])->toMatchArray(['id' => $target->id, 'host_port' => $oldPort, 'aliases' => [$oldHostname]])
+        // A certificate for the name it took over.
+        ->and($this->agents->last('db.instance.update')['payload']['instance']['tls'])->toHaveKeys(['certificate', 'private_key'])
+        ->and($target->refresh()->tls_hostnames)->toContain($oldHostname);
 });
 
 it('leaves the old container running when the major upgrade copy fails', function () {
@@ -367,18 +427,75 @@ it('leaves the old container running when the major upgrade copy fails', functio
         ->and($database->refresh()->database_instance_id)->toBe($instance->id);
 });
 
-it('removes retired instances and their volumes after the grace period', function () {
-    $retired = databases_instance($this->organization, attributes: ['status' => InstanceStatus::Retired, 'host_port' => null, 'retire_at' => now()->subMinute()]);
-    databases_instance($this->organization, attributes: ['status' => InstanceStatus::Retired, 'host_port' => null, 'retire_at' => now()->addHour()]);
-    Volume::query()->create(['id' => $retired->volume_id, 'organization_id' => $this->organization->id, 'server_id' => $retired->server_id, 'name' => 'db-old', 'kind' => 'sized', 'size_limit_bytes' => 1024 ** 3, 'protected' => true, 'status' => 'active']);
+function instances_maintain(): void
+{
+    app(MaintainInstances::class)->handle(app(AgentCommands::class), app(ApplyInstance::class), app(InstanceCertificates::class));
+}
 
-    (new RemoveRetiredInstances)->handle(app(AgentCommands::class));
+it('removes only the container of a retired instance, once its replacement is healthy, and never its data', function () {
+    $replacement = databases_instance($this->organization, attributes: ['health' => 'unhealthy', 'tls_expires_at' => now()->addYear()]);
+    $retired = databases_instance($this->organization, attributes: ['status' => InstanceStatus::Retired, 'host_port' => null, 'retire_at' => now()->subMinute(), 'replaced_by' => $replacement->id]);
+    databases_instance($this->organization, attributes: ['status' => InstanceStatus::Retired, 'host_port' => null, 'retire_at' => now()->addHour(), 'replaced_by' => $replacement->id]);
+    $volume = Volume::query()->create(['id' => $retired->volume_id, 'organization_id' => $this->organization->id, 'server_id' => $retired->server_id, 'name' => 'db-old', 'kind' => 'sized', 'size_limit_bytes' => 1024 ** 3, 'protected' => true, 'status' => 'active']);
+    $replacement->forceFill(['tls_hostnames' => app(InstanceCertificates::class)->hostnames($replacement)])->save();
 
+    instances_maintain();
+    expect($this->agents->dispatched('db.instance.delete'))->toBe([]);
+
+    $replacement->forceFill(['health' => 'healthy'])->save();
+    instances_maintain();
     expect($this->agents->dispatched('db.instance.delete'))->toHaveCount(1);
     $this->agents->succeed($this->agents->last('db.instance.delete')['handle'], ['changed' => true]);
 
+    expect($retired->refresh()->status)->toBe(InstanceStatus::Retired)
+        ->and($retired->retire_at)->toBeNull()
+        ->and($retired->status_message)->toContain('data volume is kept')
+        ->and($volume->refresh()->status->value)->toBe('active')
+        ->and($this->agents->dispatched('volume.delete'))->toBe([]);
+
+    // The user deletes it after verifying, with its data.
+    $this->delete("/databases/instances/{$retired->id}", ['confirm' => $retired->name, 'delete_volume' => true])->assertSessionHasNoErrors();
+    $this->agents->succeed($this->agents->last('db.instance.delete')['handle'], ['changed' => false]);
     expect(DatabaseInstance::query()->find($retired->id))->toBeNull()
-        ->and($this->agents->last('volume.delete')['payload']['volume']['id'])->toBe($retired->volume_id);
+        ->and($this->agents->last('volume.delete')['payload']['volume']['id'])->toBe($volume->id);
+});
+
+it('renews certificates close to expiry or no longer covering the instance, restarting the engine with them', function () {
+    [, , $instance] = databases_service($this->organization, server: $this->server, attributes: ['tls_expires_at' => now()->addYear()]);
+    $instance->forceFill(['tls_hostnames' => app(InstanceCertificates::class)->hostnames($instance)])->save();
+
+    instances_maintain();
+    expect($this->agents->dispatched('db.instance.update'))->toBe([]);
+
+    $this->travel(340)->days();
+    instances_maintain();
+    $update = $this->agents->last('db.instance.update');
+    expect($update['payload']['instance']['tls'])->toHaveKeys(['certificate', 'private_key', 'ca'])
+        ->and(databases_schema_errors($update))->toBe([])
+        ->and($instance->refresh()->tls_hostnames)->toContain($instance->hostname);
+
+    // A new private address of the server: a certificate for it.
+    $this->server->forceFill(['private_ipv4' => '10.0.0.99'])->save();
+    instances_maintain();
+    expect($this->agents->dispatched('db.instance.update'))->toHaveCount(2)
+        ->and($instance->refresh()->tls_hostnames)->toContain('10.0.0.99');
+});
+
+it('waits for someone to apply new published addresses, and saves them once the agent confirms', function () {
+    [, , $instance] = databases_service($this->organization);
+    $instance->forceFill(['pending_published_addresses' => ['10.0.0.20']])->save();
+
+    $this->post("/databases/instances/{$instance->id}/network")->assertSessionHasNoErrors();
+    $update = $this->agents->last('db.instance.update');
+
+    expect($update['payload']['instance']['publish']['addresses'])->toBe(['10.0.0.20'])
+        ->and($instance->refresh()->published_addresses)->toBeNull();
+
+    $this->agents->succeed($update['handle'], ['changed' => true, 'container_id' => 'c', 'health' => 'healthy']);
+    expect($instance->refresh()->published_addresses)->toBe(['10.0.0.20'])
+        ->and($instance->pending_published_addresses)->toBeNull();
+
+    $this->post("/databases/instances/{$instance->id}/network")->assertSessionHasErrors('instance');
 });
 
 it('records health from heartbeats and restores lost password files once per throttle window', function () {
