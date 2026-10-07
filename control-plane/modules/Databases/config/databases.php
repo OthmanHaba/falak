@@ -90,6 +90,15 @@ return [
         'backup' => 3600,
         'restore' => 3600,
         'upgrade' => 4 * 3600,
+        // A restore drill: pull, download, restore and check (the agent removes the container whatever happens).
+        'drill' => 2 * 3600,
+    ],
+
+    // Restore drills (docs/BACKUPS.md): the throwaway instance's memory limit (the instance's own when smaller, the
+    // engine's minimum when larger), and how far the restored row counts may be from those at backup time.
+    'drills' => [
+        'memory_bytes' => (int) env('FALAK_DRILL_MEMORY_BYTES', 512 * 1024 ** 2),
+        'tolerance_percent' => (float) env('FALAK_DRILL_TOLERANCE_PERCENT', 10),
     ],
 
     // Presigned URL lifetimes (seconds). The upload URL must outlive queueing + the dump itself.

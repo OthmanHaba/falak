@@ -2,12 +2,13 @@
 
 namespace Falak\Databases\Infrastructure;
 
-use Falak\Databases\Domain\Enums\Compression;
 use Falak\Databases\Domain\Enums\Engine;
 use Falak\Databases\Domain\Enums\ResourceStatus;
+use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\DatabaseUser;
+use Falak\Databases\Domain\Models\Drill;
 use Falak\Databases\Domain\Models\Grant;
 
 /**
@@ -139,23 +140,31 @@ final class CommandPayloads
     }
 
     /**
+     * db.backup: the dump goes through zstd and AES-256-GCM (FKB1) with $encryption (BackupKeys: the data key, or the
+     * customer's age recipient), straight to the presigned URL.
+     *
+     * @param  array<string, string>  $encryption
      * @return array<string, mixed>
      */
-    public static function backup(DatabaseInstance $instance, string $database, Compression $compression, string $uploadUrl): array
+    public static function backup(DatabaseInstance $instance, string $database, array $encryption, string $uploadUrl, bool $tableCounts = false): array
     {
-        return [
+        return array_filter([
             'instance' => $instance->id,
             'engine' => $instance->engine->protocol(),
             'database' => $database,
-            'compression' => $compression->value,
+            'encryption' => $encryption,
+            'table_counts' => $tableCounts ?: null,
             'destination' => ['kind' => 'presigned_url', 'url' => $uploadUrl],
-        ];
+        ], fn ($value) => $value !== null);
     }
 
     /**
+     * db.restore: the agent checks the file's sha256, opens it with $encryption and checks the dump's sha256.
+     *
+     * @param  array<string, string>  $encryption
      * @return array<string, mixed>
      */
-    public static function restore(DatabaseInstance $instance, string $database, Compression $compression, string $downloadUrl, ?string $sha256): array
+    public static function restore(DatabaseInstance $instance, string $database, Backup $backup, array $encryption, string $downloadUrl): array
     {
         $row = $instance->databases()->where('name', $database)->first();
 
@@ -163,11 +172,49 @@ final class CommandPayloads
             'instance' => $instance->id,
             'engine' => $instance->engine->protocol(),
             'database' => $database,
-            'compression' => $compression->value,
+            'encryption' => $encryption,
             'source' => ['kind' => 'url', 'url' => $downloadUrl],
-            'sha256' => $sha256,
+            'sha256' => $backup->sha256,
+            'plaintext_sha256' => $backup->plaintext_sha256,
             'owner' => $row !== null ? self::owner($instance, $row) : null,
         ], fn ($value) => $value !== null);
+    }
+
+    /**
+     * db.drill: restore $backup into a throwaway container of $instance's image digest and check it.
+     *
+     * @param  array<string, string>  $encryption
+     * @return array<string, mixed>
+     */
+    public static function drill(Drill $drill, DatabaseInstance $instance, Backup $backup, array $encryption, string $downloadUrl, ?string $query): array
+    {
+        $memory = min((int) $instance->memory_bytes, (int) config('databases.drills.memory_bytes', 512 * 1024 ** 2));
+        $memory = max($memory, (int) (config('databases.memory.min.'.$instance->engine->value) ?? 256 * 1024 ** 2));
+
+        return [
+            'drill' => $drill->id,
+            'instance' => [
+                'engine' => $instance->engine->protocol(),
+                'version' => $instance->version,
+                'image' => $instance->image,
+                'digest' => $instance->image_digest,
+                'memory_bytes' => $memory,
+            ],
+            'database' => $backup->database_name,
+            'source' => ['kind' => 'url', 'url' => $downloadUrl],
+            'sha256' => $backup->sha256,
+            ...array_filter([
+                'plaintext_sha256' => $backup->plaintext_sha256,
+                'archive_bytes' => $backup->size_bytes,
+                'uncompressed_bytes' => $backup->uncompressed_bytes,
+            ], fn ($value) => $value !== null),
+            'encryption' => $encryption,
+            'checks' => array_filter([
+                'table_counts' => $backup->table_counts ?: null,
+                'tolerance_percent' => (float) config('databases.drills.tolerance_percent', 10),
+                'query' => $instance->engine->isKeyValue() ? null : ($query ?: null),
+            ], fn ($value) => $value !== null),
+        ];
     }
 
     /**

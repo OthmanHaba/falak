@@ -25,7 +25,7 @@ final class RunBackupSchedule
         return $schedule->databases
             // Manual runs skip databases that are not active instead of failing the whole request.
             ->filter(fn (Database $database) => $trigger === 'scheduled' || $database->status === ResourceStatus::Active)
-            ->map(fn (Database $database) => ($this->backup)($database, $schedule->storageProvider, $schedule->compression, $trigger, $schedule->id, $actorId))
+            ->map(fn (Database $database) => ($this->backup)($database, $schedule->storageProvider, $trigger, $schedule, $actorId))
             ->values()
             ->all();
     }

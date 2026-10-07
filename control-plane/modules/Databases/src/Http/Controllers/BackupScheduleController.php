@@ -5,6 +5,7 @@ namespace Falak\Databases\Http\Controllers;
 use Falak\Databases\Application\Actions\DeleteBackupSchedule;
 use Falak\Databases\Application\Actions\RunBackupSchedule;
 use Falak\Databases\Application\Actions\SaveBackupSchedule;
+use Falak\Databases\Application\Actions\StartDrill;
 use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Kernel\Http\Controller;
@@ -26,8 +27,12 @@ final class BackupScheduleController extends Controller
             'cron' => ['required', 'string', 'max:120'],
             'retention_count' => ['nullable', 'integer', 'between:1,1000'],
             'retention_days' => ['nullable', 'integer', 'between:1,3650'],
-            'compression' => ['nullable', 'in:gzip,none'],
             'enabled' => ['boolean'],
+            'encryption_mode' => ['nullable', 'in:cp,customer'],
+            'age_recipient' => ['nullable', 'string', 'max:100'],
+            'drill' => ['nullable', 'in:off,weekly,monthly'],
+            'drill_query' => ['nullable', 'string', 'max:4000'],
+            'drill_server_id' => ['nullable', 'string', 'size:26'],
         ];
     }
 
@@ -54,6 +59,16 @@ final class BackupScheduleController extends Controller
         $this->authorize('manage', $backupSchedule);
 
         $run($backupSchedule, 'manual', $request->user()?->getAuthIdentifier());
+
+        return back();
+    }
+
+    /** POST /databases/schedules/{schedule}/drill: a restore drill now (the schedule's next one stays as planned). */
+    public function drill(Request $request, BackupSchedule $backupSchedule, StartDrill $start): RedirectResponse
+    {
+        $this->authorize('manage', $backupSchedule);
+
+        $start($backupSchedule, true, $request->user()?->getAuthIdentifier());
 
         return back();
     }

@@ -39,9 +39,16 @@ beforeEach(function () {
     $this->server = volumes_server($this->organization->id);
 });
 
-function volumes_archive_result(string $content = 'tar'): array
+/**
+ * The agent's volume.archive result for $command (encrypted with its key).
+ *
+ * @param  array<string, mixed>  $command
+ */
+function volumes_archive_result(array $command, string $content = 'tar'): array
 {
-    return ['size_bytes' => 4096, 'sha256' => hash('sha256', $content), 'location' => 'https://falak-backups.s3.eu-central-1.amazonaws.com/x', 'uncompressed_bytes' => 10 * 1024 ** 2, 'files' => 12, 'duration_ms' => 900];
+    return ['size_bytes' => 4096, 'sha256' => hash('sha256', $content), 'location' => 'https://falak-backups.s3.eu-central-1.amazonaws.com/x', 'uncompressed_bytes' => 10 * 1024 ** 2, 'files' => 12, 'duration_ms' => 900,
+        'plaintext_sha256' => hash('sha256', "plain {$content}"), 'encryption' => $command['payload']['encryption']['mode'], 'key_id' => $command['payload']['encryption']['key_id'],
+        'cipher' => 'aes-256-gcm', 'compression' => 'zstd'];
 }
 
 it('creates a sized volume on its server and activates it when volume.create succeeds', function () {
@@ -251,12 +258,12 @@ it('backs up on schedule through a presigned URL, prunes by retention and restor
         expect(volumes_schema_errors($command))->toBe([])
             ->and($command['payload']['consistency'])->toBe('pause')
             ->and(json_encode($command['payload']))->not->toContain('super-secret-access-key-value');
-        $this->agents->succeed($command['handle'], volumes_archive_result("tar{$i}"));
+        $this->agents->succeed($command['handle'], volumes_archive_result($command, "tar{$i}"));
     }
 
     $backups = VolumeBackup::query()->orderBy('created_at')->get();
     expect($backups->pluck('status')->all())->toBe([BackupStatus::Pruned, BackupStatus::Succeeded, BackupStatus::Succeeded])
-        ->and($backups[0]->object_key)->toMatch('#^acme/volumes/app-1-[a-z0-9]{6}/data/2026/10/20261007T030030Z-'.$backups[0]->id.'\.tar\.zst$#');
+        ->and($backups[0]->object_key)->toMatch('#^acme/volumes/app-1-[a-z0-9]{6}/data/2026/10/20261007T030030Z-'.$backups[0]->id.'\.tar\.zst\.fkb$#');
     Http::assertSent(fn ($request) => $request->method() === 'DELETE' && str_contains($request->url(), $backups[0]->object_key));
 
     // Restore the newest into a new volume and swap the services over to it.
@@ -302,7 +309,7 @@ it('moves a volume to another server: archive, restore there, hand the services 
 
     $archive = $this->agents->last('volume.archive');
     expect($archive['handle']->serverId)->toBe($this->server->id)->and($archive['payload']['consistency'])->toBe('stop');
-    $this->agents->succeed($archive['handle'], volumes_archive_result());
+    $this->agents->succeed($archive['handle'], volumes_archive_result($archive));
 
     $restore = $this->agents->last('volume.restore');
     $moved = Volume::query()->where('server_id', $target->id)->sole();

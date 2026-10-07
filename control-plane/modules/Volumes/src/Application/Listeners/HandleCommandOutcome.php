@@ -2,10 +2,12 @@
 
 namespace Falak\Volumes\Application\Listeners;
 
+use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Volumes\Application\Actions\DeleteVolume;
+use Falak\Volumes\Application\Actions\SettleVolumeDrill;
 use Falak\Volumes\Application\Jobs\PruneScheduleBackups;
 use Falak\Volumes\Application\Transfers;
 use Falak\Volumes\Contracts\VolumeKind;
@@ -27,11 +29,16 @@ use Illuminate\Validation\ValidationException;
  */
 final class HandleCommandOutcome implements ShouldQueue
 {
-    private const TYPES = ['volume.create', 'volume.delete', 'volume.resize', 'volume.archive', 'volume.restore', 'volume.clone', 'volume.download', 'volume.inventory'];
+    private const TYPES = ['volume.create', 'volume.delete', 'volume.resize', 'volume.archive', 'volume.restore', 'volume.clone', 'volume.download', 'volume.inventory', 'volume.drill'];
+
+    /** Payload secrets dropped once a command settled: archive keys, a customer's age identity. */
+    private const KEY_PATHS = ['encryption.key', 'encryption.identity'];
 
     public function __construct(
         private readonly Transfers $transfers,
         private readonly DeleteVolume $delete,
+        private readonly AgentGateway $agents,
+        private readonly SettleVolumeDrill $drills,
         private readonly AuditLog $audit,
     ) {}
 
@@ -55,7 +62,12 @@ final class HandleCommandOutcome implements ShouldQueue
      */
     private function settle(string $type, string $commandId, string $organizationId, bool $succeeded, ?string $error, array $result, string $serverId = ''): void
     {
+        if (in_array($type, ['volume.archive', 'volume.restore', 'volume.drill'], true)) {
+            $this->agents->forgetSecrets($commandId, self::KEY_PATHS);
+        }
+
         match ($type) {
+            'volume.drill' => ($this->drills)($commandId, $succeeded, $error, $result),
             'volume.create' => $this->created($commandId, $succeeded, $error, $result),
             'volume.delete' => $this->deleted($commandId, $succeeded, $error),
             'volume.resize' => $this->resized($commandId, $succeeded, $error, $result),
@@ -139,14 +151,21 @@ final class HandleCommandOutcome implements ShouldQueue
 
         $sha = is_string($result['sha256'] ?? null) && preg_match('/^[a-f0-9]{64}$/', $result['sha256']) === 1 ? $result['sha256'] : null;
 
+        $plainSha = is_string($result['plaintext_sha256'] ?? null) && preg_match('/^[a-f0-9]{64}$/', $result['plaintext_sha256']) === 1 ? $result['plaintext_sha256'] : null;
+
         if ($succeeded && $sha === null) {
             [$succeeded, $error] = [false, 'The agent reported no checksum for the upload.'];
+        } elseif ($succeeded && ($plainSha === null || ($result['key_id'] ?? null) !== $backup->id || ($result['encryption'] ?? null) !== ($backup->isCustomerHeld() ? 'age' : 'cp'))) {
+            // An agent that did not encrypt (or not with this archive's key) left a file nobody should trust.
+            [$succeeded, $error] = [false, 'The agent did not report the archive as encrypted with its key.'];
         }
 
         $backup->forceFill($succeeded ? [
             'status' => BackupStatus::Succeeded,
             'size_bytes' => (int) ($result['size_bytes'] ?? 0),
             'uncompressed_bytes' => is_int($result['uncompressed_bytes'] ?? null) ? $result['uncompressed_bytes'] : null,
+            'files' => is_int($result['files'] ?? null) ? $result['files'] : null,
+            'plaintext_sha256' => $plainSha,
             'sha256' => $sha,
             'duration_ms' => isset($result['duration_ms']) ? (int) $result['duration_ms'] : null,
             'error' => null,

@@ -5,7 +5,6 @@ namespace Falak\Databases\Http\Controllers;
 use Falak\Databases\Application\Actions\CreateDatabase;
 use Falak\Databases\Application\Actions\DeleteDatabase;
 use Falak\Databases\Application\Actions\RunBackup;
-use Falak\Databases\Domain\Enums\Compression;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\StorageProvider;
@@ -52,12 +51,11 @@ final class DatabaseController extends Controller
 
         $data = $request->validate([
             'storage_provider_id' => ['required', 'string'],
-            'compression' => ['nullable', 'in:gzip,none'],
         ]);
 
         $provider = StorageProvider::query()->where('organization_id', $database->organization_id)->findOrFail($data['storage_provider_id']);
 
-        $run($database, $provider, Compression::from($data['compression'] ?? 'gzip'), 'manual', null, $request->user()?->getAuthIdentifier());
+        $run($database, $provider, 'manual', null, $request->user()?->getAuthIdentifier());
 
         return back();
     }

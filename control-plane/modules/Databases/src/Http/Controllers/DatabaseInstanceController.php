@@ -8,7 +8,6 @@ use Falak\Databases\Application\Actions\InstanceLifecycle;
 use Falak\Databases\Application\Actions\UpdateInstance;
 use Falak\Databases\Application\Actions\UpgradeInstance;
 use Falak\Databases\Application\ConnectionInfo;
-use Falak\Databases\Domain\Enums\Compression;
 use Falak\Databases\Domain\Enums\Engine;
 use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Models\Backup;
@@ -298,7 +297,7 @@ final class DatabaseInstanceController extends Controller
         return [
             'privileges' => $instance->engine->privileges(),
             'versions' => array_values(array_filter($instance->engine->versions(), fn (string $version) => version_compare($version, $instance->version, '>='))),
-            'compressions' => array_map(fn (Compression $c) => $c->value, Compression::cases()),
+            'drill_servers' => $this->drillServers($instance),
             'default_charset' => $instance->engine->defaultCharset(),
             'default_collation' => $instance->engine->defaultCollation(),
             'evictions' => $instance->engine->isKeyValue() ? UpdateInstance::EVICTIONS : [],

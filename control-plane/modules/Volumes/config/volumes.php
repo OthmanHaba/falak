@@ -30,6 +30,12 @@ return [
         'clone' => 4 * 3600,
         'browse' => 60,
         'download' => 3600,
+        'drill' => 4 * 3600,
         'browse_wait' => 15,
+    ],
+
+    // Restore drills: how far the restored file count may be from the archive's.
+    'drills' => [
+        'tolerance_percent' => (float) env('FALAK_DRILL_TOLERANCE_PERCENT', 10),
     ],
 ];

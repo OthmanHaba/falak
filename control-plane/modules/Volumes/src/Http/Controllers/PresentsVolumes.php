@@ -15,6 +15,7 @@ use Falak\Volumes\Domain\Models\BackupSchedule;
 use Falak\Volumes\Domain\Models\Operation;
 use Falak\Volumes\Domain\Models\Volume;
 use Falak\Volumes\Domain\Models\VolumeBackup;
+use Falak\Volumes\Domain\Models\VolumeDrill;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -125,6 +126,12 @@ trait PresentsVolumes
             'uncompressed_bytes' => $backup->uncompressed_bytes,
             'volume_size_bytes' => $backup->volume_size_bytes,
             'sha256' => $backup->sha256,
+            'plaintext_sha256' => $backup->plaintext_sha256,
+            'files' => $backup->files,
+            'encryption_mode' => $backup->encryption_mode,
+            'cipher' => $backup->cipher,
+            'drill_status' => $backup->drill_status,
+            'verified_at' => $backup->verified_at?->toIso8601String(),
             'duration_ms' => $backup->duration_ms,
             'error' => $backup->error,
             'restorable' => $backup->restorable(),
@@ -148,6 +155,22 @@ trait PresentsVolumes
             'enabled' => $schedule->enabled,
             'last_run_at' => $schedule->last_run_at?->toIso8601String(),
             'next_run_at' => $schedule->next_run_at?->toIso8601String(),
+            'encryption_mode' => $schedule->encryption_mode,
+            'age_recipient' => $schedule->age_recipient,
+            'drill' => $schedule->drill->value,
+            'drill_server_id' => $schedule->drill_server_id,
+            'next_drill_at' => $schedule->next_drill_at?->toIso8601String(),
+            'drills' => $schedule->drills()->limit(10)->get()->map(fn (VolumeDrill $drill) => [
+                'id' => $drill->id,
+                'backup_id' => $drill->backup_id,
+                'status' => $drill->status->value,
+                'reason' => $drill->reason,
+                'error' => $drill->error,
+                'checks' => $drill->checks ?? [],
+                'duration_ms' => $drill->duration_ms,
+                'rto_estimate_seconds' => $drill->rto_estimate_seconds,
+                'created_at' => $drill->created_at->toIso8601String(),
+            ])->values(),
         ];
     }
 

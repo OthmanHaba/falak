@@ -5,6 +5,7 @@ namespace Falak\Databases\Application\Listeners;
 use Falak\Databases\Application\Actions\ApplyDatabaseUser;
 use Falak\Databases\Application\Actions\ApplyInstance;
 use Falak\Databases\Application\Actions\CreateDatabase;
+use Falak\Databases\Application\Actions\SettleDrill;
 use Falak\Databases\Application\AgentCommands;
 use Falak\Databases\Application\Jobs\PruneScheduleBackups;
 use Falak\Databases\Domain\Enums\BackupStatus;
@@ -24,6 +25,7 @@ use Falak\Databases\Events\DatabaseCreated;
 use Falak\Databases\Events\DatabaseDeleted;
 use Falak\Databases\Events\RestoreFinished;
 use Falak\Databases\Infrastructure\CommandPayloads;
+use Falak\Fleet\Contracts\AgentGateway;
 use Falak\Fleet\Events\CommandFailed;
 use Falak\Fleet\Events\CommandFinished;
 use Falak\Identity\Contracts\AuditLog;
@@ -33,7 +35,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Settles instances, databases, users, backups and restores when the db.* commands Databases dispatched finish.
+ * Settles instances, databases, users, backups, restores and drills when the db.* commands Databases dispatched finish.
+ * Backup keys and age identities in their payloads are forgotten then.
  * db.instance.* commands name their instance in the idempotency key (`<type>:<instance id>:…`), so concurrent commands
  * of one instance (a restart during a password rotation) each settle their own part.
  */
@@ -41,7 +44,10 @@ final class HandleCommandOutcome implements ShouldQueue
 {
     private const INSTANCE_TYPES = ['db.instance.create', 'db.instance.update', 'db.instance.restart', 'db.instance.delete', 'db.instance.password', 'db.instance.secrets', 'db.instance.upgrade'];
 
-    private const TYPES = ['db.create', 'db.drop', 'db.user.apply', 'db.backup', 'db.restore', ...self::INSTANCE_TYPES];
+    private const TYPES = ['db.create', 'db.drop', 'db.user.apply', 'db.backup', 'db.restore', 'db.drill', ...self::INSTANCE_TYPES];
+
+    /** Payload secrets dropped once a command settled: backup keys, a customer's age identity. */
+    private const KEY_PATHS = ['encryption.key', 'encryption.identity'];
 
     public function __construct(
         private readonly ApplyDatabaseUser $applyUser,
@@ -49,6 +55,8 @@ final class HandleCommandOutcome implements ShouldQueue
         private readonly CreateDatabase $createDatabase,
         private readonly ServiceVolumes $volumes,
         private readonly AgentCommands $commands,
+        private readonly AgentGateway $agents,
+        private readonly SettleDrill $drills,
         private readonly AuditLog $audit,
     ) {}
 
@@ -82,11 +90,16 @@ final class HandleCommandOutcome implements ShouldQueue
             return;
         }
 
+        if (in_array($type, ['db.backup', 'db.restore', 'db.drill'], true)) {
+            $this->agents->forgetSecrets($commandId, self::KEY_PATHS);
+        }
+
         match ($type) {
             'db.create', 'db.drop' => $this->database($commandId, $succeeded, $error),
             'db.user.apply' => $this->user($commandId, $succeeded, $error),
             'db.backup' => $this->backup($commandId, $succeeded, $error, $result ?? []),
             'db.restore' => $this->restore($commandId, $succeeded, $error, $result ?? []),
+            'db.drill' => ($this->drills)($commandId, $succeeded, $error, $result ?? []),
         };
     }
 
@@ -414,9 +427,13 @@ final class HandleCommandOutcome implements ShouldQueue
         }
 
         $sha = is_string($result['sha256'] ?? null) && preg_match('/^[a-f0-9]{64}$/', $result['sha256']) === 1 ? $result['sha256'] : null;
+        $plainSha = is_string($result['plaintext_sha256'] ?? null) && preg_match('/^[a-f0-9]{64}$/', $result['plaintext_sha256']) === 1 ? $result['plaintext_sha256'] : null;
 
         if ($succeeded && $sha === null) {
             [$succeeded, $error] = [false, 'The agent reported no checksum for the upload.'];
+        } elseif ($succeeded && ($plainSha === null || ($result['key_id'] ?? null) !== $backup->id || ($result['encryption'] ?? null) !== ($backup->isCustomerHeld() ? 'age' : 'cp'))) {
+            // An agent that did not encrypt (or not with this backup's key) left a file nobody should trust.
+            [$succeeded, $error] = [false, 'The agent did not report the backup as encrypted with its key.'];
         }
 
         $finishedAt = now();
@@ -434,6 +451,8 @@ final class HandleCommandOutcome implements ShouldQueue
             'size_bytes' => (int) ($result['size_bytes'] ?? 0),
             'uncompressed_bytes' => is_int($result['uncompressed_bytes'] ?? null) && $result['uncompressed_bytes'] > 0 ? $result['uncompressed_bytes'] : null,
             'sha256' => $sha,
+            'plaintext_sha256' => $plainSha,
+            'table_counts' => self::counts($result['table_counts'] ?? null),
             'duration_ms' => $durationMs,
             'error' => null,
             'finished_at' => $finishedAt,
@@ -444,6 +463,30 @@ final class HandleCommandOutcome implements ShouldQueue
         if ($backup->schedule_id !== null) {
             PruneScheduleBackups::dispatch($backup->schedule_id);
         }
+    }
+
+    /**
+     * At most 500 tables (the largest), as name => count.
+     *
+     * @return ?array<string, int>
+     */
+    private static function counts(mixed $counts): ?array
+    {
+        if (! is_array($counts) || $counts === []) {
+            return null;
+        }
+
+        $clean = [];
+
+        foreach ($counts as $name => $count) {
+            if (is_string($name) && $name !== '' && strlen($name) <= 200 && is_int($count) && $count >= 0) {
+                $clean[$name] = $count;
+            }
+        }
+
+        arsort($clean);
+
+        return array_slice($clean, 0, 500, true) ?: null;
     }
 
     /**
