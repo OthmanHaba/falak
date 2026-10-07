@@ -38,7 +38,8 @@ commands:
                                         the superuser's / root's / default user's new password (redis/valkey
                                         --keep-current: the current one stays valid too)
   readonly on|off                       postgres, mysql, mariadb: read-only mode (ends postgres sessions)
-  table-counts --database DB            exact row count per table
+  table-counts --database DB            exact row count per table (redis/valkey: keys per logical database)
+  query --database DB                   run the check query on stdin (one SELECT) read-only: {"rows": n}
   reassign --database DB --owner ROLE   postgres: hand the database and every object in it to ROLE
   version
 
@@ -163,6 +164,8 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 		fs.StringVar(file, "file", "", "file holding the new password")
 		fs.BoolVar(keep, "keep-current", false, "redis/valkey: keep the current password valid too")
 	case "table-counts":
+		fs.StringVar(database, "database", "", "database (redis/valkey: ignored)")
+	case "query":
 		fs.StringVar(database, "database", "", "database")
 	case "reassign":
 		fs.StringVar(database, "database", "", "database")
@@ -238,6 +241,8 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 		return h.ReadOnly(ctx, pos[0] == "on")
 	case "table-counts":
 		return h.TableCounts(ctx, *database)
+	case "query":
+		return h.Query(ctx, *database)
 	case "reassign":
 		return h.ReassignOwner(ctx, *database, *owner)
 	}

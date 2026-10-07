@@ -8,7 +8,8 @@
 # Checks: start with *_FILE secrets and a TLS certificate, healthcheck, config tuned to the memory limit, TLS
 # served, create a database, logical backup + restore, WAL archiving into the spool (postgres) or binlog rotation and
 # spooling (mysql/mariadb), physical backup + restore into a new volume + recovery to a time between an insert and a
-# DROP TABLE (postgres, mysql, mariadb), RDB backup + offline restore (redis/valkey).
+# DROP TABLE (postgres, mysql, mariadb), RDB backup + offline restore (redis/valkey), and the restore drill checks
+# (table-counts, a read-only check query; the key count for redis/valkey).
 set -euo pipefail
 
 engine=${1:?engine (postgres|mysql|mariadb|redis|valkey)}
@@ -195,6 +196,7 @@ if [ "$engine" = redis ] || [ "$engine" = valkey ]; then
 	docker start "$c" >/dev/null
 	wait_healthy "$c"
 	expect "restored key" "$(kv "$c" GET falak:smoke)" before
+	expect "key count (restore drills)" "$(docker exec "$c" falak-db table-counts | jq -r '.tables.db0')" 1
 	echo "PASS $engine $version"
 	exit 0
 fi
@@ -217,6 +219,18 @@ result_of "$work/backup.err" | jq -e '.kind == "logical" and .database == "app" 
 [ "$(result_of "$work/backup.err" | jq -r .sha256)" = "$(shasum -a 256 "$work/app.dump" | cut -d' ' -f1)" ] || fail "sha256 of the stream"
 docker exec -i "$c" falak-db restore logical --database app_copy --in - <"$work/app.dump" | jq -e .restored >/dev/null
 expect "restored rows" "$(sql "$c" app_copy 'SELECT count(*) FROM items')" 1000
+
+step "restore drill checks: row counts and a read-only check query"
+items=$(docker exec "$c" falak-db table-counts --database app_copy | jq -r '.tables | to_entries[] | select(.key | endswith(".items")) | .value')
+expect "row counts" "$items" 1000
+expect "check query" "$(printf 'SELECT id FROM items WHERE id <= 10' | docker exec -i "$c" falak-db query --database app_copy | jq -r .rows)" 10
+if printf 'SELECT 1; DROP TABLE items' | docker exec -i "$c" falak-db query --database app_copy >/dev/null 2>&1; then
+	fail "a second statement was accepted"
+fi
+if [ "$engine" = postgres ] && printf 'SELECT * FROM items FOR UPDATE' | docker exec -i "$c" falak-db query --database app_copy >/dev/null 2>&1; then
+	fail "FOR UPDATE ran: the check query is not read-only"
+fi
+expect "rows after the checks" "$(sql "$c" app_copy 'SELECT count(*) FROM items')" 1000
 
 if [ "$engine" = postgres ]; then
 	step "restore owned by the app user, swapped in: its migrations can alter what was restored"
