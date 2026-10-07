@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/volume.drill.schema.json",
   "title": "volume.drill — restore drill: the snapshot is restored into a scratch directory next to the volumes, checked (its content against the authenticated SHA-256, the file count against the recorded one), then removed",
+  "x-falak-forget-secrets": [
+    "encryption.key",
+    "encryption.identity"
+  ],
   "type": "object",
   "additionalProperties": false,
   "required": [

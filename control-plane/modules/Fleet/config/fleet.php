@@ -53,6 +53,9 @@ return [
     'long_poll_max_seconds' => 60,
 
     'commands' => [
+        // Payload secrets of settled commands (backup keys, an age identity) are forgotten by the sweep after this long
+        // when their module did not do it, and those of commands stuck this long past their timeout.
+        'forget_secrets_after_minutes' => 10,
         // Lease: a delivered command the agent has not reported as started/running/finished after this long was
         // lost (e.g. the agent restarted). Redeliverable types (x-falak-redeliverable in the command schema) are
         // queued again, others fail. Agent restarts are also detected sooner through the agent session id.

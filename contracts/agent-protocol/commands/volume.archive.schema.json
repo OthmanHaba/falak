@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/volume.archive.schema.json",
   "title": "volume.archive — a consistent tar snapshot of a volume, compressed and encrypted (FKB1: zstd, AES-256-GCM), PUT to a presigned URL (servers never hold storage credentials)",
+  "x-falak-forget-secrets": [
+    "encryption.key",
+    "encryption.identity"
+  ],
   "type": "object",
   "additionalProperties": false,
   "required": [

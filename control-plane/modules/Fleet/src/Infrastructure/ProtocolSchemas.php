@@ -21,6 +21,15 @@ final class ProtocolSchemas
      */
     public const REDELIVERABLE = 'x-falak-redeliverable';
 
+    /**
+     * Schema root keyword listing payload paths (dotted) that hold secrets needed only while the command runs (backup
+     * keys, a customer's age identity): forgotten once it settled (AgentGateway::forgetSecrets, the fleet sweep).
+     */
+    public const FORGET_SECRETS = 'x-falak-forget-secrets';
+
+    /** @var array<string, list<string>>|null command type => paths */
+    private ?array $forgettable = null;
+
     private ?Validator $validator = null;
 
     /** @var array<string, bool> */
@@ -53,6 +62,29 @@ final class ProtocolSchemas
         }
 
         return $this->redeliverable[$type];
+    }
+
+    /**
+     * Every command type whose payload has secrets to forget, with their paths.
+     *
+     * @return array<string, list<string>>
+     */
+    public function forgettableSecrets(): array
+    {
+        if ($this->forgettable === null) {
+            $this->forgettable = [];
+
+            foreach (glob($this->path().'/commands/*.schema.json') ?: [] as $file) {
+                $schema = json_decode((string) file_get_contents($file), true);
+                $paths = is_array($schema) ? ($schema[self::FORGET_SECRETS] ?? null) : null;
+
+                if (is_array($paths) && $paths !== []) {
+                    $this->forgettable[basename($file, '.schema.json')] = array_values(array_filter($paths, 'is_string'));
+                }
+            }
+        }
+
+        return $this->forgettable;
     }
 
     /**

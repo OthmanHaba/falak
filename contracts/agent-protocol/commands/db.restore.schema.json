@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.restore.schema.json",
   "title": "db.restore — load an FKB1 backup into a database of an instance (`falak-db restore logical`; postgres swapped in from a scratch database; redis/valkey: the instance stops, a one-off container of its image replaces the snapshot, it starts again)",
+  "x-falak-forget-secrets": [
+    "encryption.key",
+    "encryption.identity"
+  ],
   "type": "object",
   "additionalProperties": false,
   "required": [

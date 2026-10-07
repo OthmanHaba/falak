@@ -31,8 +31,10 @@ use Falak\Fleet\Events\CommandFinished;
 use Falak\Identity\Contracts\AuditLog;
 use Falak\Volumes\Contracts\AttachableType;
 use Falak\Volumes\Contracts\ServiceVolumes;
+use Illuminate\Contracts\Events\ShouldHandleEventsAfterCommit;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Settles instances, databases, users, backups, restores and drills when the db.* commands Databases dispatched finish.
@@ -40,7 +42,7 @@ use Illuminate\Support\Facades\DB;
  * db.instance.* commands name their instance in the idempotency key (`<type>:<instance id>:…`), so concurrent commands
  * of one instance (a restart during a password rotation) each settle their own part.
  */
-final class HandleCommandOutcome implements ShouldQueue
+final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, ShouldQueue
 {
     private const INSTANCE_TYPES = ['db.instance.create', 'db.instance.update', 'db.instance.restart', 'db.instance.delete', 'db.instance.password', 'db.instance.secrets', 'db.instance.upgrade'];
 
@@ -91,7 +93,10 @@ final class HandleCommandOutcome implements ShouldQueue
         }
 
         if (in_array($type, ['db.backup', 'db.restore', 'db.drill'], true)) {
-            $this->agents->forgetSecrets($commandId, self::KEY_PATHS);
+            if (! $this->agents->forgetSecrets($commandId, self::KEY_PATHS)) {
+                // Not settled yet as far as Fleet knows: the fleet sweep forgets them later.
+                Log::info('Command secrets left for the fleet sweep.', ['command_id' => $commandId]);
+            }
         }
 
         match ($type) {

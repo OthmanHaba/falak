@@ -1,6 +1,8 @@
 <?php
 
+use Falak\Fleet\Application\Jobs\SweepFleet;
 use Falak\Fleet\Contracts\AgentGateway;
+use Falak\Fleet\Contracts\CommandStatus;
 use Falak\Fleet\Domain\Models\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -34,4 +36,34 @@ it('forgets payload secrets only once the command is terminal', function () {
     expect($payload['env'])->toBe(['BACKUP_KEY' => '[forgotten]'])
         ->and($payload['script'])->toBe('true')
         ->and(json_encode(DB::table('fleet_commands')->get()))->not->toContain($key);
+});
+
+it('sweeps the secrets its module did not forget: settled commands, and commands stuck past their timeout', function () {
+    $key = base64_encode(random_bytes(32));
+    $payload = fn (string $id) => ['instance' => '01hzyinst00000000000000001', 'engine' => 'postgres', 'database' => 'app',
+        'encryption' => ['mode' => 'cp', 'key_id' => $id, 'key' => $key], 'destination' => ['kind' => 'presigned_url', 'url' => 'https://s3.example.com/k']];
+    $settled = $this->gateway->dispatch($this->serverId, 'db.backup', $payload('01hzybackup000000000000001'), 600);
+    $stuck = $this->gateway->dispatch($this->serverId, 'db.backup', $payload('01hzybackup000000000000002'), 60);
+    $recent = $this->gateway->dispatch($this->serverId, 'db.backup', $payload('01hzybackup000000000000003'), 600);
+    Command::query()->whereKey($settled->id)->update(['status' => CommandStatus::Succeeded->value, 'finished_at' => now()]);
+    Command::query()->whereKey($recent->id)->update(['status' => CommandStatus::Succeeded->value, 'finished_at' => now()]);
+
+    // Running commands keep them; so does a command settled a moment ago (its listener may still forget them).
+    $this->travel(5)->minutes();
+    Command::query()->whereKey($recent->id)->update(['updated_at' => now()]);
+    $this->travel(8)->minutes();
+    Command::query()->whereKey($stuck->id)->update(['status' => CommandStatus::Running->value]);
+    SweepFleet::dispatchSync();
+
+    $key_of = fn ($handle) => json_decode(Command::query()->findOrFail($handle->id)->payload, true)['encryption']['key'];
+    expect($key_of($settled))->toBe('[forgotten]')
+        ->and($key_of($recent))->toBe($key)
+        ->and(Command::query()->findOrFail($settled->id)->secrets_forgotten_at)->not->toBeNull();
+
+    // The stuck one: forgotten once its timeout plus the delay has passed, even though it never settled.
+    $this->travel(20)->minutes();
+    Command::query()->whereKey($stuck->id)->update(['status' => CommandStatus::Running->value]);
+    SweepFleet::dispatchSync();
+    expect($key_of($stuck))->toBe('[forgotten]')
+        ->and(json_encode(DB::table('fleet_commands')->whereIn('id', [$settled->id, $stuck->id])->get()))->not->toContain($key);
 });

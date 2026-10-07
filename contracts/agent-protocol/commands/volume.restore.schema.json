@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/volume.restore.schema.json",
   "title": "volume.restore — download a volume.archive snapshot (sha256 checked) into a new or empty volume, created when missing",
+  "x-falak-forget-secrets": [
+    "encryption.key",
+    "encryption.identity"
+  ],
   "type": "object",
   "additionalProperties": false,
   "required": [

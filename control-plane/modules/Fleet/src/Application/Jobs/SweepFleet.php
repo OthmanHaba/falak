@@ -12,6 +12,8 @@ use Falak\Fleet\Domain\Models\AgentMetric;
 use Falak\Fleet\Domain\Models\Command;
 use Falak\Fleet\Domain\Models\InstallToken;
 use Falak\Fleet\Events\AgentWentOffline;
+use Falak\Fleet\Infrastructure\FleetAgentGateway;
+use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -21,7 +23,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Scheduled every minute: offline detection, lost-command redelivery (lease expiry, see CommandRedelivery),
- * timeouts / expiry, agent upgrade timeouts, and pruning.
+ * timeouts / expiry, forgetting settled commands' payload secrets, agent upgrade timeouts, and pruning.
  */
 final class SweepFleet implements ShouldBeUnique, ShouldQueue
 {
@@ -36,6 +38,7 @@ final class SweepFleet implements ShouldBeUnique, ShouldQueue
         $this->detectOfflineAgents();
         $redelivery->expireLeases();
         $this->timeOutCommands($lifecycle);
+        $this->forgetSecrets();
         ($upgrades ?? app(AgentUpgradeRollout::class))->sweep();
         $this->prune();
     }
@@ -89,5 +92,34 @@ final class SweepFleet implements ShouldBeUnique, ShouldQueue
         DB::table('fleet_certificates')->whereNotNull('superseded_at')->whereNull('revoked_at')
             ->where('superseded_at', '<', now()->subDays(7))
             ->update(['revoked_at' => now()]);
+    }
+
+    /**
+     * Payload secrets (ProtocolSchemas::FORGET_SECRETS) of commands that settled more than a few minutes ago, or are
+     * still not settled well past their timeout, and whose module did not forget them (a listener that failed or ran
+     * before the transaction committed).
+     */
+    private function forgetSecrets(): void
+    {
+        $types = app(ProtocolSchemas::class)->forgettableSecrets();
+
+        if ($types === []) {
+            return;
+        }
+
+        $after = (int) config('fleet.commands.forget_secrets_after_minutes', 10);
+        $terminal = array_map(fn (CommandStatus $status) => $status->value, array_filter(CommandStatus::cases(), fn (CommandStatus $status) => $status->isTerminal()));
+
+        Command::query()
+            ->whereIn('type', array_keys($types))
+            ->whereNull('secrets_forgotten_at')
+            ->where(fn ($query) => $query->whereIn('status', $terminal)->where('updated_at', '<', now()->subMinutes($after))
+                ->orWhere('created_at', '<', now()->subMinutes($after)))
+            ->orderBy('created_at')
+            ->limit(500)
+            ->get()
+            ->filter(fn (Command $command) => ($command->status->isTerminal() && $command->updated_at->copy()->addMinutes($after)->isPast())
+                || $command->created_at->copy()->addSeconds($command->timeout_s)->addMinutes($after)->isPast())
+            ->each(fn (Command $command) => FleetAgentGateway::forget($command, $types[$command->type]));
     }
 }

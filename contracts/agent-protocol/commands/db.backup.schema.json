@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.backup.schema.json",
   "title": "db.backup — stream `falak-db backup logical` out of an instance's container (postgres pg_dump -Fc, mysql/mariadb dump, redis/valkey RDB snapshot) through zstd and AES-256-GCM (FKB1), to a local path or a presigned URL",
+  "x-falak-forget-secrets": [
+    "encryption.key",
+    "encryption.identity"
+  ],
   "type": "object",
   "additionalProperties": false,
   "required": [

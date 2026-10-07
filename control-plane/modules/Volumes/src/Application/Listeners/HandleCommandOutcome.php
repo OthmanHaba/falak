@@ -19,7 +19,9 @@ use Falak\Volumes\Domain\Models\Operation;
 use Falak\Volumes\Domain\Models\Volume;
 use Falak\Volumes\Domain\Models\VolumeBackup;
 use Falak\Volumes\Events\VolumeAlmostFull;
+use Illuminate\Contracts\Events\ShouldHandleEventsAfterCommit;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -27,7 +29,7 @@ use Illuminate\Validation\ValidationException;
  * operations on: a clone or move to another server restores once its archive is in storage, a move hands the services
  * over and deletes its source once the restore succeeded.
  */
-final class HandleCommandOutcome implements ShouldQueue
+final class HandleCommandOutcome implements ShouldHandleEventsAfterCommit, ShouldQueue
 {
     private const TYPES = ['volume.create', 'volume.delete', 'volume.resize', 'volume.archive', 'volume.restore', 'volume.clone', 'volume.download', 'volume.inventory', 'volume.drill'];
 
@@ -63,7 +65,10 @@ final class HandleCommandOutcome implements ShouldQueue
     private function settle(string $type, string $commandId, string $organizationId, bool $succeeded, ?string $error, array $result, string $serverId = ''): void
     {
         if (in_array($type, ['volume.archive', 'volume.restore', 'volume.drill'], true)) {
-            $this->agents->forgetSecrets($commandId, self::KEY_PATHS);
+            if (! $this->agents->forgetSecrets($commandId, self::KEY_PATHS)) {
+                // Not settled yet as far as Fleet knows: the fleet sweep forgets them later.
+                Log::info('Command secrets left for the fleet sweep.', ['command_id' => $commandId]);
+            }
         }
 
         match ($type) {
