@@ -73,6 +73,29 @@ final class YamlComposeInspector implements ComposeInspector
             }
         }
 
+        // Falak's own networks (environment networks with database containers, falak-*) and labels (falak.*: managed
+        // containers, volumes and networks, their secrets) are never claimed by a compose file: Falak joins the stack to
+        // its environment's network itself. Hard errors, whatever the privileged-compose setting.
+        foreach ((array) ($doc['networks'] ?? []) as $key => $network) {
+            $network = is_array($network) ? $network : [];
+            $external = $network['external'] ?? false;
+            $real = is_string($network['name'] ?? null) ? $network['name'] : (is_array($external) && is_string($external['name'] ?? null) ? $external['name'] : ((($external === true) ? (string) $key : null)));
+
+            if ($real !== null && str_starts_with(strtolower($real), 'falak')) {
+                $errors[] = "Network {$key} is {$real}: Falak's networks are not available to compose files (Falak connects the stack to its environment's network itself).";
+            }
+
+            if (self::falakLabels($network['labels'] ?? []) !== []) {
+                $errors[] = "Network {$key} sets Falak's labels (falak.*).";
+            }
+        }
+
+        foreach ((array) ($doc['volumes'] ?? []) as $key => $volume) {
+            if (is_array($volume) && self::falakLabels($volume['labels'] ?? []) !== []) {
+                $errors[] = "Volume {$key} sets Falak's labels (falak.*).";
+            }
+        }
+
         $safe = array_map('strtoupper', (array) config('sites.compose.safe_capabilities', []));
 
         foreach ($definitions as $name => $service) {
@@ -97,6 +120,22 @@ final class YamlComposeInspector implements ComposeInspector
 
             if ($image === null && ! $build) {
                 $errors[] = "Service {$name} has neither `image` nor `build`.";
+            }
+
+            // Another container's namespaces (a database container's, any container outside the stack) are never
+            // shared; `service:` only names a service of this file.
+            foreach (['network_mode', 'pid', 'ipc'] as $key) {
+                $mode = is_string($service[$key] ?? null) ? $service[$key] : '';
+
+                if (str_starts_with($mode, 'container:')) {
+                    $errors[] = "Service {$name}: {$key}: {$mode} shares another container's namespace; only services of this file can (service:<name>).";
+                } elseif (str_starts_with($mode, 'service:') && ! array_key_exists(substr($mode, 8), (array) $definitions)) {
+                    $errors[] = "Service {$name}: {$key}: {$mode} names no service of this file.";
+                }
+            }
+
+            if (($forbidden = self::falakLabels($service['labels'] ?? [])) !== []) {
+                $errors[] = "Service {$name} sets Falak's labels (".implode(', ', $forbidden).').';
             }
 
             // ---- policy
@@ -175,6 +214,17 @@ final class YamlComposeInspector implements ComposeInspector
     public static function load(string $yaml): mixed
     {
         return Yaml::parse($yaml);
+    }
+
+    /**
+     * Labels in Falak's namespace (falak.*) a compose file may not set. falak.deploy.leader_command is the stack's own;
+     * falak.site, falak.release and falak.service are the ones Falak's rendering sets (and overwrites).
+     *
+     * @return list<string>
+     */
+    public static function falakLabels(mixed $labels): array
+    {
+        return array_values(array_filter(array_keys(self::labels($labels)), fn (string $key) => str_starts_with(strtolower($key), 'falak.') && ! in_array($key, [self::LEADER_COMMAND_LABEL, 'falak.site', 'falak.release', 'falak.service'], true)));
     }
 
     /**

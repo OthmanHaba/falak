@@ -153,7 +153,7 @@
         "type": "string",
         "pattern": "^falak-env-[0-9a-z]{26}$"
       },
-      "description": "feature db.instances: environment networks every container of the project joins after `up` (created when missing, labels falak.managed / falak.network=environment), where the environment's databases answer by name"
+      "description": "feature db.instances: environment networks where the environment's databases answer by name, created before `up` (labels falak.managed / falak.network=environment): the control plane's override file (compose.falak.yaml) declares them as external networks of every service, so containers start on them; containers still missing one join it after `up`"
     }
   },
   "$defs": {

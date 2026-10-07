@@ -148,7 +148,15 @@ it('joins the stack to its environment network when the environment has a databa
     deploy_run_all($world->agents);
     $up = $world->agents->last('docker.compose.up');
 
-    expect($up['payload']['join_networks'] ?? null)->toBe($withDatabase ? ["falak-env-{$environment}"] : null);
+    expect($up['payload']['join_networks'] ?? null)->toBe($withDatabase ? ["falak-env-{$environment}"] : null)
+        ->and(array_column($up['payload']['files'], 'name'))->toBe($withDatabase ? ['compose.yaml', 'compose.falak.yaml', '.env'] : ['compose.yaml', '.env']);
+
+    if ($withDatabase) {
+        // The services start on it (their first healthchecks reach the databases), keeping their default network.
+        $override = Yaml::parse($up['payload']['files'][1]['content']);
+        expect($override['networks'])->toBe(["falak-env-{$environment}" => ['external' => true]])
+            ->and(array_keys($override['services']['app']['networks']))->toBe(['default', "falak-env-{$environment}"]);
+    }
 })->with([true, false]);
 
 it('rolls a failed compose release back with the previous release files', function () {

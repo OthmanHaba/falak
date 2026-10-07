@@ -62,8 +62,9 @@ type ComposeUpPayload struct {
 	Services []string `json:"services,omitempty"`
 	// Mask names the secret variables of env.
 	Mask []string `json:"mask,omitempty"`
-	// JoinNetworks are environment networks (falak-env-<id>) every container of the project joins after `up`, where
-	// the environment's databases answer by name. Created when missing.
+	// JoinNetworks are environment networks (falak-env-<id>), where the environment's databases answer by name: created
+	// before `up` (the control plane's override file declares them for every service), joined after it by any container
+	// still missing them.
 	JoinNetworks []string `json:"join_networks,omitempty"`
 }
 
@@ -385,7 +386,15 @@ func (s *Service) composeUp(ctx context.Context, p ComposeUpPayload, st commands
 	if len(p.Services) > 0 {
 		args = append(append(args, "--"), p.Services...)
 	}
+	// The control plane's compose override declares them as external networks of every service, so containers start
+	// on them (healthchecks reaching the environment's databases pass during --wait): they must exist first.
+	for _, n := range p.JoinNetworks {
+		if err := s.ensureEnvironmentNetwork(ctx, n); err != nil {
+			return nil, err
+		}
+	}
 	res, runErr := s.compose(ctx, p.Directory, p.Env, p.RegistryAuth, args, st)
+	// Containers a stack's own file keeps off them (an older override, a service recreated by hand) join after `up`.
 	if err := s.joinEnvironmentNetworks(ctx, p.Project, p.JoinNetworks, st); err != nil && runErr == nil {
 		runErr = err
 	}
