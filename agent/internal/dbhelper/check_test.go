@@ -42,45 +42,77 @@ func TestCheckQuery(t *testing.T) {
 	}
 }
 
-func TestQueryPostgresReadOnly(t *testing.T) {
+func TestQueryPostgresAsATemporaryReadOnlyRole(t *testing.T) {
 	th := newTestHelper(t, Postgres)
 	th.Stdin = strings.NewReader("SELECT id FROM users WHERE admin;\n")
-	sqls := recordSQL(th, func(string) (string, error) { return "3\n", nil })
+	var calls []Cmd
+	var stdins []string
+	th.run.handle = func(c Cmd) (string, error) {
+		calls = append(calls, c)
+		stdins = append(stdins, th.run.stdins[c.Name])
+		if strings.Contains(th.run.stdins[c.Name], "falak_check") && strings.Contains(th.run.stdins[c.Name], "SELECT count(*)") {
+			return "3\n", nil
+		}
+		return "", nil
+	}
 	if err := th.Query(context.Background(), "app"); err != nil {
 		t.Fatal(err)
 	}
-	sql := (*sqls)[0]
-	if !strings.HasPrefix(sql, "BEGIN TRANSACTION READ ONLY;") || !strings.Contains(sql, "SELECT count(*) FROM (SELECT id FROM users WHERE admin) AS falak_check;") || !strings.HasSuffix(sql, "ROLLBACK;\n") {
-		t.Errorf("sql %q", sql)
+	if len(calls) != 3 {
+		t.Fatalf("calls %d", len(calls))
 	}
-	c, _ := th.run.call("psql")
-	if !slices.Contains(c.Args, "app") {
-		t.Errorf("psql args %v", c.Args)
+	create, run, drop := stdins[0], stdins[1], stdins[2]
+	role := strings.Fields(create)[2]
+	if !strings.HasPrefix(role, `"falak_check_`) || !strings.Contains(create, "NOSUPERUSER") || !strings.Contains(create, "GRANT pg_read_all_data") ||
+		!strings.Contains(create, "statement_timeout = '60s'") || !strings.Contains(create, "default_transaction_read_only = on") {
+		t.Errorf("create %q", create)
+	}
+	// The check connects as the role, not the superuser, to the database.
+	if u := calls[1].Args[slices.Index(calls[1].Args, "-U")+1]; `"`+u+`"` != role || !slices.Contains(calls[1].Args, "app") {
+		t.Errorf("psql args %v (role %s)", calls[1].Args, role)
+	}
+	if !strings.HasPrefix(run, "BEGIN TRANSACTION READ ONLY;") || !strings.Contains(run, "SELECT count(*) FROM (SELECT id FROM users WHERE admin) AS falak_check;") {
+		t.Errorf("sql %q", run)
+	}
+	if !strings.Contains(drop, "DROP ROLE IF EXISTS "+role) {
+		t.Errorf("drop %q", drop)
 	}
 	if m := decode(t, th.out.String()); m["rows"] != float64(3) {
 		t.Errorf("result %v", m)
 	}
 }
 
-func TestQueryMySQLSandboxed(t *testing.T) {
+func TestQueryMySQLAsASelectOnlyUser(t *testing.T) {
 	th := newTestHelper(t, MySQL)
 	th.Stdin = strings.NewReader("SELECT 1 FROM orders")
-	var stdin string
+	var stdins []string
+	var check Cmd
 	th.run.handle = func(c Cmd) (string, error) {
 		if slices.Contains(c.Args, "--version") {
 			return "mysql  Ver 8.4.11 for Linux on x86_64", nil
 		}
-		stdin = th.run.stdins[c.Name]
-		if !slices.Contains(c.Args, "--system-command=OFF") {
-			t.Errorf("args %v", c.Args)
+		in := th.run.stdins[c.Name]
+		stdins = append(stdins, in)
+		if strings.Contains(in, "COUNT(*)") {
+			check = c
+			return "0\n", nil
 		}
-		return "0\n", nil
+		return "", nil
 	}
 	if err := th.Query(context.Background(), "shop"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(stdin, "USE `shop`;") || !strings.Contains(stdin, "START TRANSACTION READ ONLY;") || !strings.Contains(stdin, "max_execution_time") {
-		t.Errorf("stdin %q", stdin)
+	if len(stdins) != 3 || !strings.Contains(stdins[0], "CREATE USER 'falak_check_") || !strings.Contains(stdins[0], "GRANT SELECT ON `shop`.*") ||
+		!strings.HasPrefix(stdins[2], "DROP USER IF EXISTS 'falak_check_") {
+		t.Fatalf("stdins %q", stdins)
+	}
+	run := stdins[1]
+	if !strings.HasPrefix(run, "USE `shop`;") || !strings.Contains(run, "START TRANSACTION READ ONLY;") || !strings.Contains(run, "max_execution_time") {
+		t.Errorf("stdin %q", run)
+	}
+	// The check's credentials are the temporary user's, never root's, and the client is sandboxed.
+	if !slices.Contains(check.Args, "--system-command=OFF") || !strings.Contains(string(check.Fd3), "user=falak_check_") || strings.Contains(string(check.Fd3), "user=root") {
+		t.Errorf("check cmd %v creds %q", check.Args, check.Fd3)
 	}
 	if m := decode(t, th.out.String()); m["rows"] != float64(0) {
 		t.Errorf("result %v", m)

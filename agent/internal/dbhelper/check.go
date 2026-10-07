@@ -2,11 +2,14 @@ package dbhelper
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Restore drills (docs/BACKUPS.md) check a backup restored into a throwaway instance: its row counts (table-counts,
@@ -64,8 +67,10 @@ func CheckQuery(sql string) (string, error) {
 	return strings.Join(strings.Fields(q), " "), nil
 }
 
-// Query is `falak-db query --database DB` with a check query on stdin (CheckQuery): it runs as
-// `SELECT count(*) FROM (<query>)` in a read-only transaction (60 s at most) and prints {"database","rows"}.
+// Query is `falak-db query --database DB` with a check query on stdin (CheckQuery). It runs as `SELECT count(*) FROM
+// (<query>)`, as a temporary role that can only read (postgres: pg_read_all_data, read-only transactions and a 60 s
+// statement_timeout set on the role; mysql/mariadb: SELECT on the database and a 60 s statement limit), in a read-only
+// transaction. The role is dropped afterwards. Prints {"database","rows"}.
 func (h *Helper) Query(ctx context.Context, database string) error {
 	if h.Engine.kv() {
 		return unsupported(h.Engine, "query")
@@ -81,28 +86,12 @@ func (h *Helper) Query(ctx context.Context, database string) error {
 	if err != nil {
 		return err
 	}
+	role := "falak_check_" + randomHex(6)
 	var out string
 	if h.Engine == Postgres {
-		out, err = h.pgExec(ctx, database, "BEGIN TRANSACTION READ ONLY;\nSET LOCAL statement_timeout = '60s';\n"+
-			"SELECT count(*) FROM ("+q+") AS falak_check;\nROLLBACK;\n")
+		out, err = h.pgCheck(ctx, database, role, q)
 	} else {
-		var safe []string
-		if safe, err = h.mysqlSafeClientArgs(ctx); err != nil {
-			return err
-		}
-		var creds []byte
-		if creds, err = h.mysqlDefaults(); err != nil {
-			return err
-		}
-		c := myCmd(creds, h.Engine.client("mysql"), append([]string{"-N", "-B", "--default-character-set=utf8mb4"}, safe...)...)
-		timeout := "SET SESSION max_execution_time = 60000;\n"
-		if h.Engine == MariaDB {
-			timeout = "SET SESSION max_statement_time = 60;\n"
-		}
-		c.Stdin = strings.NewReader("USE " + myIdent(database) + ";\n" + timeout +
-			"START TRANSACTION READ ONLY;\nSELECT COUNT(*) FROM (" + q + ") AS falak_check;\nROLLBACK;\n")
-		out, err = output(ctx, h.Run, c)
-		out = strings.TrimSpace(out)
+		out, err = h.myCheck(ctx, database, role, q)
 	}
 	if err != nil {
 		return fmt.Errorf("check query: %w", err)
@@ -112,4 +101,57 @@ func (h *Helper) Query(ctx context.Context, database string) error {
 		return fmt.Errorf("check query: unexpected output %q", firstLine(out))
 	}
 	return h.result(map[string]any{"database": database, "rows": n})
+}
+
+// pgCheck runs the check as a temporary login role (local socket connections are trusted inside the container).
+func (h *Helper) pgCheck(ctx context.Context, database, role, q string) (string, error) {
+	if _, err := h.pgExec(ctx, "postgres", "CREATE ROLE "+pgIdent(role)+" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;\n"+
+		"GRANT pg_read_all_data TO "+pgIdent(role)+";\n"+
+		"ALTER ROLE "+pgIdent(role)+" SET statement_timeout = '60s';\n"+
+		"ALTER ROLE "+pgIdent(role)+" SET default_transaction_read_only = on;\n"); err != nil {
+		return "", err
+	}
+	defer func() {
+		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_, _ = h.pgExec(dctx, "postgres", "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = "+pgLit(role)+";\nDROP ROLE IF EXISTS "+pgIdent(role)+";\n")
+	}()
+	out, err := output(ctx, h.Run, Cmd{Name: "psql", Args: []string{
+		"-h", pgSocketDir, "-p", strconv.Itoa(pgPort), "-U", role, "-d", database, "-AtqX", "-v", "ON_ERROR_STOP=1", "-f", "-",
+	}, Stdin: strings.NewReader("BEGIN TRANSACTION READ ONLY;\nSELECT count(*) FROM (" + q + ") AS falak_check;\nROLLBACK;\n")})
+	return strings.TrimSpace(out), err
+}
+
+// myCheck runs the check as a temporary user with SELECT on the database only.
+func (h *Helper) myCheck(ctx context.Context, database, role, q string) (string, error) {
+	safe, err := h.mysqlSafeClientArgs(ctx)
+	if err != nil {
+		return "", err
+	}
+	pw := randomHex(24)
+	account := myLit(role) + "@'localhost'"
+	if _, err := h.myExec(ctx, "CREATE USER "+account+" IDENTIFIED BY "+myLit(pw)+";\nGRANT SELECT ON "+myIdent(database)+".* TO "+account+";\n"); err != nil {
+		return "", err
+	}
+	defer func() {
+		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		_, _ = h.myExec(dctx, "DROP USER IF EXISTS "+account+";")
+	}()
+	creds := []byte(fmt.Sprintf("[client]\nuser=%s\npassword=\"%s\"\nsocket=%s\n%s", role, pw, mySocket, h.socketTLS("client")))
+	timeout := "SET SESSION max_execution_time = 60000;\n"
+	if h.Engine == MariaDB {
+		timeout = "SET SESSION max_statement_time = 60;\n"
+	}
+	c := myCmd(creds, h.Engine.client("mysql"), append([]string{"-N", "-B", "--default-character-set=utf8mb4"}, safe...)...)
+	c.Stdin = strings.NewReader("USE " + myIdent(database) + ";\n" + timeout +
+		"START TRANSACTION READ ONLY;\nSELECT COUNT(*) FROM (" + q + ") AS falak_check;\nROLLBACK;\n")
+	out, err := output(ctx, h.Run, c)
+	return strings.TrimSpace(out), err
+}
+
+func randomHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
