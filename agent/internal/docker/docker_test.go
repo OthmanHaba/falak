@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/OthmanHaba/falak/agent/internal/commands"
+	"github.com/OthmanHaba/falak/agent/internal/envlinks"
 	"github.com/OthmanHaba/falak/agent/internal/hostfs"
 	"github.com/OthmanHaba/falak/agent/internal/runner"
 	"github.com/OthmanHaba/falak/agent/internal/runner/runnertest"
@@ -760,5 +761,34 @@ func TestContainerSwapWithoutEdgeRoute(t *testing.T) {
 	}
 	if len(up.calls) != 0 {
 		t.Fatalf("edge switched: %v", up.calls)
+	}
+}
+
+func TestComposeDownForgetsTheProjectsEnvFiles(t *testing.T) {
+	s, _, _, _, root := newSvc(t)
+	dir := filepath.Join(root, envlinks.DefaultEnvDir)
+	if err := os.MkdirAll(dir, 0o711); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"compose-shop.env", "compose-shop.prod.env", "compose-shop2.env", "compose-shop-api.env", "shop.env"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("SECRET=x\n"), 0o400); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fin, col := exec1(t, s, "docker.compose.down", ComposeDownPayload{Project: "shop", Directory: "/srv/falak/compose/shop"})
+	if fin.Error != "" {
+		t.Fatalf("%+v", fin)
+	}
+	var left []string
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		left = append(left, e.Name())
+	}
+	// Only shop's own files go: other projects' (shop2, shop-api) and site env files stay.
+	if strings.Join(left, ",") != "compose-shop-api.env,compose-shop2.env,shop.env" {
+		t.Fatalf("left %v", left)
+	}
+	if !strings.Contains(col.Output(""), "removed compose-shop.env") {
+		t.Fatalf("output %q", col.Output(""))
 	}
 }
