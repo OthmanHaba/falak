@@ -111,6 +111,13 @@ func TestAgeIdentity(t *testing.T) {
 	if code != 0 || out != string(data) {
 		t.Fatalf("%d %q %s", code, out, errs)
 	}
+	if !strings.Contains(errs, "forged") {
+		t.Errorf("no warning without --expect-sha256: %s", errs)
+	}
+	sum := sha256.Sum256(data)
+	if _, _, errs := runCLI("--identity", idFile, "--expect-sha256", hex.EncodeToString(sum[:]), file); strings.Contains(errs, "forged") {
+		t.Errorf("warned with --expect-sha256: %s", errs)
+	}
 	// The other kind of key is refused with a hint.
 	keyFile := filepath.Join(t.TempDir(), "key")
 	os.WriteFile(keyFile, []byte(strings.Repeat("00", 32)), 0o600)

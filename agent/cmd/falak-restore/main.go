@@ -90,6 +90,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 0
 	}
 
+	if h.Mode == backupcrypt.ModeAge && *expect == "" {
+		// The header holds the data key encrypted to a public key: anyone who can write to the bucket can make a file
+		// that opens with the same identity. Only the SHA-256 Falak recorded tells the real backup from such a file.
+		fmt.Fprintln(stderr, "falak-restore: warning: without --expect-sha256 (the backup's plaintext SHA-256 in Falak), a customer-held "+
+			"backup can't be told from a file forged by anyone with write access to the storage")
+	}
 	key, err := loadKey(h, *keyFile, *identityFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "falak-restore: %v\n", err)
