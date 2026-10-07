@@ -231,9 +231,10 @@ it('gives other servers the container server\'s private address and host port on
     $box = projects_site($this->organization, 'Box', [], $this->environment, [$other], ['runtime' => 'docker', 'framework' => 'docker', 'php_version' => null]);
     $refs = ['HOST' => '${{ shop.DB_HOST }}', 'PORT' => '${{ shop.DB_PORT }}'];
 
-    // Not published yet: Falak is applying it.
+    // Not published yet: the user applies the pending network change (it restarts the container).
     $instance->forceFill(['published_addresses' => null])->save();
-    expect($this->references->resolve($this->environment->id, $box->id, $refs)->errors[0])->toContain("is not published on {$engineServer->private_ipv4}");
+    expect($this->references->resolve($this->environment->id, $box->id, $refs)->errors[0])->toContain("is not published on {$engineServer->private_ipv4}")
+        ->toContain('Apply the pending network change on the database');
 
     $instance->forceFill(['published_addresses' => [$engineServer->private_ipv4]])->save();
     $result = $this->references->resolve($this->environment->id, $box->id, $refs);

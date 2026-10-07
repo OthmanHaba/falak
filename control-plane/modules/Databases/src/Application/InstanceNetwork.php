@@ -149,7 +149,7 @@ final class InstanceNetwork
         }
 
         if (! in_array($reach['host'], (array) ($instance->published_addresses ?? []), true)) {
-            return ['host' => null, 'port' => (int) $instance->host_port, 'reason' => "{$consumer->name} runs on ".$this->names($elsewhere).", and {$label} is not published on {$reach['host']} ({$reach['via']}) yet: Falak is applying it; deploy again once it is done."];
+            return ['host' => null, 'port' => (int) $instance->host_port, 'reason' => "{$consumer->name} runs on ".$this->names($elsewhere).", and {$label} is not published on {$reach['host']} ({$reach['via']}) yet. Apply the pending network change on the database (its \"Restart required\" notice → Apply; it restarts the container), then deploy again."];
         }
 
         return ['host' => $reach['host'], 'port' => (int) $instance->host_port, 'reason' => null];
