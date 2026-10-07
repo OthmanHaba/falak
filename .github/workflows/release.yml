@@ -2,7 +2,7 @@
 #   1. multi-arch images (native amd64 + arm64 runners, merged manifests) -> GHCR:
 #        ghcr.io/<owner>/falak-control-plane, falak-builder, falak-edge, falak-fn-bun, falak-fn-node,
 #        falak-fn-deno, falak-fn-python, falak-fn-go  :<tag> and :latest
-#   2. falak-agent / falak / falak-builder binaries (make build), falak-deploy.tar.gz, install.sh, falak-ctl,
+#   2. falak-agent / falak / falak-builder / falak-restore binaries (make build), falak-deploy.tar.gz, install.sh, falak-ctl,
 #      SHA256SUMS -> GitHub release assets.
 # Only GITHUB_TOKEN is used. After the first release, make the GHCR packages public
 # (Package settings -> Change visibility) so servers can pull without logging in.
