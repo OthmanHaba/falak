@@ -3,9 +3,9 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
-import { type BackupStatus, type ResourceStatus, type RestoreStatus } from '../types';
+import { type BackupStatus, type InstanceStatus, type ResourceStatus, type RestoreStatus } from '../types';
 
-type AnyStatus = ResourceStatus | BackupStatus | RestoreStatus;
+type AnyStatus = ResourceStatus | BackupStatus | RestoreStatus | InstanceStatus;
 
 const STATUS_STYLES: Record<AnyStatus, string> = {
     pending: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
@@ -15,6 +15,8 @@ const STATUS_STYLES: Record<AnyStatus, string> = {
     failed: 'bg-red-500/15 text-red-700 dark:text-red-300',
     deleting: 'bg-muted text-muted-foreground',
     pruned: 'bg-muted text-muted-foreground',
+    upgrading: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+    retired: 'bg-muted text-muted-foreground',
 };
 
 export function StatusBadge({ status, title, className }: { status: AnyStatus; title?: string | null; className?: string }) {

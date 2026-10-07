@@ -32,9 +32,10 @@ export function DatabaseOverviewTab({ ctx }: ServiceTabProps) {
 
     if (!data) return error ? <p className="text-danger text-sm">{error}</p> : <SkeletonRows rows={6} />;
 
-    const { database, server, connection, users } = data;
+    const { database, instance, connection, users } = data;
     const keyValue = connection.kind === 'key_value';
     const host = connection.hosts[hostIndex] ?? connection.hosts[0];
+    const port = host?.port ?? connection.port;
     const user = users.find((item) => item.id === userId) ?? users[0];
     const password = user ? passwords[user.id] : undefined;
     const scheme = connection.driver === 'pgsql' ? 'postgresql' : 'mysql';
@@ -42,22 +43,20 @@ export function DatabaseOverviewTab({ ctx }: ServiceTabProps) {
         !host || !user
             ? ''
             : keyValue
-              ? `redis://default:${secret}@${host.value}:${connection.port}`
-              : `${scheme}://${encodeURIComponent(user.username)}:${secret}@${host.value}:${connection.port}/${encodeURIComponent(database.name)}`;
+              ? `redis://default:${secret}@${host.value}:${port}`
+              : `${scheme}://${encodeURIComponent(user.username)}:${secret}@${host.value}:${port}/${encodeURIComponent(database.name)}`;
     const env = (secret: string) =>
         (keyValue
-            ? [`REDIS_CLIENT=phpredis`, `REDIS_HOST=${host?.value ?? ''}`, `REDIS_PORT=${connection.port}`, `REDIS_PASSWORD=${secret}`]
+            ? [`REDIS_CLIENT=phpredis`, `REDIS_HOST=${host?.value ?? ''}`, `REDIS_PORT=${port}`, `REDIS_PASSWORD=${secret}`]
             : [
                   `DB_CONNECTION=${connection.driver}`,
                   `DB_HOST=${host?.value ?? ''}`,
-                  `DB_PORT=${connection.port}`,
+                  `DB_PORT=${port}`,
                   `DB_DATABASE=${database.name}`,
                   `DB_USERNAME=${user?.username ?? ''}`,
                   `DB_PASSWORD=${secret}`,
               ]
         ).join('\n');
-    // On the server: the password goes through the environment, never on the command line.
-    const cli = (secret: string) => `REDISCLI_AUTH='${secret}' ${server.engine === 'valkey' ? 'valkey-cli' : 'redis-cli'} -p ${connection.port}`;
     const keys = keyValue
         ? ['REDIS_URL', 'REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD', 'REDIS_CLIENT']
         : ['DATABASE_URL', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD'];
@@ -96,7 +95,7 @@ export function DatabaseOverviewTab({ ctx }: ServiceTabProps) {
                 <div className="border-border bg-surface-2 flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm">
                     <Info className="text-info mt-0.5 size-4 shrink-0" aria-hidden />
                     <span className="text-fg-muted">
-                        {database.status === 'pending' && `Creating ${database.name} on ${server.server_name}…`}
+                        {database.status === 'pending' && `Creating ${database.name} on ${instance.server_name}…`}
                         {database.status === 'active' && database.status_message}
                         {database.status === 'failed' && (database.status_message ?? `Creating the ${noun} failed.`)}
                         {database.status === 'deleting' && (keyValue ? 'Removing the instance…' : 'Dropping the database…')}
@@ -107,11 +106,11 @@ export function DatabaseOverviewTab({ ctx }: ServiceTabProps) {
             <KeyValue
                 columns={3}
                 items={[
-                    { label: 'Engine', value: `${server.engine_label}${server.version ? ` ${server.version}` : ''}` },
-                    { label: 'Server', value: server.server_name, mono: true },
+                    { label: 'Engine', value: `${instance.engine_label} ${instance.version} · ${instance.memory_mb} MB` },
+                    { label: 'Server', value: instance.server_name, mono: true },
                     { label: 'Status', value: <StatusBadge status={resourceStatus(database.status)} /> },
                     { label: keyValue ? 'Instance' : 'Database', value: database.name, mono: true, copy: database.name },
-                    { label: 'Port', value: String(connection.port), mono: true },
+                    { label: 'Port', value: String(port), mono: true },
                     { label: 'Created', value: <RelativeTime value={database.created_at} /> },
                 ]}
             />
@@ -179,7 +178,6 @@ export function DatabaseOverviewTab({ ctx }: ServiceTabProps) {
                             </Button>
                         </div>
                         <CodeBlock title=".env" code={env(visible)} copyable={shown && Boolean(password)} />
-                        {keyValue && <CodeBlock title={`On ${server.server_name}`} code={cli(visible)} copyable={shown && Boolean(password)} />}
                         <p className="text-fg-faint text-xs">Revealing a password is recorded in the audit log.</p>
                         {keyValue && data.can.manage && (
                             <div className="flex flex-wrap items-center justify-between gap-3">

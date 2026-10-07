@@ -27,11 +27,11 @@ interface Props {
 export function BackupsTable({ backups, showServer = false, canManage, canRestore, restoreTargets = [] }: Props) {
     const [restoring, setRestoring] = useState<BackupRow | null>(null);
     const [deleting, setDeleting] = useState<BackupRow | null>(null);
-    const form = useForm({ database_server_id: '', database: '', confirm: '' });
+    const form = useForm({ database_instance_id: '', database: '', confirm: '' });
 
     const openRestore = (backup: BackupRow) => {
         form.clearErrors();
-        form.setData({ database_server_id: backup.database_server_id ?? restoreTargets[0]?.id ?? '', database: backup.database_name, confirm: '' });
+        form.setData({ database_instance_id: backup.instance_id ?? restoreTargets[0]?.id ?? '', database: backup.database_name, confirm: '' });
         setRestoring(backup);
     };
 
@@ -47,7 +47,7 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
 
     const canPickTarget = restoreTargets.length > 0;
     const keyValue = isKeyValue(restoring?.engine);
-    const targetInstances = restoreTargets.find((target) => target.id === form.data.database_server_id)?.instances ?? null;
+    const targetInstances = restoreTargets.find((target) => target.id === form.data.database_instance_id)?.databases ?? [];
 
     return (
         <>
@@ -93,7 +93,7 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                                             </a>
                                         </Button>
                                     )}
-                                    {canRestore && backup.restorable && (canPickTarget || backup.database_server_id) && (
+                                    {canRestore && backup.restorable && (canPickTarget || backup.instance_id) && (
                                         <Button variant="ghost" size="icon" aria-label="Restore" title="Restore" onClick={() => openRestore(backup)}>
                                             <RotateCcw />
                                         </Button>
@@ -125,17 +125,17 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                                 ) : (
                                     <>
                                         The dump from {restoring ? format(new Date(restoring.created_at), 'yyyy-MM-dd HH:mm') : ''} is loaded into the
-                                        target database (created if missing). Existing data in that database is overwritten.
+                                        target database. Existing data in that database is overwritten.
                                     </>
                                 )}
                             </DialogDescription>
                         </DialogHeader>
                         {canPickTarget && (
                             <div className="grid gap-2">
-                                <Label>Target server</Label>
+                                <Label>Target database server</Label>
                                 <Select
-                                    value={form.data.database_server_id}
-                                    onValueChange={(value) => form.setData(retargetRestore(form.data, value, keyValue, restoreTargets))}
+                                    value={form.data.database_instance_id}
+                                    onValueChange={(value) => form.setData(retargetRestore(form.data, value, restoreTargets))}
                                 >
                                     <SelectTrigger>
                                         <SelectValue />
@@ -148,15 +148,15 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                                         ))}
                                     </SelectContent>
                                 </Select>
-                                <InputError message={form.errors.database_server_id} />
+                                <InputError message={form.errors.database_instance_id} />
                             </div>
                         )}
                         <div className="grid gap-2">
-                            <Label htmlFor="restore-db">{keyValue ? 'Target instance' : 'Target database'}</Label>
-                            {keyValue && targetInstances ? (
+                            <Label htmlFor="restore-db">Target database</Label>
+                            {targetInstances.length > 0 ? (
                                 <Select value={form.data.database} onValueChange={(value) => form.setData('database', value)}>
                                     <SelectTrigger id="restore-db" className="font-mono">
-                                        <SelectValue placeholder="Choose an instance" />
+                                        <SelectValue placeholder="Choose a database" />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {targetInstances.map((name) => (

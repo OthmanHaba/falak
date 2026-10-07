@@ -5,9 +5,10 @@ import { type ServicePanelContext } from '@/lib/registry';
 import {
     type BackupRow,
     type Connection,
+    type DatabaseInstance,
     type DatabaseRow,
-    type DatabaseServer,
     type DatabaseUserRow,
+    type InstanceOptions,
     type RestoreRow,
     type RestoreTarget,
     type ScheduleRow,
@@ -17,7 +18,7 @@ import {
 /** GET /databases/databases/{database} (JSON): everything the database panel shows. */
 export interface DatabasePanelData {
     database: DatabaseRow;
-    server: DatabaseServer;
+    instance: DatabaseInstance;
     connection: Connection;
     users: DatabaseUserRow[];
     schedules: ScheduleRow[];
@@ -25,15 +26,7 @@ export interface DatabasePanelData {
     restores: RestoreRow[];
     storage_providers: StorageOption[];
     restore_targets: RestoreTarget[];
-    options: {
-        privileges: string[];
-        versions: string[];
-        compressions: string[];
-        /** Redis / Valkey */
-        evictions: string[];
-        persistences: string[];
-        max_memory_mb: number | null;
-    };
+    options: InstanceOptions;
     can: { manage: boolean; reveal: boolean; restore: boolean; manage_storage: boolean };
 }
 
@@ -47,6 +40,8 @@ export function useDatabasePanel(ctx: ServicePanelContext) {
     const busy = Boolean(
         data &&
         (BUSY.includes(data.database.status) ||
+            ['pending', 'upgrading', 'deleting'].includes(data.instance.status) ||
+            data.instance.rotating_password ||
             data.users.some((user) => BUSY.includes(user.status)) ||
             data.backups.some((backup) => BUSY.includes(backup.status)) ||
             data.restores.some((restore) => BUSY.includes(restore.status))),

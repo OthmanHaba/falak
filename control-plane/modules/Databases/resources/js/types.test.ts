@@ -1,30 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { retargetRestore, type RestoreTarget } from './types';
+import { instanceState, retargetRestore, type RestoreTarget } from './types';
 
 const targets: RestoreTarget[] = [
-    { id: 'redis-a', label: 'app-1 · Redis', engine: 'redis', instances: ['cache', 'sessions'] },
-    { id: 'valkey-b', label: 'app-2 · Valkey', engine: 'valkey', instances: ['queue'] },
-] as RestoreTarget[];
+    { id: 'pg-a', label: 'shop (PostgreSQL 17 on app-1)', engine: 'postgresql', databases: ['shop', 'analytics'] },
+    { id: 'pg-b', label: 'blog (PostgreSQL 17 on app-2)', engine: 'postgresql', databases: ['blog'] },
+];
 
 describe('retargetRestore', () => {
-    it('clears an instance the new server does not have, and the confirmation', () => {
-        expect(retargetRestore({ database_server_id: 'redis-a', database: 'cache', confirm: 'cache' }, 'valkey-b', true, targets)).toEqual({
-            database_server_id: 'valkey-b',
+    it('clears a database the new target does not have, and the confirmation', () => {
+        expect(retargetRestore({ database_instance_id: 'pg-a', database: 'shop', confirm: 'shop' }, 'pg-b', targets)).toEqual({
+            database_instance_id: 'pg-b',
             database: '',
             confirm: '',
         });
     });
 
-    it('keeps an instance the new server has too', () => {
-        const data = { database_server_id: 'valkey-b', database: 'cache', confirm: 'cache' };
-        expect(retargetRestore(data, 'redis-a', true, targets)).toEqual({ ...data, database_server_id: 'redis-a' });
+    it('keeps a database the new target has too', () => {
+        const data = { database_instance_id: 'pg-b', database: 'shop', confirm: 'shop' };
+        expect(retargetRestore(data, 'pg-a', targets)).toEqual({ ...data, database_instance_id: 'pg-a' });
+    });
+});
+
+describe('instanceState', () => {
+    it('shows provisioning while the container is created', () => {
+        expect(instanceState({ status: 'pending', health: null })).toBe('provisioning');
     });
 
-    it('keeps the typed database name for SQL (created when missing)', () => {
-        expect(retargetRestore({ database_server_id: 'pg-1', database: 'shop', confirm: 'shop' }, 'pg-2', false, [])).toEqual({
-            database_server_id: 'pg-2',
-            database: 'shop',
-            confirm: 'shop',
-        });
+    it('shows the heartbeat health of a running container', () => {
+        expect(instanceState({ status: 'active', health: 'unhealthy' })).toBe('degraded');
+        expect(instanceState({ status: 'active', health: 'missing' })).toBe('offline');
+        expect(instanceState({ status: 'active', health: 'healthy' })).toBe('active');
     });
 });
