@@ -2,6 +2,7 @@
 
 namespace Falak\Volumes\Domain\Models;
 
+use Falak\Kernel\Security\BackupKeys;
 use Falak\Volumes\Contracts\VolumeKind;
 use Falak\Volumes\Domain\Enums\BackupStatus;
 use Falak\Volumes\Domain\Enums\Consistency;
@@ -11,7 +12,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * A volume.archive snapshot (tar | zstd) in a storage provider. Plaintext until backup encryption (v0.10 step 4).
+ * A volume.archive snapshot in a storage provider: a tar stream, compressed and encrypted (FKB1; docs/BACKUPS.md) with
+ * its own data key, held sealed on the row (cp) or by the customer (age). Archives from before encryption can't be
+ * restored.
  *
  * @property string $id
  * @property string $organization_id
@@ -28,7 +31,16 @@ use Illuminate\Support\Carbon;
  * @property ?int $size_bytes
  * @property ?int $uncompressed_bytes
  * @property ?int $volume_size_bytes the sized volume's limit when it was taken (a restore creates one as large)
- * @property ?string $sha256
+ * @property ?string $sha256 the stored (encrypted) file's
+ * @property ?string $plaintext_sha256 the tar stream's
+ * @property ?int $files files in the archive
+ * @property ?string $encryption_mode cp|customer
+ * @property ?string $wrapped_key cp: the data key sealed under the organization's key (BackupKeys)
+ * @property ?string $age_recipient customer: the recipient the key was encrypted to
+ * @property ?string $cipher aes-256-gcm
+ * @property ?string $compression zstd
+ * @property ?string $drill_status the last drill of this backup
+ * @property ?Carbon $verified_at when a drill last restored it
  * @property ?int $duration_ms
  * @property ?string $error
  * @property ?string $prune_error
@@ -49,6 +61,9 @@ class VolumeBackup extends Model
     /** @var list<string> */
     protected $guarded = [];
 
+    /** @var list<string> */
+    protected $hidden = ['wrapped_key'];
+
     /**
      * @return array<string, string>
      */
@@ -65,6 +80,8 @@ class VolumeBackup extends Model
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
             'pruned_at' => 'datetime',
+            'verified_at' => 'datetime',
+            'files' => 'integer',
         ];
     }
 
@@ -78,6 +95,12 @@ class VolumeBackup extends Model
 
     public function restorable(): bool
     {
-        return $this->status === BackupStatus::Succeeded && $this->sha256 !== null && $this->storage_provider_id !== null;
+        return $this->status === BackupStatus::Succeeded && $this->sha256 !== null && $this->storage_provider_id !== null
+            && ($this->encryption_mode === BackupKeys::CUSTOMER || ($this->encryption_mode === BackupKeys::CP && $this->wrapped_key !== null));
+    }
+
+    public function isCustomerHeld(): bool
+    {
+        return $this->encryption_mode === BackupKeys::CUSTOMER;
     }
 }

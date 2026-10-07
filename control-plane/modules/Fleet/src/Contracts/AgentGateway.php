@@ -58,4 +58,13 @@ interface AgentGateway
      * Whether a JSON Schema exists for the command type.
      */
     public function supports(string $type): bool;
+
+    /**
+     * Drop secrets the payload no longer needs once the command is terminal (a backup key, a customer's age identity
+     * given for one restore): each dotted path present in the stored payload is replaced with "[forgotten]". Returns
+     * false while the command may still be delivered.
+     *
+     * @param  list<string>  $paths  e.g. ["encryption.key", "encryption.identity"]
+     */
+    public function forgetSecrets(CommandHandle|string $command, array $paths): bool;
 }

@@ -16,6 +16,7 @@ use Falak\Fleet\Events\CommandFinished;
 use Falak\Fleet\Events\CommandOutputReceived;
 use Falak\Fleet\Infrastructure\ProtocolSchemas;
 use Falak\Servers\Contracts\ServerDirectory;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use PHPUnit\Framework\Assert;
 
@@ -177,6 +178,23 @@ final class FakeAgentGateway implements AgentGateway
     public function supports(string $type): bool
     {
         return $this->schemas->hasCommand($type);
+    }
+
+    public function forgetSecrets(CommandHandle|string $command, array $paths): bool
+    {
+        $id = $this->id($command);
+
+        if (! isset($this->commands[$id]) || ! $this->commands[$id]['status']->isTerminal()) {
+            return false;
+        }
+
+        foreach ($paths as $path) {
+            if (Arr::has($this->commands[$id]['payload'], $path)) {
+                Arr::set($this->commands[$id]['payload'], $path, '[forgotten]');
+            }
+        }
+
+        return true;
     }
 
     // ---- simulation helpers -------------------------------------------------------------------

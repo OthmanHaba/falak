@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/db.drill.schema.json",
+  "title": "db.drill — restore drill: a throwaway container of the instance's image digest (small: 1 CPU, 512 processes, every capability but the entrypoint's dropped, no-new-privileges, no network, a scratch directory) gets the backup restored and checked (tables or keys, the 10 largest tables' row counts against those recorded at backup time, an optional read-only check query); the container and its data are then removed",
+  "x-falak-forget-secrets": [
+    "encryption.key",
+    "encryption.identity"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "drill",
+    "instance",
+    "database",
+    "source",
+    "sha256",
+    "encryption",
+    "checks"
+  ],
+  "properties": {
+    "drill": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    },
+    "instance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "version",
+        "image",
+        "digest",
+        "memory_bytes"
+      ],
+      "properties": {
+        "engine": {
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb",
+            "redis",
+            "valkey"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$"
+        },
+        "image": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 33554432,
+          "description": "the drill container's memory limit"
+        },
+        "cpus": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 64,
+          "description": "the drill container's CPU limit (default 1)"
+        }
+      }
+    },
+    "database": {
+      "type": "string",
+      "description": "SQL: the database restored and checked (identifier). Redis / Valkey: informational"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "url"
+      ],
+      "properties": {
+        "kind": {
+          "const": "url"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "plaintext_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "archive_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "uncompressed_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "encryption": {
+      "$ref": "#/$defs/encryption"
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "table_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "the counts recorded at backup time (db.backup table_counts)"
+        },
+        "tolerance_percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 10
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 4000,
+          "description": "SQL engines: one SELECT, run as a count in a read-only transaction (falak-db query); it must return at least one row"
+        }
+      }
+    },
+    "registry_auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "username",
+        "password"
+      ],
+      "properties": {
+        "server": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string",
+          "description": "secret"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "encryption": {
+      "description": "opens an FKB1 backup: cp with the data key the control plane unwrapped; age with the customer's identity, given for this command only (never stored by the control plane)",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "key"
+          ],
+          "properties": {
+            "mode": {
+              "const": "cp"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 88,
+              "description": "secret: the 32-byte data key, base64 (or hex). The agent keeps it in memory only"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "identity"
+          ],
+          "properties": {
+            "mode": {
+              "const": "age"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "identity": {
+              "type": "string",
+              "pattern": "^AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}$",
+              "description": "secret: the customer's age X25519 identity (private key)"
+            }
+          }
+        }
+      ]
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "checks",
+        "download_ms",
+        "restore_ms",
+        "duration_ms",
+        "tables"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "skipped"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "description": "skipped: what the server lacks (memory, disk)"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/check"
+          }
+        },
+        "download_ms": {
+          "type": "integer"
+        },
+        "restore_ms": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer"
+        },
+        "tables": {
+          "type": "integer",
+          "description": "tables (redis/valkey: keys) in the restored backup"
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "passed"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

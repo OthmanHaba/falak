@@ -476,6 +476,7 @@ type HostConfig struct {
 	ReadonlyRootfs bool              `json:"ReadonlyRootfs,omitempty"`
 	Tmpfs          map[string]string `json:"Tmpfs,omitempty"`
 	CapDrop        []string          `json:"CapDrop,omitempty"`
+	CapAdd         []string          `json:"CapAdd,omitempty"`
 	SecurityOpt    []string          `json:"SecurityOpt,omitempty"`
 	PidsLimit      int64             `json:"PidsLimit,omitempty"`
 	AutoRemove     bool              `json:"AutoRemove,omitempty"`

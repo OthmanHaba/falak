@@ -13,7 +13,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -66,13 +65,6 @@ type Usage struct {
 	Size, Available, Used uint64
 }
 
-// Sealer wraps the compressed snapshot stream before it is stored. Step 4 (backup encryption) plugs in here;
-// nil stores the snapshot as is.
-type Sealer func(w io.Writer) (io.WriteCloser, error)
-
-// Opener undoes a Sealer when a snapshot is restored (nil: the snapshot is plain tar.zst).
-type Opener func(r io.Reader) (io.Reader, error)
-
 // Deps are the dependencies of the volume commands.
 type Deps struct {
 	Runner runner.Runner
@@ -92,9 +84,6 @@ type Deps struct {
 	// StatFS and Mounted are injectable for tests (defaults: statfs(2), /proc/self/mountinfo).
 	StatFS  func(path string) (Usage, error)
 	Mounted func(path string) bool
-	// Seal / Open: the snapshot encryption seam (step 4).
-	Seal Sealer
-	Open Opener
 	// Poll is how often delete waits for containers to let go of a volume (default 1s).
 	Poll time.Duration
 }
@@ -142,6 +131,7 @@ func (s *Service) Register(reg *commands.Registry) {
 	reg.Register("volume.clone", commands.Typed(s.Clone))
 	reg.Register("volume.browse", commands.Typed(s.Browse))
 	reg.Register("volume.download", commands.Typed(s.Download))
+	reg.Register("volume.drill", commands.Typed(s.Drill))
 }
 
 // Ref names a volume in every payload.

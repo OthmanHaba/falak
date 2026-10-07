@@ -12,6 +12,7 @@ use Falak\Fleet\Contracts\Data\CommandResult;
 use Falak\Fleet\Contracts\Exceptions\CommandTimedOut;
 use Falak\Fleet\Domain\Models\Command;
 use Falak\Fleet\Domain\Models\CommandEvent;
+use Illuminate\Support\Arr;
 
 final class FleetAgentGateway implements AgentGateway
 {
@@ -97,6 +98,45 @@ final class FleetAgentGateway implements AgentGateway
     public function supports(string $type): bool
     {
         return $this->schemas->hasCommand($type);
+    }
+
+    public function forgetSecrets(CommandHandle|string $command, array $paths): bool
+    {
+        $model = Command::query()->find($this->id($command));
+
+        if ($model === null || ! $model->status->isTerminal()) {
+            return false;
+        }
+
+        self::forget($model, $paths);
+
+        return true;
+    }
+
+    /**
+     * Replace each dotted path present in the stored payload with "[forgotten]" and mark the command done with it
+     * (also used by the fleet sweep for commands whose listener missed it, or stuck past their timeout).
+     *
+     * @param  list<string>  $paths
+     */
+    public static function forget(Command $model, array $paths): void
+    {
+        $payload = json_decode($model->payload, true, 512, JSON_THROW_ON_ERROR);
+        $changed = false;
+
+        if (is_array($payload)) {
+            foreach ($paths as $path) {
+                if (Arr::has($payload, $path) && Arr::get($payload, $path) !== '[forgotten]') {
+                    Arr::set($payload, $path, '[forgotten]');
+                    $changed = true;
+                }
+            }
+        }
+
+        $model->forceFill(array_filter([
+            'payload' => $changed ? json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION) : null,
+            'secrets_forgotten_at' => now(),
+        ]))->save();
     }
 
     private function id(CommandHandle|string $command): string

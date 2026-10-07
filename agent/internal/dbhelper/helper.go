@@ -136,9 +136,18 @@ func (h *Helper) mysqlDefaults() ([]byte, error) {
 	esc := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(pw)
 	var b strings.Builder
 	for _, group := range []string{"client", "xtrabackup", "mariadb-backup", "mariabackup"} {
-		fmt.Fprintf(&b, "[%s]\nuser=root\npassword=\"%s\"\nsocket=%s\n\n", group, esc, mySocket)
+		fmt.Fprintf(&b, "[%s]\nuser=root\npassword=\"%s\"\nsocket=%s\n%s\n", group, esc, mySocket, h.socketTLS(group))
 	}
 	return []byte(b.String()), nil
+}
+
+// socketTLS is the option line that keeps a MariaDB 11 client from requiring TLS on the private Unix socket (it does by
+// default, and a server without a certificate, a restore drill's, then refuses every client).
+func (h *Helper) socketTLS(group string) string {
+	if h.Engine == MariaDB && group == "client" {
+		return "skip-ssl\n"
+	}
+	return ""
 }
 
 // myCmd is a MySQL-family tool reading the credentials from fd 3 (--defaults-extra-file must come first).

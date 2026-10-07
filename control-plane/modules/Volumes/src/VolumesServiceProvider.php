@@ -16,6 +16,7 @@ use Falak\Sites\Events\SiteDeleted;
 use Falak\Volumes\Application\Jobs\PruneDownloads;
 use Falak\Volumes\Application\Jobs\RefreshVolumeUsage;
 use Falak\Volumes\Application\Jobs\RunDueVolumeBackups;
+use Falak\Volumes\Application\Jobs\RunDueVolumeDrills;
 use Falak\Volumes\Application\Listeners\ForgetDeletedResources;
 use Falak\Volumes\Application\Listeners\HandleCommandOutcome;
 use Falak\Volumes\Contracts\ServiceVolumes;
@@ -27,6 +28,7 @@ use Falak\Volumes\Domain\Models\Volume;
 use Falak\Volumes\Domain\Models\VolumeBackup;
 use Falak\Volumes\Domain\Policies\VolumePolicy;
 use Falak\Volumes\Events\VolumeAlmostFull;
+use Falak\Volumes\Events\VolumeDrillFinished;
 use Falak\Volumes\Infrastructure\ActionServiceVolumes;
 use Falak\Volumes\Infrastructure\EloquentVolumeMounts;
 use Illuminate\Console\Scheduling\Schedule;
@@ -61,7 +63,10 @@ class VolumesServiceProvider extends ModuleServiceProvider
         $registry->register(VolumePolicy::MANAGE, [Role::Admin, Role::Developer], 'Create, attach, resize, back up, restore, clone, move and delete volumes', 'volumes');
         $registry->register(VolumePolicy::BROWSE, [Role::Admin], 'Browse and download the files of volumes (audited)', 'volumes');
 
-        $this->app->make(AlertTypes::class)->register(VolumeAlmostFull::ALERT_TYPE, 'Volume almost full', 'Volumes', Severity::Warning);
+        $types = $this->app->make(AlertTypes::class);
+        $types->register(VolumeAlmostFull::ALERT_TYPE, 'Volume almost full', 'Volumes', Severity::Warning);
+        $types->register(VolumeDrillFinished::ALERT_FAILED, 'Volume restore drill failed', 'Volumes', Severity::Critical);
+        $types->register(VolumeDrillFinished::ALERT_PASSED, 'Volume restore drills pass again', 'Volumes', Severity::Info);
 
         Event::listen(CommandFinished::class, [HandleCommandOutcome::class, 'handleFinished']);
         Event::listen(CommandFailed::class, [HandleCommandOutcome::class, 'handleFailed']);
@@ -72,6 +77,7 @@ class VolumesServiceProvider extends ModuleServiceProvider
 
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             $schedule->job(new RunDueVolumeBackups)->everyMinute()->name('volumes:backups')->withoutOverlapping();
+            $schedule->job(new RunDueVolumeDrills)->everyTenMinutes()->name('volumes:drills')->withoutOverlapping();
             $schedule->job(new RefreshVolumeUsage)->cron('*/'.max(1, min(59, (int) config('volumes.usage_refresh_minutes', 15))).' * * * *')->name('volumes:usage')->withoutOverlapping();
             $schedule->job(new PruneDownloads)->hourly()->name('volumes:prune-downloads')->withoutOverlapping();
         });

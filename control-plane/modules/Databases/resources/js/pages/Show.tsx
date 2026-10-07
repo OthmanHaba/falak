@@ -139,6 +139,7 @@ export default function Show({
                     databases={databases}
                     storageProviders={storageProviders}
                     canManage={can.manage}
+                    drillServers={options.drill_servers}
                 />
 
                 <Card className="gap-0 py-0">

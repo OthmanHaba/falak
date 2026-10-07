@@ -121,7 +121,8 @@ it('keeps a moved volume’s services stopped from the archive, and brings them 
     expect($archive['payload'])->toMatchArray(['consistency' => 'stop', 'keep_stopped' => true])
         ->and(volumes_schema_errors($archive))->toBe([]);
 
-    $this->agents->succeed($archive['handle'], ['size_bytes' => 1, 'sha256' => str_repeat('a', 64), 'location' => 'x']);
+    $this->agents->succeed($archive['handle'], ['size_bytes' => 1, 'sha256' => str_repeat('a', 64), 'location' => 'x', 'plaintext_sha256' => str_repeat('b', 64),
+        'encryption' => 'cp', 'key_id' => $archive['payload']['encryption']['key_id'], 'cipher' => 'aes-256-gcm', 'compression' => 'zstd']);
     $this->agents->fail($this->agents->last('volume.restore')['handle'], 'disk full');
 
     expect(Operation::query()->sole()->status)->toBe(OperationStatus::Failed)

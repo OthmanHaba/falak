@@ -2,10 +2,12 @@
 
 namespace Falak\Volumes\Domain\Models;
 
+use Falak\Databases\Contracts\DrillFrequency;
 use Falak\Volumes\Domain\Enums\Consistency;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -17,6 +19,12 @@ use Illuminate\Support\Carbon;
  * @property ?int $retention_count keep at most N successful backups
  * @property ?int $retention_days delete successful backups older than N days
  * @property Consistency $consistency
+ * @property string $encryption_mode cp|customer (BackupKeys)
+ * @property ?string $age_recipient customer: the age X25519 recipient archives are encrypted to
+ * @property DrillFrequency $drill
+ * @property ?string $drill_server_id another server of the organization to run drills on
+ * @property ?Carbon $last_drill_at
+ * @property ?Carbon $next_drill_at
  * @property bool $enabled
  * @property ?Carbon $last_run_at
  * @property ?Carbon $next_run_at
@@ -39,6 +47,9 @@ class BackupSchedule extends Model
     {
         return [
             'consistency' => Consistency::class,
+            'drill' => DrillFrequency::class,
+            'last_drill_at' => 'datetime',
+            'next_drill_at' => 'datetime',
             'enabled' => 'boolean',
             'retention_count' => 'integer',
             'retention_days' => 'integer',
@@ -53,5 +64,13 @@ class BackupSchedule extends Model
     public function volume(): BelongsTo
     {
         return $this->belongsTo(Volume::class);
+    }
+
+    /**
+     * @return HasMany<VolumeDrill, $this>
+     */
+    public function drills(): HasMany
+    {
+        return $this->hasMany(VolumeDrill::class, 'schedule_id')->latest()->orderByDesc('id');
     }
 }

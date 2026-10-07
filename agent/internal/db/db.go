@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -55,8 +56,16 @@ type Deps struct {
 	// SecretsDir holds the containers' secret files on the tmpfs (default /run/falak/secrets).
 	SecretsDir string
 	// EtcDir holds the instances' TLS files under db/<id>/tls (default /etc/falak).
-	EtcDir  string
-	TempDir string // real path for backup staging; default os.TempDir()
+	EtcDir string
+	// TempDir is the real path backups are staged in; default <VolumesRoot>/.staging (the volume store, not a tmpfs).
+	TempDir string
+	// DrillRoot holds restore drills' scratch data (default /var/lib/falak/drills).
+	DrillRoot string
+	// MemAvailable and FreeBytes size up a drill (defaults: /proc/meminfo, statfs(2)).
+	MemAvailable func() (int64, error)
+	FreeBytes    func(path string) (int64, error)
+	// CheckQueryWait is how long a drill's check query may run, from the agent's side (default 75 s).
+	CheckQueryWait time.Duration
 	// Mounted reports whether a host path is a mountpoint (default: /proc/self/mountinfo).
 	Mounted func(path string) bool
 	// Waits (tests shorten them).
@@ -110,10 +119,22 @@ func New(d Deps) *DB {
 		d.EtcDir = "/etc/falak"
 	}
 	if d.TempDir == "" {
-		d.TempDir = os.TempDir()
+		d.TempDir = d.FS.P(filepath.Join(d.VolumesRoot, ".staging"))
 	}
 	if d.Mounted == nil {
 		d.Mounted = mounted
+	}
+	if d.DrillRoot == "" {
+		d.DrillRoot = "/var/lib/falak/drills"
+	}
+	if d.MemAvailable == nil {
+		d.MemAvailable = memAvailable(d.FS)
+	}
+	if d.FreeBytes == nil {
+		d.FreeBytes = freeBytes
+	}
+	if d.CheckQueryWait == 0 {
+		d.CheckQueryWait = 75 * time.Second
 	}
 	if d.VolumeWait == 0 {
 		d.VolumeWait = 120 * time.Second
@@ -142,6 +163,7 @@ func (db *DB) Register(reg *commands.Registry) {
 	reg.Register("db.user.apply", commands.Typed(db.UserApply))
 	reg.Register("db.backup", commands.Typed(db.Backup))
 	reg.Register("db.restore", commands.Typed(db.Restore))
+	reg.Register("db.drill", commands.Typed(db.Drill))
 }
 
 // Labels of database containers.

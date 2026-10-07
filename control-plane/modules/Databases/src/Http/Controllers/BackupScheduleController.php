@@ -5,11 +5,15 @@ namespace Falak\Databases\Http\Controllers;
 use Falak\Databases\Application\Actions\DeleteBackupSchedule;
 use Falak\Databases\Application\Actions\RunBackupSchedule;
 use Falak\Databases\Application\Actions\SaveBackupSchedule;
+use Falak\Databases\Application\Actions\StartDrill;
 use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\DatabaseInstance;
+use Falak\Databases\Domain\Policies\DatabasesPolicy;
+use Falak\Identity\Contracts\OrganizationAccess;
 use Falak\Kernel\Http\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 final class BackupScheduleController extends Controller
 {
@@ -26,8 +30,12 @@ final class BackupScheduleController extends Controller
             'cron' => ['required', 'string', 'max:120'],
             'retention_count' => ['nullable', 'integer', 'between:1,1000'],
             'retention_days' => ['nullable', 'integer', 'between:1,3650'],
-            'compression' => ['nullable', 'in:gzip,none'],
             'enabled' => ['boolean'],
+            'encryption_mode' => ['nullable', 'in:cp,customer'],
+            'age_recipient' => ['nullable', 'string', 'max:100'],
+            'drill' => ['nullable', 'in:off,weekly,monthly'],
+            'drill_query' => ['nullable', 'string', 'max:4000'],
+            'drill_server_id' => ['nullable', 'string', 'size:26'],
         ];
     }
 
@@ -35,7 +43,9 @@ final class BackupScheduleController extends Controller
     {
         $this->authorize('manage', $instance);
 
-        $save($instance, $request->validate($this->rules()), null, $request->user()?->getAuthIdentifier());
+        $data = $request->validate($this->rules());
+        $this->authorizeDrillServer($request, $instance->organization_id, $data, null);
+        $save($instance, $data, null, $request->user()?->getAuthIdentifier());
 
         return back();
     }
@@ -44,7 +54,9 @@ final class BackupScheduleController extends Controller
     {
         $this->authorize('manage', $backupSchedule);
 
-        $save($backupSchedule->instance, $request->validate($this->rules()), $backupSchedule);
+        $data = $request->validate($this->rules());
+        $this->authorizeDrillServer($request, $backupSchedule->organization_id, $data, $backupSchedule->drill_server_id);
+        $save($backupSchedule->instance, $data, $backupSchedule);
 
         return back();
     }
@@ -58,6 +70,16 @@ final class BackupScheduleController extends Controller
         return back();
     }
 
+    /** POST /databases/schedules/{schedule}/drill: a restore drill now (the schedule's next one stays as planned). */
+    public function drill(Request $request, BackupSchedule $backupSchedule, StartDrill $start): RedirectResponse
+    {
+        $this->authorize('manage', $backupSchedule);
+
+        $start($backupSchedule, true, $request->user()?->getAuthIdentifier());
+
+        return back();
+    }
+
     public function destroy(BackupSchedule $backupSchedule, DeleteBackupSchedule $delete): RedirectResponse
     {
         $this->authorize('manage', $backupSchedule);
@@ -65,5 +87,20 @@ final class BackupScheduleController extends Controller
         $delete($backupSchedule);
 
         return back();
+    }
+
+    /**
+     * Drills on another server put the restored data there: choosing (or changing) a drill server takes the restore
+     * permission (admins), like restoring a backup does.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function authorizeDrillServer(Request $request, string $organizationId, array $data, ?string $current): void
+    {
+        $server = isset($data['drill_server_id']) && $data['drill_server_id'] !== '' ? strtolower((string) $data['drill_server_id']) : null;
+
+        if ($server !== null && $server !== $current && ! app(OrganizationAccess::class)->can($request->user(), $organizationId, DatabasesPolicy::RESTORE)) {
+            throw ValidationException::withMessages(['drill_server_id' => 'Only admins can run drills on another server (it receives the restored data).']);
+        }
     }
 }

@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/volume.drill.schema.json",
+  "title": "volume.drill — restore drill: the snapshot is restored into a scratch directory next to the volumes, checked (its content against the authenticated SHA-256, the file count against the recorded one), then removed",
+  "x-falak-forget-secrets": [
+    "encryption.key",
+    "encryption.identity"
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "drill",
+    "source",
+    "sha256",
+    "encryption",
+    "checks"
+  ],
+  "properties": {
+    "drill": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "url"
+      ],
+      "properties": {
+        "kind": {
+          "const": "url"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "plaintext_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "archive_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "uncompressed_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "encryption": {
+      "$ref": "#/$defs/encryption"
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "the snapshot's recorded file count"
+        },
+        "tolerance_percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 10
+        }
+      }
+    }
+  },
+  "$defs": {
+    "encryption": {
+      "description": "opens an FKB1 backup: cp with the data key the control plane unwrapped; age with the customer's identity, given for this command only (never stored by the control plane)",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "key"
+          ],
+          "properties": {
+            "mode": {
+              "const": "cp"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "key": {
+              "type": "string",
+              "minLength": 32,
+              "maxLength": 88,
+              "description": "secret: the 32-byte data key, base64 (or hex). The agent keeps it in memory only"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "key_id",
+            "identity"
+          ],
+          "properties": {
+            "mode": {
+              "const": "age"
+            },
+            "key_id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z._:-]{0,127}$",
+              "description": "the backup's key id (its id): written in the file's header and checked when it is opened"
+            },
+            "identity": {
+              "type": "string",
+              "pattern": "^AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}$",
+              "description": "secret: the customer's age X25519 identity (private key)"
+            }
+          }
+        }
+      ]
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "checks",
+        "download_ms",
+        "restore_ms",
+        "duration_ms",
+        "files",
+        "bytes"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "skipped"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/check"
+          }
+        },
+        "download_ms": {
+          "type": "integer"
+        },
+        "restore_ms": {
+          "type": "integer"
+        },
+        "duration_ms": {
+          "type": "integer"
+        },
+        "files": {
+          "type": "integer"
+        },
+        "bytes": {
+          "type": "integer"
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "passed"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

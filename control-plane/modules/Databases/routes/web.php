@@ -42,11 +42,13 @@ Route::middleware(['auth', 'org'])->prefix('databases')->name('databases.')->gro
 
     Route::put('schedules/{backupSchedule}', [BackupScheduleController::class, 'update'])->name('schedules.update');
     Route::post('schedules/{backupSchedule}/run', [BackupScheduleController::class, 'run'])->name('schedules.run');
+    Route::post('schedules/{backupSchedule}/drill', [BackupScheduleController::class, 'drill'])->middleware('throttle:10,1')->name('schedules.drill');
     Route::delete('schedules/{backupSchedule}', [BackupScheduleController::class, 'destroy'])->name('schedules.destroy');
 
     Route::get('backups', [BackupController::class, 'index'])->name('backups.index');
     Route::post('backups/{backup}/restore', [BackupController::class, 'restore'])->name('backups.restore');
     Route::get('backups/{backup}/download', [BackupController::class, 'download'])->middleware('throttle:30,1')->name('backups.download');
+    Route::post('backups/{backup}/key', [BackupController::class, 'exportKey'])->middleware(['reauthenticated', 'throttle:10,1'])->name('backups.key');
     Route::delete('backups/{backup}', [BackupController::class, 'destroy'])->name('backups.destroy');
 
     Route::post('storage', [StorageProviderController::class, 'store'])->name('storage.store');

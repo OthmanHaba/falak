@@ -1,6 +1,17 @@
-import { Button, Callout, DataTable, Dialog, Field, Input, RelativeTime, Section, Select, StatusBadge, Switch, Tag } from '@/components/falak';
+import {
+    AGE_IDENTITY,
+    BackupBadges,
+    DrillHistory,
+    ProtectionFields,
+    needsIdentity,
+    protectionFrom,
+    protectionPayload,
+    useKeyExport,
+    type ProtectionValue,
+} from '@/components/backup-protection';
+import { Button, Callout, DataTable, Dialog, Field, Input, RelativeTime, Section, Select, StatusBadge, Switch, Tag, toast } from '@/components/falak';
 import { formatBytes } from '@/lib/utils';
-import { Archive, CalendarClock, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { Archive, CalendarClock, FlaskConical, KeyRound, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
     CONSISTENCY_OPTIONS,
@@ -40,11 +51,15 @@ export function BackupsSection({ volume, backups, schedules, providers, servers,
     const [deleting, setDeleting] = useState<VolumeBackup | null>(null);
     const [now, setNow] = useState({ storage_provider_id: providers[0]?.id ?? '', consistency: 'none' as Consistency });
     const [schedule, setSchedule] = useState<ScheduleForm>(emptySchedule(providers));
-    const [restore, setRestore] = useState({ server_id: '', name: '', size_gib: '', swap: false });
+    const [restore, setRestore] = useState({ server_id: '', name: '', size_gib: '', swap: false, identity: '' });
+    const [protection, setProtection] = useState<ProtectionValue>(protectionFrom());
     const action = useVolumeAction();
+    const keys = useKeyExport((message) => toast.error(message));
+    const drillServers = servers.filter((server) => server.id !== volume.server?.id);
     const providerName = (id: string | null) => providers.find((provider) => provider.id === id)?.name ?? 'Deleted storage';
 
     useEffect(() => {
+        setProtection(protectionFrom(editing && editing !== 'new' ? editing : undefined));
         if (editing === 'new') setSchedule(emptySchedule(providers));
         else if (editing)
             setSchedule({
@@ -66,6 +81,7 @@ export function BackupsSection({ volume, backups, schedules, providers, servers,
                 name: `${restoring.volume_name}-restored`.slice(0, 63),
                 size_gib: '',
                 swap: false,
+                identity: '',
             });
             action.setErrors({});
         }
@@ -87,6 +103,7 @@ export function BackupsSection({ volume, backups, schedules, providers, servers,
             ...schedule,
             retention_count: schedule.retention_count ? Number(schedule.retention_count) : null,
             retention_days: schedule.retention_days ? Number(schedule.retention_days) : null,
+            ...protectionPayload(protection, false),
         };
         const ok =
             editing === 'new'
@@ -98,7 +115,7 @@ export function BackupsSection({ volume, backups, schedules, providers, servers,
     return (
         <Section
             title="Backups"
-            description="Consistent tar | zstd snapshots in your backup storage, restored into a new volume (never over live data)."
+            description="Consistent snapshots in your backup storage, compressed and encrypted with a key of their own, restored into a new volume (never over live data)."
             bare
             aside={
                 canManage &&
@@ -151,12 +168,37 @@ export function BackupsSection({ volume, backups, schedules, providers, servers,
                                 </span>
                             ),
                         },
+                        {
+                            id: 'protection',
+                            header: 'Keys · drills',
+                            hideOnMobile: true,
+                            cell: (row) => (
+                                <span className="flex flex-wrap items-center gap-1">
+                                    <Tag icon={<KeyRound />}>{row.encryption_mode === 'customer' ? 'your key' : 'Falak'}</Tag>
+                                    <Tag>{row.drill === 'off' ? 'no drills' : `${row.drill} drills`}</Tag>
+                                    {row.drills[0] && (
+                                        <Tag
+                                            tone={
+                                                row.drills[0].status === 'passed' ? 'success' : row.drills[0].status === 'failed' ? 'danger' : 'faint'
+                                            }
+                                        >
+                                            {row.drills[0].status}
+                                        </Tag>
+                                    )}
+                                </span>
+                            ),
+                        },
                         { id: 'next', header: 'Next run', hideOnMobile: true, cell: (row) => <RelativeTime value={row.next_run_at} fallback="—" /> },
                     ]}
                     rowActions={
                         canManage
                             ? (row) => [
                                   { label: 'Edit', icon: <Pencil />, onSelect: () => setEditing(row) },
+                                  {
+                                      label: 'Drill now',
+                                      icon: <FlaskConical />,
+                                      onSelect: () => void action.run('POST', `/volumes/schedules/${row.id}/drill`, {}, 'Restore drill started'),
+                                  },
                                   { type: 'separator' },
                                   {
                                       label: 'Delete schedule',
@@ -198,6 +240,7 @@ export function BackupsSection({ volume, backups, schedules, providers, servers,
                         hideOnMobile: true,
                         cell: (row) => <span className="text-sm">{providerName(row.storage_provider_id)}</span>,
                     },
+                    { id: 'protection', header: 'Protection', hideOnMobile: true, cell: (row) => <BackupBadges backup={row} /> },
                     {
                         id: 'status',
                         header: 'Status',
@@ -221,6 +264,15 @@ export function BackupsSection({ volume, backups, schedules, providers, servers,
                                   disabled: !row.restorable,
                                   onSelect: () => setRestoring(row),
                               },
+                              ...(row.restorable && row.encryption_mode === 'cp'
+                                  ? [
+                                        {
+                                            label: 'Export backup key…',
+                                            icon: <KeyRound />,
+                                            onSelect: () => void keys.exportKey(`/volumes/backups/${row.id}/key`),
+                                        },
+                                    ]
+                                  : []),
                               { type: 'separator' },
                               {
                                   label: 'Delete backup',
@@ -339,6 +391,12 @@ export function BackupsSection({ volume, backups, schedules, providers, servers,
                     <Field label="Enabled" inline>
                         <Switch checked={schedule.enabled} onCheckedChange={(checked) => setSchedule({ ...schedule, enabled: checked })} />
                     </Field>
+                    <ProtectionFields value={protection} onChange={setProtection} errors={action.errors} servers={drillServers} withQuery={false} />
+                    {editing && editing !== 'new' && (
+                        <Field label="Last drills">
+                            <DrillHistory drills={editing.drills} />
+                        </Field>
+                    )}
                 </div>
             </Dialog>
 
@@ -355,16 +413,23 @@ export function BackupsSection({ volume, backups, schedules, providers, servers,
                         <Button
                             variant="primary"
                             loading={action.busy}
-                            disabled={!restore.name.trim() || !restore.server_id}
+                            disabled={
+                                !restore.name.trim() ||
+                                !restore.server_id ||
+                                (restoring !== null && needsIdentity(restoring) && !AGE_IDENTITY.test(restore.identity.trim()))
+                            }
                             onClick={async () => {
                                 const body = {
                                     server_id: restore.server_id,
                                     name: restore.name.trim(),
                                     swap: restore.swap,
+                                    // Customer-held keys: for this restore only, never stored.
+                                    ...(restoring && needsIdentity(restoring) ? { identity: restore.identity.trim() } : {}),
                                     ...(restore.size_gib ? { size_bytes: Math.round(Number(restore.size_gib) * GIB) } : {}),
                                 };
-                                if ((await action.run('POST', `/volumes/backups/${restoring?.id}/restore`, body, 'Restore started')) !== null)
-                                    setRestoring(null);
+                                const ok = await action.run('POST', `/volumes/backups/${restoring?.id}/restore`, body, 'Restore started');
+                                setRestore((current) => ({ ...current, identity: '' }));
+                                if (ok !== null) setRestoring(null);
                             }}
                         >
                             Restore
@@ -380,6 +445,22 @@ export function BackupsSection({ volume, backups, schedules, providers, servers,
                             options={servers.map((server) => ({ value: server.id, label: server.name }))}
                         />
                     </Field>
+                    {restoring && needsIdentity(restoring) && (
+                        <Field
+                            label="Your age private key"
+                            error={action.errors.identity}
+                            hint="This backup is encrypted to your age key. It is sent to the server for this restore only and never stored."
+                        >
+                            <Input
+                                type="password"
+                                mono
+                                autoComplete="off"
+                                placeholder="AGE-SECRET-KEY-1…"
+                                value={restore.identity}
+                                onChange={(event) => setRestore({ ...restore, identity: event.target.value })}
+                            />
+                        </Field>
+                    )}
                     <Field label="New volume name" required error={action.errors.name}>
                         <Input mono value={restore.name} onChange={(event) => setRestore({ ...restore, name: event.target.value })} />
                     </Field>
@@ -440,6 +521,8 @@ export function BackupsSection({ volume, backups, schedules, providers, servers,
                     The snapshot is removed from {providerName(deleting?.storage_provider_id ?? null)}. This cannot be undone.
                 </p>
             </Dialog>
+
+            {keys.dialog}
 
             {canManage && providers.length > 0 && schedules.length === 0 && (
                 <p className="text-fg-faint flex items-center gap-1 text-xs">

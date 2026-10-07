@@ -9,9 +9,12 @@ use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\Database;
 use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\DatabaseUser;
+use Falak\Databases\Domain\Models\Drill;
 use Falak\Databases\Domain\Models\Grant;
 use Falak\Databases\Domain\Models\Restore;
 use Falak\Databases\Domain\Models\StorageProvider;
+use Falak\Servers\Contracts\Data\ServerData;
+use Falak\Servers\Contracts\ServerDirectory;
 
 /**
  * Array shapes sent to the Inertia pages (never secrets).
@@ -121,10 +124,38 @@ trait PresentsDatabases
             'databases' => $schedule->databases->pluck('name')->values(),
             'retention_count' => $schedule->retention_count,
             'retention_days' => $schedule->retention_days,
-            'compression' => $schedule->compression->value,
             'enabled' => $schedule->enabled,
             'last_run_at' => $schedule->last_run_at?->toIso8601String(),
             'next_run_at' => $schedule->next_run_at?->toIso8601String(),
+            'encryption_mode' => $schedule->encryption_mode,
+            'age_recipient' => $schedule->age_recipient,
+            'drill' => $schedule->drill->value,
+            'drill_query' => $schedule->drill_query,
+            'drill_server_id' => $schedule->drill_server_id,
+            'last_drill_at' => $schedule->last_drill_at?->toIso8601String(),
+            'next_drill_at' => $schedule->next_drill_at?->toIso8601String(),
+            'drills' => $schedule->drills()->limit(10)->get()->map(fn (Drill $drill) => $this->presentDrill($drill))->values(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function presentDrill(Drill $drill): array
+    {
+        return [
+            'id' => $drill->id,
+            'backup_id' => $drill->backup_id,
+            'database_name' => $drill->database_name,
+            'server_name' => $drill->server_name,
+            'status' => $drill->status->value,
+            'reason' => $drill->reason,
+            'error' => $drill->error,
+            'checks' => $drill->checks ?? [],
+            'duration_ms' => $drill->duration_ms,
+            'rto_estimate_seconds' => $drill->rto_estimate_seconds,
+            'created_at' => $drill->created_at->toIso8601String(),
+            'finished_at' => $drill->finished_at?->toIso8601String(),
         ];
     }
 
@@ -145,6 +176,11 @@ trait PresentsDatabases
             'storage_provider' => $backup->storageProvider?->name,
             'object_key' => $backup->object_key,
             'compression' => $backup->compression->value,
+            'encryption_mode' => $backup->encryption_mode,
+            'cipher' => $backup->cipher,
+            'plaintext_sha256' => $backup->plaintext_sha256,
+            'drill_status' => $backup->drill_status,
+            'verified_at' => $backup->verified_at?->toIso8601String(),
             'trigger' => $backup->trigger,
             'schedule_id' => $backup->schedule_id,
             'status' => $backup->status->value,
@@ -160,6 +196,19 @@ trait PresentsDatabases
             'finished_at' => $backup->finished_at?->toIso8601String(),
             'pruned_at' => $backup->pruned_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * The organization's other servers a schedule may run its restore drills on.
+     *
+     * @return list<array{id: string, name: string}>
+     */
+    protected function drillServers(DatabaseInstance $instance): array
+    {
+        return array_values(array_map(
+            fn (ServerData $server) => ['id' => $server->id, 'name' => $server->name],
+            array_filter(app(ServerDirectory::class)->forOrganization($instance->organization_id, activeOnly: true), fn (ServerData $server) => $server->id !== $instance->server_id),
+        ));
     }
 
     /**

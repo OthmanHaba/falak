@@ -2,18 +2,18 @@
 
 namespace Falak\Databases\Domain\Enums;
 
+/**
+ * Backups are always zstd-compressed, then encrypted (FKB1, docs/BACKUPS.md).
+ */
 enum Compression: string
 {
-    case Gzip = 'gzip';
-    case None = 'none';
+    case Zstd = 'zstd';
 
     /**
-     * The object key's extension: a SQL dump, or a Redis / Valkey RDB snapshot.
+     * The object key's extension: a SQL dump, or a Redis / Valkey RDB snapshot, compressed and encrypted.
      */
     public function extension(?Engine $engine = null): string
     {
-        $base = $engine?->isKeyValue() ? '.rdb' : '.sql';
-
-        return $this === self::Gzip ? "{$base}.gz" : $base;
+        return ($engine?->isKeyValue() ? '.rdb' : '.sql').'.zst.fkb';
     }
 }

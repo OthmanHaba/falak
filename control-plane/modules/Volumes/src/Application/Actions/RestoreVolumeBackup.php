@@ -3,6 +3,7 @@
 namespace Falak\Volumes\Application\Actions;
 
 use Falak\Identity\Contracts\AuditLog;
+use Falak\Kernel\Security\BackupKeys;
 use Falak\Volumes\Application\Transfers;
 use Falak\Volumes\Contracts\VolumeKind;
 use Falak\Volumes\Domain\Enums\OperationKind;
@@ -28,10 +29,14 @@ final class RestoreVolumeBackup
     /**
      * @throws ValidationException
      */
-    public function __invoke(VolumeBackup $backup, string $serverId, string $name, ?int $sizeBytes = null, bool $swap = false, ?string $actorId = null): Operation
+    public function __invoke(VolumeBackup $backup, string $serverId, string $name, ?int $sizeBytes = null, bool $swap = false, ?string $actorId = null, #[\SensitiveParameter] ?string $identity = null): Operation
     {
         if (! $backup->restorable()) {
-            throw ValidationException::withMessages(['backup' => 'Only successful backups whose storage provider still exists can be restored.']);
+            throw ValidationException::withMessages(['backup' => 'Only successful, encrypted backups whose storage provider still exists can be restored.']);
+        }
+
+        if ($backup->isCustomerHeld() && ! BackupKeys::validIdentity(trim((string) $identity))) {
+            throw ValidationException::withMessages(['identity' => 'This backup\'s key is customer-held: paste the age identity (AGE-SECRET-KEY-1…) that matches its recipient.']);
         }
 
         $source = $backup->volume_id !== null ? Volume::query()->find($backup->volume_id) : null;
@@ -61,7 +66,7 @@ final class RestoreVolumeBackup
         });
 
         try {
-            $this->transfers->restore($operation, $backup, $target);
+            $this->transfers->restore($operation, $backup, $target, identity: $identity);
         } catch (ValidationException $e) {
             $operation->delete();
             $target->delete();

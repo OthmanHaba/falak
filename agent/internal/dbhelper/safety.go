@@ -63,7 +63,12 @@ func (h *Helper) ReadOnly(ctx context.Context, on bool) error {
 // n}}), to compare a copy with its source.
 func (h *Helper) TableCounts(ctx context.Context, database string) error {
 	if h.Engine.kv() {
-		return unsupported(h.Engine, "table-counts")
+		// The key count of every logical database ({"tables": {"db0": n}}): what a restore drill compares.
+		counts, err := h.kvKeyCounts(ctx)
+		if err != nil {
+			return err
+		}
+		return h.result(map[string]any{"database": database, "tables": counts})
 	}
 	if err := checkName("--database", database); err != nil {
 		return err

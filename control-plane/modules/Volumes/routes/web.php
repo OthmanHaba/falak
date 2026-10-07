@@ -35,6 +35,8 @@ Route::middleware(['auth', 'org'])->group(function () {
         Route::put('schedules/{schedule}', [VolumeBackupController::class, 'updateSchedule'])->where('schedule', $ulid)->name('schedules.update');
         Route::delete('schedules/{schedule}', [VolumeBackupController::class, 'destroySchedule'])->where('schedule', $ulid)->name('schedules.destroy');
         Route::post('backups/{backup}/restore', [VolumeBackupController::class, 'restore'])->where('backup', $ulid)->name('backups.restore');
+        Route::post('backups/{backup}/key', [VolumeBackupController::class, 'exportKey'])->where('backup', $ulid)->middleware(['reauthenticated', 'throttle:10,1'])->name('backups.key');
+        Route::post('schedules/{schedule}/drill', [VolumeBackupController::class, 'drill'])->where('schedule', $ulid)->middleware('throttle:10,1')->name('schedules.drill');
         Route::delete('backups/{backup}', [VolumeBackupController::class, 'destroy'])->where('backup', $ulid)->name('backups.destroy');
     });
 });

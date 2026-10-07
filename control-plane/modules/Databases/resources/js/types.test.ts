@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { instanceState, retargetRestore, type RestoreTarget } from './types';
+import { AGE_IDENTITY, AGE_RECIPIENT, instanceState, needsIdentity, retargetRestore, type RestoreTarget } from './types';
 
 const targets: RestoreTarget[] = [
     { id: 'pg-a', label: 'shop (PostgreSQL 17 on app-1)', engine: 'postgresql', databases: ['shop', 'analytics'] },
@@ -30,5 +30,19 @@ describe('instanceState', () => {
         expect(instanceState({ status: 'active', health: 'unhealthy' })).toBe('degraded');
         expect(instanceState({ status: 'active', health: 'missing' })).toBe('offline');
         expect(instanceState({ status: 'active', health: 'healthy' })).toBe('active');
+    });
+});
+
+describe('backup keys', () => {
+    it('recognizes age recipients and identities', () => {
+        expect(AGE_RECIPIENT.test('age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p')).toBe(true);
+        expect(AGE_RECIPIENT.test('ssh-ed25519 AAAAC3Nz')).toBe(false);
+        expect(AGE_IDENTITY.test('AGE-SECRET-KEY-1' + 'Q'.repeat(58))).toBe(true);
+        expect(AGE_IDENTITY.test('AGE-SECRET-KEY-1nope')).toBe(false);
+    });
+
+    it('asks for the identity only for customer-held backups', () => {
+        expect(needsIdentity({ encryption_mode: 'customer' })).toBe(true);
+        expect(needsIdentity({ encryption_mode: 'cp' })).toBe(false);
     });
 });

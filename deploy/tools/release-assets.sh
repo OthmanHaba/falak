@@ -3,6 +3,7 @@
 #   deploy/tools/release-assets.sh <tag> <owner/repo> <out-dir>
 # Expects agent/bin/ from `make -C agent build VERSION=<tag>`. Produces:
 #   falak-agent-linux-{amd64,arm64}, falak-builder-linux-{amd64,arm64}, falak-{linux,darwin}-{amd64,arm64},
+#   falak-restore-{linux,darwin}-{amd64,arm64} (decrypts backups offline),
 #   falak-deploy.tar.gz (deploy/ + observability/, install.sh/falak-ctl pinned to <owner/repo>),
 #   install.sh (defaults to <tag>), install-cli.sh (the `falak` CLI installer, defaults to <tag>), falak-ctl, SHA256SUMS
 set -euo pipefail
@@ -14,7 +15,8 @@ bin="$root/agent/bin"
 rm -rf "$out"; mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 for f in falak-agent-linux-amd64 falak-agent-linux-arm64 falak-builder-linux-amd64 falak-builder-linux-arm64 \
-         falak-linux-amd64 falak-linux-arm64 falak-darwin-amd64 falak-darwin-arm64; do
+         falak-linux-amd64 falak-linux-arm64 falak-darwin-amd64 falak-darwin-arm64 \
+         falak-restore-linux-amd64 falak-restore-linux-arm64 falak-restore-darwin-amd64 falak-restore-darwin-arm64; do
   cp "$bin/$f" "$out/$f"
 done
 

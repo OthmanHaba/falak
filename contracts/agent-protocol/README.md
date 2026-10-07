@@ -96,10 +96,19 @@ database image (`docs/DB_IMAGES.md`); nothing runs on the host. The agent drives
 - `db.create` / `db.drop` / `db.user.apply` (SQL engines) run `falak-db database create|drop` and `falak-db user apply
   --spec <file>`; the spec, with the password, is a dot-file in the instance's secrets directory, removed afterwards.
 - `db.backup` streams `falak-db backup logical` (pg_dump `-Fc`, mysqldump / mariadb-dump, an RDB snapshot) through
-  gzip to the presigned URL; falak-db's `falak-db-result:` line must be there. Results are unchanged (`rdb` for
-  Redis / Valkey). `db.restore` pipes into `falak-db restore logical` (postgres `--clean`, after `database create`);
-  Redis / Valkey stop, a one-off `docker run --rm -i --network none --entrypoint falak-db` of the instance's image on
-  its data directory replaces the snapshot, and the instance starts again (also when the restore failed).
+  zstd and AES-256-GCM (FKB1, `encryption`; docs/BACKUPS.md) to the presigned URL; falak-db's `falak-db-result:` line
+  must be there. The result has the stored file's size and sha256, the dump's `uncompressed_bytes` and
+  `plaintext_sha256`, and with `table_counts` the row counts taken before the dump. `db.restore` checks the file's
+  sha256, opens it with `encryption` (the key, or the customer's age identity) and pipes it into `falak-db restore
+  logical` (postgres `--swap`; MySQL / MariaDB after `database create`); a segment that fails authentication fails the
+  restore. Redis / Valkey stop, a one-off `docker run --rm -i --network none --entrypoint falak-db` of the instance's
+  image on its data directory replaces the snapshot, and the instance starts again (also when the restore failed).
+- `db.drill` restores a backup into a throwaway container (`falak-db-drill-<id>`, label `falak.db.drill`): the
+  instance's image digest, its memory limit from the payload, `--network none`, no port, a scratch directory under
+  `/var/lib/falak/drills/<id>`. It checks tables (keys), the 10 largest tables' row counts against `table_counts`
+  (± `tolerance_percent`) and the optional `query` (`falak-db query`, read-only), then removes the container, its data
+  and its password file whatever happened. A server without the memory or disk for it answers `status: skipped` with
+  the reason; failed checks are `status: failed` (the command itself succeeds).
 
 The heartbeat's `databases` lists every container labelled `falak.db.instance` with its state, health and
 `secrets_missing`. `provision.apply` `docker.live_restore` merges `"live-restore": true` into
@@ -168,8 +177,10 @@ containers that mount the volume (by name, or by host path) to go away and refus
 paths are never deleted. `volume.inventory` reports usage (statfs for mounted sized volumes, a du-style walk that
 never follows symlinks otherwise) and the server's Docker volumes.
 
-Snapshots (`volume.archive`) are `tar | zstd` streams PUT to a presigned URL like database backups (sha256 and size
-in the result, the signature never echoed); `consistency` pauses or stops the running containers that mount the
+Snapshots (`volume.archive`) are tar streams compressed and encrypted like database backups (FKB1, `encryption`), PUT
+to a presigned URL (sha256 and size of the stored file, the tar stream's `plaintext_sha256`, the signature never
+echoed); `volume.drill` restores one into a scratch directory next to the volumes, checks its file count, and removes
+it; `consistency` pauses or stops the running containers that mount the
 volume while it is read. `volume.restore` and `volume.clone` write into a new or empty volume only (created when
 missing), check the sha256 before anything is written, and extract through an `os.Root`: absolute names, `..`
 segments, writes through symlinks and hard links out of the volume are refused. `volume.browse` (list, or a name
