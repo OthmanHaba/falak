@@ -2,11 +2,10 @@
 
 use Falak\Databases\Contracts\DatabaseConnections;
 use Falak\Databases\Domain\Models\Database;
-use Falak\Fleet\Domain\Models\Agent;
+use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Identity\Contracts\Role;
 use Falak\Projects\Contracts\VariableReferences;
 use Falak\Projects\Domain\Models\Service;
-use Falak\Servers\Contracts\ServerType;
 use Falak\Sites\Domain\Models\Site;
 use Tests\Support\FakeAgentGateway;
 
@@ -50,69 +49,92 @@ it('validates site input with the Sites rules', function () {
     expect(Service::query()->count())->toBe(0);
 });
 
-it('creates a database with a user through the Databases contract and places it immediately', function () {
+it('creates a database container with a user through the Databases contract and places it immediately', function () {
     $agents = FakeAgentGateway::install();
-    $engine = databases_engine($this->organization, 'postgresql');
+    $server = databases_server($this->organization);
 
-    $response = $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'postgresql', 'server_id' => $engine->server_id, 'name' => 'orders', 'x' => 10, 'y' => 20])
+    $response = $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'postgresql', 'server_id' => $server->id, 'name' => 'orders', 'version' => '16', 'memory_mb' => 1024, 'disk_gb' => 20, 'x' => 10, 'y' => 20])
         ->assertCreated()
         ->assertJsonPath('data.kind', 'database')
         ->assertJsonPath('data.name', 'orders')
         ->assertJsonPath('data.icon', 'postgresql')
         ->assertJsonPath('data.status', 'provisioning')
+        ->assertJsonPath('data.subtitle', "PostgreSQL 16 · 1024 MB · {$server->name}")
         ->assertJsonPath('data.position', ['x' => 10, 'y' => 20]);
 
     $database = Database::query()->sole();
+    $instance = DatabaseInstance::query()->sole();
+    $create = $agents->last('db.instance.create');
+
+    // The container joins the staging environment's network, where the environment's sites reach it by name.
     expect($response->json('data.ref_id'))->toBe($database->id)
-        ->and($agents->last('db.create')['payload']['name'])->toBe('orders')
-        ->and(app(DatabaseConnections::class)->variables($database->id))->toHaveKeys(['DB_USERNAME', 'DB_PASSWORD', 'DATABASE_URL'])
+        ->and($instance->environment_id)->toBe($this->staging->id)
+        ->and($create['payload']['instance'])->toMatchArray([
+            'id' => $instance->id,
+            'engine' => 'postgres',
+            'version' => '16',
+            'memory_bytes' => 1024 * 1024 ** 2,
+            'network' => "falak-env-{$this->staging->id}",
+            'aliases' => ["falak-db-{$instance->id}"],
+            'host_port' => $instance->host_port,
+            'volume_id' => $instance->volume_id,
+        ])
+        ->and($agents->last('volume.create')['payload']['size_bytes'])->toBe(20 * 1024 ** 3)
         ->and(app(DatabaseConnections::class)->variables($database->id)['DB_USERNAME'])->toBe('orders');
 
-    // db.create converging later does not move or duplicate it.
+    // db.create runs once the container does; converging later does not move or duplicate the card.
+    $agents->succeed($create['handle'], ['changed' => true, 'container_id' => 'abc', 'image_digest' => 'sha256:'.str_repeat('b', 64), 'health' => 'healthy']);
+    expect($agents->last('db.create')['payload'])->toMatchArray(['instance' => $instance->id, 'name' => 'orders']);
     $agents->succeed($agents->last('db.create')['handle'], ['changed' => true]);
-    expect(Service::query()->sole()->environment_id)->toBe($this->staging->id);
+    expect(Service::query()->sole()->environment_id)->toBe($this->staging->id)
+        ->and($database->refresh()->status->value)->toBe('active');
 });
 
-it('rejects unsupported or mismatched database engines', function () {
+it('rejects unsupported database engines, versions and foreign servers', function () {
     FakeAgentGateway::install();
-    $engine = databases_engine($this->organization, 'mysql');
+    $server = databases_server($this->organization);
 
-    $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'postgresql', 'server_id' => $engine->server_id, 'name' => 'orders'])
+    $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'memcached', 'server_id' => $server->id, 'name' => 'cache'])
         ->assertUnprocessable()->assertJsonValidationErrors(['engine']);
-    $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'redis', 'server_id' => $engine->server_id, 'name' => 'cache'])
-        ->assertUnprocessable()->assertJsonValidationErrors(['server_id' => 'The server does not run Redis.']);
-    $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'memcached', 'server_id' => $engine->server_id, 'name' => 'cache'])
-        ->assertUnprocessable()->assertJsonValidationErrors(['engine']);
+    $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'postgresql', 'server_id' => $server->id, 'name' => 'orders', 'version' => '9.6'])
+        ->assertUnprocessable()->assertJsonValidationErrors(['version']);
     $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'mysql', 'server_id' => str_repeat('0', 26), 'name' => 'orders'])
         ->assertUnprocessable()->assertJsonValidationErrors(['server_id']);
     $this->postJson("{$this->base}/services", ['kind' => 'queue'])->assertUnprocessable()->assertJsonValidationErrors(['kind']);
 
-    expect(Database::query()->count())->toBe(0);
+    expect(Database::query()->count())->toBe(0)->and(DatabaseInstance::query()->count())->toBe(0);
 });
 
-it('creates a Redis instance from the canvas: card, REDIS_* keys and references for a site on the server', function () {
+it('creates a Redis container from the canvas: card, REDIS_* keys and references by where the site runs', function () {
     $agents = FakeAgentGateway::install();
-    $server = databases_server($this->organization, 'postgresql', ServerType::App, ['stack' => ['database' => 'postgresql', 'cache' => 'redis']]);
-    Agent::factory()->create(['server_id' => $server->id, 'organization_id' => $this->organization->id, 'facts' => ['features' => ['db.redis'], 'runtimes' => ['redis' => ['7.0.15']], 'memory_bytes' => 4 * 1024 ** 3]]);
+    $server = databases_server($this->organization);
 
-    $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'redis', 'server_id' => $server->id, 'name' => 'cache', 'maxmemory_mb' => 256, 'eviction' => 'allkeys-lru'])
+    $this->postJson("{$this->base}/services", ['kind' => 'database', 'engine' => 'redis', 'server_id' => $server->id, 'name' => 'cache', 'memory_mb' => 256, 'eviction' => 'allkeys-lru'])
         ->assertCreated()
         ->assertJsonPath('data.icon', 'redis')
         ->assertJsonPath('data.status', 'provisioning')
-        ->assertJsonPath('data.subtitle', "Redis 7.0 · 256 MB · {$server->name}")
-        ->assertJsonPath('data.volumes.0.name', 'redis-data');
+        ->assertJsonPath('data.subtitle', "Redis 8 · 256 MB · {$server->name}")
+        ->assertJsonPath('data.volumes.0.detail', 'data');
 
-    $apply = $agents->last('db.redis.apply');
-    expect($apply['payload'])->toMatchArray(['name' => 'cache', 'port' => 6380, 'maxmemory_mb' => 256, 'eviction' => 'allkeys-lru']);
-    $agents->succeed($apply['handle'], ['changed' => true, 'restarted' => true, 'port' => 6380]);
+    $instance = DatabaseInstance::query()->sole();
+    $create = $agents->last('db.instance.create');
+    expect($create['payload']['instance'])->toMatchArray(['engine' => 'redis', 'memory_bytes' => 256 * 1024 ** 2, 'settings' => ['eviction' => 'allkeys-lru']]);
+    $agents->succeed($create['handle'], ['changed' => true, 'container_id' => 'abc', 'image_digest' => 'sha256:'.str_repeat('b', 64), 'health' => 'healthy']);
 
     $this->getJson("{$this->base}/variables")->assertOk()
         ->assertJsonPath('data.services.0.keys', DatabaseConnections::REDIS_KEYS);
 
+    // Native on the server: loopback and the host port. A container of the environment: its name and the engine's port.
+    $password = $instance->refresh()->root_password;
     $web = projects_site($this->organization, 'Web', [], $this->staging, [$server]);
     $result = app(VariableReferences::class)->resolve($this->staging->id, $web->id, ['REDIS_URL' => '${{ cache.REDIS_URL }}', 'REDIS_PORT' => '${{ cache.REDIS_PORT }}']);
     expect($result->errors)->toBe([])
-        ->and($result->variables)->toBe(['REDIS_URL' => "redis://default:{$apply['payload']['password']}@127.0.0.1:6380", 'REDIS_PORT' => '6380']);
+        ->and($result->variables)->toBe(['REDIS_URL' => "redis://default:{$password}@127.0.0.1:{$instance->host_port}", 'REDIS_PORT' => (string) $instance->host_port]);
+
+    $box = projects_site($this->organization, 'Box', [], $this->staging, [$server], ['runtime' => 'docker', 'framework' => 'docker', 'php_version' => null]);
+    $result = app(VariableReferences::class)->resolve($this->staging->id, $box->id, ['REDIS_HOST' => '${{ cache.REDIS_HOST }}', 'REDIS_PORT' => '${{ cache.REDIS_PORT }}']);
+    expect($result->errors)->toBe([])
+        ->and($result->variables)->toBe(['REDIS_HOST' => "falak-db-{$instance->id}", 'REDIS_PORT' => '6379']);
 
     // A site on another server gets the reason instead of a host it cannot reach.
     $other = projects_site($this->organization, 'Elsewhere', [], $this->staging, [sites_server($this->organization->id, ['name' => 'web-9'])]);
@@ -120,17 +142,16 @@ it('creates a Redis instance from the canvas: card, REDIS_* keys and references 
     expect($result->errors[0] ?? '')->toContain('cache.REDIS_HOST cannot be used here');
 });
 
-it('creates a Redis instance through the API with a token', function () {
+it('creates a Valkey container through the API with a token', function () {
     $agents = FakeAgentGateway::install();
-    $server = databases_server($this->organization, 'postgresql', ServerType::App, ['stack' => ['cache' => 'valkey']]);
-    Agent::factory()->create(['server_id' => $server->id, 'organization_id' => $this->organization->id, 'facts' => ['features' => ['db.redis']]]);
+    $server = databases_server($this->organization);
     $token = $this->user->createToken('cli', ['*']);
     $token->accessToken->forceFill(['organization_id' => $this->organization->id])->save();
     auth()->forgetGuards();
 
     $this->withToken($token->plainTextToken)->postJson("/api/v1/projects/{$this->staging->project_id}/environments/staging/services", ['kind' => 'database', 'engine' => 'valkey', 'server_id' => $server->id, 'name' => 'sessions', 'persistence' => 'aof'])
         ->assertCreated()->assertJsonPath('data.icon', 'valkey')->assertJsonPath('data.name', 'sessions');
-    expect($agents->last('db.redis.apply')['payload'])->toMatchArray(['engine' => 'valkey', 'persistence' => 'aof']);
+    expect($agents->last('db.instance.create')['payload']['instance'])->toMatchArray(['engine' => 'valkey', 'settings' => ['persistence' => 'aof']]);
 
     // Upper-case ids (as the CLI prints them) and environment ids work; another organization's project is not found.
     $this->withToken($token->plainTextToken)->postJson('/api/v1/projects/'.strtoupper($this->staging->project_id)."/environments/{$this->staging->id}/services", ['kind' => 'database', 'engine' => 'valkey', 'server_id' => $server->id, 'name' => 'queue'])

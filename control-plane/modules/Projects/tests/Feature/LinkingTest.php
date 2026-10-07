@@ -6,7 +6,6 @@ use Falak\Projects\Contracts\ProjectDirectory;
 use Falak\Projects\Domain\Models\Project;
 use Falak\Projects\Events\ServiceLinked;
 use Falak\Projects\Events\ServiceUnlinked;
-use Falak\Servers\Contracts\ServerType;
 use Falak\Sites\Domain\Models\Site;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeAgentGateway;
@@ -86,9 +85,9 @@ it('unlinks deleted sites', function () {
 
 it('places databases once they exist and unlinks them when dropped', function () {
     $agents = FakeAgentGateway::install();
-    $engine = databases_engine($this->organization, 'postgresql', ServerType::Database);
+    $instance = databases_instance($this->organization, 'postgresql');
 
-    $this->post("/databases/servers/{$engine->id}/databases", ['name' => 'shop'])->assertSessionHasNoErrors();
+    $this->post("/databases/instances/{$instance->id}/databases", ['name' => 'shop'])->assertSessionHasNoErrors();
     $database = Database::query()->sole();
 
     expect(projects_service('database', $database->id))->toBeNull();
