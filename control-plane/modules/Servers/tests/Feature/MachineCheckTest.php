@@ -149,7 +149,7 @@ it('skips the machine check for agents without provision.v2 and provisions as be
         ->and($envelopes)->toHaveCount(1)
         ->and($envelopes[0]['type'])->toBe('provision.apply')
         ->and($envelopes[0]['payload'])->not->toHaveKey('components')
-        ->and($envelopes[0]['payload']['apt']['packages'])->toContain('docker.io', 'docker-compose-v2', 'docker-buildx')
+        ->and($envelopes[0]['payload']['docker'])->toBe(['live_restore' => true, 'min_version' => '28'])
         ->and($server->machineInspection()->exists())->toBeFalse();
 
     $this->post("/servers/{$server->id}/inspection")->assertSessionHasErrors(['server' => 'The agent on this server cannot run the machine check. Update the agent first.']);

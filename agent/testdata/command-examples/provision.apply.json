@@ -18,5 +18,5 @@
     {"name": "swap", "decision": "adopt"},
     {"name": "edge", "decision": "install"}
   ],
-  "docker": {"live_restore": true}
+  "docker": {"live_restore": true, "min_version": "28"}
 }

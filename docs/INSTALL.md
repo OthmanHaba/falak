@@ -28,7 +28,10 @@ Releases are published from [github.com/OthmanHaba/falak](https://github.com/Oth
 
 This host runs only Falak. The servers Falak manages are separate machines: Ubuntu 22.04, 24.04 or 26.04 (the agent
 installer warns on other apt-based systems). On 26.04 PHP comes from Ubuntu's archive (PHP 8.5 only) until `ppa:ondrej/php`
-publishes packages for it; databases are the release's own (PostgreSQL 18, MySQL 8.4, MariaDB 11.8, Redis 8.0, Valkey 9.0).
+publishes packages for it. Every server runs Docker Engine 28 or newer from Docker's apt repository (`docker-ce`, key fingerprint
+`9DC8 5822 9FC7 DD38 854A  E2D8 8D81 803C 0EBF CD88` checked): provisioning replaces an older Docker (containers, images and
+volumes stay); where Docker's repository has no packages for the release yet, the release's `docker.io` is used if it is
+28 or newer, else provisioning stops with that reason. Databases run as containers of Falak's images (`docs/DB_IMAGES.md`).
 
 **Resource budget** (limits are caps, not reservations). Idle values were measured with three managed servers enrolled and a site deployed (sim) and on a 2-CPU host profile (bench):
 

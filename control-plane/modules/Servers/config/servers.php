@@ -37,7 +37,10 @@ return [
     ],
 
     // Every server runs Docker (sites, compose stacks, functions and database containers).
-    'docker' => ['packages' => ['docker.io', 'docker-compose-v2', 'docker-buildx'], 'service' => 'docker'],
+    // Docker Engine from Docker's apt repository, at least min_version: the agent adds the repository (its key's fingerprint
+    // checked), replaces an older Docker, and falls back to the distribution's docker.io only where Docker's repository
+    // has no suite yet and that one is recent enough (provision.apply docker.min_version).
+    'docker' => ['packages' => ['docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-buildx-plugin', 'docker-compose-plugin'], 'service' => 'docker', 'min_version' => '28'],
 
     'base_packages' => ['acl', 'ca-certificates', 'curl', 'fail2ban', 'git', 'htop', 'jq', 'rsync', 'sqlite3', 'unattended-upgrades', 'unzip', 'zip'],
 
@@ -58,12 +61,10 @@ return [
     'machine_check' => [
         'timeout' => 180,
 
-        // Lowest versions Falak adopts or completes; anything older blocks. Compared with version_compare on the
-        // upstream version (Debian epoch and revision stripped). What Falak itself installs on the oldest supported
-        // release, so a server Falak provisioned never blocks: Ubuntu 22.04 ships docker.io 20.10 (24.0 / 26.1 in
-        // jammy-updates).
+        // Lowest versions Falak adopts or completes; an older Docker is replaced with Docker's (docker-ce). Compared with
+        // version_compare on the upstream version (Debian epoch and revision stripped).
         'minimum_versions' => [
-            'docker' => '20.10',
+            'docker' => '28',
         ],
 
         // Docker package families: a missing piece is completed from the engine's own family (never mixed: Ubuntu's

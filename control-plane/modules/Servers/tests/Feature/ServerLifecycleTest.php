@@ -77,7 +77,8 @@ it('creates a custom server, enrolls its agent, provisions it and syncs SSH keys
         ->and($envelopes[0]['idempotency_key'])->toBe("provision:{$server->id}:1")
         ->and(app(ProtocolSchemas::class)->validateCommand('provision.apply', ProtocolSchemas::toJson($envelopes[0]['payload'])))->toBe([])
         ->and($envelopes[0]['payload']['runtimes']['php'])->toMatchArray(['versions' => ['8.3', '8.4'], 'default' => '8.4', 'fpm' => true])
-        ->and($envelopes[0]['payload']['apt']['packages'])->toContain('docker.io')->not->toContain('mysql-server', 'redis-server');
+        ->and($envelopes[0]['payload']['docker'])->toBe(['live_restore' => true, 'min_version' => '28'])
+        ->and($envelopes[0]['payload']['apt']['packages'])->not->toContain('mysql-server', 'redis-server', 'docker.io');
 
     // Agent reports success → active, provisioned, keys synced.
     servers_finish($agent['headers'], $server->provision_command_id);

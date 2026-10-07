@@ -17,6 +17,9 @@ import (
 type DockerPlan struct {
 	// LiveRestore keeps containers running while dockerd restarts or is upgraded (database containers).
 	LiveRestore bool `json:"live_restore"`
+	// MinVersion: Docker Engine this recent or newer, from Docker's apt repository (docker-ce) unless the server already
+	// has it (dockerEngine).
+	MinVersion string `json:"min_version,omitempty"`
 }
 
 // DaemonConfigPath is the Docker daemon's configuration file.

@@ -88,7 +88,7 @@ final class DecisionEngine
         $service = (string) ($this->config['docker']['service'] ?? 'docker');
 
         if ($docker === null) {
-            return new ComponentDecision('docker', 'Docker', Decision::Install, "Installs Docker from Ubuntu's archive (".implode(', ', $packages).').', install: $packages, service: $service);
+            return new ComponentDecision('docker', 'Docker', Decision::Install, "Installs Docker Engine from Docker's apt repository (".implode(', ', $packages).').', install: $packages, service: $service);
         }
 
         $engine = (string) ($docker['engine_package'] ?? '');
@@ -138,7 +138,8 @@ final class DecisionEngine
         $minimum = (string) ($this->rules['minimum_versions']['docker'] ?? '0');
 
         if ($version !== null && $version !== '' && version_compare($version, $minimum, '<')) {
-            return $block("Docker {$version} is older than {$minimum}, the oldest Falak supports.", "Upgrade Docker to {$minimum} or newer from the same source, then re-check.");
+            // Replaced, not blocked: images, containers and volumes stay in /var/lib/docker.
+            return new ComponentDecision('docker', 'Docker', Decision::Install, "Replaces Docker {$version} (older than {$minimum}) with Docker Engine from Docker's apt repository (".implode(', ', $packages).'); containers, images and volumes stay.', $found, install: $packages, service: $service, notes: $notes);
         }
 
         if (($docker['server_version'] ?? '') === '' && ($docker['server_error'] ?? '') !== '') {

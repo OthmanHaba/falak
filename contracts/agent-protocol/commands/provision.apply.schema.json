@@ -357,9 +357,14 @@
           "type": "boolean",
           "default": false,
           "description": "merge \"live-restore\": true into /etc/docker/daemon.json (other keys kept; invalid JSON fails the step) and reload dockerd: containers (databases) keep running while the daemon restarts or is upgraded"
+        },
+        "min_version": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)*$",
+          "description": "Docker Engine this version or newer. A Docker already that recent stays; otherwise docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin and docker-compose-plugin come from Docker's apt repository (key fingerprint checked, signed-by keyring), replacing the distribution's docker.io (containers, images and volumes stay). Where Docker's repository has no suite for the release yet, the distribution's docker.io if it is this recent, else the step fails. Skipped when the docker component is adopted"
         }
       },
-      "description": "Docker daemon settings (feature db.instances). Every server runs Docker; its packages and service come through apt and services."
+      "description": "Docker Engine and daemon settings (feature db.instances). Every server runs Docker; its service comes through services."
     }
   },
   "$defs": {

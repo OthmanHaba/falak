@@ -15,8 +15,9 @@ use Illuminate\Support\Str;
  * Builds the full desired state for `provision.apply`
  * (contracts/agent-protocol/commands/provision.apply.schema.json) from a server's type and stack.
  *
- * Every server gets Docker (apt packages plus the docker service) with `live-restore` on, so restarting or upgrading
- * the daemon leaves database containers running. Databases are containers (the Databases module), never packages.
+ * Every server gets Docker Engine (servers.docker.min_version or newer, from Docker's apt repository: the agent's
+ * docker step, not `apt`) and its service, with `live-restore` on, so restarting or upgrading the daemon leaves
+ * database containers running. Databases are containers (the Databases module), never packages.
  *
  * With a machine check (agents with provision.v2) the plan follows its decisions: adopted and blocked components
  * install nothing (an adopted engine keeps its service entry), completed ones install only their missing packages, an
@@ -53,7 +54,7 @@ final class ProvisioningPlanBuilder
             'users' => [$this->unixUser()],
             'runtimes' => $this->runtimes($type, $stack, $phpVersions, $defaultPhp),
             'services' => $services,
-            'docker' => ['live_restore' => true],
+            'docker' => $this->docker($check),
             'unattended_upgrades' => ['enabled' => true, 'auto_reboot' => false, 'reboot_time' => '04:00'],
             'ssh' => ['port' => $server->ssh_port, 'permit_root_login' => 'prohibit-password', 'password_authentication' => false],
         ];
@@ -115,7 +116,8 @@ final class ProvisioningPlanBuilder
         $packages = (array) ($this->config['base_packages'] ?? []);
         $services = [['name' => 'fail2ban', 'enabled' => true, 'state' => 'started']];
 
-        [$install, $service] = $this->decidedPackages($check?->for('docker'), $this->config['docker']['packages'], $this->config['docker']['service']);
+        // Docker's packages come from its own repository (the agent's docker step); apt only completes a kept family.
+        [$install, $service] = $this->decidedPackages($check?->for('docker'), [], $this->config['docker']['service']);
         $packages = [...$packages, ...$install];
 
         if ($service !== null) {
@@ -126,6 +128,21 @@ final class ProvisioningPlanBuilder
         sort($packages);
 
         return [$packages, $services];
+    }
+
+    /**
+     * provision.apply `docker`: live-restore, and the Docker Engine version to reach (none when the machine check
+     * adopted or blocked the machine's Docker).
+     *
+     * @return array{live_restore: bool, min_version?: string}
+     */
+    private function docker(?MachineCheck $check): array
+    {
+        $decision = $check?->for('docker')?->decision;
+
+        return in_array($decision, [Decision::Adopt, Decision::Block, Decision::Skip], true)
+            ? ['live_restore' => true]
+            : ['live_restore' => true, 'min_version' => (string) ($this->config['docker']['min_version'] ?? '28')];
     }
 
     /**

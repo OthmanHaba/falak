@@ -31,7 +31,7 @@ it('installs everything on a fresh machine', function () {
         'ssh' => 'install', 'firewall' => 'install', 'swap' => 'install', 'hostname' => 'adopt', 'unattended_upgrades' => 'install', 'fail2ban' => 'install',
     ])
         ->and($check->blocking())->toBeFalse()
-        ->and($check->for('docker')->install)->toBe(['docker.io', 'docker-compose-v2', 'docker-buildx'])
+        ->and($check->for('docker')->install)->toBe(['docker-ce', 'docker-ce-cli', 'containerd.io', 'docker-buildx-plugin', 'docker-compose-plugin'])
         ->and($check->for('swap')->reason)->toBe('Creates a 2 GB /swapfile.')
         ->and($check->for('base')->install)->toBe(['acl'])
         // Ubuntu's stock 20auto-upgrades is no customisation: Falak writes its config as before.
@@ -81,12 +81,12 @@ it('completes Ubuntu\'s docker.io with docker-compose-v2', function () {
     expect($docker->decision)->toBe(Decision::Complete)
         ->and($docker->install)->toBe(['docker-compose-v2'])
         ->and($docker->keep)->toBe(['docker.io', 'docker-buildx'])
-        ->and($docker->reason)->toBe("Uses Docker 27.5.1 from Ubuntu archive; installs docker-compose-v2 from Ubuntu's archive.");
+        ->and($docker->reason)->toBe("Uses Docker 28.2.2 from Ubuntu archive; installs docker-compose-v2 from Ubuntu's archive.");
 
     expect(mc_decide(mc_docker_io(mc_report(), ['compose', 'buildx']), mc_wanted(mc_app_stack()))->for('docker')->decision)->toBe(Decision::Adopt);
 });
 
-it('blocks snap, rootless-only, podman and too old Docker', function (callable $machine, string $reason) {
+it('blocks snap, rootless-only and podman Docker', function (callable $machine, string $reason) {
     $docker = mc_decide($machine(), mc_wanted(mc_app_stack()))->for('docker');
 
     expect($docker->decision)->toBe(Decision::Block)
@@ -96,7 +96,6 @@ it('blocks snap, rootless-only, podman and too old Docker', function (callable $
     'snap' => [fn () => mc_report(['snaps' => [['name' => 'docker', 'version' => '27.2.0']], 'docker' => ['snap' => true, 'system_daemon' => false, 'rootless' => false, 'compose' => null, 'buildx' => null]]), 'Docker is installed as a snap'],
     'rootless only' => [fn () => mc_report(['docker' => ['snap' => false, 'system_daemon' => false, 'rootless' => true, 'compose' => null, 'buildx' => null]]), 'Only a rootless Docker'],
     'podman-docker' => [fn () => mc_package(mc_report(['docker' => ['engine_package' => 'podman-docker', 'system_daemon' => false]]), 'podman-docker', '4.9.3'), 'podman-docker provides'],
-    'too old' => [fn () => array_replace_recursive(mc_docker_io(mc_report(), ['compose', 'buildx']), ['docker' => ['server_version' => '19.03.13']]), 'Docker 19.03.13 is older than 20.10'],
     'masked docker.service' => [fn () => array_replace(mc_docker_io(mc_report(), ['compose', 'buildx']), ['services' => [['unit' => 'docker.service', 'active' => 'inactive', 'enabled' => 'masked']]]), 'docker.service is masked'],
     'CLI only' => [fn () => mc_package(mc_report(['docker' => ['engine_package' => '', 'client_version' => '28.1.1', 'snap' => false, 'rootless' => false, 'system_daemon' => false, 'compose' => null, 'buildx' => null]]), 'docker-ce-cli', '5:28.1.1-1~ubuntu.24.04~noble', 'vendor', 'https://download.docker.com/linux/ubuntu'), 'Only the Docker CLI is installed'],
 ]);

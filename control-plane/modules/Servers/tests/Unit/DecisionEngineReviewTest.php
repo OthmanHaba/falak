@@ -12,17 +12,23 @@ function mc_review_stack(): Stack
     return new Stack('frankenphp', ['8.4'], '8.4', '22');
 }
 
-it('adopts the docker.io Falak installs on every supported release', function (string $version) {
+it('adopts a Docker 28 or newer, and replaces an older one with Docker\'s docker-ce', function (string $version, Decision $decision) {
     $report = mc_docker_io(mc_report(), ['compose', 'buildx']);
     $report['packages'] = array_map(fn (array $p) => $p['name'] === 'docker.io' ? [...$p, 'version' => $version] : $p, $report['packages']);
     $report['docker']['server_version'] = MachineReport::upstream($version);
+    $docker = mc_decide($report, mc_wanted(mc_review_stack()))->for('docker');
 
-    expect(mc_decide($report, mc_wanted(mc_review_stack()))->for('docker')->decision)->toBe(Decision::Adopt);
+    expect($docker->decision)->toBe($decision);
+
+    if ($decision === Decision::Install) {
+        expect($docker->reason)->toContain('Replaces Docker '.MachineReport::upstream($version).' (older than 28)')
+            ->and($docker->install)->toContain('docker-ce');
+    }
 })->with([
-    'jammy release' => '20.10.12-0ubuntu4',
-    'jammy-updates' => '24.0.7-0ubuntu2~22.04.1',
-    'noble' => '27.5.1-0ubuntu3~24.04.2',
-    'resolute' => '28.2.2-0ubuntu1',
+    'jammy release' => ['20.10.12-0ubuntu4', Decision::Install],
+    'jammy-updates' => ['24.0.7-0ubuntu2~22.04.1', Decision::Install],
+    'noble' => ['27.5.1-0ubuntu3~24.04.2', Decision::Install],
+    'resolute' => ['28.2.2-0ubuntu1', Decision::Adopt],
 ]);
 
 it('does not count root\'s keys when root may not log in', function (callable $change) {

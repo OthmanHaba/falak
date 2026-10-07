@@ -30,6 +30,7 @@ type Deps struct {
 	OndrejPPAURL   string // passed to runtime
 	CaddyKeyURL    string // default https://dl.cloudsmith.io/public/caddy/stable/gpg.key
 	CaddyRepoURL   string // default https://dl.cloudsmith.io/public/caddy/stable/deb/debian
+	DockerRepoURL  string // default https://download.docker.com/linux (+ /<os id>)
 }
 
 // Provisioner runs provision.apply.
@@ -51,6 +52,9 @@ func New(d Deps) *Provisioner {
 	}
 	if d.CaddyRepoURL == "" {
 		d.CaddyRepoURL = "https://dl.cloudsmith.io/public/caddy/stable/deb/debian"
+	}
+	if d.DockerRepoURL == "" {
+		d.DockerRepoURL = "https://download.docker.com/linux"
 	}
 	rt := runtime.New(runtime.Deps{Runner: d.Runner, FS: d.FS, Logger: d.Logger, HTTP: d.HTTP, Arch: d.Arch, FrankenPHPBase: d.FrankenPHPBase, OndrejPPAURL: d.OndrejPPAURL})
 	return &Provisioner{d: d, rt: rt}
@@ -235,6 +239,10 @@ func (p *Provisioner) steps(plan Plan) []step {
 			rm, err := a.Remove(ctx, withoutAdopted(plan.Apt.Remove, adopted))
 			return len(inst)+len(rm) > 0, err
 		})
+	}
+	if _, keep := adopted["docker"]; plan.Docker != nil && plan.Docker.MinVersion != "" && !keep {
+		min := plan.Docker.MinVersion
+		add("docker:engine", func(ctx context.Context, st commands.Stream) (bool, error) { return p.dockerEngine(ctx, st, min) })
 	}
 	for _, c := range plan.Components {
 		if c.Decision != DecisionAdopt || len(c.Packages) == 0 {

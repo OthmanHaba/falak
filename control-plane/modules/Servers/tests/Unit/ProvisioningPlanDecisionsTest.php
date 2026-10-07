@@ -30,6 +30,8 @@ it('installs no Docker package for an adopted Docker (the incident) and tells th
 
     expect($plan['apt']['packages'])->not->toContain('docker.io', 'docker-compose-v2', 'docker-buildx', 'docker-ce')
         ->and(array_column($plan['services'], 'name'))->toContain('docker')
+        // The agent leaves an adopted Docker alone (no engine step).
+        ->and($plan['docker'])->toBe(['live_restore' => true])
         ->and(collect($plan['components'])->firstWhere('name', 'docker'))->toBe(['name' => 'docker', 'decision' => 'adopt', 'packages' => ['docker-ce', 'docker-compose-plugin', 'docker-buildx-plugin'], 'service' => 'docker'])
         ->and(app(ProtocolSchemas::class)->validateCommand('provision.apply', ProtocolSchemas::toJson($plan)))->toBe([]);
 });
@@ -68,5 +70,6 @@ it('builds today\'s plan without a machine check', function () {
 
     expect($plan)->not->toHaveKey('components')
         ->and($plan['hostname'])->toBe('app-1')
-        ->and($plan['apt']['packages'])->toContain('docker.io')->not->toContain('postgresql', 'redis-server');
+        ->and($plan['docker'])->toBe(['live_restore' => true, 'min_version' => '28'])
+        ->and($plan['apt']['packages'])->not->toContain('postgresql', 'redis-server', 'docker.io');
 });
