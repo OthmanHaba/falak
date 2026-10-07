@@ -142,6 +142,24 @@ func contains(l []string, s string) bool {
 	return false
 }
 
+func TestUserNeverInDockerGroup(t *testing.T) {
+	f := &runnertest.Fake{}
+	f.On("getent passwd falak", runner.Result{Stdout: []byte("falak:x:1000:1000::/home/falak:/bin/bash\n")})
+	f.On("id -nG falak", runner.Result{Stdout: []byte("falak www-data docker\n")})
+	s, root, st, _ := newSys(t, f)
+	os.MkdirAll(filepath.Join(root, "home/falak"), 0o755)
+
+	// Asking for docker is refused outright.
+	if _, err := EnsureUser(context.Background(), f, s.d.FS, UserSpec{Name: "falak", Groups: []string{"www-data", "docker"}}, st); err == nil {
+		t.Fatal("docker group accepted")
+	}
+	// A user an earlier build put in docker leaves it.
+	r, err := EnsureUser(context.Background(), f, s.d.FS, UserSpec{Name: "falak", Groups: []string{"www-data"}}, st)
+	if err != nil || !r.Changed || !f.Ran("gpasswd --delete falak docker") {
+		t.Fatal(r, err, f.Lines())
+	}
+}
+
 func TestUserCreate(t *testing.T) {
 	var exists atomic.Bool
 	f := &runnertest.Fake{}

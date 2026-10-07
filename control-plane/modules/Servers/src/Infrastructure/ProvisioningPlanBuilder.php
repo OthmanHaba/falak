@@ -187,7 +187,9 @@ final class ProvisioningPlanBuilder
     private function unixUser(): array
     {
         $user = (string) ($this->config['unix_user'] ?? 'falak');
-        $groups = ['www-data', 'docker'];
+        // Never docker: membership is root on the server (the socket reaches every container and its secrets). Only the
+        // agent, as root, drives Docker; the agent also takes the user out of docker where an earlier build put it.
+        $groups = ['www-data'];
 
         return [
             'name' => $user,

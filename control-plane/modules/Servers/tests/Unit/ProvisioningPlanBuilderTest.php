@@ -52,7 +52,7 @@ it('builds an all-in-one app server plan', function () {
         ->and($plan['runtimes']['caddy'])->toBe(['enabled' => false])
         ->and(array_column($plan['services'], 'name'))->toBe(['fail2ban', 'docker'])
         ->and($plan['docker'])->toBe(['live_restore' => true])
-        ->and($plan['users'][0])->toMatchArray(['name' => 'falak', 'groups' => ['www-data', 'docker'], 'sudo' => 'none'])
+        ->and($plan['users'][0])->toMatchArray(['name' => 'falak', 'groups' => ['www-data'], 'sudo' => 'none'])
         ->and($plan['ssh'])->toBe(['port' => 2222, 'permit_root_login' => 'prohibit-password', 'password_authentication' => false])
         ->and($plan['unattended_upgrades']['enabled'])->toBeTrue();
 });
@@ -74,7 +74,9 @@ it('gives every server Docker with live-restore and no database or cache engine'
         ->and($plan['apt']['packages'])->not->toContain('postgresql', 'postgresql-contrib', 'mysql-server', 'mariadb-server', 'redis-server', 'valkey-server')
         ->and(array_column($plan['services'], 'name'))->toBe(['fail2ban', 'docker'])
         ->and($plan['docker'])->toBe(['live_restore' => true])
-        ->and($plan['users'][0]['groups'])->toBe(['www-data', 'docker']);
+        ->and($plan['users'][0]['groups'])->toBe(['www-data'])
+        // No site user ever gets the Docker socket (root on the server).
+        ->and(collect($plan['users'])->pluck('groups')->flatten()->all())->not->toContain('docker');
 })->with(ServerType::cases());
 
 it('provisions dedicated servers with only their runtimes', function () {
