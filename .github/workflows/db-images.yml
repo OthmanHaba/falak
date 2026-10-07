@@ -1,13 +1,20 @@
-# Falak database images (images/db, docs/DB_IMAGES.md): for every engine/version in images/db/versions.json, build
-# the image, smoke-test it against a real container (images/db/test.sh, amd64), scan it with Trivy (a fixable HIGH or
-# CRITICAL fails), and, outside pull requests, publish it multi-arch to GHCR with an SBOM, signed with cosign
-# (keyless, GitHub OIDC).
+# Falak database images (images/db, docs/DB_IMAGES.md). What is published is exactly what was tested:
+#
+#   build    (per engine, version and architecture, on a native runner; read-only token, no credentials kept)
+#            build once into an OCI archive, smoke-test it against real containers (images/db/test.sh), scan the
+#            archive with Trivy (a fixable HIGH or CRITICAL fails), make its SPDX SBOM, keep both as an artifact.
+#   publish  (not for pull requests; needs every build of the image)
+#            push each archive by digest (skopeo, digests preserved), create the multi-arch index and its tags,
+#            sign it with cosign keyless (GitHub OIDC, recursively: index and platform images) and attest each
+#            platform image's SBOM.
 #
 # Tags, ghcr.io/<owner>/falak-<engine>:
 #   main and the weekly rebuild  <version>, <version>-falak<run>       (run = this workflow's run number)
 #   release/** branches          <version>-rc, <version>-rc-falak<run>
-#   tags vX.Y.Z                  <version>-vX.Y.Z                       (the images built from that release)
+#   tags vX.Y.Z                  <version>-vX.Y.Z
 #   pull requests                build, test and scan only
+#
+# Actions are pinned by commit; Trivy and cosign run pinned versions.
 name: db-images
 
 on:
@@ -37,23 +44,103 @@ jobs:
   plan:
     runs-on: ubuntu-24.04
     outputs:
-      matrix: ${{ steps.plan.outputs.matrix }}
+      builds: ${{ steps.plan.outputs.builds }}
+      images: ${{ steps.plan.outputs.images }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: shellcheck
         run: shellcheck images/db/*.sh
-      - name: Matrix from versions.json
+      - name: Matrices from versions.json
         id: plan
         run: |
           go_image=$(jq -r .go_image images/db/versions.json)
-          matrix=$(jq -c --arg go "$go_image" '[.images[] | {engine, version, platforms,
+          images=$(jq -c --arg go "$go_image" '[.images[] | {engine, version, platforms,
             build_args: (["GO_IMAGE=\($go)", "BASE_IMAGE=\(.base)", "ENGINE_VERSION=\(.version)"]
               + ((.args // {}) | to_entries | map("\(.key)=\(.value)")) | join("\n"))}]' images/db/versions.json)
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          builds=$(jq -c '[.[] | . as $i | (.platforms | split(",")[]) | {engine: $i.engine, version: $i.version,
+            build_args: $i.build_args, platform: ., arch: (split("/")[1]),
+            runner: (if . == "linux/arm64" then "ubuntu-24.04-arm" else "ubuntu-24.04" end)}]' <<<"$images")
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+          echo "builds=$builds" >> "$GITHUB_OUTPUT"
 
-  image:
-    name: ${{ matrix.engine }} ${{ matrix.version }}
+  build:
+    name: ${{ matrix.engine }} ${{ matrix.version }} (${{ matrix.arch }})
     needs: plan
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.builds) }}
+    env:
+      ENGINE: ${{ matrix.engine }}
+      VERSION: ${{ matrix.version }}
+      ARCH: ${{ matrix.arch }}
+      CI_TAG: falak-ci/falak-${{ matrix.engine }}:${{ matrix.version }}-${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Build version
+        id: meta
+        run: |
+          version="sha-${GITHUB_SHA::12}"
+          case "$GITHUB_REF" in refs/tags/v*) version="$GITHUB_REF_NAME" ;; esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      # One build, two exports: the OCI archive that is scanned and published, and the same image loaded for tests.
+      - name: Build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: images/db/${{ matrix.engine }}/Dockerfile
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            ${{ matrix.build_args }}
+            FALAK_VERSION=${{ steps.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          provenance: false
+          sbom: false
+          outputs: |
+            type=oci,dest=${{ runner.temp }}/image.tar
+            type=docker,name=${{ env.CI_TAG }}
+          cache-from: type=gha,scope=db-${{ matrix.engine }}-${{ matrix.version }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=db-${{ matrix.engine }}-${{ matrix.version }}-${{ matrix.arch }}
+
+      - name: Smoke tests (start, health, tuning, TLS, backups, spooling, PITR)
+        run: IMAGE="$CI_TAG" images/db/test.sh "$ENGINE" "$VERSION"
+
+      - name: Trivy (fixable HIGH/CRITICAL fail) and SBOM, on the archive that gets published
+        run: |
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/layout"
+          # Trivy reads an OCI layout directory: the archive, unpacked.
+          tar -xf "$RUNNER_TEMP/image.tar" -C "$RUNNER_TEMP/layout"
+          trivy() {
+            docker run --rm -v "$RUNNER_TEMP/layout:/in:ro" -v "$RUNNER_TEMP/out:/out" -v "$PWD/images/db:/cfg:ro" "$TRIVY_IMAGE" "$@"
+          }
+          trivy image --input /in --config /cfg/trivy.yaml --ignorefile /cfg/.trivyignore
+          trivy image --input /in --format spdx-json --output /out/sbom.spdx.json --exit-code 0
+          mv "$RUNNER_TEMP/image.tar" "$RUNNER_TEMP/out/image.tar"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: db-${{ matrix.engine }}-${{ matrix.version }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: publish ${{ matrix.engine }} ${{ matrix.version }}
+    needs: [plan, build]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -62,96 +149,66 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+        include: ${{ fromJSON(needs.plan.outputs.images) }}
+    env:
+      ENGINE: ${{ matrix.engine }}
+      VERSION: ${{ matrix.version }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Version and tags
+      - name: Image name and tags
         id: meta
         run: |
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/falak-${{ matrix.engine }}"
-          v="${{ matrix.version }}"
-          version="sha-${GITHUB_SHA::12}"
-          tags=""
-          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
-            case "$GITHUB_REF" in
-              refs/heads/main) tags="$image:$v,$image:$v-falak$GITHUB_RUN_NUMBER" ;;
-              refs/heads/release/*) tags="$image:$v-rc,$image:$v-rc-falak$GITHUB_RUN_NUMBER" ;;
-              refs/tags/v*) version="$GITHUB_REF_NAME" tags="$image:$v-$GITHUB_REF_NAME" ;;
-            esac
-          fi
-          {
-            echo "image=$image"
-            echo "version=$version"
-            echo "tags=$tags"
-          } >> "$GITHUB_OUTPUT"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/falak-$ENGINE"
+          case "$GITHUB_REF" in
+            refs/heads/main) tags="$VERSION $VERSION-falak$GITHUB_RUN_NUMBER" ;;
+            refs/heads/release/*) tags="$VERSION-rc $VERSION-rc-falak$GITHUB_RUN_NUMBER" ;;
+            refs/tags/v*) tags="$VERSION-$GITHUB_REF_NAME" ;;
+            *) tags="" ;;
+          esac
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-qemu-action@v3
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         if: steps.meta.outputs.tags != ''
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build (amd64, loaded for the tests)
-        uses: docker/build-push-action@v6
         with:
-          context: .
-          file: images/db/${{ matrix.engine }}/Dockerfile
-          platforms: linux/amd64
-          build-args: |
-            ${{ matrix.build_args }}
-            FALAK_VERSION=${{ steps.meta.outputs.version }}
-          load: true
-          tags: falak-ci/falak-${{ matrix.engine }}:${{ matrix.version }}
-          cache-from: type=gha,scope=db-${{ matrix.engine }}-${{ matrix.version }}
-          cache-to: type=gha,mode=max,scope=db-${{ matrix.engine }}-${{ matrix.version }}
+          pattern: db-${{ matrix.engine }}-${{ matrix.version }}-*
+          path: ${{ runner.temp }}/images
 
-      - name: Smoke tests (start, health, tuning, TLS, backups, spooling, PITR)
-        run: IMAGE="falak-ci/falak-${{ matrix.engine }}:${{ matrix.version }}" images/db/test.sh "${{ matrix.engine }}" "${{ matrix.version }}"
-
-      - name: Trivy (fixable HIGH/CRITICAL fail)
-        run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD/images/db:/cfg:ro" "$TRIVY_IMAGE" \
-            image --config /cfg/trivy.yaml --ignorefile /cfg/.trivyignore \
-            "falak-ci/falak-${{ matrix.engine }}:${{ matrix.version }}"
-
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         if: steps.meta.outputs.tags != ''
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push (multi-arch, SBOM and provenance attached)
-        id: push
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
         if: steps.meta.outputs.tags != ''
-        uses: docker/build-push-action@v6
         with:
-          context: .
-          file: images/db/${{ matrix.engine }}/Dockerfile
-          platforms: ${{ matrix.platforms }}
-          build-args: |
-            ${{ matrix.build_args }}
-            FALAK_VERSION=${{ steps.meta.outputs.version }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          push: true
-          sbom: true
-          provenance: mode=max
-          tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha,scope=db-${{ matrix.engine }}-${{ matrix.version }}
+          cosign-release: v2.6.1
 
-      - uses: sigstore/cosign-installer@v3
-        if: steps.meta.outputs.tags != ''
-
-      - name: Sign (cosign keyless) and attest the SBOM
+      - name: Push by digest, create the index and its tags, sign, attest the SBOMs
         if: steps.meta.outputs.tags != ''
         env:
-          REF: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
+          IMAGE: ${{ steps.meta.outputs.image }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cosign sign --yes --recursive "$REF"
-          docker buildx imagetools inspect "$REF" --format '{{ json (index .SBOM "linux/amd64").SPDX }}' > sbom.spdx.json
-          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
-          cosign verify "$REF" \
-            --certificate-identity "${{ github.server_url }}/${{ github.workflow_ref }}" \
+          set -euo pipefail
+          printf '%s' "$GHCR_TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          refs=()
+          for dir in "$RUNNER_TEMP"/images/db-"$ENGINE"-"$VERSION"-*/; do
+            # The archive holds one image manifest: its digest is what was tested and scanned.
+            digest=$(tar -xOf "$dir/image.tar" index.json | jq -r '.manifests[0].digest')
+            skopeo copy --preserve-digests "oci-archive:$dir/image.tar" "docker://$IMAGE@$digest"
+            cosign attest --yes --type spdxjson --predicate "$dir/sbom.spdx.json" "$IMAGE@$digest"
+            refs+=("$IMAGE@$digest")
+          done
+          args=()
+          for t in $TAGS; do args+=(-t "$IMAGE:$t"); done
+          docker buildx imagetools create "${args[@]}" "${refs[@]}"
+          first=${TAGS%% *}
+          index=$(docker buildx imagetools inspect "$IMAGE:$first" --format '{{json .Manifest}}' | jq -r .digest)
+          cosign sign --yes --recursive "$IMAGE@$index"
+          cosign verify "$IMAGE@$index" \
+            --certificate-identity "$GITHUB_SERVER_URL/$GITHUB_WORKFLOW_REF" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
-          echo "published $REF (${{ steps.meta.outputs.tags }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "published $IMAGE@$index ($TAGS) from ${refs[*]}" >> "$GITHUB_STEP_SUMMARY"
