@@ -149,6 +149,23 @@ func (s *Service) Drill(ctx context.Context, p DrillPayload, st commands.Stream)
 	return done()
 }
 
+// SweepDrills removes scratch directories (<root>/.drills/<id>) interrupted drills left behind, older than maxAge.
+func (s *Service) SweepDrills(maxAge time.Duration) int {
+	dir := s.d.FS.P(filepath.Join(s.d.Root, ".drills"))
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	cutoff := time.Now().Add(-maxAge)
+	n := 0
+	for _, e := range entries {
+		if info, err := e.Info(); err == nil && info.ModTime().Before(cutoff) && os.RemoveAll(filepath.Join(dir, e.Name())) == nil {
+			n++
+		}
+	}
+	return n
+}
+
 // within reports whether got is within tol percent of want (rounded up).
 func within(got, want int64, tol float64) bool {
 	allowed := int64(math.Ceil(float64(want) * tol / 100))

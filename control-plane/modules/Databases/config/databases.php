@@ -98,6 +98,7 @@ return [
     // engine's minimum when larger), and how far the restored row counts may be from those at backup time.
     'drills' => [
         'memory_bytes' => (int) env('FALAK_DRILL_MEMORY_BYTES', 512 * 1024 ** 2),
+        'cpus' => (float) env('FALAK_DRILL_CPUS', 1),
         'tolerance_percent' => (float) env('FALAK_DRILL_TOLERANCE_PERCENT', 10),
     ],
 

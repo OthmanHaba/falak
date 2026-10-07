@@ -200,6 +200,7 @@ final class CommandPayloads
                 'image' => $instance->image,
                 'digest' => $instance->image_digest,
                 'memory_bytes' => $memory,
+                'cpus' => (float) config('databases.drills.cpus', 1),
             ],
             'database' => $backup->database_name,
             'source' => ['kind' => 'url', 'url' => $downloadUrl],

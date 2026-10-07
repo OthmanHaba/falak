@@ -56,7 +56,7 @@ type Deps struct {
 	// SecretsDir holds the containers' secret files on the tmpfs (default /run/falak/secrets).
 	SecretsDir string
 	// EtcDir holds the instances' TLS files under db/<id>/tls (default /etc/falak).
-	EtcDir  string
+	EtcDir string
 	// TempDir is the real path backups are staged in; default <VolumesRoot>/.staging (the volume store, not a tmpfs).
 	TempDir string
 	// DrillRoot holds restore drills' scratch data (default /var/lib/falak/drills).
@@ -64,6 +64,8 @@ type Deps struct {
 	// MemAvailable and FreeBytes size up a drill (defaults: /proc/meminfo, statfs(2)).
 	MemAvailable func() (int64, error)
 	FreeBytes    func(path string) (int64, error)
+	// CheckQueryWait is how long a drill's check query may run, from the agent's side (default 75 s).
+	CheckQueryWait time.Duration
 	// Mounted reports whether a host path is a mountpoint (default: /proc/self/mountinfo).
 	Mounted func(path string) bool
 	// Waits (tests shorten them).
@@ -130,6 +132,9 @@ func New(d Deps) *DB {
 	}
 	if d.FreeBytes == nil {
 		d.FreeBytes = freeBytes
+	}
+	if d.CheckQueryWait == 0 {
+		d.CheckQueryWait = 75 * time.Second
 	}
 	if d.VolumeWait == 0 {
 		d.VolumeWait = 120 * time.Second

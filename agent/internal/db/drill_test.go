@@ -211,7 +211,9 @@ func TestDrillRestoresIntoAThrowawayContainer(t *testing.T) {
 	}
 	body := h.dock.bodies[name]
 	if body.HostConfig.NetworkMode != "none" || body.HostConfig.Memory != 256<<20 || len(body.HostConfig.PortBindings) != 0 ||
-		body.Labels[LabelDrill] != p.Drill || body.HostConfig.RestartPolicy.Name != "" || !strings.HasSuffix(body.Image, "@"+p.Instance.Digest) {
+		body.Labels[LabelDrill] != p.Drill || body.HostConfig.RestartPolicy.Name != "" || !strings.HasSuffix(body.Image, "@"+p.Instance.Digest) ||
+		body.HostConfig.NanoCPUs != 1e9 || body.HostConfig.PidsLimit != 512 || strings.Join(body.HostConfig.CapDrop, ",") != "ALL" ||
+		strings.Join(body.HostConfig.CapAdd, ",") != "CHOWN,DAC_OVERRIDE,FOWNER,SETUID,SETGID" || strings.Join(body.HostConfig.SecurityOpt, ",") != "no-new-privileges" {
 		t.Fatalf("drill container %+v", body)
 	}
 	// Gone, with its data and password.

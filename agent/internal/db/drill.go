@@ -31,6 +31,14 @@ import (
 // LabelDrill marks a drill's container (its value is the drill id).
 const LabelDrill = "falak.db.drill"
 
+// drillCapAdd are the only capabilities a drill container keeps: the official entrypoints chown the data directory and
+// drop to the engine's user (gosu: setuid/setgid), and root falak-db reads files the engine's user owns. Checked by
+// images/db/drill-test.sh.
+var drillCapAdd = []string{"CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID"}
+
+// drillPids caps a drill container's processes (the engine's backends and workers fit far below it).
+const drillPids = 512
+
 // Drill sizing: what must be free besides the drill's memory limit and its data.
 const (
 	drillMemoryMargin = 256 << 20
@@ -46,6 +54,8 @@ type DrillInstance struct {
 	Image       string `json:"image"`
 	Digest      string `json:"digest"`
 	MemoryBytes int64  `json:"memory_bytes"`
+	// CPUs is the drill's CPU limit (default 1).
+	CPUs float64 `json:"cpus,omitempty"`
 }
 
 // DrillChecks are what a restored backup is held to.
@@ -129,6 +139,9 @@ func (p DrillPayload) validate() error {
 	}
 	if p.Instance.MemoryBytes < 32<<20 {
 		return payloadErr("instance.memory_bytes must be at least 32 MiB")
+	}
+	if p.Instance.CPUs < 0 || p.Instance.CPUs > 64 {
+		return payloadErr("instance.cpus must be between 0 and 64")
 	}
 	if !isKeyValue(p.Instance.Engine) {
 		if err := checkIdent("database", p.Database); err != nil {
@@ -322,8 +335,15 @@ func (db *DB) prepareDrill(dir, secrets, engine string) error {
 }
 
 // drillBody is the drill's container: the instance's image by digest, its memory limit, no network and no restart.
+//
+// It is hardened beyond an instance's: one CPU unless told otherwise, a PID limit, every capability dropped but those the
+// entrypoint needs, and no-new-privileges.
 func (db *DB) drillBody(p DrillPayload, s InstanceSpec, dir, secrets string) docker.CreateBody {
 	stop := 30
+	cpus := p.Instance.CPUs
+	if cpus == 0 {
+		cpus = 1
+	}
 	b := docker.CreateBody{
 		Image: s.ref(),
 		Env:   []string{"FALAK_DB_SETTINGS_FILE=" + settingsFile, "FALAK_DB_SPOOL=" + spoolTarget, passwordEnv(s.Engine) + "=" + passwordPath},
@@ -349,6 +369,11 @@ func (db *DB) drillBody(p DrillPayload, s InstanceSpec, dir, secrets string) doc
 			},
 			NetworkMode: "none",
 			Memory:      p.Instance.MemoryBytes,
+			NanoCPUs:    int64(cpus * 1e9),
+			PidsLimit:   drillPids,
+			CapDrop:     []string{"ALL"},
+			CapAdd:      drillCapAdd,
+			SecurityOpt: []string{"no-new-privileges"},
 		},
 	}
 	if s.Engine == "postgres" {
@@ -358,8 +383,16 @@ func (db *DB) drillBody(p DrillPayload, s InstanceSpec, dir, secrets string) doc
 }
 
 // checkQuery runs the user's check query read-only in the drill's container (falak-db query) and returns its rows.
+//
+// The engine stops the statement after 60 s (set on the temporary role falak-db runs it as); the agent gives up after
+// CheckQueryWait whatever the engine does, and the container goes with the drill.
 func (db *DB) checkQuery(ctx context.Context, container, database, query string) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, db.d.CheckQueryWait)
+	defer cancel()
 	out, _, err := db.execIn(ctx, container, strings.NewReader(query), nil, nil, "query", "--database", database)
+	if ctx.Err() != nil {
+		return 0, fmt.Errorf("the check query did not finish within %s", db.d.CheckQueryWait)
+	}
 	if err != nil {
 		return 0, err
 	}

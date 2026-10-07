@@ -70,6 +70,7 @@ type Components struct {
 	Deployer   *deploy.Deployer
 	Functions  *functions.Functions
 	DB         *db.DB
+	Volumes    *volumes.Service
 }
 
 // Build constructs every executor and registers the full v1 catalogue.
@@ -131,12 +132,13 @@ func Build(d Deps) *Components {
 	fns := functions.New(functions.Deps{FS: d.FS, Runner: d.Runner, Docker: docker.NewClient(cfg.DockerSock), Gateway: fngateway.NewClient(""),
 		Logger: log.With("component", "functions"), Binary: BinaryPath, Version: version.Version})
 	fns.Register(reg)
-	volumes.New(volumes.Deps{Runner: d.Runner, FS: d.FS, HTTP: d.HTTP, Docker: docker.NewClient(cfg.DockerSock), Logger: log.With("component", "volumes"),
-		Root: filepath.Join(cfg.StateDir, "volumes"), SitesRoot: cfg.SitesRoot, BindAllow: cfg.BindAllow()}).Register(reg)
+	vols := volumes.New(volumes.Deps{Runner: d.Runner, FS: d.FS, HTTP: d.HTTP, Docker: docker.NewClient(cfg.DockerSock), Logger: log.With("component", "volumes"),
+		Root: filepath.Join(cfg.StateDir, "volumes"), SitesRoot: cfg.SitesRoot, BindAllow: cfg.BindAllow()})
+	vols.Register(reg)
 	d.Telemetry.Register(reg)
 	terms.Register(reg)
 
-	return &Components{Registry: reg, Supervisor: sup, Cron: sched, PTY: terms, Docker: dock, Edge: edgeMgr, Deployer: dep, Functions: fns, DB: dbs}
+	return &Components{Registry: reg, Supervisor: sup, Cron: sched, PTY: terms, Docker: dock, Edge: edgeMgr, Deployer: dep, Functions: fns, DB: dbs, Volumes: vols}
 }
 
 // ensureEnrolled enrolls only when there is no identity yet: `falak-agent run` never replaces one because
@@ -279,6 +281,8 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	log.Info("falak-agent running", "version", version.Version, "session", client.Session, "commands", len(comps.Registry.Types()))
 	loops.Add(1)
+	go func() { defer loops.Done(); sweepDrills(runCtx, comps, log, time.Hour) }()
+	loops.Add(1)
 	go func() {
 		defer loops.Done()
 		if err := comps.Functions.RefreshGateway(runCtx); err != nil {
@@ -351,4 +355,20 @@ func missingSecrets(lists ...[]string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// sweepDrills removes what interrupted restore drills left behind (containers, scratch data, secret files), at start
+// and then every interval.
+func sweepDrills(ctx context.Context, comps *Components, log *slog.Logger, every time.Duration) {
+	for {
+		n := comps.DB.SweepDrills(ctx, db.DrillMaxAge) + comps.Volumes.SweepDrills(db.DrillMaxAge)
+		if n > 0 {
+			log.Info("removed leftovers of interrupted restore drills", "count", n)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(every):
+		}
+	}
 }

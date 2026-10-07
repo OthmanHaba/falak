@@ -1,7 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.drill.schema.json",
-  "title": "db.drill — restore drill: a throwaway container of the instance's image digest (small, no network, a scratch directory) gets the backup restored and checked (tables or keys, the 10 largest tables' row counts against those recorded at backup time, an optional read-only check query); the container and its data are then removed",
+  "title": "db.drill — restore drill: a throwaway container of the instance's image digest (small: 1 CPU, 512 processes, every capability but the entrypoint's dropped, no-new-privileges, no network, a scratch directory) gets the backup restored and checked (tables or keys, the 10 largest tables' row counts against those recorded at backup time, an optional read-only check query); the container and its data are then removed",
+  "x-falak-forget-secrets": [
+    "encryption.key",
+    "encryption.identity"
+  ],
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -53,6 +57,12 @@
           "type": "integer",
           "minimum": 33554432,
           "description": "the drill container's memory limit"
+        },
+        "cpus": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 64,
+          "description": "the drill container's CPU limit (default 1)"
         }
       }
     },
