@@ -115,6 +115,8 @@ type RenderInput struct {
 	// PasswordSHA256 is the hex SHA-256 of the redis/valkey password, for the ACL file (the plaintext never lands in
 	// a config file).
 	PasswordSHA256 string
+	// PreviousPasswordSHA256 stays valid next to it while a rotation overlaps (FALAK_DB_PREVIOUS_PASSWORD_FILE).
+	PreviousPasswordSHA256 string
 }
 
 // File is one rendered file.
@@ -436,7 +438,11 @@ func renderKV(in RenderInput) ([]File, Tuning, error) {
 
 	// The default user, with the password as a SHA-256 hash. CONFIG, DEBUG and MODULE stay with Falak: settings change
 	// by re-rendering at start. Redis 7 and Valkey reject comments in ACL files.
-	acl := "user default on #" + in.PasswordSHA256 + " ~* &* +@all -config -debug -module\n"
+	hashes := "#" + in.PasswordSHA256
+	if in.PreviousPasswordSHA256 != "" && in.PreviousPasswordSHA256 != in.PasswordSHA256 {
+		hashes = "#" + in.PreviousPasswordSHA256 + " " + hashes
+	}
+	acl := "user default on " + hashes + " ~* &* +@all -config -debug -module\n"
 
 	return []File{
 			{Path: kvConfPath, Mode: 0o640, Content: w.String()},

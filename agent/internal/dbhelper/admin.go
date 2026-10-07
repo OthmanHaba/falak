@@ -58,6 +58,33 @@ func (h *Helper) myExec(ctx context.Context, sql string) (string, error) {
 	return strings.TrimSpace(out), err
 }
 
+// pgSchemaGrants grants role on every schema of the database (not only public: apps create their own): schemaPriv on
+// the schema, tablePrivs on its tables (and sequences when withSequences), and the same by default on what the
+// superuser creates there later (restores). privileges come from normPrivileges (checked against `^[A-Z ]+$`).
+func pgSchemaGrants(role, schemaPriv, tablePrivs string, withSequences bool) string {
+	seq := ""
+	if withSequences {
+		seq = "  EXECUTE format('GRANT ALL ON ALL SEQUENCES IN SCHEMA %I TO %I', r.nspname, o);\n" +
+			"  EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON SEQUENCES TO %I', r.nspname, o);\n"
+	}
+	return "DO $falak$ DECLARE r record; o text := " + pgLit(role) + "; BEGIN\n" +
+		"FOR r IN SELECT n.nspname FROM pg_namespace n WHERE " + pgUserSchemas + " LOOP\n" +
+		"  EXECUTE format('GRANT " + schemaPriv + " ON SCHEMA %I TO %I', r.nspname, o);\n" +
+		"  EXECUTE format('GRANT " + tablePrivs + " ON ALL TABLES IN SCHEMA %I TO %I', r.nspname, o);\n" +
+		"  EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT " + tablePrivs + " ON TABLES TO %I', r.nspname, o);\n" +
+		seq + "END LOOP; END $falak$;\n"
+}
+
+// myExecWith is myExec with a given root password instead of the password file's.
+func (h *Helper) myExecWith(ctx context.Context, password, sql string) (string, error) {
+	esc := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(password)
+	creds := []byte(fmt.Sprintf("[client]\nuser=root\npassword=\"%s\"\nsocket=%s\n", esc, mySocket))
+	c := myCmd(creds, h.Engine.client("mysql"), "-N", "-B", "--default-character-set=utf8mb4")
+	c.Stdin = strings.NewReader(sql)
+	out, err := output(ctx, h.Run, c)
+	return strings.TrimSpace(out), err
+}
+
 // pgLit quotes a string literal for PostgreSQL (standard_conforming_strings is on).
 func pgLit(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 
@@ -345,11 +372,7 @@ func (h *Helper) pgUserApply(ctx context.Context, s UserSpec, desired map[string
 			if _, err := h.pgExec(ctx, "postgres", "GRANT ALL PRIVILEGES ON DATABASE "+pgIdent(d)+" TO "+u+";"); err != nil {
 				return false, err
 			}
-			if _, err := h.pgExec(ctx, d, "GRANT ALL ON SCHEMA public TO "+u+";\n"+
-				"GRANT ALL ON ALL TABLES IN SCHEMA public TO "+u+";\n"+
-				"GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO "+u+";\n"+
-				"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO "+u+";\n"+
-				"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO "+u+";\n"); err != nil {
+			if _, err := h.pgExec(ctx, d, pgSchemaGrants(s.Username, "ALL", "ALL", true)); err != nil {
 				return false, err
 			}
 			continue
@@ -358,9 +381,7 @@ func (h *Helper) pgUserApply(ctx context.Context, s UserSpec, desired map[string
 		if _, err := h.pgExec(ctx, "postgres", "GRANT CONNECT ON DATABASE "+pgIdent(d)+" TO "+u+";"); err != nil {
 			return false, err
 		}
-		if _, err := h.pgExec(ctx, d, "GRANT USAGE ON SCHEMA public TO "+u+";\n"+
-			"GRANT "+pl+" ON ALL TABLES IN SCHEMA public TO "+u+";\n"+
-			"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT "+pl+" ON TABLES TO "+u+";\n"); err != nil {
+		if _, err := h.pgExec(ctx, d, pgSchemaGrants(s.Username, "USAGE", pl, false)); err != nil {
 			return false, err
 		}
 	}
@@ -370,7 +391,11 @@ func (h *Helper) pgUserApply(ctx context.Context, s UserSpec, desired map[string
 // PasswordSet is `falak-db password set --file FILE`: the superuser's (postgres), root's (mysql/mariadb) or the
 // default user's (redis/valkey) new password. falak-db connects with the current password file; the agent swaps the
 // file afterwards, so the next start uses the new one.
-func (h *Helper) PasswordSet(ctx context.Context, file string) error {
+//
+// It is idempotent: when the engine already took the new password (a retry after the agent could not swap the file),
+// MySQL/MariaDB connect with the new one instead. Redis/Valkey with keepCurrent add the new password next to the
+// current one (both valid until a later `password set` without it), so apps keep connecting until they are redeployed.
+func (h *Helper) PasswordSet(ctx context.Context, file string, keepCurrent bool) error {
 	b, err := readSpecFile(file)
 	if err != nil {
 		return err
@@ -379,12 +404,24 @@ func (h *Helper) PasswordSet(ctx context.Context, file string) error {
 	if pw == "" {
 		return usageErr("the password file is empty")
 	}
+	if keepCurrent && !h.Engine.kv() {
+		return usageErr("--keep-current is for redis/valkey")
+	}
 	switch {
 	case h.Engine == Postgres:
 		_, err = h.pgExec(ctx, "postgres", "ALTER ROLE "+pgIdent(h.pgUser())+" WITH PASSWORD "+pgLit(pw)+";")
 	case h.Engine.mysqlFamily():
-		var hosts string
-		if hosts, err = h.myExec(ctx, "SELECT Host FROM mysql.user WHERE User='root';"); err == nil {
+		const q = "SELECT Host FROM mysql.user WHERE User='root';"
+		exec := h.myExec
+		hosts, qerr := exec(ctx, q)
+		if qerr != nil {
+			// The engine may have the new password already (a retry): connect with it.
+			exec = func(ctx context.Context, sql string) (string, error) { return h.myExecWith(ctx, pw, sql) }
+			if hosts, err = exec(ctx, q); err != nil {
+				err = qerr
+			}
+		}
+		if err == nil {
 			var sql strings.Builder
 			for _, host := range lines(hosts) {
 				sql.WriteString("ALTER USER 'root'@" + myLit(host) + " IDENTIFIED BY " + myLit(pw) + ";\n")
@@ -392,14 +429,27 @@ func (h *Helper) PasswordSet(ctx context.Context, file string) error {
 			if sql.Len() == 0 {
 				return fmt.Errorf("no root account")
 			}
-			_, err = h.myExec(ctx, sql.String())
+			_, err = exec(ctx, sql.String())
 		}
 	default:
-		// Only the hash reaches the server (and argv); the ACL file is rewritten the way `init` renders it.
+		// Only hashes reach the server (and argv); the ACL file is rewritten the way `init` renders it.
 		sum := sha256.Sum256([]byte(pw))
 		hash := hex.EncodeToString(sum[:])
-		if _, err = h.kvCmd(ctx, "ACL", "SETUSER", "default", "resetpass", "#"+hash); err == nil {
-			acl := "user default on #" + hash + " ~* &* +@all -config -debug -module\n"
+		hashes := "#" + hash
+		args := []string{"ACL", "SETUSER", "default", "resetpass", "#" + hash}
+		if keepCurrent {
+			cur, rerr := readPassword(h.Engine, h.Env)
+			if rerr != nil {
+				return rerr
+			}
+			cs := sha256.Sum256([]byte(cur))
+			if c := hex.EncodeToString(cs[:]); c != hash {
+				hashes = "#" + c + " " + hashes
+			}
+			args = []string{"ACL", "SETUSER", "default", "#" + hash}
+		}
+		if _, err = h.kvCmd(ctx, args...); err == nil {
+			acl := "user default on " + hashes + " ~* &* +@all -config -debug -module\n"
 			if err = writeFileAtomic(h.path(kvACLPath), []byte(acl), 0o600); err == nil {
 				err = h.chown(h.path(kvACLPath))
 			}

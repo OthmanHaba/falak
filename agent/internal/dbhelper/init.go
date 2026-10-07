@@ -2,6 +2,7 @@ package dbhelper
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -77,6 +78,13 @@ func (h *Helper) renderInput(mem int64, s Settings) (RenderInput, error) {
 		}
 		sum := sha256.Sum256([]byte(pw))
 		in.PasswordSHA256 = hex.EncodeToString(sum[:])
+		// A rotation in its overlap: the previous password stays valid across restarts until the agent retires it.
+		if f := h.Env("FALAK_DB_PREVIOUS_PASSWORD_FILE"); f != "" {
+			if prev, err := os.ReadFile(filepath.Clean(f)); err == nil && len(bytes.TrimRight(prev, "\r\n")) > 0 {
+				ps := sha256.Sum256(bytes.TrimRight(prev, "\r\n"))
+				in.PreviousPasswordSHA256 = hex.EncodeToString(ps[:])
+			}
+		}
 	}
 	return in, nil
 }

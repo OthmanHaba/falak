@@ -121,7 +121,7 @@ func TestPasswordSetPerEngine(t *testing.T) {
 	}
 
 	th := newTestHelper(t, Postgres)
-	if err := th.PasswordSet(ctx, write(th)); err != nil {
+	if err := th.PasswordSet(ctx, write(th), false); err != nil {
 		t.Fatal(err)
 	}
 	if th.run.stdins["psql"] != `ALTER ROLE "postgres" WITH PASSWORD 'n3w-pw';` {
@@ -135,7 +135,7 @@ func TestPasswordSetPerEngine(t *testing.T) {
 		}
 		return ""
 	})
-	if err := th.PasswordSet(ctx, write(th)); err != nil {
+	if err := th.PasswordSet(ctx, write(th), false); err != nil {
 		t.Fatal(err)
 	}
 	if got := th.run.stdins["mysql"]; got != "ALTER USER 'root'@'%' IDENTIFIED BY 'n3w-pw';\nALTER USER 'root'@'localhost' IDENTIFIED BY 'n3w-pw';\n" {
@@ -145,7 +145,7 @@ func TestPasswordSetPerEngine(t *testing.T) {
 	th = newTestHelper(t, Valkey)
 	os.MkdirAll(filepath.Join(th.Root, filepath.Dir(kvACLPath)), 0o700)
 	th.run.handle = func(Cmd) (string, error) { return "OK", nil }
-	if err := th.PasswordSet(ctx, write(th)); err != nil {
+	if err := th.PasswordSet(ctx, write(th), false); err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte("n3w-pw"))

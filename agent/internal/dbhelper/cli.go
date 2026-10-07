@@ -22,7 +22,9 @@ commands:
   health                                liveness probe (the image's HEALTHCHECK)
   backup logical --database DB --out -  dump to stdout (postgres, mysql, mariadb; redis/valkey: RDB, no --database)
   backup physical --out -               base backup to stdout (postgres tar, mysql/mariadb xbstream)
-  restore logical [--database DB] --in - [--clean]
+  restore logical [--database DB] --in - [--clean | --swap] [--owner ROLE]
+                                        postgres --swap: into a scratch database, renamed in on success; --owner: hand
+                                        every object to ROLE afterwards
   restore physical --in -               unpack (and prepare) a base backup into the empty data directory
   recover [--target-time T] (--wal-dir DIR [--action promote|pause|shutdown] | --binlog-dir DIR)
   promote                               postgres: end a paused recovery, open for writes
@@ -32,7 +34,12 @@ commands:
   database create --name N [--charset C] [--collation X] [--owner O]
   database drop --name N                postgres, mysql, mariadb
   user apply --spec FILE                converge a user, its password and grants (JSON spec file)
-  password set --file FILE              the superuser's / root's / default user's new password
+  password set --file FILE [--keep-current]
+                                        the superuser's / root's / default user's new password (redis/valkey
+                                        --keep-current: the current one stays valid too)
+  readonly on|off                       postgres, mysql, mariadb: read-only mode (ends postgres sessions)
+  table-counts --database DB            exact row count per table
+  reassign --database DB --owner ROLE   postgres: hand the database and every object in it to ROLE
   version
 
 Results are one JSON line on stdout; for commands streaming data on stdout, the result is the stderr line starting
@@ -103,6 +110,9 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 		restart  = new(bool)
 		dbo      DatabaseOptions
 		file     = new(string)
+		owner    = new(string)
+		swap     = new(bool)
+		keep     = new(bool)
 	)
 	var extra []string
 	switch cmd {
@@ -126,6 +136,8 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 		fs.StringVar(database, "database", "", "target database (must exist)")
 		fs.StringVar(in, "in", "", "input (-: stdin)")
 		fs.BoolVar(clean, "clean", false, "postgres: drop objects before recreating them")
+		fs.BoolVar(swap, "swap", false, "postgres: restore into a scratch database and rename it into place on success")
+		fs.StringVar(owner, "owner", "", "postgres: hand the database and its objects to this role afterwards")
 	case "restore physical":
 		fs.StringVar(in, "in", "", "input (-: stdin)")
 	case "recover":
@@ -149,6 +161,13 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 		fs.StringVar(file, "spec", "", "JSON user spec (holds the password: a file in the secrets directory)")
 	case "password set":
 		fs.StringVar(file, "file", "", "file holding the new password")
+		fs.BoolVar(keep, "keep-current", false, "redis/valkey: keep the current password valid too")
+	case "table-counts":
+		fs.StringVar(database, "database", "", "database")
+	case "reassign":
+		fs.StringVar(database, "database", "", "database")
+		fs.StringVar(owner, "owner", "", "the new owner role")
+	case "readonly":
 	case "health", "promote", "wal-push":
 	default:
 		fmt.Fprint(h.Stderr, usageText)
@@ -164,7 +183,7 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 	if h.Engine, err = ParseEngine(*engine); err != nil {
 		return err
 	}
-	wantArgs := map[string]int{"wal-push": 1, "wal-fetch": 2}[cmd]
+	wantArgs := map[string]int{"wal-push": 1, "wal-fetch": 2, "readonly": 1}[cmd]
 	if len(pos) != wantArgs {
 		return usageErr("%s takes %d argument(s), got %d (%s)", cmd, wantArgs, len(pos), strings.Join(pos, " "))
 	}
@@ -183,6 +202,14 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 	case "backup physical":
 		return h.BackupPhysical(ctx, *out)
 	case "restore logical":
+		switch {
+		case *swap && *clean:
+			return usageErr("--swap replaces the database: --clean is not needed")
+		case *swap:
+			return h.RestoreSwap(ctx, *database, *in, *owner)
+		case *owner != "":
+			return h.RestoreOwned(ctx, *database, *in, *owner)
+		}
 		return h.RestoreLogical(ctx, *database, *in, *clean)
 	case "restore physical":
 		return h.RestorePhysical(ctx, *in)
@@ -203,7 +230,16 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 	case "user apply":
 		return h.UserApply(ctx, *file)
 	case "password set":
-		return h.PasswordSet(ctx, *file)
+		return h.PasswordSet(ctx, *file, *keep)
+	case "readonly":
+		if pos[0] != "on" && pos[0] != "off" {
+			return usageErr("readonly takes on or off")
+		}
+		return h.ReadOnly(ctx, pos[0] == "on")
+	case "table-counts":
+		return h.TableCounts(ctx, *database)
+	case "reassign":
+		return h.ReassignOwner(ctx, *database, *owner)
 	}
 	return nil
 }
