@@ -3,6 +3,7 @@
 namespace Falak\Volumes\Infrastructure;
 
 use Falak\Volumes\Application\Actions\CreateVolume;
+use Falak\Volumes\Application\Actions\DeleteVolume;
 use Falak\Volumes\Application\Actions\ReleaseSite;
 use Falak\Volumes\Application\Actions\SyncComposeVolumes;
 use Falak\Volumes\Application\Actions\SyncSharedPaths;
@@ -23,6 +24,7 @@ final class ActionServiceVolumes implements ServiceVolumes
         private readonly SyncComposeVolumes $compose,
         private readonly ReleaseSite $release,
         private readonly CreateVolume $create,
+        private readonly DeleteVolume $delete,
     ) {}
 
     public function forSite(string $siteId): array
@@ -91,6 +93,37 @@ final class ActionServiceVolumes implements ServiceVolumes
             ['attachable_type' => $type, 'attachable_id' => strtolower($attachableId), 'service' => $service, 'mount_path' => $mountPath],
             ['read_only' => $readOnly],
         );
+    }
+
+    public function find(string $volumeId): ?VolumeData
+    {
+        $volume = Volume::query()->with('attachments')->find(strtolower($volumeId));
+
+        return $volume !== null ? self::data($volume) : null;
+    }
+
+    public function releaseDatabase(string $databaseId): void
+    {
+        Attachment::query()->where('attachable_type', AttachableType::Database)->where('attachable_id', strtolower($databaseId))->delete();
+    }
+
+    public function deleteDatabaseVolume(string $volumeId, ?string $actorId = null): void
+    {
+        $volume = Volume::query()->find(strtolower($volumeId));
+
+        if ($volume === null) {
+            return;
+        }
+
+        $volume->attachments()->where('attachable_type', AttachableType::Database)->delete();
+        $volume->forceFill(['protected' => false])->save();
+        try {
+            // The container was just removed; volume.delete waits for anything still holding the mount.
+            ($this->delete)($volume, $actorId, 120, background: true);
+        } catch (ValidationException $e) {
+            // Busy (a backup or move of it is running): it stays, unprotected, for the Volumes page.
+            $volume->forceFill(['status_message' => 'Not deleted: '.collect($e->errors())->flatten()->first()])->save();
+        }
     }
 
     public static function data(Volume $volume): VolumeData

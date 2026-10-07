@@ -6,7 +6,7 @@ use Falak\Databases\Application\Actions\DeleteBackupSchedule;
 use Falak\Databases\Application\Actions\RunBackupSchedule;
 use Falak\Databases\Application\Actions\SaveBackupSchedule;
 use Falak\Databases\Domain\Models\BackupSchedule;
-use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Kernel\Http\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -31,11 +31,11 @@ final class BackupScheduleController extends Controller
         ];
     }
 
-    public function store(Request $request, DatabaseServer $databaseServer, SaveBackupSchedule $save): RedirectResponse
+    public function store(Request $request, DatabaseInstance $instance, SaveBackupSchedule $save): RedirectResponse
     {
-        $this->authorize('manage', $databaseServer);
+        $this->authorize('manage', $instance);
 
-        $save($databaseServer, $request->validate($this->rules()), null, $request->user()?->getAuthIdentifier());
+        $save($instance, $request->validate($this->rules()), null, $request->user()?->getAuthIdentifier());
 
         return back();
     }
@@ -44,7 +44,7 @@ final class BackupScheduleController extends Controller
     {
         $this->authorize('manage', $backupSchedule);
 
-        $save($backupSchedule->databaseServer, $request->validate($this->rules()), $backupSchedule);
+        $save($backupSchedule->instance, $request->validate($this->rules()), $backupSchedule);
 
         return back();
     }

@@ -7,7 +7,7 @@ use Falak\Databases\Application\Actions\DeleteDatabaseUser;
 use Falak\Databases\Application\Actions\RevealDatabaseUserPassword;
 use Falak\Databases\Application\Actions\RotateDatabaseUserPassword;
 use Falak\Databases\Application\Actions\UpdateDatabaseUser;
-use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Kernel\Http\Controller;
 use Illuminate\Http\JsonResponse;
@@ -29,9 +29,9 @@ final class DatabaseUserController extends Controller
         ];
     }
 
-    public function store(Request $request, DatabaseServer $databaseServer, CreateDatabaseUser $create): RedirectResponse
+    public function store(Request $request, DatabaseInstance $instance, CreateDatabaseUser $create): RedirectResponse
     {
-        $this->authorize('manage', $databaseServer);
+        $this->authorize('manage', $instance);
 
         $data = $request->validate([
             'username' => ['required', 'string', 'max:63'],
@@ -41,7 +41,7 @@ final class DatabaseUserController extends Controller
             ...$this->grantRules(),
         ]);
 
-        $create($databaseServer, $data, $request->user()?->getAuthIdentifier());
+        $create($instance, $data, $request->user()?->getAuthIdentifier());
 
         return back();
     }

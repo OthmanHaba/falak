@@ -7,7 +7,7 @@ use Falak\Databases\Application\Actions\DeleteDatabase;
 use Falak\Databases\Application\Actions\RunBackup;
 use Falak\Databases\Domain\Enums\Compression;
 use Falak\Databases\Domain\Models\Database;
-use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\StorageProvider;
 use Falak\Kernel\Http\Controller;
 use Illuminate\Http\RedirectResponse;
@@ -15,9 +15,9 @@ use Illuminate\Http\Request;
 
 final class DatabaseController extends Controller
 {
-    public function store(Request $request, DatabaseServer $databaseServer, CreateDatabase $create): RedirectResponse
+    public function store(Request $request, DatabaseInstance $instance, CreateDatabase $create): RedirectResponse
     {
-        $this->authorize('manage', $databaseServer);
+        $this->authorize('manage', $instance);
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:63'],
@@ -28,13 +28,9 @@ final class DatabaseController extends Controller
             'user.username' => ['nullable', 'string', 'max:63'],
             'user.password' => ['nullable', 'string', 'min:12', 'max:128'],
             'user.host' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z0-9.%_:-]+$/'],
-            // Redis / Valkey instances
-            'maxmemory_mb' => ['nullable', 'integer', 'min:16', 'max:1048576'],
-            'eviction' => ['nullable', 'string', 'max:32'],
-            'persistence' => ['nullable', 'string', 'max:8'],
         ]);
 
-        $create($databaseServer, $data, $request->user()?->getAuthIdentifier());
+        $create($instance, $data, $request->user()?->getAuthIdentifier());
 
         return back();
     }

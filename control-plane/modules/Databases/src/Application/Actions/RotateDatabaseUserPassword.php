@@ -8,18 +8,28 @@ use Falak\Identity\Contracts\AuditLog;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
+/**
+ * A new password for a SQL user (db.user.apply); a Redis / Valkey `default` user's password is the instance's
+ * (db.instance.password, {@see InstanceLifecycle::rotatePassword()}).
+ */
 final class RotateDatabaseUserPassword
 {
     public function __construct(
         private readonly ApplyDatabaseUser $apply,
+        private readonly InstanceLifecycle $lifecycle,
         private readonly AuditLog $audit,
     ) {}
 
     public function __invoke(DatabaseUser $user, #[\SensitiveParameter] ?string $password = null): void
     {
-        // Redis / Valkey passwords go into the instance's config and REDIS_URL unquoted (db.redis.apply schema).
-        if ($password !== null && $password !== '' && $user->databaseServer->engine->isKeyValue() && preg_match('/^[A-Za-z0-9._~-]{12,128}$/', $password) !== 1) {
-            throw ValidationException::withMessages(['password' => 'Use 12–128 letters, digits, dots, dashes, underscores or tildes.']);
+        if ($user->instance->engine->isKeyValue()) {
+            $this->lifecycle->rotatePassword($user->instance, $password);
+
+            return;
+        }
+
+        if ($password !== null && $password !== '' && preg_match('/^[\x21-\x7e]{12,128}$/', $password) !== 1) {
+            throw ValidationException::withMessages(['password' => 'Use 12–128 printable characters without spaces.']);
         }
 
         DB::transaction(function () use ($user, $password) {

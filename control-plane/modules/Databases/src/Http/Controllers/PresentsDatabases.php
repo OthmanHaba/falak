@@ -2,11 +2,12 @@
 
 namespace Falak\Databases\Http\Controllers;
 
-use Falak\Databases\Application\KeyValue\KeyValueSettings;
+use Falak\Databases\Application\Actions\RestoreBackup;
+use Falak\Databases\Domain\Enums\InstanceStatus;
 use Falak\Databases\Domain\Models\Backup;
 use Falak\Databases\Domain\Models\BackupSchedule;
 use Falak\Databases\Domain\Models\Database;
-use Falak\Databases\Domain\Models\DatabaseServer;
+use Falak\Databases\Domain\Models\DatabaseInstance;
 use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Databases\Domain\Models\Grant;
 use Falak\Databases\Domain\Models\Restore;
@@ -20,25 +21,42 @@ trait PresentsDatabases
     /**
      * @return array<string, mixed>
      */
-    protected function presentServer(DatabaseServer $server): array
+    protected function presentInstance(DatabaseInstance $instance): array
     {
         return [
-            'id' => $server->id,
-            'server_id' => $server->server_id,
-            'server_name' => $server->server_name,
-            'engine' => $server->engine->value,
-            'engine_label' => $server->engine->label(),
-            'kind' => $server->engine->kind()->value,
-            'version' => $server->version,
-            'version_source' => $server->version_source,
-            'dedicated' => $server->dedicated,
-            'port' => $server->port,
-            'databases_count' => $server->databases_count ?? null,
-            'users_count' => $server->users_count ?? null,
-            // Redis / Valkey: Falak's instances run on their own ports (the engine row's port is the stock instance's).
-            'instance_ports' => $server->engine->isKeyValue()
-                ? $server->databases()->whereNotNull('port')->orderBy('port')->pluck('port')->map(fn ($port) => (int) $port)->values()->all()
-                : null,
+            'id' => $instance->id,
+            'name' => $instance->name,
+            'server_id' => $instance->server_id,
+            'server_name' => $instance->server_name,
+            'environment_id' => $instance->environment_id,
+            'engine' => $instance->engine->value,
+            'engine_label' => $instance->engine->label(),
+            'kind' => $instance->engine->kind()->value,
+            'version' => $instance->version,
+            'image' => $instance->image,
+            'image_digest' => $instance->image_digest,
+            'hostname' => $instance->hostname,
+            'port' => $instance->port,
+            'host_port' => $instance->host_port,
+            'published_addresses' => array_values((array) ($instance->published_addresses ?? [])),
+            'public_access' => $instance->public_access,
+            'require_tls' => $instance->require_tls,
+            'memory_mb' => intdiv($instance->memory_bytes, 1024 ** 2),
+            'cpus' => $instance->cpus,
+            'settings' => (object) ($instance->settings ?? []),
+            'pitr_enabled' => $instance->pitr_enabled,
+            'volume_id' => $instance->volume_id,
+            'tls_expires_at' => $instance->tls_expires_at?->toIso8601String(),
+            'status' => $instance->status->value,
+            'status_message' => $instance->status_message,
+            'health' => $instance->health,
+            'health_at' => $instance->health_at?->toIso8601String(),
+            'rotating_password' => $instance->next_root_password !== null,
+            'upgrade_of' => $instance->upgrade_of,
+            'retire_at' => $instance->retire_at?->toIso8601String(),
+            'databases_count' => $instance->databases_count ?? null,
+            'users_count' => $instance->users_count ?? null,
+            'created_at' => $instance->created_at->toIso8601String(),
         ];
     }
 
@@ -49,11 +67,10 @@ trait PresentsDatabases
     {
         return [
             'id' => $database->id,
+            'instance_id' => $database->database_instance_id,
             'name' => $database->name,
             'charset' => $database->charset,
             'collation' => $database->collation,
-            'port' => $database->port,
-            'settings' => $database->port !== null ? KeyValueSettings::of($database) : null,
             'site_id' => $database->site_id,
             'status' => $database->status->value,
             'status_message' => $database->status_message,
@@ -69,8 +86,7 @@ trait PresentsDatabases
     {
         return [
             'id' => $user->id,
-            // A Redis / Valkey instance's user row is named after the instance; clients authenticate as `default`.
-            'username' => $user->databaseServer->engine->isKeyValue() ? 'default' : $user->username,
+            'username' => $user->username,
             'host' => $user->host,
             'site_id' => $user->site_id,
             'status' => $user->status->value,
@@ -117,8 +133,10 @@ trait PresentsDatabases
             'database_name' => $backup->database_name,
             'server_id' => $backup->server_id,
             'server_name' => $backup->server_name,
-            'database_server_id' => $backup->database_server_id,
+            'instance_id' => $backup->database_instance_id,
+            'instance_name' => $backup->instance_name,
             'engine' => $backup->engine->value,
+            'engine_version' => $backup->engine_version,
             'storage_provider' => $backup->storageProvider?->name,
             'object_key' => $backup->object_key,
             'compression' => $backup->compression->value,
@@ -161,25 +179,22 @@ trait PresentsDatabases
     }
 
     /**
-     * Where a backup of the source's engine can be restored: SQL engine servers of the same wire protocol (the
-     * database is created when missing), or for Redis / Valkey the key-value engine servers with their active instances
-     * (a snapshot only goes into an existing instance; the agent checks the RDB version against the target).
+     * Running instances a backup of the source's engine can be restored into (RestoreBackup::compatible), with their
+     * active databases (a restore goes into an existing one).
      *
-     * @return list<array{id: string, label: string, engine: string, instances: ?list<string>}>
+     * @return list<array{id: string, label: string, engine: string, databases: list<string>}>
      */
-    protected function restoreTargets(DatabaseServer $source): array
+    protected function restoreTargets(DatabaseInstance $source): array
     {
-        return DatabaseServer::query()->where('organization_id', $source->organization_id)->orderBy('server_name')->get()
-            ->filter(fn (DatabaseServer $target) => $source->engine->isKeyValue()
-                ? $target->engine->isKeyValue()
-                : ! $target->engine->isKeyValue() && $target->engine->protocol() === $source->engine->protocol())
-            ->map(fn (DatabaseServer $target) => [
+        $probe = new Backup(['engine' => $source->engine, 'engine_version' => $source->version]);
+
+        return DatabaseInstance::query()->where('organization_id', $source->organization_id)->where('status', InstanceStatus::Active)->orderBy('name')->get()
+            ->filter(fn (DatabaseInstance $target) => RestoreBackup::compatible($probe, $target))
+            ->map(fn (DatabaseInstance $target) => [
                 'id' => $target->id,
-                'label' => "{$target->server_name} ({$target->label()})",
+                'label' => "{$target->name} ({$target->label()} on {$target->server_name})",
                 'engine' => $target->engine->value,
-                'instances' => $target->engine->isKeyValue()
-                    ? $target->databases()->where('status', 'active')->orderBy('name')->pluck('name')->values()->all()
-                    : null,
+                'databases' => $target->databases()->where('status', 'active')->pluck('name')->values()->all(),
             ])
             ->values()
             ->all();

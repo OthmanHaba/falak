@@ -142,9 +142,9 @@ it('restricts provider management to admins', function () {
 
 it('refuses to delete providers used by schedules', function () {
     $provider = databases_provider($this->organization);
-    $engine = databases_engine($this->organization);
+    $engine = databases_instance($this->organization);
     $db = databases_active_db($engine);
-    $this->post("/databases/servers/{$engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $provider->id, 'database_ids' => [$db->id], 'cron' => '0 3 * * *'])->assertSessionHasNoErrors();
+    $this->post("/databases/instances/{$engine->id}/schedules", ['name' => 'Nightly', 'storage_provider_id' => $provider->id, 'database_ids' => [$db->id], 'cron' => '0 3 * * *'])->assertSessionHasNoErrors();
 
     $this->delete("/databases/storage/{$provider->id}")->assertSessionHasErrors('provider');
     expect(StorageProvider::query()->count())->toBe(1)->and(StorageDriver::S3->label())->toBe('Amazon S3');

@@ -7,7 +7,6 @@ use Falak\Databases\Domain\Models\DatabaseUser;
 use Falak\Databases\Events\DatabaseCreated;
 use Falak\Databases\Events\DatabaseDeleted;
 use Falak\Identity\Contracts\Role;
-use Falak\Servers\Contracts\ServerType;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Tests\Support\FakeAgentGateway;
@@ -17,21 +16,21 @@ require_once __DIR__.'/../Support/helpers.php';
 beforeEach(function () {
     $this->agents = FakeAgentGateway::install();
     [$this->user, $this->organization] = actingAsMember(Role::Developer);
-    $this->mysql = databases_engine($this->organization, 'mysql', ServerType::Database);
-    $this->pg = databases_engine($this->organization, 'postgresql');
+    $this->mysql = databases_instance($this->organization, 'mysql');
+    $this->pg = databases_instance($this->organization, 'postgresql');
 });
 
 it('creates a database with db.create and activates it when the agent confirms', function () {
     Event::fake([DatabaseCreated::class]);
 
-    $this->post("/databases/servers/{$this->mysql->id}/databases", ['name' => 'shop'])->assertSessionHasNoErrors();
+    $this->post("/databases/instances/{$this->mysql->id}/databases", ['name' => 'shop'])->assertSessionHasNoErrors();
 
     $database = Database::query()->where('name', 'shop')->firstOrFail();
     $command = $this->agents->last('db.create');
 
     expect($database->status)->toBe(ResourceStatus::Pending)
         ->and($database->command_id)->toBe($command['handle']->id)
-        ->and($command['payload'])->toBe(['engine' => 'mysql', 'name' => 'shop', 'charset' => 'utf8mb4', 'collation' => 'utf8mb4_0900_ai_ci'])
+        ->and($command['payload'])->toBe(['instance' => $this->mysql->id, 'engine' => 'mysql', 'name' => 'shop', 'charset' => 'utf8mb4', 'collation' => 'utf8mb4_0900_ai_ci'])
         ->and($command['handle']->idempotencyKey)->toStartWith("db.create:{$database->id}:")
         ->and(databases_schema_errors($command))->toBe([]);
 
@@ -42,13 +41,13 @@ it('creates a database with db.create and activates it when the agent confirms',
 });
 
 it('sends postgres databases without mysql charset options', function () {
-    $this->post("/databases/servers/{$this->pg->id}/databases", ['name' => 'analytics', 'charset' => 'latin1'])->assertSessionHasNoErrors();
+    $this->post("/databases/instances/{$this->pg->id}/databases", ['name' => 'analytics', 'charset' => 'latin1'])->assertSessionHasNoErrors();
 
-    expect($this->agents->last('db.create')['payload'])->toBe(['engine' => 'postgres', 'name' => 'analytics']);
+    expect($this->agents->last('db.create')['payload'])->toBe(['instance' => $this->pg->id, 'engine' => 'postgres', 'name' => 'analytics']);
 });
 
 it('creates a user with the database and applies its grant once the database exists', function () {
-    $this->post("/databases/servers/{$this->pg->id}/databases", ['name' => 'app', 'user' => ['username' => 'app_user']])->assertSessionHasNoErrors();
+    $this->post("/databases/instances/{$this->pg->id}/databases", ['name' => 'app', 'user' => ['username' => 'app_user']])->assertSessionHasNoErrors();
 
     $user = DatabaseUser::query()->where('username', 'app_user')->firstOrFail();
     $firstApply = $this->agents->last('db.user.apply');
@@ -71,42 +70,20 @@ it('creates a user with the database and applies its grant once the database exi
     expect($user->refresh()->status)->toBe(ResourceStatus::Active);
 });
 
-it('flags users of dedicated database servers as remote so the engine listens on the network', function () {
-    $dedicatedPg = databases_engine($this->organization, 'postgresql', ServerType::Database);
-    databases_active_db($dedicatedPg, 'shop');
-    databases_active_db($this->mysql, 'shop');
-    databases_active_db($this->pg, 'shop');
-
-    $this->post("/databases/servers/{$dedicatedPg->id}/users", ['username' => 'shop', 'grants' => []])->assertSessionHasNoErrors();
-    $pgApply = $this->agents->last('db.user.apply');
-    expect($pgApply['payload'])->toMatchArray(['engine' => 'postgres', 'remote' => true])
-        ->and(databases_schema_errors($pgApply))->toBe([]);
-
-    // Dedicated MySQL: remote unless the user is pinned to a local host.
-    $this->post("/databases/servers/{$this->mysql->id}/users", ['username' => 'web', 'grants' => []])->assertSessionHasNoErrors();
-    expect($this->agents->last('db.user.apply')['payload'])->toMatchArray(['host' => '%', 'remote' => true]);
-    $this->post("/databases/servers/{$this->mysql->id}/users", ['username' => 'cron', 'host' => 'localhost', 'grants' => []])->assertSessionHasNoErrors();
-    expect($this->agents->last('db.user.apply')['payload'])->toMatchArray(['host' => 'localhost'])->not->toHaveKey('remote');
-
-    // An engine on an app server stays on localhost.
-    $this->post("/databases/servers/{$this->pg->id}/users", ['username' => 'local', 'grants' => []])->assertSessionHasNoErrors();
-    expect($this->agents->last('db.user.apply')['payload'])->not->toHaveKey('remote');
-});
-
 it('stores passwords encrypted and only reveals them with permission, audited', function () {
     databases_active_db($this->mysql, 'shop');
-    $this->post("/databases/servers/{$this->mysql->id}/users", ['username' => 'shop', 'password' => 'correct-horse-battery', 'grants' => []])->assertSessionHasNoErrors();
+    $this->post("/databases/instances/{$this->mysql->id}/users", ['username' => 'shop', 'password' => 'correct-horse-battery', 'grants' => []])->assertSessionHasNoErrors();
     $user = DatabaseUser::query()->where('username', 'shop')->firstOrFail();
 
     $raw = DB::table('databases_users')->where('id', $user->id)->value('password');
     expect($raw)->not->toContain('correct-horse-battery')
         ->and($user->toArray())->not->toHaveKey('password');
 
-    $this->get("/databases/servers/{$this->mysql->id}")->assertOk()->assertInertia(fn ($page) => $page
+    $this->get("/databases/instances/{$this->mysql->id}")->assertOk()->assertInertia(fn ($page) => $page
         ->component('Databases/Show', false)
         ->where('users.0.username', 'shop')
         ->missing('users.0.password'));
-    expect($this->get("/databases/servers/{$this->mysql->id}")->getContent())->not->toContain('correct-horse-battery');
+    expect($this->get("/databases/instances/{$this->mysql->id}")->getContent())->not->toContain('correct-horse-battery');
 
     $this->postJson("/databases/users/{$user->id}/reveal")->assertOk()->assertJson(['password' => 'correct-horse-battery']);
     $this->assertDatabaseHas('identity_audit_log', ['action' => 'databases.user_password_revealed', 'subject_id' => $user->id]);
@@ -118,7 +95,7 @@ it('stores passwords encrypted and only reveals them with permission, audited', 
 it('updates grants and recreates the account when the mysql host changes', function () {
     $shop = databases_active_db($this->mysql, 'shop');
     $blog = databases_active_db($this->mysql, 'blog');
-    $this->post("/databases/servers/{$this->mysql->id}/users", ['username' => 'web', 'grants' => [['database_id' => $shop->id]]]);
+    $this->post("/databases/instances/{$this->mysql->id}/users", ['username' => 'web', 'grants' => [['database_id' => $shop->id]]]);
     $user = DatabaseUser::query()->where('username', 'web')->firstOrFail();
     expect($this->agents->last('db.user.apply')['payload'])->toMatchArray(['host' => '%', 'grants' => [['database' => 'shop', 'privileges' => ['ALL PRIVILEGES']]]]);
 
@@ -128,7 +105,7 @@ it('updates grants and recreates the account when the mysql host changes', funct
     ])->assertSessionHasNoErrors();
 
     [$absent, $present] = array_slice($this->agents->dispatched('db.user.apply'), -2);
-    expect($absent['payload'])->toBe(['engine' => 'mysql', 'username' => 'web', 'state' => 'absent', 'host' => '%'])
+    expect($absent['payload'])->toBe(['instance' => $this->mysql->id, 'engine' => 'mysql', 'username' => 'web', 'state' => 'absent', 'host' => '%'])
         ->and($present['payload'])->toMatchArray(['host' => '10.90.0.%', 'grants' => [['database' => 'blog', 'privileges' => ['SELECT', 'INSERT']]]])
         ->and(databases_schema_errors($absent))->toBe([])
         ->and(databases_schema_errors($present))->toBe([])
@@ -140,12 +117,12 @@ it('updates grants and recreates the account when the mysql host changes', funct
 it('rejects grants on other servers databases', function () {
     $foreign = databases_active_db($this->pg, 'elsewhere');
 
-    $this->post("/databases/servers/{$this->mysql->id}/users", ['username' => 'web', 'grants' => [['database_id' => $foreign->id]]])
+    $this->post("/databases/instances/{$this->mysql->id}/users", ['username' => 'web', 'grants' => [['database_id' => $foreign->id]]])
         ->assertSessionHasErrors('grants');
 });
 
 it('rotates passwords', function () {
-    $this->post("/databases/servers/{$this->pg->id}/users", ['username' => 'svc', 'grants' => []]);
+    $this->post("/databases/instances/{$this->pg->id}/users", ['username' => 'svc', 'grants' => []]);
     $user = DatabaseUser::query()->where('username', 'svc')->firstOrFail();
     $old = $user->password;
 
@@ -159,14 +136,14 @@ it('rotates passwords', function () {
 it('drops databases and users once the agent confirms', function () {
     Event::fake([DatabaseDeleted::class]);
     $db = databases_active_db($this->mysql, 'old');
-    $this->post("/databases/servers/{$this->mysql->id}/users", ['username' => 'old_user', 'grants' => [['database_id' => $db->id]]]);
+    $this->post("/databases/instances/{$this->mysql->id}/users", ['username' => 'old_user', 'grants' => [['database_id' => $db->id]]]);
     $user = DatabaseUser::query()->where('username', 'old_user')->firstOrFail();
 
     $this->delete("/databases/databases/{$db->id}", ['confirm' => 'nope'])->assertSessionHasErrors('confirm');
     $this->delete("/databases/databases/{$db->id}", ['confirm' => 'old'])->assertSessionHasNoErrors();
 
     $drop = $this->agents->last('db.drop');
-    expect($drop['payload'])->toBe(['engine' => 'mysql', 'name' => 'old'])->and($db->refresh()->status)->toBe(ResourceStatus::Deleting);
+    expect($drop['payload'])->toBe(['instance' => $this->mysql->id, 'engine' => 'mysql', 'name' => 'old'])->and($db->refresh()->status)->toBe(ResourceStatus::Deleting);
 
     $this->agents->succeed($drop['handle'], ['changed' => true]);
 
@@ -183,7 +160,7 @@ it('drops databases and users once the agent confirms', function () {
 });
 
 it('records failures from the agent', function () {
-    $this->post("/databases/servers/{$this->mysql->id}/databases", ['name' => 'broken']);
+    $this->post("/databases/instances/{$this->mysql->id}/databases", ['name' => 'broken']);
     $this->agents->fail($this->agents->last('db.create')['handle'], 'ERROR 1044: access denied');
 
     expect(Database::query()->where('name', 'broken')->first())
@@ -194,17 +171,17 @@ it('records failures from the agent', function () {
 it('validates names, reserved identifiers and duplicates', function () {
     databases_active_db($this->mysql, 'taken');
 
-    $this->post("/databases/servers/{$this->mysql->id}/databases", ['name' => '1bad-name'])->assertSessionHasErrors('name');
-    $this->post("/databases/servers/{$this->mysql->id}/databases", ['name' => 'mysql'])->assertSessionHasErrors('name');
-    $this->post("/databases/servers/{$this->mysql->id}/databases", ['name' => 'taken'])->assertSessionHasErrors('name');
-    $this->post("/databases/servers/{$this->pg->id}/users", ['username' => 'postgres', 'grants' => []])->assertSessionHasErrors('username');
+    $this->post("/databases/instances/{$this->mysql->id}/databases", ['name' => '1bad-name'])->assertSessionHasErrors('name');
+    $this->post("/databases/instances/{$this->mysql->id}/databases", ['name' => 'mysql'])->assertSessionHasErrors('name');
+    $this->post("/databases/instances/{$this->mysql->id}/databases", ['name' => 'taken'])->assertSessionHasErrors('name');
+    $this->post("/databases/instances/{$this->pg->id}/users", ['username' => 'postgres', 'grants' => []])->assertSessionHasErrors('username');
     $this->agents->assertNothingDispatched();
 });
 
 it('turns a missing agent into a validation error', function () {
     $this->agents->unavailable($this->mysql->server_id);
 
-    $this->post("/databases/servers/{$this->mysql->id}/databases", ['name' => 'shop'])->assertSessionHasErrors('name');
+    $this->post("/databases/instances/{$this->mysql->id}/databases", ['name' => 'shop'])->assertSessionHasErrors('name');
 
     expect(Database::query()->where('name', 'shop')->exists())->toBeFalse();
 });
@@ -213,8 +190,8 @@ it('lets viewers look but not change anything', function () {
     [$viewer] = memberOf($this->organization, Role::Viewer);
     $this->actingAs($viewer);
 
-    $this->get("/databases/servers/{$this->mysql->id}")->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false)->where('can.reveal', false));
-    $this->post("/databases/servers/{$this->mysql->id}/databases", ['name' => 'shop'])->assertForbidden();
+    $this->get("/databases/instances/{$this->mysql->id}")->assertOk()->assertInertia(fn ($page) => $page->where('can.manage', false)->where('can.reveal', false));
+    $this->post("/databases/instances/{$this->mysql->id}/databases", ['name' => 'shop'])->assertForbidden();
 });
 
 it('exposes databases through the DatabaseDirectory contract', function () {
@@ -226,15 +203,33 @@ it('exposes databases through the DatabaseDirectory contract', function () {
 
     expect($directory->forSite($this->organization->id, $siteId))->toHaveCount(1)
         ->and($directory->find($db->id))->engine->toBe('postgresql')->port->toBe(5432)->status->toBe('active')
-        ->and($directory->forServer($this->pg->server_id)[0]->name)->toBe('site_db');
+        ->and($directory->forServer($this->pg->server_id)[0]->name)->toBe('site_db')
+        ->and($directory->find($db->id))->instanceId->toBe($this->pg->id)->memoryMb->toBe(512)->volumeId->toBe($this->pg->volume_id);
 });
 
-it('shows private connection hosts', function () {
-    $this->get("/databases/servers/{$this->pg->id}")->assertInertia(fn ($page) => $page
-        ->where('connection.driver', 'pgsql')
-        ->where('connection.hosts.0.value', '127.0.0.1')
-        ->where('connection.hosts.1.value', '10.0.0.20'));
+it('shows where apps connect: the environment network, loopback and published private addresses', function () {
+    $this->pg->forceFill(['environment_id' => strtolower((string) Str::ulid()), 'published_addresses' => ['10.0.0.20']])->save();
 
-    $this->get("/databases/servers/{$this->mysql->id}")->assertInertia(fn ($page) => $page
-        ->where('connection.hosts.0.value', '10.0.0.20'));
+    $this->get("/databases/instances/{$this->pg->id}")->assertInertia(fn ($page) => $page
+        ->where('connection.driver', 'pgsql')
+        ->where('connection.hosts.0.value', $this->pg->hostname)
+        ->where('connection.hosts.0.port', 5432)
+        ->where('connection.hosts.1.value', '127.0.0.1')
+        ->where('connection.hosts.1.port', $this->pg->host_port)
+        ->where('connection.hosts.2.value', '10.0.0.20'));
+
+    // Not in an environment, nothing published: loopback only.
+    $this->get("/databases/instances/{$this->mysql->id}")->assertInertia(fn ($page) => $page
+        ->where('connection.hosts.0.value', '127.0.0.1')
+        ->missing('connection.hosts.1'));
+});
+
+it('refuses databases in Redis instances and in instances that are not running', function () {
+    $redis = databases_instance($this->organization, 'redis');
+    $pending = databases_instance($this->organization, 'postgresql', attributes: ['status' => 'pending']);
+
+    $this->post("/databases/instances/{$redis->id}/databases", ['name' => 'more'])->assertSessionHasErrors('name');
+    $this->post("/databases/instances/{$pending->id}/databases", ['name' => 'more'])->assertSessionHasErrors('name');
+    $this->post("/databases/instances/{$redis->id}/users", ['username' => 'extra', 'grants' => []])->assertSessionHasErrors('username');
+    $this->agents->assertNothingDispatched();
 });

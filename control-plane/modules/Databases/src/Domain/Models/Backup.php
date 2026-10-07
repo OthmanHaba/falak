@@ -17,7 +17,7 @@ use Illuminate\Support\Carbon;
  * @property string $organization_id
  * @property ?string $schedule_id
  * @property ?string $database_id
- * @property ?string $database_server_id
+ * @property ?string $database_instance_id
  * @property string $server_id
  * @property string $server_name
  * @property string $database_name

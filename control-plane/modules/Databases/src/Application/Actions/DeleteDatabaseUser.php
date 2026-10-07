@@ -21,7 +21,7 @@ final class DeleteDatabaseUser
 
     public function __invoke(DatabaseUser $user): void
     {
-        if ($user->databaseServer->engine->isKeyValue()) {
+        if ($user->instance->engine->isKeyValue()) {
             throw ValidationException::withMessages(['user' => 'The default user of an instance goes with the instance: delete the instance instead.']);
         }
 
@@ -30,7 +30,7 @@ final class DeleteDatabaseUser
         $handle = $this->commands->dispatch(
             $user->server_id,
             'db.user.apply',
-            CommandPayloads::userAbsent($user->databaseServer, $user),
+            CommandPayloads::userAbsent($user->instance, $user),
             (int) config('databases.timeouts.ddl', 300),
             "db.user.absent:{$user->id}:{$user->host}:{$revision}",
             'user',

@@ -12,6 +12,8 @@ use Falak\Deployments\Domain\Models\Release;
 use Falak\Deployments\Domain\Models\SiteSettings;
 use Falak\Edge\Contracts\EdgeRoutes;
 use Falak\Fleet\Contracts\AgentDirectory;
+use Falak\Projects\Contracts\ProjectDirectory;
+use Falak\Projects\Contracts\ServiceKind;
 use Falak\Projects\Contracts\VariableReferences;
 use Falak\Sites\Contracts\ComposeServiceExtraction;
 use Falak\Sites\Contracts\ComposeSites;
@@ -43,6 +45,7 @@ final class StepPayloads
         private readonly SecretVariables $secrets,
         private readonly VolumeMounts $mounts,
         private readonly ServiceVolumes $volumes,
+        private readonly ProjectDirectory $projects,
     ) {}
 
     /** @var array<string, list<string>> site id => variables the last resolve filled from the secret store */
@@ -239,7 +242,30 @@ final class StepPayloads
             'wait' => true,
             'wait_timeout_s' => max(1, min(3600, (int) config('deployments.compose.wait_timeout', 300))),
             ...($bootstrap !== [] ? ['services' => $bootstrap] : []),
+            // The stack's containers join the environment's network, where its database containers are.
+            ...(($network = $this->environmentNetwork($site->id)) !== null ? ['join_networks' => [$network]] : []),
         ];
+    }
+
+    /**
+     * The Docker network of the site's environment (falak-env-<id>) when that environment has databases: their
+     * containers are on it, and the site's containers reach them by name there.
+     */
+    private function environmentNetwork(string $siteId): ?string
+    {
+        $placed = $this->projects->projectOf(ServiceKind::Site, $siteId);
+
+        if ($placed === null) {
+            return null;
+        }
+
+        foreach ($this->projects->servicesIn($placed->environmentId) as $service) {
+            if ($service->kind === ServiceKind::Database) {
+                return 'falak-env-'.strtolower($placed->environmentId);
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -825,8 +851,12 @@ final class StepPayloads
             ],
             // Sites with no domain have no edge route (a split-out compose service only its stack reaches).
             'edge_route_id' => $site->testDomain !== null || $this->edge->domainsFor($site->id) !== [] ? $this->edge->routeId($site->id) : null,
-            // A compose service run as its own site keeps reaching the stack's services (and they it) by name.
-            'networks' => $this->compose->stackNetworks($site->id, $serverId) ?: null,
+            // A compose service run as its own site keeps reaching the stack's services (and they it) by name; a site of
+            // an environment with databases joins its network, where the database containers are.
+            'networks' => [
+                ...$this->compose->stackNetworks($site->id, $serverId),
+                ...(($network = $this->environmentNetwork($site->id)) !== null ? [['name' => $network, 'environment' => true]] : []),
+            ] ?: null,
             // Volumes attached to the site on this server: Docker volumes by name, sized ones at their mountpoint.
             'volumes' => array_map(fn (Mount $mount) => $mount->toPayload(), $this->mounts->forSite($site->id, $serverId)) ?: null,
             'labels' => (object) array_filter([

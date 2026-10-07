@@ -13,7 +13,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property string $id
  * @property string $organization_id
- * @property string $database_server_id
+ * @property string $database_instance_id
  * @property string $storage_provider_id
  * @property string $name
  * @property string $cron 5-field cron expression, evaluated in UTC
@@ -24,7 +24,7 @@ use Illuminate\Support\Carbon;
  * @property ?Carbon $last_run_at
  * @property ?Carbon $next_run_at
  * @property ?string $created_by
- * @property-read DatabaseServer $databaseServer
+ * @property-read DatabaseInstance $instance
  * @property-read StorageProvider $storageProvider
  * @property-read Collection<int, Database> $databases
  */
@@ -53,11 +53,11 @@ class BackupSchedule extends Model
     }
 
     /**
-     * @return BelongsTo<DatabaseServer, $this>
+     * @return BelongsTo<DatabaseInstance, $this>
      */
-    public function databaseServer(): BelongsTo
+    public function instance(): BelongsTo
     {
-        return $this->belongsTo(DatabaseServer::class);
+        return $this->belongsTo(DatabaseInstance::class, 'database_instance_id');
     }
 
     /**
