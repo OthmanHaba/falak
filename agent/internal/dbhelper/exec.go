@@ -19,6 +19,8 @@ type Cmd struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+	// Fd3, when set, is readable by the tool on file descriptor 3 (a pipe): how credentials reach it.
+	Fd3 []byte
 }
 
 func (c Cmd) String() string { return c.Name + " " + strings.Join(c.Args, " ") }
@@ -40,6 +42,19 @@ func (ExecRunner) Run(ctx context.Context, c Cmd) error {
 		cmd.Stderr = io.MultiWriter(c.Stderr, &tail)
 	} else {
 		cmd.Stderr = &tail
+	}
+	if c.Fd3 != nil {
+		r, w, err := os.Pipe()
+		if err != nil {
+			return err
+		}
+		defer r.Close()
+		cmd.ExtraFiles = []*os.File{r}
+		// Written by a goroutine: a tool may not read it all (or at all), and the pipe buffer is finite.
+		go func() {
+			w.Write(c.Fd3) //nolint:errcheck // a tool that exits early closes its end
+			w.Close()
+		}()
 	}
 	if err := cmd.Run(); err != nil {
 		if msg := strings.TrimSpace(tail.String()); msg != "" && c.Stderr == nil {

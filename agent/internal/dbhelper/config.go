@@ -110,7 +110,7 @@ type RenderInput struct {
 	Engine      Engine
 	MemoryBytes int64
 	Settings    Settings
-	DataDir     string // postgres: PGDATA (the recovery include lives there)
+	DataDir     string // postgres: PGDATA (the recovery include lives there); redis/valkey: dir (default /data)
 	TLSCA       bool   // a CA certificate is mounted next to the server certificate
 	// PasswordSHA256 is the hex SHA-256 of the redis/valkey password, for the ACL file (the plaintext never lands in
 	// a config file).
@@ -404,7 +404,14 @@ func renderKV(in RenderInput) ([]File, Tuning, error) {
 	w.line("maxmemory %d", maxmem)
 	w.line("maxmemory-policy %s", eviction)
 	w.line("")
-	w.line("dir /data")
+	dir := in.DataDir
+	if dir == "" {
+		dir = "/data"
+	}
+	if strings.ContainsAny(dir, " \t\r\n\"'\\") {
+		return nil, nil, usageErr("data directory %q has unsafe characters", dir)
+	}
+	w.line("dir %s", dir)
 	w.line("dbfilename dump.rdb")
 	switch persistence {
 	case "rdb":

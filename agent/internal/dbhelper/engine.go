@@ -4,6 +4,7 @@
 package dbhelper
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -169,6 +170,10 @@ func readPassword(e Engine, env Env) (string, error) {
 	if len(b) == 0 {
 		return "", fmt.Errorf("password file %s is empty", f)
 	}
+	// A line break or NUL would end the value early in an option file or the ACL hash input of another tool.
+	if bytes.ContainsAny(b, "\n\r\x00") {
+		return "", fmt.Errorf("password file %s: the password contains a line break or NUL", f)
+	}
 	return string(b), nil
 }
 
@@ -178,6 +183,7 @@ var forbiddenEnv = []string{
 	"POSTGRES_PASSWORD", "POSTGRES_HOST_AUTH_METHOD",
 	"MYSQL_ROOT_PASSWORD", "MYSQL_PASSWORD", "MYSQL_ALLOW_EMPTY_PASSWORD", "MYSQL_RANDOM_ROOT_PASSWORD",
 	"MARIADB_ROOT_PASSWORD", "MARIADB_PASSWORD", "MARIADB_ALLOW_EMPTY_ROOT_PASSWORD", "MARIADB_RANDOM_ROOT_PASSWORD",
+	"MARIADB_ROOT_PASSWORD_HASH", "MARIADB_PASSWORD_HASH",
 	"REDIS_PASSWORD", "VALKEY_PASSWORD",
 }
 

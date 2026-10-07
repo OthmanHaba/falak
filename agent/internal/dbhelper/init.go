@@ -194,9 +194,7 @@ func (h *Helper) Init(extra []string) error {
 		return usageErr("%v", err)
 	}
 	if !h.Engine.kv() && passwordFile(h.Engine, h.Env) == "" {
-		return usageErr("no superuser password file (%s)", map[Engine]string{
-			Postgres: "POSTGRES_PASSWORD_FILE", MySQL: "MYSQL_ROOT_PASSWORD_FILE", MariaDB: "MARIADB_ROOT_PASSWORD_FILE",
-		}[h.Engine])
+		return usageErr("no superuser password file (%s or FALAK_DB_PASSWORD_FILE)", entrypointVar[h.Engine])
 	}
 	s, err := h.settings()
 	if err != nil {
@@ -227,7 +225,8 @@ func (h *Helper) Init(extra []string) error {
 		dirs = append(dirs, h.path(filepath.Dir(mySlowLog)))
 	}
 	if h.Engine.kv() {
-		dirs = []string{h.path(runDir)}
+		// The official entrypoint only fixes the ownership of its working directory, /data.
+		dirs = []string{h.path(runDir), h.path(dataDir(h.Engine, h.Env))}
 	}
 	for _, d := range dirs {
 		// Parents stay traversable (0755); the spool itself is private to the engine's user.
@@ -242,6 +241,12 @@ func (h *Helper) Init(extra []string) error {
 		}
 	}
 
+	if h.Engine == Postgres {
+		if err := h.pgDropFinishedRecovery(); err != nil {
+			return err
+		}
+	}
+
 	argv := h.serverArgv(extra)
 	path, err := exec.LookPath(argv[0])
 	if err != nil {
@@ -249,7 +254,38 @@ func (h *Helper) Init(extra []string) error {
 	}
 	fmt.Fprintf(h.Stderr, "falak-db: %s %s, memory %d MiB (%s), starting %s\n", h.Engine, strings.Join(res.Files, " "),
 		mib(mem), source, h.Engine.server())
-	return h.Exec(path, argv, os.Environ())
+	return h.Exec(path, argv, h.entrypointEnv(os.Environ()))
+}
+
+// entrypointVar is the official entrypoint's password-file variable.
+var entrypointVar = map[Engine]string{
+	Postgres: "POSTGRES_PASSWORD_FILE", MySQL: "MYSQL_ROOT_PASSWORD_FILE", MariaDB: "MARIADB_ROOT_PASSWORD_FILE",
+}
+
+// entrypointEnv hands FALAK_DB_PASSWORD_FILE to the official entrypoint under its own name when only ours is set, so
+// first-time initialisation sets the superuser password from the same file.
+func (h *Helper) entrypointEnv(env []string) []string {
+	v, ok := entrypointVar[h.Engine]
+	if !ok || h.Env("FALAK_DB_PASSWORD_FILE") == "" {
+		return env
+	}
+	if h.Env(v) != "" || (h.Engine == MariaDB && h.Env("MYSQL_ROOT_PASSWORD_FILE") != "") {
+		return env
+	}
+	return append(env, v+"="+h.Env("FALAK_DB_PASSWORD_FILE"))
+}
+
+// pgDropFinishedRecovery removes falak-recovery.conf once recovery is over (no recovery.signal left: postgres
+// promoted), so its restore_command and target do not linger.
+func (h *Helper) pgDropFinishedRecovery() error {
+	dir := h.path(dataDir(Postgres, h.Env))
+	if fileExists(filepath.Join(dir, "recovery.signal")) {
+		return nil
+	}
+	if err := os.Remove(filepath.Join(dir, recoveryConf)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // serverArgv is the official entrypoint's command line for our config.

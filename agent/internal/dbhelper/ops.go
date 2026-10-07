@@ -31,12 +31,10 @@ func (h *Helper) Health(ctx context.Context) error {
 			"-q", "-h", "127.0.0.1", "-p", strconv.Itoa(pgPort), "-U", h.pgUser(), "-d", "postgres", "-t", "5",
 		}})
 	case MySQL, MariaDB:
-		var defaults string
-		var cleanup func()
-		if defaults, cleanup, err = h.mysqlDefaults(); err != nil {
+		var creds []byte
+		if creds, err = h.mysqlDefaults(); err != nil {
 			return err
 		}
-		defer cleanup()
 		// MySQL's caching_sha2_password needs TLS (the default, preferred) or the server's RSA key when TLS is off.
 		// MariaDB 11.4's client would verify the certificate; its ping exits 0 whenever the server answers (even
 		// "insecure transport prohibited"), so plaintext is enough there.
@@ -44,10 +42,10 @@ func (h *Helper) Health(ctx context.Context) error {
 		if h.Engine == MariaDB {
 			transport = "--skip-ssl"
 		}
-		err = h.Run.Run(ctx, Cmd{Name: h.Engine.client("mysqladmin"), Args: []string{
-			"--defaults-extra-file=" + defaults, "--protocol=TCP", "-h", "127.0.0.1", "-P", strconv.Itoa(myPort),
-			transport, "--connect-timeout=5", "ping",
-		}, Stdout: io.Discard})
+		c := myCmd(creds, h.Engine.client("mysqladmin"), "--protocol=TCP", "-h", "127.0.0.1", "-P", strconv.Itoa(myPort),
+			transport, "--connect-timeout=5", "ping")
+		c.Stdout = io.Discard
+		err = h.Run.Run(ctx, c)
 	case Redis, Valkey:
 		var out string
 		if out, err = h.kvCmd(ctx, "PING"); err == nil && out != "PONG" {
@@ -121,19 +119,19 @@ func (h *Helper) BackupLogical(ctx context.Context, database, out string) error 
 		}
 	case MySQL, MariaDB:
 		res.Format = "sql"
-		defaults, cleanup, err := h.mysqlDefaults()
+		creds, err := h.mysqlDefaults()
 		if err != nil {
 			return err
 		}
-		defer cleanup()
-		args := []string{"--defaults-extra-file=" + defaults, "--single-transaction", "--routines", "--triggers",
+		args := []string{"--single-transaction", "--routines", "--triggers",
 			"--events", "--hex-blob", "--default-character-set=utf8mb4"}
 		if h.Engine == MySQL {
 			// The dump restores into any instance, whose GTID history is its own.
 			args = append(args, "--set-gtid-purged=OFF")
 		}
-		if err := h.Run.Run(ctx, Cmd{Name: h.Engine.client("mysqldump"), Args: append(args, database),
-			Stdout: st, Stderr: h.Stderr}); err != nil {
+		c := myCmd(creds, h.Engine.client("mysqldump"), append(args, database)...)
+		c.Stdout, c.Stderr = st, h.Stderr
+		if err := h.Run.Run(ctx, c); err != nil {
 			return err
 		}
 	case Redis, Valkey:
@@ -235,14 +233,17 @@ func (h *Helper) RestoreLogical(ctx context.Context, database, in string, clean 
 		if clean {
 			return usageErr("--clean is for postgres (a SQL dump drops and creates each table itself)")
 		}
-		defaults, cleanup, err := h.mysqlDefaults()
+		creds, err := h.mysqlDefaults()
 		if err != nil {
 			return err
 		}
-		defer cleanup()
-		if err := h.Run.Run(ctx, Cmd{Name: h.Engine.client("mysql"), Args: []string{
-			"--defaults-extra-file=" + defaults, "--default-character-set=utf8mb4", database,
-		}, Stdin: h.Stdin, Stderr: h.Stderr}); err != nil {
+		args, err := h.mysqlSafeClientArgs(ctx)
+		if err != nil {
+			return err
+		}
+		c := myCmd(creds, h.Engine.client("mysql"), append(args, "--default-character-set=utf8mb4", database)...)
+		c.Stdin, c.Stderr = h.Stdin, h.Stderr
+		if err := h.Run.Run(ctx, c); err != nil {
 			return err
 		}
 	case Redis, Valkey:
@@ -341,11 +342,10 @@ func (h *Helper) BackupPhysical(ctx context.Context, out string) error {
 		}
 	case MySQL, MariaDB:
 		res.Format = "xbstream"
-		defaults, cleanup, err := h.mysqlDefaults()
+		creds, err := h.mysqlDefaults()
 		if err != nil {
 			return err
 		}
-		defer cleanup()
 		work, err := os.MkdirTemp("", "falak-db-xb-")
 		if err != nil {
 			return err
@@ -355,9 +355,13 @@ func (h *Helper) BackupPhysical(ctx context.Context, out string) error {
 		if h.Engine == MariaDB {
 			tool = "mariadb-backup"
 		}
-		if err := h.Run.Run(ctx, Cmd{Name: tool, Args: []string{
-			"--defaults-extra-file=" + defaults, "--backup", "--stream=xbstream", "--target-dir=" + work,
-		}, Stdout: st, Stderr: h.Stderr}); err != nil {
+		c, cleanup, err := backupToolCmd(creds, tool, "--backup", "--stream=xbstream", "--target-dir="+work)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		c.Stdout, c.Stderr = st, h.Stderr
+		if err := h.Run.Run(ctx, c); err != nil {
 			return err
 		}
 	default:
@@ -414,7 +418,12 @@ func manifestStopWAL(manifest []byte, segSize int64) (string, error) {
 	tli, _ := strconv.ParseUint(string(last[1]), 10, 32)
 	hi, _ := strconv.ParseUint(string(last[2]), 16, 32)
 	lo, _ := strconv.ParseUint(string(last[3]), 16, 32)
-	return walFileName(uint32(tli), hi<<32|lo, segSize)
+	end := hi<<32 | lo
+	// An end exactly on a segment boundary needs nothing from the segment that starts there (XLByteToPrevSeg).
+	if segSize > 0 && end > 0 && end%uint64(segSize) == 0 {
+		end--
+	}
+	return walFileName(uint32(tli), end, segSize)
 }
 
 // walFileName is postgres' XLogFileName: the segment holding lsn.
@@ -593,8 +602,11 @@ func (h *Helper) pgRecover(o RecoverOptions, target time.Time) error {
 	if o.BinlogDir != "" {
 		return usageErr("--binlog-dir is for mysql and mariadb")
 	}
-	if !safeShellPath.MatchString(o.WALDir) {
-		return usageErr("--wal-dir must be an absolute path of letters, digits and / . _ -")
+	if !safeShellPath.MatchString(o.WALDir) || !h.allowedWALDir(o.WALDir) {
+		return usageErr("--wal-dir must be a directory under /replay or the spool (%s), as a clean absolute path", spoolDir(h.Env))
+	}
+	if o.Action != "" && target.IsZero() {
+		return usageErr("--action needs --target-time (without a target, postgres replays everything and promotes)")
 	}
 	action := o.Action
 	if action == "" {
@@ -608,7 +620,7 @@ func (h *Helper) pgRecover(o RecoverOptions, target time.Time) error {
 		return conflict("%s has no backup_label: run restore physical first", dataDir(h.Engine, h.Env))
 	}
 	walDir := h.path(o.WALDir)
-	if st, err := os.Stat(walDir); err != nil || !st.IsDir() {
+	if st, err := os.Lstat(walDir); err != nil || !st.IsDir() {
 		return usageErr("--wal-dir %s is not a directory", o.WALDir)
 	}
 	var b strings.Builder
@@ -630,7 +642,7 @@ func (h *Helper) pgRecover(o RecoverOptions, target time.Time) error {
 	if err := h.chown(conf, signal); err != nil {
 		return err
 	}
-	if err := h.chownTree(walDir); err != nil {
+	if err := h.chownWAL(walDir); err != nil {
 		return err
 	}
 	res := map[string]any{"engine": h.Engine, "mode": "on-start", "wal_dir": o.WALDir}
@@ -639,6 +651,45 @@ func (h *Helper) pgRecover(o RecoverOptions, target time.Time) error {
 		res["action"] = action
 	}
 	return h.result(res)
+}
+
+// walReplayRoot is where the agent mounts the WAL (or binlogs) to replay into a restored instance.
+const walReplayRoot = "/replay"
+
+// allowedWALDir accepts /replay, the spool, or a directory under one of them, written as a clean path.
+func (h *Helper) allowedWALDir(dir string) bool {
+	if filepath.Clean(dir) != dir {
+		return false
+	}
+	for _, root := range []string{walReplayRoot, filepath.Clean(spoolDir(h.Env))} {
+		if root != "/" && (dir == root || strings.HasPrefix(dir, root+"/")) {
+			return true
+		}
+	}
+	return false
+}
+
+// walFile matches what restore_command fetches: segments, partial segments, backup history and timeline history.
+var walFile = regexp.MustCompile(`^([0-9A-F]{24}(\.partial|\.[0-9A-F]{8}\.backup)?|[0-9A-F]{8}\.history)$`)
+
+// chownWAL hands the WAL directory and the WAL files directly in it (nothing else, not recursively, no links) to
+// postgres, which reads them through wal-fetch.
+func (h *Helper) chownWAL(dir string) error {
+	if err := h.chown(dir); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Type().IsRegular() && walFile.MatchString(e.Name()) {
+			if err := h.chown(filepath.Join(dir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // binlogInfo reads the binlog file and position a physical backup was taken at.
@@ -719,6 +770,12 @@ func (h *Helper) myRecover(ctx context.Context, o RecoverOptions, target time.Ti
 	if o.BinlogDir == "" {
 		return usageErr("--binlog-dir is required")
 	}
+	if !h.allowedWALDir(o.BinlogDir) {
+		return usageErr("--binlog-dir must be a directory under /replay or the spool (%s), as a clean absolute path", spoolDir(h.Env))
+	}
+	// Binlog events have whole-second timestamps: the target is rounded down, and replay stops before the first event
+	// at or after it.
+	target = target.Truncate(time.Second)
 	start, pos, err := binlogInfo(h.path(dataDir(h.Engine, h.Env)))
 	if err != nil {
 		return err
@@ -735,15 +792,20 @@ func (h *Helper) myRecover(ctx context.Context, o RecoverOptions, target time.Ti
 	for _, n := range names {
 		args = append(args, filepath.Join(dir, n))
 	}
-	defaults, cleanup, err := h.mysqlDefaults()
+	creds, err := h.mysqlDefaults()
 	if err != nil {
 		return err
 	}
-	defer cleanup()
+	safe, err := h.mysqlSafeClientArgs(ctx)
+	if err != nil {
+		return err
+	}
+	apply := myCmd(creds, h.Engine.client("mysql"), safe...)
+	apply.Stderr = h.Stderr
 	// mysqlbinlog reads --stop-datetime in its own time zone.
 	if err := pipe(ctx, h.Run,
 		Cmd{Name: h.Engine.client("mysqlbinlog"), Args: args, Env: []string{"TZ=UTC"}, Stderr: h.Stderr},
-		Cmd{Name: h.Engine.client("mysql"), Args: []string{"--defaults-extra-file=" + defaults, "--binary-mode"}, Stderr: h.Stderr},
+		apply,
 	); err != nil {
 		return err
 	}
@@ -800,21 +862,20 @@ const binlogPositionFile = ".binlog-last"
 // BinlogRotate is `falak-db binlog-rotate`: FLUSH BINARY LOGS (unless noFlush), then spool every closed binlog not
 // spooled yet, oldest first. The newest binlog is the one being written, so it is never spooled. The last spooled
 // name is kept in the spool (.binlog-last) so files the agent already shipped (and removed) are not spooled again.
-func (h *Helper) BinlogRotate(ctx context.Context, noFlush bool) error {
+func (h *Helper) BinlogRotate(ctx context.Context, noFlush, restart bool) error {
 	if !h.Engine.mysqlFamily() {
 		return unsupported(h.Engine, "binlog-rotate")
 	}
-	defaults, cleanup, err := h.mysqlDefaults()
+	creds, err := h.mysqlDefaults()
 	if err != nil {
 		return err
 	}
-	defer cleanup()
 	if !noFlush {
-		if _, err := h.mysqlQuery(ctx, defaults, "FLUSH BINARY LOGS"); err != nil {
+		if _, err := h.mysqlQuery(ctx, creds, "FLUSH BINARY LOGS"); err != nil {
 			return err
 		}
 	}
-	out, err := h.mysqlQuery(ctx, defaults, "SHOW BINARY LOGS")
+	out, err := h.mysqlQuery(ctx, creds, "SHOW BINARY LOGS")
 	if err != nil {
 		return err
 	}
@@ -824,7 +885,7 @@ func (h *Helper) BinlogRotate(ctx context.Context, noFlush bool) error {
 			logs = append(logs, f[0])
 		}
 	}
-	basename, err := h.mysqlQuery(ctx, defaults, "SELECT @@log_bin_basename")
+	basename, err := h.mysqlQuery(ctx, creds, "SELECT @@log_bin_basename")
 	if err != nil {
 		return err
 	}
@@ -840,31 +901,100 @@ func (h *Helper) BinlogRotate(ctx context.Context, noFlush bool) error {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
+	if restart {
+		last = ""
+	}
 	_, lastSeq, haveLast := binlogSeq(last)
 
-	res := struct {
-		Engine  Engine    `json:"engine"`
-		Flushed bool      `json:"flushed"`
-		Current string    `json:"current,omitempty"`
-		Spooled []Spooled `json:"spooled"`
-	}{Engine: h.Engine, Flushed: !noFlush, Spooled: []Spooled{}}
+	res := BinlogRotateResult{Engine: h.Engine, Flushed: !noFlush, Spooled: []Spooled{}, Gaps: []BinlogGap{}}
 	if len(logs) > 0 {
 		res.Current = logs[len(logs)-1]
-		logs = logs[:len(logs)-1]
 	}
-	for _, name := range logs {
-		_, seq, ok := binlogSeq(name)
-		if !ok || (haveLast && seq <= lastSeq) {
+	gaps, closed := binlogGaps(logs, last)
+	res.Gaps = append(res.Gaps, gaps...)
+	reset := len(gaps) > 0 && gaps[0].Kind == "reset"
+	if !reset {
+		for _, name := range closed {
+			if _, seq, _ := binlogSeq(name); haveLast && seq <= lastSeq {
+				continue
+			}
+			s, err := spoolFile(filepath.Join(binDir, name), spool, spoolBinlog, name)
+			if err != nil {
+				return err
+			}
+			res.Spooled = append(res.Spooled, s)
+			if err := writeFileAtomic(posFile, []byte(name+"\n"), 0o600); err != nil {
+				return err
+			}
+		}
+	}
+	if err := h.result(res); err != nil {
+		return err
+	}
+	if len(res.Gaps) > 0 {
+		return conflict("binlog chain broken: %s", res.Gaps[0].Detail)
+	}
+	return nil
+}
+
+// BinlogRotateResult is the JSON result of binlog-rotate. With gaps, the command still prints it, and exits 4.
+type BinlogRotateResult struct {
+	Engine  Engine      `json:"engine"`
+	Flushed bool        `json:"flushed"`
+	Current string      `json:"current,omitempty"`
+	Spooled []Spooled   `json:"spooled"`
+	Gaps    []BinlogGap `json:"gaps"`
+}
+
+// BinlogGap is a break in the binlog chain: point-in-time recovery cannot cross it, so the agent alerts and takes a
+// new base backup.
+//
+//	missing: binlogs between two spooled ones are gone (purged or expired before they were spooled); From..To are
+//	         the missing names. What is still there is spooled.
+//	reset:   the server's numbering went backwards (RESET BINARY LOGS, a new data directory): nothing is spooled until
+//	         `binlog-rotate --restart`, after a new base backup.
+type BinlogGap struct {
+	Kind   string `json:"kind"`
+	From   string `json:"from,omitempty"`
+	To     string `json:"to,omitempty"`
+	Detail string `json:"detail"`
+}
+
+// binlogGaps compares the server's binlogs (oldest first; the last is the one being written) with the last spooled
+// name, and returns the gaps and the closed binlogs.
+func binlogGaps(logs []string, last string) ([]BinlogGap, []string) {
+	if len(logs) == 0 {
+		return nil, nil
+	}
+	closed := logs[:len(logs)-1]
+	base, lastSeq, haveLast := binlogSeq(last)
+	curBase, curSeq, ok := binlogSeq(logs[len(logs)-1])
+	if !ok {
+		return []BinlogGap{{Kind: "reset", Detail: fmt.Sprintf("unexpected binlog name %q", logs[len(logs)-1])}}, closed
+	}
+	name := func(n int) string { return fmt.Sprintf("%s.%06d", curBase, n) }
+	if haveLast && (base != curBase || curSeq <= lastSeq) {
+		return []BinlogGap{{Kind: "reset", From: last, To: logs[len(logs)-1], Detail: fmt.Sprintf(
+			"the server is writing %s but %s was already spooled: the binlogs were reset; take a new base backup, then run binlog-rotate --restart",
+			logs[len(logs)-1], last)}}, closed
+	}
+	var gaps []BinlogGap
+	expect := -1
+	if haveLast {
+		expect = lastSeq + 1
+	}
+	for _, l := range logs {
+		_, seq, ok := binlogSeq(l)
+		if !ok {
 			continue
 		}
-		s, err := spoolFile(filepath.Join(binDir, name), spool, spoolBinlog, name)
-		if err != nil {
-			return err
+		if expect >= 0 && seq > expect {
+			gaps = append(gaps, BinlogGap{Kind: "missing", From: name(expect), To: name(seq - 1), Detail: fmt.Sprintf(
+				"%s to %s are gone from the server before they were spooled; take a new base backup", name(expect), name(seq-1))})
 		}
-		res.Spooled = append(res.Spooled, s)
-		if err := writeFileAtomic(posFile, []byte(name+"\n"), 0o600); err != nil {
-			return err
+		if seq >= expect {
+			expect = seq + 1
 		}
 	}
-	return h.result(res)
+	return gaps, closed
 }

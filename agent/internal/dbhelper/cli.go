@@ -28,7 +28,7 @@ commands:
   promote                               postgres: end a paused recovery, open for writes
   wal-push PATH                         postgres archive_command: spool a WAL segment
   wal-fetch NAME DEST --from DIR        postgres restore_command
-  binlog-rotate [--no-flush]            mysql/mariadb: flush binary logs, spool the closed ones
+  binlog-rotate [--no-flush] [--restart] mysql/mariadb: flush binary logs, spool the closed ones (exit 4 on gaps)
   version
 
 Results are one JSON line on stdout; for commands streaming data on stdout, the result is the stderr line starting
@@ -96,6 +96,7 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 		ro       RecoverOptions
 		from     = new(string)
 		noFlush  = new(bool)
+		restart  = new(bool)
 	)
 	var extra []string
 	switch cmd {
@@ -130,6 +131,7 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 		fs.StringVar(from, "from", "", "directory holding archived WAL")
 	case "binlog-rotate":
 		fs.BoolVar(noFlush, "no-flush", false, "only spool binlogs that are already closed")
+		fs.BoolVar(restart, "restart", false, "after a reset (exit 4, gap kind \"reset\") and a new base backup: forget the last spooled name")
 	case "health", "promote", "wal-push":
 	default:
 		fmt.Fprint(h.Stderr, usageText)
@@ -176,7 +178,7 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 	case "wal-fetch":
 		return h.WALFetch(pos[0], pos[1], *from)
 	case "binlog-rotate":
-		return h.BinlogRotate(ctx, *noFlush)
+		return h.BinlogRotate(ctx, *noFlush, *restart)
 	}
 	return nil
 }

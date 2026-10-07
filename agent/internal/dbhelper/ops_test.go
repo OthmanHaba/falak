@@ -178,29 +178,92 @@ func TestKVCredentialsTravelInTheEnvironment(t *testing.T) {
 	}
 }
 
-func TestMySQLDefaultsFile(t *testing.T) {
+func TestMySQLCredentialsTravelOnFd3(t *testing.T) {
 	th := newTestHelper(t, MariaDB)
-	var content string
-	var mode os.FileMode
-	var path string
-	th.run.handle = func(c Cmd) (string, error) {
-		path = strings.TrimPrefix(c.Args[0], "--defaults-extra-file=")
-		b, _ := os.ReadFile(path)
-		st, _ := os.Stat(path)
-		content, mode = string(b), st.Mode().Perm()
-		return "", nil
-	}
 	if err := th.Health(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if mode != 0o600 {
-		t.Errorf("defaults file mode %v", mode)
+	cmd, _ := th.run.call("mariadb-admin")
+	if cmd.Args[0] != "--defaults-extra-file=/dev/fd/3" {
+		t.Errorf("first argument %q", cmd.Args[0])
 	}
+	content := string(cmd.Fd3)
 	if !strings.Contains(content, "[client]\nuser=root\npassword=\"s3cr\\\"et\\\\pw\"\n") || !strings.Contains(content, "[mariadb-backup]") {
-		t.Errorf("defaults file:\n%s", content)
+		t.Errorf("option file:\n%s", content)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Errorf("defaults file left behind: %v", err)
+	for _, a := range cmd.Args {
+		if strings.Contains(a, "s3cr") {
+			t.Errorf("password in argv: %q", a)
+		}
+	}
+	tmp, _ := os.ReadDir(os.TempDir())
+	for _, e := range tmp {
+		if strings.HasPrefix(e.Name(), "falak-db-") && !e.IsDir() {
+			t.Errorf("credentials file in %s: %s", os.TempDir(), e.Name())
+		}
+	}
+}
+
+func TestMySQLSafeClientArgs(t *testing.T) {
+	for _, c := range []struct {
+		version string
+		want    string
+		ok      bool
+	}{
+		{"mysql  Ver 8.4.11 for Linux on aarch64 (MySQL Community Server - GPL)", "--binary-mode --system-command=OFF", true},
+		{"mysql  Ver 8.0.46 for Linux on x86_64", "--binary-mode --system-command=OFF", true},
+		{"mysql  Ver 8.0.39 for Linux on x86_64", "", false},
+		{"mysql  Ver 8.4.2 for Linux on x86_64", "", false},
+		{"mysql  Ver 8.3.0 for Linux on x86_64", "", false},
+		{"mysql  Ver 9.1.0 for Linux on x86_64", "--binary-mode --system-command=OFF", true},
+		{"garbage", "", false},
+	} {
+		th := newTestHelper(t, MySQL)
+		th.run.handle = func(Cmd) (string, error) { return c.version, nil }
+		args, err := th.mysqlSafeClientArgs(context.Background())
+		if (err == nil) != c.ok || strings.Join(args, " ") != c.want {
+			t.Errorf("%q: %v, %v", c.version, args, err)
+		}
+	}
+	th := newTestHelper(t, MariaDB)
+	if args, err := th.mysqlSafeClientArgs(context.Background()); err != nil || strings.Join(args, " ") != "--binary-mode --sandbox" {
+		t.Errorf("mariadb: %v, %v", args, err)
+	}
+	if len(th.run.calls) != 0 {
+		t.Error("mariadb ran a version probe")
+	}
+}
+
+func TestRestoreLogicalMySQLIsSandboxed(t *testing.T) {
+	th := newTestHelper(t, MySQL)
+	th.run.handle = func(c Cmd) (string, error) {
+		if len(c.Args) == 1 && c.Args[0] == "--version" {
+			return "mysql  Ver 8.4.11 for Linux", nil
+		}
+		return "", nil
+	}
+	th.Stdin = strings.NewReader("\\! id\n")
+	if err := th.RestoreLogical(context.Background(), "app", "-", false); err != nil {
+		t.Fatal(err)
+	}
+	last := th.run.calls[len(th.run.calls)-1]
+	if got := strings.Join(last.Args[1:], " "); got != "--binary-mode --system-command=OFF --default-character-set=utf8mb4 app" {
+		t.Errorf("mysql %s", got)
+	}
+
+	th = newTestHelper(t, MySQL)
+	th.run.handle = func(Cmd) (string, error) { return "mysql  Ver 8.0.30 for Linux", nil }
+	if err := th.RestoreLogical(context.Background(), "app", "-", false); err == nil {
+		t.Error("restored with a client that cannot disable system commands")
+	}
+
+	th = newTestHelper(t, MariaDB)
+	if err := th.RestoreLogical(context.Background(), "app", "-", false); err != nil {
+		t.Fatal(err)
+	}
+	cmd, _ := th.run.call("mariadb")
+	if got := strings.Join(cmd.Args[1:], " "); got != "--binary-mode --sandbox --default-character-set=utf8mb4 app" {
+		t.Errorf("mariadb %s", got)
 	}
 }
 
@@ -556,6 +619,9 @@ func TestMySQLRecover(t *testing.T) {
 		if c.Name == "mysqlbinlog" {
 			return "BINLOG-SQL", nil
 		}
+		if len(c.Args) == 1 && c.Args[0] == "--version" {
+			return "mysql  Ver 8.0.46 for Linux", nil
+		}
 		return "", nil
 	}
 	if err := th.Recover(context.Background(), RecoverOptions{BinlogDir: "/replay", TargetTime: "2026-10-07T12:00:00+03:00"}); err != nil {
@@ -597,7 +663,7 @@ func TestBinlogRotate(t *testing.T) {
 		}
 		return "", nil
 	}
-	if err := th.BinlogRotate(context.Background(), false); err != nil {
+	if err := th.BinlogRotate(context.Background(), false, false); err != nil {
 		t.Fatal(err)
 	}
 	res := decode(t, th.out.String())
@@ -613,7 +679,7 @@ func TestBinlogRotate(t *testing.T) {
 	os.RemoveAll(filepath.Join(spool, "binlog"))
 	th.out.Reset()
 	queries = nil
-	if err := th.BinlogRotate(context.Background(), true); err != nil {
+	if err := th.BinlogRotate(context.Background(), true, false); err != nil {
 		t.Fatal(err)
 	}
 	if res := decode(t, th.out.String()); len(res["spooled"].([]any)) != 0 || queries[0] == "FLUSH BINARY LOGS" {
@@ -624,14 +690,14 @@ func TestBinlogRotate(t *testing.T) {
 	writeTemp(t, data, "binlog.000004", "four")
 	logs += "binlog.000004\t157\tNo\n"
 	th.out.Reset()
-	if err := th.BinlogRotate(context.Background(), true); err != nil {
+	if err := th.BinlogRotate(context.Background(), true, false); err != nil {
 		t.Fatal(err)
 	}
 	if res := decode(t, th.out.String()); len(res["spooled"].([]any)) != 1 {
 		t.Errorf("third run: %v", res)
 	}
 
-	if th := newTestHelper(t, Postgres); ExitCode(th.BinlogRotate(context.Background(), false)) != ExitUnsupported {
+	if th := newTestHelper(t, Postgres); ExitCode(th.BinlogRotate(context.Background(), false, false)) != ExitUnsupported {
 		t.Error("binlog-rotate on postgres")
 	}
 }
