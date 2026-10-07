@@ -55,6 +55,29 @@ cosign verify-attestation --type spdxjson "ghcr.io/othmanhaba/falak-postgres@$di
   --certificate-oidc-issuer https://token.actions.githubusercontent.com --certificate-identity-regexp "$id"
 ```
 
+### Trust: the control plane ships the digests
+
+Servers run a database image only by the digest the control plane sends (`db.instance.create|update` refuse an
+`instance.digest`-less spec; the agent checks the pulled image's RepoDigests against it). The control plane only sends
+digests from `control-plane/modules/Databases/config/db-image-digests.json` (`{"postgresql": {"17": "sha256:…"}}`), and
+refuses to create or upgrade to a major missing there. That file is written in CI:
+
+- `release.yml` (tags `vX.Y.Z`, `vX.Y.Z-rc.N`): its `db-digests` job runs `tools/db-image-digests.sh -<tag>`, which
+  resolves the multi-arch index digest of `ghcr.io/othmanhaba/falak-<engine>:<version>-<tag>` for every entry of
+  `images/db/versions.json`. The db-images run of the same tag pushes those tags only after building, testing, scanning
+  and signing them, so the job waits for them (up to 2 h, `--wait`); any image still missing fails the release. The
+  control-plane image is then built with the file.
+- The committed file is `{}`: a control plane built from a checkout (development, the sim) creates no database until
+  you run the script, with `-rc` (release/** branches), `""` (main: `<version>`) or `-vX.Y.Z`, after `docker login
+  ghcr.io` if the packages are private.
+
+So the chain is: db-images (GitHub OIDC) builds and signs → the release job pins exactly those digests into the
+control-plane image, which is itself built by CI from the same tag → the agent runs nothing else. A digest is
+content-addressed: a registry or mirror cannot substitute other bytes for it. Verifying cosign signatures on every
+server would add a Sigstore client, network access to Rekor/Fulcio and a trust root to keep current on each server,
+to check a fact CI already established when it chose the digest. The signatures stay useful to anyone auditing an
+image (above) or a control plane built outside CI.
+
 ## Running an image
 
 The container starts as root, like the base image; the official entrypoint drops to the engine's user (`postgres`,

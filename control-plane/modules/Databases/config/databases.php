@@ -9,9 +9,9 @@ $versions = [
 ];
 
 // Database images run pinned by digest, never a tag as pulled: the digests of the images CI published and signed
-// (db-image-digests.json, {"postgresql": {"17": "sha256:…"}}, written by .github/workflows/db-images.yml for a
-// release), overridable per major with FALAK_DB_IMAGE_DIGEST_<ENGINE>_<MAJOR> (dots as underscores). A major without a
-// digest can't be created or upgraded to.
+// (db-image-digests.json, {"postgresql": {"17": "sha256:…"}}, written by tools/db-image-digests.sh in release.yml before the
+// control-plane image is built; docs/DB_IMAGES.md "Trust"), overridable per major with FALAK_DB_IMAGE_DIGEST_<ENGINE>_<MAJOR>
+// (dots as underscores). A major without a digest can't be created or upgraded to.
 $manifest = (string) env('FALAK_DB_IMAGE_DIGESTS', __DIR__.'/db-image-digests.json');
 $manifest = str_starts_with($manifest, '/') ? $manifest : base_path($manifest);
 $digests = is_file($manifest) ? (array) json_decode((string) file_get_contents($manifest), true) : [];
