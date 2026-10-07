@@ -12,6 +12,7 @@ use Falak\Fleet\Contracts\Data\CommandResult;
 use Falak\Fleet\Contracts\Exceptions\CommandTimedOut;
 use Falak\Fleet\Domain\Models\Command;
 use Falak\Fleet\Domain\Models\CommandEvent;
+use Illuminate\Support\Arr;
 
 final class FleetAgentGateway implements AgentGateway
 {
@@ -97,6 +98,36 @@ final class FleetAgentGateway implements AgentGateway
     public function supports(string $type): bool
     {
         return $this->schemas->hasCommand($type);
+    }
+
+    public function forgetSecrets(CommandHandle|string $command, array $paths): bool
+    {
+        $model = Command::query()->find($this->id($command));
+
+        if ($model === null || ! $model->status->isTerminal()) {
+            return false;
+        }
+
+        $payload = json_decode($model->payload, true, 512, JSON_THROW_ON_ERROR);
+
+        if (! is_array($payload)) {
+            return true;
+        }
+
+        $changed = false;
+
+        foreach ($paths as $path) {
+            if (Arr::has($payload, $path) && Arr::get($payload, $path) !== '[forgotten]') {
+                Arr::set($payload, $path, '[forgotten]');
+                $changed = true;
+            }
+        }
+
+        if ($changed) {
+            $model->forceFill(['payload' => json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION)])->save();
+        }
+
+        return true;
     }
 
     private function id(CommandHandle|string $command): string

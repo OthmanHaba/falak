@@ -93,4 +93,9 @@ final class RecordingAgentGateway implements AgentGateway
     {
         return true;
     }
+
+    public function forgetSecrets(CommandHandle|string $command, array $paths): bool
+    {
+        return true;
+    }
 }
