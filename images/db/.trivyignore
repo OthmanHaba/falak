@@ -1,0 +1,3 @@
+# CVEs accepted for the Falak database images, one per line: "CVE-YYYY-NNNNN  # why, and until when".
+# Keep this empty unless a fix is not reachable or not yet published by the base image; prefer bumping the digest
+# (images/db/bump.sh).

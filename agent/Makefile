@@ -1,4 +1,5 @@
-# falak-agent (servers), falak (CLI), falak-builder (build worker). Zero CGO, static, stripped.
+# falak-agent (servers), falak (CLI), falak-builder (build worker), falak-db (inside the database images,
+# images/db). Zero CGO, static, stripped.
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -buildid= -X github.com/OthmanHaba/falak/agent/internal/version.Version=$(VERSION)
 GOFLAGS := -trimpath
@@ -6,12 +7,14 @@ GOFLAGS := -trimpath
 AGENT_PLATFORMS   := linux-amd64 linux-arm64
 CLI_PLATFORMS     := darwin-amd64 darwin-arm64 linux-amd64 linux-arm64
 BUILDER_PLATFORMS := linux-amd64 linux-arm64
+DBHELPER_PLATFORMS := linux-amd64 linux-arm64
 
 BINARIES := $(foreach p,$(AGENT_PLATFORMS),bin/falak-agent-$(p)) \
             $(foreach p,$(CLI_PLATFORMS),bin/falak-$(p)) \
-            $(foreach p,$(BUILDER_PLATFORMS),bin/falak-builder-$(p))
+            $(foreach p,$(BUILDER_PLATFORMS),bin/falak-builder-$(p)) \
+            $(foreach p,$(DBHELPER_PLATFORMS),bin/falak-db-$(p))
 
-.PHONY: build agent cli builder test vet clean sizes
+.PHONY: build agent cli builder dbhelper test vet clean sizes
 
 build: $(BINARIES)
 	@$(MAKE) --no-print-directory sizes
@@ -19,6 +22,7 @@ build: $(BINARIES)
 agent: $(foreach p,$(AGENT_PLATFORMS),bin/falak-agent-$(p))
 cli: $(foreach p,$(CLI_PLATFORMS),bin/falak-$(p))
 builder: $(foreach p,$(BUILDER_PLATFORMS),bin/falak-builder-$(p))
+dbhelper: $(foreach p,$(DBHELPER_PLATFORMS),bin/falak-db-$(p))
 
 # $(call gobuild,<cmd dir>,<os-arch>)
 define gobuild
@@ -27,7 +31,7 @@ define gobuild
 		go build $(GOFLAGS) -ldflags '$(LDFLAGS)' -o $@ ./cmd/$(1)
 endef
 
-# Static pattern rules: falak-builder-* and falak-agent-* must not fall into the falak-% CLI rule.
+# Static pattern rules: falak-builder-*, falak-db-* and falak-agent-* must not fall into the falak-% CLI rule.
 # <binary>.version: the version the control plane announces when it serves this build (agent upgrades).
 $(foreach p,$(AGENT_PLATFORMS),bin/falak-agent-$(p)): bin/falak-agent-%: FORCE
 	$(call gobuild,falak-agent,$*)
@@ -35,6 +39,9 @@ $(foreach p,$(AGENT_PLATFORMS),bin/falak-agent-$(p)): bin/falak-agent-%: FORCE
 
 $(foreach p,$(BUILDER_PLATFORMS),bin/falak-builder-$(p)): bin/falak-builder-%: FORCE
 	$(call gobuild,falak-builder,$*)
+
+$(foreach p,$(DBHELPER_PLATFORMS),bin/falak-db-$(p)): bin/falak-db-%: FORCE
+	$(call gobuild,falak-db,$*)
 
 $(foreach p,$(CLI_PLATFORMS),bin/falak-$(p)): bin/falak-%: FORCE
 	$(call gobuild,falak,$*)

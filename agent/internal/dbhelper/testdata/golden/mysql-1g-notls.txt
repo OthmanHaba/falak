@@ -1,0 +1,34 @@
+==> /etc/mysql/conf.d/zz-falak.cnf (-rw-r--r--)
+# Rendered by falak-db at every container start: do not edit, changes are lost.
+# Memory limit: 1024 MiB
+
+[mysqld]
+port = 3306
+socket = /var/run/mysqld/mysqld.sock
+max_connections = 151
+skip_name_resolve = ON
+character_set_server = utf8mb4
+
+innodb_buffer_pool_size = 563M
+innodb_buffer_pool_instances = 1
+innodb_buffer_pool_chunk_size = 563M
+
+# Point-in-time recovery: binlogs are rotated and spooled every 60 s; the agent ships the spool.
+server_id = 1
+log_bin = binlog
+binlog_format = ROW
+binlog_row_image = FULL
+sync_binlog = 1
+innodb_flush_log_at_trx_commit = 1
+binlog_expire_logs_seconds = 604800
+gtid_mode = ON
+enforce_gtid_consistency = ON
+
+tls_version = ''
+
+slow_query_log = OFF
+==> tuning
+innodb_buffer_pool_size = 563M
+max_connections = 151
+memory_mb = 1024
+server_id = 1
