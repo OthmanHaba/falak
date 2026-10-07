@@ -29,6 +29,6 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions) {
         // Never flashed back into the session with validation errors (old input): passwords, codes, secret values,
-        // secret provider credentials (config).
-        $exceptions->dontFlash(['password', 'password_confirmation', 'current_password', 'code', 'recovery_code', 'value', 'reference', 'content', 'set', 'config']);
+        // secret provider credentials (config), a customer's age identity given for one backup restore (identity).
+        $exceptions->dontFlash(['password', 'password_confirmation', 'current_password', 'code', 'recovery_code', 'value', 'reference', 'content', 'set', 'config', 'identity']);
     })->create();

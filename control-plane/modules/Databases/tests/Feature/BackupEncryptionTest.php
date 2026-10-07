@@ -182,3 +182,17 @@ it('refuses to restore backups taken before encryption', function () {
     $this->post("/databases/backups/{$backup->id}/restore", ['database_instance_id' => $this->engine->id, 'database' => 'shop_copy', 'confirm' => 'shop_copy'])
         ->assertSessionHasErrors('backup');
 });
+
+it('never flashes the age identity into the session when a restore fails validation', function () {
+    $schedule = enc_schedule($this, ['encryption_mode' => 'customer', 'age_recipient' => ENC_RECIPIENT]);
+    $backup = enc_backup($this, $schedule);
+    databases_active_db($this->engine, 'shop_copy');
+
+    // An Inertia-style form post (redirect back with old input): the confirmation does not match.
+    $this->from('/databases/backups')->post("/databases/backups/{$backup->id}/restore", [
+        'database_instance_id' => $this->engine->id, 'database' => 'shop_copy', 'confirm' => 'nope', 'identity' => enc_identity(),
+    ])->assertSessionHasErrors('confirm')->assertSessionMissing('_old_input.identity');
+
+    expect(json_encode(session()->all()))->not->toContain(str_repeat('Q', 58))
+        ->and(session()->getOldInput('database'))->toBe('shop_copy');
+});

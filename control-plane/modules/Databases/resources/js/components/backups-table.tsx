@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { HttpError, errorMessage, requestJson } from '@/lib/http';
 import { router, useForm } from '@inertiajs/react';
 import { format } from 'date-fns';
 import { Download, KeyRound, RotateCcw, Trash2 } from 'lucide-react';
@@ -44,16 +45,29 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
         setRestoring(backup);
     };
 
-    const submitRestore: FormEventHandler = (event) => {
+    const [restoringBusy, setRestoringBusy] = useState(false);
+
+    // Posted as JSON, not an Inertia form visit: a validation error never flashes the age identity into the session.
+    const submitRestore: FormEventHandler = async (event) => {
         event.preventDefault();
         if (!restoring) return;
-        // The age identity is used for this restore only: dropped from the form either way.
-        form.transform((data) => (customer ? { ...data, identity: data.identity.trim() } : { ...data, identity: null }));
-        form.post(`/databases/backups/${restoring.id}/restore`, {
-            preserveScroll: true,
-            onSuccess: () => setRestoring(null),
-            onFinish: () => form.setData('identity', ''),
-        });
+        setRestoringBusy(true);
+        form.clearErrors();
+        try {
+            await requestJson(`/databases/backups/${restoring.id}/restore`, 'POST', {
+                database_instance_id: form.data.database_instance_id,
+                database: form.data.database,
+                confirm: form.data.confirm,
+                ...(customer ? { identity: form.data.identity.trim() } : {}),
+            });
+            setRestoring(null);
+            router.reload();
+        } catch (e) {
+            form.setError(e instanceof HttpError && Object.keys(e.errors).length > 0 ? e.errors : { backup: errorMessage(e) });
+        } finally {
+            form.setData('identity', '');
+            setRestoringBusy(false);
+        }
     };
 
     if (backups.length === 0) {
@@ -237,7 +251,7 @@ export function BackupsTable({ backups, showServer = false, canManage, canRestor
                             <Button
                                 variant="destructive"
                                 disabled={
-                                    form.processing ||
+                                    restoringBusy ||
                                     form.data.confirm !== form.data.database ||
                                     !form.data.database ||
                                     (customer && !AGE_IDENTITY.test(form.data.identity.trim()))
