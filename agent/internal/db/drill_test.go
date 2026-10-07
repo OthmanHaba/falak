@@ -95,14 +95,27 @@ func TestBackupRestoreThroughPresignedURLs(t *testing.T) {
 	b.objects["/app.fkb"] = obj
 	sum := sha256.Sum256(obj)
 	restored = ""
+	h.run.Reset()
 	_, err := h.db.Restore(context.Background(), RestorePayload{Instance: instID, Engine: "postgres", Database: "app", Encryption: testEnc,
 		Source: src, SHA256: hex.EncodeToString(sum[:])}, stream())
 	if err == nil || !strings.Contains(err.Error(), "corrupt") {
 		t.Fatalf("tampered: %v", err)
 	}
-	if len(restored) >= len(dump) {
-		t.Fatal("a tampered backup was restored completely")
+	// Verified before anything runs: falak-db never started.
+	if restored != "" || len(h.run.Lines()) != 0 {
+		t.Fatalf("falak-db ran for a tampered backup: %q", h.run.Lines())
 	}
+	// A restore without the stored file's sha256 is refused, and so is one the staging directory has no room for.
+	if _, err := h.db.Restore(context.Background(), RestorePayload{Instance: instID, Engine: "postgres", Database: "app", Encryption: testEnc,
+		Source: src}, stream()); !commands.IsPayloadError(err) {
+		t.Fatalf("no sha256: %v", err)
+	}
+	h.db.d.FreeBytes = func(string) (int64, error) { return 1 << 20, nil }
+	if _, err := h.db.Restore(context.Background(), RestorePayload{Instance: instID, Engine: "postgres", Database: "app", Encryption: testEnc,
+		Source: src, SHA256: br.SHA256, ArchiveBytes: br.SizeBytes}, stream()); err == nil || !strings.Contains(err.Error(), "free") {
+		t.Fatalf("no room: %v", err)
+	}
+	h.db.d.FreeBytes = freeBytes
 	// The recorded sha256 of the object is checked first.
 	if _, err := h.db.Restore(context.Background(), RestorePayload{Instance: instID, Engine: "postgres", Database: "app", Encryption: testEnc,
 		Source: src, SHA256: br.SHA256}, stream()); err == nil {

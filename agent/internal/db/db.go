@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -56,7 +57,8 @@ type Deps struct {
 	SecretsDir string
 	// EtcDir holds the instances' TLS files under db/<id>/tls (default /etc/falak).
 	EtcDir  string
-	TempDir string // real path for backup staging; default os.TempDir()
+	// TempDir is the real path backups are staged in; default <VolumesRoot>/.staging (the volume store, not a tmpfs).
+	TempDir string
 	// DrillRoot holds restore drills' scratch data (default /var/lib/falak/drills).
 	DrillRoot string
 	// MemAvailable and FreeBytes size up a drill (defaults: /proc/meminfo, statfs(2)).
@@ -115,7 +117,7 @@ func New(d Deps) *DB {
 		d.EtcDir = "/etc/falak"
 	}
 	if d.TempDir == "" {
-		d.TempDir = os.TempDir()
+		d.TempDir = d.FS.P(filepath.Join(d.VolumesRoot, ".staging"))
 	}
 	if d.Mounted == nil {
 		d.Mounted = mounted

@@ -146,7 +146,7 @@ final class CommandPayloads
      * @param  array<string, string>  $encryption
      * @return array<string, mixed>
      */
-    public static function backup(DatabaseInstance $instance, string $database, array $encryption, string $uploadUrl, bool $tableCounts = false): array
+    public static function backup(DatabaseInstance $instance, string $database, #[\SensitiveParameter] array $encryption, string $uploadUrl, bool $tableCounts = false): array
     {
         return array_filter([
             'instance' => $instance->id,
@@ -164,7 +164,7 @@ final class CommandPayloads
      * @param  array<string, string>  $encryption
      * @return array<string, mixed>
      */
-    public static function restore(DatabaseInstance $instance, string $database, Backup $backup, array $encryption, string $downloadUrl): array
+    public static function restore(DatabaseInstance $instance, string $database, Backup $backup, #[\SensitiveParameter] array $encryption, string $downloadUrl): array
     {
         $row = $instance->databases()->where('name', $database)->first();
 
@@ -176,6 +176,7 @@ final class CommandPayloads
             'source' => ['kind' => 'url', 'url' => $downloadUrl],
             'sha256' => $backup->sha256,
             'plaintext_sha256' => $backup->plaintext_sha256,
+            'archive_bytes' => $backup->size_bytes,
             'owner' => $row !== null ? self::owner($instance, $row) : null,
         ], fn ($value) => $value !== null);
     }
@@ -186,7 +187,7 @@ final class CommandPayloads
      * @param  array<string, string>  $encryption
      * @return array<string, mixed>
      */
-    public static function drill(Drill $drill, DatabaseInstance $instance, Backup $backup, array $encryption, string $downloadUrl, ?string $query): array
+    public static function drill(Drill $drill, DatabaseInstance $instance, Backup $backup, #[\SensitiveParameter] array $encryption, string $downloadUrl, ?string $query): array
     {
         $memory = min((int) $instance->memory_bytes, (int) config('databases.drills.memory_bytes', 512 * 1024 ** 2));
         $memory = max($memory, (int) (config('databases.memory.min.'.$instance->engine->value) ?? 256 * 1024 ** 2));

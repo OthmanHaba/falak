@@ -140,7 +140,7 @@ func (p DrillPayload) validate() error {
 	if p.Source.Kind != "url" || !strings.HasPrefix(p.Source.URL, "https://") {
 		return payloadErr("source must be an https url")
 	}
-	if len(p.SHA256) != 64 {
+	if !sha256Re.MatchString(p.SHA256) {
 		return payloadErr("invalid sha256")
 	}
 	if p.ArchiveBytes < 0 || p.UncompressedBytes < 0 || p.Checks.TolerancePercent < 0 || p.Checks.TolerancePercent > 100 {

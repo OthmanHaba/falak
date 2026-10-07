@@ -131,6 +131,24 @@ func (e Encryption) Open(r io.Reader) (*Reader, error) {
 	return Open(h, r, key)
 }
 
+// Verify reads a whole stream with the key, discarding the data: every segment and the trailer are authenticated,
+// and, when want is set, the data's SHA-256 must be it. Restores run it before feeding anything to an engine.
+func (e Encryption) Verify(r io.Reader, want string) (Summary, error) {
+	rd, err := e.Open(r)
+	if err != nil {
+		return Summary{}, err
+	}
+	defer rd.Close()
+	if _, err := io.Copy(io.Discard, rd); err != nil {
+		return Summary{}, err
+	}
+	sum := rd.Summary()
+	if want != "" && !strings.EqualFold(hex.EncodeToString(sum.SHA256[:]), want) {
+		return sum, fmt.Errorf("%w: the content is not the one recorded (sha256 %x, want %s)", ErrAuth, sum.SHA256, want)
+	}
+	return sum, nil
+}
+
 // DecodeKey reads a 32-byte data key written as base64 (standard or URL, padded or not) or hex.
 func DecodeKey(s string) ([]byte, error) {
 	s = strings.TrimSpace(s)

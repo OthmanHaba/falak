@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -300,6 +301,8 @@ type RestorePayload struct {
 	// the file's authenticated trailer).
 	SHA256          string `json:"sha256"`
 	PlaintextSHA256 string `json:"plaintext_sha256,omitempty"`
+	// ArchiveBytes is the stored file's size: the staging directory must have room for it.
+	ArchiveBytes int64 `json:"archive_bytes,omitempty"`
 	// Owner (postgres) gets the restored database and every object in it: the application keeps migrating it.
 	Owner string `json:"owner,omitempty"`
 }
@@ -345,6 +348,15 @@ func (db *DB) Restore(ctx context.Context, p RestorePayload, st commands.Stream)
 	if err := p.Encryption.Check(false); err != nil {
 		return nil, &commands.PayloadError{Err: err}
 	}
+	if !sha256Re.MatchString(p.SHA256) {
+		return nil, payloadErr("sha256 (of the stored file) is required")
+	}
+	if p.ArchiveBytes < 0 {
+		return nil, payloadErr("archive_bytes must be positive")
+	}
+	if err := db.stagingRoom(p.ArchiveBytes); err != nil {
+		return nil, err
+	}
 	if p.Engine == "postgres" && p.Owner != "" {
 		if err := checkIdent("owner", p.Owner); err != nil {
 			return nil, err
@@ -365,11 +377,22 @@ func (db *DB) Restore(ctx context.Context, p RestorePayload, st commands.Stream)
 // restoreInto opens a backup file and loads it into a container: a SQL database (created first on MySQL / MariaDB;
 // postgres with swap: into a scratch database renamed in on success), or a Redis / Valkey container's snapshot. It
 // returns the dump's size.
+//
+// The whole file is authenticated first (every segment, the trailer, the recorded SHA-256), decrypting to nothing: an
+// engine is only ever fed a backup known to be complete and intact. While it streams, a read error (the disk) cancels
+// the exec, so falak-db is killed rather than seeing an early end of input it could take for a complete dump.
 func (db *DB) restoreInto(ctx context.Context, container, engine, database, owner string, swap bool, file string, enc backupcrypt.Encryption, want string, st commands.Stream) (int64, error) {
+	if err := verifyDump(file, enc, want); err != nil {
+		return 0, err
+	}
+	fmt.Fprintf(st.Stdout(), "backup verified (every segment and its SHA-256)\n")
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	in, err := openDump(file, enc, want)
 	if err != nil {
 		return 0, err
 	}
+	in.cancel = cancel
 	defer in.Close()
 	if isKeyValue(engine) {
 		return in.n, in.check(db.restoreKeyValue(ctx, container, in, st))
@@ -438,6 +461,26 @@ func (db *DB) restoreKeyValue(ctx context.Context, name string, in io.Reader, st
 	return err
 }
 
+var sha256Re = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
+// stagingRoom fails when the staging directory (on the volume store) has less than need bytes (+512 MiB) free.
+func (db *DB) stagingRoom(need int64) error {
+	if err := os.MkdirAll(db.d.TempDir, 0o700); err != nil {
+		return err
+	}
+	if need <= 0 {
+		return nil
+	}
+	free, err := db.d.FreeBytes(db.d.TempDir)
+	if err != nil {
+		return fmt.Errorf("free space of %s: %w", db.d.TempDir, err)
+	}
+	if free < need+drillDiskMargin {
+		return fmt.Errorf("%s has %d MiB free, the backup needs %d MiB", db.d.TempDir, free>>20, (need+drillDiskMargin)>>20)
+	}
+	return nil
+}
+
 // fetchSource gives the backup file locally: a local source checked against sha256, or a URL downloaded (and checked)
 // into a temporary file that cleanup removes.
 func (db *DB) fetchSource(ctx context.Context, src Location, sha string) (file string, cleanup func(), err error) {
@@ -480,6 +523,20 @@ type dumpReader struct {
 	n      int64
 	err    error
 	closed bool
+	cancel context.CancelFunc
+}
+
+// verifyDump authenticates a whole backup file without keeping its content.
+func verifyDump(file string, enc backupcrypt.Encryption, want string) error {
+	f, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := enc.Verify(f, want); err != nil {
+		return fmt.Errorf("backup verification: %w", err)
+	}
+	return nil
 }
 
 // openDump opens a backup file (FKB1) with its key. want, when set, is the dump's expected SHA-256.
@@ -506,6 +563,9 @@ func (d *dumpReader) Read(p []byte) (int, error) {
 	}
 	if err != nil && !errors.Is(err, io.EOF) && d.err == nil {
 		d.err = err
+		if d.cancel != nil {
+			d.cancel() // kill the consumer before it sees the end of its input
+		}
 	}
 	return n, err
 }

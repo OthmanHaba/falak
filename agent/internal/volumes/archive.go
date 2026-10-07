@@ -564,12 +564,21 @@ func (s *Service) Restore(ctx context.Context, p RestorePayload, st commands.Str
 
 // unpack opens a staged snapshot (FKB1) and extracts it into root, never more than the snapshot recorded (+1%),
 // whatever the stream claims. The tar stream must match the recorded SHA-256 (want) when given.
+//
+// The whole file is authenticated first (decrypting to nothing): nothing is written into the volume from a snapshot
+// that is incomplete or was changed.
 func unpack(ctx context.Context, root *os.Root, file string, enc backupcrypt.Encryption, want string, uncompressed int64) (tarStats, error) {
 	f, err := os.Open(file)
 	if err != nil {
 		return tarStats{}, err
 	}
 	defer f.Close()
+	if _, err := enc.Verify(f, want); err != nil {
+		return tarStats{}, fmt.Errorf("snapshot verification: %w", err)
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return tarStats{}, err
+	}
 	r, err := enc.Open(f)
 	if err != nil {
 		return tarStats{}, fmt.Errorf("open snapshot: %w", err)

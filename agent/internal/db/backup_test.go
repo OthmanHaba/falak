@@ -239,8 +239,8 @@ func TestRestoreKeyValueStopsTheInstance(t *testing.T) {
 	})
 	h.dock.calls = nil
 	h.run.Reset()
-	file, _ := sealedFile(t, h, "REDIS0012...")
-	if _, err := h.db.Restore(ctx, RestorePayload{Instance: instID, Engine: "redis", Database: "cache", Encryption: testEnc, Source: Location{Kind: "local", Path: file}}, stream()); err != nil {
+	file, sha := sealedFile(t, h, "REDIS0012...")
+	if _, err := h.db.Restore(ctx, RestorePayload{Instance: instID, Engine: "redis", Database: "cache", Encryption: testEnc, Source: Location{Kind: "local", Path: file}, SHA256: sha}, stream()); err != nil {
 		t.Fatal(err)
 	}
 	line := h.run.Lines()[0]
@@ -258,8 +258,8 @@ func TestRestoreKeyValueStopsTheInstance(t *testing.T) {
 	h2 := newHarness(t)
 	h2.db.InstanceCreate(ctx, p, stream())
 	h2.run.On("docker run", runner.Result{ExitCode: 4, Stderr: []byte("falak-db: conflict")})
-	file, _ = sealedFile(t, h2, "REDIS0012...")
-	if _, err := h2.db.Restore(ctx, RestorePayload{Instance: instID, Engine: "redis", Database: "cache", Encryption: testEnc, Source: Location{Kind: "local", Path: file}}, stream()); err == nil {
+	file, sha = sealedFile(t, h2, "REDIS0012...")
+	if _, err := h2.db.Restore(ctx, RestorePayload{Instance: instID, Engine: "redis", Database: "cache", Encryption: testEnc, Source: Location{Kind: "local", Path: file}, SHA256: sha}, stream()); err == nil {
 		t.Fatal("failed restore succeeded")
 	}
 	if !h2.dock.containers["falak-db-"+instID].State.Running {
