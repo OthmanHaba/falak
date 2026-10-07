@@ -310,8 +310,6 @@
             "enum": [
               "base",
               "docker",
-              "database",
-              "cache",
               "edge",
               "php",
               "node",
@@ -347,6 +345,18 @@
           }
         }
       }
+    },
+    "docker": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "live_restore": {
+          "type": "boolean",
+          "default": false,
+          "description": "merge \"live-restore\": true into /etc/docker/daemon.json (other keys kept; invalid JSON fails the step) and reload dockerd: containers (databases) keep running while the daemon restarts or is upgraded"
+        }
+      },
+      "description": "Docker daemon settings (feature db.instances). Every server runs Docker; its packages and service come through apt and services."
     }
   },
   "$defs": {

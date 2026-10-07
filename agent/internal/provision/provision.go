@@ -73,6 +73,8 @@ type Plan struct {
 	Services           []Service          `json:"services"`
 	UnattendedUpgrades *UnattendedUpgrade `json:"unattended_upgrades"`
 	SSH                *SSH               `json:"ssh"`
+	// Docker: daemon settings (every server runs Docker: database containers).
+	Docker *DockerPlan `json:"docker"`
 	// Components carries the control plane's machine-check decision per component (feature provision.v2).
 	Components []Component `json:"components"`
 }
@@ -284,6 +286,9 @@ func (p *Provisioner) steps(plan Plan) []step {
 	for _, svc := range plan.Services {
 		svc := svc
 		add("service:"+svc.Name, func(ctx context.Context, st commands.Stream) (bool, error) { return p.service(ctx, st, svc) })
+	}
+	if plan.Docker != nil && plan.Docker.LiveRestore {
+		add("docker:live-restore", func(ctx context.Context, st commands.Stream) (bool, error) { return p.dockerLiveRestore(ctx, st) })
 	}
 	if u := plan.UnattendedUpgrades; u != nil {
 		if _, keep := adopted["unattended_upgrades"]; keep {
