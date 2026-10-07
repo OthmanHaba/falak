@@ -343,26 +343,25 @@ With `from_environment_id` (also needs `sites.create`), every site is copied thr
 position and service name; databases are not copied. `201 {data, warnings[]}`.
 ### `POST /api/v1/projects/{project}/environments/{environment}/services` — `projects.manage` + `databases.manage` / `sites.create`
 The canvas' Create. Databases: `{kind: "database", engine: postgresql|mysql|mariadb|redis|valkey, server_id, name,
-maxmemory_mb?, eviction?, persistence?}` (the last three for Redis / Valkey: memory limit in MB, default 128 capped at ¾
-of the server's RAM; `noeviction` (default), `allkeys-lru`, `allkeys-lfu`, `allkeys-random`, `volatile-lru`,
-`volatile-lfu`, `volatile-random`, `volatile-ttl`; `rdb` (default), `aof`, `none` — nothing on disk, every restart
-starts empty). The server must run the engine; a Redis / Valkey instance gets its own port (6380–6479) and password,
-and needs an agent with `db.redis` (`422` "Update the agent on <server> first" otherwise). Sites: the `POST /sites`
-body with `kind: "site"`. `201 {data: <canvas service>, warnings[]}`; the instance is `provisioning` until the agent
-confirms.
+version?, memory_mb?, disk_gb?, eviction?, persistence?}`: a database container on the server (a Falak image of the
+major, default the engine's first; memory default 512 MB, 128 MB for Redis / Valkey; disk default 10 GB, 2 GB), joined
+to the environment's network. SQL engines get a database and a user named after it; Redis / Valkey their keyspace and
+`default` user (`eviction`: `noeviction` default, `allkeys-lru`, …; `persistence`: `rdb` default, `aof`, `none`). A
+major this release ships no pinned image of is a `422` on `version`. Sites: the `POST /sites` body with
+`kind: "site"`. `201 {data: <canvas service>, warnings[]}`; the service is `provisioning` until the container runs.
 
-Database backups have no `/api/v1` endpoints yet; the panel's session routes (CSRF, `Accept: application/json` for
-errors as JSON) are the same for SQL databases and Redis / Valkey instances (v0.9.0, agent feature `db.redis.backup`,
-`422` "Update the agent on <server> first" without it): `POST /databases/databases/{database}/backups
-{storage_provider_id, compression?: gzip|none}` (key-value: an RDB snapshot, object `….rdb.gz`), `POST
-/databases/servers/{databaseServer}/schedules {name, storage_provider_id, database_ids[], cron, retention_count?,
-retention_days?, compression?, enabled?}` · `PUT|DELETE /databases/schedules/{schedule}` · `POST
-/databases/schedules/{schedule}/run`, `POST /databases/backups/{backup}/restore {database_server_id, database,
-confirm}` (`databases.restore`; key-value: `database` is an existing, active instance of a Redis or Valkey server,
-snapshots never go into SQL engines nor dumps into instances), `GET /databases/backups/{backup}/download` (302 to a
-presigned URL valid 5 minutes, or `{url}` as JSON; `databases.restore`, audited), `DELETE /databases/backups/{backup}`,
-`GET /databases/databases/{database}` (JSON: the panel's backups, schedules, restores, `restore_targets[]` with
-`engine` and key-value `instances[]`).
+Database containers and backups have no `/api/v1` endpoints yet; the session routes (CSRF, `Accept: application/json`
+for errors as JSON): `POST /databases/instances {engine, server_id, name, version?, memory_mb?, cpus?, disk_gb?,
+settings?}`, `PUT /databases/instances/{instance} {memory_mb?, cpus?, settings?, public_access?, require_tls?,
+allowed_sources?}` (a setting given as `null` returns to its default; `allowed_sources`: IPv4 CIDRs allowed to reach a
+public port), `POST /databases/instances/{instance}/restart|upgrade {version?}|password {password?}|network` (`network`
+applies pending published addresses: the container is recreated), `DELETE /databases/instances/{instance} {confirm,
+delete_volume?}`, `POST /databases/databases/{database}/backups {storage_provider_id, compression?}`, `POST
+/databases/instances/{instance}/schedules {…}` · `PUT|DELETE /databases/schedules/{schedule}` · `POST
+/databases/schedules/{schedule}/run`, `POST /databases/backups/{backup}/restore {database_instance_id, database,
+confirm}` (`databases.restore`; into an existing database of a running instance of the same family), `GET
+/databases/backups/{backup}/download`, `DELETE /databases/backups/{backup}`, `GET /databases/databases/{database}` (JSON:
+the panel).
 ### `PATCH|DELETE /api/v1/projects/{project}/environments/{environment}` — `projects.manage`
 Rename (the slug follows). Only empty, non-production environments can be deleted.
 
@@ -370,49 +369,23 @@ Rename (the slug follows). Only empty, non-production environments can be delete
 Site variables may contain `${{ <service>.<KEY> }}`; they resolve at deploy time (release `.env`, deploy script
 environment, public build variables) against services of the **same environment**. Service names match
 case-insensitively with spaces/dots/underscores as dashes. Database services expose `DATABASE_URL`,
-`DB_CONNECTION`, `DB_HOST` (depends on the site, below; never a public address), `DB_PORT`, `DB_DATABASE`,
-`DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the database); site services expose their own variables.
-Redis and Valkey services (instances) expose `REDIS_URL` (`redis://default:<password>@<host>:<port>`), `REDIS_HOST`,
-`REDIS_PORT` (the instance's own port, 6380–6479), `REDIS_PASSWORD` and `REDIS_CLIENT` (`phpredis`). `REDIS_HOST` /
-`REDIS_URL` depend on the site (v0.7.1, agents with `db.redis.network`; older agents keep the instance on 127.0.0.1 and
-everyone else gets a resolution error saying to update the agent):
-- a native site on the instance's server: `127.0.0.1`;
-- a container there (Docker site, compose stack, function): the Docker bridge's address (`docker0`, `172.17.0.1` out of
-  the box), which the instance listens on; the firewall opens the instance's port to the Docker ranges on the bridges
-  only;
-- a site on another server of the environment (native or containers, also a site spanning both): the instance server's
-  address on a private network they share — a Falak private network (WireGuard) first, else the provider private network
-  only where both servers are on it for sure (created by Falak with the same provider credential, in the same region, on
-  DigitalOcean or Lightsail, whose servers of one account and region share a private network by default; never Hetzner,
-  Vultr, Linode, whose private networks are opt-in, nor custom servers). The instance listens there while a site of its
-  environment runs on another server; the firewall opens its port to those servers' addresses only. **Never a public
-  address:** servers sharing no private network get `… shares no private network with <server> … Add both servers to a
-  private network (Network → Private networks)`. Until the agent listens on the address (a restart that keeps the data),
-  the reference says so (`does not listen on <address> yet`).
-The instance always keeps its password, `protected-mode` and the disabled commands.
+`DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (oldest user granted on the
+database); Redis and Valkey services `REDIS_URL` (`redis://default:<password>@<host>:<port>`), `REDIS_HOST`,
+`REDIS_PORT`, `REDIS_PASSWORD` and `REDIS_CLIENT` (`phpredis`); site services their own variables. The host and port
+depend on the site:
+- a container on the database's server (Docker site, compose stack): `falak-db-<id>` and the engine's port, on the
+  environment's Docker network;
+- a native site there: `127.0.0.1` and the container's host port;
+- a site on another server of the environment: the database server's address on a private network they share (a Falak
+  private network first, else the provider private network where both servers are on it for sure) and the host port,
+  once that address is published (a restart someone applies). **Never a public address**: otherwise the reference
+  fails with the reason (`… shares no private network with <server> …`, `… is not published on <address> yet …`).
 Unknown services/keys and cycles fail the deployment: `Unresolved variable references: …`.
 `${{ secrets.NAME }}` reads the secret store instead of a service (`secrets` is never a service name there): the
 current version of the nearest secret `NAME` of the service owning the variable — its service, environment, project,
 then organization secrets. A missing secret fails the deployment (`STRIPE_KEY: secret STRIPE_KEY is not defined for
 this service …`), as does a linked secret whose provider is not configured. Each read is in the secret's access log
 (once per deployment and version).
-An engine on an app or worker server serves that server only, and `DB_HOST` / `DATABASE_URL` resolve only for a
-consumer running on that server alone:
-- a native site gets `127.0.0.1`;
-- a container on it (Docker site, compose stack, function) gets the Docker bridge's address (`docker0`: the one the
-  agent reported for a Redis / Valkey instance on the server, else `FALAK_DOCKER_BRIDGE_HOST`, default `172.17.0.1`).
-  The engine accepts the Docker address
-  ranges (`FALAK_DOCKER_NETWORKS`, default `172.16.0.0/12,192.168.0.0/16`: PostgreSQL host rules, an extra MySQL account
-  per range) and the firewall opens its port on the Docker bridges only (`docker0`, `br-*`). This needs agent 0.4.5 or
-  newer (feature `db.containers`); it turns on per engine once the agent reports it. Before that, the reference fails
-  and says to update the agent.
-
-A site on other servers gets a resolution error naming the reason instead of a host it cannot reach; use a dedicated
-database server for those. A dedicated database server resolves like a Redis / Valkey instance: `127.0.0.1` for a native
-site on it, the Docker bridge for containers there, and for sites on other servers its address on a private network all
-of them share with it (a Falak private network first, else the provider private network where both servers are on it for
-sure, as above). **Never a public address** — servers sharing no private network get `… shares no private network with
-<server>, and database references never point at a public address. Add both servers to a private network …`.
 
 ## Secrets
 

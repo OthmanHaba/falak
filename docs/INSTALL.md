@@ -257,15 +257,6 @@ an HTTPS mirror with the same path layout. Set these in `/opt/falak/custom.env`,
 Unset (the default) means the upstream URLs. The mirror applies to servers provisioned (or runtimes
 installed) after the change.
 
-### Docker address ranges (optional)
-
-Containers on an app or worker server (compose stacks, Docker sites, functions) reach that server's databases
-through the Docker bridge (agent 0.4.5+). The engines accept connections from Docker's default address pools,
-`172.16.0.0/12,192.168.0.0/16`; the firewall only lets them in on the Docker bridges. If the Docker daemon on your
-servers uses other `default-address-pools`, set `FALAK_DOCKER_NETWORKS` (comma-separated IPv4 CIDRs, /8–/30) in
-`/opt/falak/custom.env` and run `falak-ctl up`; it applies to database users created or updated afterwards. Entries
-that are not such ranges are ignored with a warning in the logs (Docker's defaults apply when none is left).
-
 ### Extra sites on the control-plane host (optional)
 
 The edge (Caddy, ports 80/443) also loads every `/opt/falak/edge/*.caddyfile`. The folder is mounted read-only at
@@ -435,6 +426,21 @@ before v0.10.0 hold `APP_KEY` ciphertexts and restore as before: the migration c
 If step 3, 4 or 5 fails, `falak-ctl` **rolls back automatically**. It restores the previous deploy files and
 `FALAK_VERSION`, restores the database, storage and Fleet CA from the pre-update backup (the new migrations
 may already have run), and starts the previous version again.
+
+### Upgrading to v0.10.0: databases in containers
+
+v0.10.0 runs every managed database in a container and no longer manages the PostgreSQL, MySQL, MariaDB, Redis and
+Valkey engines earlier versions installed on servers. They keep running, but Falak forgets them: no backups, no
+references. The update's migration refuses to run while those databases are registered, and nothing changes:
+
+```
+Falak v0.10 runs every database in a container and no longer manages the host databases of earlier versions …
+```
+
+1. Back up every database you need (a dump of each, kept outside Falak).
+2. Set `FALAK_DROP_LEGACY_DATABASES=1` in `/opt/falak/custom.env` and run `falak-ctl update` again. The old rows, their
+   backup history and their canvas services go (references to them fail until they point at new services).
+3. Create database containers (canvas → Create → Database) and restore your dumps into them, then remove the flag.
 
 ### Upgrading the server agents
 

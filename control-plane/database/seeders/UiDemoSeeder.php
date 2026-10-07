@@ -116,7 +116,6 @@ class UiDemoSeeder extends Seeder
                 'branch' => $repository ? 'main' : null,
                 'deploy_script' => '$FALAK_FETCH',
                 'laravel' => new LaravelSettings,
-                'shared_paths' => [],
             ]);
 
             foreach ($index === 0 ? [$servers[0], $servers[1]] : [$servers[$index % 2]] as $position => $server) {
@@ -248,7 +247,6 @@ YAML;
             'unix_user' => 'falak',
             'deploy_script' => '',
             'laravel' => new LaravelSettings,
-            'shared_paths' => [],
             'compose_source' => ComposeSource::Inline,
             'public_services' => [
                 ['service' => 'n8n', 'port' => 5678, 'domain' => 'automations.acme.dev', 'host_port' => 3200],
