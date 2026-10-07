@@ -5,6 +5,7 @@ use Falak\Fleet\Contracts\AgentDirectory;
 use Falak\Fleet\Contracts\AgentStatus;
 use Falak\Fleet\Domain\Models\AgentMetric;
 use Falak\Fleet\Events\AgentCameOnline;
+use Falak\Fleet\Events\AgentDatabasesReported;
 use Falak\Fleet\Events\AgentFactsReported;
 use Falak\Fleet\Events\AgentSecretsMissing;
 use Falak\Fleet\Events\AgentVersionChanged;
@@ -116,4 +117,29 @@ it('announces sites whose secrets the server lost (missing_secrets)', function (
 
     $this->postJson('/agent/v1/heartbeat', $heartbeat, $this->headers)->assertNoContent();
     Event::assertDispatched(AgentSecretsMissing::class, fn (AgentSecretsMissing $e) => $e->serverId === $this->serverId && $e->sites === ['shop', 'api']);
+});
+
+it('reports the server\'s database containers (databases)', function () {
+    Event::fake([AgentDatabasesReported::class]);
+
+    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(), $this->headers)->assertNoContent();
+    Event::assertNotDispatched(AgentDatabasesReported::class);
+
+    $id = strtolower((string) Str::ulid());
+    $heartbeat = fleet_heartbeat(['databases' => [
+        ['id' => $id, 'state' => 'running', 'health' => 'healthy', 'secrets_missing' => false],
+        ['id' => strtolower((string) Str::ulid()), 'state' => 'created', 'health' => 'none', 'secrets_missing' => true],
+    ]]);
+    expect(fleet_schema_errors('heartbeat.schema.json', $heartbeat))->toBe([])
+        ->and(fleet_schema_errors('heartbeat.schema.json', fleet_heartbeat(['databases' => [['id' => '../x', 'state' => 'running', 'health' => 'healthy', 'secrets_missing' => false]]])))->not->toBe([]);
+
+    $this->postJson('/agent/v1/heartbeat', $heartbeat, $this->headers)->assertNoContent();
+    Event::assertDispatched(AgentDatabasesReported::class, fn (AgentDatabasesReported $e) => $e->serverId === $this->serverId
+        && count($e->instances) === 2
+        && $e->instances[0] === ['id' => $id, 'state' => 'running', 'health' => 'healthy', 'secrets_missing' => false]
+        && $e->instances[1]['secrets_missing'] === true);
+
+    // An empty list still reports (the server runs none any more).
+    $this->postJson('/agent/v1/heartbeat', fleet_heartbeat(['databases' => []]), $this->headers)->assertNoContent();
+    Event::assertDispatched(AgentDatabasesReported::class, fn (AgentDatabasesReported $e) => $e->instances === []);
 });
