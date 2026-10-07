@@ -186,7 +186,8 @@ their JSON result as the last stderr line, prefixed with `falak-db-result: `. Er
 | `user apply --spec FILE` | running, SQL engines | the user's full desired state from a JSON file the agent puts in the secrets directory (`{"username","password","host","grants":[{"database","privileges"}],"state":"present"\|"absent"}`): creates or alters the user and its password, grants the listed databases and revokes the others. The engine's own accounts are refused. `{"changed"}` |
 | `password set --file FILE [--keep-current]` | running | the superuser's (postgres), root's (every `root@host`, mysql/mariadb) or the default user's (redis/valkey: `ACL SETUSER default resetpass #<sha256>`, and the ACL file rewritten) new password, read from FILE. falak-db connects with the current password file (mysql/mariadb: with the new one when the engine already has it, so a retry finishes); the agent replaces that file afterwards. redis/valkey `--keep-current`: the new password is added, the current one stays valid. `{"changed": true}` |
 | `readonly on\|off` | running, SQL engines | postgres: `default_transaction_read_only` on every database, and the open client sessions are ended; mysql: `super_read_only`; mariadb: `read_only`. `{"read_only"}` |
-| `table-counts --database DB` | running, SQL engines | the exact row count of every table: `{"database","tables":{"schema.table":n}}` (a copy is checked against its source) |
+| `table-counts --database DB` | running | the exact row count of every table: `{"database","tables":{"schema.table":n}}` (a copy is checked against its source; restore drills compare with the counts taken at backup time). Redis / Valkey: the keys of every logical database, `{"tables":{"db0":n}}` (no `--database`) |
+| `query --database DB` | running, SQL engines | a restore drill's check query, on stdin: one `SELECT` (or `WITH … SELECT`), no `;`, comments or `\`, line breaks become spaces; run as `SELECT count(*) FROM (<query>)` in a read-only transaction with a 60 s statement limit (MySQL / MariaDB with the sandboxed client flags of `restore logical`). `{"database","rows"}` |
 | `reassign --database DB --owner ROLE` | running, postgres | the database, its schemas and every object in them (tables, views, sequences, functions, types; not extensions') owned by ROLE |
 | `version` | any | `{"version","engine"}` |
 
@@ -199,7 +200,7 @@ second.
 **only adds files**: each one is written to a temporary file, fsynced, hard-linked into place (never replacing a file)
 and the directory is fsynced. Spooling the same file twice is fine; different content under an existing name is exit
 4 and the spooled file stays as it was. falak-db never deletes from the spool: shipping it (presigned URLs from the
-CP, encryption in step 4) and removing what was shipped is the host agent's job. Names starting with `.` are
+CP, encrypted like backups: docs/BACKUPS.md) and removing what was shipped is the host agent's job. Names starting with `.` are
 falak-db's own (temporary files, `.binlog-last`, the last binlog spooled, so shipped binlogs are not spooled again)
 and must not be shipped or deleted.
 

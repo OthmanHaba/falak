@@ -356,12 +356,19 @@ settings?}`, `PUT /databases/instances/{instance} {memory_mb?, cpus?, settings?,
 allowed_sources?}` (a setting given as `null` returns to its default; `allowed_sources`: IPv4 CIDRs allowed to reach a
 public port), `POST /databases/instances/{instance}/restart|upgrade {version?}|password {password?}|network` (`network`
 applies pending published addresses: the container is recreated), `DELETE /databases/instances/{instance} {confirm,
-delete_volume?}`, `POST /databases/databases/{database}/backups {storage_provider_id, compression?}`, `POST
-/databases/instances/{instance}/schedules {…}` · `PUT|DELETE /databases/schedules/{schedule}` · `POST
-/databases/schedules/{schedule}/run`, `POST /databases/backups/{backup}/restore {database_instance_id, database,
-confirm}` (`databases.restore`; into an existing database of a running instance of the same family), `GET
-/databases/backups/{backup}/download`, `DELETE /databases/backups/{backup}`, `GET /databases/databases/{database}` (JSON:
-the panel).
+delete_volume?}`, `POST /databases/databases/{database}/backups {storage_provider_id}`, `POST
+/databases/instances/{instance}/schedules {name, storage_provider_id, database_ids, cron, retention_count?,
+retention_days?, enabled?, encryption_mode? (cp|customer), age_recipient?, drill? (off|weekly|monthly), drill_query?,
+drill_server_id?}` · `PUT|DELETE /databases/schedules/{schedule}` · `POST /databases/schedules/{schedule}/run|drill`,
+`POST /databases/backups/{backup}/restore {database_instance_id, database, confirm, identity?}` (`databases.restore`;
+into an existing database of a running instance of the same family; `identity`: the age private key of a
+customer-held backup, used once), `POST /databases/backups/{backup}/key` (`databases.restore` and a re-authentication
+within 5 minutes, else `423`: the backup's data key as a `falak-restore` key file, audited), `GET
+/databases/backups/{backup}/download` (the encrypted FKB1 file), `DELETE /databases/backups/{backup}`, `GET
+/databases/databases/{database}` (JSON: the panel). Volumes: `POST /volumes/{volume}/schedules` and `PUT
+/volumes/schedules/{schedule}` take the same `encryption_mode`, `age_recipient`, `drill` and `drill_server_id`; `POST
+/volumes/schedules/{schedule}/drill`, `POST /volumes/backups/{backup}/restore {…, identity?}`, `POST
+/volumes/backups/{backup}/key` (`volumes.browse` and a re-authentication). Backups and drills: docs/BACKUPS.md.
 ### `PATCH|DELETE /api/v1/projects/{project}/environments/{environment}` — `projects.manage`
 Rename (the slug follows). Only empty, non-production environments can be deleted.
 
