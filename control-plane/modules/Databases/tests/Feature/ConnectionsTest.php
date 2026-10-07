@@ -131,3 +131,12 @@ it('exposes Redis and Valkey with the default user and REDIS_URL', function () {
         'REDIS_URL' => "redis://default:{$instance->root_password}@falak-db-{$instance->id}:6379",
     ])->and(app(DatabaseConnections::class)->keysFor('valkey'))->toBe(DatabaseConnections::REDIS_KEYS);
 });
+
+it('gives Redis a rediss:// URL when the instance requires TLS (it is TLS-only then)', function () {
+    [$database, , $instance] = databases_service($this->organization, 'redis', 'cache', $this->server, ['environment_id' => strtolower((string) Str::ulid())]);
+    $instance->forceFill(['require_tls' => true])->save();
+
+    $variables = app(DatabaseConnections::class)->variables($database->id, new DatabaseConsumer('Shop', [$this->server->id], true));
+
+    expect($variables['REDIS_URL'])->toBe("rediss://default:{$instance->root_password}@falak-db-{$instance->id}:6379");
+});
