@@ -26,10 +26,10 @@ bump() { # bump <jq path to the ref>
 	ref=$(jq -r "$path" "$tmp")
 	tag=${ref%@*}
 	digest=$(digest_of "$tag")
-	[ -n "$digest" ] && [ "$digest" != null ] || {
+	if [ -z "$digest" ] || [ "$digest" = null ]; then
 		echo "bump.sh: cannot resolve $tag" >&2
 		exit 1
-	}
+	fi
 	if [ "$ref" != "$tag@$digest" ]; then
 		echo "$tag: ${ref#*@} -> $digest"
 		changed=1
