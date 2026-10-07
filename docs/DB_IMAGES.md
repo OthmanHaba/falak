@@ -131,6 +131,8 @@ The MySQL/MariaDB slow log is `/var/log/falak-db/slow.log` in the container (mys
 falak-db <command> [flags]      (--engine overrides FALAK_DB_ENGINE on every command)
 ```
 
+SQL and passwords never travel in arguments: `psql` and `mysql` read their statements on stdin.
+
 **Output.** A command prints one JSON object on stdout. Commands whose stdout is a data stream (`backup ...`) print
 their JSON result as the last stderr line, prefixed with `falak-db-result: `. Errors go to stderr as
 `falak-db: <message>`; secrets never appear in arguments, output or errors.
@@ -154,6 +156,10 @@ their JSON result as the last stderr line, prefixed with `falak-db-result: `. Er
 | `wal-push PATH` | postgres (its `archive_command`) | spools the segment; silent on success |
 | `wal-fetch NAME DEST --from DIR` | postgres (its `restore_command`) | copies `DIR/NAME` to `DEST`; exit 5 when absent (the end of the archive for postgres) |
 | `binlog-rotate [--no-flush] [--restart]` | mysql/mariadb, running | `FLUSH BINARY LOGS`, then spools every closed binlog not spooled yet, oldest first. `{"flushed","current","spooled":[{"name","path","bytes","sha256","existed"}],"gaps":[{"kind","from","to","detail"}]}`. A break in the chain prints the result and **exits 4**: `missing` (binlogs purged before they were spooled; what remains is spooled, reported once) or `reset` (the numbering went backwards; nothing is spooled until `--restart`, after a new base backup). Either way PITR cannot cross the gap: alert and take a new base backup. |
+| `database create --name N [--charset C] [--collation X] [--owner O]` | running, SQL engines | creates the database when missing (postgres: `ENCODING 'UTF8' TEMPLATE template0`, converges the owner; mysql/mariadb: `utf8mb4` unless given). `{"changed"}` |
+| `database drop --name N` | running, SQL engines | drops it when present (postgres `WITH (FORCE)`). `{"changed"}` |
+| `user apply --spec FILE` | running, SQL engines | the user's full desired state from a JSON file the agent puts in the secrets directory (`{"username","password","host","grants":[{"database","privileges"}],"state":"present"\|"absent"}`): creates or alters the user and its password, grants the listed databases and revokes the others. The engine's own accounts are refused. `{"changed"}` |
+| `password set --file FILE` | running | the superuser's (postgres), root's (every `root@host`, mysql/mariadb) or the default user's (redis/valkey: `ACL SETUSER default resetpass #<sha256>`, and the ACL file rewritten) new password, read from FILE. falak-db connects with the current password file; the agent replaces that file afterwards. `{"changed": true}` |
 | `version` | any | `{"version","engine"}` |
 
 `T` is RFC 3339 (`2026-10-07T12:00:00Z`). Postgres keeps fractional seconds; MySQL/MariaDB round T down to the

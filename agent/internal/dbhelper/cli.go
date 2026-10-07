@@ -29,6 +29,10 @@ commands:
   wal-push PATH                         postgres archive_command: spool a WAL segment
   wal-fetch NAME DEST --from DIR        postgres restore_command
   binlog-rotate [--no-flush] [--restart] mysql/mariadb: flush binary logs, spool the closed ones (exit 4 on gaps)
+  database create --name N [--charset C] [--collation X] [--owner O]
+  database drop --name N                postgres, mysql, mariadb
+  user apply --spec FILE                converge a user, its password and grants (JSON spec file)
+  password set --file FILE              the superuser's / root's / default user's new password
   version
 
 Results are one JSON line on stdout; for commands streaming data on stdout, the result is the stderr line starting
@@ -77,7 +81,7 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 		return nil
 	case "version", "--version":
 		return h.result(map[string]any{"version": version.Version, "engine": h.Engine})
-	case "config", "backup", "restore":
+	case "config", "backup", "restore", "database", "user", "password":
 		if len(args) == 0 {
 			return usageErr("%s needs a subcommand", cmd)
 		}
@@ -97,6 +101,8 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 		from     = new(string)
 		noFlush  = new(bool)
 		restart  = new(bool)
+		dbo      DatabaseOptions
+		file     = new(string)
 	)
 	var extra []string
 	switch cmd {
@@ -132,6 +138,17 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 	case "binlog-rotate":
 		fs.BoolVar(noFlush, "no-flush", false, "only spool binlogs that are already closed")
 		fs.BoolVar(restart, "restart", false, "after a reset (exit 4, gap kind \"reset\") and a new base backup: forget the last spooled name")
+	case "database create":
+		fs.StringVar(&dbo.Name, "name", "", "database name")
+		fs.StringVar(&dbo.Charset, "charset", "", "mysql/mariadb: character set (default utf8mb4)")
+		fs.StringVar(&dbo.Collation, "collation", "", "mysql/mariadb: collation")
+		fs.StringVar(&dbo.Owner, "owner", "", "postgres: owner role")
+	case "database drop":
+		fs.StringVar(&dbo.Name, "name", "", "database name")
+	case "user apply":
+		fs.StringVar(file, "spec", "", "JSON user spec (holds the password: a file in the secrets directory)")
+	case "password set":
+		fs.StringVar(file, "file", "", "file holding the new password")
 	case "health", "promote", "wal-push":
 	default:
 		fmt.Fprint(h.Stderr, usageText)
@@ -179,6 +196,14 @@ func dispatch(ctx context.Context, h *Helper, args []string) error {
 		return h.WALFetch(pos[0], pos[1], *from)
 	case "binlog-rotate":
 		return h.BinlogRotate(ctx, *noFlush, *restart)
+	case "database create":
+		return h.DatabaseCreate(ctx, dbo)
+	case "database drop":
+		return h.DatabaseDrop(ctx, dbo.Name)
+	case "user apply":
+		return h.UserApply(ctx, *file)
+	case "password set":
+		return h.PasswordSet(ctx, *file)
 	}
 	return nil
 }
