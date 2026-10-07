@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/db.instance.restart.schema.json",
+  "title": "db.instance.restart — restart the container (60 s to shut down) and wait until healthy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean"
+        },
+        "health": {
+          "enum": [
+            "healthy",
+            "unhealthy",
+            "starting",
+            "none"
+          ]
+        }
+      }
+    }
+  }
+}

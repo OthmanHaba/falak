@@ -272,6 +272,10 @@ type Container struct {
 		Image  string            `json:"Image"`
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
+	Mounts []struct {
+		Source      string `json:"Source"`
+		Destination string `json:"Destination"`
+	} `json:"Mounts"`
 	NetworkSettings struct {
 		Ports    map[string][]PortBinding `json:"Ports"`
 		Networks map[string]struct {
@@ -378,6 +382,7 @@ type ContainerSummary struct {
 	Names   []string          `json:"Names"`
 	Image   string            `json:"Image"`
 	State   string            `json:"State"`
+	Status  string            `json:"Status"` // "Up 5 minutes (healthy)"
 	Created int64             `json:"Created"`
 	Labels  map[string]string `json:"Labels"`
 	Mounts  []MountPoint      `json:"Mounts,omitempty"`
@@ -417,7 +422,30 @@ type CreateBody struct {
 	WorkingDir   string              `json:"WorkingDir,omitempty"`
 	Labels       map[string]string   `json:"Labels,omitempty"`
 	ExposedPorts map[string]struct{} `json:"ExposedPorts,omitempty"`
-	HostConfig   HostConfig          `json:"HostConfig"`
+	Healthcheck  *Healthcheck        `json:"Healthcheck,omitempty"`
+	// StopTimeout is the seconds `docker stop` (and a daemon shutdown) waits before SIGKILL.
+	StopTimeout      *int              `json:"StopTimeout,omitempty"`
+	HostConfig       HostConfig        `json:"HostConfig"`
+	NetworkingConfig *NetworkingConfig `json:"NetworkingConfig,omitempty"`
+}
+
+// Healthcheck of a container (durations in nanoseconds).
+type Healthcheck struct {
+	Test        []string `json:"Test"`
+	Interval    int64    `json:"Interval,omitempty"`
+	Timeout     int64    `json:"Timeout,omitempty"`
+	Retries     int      `json:"Retries,omitempty"`
+	StartPeriod int64    `json:"StartPeriod,omitempty"`
+}
+
+// NetworkingConfig names the endpoint a container is created on (HostConfig.NetworkMode), with its DNS aliases.
+type NetworkingConfig struct {
+	EndpointsConfig map[string]EndpointConfig `json:"EndpointsConfig"`
+}
+
+// EndpointConfig is one network endpoint.
+type EndpointConfig struct {
+	Aliases []string `json:"Aliases,omitempty"`
 }
 
 // HostConfig subset.
@@ -431,6 +459,7 @@ type HostConfig struct {
 	RestartPolicy RestartPolicy `json:"RestartPolicy"`
 	Memory        int64         `json:"Memory,omitempty"`
 	NanoCPUs      int64         `json:"NanoCpus,omitempty"`
+	ShmSize       int64         `json:"ShmSize,omitempty"`
 	// Hardening (function containers).
 	ReadonlyRootfs bool              `json:"ReadonlyRootfs,omitempty"`
 	Tmpfs          map[string]string `json:"Tmpfs,omitempty"`

@@ -74,7 +74,9 @@ type Heartbeat struct {
 	// MissingSecrets are sites whose env file or container secret files are gone (a reboot emptied /run): the
 	// control plane answers with site.env.write.
 	MissingSecrets []string `json:"missing_secrets,omitempty"`
-	Facts          any      `json:"facts,omitempty"`
+	// Databases are the database containers' states and health (db.Report); nil when there are none.
+	Databases any `json:"databases,omitempty"`
+	Facts     any `json:"facts,omitempty"`
 }
 
 // Heartbeater posts heartbeats every Interval. Facts are included on the first beat and whenever

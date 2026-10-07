@@ -1,1 +1,1 @@
-{"engine": "mysql", "name": "shop", "charset": "utf8mb4", "collation": "utf8mb4_unicode_ci"}
+{"instance": "01hzyinst00000000000000001", "engine": "mysql", "name": "shop", "charset": "utf8mb4", "collation": "utf8mb4_0900_ai_ci"}

@@ -1,26 +1,31 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://falak.sh/agent-protocol/commands/db.restore.schema.json",
-  "title": "db.restore — restore a dump into a database (created if missing), or an RDB snapshot into an existing Redis / Valkey instance",
+  "title": "db.restore — load a backup into a database of an instance (`falak-db restore logical`; postgres with --clean; redis/valkey: the instance stops, a one-off container of its image replaces the snapshot, it starts again)",
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "instance",
     "engine",
     "database",
     "source"
   ],
   "properties": {
+    "instance": {
+      "type": "string",
+      "pattern": "^[0-9a-z]{26}$"
+    },
     "engine": {
       "enum": [
-        "mysql",
         "postgres",
+        "mysql",
+        "mariadb",
         "redis",
         "valkey"
       ]
     },
     "database": {
-      "type": "string",
-      "description": "SQL: the database. Redis / Valkey (feature db.redis.backup): the instance's name."
+      "type": "string"
     },
     "compression": {
       "enum": [
@@ -77,11 +82,6 @@
     "sha256": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
-    },
-    "uncompressed_bytes": {
-      "type": "integer",
-      "minimum": 1,
-      "description": "Feature db.redis.restore_checks, Redis / Valkey: the snapshot's size the backup recorded (db.backup uncompressed_bytes). The agent checks the instance's free disk space against it and caps the gunzipped copy; without it, the gzip trailer gives an estimate."
     }
   },
   "allOf": [
@@ -90,8 +90,9 @@
         "properties": {
           "engine": {
             "enum": [
-              "redis",
-              "valkey"
+              "postgres",
+              "mysql",
+              "mariadb"
             ]
           }
         },
@@ -102,13 +103,7 @@
       "then": {
         "properties": {
           "database": {
-            "pattern": "^[a-z][a-z0-9_-]{0,40}$"
-          }
-        }
-      },
-      "else": {
-        "properties": {
-          "database": {
+            "type": "string",
             "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$"
           }
         }
@@ -129,24 +124,11 @@
         "duration_ms": {
           "type": "integer"
         },
-        "rdb": {
-          "type": "string",
-          "pattern": "^(REDIS[0-9]{4}|VALKEY[0-9]{3})$",
-          "description": "Redis / Valkey: the snapshot's RDB header"
-        },
-        "moved_aside": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "Redis / Valkey: the instance's earlier dump.rdb / appendonlydir / appendonly.aof, renamed <file>.falak-<UTC time> in its data directory"
-        },
         "warnings": {
           "type": "array",
           "items": {
             "type": "string"
-          },
-          "description": "Redis / Valkey: the restore succeeded, but something needs attention (a config file that could not be put back, a dataset over the memory limit)"
+          }
         }
       }
     }

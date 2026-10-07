@@ -30,7 +30,8 @@ var Catalogue = []string{
 	"deploy.fetch", "deploy.prepare", "deploy.hook", "deploy.activate", "deploy.rollback", "deploy.prune", "deploy.container.swap", "site.env.write",
 	"proc.apply", "proc.restart", "proc.status",
 	"cron.apply",
-	"db.create", "db.drop", "db.user.apply", "db.backup", "db.restore", "db.redis.apply", "db.redis.remove",
+	"db.instance.create", "db.instance.update", "db.instance.restart", "db.instance.stop", "db.instance.delete", "db.instance.password", "db.instance.secrets", "db.instance.upgrade",
+	"db.create", "db.drop", "db.user.apply", "db.backup", "db.restore",
 	"net.firewall.apply", "net.wireguard.apply", "net.tunnel.apply",
 	"fn.release.apply", "fn.release.remove", "fn.run", "fn.status",
 	"docker.pull", "docker.run", "docker.stop", "docker.compose.up", "docker.compose.down", "docker.compose.pull", "docker.compose.ps", "docker.compose.restart", "docker.prune",
@@ -266,49 +267,49 @@ func TestFunctionResultsValidate(t *testing.T) {
 	}
 }
 
-// db.backup / db.restore name a SQL database or a Redis / Valkey instance (feature db.redis.backup): each engine's
-// names only, and the key-value results validate.
-func TestDatabaseBackupSchemasPerEngine(t *testing.T) {
+// db.* payloads name an instance; SQL commands only take SQL engines, and every db.* result validates.
+func TestDatabaseSchemas(t *testing.T) {
 	c := compiler(t)
+	inst := `"instance":"01hzyinst00000000000000001"`
 	dest := `"destination":{"kind":"presigned_url","url":"https://s3.example.com/b/k?X-Amz-Signature=x"}`
-	src := `"source":{"kind":"url","url":"https://s3.example.com/b/k"}`
-	for payload, valid := range map[string]bool{
-		`{"engine":"redis","database":"cache-1",` + dest + `}`:     true,
-		`{"engine":"valkey","database":"sessions_2",` + dest + `}`: true,
-		`{"engine":"redis","database":"Cache",` + dest + `}`:       false,
-		`{"engine":"valkey","database":"9lives",` + dest + `}`:     false,
-		`{"engine":"mysql","database":"shop_db",` + dest + `}`:     true,
-		`{"engine":"mysql","database":"shop-db",` + dest + `}`:     false,
-		`{"engine":"memcached","database":"cache",` + dest + `}`:   false,
+	for _, tc := range []struct {
+		typ, body string
+		valid     bool
+	}{
+		{"db.backup", `{` + inst + `,"engine":"redis","database":"cache-1",` + dest + `}`, true},
+		{"db.backup", `{` + inst + `,"engine":"mariadb","database":"shop_db",` + dest + `}`, true},
+		{"db.backup", `{` + inst + `,"engine":"mysql","database":"shop-db",` + dest + `}`, false},
+		{"db.backup", `{"engine":"mysql","database":"shop",` + dest + `}`, false},
+		{"db.create", `{` + inst + `,"engine":"redis","name":"x"}`, false},
+		{"db.create", `{"instance":"../x","engine":"postgres","name":"x"}`, false},
+		{"db.user.apply", `{` + inst + `,"engine":"postgres","username":"app","remote":true}`, false},
+		{"db.instance.create", `{"instance":{"id":"01hzyinst00000000000000001","engine":"postgres","version":"17","image":"ghcr.io/othmanhaba/falak-postgres:17","volume_id":"01hzyvol000000000000000001","memory_bytes":1024},"password":"x"}`, false},
+		{"db.instance.create", `{"instance":{"id":"01hzyinst00000000000000001","engine":"postgres","version":"17","image":"ghcr.io/othmanhaba/falak-postgres:17","volume_id":"01hzyvol000000000000000001","memory_bytes":536870912,"network":"bridge"},"password":"x"}`, false},
+		{"db.instance.create", `{"instance":{"id":"01hzyinst00000000000000001","engine":"postgres","version":"17","image":"ghcr.io/othmanhaba/falak-postgres:17","volume_id":"01hzyvol000000000000000001","memory_bytes":536870912},"password":""}`, false},
+		{"db.instance.upgrade", `{"mode":"minor","source":{"id":"01hzyinst00000000000000001","engine":"postgres"},"target":{"id":"01hzyinst00000000000000002","engine":"postgres"},"databases":[],"alias":"a"}`, false},
+		{"db.instance.upgrade", `{"mode":"major","source":{"id":"01hzyinst00000000000000001","engine":"redis"},"target":{"id":"01hzyinst00000000000000002","engine":"redis"},"databases":[],"alias":"a"}`, false},
 	} {
-		for typ, body := range map[string]string{"db.backup": payload, "db.restore": strings.Replace(payload, dest, src, 1)} {
-			sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json")
-			if err != nil {
-				t.Fatal(err)
-			}
-			v, _ := jsonschema.UnmarshalJSON(strings.NewReader(body))
-			if err := sch.Validate(v); (err == nil) != valid {
-				t.Errorf("%s %s: valid=%v, err=%v", typ, body, valid, err)
-			}
+		sch, err := c.Compile(idBase + "commands/" + tc.typ + ".schema.json")
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	// The recorded size a restore gets back (feature db.redis.restore_checks).
-	sch, err := c.Compile(idBase + "commands/db.restore.schema.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for body, valid := range map[string]bool{
-		`{"engine":"redis","database":"cache",` + src + `,"uncompressed_bytes":1048576}`: true,
-		`{"engine":"redis","database":"cache",` + src + `,"uncompressed_bytes":0}`:       false,
-	} {
-		v, _ := jsonschema.UnmarshalJSON(strings.NewReader(body))
-		if err := sch.Validate(v); (err == nil) != valid {
-			t.Errorf("%s: valid=%v, err=%v", body, valid, err)
+		v, _ := jsonschema.UnmarshalJSON(strings.NewReader(tc.body))
+		if err := sch.Validate(v); (err == nil) != tc.valid {
+			t.Errorf("%s %s: valid=%v, err=%v", tc.typ, tc.body, tc.valid, err)
 		}
 	}
 	for typ, res := range map[string]any{
-		"db.backup":  db.BackupResult{SizeBytes: 10, SHA256: strings.Repeat("a", 64), Location: "https://s3.example.com/b/k", DurationMS: 5, RDB: "VALKEY080", UncompressedBytes: 42},
-		"db.restore": db.RestoreResult{Bytes: 10, DurationMS: 5, RDB: "REDIS0011", MovedAside: []string{"dump.rdb.falak-20261006T120000Z"}, Warnings: []string{"over the memory limit"}},
+		"db.backup":            db.BackupResult{SizeBytes: 10, SHA256: strings.Repeat("a", 64), Location: "https://s3.example.com/b/k", DurationMS: 5, RDB: "VALKEY080", UncompressedBytes: 42},
+		"db.restore":           db.RestoreResult{Bytes: 10, DurationMS: 5, Warnings: []string{"x"}},
+		"db.create":            db.ChangedResult{Changed: true},
+		"db.user.apply":        db.ChangedResult{Changed: true},
+		"db.instance.create":   db.InstanceResult{Changed: true, ContainerID: "abc", ImageDigest: "sha256:" + strings.Repeat("a", 64), Health: "healthy"},
+		"db.instance.update":   db.InstanceResult{ContainerID: "abc", Health: "starting"},
+		"db.instance.restart":  db.ChangedResult{Changed: true, Health: "healthy"},
+		"db.instance.delete":   db.ChangedResult{},
+		"db.instance.password": db.ChangedResult{Changed: true},
+		"db.instance.secrets":  db.SecretsResult{Restored: true, Started: true},
+		"db.instance.upgrade":  db.UpgradeResult{Databases: []db.CopiedDatabase{{Name: "shop", Bytes: 10}}, DurationMS: 4},
 	} {
 		sch, err := c.Compile(idBase + "commands/" + typ + ".schema.json#/$defs/result")
 		if err != nil {
@@ -319,6 +320,15 @@ func TestDatabaseBackupSchemasPerEngine(t *testing.T) {
 		if err := sch.Validate(v); err != nil {
 			t.Errorf("%s result invalid: %v\n%s", typ, err, b)
 		}
+	}
+	// The heartbeat's database report.
+	hbs, _ := c.Compile(idBase + "heartbeat.schema.json")
+	hb := transport.Heartbeat{At: time.Now(), UptimeS: 5, Load: [3]float64{0.1, 0.2, 0.3}, RunningCommands: []string{},
+		Databases: []db.InstanceReport{{ID: "01hzyinst00000000000000001", State: "exited", Health: "none", SecretsMissing: true}}}
+	b, _ := json.Marshal(hb)
+	v, _ := jsonschema.UnmarshalJSON(bytes.NewReader(b))
+	if err := hbs.Validate(v); err != nil {
+		t.Fatalf("heartbeat with databases invalid: %v\n%s", err, b)
 	}
 }
 

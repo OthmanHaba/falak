@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://falak.sh/agent-protocol/commands/db.instance.update.schema.json",
+  "title": "db.instance.update — converge an instance's container to the spec: recreated on the same volume (60 s clean shutdown) when its spec or image changed, else only started if stopped",
+  "x-falak-redeliverable": true,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "instance",
+    "password"
+  ],
+  "properties": {
+    "instance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "engine",
+        "version",
+        "image",
+        "volume_id",
+        "memory_bytes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[0-9a-z]{26}$"
+        },
+        "engine": {
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb",
+            "redis",
+            "valkey"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+)?$",
+          "description": "the image's major version (postgres 15–18, mysql 8.0 / 8.4, mariadb 10.11 / 11.4, redis 7.4 / 8, valkey 8.1)"
+        },
+        "image": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9./_-]*(:[A-Za-z0-9_.-]+)?$",
+          "description": "tag reference, e.g. ghcr.io/othmanhaba/falak-postgres:17"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "pin: pulled as <repository>@<digest> and checked against the image's RepoDigests. Without it the tag is pulled again on every create/update and a newer image recreates the container (minor upgrades). Cosign signatures are not verified yet."
+        },
+        "volume_id": {
+          "type": "string",
+          "pattern": "^[0-9a-z]{26}$",
+          "description": "the sized volume holding data/ and spool/ (/var/lib/falak/volumes/<id>; the agent waits up to 120 s for it to be mounted)"
+        },
+        "host_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "published on 127.0.0.1 (native sites on the server) and publish.addresses; absent: not published (a retired instance)"
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 33554432,
+          "description": "the container's memory limit; falak-db tunes the engine to it"
+        },
+        "cpus": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "settings": {
+          "type": "object",
+          "description": "falak-db settings (docs/DB_IMAGES.md), FALAK_DB_SETTINGS. Without an installed certificate the agent sets tls: false."
+        },
+        "network": {
+          "type": "string",
+          "pattern": "^falak-env-[0-9a-z]{26}$",
+          "description": "the environment's network, created when missing; the container joins it under aliases"
+        },
+        "aliases": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9.-]{0,62}$"
+          },
+          "description": "DNS names on the network (default [falak-db-<id>]); after a major upgrade the new instance keeps the old one's name"
+        },
+        "publish": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "addresses": {
+              "type": "array",
+              "maxItems": 8,
+              "items": {
+                "type": "string",
+                "format": "ipv4"
+              },
+              "description": "private addresses (RFC 1918, CGNAT 100.64.0.0/10: WireGuard) the port is also published on; any other address fails the command"
+            },
+            "public": {
+              "type": "boolean",
+              "default": false,
+              "description": "publish on every address (0.0.0.0); the control plane sends settings.require_tls with it"
+            }
+          }
+        },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "certificate",
+            "private_key"
+          ],
+          "description": "db.instance.create only: the certificate from the Falak CA, written to /etc/falak/db/<id>/tls (root, 0600) and mounted read-only at /run/falak/db/tls. Updates keep the installed one.",
+          "properties": {
+            "certificate": {
+              "type": "string"
+            },
+            "private_key": {
+              "type": "string",
+              "description": "secret"
+            },
+            "ca": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "password": {
+      "type": "string",
+      "minLength": 1,
+      "description": "secret: the superuser's (postgres) / root's (mysql, mariadb) / default user's (redis, valkey) password, written to /run/falak/secrets/falak-db-<id>/password (tmpfs) and given to the container as a *_FILE variable"
+    },
+    "registry_auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "username",
+        "password"
+      ],
+      "properties": {
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string",
+          "description": "secret"
+        },
+        "server": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed",
+        "container_id",
+        "health"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean"
+        },
+        "container_id": {
+          "type": "string"
+        },
+        "image_digest": {
+          "type": "string",
+          "description": "the digest the container runs (record it to pin)"
+        },
+        "health": {
+          "enum": [
+            "healthy",
+            "unhealthy",
+            "starting",
+            "none"
+          ]
+        }
+      }
+    }
+  }
+}
